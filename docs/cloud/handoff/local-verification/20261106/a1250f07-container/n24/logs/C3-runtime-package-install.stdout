@@ -1,0 +1,197 @@
+✔ fix3 A-B-A refuses the old receipt even when selector identities are reused (503.668023ms)
+✔ fix3 each switch binds a new generation to its receipt and no-op preserves it (520.52954ms)
+✔ fix3 inactive restore and reapply do not resurrect an original receipt (311.100821ms)
+✔ fix3 legacy schema selector is refused without mutation or payload launch (327.976849ms)
+✔ fix3 missing generation selector is refused without mutation or payload launch (314.346594ms)
+✔ fix3 malformed generation selector is refused without mutation or payload launch (324.564499ms)
+✔ fix3 non-v4 generation selector is refused without mutation or payload launch (309.538682ms)
+✔ fix3 array generation selector is refused without mutation or payload launch (289.065701ms)
+✔ fix3 array manifest digest selector is refused without mutation or payload launch (306.051351ms)
+✔ fix3 unknown field selector is refused without mutation or payload launch (298.55182ms)
+✔ fix3 legacy schema receipt is refused and all evidence is retained (179.871225ms)
+✔ fix3 wrong generation binding receipt is refused and all evidence is retained (189.583792ms)
+✔ fix3 array-valued receipt before is refused without mutation (181.30732ms)
+✔ fix3 array-valued receipt after is refused without mutation (183.272786ms)
+✔ fix3 before-selection interruption retains exact generation-bound recovery evidence (338.91034ms)
+✔ fix3 after-selection interruption retains exact generation-bound recovery evidence (355.94074ms)
+✔ help/default/preview are read-only and launch nothing (111.908166ms)
+✔ fresh apply and explicit initially-absent restore stay standalone with punctuation in prefix (282.01394ms)
+✔ A to B to A rollback preserves both immutable releases and source bundles (467.080014ms)
+✔ foreign paths, shims, lock and partial stage are never overwritten or cleared (183.26493ms)
+✔ existing private canonical prefix and unchanged directory identity are required (24.190115ms)
+✔ replaced source content and symlinked installed paths reject stale plans (185.876141ms)
+✔ concurrent apply is refused by the first transaction lock (215.206404ms)
+✔ fault before-selection retains inspectable receipt and lock, never auto-retries (169.071884ms)
+✔ fault after-selection retains inspectable receipt and lock, never auto-retries (173.177193ms)
+✔ mid-transaction ancestor replacement cannot redirect writes to replacement (159.252089ms)
+✔ restore binds original prefix, exact selected inode and owned shim state (364.314101ms)
+✔ source mutation during staging prevents selection and retains lock (164.961058ms)
+✔ partial staging and missing installed dependency are refused without repair (193.507835ms)
+✔ restore rejects changed shims and preserves current selection (188.426766ms)
+✔ partial owned directories and foreign receipt contents are refused (199.065959ms)
+✔ fix1 installed permission drift blocks NO_OP: bin (184.538684ms)
+✔ fix1 installed permission drift blocks NO_OP: RUNTIME-MANIFEST.json (186.298623ms)
+✔ fix1 installed permission drift blocks NO_OP: bin/hud (190.277636ms)
+✔ fix1 receipt capacity is reserved before apply/restore; same-package NO_OP stays available (448.316886ms)
+✔ fix1 output ENOSPC preserves selected outcome, receipt and inspection barrier (228.791292ms)
+✔ fix1 lock removal fsync failure reports real state and restores an inspection barrier (186.264034ms)
+✔ fix1 hud runs in original PID with direct parent, argv, stdin, fd3 and exit code (230.157ms)
+✔ fix1 hud-run runs in original PID with direct parent, argv, stdin, fd3 and exit code (212.335889ms)
+✔ fix1 hud-statusline runs in original PID with direct parent, argv, stdin, fd3 and exit code (199.690517ms)
+✔ fix1 hud-mcp runs in original PID with direct parent, argv, stdin, fd3 and exit code (198.056292ms)
+✔ fix1 installed hud-mcp SIGINT leaves no payload and preserves PID/PPID (338.880619ms)
+ℹ {"startedAtMs":1793983165919,"deadlineAtMs":1793983172919,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":366,"ppid":365,"start":"12071664"},"launcherPid":366,"parentPid":365,"launcherCode":-2,"stderr":null}
+✔ fix1 installed hud-mcp SIGTERM leaves no payload and preserves PID/PPID (309.17593ms)
+ℹ {"startedAtMs":1793983166238,"deadlineAtMs":1793983173238,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":374,"ppid":373,"start":"12071696"},"launcherPid":374,"parentPid":373,"launcherCode":-15,"stderr":null}
+✔ fix1 installed codex-hud SIGINT leaves no payload and preserves PID/PPID (362.504571ms)
+ℹ {"startedAtMs":1793983166550,"deadlineAtMs":1793983173550,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":382,"ppid":381,"start":"12071727"},"launcherPid":382,"parentPid":381,"launcherCode":-2,"stderr":null}
+✔ fix1 installed codex-hud SIGTERM leaves no payload and preserves PID/PPID (355.225651ms)
+ℹ {"startedAtMs":1793983166915,"deadlineAtMs":1793983173915,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":398,"ppid":397,"start":"12071763"},"launcherPid":398,"parentPid":397,"launcherCode":-15,"stderr":null}
+✔ fix1 release capacity reserves a slot for upgrade but permits existing selection and restore (1522.540527ms)
+✔ fix1 legacy exec preserves newline prefix, metacharacter argv, stdin and natural exit (254.752024ms)
+✔ fix1 legacy selector SIGINT is reaped without launching payload (334.890771ms)
+ℹ {"startedAtMs":1793983169066,"deadlineAtMs":1793983176066,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":430,"ppid":429,"start":"12071979"},"launcherPid":429,"parentPid":428,"launcherCode":130,"stderr":"runtime_selector_failed: interrupted_SIGINT; cleanup=REAPED; owned_pid=430; owned_start=12071979; wait_status=137\n"}
+✔ fix1 legacy selector SIGTERM is reaped without launching payload (320.710327ms)
+ℹ {"startedAtMs":1793983169387,"deadlineAtMs":1793983176387,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":439,"ppid":438,"start":"12072011"},"launcherPid":438,"parentPid":437,"launcherCode":143,"stderr":"runtime_selector_failed: interrupted_SIGTERM; cleanup=REAPED; owned_pid=439; owned_start=12072011; wait_status=137\n"}
+✔ fix1 legacy selector timeout is bounded and cannot start payload (5188.315514ms)
+ℹ {"selectorPid":447,"reaped":true,"deadlineMs":7500}
+✔ fix1 restore output failure retains inactive selection and its recovery barrier (268.802266ms)
+✔ fix1 legacy selector cannot hang after emitting a valid path (5381.904283ms)
+ℹ {"startedAtMs":1793983175199,"deadlineAtMs":1793983184199,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":463,"ppid":462,"start":"12072592"},"launcherPid":462,"parentPid":461,"launcherCode":5,"stderr":"runtime_selector_failed: timed_out; cleanup=REAPED; owned_pid=463; owned_start=12072592; wait_status=137\n"}
+✔ fix1 selector close-output requires actual timely zero exit before payload (5349.569857ms)
+ℹ {"startedAtMs":1793983180548,"deadlineAtMs":1793983189548,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":700,"ppid":699,"start":"12073127"},"launcherPid":699,"parentPid":698,"launcherCode":5,"stderr":"runtime_selector_failed: timed_out; cleanup=REAPED; owned_pid=700; owned_start=12073127; wait_status=137\n"}
+✔ fix1 selector nonzero requires actual timely zero exit before payload (352.211305ms)
+ℹ {"startedAtMs":1793983185900,"deadlineAtMs":1793983194900,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":937,"ppid":936,"start":"12073662"},"launcherPid":936,"parentPid":935,"launcherCode":5,"stderr":"runtime_selector_failed: nonzero_selector_exit; cleanup=REAPED; owned_pid=937; owned_start=12073662; wait_status=7\n"}
+✔ fix1 selector success requires actual timely zero exit before payload (349.737213ms)
+ℹ {"startedAtMs":1793983186250,"deadlineAtMs":1793983195250,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":947,"ppid":946,"start":"12073697"},"launcherPid":946,"parentPid":945,"launcherCode":0,"stderr":null}
+✔ fix1 selector SIGHUP during reading never launches payload (313.162548ms)
+ℹ {"startedAtMs":1793983186591,"deadlineAtMs":1793983193591,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":957,"ppid":956,"start":"12073731"},"launcherPid":956,"parentPid":955,"launcherCode":129,"stderr":"runtime_selector_failed: interrupted_SIGHUP; cleanup=REAPED; owned_pid=957; owned_start=12073731; wait_status=137\n"}
+✔ fix1 selector SIGINT during waiting never launches payload (429.331206ms)
+ℹ {"startedAtMs":1793983186907,"deadlineAtMs":1793983193907,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":966,"ppid":965,"start":"12073763"},"launcherPid":965,"parentPid":964,"launcherCode":130,"stderr":"runtime_selector_failed: interrupted_SIGINT; cleanup=REAPED; owned_pid=966; owned_start=12073763; wait_status=137\n"}
+✔ fix1 selector SIGTERM during waiting never launches payload (439.069426ms)
+ℹ {"startedAtMs":1793983187346,"deadlineAtMs":1793983194346,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":980,"ppid":979,"start":"12073807"},"launcherPid":979,"parentPid":978,"launcherCode":143,"stderr":"runtime_selector_failed: interrupted_SIGTERM; cleanup=REAPED; owned_pid=980; owned_start=12073807; wait_status=137\n"}
+✔ fix1 selector SIGHUP during waiting never launches payload (432.109907ms)
+ℹ {"startedAtMs":1793983187777,"deadlineAtMs":1793983194777,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":994,"ppid":993,"start":"12073850"},"launcherPid":993,"parentPid":992,"launcherCode":129,"stderr":"runtime_selector_failed: interrupted_SIGHUP; cleanup=REAPED; owned_pid=994; owned_start=12073850; wait_status=137\n"}
+✔ fix1 unknown selector cleanup is bounded, reports UNKNOWN and does not pretend shim reap (2345.673861ms)
+ℹ {"startedAtMs":1793983188210,"deadlineAtMs":1793983197210,"aliveAfterSignal":true,"reaped":true,"reapEvidence":"harness_waitpid","error":null,"payload":{"pid":1008,"ppid":1007,"start":"12073893"},"launcherPid":1007,"parentPid":1006,"launcherCode":5,"stderr":"runtime_selector_failed: identity_changed; cleanup=UNKNOWN; owned_pid=1008; owned_start=12073893; wait_status=unknown\n"}
+✔ fix2 native exit semantics: unsettled TLA (257.257408ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-yTbc2h/private space ';$() prefix/releases/6c9725baedb750e584b08a468a431dffc0e82a5fc1439b5a96fd8fd199d7eb62/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793983190559,"deadlineAtMs":1793983193559,"endedAtMs":1793983190579,"ownedPid":1108,"waitedStatus":13,"signal":null,"stderr":"Warning: Detected unsettled top-level await at file:///work/tmp/hud-runtime-test-yTbc2h/private%20space%20';$()%20prefix/releases/6c9725baedb750e584b08a468a431dffc0e82a5fc1439b5a96fd8fd199d7eb62/packages/hud-mcp/bin/hud-mcp.mjs:10\n  await import('../dist/packages/hud-mcp/src/main.js');\n  ^\n\n\n\n"}
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-yTbc2h/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983190579,"deadlineAtMs":1793983193579,"endedAtMs":1793983190602,"ownedPid":1115,"waitedStatus":13,"signal":null,"stderr":"Warning: Detected unsettled top-level await at file:///work/tmp/hud-runtime-test-yTbc2h/private%20space%20';$()%20prefix/releases/6c9725baedb750e584b08a468a431dffc0e82a5fc1439b5a96fd8fd199d7eb62/packages/hud-mcp/bin/hud-mcp.mjs:10\n  await import('../dist/packages/hud-mcp/src/main.js');\n  ^\n\n\n\n"}
+ℹ {"command":["/work/tmp/hud-runtime-test-yTbc2h/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983190602,"deadlineAtMs":1793983193602,"endedAtMs":1793983190623,"ownedPid":1122,"waitedStatus":13,"signal":null,"stderr":"Warning: Detected unsettled top-level await at file:///work/tmp/hud-runtime-test-yTbc2h/private%20space%20';$()%20prefix/releases/6c9725baedb750e584b08a468a431dffc0e82a5fc1439b5a96fd8fd199d7eb62/packages/hud-mcp/bin/hud-mcp.mjs:10\n  await import('../dist/packages/hud-mcp/src/main.js');\n  ^\n\n\n\n"}
+✔ fix2 native exit semantics: unsettled TLA explicit23 (251.970231ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-uFDSIM/private space ';$() prefix/releases/c57b78d4e30ca5e22408cb7ba010ac8f00cb5aa3106a057d9f676729f68f383f/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793983190813,"deadlineAtMs":1793983193813,"endedAtMs":1793983190834,"ownedPid":1129,"waitedStatus":23,"signal":null,"stderr":""}
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-uFDSIM/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983190834,"deadlineAtMs":1793983193834,"endedAtMs":1793983190854,"ownedPid":1136,"waitedStatus":23,"signal":null,"stderr":""}
+ℹ {"command":["/work/tmp/hud-runtime-test-uFDSIM/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983190854,"deadlineAtMs":1793983193854,"endedAtMs":1793983190875,"ownedPid":1143,"waitedStatus":23,"signal":null,"stderr":""}
+✔ fix2 native exit semantics: timer settled TLA23 (310.380337ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-ewwzS3/private space ';$() prefix/releases/1c680dd059f31d84f4172c6e3dd4392a89e5fd0e63d730fbc967e03c72a0744e/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793983191060,"deadlineAtMs":1793983194060,"endedAtMs":1793983191102,"ownedPid":1150,"waitedStatus":23,"signal":null,"stderr":""}
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-ewwzS3/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983191102,"deadlineAtMs":1793983194102,"endedAtMs":1793983191144,"ownedPid":1157,"waitedStatus":23,"signal":null,"stderr":""}
+ℹ {"command":["/work/tmp/hud-runtime-test-ewwzS3/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983191144,"deadlineAtMs":1793983194144,"endedAtMs":1793983191185,"ownedPid":1164,"waitedStatus":23,"signal":null,"stderr":""}
+✔ fix2 native exit semantics: explicit exit0 (249.602943ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-tCSNRv/private space ';$() prefix/releases/0a9c3689334738b2c95ff9105d50fb273a6bfde0f4b907343093fd959064024e/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793983191374,"deadlineAtMs":1793983194374,"endedAtMs":1793983191394,"ownedPid":1171,"waitedStatus":0,"signal":null,"stderr":""}
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-tCSNRv/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983191394,"deadlineAtMs":1793983194394,"endedAtMs":1793983191414,"ownedPid":1178,"waitedStatus":0,"signal":null,"stderr":""}
+ℹ {"command":["/work/tmp/hud-runtime-test-tCSNRv/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983191414,"deadlineAtMs":1793983194414,"endedAtMs":1793983191435,"ownedPid":1185,"waitedStatus":0,"signal":null,"stderr":""}
+✔ fix2 native exit semantics: beforeExit starts work23 (313.292797ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-v5tWD5/private space ';$() prefix/releases/5e5b15c5b0056a0f7d271f873b9da2f50bd865ee4435b08b18779158f17b1c8e/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793983191622,"deadlineAtMs":1793983194622,"endedAtMs":1793983191663,"ownedPid":1192,"waitedStatus":23,"signal":null,"stderr":""}
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-v5tWD5/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983191663,"deadlineAtMs":1793983194663,"endedAtMs":1793983191706,"ownedPid":1199,"waitedStatus":23,"signal":null,"stderr":""}
+ℹ {"command":["/work/tmp/hud-runtime-test-v5tWD5/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983191706,"deadlineAtMs":1793983194706,"endedAtMs":1793983191748,"ownedPid":1206,"waitedStatus":23,"signal":null,"stderr":""}
+✔ fix2 native exit semantics: wrapper throw (243.238268ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-0bhZ0o/private space ';$() prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793983191925,"deadlineAtMs":1793983194925,"endedAtMs":1793983191946,"ownedPid":1213,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-0bhZ0o/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1\nthrow new Error('synthetic_wrapper_failure');\n      ^\n\nError: synthetic_wrapper_failure\n    at file:///work/tmp/hud-runtime-test-0bhZ0o/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1:7\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n"}
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-0bhZ0o/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983191946,"deadlineAtMs":1793983194946,"endedAtMs":1793983191968,"ownedPid":1220,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-0bhZ0o/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1\nthrow new Error('synthetic_wrapper_failure');\n      ^\n\nError: synthetic_wrapper_failure\n    at file:///work/tmp/hud-runtime-test-0bhZ0o/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1:7\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n"}
+ℹ {"command":["/work/tmp/hud-runtime-test-0bhZ0o/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983191968,"deadlineAtMs":1793983194968,"endedAtMs":1793983191992,"ownedPid":1227,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-0bhZ0o/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1\nthrow new Error('synthetic_wrapper_failure');\n      ^\n\nError: synthetic_wrapper_failure\n    at file:///work/tmp/hud-runtime-test-0bhZ0o/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1:7\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n"}
+✔ fix2 native exit semantics: wrapper rejected TLA (243.84551ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-Lts8Wj/private space ';$() prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793983192168,"deadlineAtMs":1793983195168,"endedAtMs":1793983192190,"ownedPid":1234,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-Lts8Wj/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1\nawait Promise.reject(new Error('synthetic_wrapper_failure'));\n                     ^\n\nError: synthetic_wrapper_failure\n    at file:///work/tmp/hud-runtime-test-Lts8Wj/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1:22\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n"}
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-Lts8Wj/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983192190,"deadlineAtMs":1793983195190,"endedAtMs":1793983192211,"ownedPid":1241,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-Lts8Wj/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1\nawait Promise.reject(new Error('synthetic_wrapper_failure'));\n                     ^\n\nError: synthetic_wrapper_failure\n    at file:///work/tmp/hud-runtime-test-Lts8Wj/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1:22\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n"}
+ℹ {"command":["/work/tmp/hud-runtime-test-Lts8Wj/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983192211,"deadlineAtMs":1793983195211,"endedAtMs":1793983192236,"ownedPid":1248,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-Lts8Wj/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1\nawait Promise.reject(new Error('synthetic_wrapper_failure'));\n                     ^\n\nError: synthetic_wrapper_failure\n    at file:///work/tmp/hud-runtime-test-Lts8Wj/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1:22\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)\n\nNode.js v24.22.1\n"}
+✔ fix2 hud has explicit ESM scope below CommonJS ancestor (205.622225ms)
+✔ fix2 hud-run has explicit ESM scope below CommonJS ancestor (221.317157ms)
+✔ fix2 hud-statusline has explicit ESM scope below CommonJS ancestor (211.938232ms)
+✔ fix2 hud-mcp has explicit ESM scope below CommonJS ancestor (214.160198ms)
+✔ fix2 launch metadata missing refuses preview, no-op and payload (210.93394ms)
+✔ fix2 launch metadata malformed refuses preview, no-op and payload (211.305854ms)
+✔ fix2 launch metadata commonjs refuses preview, no-op and payload (202.17696ms)
+✔ fix2 launch metadata extra refuses preview, no-op and payload (209.564729ms)
+✔ fix2 launch metadata mode refuses preview, no-op and payload (200.667608ms)
+✔ fix2 launch metadata special-mode refuses preview, no-op and payload (198.262596ms)
+✔ fix2 launch metadata symlink refuses preview, no-op and payload (195.856806ms)
+✔ fix2 launch metadata hardlink refuses preview, no-op and payload (197.891006ms)
+✔ fix2 launch metadata bin-mode refuses preview, no-op and payload (208.325033ms)
+✔ fix2 launch metadata bin-symlink refuses preview, no-op and payload (203.753057ms)
+✔ fix2 identical marker replacement invalidates an existing plan and restore receipt (246.265608ms)
+✔ fix2 pre-switch marker replacement keeps selection absent and retains recovery barrier (162.304904ms)
+✔ fix2 metadata identity survives A to B to A and initially-absent restore (665.052684ms)
+✔ fix2 hud CommonJS marker refuses both node and shebang with NO_PAYLOAD (234.696366ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-xW4oxN/private space ';$() prefix/bin/hud"],"startedAtMs":1793983196391,"deadlineAtMs":1793983199391,"endedAtMs":1793983196415,"ownedPid":1374,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\n"}
+ℹ {"command":["/work/tmp/hud-runtime-test-xW4oxN/private space ';$() prefix/bin/hud"],"startedAtMs":1793983196415,"deadlineAtMs":1793983199415,"endedAtMs":1793983196437,"ownedPid":1381,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\n"}
+✔ fix2 hud-run CommonJS marker refuses both node and shebang with NO_PAYLOAD (241.004385ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-NSjN17/private space ';$() prefix/bin/hud-run"],"startedAtMs":1793983196633,"deadlineAtMs":1793983199633,"endedAtMs":1793983196655,"ownedPid":1395,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\n"}
+ℹ {"command":["/work/tmp/hud-runtime-test-NSjN17/private space ';$() prefix/bin/hud-run"],"startedAtMs":1793983196655,"deadlineAtMs":1793983199655,"endedAtMs":1793983196678,"ownedPid":1402,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\n"}
+✔ fix2 hud-statusline CommonJS marker refuses both node and shebang with NO_PAYLOAD (233.620458ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-fxHQMe/private space ';$() prefix/bin/hud-statusline"],"startedAtMs":1793983196867,"deadlineAtMs":1793983199867,"endedAtMs":1793983196890,"ownedPid":1416,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\n"}
+ℹ {"command":["/work/tmp/hud-runtime-test-fxHQMe/private space ';$() prefix/bin/hud-statusline"],"startedAtMs":1793983196890,"deadlineAtMs":1793983199890,"endedAtMs":1793983196912,"ownedPid":1423,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\n"}
+✔ fix2 hud-mcp CommonJS marker refuses both node and shebang with NO_PAYLOAD (231.59987ms)
+ℹ {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-hhVXgG/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983197100,"deadlineAtMs":1793983200100,"endedAtMs":1793983197120,"ownedPid":1437,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\n"}
+ℹ {"command":["/work/tmp/hud-runtime-test-hhVXgG/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793983197120,"deadlineAtMs":1793983200120,"endedAtMs":1793983197143,"ownedPid":1444,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\n"}
+✔ manifest validates complete bounded payload and exact locked production identities (22.85976ms)
+✔ exact shared source mapping never selects arbitrary output or source files (0.35505ms)
+✔ E2 shared helper mapping (0.287224ms)
+✔ tampered and missing runtime closure fails: bin/hud (13.884833ms)
+✔ tampered and missing runtime closure fails: bin/codex-with-herdr-context (14.051161ms)
+✔ tampered and missing runtime closure fails: node_modules/chokidar/package.json (16.766397ms)
+✔ malformed manifest is refused before copy (10.20253ms)
+✔ malformed manifest is refused before copy (9.811734ms)
+✔ malformed manifest is refused before copy (10.837479ms)
+✔ malformed manifest is refused before copy (10.755668ms)
+✔ malformed manifest is refused before copy (10.201668ms)
+✔ malformed manifest is refused before copy (10.397761ms)
+✔ malformed manifest is refused before copy (10.326971ms)
+✔ malformed manifest is refused before copy (10.603004ms)
+✔ unlisted files, links, devices and hard links cannot enter the bundle (18.104107ms)
+✔ bounded regular read rejects FIFO and oversize file without blocking (16.17075ms)
+✔ source parent symlink and replaced pinned parent are rejected (11.643318ms)
+✔ unlisted empty directories are rejected (13.433039ms)
+✔ a file changing while its bytes are read is rejected (12.613943ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (9.782981ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (10.122871ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (10.42326ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (10.410122ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (9.950241ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (10.036741ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (10.397061ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (9.678786ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (10.27285ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (10.736933ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (9.565596ms)
+✔ frozen shared metadata envelope rejects malformed or unknown fields (9.929241ms)
+✔ valid optional metadata stays inert; dirty development bundles remain valid (10.713038ms)
+✔ annotation aggregate and payload total are independently bounded (22.812924ms)
+✔ builder help and unknown arguments never start a build; unsupported cache flag is refused (103.069219ms)
+✔ fix1 SemVer rejects numeric prerelease leading zero: 24.0.0-01 (9.885811ms)
+✔ fix1 SemVer rejects numeric prerelease leading zero: 24.0.0-rc.00 (11.140192ms)
+✔ fix1 SemVer rejects numeric prerelease leading zero: 24.0.0-00+build (9.590341ms)
+✔ fix1 SemVer accepts standard prerelease/build: 24.0.0 (9.539247ms)
+✔ fix1 SemVer accepts standard prerelease/build: 24.0.0-0 (9.508139ms)
+✔ fix1 SemVer accepts standard prerelease/build: 24.0.0-rc.0 (10.341298ms)
+✔ fix1 SemVer accepts standard prerelease/build: 24.0.0-01a (9.710525ms)
+✔ fix1 SemVer accepts standard prerelease/build: 24.0.0-rc.1+build.00 (9.321622ms)
+✔ fix1 SemVer accepts standard prerelease/build: 24.0.0+001 (10.048142ms)
+✔ fix1 SemVer accepts standard prerelease/build: 24.0.0+build-01 (9.39531ms)
+✔ fix1 bundle rejects unsafe full permission mode: bin (9.902622ms)
+✔ fix1 bundle rejects unsafe full permission mode: RUNTIME-MANIFEST.json (9.787408ms)
+✔ fix1 bundle rejects unsafe full permission mode: bin/hud (11.229237ms)
+✔ fix1 exactly 5000 payload files plus manifest is valid; 5001 payload files is rejected (432.318052ms)
+✔ fix1 builder selected-input reader bounds allocation and avoids readFileSync (11.133119ms)
+✔ fix1 interrupted builder SIGINT reaps owned child and writes failure receipt (1538.365503ms)
+ℹ {"startedAtMs":1793983198305,"deadlineAtMs":1793983205305,"aliveAfterDeadline":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"receipt":{"name":"interrupted","command":["/usr/local/bin/node","-e","const fs=require('node:fs');const stat=fs.readFileSync('/proc/self/stat','utf8');fs.writeFileSync(process.argv[1],JSON.stringify({pid:process.pid,start:stat.slice(stat.lastIndexOf(')')+2).split(' ')[19]}));setTimeout(()=>process.exit(0),5000);setInterval(()=>{},100);","/work/tmp/hud-runtime-test-8SP4lH/unrelated/child.json","runtime-owned-interrupt-fixture"],"cwd":"/work/tmp/hud-runtime-test-8SP4lH/unrelated","startedAt":"2026-11-06T16:39:58.331Z","finishedAt":"2026-11-06T16:39:58.359Z","ownedPid":1489,"ownedStart":"12074905","deadline":"2026-11-06T16:39:59.331Z","code":null,"signal":"SIGKILL","cleanupDeadline":"2026-11-06T16:39:59.857Z","directChildExited":true,"closeObserved":true,"reason":"interrupted_SIGINT","signals":[{"signal":"SIGKILL","at":"2026-11-06T16:39:58.357Z","start":"12074905"}],"cleanupUncertain":false,"status":"FAIL","cleanup":"owned direct child reaped after interruption/failure"},"runnerCode":1}
+✔ fix1 interrupted builder SIGTERM reaps owned child and writes failure receipt (1536.80907ms)
+ℹ {"startedAtMs":1793983199842,"deadlineAtMs":1793983206842,"aliveAfterDeadline":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"receipt":{"name":"interrupted","command":["/usr/local/bin/node","-e","const fs=require('node:fs');const stat=fs.readFileSync('/proc/self/stat','utf8');fs.writeFileSync(process.argv[1],JSON.stringify({pid:process.pid,start:stat.slice(stat.lastIndexOf(')')+2).split(' ')[19]}));setTimeout(()=>process.exit(0),5000);setInterval(()=>{},100);","/work/tmp/hud-runtime-test-DdJ3Ct/unrelated/child.json","runtime-owned-interrupt-fixture"],"cwd":"/work/tmp/hud-runtime-test-DdJ3Ct/unrelated","startedAt":"2026-11-06T16:39:59.872Z","finishedAt":"2026-11-06T16:39:59.896Z","ownedPid":1504,"ownedStart":"12075059","deadline":"2026-11-06T16:40:00.872Z","code":null,"signal":"SIGKILL","cleanupDeadline":"2026-11-06T16:40:01.394Z","directChildExited":true,"closeObserved":true,"reason":"interrupted_SIGTERM","signals":[{"signal":"SIGKILL","at":"2026-11-06T16:39:59.894Z","start":"12075059"}],"cleanupUncertain":false,"status":"FAIL","cleanup":"owned direct child reaped after interruption/failure"},"runnerCode":1}
+✔ fix1 owned runner records a quick normal child without uncertainty (28.71436ms)
+ℹ {"name":"quick","command":["/bin/true"],"cwd":"/work/tmp/hud-runtime-test-FtCnF3/unrelated","startedAt":"2026-11-06T16:40:01.363Z","finishedAt":"2026-11-06T16:40:01.381Z","ownedPid":1511,"ownedStart":"12075208","deadline":"2026-11-06T16:40:02.363Z","code":0,"signal":null,"cleanupDeadline":null,"directChildExited":true,"closeObserved":true,"reason":null,"signals":[],"cleanupUncertain":false,"status":"PASS","cleanup":"direct child closed normally"}
+✔ F4 digest exact source output mapping (0.325756ms)
+ℹ tests 141
+ℹ suites 0
+ℹ pass 141
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 46004.474257

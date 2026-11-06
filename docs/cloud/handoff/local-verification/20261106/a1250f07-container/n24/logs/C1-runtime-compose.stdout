@@ -1,0 +1,52 @@
+(node:15) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ SIMULATED installed composition: actual installer, direct native parent, fixed factory and bounded negative matrix
+  ✖ A: common manifest and installed direct-parent path refuse empty capabilities (435.21788ms)
+✖ SIMULATED installed composition: actual installer, direct native parent, fixed factory and bounded negative matrix (1010.288786ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1063.949152
+
+✖ failing tests:
+
+test at tests/unit/runtime-compose.test.mjs:54:11
+✖ A: common manifest and installed direct-parent path refuse empty capabilities (435.21788ms)
+  AssertionError [ERR_ASSERTION]: hud-mcp startup failed: registration_unverified
+  
+  
+  1 !== 0
+  
+      at joint (file:///work/src/tests/unit/runtime-compose.test.mjs:17:10)
+      at TestContext.<anonymous> (file:///work/src/tests/unit/runtime-compose.test.mjs:60:14)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async TestContext.<anonymous> (file:///work/src/tests/unit/runtime-compose.test.mjs:54:3)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/unit/runtime-compose.test.mjs:43:1
+✖ SIMULATED installed composition: actual installer, direct native parent, fixed factory and bounded negative matrix (1010.288786ms)
+  AssertionError [ERR_ASSERTION]: stop matrix if initial joint path fails
+      at TestContext.<anonymous> (file:///work/src/tests/unit/runtime-compose.test.mjs:63:10)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

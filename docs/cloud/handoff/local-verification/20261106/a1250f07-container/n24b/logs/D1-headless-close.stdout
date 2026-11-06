@@ -1,0 +1,69 @@
+✔ E4 real MCP/service/SQLite acceptance, reconcile closure, immutable replay and read-only projections (104.817482ms)
+✔ E4 preserves existing cancellation clock, grace and before_exit terminal classification (61.963149ms)
+✔ E4 preserves existing cancellation clock, grace and after_exit terminal classification (66.970985ms)
+✔ E4 preserves existing cancellation clock, grace and unknown terminal classification (56.119135ms)
+✔ E4 already-terminal receipt closes without another cancellation or rewritten terminal evidence (52.918493ms)
+✔ E4 already-terminal scope_reconciled closes without another cancellation or rewritten terminal evidence (52.56953ms)
+✔ E4 already-terminal N on a bound resume closes, with no cancellation or launch (60.542818ms)
+✖ E4 resume commits first: expectedRun refusal; close commits first: fresh resume/handover fenced, replay untouched (66.654898ms)
+✔ E4 unsupported target {"bind":false} has no close/cancel/surface effect (37.444239ms)
+✔ E4 unsupported target {"visible":true} has no close/cancel/surface effect (48.874435ms)
+✔ E4 strict schema rejects owner/context/target/admin/generation overrides and invalid inputs (0.692597ms)
+✔ E4 current authority required even for replay; retirement after acceptance does not undo fixed intent (54.434329ms)
+✔ E4 wrong owner and same session id under another source/thread cannot control (44.76281ms)
+✔ E4 revoked after acceptance preserves intent and never closes a successor (57.142399ms)
+✔ E4 generation after acceptance preserves intent and never closes a successor (51.385748ms)
+✖ E4 target after acceptance preserves intent and never closes a successor (42.65858ms)
+✔ E4 supervisor_dead cannot fabricate closure or release execution slots (51.255116ms)
+✔ E4 unknown_scope cannot fabricate closure or release execution slots (47.968119ms)
+✔ E4 leader_only cannot fabricate closure or release execution slots (50.659465ms)
+✔ E4 wrong_scope cannot fabricate closure or release execution slots (69.167425ms)
+✔ E4 conflict cannot fabricate closure or release execution slots (61.768068ms)
+✔ E4 rollback at acceptance and finalization leaves no half-close; existing reconciler recovers (104.76519ms)
+✔ E4 closed run rejects late report/binding and retains restrictive target history (67.739783ms)
+✔ E4 original receipt budget is shared through source authorization and close acceptance (46.093777ms)
+✔ E4 versioned events reject extension fields and invalid references (53.983335ms)
+✔ E4 actual close transaction retains existing late_commit semantics (49.996409ms)
+✔ E4 actual close transaction retains existing unknown_commit semantics (48.544253ms)
+✔ E4 actual close transaction retains existing cleanup_failure semantics (43.507286ms)
+✔ E4 already-terminal pending close finalizes on existing reconcile without another state transition (65.39995ms)
+✔ E4 committed terminal row without accepted terminal evidence remains pending (52.566115ms)
+✔ E4 close atomically revokes remaining wake registration with link_closed once (58.631085ms)
+ℹ tests 31
+ℹ suites 0
+ℹ pass 29
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1860.759049
+
+✖ failing tests:
+
+test at packages/hud-mcp/dist/tests/hud-mcp/headless-close.test.js:209:1
+✖ E4 resume commits first: expectedRun refusal; close commits first: fresh resume/handover fenced, replay untouched (66.654898ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  58 !== 56
+  
+      at TestContext.<anonymous> (file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/headless-close.test.js:231:16)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 58,
+    expected: 56,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at packages/hud-mcp/dist/tests/hud-mcp/headless-close.test.js:306:5
+✖ E4 target after acceptance preserves intent and never closes a successor (42.65858ms)
+  Error: known child ref cannot be replaced
+      at LedgerTransaction.run (file:///work/src/packages/hud-mcp/dist/src/ledger/transaction.js:100:44)
+      at file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/headless-close.test.js:323:24
+      at execute (file:///work/src/packages/hud-mcp/dist/src/ledger/ledger.js:52:50) {
+    code: 'ERR_SQLITE_ERROR',
+    errcode: 1811,
+    errstr: 'constraint failed'
+  }

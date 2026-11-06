@@ -1,0 +1,427 @@
+TAP version 13
+# Subtest: refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool
+ok 1 - refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool
+  ---
+  duration_ms: 1.353284
+  type: 'test'
+  ...
+# Subtest: dual MCP instance shares scope and owner; stale first-bind CAS refuses
+ok 2 - dual MCP instance shares scope and owner; stale first-bind CAS refuses
+  ---
+  duration_ms: 6.064641
+  type: 'test'
+  ...
+# Subtest: /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A
+ok 3 - /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A
+  ---
+  duration_ms: 4.39657
+  type: 'test'
+  ...
+# Subtest: wrong generation is refused before currentAuthority can authorize an intent
+ok 4 - wrong generation is refused before currentAuthority can authorize an intent
+  ---
+  duration_ms: 2.609419
+  type: 'test'
+  ...
+# Subtest: delegate_list schema accepts bounded page only, never owner selectors
+ok 5 - delegate_list schema accepts bounded page only, never owner selectors
+  ---
+  duration_ms: 2.30542
+  type: 'test'
+  ...
+# Subtest: owner pages preserve historical same-session links, exclude unrelated owner and no private bodies
+ok 6 - owner pages preserve historical same-session links, exclude unrelated owner and no private bodies
+  ---
+  duration_ms: 65.146997
+  type: 'test'
+  ...
+# Subtest: empty pages still authorize and stale contexts refuse; cursor cannot select a foreign owner
+ok 7 - empty pages still authorize and stale contexts refuse; cursor cannot select a foreign owner
+  ---
+  duration_ms: 36.372087
+  type: 'test'
+  ...
+# Subtest: bounded owner pagination does not let foreign rows consume capacity and reads cause no ledger writes
+ok 8 - bounded owner pagination does not let foreign rows consume capacity and reads cause no ledger writes
+  ---
+  duration_ms: 178.541519
+  type: 'test'
+  ...
+# Subtest: same sessionId in another source cannot enter the owner page
+ok 9 - same sessionId in another source cannot enter the owner page
+  ---
+  duration_ms: 36.981115
+  type: 'test'
+  ...
+# Subtest: Claude hook matcher captures delegate_list but not other names
+ok 10 - Claude hook matcher captures delegate_list but not other names
+  ---
+  duration_ms: 0.382611
+  type: 'test'
+  ...
+# Subtest: real DelegationService routes list through current context without launch or capability verification
+ok 11 - real DelegationService routes list through current context without launch or capability verification
+  ---
+  duration_ms: 36.488164
+  type: 'test'
+  ...
+# Subtest: list preserves committed status stamp and rejects binding mismatch without reading transcripts
+ok 12 - list preserves committed status stamp and rejects binding mismatch without reading transcripts
+  ---
+  duration_ms: 75.418971
+  type: 'test'
+  ...
+# (node:29) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files
+ok 13 - hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files
+  ---
+  duration_ms: 5.724417
+  type: 'test'
+  ...
+# Subtest: missing then late record never revives a refused call; a new exact call can retry
+ok 14 - missing then late record never revives a refused call; a new exact call can retry
+  ---
+  duration_ms: 1.608028
+  type: 'test'
+  ...
+# Subtest: half-written, oversized, symlink and duplicate conflicting publications refuse
+ok 15 - half-written, oversized, symlink and duplicate conflicting publications refuse
+  ---
+  duration_ms: 4.678606
+  type: 'test'
+  ...
+# Subtest: wrong hook version refuses even with a matching content fingerprint
+ok 16 - wrong hook version refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.279147
+  type: 'test'
+  ...
+# Subtest: wrong hook implementation refuses even with a matching content fingerprint
+ok 17 - wrong hook implementation refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.327477
+  type: 'test'
+  ...
+# Subtest: wrong hook claudeVersion refuses even with a matching content fingerprint
+ok 18 - wrong hook claudeVersion refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.342585
+  type: 'test'
+  ...
+# Subtest: wrong hook profileFingerprint refuses even with a matching content fingerprint
+ok 19 - wrong hook profileFingerprint refuses even with a matching content fingerprint
+  ---
+  duration_ms: 2.28688
+  type: 'test'
+  ...
+# Subtest: wrong hook sourceId refuses even with a matching content fingerprint
+ok 20 - wrong hook sourceId refuses even with a matching content fingerprint
+  ---
+  duration_ms: 2.959339
+  type: 'test'
+  ...
+# Subtest: wrong hook processKey refuses even with a matching content fingerprint
+ok 21 - wrong hook processKey refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.457058
+  type: 'test'
+  ...
+# Subtest: wrong hook bootId refuses even with a matching content fingerprint
+ok 22 - wrong hook bootId refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.31787
+  type: 'test'
+  ...
+# Subtest: wrong hook serverName refuses even with a matching content fingerprint
+ok 23 - wrong hook serverName refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.295988
+  type: 'test'
+  ...
+# Subtest: wrong hook toolUseId refuses even with a matching content fingerprint
+ok 24 - wrong hook toolUseId refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.091178
+  type: 'test'
+  ...
+# Subtest: wrong hook toolName refuses even with a matching content fingerprint
+ok 25 - wrong hook toolName refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.159093
+  type: 'test'
+  ...
+# Subtest: wrong hook sessionId refuses even with a matching content fingerprint
+ok 26 - wrong hook sessionId refuses even with a matching content fingerprint
+  ---
+  duration_ms: 2.137302
+  type: 'test'
+  ...
+# Subtest: wrong hook hookStartMonoMs refuses even with a matching content fingerprint
+ok 27 - wrong hook hookStartMonoMs refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.461165
+  type: 'test'
+  ...
+# Subtest: wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint
+ok 28 - wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.197235
+  type: 'test'
+  ...
+# Subtest: wrong hook publishedMonoMs refuses even with a matching content fingerprint
+ok 29 - wrong hook publishedMonoMs refuses even with a matching content fingerprint
+  ---
+  duration_ms: 1.022179
+  type: 'test'
+  ...
+# Subtest: native child with root transcript path refuses and leaves subsequent root verifiable
+ok 30 - native child with root transcript path refuses and leaves subsequent root verifiable
+  ---
+  duration_ms: 1.686083
+  type: 'test'
+  ...
+# Subtest: A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation
+ok 31 - A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation
+  ---
+  duration_ms: 1.578793
+  type: 'test'
+  ...
+# Subtest: CLI settings preserve existing hooks/config and match only the exact server tools including headless close
+ok 32 - CLI settings preserve existing hooks/config and match only the exact server tools including headless close
+  ---
+  duration_ms: 0.680495
+  type: 'test'
+  ...
+# Subtest: scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file
+ok 33 - scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file
+  ---
+  duration_ms: 23.790866
+  type: 'test'
+  ...
+# Subtest: resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear
+ok 34 - resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear
+  ---
+  duration_ms: 5.969909
+  type: 'test'
+  ...
+# Subtest: scope reader refuses unsupported runtimes before touching a missing path
+ok 35 - scope reader refuses unsupported runtimes before touching a missing path
+  ---
+  duration_ms: 75.420955
+  type: 'test'
+  ...
+# Subtest: hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values
+ok 36 - hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values
+  ---
+  duration_ms: 0.423196
+  type: 'test'
+  ...
+# Subtest: fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies
+ok 37 - fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies
+  ---
+  duration_ms: 1.686985
+  type: 'test'
+  ...
+# Subtest: E4 Claude close source record uses the exact tool and rejects suffix/server forgery
+ok 38 - E4 Claude close source record uses the exact tool and rejects suffix/server forgery
+  ---
+  duration_ms: 1.287313
+  type: 'test'
+  ...
+# Subtest: G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required
+ok 39 - G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required
+  ---
+  duration_ms: 0.982195
+  type: 'test'
+  ...
+# Subtest: G03 old request key replays its original run after a newer run appeared and ended
+ok 40 - G03 old request key replays its original run after a newer run appeared and ended
+  ---
+  duration_ms: 95.001325
+  type: 'test'
+  ...
+# Subtest: G03 same request key with a different expectedRun conflicts without a new intent
+ok 41 - G03 same request key with a different expectedRun conflicts without a new intent
+  ---
+  duration_ms: 66.534843
+  type: 'test'
+  ...
+# Subtest: G03 two callers that read the same run and race with different keys create at most one intent
+ok 42 - G03 two callers that read the same run and race with different keys create at most one intent
+  ---
+  duration_ms: 66.582502
+  type: 'test'
+  ...
+# Subtest: G03 an old expectedRun is still refused after another run started and ended
+ok 43 - G03 an old expectedRun is still refused after another run started and ended
+  ---
+  duration_ms: 68.103328
+  type: 'test'
+  ...
+# Subtest: G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest
+ok 44 - G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest
+  ---
+  duration_ms: 65.244545
+  type: 'test'
+  ...
+# Subtest: G03 local management resume still requires expectedRun
+ok 45 - G03 local management resume still requires expectedRun
+  ---
+  duration_ms: 56.504499
+  type: 'test'
+  ...
+# Subtest: delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts
+ok 46 - delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts
+  ---
+  duration_ms: 4.318717
+  type: 'test'
+  ...
+# Subtest: registration records A4 fields and verified physical start; file fake remains private and refuses overwrite
+ok 47 - registration records A4 fields and verified physical start; file fake remains private and refuses overwrite
+  ---
+  duration_ms: 6.222191
+  type: 'test'
+  ...
+# Subtest: unknown cwd is a typed refusal before registry write
+ok 48 - unknown cwd is a typed refusal before registry write
+  ---
+  duration_ms: 0.639678
+  type: 'test'
+  ...
+# Subtest: real /proc registration stamp and PID domain are read without environment secrets
+not ok 49 - real /proc registration stamp and PID domain are read without environment secrets
+  ---
+  duration_ms: 0.776643
+  type: 'test'
+  location: '/work/src/packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js:196:1'
+  failureType: 'testCodeFailure'
+  error: 'registration_unverified'
+  code: 'registration_unverified'
+  stack: |-
+    LinuxProcessReader.domain (file:///work/src/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:41:19)
+    TestContext.<anonymous> (file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js:204:22)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: Codex root combination resolves, native child refuses without invalidating subsequent root
+ok 50 - Codex root combination resolves, native child refuses without invalidating subsequent root
+  ---
+  duration_ms: 2.397866
+  type: 'test'
+  ...
+# Subtest: current Codex source is not remembered after simulated optional ancestor EACCES; fresh root still resolves
+ok 51 - current Codex source is not remembered after simulated optional ancestor EACCES; fresh root still resolves
+  ---
+  duration_ms: 2.286961
+  type: 'test'
+  ...
+# Subtest: current Codex source is not remembered after simulated optional ancestor EPERM; fresh root still resolves
+ok 52 - current Codex source is not remembered after simulated optional ancestor EPERM; fresh root still resolves
+  ---
+  duration_ms: 1.565318
+  type: 'test'
+  ...
+# Subtest: missing, conflicting and forged arguments metadata never falls back to remembered root/proc
+ok 53 - missing, conflicting and forged arguments metadata never falls back to remembered root/proc
+  ---
+  duration_ms: 1.50139
+  type: 'test'
+  ...
+# Subtest: session switches remain source diagnostics; shared ledger supplies the generation gate
+ok 54 - session switches remain source diagnostics; shared ledger supplies the generation gate
+  ---
+  duration_ms: 2.181925
+  type: 'test'
+  ...
+# Subtest: PID reuse, source mismatch, missing header and unmeasured Codex versions refuse
+ok 55 - PID reuse, source mismatch, missing header and unmeasured Codex versions refuse
+  ---
+  duration_ms: 1.35069
+  type: 'test'
+  ...
+# Subtest: Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId
+ok 56 - Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId
+  ---
+  duration_ms: 0.312241
+  type: 'test'
+  ...
+# Subtest: Claude late/missing public call refuses, observed record still cannot upgrade unverified profile
+ok 57 - Claude late/missing public call refuses, observed record still cannot upgrade unverified profile
+  ---
+  duration_ms: 2.381066
+  type: 'test'
+  ...
+# Subtest: pi explicit session path resolver checks header and source; directory alone grants nothing
+ok 58 - pi explicit session path resolver checks header and source; directory alone grants nothing
+  ---
+  duration_ms: 0.891978
+  type: 'test'
+  ...
+# Subtest: eight MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments
+ok 59 - eight MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments
+  ---
+  duration_ms: 0.384584
+  type: 'test'
+  ...
+# Subtest: runtime rejects Node 18, 22.12 and 23 before importing package entry
+ok 60 - runtime rejects Node 18, 22.12 and 23 before importing package entry
+  ---
+  duration_ms: 73.909687
+  type: 'test'
+  ...
+# Subtest: runtime accepts declared 22.13 and 24 entry boundaries
+not ok 61 - runtime accepts declared 22.13 and 24 entry boundaries
+  ---
+  duration_ms: 99.44434
+  type: 'test'
+  location: '/work/src/packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js:456:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    hud-mcp startup failed: registration_unverified
+    
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js:477:20)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths
+ok 62 - bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths
+  ---
+  duration_ms: 3.292938
+  type: 'test'
+  ...
+# Subtest: source/header mismatch, missing header and daemon topology cannot resolve identity
+ok 63 - source/header mismatch, missing header and daemon topology cannot resolve identity
+  ---
+  duration_ms: 1.679931
+  type: 'test'
+  ...
+# Subtest: stdio framing rejects malformed JSON, ignores notifications and serializes stub replies
+ok 64 - stdio framing rejects malformed JSON, ignores notifications and serializes stub replies
+  ---
+  duration_ms: 2.350778
+  type: 'test'
+  ...
+1..64
+# tests 64
+# suites 0
+# pass 62
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1548.056982

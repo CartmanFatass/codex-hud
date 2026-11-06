@@ -1,0 +1,925 @@
+TAP version 13
+# Subtest: int accepted intent to real CLI registration/submission/receipt/reconcile releases slot
+not ok 1 - int accepted intent to real CLI registration/submission/receipt/reconcile releases slot
+  ---
+  duration_ms: 96.786674
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:15:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    hud-run: supervisor_stamp_unavailable
+    
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:25:16)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: int supervisor SIGKILL holds uncertain slot until real Q, never resubmits
+not ok 2 - int supervisor SIGKILL holds uncertain slot until real Q, never resubmits
+  ---
+  duration_ms: 10050.26173
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:50:1'
+  failureType: 'testCodeFailure'
+  error: 'integration event deadline'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    until (file:///work/src/tests/int/fixture.mjs:115:9)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:59:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int F05 fixed unbound local cancel/reconcile gate and audit, duplicate grace and old-run isolation
+ok 3 - int F05 fixed unbound local cancel/reconcile gate and audit, duplicate grace and old-run isolation
+  ---
+  duration_ms: 60.644243
+  type: 'test'
+  ...
+# Subtest: int launch ticket revalidates stored context/generation/owner before any backend call
+ok 4 - int launch ticket revalidates stored context/generation/owner before any backend call
+  ---
+  duration_ms: 267.667403
+  type: 'test'
+  ...
+# Subtest: int registration single winner, beginSubmission rechecks context, and stale reconcile imports nothing
+not ok 5 - int registration single winner, beginSubmission rechecks context, and stale reconcile imports nothing
+  ---
+  duration_ms: 25.250252
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:145:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of null (reading 'stamp')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:149:67)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int shell receipt projects shell 137 while native status stays unknown
+not ok 6 - int shell receipt projects shell 137 while native status stays unknown
+  ---
+  duration_ms: 27.213903
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:168:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:176:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int private store refuses symlinks, foreign paths and permission changes after manager authorization
+ok 7 - int private store refuses symlinks, foreign paths and permission changes after manager authorization
+  ---
+  duration_ms: 27.959384
+  type: 'test'
+  ...
+# Subtest: int stored local_user resume initiator uses private store gate, never trusted_local launch power
+not ok 8 - int stored local_user resume initiator uses private store gate, never trusted_local launch power
+  ---
+  duration_ms: 88.695194
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:220:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:224:16)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int next identity generation and revoked binding owner refuse the accepted execution ticket
+ok 9 - int next identity generation and revoked binding owner refuse the accepted execution ticket
+  ---
+  duration_ms: 90.677497
+  type: 'test'
+  ...
+# Subtest: int raw writer has no transition setter and normalized Q cannot forge a release
+not ok 10 - int raw writer has no transition setter and normalized Q cannot forge a release
+  ---
+  duration_ms: 25.594893
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:310:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of null (reading 'stamp')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:314:67)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int review same-owner replacement MCP can execute an accepted resume with historical parent tuple
+not ok 11 - int review same-owner replacement MCP can execute an accepted resume with historical parent tuple
+  ---
+  duration_ms: 83.053562
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:347:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:351:16)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int review revoked local_user resume claim forbids beginSubmission
+not ok 12 - int review revoked local_user resume claim forbids beginSubmission
+  ---
+  duration_ms: 84.934221
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:364:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:368:16)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int review final receipt recovery imports shell facts atomically and refuses conflicting receipts
+not ok 13 - int review final receipt recovery imports shell facts atomically and refuses conflicting receipts
+  ---
+  duration_ms: 24.079426
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:379:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /synthetic-crash-after-file/. Input:
+    
+    'Error: supervisor_stamp_unavailable'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'supervisor_stamp_unavailable'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async waitForActual (node:assert:644:5)
+    async Function.rejects (node:assert:767:25)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:390:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  operator: 'rejects'
+  stack: |-
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:390:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int review verified future stored heartbeat becomes clock_anomaly, arbitrary future facts refuse
+not ok 14 - int review verified future stored heartbeat becomes clock_anomaly, arbitrary future facts refuse
+  ---
+  duration_ms: 22.394496
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:419:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of null (reading 'stamp')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:424:109)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int review status projects committed bound handshake, latest event-ordered report and cause without writes
+ok 15 - int review status projects committed bound handshake, latest event-ordered report and cause without writes
+  ---
+  duration_ms: 25.013693
+  type: 'test'
+  ...
+# Subtest: int final review queued reads allow management and heartbeat overlap on one real connection
+not ok 16 - int final review queued reads allow management and heartbeat overlap on one real connection
+  ---
+  duration_ms: 22.958309
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:534:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of null (reading 'stamp')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:538:67)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int final review separate recovery process cannot impersonate original raw/startup/receipt writer
+not ok 17 - int final review separate recovery process cannot impersonate original raw/startup/receipt writer
+  ---
+  duration_ms: 21.427509
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:561:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of null (reading 'stamp')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:566:109)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int final review historical final R imports after labelled current-boot mismatch without requiring Q
+not ok 18 - int final review historical final R imports after labelled current-boot mismatch without requiring Q
+  ---
+  duration_ms: 22.745799
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:589:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /synthetic-receipt-cut/. Input:
+    
+    'Error: supervisor_stamp_unavailable'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'supervisor_stamp_unavailable'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async waitForActual (node:assert:644:5)
+    async Function.rejects (node:assert:767:25)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:598:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  operator: 'rejects'
+  stack: |-
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:598:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int final review same uncertain state persists a changed cause once, status reads latest summary
+not ok 19 - int final review same uncertain state persists a changed cause once, status reads latest summary
+  ---
+  duration_ms: 22.786731
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:619:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of null (reading 'stamp')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:623:67)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int final review a reserved-run reconciliation summary does not fence its original execution ticket
+not ok 20 - int final review a reserved-run reconciliation summary does not fence its original execution ticket
+  ---
+  duration_ms: 96.196368
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:641:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    hud-run: supervisor_stamp_unavailable
+    
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:648:16)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int final review an OS proof changed during revalidation requests a fresh probe
+not ok 21 - int final review an OS proof changed during revalidation requests a fresh probe
+  ---
+  duration_ms: 92.119537
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:655:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:659:16)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int final review a blocked terminal run persists a changed cause without rewriting completion
+not ok 22 - int final review a blocked terminal run persists a changed cause without rewriting completion
+  ---
+  duration_ms: 24.074497
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:681:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:686:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int sourced compatibility waiter preserves exact native exit 7 on the real ledger
+not ok 23 - int sourced compatibility waiter preserves exact native exit 7 on the real ledger
+  ---
+  duration_ms: 25.235997
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/int-ledger-run.test.js:743:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/int-ledger-run.test.js:748:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: int equals-executable refusal spends no ticket and changes no run, claim or ledger rows
+ok 24 - int equals-executable refusal spends no ticket and changes no run, claim or ledger rows
+  ---
+  duration_ms: 24.906674
+  type: 'test'
+  ...
+# RUNZ1-KILL K1 old key-only serializer failed the embedded-identity assertion; synthetic markers only
+# Subtest: RUNZ1-KILL K1 publication pseudonymizes embedded identities without mutating evidence
+ok 25 - RUNZ1-KILL K1 publication pseudonymizes embedded identities without mutating evidence
+  ---
+  duration_ms: 11.609484
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: no completion evidence
+ok 26 - RUNZ1-KILL table: no completion evidence
+  ---
+  duration_ms: 0.886077
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: complete Q with before_exit
+ok 27 - RUNZ1-KILL table: complete Q with before_exit
+  ---
+  duration_ms: 0.213637
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: complete Q with absent chronology
+ok 28 - RUNZ1-KILL table: complete Q with absent chronology
+  ---
+  duration_ms: 0.136153
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: complete Q with unknown chronology
+ok 29 - RUNZ1-KILL table: complete Q with unknown chronology
+  ---
+  duration_ms: 0.199992
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: complete Q with after_exit
+ok 30 - RUNZ1-KILL table: complete Q with after_exit
+  ---
+  duration_ms: 0.120654
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: incomplete complete
+ok 31 - RUNZ1-KILL table: incomplete complete
+  ---
+  duration_ms: 0.322871
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: incomplete harnessTerminated
+ok 32 - RUNZ1-KILL table: incomplete harnessTerminated
+  ---
+  duration_ms: 0.313903
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: incomplete launchersSealed
+ok 33 - RUNZ1-KILL table: incomplete launchersSealed
+  ---
+  duration_ms: 0.298014
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: wrong run
+ok 34 - RUNZ1-KILL table: wrong run
+  ---
+  duration_ms: 0.377672
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: wrong source
+ok 35 - RUNZ1-KILL table: wrong source
+  ---
+  duration_ms: 0.199
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: wrong generation
+ok 36 - RUNZ1-KILL table: wrong generation
+  ---
+  duration_ms: 0.818351
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: wrong supervisor
+ok 37 - RUNZ1-KILL table: wrong supervisor
+  ---
+  duration_ms: 0.196966
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: rejected validation
+ok 38 - RUNZ1-KILL table: rejected validation
+  ---
+  duration_ms: 0.147735
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: pending validation
+ok 39 - RUNZ1-KILL table: pending validation
+  ---
+  duration_ms: 0.116707
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: invalid fact time null
+ok 40 - RUNZ1-KILL table: invalid fact time null
+  ---
+  duration_ms: 0.153976
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: invalid fact time -1
+ok 41 - RUNZ1-KILL table: invalid fact time -1
+  ---
+  duration_ms: 0.085699
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: invalid fact time NaN
+ok 42 - RUNZ1-KILL table: invalid fact time NaN
+  ---
+  duration_ms: 0.071914
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: invalid fact time 1700000000001
+ok 43 - RUNZ1-KILL table: invalid fact time 1700000000001
+  ---
+  duration_ms: 0.068758
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: conflicting live evidence
+ok 44 - RUNZ1-KILL table: conflicting live evidence
+  ---
+  duration_ms: 0.303935
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: undated live evidence
+ok 45 - RUNZ1-KILL table: undated live evidence
+  ---
+  duration_ms: 0.120243
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: unresolved identity conflict
+ok 46 - RUNZ1-KILL table: unresolved identity conflict
+  ---
+  duration_ms: 0.225279
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL table: conflicting cancellation evidence
+ok 47 - RUNZ1-KILL table: conflicting cancellation evidence
+  ---
+  duration_ms: 0.142805
+  type: 'test'
+  ...
+# Subtest: RUNZ1-KILL real live original holds slot, then reaped fixed scope gives receiptless Q exactly once
+not ok 48 - RUNZ1-KILL real live original holds slot, then reaped fixed scope gives receiptless Q exactly once
+  ---
+  duration_ms: 30.510177
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control-kill-evidence.test.js:437:1'
+  failureType: 'testCodeFailure'
+  error: 'positively identified live original leader'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ~
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control-kill-evidence.test.js:469:16)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: RunControl real contract: readonly status, byte logs, stdin EOF, normal and nonzero native result
+not ok 49 - RunControl real contract: readonly status, byte logs, stdin EOF, normal and nonzero native result
+  ---
+  duration_ms: 3.677063
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:49:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:60:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: normal exit 0 creates one durable final receipt before adoption
+not ok 50 - normal exit 0 creates one durable final receipt before adoption
+  ---
+  duration_ms: 0.942201
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:72:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:75:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: cancel authenticates intent, returns promptly, preserves duplicate grace and signals three stages
+not ok 51 - cancel authenticates intent, returns promptly, preserves duplicate grace and signals three stages
+  ---
+  duration_ms: 5.965373
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:86:1'
+  failureType: 'unhandledRejection'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+  ...
+# Subtest: unknown scope refuses receipts, control and recovery after short shell without harness identity
+not ok 52 - unknown scope refuses receipts, control and recovery after short shell without harness identity
+  ---
+  duration_ms: 1.223513
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:122:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:125:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: configuration claim leaves preserve user argv and only override four named leaves
+ok 53 - configuration claim leaves preserve user argv and only override four named leaves
+  ---
+  duration_ms: 0.309155
+  type: 'test'
+  ...
+# (node:119) PromiseRejectionHandledWarning: Promise rejection was handled asynchronously (rejection id: 1)
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: supervisor death receiptless Q uses registered stamp, no replacement execution or writer files
+not ok 54 - supervisor death receiptless Q uses registered stamp, no replacement execution or writer files
+  ---
+  duration_ms: 8010.829694
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:148:1'
+  failureType: 'testCodeFailure'
+  error: 'test event deadline'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    until (file:///work/src/dist-test/tests/unit/run-control.test.js:28:11)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:154:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: two real supervisors compete for one fake slot/ticket: loser touches no logs, exactly one submission
+not ok 55 - two real supervisors compete for one fake slot/ticket: loser touches no logs, exactly one submission
+  ---
+  duration_ms: 62.772882
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:175:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    1,1 hud-run: supervisor_stamp_unavailable
+     hud-run: supervisor_stamp_unavailable
+    
+    
+    0 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:186:16)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: registration commit before meta crash retains all stamp fields; missing/mismatched domain never backfills
+not ok 56 - registration commit before meta crash retains all stamp fields; missing/mismatched domain never backfills
+  ---
+  duration_ms: 1.206743
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:198:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of null (reading 'stamp')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:201:47)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: reconcile revision prevents competing cancel or registration being overwritten
+ok 57 - reconcile revision prevents competing cancel or registration being overwritten
+  ---
+  duration_ms: 1.145659
+  type: 'test'
+  ...
+# Subtest: verified shell harness keeps native unknown separately from actual shell status 137
+not ok 58 - verified shell harness keeps native unknown separately from actual shell status 137
+  ---
+  duration_ms: 1.400793
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:226:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:237:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: direct harness killed by a real signal records sourced wait signal
+not ok 59 - direct harness killed by a real signal records sourced wait signal
+  ---
+  duration_ms: 1.896494
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:260:1'
+  failureType: 'unhandledRejection'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+  ...
+# Subtest: accepted cancellation with verified scope absent never signals a guessed shell group
+not ok 60 - accepted cancellation with verified scope absent never signals a guessed shell group
+  ---
+  duration_ms: 1.333558
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:278:1'
+  failureType: 'unhandledRejection'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+  ...
+# Subtest: orphan policy reacts to verified physical parent death, while continue preserves the run
+not ok 61 - orphan policy reacts to verified physical parent death, while continue preserves the run
+  ---
+  duration_ms: 8002.375596
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:296:1'
+  failureType: 'testCodeFailure'
+  error: 'test event deadline'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    until (file:///work/src/dist-test/tests/unit/run-control.test.js:28:11)
+    runNextTicks (node:internal/process/task_queues:64:5)
+    listOnTimeout (node:internal/timers:547:9)
+    process.processTimers (node:internal/timers:521:7)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:299:29)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof
+not ok 62 - cancel escalates INT then TERM then KILL; lost KILL wait remains unknown without complete scope proof
+  ---
+  duration_ms: 2.224814
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:338:1'
+  failureType: 'unhandledRejection'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    runNextTicks (node:internal/process/task_queues:64:5)
+    listOnTimeout (node:internal/timers:547:9)
+    process.processTimers (node:internal/timers:521:7)
+  ...
+# Subtest: cancel accepted after submitting and before scope fixation wakes once discovery finishes
+not ok 63 - cancel accepted after submitting and before scope fixation wakes once discovery finishes
+  ---
+  duration_ms: 1.444424
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:374:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    processTicksAndRejections (node:internal/process/task_queues:103:5)
+    runNextTicks (node:internal/process/task_queues:68:3)
+    listOnTimeout (node:internal/timers:547:9)
+    process.processTimers (node:internal/timers:521:7)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:387:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: heartbeat wall/monotonic disagreement records one anomaly and stays uncertain
+not ok 64 - heartbeat wall/monotonic disagreement records one anomaly and stays uncertain
+  ---
+  duration_ms: 1.533449
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:397:1'
+  failureType: 'unhandledRejection'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    processTicksAndRejections (node:internal/process/task_queues:103:5)
+    runNextTicks (node:internal/process/task_queues:68:3)
+    listOnTimeout (node:internal/timers:547:9)
+    process.processTimers (node:internal/timers:521:7)
+  ...
+# Subtest: historical PGID/SID reuse simulation never makes unrelated new workload an old-scope conflict
+not ok 65 - historical PGID/SID reuse simulation never makes unrelated new workload an old-scope conflict
+  ---
+  duration_ms: 1.394141
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:431:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    processTicksAndRejections (node:internal/process/task_queues:103:5)
+    runNextTicks (node:internal/process/task_queues:68:3)
+    listOnTimeout (node:internal/timers:547:9)
+    process.processTimers (node:internal/timers:521:7)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:435:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# (node:119) PromiseRejectionHandledWarning: Promise rejection was handled asynchronously (rejection id: 3)
+# (node:119) PromiseRejectionHandledWarning: Promise rejection was handled asynchronously (rejection id: 4)
+# RUNZ1_KILL_CAPTURE {
+#   "schema": 2,
+#   "label": "kill-ladder",
+#   "runtime": "v22.23.4",
+#   "caveat": "Instrumentation may perturb scheduling. New evidence, not historical replay. No extra critical-path probes.",
+#   "redaction": "v2 explicit field allowlist; opaque scope, boot and PID-domain identities consistently pseudonymized throughout projected copies; original in-memory digest retained, not reconstructible from projection.",
+#   "originalRecordsSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+#   "records": [],
+#   "final": {
+#     "revision": 0,
+#     "run": {
+#       "runId": "run_c8e70e37f2fe4caaaa63c5426634c8af",
+#       "linkId": "link-a",
+#       "sourceId": "239b044e8a2dac915e4dc30c852b69e0908f4d26b01a68b5b3d324c10617aa75",
+#       "expectedGeneration": 1,
+#       "mode": "headless",
+#       "supervisionStrategy": "headless",
+#       "scopeKind": "pgid",
+#       "scopeRef": null,
+#       "state": "starting",
+#       "launchPhase": "reserved",
+#       "supervisor": null,
+#       "heartbeatAt": null,
+#       "heartbeatSeq": 0,
+#       "heartbeatMonoMs": null,
+#       "cancelRequestedAt": null,
+#       "submissionFencedAt": null,
+#       "createdAt": 1793983496144,
+#       "startedAt": null,
+#       "endedAt": null,
+#       "exitCode": null,
+#       "exitSignal": null,
+#       "exitSource": null,
+#       "terminalEvidenceId": null
+#     },
+#     "meta": null,
+#     "facts": [],
+#     "receipt": null,
+#     "claimSupervisor": null,
+#     "claimState": "issued",
+#     "slotHeld": true,
+#     "controlConflict": false,
+#     "terminalNote": null,
+#     "events": [],
+#     "terminalTransitionCount": 0
+#   },
+#   "exitFile": null
+# }
+# (node:119) PromiseRejectionHandledWarning: Promise rejection was handled asynchronously (rejection id: 5)
+# (node:119) PromiseRejectionHandledWarning: Promise rejection was handled asynchronously (rejection id: 6)
+# Subtest: real supervisor SIGKILL at submitted_before_scope never resubmits or replays signals
+not ok 66 - real supervisor SIGKILL at submitted_before_scope never resubmits or replays signals
+  ---
+  duration_ms: 8020.178909
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:469:5'
+  failureType: 'testCodeFailure'
+  error: 'test event deadline'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    until (file:///work/src/dist-test/tests/unit/run-control.test.js:28:11)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:491:25)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: real supervisor SIGKILL at cancel_before_ack_commit never resubmits or replays signals
+not ok 67 - real supervisor SIGKILL at cancel_before_ack_commit never resubmits or replays signals
+  ---
+  duration_ms: 8013.580493
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:469:5'
+  failureType: 'testCodeFailure'
+  error: 'test event deadline'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    until (file:///work/src/dist-test/tests/unit/run-control.test.js:28:11)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:491:25)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: argv wrapper honors independent harness discovery and never uses launcher wait as native exit
+not ok 68 - argv wrapper honors independent harness discovery and never uses launcher wait as native exit
+  ---
+  duration_ms: 1.53886
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/run-control.test.js:542:1'
+  failureType: 'testCodeFailure'
+  error: 'supervisor_stamp_unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    HeadlessRunControl.start (file:///work/src/dist-test/src/core/run/control.js:259:19)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/run-control.test.js:549:9)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..68
+# tests 68
+# suites 0
+# pass 31
+# fail 37
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 79774.369958

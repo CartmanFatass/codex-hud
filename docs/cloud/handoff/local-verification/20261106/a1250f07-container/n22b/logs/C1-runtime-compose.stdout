@@ -1,0 +1,38 @@
+TAP version 13
+# Subtest: SIMULATED installed composition: actual installer, direct native parent, fixed factory and bounded negative matrix
+not ok 1 - SIMULATED installed composition: actual installer, direct native parent, fixed factory and bounded negative matrix
+  ---
+  duration_ms: 6.123249
+  type: 'test'
+  location: '/work/src/tests/unit/runtime-compose.test.mjs:43:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    pinned builtin transform runtime
+    + actual - expected
+    
+    + '22.23.4'
+    - '24.22.1'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '24.22.1'
+  actual: '22.23.4'
+  operator: 'strictEqual'
+  stack: |-
+    emit (file:///work/src/tests/fixtures/runtime-compose.mjs:119:10)
+    createContext (file:///work/src/tests/fixtures/runtime-compose.mjs:168:33)
+    TestContext.<anonymous> (file:///work/src/tests/unit/runtime-compose.test.mjs:44:25)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 61.896568

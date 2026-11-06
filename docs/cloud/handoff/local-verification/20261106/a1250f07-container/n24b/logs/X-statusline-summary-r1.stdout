@@ -1,0 +1,19 @@
+✔ statusline identity needs explicit canonical source and exact root/thread tuple (90.785914ms)
+✔ committed projection is read-only, partial and independent of transcript/recovery bodies (94.763632ms)
+✔ missing, old, future and oversized projections never invent current activity (86.735643ms)
+✔ later ledger sequence and revoked exact binding invalidate observation (79.58823ms)
+✔ one indexed parent page is capped at fifty with no tree totals or descendants (78.607397ms)
+✔ historical rows consume candidate budget rather than an unbounded filtered scan (76.242027ms)
+✔ unsafe private paths and unavailable ledger leave first-line fallback possible (74.610795ms)
+✔ budget includes close and close failure cannot escape the read-only reader (82.374122ms)
+✔ render is bounded, terminal-safe and never supplies capacity or tree totals (88.703792ms)
+✔ actual hud-statusline and hud statusline render line 2 without settings or transcript reads (445.707864ms)
+✔ projection byte charge includes stored whitespace and malformed JSON before decode (80.696736ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1399.977528

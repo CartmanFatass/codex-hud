@@ -1,0 +1,107 @@
+✔ refuse-first missing ambiguous stale source and native-child never invoke authorization or a tool (1.646469ms)
+✔ dual MCP instance shares scope and owner; stale first-bind CAS refuses (6.300368ms)
+✔ /clear rekeys shared generation; in-flight old authority and A→B→A evidence cannot revive A (4.822261ms)
+✔ wrong generation is refused before currentAuthority can authorize an intent (2.316364ms)
+✔ delegate_list schema accepts bounded page only, never owner selectors (0.743421ms)
+✔ owner pages preserve historical same-session links, exclude unrelated owner and no private bodies (62.839121ms)
+✔ empty pages still authorize and stale contexts refuse; cursor cannot select a foreign owner (39.437267ms)
+✔ bounded owner pagination does not let foreign rows consume capacity and reads cause no ledger writes (165.765039ms)
+✔ same sessionId in another source cannot enter the owner page (33.579388ms)
+✔ Claude hook matcher captures delegate_list but not other names (0.513955ms)
+✔ real DelegationService routes list through current context without launch or capability verification (36.394036ms)
+✔ list preserves committed status stamp and rejects binding mismatch without reading transcripts (76.290403ms)
+✔ hook publication is bounded, private, exact and omits tool_input/prompt/transcript sentinel even in temporary files (4.990003ms)
+✔ missing then late record never revives a refused call; a new exact call can retry (1.628396ms)
+✔ half-written, oversized, symlink and duplicate conflicting publications refuse (4.842188ms)
+✔ wrong hook version refuses even with a matching content fingerprint (1.422463ms)
+✔ wrong hook implementation refuses even with a matching content fingerprint (1.286251ms)
+✔ wrong hook claudeVersion refuses even with a matching content fingerprint (1.716219ms)
+✔ wrong hook profileFingerprint refuses even with a matching content fingerprint (1.265823ms)
+✔ wrong hook sourceId refuses even with a matching content fingerprint (1.192075ms)
+✔ wrong hook processKey refuses even with a matching content fingerprint (1.227612ms)
+✔ wrong hook bootId refuses even with a matching content fingerprint (1.287753ms)
+✔ wrong hook serverName refuses even with a matching content fingerprint (1.014155ms)
+✔ wrong hook toolUseId refuses even with a matching content fingerprint (1.052195ms)
+✔ wrong hook toolName refuses even with a matching content fingerprint (1.195852ms)
+✔ wrong hook sessionId refuses even with a matching content fingerprint (1.110624ms)
+✔ wrong hook hookStartMonoMs refuses even with a matching content fingerprint (1.207293ms)
+✔ wrong hook hookStartUncertaintyMs refuses even with a matching content fingerprint (1.017872ms)
+✔ wrong hook publishedMonoMs refuses even with a matching content fingerprint (1.090877ms)
+✔ native child with root transcript path refuses and leaves subsequent root verifiable (1.863513ms)
+✔ A→B→A old record and closed-scope no-current ABA reject instead of attaching latest generation (1.79175ms)
+✔ CLI settings preserve existing hooks/config and match only the exact server tools including headless close (0.734305ms)
+✔ scope snapshot reads the real src/ledger schema, no-current high-water and current ref; never creates a missing file (27.065776ms)
+✔ resolver uses genuine metadata and returns the captured premise without poisoning root after native child or /clear (6.151319ms)
+✔ scope reader refuses unsupported runtimes before touching a missing path (64.081297ms)
+✔ hook fingerprint binds nonsecret env values, matches core digest and excludes per-run credential values (0.539369ms)
+✔ fresh post-suspend hook maps BOOTTIME start to monotonic, retains bounded uncertainty and verifies (1.670484ms)
+✔ E4 Claude close source record uses the exact tool and rejects suffix/server forgery (1.220127ms)
+✔ G03 tool schema accepts optional expectedRun as a RunId and keeps it non-required (1.223293ms)
+✔ G03 old request key replays its original run after a newer run appeared and ended (90.238866ms)
+✔ G03 same request key with a different expectedRun conflicts without a new intent (59.60749ms)
+✔ G03 two callers that read the same run and race with different keys create at most one intent (57.832221ms)
+✔ G03 an old expectedRun is still refused after another run started and ended (64.236588ms)
+✔ G03 omitted MCP expectedRun keeps transaction-selected current run and never auto-fills the digest (64.705016ms)
+✔ G03 local management resume still requires expectedRun (53.762018ms)
+✔ delegate.json valid load, roles, unknown fields, mutually exclusive templates, missing source and bad timeouts (3.340638ms)
+✔ registration records A4 fields and verified physical start; file fake remains private and refuses overwrite (7.145258ms)
+✔ unknown cwd is a typed refusal before registry write (0.648084ms)
+✖ real /proc registration stamp and PID domain are read without environment secrets (0.906214ms)
+✔ Codex root combination resolves, native child refuses without invalidating subsequent root (2.108398ms)
+✔ current Codex source is not remembered after simulated optional ancestor EACCES; fresh root still resolves (2.347524ms)
+✔ current Codex source is not remembered after simulated optional ancestor EPERM; fresh root still resolves (1.461146ms)
+✔ missing, conflicting and forged arguments metadata never falls back to remembered root/proc (1.33436ms)
+✔ session switches remain source diagnostics; shared ledger supplies the generation gate (2.558013ms)
+✔ PID reuse, source mismatch, missing header and unmeasured Codex versions refuse (1.172349ms)
+✔ Claude exact call parser ignores substring/tool-result/private records and retains duplicates/child agentId (0.288496ms)
+✔ Claude late/missing public call refuses, observed record still cannot upgrade unverified profile (2.100322ms)
+✔ pi explicit session path resolver checks header and source; directory alone grants nothing (0.954895ms)
+✔ eight MCP schemas, target XOR, numeric bounds, request keys, unknown identity arguments (0.416143ms)
+✔ runtime rejects Node 18, 22.12 and 23 before importing package entry (65.783885ms)
+✖ runtime accepts declared 22.13 and 24 entry boundaries (99.468093ms)
+✔ bounded Codex locator covers harness-local previous day and refuses duplicate exact session paths (3.383758ms)
+✔ source/header mismatch, missing header and daemon topology cannot resolve identity (1.288174ms)
+✔ stdio framing rejects malformed JSON, ignores notifications and serializes stub replies (1.804213ms)
+ℹ tests 64
+ℹ suites 0
+ℹ pass 62
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1478.40733
+
+✖ failing tests:
+
+test at packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js:196:1
+✖ real /proc registration stamp and PID domain are read without environment secrets (0.906214ms)
+  Error: registration_unverified
+      at LinuxProcessReader.domain (file:///work/src/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:41:19)
+      at TestContext.<anonymous> (file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js:204:22)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'registration_unverified'
+  }
+
+test at packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js:456:1
+✖ runtime accepts declared 22.13 and 24 entry boundaries (99.468093ms)
+  AssertionError [ERR_ASSERTION]: hud-mcp startup failed: registration_unverified
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/skeleton.test.js:477:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

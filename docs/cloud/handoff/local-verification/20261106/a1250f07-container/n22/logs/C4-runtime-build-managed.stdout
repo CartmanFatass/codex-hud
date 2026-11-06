@@ -1,0 +1,556 @@
+TAP version 13
+# Subtest: strict manifest rejects malformed envelopes, duplicate JSON/key, bad sibling and wrong topology
+ok 1 - strict manifest rejects malformed envelopes, duplicate JSON/key, bad sibling and wrong topology
+  ---
+  duration_ms: 3.459258
+  type: 'test'
+  ...
+# Subtest: SIMULATED owned native parent, independently observed target and exact startup composition
+not ok 2 - SIMULATED owned native parent, independently observed target and exact startup composition
+  ---
+  duration_ms: 64.693332
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/managed-runtime.test.js:56:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    compile (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:35:20)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async runNativeScenario (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:42:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/managed-runtime.test.js:57:33)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: SIMULATED native parent 0.165.0 cannot borrow independently observed target 0.166.0
+not ok 3 - SIMULATED native parent 0.165.0 cannot borrow independently observed target 0.166.0
+  ---
+  duration_ms: 54.734835
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/managed-runtime.test.js:59:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    compile (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:35:20)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async runNativeScenario (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:42:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/managed-runtime.test.js:60:20)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: new-process default verifier and CLI help preserve refusal with managed-missing
+ok 4 - new-process default verifier and CLI help preserve refusal with managed-missing
+  ---
+  duration_ms: 316.497213
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"managed-missing","purpose":"default-verifier","pid":32,"deadlineAt":1793983465588,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"managed-missing","purpose":"--help","pid":39,"deadlineAt":1793983465616,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"managed-missing","purpose":"run --help","pid":46,"deadlineAt":1793983465714,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: new-process default verifier and CLI help preserve refusal with codex-missing
+ok 5 - new-process default verifier and CLI help preserve refusal with codex-missing
+  ---
+  duration_ms: 308.80214
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"codex-missing","purpose":"default-verifier","pid":53,"deadlineAt":1793983465898,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"codex-missing","purpose":"--help","pid":60,"deadlineAt":1793983465930,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"codex-missing","purpose":"run --help","pid":67,"deadlineAt":1793983466029,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: new-process default verifier and CLI help preserve refusal with managed-malformed
+ok 6 - new-process default verifier and CLI help preserve refusal with managed-malformed
+  ---
+  duration_ms: 302.107405
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"managed-malformed","purpose":"default-verifier","pid":74,"deadlineAt":1793983466205,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"managed-malformed","purpose":"--help","pid":81,"deadlineAt":1793983466232,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"managed-malformed","purpose":"run --help","pid":88,"deadlineAt":1793983466327,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: new-process default verifier and CLI help preserve refusal with codex-malformed
+ok 7 - new-process default verifier and CLI help preserve refusal with codex-malformed
+  ---
+  duration_ms: 301.780335
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"codex-malformed","purpose":"default-verifier","pid":95,"deadlineAt":1793983466506,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"codex-malformed","purpose":"--help","pid":102,"deadlineAt":1793983466534,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"codex-malformed","purpose":"run --help","pid":109,"deadlineAt":1793983466632,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: new-process default verifier and CLI help preserve refusal with both-missing
+ok 8 - new-process default verifier and CLI help preserve refusal with both-missing
+  ---
+  duration_ms: 300.984284
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"both-missing","purpose":"default-verifier","pid":116,"deadlineAt":1793983466810,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"both-missing","purpose":"--help","pid":123,"deadlineAt":1793983466838,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"both-missing","purpose":"run --help","pid":130,"deadlineAt":1793983466935,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: SIMULATED native target 0.165.0 cannot borrow parent client 0.166.0
+not ok 9 - SIMULATED native target 0.165.0 cannot borrow parent client 0.166.0
+  ---
+  duration_ms: 54.842585
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/managed-runtime.test.js:144:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    compile (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:35:20)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async runNativeScenario (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:42:5)
+    async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/managed-runtime.test.js:145:20)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: SIMULATED complete private runtime inventory derives frozen build ID and excludes only four cell files
+ok 10 - SIMULATED complete private runtime inventory derives frozen build ID and excludes only four cell files
+  ---
+  duration_ms: 44.640997
+  type: 'test'
+  ...
+# Subtest: runtime refuses dirty
+ok 11 - runtime refuses dirty
+  ---
+  duration_ms: 14.382778
+  type: 'test'
+  ...
+# Subtest: runtime refuses missing
+ok 12 - runtime refuses missing
+  ---
+  duration_ms: 11.433467
+  type: 'test'
+  ...
+# Subtest: runtime refuses changed
+ok 13 - runtime refuses changed
+  ---
+  duration_ms: 16.196599
+  type: 'test'
+  ...
+# Subtest: runtime refuses unlisted
+ok 14 - runtime refuses unlisted
+  ---
+  duration_ms: 14.594911
+  type: 'test'
+  ...
+# Subtest: runtime refuses symlink
+ok 15 - runtime refuses symlink
+  ---
+  duration_ms: 12.355691
+  type: 'test'
+  ...
+# Subtest: runtime refuses directory-link
+ok 16 - runtime refuses directory-link
+  ---
+  duration_ms: 11.713127
+  type: 'test'
+  ...
+# Subtest: runtime refuses duplicate
+ok 17 - runtime refuses duplicate
+  ---
+  duration_ms: 11.484332
+  type: 'test'
+  ...
+# Subtest: runtime refuses escape
+ok 18 - runtime refuses escape
+  ---
+  duration_ms: 11.77974
+  type: 'test'
+  ...
+# Subtest: runtime refuses oversize
+ok 19 - runtime refuses oversize
+  ---
+  duration_ms: 12.423807
+  type: 'test'
+  ...
+# Subtest: runtime refuses total
+ok 20 - runtime refuses total
+  ---
+  duration_ms: 11.578947
+  type: 'test'
+  ...
+# Subtest: runtime refuses too-many
+ok 21 - runtime refuses too-many
+  ---
+  duration_ms: 28.993781
+  type: 'test'
+  ...
+# Subtest: runtime refuses mode
+ok 22 - runtime refuses mode
+  ---
+  duration_ms: 16.932546
+  type: 'test'
+  ...
+# Subtest: runtime refuses unknown
+ok 23 - runtime refuses unknown
+  ---
+  duration_ms: 11.618992
+  type: 'test'
+  ...
+# Subtest: runtime refuses bad-meta
+ok 24 - runtime refuses bad-meta
+  ---
+  duration_ms: 11.183753
+  type: 'test'
+  ...
+# Subtest: runtime refuses tree-alias
+ok 25 - runtime refuses tree-alias
+  ---
+  duration_ms: 10.92421
+  type: 'test'
+  ...
+# Subtest: runtime refuses dot-path
+ok 26 - runtime refuses dot-path
+  ---
+  duration_ms: 13.404771
+  type: 'test'
+  ...
+# Subtest: runtime refuses duplicate-json
+ok 27 - runtime refuses duplicate-json
+  ---
+  duration_ms: 11.642265
+  type: 'test'
+  ...
+# Subtest: runtime refuses bad-cells
+ok 28 - runtime refuses bad-cells
+  ---
+  duration_ms: 15.01806
+  type: 'test'
+  ...
+# Subtest: runtime refuses truncated
+ok 29 - runtime refuses truncated
+  ---
+  duration_ms: 11.699622
+  type: 'test'
+  ...
+# Subtest: runtime refuses invalid-utf8
+ok 30 - runtime refuses invalid-utf8
+  ---
+  duration_ms: 12.014566
+  type: 'test'
+  ...
+# Subtest: runtime metadata uses the exact inert shared whitelist and primitive types
+ok 31 - runtime metadata uses the exact inert shared whitelist and primitive types
+  ---
+  duration_ms: 20.749479
+  type: 'test'
+  ...
+# Subtest: inert builtWithNode validates standard SemVer without trusting it as actual Node
+ok 32 - inert builtWithNode validates standard SemVer without trusting it as actual Node
+  ---
+  duration_ms: 43.471293
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/launch/codex-cells.json
+ok 33 - minimum runtime anchor cannot be omitted: dist/core/launch/codex-cells.json
+  ---
+  duration_ms: 12.101999
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/launch/managed-cells.json
+ok 34 - minimum runtime anchor cannot be omitted: dist/core/launch/managed-cells.json
+  ---
+  duration_ms: 13.229785
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/codex-cells.json
+ok 35 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/codex-cells.json
+  ---
+  duration_ms: 12.872712
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/managed-cells.json
+ok 36 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/managed-cells.json
+  ---
+  duration_ms: 12.755403
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: package.json
+ok 37 - minimum runtime anchor cannot be omitted: package.json
+  ---
+  duration_ms: 13.68469
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/package.json
+ok 38 - minimum runtime anchor cannot be omitted: packages/hud-mcp/package.json
+  ---
+  duration_ms: 12.431492
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: bin/hud-run
+ok 39 - minimum runtime anchor cannot be omitted: bin/hud-run
+  ---
+  duration_ms: 12.429969
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/bin/hud-mcp.mjs
+ok 40 - minimum runtime anchor cannot be omitted: packages/hud-mcp/bin/hud-mcp.mjs
+  ---
+  duration_ms: 12.924334
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/run/cli.js
+ok 41 - minimum runtime anchor cannot be omitted: dist/core/run/cli.js
+  ---
+  duration_ms: 11.807953
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/run/control.js
+ok 42 - minimum runtime anchor cannot be omitted: dist/core/run/control.js
+  ---
+  duration_ms: 13.378482
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/run/process.js
+ok 43 - minimum runtime anchor cannot be omitted: dist/core/run/process.js
+  ---
+  duration_ms: 11.97284
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/harness/codex/profile.js
+ok 44 - minimum runtime anchor cannot be omitted: dist/harness/codex/profile.js
+  ---
+  duration_ms: 11.677761
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/collectors/file-watcher.js
+ok 45 - minimum runtime anchor cannot be omitted: dist/collectors/file-watcher.js
+  ---
+  duration_ms: 12.069689
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/main.js
+ok 46 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/main.js
+  ---
+  duration_ms: 14.281008
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/managed-runtime.js
+ok 47 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/managed-runtime.js
+  ---
+  duration_ms: 12.64079
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/delegation.js
+ok 48 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/delegation.js
+  ---
+  duration_ms: 11.539315
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/runtime-build.js
+ok 49 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/runtime-build.js
+  ---
+  duration_ms: 11.567305
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/capability-manifest.js
+ok 50 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/capability-manifest.js
+  ---
+  duration_ms: 13.20526
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/capability.js
+ok 51 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/capability.js
+  ---
+  duration_ms: 11.744986
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/supervisor.js
+ok 52 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/supervisor.js
+  ---
+  duration_ms: 11.663735
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/harness/codex/profile.js
+ok 53 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/harness/codex/profile.js
+  ---
+  duration_ms: 12.733597
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/package.json
+ok 54 - minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/package.json
+  ---
+  duration_ms: 13.241547
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/chokidar/package.json
+ok 55 - minimum runtime anchor cannot be omitted: node_modules/chokidar/package.json
+  ---
+  duration_ms: 13.339879
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/readdirp/package.json
+ok 56 - minimum runtime anchor cannot be omitted: node_modules/readdirp/package.json
+  ---
+  duration_ms: 11.875979
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/toml.js
+ok 57 - minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/toml.js
+  ---
+  duration_ms: 11.882761
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/chokidar/index.js
+ok 58 - minimum runtime anchor cannot be omitted: node_modules/chokidar/index.js
+  ---
+  duration_ms: 13.925995
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/chokidar/handler.js
+ok 59 - minimum runtime anchor cannot be omitted: node_modules/chokidar/handler.js
+  ---
+  duration_ms: 12.343689
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/readdirp/index.js
+ok 60 - minimum runtime anchor cannot be omitted: node_modules/readdirp/index.js
+  ---
+  duration_ms: 11.409362
+  type: 'test'
+  ...
+# Subtest: dependency package identity is independently checked: @iarna/toml
+ok 61 - dependency package identity is independently checked: @iarna/toml
+  ---
+  duration_ms: 14.652641
+  type: 'test'
+  ...
+# Subtest: dependency package identity is independently checked: chokidar
+ok 62 - dependency package identity is independently checked: chokidar
+  ---
+  duration_ms: 14.725995
+  type: 'test'
+  ...
+# Subtest: dependency package identity is independently checked: readdirp
+ok 63 - dependency package identity is independently checked: readdirp
+  ---
+  duration_ms: 18.709188
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses @iarna/toml name
+ok 64 - fixed dependency resolution refuses @iarna/toml name
+  ---
+  duration_ms: 14.85241
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses @iarna/toml main
+ok 65 - fixed dependency resolution refuses @iarna/toml main
+  ---
+  duration_ms: 14.848236
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses @iarna/toml type
+ok 66 - fixed dependency resolution refuses @iarna/toml type
+  ---
+  duration_ms: 16.182693
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses @iarna/toml exports
+ok 67 - fixed dependency resolution refuses @iarna/toml exports
+  ---
+  duration_ms: 16.980575
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses chokidar name
+ok 68 - fixed dependency resolution refuses chokidar name
+  ---
+  duration_ms: 14.976719
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses chokidar main
+ok 69 - fixed dependency resolution refuses chokidar main
+  ---
+  duration_ms: 15.371555
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses chokidar type
+ok 70 - fixed dependency resolution refuses chokidar type
+  ---
+  duration_ms: 17.852947
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses chokidar exports
+ok 71 - fixed dependency resolution refuses chokidar exports
+  ---
+  duration_ms: 16.118513
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses readdirp name
+ok 72 - fixed dependency resolution refuses readdirp name
+  ---
+  duration_ms: 14.71764
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses readdirp main
+ok 73 - fixed dependency resolution refuses readdirp main
+  ---
+  duration_ms: 16.356646
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses readdirp type
+ok 74 - fixed dependency resolution refuses readdirp type
+  ---
+  duration_ms: 16.294564
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses readdirp exports
+ok 75 - fixed dependency resolution refuses readdirp exports
+  ---
+  duration_ms: 15.360301
+  type: 'test'
+  ...
+# Subtest: unexpected or nested dependency path refuses: node_modules/fourth/index.js
+ok 76 - unexpected or nested dependency path refuses: node_modules/fourth/index.js
+  ---
+  duration_ms: 12.054041
+  type: 'test'
+  ...
+# Subtest: unexpected or nested dependency path refuses: packages/hud-mcp/node_modules/@iarna/toml/toml.js
+ok 77 - unexpected or nested dependency path refuses: packages/hud-mcp/node_modules/@iarna/toml/toml.js
+  ---
+  duration_ms: 14.156137
+  type: 'test'
+  ...
+# Subtest: unexpected or nested dependency path refuses: node_modules/chokidar/node_modules/readdirp/index.js
+ok 78 - unexpected or nested dependency path refuses: node_modules/chokidar/node_modules/readdirp/index.js
+  ---
+  duration_ms: 12.871897
+  type: 'test'
+  ...
+# Subtest: missing local entrypoint cannot borrow a same-name ancestor dependency
+ok 79 - missing local entrypoint cannot borrow a same-name ancestor dependency
+  ---
+  duration_ms: 22.852337
+  type: 'test'
+  ...
+1..79
+# tests 79
+# suites 0
+# pass 76
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2898.801782

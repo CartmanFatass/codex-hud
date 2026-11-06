@@ -1,0 +1,20 @@
+✔ one original 250ms deadline, tightening never extends, malformed clock refuses (1.282674ms)
+✔ preparation beyond old 30ms succeeds, expired receipt runs no callback (1.563757ms)
+✔ queue consumes cumulative contention and refuses at100ms before BEGIN (0.878593ms)
+✔ BEGIN retries can exceed old seven attempts but all waits share100ms across transactions (1.362452ms)
+✔ callback overrun rolls back without COMMIT, late COMMIT preserves committed truth (3.889227ms)
+✔ unknown COMMIT is not retry-safe busy; rollback failure poisons connection (1.467306ms)
+✔ late authenticated prior result returns without new COMMIT, cannot mark mutated result durable (0.522661ms)
+✔ numeric ledger API stays capped20ms; zero budget retains immediate attempt (0.246468ms)
+✔ MCP receipt includes parent callback and source work, read-only tools never get writer budget (1.059649ms)
+✔ pre-acceptance read queue shares contention allowance and never runs expired callback (0.461878ms)
+✔ production delegation passes one shared budget through authorization and atomic intent, replay launches once (190.574805ms)
+✔ multiple MCP calls in one chunk retain the same original receipt (2.436297ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 280.406936

@@ -1,0 +1,40 @@
+✔ accepted completed codex full ref is lazy and is not run-terminal evidence (48.184017ms)
+✔ accepted completed claude full ref is lazy and is not run-terminal evidence (38.46545ms)
+✔ accepted completed pi full ref is lazy and is not run-terminal evidence (33.922416ms)
+✔ actual metadata selection refuses missing accepted event (25.350101ms)
+✔ actual metadata selection refuses duplicate accepted event (27.232793ms)
+✔ actual metadata selection refuses unaccepted binding (28.471574ms)
+✔ actual metadata selection refuses missing parent (27.353662ms)
+✔ actual metadata selection refuses handover (30.351854ms)
+✖ actual metadata selection refuses thread mismatch (21.92066ms)
+✔ actual metadata selection refuses source mismatch (26.080791ms)
+✔ actual metadata selection refuses harness mismatch (30.081977ms)
+✔ actual metadata selection refuses report context mismatch (24.722456ms)
+✔ actual metadata selection refuses binding generation mismatch (24.77906ms)
+✔ actual metadata selection refuses noncompleted (25.992657ms)
+✔ latest accepted report is selected by event sequence, never createdAt, with permanent target invalidation (46.716962ms)
+✔ conflict on another relation with the same full target blocks until explicitly resolved (34.828699ms)
+✔ oversize metadata stays lazy; body bounds, empty and sealed summary fail without truncation (43.39536ms)
+✔ replaced ledger inode invalidates the opened target without reopening another database (24.913972ms)
+✔ new current run preserves report attribution but invalidates the selected old run (30.1913ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 18
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 695.826992
+
+✖ failing tests:
+
+test at dist-test/tests/unit/delegated-report-read.test.js:50:5
+✖ actual metadata selection refuses thread mismatch (21.92066ms)
+  Error: known target ref cannot be replaced
+      at TestContext.<anonymous> (file://$ROOT/src/dist-test/tests/unit/delegated-report-read.test.js:55:18)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    code: 'ERR_SQLITE_ERROR',
+    errcode: 1811,
+    errstr: 'constraint failed'
+  }

@@ -1,0 +1,5 @@
+
+> codex-hud@0.1.0 format:check
+> node ./node_modules/prettier/bin/prettier.cjs --check src tests
+
+Checking formatting...

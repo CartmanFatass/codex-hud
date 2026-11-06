@@ -1,0 +1,43 @@
+(node:15) ExperimentalWarning: stripTypeScriptTypes is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ SIMULATED installed composition: actual installer, direct native parent, fixed factory and bounded negative matrix
+  ✔ A: common manifest and installed direct-parent path refuse empty capabilities (935.328623ms)
+  ✔ B: only excluded cells change full manifest digest; exact simulated spawn/resume match (908.632139ms)
+  ✔ A restore uses fresh generation; no-op preserves it; stale receipts and plans refuse (664.410588ms)
+  ✔ manifest boundary: dirty (875.403481ms)
+  ✔ manifest boundary: wrong-MCP-name (34.348944ms)
+  ✔ manifest boundary: missing-managed-anchor (25.290799ms)
+  ✔ manifest boundary: wrong-dependency-resolution (34.838433ms)
+  ✔ manifest boundary: payload-hash (21.299704ms)
+  ✔ manifest boundary: payload-mode (21.895789ms)
+  ✔ manifest boundary: unlisted-file (18.147034ms)
+  ✔ manifest boundary: missing-file (18.805888ms)
+  ✔ manifest boundary: malformed-cell-0 (25.578054ms)
+  ✔ manifest boundary: malformed-cell-1 (31.556665ms)
+  ✔ manifest boundary: malformed-cell-2 (30.705741ms)
+  ✔ manifest boundary: malformed-cell-3 (30.507084ms)
+  ✔ manifest boundary: duplicate-members (29.935531ms)
+  ✔ manifest boundary: malformed-sibling (30.830014ms)
+  ✔ other three cell files cannot replace fixed MCP managed-cell file (893.167257ms)
+  ✔ resealed ordinary payload mutation changes build ID and invalidates old cell (892.188886ms)
+  ✔ source-shaped module cannot gain installed status via env, input fields or manifest path (70.657237ms)
+  ✔ physical Node proxy cannot borrow native grandparent authority (113.668532ms)
+  ✔ identity boundary: parent-version (86.45873ms)
+  ✔ identity boundary: target-version (84.397274ms)
+  ✔ identity boundary: wrong-selected-profile (79.72017ms)
+  ✔ identity boundary: wrong-selected-source (76.777468ms)
+  ✔ identity boundary: missing-executable (81.607678ms)
+  ✔ identity boundary: script-executable (81.95378ms)
+  ✔ broken selector prevents synthetic-main execution (1041.685741ms)
+  ✔ broken module-marker prevents synthetic-main execution (808.361795ms)
+  ✔ bounded regression entrypoint refuses unknown arguments (34.341381ms)
+  ✔ production source capability files are unchanged and empty (0.368816ms)
+✔ SIMULATED installed composition: actual installer, direct native parent, fixed factory and bounded negative matrix (8801.61011ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 32
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8860.711423

@@ -1,0 +1,878 @@
+TAP version 13
+# Subtest: golden legacy Codex: explicit backend plus historical feature defaults preserves identical request bytes
+ok 1 - golden legacy Codex: explicit backend plus historical feature defaults preserves identical request bytes
+  ---
+  duration_ms: 59.554588
+  type: 'test'
+  ...
+# Subtest: T-07-2/17 legacy: default booleans, credentials, malformed settings and new sources cannot create a grant
+ok 2 - T-07-2/17 legacy: default booleans, credentials, malformed settings and new sources cannot create a grant
+  ---
+  duration_ms: 23.476186
+  type: 'test'
+  ...
+# Subtest: T-07-6/17 legacy old caches remain readable only in proven original scope and are never migrated or deleted
+ok 3 - T-07-6/17 legacy old caches remain readable only in proven original scope and are never migrated or deleted
+  ---
+  duration_ms: 5.97256
+  type: 'test'
+  ...
+# Subtest: T-07-7 legacy recipient/credential changes and preflight cancellation do not send to a new recipient
+ok 4 - T-07-7 legacy recipient/credential changes and preflight cancellation do not send to a new recipient
+  ---
+  duration_ms: 8.923433
+  type: 'test'
+  ...
+# Subtest: T-07-7/17 legacy explicit policy is authoritative; deleting it cannot resurrect the compatibility grant
+ok 5 - T-07-7/17 legacy explicit policy is authoritative; deleting it cannot resurrect the compatibility grant
+  ---
+  duration_ms: 14.981232
+  type: 'test'
+  ...
+# Subtest: T-07-6 unknown legacy provenance stays tainted and cannot be relabelled as general source material
+ok 6 - T-07-6 unknown legacy provenance stays tainted and cannot be relabelled as general source material
+  ---
+  duration_ms: 7.769829
+  type: 'test'
+  ...
+# Subtest: T-07-9 explicit paused probe sends only fixed synthetic material; off sends zero calls
+ok 7 - T-07-9 explicit paused probe sends only fixed synthetic material; off sends zero calls
+  ---
+  duration_ms: 6.919347
+  type: 'test'
+  ...
+# Subtest: T-07-8 legacy agy: concrete executable/PATH is pinned; replacement profiles cannot inherit the grant
+ok 8 - T-07-8 legacy agy: concrete executable/PATH is pinned; replacement profiles cannot inherit the grant
+  ---
+  duration_ms: 15.137619
+  type: 'test'
+  ...
+# Subtest: T-07-2 native topology: both historical parent encodings work; conflicting and delegated edges deny before compose
+ok 9 - T-07-2 native topology: both historical parent encodings work; conflicting and delegated edges deny before compose
+  ---
+  duration_ms: 11.758124
+  type: 'test'
+  ...
+# Subtest: T-07-6 narrow recap: unknown both-to-main ancestry and its coverage/overall are omitted; proven main translation survives
+ok 10 - T-07-6 narrow recap: unknown both-to-main ancestry and its coverage/overall are omitted; proven main translation survives
+  ---
+  duration_ms: 16.604275
+  type: 'test'
+  ...
+# B17 collector scheduling n=100 p50=0.002ms p95=0.004ms p99=0.070ms max=0.144ms; synchronous HUD-tick filesystem operations=0; indexed policy checks=0
+# Subtest: T-07-9 actual Cards preset changes display only and cannot revive a disabled generator
+ok 11 - T-07-9 actual Cards preset changes display only and cannot revive a disabled generator
+  ---
+  duration_ms: 9.455642
+  type: 'test'
+  ...
+# Subtest: B17 tick performance: collector material scheduling performs zero new synchronous filesystem operations
+ok 12 - B17 tick performance: collector material scheduling performs zero new synchronous filesystem operations
+  ---
+  duration_ms: 8.795304
+  type: 'test'
+  ...
+# Subtest: E2 model selected B off cannot borrow shadowed A authority
+ok 13 - E2 model selected B off cannot borrow shadowed A authority
+  ---
+  duration_ms: 4.124765
+  type: 'test'
+  ...
+# Subtest: E2 model selected B missing grant cannot borrow shadowed A authority
+ok 14 - E2 model selected B missing grant cannot borrow shadowed A authority
+  ---
+  duration_ms: 3.591736
+  type: 'test'
+  ...
+# Subtest: E2 model selected B different recipient cannot borrow shadowed A authority
+ok 15 - E2 model selected B different recipient cannot borrow shadowed A authority
+  ---
+  duration_ms: 3.482682
+  type: 'test'
+  ...
+# Subtest: E2 model selected B disabled feature cannot borrow shadowed A authority
+ok 16 - E2 model selected B disabled feature cannot borrow shadowed A authority
+  ---
+  duration_ms: 3.607473
+  type: 'test'
+  ...
+# Subtest: E2 model selected B paused cannot borrow shadowed A authority
+ok 17 - E2 model selected B paused cannot borrow shadowed A authority
+  ---
+  duration_ms: 8.786966
+  type: 'test'
+  ...
+# Subtest: E2 selected settings use the injected env and shadowed legacy changes do not move authority
+ok 18 - E2 selected settings use the injected env and shadowed legacy changes do not move authority
+  ---
+  duration_ms: 10.902381
+  type: 'test'
+  ...
+# Subtest: E2 legacy-only settings override retains authorization and empty neutral uses the original default
+ok 19 - E2 legacy-only settings override retains authorization and empty neutral uses the original default
+  ---
+  duration_ms: 11.38705
+  type: 'test'
+  ...
+# Subtest: E2 effective selector changes before deferred capture refuse even when both files grant the same source
+ok 20 - E2 effective selector changes before deferred capture refuse even when both files grant the same source
+  ---
+  duration_ms: 8.025693
+  type: 'test'
+  ...
+# Subtest: E2 changed selector invalidates captured handles, queued dispatch and late cache writes
+ok 21 - E2 changed selector invalidates captured handles, queued dispatch and late cache writes
+  ---
+  duration_ms: 12.907045
+  type: 'test'
+  ...
+# Subtest: E2 same-source delegated text stays denied with an authorized neutral selector
+ok 22 - E2 same-source delegated text stays denied with an authorized neutral selector
+  ---
+  duration_ms: 3.321853
+  type: 'test'
+  ...
+# Subtest: E2 backend off reads no material and makes no transport calls despite authorized A and B
+ok 23 - E2 backend off reads no material and makes no transport calls despite authorized A and B
+  ---
+  duration_ms: 3.906332
+  type: 'test'
+  ...
+# Subtest: text-hook fixture preserves native Response getters, methods and one-shot body consumption
+ok 24 - text-hook fixture preserves native Response getters, methods and one-shot body consumption
+  ---
+  duration_ms: 13.657621
+  type: 'test'
+  ...
+# Subtest: strict response parser admits only bounded single-line conclusion/basis/caveats
+ok 25 - strict response parser admits only bounded single-line conclusion/basis/caveats
+  ---
+  duration_ms: 0.723204
+  type: 'test'
+  ...
+# Subtest: actual service generates and safely reuses generic cache with exact route and provenance
+ok 26 - actual service generates and safely reuses generic cache with exact route and provenance
+  ---
+  duration_ms: 220.413124
+  type: 'test'
+  ...
+# Subtest: plan/run refuse missing with zero summary reads, cache, budget or fetch
+ok 27 - plan/run refuse missing with zero summary reads, cache, budget or fetch
+  ---
+  duration_ms: 136.225013
+  type: 'test'
+  ...
+# Subtest: plan/run refuse off with zero summary reads, cache, budget or fetch
+ok 28 - plan/run refuse off with zero summary reads, cache, budget or fetch
+  ---
+  duration_ms: 103.115661
+  type: 'test'
+  ...
+# Subtest: plan/run refuse disabled with zero summary reads, cache, budget or fetch
+ok 29 - plan/run refuse disabled with zero summary reads, cache, budget or fetch
+  ---
+  duration_ms: 98.466112
+  type: 'test'
+  ...
+# Subtest: plan/run refuse paused with zero summary reads, cache, budget or fetch
+ok 30 - plan/run refuse paused with zero summary reads, cache, budget or fetch
+  ---
+  duration_ms: 38.173278
+  type: 'test'
+  ...
+# Subtest: plan/run refuse scope with zero summary reads, cache, budget or fetch
+ok 31 - plan/run refuse scope with zero summary reads, cache, budget or fetch
+  ---
+  duration_ms: 37.383106
+  type: 'test'
+  ...
+# Subtest: plan/run refuse outbound with zero summary reads, cache, budget or fetch
+ok 32 - plan/run refuse outbound with zero summary reads, cache, budget or fetch
+  ---
+  duration_ms: 39.605353
+  type: 'test'
+  ...
+# Subtest: plan/run refuse invalid with zero summary reads, cache, budget or fetch
+ok 33 - plan/run refuse invalid with zero summary reads, cache, budget or fetch
+  ---
+  duration_ms: 39.931005
+  type: 'test'
+  ...
+# Subtest: plan/run refuse wrong-recipient with zero summary reads, cache, budget or fetch
+ok 34 - plan/run refuse wrong-recipient with zero summary reads, cache, budget or fetch
+  ---
+  duration_ms: 37.495827
+  type: 'test'
+  ...
+# Subtest: deferred reply is discarded after same-source scope change
+ok 35 - deferred reply is discarded after same-source scope change
+  ---
+  duration_ms: 56.841101
+  type: 'test'
+  ...
+# Subtest: deferred reply is discarded after same-source outbound change
+ok 36 - deferred reply is discarded after same-source outbound change
+  ---
+  duration_ms: 55.86835
+  type: 'test'
+  ...
+# Subtest: deferred reply is discarded after same-source credential change
+ok 37 - deferred reply is discarded after same-source credential change
+  ---
+  duration_ms: 58.265643
+  type: 'test'
+  ...
+# Subtest: deferred reply is discarded after same-source handover change
+ok 38 - deferred reply is discarded after same-source handover change
+  ---
+  duration_ms: 48.356365
+  type: 'test'
+  ...
+# Subtest: deferred reply is discarded after same-source binding change
+ok 39 - deferred reply is discarded after same-source binding change
+  ---
+  duration_ms: 50.639661
+  type: 'test'
+  ...
+# Subtest: deferred reply is discarded after same-source source-directory change
+ok 40 - deferred reply is discarded after same-source source-directory change
+  ---
+  duration_ms: 56.003506
+  type: 'test'
+  ...
+# Subtest: invalid-format or wrong-language reply is never reusable
+ok 41 - invalid-format or wrong-language reply is never reusable
+  ---
+  duration_ms: 48.248227
+  type: 'test'
+  ...
+# Subtest: invalid-format or wrong-language reply is never reusable
+ok 42 - invalid-format or wrong-language reply is never reusable
+  ---
+  duration_ms: 48.594779
+  type: 'test'
+  ...
+# Subtest: invalid-format or wrong-language reply is never reusable
+ok 43 - invalid-format or wrong-language reply is never reusable
+  ---
+  duration_ms: 49.381056
+  type: 'test'
+  ...
+# Subtest: invalid-format or wrong-language reply is never reusable
+ok 44 - invalid-format or wrong-language reply is never reusable
+  ---
+  duration_ms: 50.843783
+  type: 'test'
+  ...
+# Subtest: source cap is shared across concurrent model instances; cancellation and late reply never publish
+ok 45 - source cap is shared across concurrent model instances; cancellation and late reply never publish
+  ---
+  duration_ms: 130.329746
+  type: 'test'
+  ...
+# Subtest: cache commit observes revocation inside asynchronous body delivery
+ok 46 - cache commit observes revocation inside asynchronous body delivery
+  ---
+  duration_ms: 47.601629
+  type: 'test'
+  ...
+# Subtest: queued same-source request observes revocation and cannot revive after bytes are restored
+ok 47 - queued same-source request observes revocation and cannot revive after bytes are restored
+  ---
+  duration_ms: 62.581683
+  type: 'test'
+  ...
+# Subtest: language, recipient, report and full-ref changes cannot reuse a generic cache entry
+ok 48 - language, recipient, report and full-ref changes cannot reuse a generic cache entry
+  ---
+  duration_ms: 298.752873
+  type: 'test'
+  ...
+# Subtest: unsafe existing source runtime is refused without chmod or repair
+ok 49 - unsafe existing source runtime is refused without chmod or repair
+  ---
+  duration_ms: 25.686514
+  type: 'test'
+  ...
+# Subtest: malformed language ["en"] refuses plan/run before material and runtime
+ok 50 - malformed language ["en"] refuses plan/run before material and runtime
+  ---
+  duration_ms: 23.761256
+  type: 'test'
+  ...
+# Subtest: malformed language ["zh"] refuses plan/run before material and runtime
+ok 51 - malformed language ["zh"] refuses plan/run before material and runtime
+  ---
+  duration_ms: 25.659333
+  type: 'test'
+  ...
+# Subtest: malformed language null refuses plan/run before material and runtime
+ok 52 - malformed language null refuses plan/run before material and runtime
+  ---
+  duration_ms: 23.045888
+  type: 'test'
+  ...
+# Subtest: malformed language true refuses plan/run before material and runtime
+ok 53 - malformed language true refuses plan/run before material and runtime
+  ---
+  duration_ms: 25.231098
+  type: 'test'
+  ...
+# Subtest: malformed language 1 refuses plan/run before material and runtime
+ok 54 - malformed language 1 refuses plan/run before material and runtime
+  ---
+  duration_ms: 24.410583
+  type: 'test'
+  ...
+# Subtest: malformed language {} refuses plan/run before material and runtime
+ok 55 - malformed language {} refuses plan/run before material and runtime
+  ---
+  duration_ms: 24.551605
+  type: 'test'
+  ...
+# Subtest: deferred response body abort settles transport and releases its claim before late body completion
+ok 56 - deferred response body abort settles transport and releases its claim before late body completion
+  ---
+  duration_ms: 82.187591
+  type: 'test'
+  ...
+# Subtest: deferred response body deadline settles transport and releases its claim before late body completion
+ok 57 - deferred response body deadline settles transport and releases its claim before late body completion
+  ---
+  duration_ms: 546.83784
+  type: 'test'
+  ...
+# Subtest: accepted completed codex full ref is lazy and is not run-terminal evidence
+ok 58 - accepted completed codex full ref is lazy and is not run-terminal evidence
+  ---
+  duration_ms: 63.03526
+  type: 'test'
+  ...
+# Subtest: accepted completed claude full ref is lazy and is not run-terminal evidence
+ok 59 - accepted completed claude full ref is lazy and is not run-terminal evidence
+  ---
+  duration_ms: 31.285798
+  type: 'test'
+  ...
+# Subtest: accepted completed pi full ref is lazy and is not run-terminal evidence
+ok 60 - accepted completed pi full ref is lazy and is not run-terminal evidence
+  ---
+  duration_ms: 31.771256
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses missing accepted event
+ok 61 - actual metadata selection refuses missing accepted event
+  ---
+  duration_ms: 28.10293
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses duplicate accepted event
+ok 62 - actual metadata selection refuses duplicate accepted event
+  ---
+  duration_ms: 26.644342
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses unaccepted binding
+ok 63 - actual metadata selection refuses unaccepted binding
+  ---
+  duration_ms: 25.613058
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses missing parent
+ok 64 - actual metadata selection refuses missing parent
+  ---
+  duration_ms: 24.448562
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses handover
+ok 65 - actual metadata selection refuses handover
+  ---
+  duration_ms: 22.304178
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses thread mismatch
+not ok 66 - actual metadata selection refuses thread mismatch
+  ---
+  duration_ms: 22.965486
+  type: 'test'
+  location: '/work/src/dist-test/tests/unit/delegated-report-read.test.js:50:5'
+  failureType: 'testCodeFailure'
+  error: 'known target ref cannot be replaced'
+  code: 'ERR_SQLITE_ERROR'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/delegated-report-read.test.js:55:18)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: actual metadata selection refuses source mismatch
+ok 67 - actual metadata selection refuses source mismatch
+  ---
+  duration_ms: 24.026106
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses harness mismatch
+ok 68 - actual metadata selection refuses harness mismatch
+  ---
+  duration_ms: 27.277705
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses report context mismatch
+ok 69 - actual metadata selection refuses report context mismatch
+  ---
+  duration_ms: 25.993705
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses binding generation mismatch
+ok 70 - actual metadata selection refuses binding generation mismatch
+  ---
+  duration_ms: 23.335144
+  type: 'test'
+  ...
+# Subtest: actual metadata selection refuses noncompleted
+ok 71 - actual metadata selection refuses noncompleted
+  ---
+  duration_ms: 25.585045
+  type: 'test'
+  ...
+# Subtest: latest accepted report is selected by event sequence, never createdAt, with permanent target invalidation
+ok 72 - latest accepted report is selected by event sequence, never createdAt, with permanent target invalidation
+  ---
+  duration_ms: 39.383297
+  type: 'test'
+  ...
+# Subtest: conflict on another relation with the same full target blocks until explicitly resolved
+ok 73 - conflict on another relation with the same full target blocks until explicitly resolved
+  ---
+  duration_ms: 31.009657
+  type: 'test'
+  ...
+# Subtest: oversize metadata stays lazy; body bounds, empty and sealed summary fail without truncation
+ok 74 - oversize metadata stays lazy; body bounds, empty and sealed summary fail without truncation
+  ---
+  duration_ms: 38.775526
+  type: 'test'
+  ...
+# Subtest: replaced ledger inode invalidates the opened target without reopening another database
+ok 75 - replaced ledger inode invalidates the opened target without reopening another database
+  ---
+  duration_ms: 22.64937
+  type: 'test'
+  ...
+# Subtest: new current run preserves report attribution but invalidates the selected old run
+ok 76 - new current run preserves report attribution but invalidates the selected old run
+  ---
+  duration_ms: 30.73901
+  type: 'test'
+  ...
+# Subtest: strict CLI parse refuses all malformed/unknown/duplicate selections before even reading env
+ok 77 - strict CLI parse refuses all malformed/unknown/duplicate selections before even reading env
+  ---
+  duration_ms: 1.779237
+  type: 'test'
+  ...
+# Subtest: root route discovers digest and help bypasses missing/unsafe homes
+ok 78 - root route discovers digest and help bypasses missing/unsafe homes
+  ---
+  duration_ms: 0.503595
+  type: 'test'
+  ...
+# Subtest: real command produces one complete JSON document; expected IDs, schema, material and model errors are fixed codes
+ok 79 - real command produces one complete JSON document; expected IDs, schema, material and model errors are fixed codes
+  ---
+  duration_ms: 193.097677
+  type: 'test'
+  ...
+# Subtest: installed hud entry generates a digest with preload-injected fake transport only
+ok 80 - installed hud entry generates a digest with preload-injected fake transport only
+  ---
+  duration_ms: 210.367409
+  type: 'test'
+  ...
+# Subtest: CLI scope maps authorization loss separately from explicit cancellation
+ok 81 - CLI scope maps authorization loss separately from explicit cancellation
+  ---
+  duration_ms: 58.651363
+  type: 'test'
+  ...
+# Subtest: CLI outbound maps authorization loss separately from explicit cancellation
+ok 82 - CLI outbound maps authorization loss separately from explicit cancellation
+  ---
+  duration_ms: 55.255052
+  type: 'test'
+  ...
+# Subtest: CLI target maps authorization loss separately from explicit cancellation
+ok 83 - CLI target maps authorization loss separately from explicit cancellation
+  ---
+  duration_ms: 53.153206
+  type: 'test'
+  ...
+# Subtest: CLI abort maps authorization loss separately from explicit cancellation
+ok 84 - CLI abort maps authorization loss separately from explicit cancellation
+  ---
+  duration_ms: 55.092098
+  type: 'test'
+  ...
+# Subtest: hud help and strict argument refusals never access or create a ledger
+ok 85 - hud help and strict argument refusals never access or create a ledger
+  ---
+  duration_ms: 391.420746
+  type: 'test'
+  ...
+# Subtest: hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes
+ok 86 - hud rejects missing, relative, public, symlink, file and foreign-owned HUD_HOME without writes
+  ---
+  duration_ms: 107.31407
+  type: 'test'
+  ...
+# Subtest: hud missing and unreadable ledgers fail with no stdout or initialization
+ok 87 - hud missing and unreadable ledgers fail with no stdout or initialization
+  ---
+  duration_ms: 97.125561
+  type: 'test'
+  ...
+# Subtest: hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes
+ok 88 - hud rejects symlink HUD_HOME with trailing slashes and dot components in real processes
+  ---
+  duration_ms: 810.951256
+  type: 'test'
+  ...
+# Subtest: hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4
+ok 89 - hud unsearchable HUD_HOME returns home exit 3 while an unreadable ledger returns exit 4
+  ---
+  duration_ms: 322.838272
+  type: 'test'
+  ...
+# Subtest: hud reports asynchronous stdout failures for export and help without Node stack traces
+ok 90 - hud reports asynchronous stdout failures for export and help without Node stack traces
+  ---
+  duration_ms: 452.754197
+  type: 'test'
+  ...
+# Subtest: hud consumes producer JSON byte for byte, preserving full refs, scopes, history and path opt-in
+ok 91 - hud consumes producer JSON byte for byte, preserving full refs, scopes, history and path opt-in
+  ---
+  duration_ms: 47.049769
+  type: 'test'
+  ...
+# Subtest: hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged
+ok 92 - hud real launcher matches the query JSON and leaves database/WAL bytes and mtime unchanged
+  ---
+  duration_ms: 137.034554
+  type: 'test'
+  ...
+# Subtest: hud refuses unknown ledger versions without migrating or emitting JSON
+ok 93 - hud refuses unknown ledger versions without migrating or emitting JSON
+  ---
+  duration_ms: 137.679968
+  type: 'test'
+  ...
+# Subtest: hud producer validation refusal writes no partial JSON
+ok 94 - hud producer validation refusal writes no partial JSON
+  ---
+  duration_ms: 127.915027
+  type: 'test'
+  ...
+# Subtest: hud defaults to ~/.hud only inside an isolated synthetic HOME
+ok 95 - hud defaults to ~/.hud only inside an isolated synthetic HOME
+  ---
+  duration_ms: 136.048621
+  type: 'test'
+  ...
+# Subtest: hud export leaves fresh-process raw stderr free of SQLite initialization warnings
+ok 96 - hud export leaves fresh-process raw stderr free of SQLite initialization warnings
+  ---
+  duration_ms: 136.289529
+  type: 'test'
+  ...
+# Subtest: ledger initialization restores emitWarning and preserves unrelated warnings
+ok 97 - ledger initialization restores emitWarning and preserves unrelated warnings
+  ---
+  duration_ms: 30.885646
+  type: 'test'
+  ...
+# Subtest: T-07-1/3: absent, invalid, unknown, missing-purpose, wrong-source and recipient grants deny before text is read
+ok 98 - T-07-1/3: absent, invalid, unknown, missing-purpose, wrong-source and recipient grants deny before text is read
+  ---
+  duration_ms: 5.199526
+  type: 'test'
+  ...
+# Subtest: T-07-2/4: new Claude/pi/delegated and private fields stay absent from requests, prompts, cache-key getters and caches
+ok 99 - T-07-2/4: new Claude/pi/delegated and private fields stay absent from requests, prompts, cache-key getters and caches
+  ---
+  duration_ms: 27.768229
+  type: 'test'
+  ...
+# Subtest: T-07-5: every purpose requires its own source grant before compose/cache and raw submit is refused
+ok 100 - T-07-5: every purpose requires its own source grant before compose/cache and raw submit is refused
+  ---
+  duration_ms: 23.366693
+  type: 'test'
+  ...
+# Subtest: T-07-6: derived summaries retain source union, reject parent relabelling, cloning and unauthorized union members
+ok 101 - T-07-6: derived summaries retain source union, reject parent relabelling, cloning and unauthorized union members
+  ---
+  duration_ms: 2.984345
+  type: 'test'
+  ...
+# Subtest: T-07-7 queue: revocation after enqueue cancels before a second outbound request
+ok 102 - T-07-7 queue: revocation after enqueue cancels before a second outbound request
+  ---
+  duration_ms: 3.877916
+  type: 'test'
+  ...
+# B17 material file-authority n=100 fragments=20 p50=0.347ms p95=0.527ms p99=1.450ms max=1.450ms; new HUD-tick I/O=0
+# Subtest: T-07-7 late reply: revocation prevents memory/disk caching and consumer note persistence
+ok 103 - T-07-7 late reply: revocation prevents memory/disk caching and consumer note persistence
+  ---
+  duration_ms: 14.142262
+  type: 'test'
+  ...
+# Subtest: T-07-6/7 repair and translation: revoked inherited provenance is checked before repair/system construction
+ok 104 - T-07-6/7 repair and translation: revoked inherited provenance is checked before repair/system construction
+  ---
+  duration_ms: 5.735328
+  type: 'test'
+  ...
+# Subtest: T-07-6 cache: reauthorize before hit; missing, mismatched or unknown provenance never gives a general hit
+ok 105 - T-07-6 cache: reauthorize before hit; missing, mismatched or unknown provenance never gives a general hit
+  ---
+  duration_ms: 13.939775
+  type: 'test'
+  ...
+# Subtest: T-07-8: endpoint/base path/account/profile changes deny, credentials alone never resolve a recipient
+ok 106 - T-07-8: endpoint/base path/account/profile changes deny, credentials alone never resolve a recipient
+  ---
+  duration_ms: 4.166352
+  type: 'test'
+  ...
+# Subtest: T-07-9: backend off is zero network and never evaluates material or prompt; display preset has no grants
+ok 107 - T-07-9: backend off is zero network and never evaluates material or prompt; display preset has no grants
+  ---
+  duration_ms: 2.110091
+  type: 'test'
+  ...
+# Subtest: T-07-7 scope revision and source changes invalidate a previously built envelope
+ok 108 - T-07-7 scope revision and source changes invalidate a previously built envelope
+  ---
+  duration_ms: 1.586809
+  type: 'test'
+  ...
+# Subtest: material building cost: pure bounded public fragments, no collection or paint hook
+ok 109 - material building cost: pure bounded public fragments, no collection or paint hook
+  ---
+  duration_ms: 39.408467
+  type: 'test'
+  ...
+# Subtest: T-07-6 persistent notes: source union survives restart, translation and revocation without entering legacy stores
+ok 110 - T-07-6 persistent notes: source union survives restart, translation and revocation without entering legacy stores
+  ---
+  duration_ms: 5.267555
+  type: 'test'
+  ...
+# Subtest: T-07-17 preservation: more than 200 general entries never prune or rewrite the original legacy cache
+ok 111 - T-07-17 preservation: more than 200 general entries never prune or rewrite the original legacy cache
+  ---
+  duration_ms: 666.867586
+  type: 'test'
+  ...
+# Subtest: root help discovers statusline without opening a ledger; render aliases agree
+ok 112 - root help discovers statusline without opening a ledger; render aliases agree
+  ---
+  duration_ms: 548.619593
+  type: 'test'
+  ...
+# Subtest: routed settings preserve preview/apply/restore safeguards in temporary HOME
+ok 113 - routed settings preserve preview/apply/restore safeguards in temporary HOME
+  ---
+  duration_ms: 312.844176
+  type: 'test'
+  ...
+# Subtest: package and lock agree on executable aliases
+ok 114 - package and lock agree on executable aliases
+  ---
+  duration_ms: 0.324543
+  type: 'test'
+  ...
+# Subtest: E2 panel help is read-only with neutral selectors and missing or unsafe homes
+ok 115 - E2 panel help is read-only with neutral selectors and missing or unsafe homes
+  ---
+  duration_ms: 580.1101
+  type: 'test'
+  ...
+# Subtest: E2 existing panel entry receives neutral and legacy environment unchanged (mock spawn only)
+ok 116 - E2 existing panel entry receives neutral and legacy environment unchanged (mock spawn only)
+  ---
+  duration_ms: 6.531647
+  type: 'test'
+  ...
+# Subtest: F4 installed digest help and syntax refusals do not open missing or unsafe HUD homes
+ok 117 - F4 installed digest help and syntax refusals do not open missing or unsafe HUD homes
+  ---
+  duration_ms: 674.652548
+  type: 'test'
+  ...
+# Subtest: AGY retains named effort models and explicit override flags without a shell
+ok 118 - AGY retains named effort models and explicit override flags without a shell
+  ---
+  duration_ms: 0.771273
+  type: 'test'
+  ...
+# Subtest: API task routes, configurable tier models, and global overrides
+ok 119 - API task routes, configurable tier models, and global overrides
+  ---
+  duration_ms: 0.851512
+  type: 'test'
+  ...
+# Subtest: custom endpoints never receive the general OpenAI key; deliberate HUD keys still work
+ok 120 - custom endpoints never receive the general OpenAI key; deliberate HUD keys still work
+  ---
+  duration_ms: 0.18837
+  type: 'test'
+  ...
+# Subtest: reasoning_effort is opt-in and unknown efforts are omitted
+ok 121 - reasoning_effort is opt-in and unknown efforts are omitted
+  ---
+  duration_ms: 0.132036
+  type: 'test'
+  ...
+# Subtest: call counts: last hour and since midnight
+ok 122 - call counts: last hour and since midnight
+  ---
+  duration_ms: 0.297794
+  type: 'test'
+  ...
+# Subtest: single flight, queued cancellation, active cancellation, and cancelAll
+ok 123 - single flight, queued cancellation, active cancellation, and cancelAll
+  ---
+  duration_ms: 25.978627
+  type: 'test'
+  ...
+# Subtest: cancelled active fetch holds its slot until stopping finishes, also across configure/cancelAll
+ok 124 - cancelled active fetch holds its slot until stopping finishes, also across configure/cancelAll
+  ---
+  duration_ms: 7.113369
+  type: 'test'
+  ...
+# Subtest: API redirects are refused and reflected credentials are removed from errors
+ok 125 - API redirects are refused and reflected credentials are removed from errors
+  ---
+  duration_ms: 1.53384
+  type: 'test'
+  ...
+# Subtest: freeze request, route, and environment at submission; configure cancels changed destinations
+ok 126 - freeze request, route, and environment at submission; configure cancels changed destinations
+  ---
+  duration_ms: 4.525991
+  type: 'test'
+  ...
+# Subtest: cap, free cache, restart persistence, private files, and cache endpoint/model/thinking/feature identity
+ok 127 - cap, free cache, restart persistence, private files, and cache endpoint/model/thinking/feature identity
+  ---
+  duration_ms: 36.150195
+  type: 'test'
+  ...
+# Subtest: off and invalid configuration do not call fetch or spend budget; HTTP, transport, malformed and empty errors
+ok 128 - off and invalid configuration do not call fetch or spend budget; HTTP, transport, malformed and empty errors
+  ---
+  duration_ms: 2.746243
+  type: 'test'
+  ...
+# Subtest: public handle lifecycle notifies queued-to-running, holds cancellation slot, and retains cache generation time
+ok 129 - public handle lifecycle notifies queued-to-running, holds cancellation slot, and retains cache generation time
+  ---
+  duration_ms: 2.586116
+  type: 'test'
+  ...
+# Subtest: optional response validator checks fresh, cache and throwing predicates (memory)
+ok 130 - optional response validator checks fresh, cache and throwing predicates (memory)
+  ---
+  duration_ms: 2.942368
+  type: 'test'
+  ...
+# Subtest: optional response validator checks fresh, cache and throwing predicates (shared)
+ok 131 - optional response validator checks fresh, cache and throwing predicates (shared)
+  ---
+  duration_ms: 13.018332
+  type: 'test'
+  ...
+# Subtest: strict source schema rejects omission, wildcard, future field, duplicate scope and wrong full identity
+ok 132 - strict source schema rejects omission, wildcard, future field, duplicate scope and wrong full identity
+  ---
+  duration_ms: 23.73157
+  type: 'test'
+  ...
+# Subtest: actual generic boundary exact permission matrix rejects before evaluating material
+ok 133 - actual generic boundary exact permission matrix rejects before evaluating material
+  ---
+  duration_ms: 24.492986
+  type: 'test'
+  ...
+# Subtest: source private read fails closed without repair: missing
+ok 134 - source private read fails closed without repair: missing
+  ---
+  duration_ms: 20.336713
+  type: 'test'
+  ...
+# Subtest: source private read fails closed without repair: corrupt
+ok 135 - source private read fails closed without repair: corrupt
+  ---
+  duration_ms: 19.286109
+  type: 'test'
+  ...
+# Subtest: source private read fails closed without repair: oversize
+ok 136 - source private read fails closed without repair: oversize
+  ---
+  duration_ms: 18.480298
+  type: 'test'
+  ...
+# Subtest: source private read fails closed without repair: public-file
+ok 137 - source private read fails closed without repair: public-file
+  ---
+  duration_ms: 22.16273
+  type: 'test'
+  ...
+# Subtest: source private read fails closed without repair: symlink
+ok 138 - source private read fails closed without repair: symlink
+  ---
+  duration_ms: 19.416859
+  type: 'test'
+  ...
+# Subtest: source private read fails closed without repair: hardlink
+ok 139 - source private read fails closed without repair: hardlink
+  ---
+  duration_ms: 18.109743
+  type: 'test'
+  ...
+# Subtest: source private read fails closed without repair: public-dir
+ok 140 - source private read fails closed without repair: public-dir
+  ---
+  duration_ms: 20.439914
+  type: 'test'
+  ...
+# Subtest: source private read fails closed without repair: symlink-dir
+ok 141 - source private read fails closed without repair: symlink-dir
+  ---
+  duration_ms: 18.912086
+  type: 'test'
+  ...
+# Subtest: same-source scope and outbound edits latch invalidation; explicit accountless is separate
+ok 142 - same-source scope and outbound edits latch invalidation; explicit accountless is separate
+  ---
+  duration_ms: 20.861185
+  type: 'test'
+  ...
+# Subtest: language is an exact string enum, never a coerced JSON value
+ok 143 - language is an exact string enum, never a coerced JSON value
+  ---
+  duration_ms: 18.648064
+  type: 'test'
+  ...
+1..143
+# tests 143
+# suites 0
+# pass 142
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11068.576886

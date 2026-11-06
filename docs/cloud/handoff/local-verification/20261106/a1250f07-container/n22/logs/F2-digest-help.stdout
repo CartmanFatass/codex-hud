@@ -1,0 +1,8 @@
+Usage: hud digest plan --run RUN --report REPORT --json
+       hud digest run --run RUN --report REPORT --expected-ledger LEDGER_ID --expected-recipient RECIPIENT_ID --json
+       hud digest --help
+
+Explicitly summarize one authenticated completed delegation report's public summary.
+Plan reads metadata only. Run requires private per-source model.json scope and an independent outbound.json grant.
+No initialization, migration, reportPath reading, background work or process control.
+A completed report and a generated digest do not prove run termination or task correctness.

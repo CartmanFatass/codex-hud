@@ -1,0 +1,99 @@
+TAP version 13
+# Subtest: SIMULATED strict production matcher → DelegationService → hud-run → whoami/report → scope end and exact-session resume
+not ok 1 - SIMULATED strict production matcher → DelegationService → hud-run → whoami/report → scope end and exact-session resume
+  ---
+  duration_ms: 60.777194
+  type: 'test'
+  location: '/work/src/packages/hud-mcp/dist/tests/hud-mcp/managed-runtime.test.js:4:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    true !== false
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: false
+  actual: true
+  operator: 'strictEqual'
+  stack: |-
+    compile (file:///work/src/packages/hud-mcp/dist/tests/fixtures/managed-native-runner.js:35:20)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async runNativeScenario (file:///work/src/packages/hud-mcp/dist/tests/fixtures/managed-native-runner.js:42:5)
+    async TestContext.<anonymous> (file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/managed-runtime.test.js:5:20)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: default main keeps MCP available with missing bundled capability JSON
+not ok 2 - default main keeps MCP available with missing bundled capability JSON
+  ---
+  duration_ms: 156.376718
+  type: 'test'
+  location: '/work/src/packages/hud-mcp/dist/tests/hud-mcp/managed-runtime.test.js:16:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    main_closed:1:file:///work/tmp/managed-native-default-hFCVM6/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:41
+                throw new Refusal('registration_unverified');
+                      ^
+    
+    Refusal [Error]: registration_unverified
+        at LinuxProcessReader.domain (file:///work/tmp/managed-native-default-hFCVM6/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:41:19)
+        at registerCaller (file:///work/tmp/managed-native-default-hFCVM6/packages/hud-mcp/dist/packages/hud-mcp/src/registry.js:63:33)
+        at file:///work/tmp/managed-native-default-hFCVM6/packages/hud-mcp/dist/packages/hud-mcp/src/main.js:57:32 {
+      code: 'registration_unverified'
+    }
+    
+    Node.js v22.23.4
+    
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    LinuxProcessReader.domain (file:///work/tmp/managed-native-default-hFCVM6/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:41:19)
+    registerCaller (file:///work/tmp/managed-native-default-hFCVM6/packages/hud-mcp/dist/packages/hud-mcp/src/registry.js:63:33)
+    file:///work/tmp/managed-native-default-hFCVM6/packages/hud-mcp/dist/packages/hud-mcp/src/main.js:57:32 {
+    ChildProcess.<anonymous> (file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/managed-runtime.test.js:62:50)
+    Object.onceWrapper (node:events:634:26)
+    ChildProcess.emit (node:events:531:35)
+    maybeClose (node:internal/child_process:1101:16)
+    ChildProcess._handle.onexit (node:internal/child_process:304:5)
+  ...
+# Subtest: default main keeps MCP available with malformed bundled capability JSON
+not ok 3 - default main keeps MCP available with malformed bundled capability JSON
+  ---
+  duration_ms: 141.910935
+  type: 'test'
+  location: '/work/src/packages/hud-mcp/dist/tests/hud-mcp/managed-runtime.test.js:16:5'
+  failureType: 'testCodeFailure'
+  error: |-
+    main_closed:1:file:///work/tmp/managed-native-default-psBKDh/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:41
+                throw new Refusal('registration_unverified');
+                      ^
+    
+    Refusal [Error]: registration_unverified
+        at LinuxProcessReader.domain (file:///work/tmp/managed-native-default-psBKDh/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:41:19)
+        at registerCaller (file:///work/tmp/managed-native-default-psBKDh/packages/hud-mcp/dist/packages/hud-mcp/src/registry.js:63:33)
+        at file:///work/tmp/managed-native-default-psBKDh/packages/hud-mcp/dist/packages/hud-mcp/src/main.js:57:32 {
+      code: 'registration_unverified'
+    }
+    
+    Node.js v22.23.4
+    
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    LinuxProcessReader.domain (file:///work/tmp/managed-native-default-psBKDh/packages/hud-mcp/dist/packages/hud-mcp/src/process.js:41:19)
+    registerCaller (file:///work/tmp/managed-native-default-psBKDh/packages/hud-mcp/dist/packages/hud-mcp/src/registry.js:63:33)
+    file:///work/tmp/managed-native-default-psBKDh/packages/hud-mcp/dist/packages/hud-mcp/src/main.js:57:32 {
+    ChildProcess.<anonymous> (file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/managed-runtime.test.js:62:50)
+    Object.onceWrapper (node:events:634:26)
+    ChildProcess.emit (node:events:531:35)
+    maybeClose (node:internal/child_process:1101:16)
+    ChildProcess._handle.onexit (node:internal/child_process:304:5)
+  ...
+1..3
+# tests 3
+# suites 0
+# pass 0
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 454.250162

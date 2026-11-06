@@ -1,0 +1,31 @@
+TAP version 13
+# Subtest: fix1 release capacity reserves a slot for upgrade but permits existing selection and restore
+not ok 1 - fix1 release capacity reserves a slot for upgrade but permits existing selection and restore
+  ---
+  duration_ms: 1181.949488
+  type: 'test'
+  location: '/work/src/tests/unit/runtime-install.test.mjs:554:1'
+  failureType: 'testCodeFailure'
+  error: 'unsafe_owned_directory'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    file:///work/src/scripts/runtime-package/installer.mjs:199:13
+    Directory.withParent (file:///work/src/scripts/runtime-package/safety.mjs:98:14)
+    ownedDirectory (file:///work/src/scripts/runtime-package/installer.mjs:196:20)
+    inspectPrefix (file:///work/src/scripts/runtime-package/installer.mjs:256:7)
+    planInstall (file:///work/src/scripts/runtime-package/installer.mjs:321:19)
+    preview (file:///work/src/tests/unit/runtime-install.test.mjs:10:33)
+    apply (file:///work/src/tests/unit/runtime-install.test.mjs:11:73)
+    TestContext.<anonymous> (file:///work/src/tests/unit/runtime-install.test.mjs:567:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1237.591781

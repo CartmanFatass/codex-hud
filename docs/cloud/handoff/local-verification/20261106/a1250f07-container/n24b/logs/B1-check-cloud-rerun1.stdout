@@ -1,0 +1,20 @@
+PASS: build
+PASS: build-test
+PASS: build-mcp
+PASS: focused
+PASS: workbench-product
+PASS: pi-source-root
+PASS: pi-delegation-bridge
+PASS: managed-targets
+PASS: delegate-list
+PASS: statusline-observer
+PASS: demo-cloud-m1
+PASS: demo-codex-exec
+PASS: demo-codex-exec-transport
+PASS: demo-codex-app-server-transport
+PASS: demo-claude-print-transport
+PASS: demo-pi-rpc
+PASS: demo-pi-rpc-transport
+PASS: demo-jev-fake
+PASS: demo-pi-footer
+Cloud results: tmp/cloud-development/checks-lgcodS/results.json

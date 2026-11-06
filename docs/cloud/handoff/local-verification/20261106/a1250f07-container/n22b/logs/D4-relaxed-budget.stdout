@@ -1,0 +1,84 @@
+TAP version 13
+# (node:15) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: one original 250ms deadline, tightening never extends, malformed clock refuses
+ok 1 - one original 250ms deadline, tightening never extends, malformed clock refuses
+  ---
+  duration_ms: 1.289778
+  type: 'test'
+  ...
+# Subtest: preparation beyond old 30ms succeeds, expired receipt runs no callback
+ok 2 - preparation beyond old 30ms succeeds, expired receipt runs no callback
+  ---
+  duration_ms: 1.670764
+  type: 'test'
+  ...
+# Subtest: queue consumes cumulative contention and refuses at100ms before BEGIN
+ok 3 - queue consumes cumulative contention and refuses at100ms before BEGIN
+  ---
+  duration_ms: 0.725047
+  type: 'test'
+  ...
+# Subtest: BEGIN retries can exceed old seven attempts but all waits share100ms across transactions
+ok 4 - BEGIN retries can exceed old seven attempts but all waits share100ms across transactions
+  ---
+  duration_ms: 1.499256
+  type: 'test'
+  ...
+# Subtest: callback overrun rolls back without COMMIT, late COMMIT preserves committed truth
+ok 5 - callback overrun rolls back without COMMIT, late COMMIT preserves committed truth
+  ---
+  duration_ms: 0.38178
+  type: 'test'
+  ...
+# Subtest: unknown COMMIT is not retry-safe busy; rollback failure poisons connection
+ok 6 - unknown COMMIT is not retry-safe busy; rollback failure poisons connection
+  ---
+  duration_ms: 0.723885
+  type: 'test'
+  ...
+# Subtest: late authenticated prior result returns without new COMMIT, cannot mark mutated result durable
+ok 7 - late authenticated prior result returns without new COMMIT, cannot mark mutated result durable
+  ---
+  duration_ms: 0.313443
+  type: 'test'
+  ...
+# Subtest: numeric ledger API stays capped20ms; zero budget retains immediate attempt
+ok 8 - numeric ledger API stays capped20ms; zero budget retains immediate attempt
+  ---
+  duration_ms: 0.131003
+  type: 'test'
+  ...
+# Subtest: MCP receipt includes parent callback and source work, read-only tools never get writer budget
+ok 9 - MCP receipt includes parent callback and source work, read-only tools never get writer budget
+  ---
+  duration_ms: 0.772736
+  type: 'test'
+  ...
+# Subtest: pre-acceptance read queue shares contention allowance and never runs expired callback
+ok 10 - pre-acceptance read queue shares contention allowance and never runs expired callback
+  ---
+  duration_ms: 0.688901
+  type: 'test'
+  ...
+# Subtest: production delegation passes one shared budget through authorization and atomic intent, replay launches once
+ok 11 - production delegation passes one shared budget through authorization and atomic intent, replay launches once
+  ---
+  duration_ms: 219.763945
+  type: 'test'
+  ...
+# Subtest: multiple MCP calls in one chunk retain the same original receipt
+ok 12 - multiple MCP calls in one chunk retain the same original receipt
+  ---
+  duration_ms: 1.4635
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 286.345644

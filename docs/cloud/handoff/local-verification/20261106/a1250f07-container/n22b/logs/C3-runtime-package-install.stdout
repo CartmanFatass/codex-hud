@@ -1,0 +1,919 @@
+TAP version 13
+# Subtest: fix3 A-B-A refuses the old receipt even when selector identities are reused
+ok 1 - fix3 A-B-A refuses the old receipt even when selector identities are reused
+  ---
+  duration_ms: 515.338765
+  type: 'test'
+  ...
+# Subtest: fix3 each switch binds a new generation to its receipt and no-op preserves it
+ok 2 - fix3 each switch binds a new generation to its receipt and no-op preserves it
+  ---
+  duration_ms: 517.050427
+  type: 'test'
+  ...
+# Subtest: fix3 inactive restore and reapply do not resurrect an original receipt
+ok 3 - fix3 inactive restore and reapply do not resurrect an original receipt
+  ---
+  duration_ms: 328.384525
+  type: 'test'
+  ...
+# Subtest: fix3 legacy schema selector is refused without mutation or payload launch
+ok 4 - fix3 legacy schema selector is refused without mutation or payload launch
+  ---
+  duration_ms: 328.391106
+  type: 'test'
+  ...
+# Subtest: fix3 missing generation selector is refused without mutation or payload launch
+ok 5 - fix3 missing generation selector is refused without mutation or payload launch
+  ---
+  duration_ms: 315.2682
+  type: 'test'
+  ...
+# Subtest: fix3 malformed generation selector is refused without mutation or payload launch
+ok 6 - fix3 malformed generation selector is refused without mutation or payload launch
+  ---
+  duration_ms: 321.701254
+  type: 'test'
+  ...
+# Subtest: fix3 non-v4 generation selector is refused without mutation or payload launch
+ok 7 - fix3 non-v4 generation selector is refused without mutation or payload launch
+  ---
+  duration_ms: 481.971163
+  type: 'test'
+  ...
+# Subtest: fix3 array generation selector is refused without mutation or payload launch
+ok 8 - fix3 array generation selector is refused without mutation or payload launch
+  ---
+  duration_ms: 620.131982
+  type: 'test'
+  ...
+# Subtest: fix3 array manifest digest selector is refused without mutation or payload launch
+ok 9 - fix3 array manifest digest selector is refused without mutation or payload launch
+  ---
+  duration_ms: 540.798186
+  type: 'test'
+  ...
+# Subtest: fix3 unknown field selector is refused without mutation or payload launch
+ok 10 - fix3 unknown field selector is refused without mutation or payload launch
+  ---
+  duration_ms: 591.838031
+  type: 'test'
+  ...
+# Subtest: fix3 legacy schema receipt is refused and all evidence is retained
+ok 11 - fix3 legacy schema receipt is refused and all evidence is retained
+  ---
+  duration_ms: 430.572851
+  type: 'test'
+  ...
+# Subtest: fix3 wrong generation binding receipt is refused and all evidence is retained
+ok 12 - fix3 wrong generation binding receipt is refused and all evidence is retained
+  ---
+  duration_ms: 426.917184
+  type: 'test'
+  ...
+# Subtest: fix3 array-valued receipt before is refused without mutation
+ok 13 - fix3 array-valued receipt before is refused without mutation
+  ---
+  duration_ms: 385.471883
+  type: 'test'
+  ...
+# Subtest: fix3 array-valued receipt after is refused without mutation
+ok 14 - fix3 array-valued receipt after is refused without mutation
+  ---
+  duration_ms: 389.725557
+  type: 'test'
+  ...
+# Subtest: fix3 before-selection interruption retains exact generation-bound recovery evidence
+ok 15 - fix3 before-selection interruption retains exact generation-bound recovery evidence
+  ---
+  duration_ms: 750.117593
+  type: 'test'
+  ...
+# Subtest: fix3 after-selection interruption retains exact generation-bound recovery evidence
+ok 16 - fix3 after-selection interruption retains exact generation-bound recovery evidence
+  ---
+  duration_ms: 801.142545
+  type: 'test'
+  ...
+# Subtest: help/default/preview are read-only and launch nothing
+ok 17 - help/default/preview are read-only and launch nothing
+  ---
+  duration_ms: 115.348868
+  type: 'test'
+  ...
+# Subtest: fresh apply and explicit initially-absent restore stay standalone with punctuation in prefix
+ok 18 - fresh apply and explicit initially-absent restore stay standalone with punctuation in prefix
+  ---
+  duration_ms: 2130.421868
+  type: 'test'
+  ...
+# Subtest: A to B to A rollback preserves both immutable releases and source bundles
+ok 19 - A to B to A rollback preserves both immutable releases and source bundles
+  ---
+  duration_ms: 1630.338257
+  type: 'test'
+  ...
+# Subtest: foreign paths, shims, lock and partial stage are never overwritten or cleared
+ok 20 - foreign paths, shims, lock and partial stage are never overwritten or cleared
+  ---
+  duration_ms: 527.983237
+  type: 'test'
+  ...
+# Subtest: existing private canonical prefix and unchanged directory identity are required
+ok 21 - existing private canonical prefix and unchanged directory identity are required
+  ---
+  duration_ms: 31.947277
+  type: 'test'
+  ...
+# Subtest: replaced source content and symlinked installed paths reject stale plans
+ok 22 - replaced source content and symlinked installed paths reject stale plans
+  ---
+  duration_ms: 529.335993
+  type: 'test'
+  ...
+# Subtest: concurrent apply is refused by the first transaction lock
+ok 23 - concurrent apply is refused by the first transaction lock
+  ---
+  duration_ms: 520.084041
+  type: 'test'
+  ...
+# Subtest: fault before-selection retains inspectable receipt and lock, never auto-retries
+ok 24 - fault before-selection retains inspectable receipt and lock, never auto-retries
+  ---
+  duration_ms: 456.077278
+  type: 'test'
+  ...
+# Subtest: fault after-selection retains inspectable receipt and lock, never auto-retries
+ok 25 - fault after-selection retains inspectable receipt and lock, never auto-retries
+  ---
+  duration_ms: 451.669612
+  type: 'test'
+  ...
+# Subtest: mid-transaction ancestor replacement cannot redirect writes to replacement
+ok 26 - mid-transaction ancestor replacement cannot redirect writes to replacement
+  ---
+  duration_ms: 469.127567
+  type: 'test'
+  ...
+# Subtest: restore binds original prefix, exact selected inode and owned shim state
+ok 27 - restore binds original prefix, exact selected inode and owned shim state
+  ---
+  duration_ms: 924.286089
+  type: 'test'
+  ...
+# Subtest: source mutation during staging prevents selection and retains lock
+ok 28 - source mutation during staging prevents selection and retains lock
+  ---
+  duration_ms: 619.990991
+  type: 'test'
+  ...
+# Subtest: partial staging and missing installed dependency are refused without repair
+ok 29 - partial staging and missing installed dependency are refused without repair
+  ---
+  duration_ms: 469.595754
+  type: 'test'
+  ...
+# Subtest: restore rejects changed shims and preserves current selection
+ok 30 - restore rejects changed shims and preserves current selection
+  ---
+  duration_ms: 503.907987
+  type: 'test'
+  ...
+# Subtest: partial owned directories and foreign receipt contents are refused
+ok 31 - partial owned directories and foreign receipt contents are refused
+  ---
+  duration_ms: 481.529097
+  type: 'test'
+  ...
+# Subtest: fix1 installed permission drift blocks NO_OP: bin
+ok 32 - fix1 installed permission drift blocks NO_OP: bin
+  ---
+  duration_ms: 475.868611
+  type: 'test'
+  ...
+# Subtest: fix1 installed permission drift blocks NO_OP: RUNTIME-MANIFEST.json
+ok 33 - fix1 installed permission drift blocks NO_OP: RUNTIME-MANIFEST.json
+  ---
+  duration_ms: 472.766555
+  type: 'test'
+  ...
+# Subtest: fix1 installed permission drift blocks NO_OP: bin/hud
+ok 34 - fix1 installed permission drift blocks NO_OP: bin/hud
+  ---
+  duration_ms: 422.743984
+  type: 'test'
+  ...
+# Subtest: fix1 receipt capacity is reserved before apply/restore; same-package NO_OP stays available
+ok 35 - fix1 receipt capacity is reserved before apply/restore; same-package NO_OP stays available
+  ---
+  duration_ms: 729.376128
+  type: 'test'
+  ...
+# Subtest: fix1 output ENOSPC preserves selected outcome, receipt and inspection barrier
+ok 36 - fix1 output ENOSPC preserves selected outcome, receipt and inspection barrier
+  ---
+  duration_ms: 433.930573
+  type: 'test'
+  ...
+# Subtest: fix1 lock removal fsync failure reports real state and restores an inspection barrier
+ok 37 - fix1 lock removal fsync failure reports real state and restores an inspection barrier
+  ---
+  duration_ms: 425.430777
+  type: 'test'
+  ...
+# Subtest: fix1 hud runs in original PID with direct parent, argv, stdin, fd3 and exit code
+ok 38 - fix1 hud runs in original PID with direct parent, argv, stdin, fd3 and exit code
+  ---
+  duration_ms: 459.689149
+  type: 'test'
+  ...
+# Subtest: fix1 hud-run runs in original PID with direct parent, argv, stdin, fd3 and exit code
+ok 39 - fix1 hud-run runs in original PID with direct parent, argv, stdin, fd3 and exit code
+  ---
+  duration_ms: 480.454449
+  type: 'test'
+  ...
+# Subtest: fix1 hud-statusline runs in original PID with direct parent, argv, stdin, fd3 and exit code
+ok 40 - fix1 hud-statusline runs in original PID with direct parent, argv, stdin, fd3 and exit code
+  ---
+  duration_ms: 457.042781
+  type: 'test'
+  ...
+# Subtest: fix1 hud-mcp runs in original PID with direct parent, argv, stdin, fd3 and exit code
+ok 41 - fix1 hud-mcp runs in original PID with direct parent, argv, stdin, fd3 and exit code
+  ---
+  duration_ms: 435.927393
+  type: 'test'
+  ...
+# Subtest: fix1 installed hud-mcp SIGINT leaves no payload and preserves PID/PPID
+ok 42 - fix1 installed hud-mcp SIGINT leaves no payload and preserves PID/PPID
+  ---
+  duration_ms: 573.261553
+  type: 'test'
+  ...
+# {"startedAtMs":1793984033955,"deadlineAtMs":1793984040955,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":366,"ppid":365,"start":"12158467"},"launcherPid":366,"parentPid":365,"launcherCode":-2,"stderr":null}
+# Subtest: fix1 installed hud-mcp SIGTERM leaves no payload and preserves PID/PPID
+ok 43 - fix1 installed hud-mcp SIGTERM leaves no payload and preserves PID/PPID
+  ---
+  duration_ms: 531.41139
+  type: 'test'
+  ...
+# {"startedAtMs":1793984034487,"deadlineAtMs":1793984041487,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":374,"ppid":373,"start":"12158521"},"launcherPid":374,"parentPid":373,"launcherCode":-15,"stderr":null}
+# Subtest: fix1 installed codex-hud SIGINT leaves no payload and preserves PID/PPID
+ok 44 - fix1 installed codex-hud SIGINT leaves no payload and preserves PID/PPID
+  ---
+  duration_ms: 647.108272
+  type: 'test'
+  ...
+# {"startedAtMs":1793984035091,"deadlineAtMs":1793984042091,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":382,"ppid":381,"start":"12158581"},"launcherPid":382,"parentPid":381,"launcherCode":-2,"stderr":null}
+# Subtest: fix1 installed codex-hud SIGTERM leaves no payload and preserves PID/PPID
+ok 45 - fix1 installed codex-hud SIGTERM leaves no payload and preserves PID/PPID
+  ---
+  duration_ms: 627.606963
+  type: 'test'
+  ...
+# {"startedAtMs":1793984035720,"deadlineAtMs":1793984042720,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":398,"ppid":397,"start":"12158644"},"launcherPid":398,"parentPid":397,"launcherCode":-15,"stderr":null}
+# Subtest: fix1 release capacity reserves a slot for upgrade but permits existing selection and restore
+not ok 46 - fix1 release capacity reserves a slot for upgrade but permits existing selection and restore
+  ---
+  duration_ms: 1193.905126
+  type: 'test'
+  location: '/work/src/tests/unit/runtime-install.test.mjs:554:1'
+  failureType: 'testCodeFailure'
+  error: 'unsafe_owned_directory'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    file:///work/src/scripts/runtime-package/installer.mjs:199:13
+    Directory.withParent (file:///work/src/scripts/runtime-package/safety.mjs:98:14)
+    ownedDirectory (file:///work/src/scripts/runtime-package/installer.mjs:196:20)
+    inspectPrefix (file:///work/src/scripts/runtime-package/installer.mjs:256:7)
+    planInstall (file:///work/src/scripts/runtime-package/installer.mjs:321:19)
+    preview (file:///work/src/tests/unit/runtime-install.test.mjs:10:33)
+    apply (file:///work/src/tests/unit/runtime-install.test.mjs:11:73)
+    TestContext.<anonymous> (file:///work/src/tests/unit/runtime-install.test.mjs:567:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: fix1 legacy exec preserves newline prefix, metacharacter argv, stdin and natural exit
+ok 47 - fix1 legacy exec preserves newline prefix, metacharacter argv, stdin and natural exit
+  ---
+  duration_ms: 513.319841
+  type: 'test'
+  ...
+# Subtest: fix1 legacy selector SIGINT is reaped without launching payload
+ok 48 - fix1 legacy selector SIGINT is reaped without launching payload
+  ---
+  duration_ms: 577.265318
+  type: 'test'
+  ...
+# {"startedAtMs":1793984038055,"deadlineAtMs":1793984045055,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":430,"ppid":429,"start":"12158878"},"launcherPid":429,"parentPid":428,"launcherCode":130,"stderr":"runtime_selector_failed: interrupted_SIGINT; cleanup=REAPED; owned_pid=430; owned_start=12158878; wait_status=137\\n"}
+# Subtest: fix1 legacy selector SIGTERM is reaped without launching payload
+ok 49 - fix1 legacy selector SIGTERM is reaped without launching payload
+  ---
+  duration_ms: 573.703458
+  type: 'test'
+  ...
+# {"startedAtMs":1793984038627,"deadlineAtMs":1793984045627,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":439,"ppid":438,"start":"12158935"},"launcherPid":438,"parentPid":437,"launcherCode":143,"stderr":"runtime_selector_failed: interrupted_SIGTERM; cleanup=REAPED; owned_pid=439; owned_start=12158935; wait_status=137\\n"}
+# Subtest: fix1 legacy selector timeout is bounded and cannot start payload
+ok 50 - fix1 legacy selector timeout is bounded and cannot start payload
+  ---
+  duration_ms: 5419.99473
+  type: 'test'
+  ...
+# {"selectorPid":447,"reaped":true,"deadlineMs":7500}
+# Subtest: fix1 restore output failure retains inactive selection and its recovery barrier
+ok 51 - fix1 restore output failure retains inactive selection and its recovery barrier
+  ---
+  duration_ms: 576.453673
+  type: 'test'
+  ...
+# Subtest: fix1 legacy selector cannot hang after emitting a valid path
+ok 52 - fix1 legacy selector cannot hang after emitting a valid path
+  ---
+  duration_ms: 5585.653001
+  type: 'test'
+  ...
+# {"startedAtMs":1793984045220,"deadlineAtMs":1793984054220,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":463,"ppid":462,"start":"12159594"},"launcherPid":462,"parentPid":461,"launcherCode":5,"stderr":"runtime_selector_failed: timed_out; cleanup=REAPED; owned_pid=463; owned_start=12159594; wait_status=137\\n"}
+# Subtest: fix1 selector close-output requires actual timely zero exit before payload
+ok 53 - fix1 selector close-output requires actual timely zero exit before payload
+  ---
+  duration_ms: 5665.159507
+  type: 'test'
+  ...
+# {"startedAtMs":1793984050837,"deadlineAtMs":1793984059837,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":695,"ppid":694,"start":"12160156"},"launcherPid":694,"parentPid":693,"launcherCode":5,"stderr":"runtime_selector_failed: timed_out; cleanup=REAPED; owned_pid=695; owned_start=12160156; wait_status=137\\n"}
+# Subtest: fix1 selector nonzero requires actual timely zero exit before payload
+ok 54 - fix1 selector nonzero requires actual timely zero exit before payload
+  ---
+  duration_ms: 739.550885
+  type: 'test'
+  ...
+# {"startedAtMs":1793984056592,"deadlineAtMs":1793984065592,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":928,"ppid":927,"start":"12160731"},"launcherPid":927,"parentPid":926,"launcherCode":5,"stderr":"runtime_selector_failed: nonzero_selector_exit; cleanup=REAPED; owned_pid=928; owned_start=12160731; wait_status=7\\n"}
+# Subtest: fix1 selector success requires actual timely zero exit before payload
+ok 55 - fix1 selector success requires actual timely zero exit before payload
+  ---
+  duration_ms: 875.987452
+  type: 'test'
+  ...
+# {"startedAtMs":1793984057450,"deadlineAtMs":1793984066450,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":938,"ppid":937,"start":"12160817"},"launcherPid":937,"parentPid":936,"launcherCode":0,"stderr":null}
+# Subtest: fix1 selector SIGHUP during reading never launches payload
+ok 56 - fix1 selector SIGHUP during reading never launches payload
+  ---
+  duration_ms: 583.868373
+  type: 'test'
+  ...
+# {"startedAtMs":1793984058059,"deadlineAtMs":1793984065059,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":948,"ppid":947,"start":"12160878"},"launcherPid":947,"parentPid":946,"launcherCode":129,"stderr":"runtime_selector_failed: interrupted_SIGHUP; cleanup=REAPED; owned_pid=948; owned_start=12160878; wait_status=137\\n"}
+# Subtest: fix1 selector SIGINT during waiting never launches payload
+ok 57 - fix1 selector SIGINT during waiting never launches payload
+  ---
+  duration_ms: 712.52388
+  type: 'test'
+  ...
+# {"startedAtMs":1793984058673,"deadlineAtMs":1793984065673,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":957,"ppid":956,"start":"12160939"},"launcherPid":956,"parentPid":955,"launcherCode":130,"stderr":"runtime_selector_failed: interrupted_SIGINT; cleanup=REAPED; owned_pid=957; owned_start=12160939; wait_status=137\\n"}
+# Subtest: fix1 selector SIGTERM during waiting never launches payload
+ok 58 - fix1 selector SIGTERM during waiting never launches payload
+  ---
+  duration_ms: 693.61959
+  type: 'test'
+  ...
+# {"startedAtMs":1793984059359,"deadlineAtMs":1793984066359,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":971,"ppid":970,"start":"12161008"},"launcherPid":970,"parentPid":969,"launcherCode":143,"stderr":"runtime_selector_failed: interrupted_SIGTERM; cleanup=REAPED; owned_pid=971; owned_start=12161008; wait_status=137\\n"}
+# Subtest: fix1 selector SIGHUP during waiting never launches payload
+ok 59 - fix1 selector SIGHUP during waiting never launches payload
+  ---
+  duration_ms: 696.552499
+  type: 'test'
+  ...
+# {"startedAtMs":1793984060060,"deadlineAtMs":1793984067060,"aliveAfterSignal":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"payload":{"pid":985,"ppid":984,"start":"12161078"},"launcherPid":984,"parentPid":983,"launcherCode":129,"stderr":"runtime_selector_failed: interrupted_SIGHUP; cleanup=REAPED; owned_pid=985; owned_start=12161078; wait_status=137\\n"}
+# Subtest: fix1 unknown selector cleanup is bounded, reports UNKNOWN and does not pretend shim reap
+ok 60 - fix1 unknown selector cleanup is bounded, reports UNKNOWN and does not pretend shim reap
+  ---
+  duration_ms: 2629.697274
+  type: 'test'
+  ...
+# {"startedAtMs":1793984060764,"deadlineAtMs":1793984069764,"aliveAfterSignal":true,"reaped":true,"reapEvidence":"harness_waitpid","error":null,"payload":{"pid":999,"ppid":998,"start":"12161149"},"launcherPid":998,"parentPid":997,"launcherCode":5,"stderr":"runtime_selector_failed: identity_changed; cleanup=UNKNOWN; owned_pid=999; owned_start=12161149; wait_status=unknown\\n"}
+# Subtest: fix2 native exit semantics: unsettled TLA
+ok 61 - fix2 native exit semantics: unsettled TLA
+  ---
+  duration_ms: 577.96873
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-uFfFk4/private space ';$() prefix/releases/6c9725baedb750e584b08a468a431dffc0e82a5fc1439b5a96fd8fd199d7eb62/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793984063431,"deadlineAtMs":1793984066431,"endedAtMs":1793984063457,"ownedPid":1097,"waitedStatus":13,"signal":null,"stderr":"Warning: Detected unsettled top-level await at file:///work/tmp/hud-runtime-test-uFfFk4/private%20space%20';$()%20prefix/releases/6c9725baedb750e584b08a468a431dffc0e82a5fc1439b5a96fd8fd199d7eb62/packages/hud-mcp/bin/hud-mcp.mjs:10\\n  await import('../dist/packages/hud-mcp/src/main.js');\\n  ^\\n\\n\\n\\n"}
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-uFfFk4/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984063457,"deadlineAtMs":1793984066457,"endedAtMs":1793984063486,"ownedPid":1104,"waitedStatus":13,"signal":null,"stderr":"Warning: Detected unsettled top-level await at file:///work/tmp/hud-runtime-test-uFfFk4/private%20space%20';$()%20prefix/releases/6c9725baedb750e584b08a468a431dffc0e82a5fc1439b5a96fd8fd199d7eb62/packages/hud-mcp/bin/hud-mcp.mjs:10\\n  await import('../dist/packages/hud-mcp/src/main.js');\\n  ^\\n\\n\\n\\n"}
+# {"command":["/work/tmp/hud-runtime-test-uFfFk4/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984063486,"deadlineAtMs":1793984066486,"endedAtMs":1793984063514,"ownedPid":1111,"waitedStatus":13,"signal":null,"stderr":"Warning: Detected unsettled top-level await at file:///work/tmp/hud-runtime-test-uFfFk4/private%20space%20';$()%20prefix/releases/6c9725baedb750e584b08a468a431dffc0e82a5fc1439b5a96fd8fd199d7eb62/packages/hud-mcp/bin/hud-mcp.mjs:10\\n  await import('../dist/packages/hud-mcp/src/main.js');\\n  ^\\n\\n\\n\\n"}
+# Subtest: fix2 native exit semantics: unsettled TLA explicit23
+ok 62 - fix2 native exit semantics: unsettled TLA explicit23
+  ---
+  duration_ms: 618.995606
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-EZEhKN/private space ';$() prefix/releases/c57b78d4e30ca5e22408cb7ba010ac8f00cb5aa3106a057d9f676729f68f383f/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793984064056,"deadlineAtMs":1793984067056,"endedAtMs":1793984064083,"ownedPid":1118,"waitedStatus":23,"signal":null,"stderr":""}
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-EZEhKN/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984064083,"deadlineAtMs":1793984067083,"endedAtMs":1793984064106,"ownedPid":1125,"waitedStatus":23,"signal":null,"stderr":""}
+# {"command":["/work/tmp/hud-runtime-test-EZEhKN/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984064106,"deadlineAtMs":1793984067106,"endedAtMs":1793984064132,"ownedPid":1132,"waitedStatus":23,"signal":null,"stderr":""}
+# Subtest: fix2 native exit semantics: timer settled TLA23
+ok 63 - fix2 native exit semantics: timer settled TLA23
+  ---
+  duration_ms: 685.298063
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-5j7VNu/private space ';$() prefix/releases/1c680dd059f31d84f4172c6e3dd4392a89e5fd0e63d730fbc967e03c72a0744e/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793984064677,"deadlineAtMs":1793984067677,"endedAtMs":1793984064721,"ownedPid":1139,"waitedStatus":23,"signal":null,"stderr":""}
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-5j7VNu/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984064721,"deadlineAtMs":1793984067721,"endedAtMs":1793984064767,"ownedPid":1146,"waitedStatus":23,"signal":null,"stderr":""}
+# {"command":["/work/tmp/hud-runtime-test-5j7VNu/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984064767,"deadlineAtMs":1793984067767,"endedAtMs":1793984064818,"ownedPid":1153,"waitedStatus":23,"signal":null,"stderr":""}
+# Subtest: fix2 native exit semantics: explicit exit0
+ok 64 - fix2 native exit semantics: explicit exit0
+  ---
+  duration_ms: 528.932795
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-DwpJin/private space ';$() prefix/releases/0a9c3689334738b2c95ff9105d50fb273a6bfde0f4b907343093fd959064024e/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793984065275,"deadlineAtMs":1793984068275,"endedAtMs":1793984065300,"ownedPid":1160,"waitedStatus":0,"signal":null,"stderr":""}
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-DwpJin/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984065300,"deadlineAtMs":1793984068300,"endedAtMs":1793984065320,"ownedPid":1167,"waitedStatus":0,"signal":null,"stderr":""}
+# {"command":["/work/tmp/hud-runtime-test-DwpJin/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984065320,"deadlineAtMs":1793984068320,"endedAtMs":1793984065346,"ownedPid":1174,"waitedStatus":0,"signal":null,"stderr":""}
+# Subtest: fix2 native exit semantics: beforeExit starts work23
+ok 65 - fix2 native exit semantics: beforeExit starts work23
+  ---
+  duration_ms: 617.114154
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-D0qtnA/private space ';$() prefix/releases/5e5b15c5b0056a0f7d271f873b9da2f50bd865ee4435b08b18779158f17b1c8e/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793984065831,"deadlineAtMs":1793984068831,"endedAtMs":1793984065875,"ownedPid":1181,"waitedStatus":23,"signal":null,"stderr":""}
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-D0qtnA/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984065875,"deadlineAtMs":1793984068875,"endedAtMs":1793984065918,"ownedPid":1188,"waitedStatus":23,"signal":null,"stderr":""}
+# {"command":["/work/tmp/hud-runtime-test-D0qtnA/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984065918,"deadlineAtMs":1793984068918,"endedAtMs":1793984065965,"ownedPid":1195,"waitedStatus":23,"signal":null,"stderr":""}
+# Subtest: fix2 native exit semantics: wrapper throw
+ok 66 - fix2 native exit semantics: wrapper throw
+  ---
+  duration_ms: 519.043449
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-hXLIiI/private space ';$() prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793984066410,"deadlineAtMs":1793984069410,"endedAtMs":1793984066433,"ownedPid":1202,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-hXLIiI/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1\\nthrow new Error('synthetic_wrapper_failure');\\n      ^\\n\\nError: synthetic_wrapper_failure\\n    at file:///work/tmp/hud-runtime-test-hXLIiI/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1:7\\n    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\\n\\nNode.js v22.23.4\\n"}
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-hXLIiI/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984066433,"deadlineAtMs":1793984069433,"endedAtMs":1793984066457,"ownedPid":1209,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-hXLIiI/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1\\nthrow new Error('synthetic_wrapper_failure');\\n      ^\\n\\nError: synthetic_wrapper_failure\\n    at file:///work/tmp/hud-runtime-test-hXLIiI/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1:7\\n    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\\n\\nNode.js v22.23.4\\n"}
+# {"command":["/work/tmp/hud-runtime-test-hXLIiI/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984066457,"deadlineAtMs":1793984069457,"endedAtMs":1793984066483,"ownedPid":1216,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-hXLIiI/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1\\nthrow new Error('synthetic_wrapper_failure');\\n      ^\\n\\nError: synthetic_wrapper_failure\\n    at file:///work/tmp/hud-runtime-test-hXLIiI/private%20space%20';$()%20prefix/releases/72a76cc137efb8180b871180cb8cbfa7487edd8851e53d507c049039efca0222/packages/hud-mcp/bin/hud-mcp.mjs:1:7\\n    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\\n\\nNode.js v22.23.4\\n"}
+# Subtest: fix2 native exit semantics: wrapper rejected TLA
+ok 67 - fix2 native exit semantics: wrapper rejected TLA
+  ---
+  duration_ms: 550.615939
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-tbXTgB/private space ';$() prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs"],"startedAtMs":1793984066957,"deadlineAtMs":1793984069957,"endedAtMs":1793984066983,"ownedPid":1223,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-tbXTgB/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1\\nawait Promise.reject(new Error('synthetic_wrapper_failure'));\\n                     ^\\n\\nError: synthetic_wrapper_failure\\n    at file:///work/tmp/hud-runtime-test-tbXTgB/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1:22\\n    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\\n\\nNode.js v22.23.4\\n"}
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-tbXTgB/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984066983,"deadlineAtMs":1793984069983,"endedAtMs":1793984067009,"ownedPid":1230,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-tbXTgB/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1\\nawait Promise.reject(new Error('synthetic_wrapper_failure'));\\n                     ^\\n\\nError: synthetic_wrapper_failure\\n    at file:///work/tmp/hud-runtime-test-tbXTgB/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1:22\\n    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\\n\\nNode.js v22.23.4\\n"}
+# {"command":["/work/tmp/hud-runtime-test-tbXTgB/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984067009,"deadlineAtMs":1793984070009,"endedAtMs":1793984067034,"ownedPid":1237,"waitedStatus":1,"signal":null,"stderr":"file:///work/tmp/hud-runtime-test-tbXTgB/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1\\nawait Promise.reject(new Error('synthetic_wrapper_failure'));\\n                     ^\\n\\nError: synthetic_wrapper_failure\\n    at file:///work/tmp/hud-runtime-test-tbXTgB/private%20space%20';$()%20prefix/releases/406ac548e0e200c22b68a5fcb14bd5fd83732d3e4c50985a481b9687f7c33c82/packages/hud-mcp/bin/hud-mcp.mjs:1:22\\n    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)\\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)\\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)\\n\\nNode.js v22.23.4\\n"}
+# Subtest: fix2 hud has explicit ESM scope below CommonJS ancestor
+ok 68 - fix2 hud has explicit ESM scope below CommonJS ancestor
+  ---
+  duration_ms: 492.435876
+  type: 'test'
+  ...
+# Subtest: fix2 hud-run has explicit ESM scope below CommonJS ancestor
+ok 69 - fix2 hud-run has explicit ESM scope below CommonJS ancestor
+  ---
+  duration_ms: 587.296242
+  type: 'test'
+  ...
+# Subtest: fix2 hud-statusline has explicit ESM scope below CommonJS ancestor
+ok 70 - fix2 hud-statusline has explicit ESM scope below CommonJS ancestor
+  ---
+  duration_ms: 509.633973
+  type: 'test'
+  ...
+# Subtest: fix2 hud-mcp has explicit ESM scope below CommonJS ancestor
+ok 71 - fix2 hud-mcp has explicit ESM scope below CommonJS ancestor
+  ---
+  duration_ms: 475.233831
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata missing refuses preview, no-op and payload
+ok 72 - fix2 launch metadata missing refuses preview, no-op and payload
+  ---
+  duration_ms: 491.5707
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata malformed refuses preview, no-op and payload
+ok 73 - fix2 launch metadata malformed refuses preview, no-op and payload
+  ---
+  duration_ms: 487.192793
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata commonjs refuses preview, no-op and payload
+ok 74 - fix2 launch metadata commonjs refuses preview, no-op and payload
+  ---
+  duration_ms: 458.35788
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata extra refuses preview, no-op and payload
+ok 75 - fix2 launch metadata extra refuses preview, no-op and payload
+  ---
+  duration_ms: 458.987119
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata mode refuses preview, no-op and payload
+ok 76 - fix2 launch metadata mode refuses preview, no-op and payload
+  ---
+  duration_ms: 449.031362
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata special-mode refuses preview, no-op and payload
+ok 77 - fix2 launch metadata special-mode refuses preview, no-op and payload
+  ---
+  duration_ms: 481.461858
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata symlink refuses preview, no-op and payload
+ok 78 - fix2 launch metadata symlink refuses preview, no-op and payload
+  ---
+  duration_ms: 436.24662
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata hardlink refuses preview, no-op and payload
+ok 79 - fix2 launch metadata hardlink refuses preview, no-op and payload
+  ---
+  duration_ms: 392.311343
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata bin-mode refuses preview, no-op and payload
+ok 80 - fix2 launch metadata bin-mode refuses preview, no-op and payload
+  ---
+  duration_ms: 418.560751
+  type: 'test'
+  ...
+# Subtest: fix2 launch metadata bin-symlink refuses preview, no-op and payload
+ok 81 - fix2 launch metadata bin-symlink refuses preview, no-op and payload
+  ---
+  duration_ms: 413.144323
+  type: 'test'
+  ...
+# Subtest: fix2 identical marker replacement invalidates an existing plan and restore receipt
+ok 82 - fix2 identical marker replacement invalidates an existing plan and restore receipt
+  ---
+  duration_ms: 432.251825
+  type: 'test'
+  ...
+# Subtest: fix2 pre-switch marker replacement keeps selection absent and retains recovery barrier
+ok 83 - fix2 pre-switch marker replacement keeps selection absent and retains recovery barrier
+  ---
+  duration_ms: 413.87649
+  type: 'test'
+  ...
+# Subtest: fix2 metadata identity survives A to B to A and initially-absent restore
+ok 84 - fix2 metadata identity survives A to B to A and initially-absent restore
+  ---
+  duration_ms: 1459.045926
+  type: 'test'
+  ...
+# Subtest: fix2 hud CommonJS marker refuses both node and shebang with NO_PAYLOAD
+ok 85 - fix2 hud CommonJS marker refuses both node and shebang with NO_PAYLOAD
+  ---
+  duration_ms: 551.149685
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-8AdOMe/private space ';$() prefix/bin/hud"],"startedAtMs":1793984076393,"deadlineAtMs":1793984079393,"endedAtMs":1793984076418,"ownedPid":1363,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\\n"}
+# {"command":["/work/tmp/hud-runtime-test-8AdOMe/private space ';$() prefix/bin/hud"],"startedAtMs":1793984076418,"deadlineAtMs":1793984079418,"endedAtMs":1793984076443,"ownedPid":1370,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\\n"}
+# Subtest: fix2 hud-run CommonJS marker refuses both node and shebang with NO_PAYLOAD
+ok 86 - fix2 hud-run CommonJS marker refuses both node and shebang with NO_PAYLOAD
+  ---
+  duration_ms: 537.730612
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-erJPnH/private space ';$() prefix/bin/hud-run"],"startedAtMs":1793984076934,"deadlineAtMs":1793984079934,"endedAtMs":1793984076957,"ownedPid":1384,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\\n"}
+# {"command":["/work/tmp/hud-runtime-test-erJPnH/private space ';$() prefix/bin/hud-run"],"startedAtMs":1793984076957,"deadlineAtMs":1793984079957,"endedAtMs":1793984076980,"ownedPid":1391,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\\n"}
+# Subtest: fix2 hud-statusline CommonJS marker refuses both node and shebang with NO_PAYLOAD
+ok 87 - fix2 hud-statusline CommonJS marker refuses both node and shebang with NO_PAYLOAD
+  ---
+  duration_ms: 512.227206
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-UUJZQ3/private space ';$() prefix/bin/hud-statusline"],"startedAtMs":1793984077450,"deadlineAtMs":1793984080450,"endedAtMs":1793984077472,"ownedPid":1405,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\\n"}
+# {"command":["/work/tmp/hud-runtime-test-UUJZQ3/private space ';$() prefix/bin/hud-statusline"],"startedAtMs":1793984077472,"deadlineAtMs":1793984080472,"endedAtMs":1793984077494,"ownedPid":1412,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\\n"}
+# Subtest: fix2 hud-mcp CommonJS marker refuses both node and shebang with NO_PAYLOAD
+ok 88 - fix2 hud-mcp CommonJS marker refuses both node and shebang with NO_PAYLOAD
+  ---
+  duration_ms: 516.443441
+  type: 'test'
+  ...
+# {"command":["/usr/local/bin/node","/work/tmp/hud-runtime-test-tjGfP3/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984077963,"deadlineAtMs":1793984080963,"endedAtMs":1793984077987,"ownedPid":1426,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\\n"}
+# {"command":["/work/tmp/hud-runtime-test-tjGfP3/private space ';$() prefix/bin/hud-mcp"],"startedAtMs":1793984077987,"deadlineAtMs":1793984080987,"endedAtMs":1793984078010,"ownedPid":1433,"waitedStatus":5,"signal":null,"stdout":"","stderr":"unsafe_runtime_module_marker\\n"}
+# Subtest: manifest validates complete bounded payload and exact locked production identities
+ok 89 - manifest validates complete bounded payload and exact locked production identities
+  ---
+  duration_ms: 27.369972
+  type: 'test'
+  ...
+# Subtest: exact shared source mapping never selects arbitrary output or source files
+ok 90 - exact shared source mapping never selects arbitrary output or source files
+  ---
+  duration_ms: 0.440048
+  type: 'test'
+  ...
+# Subtest: E2 shared helper mapping
+ok 91 - E2 shared helper mapping
+  ---
+  duration_ms: 0.306369
+  type: 'test'
+  ...
+# Subtest: tampered and missing runtime closure fails: bin/hud
+ok 92 - tampered and missing runtime closure fails: bin/hud
+  ---
+  duration_ms: 15.76768
+  type: 'test'
+  ...
+# Subtest: tampered and missing runtime closure fails: bin/codex-with-herdr-context
+ok 93 - tampered and missing runtime closure fails: bin/codex-with-herdr-context
+  ---
+  duration_ms: 15.256081
+  type: 'test'
+  ...
+# Subtest: tampered and missing runtime closure fails: node_modules/chokidar/package.json
+ok 94 - tampered and missing runtime closure fails: node_modules/chokidar/package.json
+  ---
+  duration_ms: 17.293838
+  type: 'test'
+  ...
+# Subtest: malformed manifest is refused before copy
+ok 95 - malformed manifest is refused before copy
+  ---
+  duration_ms: 11.621517
+  type: 'test'
+  ...
+# Subtest: malformed manifest is refused before copy
+ok 96 - malformed manifest is refused before copy
+  ---
+  duration_ms: 13.559869
+  type: 'test'
+  ...
+# Subtest: malformed manifest is refused before copy
+ok 97 - malformed manifest is refused before copy
+  ---
+  duration_ms: 12.720328
+  type: 'test'
+  ...
+# Subtest: malformed manifest is refused before copy
+ok 98 - malformed manifest is refused before copy
+  ---
+  duration_ms: 12.845801
+  type: 'test'
+  ...
+# Subtest: malformed manifest is refused before copy
+ok 99 - malformed manifest is refused before copy
+  ---
+  duration_ms: 12.835011
+  type: 'test'
+  ...
+# Subtest: malformed manifest is refused before copy
+ok 100 - malformed manifest is refused before copy
+  ---
+  duration_ms: 13.571913
+  type: 'test'
+  ...
+# Subtest: malformed manifest is refused before copy
+ok 101 - malformed manifest is refused before copy
+  ---
+  duration_ms: 13.351211
+  type: 'test'
+  ...
+# Subtest: malformed manifest is refused before copy
+ok 102 - malformed manifest is refused before copy
+  ---
+  duration_ms: 12.067005
+  type: 'test'
+  ...
+# Subtest: unlisted files, links, devices and hard links cannot enter the bundle
+ok 103 - unlisted files, links, devices and hard links cannot enter the bundle
+  ---
+  duration_ms: 19.18622
+  type: 'test'
+  ...
+# Subtest: bounded regular read rejects FIFO and oversize file without blocking
+ok 104 - bounded regular read rejects FIFO and oversize file without blocking
+  ---
+  duration_ms: 18.025622
+  type: 'test'
+  ...
+# Subtest: source parent symlink and replaced pinned parent are rejected
+ok 105 - source parent symlink and replaced pinned parent are rejected
+  ---
+  duration_ms: 11.953954
+  type: 'test'
+  ...
+# Subtest: unlisted empty directories are rejected
+ok 106 - unlisted empty directories are rejected
+  ---
+  duration_ms: 12.125834
+  type: 'test'
+  ...
+# Subtest: a file changing while its bytes are read is rejected
+ok 107 - a file changing while its bytes are read is rejected
+  ---
+  duration_ms: 16.962771
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 108 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 14.247046
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 109 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 13.31867
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 110 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 11.883142
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 111 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 13.356571
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 112 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 11.621586
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 113 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 11.416226
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 114 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 13.006741
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 115 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 12.807751
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 116 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 12.207325
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 117 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 12.517783
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 118 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 12.995358
+  type: 'test'
+  ...
+# Subtest: frozen shared metadata envelope rejects malformed or unknown fields
+ok 119 - frozen shared metadata envelope rejects malformed or unknown fields
+  ---
+  duration_ms: 12.152272
+  type: 'test'
+  ...
+# Subtest: valid optional metadata stays inert; dirty development bundles remain valid
+ok 120 - valid optional metadata stays inert; dirty development bundles remain valid
+  ---
+  duration_ms: 15.296696
+  type: 'test'
+  ...
+# Subtest: annotation aggregate and payload total are independently bounded
+ok 121 - annotation aggregate and payload total are independently bounded
+  ---
+  duration_ms: 28.909103
+  type: 'test'
+  ...
+# Subtest: builder help and unknown arguments never start a build; unsupported cache flag is refused
+ok 122 - builder help and unknown arguments never start a build; unsupported cache flag is refused
+  ---
+  duration_ms: 111.717528
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer rejects numeric prerelease leading zero: 24.0.0-01
+ok 123 - fix1 SemVer rejects numeric prerelease leading zero: 24.0.0-01
+  ---
+  duration_ms: 12.692158
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer rejects numeric prerelease leading zero: 24.0.0-rc.00
+ok 124 - fix1 SemVer rejects numeric prerelease leading zero: 24.0.0-rc.00
+  ---
+  duration_ms: 11.461619
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer rejects numeric prerelease leading zero: 24.0.0-00+build
+ok 125 - fix1 SemVer rejects numeric prerelease leading zero: 24.0.0-00+build
+  ---
+  duration_ms: 12.323875
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer accepts standard prerelease/build: 24.0.0
+ok 126 - fix1 SemVer accepts standard prerelease/build: 24.0.0
+  ---
+  duration_ms: 11.771164
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer accepts standard prerelease/build: 24.0.0-0
+ok 127 - fix1 SemVer accepts standard prerelease/build: 24.0.0-0
+  ---
+  duration_ms: 11.064281
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer accepts standard prerelease/build: 24.0.0-rc.0
+ok 128 - fix1 SemVer accepts standard prerelease/build: 24.0.0-rc.0
+  ---
+  duration_ms: 10.689765
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer accepts standard prerelease/build: 24.0.0-01a
+ok 129 - fix1 SemVer accepts standard prerelease/build: 24.0.0-01a
+  ---
+  duration_ms: 12.829578
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer accepts standard prerelease/build: 24.0.0-rc.1+build.00
+ok 130 - fix1 SemVer accepts standard prerelease/build: 24.0.0-rc.1+build.00
+  ---
+  duration_ms: 12.589617
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer accepts standard prerelease/build: 24.0.0+001
+ok 131 - fix1 SemVer accepts standard prerelease/build: 24.0.0+001
+  ---
+  duration_ms: 11.223447
+  type: 'test'
+  ...
+# Subtest: fix1 SemVer accepts standard prerelease/build: 24.0.0+build-01
+ok 132 - fix1 SemVer accepts standard prerelease/build: 24.0.0+build-01
+  ---
+  duration_ms: 10.721023
+  type: 'test'
+  ...
+# Subtest: fix1 bundle rejects unsafe full permission mode: bin
+ok 133 - fix1 bundle rejects unsafe full permission mode: bin
+  ---
+  duration_ms: 11.48355
+  type: 'test'
+  ...
+# Subtest: fix1 bundle rejects unsafe full permission mode: RUNTIME-MANIFEST.json
+ok 134 - fix1 bundle rejects unsafe full permission mode: RUNTIME-MANIFEST.json
+  ---
+  duration_ms: 13.885073
+  type: 'test'
+  ...
+# Subtest: fix1 bundle rejects unsafe full permission mode: bin/hud
+ok 135 - fix1 bundle rejects unsafe full permission mode: bin/hud
+  ---
+  duration_ms: 13.49582
+  type: 'test'
+  ...
+# Subtest: fix1 exactly 5000 payload files plus manifest is valid; 5001 payload files is rejected
+ok 136 - fix1 exactly 5000 payload files plus manifest is valid; 5001 payload files is rejected
+  ---
+  duration_ms: 528.293928
+  type: 'test'
+  ...
+# Subtest: fix1 builder selected-input reader bounds allocation and avoids readFileSync
+ok 137 - fix1 builder selected-input reader bounds allocation and avoids readFileSync
+  ---
+  duration_ms: 15.240863
+  type: 'test'
+  ...
+# Subtest: fix1 interrupted builder SIGINT reaps owned child and writes failure receipt
+ok 138 - fix1 interrupted builder SIGINT reaps owned child and writes failure receipt
+  ---
+  duration_ms: 1549.00937
+  type: 'test'
+  ...
+# {"startedAtMs":1793984079410,"deadlineAtMs":1793984086410,"aliveAfterDeadline":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"receipt":{"name":"interrupted","command":["/usr/local/bin/node","-e","const fs=require('node:fs');const stat=fs.readFileSync('/proc/self/stat','utf8');fs.writeFileSync(process.argv[1],JSON.stringify({pid:process.pid,start:stat.slice(stat.lastIndexOf(')')+2).split(' ')[19]}));setTimeout(()=>process.exit(0),5000);setInterval(()=>{},100);","/work/tmp/hud-runtime-test-9lgS5u/unrelated/child.json","runtime-owned-interrupt-fixture"],"cwd":"/work/tmp/hud-runtime-test-9lgS5u/unrelated","startedAt":"2026-11-06T16:54:39.448Z","finishedAt":"2026-11-06T16:54:39.475Z","ownedPid":1478,"ownedStart":"12163017","deadline":"2026-11-06T16:54:40.448Z","code":null,"signal":"SIGKILL","cleanupDeadline":"2026-11-06T16:54:40.972Z","directChildExited":true,"closeObserved":true,"reason":"interrupted_SIGINT","signals":[{"signal":"SIGKILL","at":"2026-11-06T16:54:39.472Z","start":"12163017"}],"cleanupUncertain":false,"status":"FAIL","cleanup":"owned direct child reaped after interruption/failure"},"runnerCode":1}
+# Subtest: fix1 interrupted builder SIGTERM reaps owned child and writes failure receipt
+ok 139 - fix1 interrupted builder SIGTERM reaps owned child and writes failure receipt
+  ---
+  duration_ms: 1539.893291
+  type: 'test'
+  ...
+# {"startedAtMs":1793984080955,"deadlineAtMs":1793984087955,"aliveAfterDeadline":false,"reaped":true,"reapEvidence":"already_gone_not_harness_waited","error":null,"receipt":{"name":"interrupted","command":["/usr/local/bin/node","-e","const fs=require('node:fs');const stat=fs.readFileSync('/proc/self/stat','utf8');fs.writeFileSync(process.argv[1],JSON.stringify({pid:process.pid,start:stat.slice(stat.lastIndexOf(')')+2).split(' ')[19]}));setTimeout(()=>process.exit(0),5000);setInterval(()=>{},100);","/work/tmp/hud-runtime-test-svYiVU/unrelated/child.json","runtime-owned-interrupt-fixture"],"cwd":"/work/tmp/hud-runtime-test-svYiVU/unrelated","startedAt":"2026-11-06T16:54:40.983Z","finishedAt":"2026-11-06T16:54:41.009Z","ownedPid":1493,"ownedStart":"12163170","deadline":"2026-11-06T16:54:41.983Z","code":null,"signal":"SIGKILL","cleanupDeadline":"2026-11-06T16:54:42.506Z","directChildExited":true,"closeObserved":true,"reason":"interrupted_SIGTERM","signals":[{"signal":"SIGKILL","at":"2026-11-06T16:54:41.007Z","start":"12163170"}],"cleanupUncertain":false,"status":"FAIL","cleanup":"owned direct child reaped after interruption/failure"},"runnerCode":1}
+# Subtest: fix1 owned runner records a quick normal child without uncertainty
+ok 140 - fix1 owned runner records a quick normal child without uncertainty
+  ---
+  duration_ms: 37.809831
+  type: 'test'
+  ...
+# {"name":"quick","command":["/bin/true"],"cwd":"/work/tmp/hud-runtime-test-NkJwEY/unrelated","startedAt":"2026-11-06T16:54:42.477Z","finishedAt":"2026-11-06T16:54:42.501Z","ownedPid":1500,"ownedStart":"12163320","deadline":"2026-11-06T16:54:43.477Z","code":0,"signal":null,"cleanupDeadline":null,"directChildExited":true,"closeObserved":true,"reason":null,"signals":[],"cleanupUncertain":false,"status":"PASS","cleanup":"direct child closed normally"}
+# Subtest: F4 digest exact source output mapping
+ok 141 - F4 digest exact source output mapping
+  ---
+  duration_ms: 3.825282
+  type: 'test'
+  ...
+1..141
+# tests 141
+# suites 0
+# pass 140
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 71454.020573

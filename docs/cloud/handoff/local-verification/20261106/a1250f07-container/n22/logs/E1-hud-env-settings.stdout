@@ -1,0 +1,648 @@
+TAP version 13
+# Subtest: golden legacy Codex: explicit backend plus historical feature defaults preserves identical request bytes
+ok 1 - golden legacy Codex: explicit backend plus historical feature defaults preserves identical request bytes
+  ---
+  duration_ms: 62.447129
+  type: 'test'
+  ...
+# Subtest: T-07-2/17 legacy: default booleans, credentials, malformed settings and new sources cannot create a grant
+ok 2 - T-07-2/17 legacy: default booleans, credentials, malformed settings and new sources cannot create a grant
+  ---
+  duration_ms: 26.956323
+  type: 'test'
+  ...
+# Subtest: T-07-6/17 legacy old caches remain readable only in proven original scope and are never migrated or deleted
+ok 3 - T-07-6/17 legacy old caches remain readable only in proven original scope and are never migrated or deleted
+  ---
+  duration_ms: 5.892088
+  type: 'test'
+  ...
+# Subtest: T-07-7 legacy recipient/credential changes and preflight cancellation do not send to a new recipient
+ok 4 - T-07-7 legacy recipient/credential changes and preflight cancellation do not send to a new recipient
+  ---
+  duration_ms: 8.633734
+  type: 'test'
+  ...
+# Subtest: T-07-7/17 legacy explicit policy is authoritative; deleting it cannot resurrect the compatibility grant
+ok 5 - T-07-7/17 legacy explicit policy is authoritative; deleting it cannot resurrect the compatibility grant
+  ---
+  duration_ms: 17.337768
+  type: 'test'
+  ...
+# Subtest: T-07-6 unknown legacy provenance stays tainted and cannot be relabelled as general source material
+ok 6 - T-07-6 unknown legacy provenance stays tainted and cannot be relabelled as general source material
+  ---
+  duration_ms: 7.360689
+  type: 'test'
+  ...
+# Subtest: T-07-9 explicit paused probe sends only fixed synthetic material; off sends zero calls
+ok 7 - T-07-9 explicit paused probe sends only fixed synthetic material; off sends zero calls
+  ---
+  duration_ms: 2.499956
+  type: 'test'
+  ...
+# Subtest: T-07-8 legacy agy: concrete executable/PATH is pinned; replacement profiles cannot inherit the grant
+ok 8 - T-07-8 legacy agy: concrete executable/PATH is pinned; replacement profiles cannot inherit the grant
+  ---
+  duration_ms: 14.624357
+  type: 'test'
+  ...
+# Subtest: T-07-2 native topology: both historical parent encodings work; conflicting and delegated edges deny before compose
+ok 9 - T-07-2 native topology: both historical parent encodings work; conflicting and delegated edges deny before compose
+  ---
+  duration_ms: 11.955548
+  type: 'test'
+  ...
+# Subtest: T-07-6 narrow recap: unknown both-to-main ancestry and its coverage/overall are omitted; proven main translation survives
+ok 10 - T-07-6 narrow recap: unknown both-to-main ancestry and its coverage/overall are omitted; proven main translation survives
+  ---
+  duration_ms: 13.85702
+  type: 'test'
+  ...
+# B17 collector scheduling n=100 p50=0.002ms p95=0.006ms p99=0.063ms max=0.129ms; synchronous HUD-tick filesystem operations=0; indexed policy checks=0
+# Subtest: T-07-9 actual Cards preset changes display only and cannot revive a disabled generator
+ok 11 - T-07-9 actual Cards preset changes display only and cannot revive a disabled generator
+  ---
+  duration_ms: 8.767542
+  type: 'test'
+  ...
+# Subtest: B17 tick performance: collector material scheduling performs zero new synchronous filesystem operations
+ok 12 - B17 tick performance: collector material scheduling performs zero new synchronous filesystem operations
+  ---
+  duration_ms: 8.113639
+  type: 'test'
+  ...
+# Subtest: E2 model selected B off cannot borrow shadowed A authority
+ok 13 - E2 model selected B off cannot borrow shadowed A authority
+  ---
+  duration_ms: 4.020891
+  type: 'test'
+  ...
+# Subtest: E2 model selected B missing grant cannot borrow shadowed A authority
+ok 14 - E2 model selected B missing grant cannot borrow shadowed A authority
+  ---
+  duration_ms: 3.680817
+  type: 'test'
+  ...
+# Subtest: E2 model selected B different recipient cannot borrow shadowed A authority
+ok 15 - E2 model selected B different recipient cannot borrow shadowed A authority
+  ---
+  duration_ms: 3.646175
+  type: 'test'
+  ...
+# Subtest: E2 model selected B disabled feature cannot borrow shadowed A authority
+ok 16 - E2 model selected B disabled feature cannot borrow shadowed A authority
+  ---
+  duration_ms: 3.817265
+  type: 'test'
+  ...
+# Subtest: E2 model selected B paused cannot borrow shadowed A authority
+ok 17 - E2 model selected B paused cannot borrow shadowed A authority
+  ---
+  duration_ms: 6.290161
+  type: 'test'
+  ...
+# Subtest: E2 selected settings use the injected env and shadowed legacy changes do not move authority
+ok 18 - E2 selected settings use the injected env and shadowed legacy changes do not move authority
+  ---
+  duration_ms: 12.480793
+  type: 'test'
+  ...
+# Subtest: E2 legacy-only settings override retains authorization and empty neutral uses the original default
+ok 19 - E2 legacy-only settings override retains authorization and empty neutral uses the original default
+  ---
+  duration_ms: 13.878561
+  type: 'test'
+  ...
+# Subtest: E2 effective selector changes before deferred capture refuse even when both files grant the same source
+ok 20 - E2 effective selector changes before deferred capture refuse even when both files grant the same source
+  ---
+  duration_ms: 8.320733
+  type: 'test'
+  ...
+# Subtest: E2 changed selector invalidates captured handles, queued dispatch and late cache writes
+ok 21 - E2 changed selector invalidates captured handles, queued dispatch and late cache writes
+  ---
+  duration_ms: 13.412755
+  type: 'test'
+  ...
+# Subtest: E2 same-source delegated text stays denied with an authorized neutral selector
+ok 22 - E2 same-source delegated text stays denied with an authorized neutral selector
+  ---
+  duration_ms: 3.484396
+  type: 'test'
+  ...
+# Subtest: E2 backend off reads no material and makes no transport calls despite authorized A and B
+ok 23 - E2 backend off reads no material and makes no transport calls despite authorized A and B
+  ---
+  duration_ms: 3.764986
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_SETTINGS_PATH: presence wins without mutation or fallback
+ok 24 - E2 raw alias HUD_SETTINGS_PATH: presence wins without mutation or fallback
+  ---
+  duration_ms: 1.132835
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_THEME: presence wins without mutation or fallback
+ok 25 - E2 raw alias HUD_THEME: presence wins without mutation or fallback
+  ---
+  duration_ms: 2.35669
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_DENSITY: presence wins without mutation or fallback
+ok 26 - E2 raw alias HUD_DENSITY: presence wins without mutation or fallback
+  ---
+  duration_ms: 0.24162
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_GLYPHS: presence wins without mutation or fallback
+ok 27 - E2 raw alias HUD_GLYPHS: presence wins without mutation or fallback
+  ---
+  duration_ms: 0.111708
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_ICONS: presence wins without mutation or fallback
+ok 28 - E2 raw alias HUD_ICONS: presence wins without mutation or fallback
+  ---
+  duration_ms: 0.196966
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_LOOK: presence wins without mutation or fallback
+ok 29 - E2 raw alias HUD_LOOK: presence wins without mutation or fallback
+  ---
+  duration_ms: 0.098613
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_REDUCED_MOTION: presence wins without mutation or fallback
+ok 30 - E2 raw alias HUD_REDUCED_MOTION: presence wins without mutation or fallback
+  ---
+  duration_ms: 0.131404
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_CONTEXT: presence wins without mutation or fallback
+ok 31 - E2 raw alias HUD_CONTEXT: presence wins without mutation or fallback
+  ---
+  duration_ms: 0.054632
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_TREE_WIDTH: presence wins without mutation or fallback
+ok 32 - E2 raw alias HUD_TREE_WIDTH: presence wins without mutation or fallback
+  ---
+  duration_ms: 0.171579
+  type: 'test'
+  ...
+# Subtest: E2 raw alias HUD_CLEAR_SCROLLBACK: presence wins without mutation or fallback
+ok 33 - E2 raw alias HUD_CLEAR_SCROLLBACK: presence wins without mutation or fallback
+  ---
+  duration_ms: 0.21481
+  type: 'test'
+  ...
+# Subtest: E2 only the ten presentation/settings names map, never credentials or identity
+ok 34 - E2 only the ten presentation/settings names map, never credentials or identity
+  ---
+  duration_ms: 0.357294
+  type: 'test'
+  ...
+# Subtest: E2 display consumers preserve parsing, defaults, neutral precedence and NO_COLOR
+ok 35 - E2 display consumers preserve parsing, defaults, neutral precedence and NO_COLOR
+  ---
+  duration_ms: 0.405944
+  type: 'test'
+  ...
+# Subtest: E2 runtime defaults use aliases, bounded width and saved settings priority; NO_COLOR stays final
+ok 36 - E2 runtime defaults use aliases, bounded width and saved settings priority; NO_COLOR stays final
+  ---
+  duration_ms: 4.484783
+  type: 'test'
+  ...
+# Subtest: E2 renderer clears only its first frame using the selected raw alias
+ok 37 - E2 renderer clears only its first frame using the selected raw alias
+  ---
+  duration_ms: 520.681153
+  type: 'test'
+  ...
+# Subtest: T-07-1/3: absent, invalid, unknown, missing-purpose, wrong-source and recipient grants deny before text is read
+ok 38 - T-07-1/3: absent, invalid, unknown, missing-purpose, wrong-source and recipient grants deny before text is read
+  ---
+  duration_ms: 5.108122
+  type: 'test'
+  ...
+# Subtest: T-07-2/4: new Claude/pi/delegated and private fields stay absent from requests, prompts, cache-key getters and caches
+ok 39 - T-07-2/4: new Claude/pi/delegated and private fields stay absent from requests, prompts, cache-key getters and caches
+  ---
+  duration_ms: 25.249402
+  type: 'test'
+  ...
+# Subtest: T-07-5: every purpose requires its own source grant before compose/cache and raw submit is refused
+ok 40 - T-07-5: every purpose requires its own source grant before compose/cache and raw submit is refused
+  ---
+  duration_ms: 17.94162
+  type: 'test'
+  ...
+# Subtest: T-07-6: derived summaries retain source union, reject parent relabelling, cloning and unauthorized union members
+ok 41 - T-07-6: derived summaries retain source union, reject parent relabelling, cloning and unauthorized union members
+  ---
+  duration_ms: 2.392435
+  type: 'test'
+  ...
+# Subtest: T-07-7 queue: revocation after enqueue cancels before a second outbound request
+ok 42 - T-07-7 queue: revocation after enqueue cancels before a second outbound request
+  ---
+  duration_ms: 4.432897
+  type: 'test'
+  ...
+# B17 material file-authority n=100 fragments=20 p50=0.344ms p95=0.730ms p99=3.151ms max=3.151ms; new HUD-tick I/O=0
+# Subtest: T-07-7 late reply: revocation prevents memory/disk caching and consumer note persistence
+ok 43 - T-07-7 late reply: revocation prevents memory/disk caching and consumer note persistence
+  ---
+  duration_ms: 11.416736
+  type: 'test'
+  ...
+# Subtest: T-07-6/7 repair and translation: revoked inherited provenance is checked before repair/system construction
+ok 44 - T-07-6/7 repair and translation: revoked inherited provenance is checked before repair/system construction
+  ---
+  duration_ms: 3.54576
+  type: 'test'
+  ...
+# Subtest: T-07-6 cache: reauthorize before hit; missing, mismatched or unknown provenance never gives a general hit
+ok 45 - T-07-6 cache: reauthorize before hit; missing, mismatched or unknown provenance never gives a general hit
+  ---
+  duration_ms: 15.197071
+  type: 'test'
+  ...
+# Subtest: T-07-8: endpoint/base path/account/profile changes deny, credentials alone never resolve a recipient
+ok 46 - T-07-8: endpoint/base path/account/profile changes deny, credentials alone never resolve a recipient
+  ---
+  duration_ms: 2.066801
+  type: 'test'
+  ...
+# Subtest: T-07-9: backend off is zero network and never evaluates material or prompt; display preset has no grants
+ok 47 - T-07-9: backend off is zero network and never evaluates material or prompt; display preset has no grants
+  ---
+  duration_ms: 1.792461
+  type: 'test'
+  ...
+# Subtest: T-07-7 scope revision and source changes invalidate a previously built envelope
+ok 48 - T-07-7 scope revision and source changes invalidate a previously built envelope
+  ---
+  duration_ms: 1.801299
+  type: 'test'
+  ...
+# Subtest: material building cost: pure bounded public fragments, no collection or paint hook
+ok 49 - material building cost: pure bounded public fragments, no collection or paint hook
+  ---
+  duration_ms: 46.531456
+  type: 'test'
+  ...
+# Subtest: T-07-6 persistent notes: source union survives restart, translation and revocation without entering legacy stores
+ok 50 - T-07-6 persistent notes: source union survives restart, translation and revocation without entering legacy stores
+  ---
+  duration_ms: 3.71858
+  type: 'test'
+  ...
+# Subtest: T-07-17 preservation: more than 200 general entries never prune or rewrite the original legacy cache
+ok 51 - T-07-17 preservation: more than 200 general entries never prune or rewrite the original legacy cache
+  ---
+  duration_ms: 753.727709
+  type: 'test'
+  ...
+# Subtest: preview is exact/read-only and only allowlisted presentation changes are copied
+ok 52 - preview is exact/read-only and only allowlisted presentation changes are copied
+  ---
+  duration_ms: 22.690386
+  type: 'test'
+  ...
+# Subtest: missing destination restores to absence, private mode and exact bytes round trip
+ok 53 - missing destination restores to absence, private mode and exact bytes round trip
+  ---
+  duration_ms: 26.263205
+  type: 'test'
+  ...
+# Subtest: source and destination input changes, same-byte replacements and mode changes reject stale apply
+ok 54 - source and destination input changes, same-byte replacements and mode changes reject stale apply
+  ---
+  duration_ms: 5.491725
+  type: 'test'
+  ...
+# Subtest: restore refuses intervening edits, replacements, mode changes and touched files
+ok 55 - restore refuses intervening edits, replacements, mode changes and touched files
+  ---
+  duration_ms: 12.090658
+  type: 'test'
+  ...
+# Subtest: symlinks, hard links, public files, special files and unsafe roots are refused
+ok 56 - symlinks, hard links, public files, special files and unsafe roots are refused
+  ---
+  duration_ms: 8.426128
+  type: 'test'
+  ...
+# Subtest: unknown/oversize/invalid inputs do not create state or copy authorization
+ok 57 - unknown/oversize/invalid inputs do not create state or copy authorization
+  ---
+  duration_ms: 4.471957
+  type: 'test'
+  ...
+# Subtest: no transcripts, credentials, grants, verification or cache files are read/copied
+ok 58 - no transcripts, credentials, grants, verification or cache files are read/copied
+  ---
+  duration_ms: 8.695943
+  type: 'test'
+  ...
+# Subtest: private backup validation and busy lock refuse rather than overwrite
+ok 59 - private backup validation and busy lock refuse rather than overwrite
+  ---
+  duration_ms: 10.169338
+  type: 'test'
+  ...
+# Subtest: backup precedes replacement and injected rename failure leaves original recoverable
+ok 60 - backup precedes replacement and injected rename failure leaves original recoverable
+  ---
+  duration_ms: 8.653059
+  type: 'test'
+  ...
+# Subtest: directory substitution cannot redirect writes outside the pinned target
+ok 61 - directory substitution cannot redirect writes outside the pinned target
+  ---
+  duration_ms: 7.69739
+  type: 'test'
+  ...
+# Subtest: product CLI help, preview, apply and restore operate only in temporary homes
+ok 62 - product CLI help, preview, apply and restore operate only in temporary homes
+  ---
+  duration_ms: 898.766486
+  type: 'test'
+  ...
+# Subtest: apply verifies both inputs again after backup persistence, before replacement
+ok 63 - apply verifies both inputs again after backup persistence, before replacement
+  ---
+  duration_ms: 16.003628
+  type: 'test'
+  ...
+# Subtest: target consumption uses existing settings path and keeps outbound/model choice disabled
+ok 64 - target consumption uses existing settings path and keeps outbound/model choice disabled
+  ---
+  duration_ms: 38.710657
+  type: 'test'
+  ...
+# Subtest: unrepresentable unrelated JSON numbers are refused without changing target values
+ok 65 - unrepresentable unrelated JSON numbers are refused without changing target values
+  ---
+  duration_ms: 2.57771
+  type: 'test'
+  ...
+# Subtest: partial temporary and backup writes leave the target unchanged and refuse blind retry
+ok 66 - partial temporary and backup writes leave the target unchanged and refuse blind retry
+  ---
+  duration_ms: 12.045915
+  type: 'test'
+  ...
+# Subtest: failure after replacement still leaves a guarded exact restore
+ok 67 - failure after replacement still leaves a guarded exact restore
+  ---
+  duration_ms: 11.776455
+  type: 'test'
+  ...
+# Subtest: stdout failure after apply reports uncertainty without discarding the backup
+ok 68 - stdout failure after apply reports uncertainty without discarding the backup
+  ---
+  duration_ms: 14.362981
+  type: 'test'
+  ...
+# Subtest: selection digest is independent of caller object property order
+ok 69 - selection digest is independent of caller object property order
+  ---
+  duration_ms: 12.824097
+  type: 'test'
+  ...
+# Subtest: root help discovers statusline without opening a ledger; render aliases agree
+ok 70 - root help discovers statusline without opening a ledger; render aliases agree
+  ---
+  duration_ms: 525.922133
+  type: 'test'
+  ...
+# Subtest: routed settings preserve preview/apply/restore safeguards in temporary HOME
+ok 71 - routed settings preserve preview/apply/restore safeguards in temporary HOME
+  ---
+  duration_ms: 333.312175
+  type: 'test'
+  ...
+# Subtest: package and lock agree on executable aliases
+ok 72 - package and lock agree on executable aliases
+  ---
+  duration_ms: 0.38189
+  type: 'test'
+  ...
+# Subtest: E2 panel help is read-only with neutral selectors and missing or unsafe homes
+ok 73 - E2 panel help is read-only with neutral selectors and missing or unsafe homes
+  ---
+  duration_ms: 592.401018
+  type: 'test'
+  ...
+# Subtest: E2 existing panel entry receives neutral and legacy environment unchanged (mock spawn only)
+ok 74 - E2 existing panel entry receives neutral and legacy environment unchanged (mock spawn only)
+  ---
+  duration_ms: 6.366251
+  type: 'test'
+  ...
+# Subtest: F4 installed digest help and syntax refusals do not open missing or unsafe HUD homes
+ok 75 - F4 installed digest help and syntax refusals do not open missing or unsafe HUD homes
+  ---
+  duration_ms: 693.348071
+  type: 'test'
+  ...
+# Subtest: missing settings keep display defaults and hide optional tasks and activity
+ok 76 - missing settings keep display defaults and hide optional tasks and activity
+  ---
+  duration_ms: 2.91649
+  type: 'test'
+  ...
+# Subtest: status bar and context display preferences persist and validate
+ok 77 - status bar and context display preferences persist and validate
+  ---
+  duration_ms: 1.994347
+  type: 'test'
+  ...
+# Subtest: load validates known settings without importing unknown or invalid values
+ok 78 - load validates known settings without importing unknown or invalid values
+  ---
+  duration_ms: 1.083834
+  type: 'test'
+  ...
+# Subtest: monitor pane modes and worktreeRoot validate independently of legacy panel booleans
+ok 79 - monitor pane modes and worktreeRoot validate independently of legacy panel booleans
+  ---
+  duration_ms: 1.040604
+  type: 'test'
+  ...
+# Subtest: the timeline's style, window and roles keep to what the panel draws
+ok 80 - the timeline's style, window and roles keep to what the panel draws
+  ---
+  duration_ms: 0.975092
+  type: 'test'
+  ...
+# Subtest: refresh intervals and widths accept only bounded integer values
+ok 81 - refresh intervals and widths accept only bounded integer values
+  ---
+  duration_ms: 4.789894
+  type: 'test'
+  ...
+# Subtest: partial saves retain previous preferences and publish a complete JSON document
+ok 82 - partial saves retain previous preferences and publish a complete JSON document
+  ---
+  duration_ms: 1.14059
+  type: 'test'
+  ...
+# Subtest: save ignores invalid patches and strips unknown fields from existing files
+ok 83 - save ignores invalid patches and strips unknown fields from existing files
+  ---
+  duration_ms: 0.873854
+  type: 'test'
+  ...
+# Subtest: saving creates a missing settings parent directory
+ok 84 - saving creates a missing settings parent directory
+  ---
+  duration_ms: 1.476384
+  type: 'test'
+  ...
+# Subtest: malformed JSON and inaccessible settings errors propagate without overwriting the file
+ok 85 - malformed JSON and inaccessible settings errors propagate without overwriting the file
+  ---
+  duration_ms: 1.052475
+  type: 'test'
+  ...
+# Subtest: nonobject JSON cannot become settings and oversized files are rejected
+ok 86 - nonobject JSON cannot become settings and oversized files are rejected
+  ---
+  duration_ms: 2.484998
+  type: 'test'
+  ...
+# Subtest: legacy OMP settings migrate to API deterministically and task models validate
+ok 87 - legacy OMP settings migrate to API deterministically and task models validate
+  ---
+  duration_ms: 1.288264
+  type: 'test'
+  ...
+# Subtest: flat card visibility and progress defaults validate independently; legacy notes are ignored
+ok 88 - flat card visibility and progress defaults validate independently; legacy notes are ignored
+  ---
+  duration_ms: 2.213032
+  type: 'test'
+  ...
+# Subtest: saving display preferences retains synthetic API credentials and task routing
+ok 89 - saving display preferences retains synthetic API credentials and task routing
+  ---
+  duration_ms: 1.146762
+  type: 'test'
+  ...
+# Subtest: the prefix: Ctrl+\\ on a fresh install, Ctrl+] kept by a file saved without one, a saved choice kept either way
+ok 90 - the prefix: Ctrl+\\ on a fresh install, Ctrl+] kept by a file saved without one, a saved choice kept either way
+  ---
+  duration_ms: 1.630393
+  type: 'test'
+  ...
+# Subtest: E2 settings B shadows A for UI and explicit saves without moving homes or importing unknown keys
+ok 91 - E2 settings B shadows A for UI and explicit saves without moving homes or importing unknown keys
+  ---
+  duration_ms: 1.62524
+  type: 'test'
+  ...
+# Subtest: E2 empty selector uses the existing default; missing or malformed neutral file never falls back to A
+ok 92 - E2 empty selector uses the existing default; missing or malformed neutral file never falls back to A
+  ---
+  duration_ms: 1.82629
+  type: 'test'
+  ...
+# Subtest: AGY retains named effort models and explicit override flags without a shell
+ok 93 - AGY retains named effort models and explicit override flags without a shell
+  ---
+  duration_ms: 0.711212
+  type: 'test'
+  ...
+# Subtest: API task routes, configurable tier models, and global overrides
+ok 94 - API task routes, configurable tier models, and global overrides
+  ---
+  duration_ms: 0.702366
+  type: 'test'
+  ...
+# Subtest: custom endpoints never receive the general OpenAI key; deliberate HUD keys still work
+ok 95 - custom endpoints never receive the general OpenAI key; deliberate HUD keys still work
+  ---
+  duration_ms: 0.18302
+  type: 'test'
+  ...
+# Subtest: reasoning_effort is opt-in and unknown efforts are omitted
+ok 96 - reasoning_effort is opt-in and unknown efforts are omitted
+  ---
+  duration_ms: 0.135753
+  type: 'test'
+  ...
+# Subtest: call counts: last hour and since midnight
+ok 97 - call counts: last hour and since midnight
+  ---
+  duration_ms: 0.28489
+  type: 'test'
+  ...
+# Subtest: single flight, queued cancellation, active cancellation, and cancelAll
+ok 98 - single flight, queued cancellation, active cancellation, and cancelAll
+  ---
+  duration_ms: 25.09336
+  type: 'test'
+  ...
+# Subtest: cancelled active fetch holds its slot until stopping finishes, also across configure/cancelAll
+ok 99 - cancelled active fetch holds its slot until stopping finishes, also across configure/cancelAll
+  ---
+  duration_ms: 11.211414
+  type: 'test'
+  ...
+# Subtest: API redirects are refused and reflected credentials are removed from errors
+ok 100 - API redirects are refused and reflected credentials are removed from errors
+  ---
+  duration_ms: 1.769669
+  type: 'test'
+  ...
+# Subtest: freeze request, route, and environment at submission; configure cancels changed destinations
+ok 101 - freeze request, route, and environment at submission; configure cancels changed destinations
+  ---
+  duration_ms: 5.421434
+  type: 'test'
+  ...
+# Subtest: cap, free cache, restart persistence, private files, and cache endpoint/model/thinking/feature identity
+ok 102 - cap, free cache, restart persistence, private files, and cache endpoint/model/thinking/feature identity
+  ---
+  duration_ms: 29.147124
+  type: 'test'
+  ...
+# Subtest: off and invalid configuration do not call fetch or spend budget; HTTP, transport, malformed and empty errors
+ok 103 - off and invalid configuration do not call fetch or spend budget; HTTP, transport, malformed and empty errors
+  ---
+  duration_ms: 1.982315
+  type: 'test'
+  ...
+# Subtest: public handle lifecycle notifies queued-to-running, holds cancellation slot, and retains cache generation time
+ok 104 - public handle lifecycle notifies queued-to-running, holds cancellation slot, and retains cache generation time
+  ---
+  duration_ms: 2.03942
+  type: 'test'
+  ...
+# Subtest: optional response validator checks fresh, cache and throwing predicates (memory)
+ok 105 - optional response validator checks fresh, cache and throwing predicates (memory)
+  ---
+  duration_ms: 2.375904
+  type: 'test'
+  ...
+# Subtest: optional response validator checks fresh, cache and throwing predicates (shared)
+ok 106 - optional response validator checks fresh, cache and throwing predicates (shared)
+  ---
+  duration_ms: 15.577984
+  type: 'test'
+  ...
+1..106
+# tests 106
+# suites 0
+# pass 106
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5500.554097

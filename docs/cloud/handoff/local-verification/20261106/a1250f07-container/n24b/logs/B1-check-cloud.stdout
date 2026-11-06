@@ -1,0 +1,5 @@
+PASS: build
+PASS: build-test
+PASS: build-mcp
+FAIL: focused
+Cloud results: tmp/cloud-development/checks-PZ7mVH/results.json

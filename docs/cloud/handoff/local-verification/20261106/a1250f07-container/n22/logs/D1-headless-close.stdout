@@ -1,0 +1,220 @@
+TAP version 13
+# Subtest: E4 real MCP/service/SQLite acceptance, reconcile closure, immutable replay and read-only projections
+ok 1 - E4 real MCP/service/SQLite acceptance, reconcile closure, immutable replay and read-only projections
+  ---
+  duration_ms: 94.721473
+  type: 'test'
+  ...
+# Subtest: E4 preserves existing cancellation clock, grace and before_exit terminal classification
+ok 2 - E4 preserves existing cancellation clock, grace and before_exit terminal classification
+  ---
+  duration_ms: 56.632316
+  type: 'test'
+  ...
+# Subtest: E4 preserves existing cancellation clock, grace and after_exit terminal classification
+ok 3 - E4 preserves existing cancellation clock, grace and after_exit terminal classification
+  ---
+  duration_ms: 57.143473
+  type: 'test'
+  ...
+# Subtest: E4 preserves existing cancellation clock, grace and unknown terminal classification
+ok 4 - E4 preserves existing cancellation clock, grace and unknown terminal classification
+  ---
+  duration_ms: 55.367013
+  type: 'test'
+  ...
+# Subtest: E4 already-terminal receipt closes without another cancellation or rewritten terminal evidence
+ok 5 - E4 already-terminal receipt closes without another cancellation or rewritten terminal evidence
+  ---
+  duration_ms: 56.632656
+  type: 'test'
+  ...
+# Subtest: E4 already-terminal scope_reconciled closes without another cancellation or rewritten terminal evidence
+ok 6 - E4 already-terminal scope_reconciled closes without another cancellation or rewritten terminal evidence
+  ---
+  duration_ms: 47.916736
+  type: 'test'
+  ...
+# Subtest: E4 already-terminal N on a bound resume closes, with no cancellation or launch
+ok 7 - E4 already-terminal N on a bound resume closes, with no cancellation or launch
+  ---
+  duration_ms: 65.107801
+  type: 'test'
+  ...
+# Subtest: E4 resume commits first: expectedRun refusal; close commits first: fresh resume/handover fenced, replay untouched
+not ok 8 - E4 resume commits first: expectedRun refusal; close commits first: fresh resume/handover fenced, replay untouched
+  ---
+  duration_ms: 65.387661
+  type: 'test'
+  location: '/work/src/packages/hud-mcp/dist/tests/hud-mcp/headless-close.test.js:209:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    58 !== 56
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 56
+  actual: 58
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/headless-close.test.js:231:16)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: E4 unsupported target {"bind":false} has no close/cancel/surface effect
+ok 9 - E4 unsupported target {"bind":false} has no close/cancel/surface effect
+  ---
+  duration_ms: 41.758967
+  type: 'test'
+  ...
+# Subtest: E4 unsupported target {"visible":true} has no close/cancel/surface effect
+ok 10 - E4 unsupported target {"visible":true} has no close/cancel/surface effect
+  ---
+  duration_ms: 44.526361
+  type: 'test'
+  ...
+# Subtest: E4 strict schema rejects owner/context/target/admin/generation overrides and invalid inputs
+ok 11 - E4 strict schema rejects owner/context/target/admin/generation overrides and invalid inputs
+  ---
+  duration_ms: 0.421744
+  type: 'test'
+  ...
+# Subtest: E4 current authority required even for replay; retirement after acceptance does not undo fixed intent
+ok 12 - E4 current authority required even for replay; retirement after acceptance does not undo fixed intent
+  ---
+  duration_ms: 53.779178
+  type: 'test'
+  ...
+# Subtest: E4 wrong owner and same session id under another source/thread cannot control
+ok 13 - E4 wrong owner and same session id under another source/thread cannot control
+  ---
+  duration_ms: 39.763913
+  type: 'test'
+  ...
+# Subtest: E4 revoked after acceptance preserves intent and never closes a successor
+ok 14 - E4 revoked after acceptance preserves intent and never closes a successor
+  ---
+  duration_ms: 59.5838
+  type: 'test'
+  ...
+# Subtest: E4 generation after acceptance preserves intent and never closes a successor
+ok 15 - E4 generation after acceptance preserves intent and never closes a successor
+  ---
+  duration_ms: 47.662533
+  type: 'test'
+  ...
+# Subtest: E4 target after acceptance preserves intent and never closes a successor
+not ok 16 - E4 target after acceptance preserves intent and never closes a successor
+  ---
+  duration_ms: 42.141921
+  type: 'test'
+  location: '/work/src/packages/hud-mcp/dist/tests/hud-mcp/headless-close.test.js:306:5'
+  failureType: 'testCodeFailure'
+  error: 'known child ref cannot be replaced'
+  code: 'ERR_SQLITE_ERROR'
+  stack: |-
+    LedgerTransaction.run (file:///work/src/packages/hud-mcp/dist/src/ledger/transaction.js:100:44)
+    file:///work/src/packages/hud-mcp/dist/tests/hud-mcp/headless-close.test.js:323:24
+    execute (file:///work/src/packages/hud-mcp/dist/src/ledger/ledger.js:52:50)
+  ...
+# Subtest: E4 supervisor_dead cannot fabricate closure or release execution slots
+ok 17 - E4 supervisor_dead cannot fabricate closure or release execution slots
+  ---
+  duration_ms: 47.658391
+  type: 'test'
+  ...
+# Subtest: E4 unknown_scope cannot fabricate closure or release execution slots
+ok 18 - E4 unknown_scope cannot fabricate closure or release execution slots
+  ---
+  duration_ms: 48.388
+  type: 'test'
+  ...
+# Subtest: E4 leader_only cannot fabricate closure or release execution slots
+ok 19 - E4 leader_only cannot fabricate closure or release execution slots
+  ---
+  duration_ms: 48.970263
+  type: 'test'
+  ...
+# Subtest: E4 wrong_scope cannot fabricate closure or release execution slots
+ok 20 - E4 wrong_scope cannot fabricate closure or release execution slots
+  ---
+  duration_ms: 48.662059
+  type: 'test'
+  ...
+# Subtest: E4 conflict cannot fabricate closure or release execution slots
+ok 21 - E4 conflict cannot fabricate closure or release execution slots
+  ---
+  duration_ms: 49.939103
+  type: 'test'
+  ...
+# Subtest: E4 rollback at acceptance and finalization leaves no half-close; existing reconciler recovers
+ok 22 - E4 rollback at acceptance and finalization leaves no half-close; existing reconciler recovers
+  ---
+  duration_ms: 68.892295
+  type: 'test'
+  ...
+# Subtest: E4 closed run rejects late report/binding and retains restrictive target history
+ok 23 - E4 closed run rejects late report/binding and retains restrictive target history
+  ---
+  duration_ms: 61.363928
+  type: 'test'
+  ...
+# Subtest: E4 original receipt budget is shared through source authorization and close acceptance
+ok 24 - E4 original receipt budget is shared through source authorization and close acceptance
+  ---
+  duration_ms: 39.209421
+  type: 'test'
+  ...
+# Subtest: E4 versioned events reject extension fields and invalid references
+ok 25 - E4 versioned events reject extension fields and invalid references
+  ---
+  duration_ms: 47.705505
+  type: 'test'
+  ...
+# Subtest: E4 actual close transaction retains existing late_commit semantics
+ok 26 - E4 actual close transaction retains existing late_commit semantics
+  ---
+  duration_ms: 46.322058
+  type: 'test'
+  ...
+# Subtest: E4 actual close transaction retains existing unknown_commit semantics
+ok 27 - E4 actual close transaction retains existing unknown_commit semantics
+  ---
+  duration_ms: 44.531815
+  type: 'test'
+  ...
+# Subtest: E4 actual close transaction retains existing cleanup_failure semantics
+ok 28 - E4 actual close transaction retains existing cleanup_failure semantics
+  ---
+  duration_ms: 39.245084
+  type: 'test'
+  ...
+# Subtest: E4 already-terminal pending close finalizes on existing reconcile without another state transition
+ok 29 - E4 already-terminal pending close finalizes on existing reconcile without another state transition
+  ---
+  duration_ms: 59.404843
+  type: 'test'
+  ...
+# Subtest: E4 committed terminal row without accepted terminal evidence remains pending
+ok 30 - E4 committed terminal row without accepted terminal evidence remains pending
+  ---
+  duration_ms: 46.986202
+  type: 'test'
+  ...
+# Subtest: E4 close atomically revokes remaining wake registration with link_closed once
+ok 31 - E4 close atomically revokes remaining wake registration with link_closed once
+  ---
+  duration_ms: 56.377341
+  type: 'test'
+  ...
+1..31
+# tests 31
+# suites 0
+# pass 29
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1684.636125

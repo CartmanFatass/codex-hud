@@ -1,0 +1,502 @@
+TAP version 13
+# Subtest: strict manifest rejects malformed envelopes, duplicate JSON/key, bad sibling and wrong topology
+ok 1 - strict manifest rejects malformed envelopes, duplicate JSON/key, bad sibling and wrong topology
+  ---
+  duration_ms: 3.600991
+  type: 'test'
+  ...
+# Subtest: SIMULATED owned native parent, independently observed target and exact startup composition
+ok 2 - SIMULATED owned native parent, independently observed target and exact startup composition
+  ---
+  duration_ms: 525.695156
+  type: 'test'
+  ...
+# {"synthetic":true,"mode":"unit","startup":{"elapsedMs":19.38730799999999,"bytes":10064,"probes":2,"buildId":"sha256:4e132e1dc8335dee2b8adeade64332f86f4818dfeb5fed3743c052ed872eb189","parentObserved":true,"bootstrapObserved":true},"firstStartup":{"elapsedMs":26.994681,"bytes":1044,"probes":2,"buildId":"sha256:4e132e1dc8335dee2b8adeade64332f86f4818dfeb5fed3743c052ed872eb189","parentObserved":true,"bootstrapObserved":true},"probes":[{"pid":44,"procStart":"12163399","observedAt":1793984083268,"deadlineAt":1793984084268,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":45,"procStart":"12163399","observedAt":1793984083276,"deadlineAt":1793984084276,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":46,"procStart":"12163402","observedAt":1793984083301,"deadlineAt":1793984084301,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":47,"procStart":"12163402","observedAt":1793984083306,"deadlineAt":1793984084306,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":48,"procStart":"12163403","observedAt":1793984083310,"deadlineAt":1793984084310,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":49,"procStart":"12163403","observedAt":1793984083314,"deadlineAt":1793984084314,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":50,"procStart":"12163404","observedAt":1793984083317,"deadlineAt":1793984084317,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":51,"procStart":"12163404","observedAt":1793984083321,"deadlineAt":1793984084321,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":52,"procStart":"12163405","observedAt":1793984083331,"deadlineAt":1793984084331,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":53,"procStart":"12163405","observedAt":1793984083334,"deadlineAt":1793984084334,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":54,"procStart":"12163406","observedAt":1793984083344,"deadlineAt":1793984084344,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":55,"procStart":"12163407","observedAt":1793984083347,"deadlineAt":1793984084347,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":56,"procStart":"12163408","observedAt":1793984083357,"deadlineAt":1793984084357,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":57,"procStart":"12163408","observedAt":1793984083360,"deadlineAt":1793984084360,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":58,"procStart":"12163409","observedAt":1793984083368,"deadlineAt":1793984084368,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":59,"procStart":"12163409","observedAt":1793984083371,"deadlineAt":1793984084371,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":60,"procStart":"12163410","observedAt":1793984083382,"deadlineAt":1793984084382,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":61,"procStart":"12163410","observedAt":1793984083385,"deadlineAt":1793984084385,"version":"0.166.0","observedEndedAt":1793984083524,"alive":false},{"pid":62,"procStart":"12163411","observedAt":1793984083397,"deadlineAt":1793984084397,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":63,"procStart":"12163412","observedAt":1793984083402,"deadlineAt":1793984084402,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":64,"procStart":"12163413","observedAt":1793984083415,"deadlineAt":1793984084415,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":65,"procStart":"12163414","observedAt":1793984083419,"deadlineAt":1793984084419,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":66,"procStart":"12163415","observedAt":1793984083430,"deadlineAt":1793984084430,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":67,"procStart":"12163416","observedAt":1793984083440,"deadlineAt":1793984084440,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":68,"procStart":"12163417","observedAt":1793984083450,"deadlineAt":1793984084450,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":69,"procStart":"12163417","observedAt":1793984083453,"deadlineAt":1793984084453,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":70,"procStart":"12163418","observedAt":1793984083465,"deadlineAt":1793984084465,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":71,"procStart":"12163419","observedAt":1793984083468,"deadlineAt":1793984084468,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":72,"procStart":"12163420","observedAt":1793984083478,"deadlineAt":1793984084478,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":73,"procStart":"12163420","observedAt":1793984083482,"deadlineAt":1793984084482,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":74,"procStart":"12163421","observedAt":1793984083492,"deadlineAt":1793984084492,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":75,"procStart":"12163421","observedAt":1793984083496,"deadlineAt":1793984084496,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":76,"procStart":"12163423","observedAt":1793984083509,"deadlineAt":1793984084509,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":77,"procStart":"12163423","observedAt":1793984083512,"deadlineAt":1793984084512,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":78,"procStart":"12163423","observedAt":1793984083517,"deadlineAt":1793984084517,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false},{"pid":79,"procStart":"12163424","observedAt":1793984083521,"deadlineAt":1793984084521,"version":"0.166.0","observedEndedAt":1793984083525,"alive":false}],"parent":{"pid":32,"start":{"pid":32,"proc_start":"12163385","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"}},"dispatches":0,"receipts":[],"compilerReceipts":[{"pid":22,"start":{"pid":22,"proc_start":"12163374","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984093022,"end":{"code":0,"signal":null},"alive":false},{"pid":27,"start":{"pid":27,"proc_start":"12163380","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984093081,"end":{"code":0,"signal":null},"alive":false}],"ownedParent":{"pid":32,"start":{"pid":32,"proc_start":"12163385","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"startedAt":1793984083135,"deadlineAt":1793984128135,"end":{"code":0,"signal":null},"endedAt":1793984083539,"alive":false}}
+# Subtest: SIMULATED native parent 0.165.0 cannot borrow independently observed target 0.166.0
+ok 3 - SIMULATED native parent 0.165.0 cannot borrow independently observed target 0.166.0
+  ---
+  duration_ms: 245.688451
+  type: 'test'
+  ...
+# {"synthetic":true,"mode":"parent-version-mismatch","startup":{"elapsedMs":23.040793000000008,"bytes":1044,"probes":2,"buildId":"sha256:4e132e1dc8335dee2b8adeade64332f86f4818dfeb5fed3743c052ed872eb189","parentObserved":false,"bootstrapObserved":false},"dispatches":0,"receipts":[],"compilerReceipts":[{"pid":80,"start":{"pid":80,"proc_start":"12163426","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984093545,"end":{"code":0,"signal":null},"alive":false},{"pid":85,"start":{"pid":85,"proc_start":"12163432","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984093597,"end":{"code":0,"signal":null},"alive":false}],"ownedParent":{"pid":90,"start":{"pid":90,"proc_start":"12163437","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"startedAt":1793984083647,"deadlineAt":1793984128647,"end":{"code":0,"signal":null},"endedAt":1793984083785,"alive":false}}
+# Subtest: new-process default verifier and CLI help preserve refusal with managed-missing
+ok 4 - new-process default verifier and CLI help preserve refusal with managed-missing
+  ---
+  duration_ms: 353.019798
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"managed-missing","purpose":"default-verifier","pid":104,"start":{"pid":104,"proc_start":"12163458","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984088862,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"managed-missing","purpose":"--help","pid":111,"start":{"pid":111,"proc_start":"12163461","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984088894,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"managed-missing","purpose":"run --help","pid":118,"start":{"pid":118,"proc_start":"12163473","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984089007,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: new-process default verifier and CLI help preserve refusal with codex-missing
+ok 5 - new-process default verifier and CLI help preserve refusal with codex-missing
+  ---
+  duration_ms: 345.593337
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"codex-missing","purpose":"default-verifier","pid":125,"start":{"pid":125,"proc_start":"12163492","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984089207,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"codex-missing","purpose":"--help","pid":132,"start":{"pid":132,"proc_start":"12163496","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984089239,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"codex-missing","purpose":"run --help","pid":139,"start":{"pid":139,"proc_start":"12163507","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984089353,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: new-process default verifier and CLI help preserve refusal with managed-malformed
+ok 6 - new-process default verifier and CLI help preserve refusal with managed-malformed
+  ---
+  duration_ms: 344.227913
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"managed-malformed","purpose":"default-verifier","pid":146,"start":{"pid":146,"proc_start":"12163527","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984089554,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"managed-malformed","purpose":"--help","pid":153,"start":{"pid":153,"proc_start":"12163531","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984089588,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"managed-malformed","purpose":"run --help","pid":160,"start":{"pid":160,"proc_start":"12163542","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984089697,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: new-process default verifier and CLI help preserve refusal with codex-malformed
+ok 7 - new-process default verifier and CLI help preserve refusal with codex-malformed
+  ---
+  duration_ms: 325.32365
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"codex-malformed","purpose":"default-verifier","pid":167,"start":{"pid":167,"proc_start":"12163561","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984089892,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"codex-malformed","purpose":"--help","pid":174,"start":{"pid":174,"proc_start":"12163564","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984089924,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"codex-malformed","purpose":"run --help","pid":181,"start":{"pid":181,"proc_start":"12163574","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984090024,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: new-process default verifier and CLI help preserve refusal with both-missing
+ok 8 - new-process default verifier and CLI help preserve refusal with both-missing
+  ---
+  duration_ms: 331.918125
+  type: 'test'
+  ...
+# {"synthetic":true,"kind":"both-missing","purpose":"default-verifier","pid":188,"start":{"pid":188,"proc_start":"12163594","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984090222,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"both-missing","purpose":"--help","pid":195,"start":{"pid":195,"proc_start":"12163597","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984090253,"end":{"code":0,"signal":null},"alive":false}
+# {"synthetic":true,"kind":"both-missing","purpose":"run --help","pid":202,"start":{"pid":202,"proc_start":"12163608","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984090364,"end":{"code":0,"signal":null},"alive":false}
+# Subtest: SIMULATED native target 0.165.0 cannot borrow parent client 0.166.0
+ok 9 - SIMULATED native target 0.165.0 cannot borrow parent client 0.166.0
+  ---
+  duration_ms: 264.078257
+  type: 'test'
+  ...
+# {"synthetic":true,"mode":"target-version-mismatch","startup":{"elapsedMs":21.763248000000004,"bytes":1044,"probes":2,"buildId":"sha256:4e132e1dc8335dee2b8adeade64332f86f4818dfeb5fed3743c052ed872eb189","parentObserved":true,"bootstrapObserved":true},"probes":[{"pid":231,"procStart":"12163644","observedAt":1793984085727,"deadlineAt":1793984086727,"version":"0.166.0","observedEndedAt":1793984085744,"alive":false},{"pid":232,"procStart":"12163645","observedAt":1793984085733,"deadlineAt":1793984086733,"version":"0.165.0","observedEndedAt":1793984085744,"alive":false}],"dispatches":0,"receipts":[],"compilerReceipts":[{"pid":209,"start":{"pid":209,"proc_start":"12163621","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984095491,"end":{"code":0,"signal":null},"alive":false},{"pid":214,"start":{"pid":214,"proc_start":"12163627","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"deadlineAt":1793984095550,"end":{"code":0,"signal":null},"alive":false}],"ownedParent":{"pid":219,"start":{"pid":219,"proc_start":"12163632","boot_id":"f2922341-0d99-43d0-8f88-9d060eeb7a47","pid_domain":"35e62dcd2f82ce0974164315a8fcf8381440e1d92c0da9a787fa072441997d73:pid:[4026532302]"},"startedAt":1793984085602,"deadlineAt":1793984130602,"end":{"code":0,"signal":null},"endedAt":1793984085750,"alive":false}}
+# Subtest: SIMULATED complete private runtime inventory derives frozen build ID and excludes only four cell files
+ok 10 - SIMULATED complete private runtime inventory derives frozen build ID and excludes only four cell files
+  ---
+  duration_ms: 46.806474
+  type: 'test'
+  ...
+# Subtest: runtime refuses dirty
+ok 11 - runtime refuses dirty
+  ---
+  duration_ms: 12.580458
+  type: 'test'
+  ...
+# Subtest: runtime refuses missing
+ok 12 - runtime refuses missing
+  ---
+  duration_ms: 12.195272
+  type: 'test'
+  ...
+# Subtest: runtime refuses changed
+ok 13 - runtime refuses changed
+  ---
+  duration_ms: 16.056329
+  type: 'test'
+  ...
+# Subtest: runtime refuses unlisted
+ok 14 - runtime refuses unlisted
+  ---
+  duration_ms: 13.674231
+  type: 'test'
+  ...
+# Subtest: runtime refuses symlink
+ok 15 - runtime refuses symlink
+  ---
+  duration_ms: 13.507062
+  type: 'test'
+  ...
+# Subtest: runtime refuses directory-link
+ok 16 - runtime refuses directory-link
+  ---
+  duration_ms: 13.395864
+  type: 'test'
+  ...
+# Subtest: runtime refuses duplicate
+ok 17 - runtime refuses duplicate
+  ---
+  duration_ms: 11.637186
+  type: 'test'
+  ...
+# Subtest: runtime refuses escape
+ok 18 - runtime refuses escape
+  ---
+  duration_ms: 11.572766
+  type: 'test'
+  ...
+# Subtest: runtime refuses oversize
+ok 19 - runtime refuses oversize
+  ---
+  duration_ms: 11.841465
+  type: 'test'
+  ...
+# Subtest: runtime refuses total
+ok 20 - runtime refuses total
+  ---
+  duration_ms: 13.531727
+  type: 'test'
+  ...
+# Subtest: runtime refuses too-many
+ok 21 - runtime refuses too-many
+  ---
+  duration_ms: 39.26167
+  type: 'test'
+  ...
+# Subtest: runtime refuses mode
+ok 22 - runtime refuses mode
+  ---
+  duration_ms: 16.118153
+  type: 'test'
+  ...
+# Subtest: runtime refuses unknown
+ok 23 - runtime refuses unknown
+  ---
+  duration_ms: 12.54365
+  type: 'test'
+  ...
+# Subtest: runtime refuses bad-meta
+ok 24 - runtime refuses bad-meta
+  ---
+  duration_ms: 11.74168
+  type: 'test'
+  ...
+# Subtest: runtime refuses tree-alias
+ok 25 - runtime refuses tree-alias
+  ---
+  duration_ms: 11.834734
+  type: 'test'
+  ...
+# Subtest: runtime refuses dot-path
+ok 26 - runtime refuses dot-path
+  ---
+  duration_ms: 12.628368
+  type: 'test'
+  ...
+# Subtest: runtime refuses duplicate-json
+ok 27 - runtime refuses duplicate-json
+  ---
+  duration_ms: 12.118881
+  type: 'test'
+  ...
+# Subtest: runtime refuses bad-cells
+ok 28 - runtime refuses bad-cells
+  ---
+  duration_ms: 15.490166
+  type: 'test'
+  ...
+# Subtest: runtime refuses truncated
+ok 29 - runtime refuses truncated
+  ---
+  duration_ms: 11.626616
+  type: 'test'
+  ...
+# Subtest: runtime refuses invalid-utf8
+ok 30 - runtime refuses invalid-utf8
+  ---
+  duration_ms: 12.114373
+  type: 'test'
+  ...
+# Subtest: runtime metadata uses the exact inert shared whitelist and primitive types
+ok 31 - runtime metadata uses the exact inert shared whitelist and primitive types
+  ---
+  duration_ms: 21.475016
+  type: 'test'
+  ...
+# Subtest: inert builtWithNode validates standard SemVer without trusting it as actual Node
+ok 32 - inert builtWithNode validates standard SemVer without trusting it as actual Node
+  ---
+  duration_ms: 38.35015
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/launch/codex-cells.json
+ok 33 - minimum runtime anchor cannot be omitted: dist/core/launch/codex-cells.json
+  ---
+  duration_ms: 15.271149
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/launch/managed-cells.json
+ok 34 - minimum runtime anchor cannot be omitted: dist/core/launch/managed-cells.json
+  ---
+  duration_ms: 13.417514
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/codex-cells.json
+ok 35 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/codex-cells.json
+  ---
+  duration_ms: 12.07016
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/managed-cells.json
+ok 36 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/managed-cells.json
+  ---
+  duration_ms: 11.755336
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: package.json
+ok 37 - minimum runtime anchor cannot be omitted: package.json
+  ---
+  duration_ms: 11.95154
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/package.json
+ok 38 - minimum runtime anchor cannot be omitted: packages/hud-mcp/package.json
+  ---
+  duration_ms: 13.601797
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: bin/hud-run
+ok 39 - minimum runtime anchor cannot be omitted: bin/hud-run
+  ---
+  duration_ms: 13.127806
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/bin/hud-mcp.mjs
+ok 40 - minimum runtime anchor cannot be omitted: packages/hud-mcp/bin/hud-mcp.mjs
+  ---
+  duration_ms: 13.46902
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/run/cli.js
+ok 41 - minimum runtime anchor cannot be omitted: dist/core/run/cli.js
+  ---
+  duration_ms: 14.768505
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/run/control.js
+ok 42 - minimum runtime anchor cannot be omitted: dist/core/run/control.js
+  ---
+  duration_ms: 13.886044
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/core/run/process.js
+ok 43 - minimum runtime anchor cannot be omitted: dist/core/run/process.js
+  ---
+  duration_ms: 13.642993
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/harness/codex/profile.js
+ok 44 - minimum runtime anchor cannot be omitted: dist/harness/codex/profile.js
+  ---
+  duration_ms: 12.85414
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: dist/collectors/file-watcher.js
+ok 45 - minimum runtime anchor cannot be omitted: dist/collectors/file-watcher.js
+  ---
+  duration_ms: 15.56303
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/main.js
+ok 46 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/main.js
+  ---
+  duration_ms: 11.862334
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/managed-runtime.js
+ok 47 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/managed-runtime.js
+  ---
+  duration_ms: 12.872028
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/delegation.js
+ok 48 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/delegation.js
+  ---
+  duration_ms: 11.805579
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/runtime-build.js
+ok 49 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/runtime-build.js
+  ---
+  duration_ms: 11.662192
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/capability-manifest.js
+ok 50 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/capability-manifest.js
+  ---
+  duration_ms: 15.825218
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/capability.js
+ok 51 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/capability.js
+  ---
+  duration_ms: 13.939574
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/supervisor.js
+ok 52 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/supervisor.js
+  ---
+  duration_ms: 20.162479
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/harness/codex/profile.js
+ok 53 - minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/harness/codex/profile.js
+  ---
+  duration_ms: 15.235114
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/package.json
+ok 54 - minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/package.json
+  ---
+  duration_ms: 11.737241
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/chokidar/package.json
+ok 55 - minimum runtime anchor cannot be omitted: node_modules/chokidar/package.json
+  ---
+  duration_ms: 12.335043
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/readdirp/package.json
+ok 56 - minimum runtime anchor cannot be omitted: node_modules/readdirp/package.json
+  ---
+  duration_ms: 13.420029
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/toml.js
+ok 57 - minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/toml.js
+  ---
+  duration_ms: 13.508172
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/chokidar/index.js
+ok 58 - minimum runtime anchor cannot be omitted: node_modules/chokidar/index.js
+  ---
+  duration_ms: 12.768057
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/chokidar/handler.js
+ok 59 - minimum runtime anchor cannot be omitted: node_modules/chokidar/handler.js
+  ---
+  duration_ms: 12.09637
+  type: 'test'
+  ...
+# Subtest: minimum runtime anchor cannot be omitted: node_modules/readdirp/index.js
+ok 60 - minimum runtime anchor cannot be omitted: node_modules/readdirp/index.js
+  ---
+  duration_ms: 12.653475
+  type: 'test'
+  ...
+# Subtest: dependency package identity is independently checked: @iarna/toml
+ok 61 - dependency package identity is independently checked: @iarna/toml
+  ---
+  duration_ms: 15.11084
+  type: 'test'
+  ...
+# Subtest: dependency package identity is independently checked: chokidar
+ok 62 - dependency package identity is independently checked: chokidar
+  ---
+  duration_ms: 17.190827
+  type: 'test'
+  ...
+# Subtest: dependency package identity is independently checked: readdirp
+ok 63 - dependency package identity is independently checked: readdirp
+  ---
+  duration_ms: 17.569529
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses @iarna/toml name
+ok 64 - fixed dependency resolution refuses @iarna/toml name
+  ---
+  duration_ms: 14.99196
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses @iarna/toml main
+ok 65 - fixed dependency resolution refuses @iarna/toml main
+  ---
+  duration_ms: 14.77714
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses @iarna/toml type
+ok 66 - fixed dependency resolution refuses @iarna/toml type
+  ---
+  duration_ms: 18.584115
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses @iarna/toml exports
+ok 67 - fixed dependency resolution refuses @iarna/toml exports
+  ---
+  duration_ms: 14.913335
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses chokidar name
+ok 68 - fixed dependency resolution refuses chokidar name
+  ---
+  duration_ms: 15.351437
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses chokidar main
+ok 69 - fixed dependency resolution refuses chokidar main
+  ---
+  duration_ms: 18.535733
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses chokidar type
+ok 70 - fixed dependency resolution refuses chokidar type
+  ---
+  duration_ms: 14.625318
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses chokidar exports
+ok 71 - fixed dependency resolution refuses chokidar exports
+  ---
+  duration_ms: 15.709105
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses readdirp name
+ok 72 - fixed dependency resolution refuses readdirp name
+  ---
+  duration_ms: 18.74792
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses readdirp main
+ok 73 - fixed dependency resolution refuses readdirp main
+  ---
+  duration_ms: 14.993973
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses readdirp type
+ok 74 - fixed dependency resolution refuses readdirp type
+  ---
+  duration_ms: 15.934852
+  type: 'test'
+  ...
+# Subtest: fixed dependency resolution refuses readdirp exports
+ok 75 - fixed dependency resolution refuses readdirp exports
+  ---
+  duration_ms: 17.065352
+  type: 'test'
+  ...
+# Subtest: unexpected or nested dependency path refuses: node_modules/fourth/index.js
+ok 76 - unexpected or nested dependency path refuses: node_modules/fourth/index.js
+  ---
+  duration_ms: 12.558998
+  type: 'test'
+  ...
+# Subtest: unexpected or nested dependency path refuses: packages/hud-mcp/node_modules/@iarna/toml/toml.js
+ok 77 - unexpected or nested dependency path refuses: packages/hud-mcp/node_modules/@iarna/toml/toml.js
+  ---
+  duration_ms: 12.708578
+  type: 'test'
+  ...
+# Subtest: unexpected or nested dependency path refuses: node_modules/chokidar/node_modules/readdirp/index.js
+ok 78 - unexpected or nested dependency path refuses: node_modules/chokidar/node_modules/readdirp/index.js
+  ---
+  duration_ms: 13.293294
+  type: 'test'
+  ...
+# Subtest: missing local entrypoint cannot borrow a same-name ancestor dependency
+ok 79 - missing local entrypoint cannot borrow a same-name ancestor dependency
+  ---
+  duration_ms: 22.764573
+  type: 'test'
+  ...
+1..79
+# tests 79
+# suites 0
+# pass 79
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3988.523197

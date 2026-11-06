@@ -1,0 +1,164 @@
+✔ strict manifest rejects malformed envelopes, duplicate JSON/key, bad sibling and wrong topology (3.564383ms)
+✖ SIMULATED owned native parent, independently observed target and exact startup composition (57.559513ms)
+✖ SIMULATED native parent 0.165.0 cannot borrow independently observed target 0.166.0 (51.363275ms)
+✔ new-process default verifier and CLI help preserve refusal with managed-missing (312.044037ms)
+ℹ {"synthetic":true,"kind":"managed-missing","purpose":"default-verifier","pid":32,"deadlineAt":1793983207011,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"managed-missing","purpose":"--help","pid":39,"deadlineAt":1793983207040,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"managed-missing","purpose":"run --help","pid":46,"deadlineAt":1793983207142,"end":{"code":0,"signal":null},"alive":false}
+✔ new-process default verifier and CLI help preserve refusal with codex-missing (308.310961ms)
+ℹ {"synthetic":true,"kind":"codex-missing","purpose":"default-verifier","pid":53,"deadlineAt":1793983207317,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"codex-missing","purpose":"--help","pid":60,"deadlineAt":1793983207346,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"codex-missing","purpose":"run --help","pid":67,"deadlineAt":1793983207447,"end":{"code":0,"signal":null},"alive":false}
+✔ new-process default verifier and CLI help preserve refusal with managed-malformed (312.254604ms)
+ℹ {"synthetic":true,"kind":"managed-malformed","purpose":"default-verifier","pid":74,"deadlineAt":1793983207623,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"managed-malformed","purpose":"--help","pid":81,"deadlineAt":1793983207654,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"managed-malformed","purpose":"run --help","pid":88,"deadlineAt":1793983207756,"end":{"code":0,"signal":null},"alive":false}
+✔ new-process default verifier and CLI help preserve refusal with codex-malformed (301.509412ms)
+ℹ {"synthetic":true,"kind":"codex-malformed","purpose":"default-verifier","pid":95,"deadlineAt":1793983207931,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"codex-malformed","purpose":"--help","pid":102,"deadlineAt":1793983207962,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"codex-malformed","purpose":"run --help","pid":109,"deadlineAt":1793983208061,"end":{"code":0,"signal":null},"alive":false}
+✔ new-process default verifier and CLI help preserve refusal with both-missing (309.296246ms)
+ℹ {"synthetic":true,"kind":"both-missing","purpose":"default-verifier","pid":116,"deadlineAt":1793983208232,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"both-missing","purpose":"--help","pid":123,"deadlineAt":1793983208264,"end":{"code":0,"signal":null},"alive":false}
+ℹ {"synthetic":true,"kind":"both-missing","purpose":"run --help","pid":130,"deadlineAt":1793983208368,"end":{"code":0,"signal":null},"alive":false}
+✖ SIMULATED native target 0.165.0 cannot borrow parent client 0.166.0 (55.249652ms)
+✔ SIMULATED complete private runtime inventory derives frozen build ID and excludes only four cell files (41.979231ms)
+✔ runtime refuses dirty (11.443506ms)
+✔ runtime refuses missing (10.884637ms)
+✔ runtime refuses changed (14.403338ms)
+✔ runtime refuses unlisted (11.745206ms)
+✔ runtime refuses symlink (12.488558ms)
+✔ runtime refuses directory-link (11.179435ms)
+✔ runtime refuses duplicate (10.483371ms)
+✔ runtime refuses escape (10.632248ms)
+✔ runtime refuses oversize (10.738797ms)
+✔ runtime refuses total (10.856144ms)
+✔ runtime refuses too-many (24.178311ms)
+✔ runtime refuses mode (14.542363ms)
+✔ runtime refuses unknown (10.743842ms)
+✔ runtime refuses bad-meta (10.597684ms)
+✔ runtime refuses tree-alias (10.733246ms)
+✔ runtime refuses dot-path (11.217556ms)
+✔ runtime refuses duplicate-json (11.340999ms)
+✔ runtime refuses bad-cells (13.797519ms)
+✔ runtime refuses truncated (10.483789ms)
+✔ runtime refuses invalid-utf8 (10.419753ms)
+✔ runtime metadata uses the exact inert shared whitelist and primitive types (18.889637ms)
+✔ inert builtWithNode validates standard SemVer without trusting it as actual Node (37.376955ms)
+✔ minimum runtime anchor cannot be omitted: dist/core/launch/codex-cells.json (10.955118ms)
+✔ minimum runtime anchor cannot be omitted: dist/core/launch/managed-cells.json (10.684966ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/codex-cells.json (10.711936ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/managed-cells.json (12.468904ms)
+✔ minimum runtime anchor cannot be omitted: package.json (10.658587ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/package.json (10.601751ms)
+✔ minimum runtime anchor cannot be omitted: bin/hud-run (10.662054ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/bin/hud-mcp.mjs (10.846987ms)
+✔ minimum runtime anchor cannot be omitted: dist/core/run/cli.js (10.678384ms)
+✔ minimum runtime anchor cannot be omitted: dist/core/run/control.js (12.084484ms)
+✔ minimum runtime anchor cannot be omitted: dist/core/run/process.js (10.590551ms)
+✔ minimum runtime anchor cannot be omitted: dist/harness/codex/profile.js (10.808289ms)
+✔ minimum runtime anchor cannot be omitted: dist/collectors/file-watcher.js (10.56872ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/main.js (10.586734ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/managed-runtime.js (10.526462ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/packages/hud-mcp/src/delegation.js (11.061045ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/runtime-build.js (10.755377ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/capability-manifest.js (10.766838ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/capability.js (10.528195ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/core/launch/supervisor.js (10.516302ms)
+✔ minimum runtime anchor cannot be omitted: packages/hud-mcp/dist/src/harness/codex/profile.js (10.603085ms)
+✔ minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/package.json (10.860011ms)
+✔ minimum runtime anchor cannot be omitted: node_modules/chokidar/package.json (11.441883ms)
+✔ minimum runtime anchor cannot be omitted: node_modules/readdirp/package.json (10.564071ms)
+✔ minimum runtime anchor cannot be omitted: node_modules/@iarna/toml/toml.js (10.686107ms)
+✔ minimum runtime anchor cannot be omitted: node_modules/chokidar/index.js (10.654881ms)
+✔ minimum runtime anchor cannot be omitted: node_modules/chokidar/handler.js (10.871943ms)
+✔ minimum runtime anchor cannot be omitted: node_modules/readdirp/index.js (10.938196ms)
+✔ dependency package identity is independently checked: @iarna/toml (14.172828ms)
+✔ dependency package identity is independently checked: chokidar (14.128576ms)
+✔ dependency package identity is independently checked: readdirp (13.676926ms)
+✔ fixed dependency resolution refuses @iarna/toml name (14.783152ms)
+✔ fixed dependency resolution refuses @iarna/toml main (14.76559ms)
+✔ fixed dependency resolution refuses @iarna/toml type (14.585544ms)
+✔ fixed dependency resolution refuses @iarna/toml exports (14.888354ms)
+✔ fixed dependency resolution refuses chokidar name (13.945495ms)
+✔ fixed dependency resolution refuses chokidar main (14.554426ms)
+✔ fixed dependency resolution refuses chokidar type (14.709635ms)
+✔ fixed dependency resolution refuses chokidar exports (13.903718ms)
+✔ fixed dependency resolution refuses readdirp name (14.819859ms)
+✔ fixed dependency resolution refuses readdirp main (14.811177ms)
+✔ fixed dependency resolution refuses readdirp type (14.038128ms)
+✔ fixed dependency resolution refuses readdirp exports (15.443037ms)
+✔ unexpected or nested dependency path refuses: node_modules/fourth/index.js (11.829393ms)
+✔ unexpected or nested dependency path refuses: packages/hud-mcp/node_modules/@iarna/toml/toml.js (12.398781ms)
+✔ unexpected or nested dependency path refuses: node_modules/chokidar/node_modules/readdirp/index.js (12.071943ms)
+✔ missing local entrypoint cannot borrow a same-name ancestor dependency (22.769994ms)
+ℹ tests 79
+ℹ suites 0
+ℹ pass 76
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2794.280094
+
+✖ failing tests:
+
+test at dist-test/tests/unit/managed-runtime.test.js:56:1
+✖ SIMULATED owned native parent, independently observed target and exact startup composition (57.559513ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at compile (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:35:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async runNativeScenario (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:42:5)
+      at async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/managed-runtime.test.js:57:33)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/managed-runtime.test.js:59:1
+✖ SIMULATED native parent 0.165.0 cannot borrow independently observed target 0.166.0 (51.363275ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at compile (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:35:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async runNativeScenario (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:42:5)
+      at async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/managed-runtime.test.js:60:20)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at dist-test/tests/unit/managed-runtime.test.js:144:1
+✖ SIMULATED native target 0.165.0 cannot borrow parent client 0.166.0 (55.249652ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at compile (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:35:20)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async runNativeScenario (file:///work/src/dist-test/tests/fixtures/managed-native-runner.js:42:5)
+      at async TestContext.<anonymous> (file:///work/src/dist-test/tests/unit/managed-runtime.test.js:145:20)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
