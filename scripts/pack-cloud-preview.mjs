@@ -16,14 +16,14 @@ import {
   runStep,
 } from './check-cloud.mjs';
 
-const ROOT_BINS = {
+export const ROOT_BINS = {
   'codex-hud': 'bin/codex-hud',
   hud: 'bin/hud',
   'hud-run': 'bin/hud-run',
   'hud-statusline': 'bin/hud-statusline',
 };
 const ENTRYPOINTS = Object.values(ROOT_BINS);
-const REQUIRED_OUTPUTS = {
+export const REQUIRED_OUTPUTS = {
   'src/cli/statusline.ts': 'dist/cli/statusline.js',
   'src/harness/pi/managed-launch.ts': 'dist/harness/pi/managed-launch.js',
   'src/harness/claude/managed-launch.ts': 'dist/harness/claude/managed-launch.js',
@@ -34,7 +34,7 @@ const REQUIRED_OUTPUTS = {
   'src/harness/pi/delegation-context.ts': 'dist/harness/pi/delegation-context.js',
 };
 const EXTENSION_ENTRIES = ['extensions/pi/hud-footer.ts', 'extensions/pi/hud-delegate.ts'];
-const EXTRA_FILES = [
+export const EXTRA_FILES = [
   'README.md',
   'bin/hud-statusline-preview',
   ...EXTENSION_ENTRIES,
@@ -46,7 +46,20 @@ export function outputForSource(file, mcp = false) {
   const js = file.slice(0, -3) + '.js';
   return mcp ? `packages/hud-mcp/dist/${js}` : file.startsWith('src/') ? `dist/${js.slice(4)}` : null;
 }
-function previewManifest(original, mcp = false) {
+// Shared exact tracked-source/fresh-build selection. Neither caller recursively packs dist.
+export function selectedOutputs(inputs, hasOutput) {
+  const selected = [];
+  for (const source of inputs) {
+    const main = outputForSource(source);
+    if (main) selected.push({ source, output: main, generatedPath: `main/${main.slice(5)}` });
+    const mcp = outputForSource(source, true);
+    const generatedPath = `mcp/${source.slice(0, -3)}.js`;
+    if (mcp && (source.startsWith('packages/hud-mcp/src/') || hasOutput(generatedPath)))
+      selected.push({ source, output: mcp, generatedPath });
+  }
+  return selected;
+}
+export function previewManifest(original, mcp = false) {
   if (typeof original.name !== 'string' || typeof original.version !== 'string' || original.type !== 'module')
     throw new Error('invalid_package_manifest');
   const expected = mcp ? { 'hud-mcp': 'bin/hud-mcp.mjs' } : ROOT_BINS;
@@ -191,15 +204,10 @@ async function main() {
         throw new Error('unsafe_generated_output');
       return fs.readFileSync(file);
     };
-    for (const source of inputs) {
-      const main = outputForSource(source);
-      if (main) add(main, generated(`main/${main.slice(5)}`), 0o644, source);
-      const mcp = outputForSource(source, true);
-      // MCP compiles its own sources and only the root modules it imports, not every CLI.
-      const mcpOutput = `mcp/${source.slice(0, -3)}.js`;
-      if (mcp && (source.startsWith('packages/hud-mcp/src/') || fs.existsSync(path.join(out, mcpOutput))))
-        add(mcp, generated(mcpOutput), 0o644, source);
-    }
+    for (const { source, output, generatedPath } of selectedOutputs(inputs, (file) =>
+      fs.existsSync(path.join(out, file))
+    ))
+      add(output, generated(generatedPath), 0o644, source);
     for (const [source, output] of Object.entries(REQUIRED_OUTPUTS)) {
       if (!report.entries.some((entry) => entry.path === output && entry.origin === source))
         throw new Error(`missing_required_runtime_output: ${output}`);
