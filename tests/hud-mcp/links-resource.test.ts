@@ -23,7 +23,6 @@ const request = (args: Record<string, unknown> = {}) => ({
 function resource(value: unknown) {
   const result = linksResource(value, source);
   assert.equal(result.ok, true);
-  if (!result.ok) throw new Error(result.code);
   return result.content;
 }
 
