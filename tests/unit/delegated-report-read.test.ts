@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { openCompletedReport } from '../../src/core/delegated-report-read.js';
+import { sessionRefKey } from '../../src/core/identity.js';
+import { DigestFailure } from '../../src/core/materials/source-config.js';
 import { digestFixture, SUMMARY } from '../fixtures/delegated-digest.js';
 
 for (const harness of ['codex', 'claude', 'pi'] as const) {
@@ -35,7 +37,6 @@ for (const [name, sql] of [
   ['unaccepted binding', "UPDATE evidence SET validation='rejected' WHERE evidence_id='proof'"],
   ['missing parent', 'UPDATE links SET parent_ref=NULL'],
   ['handover', "UPDATE links SET current_owner=0,state='handed_over'"],
-  ['thread mismatch', "UPDATE runs SET target_session_ref='[\"claude\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"synthetic-child\",\"other\"]'"],
   ['source mismatch', "UPDATE runs SET source_id='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'"],
   ['harness mismatch', "UPDATE runs SET harness='pi'"],
   ['report context mismatch', 'UPDATE reports SET context_generation=2'],
@@ -51,6 +52,98 @@ for (const [name, sql] of [
     } finally { f.cleanup(); }
   });
 }
+
+test('actual metadata selection refuses thread mismatch in a disposable schema-preserving fixture', async () => {
+  const f = await digestFixture();
+  try {
+    const valid = await openCompletedReport(f.home, f.input.runId, f.input.reportId);
+    try {
+      assert.deepEqual(valid.metadata.ref, f.ref);
+    } finally { valid.close(); }
+
+    const originalRef = sessionRefKey(f.ref);
+    const otherRef = { ...f.ref, threadId: 'other' };
+    const otherKey = sessionRefKey(otherRef);
+    assert.notEqual(otherRef.threadId, f.ref.threadId);
+    const originalRun = f.db.prepare('SELECT * FROM runs WHERE run_id=?').get(f.input.runId);
+    assert.ok(originalRun);
+    assert.equal(originalRun.target_session_ref, originalRef);
+    const replacementRun: Record<string, string | number | null> = {};
+    for (const [column, value] of Object.entries(originalRun)) {
+      assert.ok(value === null || typeof value === 'string' || typeof value === 'number');
+      replacementRun[column] = value;
+    }
+    replacementRun.target_session_ref = otherKey;
+    const triggers = () => f.db.prepare("SELECT name, tbl_name, sql FROM sqlite_master WHERE type='trigger' ORDER BY name").all();
+    const originalTriggers = triggers();
+    const attribution = () => ({
+      bindings: f.db.prepare('SELECT * FROM child_bindings ORDER BY binding_id').all(),
+      links: f.db.prepare('SELECT * FROM links ORDER BY link_id').all(),
+      reports: f.db.prepare('SELECT * FROM reports ORDER BY report_id').all(),
+      contexts: f.db.prepare('SELECT * FROM caller_contexts ORDER BY context_id, generation').all(),
+      evidence: f.db.prepare('SELECT * FROM evidence ORDER BY evidence_id').all(),
+      events: f.db.prepare('SELECT * FROM events ORDER BY seq').all(),
+    });
+    const originalAttribution = attribution();
+    assert.equal(originalAttribution.bindings.length, 1);
+    assert.equal(originalAttribution.bindings[0].session_ref, originalRef);
+    assert.equal(originalAttribution.bindings[0].run_id, f.input.runId);
+    assert.equal(originalAttribution.links.length, 1);
+    assert.equal(originalAttribution.links[0].child_ref, originalRef);
+    assert.equal(originalAttribution.links[0].link_id, originalRun.link_id);
+    assert.equal(originalAttribution.reports.length, 1);
+    assert.equal(originalAttribution.reports[0].report_id, f.input.reportId);
+    assert.equal(originalAttribution.reports[0].run_id, f.input.runId);
+    assert.equal(originalAttribution.reports[0].link_id, originalRun.link_id);
+    assert.equal(originalAttribution.reports[0].child_binding_id, originalAttribution.bindings[0].binding_id);
+    assert.equal(f.db.prepare('PRAGMA foreign_keys').get()!.foreign_keys, 1);
+    assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(), []);
+
+    // Ordinary writers must still be unable to replace a known target.
+    assert.throws(
+      () => f.db.prepare('UPDATE runs SET target_session_ref=? WHERE run_id=?').run(otherKey, f.input.runId),
+      { message: 'known target ref cannot be replaced' }
+    );
+    assert.deepEqual(f.db.prepare('SELECT * FROM runs WHERE run_id=?').get(f.input.runId), originalRun);
+
+    f.insert('sessions', { session_ref: otherKey, harness: otherRef.harness, source_id: otherRef.sourceId,
+      session_id: otherRef.sessionId, thread_id: otherRef.threadId });
+    // Offline corruption of this disposable fixture only, never a production write path.
+    // Keep every schema guard and stored run column; defer only the temporary missing-parent FKs.
+    f.db.exec('BEGIN');
+    try {
+      f.db.exec('PRAGMA defer_foreign_keys=ON');
+      assert.equal(f.db.prepare('DELETE FROM runs WHERE run_id=?').run(f.input.runId).changes, 1);
+      f.insert('runs', replacementRun);
+      f.db.exec('COMMIT');
+    } catch (error) {
+      f.db.exec('ROLLBACK');
+      throw error;
+    }
+
+    assert.deepEqual({ ...f.db.prepare('SELECT * FROM runs WHERE run_id=?').get(f.input.runId) }, replacementRun);
+    const originalSession = f.db.prepare('SELECT * FROM sessions WHERE session_ref=?').get(originalRef);
+    const otherSession = f.db.prepare('SELECT * FROM sessions WHERE session_ref=?').get(otherKey);
+    assert.ok(originalSession);
+    assert.ok(otherSession);
+    assert.deepEqual({ ...otherSession }, { ...originalSession, session_ref: otherKey, thread_id: 'other' });
+    assert.deepEqual(JSON.parse(otherKey), [f.ref.harness, f.ref.sourceId, f.ref.sessionId, 'other']);
+    assert.deepEqual(attribution(), originalAttribution);
+    assert.equal(f.db.prepare('PRAGMA foreign_keys').get()!.foreign_keys, 1);
+    assert.equal(f.db.prepare('PRAGMA defer_foreign_keys').get()!.defer_foreign_keys, 0);
+    assert.deepEqual(f.db.prepare('PRAGMA foreign_key_check').all(), []);
+    assert.deepEqual(triggers(), originalTriggers);
+
+    // Setup must finish successfully before observing the actual reader's refusal.
+    const queries: string[] = [];
+    await assert.rejects(async () => {
+      const unexpected = await openCompletedReport(f.home, f.input.runId, f.input.reportId, { onQuery: (q) => queries.push(q) });
+      unexpected.close();
+    }, (error: unknown) => error instanceof DigestFailure && error.reason === 'target_unavailable');
+    assert.equal(queries.filter((q) => /^\s*SELECT p\.report_id, p\.run_id,/.test(q) && q.includes('FROM reports p')).length, 1);
+    assert.equal(queries.some((q) => /^\s*SELECT\s+(?:\*|summary\b)/i.test(q)), false);
+  } finally { f.cleanup(); }
+});
 
 test('latest accepted report is selected by event sequence, never createdAt, with permanent target invalidation', async () => {
   const f = await digestFixture();
