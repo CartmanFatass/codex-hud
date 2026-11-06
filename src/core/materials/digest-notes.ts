@@ -221,7 +221,7 @@ export function saveDigestNote(context: DigestNoteContext, document: DigestDocum
           checkWriterLock(cleanupLock, paths);
           // This live descriptor keeps the original inode allocated even after peer replacement.
           // Metadata only: revoked authority never permits reading generated payload here.
-          if (!pin || pin.id !== attempted.id) fail();
+          if (!pin || pin.id !== attempted.id) return fail();
           const owned = fs.fstatSync(pin.fd);
           privateDescriptor(owned, false);
           if (`${owned.dev}:${owned.ino}` !== pin.id || owned.size !== pin.size) fail();
