@@ -1,4 +1,7 @@
 /** One explicit completed-report summary, one ordinary generic SmallModel request. */
+import { prepareDelegatedDigestPlan, disposeDelegatedDigestPlan, claimDelegatedDigestPlan,
+  type DigestPlanLifetime } from './delegated-digest-lifetime.js';
+export type { DigestPlan } from './delegated-digest-lifetime.js';
 import { SmallModel, type ModelHandle } from '../../collectors/small-model.js';
 import { openCompletedReport, type CompletedReportMetadata, type CompletedReportTarget } from '../delegated-report-read.js';
 import { materialRequest } from './request.js';
@@ -32,6 +35,8 @@ function selection(m: CompletedReportMetadata) {
 }
 export interface DigestInput { home: string; runId: string; reportId: string; env: NodeJS.ProcessEnv }
 export interface DigestOptions {
+  /** Optional in-process continuity veto; never replaces the fresh invocation authority. */
+  planLifetime?: DigestPlanLifetime;
   fetch?: typeof fetch;
   signal?: AbortSignal;
   /** Test observation only; cannot change SQL or supply material. */
@@ -47,28 +52,11 @@ function source(input: DigestInput, target: CompletedReportTarget, active: () =>
   }
 }
 export async function planDelegatedDigest(input: DigestInput, options: Pick<DigestOptions, 'onQuery'> = {}) {
-  const target = await openCompletedReport(input.home, input.runId, input.reportId, options);
-  try {
-    let prepared: SourceSnapshot | undefined;
-    let reason: string;
-    try { prepared = source(input, target, () => true); reason = prepared.readiness(target.metadata.ref); }
-    catch (error) { reason = error instanceof DigestFailure ? error.reason : 'source_configuration_invalid'; }
-    if (!target.current()) throw new DigestFailure('target_changed');
-    return {
-      format: 'hud-delegated-digest-plan' as const, schemaVersion: 1 as const, ...selection(target.metadata),
-      field: 'result' as const,
-      material: { kind: 'completed_report_summary', status: 'completed', bytes: target.metadata.summaryBytes,
-        acceptedSeq: target.metadata.acceptedSeq, acceptedAt: target.metadata.acceptedAt, coverage: 'one_report_summary' },
-      configuration: { model: `sources/${target.metadata.ref.sourceId}/model.json`,
-        outbound: `sources/${target.metadata.ref.sourceId}/outbound.json` },
-      ...(prepared?.recipient && prepared.config.connection.backend === 'api' ? {
-        recipientId: prepared.recipient.recipientId, endpoint: prepared.endpoint, account: prepared.config.connection.account,
-        model: prepared.recipient.model, language: prepared.config.delegatedDigest.language,
-      } : {}),
-      readiness: { ready: reason === 'ready', reason },
-    };
-  } finally { target.close(); }
+  const prepared = await prepareDelegatedDigestPlan(input, options);
+  try { return prepared.plan; }
+  finally { if (prepared.lifetime) disposeDelegatedDigestPlan(prepared.lifetime); }
 }
+
 export interface DigestDocument extends ReturnType<typeof selection> {
   format: 'hud-delegated-digest'; schemaVersion: 1; material: 'completed_report_summary';
   recipientId: string; model: string; language: 'en' | 'zh'; generatedAt: number; cached: boolean; digest: DelegatedDigest;
@@ -77,11 +65,16 @@ export async function runDelegatedDigest(
   input: DigestInput & { expectedLedger: string; expectedRecipient: string }, options: DigestOptions = {},
   deliver?: (document: DigestDocument) => void | Promise<void>
 ): Promise<DigestDocument> {
+  const planLifetime = options.planLifetime;
+  // A guarded invocation cannot be retargeted by later mutation of its caller's input object.
+  if (planLifetime !== undefined) input = { ...input };
   let active = true;
   let target: CompletedReportTarget | undefined;
   let model: SmallModel | undefined;
   let handle: ModelHandle | undefined;
   let stopped: DigestFailure | undefined;
+  let claimed: ReturnType<typeof claimDelegatedDigestPlan> | undefined;
+  let completed = false;
   let stopResult!: (error: DigestFailure) => void;
   const stopPromise = new Promise<DigestFailure>((resolve) => { stopResult = resolve; });
   const stop = (reason: string) => {
@@ -99,10 +92,13 @@ export async function runDelegatedDigest(
   if (options.signal?.aborted) abort();
   try {
     if (stopped) throw stopped;
+    if (planLifetime !== undefined) claimed = claimDelegatedDigestPlan(planLifetime, input,
+      () => stop('authorization_changed'));
     target = await openCompletedReport(input.home, input.runId, input.reportId, options);
     if (stopped) throw stopped;
     if (target.metadata.ledgerId !== input.expectedLedger) throw new DigestFailure('expected_ledger_mismatch');
-    const prepared = source(input, target, () => active);
+    if (claimed && !claimed.current(target.metadata)) throw stopped ?? new DigestFailure('plan_lifetime_invalid');
+    const prepared = source(input, target, () => active && (!claimed || claimed.current(target!.metadata)));
     if (!prepared.recipient || prepared.recipient.recipientId !== input.expectedRecipient)
       throw new DigestFailure('expected_recipient_mismatch');
     const ready = prepared.readiness(target.metadata.ref);
@@ -192,19 +188,36 @@ export async function runDelegatedDigest(
       const delivered = await Promise.race([Promise.resolve(deliver(result)), stopPromise]);
       if (delivered instanceof DigestFailure) throw delivered;
     }
+    if (claimed && !claimed.current(target.metadata)) throw stopped ?? new DigestFailure('authorization_changed');
+    completed = true;
     return result;
   } finally {
     // Latch inactive BEFORE cancellation/cleanup: an uncooperative late transport cannot publish.
     active = false;
     clearTimeout(timer);
     options.signal?.removeEventListener('abort', abort);
-    model?.cancelAll();
-    target?.close();
-    let flushTimer: ReturnType<typeof setTimeout> | undefined;
+    let cleanupCompleted = false;
     try {
-      if (model) await Promise.race([model.flushTelemetry().catch(() => undefined), new Promise<void>((resolve) => {
-        flushTimer = setTimeout(resolve, 500);
-      })]);
-    } finally { clearTimeout(flushTimer); }
+      model?.cancelAll();
+      target?.close();
+      let flushTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        if (model) await Promise.race([model.flushTelemetry().catch(() => undefined), new Promise<void>((resolve) => {
+          flushTimer = setTimeout(resolve, 500);
+        })]);
+      } finally { clearTimeout(flushTimer); }
+      cleanupCompleted = true;
+    } finally {
+      if (claimed) {
+        if (options.signal?.aborted && !stopped) stop('cancelled');
+        const keep = completed && cleanupCompleted && !stopped && !!target && claimed.current(target.metadata);
+        claimed.release(keep);
+        // A success cannot escape after asynchronous cleanup invalidated the original baseline.
+        if (completed && !keep) throw stopped ?? new DigestFailure('authorization_changed');
+      } else if (planLifetime !== undefined && !completed) {
+        // Includes abort before claim, bad input, and a failed/duplicate claim. Never leave a reusable attempt.
+        disposeDelegatedDigestPlan(planLifetime);
+      }
+    }
   }
 }
