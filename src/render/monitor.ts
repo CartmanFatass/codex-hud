@@ -32,6 +32,7 @@ import { paneRows, agentsView, putAwayCount, summaryRow } from './monitor-panes.
 import { delegationPutAway, delegationView, type DelegationView, type PlanOptions } from './delegation/panel.js';
 import { resolveSelection } from './delegation/selection.js';
 import { selectedActions, type DelegationAction } from './delegation/actions.js';
+import { digestFrameTarget, type DigestPanelTarget, type DigestPanelSnapshot } from './delegated-digest.js';
 import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
 import { roleSet } from './directions.js';
 
@@ -228,7 +229,8 @@ export interface MonitorControl {
     | 'keys'
     | 'open-session'
     | 'delegation-open'
-    | 'delegation-recover';
+    | 'delegation-recover'
+    | 'delegation-digest';
   pane?: MonitorPane;
   /** The agent a log line belongs to: a click selects it. */
   item?: string;
@@ -248,8 +250,10 @@ export interface MonitorFrame {
   statusCard?: FootInfo;
   /** The delegation view this frame drew (its plan, its rows), what a key or a click is resolved against. */
   delegation?: DelegationView;
+  digestTarget?: DigestPanelTarget | null;
 }
 export interface MonitorData {
+  delegatedDigest?: DigestPanelSnapshot;
   /** The HUD's data; `delegation`, when non-null, draws the agents view from the delegation view model. */
   hud?: HudData & HudDelegationData;
   tree: SubagentTree;
@@ -325,6 +329,7 @@ export interface MonitorOutcome {
   state: MonitorState;
   close: boolean;
   action?:
+    | { type: 'delegation-digest'; target: DigestPanelTarget }
     | { type: 'settings' }
     | { type: 'switch'; id: string }
     | { type: 'pick'; id: string }
@@ -557,7 +562,7 @@ function helpText(
       ...(rich ? [] : ['{p} h l  fold / unfold agent']),
       '{p} f  filter  {p} s  order',
       // The delegation view's keys (design §2, §3.7): only where that view is drawn, so the legacy help is as it was.
-      ...(delegation ? ['{p} n N  next / previous trouble', '{p} L  log', '{p} R  resume / reconcile'] : []),
+      ...(delegation ? ['{p} n N  next / previous trouble', '{p} L  log', '{p} R  resume / reconcile', '{p} D  digest completed report'] : []),
       rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
       '{p} Esc  back  {p} q  close panel',
       '{p} {p}  {p} itself, to Codex',
@@ -653,6 +658,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       ...planOptions(state, now),
       style: state.style === 'rich' ? 'rich' : 'compact',
     });
+  frame.digestTarget = digestFrameTarget(frame.delegation, state.tree.selectedId);
   if (!width || !height) return frame;
   if (state.help) {
     // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
@@ -798,6 +804,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
           brief: input.brief,
           expired: delegationPutAway(dview.vm, planOptions(state, now)),
           buttons: rowButtons(dview, state.tree.selectedId),
+          digest: Boolean(frame.digestTarget),
         }
       : { brief: input.brief, expired: putAwayCount(input.tree.nodes, state, now) },
     width

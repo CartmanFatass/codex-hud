@@ -20,6 +20,7 @@ import { sameSessionRef } from '../core/identity.js';
 import type { LinkTreeNode } from '../core/link/types.js';
 import type { DelegationView } from './delegation/panel.js';
 import { RESUME_DIAGNOSTIC, selectedActions } from './delegation/actions.js';
+import { digestFrameTarget, digestInspectorLines } from './delegated-digest.js';
 import {
   age,
   nodeStatus,
@@ -367,7 +368,14 @@ export function inspectorRows(
     ];
   }
   if (state.preview === 'agent') {
-    if (delegation) return delegationInspectorRows(delegation, state.tree.selectedId, width);
+    if (delegation) {
+      const digest = digestInspectorLines(input.delegatedDigest, digestFrameTarget(delegation, state.tree.selectedId), width);
+      return [
+        ...digest.map((text) => ({ text })),
+        ...(digest.length ? [{ text: '' }] : []),
+        ...delegationInspectorRows(delegation, state.tree.selectedId, width),
+      ];
+    }
     const node = findNode(input.tree.nodes, state.tree.selectedId);
     if (!node) lines = [];
     else {

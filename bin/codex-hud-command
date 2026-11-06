@@ -39,7 +39,7 @@ if [[ "$tree_pane" =~ ^%[0-9]+$ ]]; then
 fi
 
 case "$command" in
-  quit|back|up|down|page-up|page-down|first|last|left|right|next-trouble|previous-trouble|log|resume-reconcile) exit 0 ;;
+  quit|back|up|down|page-up|page-down|first|last|left|right|next-trouble|previous-trouble|log|resume-reconcile|delegation-digest) exit 0 ;;
 esac
 
 # Not a HUD session after all: nothing to open.

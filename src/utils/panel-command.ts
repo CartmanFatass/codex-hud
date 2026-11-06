@@ -51,6 +51,7 @@ export const PANEL_COMMANDS = [
   'previous-trouble',
   'log',
   'resume-reconcile',
+  'delegation-digest',
 ] as const;
 export type PanelCommand = (typeof PANEL_COMMANDS)[number];
 
@@ -96,6 +97,7 @@ const MONITOR_KEYS: Record<PanelCommand, string> = {
   'previous-trouble': 'previous-trouble',
   log: 'log',
   'resume-reconcile': 'resume-reconcile',
+  'delegation-digest': 'delegation-digest',
 };
 export function monitorKey(command: PanelCommand): string {
   return MONITOR_KEYS[command];
@@ -153,6 +155,7 @@ export function needsOpenPanel(command: PanelCommand): boolean {
     'previous-trouble',
     'log',
     'resume-reconcile',
+    'delegation-digest',
   ].includes(command);
 }
 

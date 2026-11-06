@@ -81,7 +81,9 @@ test('the decoder names n, N, L and R, and every other key (all of ASCII) is exa
         const ch = String.fromCharCode(code);
         const inputs = new WorkbenchInputDecoder(profile, { forward }).push(Buffer.from(ch));
         const expected =
-          NEW[ch] ??
+          profile === 'monitor' && ch === 'D'
+            ? 'delegation-digest'
+            : NEW[ch] ??
           (profile === 'monitor' && ch === '2'
             ? 'timeline'
             : profile === 'monitor' && ch === '4'
@@ -112,7 +114,7 @@ test('the four commands are panel commands, mapped to keys of their own; R is na
     assert.deepEqual(decoder.push(Buffer.from(commandSequence(command as never))), [{ type: 'command', command }]);
   }
   assert.equal(NEW.R, 'resume-reconcile');
-  assert.equal(PANEL_COMMANDS.length, 36);
+  assert.equal(PANEL_COMMANDS.length, 37);
   // The map of every other command is as it was.
   assert.equal(monitorKey('older'), 'show-all');
   assert.equal(monitorKey('switch'), 'open-session');
@@ -126,6 +128,7 @@ test('with the panel closed all four do nothing; every other command is as it wa
   const doNothing = staysOpening.filter((c) => !needsOpenPanel(c));
   assert.deepEqual(doNothing.sort(), [
     'back',
+    'delegation-digest',
     'down',
     'first',
     'last',

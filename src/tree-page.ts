@@ -1,5 +1,8 @@
 import { performance } from 'node:perf_hooks';
 import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
+import { DelegatedDigestPanel, DelegatedDigestPage } from './collectors/delegated-digest-panel.js';
+import { digestPanelTarget, digestModalOwnsInput, renderDigestModal,
+  type DigestModalFrame } from './render/delegated-digest.js';
 import {
   PanelHostController,
   panelHostTarget,
@@ -338,6 +341,8 @@ async function runLivePage(): Promise<void> {
   const navigateOnce = createNavigationGate();
   const openOnce = createOpenGate();
   const runLogs = new DelegationLogView();
+  const delegatedDigest = new DelegatedDigestPanel();
+  let digestModalFrame: DigestModalFrame | undefined;
   let logFrame: LogFrame | undefined;
   const panelHost = new PanelHostController({ home: delegationCollector?.home ?? null });
   let panelDelegation: DelegationViewModel | null = null;
@@ -365,7 +370,29 @@ async function runLivePage(): Promise<void> {
       panelDelegation = withPanelHostAvailability(delegation, panelHost.snapshot);
     }
     if (runLogs.isOpen && !runLogs.valid(logContext())) runLogs.close();
+    digestPage.synchronize();
   };
+  // A single production seam owns Digest routing, whole-read isolation, completion effects and revalidation.
+  // The generic dispatcher below cannot dismiss an obscuring surface on behalf of a hidden Digest.
+  let digestForward: ((text: string) => void) | undefined;
+  const digestPage = new DelegatedDigestPage(delegatedDigest, {
+    context: () => ({ state, monitor: { tree, git, worktrees, frame },
+      surfaces: { settingsPage, settingsLeave, activityHub, observability, logsOpen: runLogs.isOpen },
+      mainPane: Boolean(mainPane), mouse: settings.mouse, closed, home: delegationCollector?.home ?? null,
+      env: process.env, target: digestPanelTarget(panelDelegation, state.tree.selectedId),
+      scope: JSON.stringify([tree.rootId, panelEpoch, panelDelegation?.tree.nodes
+        .filter((node) => node.parentKey === null).map((node) => [node.key, node.identity])]),
+      frameRoot, currentRoot: tree.rootId, frameEpoch, currentEpoch: collectionEpoch }),
+    sync: syncPanelView, modalFrame: () => digestModalFrame, setState: (next) => { state = next; },
+    paint: () => render(), focusPanel: () => focusPanel(), focusMain: () => focusMain(),
+    close: () => finish(true), forward: (text) => digestForward?.(text),
+    pauseModels: () => {
+      if (settings.briefing === 'off') return;
+      try { settings = saveSettings({ briefingPaused: true }); updateBriefer(true); jobs.stop(); updateProgress(); }
+      catch { error = t('Digest cancelled; model pause could not be saved'); }
+    },
+    timeAsync: (name, work) => timeAsync(name, work),
+  });
   const refreshPanelHost = () => {
     if (closed) return;
     syncPanelView();
@@ -674,7 +701,12 @@ async function runLivePage(): Promise<void> {
     syncPanelView();
     const output = time('render', () => {
       let lines: string[];
-      if (runLogs.isOpen) {
+      if (digestModalOwnsInput(delegatedDigest.snapshot)) {
+        digestModalFrame = renderDigestModal(delegatedDigest.snapshot, process.stdout.columns || 30,
+          process.stdout.rows || 24, digestPage.offset);
+        digestPage.offset = digestModalFrame.offset;
+        lines = digestModalFrame.lines;
+      } else if (runLogs.isOpen) {
         logFrame = runLogs.render(process.stdout.columns || 30, process.stdout.rows || 24);
         lines = logFrame.lines;
       } else if (activityHub) {
@@ -750,6 +782,7 @@ async function runLivePage(): Promise<void> {
           settings.briefing !== 'off' || settings.agentLog
         );
         frame = renderMonitor({
+          delegatedDigest: delegatedDigest.snapshot,
           tree,
           state,
           git,
@@ -1186,6 +1219,7 @@ async function runLivePage(): Promise<void> {
     } finally {
       collecting = false;
     }
+    await digestPage.ordinaryCollectionCompleted(); // Includes hide/paint and I/O inside the outer collect timer.
     readMainCols();
     void refreshInspection();
     void refreshAgentContext();
@@ -1280,6 +1314,7 @@ async function runLivePage(): Promise<void> {
   const finish = (user = false) => {
     if (closed) return;
     closed = true;
+    digestPage.shutdown();
     runLogs.close();
     panelHost.close();
     const clipboardClosing = clipboard.close();
@@ -1436,10 +1471,8 @@ async function runLivePage(): Promise<void> {
     const overlayBefore = Boolean(settingsPage || state.help || activityHub || observability);
     // What goes to Codex, in order, sent once the whole read is through.
     const forward: ForwardItem[] = [];
-    for (let input of inputs) {
-      if (closed) break;
-      if (input.type === 'mouse' && !settings.mouse) continue;
-      syncPanelView();
+    digestForward = (text) => forward.push({ kind: 'keys', text });
+    for (let input of digestPage.inputs(inputs)) {
       if (runLogs.isOpen) {
         runLogs.input(input, logFrame, logContext());
         if (!runLogs.isOpen && !state.keys) focusMain();
@@ -1704,6 +1737,7 @@ async function runLivePage(): Promise<void> {
           // Resuming asks at once when there is news, rather than at the next tick.
           if (!settings.briefingPaused) void collect();
           else {
+            delegatedDigest.cancel();
             updateBriefer(true);
             jobs.stop();
           }
@@ -1839,6 +1873,7 @@ async function runLivePage(): Promise<void> {
         }
       }
     }
+    digestForward = undefined;
     if (!STANDALONE_PANEL && forward.length) void forwarder.send(forward);
     if (!settingsPage) probe.cancel();
     if (!closed && !overlayBefore && (settingsPage || state.help || activityHub || observability)) focusPanel();

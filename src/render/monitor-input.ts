@@ -29,6 +29,18 @@ import { nextLevel } from './status-foot.js';
 import { UNTRACKED_ROW, worktreeOfItem } from './monitor-labels.js';
 import { TIMELINE_EARLIER, TIMELINE_STEP, timelineAgent } from './monitor-timeline.js';
 
+/** The page's early Digest dispatch gate. Ordinary text on other surfaces keeps its existing owner. */
+export function routeDigestInput(
+  input: WorkbenchInput,
+  context: { monitorVisible: boolean; forwardToMain: boolean }
+): 'ignore' | 'forward' | 'panel' | null {
+  if (input.type === 'command' && input.command === 'delegation-digest')
+    return context.monitorVisible ? 'panel' : 'ignore';
+  if (input.type === 'key' && input.key === 'delegation-digest' && context.monitorVisible)
+    return context.forwardToMain ? 'forward' : 'panel';
+  return null;
+}
+
 /**
  * A click on a pane's button, or its number after the prefix: an open pane
  * closes, a closed one opens and takes focus. Closed, it takes no row, and
@@ -115,6 +127,11 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     const action = actions ? choose(actions) : null;
     return result(action ?? undefined);
   };
+  const digestAction = (): MonitorOutcome => {
+    const target = ctx.frame?.digestTarget;
+    return target && ctx.frame?.controls.some((control) => control.kind === 'delegation-digest' && !control.disabled)
+      ? result({ type: 'delegation-digest', target }) : result();
+  };
   if (key === 'close') return result(undefined, true);
   // Space and Enter inspect the selection in either panel style.
   if (key === 'space') key = 'enter';
@@ -166,6 +183,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       return control.disabled
         ? result()
         : rowAction(control.kind, control.kind === 'delegation-open' ? openButtonAction : recoverAction);
+    if (control?.kind === 'delegation-digest') return control.disabled ? result() : digestAction();
     if (control?.kind === 'settings') return result({ type: 'settings' });
     if (control?.kind === 'observability') return result({ type: 'observability' });
     if (control?.kind === 'help') {
@@ -329,6 +347,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   if (key === 'main') return result({ type: 'switch', id: ctx.tree.rootId });
   // `o`, `L` and `R` on a delegation row: Open or Switch, Log, Reconcile or Resume. Each acts when its button is drawn.
   if (key === 'open-session' && (del || next.delegating)) return rowAction('delegation-open', openKeyAction);
+  if (key === 'delegation-digest') return digestAction();
   if (key === 'log') return rowAction('delegation-open', logKeyAction);
   if (key === 'resume-reconcile') return rowAction('delegation-recover', recoverAction);
   if (key === 'open-session')

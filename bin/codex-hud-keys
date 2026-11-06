@@ -96,6 +96,7 @@ bind_command 0 n next-trouble
 bind_command 0 N previous-trouble
 bind_command 0 L log
 bind_command 0 R resume-reconcile
+bind_command 0 D delegation-digest
 bind_command 0 Escape back
 # Within repeat-time the next of these needs no prefix: prefix j j j.
 bind_command 1 j down

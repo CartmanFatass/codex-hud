@@ -56,6 +56,8 @@ export interface BarInput {
   expired: number;
   /** Settings is the active navigation tab while its modal is open. */
   settingsActive?: boolean;
+  /** A candidate for metadata planning, never outbound authorization. */
+  digest?: boolean;
   /**
    * The delegation view is drawn: the buttons of its selected row (design §3.7), in place of the legacy Switch. A row
    * with no button for one of them passes null; absent is the legacy panel.
@@ -296,6 +298,9 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
         });
     }
   }
+  // Digest is optional and gives way before the existing row actions. Its word never becomes an unexplained icon.
+  if (switchable && input.digest && !input.settingsActive && keep >= 3)
+    actions.push({ kind: 'delegation-digest', glyph: '', word: t('Digest'), short: t('Digest'), state: 'live' });
   if (input.brief && keep >= 2) {
     const paused = Boolean(input.brief.paused);
     actions.push({

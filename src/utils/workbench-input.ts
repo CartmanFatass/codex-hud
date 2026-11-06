@@ -140,7 +140,9 @@ export class WorkbenchInputDecoder {
       if (this.pending[0] !== '\x1b') {
         const ch = String.fromCodePoint(this.pending.codePointAt(0) ?? 0);
         const name =
-          this.profile === 'monitor' && ch === '2'
+          this.profile === 'monitor' && ch === 'D'
+            ? 'delegation-digest'
+            : this.profile === 'monitor' && ch === '2'
             ? 'timeline'
             : this.profile === 'monitor' && ch === '4'
               ? 'details'
