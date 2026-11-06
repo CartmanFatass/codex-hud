@@ -6,6 +6,12 @@ Use isolated cloud worktrees to design, implement, review and test Universal HUD
 
 The reference baseline for this handbook is `CartmanFatass/codex-hud` integration commit `4899b3f5802657520509e5c0db1918395b031257`, not `main`. Existing feature branches and local WIP can move independently. Before work, read `AGENTS.md`, the relevant contracts and `docs/handoff/STATE.md`; inspect exact current branch heads and diffs before creating work. Do not overwrite, reset, or clean another worktree.
 
+### Owner clarification (2026-11-06)
+
+Use official interface documentation pinned to the relevant version (and capture date for moving documentation), together with synthetic/mock fixtures, for cloud design, implementation and tests. Real Claude/Codex/Pi harness access, provider credentials and real-scenario tests are not prerequisites for that work or for reviewed publication to an authorized test branch. The owner will perform unified real validation locally later. This does not authorize an integration merge, release, production capability claim, or a bypass of network/auth restrictions.
+
+Lack of real access alone must not reopen this resolved blocking question in planning, review or agent handoff. Record the missing evidence, continue independent authorized work, and leave a precise local-validation checklist. Escalate a genuinely new contract, authorization or implementation issue on its own merits; do not disguise it as a request for credentials or mark an unrun check as passed.
+
 ## Repeatable cloud setup
 
 1. Provision a Linux cloud workspace with network and GitHub access appropriate to the environment. Record OS, architecture, Node, npm, Git and any test dependencies. The existing saved cloud configuration is configured for `main`, so explicitly select the intended branch. Its availability is environment-dependent.
@@ -84,7 +90,7 @@ Treat these as separate protocol surfaces. Pin the exact vendor version, capture
 
 ### Result record
 
-For each scenario record these independent fields: specification URL and version or commit; fixture provenance and assumptions; implementation and repository SHA; execution mode (fixture, simulated process, real local process or real provider); command/environment; PASS, FAIL, SKIP or NOT_RUN and reason; implementation/review/integration status; and the runtime capability status. A fake PASS must never write or imply production `verified`. Preserve fail-closed runtime guards and make refusal reasons visible. Store only synthetic examples and logs.
+For each scenario record these independent fields: specification URL and version or commit; fixture provenance and assumptions; implementation and repository SHA; execution mode (fixture, simulated process, real local process or real provider); command/environment; PASS, FAIL, SKIP or NOT_RUN and reason; implementation/review/integration status; and the runtime capability status. Keep simulation, native-local and real-provider results separately labelled, each with its own status; a native-local process test is not a real-provider test. Missing access is NOT_RUN (or an actual suite SKIP with its reason), not PASS or evidence of a product failure; preserve any actual FAIL. A fake PASS must never write or imply production `verified`. Preserve fail-closed runtime guards and make refusal reasons visible. Store only synthetic examples and logs.
 
 The repo already contains fake interfaces in `tests/fakes/` and synthetic fixtures under `tests/fixtures/`. Fixtures should name their source and version, distinguish official fields from observed/assumed ones, and avoid real session content. Unsupported fields stay unknown; absent evidence must not become a fabricated value. Use a fixture only for the behaviour it can establish.
 
@@ -97,6 +103,14 @@ The repo already contains fake interfaces in `tests/fakes/` and synthetic fixtur
 5. Maintain a finite ready queue, recording owner, next action, dependencies and stopping conditions. Before interruption persist branch/base SHA, worktree status, completed user-visible function, exact commands and outcomes, unresolved issues and the next command. Stop when no authorized ready package has inputs; do not invent work to stay busy.
 6. Review the actual diff and stated evidence. Keep claims at the level tested. If a change alters an identity, authorization, execution or data-sharing contract, record the decision and revise the applicable contract explicitly instead of silently weakening it.
 7. Commit to the agreed feature branch after review. Re-read its remote head and changed files. Leave a concise handoff containing base and head SHAs, scope, commands and outcomes, known gaps, next steps and source links. Integrate or publish only with the authority and review appropriate to that action.
+
+### Owner-local validation handoff
+
+For each affected scenario, leave the owner a checklist for later unified local validation, without making its execution a prerequisite for authorized test-branch publication:
+
+- Pin the test branch/head SHA, target OS, harness/provider and exact versions or protocol surface. Link the specification and synthetic fixture, and identify which assumption remains unverified.
+- Give the exact command or manual steps, required local setup and permissions (never credentials in the handoff), expected observations and failure criteria, and cleanup for test-owned processes/files. Keep native-local checks separate from real-provider checks.
+- Record the cloud commands and PASS/FAIL/SKIP/NOT_RUN results already obtained. Mark each unexecuted local/provider scenario NOT_RUN with its reason; append later observations and evidence against the tested SHA without relabelling simulation as real evidence. Keep runtime capability and production qualification separate and unverified until their applicable gates are met.
 
 ## Safety and data boundaries
 
