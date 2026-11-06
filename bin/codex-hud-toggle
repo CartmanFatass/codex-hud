@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+# Presence wins before the existing width validation/defaulting below.
+if [[ "${HUD_TREE_WIDTH+x}" ]]; then export CODEX_HUD_TREE_WIDTH="$HUD_TREE_WIDTH"; fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HUD_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -261,7 +264,7 @@ initial_command=""
 if [[ -n "$command" ]]; then
   initial_command=" CODEX_HUD_INITIAL_COMMAND='$command'"
 fi
-tree_cmd="env${initial_command} CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
+tree_cmd="env${initial_command} HUD_TREE_WIDTH='$requested_width' CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
 if ! new_tree=$(tmux split-window -h -l "$panel_width" -t "$main_pane" -d -P -F '#{pane_id}' "$tree_cmd"); then
   tmux display-message -t "$session_name" "codex-hud: failed to open the tree panel"
   exit 1

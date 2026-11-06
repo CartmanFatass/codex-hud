@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
+# Saved session policy still wins. Normalize only its environment fallbacks.
+if [[ "${HUD_HEIGHT_AUTO+x}" ]]; then export CODEX_HUD_HEIGHT_AUTO="$HUD_HEIGHT_AUTO"; fi
+if [[ "${HUD_HEIGHT_MIN+x}" ]]; then export CODEX_HUD_HEIGHT_MIN="$HUD_HEIGHT_MIN"; fi
+if [[ "${HUD_HEIGHT_MAX+x}" ]]; then export CODEX_HUD_HEIGHT_MAX="$HUD_HEIGHT_MAX"; fi
+
 session_name="$1"
 trigger_pane="${2:-}"
 

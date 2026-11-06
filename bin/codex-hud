@@ -3,7 +3,11 @@
 # codex-hud - Wrapper script for Codex CLI with HUD display
 # Launches Codex in a tmux session with a status bar pane
 #
-# Environment variables:
+# Environment variables (Linux/Bash/tmux):
+#   The ten launch/layout controls below also accept HUD_ instead of CODEX_HUD_.
+#   A present neutral value wins, even empty/invalid, before existing parsing.
+#   NO_ATTACH has no neutral alias; prefer --new-session.
+#   HUD_TREE_WIDTH / CODEX_HUD_TREE_WIDTH also select initial/toggled panel width.
 #   CODEX_HUD_POSITION - HUD pane position: bottom (default), top
 #   CODEX_HUD_HEIGHT   - HUD pane height in lines (default: 1; compact identity line)
 #   CODEX_HUD_HEIGHT_AUTO - Auto-adjust HUD height based on pane width (default: 0)
@@ -19,6 +23,20 @@
 #
 
 set -e
+
+# Select only supported neutral names, before HEIGHT/POSITION become internal
+# layout values. Presence (even empty/invalid) wins; existing parsers run later.
+if [[ "${HUD_POSITION+x}" ]]; then export CODEX_HUD_POSITION="$HUD_POSITION"; fi
+if [[ "${HUD_HEIGHT+x}" ]]; then export CODEX_HUD_HEIGHT="$HUD_HEIGHT"; fi
+if [[ "${HUD_HEIGHT_AUTO+x}" ]]; then export CODEX_HUD_HEIGHT_AUTO="$HUD_HEIGHT_AUTO"; fi
+if [[ "${HUD_HEIGHT_MIN+x}" ]]; then export CODEX_HUD_HEIGHT_MIN="$HUD_HEIGHT_MIN"; fi
+if [[ "${HUD_HEIGHT_MAX+x}" ]]; then export CODEX_HUD_HEIGHT_MAX="$HUD_HEIGHT_MAX"; fi
+if [[ "${HUD_STATUSLINE+x}" ]]; then export CODEX_HUD_STATUSLINE="$HUD_STATUSLINE"; fi
+if [[ "${HUD_TREE+x}" ]]; then export CODEX_HUD_TREE="$HUD_TREE"; fi
+if [[ "${HUD_AUTO_ATTACH+x}" ]]; then export CODEX_HUD_AUTO_ATTACH="$HUD_AUTO_ATTACH"; fi
+if [[ "${HUD_ALTERNATE_SCREEN+x}" ]]; then export CODEX_HUD_ALTERNATE_SCREEN="$HUD_ALTERNATE_SCREEN"; fi
+if [[ "${HUD_MOUSE+x}" ]]; then export CODEX_HUD_MOUSE="$HUD_MOUSE"; fi
+if [[ "${HUD_TREE_WIDTH+x}" ]]; then export CODEX_HUD_TREE_WIDTH="$HUD_TREE_WIDTH"; fi
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -550,7 +568,7 @@ open_default_tree_pane() {
 
     toggle_q=$(printf '%q' "$toggle_cmd")
     session_q=$(printf '%q' "$session_name")
-    tree_cmd="env CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_escaped} CODEX_HUD_CWD=${cwd_escaped} CODEX_HUD_MAIN_PANE='$main_pane_id' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
+    tree_cmd="env HUD_TREE_WIDTH='$requested_width' CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_escaped} CODEX_HUD_CWD=${cwd_escaped} CODEX_HUD_MAIN_PANE='$main_pane_id' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
     tree_pane_id=$(tmux split-window -h -l "$panel_width" -t "$main_pane_id" -d -P -F '#{pane_id}' "$tree_cmd")
     tmux set-option -t "$session_name" -q @codex_hud_tree_pane "$tree_pane_id"
     tmux set-option -t "$session_name" -q @codex_hud_mode "tree"
@@ -862,11 +880,17 @@ EOF
         fi
     done
 
+    # Width is also consumed by later toggle commands in this session. Copy only
+    # these two supported selectors; explicit empties block a stale server value.
+    # Both names carry the selected raw value, so neutral/legacy launches agree.
+    local width_environment=(-e "HUD_TREE_WIDTH=${CODEX_HUD_TREE_WIDTH-}"
+                             -e "CODEX_HUD_TREE_WIDTH=${CODEX_HUD_TREE_WIDTH-}")
+
     # Create new detached session
     if [[ -n "$tmux_windows_bash" ]]; then
-        tmux new-session -d -s "$SESSION_NAME" -x "$term_width" -y "$term_height" "${herdr_environment[@]}" "$tmux_windows_bash" "$main_runner"
+        tmux new-session -d -s "$SESSION_NAME" -x "$term_width" -y "$term_height" "${herdr_environment[@]}" "${width_environment[@]}" "$tmux_windows_bash" "$main_runner"
     else
-        tmux new-session -d -s "$SESSION_NAME" -x "$term_width" -y "$term_height" "${herdr_environment[@]}"
+        tmux new-session -d -s "$SESSION_NAME" -x "$term_width" -y "$term_height" "${herdr_environment[@]}" "${width_environment[@]}"
     fi
     # Mouse stays on so the HUD/tree can be clicked, but events are routed
     # per pane: Codex keeps its own mouse, and the compact bar cannot steal
@@ -1148,7 +1172,16 @@ Options:
                       Print (or write to FILE) the brief the panel would send
                       to the model now for this directory's session; nothing is sent
 
-Environment Variables:
+Environment Variables (Linux/Bash/tmux):
+  Neutral aliases: HUD_POSITION, HUD_HEIGHT, HUD_HEIGHT_AUTO, HUD_HEIGHT_MIN,
+  HUD_HEIGHT_MAX, HUD_STATUSLINE, HUD_TREE, HUD_AUTO_ATTACH,
+  HUD_ALTERNATE_SCREEN, HUD_MOUSE. A present neutral value wins, even empty or
+  invalid; existing validation, defaults and explicit flag precedence remain.
+  HUD_TREE_WIDTH / CODEX_HUD_TREE_WIDTH also set initial/toggled panel width.
+  HUD_NO_ATTACH is not supported; use --new-session instead.
+  Native Windows/PowerShell alias expansion is separate work.
+
+Legacy names (still supported):
   CODEX_HUD_POSITION  HUD pane position: bottom (default), top
   CODEX_HUD_HEIGHT    HUD pane height in lines (default: 1; compact identity line)
   CODEX_HUD_HEIGHT_AUTO Auto-adjust HUD height based on pane width (default: 0)
