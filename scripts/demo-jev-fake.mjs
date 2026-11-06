@@ -1,31 +1,62 @@
-// This executable demo uses only the test fake and HUD's read-only JobRef identity projection.
-import { FakeJevBrowser } from '../dist-test/tests/fakes/jev-browser.js';
-const fake = new FakeJevBrowser();
-const owner = 'synthetic-owner';
+// SIMULATED only: independent temporary SQLite, no provider/browser/network action.
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DurableJevLab, SimulatedJevReader } from '../dist-test/tests/fakes/jev-durable.js';
+const root = mkdtempSync(join(tmpdir(), 'jev-durable-demo-'));
+const path = join(root, 'simulation.sqlite'),
+  owner = 'synthetic-owner';
 const first = { kind: 'jev', provider: 'synthetic-ask', account: 'synthetic-one', key: 'synthetic-question' };
 const second = { kind: 'jev', provider: 'synthetic-ask', account: 'synthetic-two', key: 'synthetic-followup' };
-for (const ref of [first, second])
-  fake.enqueue({
+let lab, reader;
+try {
+  lab = DurableJevLab.create(path);
+  for (const ref of [first, second])
+    lab.enqueue({
+      owner,
+      label: 'synthetic-holder',
+      browser: 'synthetic-browser',
+      ref,
+      requestId: `synthetic-id-${ref.key}`,
+      requestFingerprint: `synthetic-request-${ref.key}`,
+    });
+  const storeId = lab.snapshot().storeId;
+  reader = new SimulatedJevReader(path, storeId);
+  const readAvailable = () => {
+    const view = reader.snapshot();
+    if (view.availability !== 'available') throw Error(`simulation_store_unavailable:${view.reason}`);
+    return view;
+  };
+  const current = (ref) => readAvailable().jobs.find((j) => j.ref.key === ref.key);
+  const show = () => {
+    const view = readAvailable();
+    for (const j of view.jobs)
+      console.log(
+        `SIMULATED durable Jev ${j.ref.key} · ${j.state} · holder ${j.holderLabel ?? 'unlabelled'} · generation ${j.lease?.generation ?? 'none'} · revision ${view.revision}`
+      );
+  };
+  const ticket = lab.consumeDispatch(owner, first, current(first).revision);
+  lab.close();
+  lab = DurableJevLab.open(path, storeId); // Lost acknowledgement; consumed ticket stays uncertain.
+  show();
+  lab.observe(owner, first, ticket.generation, current(first).revision, 'needs_human');
+  show();
+  lab.observe(owner, first, ticket.generation, current(first).revision, 'answered', 'synthetic-evidence');
+  lab.reconcile(
     owner,
-    browser: 'synthetic-browser',
-    ref,
-    requestId: `synthetic-id-${ref.key}`,
-    requestFingerprint: `synthetic-request-${ref.key}`,
-  });
-const { generation } = fake.dispatch(owner, first, 'lost');
-const show = (ref) => {
-  const v = fake.view(owner, ref);
-  console.log(
-    `SIMULATED Jev ${ref.key} · ${v.fakeState} · holder ${v.holderLabel ?? 'none'} · HUD identity ${v.hudNode.loaded ? 'loaded' : 'unloaded'}`
+    first,
+    ticket.generation,
+    current(first).revision,
+    'answered',
+    'synthetic-evidence',
+    'synthetic-answer'
   );
-};
-show(first);
-show(second);
-fake.observe(owner, first, generation, 'needs_human');
-show(first);
-fake.observe(owner, first, generation, 'answered');
-fake.reconcile(owner, first, generation, 'answered', 'synthetic-answer');
-show(first);
-fake.dispatch(owner, second, 'received');
-show(second);
-console.log('SIMULATED only: no real browser, provider, account, network, or production capability.');
+  const next = lab.consumeDispatch(owner, second, current(second).revision);
+  lab.observe(owner, second, next.generation, next.revision, 'sent');
+  show();
+  console.log('SIMULATED only: no live recovery, external exactly-once guarantee or production capability.');
+} finally {
+  reader?.close();
+  lab?.close();
+  rmSync(root, { recursive: true, force: true });
+}
