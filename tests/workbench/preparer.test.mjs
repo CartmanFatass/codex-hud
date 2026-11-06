@@ -25,8 +25,8 @@ async function setup(preparer) {
   }
   return {...f,service,invoke,before,stats:()=>({launches,capabilities,runs:f.ledger.snapshot((tx)=>tx.get('SELECT count(*) AS n FROM runs').n)}),cleanup:async()=>{await service.close();await f.close()}};
 }
-test('default production map refuses Pi before capability or dispatch',async()=>{
-  const f=await setup(); try {await assert.rejects(f.invoke(),/unsupported_harness/);assert.deepEqual(f.stats(),{launches:0,capabilities:0,runs:f.before})} finally {await f.cleanup()}
+test('default Pi preparer refuses an unconfigured extension profile before capability or dispatch',async()=>{
+  const f=await setup(); try {await assert.rejects(f.invoke(),{message:'pi_managed_extension_required'});assert.deepEqual(f.stats(),{launches:0,capabilities:0,runs:f.before})} finally {await f.cleanup()}
 });
 for(const field of ['harness','sourceRoot','sourceId','cwd','profile','keyHarness','keySource','keyMode','keyOperation','keyHost','keyLayout','inputRun','inputSource','inputProfile','inputCwd','inputMode']) {
  test(`trusted Pi preparer mismatch ${field} is rejected before capability and dispatch`,async()=>{
