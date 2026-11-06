@@ -28,6 +28,22 @@ async function until<T>(read: () => T | Promise<T>): Promise<NonNullable<T>> {
   throw Error('managed_target_deadline');
 }
 
+// Production supervisors intentionally unref their process handle. A finite,
+// referenced test deadline keeps completion observable without changing runtime ownership.
+async function waitForOwnedSupervisor(dispatch: SupervisorDispatch, phase: string) {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      dispatch.completion,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(Error(`managed_supervisor_timeout:${phase}:pid=${dispatch.pid}`)), 10_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 for (const harness of ['pi', 'claude'] as const)
   test(
     `production default ${harness} target: accepted intent, hud-run, authenticated handshake/report and exact-session resume`,
@@ -156,6 +172,7 @@ for (const harness of ['pi', 'claude'] as const)
         mode: 'headless',
         request_key: 'managed-spawn',
       };
+      let primaryFailed = false;
       try {
         const denied = new DelegationService({
           ...common,
@@ -243,7 +260,7 @@ for (const harness of ['pi', 'claude'] as const)
             request_key: 'replaced-resume',
           })) as typeof accepted;
           await until(() => dispatches.length === 3);
-          await dispatches[2].completion;
+          await waitForOwnedSupervisor(dispatches[2], 'pi-resume-mismatch');
           const receipt = JSON.parse(readFileSync(join(f.root, 'runs', mismatched.runId, 'exit.json'), 'utf8'));
           assert.equal(receipt.coverage, 'scope');
           assert.equal(receipt.scope_check.result, 'gone');
@@ -276,7 +293,7 @@ for (const harness of ['pi', 'claude'] as const)
         await assert.rejects(service.invoke(source(), 'delegate_spawn', args), /idempotency_conflict/);
         assert.equal(dispatches.length, harness === 'pi' ? 3 : 2);
         for (const dispatched of dispatches) {
-          await dispatched.completion;
+          await waitForOwnedSupervisor(dispatched, `${harness}-assert-reaped`);
           assert.equal(readProcess(dispatched.pid), null);
         }
         const facts = f.ledger.snapshot((tx) => tx.all('SELECT kind FROM events WHERE link_id=?', accepted.linkId));
@@ -291,11 +308,40 @@ for (const harness of ['pi', 'claude'] as const)
             productionCapability: 'unverified',
           })
         );
+      } catch (error) {
+        primaryFailed = true;
+        throw error;
       } finally {
-        // Tests only remove their temporary directory after their owned supervisors exit.
-        await service.close();
-        await Promise.all(dispatches.map((dispatch) => dispatch.completion));
-        await f.close();
+        // A timeout is not termination proof. Retain fixtures and the original
+        // failure if any owned supervisor cannot be observed exiting and reaped.
+        try {
+          const cleanup = await Promise.allSettled([
+            service.close(),
+            ...dispatches.map(async (dispatch) => {
+              await waitForOwnedSupervisor(dispatch, `${harness}-cleanup`);
+              assert.equal(readProcess(dispatch.pid), null, 'owned supervisor must be reaped before fixture removal');
+            }),
+          ]);
+          const failures = cleanup.filter((result) => result.status === 'rejected');
+          if (failures.length)
+            throw new AggregateError(
+              failures.map((result) => result.reason),
+              'managed_cleanup_uncertain'
+            );
+          await f.close();
+        } catch (error) {
+          t.diagnostic(
+            JSON.stringify({
+              harness,
+              phase: 'cleanup',
+              cleanupUncertain: true,
+              retainedFixture: f.root,
+              error: String(error),
+              causes: error instanceof AggregateError ? error.errors.map(String) : undefined,
+            })
+          );
+          if (!primaryFailed) throw error;
+        }
       }
     }
   );

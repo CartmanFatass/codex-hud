@@ -19,6 +19,7 @@ import { preparePiLaunch, PI_MANAGED_EXTENSION } from '../../dist/harness/pi/man
 import { launchDigest } from '../../dist/core/run/control.js';
 import { launchPreparedRun } from '../../dist/core/launch/supervisor.js';
 import { FileRunFactPort } from '../../dist/core/run/fake-port.js';
+import { RunArtifacts } from '../../dist/core/run/artifacts.js';
 import { createShippedCodexCapabilityVerifier, verifyManagedCapability } from '../../dist/core/launch/capability.js';
 import { seedRun } from '../../dist-test/tests/run/fixtures.js';
 import { ledgerRuntimeSupported } from '../../dist/ledger/runtime.js';
@@ -62,7 +63,8 @@ function fixture(t) {
   for (const path of [home, source, cwd, hudHome]) mkdirSync(path, { mode: 0o700 });
   const briefPath = join(root, 'brief.md');
   writeFileSync(briefPath, 'Synthetic brief: \u4efb\u52a1; $(never-execute)\n');
-  const executable = join(root, 'pi');
+  // Explicit format also works when CI places TMPDIR beneath this ESM package.
+  const executable = join(root, 'pi.cjs');
   writeFileSync(executable, '#!/bin/sh\nexit 0\n');
   chmodSync(executable, 0o700);
   const profile = {
@@ -401,6 +403,18 @@ test(
       const data = seedRun(f.cwd, []),
         run = { ...f.run, runId: data.input.runId };
       const prepared = p.forRun(run);
+      const diagnose = (error) => {
+        let stderr;
+        try {
+          stderr = RunArtifacts.open(f.hudHome, run.runId).readLog('stderr', 0, 16384).data.toString();
+        } catch (readError) {
+          stderr = `unavailable: ${readError.message}`;
+        }
+        // Capture the bounded synthetic diagnostic in the test log before the
+        // fixture cleanup removes its private temporary run directory.
+        t.diagnostic(JSON.stringify({ operation, runId: run.runId, stderr }));
+        throw error;
+      };
       Object.assign(data.seed.snapshot.run, { sourceId: prepared.input.sourceId, launchDigest: prepared.launchDigest });
       const facts = join(f.hudHome, 'facts.json');
       writeFileSync(facts, JSON.stringify(data.seed), { mode: 0o600 });
@@ -418,6 +432,8 @@ test(
           }),
         ]);
         assert.equal(completion.code, 0);
+      } catch (error) {
+        diagnose(error);
       } finally {
         clearTimeout(timer);
         // Scope retirement is the production supervisor's job; only this exact
@@ -431,13 +447,38 @@ test(
           }
         }
       }
-      const state = await port.read(run.runId);
-      assert.equal(state.run.state, 'ended');
-      assert.equal(state.slotHeld, false);
-      assert.equal(state.events.filter((e) => e.kind === 'supervisor.registered').length, 1);
-      assert.equal(state.events.filter((e) => e.kind === 'launch.sealed').length, 1);
-      assert.ok(state.receipt);
-      assert.equal(state.run.targetSessionRef, null, 'synthetic process does not manufacture a managed binding');
+      try {
+        const state = await port.read(run.runId);
+        assert.equal(state.run.state, 'ended');
+        assert.equal(state.slotHeld, false);
+        assert.equal(state.events.filter((e) => e.kind === 'supervisor.registered').length, 1);
+        assert.equal(state.events.filter((e) => e.kind === 'launch.sealed').length, 1);
+        assert.ok(state.receipt);
+        assert.equal(state.run.targetSessionRef, null, 'synthetic process does not manufacture a managed binding');
+        // Scope termination and supervisor exit are not workload-success proof.
+        // Verify actual output, input consumption and persisted identity now,
+        // before a subsequent resume can hide the original command failure.
+        const stdout = RunArtifacts.open(f.hudHome, run.runId).readLog('stdout', 0, 65536).data;
+        assert.equal(stdout.toString(), JSON.stringify({ type: 'synthetic_done', id }) + '\n');
+        const file = join(f.source, `synthetic_${id}.jsonl`);
+        assert.equal(realpathSync(file), file);
+        const header = readFileSync(file);
+        assert.equal(header.indexOf(10), header.length - 1, 'session header must be framed by an actual LF');
+        assert.deepEqual(JSON.parse(header.toString()), { type: 'session', version: 3, id, cwd: f.cwd });
+        const launchBytes = readFileSync(join(f.source, 'launches.jsonl'));
+        assert.equal(launchBytes.at(-1), 10, 'launch records must end with an actual LF');
+        const records = launchBytes.toString().trimEnd().split('\n').map(JSON.parse);
+        assert.equal(records.length, operation === 'spawn' ? 1 : 2);
+        assert.deepEqual(records.at(-1), {
+          argv: prepared.input.launch.argv.slice(1),
+          stdin: Buffer.from(prepared.payload.briefBase64, 'base64').toString(),
+          id,
+          run: run.runId,
+          profile: f.profile.name,
+        });
+      } catch (error) {
+        diagnose(error);
+      }
       return { run, prepared };
     }
     const first = await execute('spawn'),
