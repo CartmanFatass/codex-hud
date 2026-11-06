@@ -43,7 +43,11 @@ test('B10C production rollout header supplies native title without another read;
   for (let i = 0; !topology.loaded && i < 100; i++)
     topology = await catalog.collect(ref, { maxBytes: 4 * 1024 * 1024, maxRecords: 2000, budgetMs: 20 });
   assert.equal(topology.loaded, true);
-  assert.deepEqual(topology.nativeMetadata!['synthetic-child'], { title: 'check_paths', kind: null });
+  assert.deepEqual(topology.nativeMetadata!['synthetic-child'], {
+    title: 'check_paths',
+    kind: null,
+    pickerLabel: '/root/audit/check_paths',
+  });
   const view = {
     nodeIdentity: { kind: 'session', ref },
     statusProjection: { lastEvidenceAt: 1000 },
@@ -65,7 +69,11 @@ test('B10C production rollout header supplies native title without another read;
     nowMs: 1000,
   });
   assert.equal(tree.nodes[0].native, null);
-  assert.deepEqual(tree.nodes[1].native, { title: 'check_paths', kind: null });
+  assert.deepEqual(tree.nodes[1].native, {
+    title: 'check_paths',
+    kind: null,
+    pickerLabel: '/root/audit/check_paths',
+  });
   const memo = new JsonVersion();
   const before = memo.update(sessionMemoInput(session));
   session.topology!.nativeMetadata = { 'synthetic-child': { title: 'renamed', kind: 'review' } };
