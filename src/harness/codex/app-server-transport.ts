@@ -1,8 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { isAbsolute } from 'node:path';
-import { CodexAppServerObserver } from './app-server.js';
+import type { ConfigObservation, ConfigReadOptions } from './config-observation.js';
+import { CodexAppServerObserver, type ServerInput } from './app-server.js';
 
-type Pending = { resolve: () => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
+type Response = Extract<ServerInput, { kind: 'response' }>;
+type Pending = { resolve: (event: Response) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
 export interface AppServerTransportOptions {
   executable: string;
   args: string[];
@@ -81,7 +83,7 @@ export class CodexAppServerTransport {
           }
           this.pending.delete(event.id);
           clearTimeout(pending.timer);
-          if (event.ok) pending.resolve();
+          if (event.ok) pending.resolve(event);
           else pending.reject(new Error('app_server_request_failed'));
         }
       }
@@ -99,6 +101,9 @@ export class CodexAppServerTransport {
   }
   snapshot() {
     return { observation: this.observer.snapshot(), stopped: this.stopped, reason: this.reason };
+  }
+  configurationSnapshot(): ConfigObservation {
+    return this.observer.configurationSnapshot();
   }
   private enqueue(message: object): Promise<void> {
     const bytes = JSON.stringify(message) + '\n';
@@ -119,7 +124,7 @@ export class CodexAppServerTransport {
     });
     return next;
   }
-  private request(make: (id: number) => object): Promise<void> {
+  private request(make: (id: number) => object): Promise<Response> {
     if (this.stopped) return Promise.reject(new Error('app_server_closed'));
     if (this.pending.size >= 8) return Promise.reject(new Error('app_server_pending_limit'));
     const id = this.nextId++;
@@ -140,10 +145,19 @@ export class CodexAppServerTransport {
     await this.enqueue(this.observer.initialized());
   }
   threadStart(): Promise<void> {
-    return this.request((id) => this.observer.threadStart(id));
+    return this.request((id) => this.observer.threadStart(id)).then(() => undefined);
   }
   threadResume(threadId: string): Promise<void> {
-    return this.request((id) => this.observer.threadResume(id, threadId));
+    return this.request((id) => this.observer.threadResume(id, threadId)).then(() => undefined);
+  }
+  async configRead(options: ConfigReadOptions): Promise<ConfigObservation> {
+    if (this.stopped || this.pending.size >= 8) {
+      this.observer.configurationReadRefused();
+      throw new Error(this.stopped ? 'app_server_closed' : 'app_server_pending_limit');
+    }
+    const response = await this.request((id) => this.observer.configRead(id, options));
+    if (!response.configuration) throw new Error('app_server_config_result_unavailable');
+    return response.configuration;
   }
   private rejectPending(reason: string) {
     for (const p of this.pending.values()) {
@@ -158,6 +172,11 @@ export class CodexAppServerTransport {
     this.reason = reason;
     clearTimeout(this.lifetime);
     this.rejectPending(reason);
+    this.observer.configurationInterrupted(
+      reason === 'request_timeout' || reason === 'protocol_gap' || reason === 'unsupported_server_request'
+        ? reason
+        : 'connection_closed'
+    );
     this.observer.finish();
     this.child.stdin.destroy();
     this.child.kill('SIGTERM');

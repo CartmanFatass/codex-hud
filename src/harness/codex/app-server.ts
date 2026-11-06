@@ -1,8 +1,27 @@
+import {
+  configReadParams,
+  projectConfig,
+  requestedCwdIdentity,
+  unavailableConfig,
+  type ConfigObservation,
+  type ConfigReadOptions,
+  type ConfigReason,
+} from './config-observation.js';
+
 /** Bounded observation seam for a small pinned app-server JSON-RPC subset, not exec or rollout. */
 export const CODEX_APP_SERVER_SCHEMA = 'openai/codex@d786ff91fad8e7ddab8653ee07bc6313a6fcb03d';
 type Id = string | number;
-type Method = 'initialize' | 'thread/start' | 'thread/resume';
-type Pending = { method: Method; expectedThread?: string };
+type Method = 'initialize' | 'thread/start' | 'thread/resume' | 'config/read';
+type Pending = {
+  method: Method;
+  expectedThread?: string;
+  config?: {
+    sequence: number;
+    requestedCwd: ConfigObservation['requestedCwd'];
+    includeLayers: boolean;
+    invalidated?: ConfigReason;
+  };
+};
 export interface AppServerObservation {
   schema: string;
   handshake: 'new' | 'initializing' | 'acknowledge' | 'ready' | 'failed';
@@ -18,7 +37,7 @@ export interface AppServerObservation {
 export type ServerInput =
   | { kind: 'notification'; method: string }
   | { kind: 'unsupported_request'; method: string; id: Id }
-  | { kind: 'response'; method: Method; id: Id; ok: boolean }
+  | { kind: 'response'; method: Method; id: Id; ok: boolean; configuration?: ConfigObservation }
   | { kind: 'gap' };
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const ident = (v: unknown): v is string =>
@@ -53,6 +72,23 @@ export class CodexAppServerObserver {
   private readonly used = new Set<string>();
   private buffer = Buffer.alloc(0);
   private bytes = 0;
+  private configuration = unavailableConfig(0, null, 'not_requested');
+  configurationSnapshot(): ConfigObservation {
+    return structuredClone(this.configuration);
+  }
+  private commitConfiguration(value: ConfigObservation): void {
+    // A late older response may resolve its own request, never replace a newer attempt.
+    if (value.sequence === this.configuration.sequence && this.configuration.reasons.includes('pending'))
+      this.configuration = value;
+  }
+  configurationReadRefused(): void {
+    this.configuration = unavailableConfig(this.configuration.sequence + 1, null, 'invalid_request');
+  }
+  configurationInterrupted(reason: ConfigReason): void {
+    for (const pending of this.requests.values()) if (pending.config) pending.config.invalidated = reason;
+    if (this.configuration.reasons.includes('pending'))
+      this.configuration = unavailableConfig(this.configuration.sequence, this.configuration.requestedCwd, reason);
+  }
   snapshot(): AppServerObservation {
     return structuredClone(this.state);
   }
@@ -91,6 +127,16 @@ export class CodexAppServerObserver {
     this.register(id, { method: 'thread/resume', expectedThread: threadId });
     return { id, method: 'thread/resume', params: { threadId } };
   }
+  configRead(id: Id, options: ConfigReadOptions): object {
+    const sequence = this.configuration.sequence + 1;
+    this.configuration = unavailableConfig(sequence, null, 'invalid_request');
+    this.ready();
+    const params = configReadParams(options);
+    const request = { sequence, requestedCwd: requestedCwdIdentity(params.cwd), includeLayers: params.includeLayers };
+    this.register(id, { method: 'config/read', config: request });
+    this.configuration = unavailableConfig(sequence, request.requestedCwd, 'pending');
+    return { id, method: 'config/read', params };
+  }
   private ready(): void {
     this.open();
     if (this.state.handshake !== 'ready') throw new Error('app_server_not_ready');
@@ -101,6 +147,7 @@ export class CodexAppServerObserver {
     this.bytes += chunk.byteLength;
     if (this.bytes > 4 * 1024 * 1024) {
       this.state.gaps++;
+      this.configurationInterrupted('protocol_gap');
       this.state.transport = 'interrupted';
       this.buffer = Buffer.alloc(0);
       return [{ kind: 'gap' }];
@@ -115,6 +162,7 @@ export class CodexAppServerObserver {
     }
     if (this.buffer.length > 64 * 1024) {
       this.state.gaps++;
+      this.configurationInterrupted('protocol_gap');
       this.state.transport = 'interrupted';
       this.buffer = Buffer.alloc(0);
       events.push({ kind: 'gap' });
@@ -122,6 +170,7 @@ export class CodexAppServerObserver {
     return events;
   }
   finish(): AppServerObservation {
+    this.configurationInterrupted('connection_closed');
     if (this.state.transport !== 'open') return this.snapshot();
     if (this.buffer.length || this.requests.size) this.state.gaps++;
     this.buffer = Buffer.alloc(0);
@@ -131,6 +180,7 @@ export class CodexAppServerObserver {
   private read(bytes: Uint8Array): ServerInput {
     const gap = (): ServerInput => {
       this.state.gaps++;
+      this.configurationInterrupted('protocol_gap');
       return { kind: 'gap' };
     };
     let msg: unknown;
@@ -146,6 +196,7 @@ export class CodexAppServerObserver {
       if ('id' in msg) {
         if (!idValid(msg.id)) return gap();
         this.state.unsupportedRequests++;
+        this.configurationInterrupted('unsupported_server_request');
         return { kind: 'unsupported_request', method: msg.method, id: msg.id };
       }
       if (!object(msg.params)) return gap();
@@ -162,7 +213,28 @@ export class CodexAppServerObserver {
       this.state.pending = this.requests.size;
       this.state.errors++;
       if (pending.method === 'initialize') this.state.handshake = 'failed';
+      if (pending.config)
+        this.commitConfiguration(
+          unavailableConfig(pending.config.sequence, pending.config.requestedCwd, 'request_failed')
+        );
       return { kind: 'response', method: pending.method, id: msg.id, ok: false };
+    }
+    if (pending.config) {
+      const configuration = pending.config.invalidated
+        ? unavailableConfig(pending.config.sequence, pending.config.requestedCwd, pending.config.invalidated)
+        : projectConfig(msg.result, pending.config);
+      this.commitConfiguration(configuration);
+      this.requests.delete(key(msg.id));
+      this.state.pending = this.requests.size;
+      const ok = configuration.status !== 'unavailable';
+      if (!ok) this.state.errors++;
+      return {
+        kind: 'response',
+        method: pending.method,
+        id: msg.id,
+        ok,
+        configuration: structuredClone(configuration),
+      };
     }
     if (!object(msg.result)) return gap();
     if (pending.method === 'initialize') {
