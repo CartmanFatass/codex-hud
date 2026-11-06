@@ -2,6 +2,41 @@
 
 > **2026-11-05 cloud-development update:** See [the current cloud handbook and revised C–F roadmap](../cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
 
+## Current integration snapshot (2026-11-06)
+
+Source inventory at commit `95dac1bdd40583f6015ed686d4be4feef79cf916`, tree
+`774f1a81a1727d013ceea8b81978f5a5af1beb8b`. These are implemented slices, not
+whole-milestone acceptance or production qualification:
+
+- [Pi observation](../cloud/pi-ordinary-observation.md), [synthetic protocol
+  workbenches](../cloud-development/checks-and-preview.md), [vertical delegation
+  workbenches](../cloud/m2-vertical-workbench.md), and the [fake-only Jev
+  laboratory](../cloud/c45-jev-fake-simulation.md).
+- [Experimental managed Codex/Claude/Pi preparation](../cloud-development/managed-targets.md)
+  and the [opt-in Pi delegation bridge](../cloud/pi-delegation-bridge.md). Both shipped
+  capability manifests remain empty; partial Claude/Pi configuration coverage
+  still refuses production promotion.
+- Claude committed action/Todo panel visibility (included in the [focused cloud
+  check scope](../cloud-development/checks-and-preview.md)), [product statusline
+  entrypoints](../cloud/product-cli.md), [shared partial direct-child
+  summaries](../statusline/delegation-summary.md), and the [opt-in Pi footer](../cloud/pi-footer.md).
+- [Owner-scoped delegate_list](../cloud/e4-delegate-list.md), [guarded panel Open
+  and bounded logs](../cloud/e1-panel-open-logs.md), [reversible display-settings
+  migration](../cloud-development/reversible-migration.md), and [cloud checks and
+  runtime package preview](../cloud-development/checks-and-preview.md).
+
+[Cloud workflow run 42135963414](https://github.com/CartmanFatass/codex-hud/actions/runs/42135963414)
+completed successfully for this exact commit on Node 22.x and 24.x. That is the
+focused cloud workflow's result, not full-project, missing-test or performance
+qualification.
+
+The preview is not a standalone installer. This documentation runs no settings
+preview/apply/restore command. Separate Jev candidate `59e4b0a6` and ongoing
+D2/statusline work are not included in this fixed baseline's delivery inventory.
+The older queue and statusline-wiring notes below are historical. This snapshot
+does not erase the recorded B10D/P065/C3 failures or holds, certify real providers,
+or establish missing functional checks or performance qualification.
+
 From 2026-11-03 development runs remotely: first Claude Code cloud (`docs/cloud/README.md`), then dots
 (`docs/cloud/dots.md`). The local machine only does the work listed under "Local only". This file replaces the
 local orchestrator's scratch notes. Keep it current: the remote orchestrator updates it whenever a package merges
