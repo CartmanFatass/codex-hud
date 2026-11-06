@@ -3,9 +3,10 @@ import { fileURLToPath } from 'node:url';
 import { capabilityKey, capabilitySupport } from '../capabilities.js';
 import { canonicalJson } from '../canonical.js';
 import type { CapabilityCell, CapabilityKey, CapabilityManifestV1, CapabilityVersions } from '../types/capabilities.js';
-// Importing the data also makes tsc ship it next to the compiled loader.
-import shippedCells from './managed-cells.json' with { type: 'json' };
-import codexCells from './codex-cells.json' with { type: 'json' };
+// Type-only graph references make tsc ship the data without evaluating malformed/missing JSON before fail-closed loading.
+import type shippedCells from './managed-cells.json';
+import type codexCells from './codex-cells.json';
+type BundledCapabilityFiles = [typeof shippedCells, typeof codexCells];
 
 export interface ManagedCapabilityRequest {
   /** Partial discovery can never be promoted by a shipped production cell. */
@@ -63,8 +64,6 @@ export function createShippedManagedCapabilityVerifier(options: {
   versions: CapabilityVersions | ((request: ManagedCapabilityRequest) => CapabilityVersions | null);
   cellFile?: string;
 }): CapabilityVerifier {
-  void shippedCells;
-  void codexCells;
   let cells: CapabilityCell[] = [];
   try {
     const fd = openSync(
