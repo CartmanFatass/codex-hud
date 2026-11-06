@@ -446,6 +446,7 @@ command ("safe", "should approve") instead of describing it.
 | `agentProgress` | visible live card summaries: the bounded public progress material in §5.5; independent of `briefAgents` |
 | `briefMain` | user prompts and the assistant's public replies (≤4000 characters), plan, goal, approval summary |
 | `resultDigest` | final answers, head and tail, ≤8000 characters |
+| `sources/<sourceId>/model.json` `delegatedDigest` + exact scope + independent `outbound.json` grant | explicit `hud digest run`: one authenticated completed delegated report summary, ≤32 KiB UTF-8 and ≤8000 code points; no reportPath/transcript/task/parent text |
 | `agentLabels` | the parent's plaintext from before the subagent was created (≤400, with its path and role), else a plaintext task (≤400), and the first prompt (≤1500). A Fernet payload is not sent. The brief's labels send nothing more than the brief |
 | `failureCause` | error output (≤2000) and the command |
 | `changeSummary` | diff stat and hunks (≤6000) |
@@ -458,6 +459,13 @@ provenance live under `model-cache/materials-v1/`, sharing the original call bud
 and coordination. Original Codex caches/notes have a restricted compatibility
 scope; unknown recap ancestry cannot be reused as main-only material. No input
 fields or size limits are added by this boundary.
+
+The explicit [F4 digest CLI](cloud/f4-digest-cli.md) adds only the completed-report
+summary adapter. Plan is metadata-only; run uses full-ref delegated/result/digest
+scope and a concrete recipient grant, default-deny without legacy permission
+inheritance. Its new source-scoped `model-runtime-v1/` shares the ordinary F4
+budget and generic cache across invocations, not the legacy Codex budget. Coverage
+is one summary record; generated prose is not lifecycle or control evidence.
 
 Reasoning and other private channels are never read for any of these.
 Pre-create charge collection uses the same public channel/phase boundary as

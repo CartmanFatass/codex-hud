@@ -12,6 +12,7 @@ export const EXPORT_HELP = `${EXPORT_USAGE}
        hud panel [--help]          Open the delegation panel
        hud statusline --help      Render stdin or explicitly manage statusline settings
        hud pi --help              Inspect transcripts or launch Pi explicitly
+       hud digest --help          Summarize one explicitly selected completed report
        hud run --help
        hud cache show [--json]
        hud migrate --help         Preview, apply or restore compatible settings

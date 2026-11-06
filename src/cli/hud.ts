@@ -1,3 +1,4 @@
+import { digestCommand } from './digest.js';
 import { CallBudget } from '../ledger/call-budget.js';
 import { migrateCommand } from './migrate.js';
 import { statuslineCommand } from './statusline.js';
@@ -43,6 +44,7 @@ export async function main(
   const callBudget =
     args[0] === 'run' && ['resume', 'cancel'].includes(args[1]) ? new CallBudget(undefined, received) : undefined;
   try {
+    if (args[0] === 'digest') return await digestCommand(args.slice(1), io);
     if (args[0] === 'migrate') return await migrateCommand(args.slice(1), io);
     if (args[0] === 'statusline') return await statuslineCommand(args.slice(1), io);
     if (args[0] === 'panel') {

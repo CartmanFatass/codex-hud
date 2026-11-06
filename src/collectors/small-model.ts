@@ -109,6 +109,8 @@ export interface ModelRequest {
    * one cached before is dropped. Never sent, and no part of the cache identity.
    */
   language?: Language;
+  /** Local pure format predicate; exceptions fail closed. Never sent or persisted. */
+  validateResponse?: (text: string) => boolean;
   /**
    * Answer from the cache when the same input was answered before. The key
    * names what the input is about (an agent id, a rollout path); the cache is
@@ -355,7 +357,11 @@ export function requestDigest(
 
 /** Whether a reply is one the request can take: in its language, when it names one. */
 function acceptable(request: ModelRequest, text: string): boolean {
-  return !request.language || !wrongLanguage(text, request.language);
+  return validFormat(request, text) && (!request.language || !wrongLanguage(text, request.language));
+}
+function validFormat(request: ModelRequest, text: string): boolean {
+  try { return request.validateResponse ? request.validateResponse(text) === true : true; }
+  catch { return false; }
 }
 
 /** Calls within `windowMs` before `now`. */
@@ -1211,7 +1217,9 @@ export class SmallModel {
     } else if (request.materialUnchanged) {
       job.resolve({ ok: false, error: 'unchanged', unchanged: true });
     } else if (legacy && request.legacyCachedText !== undefined) {
-      job.resolve({ ok: true, text: request.legacyCachedText, cached: true });
+      job.resolve(validFormat(request, request.legacyCachedText)
+        ? { ok: true, text: request.legacyCachedText, cached: true }
+        : { ok: false, error: 'Invalid response', classification: 'invalid-response' });
     } else if (hit) {
       job.generatedAt = hit.at;
       job.resolve({ ok: true, text: hit.text, cached: true });
@@ -1436,7 +1444,11 @@ export class SmallModel {
         : this.spawn(job, job.command!));
       // Written in another language than asked: a failure, never cached, never shown as if it obeyed.
       if (outcome.ok && !acceptable(job.request, outcome.text))
-        outcome = { ok: false, error: t('Reply not in the panel language'), classification: 'invalid-response' };
+        outcome = {
+          ok: false,
+          error: validFormat(job.request, outcome.text) ? t('Reply not in the panel language') : 'Invalid response',
+          classification: 'invalid-response',
+        };
       if (outcome.ok && !this.authorized(job)) outcome = this.authorizationFailure();
       if (outcome.ok) job.generatedAt = this.clock();
     } catch {
@@ -1492,6 +1504,10 @@ export class SmallModel {
         clearTimeout(timer);
         clearTimeout(killTimer);
         const text = cleanOutput(out);
+        if (!validFormat(job.request, out)) {
+          resolve({ ok: false, error: 'Invalid response', classification: 'invalid-response' });
+          return;
+        }
         resolve(
           !timedOut && message === null && text
             ? { ok: true, text }
@@ -1547,7 +1563,10 @@ export class SmallModel {
           classification,
         };
       }
-      const text = cleanOutput(completionText(json) ?? '');
+      const content = completionText(json) ?? '';
+      if (!validFormat(job.request, content))
+        return { ok: false, error: 'Invalid response', classification: 'invalid-response' };
+      const text = cleanOutput(content);
       if (
         !text &&
         (json as { choices?: Array<{ finish_reason?: unknown }> } | null)?.choices?.[0]?.finish_reason === 'length'

@@ -313,3 +313,14 @@ test('fix1 owned runner records a quick normal child without uncertainty', async
   assert.match(result.ownedStart, /^[0-9]+$/);
   t.diagnostic(JSON.stringify(result));
 });
+
+test('F4 digest exact source output mapping', () => {
+  const sources = ['src/cli/digest.ts', 'src/core/delegated-report-read.ts',
+    'src/core/materials/source-config.ts', 'src/core/materials/delegated-digest.ts'];
+  const ordinary = selectedOutputs(sources, () => false);
+  assert.deepEqual(ordinary.map((entry) => entry.output), sources.map((file) => `dist/${file.slice(4, -3)}.js`));
+  const actualMcp = 'mcp/src/core/materials/source-config.js';
+  const withMcp = selectedOutputs(sources, (file) => file === actualMcp);
+  assert.deepEqual(withMcp.filter((entry) => entry.generatedPath.startsWith('mcp/')).map((entry) => entry.generatedPath), [actualMcp]);
+  assert.equal(withMcp.length, ordinary.length + 1);
+});

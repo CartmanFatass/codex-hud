@@ -374,3 +374,29 @@ test('public handle lifecycle notifies queued-to-running, holds cancellation slo
   assert.equal(pending.length, 2);
   assert.deepEqual(Object.keys(second).sort(), ['cancel', 'generatedAt', 'result', 'status', 'subscribe']);
 });
+
+for (const dirMode of ['memory', 'shared'] as const) {
+  test(`optional response validator checks fresh, cache and throwing predicates (${dirMode})`, async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-validator-synthetic-'));
+    let calls = 0;
+    const model = new SmallModel({ dir: dirMode === 'shared' ? directory : null, env: {},
+      fetch: (async () => { calls++; return reply('ordinary synthetic answer'); }) as typeof fetch });
+    model.configure({ backend: 'api', api: { ...api, model: 'synthetic-model' } });
+    const request = { ...question, cacheKey: 'validator' };
+    try {
+      assert.equal((await model.submit(request).result).ok, true); // absent validator unchanged
+      assert.equal((await model.submit(request).result).ok, true); assert.equal(calls, 1);
+      for (const validateResponse of [() => false, () => { throw new Error('synthetic predicate failure'); }]) {
+        const result = await model.submit({ ...request, validateResponse }).result;
+        assert.equal(result.ok, false);
+        if (!result.ok) { assert.equal(result.classification, 'invalid-response'); assert.equal(result.error, 'Invalid response'); }
+      }
+      assert.equal(calls, 3); // the old hit was rejected; neither invalid fresh reply was admitted
+      const good = await model.submit({ ...request, validateResponse: (text) => text === 'ordinary synthetic answer' }).result;
+      assert.equal(good.ok, true); assert.equal(calls, 4);
+      const cached = await model.submit({ ...request, validateResponse: () => true }).result;
+      assert.equal(cached.ok, true); if (cached.ok) assert.equal(cached.cached, true);
+      assert.equal(calls, 4);
+    } finally { model.cancelAll(); await model.flushTelemetry(); fs.rmSync(directory, { recursive: true, force: true }); }
+  });
+}

@@ -550,3 +550,15 @@ JSON 快照新增可选 `outputRate` 证据及 `health.sessionBound`。
 额度可能保守保留；协调失败则拒绝发送，不绕过计数。排队时审批和显式测试
 优先，其次可见进度，最后后台摘要，同时防止后台任务一直饿死；已发出的请求
 不会被抢占。跨窗口协调依赖本地文件系统的原子重命名和一致目录读取。
+
+
+## 显式委派报告摘要（测试候选）
+
+`hud digest --help` 提供 `plan --run RUN --report REPORT --json` 和
+`run --run RUN --report REPORT --expected-ledger LEDGER_ID --expected-recipient RECIPIENT_ID --json`。
+plan 只读元数据；run 仅把明确选定且已认证的 completed 报告 summary 作为公开 result 材料，
+上限 32 KiB UTF-8、8000 Unicode 码点，不读 reportPath、transcript、stdout、任务或父文本。
+私有来源 model.json 必须显式开启 delegatedDigest，并授权完整 ref 的 delegated/result/digest；
+独立 outbound.json 还必须允许具体 digest 接收方。缺省拒绝，不继承旧 Codex/native/resultDigest 权限。
+F4 来源预算与通用缓存独立于旧状态；生成摘要不证明任务正确或运行终结，不增加控制权限。
+详见[配置、拒绝码与本地验证清单](cloud/f4-digest-cli.md)。

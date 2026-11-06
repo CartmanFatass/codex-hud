@@ -700,3 +700,17 @@ stable reason code without internal paths. See `hud run --help` and
 `hud link export --json --schema-version 1` retains B18's independent read-only
 metadata export. `--paths local` opts in to local paths; `--link ID` is repeatable.
 Its export-specific exit codes are listed by `hud link export --help`.
+
+
+## Explicit delegated report digest (test candidate)
+
+`hud digest --help` discovers `plan --run RUN --report REPORT --json` and
+`run --run RUN --report REPORT --expected-ledger LEDGER_ID --expected-recipient RECIPIENT_ID --json`.
+Plan reads only metadata. Run sends only one authenticated completed report’s
+public summary (≤32 KiB UTF-8, ≤8000 code points), never reportPath, transcripts,
+stdout, tasks or parent text. Private source `model.json` must explicitly enable
+delegatedDigest and full-ref delegated/result/digest scope; independent
+`outbound.json` must allow the concrete digest recipient. Missing settings deny;
+old Codex/native/resultDigest permission does not apply. Source F4 budget/cache
+is separate from legacy state. Summaries do not prove correctness or run termination.
+See [configuration, refusals and local validation](cloud/f4-digest-cli.md).
