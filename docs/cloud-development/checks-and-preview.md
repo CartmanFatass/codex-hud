@@ -46,6 +46,15 @@ the ledger's Node22.13 minimum. The optional installed-official
 Pi no-model probe is not part of the default cloud command. The real-PTY
 workbench script and broader MCP suite remain outside this focused command.
 
+The central regression wiring retains all prior entries and all nine demos, with
+35 focused TypeScript test files and 19 total steps. It adds synthetic functional
+coverage for migration, delegation summaries, panel log opening, durable Jev and
+Jev tree consumption, plus explicit delegate-list and statusline-observer steps.
+The MCP delegate-list test uses the existing MCP build output with a thirty-second
+guard; the observer runs its source MJS test after the production build with a
+three-minute guard. Observer latency is advisory cloud evidence, not live-provider,
+WSL, two-week observation, installation or production qualification.
+
 Each build/test command has a three-minute guard, each demo thirty seconds, and
 captured output is limited to 2 MiB per command. The first failure stops later
 steps, which are listed as NOT_RUN, not passed. Each command uses an owned process

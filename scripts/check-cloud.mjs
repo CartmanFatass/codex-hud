@@ -40,6 +40,11 @@ export const FOCUSED_TESTS = [
   'workbench-layout',
   'workbench-live',
   'workbench',
+  'migration',
+  'delegation-summary',
+  'panel-open-logs',
+  'c45-jev-durable',
+  'c45-jev-tree',
 ];
 export const WORKBENCH_TESTS = ['unified', 'preparer', 'unified-paint', 'pi-channel-state', 'pi-extension-context'];
 export const DEMOS = [
@@ -351,6 +356,16 @@ async function main() {
         'packages/hud-mcp/dist/tests/hud-mcp/managed-target.test.js',
       ],
       timeoutMs: 120000,
+    },
+    {
+      name: 'delegate-list',
+      args: ['--test', 'packages/hud-mcp/dist/tests/hud-mcp/delegate-list.test.js'],
+      timeoutMs: 30000,
+    },
+    {
+      name: 'statusline-observer',
+      args: ['--test', '--test-concurrency=1', 'tests/unit/statusline-observer.test.mjs'],
+      timeoutMs: 180000,
     },
     ...DEMOS.map((name) => ({ name, args: [`scripts/${name}.mjs`], timeoutMs: 30000 })),
   ];
