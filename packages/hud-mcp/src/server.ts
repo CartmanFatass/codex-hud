@@ -2,6 +2,7 @@ import { CallBudget, monotonicClock, type BudgetClock } from '../../../src/ledge
 import type { Readable, Writable } from 'node:stream';
 import { object } from './io.js';
 import { outcomeCode } from './errors.js';
+import { linksResource, type LinksResource } from './links-resource.js';
 import type { CallResolution, CurrentCallSourcePort } from './resolvers.js';
 import { TOOLS, validateToolArguments } from './tools.js';
 export interface RpcRequest {
@@ -101,6 +102,7 @@ export class HudMcpServer {
           return this.bodies?.decorateFailure?.(definition.name, args, refusal) ?? refusal;
         };
         let outcome: unknown;
+        let embedded: LinksResource | undefined;
         try {
           if (this.stopped) throw new Error('server_shutdown');
           // params.arguments, prompt, claim and env hints cannot select a logical caller.
@@ -113,6 +115,16 @@ export class HudMcpServer {
               ? await this.bodies.invoke(resolution, definition.name, args, started, controller.signal, budget)
               : { ok: false, code: 'not_implemented', tool: definition.name }
             : failure(resolution.code);
+          if (definition.name === 'delegate_list' && args.format === 'resource') {
+            // A shutdown/cancellation during an async read must never leak a partial page.
+            controller.signal.throwIfAborted();
+            if (this.stopped) throw new Error('server_shutdown');
+            if (resolution.ok && object(outcome) && outcome.ok === true) {
+              const resource = linksResource(outcome, resolution);
+              if (resource.ok) embedded = resource.content;
+              else outcome = failure(resource.code);
+            }
+          }
         } catch (error) {
           // A committed intent is returned by its body even if subsequent dispatch fails.
           outcome = failure(outcomeCode(error));
@@ -120,7 +132,9 @@ export class HudMcpServer {
           this.requests.delete(id);
         }
         return reply({
-          content: [{ type: 'text', text: JSON.stringify(outcome) }],
+          content: embedded
+            ? [{ type: 'text', text: 'Authenticated owned-links metadata page; structuredContent is unchanged.' }, embedded]
+            : [{ type: 'text', text: JSON.stringify(outcome) }],
           isError: object(outcome) && outcome.ok === false,
           structuredContent: outcome,
         });

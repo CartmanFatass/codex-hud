@@ -32,7 +32,11 @@ export const TOOLS: ToolDefinition[] = [
   tool(
     'delegate_list',
     'Read a bounded page of this authenticated owner’s links and latest runs; committed observations only, no transcript or report bodies.',
-    { limit: { type: 'integer', minimum: 1, maximum: 50 }, cursor: { type: 'string', minLength: 1, maxLength: 2048 } },
+    {
+      limit: { type: 'integer', minimum: 1, maximum: 50 },
+      cursor: { type: 'string', minLength: 1, maxLength: 2048 },
+      format: { type: 'string', enum: ['json', 'resource'] },
+    },
     []
   ),
   tool(
