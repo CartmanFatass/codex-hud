@@ -698,6 +698,25 @@ Preserve all current source/identity/captured-generation checks, non-enforcing t
 | 测试与文档 | 历史测试随代码一并删除；历史文档归档或删除，只留当前参考 |
 | 测试矩阵 | 3 种主会话 × 2 种子会话 + Jev，每格覆盖创建、发送、读取、恢复、关闭与唤醒 |
 
+### 2026-11-07 设计定稿：native HUD v2.1 与 Jev 内化（Jacob）
+
+设计稿 `docs/design/native-hud-v2.md`（v2 经 ChatGPT Pro 评审 ACCEPT WITH CHANGES，v2.1 落实其十项必改）与
+`docs/design/jev-in-hud.md`（Jev 内化，经 Opus 评审 ACCEPT WITH CHANGES 后修订为 v4）。两份设计的待定分叉均已关闭。
+
+| 决定 | 内容 |
+| --- | --- |
+| Pi 接入（Q1） | 进程内，与 hud-mcp 共用校验、分发、错误与结果 |
+| host（Q2） | 每个有效 HUD home 一个 host；崩溃清理用进程组、记录进程标记、下次启动时清扫 |
+| 子会话工具（Q3） | 子会话不暴露 hud 工具（启动标记判断，返回空工具表）；调用仍拒绝，host 端再检查层级 |
+| 空闲关闭（Q4） | 30 分钟，可配置，只在真正空闲时；被动读取不续期 |
+| 非 Codex 根（Q5） | Claude / Pi 根会话的面板与摘要在 v2 验收范围内 |
+| 子会话请求 | 由主会话经 `hud_respond` 处理（同 herdr 的 ask_orchestrator）；主会话 1 小时未回应再唤醒一次，2 小时撤回请求并以 `abandoned` 关闭，两者可配置 |
+| 单轮时限 | 默认无；`turnDeadlineMs` 可选 |
+| Jev 内化 | hud-mcp 是独立 MCP：Jev Ultrafast（MIT）移植为 TypeScript 进入本仓库，ChatGPT / Gemini 提问驱动在 host 进程内运行；不再依赖 Python bridge 与外部 jev-ask |
+| Jev 决策后端 | TypeSafe 与 OpenAI Decisions API 都支持、可自由配置；TypeSafe 凭据复用现有 Jev 安装的 `.env`；两者都有且未指定时缺省 OpenAI Decisions API |
+| Jev 发送 | 强度滑块用键盘 `End`；Gemini 模式交给 Jev；`jev_ask` 立即返回；浏览器锁只在发送、核对与连接器授权段持有；`uncertain` 后自动只读核对，重发须显式确认；`model` + `effort_word` 取代 `"6 Pro"` 标签并退役 `5.6 Pro` 后备 |
+| Jev 记录 | 与 jev-ask CLI 共用记录与状态目录，答案写入其 `out/`；CLI 的 ChatGPT / Gemini 路径达到设计中的门槛后退役 |
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。

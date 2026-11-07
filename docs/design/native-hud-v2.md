@@ -1,24 +1,38 @@
-# Native HUD v2: identity, display, Pi package, summaries, wake, lifecycle, migration
+# Native HUD v2.1: identity, display, Pi package, summaries, wake, lifecycle, migration
 
-Design decision document for DES1 (2026-11-07), branch `universal-hud` at `e533c44`. It answers the seven
-questions of the brief inside the owner's fixed inputs (`docs/universal-hud-concept.md` §15, entry
-"2026-11-07 本地对齐：产品定义重置"). Paths are repo-relative; `file:line` refers to the tree at `e533c44`.
-The keep/delete inventory the brief cites is git-ignored; the numbers and hot spots this document relies on are
-reproduced in Appendix A. Every example (ids, paths, names) is synthetic.
+Design decision document, revision 2.1 (2026-11-07), branch `universal-hud` at `9e46378` (the code is identical to
+`e533c44`; `9e46378` only added v2 of this document). v2.1 applies the ChatGPT Pro review of v2 (verdict ACCEPT
+WITH CHANGES, ten required changes) and the owner's decisions of 2026-11-07 on the five open questions and the
+three forks that followed (§8; nothing is left open). Every
+code reference the review cited was re-read at `9e46378` before it was applied; all of them were accurate, and
+where the review corrected v2's reading of the code this revision says so in place. The document answers the seven
+questions of the DES1 brief inside the owner's fixed inputs (`docs/universal-hud-concept.md` §15, entry
+"2026-11-07 本地对齐：产品定义重置").
+
+Jev (the ChatGPT/Gemini ask driver, the Jev Ultrafast port under `src/jev/`, the `jev_ask*` and `jev_*` tools, the
+decision providers) is designed in the companion document **JEV1**
+(`docs/design/jev-in-hud.md`). This document points to it and does not duplicate it.
+
+Baselines (WP0): review SHA `9e46378`; `main` SHA `9108482`, the main-feature baseline every package preserves.
+Paths are repo-relative; `file:line` refers to the tree at `9e46378`. Every example (ids, paths, names) is synthetic.
 
 The thesis in four lines:
 
-1. **Identity is data the harness hands us, not a proof we extract.** Codex says which thread calls in `_meta`;
-   Claude writes its live session id in a per-pid registry file; the Pi extension *is* the session. Per-call
-   verification (`/proc` ancestry, hook records, fd-3 tickets, rollout headers) goes away.
+1. **Identity is data the harness hands us, bound once per attachment and rebound cheaply.** Codex says which
+   thread calls in `_meta`; Claude writes its live session id in a per-pid registry file; the Pi extension *is* the
+   session. Per-call verification (`/proc` ancestry, hook records, fd-3 tickets, rollout headers) goes away. What
+   stays is a small binding contract (§1.2): validate the carrier, snapshot the caller per request, fence stale
+   callbacks when the session changes, keep the source location.
 2. **An MCP child is an agent in the tree the panel already draws.** Children of any harness are projected into
    `SubagentTreeNode` (`src/types.ts:451`), so cards, timeline, agent log, bar counts, notifications, briefs,
-   progress notes, digests and names work unchanged. `src/render/delegation/*` and the link view model are deleted.
-3. **One host per user, with a clock.** The host starts only on `create`, never on a read, and exits by itself when
-   nothing is retained; idle children are closed on a timer; every process HUD starts is bound to a parent stdio.
-4. **Pi attaches in-process.** The HUD Pi package registers the same tool table through `pi.registerTool` and talks
-   to the host directly; no hud-mcp subprocess, no fd-3 channel. In a child it turns `ask_orchestrator` into Pi's
-   own `extension_ui_request`, which the host already relays to the parent.
+   progress notes, digests and names work through the same code. `src/render/delegation/*` and the link view model
+   are deleted. Connection lifecycle and turn outcome are separate facts (§2.8); "closed" never means "succeeded".
+3. **One host per HUD home, with a clock and a bounded close.** The host starts only on `create`, never on a read,
+   exits by itself when nothing is retained, closes quiescent children on a timer, and owns every process it starts
+   through a tested close ladder and a crash sweep (§6.1).
+4. **Pi attaches in-process, and a child never sees the HUD tools.** The HUD Pi package registers the same tool table
+   through `pi.registerTool` and shares hud-mcp's validation and dispatch; in a child of any harness the HUD tool
+   table is empty, direct calls are refused, and the host enforces depth again (§1.4).
 
 ---
 
@@ -28,9 +42,9 @@ The thesis in four lines:
 |---|---|
 | Any of Claude Code / Codex / Pi is the main session; symmetric roles | §1 one identity rule per harness, same tool table and the same child projection for all three (§2) |
 | MCP is the one interface (create, send, read, resume, close, wake) and the TUI's data source | Appendix B tool table; the TUI reads the host and the child records, nothing else (§2.3) |
-| Non-interference: connect and observe; children keep the harness's own configuration; HUD only passes the user's environment through | §6.2 environment capture; no `-c`, no settings file, no MCP config override for children (§1.4 chooses refusal over config changes) |
-| Pi exception: `pi -ne -ns -e <HUD Pi package> [-e pi-roles]`; the package gives channel, wake, footer, events | §3 |
-| Depth one; children's native subagents unrestricted, shown read-only | §1.4 child mode; §2.3 rows "native subagent of a child" |
+| Non-interference: connect and observe; children keep the harness's own configuration, including permission modes; HUD only passes the user's environment through | §6.2 environment capture; no `-c`, no settings file, no MCP config override for children; no permission-mode fields in the model-facing API (§1.4, Appendix B) |
+| Pi exception: `pi -ne -ns -e <HUD Pi package> [-e pi-roles]`; the package gives channel, wake, footer, events | §3, in-process (Q1 decided) |
+| Depth one; children do not obtain the hud MCP; children's native subagents unrestricted, shown read-only | §1.4 child mode: empty tool table, call refusal, host-side depth; §2.3 rows "native subagent of a child" |
 | Display scope: the root (any harness), its MCP children, their native subagents; nothing else | §2.2 owner-scoped collection |
 | Keep all `origin/main` features; delete the historical stack | §7 work packages, Appendix A |
 | Lightweight, fast, clear; performance first-class; one install + one registration per harness; bounded lifecycles | §1.5, §2.6, §6.1 |
@@ -46,8 +60,9 @@ The thesis in four lines:
   `SessionRefResolver.resolve` (`packages/hud-mcp/src/resolvers.ts:157-364`) rechecks ancestry and process start
   stamps (161-178, 349-353), denies a harness whose argv contains `app-server|daemon` (177-178), compares
   `/proc/<pid>/exe` with a configured path (203), reads Claude's registry (204-217), consumes a hook record
-  (220-227), locates the Codex rollout and parses its header (290-299), and refuses a Codex turn whose
-  `turn_trigger` is not `exec` on an `exec` source (302) — the cause of F2 in
+  (220-227), requires both Codex carriers and compares them (270-281), rejects a native subagent caller whose
+  `threadId` differs from `sessionId` (283-289), locates the Codex rollout and parses its header (290-299), and
+  refuses a Codex turn whose `turn_trigger` is not `exec` on an `exec` source (302) — the cause of F2 in
   `docs/cloud/handoff/local-real-client-results-20261107.md:31-34`.
 - Attachment needs three files per harness: `delegate.json` profiles with `callSource` kinds
   (`packages/hud-mcp/src/config.ts:144-189`), `native.json` child profiles (`src/managed/host-config.ts:59-71`), and
@@ -58,91 +73,144 @@ The thesis in four lines:
   (`src/harness/pi/delegation-channel.ts:41-50,189-208`; `packages/hud-mcp/src/pi-channel.ts:65-75,107-132,153-203`).
 - The wake target is re-registered on every call (`packages/hud-mcp/src/main.ts:60-90`), reading
   `/proc/<pid>/exe` of the Codex ancestor each time (`main.ts:75`).
+- Ownership includes a `sourceId` (`src/managed/relations.ts:5-22`): source location matters today, and v2.1 keeps
+  it as recorded data (§1.2) rather than as part of the key.
 
-### 1.2 Decision
+### 1.2 Decision: declared identity with a binding contract
 
-Identity is **declared once per MCP process and refreshed from a cheap local source**, never verified:
+Identity is **declared at attachment and rebound from a cheap local source**, never verified against process
+evidence. An *attachment* is one physical connection (one hud-mcp stdio process, or one HUD Pi extension instance)
+carrying one *current logical session*:
 
-- **Owner key** = `(harness, sessionId)`; `ownerKey = sha256(harness + '\0' + sessionId)[:16]`. The `sourceId`
-  (hash of `CODEX_HOME` / `CLAUDE_CONFIG_DIR` / Pi session dir, `src/managed/relations.ts:19-22`) leaves the key:
-  session ids are UUIDs, unique across homes, and the owner's two Codex accounts never collide on them.
-- The MCP process learns *which harness* it serves from the first call's `_meta` shape (or from its parent
-  process name as a hint) and *which session* from the per-harness source below. Nothing is re-derived per call
-  except the Codex thread id, which Codex already puts on every call.
-- A **call id** (Codex `callId`, Claude `claudecode/toolUseId`, Pi `callId`) is recorded on the child record for
-  display and dedupe only.
+```ts
+Attachment { attachmentId, owner: { harness, sessionId }, source, generation }
+```
+
+- `attachmentId` = `sha256(pid '\0' procStart)` of the hud-mcp process, a random UUID for a Pi extension instance.
+  Two attachments to one resumed session share the owner key but keep their own subscriptions and wake bindings,
+  keyed by `attachmentId` (§2.8, §5).
+- **Owner key** = `(harness, sessionId)`; `ownerKey = sha256(harness + '\0' + sessionId)[:16]`. `source` — the
+  `CODEX_HOME`, `CLAUDE_CONFIG_DIR` or Pi session directory the session lives in — leaves the key but is **recorded**
+  on every child record and compared: a caller presenting the same `(harness, sessionId)` from a different source
+  (a copied home, a copied session file) is refused with `source_mismatch`; `hud_create{resume}` uses the recorded
+  source, never whichever home the new caller happens to supply.
+- `generation` increments on every rebind: Claude registry change after `/clear` or `--resume` inside one process
+  (observed in `docs/probes/b1-call-source.md:69-79`: harness and MCP pids persist, the registry changes), Pi
+  `session_start`/switch/fork, Codex `/new` (which replaces the MCP process, so a new attachment). Subscriptions,
+  wake bindings and in-flight callbacks carry the generation they were created under; the host drops frames and
+  wake attempts whose generation is stale.
+
+The binding contract, per request:
+
+1. **Validate the carrier; reject contradictions.** Codex: when both `_meta.sessionId/threadId` and
+   `x-codex-turn-metadata.session_id/thread_id` are present they must agree, else
+   `invalid_arguments{carrier_mismatch}`; when only one carrier is present it is accepted. Today's code requires
+   both (`resolvers.ts:270-281`), so the single-carrier case is new behaviour with its own fixture (WP2a).
+   Claude: the registry record must carry the pid and process start captured at attachment (as `resolvers.ts:206-208`
+   checks today), else `identity_unavailable`; a missing or malformed registry is an error, never "the last session".
+2. **Snapshot the caller per request.** The `Caller` resolved at request entry travels in the host envelope; an
+   asynchronous operation never re-reads "the current session" mid-flight and never acts for a replacement session.
+3. **Fence by generation**, as above.
+4. **Host-side scoping and depth.** Every mutation resolves under the full owner tuple at the host; a `create`
+   whose owner is itself an active child (§1.4) is refused with `depth_limit` whatever the MCP decided.
+5. A **call id** (Codex `callId`, Claude `claudecode/toolUseId`, Pi tool call id) is recorded on the child record
+   for display and dedupe only.
 
 ### 1.3 The source of truth per harness
 
 | Parent harness | Session identity | Where it comes from | Refresh | Notes |
 |---|---|---|---|---|
-| Codex | `x-codex-turn-metadata.session_id` (root thread) and `.thread_id` (calling thread), with `_meta.sessionId`/`threadId` as fallback (`resolvers.ts:270-281` shows both carriers) | every `tools/call` `_meta` | per call, zero cost | A native subagent of the root (`thread_id != session_id`, `parent_thread_id` set) is **accepted and attributed to the root session**; the calling thread is kept as `caller.threadId`. `turn_trigger` is ignored (F2 fixed). `thread_source` is ignored. |
-| Claude Code | `<CLAUDE_CONFIG_DIR>/sessions/<claude pid>.json` `.sessionId` — the registry Claude keeps current (today both the hook, `hook/command.ts:90-101`, and the resolver, `resolvers.ts:204-217`, already require it to match the live session) | the MCP's parent `claude` pid (ppid walk ≤ 8, `packages/hud-mcp/src/process.ts:95-121`, kept) and `CLAUDE_CONFIG_DIR` from the MCP's own env (Claude passes its environment to stdio servers) else `~/.claude` | re-read on each call, cached by mtime (one `stat`) so `/clear` and `/resume` inside one process are followed | No PreToolUse hook. `claudecode/toolUseId` is the call id. Claude native subagents (Agent tool) share the process and are attributed to the root. |
-| Pi | `ctx.sessionManager.getSessionId()` inside the HUD Pi package, which calls the host in-process (§3) | the extension itself; `session_start` / `session_before_switch` / fork / tree events re-bind | event-driven | No hud-mcp process, no fd 3, no tickets. |
+| Codex | `x-codex-turn-metadata.session_id` (root thread) and `.thread_id` (calling thread), or `_meta.sessionId`/`threadId` (`resolvers.ts:270-281` shows both carriers); both present → must agree | every `tools/call` `_meta` | per call, zero cost | A native subagent of the root (`thread_id != session_id`, `parent_thread_id` set) is **accepted and attributed to the root session** and shares the root's HUD ownership scope; the calling thread is kept as `caller.threadId`. `turn_trigger` is ignored (F2). `thread_source` is ignored. |
+| Claude Code | `<CLAUDE_CONFIG_DIR>/sessions/<claude pid>.json` `.sessionId` — the registry Claude keeps current (the hook, `hook/command.ts:90-101`, and the resolver, `resolvers.ts:204-217`, already require it to match the live session) | at attachment: the MCP's parent `claude` pid (ppid walk ≤ 8, `packages/hud-mcp/src/process.ts:95-121`, run **once**) and `CLAUDE_CONFIG_DIR` from the MCP's own env (Claude passes its environment to stdio servers) else `~/.claude` | one bounded read (≤ 4 KiB) of the registry per call, matched against the captured pid and process start; a changed `sessionId` is a rebind | No PreToolUse hook. `claudecode/toolUseId` is the call id. Claude native subagents (Agent tool) share the process and are attributed to the root. |
+| Pi | `ctx.sessionManager.getSessionId()` inside the HUD Pi package (§3) | the extension itself; `session_start` / `session_before_switch` / fork / tree events rebind | event-driven | No hud-mcp process, no fd 3, no tickets. |
 
 Resume and multiple sessions: Codex `codex resume <id>` keeps the thread id, Claude `--resume` keeps the session
 id, Pi resume keeps the session header id (`src/harness/pi/delegation-context.ts:158-231` reads it today) — the
 owner key is stable across resume, so the parent lists its children again (the "same parent resumes, lists,
-reads" row of the results table). Two TUIs of one harness are two MCP processes (or two extension instances) with
-different owner keys; one host serves both (§6.1). A fork is a new session with no children; it may adopt a
-*closed* child with `hud_create{resume}` (§1.9), never a live one of another owner (`child_busy`).
+reads" row of the results table). Two *different* sessions of one harness are two owner keys; two attachments to
+the *same* resumed session share the key and the host serves both (§6.1). A fork is a new session with no
+children; it may adopt a *closed* child with `hud_create{resume}` (§1.9), never a live one of another owner
+(`child_busy`). Registry freshness across every Claude in-process resume path and future client versions is
+unverified: probe P1 (§7) checks it on the real clients before the deletions start.
 
-### 1.4 Child mode (depth one) without touching the child's configuration
+### 1.4 Child mode (Q3 decided): no HUD tools in a child, refusal, host-side depth
 
 A child Codex or Claude starts with the user's configuration, which includes the `hud` MCP registration (F3 counted
-8 MCP servers per Codex child). Instead of disabling it through configuration, the same `hud-mcp` binary detects
-that it runs inside a HUD child and refuses to delegate:
+8 MCP servers per Codex child). HUD does not change that configuration; the same `hud-mcp` binary detects that it
+runs inside a HUD child and exposes nothing:
 
-- The host sets `HUD_CHILD=<childId>` and `HUD_CHILD_OF=<ownerKey>` in every child's environment. Pi children
-  never load hud-mcp at all (`-ne`); Claude forwards its environment to stdio MCP servers, so the marker arrives.
-- Codex filters the environment it gives MCP servers (F3), so the marker may not arrive there. The uniform
-  fallback, used whenever the marker is absent, is one lookup of the caller's own session id (Codex: `_meta`
-  `session_id`; Claude: the registry of §1.3) against `~/.hud/children/*/*.json` (`nativeRef.threadId` /
-  `nativeRef.sessionId`), cached for the process lifetime after the first hit. A hit means "I am a HUD child".
-- In child mode `tools/list` still returns the table (Codex sends no `_meta` on `tools/list`), but every call answers
-  `{error:'depth_limit', message:'This session is a HUD child; ask the orchestrator instead.'}` in ≤ 1 ms, and
-  `hud_create`/`jev_open` never start a host. The child's native subagents (Codex `spawn_agent`, Claude Agent tool)
-  are untouched.
+- The host sets `HUD_CHILD=<childId>` and `HUD_CHILD_OF=<ownerKey>` in every child's environment (the launch
+  marker). Pi children never load hud-mcp at all (`-ne`); the HUD Pi package in child mode registers only
+  `ask_orchestrator` (§3.1).
+- hud-mcp classifies itself **at `initialize`** and again on every rebind (generation change), in this order:
+  (a) `HUD_CHILD` in its own environment (Claude forwards its environment to stdio servers); (b) on Linux, `HUD_CHILD`
+  in `/proc/<harness ancestor pid>/environ` — the ancestor is the child's own `codex`/`claude` process, whose launch
+  environment the host set, so Codex's filtered MCP environment (F3) cannot hide the marker; (c) one lookup of the
+  caller's own session id in the **active-child index** `~/.hud/active/<nativeKey>.json` — one small file per live
+  child keyed by the native thread/session id, written by the host before the first prompt is sent, removed on
+  close. Never a scan of the historical `children/` directory, never a result cached for the process lifetime.
+- In child mode `tools/list` returns an **empty** table. A direct `tools/call` of a HUD tool (a cached schema, a
+  hand-written call) answers `{error:'depth_limit', message:'This session is a HUD child; ask the orchestrator
+  instead.'}` without touching the socket; nothing in child mode ever starts a host.
+- The host refuses `create` for an owner whose session id is in the active-child index (§1.2 rule 4): depth is
+  enforced twice, once at the MCP and once at the host.
+- Publication precedes input: the host writes the active-child index entry and the child record, and only then sends
+  turn 1. A write failure fails the `create` with `child_record_unavailable`. Today `bind` swallows relation-write
+  errors into `persistenceError` (`src/managed/host.ts:106-120`); that cannot stay once the record enforces depth.
+- The child's native subagents (Codex `spawn_agent`, Claude Agent tool) are untouched; they inherit the marker and
+  are therefore child-mode too.
 
 Rejected: passing a per-thread config override (Codex `thread/start.config`, Claude SDK `mcpServers` +
 `strictMcpConfig`) to drop the `hud` server. The Claude form drops *all* user servers (violates non-interference);
-the Codex form is version-dependent and still leaves Claude different. The refusal path is uniform and costs one
-file lookup. Open question 3 in §8 keeps the override as a possible later refinement for Codex only.
+the Codex form is version-dependent and still leaves Claude different. The marker + empty table costs nothing and
+is uniform. (Q3 of v2 is closed; §8.)
 
 ### 1.5 What the user configures (one install, one registration per harness)
 
-- `./install.sh` builds `dist/` **and** `packages/hud-mcp/dist/` (today it runs only `npm run build`, inventory H17),
-  links the Pi package into `~/.pi/bundles/hud` (the owner's existing pattern for pi-roles) and prints:
+- `./install.sh` builds `dist/`, `packages/hud-mcp/dist/` **and** `packages/hud-pi/dist/` (today it runs only
+  `npm run build`, inventory H17) and prints:
   - Codex: `codex mcp add hud -- node <checkout>/packages/hud-mcp/bin/hud-mcp.mjs` (or the `[mcp_servers.hud]`
     table for `config.toml`), once per `CODEX_HOME` in use. No `env` block.
   - Claude: `claude mcp add --scope user hud -- node <checkout>/packages/hud-mcp/bin/hud-mcp.mjs`.
-  - Pi: nothing beyond the link (pi loads `~/.pi/bundles/*` / `~/.pi/agent/extensions`); for a Pi started with
-    `-ne`, `-e ~/.pi/bundles/hud`.
+  - Pi: `pi install <checkout>/packages/hud-pi` — pi's supported package registration (it writes the package
+    declaration into pi's `settings.json` under the configured agent directory; `PI_CODING_AGENT_DIR` is honoured).
+    For a child started with `-ne`: `-e <checkout>/packages/hud-pi`. v2's claim that a link under `~/.pi/bundles/`
+    is enough was wrong: pi 1.5.0's extension loader discovers the project and global extension directories,
+    configured packages and explicit `-e` paths, and a package directory is accepted through its `package.json`
+    `pi.extensions`; it does not discover a bundles directory. The owner's `~/.pi/bundles/hud` link is kept only as a
+    stable path for `-e` (pi-roles is loaded the same way, by its launcher).
 - `HUD_HOME` defaults to `~/.hud` (0700). Tests set it explicitly; users never do.
-- `~/.hud/config.json` is optional and small: `{ "idleCloseMs", "graceExitMs", "jev": { "python" }, "codex": {
-  "executable" }, "claude": { "executable" }, "pi": { "executable" } }`. Nothing in it changes a child's behaviour;
-  it only says where HUD finds programs and how long it keeps idle processes.
+- `~/.hud/config.json` is optional and small: `{ idleCloseMs, graceExitMs, requestStaleMs, requestAbandonMs,
+  turnDeadlineMs?, startTimeoutMs, closeTimeoutMs, maxChildren, codex: { executable }, claude: { executable },
+  pi: { executable }, jev: { … } }`.
+  The `jev` block is JEV1 §4.6 (shared-Chrome settings, `stateDir`, ask limits); Jev credentials live in
+  `~/.hud/jev.env` (0600), read per job; there is no interpreter setting because there is no Python (JEV1 §4.1).
+  Nothing in the file changes a child's behaviour; it only says where HUD finds programs and how long it keeps
+  processes.
 
 ### 1.6 Fate of today's pieces
 
-| Piece | v2 |
+| Piece | v2.1 |
 |---|---|
 | `delegate.json` (`config.ts:144-189`), `HUD_MCP_PROFILE` (`main.ts:24-26`) | deleted; harness inferred from the call |
-| `native.json` (`host-config.ts:59-71`), `nativeProfiles` env merge (`host-config.ts:72-120`) | deleted; children launch with the harness defaults on the captured PATH; per-create options come from the orchestrator (Appendix B) |
-| Claude PreToolUse hook (`packages/hud-mcp/src/hook/*`, `bin/hud-claude-hook.mjs`, `HUD_CLAUDE_HOOK_CONFIG`, `claude.settings.json`) | deleted; replaced by the registry read in §1.3 |
-| `/proc` evidence (`process.ts:22-40` reads `stat`, `cmdline`, `environ`, `ns/pid`; `pi-host.ts:12-35`; `hook/process.ts:66-116`) | no longer identity evidence. `/proc/<pid>/environ` of the harness ancestor stays as the **environment source** on Linux (§6.2); `findHarness` stays to find that ancestor |
+| `native.json` (`host-config.ts:59-71`), `nativeProfiles` env merge (`host-config.ts:72-120`) | deleted; children launch with the harness defaults on the captured environment; per-create options come from the orchestrator (Appendix B; no permission-mode fields) |
+| Claude PreToolUse hook (`packages/hud-mcp/src/hook/*`, `bin/hud-claude-hook.mjs`, `HUD_CLAUDE_HOOK_CONFIG`, `claude.settings.json`) | deleted; replaced by the registry read in §1.3; WP11's upgrade check reports leftover hook entries |
+| `/proc` evidence (`process.ts:22-40` reads `stat`, `cmdline`, `environ`, `ns/pid`; `pi-host.ts:12-35`; `hook/process.ts:66-116`) | no longer identity evidence. `/proc/<pid>/environ` of the harness ancestor stays as the **environment source** (§6.2) and the **child-marker source** (§1.4) on Linux; `findHarness` runs once at attachment |
 | Pi fd-3 channel (`delegation-channel.ts`, `delegation-context.ts`, `pi-channel.ts`, `pi-host.ts`) | deleted (§3) |
 | `MemoryCallerRegistry`/`FileCallerRegistry`/`registerCaller` (`registry.ts:25-146`) | deleted |
-| `wake_register` on every call (`main.ts:60-90`, `host-wake.ts:158-205` methods) | replaced by a wake target computed at `hud_create` and stored on the child record (§5) |
-| `identity_unverified`, `stale_context`, `unsupported` resolutions (`resolvers.ts:18-27`) | the only refusal classes left: `depth_limit`, `child_busy`, `host_unavailable`, `invalid_arguments` |
+| `wake_register` on every call (`main.ts:60-90`, `host-wake.ts:158-205` methods) | replaced by a wake binding computed at attachment and refreshed on reattach (§5) |
+| `identity_unverified`, `stale_context`, `unsupported` resolutions (`resolvers.ts:18-27`) | the refusal classes left: `depth_limit`, `child_busy`, `host_unavailable`, `host_shutting_down`, `invalid_arguments`, `identity_unavailable`, `source_mismatch`, `limit_exceeded` |
+| Python Jev bridge (`src/managed/jev-bridge.py`, `PythonJevBridge`, `HUD_JEV_PYTHON`) | deleted with the TypeScript port (JEV1 §4.1) |
 
 ### 1.7 Security posture (single-user local tool)
 
 Still defended: (a) other local users — `HUD_HOME` 0700, socket 0600, child records 0600, `writePrivateFile`
 pattern as on main (`docs/ARCHITECTURE.md` §5.1); (b) accidental cross-session action — every host request carries
-the owner key and the host only lists/acts on that owner's children (a *scoping* rule); (c) terminal injection —
-wake and notice text is control-stripped (`src/notify.ts` already does this; `src/managed/wake-message.ts` keeps
-the 512-byte cap); (d) nothing leaves the machine unless the model features are on (§4).
+the owner and the host only lists/acts on that owner's children; the source check of §1.2 catches a copied home;
+(c) terminal injection — wake and notice text is control-stripped (`src/notify.ts` already does this;
+`src/managed/wake-message.ts` keeps the 512-byte cap); (d) **HUD's own summary traffic** leaves the machine only
+when the model features are on (§4). (d) says nothing about the children, their configured MCP servers and plugins,
+or Jev's browser, which talk to the network on their own terms; HUD neither adds nor removes that.
 
 Deliberately dropped: proving that the calling process is the session it claims (ancestry, procStart, exe path,
 rollout header digest, hook tombstones, fd ownership, fingerprints). A same-uid process can already read every
@@ -158,22 +226,31 @@ Claude call and ~300 lines per harness.
   breaks for Codex's shared-process case (several threads per MCP process), and adds a credential to a tool with no
   adversary.
 - *A per-owner host as today (`host-ipc.ts:27-30`, one socket per `ownerKey[0:32]`).* See §6.1.
+- *A lifetime-long session cache per MCP process* (v2's "declared once"). The probes show the session changing
+  under a live MCP process; the cheap rebind of §1.2 is what the evidence supports.
 
 ### 1.9 Interfaces
 
 ```ts
 // packages/hud-mcp/src/identity.ts (replaces resolvers.ts, registry.ts, hook/*, pi-channel.ts, pi-host.ts)
 export interface Owner { harness: 'codex' | 'claude' | 'pi'; sessionId: string }
-export interface Caller { owner: Owner; callId: string | null; threadId: string | null }
-export interface IdentitySource { caller(meta: unknown, toolName: string): Caller | { error: 'depth_limit' } }
-export function codexCaller(meta: unknown): Caller;                       // _meta carriers, no I/O
-export function claudeCaller(reader: RegistryReader, meta: unknown): Caller; // registry read, mtime-cached
-export function ownerKey(owner: Owner): string;                           // sha256(harness\0sessionId).slice(0,16)
+export interface Attachment { attachmentId: string; owner: Owner; source: string; generation: number }
+export interface Caller { attachment: Attachment; callId: string | null; threadId: string | null }
+export type IdentityError = 'identity_unavailable' | 'invalid_arguments' | 'source_mismatch' | 'depth_limit';
+export function codexCaller(current: Attachment, meta: unknown): Caller | { error: IdentityError; detail: string }; // carriers, no I/O
+export function claudeCaller(current: Attachment, registry: RegistryReader, meta: unknown): Caller | { error: IdentityError; detail: string }; // one bounded read
+export function ownerKey(owner: Owner): string;                          // sha256(harness\0sessionId).slice(0,16)
+export function childMode(env: NodeJS.ProcessEnv, procEnviron: () => string | null, activeIndex: ActiveIndex, owner: Owner | null): boolean;
+
+// packages/hud-mcp/src/tools.ts — one implementation shared by server.ts (MCP) and packages/hud-pi (in-process)
+export interface HudTools {
+  list(mode: 'parent' | 'child'): ToolDefinition[];                     // 'child' → []
+  invoke(caller: Caller, name: string, args: unknown, signal: AbortSignal): Promise<ToolResult>; // validation, dispatch, errors, result shaping
+}
 ```
 
-The host's request envelope becomes `{ owner: Owner, method, params, env?: Record<string,string> }`
-(`env` only on `hud_create`/`jev_open`, §6.2). `src/managed/relations.ts` `DirectRelation` (11-18) is replaced by the
-child record of §2.8.
+The host's request envelope becomes `{ caller: Caller, method, params, env?: Record<string,string> }` (`env` only on
+`hud_create`, §6.2). `src/managed/relations.ts` `DirectRelation` (11-18) is replaced by the child record of §2.8.
 
 ---
 
@@ -184,9 +261,14 @@ child record of §2.8.
 The bar and panel draw children through `NativeCallCollector` (`src/collectors/native-calls.ts:63-310`), which
 asks the host for `list` + `wait` per owner with a 40 ms budget (165-169) and *merges* the result into a
 `DelegationViewModel` (`merge`, 208-309) whose tree is a `LinkTreeProjection` of the deleted ledger design
-(`src/core/link/types.ts:142-161`, nodes 102-134) stamped `reason: 'legacy_ledger_not_used'` (212). The panel
-then renders it with `src/render/delegation/*` (~4.8k lines: `panel.ts:322-349`, `bar.ts:49-75`,
-`statusline.ts:160-168`) instead of its own cards. `src/index.ts:113-114,198-201,240,253` and
+(`src/core/link/types.ts:142-161`, nodes 102-134) stamped `reason: 'legacy_ledger_not_used'` (212). Two corrections
+to v2's reading: the bar's collector constructs `new NativeHostClient(home, false)` (`native-calls.ts:67-70`) and
+`invoke` refuses to start a host when `launch` is false (`host-ipc.ts:207-212`), so the TUI never spawns a host
+today — F6 is about the MCP's read tools, whose client launches (`main.ts:56`); and in the native-only case the panel
+keeps its own rows and *appends* compact delegation rows (`monitor-panes.ts:579-587`), while only the legacy branch
+replaces the view (588-600). The renderers under `src/render/delegation/*` (~4.8k lines: `panel.ts:322-349`,
+`bar.ts:49-75`, `statusline.ts:160-168`) and `render/monitor.ts:1-35` (which still imports `core/link/view-model`
+and `delegation/*`) are what the cleanup removes. `src/index.ts:113-114,198-201,240,253` and
 `src/tree-page.ts:286-289,1027-1035,1156-1163,1179-1190` carry both the legacy collector and the native one.
 Meanwhile the whole panel is built around `SubagentTree` (`src/types.ts:520-525`): cards, timeline, agent log,
 briefs, progress and labels all take `SubagentTreeNode` (`docs/ARCHITECTURE.md` §4.4–§6.3).
@@ -200,36 +282,37 @@ root                       (the session this TUI belongs to; any harness)
 ├─ native subagent …       (Codex: rollout scan as on main; Claude: Agent-tool sidechains)
 ├─ MCP child  ⌬/✳/π        (from the child record + the host's ChildSummary)
 │  └─ native subagent …    (read-only; Codex child: rollout scan rooted at the child thread)
-└─ Jev job ◎               (from the jev record + jev_snapshot)
+└─ Jev job ◎               (from the Jev job file + the host's job summary; JEV1 §4.8)
 ```
 
 - A new collector `src/collectors/children.ts` turns child records and host summaries into `SubagentTreeNode[]`
   and the bar/panel/dry-run append them to `tree.nodes`. The panel keeps *one* tree, *one* set of counts
   (`agentCounts`, `src/collectors/subagent-tree.ts:1304-1326`), one selection model.
-- `SubagentTreeNode` gets three additive optional fields; nothing existing changes meaning:
+- `SubagentTreeNode` gets four additive optional fields; nothing existing changes meaning:
 
 ```ts
 // src/types.ts (additive)
 harness?: 'codex' | 'claude' | 'pi' | 'jev';          // glyph beside the name when the tree spans harnesses
-origin?: 'native' | 'hud';                              // 'hud' = created through hud_create / jev_open
-request?: { kind: 'approval' | 'question' | 'permission' | 'dialog'; text: string; since: Date };  // needs the orchestrator
+origin?: 'native' | 'hud';                              // 'hud' = created through hud_create / jev_ask / jev_open
+link?: { lifecycle: ChildRecord['lifecycle']; outcome: ChildRecord['outcome']['status']; closeReason?: ChildRecord['closeReason']; pendingRequests: number };
+request?: { requestId: string; kind: string; summary: string; since: Date };   // the first pending request
 ```
 
 - `DelegationViewModel`, `HudDelegationData`, `nativeCallLabel`, `jevCallLabel` (`src/core/link/view-model.ts`),
-  `render/delegation/*`, `core/link/*`, `core/capacity.ts`, `core/observation.ts` projections are deleted (WP2).
+  `render/delegation/*`, `core/link/*`, `core/capacity.ts`, `core/observation.ts` projections are deleted (WP2b).
 
 ### 2.3 Node types and data sources
 
 | Node | Identity | Data source | Status, clock | Text shown | Cost per tick |
 |---|---|---|---|---|---|
 | Codex root | `SessionFinder` as on main | rollout parse + `HudStatus` (unchanged) | unchanged | unchanged | unchanged |
-| Claude root | statusline JSON `session_id` (`src/core/statusline-summary.ts:77-96` keeps `statuslineRef` minus the ledger) or, for the standalone panel, `--session <id>` / newest transcript for the cwd | native facts from the statusline JSON; transcript via `src/harness/claude/reader.ts` (kept) for the panel | from the transcript tail | model, context, cost (statusline) | one-shot (statusline) |
+| Claude root | statusline JSON `session_id` (`src/core/statusline-summary.ts:77-96` keeps `statuslineRef` minus the ledger); for the standalone panel `--session <id>`, or, without it, the transcript for the cwd **only when exactly one is live** (modified within 5 min) — otherwise the panel lists the candidates and asks for `--session` | native facts from the statusline JSON; transcript via `src/harness/claude/reader.ts` (kept) for the panel | from the transcript tail | model, context, cost (statusline) | one-shot (statusline) |
 | Pi root | `ctx.sessionManager` | `ctx.getContextUsage`, `ctx.isIdle`, session file (`src/harness/pi/footer.ts:87-120` already) | footer events | footer lines | event-driven |
 | Native subagent of the root | as on main (Codex); `ClaudeNativeTopology` (`src/harness/claude/topology.ts:75`) | as on main | as on main | as on main | as on main |
-| MCP child (any harness) | child record `~/.hud/children/<ownerKey>/<childId>.json` | host subscription → `ChildSummary` (§2.8) | `starting` → `running` (turn in flight) → `completed` (idle after a turn) / `error` (exit ≠ 0, transport lost); `request` set while a request waits | name (orchestrator's `name` or `harness·c-7f3a`), model·effort, task head (≤ 300), last public message head (≤ 600), current tool (≤ 200), context % when the harness reports it, the request line | one socket message per change; 0 when quiet |
-| Native subagent of a Codex child | rollout scan rooted at `nativeRef.threadId` under the child's `CODEX_HOME` (from the record) | `buildSubagentTree` (`subagent-tree.ts:968-983`) with a shared parent map (WP6: one scan, many roots) | as on main | as on main | shares the scan cache (`tree-scan-store.ts`) |
+| MCP child (any harness) | child record `~/.hud/children/<ownerKey>/<childId>.json` | host subscription → `ChildSummary` (§2.8) | lifecycle × outcome mapping of §2.8; `request` set while a request waits | name (orchestrator's `name` or `harness·c-7f3a`), model·effort, task head (≤ 300), last public message head (≤ 600), current tool (≤ 200), context % when the harness reports it, the request line | one socket message per change; 0 when quiet |
+| Native subagent of a Codex child | rollout scan rooted at `nativeRef.threadId` under the child's `source` (from the record) | `buildSubagentTree` (`subagent-tree.ts:968-983`) with a shared parent map (WP6: one scan, many roots) | as on main | as on main | shares the scan cache (`tree-scan-store.ts`) |
 | Native subagent of a Claude child | `ClaudeNativeTopology` over the child transcript path from the record | same reader | as on main's Claude reader | name, status | one tail read per changed file |
-| Jev job | `~/.hud/jev/<ownerKey>/<instanceId>.json` | host `jev_snapshot` result cached in the summary (today `native-calls.ts:98-149` asks per tick) | running / blocked (CAPTCHA, login) / closed | url host, goal head, last snapshot line | 0 when quiet |
+| Jev job (`jev_ask`) and Jev instance (`jev_open`) | `~/.hud/jev/<ownerKey>/<job>.json` | host job summary on the same subscription | JEV1 §4.8 mapping (`queued/sending/awaiting → running`, `needs_human → running + request{kind:'dialog'}`, answered → `completed`, failures → `error`) | `Pro·review-v2`, phase line (`▸ wait: generating 12m`), answer head ≤ 600 | 0 when quiet |
 
 Scope rule: a TUI asks the host only for **its owner** (root session). Unrelated sessions never appear, and a
 `hud panel --all` debug switch is the only exception (replacing `CODEX_HUD_PANEL_ALL_DELEGATIONS`,
@@ -243,16 +326,20 @@ MCP child:
 - **Card / compact row:** status marker (existing set), harness glyph (`⌬` Codex, `✳` Claude, `π` Pi, `◎` Jev;
   moved from `render/delegation/glyphs.ts` into `render/subagent-chip.ts`), name, model·effort badge, turn clock,
   context meter when known, newest model note (progress summary), current action `▸ npm test`, and while a request
-  waits one line `⚑ approval · rm -rf build (2m)` in the alert colour. Children of the child (its native
-  subagents) are its child lines as today.
+  waits one line `⚑ approval · rm -rf build (2m) +1` in the alert colour (`+1` = further pending requests). Children
+  of the child (its native subagents) are its child lines as today.
 - **Timeline:** each turn is a stage (`stages[]`): started at `hud_send`, ended at `turn_done` with the result head;
   requests appear as `⚑` entries; nothing else is invented.
-- **Inspector:** the request text whole (`flowLines`), the last result whole, the task (create prompt), the native
-  ref and transcript path under `▾ More`, and a fixed note "read-only: the orchestrator drives this child". The
-  `o`/`⇢` switch action is disabled for `origin:'hud'` nodes (there is no `/subagents` entry to switch to).
+- **Inspector:** every pending request whole (`flowLines`), the last result whole, the task (create prompt head and
+  a locator to the native transcript), the lifecycle line (`connected · turn 3 completed 40 s ago`, or
+  `closed · idle_timeout`, or `lost · host down, resume with hud_create{resume}`), the native ref, source and
+  transcript path under `▾ More`, and a fixed note "read-only: the orchestrator drives this child". The `o`/`⇢`
+  switch action is disabled for `origin:'hud'` nodes (there is no `/subagents` entry to switch to).
 - **Bar:** `Agents 2▸ 1⚑ 1✓` — the existing module over `agentCounts`; the attention badge adds "child needs the
-  orchestrator" (`render/attention.ts`) ranked with pending approvals; the notice zone gets `✓ reviewer finished ·
-  12s ago` from `BarNoticeTracker` for free because children are L1 agents.
+  orchestrator" (`render/attention.ts`) ranked with pending approvals. Completion notices: `BarNoticeTracker`
+  (`src/collectors/bar-notices.ts:45-53`) announces a completion only after it has seen the agent running or
+  starting; that baseline stays. For `origin:'hud'` nodes WP7 keys the notice on `(child, outcome.turn)` so two turns
+  completing between two ticks (subscription coalescing) give two notices and a re-rendered summary gives none.
 - **Claude statusline (`hud statusline`):** line 1 unchanged (`render/statusline-session.ts`), with the counts at
   its end; line 2 `⧉ ▸ π implementer 4m · ⚑ ⌬ reviewer approval 1m · +1✓`. The pure functions of
   `render/delegation/statusline.ts:160-260` are rewritten over `SubagentTreeNode[]` (≈ 150 lines) and the
@@ -270,14 +357,15 @@ without the host.
 
 ### 2.6 Performance budget
 
-| Stage | Today | v2 target | How |
+| Stage | Today | v2.1 target | How |
 |---|---|---|---|
 | Bar cold start to first paint | module graph 149 modules / 44.6k lines, 36 modules / 11.4k historical (App. A) | −36 modules; ≤ 150 ms on the owner's machine with a warm scan cache | WP1–WP2 |
 | Panel cold start | 193 / 63.9k, 46 / 13.9k historical | −46 modules; ≤ 300 ms to first frame, tree may still say loading | same |
-| Children per tick (bar, 1 s) | `list` + `wait` per owner, 40 ms cap (`native-calls.ts:165-169`), spawns a host on `ENOENT` (`host-ipc.ts:201-282`) | 0 syscalls when nothing changed (subscription); ≤ 2 ms p50 / 40 ms cap on change; **never starts a host** | §2.8 subscription |
+| Children per tick (bar, 1 s) | `list` + `wait` per owner, 40 ms cap (`native-calls.ts:165-169`), plus `jev_list`/`jev_snapshot` per tick (98-149); never starts a host (`native-calls.ts:67-70`) | 0 syscalls when nothing changed (subscription); ≤ 2 ms p50 / 40 ms cap on change; still never starts a host | §2.8 subscription |
 | Panel tick | same | same; child native-subagent scans share one yielding scan (`buildSubagentTreeYielding`, 4 ms slices) | WP6 |
 | Statusline (one-shot) | ledger open + sqlite | one connect + one `list` with a 20 ms budget, else "host down" | WP6 |
-| Host | one per owner, `process.env` of the MCP | one per user; idle CPU 0; ring 512 msgs / 4 MiB kept (`host.ts:80-105`) | §6 |
+| MCP read tools (`hud_list`, `hud_read`, `hud_wait`) | the MCP's client launches a host on `ENOENT` (`main.ts:56`, `host-ipc.ts:201-282`) — F6 | `launch:false`; answer from records with `unavailable:'host_down'` | WP2a |
+| Host | one per owner, `process.env` of the MCP | one per HUD home; idle CPU 0; ring 512 msgs / 4 MiB kept (`host.ts:80-105`) | §6 |
 
 Acceptance is measured with the existing `CODEX_HUD_PROFILE=1` stage log (`docs/reference.md`, "All environment
 variables"): a `children` stage ≤ 5 ms p99 with three live children.
@@ -289,94 +377,132 @@ variables"): a `children` stage ≤ 5 ms p99 with three live children.
 - *A separate "Children" pane.* Two trees, two selections, two count vocabularies; the owner wants one glance.
 - *Poll the host per tick.* Cheap but not zero; a subscription makes quiet sessions cost nothing and gives the Pi
   footer and wake the same stream.
+- *One `status` field for connection and outcome* (v2's `closed → completed`). Closing a failed, interrupted or
+  disconnected child must not turn it into a success: the panel deliberately keeps failures while completed nodes
+  expire (`src/render/panel-state.ts:65-84`) and the agent log reads `completed` as finished
+  (`src/collectors/agent-log.ts:79-85`).
 
 ### 2.8 Interfaces
 
 ```ts
-// src/managed/child-record.ts — written by the host, read by every TUI (0600)
+// src/managed/child-record.ts — written by the host, read by every TUI (0600). Rewritten at once on create, binding,
+// turn_done, request, request_done, close and lost; otherwise debounced to ≤ 1 write/s per child.
 export interface ChildRecord {
   child: string;                       // 'c-7f3a9c'
   owner: Owner;                        // { harness:'claude', sessionId:'1d2e…' }
+  createdBy: string;                   // attachmentId of the creating attachment
   harness: 'codex' | 'claude' | 'pi';
   name: string | null;                 // orchestrator's label: 'implementer'
-  nativeRef: NativeRef;                // src/managed/types.ts:3-6, unchanged
+  nativeRef: NativeRef | null;         // src/managed/types.ts:3-6; null until the harness reports its binding
+  source: string;                      // CODEX_HOME / CLAUDE_CONFIG_DIR / Pi session dir of this child
   cwd: string;
   transcriptPath: string | null;       // Codex rollout / Claude transcript / Pi session file, when known
-  codexHome?: string;                  // Codex only: where the child's rollouts live
-  createdAt: number;
-  closedAt?: number; closeReason?: 'closed' | 'idle_timeout' | 'host_exit' | 'exit';
-  wake: WakeTarget;                    // §5
+  task: { head: string /* ≤ 300 */; bytes: number; sha256: string } | null;   // create prompt; full text is in the native transcript
+  lifecycle: 'starting' | 'connected' | 'closing' | 'closed' | 'lost';
+  outcome: { turn: number; status: 'none' | 'running' | 'completed' | 'interrupted' | 'failed' | 'unknown';
+             startedAt: number | null; endedAt: number | null; head: string /* ≤ 600 */ };
+  stages: Array<{ n: number; startedAt: number; endedAt: number | null; status: ChildRecord['outcome']['status']; head: string /* ≤ 200 */ }>; // last 8
+  requests: Array<{ requestId: string; kind: string; summary: string /* ≤ 300 */; since: number }>;   // all pending
+  process: { pgid: number; procStart: string } | null;   // §6.1 containment; null for a harness the host cannot address
+  createdAt: number; lastEventAt: number;
+  closedAt?: number;
+  closeReason?: 'closed' | 'idle_timeout' | 'abandoned' | 'exit' | 'startup_failed' | 'host_shutdown' | 'swept';
+  hostGeneration: string;              // boot id of the host that wrote this record
+  seq: number;                         // last event seq folded into this record
+  wake: WakeBinding;                   // §5
 }
 
-// src/managed/child-summary.ts — in the host; sent on the subscription and by hud_list/hud_read
-export interface ChildSummary {
-  child: string; harness: ChildRecord['harness']; name: string | null;
-  state: 'starting' | 'running' | 'idle' | 'needs_parent' | 'failed' | 'closed';
-  turn: { n: number; startedAt: number | null; endedAt: number | null };
+// src/managed/child-summary.ts — the live form, sent on the subscription and by hud_list / hud_read{status}
+export interface ChildSummary extends Pick<ChildRecord, 'child' | 'harness' | 'name' | 'nativeRef' | 'source' | 'lifecycle' | 'outcome' | 'requests' | 'closeReason' | 'lastEventAt' | 'seq'> {
   lastMessage: { at: number; head: string /* ≤ 600 */; bytes: number } | null;
   action: { name: string; target: string /* ≤ 200 */; since: number } | null;
-  request: { requestId: string; kind: 'approval' | 'question' | 'permission' | 'dialog'; text: string /* ≤ 2 KiB */; since: number } | null;
   usage: { contextTokens?: number; contextWindow?: number; inputTokens?: number; outputTokens?: number; costUsd?: number } | null;
   model: string | null; effort: string | null;
-  seq: number;                         // last event seq for this child
+  generation: string;                  // host boot id
 }
 
-export type ChildEvent =
-  | { seq: number; child: string; at: number; type: 'created' | 'turn_started' | 'closed' }
-  | { seq; child; at; type: 'turn_done'; status: 'completed' | 'interrupted' | 'failed'; text: string /* head+tail ≤ 8 KiB */; usage?: ChildSummary['usage'] }
-  | { seq; child; at; type: 'message'; role: 'assistant'; head: string /* ≤ 600 */ }
-  | { seq; child; at; type: 'tool'; phase: 'start' | 'end'; name: string; target: string }
-  | { seq; child; at; type: 'request'; request: NonNullable<ChildSummary['request']> }
-  | { seq; child; at; type: 'request_done'; requestId: string }
-  | { seq; child; at; type: 'exit'; code: number | null; signal: string | null }
-  | { seq; child; at; type: 'error'; code: string; message: string };
+export type ChildEvent = { generation: string; seq: number; child: string; at: number } & (
+  | { type: 'created' | 'turn_started' | 'closed' | 'lost' }
+  | { type: 'turn_done'; status: 'completed' | 'interrupted' | 'failed'; text: string /* head+tail ≤ 8 KiB */; usage?: ChildSummary['usage'] }
+  | { type: 'message'; role: 'assistant'; head: string /* ≤ 600 */ }
+  | { type: 'tool'; phase: 'start' | 'end'; name: string; target: string }
+  | { type: 'request'; request: HudRequest }                       // §3.3
+  | { type: 'request_done'; requestId: string; how: 'answered' | 'withdrawn' | 'expired' }
+  | { type: 'exit'; code: number | null; signal: string | null }
+  | { type: 'error'; code: string; message: string });
 
 // src/collectors/children.ts
 export class ChildrenCollector {
-  constructor(home: string, owner: Owner | null, port?: HostPort);   // never starts a host
-  /** Records from disk + live summaries from the subscription; ≤ 40 ms; [] with `unavailable` when the host is down. */
+  constructor(home: string, owner: Owner | null, attachmentId: string, port?: HostPort);   // never starts a host
+  /** Records from disk + live summaries from the subscription; ≤ 40 ms. Host down → records only, `unavailable:'host_down'`. */
   collect(nowMs: number): { nodes: SubagentTreeNode[]; unavailable: string | null };
-  /** Fires on any host message so the bar/panel can `wakeCollection()`. */
-  onChange(cb: () => void): void;
+  onChange(cb: () => void): void;      // fires on any host frame so the bar/panel can wakeCollection()
   close(): void;
 }
 ```
 
-Mapping `ChildSummary` → `SubagentTreeNode`: `id = child`, `name = name ?? \`${harness}·${child.slice(2,6)}\``,
-`status`: starting→`starting`, running/needs_parent→`running`, idle→`completed`, failed→`error`, closed→`completed`
-with `statusAt = closedAt` (the 3-minute linger puts it away); `task` = create prompt head (≤ 300), `charge` =
-none, `stages` = turns, `lastReport.text` = `lastMessage.head`, `action`, `contextUsage` from `usage`,
-`startedAt = createdAt`, `turnStartedAt`, `model`, `effort`, `rolloutPath = transcriptPath` (Codex children only
-feed `readAgentTokens`), `harness`, `origin:'hud'`, `request`.
+**Subscription protocol.** `subscribe { owner, attachmentId, generation?, afterSeq? }` on one long-lived connection.
+The host answers first with `snapshot { generation, seq, children: ChildSummary[] }`, then pushes deltas
+`{ generation, seq, summary?: ChildSummary, event?: ChildEvent }` (frames ≤ 64 KiB, at most 16 subscribers, slow
+readers dropped). When the subscriber's `generation` is not the host's, or `afterSeq` is older than the ring's
+oldest retained seq (`host.ts:80-96` keeps 512 messages / 4 MiB; the ring is display buffering, not history), the
+host answers `gap { generation, oldestSeq }` and the reader rebuilds from the snapshot and the records. `hud_wait`
+returns `{ events, seq, generation, truncated, gap? }` with the same semantics. This replaces today's
+one-request-per-connection socket (`host-ipc.ts:51-108`) for readers; mutating calls keep request/response.
 
-Host subscription: `subscribe { owner, afterSeq }` on one long-lived connection; the host pushes
-`{ seq, summary?: ChildSummary, event?: ChildEvent }` frames ≤ 64 KiB, at most 16 subscribers, slow readers are
-dropped (they reconnect and resync from records). This replaces today's one-request-per-connection socket
-(`host-ipc.ts:51-108`) for readers; mutating calls keep request/response.
+**Offline collection.** With the host down, `collect` returns the records: `lifecycle:'closed'` ones as recorded;
+others as `lost` (status `unknown`, Inspector line "host down — recovery required", resume with
+`hud_create{resume}`); never silently empty. A record whose `hostGeneration` is not the live host's and which is
+not `closed` is `lost` by definition.
+
+**Full results and history.** `hud_read{what:'result'|'transcript'}` serves from the ring while it can and otherwise
+from the native history of the child's recorded `source`: Codex rollout file, Claude transcript file read directly
+with `src/harness/claude/reader.ts` from `transcriptPath` (the SDK's disk reader uses the host's own `process.env`
+and refuses a different `HOME`/`CLAUDE_CONFIG_DIR`, `sdk-adapter.ts:255-263`; a singleton host never mutates its
+environment, so it does not use that reader), Pi session file. Pages are bounded (Appendix B).
+
+**Mapping `ChildSummary` → `SubagentTreeNode`.** `id = child`, `name = name ?? \`${harness}·${child.slice(2,6)}\``,
+`task` = `task.head`, `stages` = `stages[]`, `lastReport.text = lastMessage.head`, `action`, `contextUsage` from
+`usage`, `startedAt = createdAt`, `turnStartedAt = outcome.startedAt`, `model`, `effort`, `rolloutPath =
+transcriptPath` (Codex children feed `readAgentTokens`), `harness`, `origin:'hud'`, `link`, `request` = first of
+`requests`. `lastEventAt` = latest evidence of any kind. `status` and `statusAt`:
+
+| lifecycle | outcome | `status` | `statusAt` | shown as |
+|---|---|---|---|---|
+| starting | — | `starting` | — | starting clock (7–15 s is normal, F3) |
+| connected | none | `starting` | — | "connected, waiting for its first turn"; never expires |
+| connected | running | `running` | — | turn clock; a pending request keeps `running` and adds the `⚑` line |
+| connected | completed | `completed` | `outcome.endedAt` | idle; put away after the linger |
+| connected | interrupted / unknown | `unknown` | `lastEventAt` | `hud_cancel`, or no evidence yet |
+| connected | failed | `error` | `outcome.endedAt` | kept until put away by hand |
+| closing | any | as the outcome | as above | "closing…" |
+| closed | completed / failed | as the outcome | `outcome.endedAt` | Inspector shows `closeReason` |
+| closed | none / running / interrupted / unknown | `unknown` | `closedAt` | `closed · idle_timeout` etc.; never `completed` |
+| closed (`startup_failed`) | — | `error` | `closedAt` | the error event text |
+| lost | completed / failed | as the outcome | `outcome.endedAt` | the outcome stands; the connection does not |
+| lost | other | `unknown` | `lastEventAt` | "host down — recovery required" until resumed or swept |
 
 ---
 
 ## 3. HUD Pi package
 
-### 3.1 Shape
+### 3.1 Shape (Q1 decided: in-process)
 
-`packages/hud-pi/` with `package.json { "pi": { "extensions": ["./extensions/hud.ts"] } }`, built from
-`src/harness/pi/*.ts` (`dist/`), linked as `~/.pi/bundles/hud` by the installer — the same packaging the owner
-uses for pi-roles (`~/codex/MySkills/pi-roles`, linked `~/.pi/bundles/roles`). One entry, two modes chosen at
-`session_start` by the environment:
+`packages/hud-pi/` with `package.json { "pi": { "extensions": ["./dist/hud.js"] } }`, built from
+`src/harness/pi/*.ts`, registered with `pi install <checkout>/packages/hud-pi` (§1.5). One entry, two modes chosen
+at `session_start` by the environment:
 
 | Mode | When | Registers | Talks to |
 |---|---|---|---|
-| parent | no `HUD_CHILD` in env | the tool table of Appendix B via `pi.registerTool` (as `extensions/pi/hud-delegate.ts` does today); `/hud` command (`status`, `close <child>`, `footer on|off`); footer lines; wake delivery | the host in-process through `NativeHostClient` (socket), owner = `{harness:'pi', sessionId: ctx.sessionManager.getSessionId()}`; one subscription for footer + wake |
+| parent | no `HUD_CHILD` in env | the tool table of Appendix B via `pi.registerTool`, each handler calling the **same** `HudTools.invoke` that hud-mcp's `server.ts` calls (shared validation, dispatch, error codes and result shaping, §1.9); `/hud` command (`status`, `close <child>`, `footer on|off`); footer lines; wake delivery | the host socket directly, owner = `{harness:'pi', sessionId: ctx.sessionManager.getSessionId()}`, one attachment id per extension instance; one subscription for footer + wake |
 | child | `HUD_CHILD` set (the host sets it when it spawns `pi --mode rpc -ne -ns -e <hud-pi> [args]`) | `ask_orchestrator` only | nothing: the rpc stream is the event channel; the question goes through `ctx.ui` |
 
 Rejected: spawning `hud-mcp` over stdio from the extension (today's `PiDelegationBridge`,
 `src/harness/pi/delegation-bridge.ts:6-80`). It costs a process and an MCP handshake per Pi session, needs the fd-3
-identity dance (`delegation-channel.ts:41-50`), and buys nothing: the tool table is a shared module both the MCP
-server and the extension import (`packages/hud-mcp/src/managed-tools.ts:39-106` is already imported by
-`extensions/pi/hud-delegate.ts`). The "parent-side MCP connection" of the fixed input is read as "the parent-side
-attachment to HUD's delegation service": same tools, same semantics, same host — without a stdio process. §8 Q1
-asks the owner to confirm this reading.
+identity dance (`delegation-channel.ts:41-50`), and buys nothing: today the extension already imports the tool
+schemas from hud-mcp (`extensions/pi/hud-delegate.ts:10-20`); v2.1 shares the implementation, not only the schema.
+The fixed input's "parent-side MCP connection" is read as "the parent-side attachment to HUD's delegation service":
+same tools, same semantics, same host — without a stdio process. The owner confirmed this reading (§8 Q1).
 
 ### 3.2 Structured event protocol to HUD
 
@@ -393,28 +519,66 @@ protocol; the harness's official stream *is* the structured report.
 ### 3.3 `ask_orchestrator` as a standard child → parent request
 
 ```ts
-// packages/hud-pi/extensions/hud.ts, child mode
+// packages/hud-pi/src/hud.ts, child mode
 pi.registerTool({
   name: 'ask_orchestrator',
   description: 'Ask the orchestrator one question and wait for the answer. Use only for decisions you cannot make from the brief.',
   parameters: { question: string, options?: string[] },
   async execute(_id, { question, options }, signal, _update, ctx) {
     const answer = options?.length
-      ? await ctx.ui.select(question, options)         // → extension_ui_request{method:'select'}
-      : await ctx.ui.input(question);                   // → extension_ui_request{method:'input'}
-    return { content: [{ type: 'text', text: answer ?? '(no answer)' }] };
+      ? await ctx.ui.select(question, options, { signal })        // → extension_ui_request{method:'select'}
+      : await ctx.ui.input(question, undefined, { signal });      // → extension_ui_request{method:'input'}
+    return { content: [{ type: 'text', text: answer ?? '(cancelled)' }] };
   },
 });
 ```
 
-In rpc mode `ctx.ui.*` becomes an `extension_ui_request`, which the host already relays as a `NativeRequest`
-(`rpc-adapter.ts:96-155`); the parent sees `ChildEvent{type:'request', kind:'question', text}` on `hud_wait`, is
-woken (§5), answers with `hud_respond{child, requestId, response:{text}}`, and the host sends
-`extension_ui_response`. In an interactive Pi (no HUD, or the owner running a role by hand) the same tool just
-prompts the human. Codex and Claude children get the equivalent for free: Codex `request_user_input` /
-`execCommandApproval` server requests and Claude `canUseTool` / `onElicitation` / `onUserDialog` callbacks are
-relayed the same way, so **every child of every harness asks its parent through one path**. The file protocol
-(`<qa-dir>/qN.md` → `qN.answer.md`, `--notify`, `--qa-timeout`) is not used under HUD.
+The `{ signal }` is required: pi wires dialog cancellation only when the dialog receives it (pi 1.5.0
+`rpc-mode`, dialog helper with `opts.signal`), and `ExtensionUIDialogOptions` is the third argument of
+`ctx.ui.select/input`. In rpc mode the request surfaces as an `extension_ui_request`, which the host already relays
+as a native request (`rpc-adapter.ts:96-155`); the parent sees `ChildEvent{type:'request'}` on `hud_wait`, is woken
+(§5), answers with `hud_respond`, and the host writes the `extension_ui_response`.
+
+**Requests keep their native shape.** v2's `kind/text` + `decision/text/option` lost information: Codex can ask
+several questions at once, Claude elicitation carries a schema, approvals carry commands and reasons, and the
+adapters already relay complete payloads (`managed-adapter.ts:338-349`, `sdk-adapter.ts:358-404`,
+`rpc-adapter.ts:122-138`). v2.1 uses one discriminated request and one `hud_respond`:
+
+```ts
+export type HudRequest = { requestId: string; child: string; since: number; summary: string /* ≤ 300 */ } & (
+  | { harness: 'codex'; kind: 'exec_approval' | 'patch_approval'; command?: string; cwd?: string; reason?: string }
+  | { harness: 'codex'; kind: 'user_input'; questions: Array<{ id: string; text: string; options?: string[] }> }
+  | { harness: 'claude'; kind: 'tool_permission'; toolName: string; input: unknown /* ≤ 8 KiB */; suggestions?: unknown }
+  | { harness: 'claude'; kind: 'elicitation'; message: string; schema: unknown /* ≤ 8 KiB */ }
+  | { harness: 'claude'; kind: 'user_dialog'; message: string; options?: string[] }
+  | { harness: 'pi'; kind: 'select' | 'confirm' | 'input' | 'editor'; title: string; options?: string[]; placeholder?: string }
+  | { harness: 'codex' | 'claude' | 'pi'; kind: 'other'; nativeKind: string; payload: unknown /* ≤ 8 KiB */ });
+
+export interface HudResponse {
+  decision?: 'allow' | 'deny';                         // approvals / tool permission
+  answers?: Record<string, string | string[]>;         // codex user_input: question id → answer(s); claude elicitation: field → value
+  value?: string; confirmed?: boolean; cancelled?: true;   // pi dialogs; cancelled is accepted for every kind
+  raw?: unknown;                                       // forwarded verbatim; required for kind:'other'
+}
+```
+
+The host maps a `HudResponse` to the harness's own wire shape: Codex approval decisions and `user_input` answers
+as the app-server expects; Claude `canUseTool` → `{behavior:'allow'|'deny', …}`, elicitation → accept/decline/cancel
+with content, dialog results per the SDK; Pi `select`/`input` → `{value}`, `confirm` → `{confirmed}`, any
+`cancelled` → `{cancelled:true}` — pi 1.5.0 reads exactly those fields (`rpc-mode`: `cancelled` wins, then `value`
+or `confirmed`). Today's adapter forwards the response object verbatim and makes no such translation
+(`rpc-adapter.ts:122-138`); WP4 pins each mapping with a fixture against the adapter code. A pipe write is not a
+native acknowledgement (the adapter says so, 128-136): `request_done{how:'answered'}` is emitted when the harness
+withdraws the request, not when HUD wrote the answer.
+
+Several requests may be pending at once (Codex approval while a Claude elicitation waits in another child; one
+child with two). `hud_read{what:'status'}` (≤ 2 KiB) carries `requests.length` and the first request's `summary`;
+`hud_read{what:'requests'}` lists them whole (≤ 10, each ≤ 8 KiB); the Inspector shows them all. Unsupported shapes
+arrive as `kind:'other'` with the bounded payload and are answered with `raw`.
+
+In an interactive Pi (no HUD, or the owner running a role by hand) the same tool just prompts the human. Codex and
+Claude children get the equivalent for free, so **every child of every harness asks its parent through one path**.
+The file protocol (`<qa-dir>/qN.md` → `qN.answer.md`, `--notify`, `--qa-timeout`) is not used under HUD.
 
 ### 3.4 Relation to pi-roles (two layers, confirmed)
 
@@ -422,14 +586,15 @@ relayed the same way, so **every child of every harness asks its parent through 
   the visible herdr-tab workflow, `--qa-dir` file questions for that workflow.
 - HUD package provides: channel (tools in a parent, `ask_orchestrator` in a child), events (via rpc), wake, footer.
 - One change in pi-roles (outside this repo): register its own `ask_orchestrator` only when `--qa-dir` is given, so
-  a child launched by HUD with `-e ~/.pi/bundles/hud -e ~/.pi/bundles/roles --role implementer` has exactly one
-  `ask_orchestrator`. Child launch line: `pi --mode rpc -ne -ns -e <hud-pi> -e <roles> --role <r> [--allow-write]`,
-  where everything after `<hud-pi>` comes from `hud_create.options.args` chosen by the orchestrator.
+  a child launched by HUD with `-e <hud-pi> -e <roles> --role implementer` has exactly one `ask_orchestrator`. The
+  combined load is **acceptance evidence, not a note**: probe P3 (§7) runs the real pair once before WP8 and WP8's
+  tests include the composed launch line. Child launch line: `pi --mode rpc -ne -ns -e <hud-pi> -e <roles> --role <r>
+  [--allow-write]`, where everything after `<hud-pi>` comes from `hud_create.options.args` chosen by the orchestrator.
 
 ### 3.5 herdr-delegate through HUD later
 
 Yes, as a headless path: the Claude main session calls
-`hud_create{harness:'pi', cwd, name:'implementer', prompt:'@<brief path> <message>', options:{args:['-e','~/.pi/bundles/roles','--role','implementer']}}`
+`hud_create{harness:'pi', cwd, name:'implementer', prompt:'@<brief path> <message>', options:{args:['-e','<roles>','--role','implementer']}}`
 and waits on `hud wait` (§5). The herdr tab + `pi-role` launcher stays the visible, manual alternative; HUD gives
 the bounded lifecycle the owner's memory asks for (idle close, §6.1). The two are not mixed in one child.
 
@@ -447,33 +612,66 @@ The generators consume the tree and the main parse: `briefMaterial(tree, {main, 
 the ones in `docs/reference.md` "LLM" (tasks ≤ 300, updates ≤ 600, answers ≤ 8 000, prompts/replies ≤ 4 000 in
 all) and `docs/ARCHITECTURE.md` §5.4; `codex-hud brief --dry-run` prints the material (`src/collectors/brief-dry-run.ts:38-94`).
 
-### 4.2 Decision: two generic shapes, no new generator
+Three facts v2 missed, which make "the generators work unchanged" false:
 
-1. **Children of any harness** reach the generators as `SubagentTreeNode` (§2.8). Because the projection fills
-   `task`, `stages[].intent/result`, `lastReport`, `action`, `name`, `role`, `status`, `children`, every feature
-   works unchanged: the periodic brief reports them, progress notes land on their cards, result digests take the
-   turn result, labels use the create prompt (`labelSource` reads `charge ?? task`), causes use the error event,
-   the agent log records started/finished/failed/report.
-2. **Roots of any harness** reach the recap through a small interface the Codex parse already satisfies:
+1. Model material passes a Codex-only bridge. `legacyTreeSubjects` reads `harness`/`origin`/`sourceId` off the
+   node and marks it `universal` (`src/core/materials/request.ts:59-118`); `LegacyCodexBridge` then returns `null`
+   for any subject whose `origin` is not `'native'` or whose rollout is not under the Codex `sessions/` directory
+   (`src/core/materials/legacy.ts:148-220`). An `origin:'hud'` node gets no material at all.
+2. `recapInput` reads more than prompts and replies: ordered transcript entries with reply/commentary kinds, the
+   first user message, `transcriptDroppedAt`, `activity.state`, the pending approval's id and time, and it builds
+   the scheduling fingerprints from them (`recap.ts:183-243`); `briefingSchedule` reads the same fields
+   (`briefing.ts:937-972`).
+3. The retained readers do not expose everything: the Claude reader deliberately keeps user prompt content out of
+   reports and checkpoints and bounds assistant reports (`src/harness/claude/reader.ts:431-457`); failure causes read
+   Codex rollout error material through `node.rolloutPath` (`model-jobs.ts:1339-1360`); approval wording runs only on
+   the root's `pendingApproval` of kind `exec` (`model-jobs.ts:1390-1404`).
+
+### 4.2 Decision: the generators stay; their inputs are adapted explicitly
+
+1. **A generic public-material boundary** replaces `core/materials/{request,legacy}.ts`: each collector that builds a
+   node attaches `material(node): { kind:'public_text'; read(): string; fingerprint: string } | null` — Codex native
+   agents: the rollout under `sessions/` exactly as today; HUD children: the host-filtered `ChildSummary`/record
+   fields (task head, last message, turn result, error text); Claude native agents: the reader's reports; Jev: the
+   job's answer head. Feature switches, scope selection, pause behaviour and output limits (`docs/ARCHITECTURE.md`
+   §5.4) are preserved unchanged; only the "is this subject allowed" question moves from Codex-path checks to the
+   collector that owns the node.
+2. **Children of any harness** reach the generators as `SubagentTreeNode` (§2.8): `task`, `stages[]`, `lastReport`,
+   `action`, `name`, `status`, `children` are filled, so the periodic brief reports them, progress notes land on
+   their cards, result digests take the turn result, labels use the create prompt (`labelSource` reads
+   `charge ?? task`), and the agent log records started/finished/failed/report. Two generators need an input
+   change: **causes** take `errorMaterial` from the child's `error`/`turn_done{failed}` event text when
+   `origin:'hud'` (no rollout read); **approval words** run over the root's `pendingApproval` *and* over children's
+   pending `exec_approval`/`tool_permission` requests (same prompt, same cache key rule).
+3. **Roots of any harness** reach the recap and the brief through an ordered transcript shape that is exactly the
+   subset of `RolloutParseResult` the two functions read:
 
 ```ts
 // src/collectors/main-transcript.ts
 export interface MainTranscript {
   sessionId: string;
-  prompts: Array<{ at: number; text: string }>;          // user → assistant, ≤ 600 each when sent
-  replies: Array<{ at: number; text: string }>;          // assistant public final/commentary only
-  plan?: PlanProgress;                                    // src/types.ts PlanProgress (Codex plan, Claude todos via harness/claude/todos.ts)
-  approvals?: Array<{ at: number; summary: string; answered: boolean }>;
-  compactions: number;
-  turnEnded?: number;
+  entries: Array<{ at: Date; role: 'user' | 'assistant'; kind: 'prompt' | 'reply' | 'commentary'; text: string }>;  // ordered, bounded buffer
+  firstUserMessage?: { at: Date; text: string };
+  transcriptDroppedAt?: Date;
+  activity?: { state: 'working' | 'idle' | 'waiting'; updatedAt: Date; turnStartedAt?: Date };
+  lastUserMessageAt?: Date; lastReplyAt?: Date; lastEventTime?: Date;
+  pendingApproval?: { callId?: string; since: Date; kind: string; command?: string };
+  planProgress?: PlanProgress;          // Codex plan; Claude todos via harness/claude/todos.ts; Pi: none
+  compactCount: number;
 }
-export function codexMainTranscript(parse: RolloutParseResult): MainTranscript;   // today's recapInput inputs
-export function claudeMainTranscript(result: ClaudeReaderResult): MainTranscript; // src/harness/claude/reader.ts (kept)
-export function piMainTranscript(result: PiReaderResult): MainTranscript;         // src/harness/pi/reader.ts (kept)
+export function codexMainTranscript(parse: RolloutParseResult): MainTranscript;   // field-for-field, no behaviour change
+export function claudeMainTranscript(result: ClaudeReaderResult): MainTranscript; // WP10: reader extended with prompt heads
+export function piMainTranscript(result: PiReaderResult): MainTranscript;         // WP10
 ```
 
-`recapInput` takes a `MainTranscript`; `codexMainTranscript` is a rename of what it reads today, so the Codex root
-is unchanged (WP6); Claude/Pi roots are WP11.
+`recapInput` and `briefingSchedule` take a `MainTranscript`; `codexMainTranscript` is a projection of what they
+read today, so the Codex root's recap, fingerprints and scheduling are byte-identical (WP6 asserts it on the
+existing fixtures). The Claude and Pi adapters fill what their readers have and leave the rest undefined; the
+Claude reader gains user prompt heads (≤ 600, the recap's limit) behind the same privacy rules (WP10).
+
+Acceptance (WP9/WP10): brief, recap, progress, digest, names, causes and approval words exercised for each root
+harness and each child harness on fixtures, with `brief --dry-run` parity: the printed material equals what the
+generator would send.
 
 ### 4.3 Privacy boundary (unchanged, extended by rows)
 
@@ -483,15 +681,15 @@ is unchanged (WP6); Claude/Pi roots are WP11.
 | latest update | `lastMessage.head` ≤ 600 | public assistant text only |
 | stage result / digest | `turn_done.text` ≤ 8 000 (head+tail) | public final message only |
 | current action | tool name + target ≤ 200 | as native |
-| request text | ≤ 2 000, only to the Approval words job when it is on | as native approvals |
+| request text | `summary` ≤ 300, `command` ≤ 2 000, only to the Approval words job when it is on | as native approvals |
 | never | reasoning/thinking blocks (Codex `reasoning` items, Claude `thinking`, Pi `thinking`), env, prompts the orchestrator did not write, native refs, paths | `ChildSummary` never carries them; the host drops them at normalisation |
 
 `brief --dry-run` gains the children: `dryRunText` appends `ChildrenCollector.collect()` nodes (read-only: records +
 a `list` if the host is up, never a start) before `briefMaterial`, so the printed material shows exactly the child
-lines that would be sent. A `--root <harness>` switch is added only with WP11.
+lines that would be sent. `--root <harness>` is added with WP10.
 
-Rejected: a new "delegation digest" generator or a second log. The existing six features cover what the owner
-asked for (brief, recap, progress, digest, names) once children are agents.
+Rejected: a new "delegation digest" generator or a second log. The existing features cover what the owner asked
+for (brief, recap, progress, digest, names) once children are agents.
 
 ---
 
@@ -500,37 +698,65 @@ asked for (brief, recap, progress, digest, names) once children are agents.
 Facts from `docs/design/notify-wake-lifecycle-cache.md` §2 (versions as read there): Claude's background command
 completion starts a new turn in an idle interactive TUI (2.1.305); `codex queue --thread` writes a durable row
 that the owning TUI polls every ~10 s and dispatches only when idle (0.166), is rejected while a daemon runs for a
-forced-embedded TUI, and `--no-daemon` is rejected; pi `sendMessage(..., {deliverAs:'followUp', triggerTurn:true})`
-delivers after tools finish (1.5.0). None interrupts a running turn; each wake costs the parent one model sample,
-so wakes are coalesced.
+forced-embedded TUI, skipped while `Interrupted`/plan mode, and `--no-daemon` is rejected; pi
+`sendMessage(..., {deliverAs:'followUp', triggerTurn:true})` delivers after tools finish (1.5.0). None interrupts a
+running turn; each wake costs the parent one model sample, so wakes are coalesced.
 
-### 5.1 Per parent harness
+The evidence is narrower than v2 said: the real-client run left the Codex queue wake and the Claude background
+waiter untested as deliberate cases and recorded one Pi wake (`local-real-client-results-20261107.md:20-23`); the
+matrix marks runtime cases unverified and limits `codex queue` by mode (`notify-wake-lifecycle-cache.md:41-65`).
+Probe P2 (§7) runs each mechanism once on the owner's clients before WP5 is sized as done.
 
-| Parent | Mechanism | Delivery guarantee | What the parent sees |
+### 5.1 Per parent harness: mechanism and the honest guarantee
+
+| Parent | Mechanism | Guarantee | What the parent sees |
 |---|---|---|---|
-| Codex | the host spawns `codex queue --thread <root session_id> --message <line>` with `CODEX_HOME` from the captured env and the `codex` executable captured at `hud_create` (`/proc/<pid>/exe` of the harness ancestor, as `main.ts:75` does today, else PATH); 10 s timeout, detached; receipt `accepted | rejected{reason} | unknown` is **advisory** | at-least-once attempt; delivered when the TUI is idle; coalesced: one message per child per idle period; retried once after 30 s if the owner's read cursor has not passed the event (`lastReadSeq` in the host) | one queued user message: `[hud] reviewer (⌬ c-7f3a) finished turn 2 · "LGTM with two nits…" · hud_read{child:"c-7f3a"} · hud_wait{afterSeq:17}` (≤ 512 bytes, control-stripped) |
-| Claude Code | `hud wait --owner <key> [--child <id>] --after <seq> [--timeout 1500]`: connects to the host socket, long-polls, prints one line, exits 0; printed by `hud_create` as `wake.command` with the instruction to run it in the background | delivered when the waiter exits (Claude's task notification at the next idle); the waiter exits on the first event after `--after`, on host exit (`host down`), or at the timeout with `timed out; rerun: <command>`; unattended caps (30 min default / 2 h max per the matrix) are respected by the default timeout | the `<task-notification>` with the same one line |
-| Pi | the parent package's subscription receives the event and calls `pi.sendMessage({customType:'hud_wake', content, display:true, details}, {triggerTurn:true, deliverAs:'followUp'})` (`src/harness/pi/wake-extension.ts:87-104` logic kept, socket dropped) | exactly once per seq (the package keeps `lastDeliveredSeq`); delivered after the current tools finish | a follow-up message with the same line |
+| Codex | the host spawns `codex queue --thread <root session_id> --message <line>` with `CODEX_HOME` from the captured env and the `codex` executable captured at attachment (`/proc/<pid>/exe` of the harness ancestor, as `main.ts:75` does today, else PATH); 10 s timeout, detached; receipt `accepted \| rejected{reason} \| unknown` is **advisory** | **submission** can be confirmed; **execution** depends on the owning client's mode and scheduler: embedded TUI → delivered at its next idle (`available`); daemon present or forced-embedded guard → `degraded{daemon}`; `codex exec` parent → `unavailable` | one queued user message: `[hud] reviewer (⌬ c-7f3a) finished turn 2 · "LGTM with two nits…" · drain with hud_wait{afterSeq:<your cursor>}` (≤ 512 bytes, control-stripped) |
+| Claude Code | `hud wait --owner <key> --after <seq> --parent <pid> --timeout-ms 1500000`: connects to the host socket, long-polls **wake-worthy events only**, prints one line, exits. `hud_create` returns `wake: { kind:'background_command', command, note }` and the skill **arms** it with Claude's background Bash (`run_in_background: true`) and **re-arms** after every wake or timeout | delivered only while a waiter is armed and the parent is an interactive TUI (`-p`/SDK parents: `degraded{no_background_turn}`); the waiter exits 0 with the line on an event, 2 on `host down`, 3 on timeout (`timed out; rerun: <command>`), 4 silently when its parent pid or the attachment generation is gone; the default timeout (25 min) stays under Claude's 30-min unattended cap | the `<task-notification>` with the same one line |
+| Pi | the parent package's subscription receives the event and calls `pi.sendMessage({customType:'hud_wake', content, display:true, details}, {triggerTurn:true, deliverAs:'followUp'})` (`src/harness/pi/wake-extension.ts:87-104` logic kept, including its immediate session check; socket dropped) | queued through pi's scheduler, delivered after the current tools finish; duplicates suppressed **within one attachment** (`lastDeliveredSeq` in memory); a notice is harmless if repeated (same text, drain-from-cursor instruction) | a follow-up message with the same line |
 
-Events that wake: `turn_done`, `request`, `exit`, `error`. `message`/`tool` never wake. Jev: `run` completion and
-`blocked` snapshots wake like `turn_done`/`request`.
+`hud_create` and `hud_list` return the current binding `{ kind, capability: 'available' | 'degraded' | 'unavailable',
+reason?, command? }`, computed at attachment and **refreshed on every reattach** (a resumed parent gets a fresh
+binding, not the one captured when the child was created).
 
-### 5.2 F2 and the flaky receipts
+Events that wake: `turn_done`, `request`, `exit`, `error`, `lost`. `message`/`tool` never wake, in the waiter or the
+host. Jev (JEV1 §4.8): `answered`, `incomplete`, `needs_human`, `uncertain`, `not_submitted`, `pre_send_failed`,
+`wait_failed`, `timed_out`; `sent` only with `wake_on_sent`.
 
-- F2: the queue-woken turn was refused by `resolvers.ts:302`; with §1 the turn is a normal Codex call. Nothing else
-  is needed.
+### 5.2 Coalescing, retry, cursors
+
+- **Coalescing** is a bounded debounce, not "one per idle period" (the host cannot observe the parent's idle
+  periods): per owner, wake-worthy events are aggregated for 2 s, one attempt is in flight at a time, and the line
+  names up to three events (`[hud] 2 events: reviewer finished turn 2; implementer asks approval · drain …`).
+- **Retry** at most once, 30 s later, only if the owner's **read cursor** has not reached the first aggregated seq.
+  A retry may enqueue a duplicate durable Codex row; the line is idempotent (it tells the parent to drain from its
+  own cursor) so a duplicate costs one extra sample and nothing else. A dead parent costs two attempts per
+  aggregation and then nothing.
+- **Three cursors, kept apart.** The TUI's *observation* cursor (subscription) never acknowledges anything on the
+  orchestrator's behalf. The parent's *read* cursor advances only through `hud_wait`/`hud_read` responses, and only
+  to the last seq actually returned (a child-filtered or truncated page acknowledges nothing it did not return). The
+  *wake* bookkeeping (`lastAttemptAt`, `lastAttemptSeq`, `retries`, per owner) is the host's own. A cursor proves
+  that data was returned, not that the model acted on it.
+- **Generation.** Events carry the host's generation; a parent whose cursor belongs to an older generation gets
+  `gap` and drains from the snapshot.
+
+### 5.3 F2 and the flaky receipts
+
+- F2: the queue-woken turn was refused by `resolvers.ts:302`; with §1 the turn is a normal Codex call. That removes
+  the demonstrated failure; P2 establishes that the queue wake then works end to end on the owner's embedded TUI.
 - Receipts: today `sendNativeWake` kills `codex queue` after 2 s (`src/managed/host-wake.ts:51-155`), while the CLI's
-  own startup can exceed that; the receipt was `unknown/timeout` 2 of 3 and the message may still have landed. v2:
-  10 s timeout, the receipt is logged on the child record (`wake.last = {at, result}`) and shown in the Inspector,
-  and delivery is judged by the owner's cursor, not by the receipt. The retry is bounded (one), so a dead parent
-  costs two spawns per child event at most and then nothing.
+  own startup can exceed that; the receipt was `unknown/timeout` 2 of 3 and the message may still have landed.
+  v2.1: 10 s timeout, the receipt is logged on the child record (`wake.last = {at, seq, result, reason}`) and shown
+  in the Inspector, and delivery is judged by the read cursor, not by the receipt.
 
-### 5.3 Rejected
+### 5.4 Rejected
 
 - Blocking `hud_create` until the child finishes: serialises delegation.
 - MCP notifications/elicitation as a wake: no harness turns them into a model turn (matrix §2.4).
 - Codex `turn/steer` through an app-server socket: the owner's TUIs run embedded (matrix §2.2) and it would steer
   a running turn — a wake must not interrupt.
+- "Exactly once" for Pi: an in-memory cursor cannot promise it across a crash; duplicate suppression within an
+  attachment plus harmless notices is what can be kept.
 
 ---
 
@@ -538,138 +764,245 @@ Events that wake: `turn_done`, `request`, `exit`, `error`. `message`/`tool` neve
 
 ### 6.1 Host and children
 
-Today: a host per owner (`host-ipc.ts:27-30`), spawned on the first `ENOENT`/`ECONNREFUSED` of **any** call
-including `list` (`host-ipc.ts:201-282`), unrefs its server only after an explicit close (`host-ipc.ts:35-49`),
-and bootstrap-only hosts stay alive on purpose (`src/managed/host-entry.ts:18-20`) — F6. Jev's `release()` only
-ends stdin (`src/managed/jev-host.ts:108-110`) and `createJevHost` keeps the host referenced while the bridge
-lingers — F7.
+Today: a host per owner (`host-ipc.ts:27-30`), spawned on the first `ENOENT`/`ECONNREFUSED` of **any** MCP call
+including `list` (`main.ts:56` → `host-ipc.ts:201-282`), unrefs its server only after an explicit close
+(`host-ipc.ts:35-49`), counts every in-flight request the same way (`host-ipc.ts:74-94`, so a long `wait` would
+keep it alive), keeps connections and pending requests in maps with no terminating path (`host.ts:69-74,169-202`),
+and bootstrap-only hosts stay alive on purpose (`src/managed/host-entry.ts:18-20`) — F6. The adapters do not
+establish bounded cleanup: Codex sends EOF, never signals, and may settle after 250 ms with `reaped:false` and an
+unreferenced child (`src/harness/codex/app-server-transport.ts:333-366`); Claude's `close()` returns
+`workStopped:'unknown'` (`sdk-adapter.ts:284-291`); Pi's `close()` resolves when `stdin.end()` completes
+(`src/harness/pi/native-rpc-transport.ts:169-178`). "Stdio-bound, so a crash leaves no orphans" was therefore not
+established by v2; §6.1.3 makes it a tested mechanism.
 
-v2 rules:
+#### 6.1.1 Processes (Q2 decided: one host per HUD home; Q4 decided: 30-min quiescent idle close)
 
-| Process | Started by | Lives while | Ends when |
+| Process | Started by | Retained by | Ends when |
 |---|---|---|---|
-| host (`~/.hud/host.sock`, one per user) | the first `hud_create`/`jev_open` of any owner (lock `host.sock.start` as today) | any child connection or Jev instance is live, or a request is in flight | nothing retained for `graceExitMs` (default 60 s) → `server.close()` → exit 0; also on `SIGTERM`. Readers (`subscribe`, `list`, `read`, `wait`) never start it and never keep it alive |
-| child harness process (Codex `app-server`, Claude `claude` via SDK, Pi `--mode rpc`) | the host, stdio-bound (`stdin` pipe), not detached | a turn runs, or the parent read/sent within `idleCloseMs` (default 30 min) | `hud_close`; idle timeout (never while a turn runs; the native session stays resumable with `hud_create{resume}`); host exit (the host closes every transport first; a harness exits on stdin EOF); `closeReason` recorded |
-| Jev bridge (python) | the host per instance | the instance exists | `jev_close` → `stdin.end()` then `SIGTERM` after 5 s, `SIGKILL` after 10 s; host exit |
-| `hud wait` waiter | the Claude parent (background) | until one event, host down, or `--timeout` | exits by itself; no loops |
-| hud-mcp (stdio) | the harness | the harness process | stdin EOF; the 30 s `parentAlive` check (`server.ts:270-273`) stays |
-| Pi package | Pi | the Pi session | `session_shutdown` |
-| bar / panel / statusline | tmux / Claude | as on main | as on main |
+| host (`~/.hud/host.sock`, one per `HUD_HOME`) | the first `hud_create`/`jev_ask`/`jev_open` of any owner (lock `host.sock.start` as today, `host-ipc.ts:216-244`) | live child handles (`starting`/`connected`/`closing`), Jev jobs with a run and live Jev instances (JEV1 §4.7), startup reservations (a `create` admitted but not yet connected), in-flight **mutations**. **Not** by subscriptions, `wait`, `list` or `read` | nothing retained for `graceExitMs` (60 s) → shutdown (§6.1.2); `SIGTERM` → close every child through the ladder (§6.1.3), then the same shutdown. Readers never start it and never keep it alive |
+| child harness process (Codex `app-server`, Claude `claude` via SDK, Pi `--mode rpc`) | the host, in its own process group, stdio-bound | a turn runs, a request is pending, or the parent **acted** within `idleCloseMs` (30 min) | `hud_close`; quiescent idle timeout (§6.1.4); abandonment (§6.1.4); host shutdown (`closeReason:'host_shutdown'`); its own exit (`'exit'`); `startTimeoutMs` (120 s) without a binding (`'startup_failed'`); every path runs the close ladder |
+| Jev job / instance | the host, per `jev_ask` / `jev_open` | a run is in progress, or the instance is live | `jev_ask_close` / `jev_close` → abort ladder with the deadline counted **from the close call** (JEV1 §4.7); idle and abandon policies of JEV1 §4.7; host shutdown. An async task inside the host, not a subprocess |
+| `hud wait` waiter | the Claude parent (background) | — | one event, host down, timeout, parent gone, generation changed (§5.1); never loops |
+| hud-mcp (stdio) | the harness | — | stdin EOF; the 30 s `parentAlive` check (`server.ts:270-273`) stays |
+| Pi package | Pi | — | `session_shutdown` |
+| bar / panel / statusline | tmux / Claude | — | as on main |
 
-"Work the user wants to keep" is protected by three rules: a running turn is never cut by a timer; `hud_close` is
-explicit; the native session file outlives the process and `hud_create{resume: nativeRef}` continues it later
-(all three adapters support resume: `managed-adapter.ts:153-200`, `sdk-adapter.ts:174-196`,
-`rpc-adapter.ts:172-187`). The parent is told why a child went away (`closeReason` in `hud_list` and the Inspector).
+Limits: `maxChildren` 8 live children per owner and 24 per host, plus JEV1's `liveLimit`/`queueLimit`; beyond them
+`limit_exceeded`. A 30-minute timer alone does not bound their number; the limits do.
+
+#### 6.1.2 Host shutdown with draining
+
+When `graceExitMs` expires with nothing retained: set `shuttingDown` (admission answers `host_shutting_down`; a
+`create` admitted in the same event-loop tick before the flag wins — admission and the flag flip are one
+synchronous step), cancel long-polls with `host_shutting_down`, close subscriptions, `server.close()`, drain
+accepted connections for ≤ 5 s, exit 0. `net.Server.close()` alone keeps already accepted connections, which is
+why the readers are cancelled first. A new `create` that arrives before the flag flips cancels shutdown
+eligibility atomically (it is a retained reservation from admission on).
+
+#### 6.1.3 Bounded close and crash containment
+
+Every close returns three separate results:
+
+```ts
+{ released: boolean;                             // the harness's own close API was invoked (EOF / query.close())
+  exited: { code: number | null; signal: string | null } | 'unknown';   // the direct child process was reaped
+  workStopped: 'confirmed' | 'unknown' }         // the harness reported its work ended (turn_done/agent_settled/result) before exit
+```
+
+Ladder, total ≤ `closeTimeoutMs` (15 s), deadline counted from the close call: (1) release — the harness's close
+API (Codex: stdin EOF after the thread is quiet, Claude: `query.close()`, Pi: stdin EOF) and wait ≤ 5 s for exit;
+(2) `SIGTERM` to the child's **process group**, ≤ 5 s; (3) `SIGKILL` to the group, ≤ 2 s. The explicit-close row of
+the results table passed through step 1 for all three harnesses (≤ 1.2 s / ≤ 2.1 s / ≤ 5 s), so steps 2–3 are the
+bound, not the norm. Containment: the host spawns each child with `detached: true` (its own process group) while
+keeping its stdio pipes and the handle referenced, and records `{ pgid, procStart }` on the child record, so
+descendants (a child's MCP servers, subprocesses) are addressed with the group. The Claude child is spawned by the
+SDK, not by the adapter (`sdk-adapter.ts:69-91` only resolves the executable); probe P4 checks whether the pinned
+SDK exposes the child process or a spawn hook, and otherwise `pathToClaudeCodeExecutable` points at a two-line
+`setsid` launcher so the group exists (a launcher, not a configuration change).
+
+Crash sweep: at every host boot and on `hud setup --sweep`, records that are not `closed` and whose
+`hostGeneration` is not the live host's are examined; a recorded `{pgid, procStart}` that is still alive is a
+HUD-owned orphan and is terminated with the same ladder, then the record becomes `closed{'swept'}`; a dead one
+becomes `closed{'exit'}`. Between a host `SIGKILL` and the next boot, a child that ignores stdin EOF can live on;
+P4 measures whether any of the three harnesses does, and the limitation is stated in `docs/reference.md`. This
+mechanism is the decided design (§8, 2026-11-07); a per-child parent-death guard is considered only if P4 shows a
+harness ignoring EOF. A
+`SIGKILL` cannot run a handler, so nothing in the design depends on one. The interactive parent and the shared
+Chrome process are never signalled (JEV1 owns its tabs, not the browser).
+
+After unclean host loss, a child's record shows `lost` until evidence says otherwise (§2.8); `closeReason:
+'host_shutdown'` is written only by a host that closed the child itself.
+
+#### 6.1.4 Idle, blocked and abandoned children
+
+- **Quiescent-only idle close (Q4).** A child is eligible when *all* hold: `lifecycle:'connected'`; `outcome.status`
+  not `running`; no queued input; no pending request; no native background work observed (Codex: every `item/*`
+  started since the last `turn/completed` has ended; Claude: a `result` arrived for the last prompt and no callback
+  is open; Pi: `agent_settled` after the last input); not within a startup, resume or close transition. A quiet
+  stream is not idle. The clock is `idleSince = max(outcome.endedAt, lastOwnerActionAt)` where owner actions are
+  `hud_send`, `hud_respond`, `hud_cancel` and `hud_create{resume}` — **passive reads (`hud_read`, `hud_wait`,
+  `hud_list`, subscriptions) never extend it**. A long turn is not eligible however old its send is. Checked every
+  60 s; `closeReason:'idle_timeout'`; the native session stays resumable.
+- **Blocked.** A pending request older than `requestStaleMs` (1 h) triggers one more wake (`request_stale`); older
+  than `requestAbandonMs` (2 h) the child is closed with `closeReason:'abandoned'` (the request is withdrawn through
+  the harness's own cancel path where one exists; the native session stays resumable). This is the separate policy
+  the owner asked for; both numbers are configurable and were decided on 2026-11-07 (§8).
+- **Running too long.** There is no wall-clock bound on a turn by default (decided, §8): "never during a turn" means
+  an indefinitely running turn is never cut by HUD. `turnDeadlineMs` is opt-in; when set, the child is interrupted
+  with `hud_cancel` semantics and its outcome is `interrupted`, never reinterpreted as idle.
+- **Dead handles.** `exit`/`lost` events run the ladder's remaining steps and retire the connection; nothing stays
+  in a map past its close. Jev's abandoned and blocked states follow JEV1 §4.7 (`abandonMs`, `needs_human`).
+
+"Work the user wants to keep" is protected by: a running turn is never cut by a timer; `hud_close` is explicit; the
+native session file outlives the process and `hud_create{resume: nativeRef}` continues it later (all three adapters
+support resume: `managed-adapter.ts:153-200`, `sdk-adapter.ts:174-196`, `rpc-adapter.ts:172-187`) — resume restores
+persisted history, **not** in-memory tool state, pending approvals or unflushed output, and the Inspector says so on
+a `lost` child. The parent is told why a child went away (`closeReason` in `hud_list` and the Inspector).
 
 Rejected: keeping per-owner hosts. Two owners → two node processes idling; the TUI would open N sockets; the
-per-owner isolation was an authentication artefact (§1.7). The cost of one host per user is a larger blast
-radius on a host crash (§9); children are stdio-bound to it, so a crash leaves no orphans.
+per-owner isolation was an authentication artefact (§1.7). The cost of one host per home is a larger blast radius
+on a host crash, accepted with the tested sweep above (§8 Q2).
 
 ### 6.2 Children get the user's real environment (F3)
 
 The host is spawned with the MCP's `process.env` (`host-ipc.ts:119-123`), which Codex has filtered (F3), and
-children inherit it (`host-config.ts:74`). v2: the environment is **captured on the caller's side at every
-`hud_create`/`jev_open` and passed to the host in the request**; the host applies it to that spawn only.
+children inherit it (`host-config.ts:74`). v2.1: the environment is **captured on the caller's side at every
+`hud_create` and passed to the host in the request**; the host applies it to that spawn only.
 
-- Codex and Claude parents (Linux): `env = read('/proc/<harness pid>/environ')` of the nearest harness ancestor
-  (`findHarness`, kept) — literally the environment the user's Codex/Claude runs with (proxy, PATH, `CODEX_HOME`,
-  `CLAUDE_CONFIG_DIR`, API keys). Fallback when unreadable (another platform): `process.env`.
+- Codex and Claude parents (Linux): `env = read('/proc/<harness pid>/environ')` of the harness ancestor found at
+  attachment. This is the harness process's **launch environment** (proxy, PATH, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`,
+  API keys as they were when the user started it), not a live view of the shell: a later `export` in the user's
+  shell reaches the next harness the user launches, not a running harness or its next child. v2's "a later export
+  reaches the next child" was wrong. Fallback when unreadable (another platform): `process.env`.
 - Pi parent: `process.env` of the Pi process (in-process).
-- HUD removes only its own `HUD_*` variables, then **adds** `HUD_CHILD`, `HUD_CHILD_OF` (§1.4) and, for Codex,
-  nothing else — `CODEX_HOME` is whatever the parent had, so the child runs on the same account.
-- Nothing is persisted; the env travels once over the 0600 socket. A later `export` in the user's shell reaches
-  the next child because capture is per call, which also answers the second half of F4.
+- HUD strips **selectively**: only `HUD_CHILD`, `HUD_CHILD_OF` and the legacy caller-identity names
+  (`HUD_CALLER_ID`, `HUD_CONTEXT_ID`, `HUD_CONTEXT_GENERATION`, `HUD_MCP_PROFILE`, `HUD_CLAUDE_HOOK_CONFIG`,
+  `HUD_PI_EVIDENCE_FD`, the list `host-config.ts:76-84` already removes) are removed; `HUD_HOME` stays, so a custom
+  home reaches the child and its own hud-mcp (which needs it to find the active-child index). Then HUD **adds**
+  `HUD_CHILD`, `HUD_CHILD_OF` (§1.4) and nothing else — `CODEX_HOME` is whatever the parent had, so the child runs
+  on the same account.
+- Nothing is persisted but the child's `source` (§2.8), which history reads use; the env itself travels once over
+  the 0600 socket.
 
 Children still load the user's full MCP/plugin set (7–15 s startup, F3): that is their configuration, and
 non-interference says HUD does not touch it; the cost is shown on the card as the `starting` clock.
 
-### 6.3 Jev interpreter and credentials (F4, F5)
+### 6.3 Jev: in-process, credentials from HUD's own file (F4, F5, F7)
 
-- Interpreter, in order: `config.json jev.python`, `HUD_JEV_PYTHON` from the captured env, a probe
-  `python3 -c 'import jev'` with the captured env, then `jev_python_not_found` listing what was tried. Today's
-  `options.python ?? process.env.HUD_JEV_PYTHON ?? 'python3'` (`jev-host.ts:52-59`) is replaced by this resolver.
-- Credentials: the bridge gets the captured env of the `jev_open` call, so they are whatever the user's shell had
-  at that moment.
-- `screenshots` is explicit and defaults to `false`; `record_dir` only records (F5). The 5 s screenshot IPC timeout
-  is reported as a `blocked`-style snapshot, not a failure.
+v2's §6.3 (interpreter resolution, caller-env credentials, `import jev` probe) is withdrawn; JEV1 replaces it:
+
+- The Jev Ultrafast agent and the ask driver are TypeScript inside the host (`src/jev/`, JEV1 §4.1–§4.2); there is
+  no Python, no interpreter to find, no `HUD_JEV_PYTHON`. (The v2 probe would also have been wrong: the bridge
+  imports `jev_ultrafast`, `src/managed/jev-bridge.py:25`, not `jev`.)
+- Credentials come from `~/.hud/jev.env` (0600), read at the start of **each job**, never from the caller's
+  environment (JEV1 §4.6); a rotated key takes effect on the next job, which answers the second half of F4.
+- `screenshots` is explicit and defaults to `false`; `record_dir` only records (F5).
+- F7 ("host does not exit after `jev_close`"): v2's explanation (`release()` only ends stdin, the host keeps a
+  reference) was not established by the code — at `9e46378` `jev_close` already deletes the instance
+  (`src/managed/jev-host.ts:263-266`) and the reference accounting recognises `jev_close` (`host-ipc.ts:43-48`).
+  The cause of the observed leak is unproven; the Python bridge disappears with the port, and JEV1 §4.7 gives the
+  in-process jobs a close ladder whose deadline starts at the close call and a retention rule that excludes
+  long-polls. WP12 re-tests "host exits `graceExitMs` after `jev_close`" as a matrix row.
 
 ---
 
 ## 7. Migration plan
 
-Principles: cut the coupling first so the historical modules fall out of every live module graph; delete in
-segments that each leave `npm test` green; build v2 on the cleaned tree; the main features (`origin/main`
-codex-hud bar, panel, brief, installer) must work after every package. Implementers per the brief: **Grok** core
-code, **pi** well-specified tests/fixtures, **frontend-implementer** rendering (design by the Fable-max subagent per
-the owner's routing). Sizes: S ≤ half a day, M ≤ 2 days, L more.
+Principles: pin the baselines first; probe the unverified mechanisms before deleting what currently works; extract
+shared code before deleting its old home; delete in segments that each leave the main suite green; build v2.1 on
+the cleaned tree; the main features (`origin/main` codex-hud bar, panel, brief, installer) work after every package.
+Implementers per the owner's routing (2026-11-07): **Grok 4.7 high** core code, **pi** well-specified tests and
+fixtures, **frontend-implementer** rendering (design by the Fable-max subagent), an **Opus subagent** reviews every
+package; Codex is not available for implementation; Codex test cells run on the `codex2` account with `gpt-6-luna`
+medium. Sizes: S ≤ half a day, M ≤ 2 days.
 
 | WP | Goal | Files / areas | Acceptance | Size | Who |
 |---|---|---|---|---|---|
-| **WP0** Baseline | Freeze what must stay green | tag `v1-historical`; `tests/run-core.sh` lists the main-feature suites (render, collectors, settings, visual baselines, integration); record `npm test` and `npm run test:visual` results | the list exists and passes at `e533c44` | S | Grok |
-| **WP1** Cut the hot spots | Live processes stop importing the historical stack | `src/index.ts` (H1: 3, 113–122, 198–209, 227–232, 239–253, 280–303, 316, 320, 347, 407, 426), `src/tree-page.ts` (H2: 1–13, 286–289, 343–346, 372–386, 1027–1035, 1156–1163, 1179–1190, 1299, 1785–1812, 1878–1885), `src/cli/statusline.ts` + `src/core/statusline-summary.ts` (H3), `src/cli/hud.ts` (H4), `src/harness/pi/footer.ts:8` + `extensions/pi/hud-footer.ts` (H16); a temporary `ChildrenCollector` returning `[]` replaces `NativeCallCollector` + `merge` | `tsc --listFiles` for `dist/index.js`, `dist/tree-page.js`, `bin/hud-statusline` contains no `src/ledger`, `src/core/link`, `src/core/run`, `integrations/herdr`; visual baselines unchanged except the removed delegation scenes; `npm test` green | M | Grok |
-| **WP2** Delete segment A (historical stack) | Remove the dead code and its tests | `src/ledger/*`, `src/core/run/*`, `src/core/link/*`, `src/core/capacity.ts`, `src/core/observation.ts` projections, `src/collectors/delegation.ts`, `src/render/delegation/*`, `integrations/herdr/*`, capability/qualification modules, `src/cli/{run,run-wait,cache,migrate,digest,pi,launcher,link-export}.ts` (move `HudIO` to `src/cli/io.ts`), `bin/hud-run` + `package.json` `bin.hud-run`, runtime package scripts, `packages/hud-mcp/src/tools.ts`, `tests/fixtures/b10b-*`; delete the 72 HIST-ONLY and 98 MIXED-mostly-hist tests; trim the 205 MIXED-mostly-keep tests; dead stubs of inventory §7 (`src/managed/manager.ts`, `store.ts`, `core/interfaces/run-control.ts`, `core/launch/types.ts`, `render/delegation/index.ts`, `render/workbench.ts`, `render/subagent-tree-view.ts`, `render/sparkline.ts`, `collectors/history.ts`, `src/test-render.ts`) | `npm test` green; `git grep -l 'ledger\|delegate_\|hud-run' src packages bin` returns only `src/types/node-sqlite.d.ts` (daemon binding) and docs; `tsconfig.test.json` builds | M | Grok (+ pi: rewrite the shared fixtures the kept tests need) |
-| **WP3** hud-mcp v2 core | Identity, tool table, child mode, env capture | `packages/hud-mcp/src/{main,server}.ts` simplified (no `bodies`, no `CallBudget`, no resolver); new `identity.ts` (§1.9), `env-capture.ts` (§6.2), `tools.ts` = Appendix B; delete `resolvers.ts`, `registry.ts`, `config.ts` (delegate/native parts), `hook/*`, `pi-channel.ts`, `pi-host.ts`, `wake-registration.ts`, `bin/hud-claude-hook.mjs` | tests (pi): `_meta` of the three shapes → owner; Claude registry fixture with mtime change → new session id; child mode refuses in ≤ 1 ms without touching the socket; env capture from a fake `/proc` reader strips `HUD_*` | M | Grok (tests: pi) |
-| **WP4** Host v2 | One host, subscription, summaries, lifecycle | `src/managed/{host,host-ipc,host-entry,child-record,child-summary,jev-host}.ts`; normalisation in the three adapters (`harness/*/…-adapter.ts`), compact `hud_read` (F8: never return `initializationResult`, `sdk-adapter.ts:229-235`), idle/grace timers with injected clock, Jev release kill (F7), read-only paths never spawn (F6) | tests (pi, fake adapters): host exits `graceExitMs` after the last close; `list` on a dead socket returns records with `unavailable`; subscription fan-out and slow-reader drop; idle timeout never fires during a turn; `hud_read status` ≤ 2 KiB for a 38 KiB fake init result | M | Grok (tests: pi) |
-| **WP5** Wake v2 | Three wake paths, receipts advisory, retry once | `src/managed/wake.ts`, `src/cli/wait.ts` (`hud wait`), Pi delivery in WP8 | tests (pi): fake `codex` binary slow by 3 s → `accepted`; cursor advance suppresses the retry; waiter prints one line and exits on event / host down / timeout | S | Grok (tests: pi) |
-| **WP6** Children collector + tree merge | Children are agents in the tree; dry-run shows them | `src/collectors/children.ts`, `src/types.ts` (3 fields), `src/index.ts`, `src/tree-page.ts`, `src/collectors/brief-dry-run.ts`, `subagent-tree.ts` multi-root parent map, `harness/claude/topology.ts` for Claude child subagents; `recapInput` over `MainTranscript` (Codex only) | tests (pi): fixture host → nodes with the mapping of §2.8; `agentCounts` counts children as agents; dry-run output contains child lines within the limits of §4.3; `CODEX_HUD_PROFILE` `children` stage ≤ 5 ms p99 with three fake children | M | Grok (tests: pi) |
-| **WP7** Rendering | Harness glyph, request line, Inspector sections, bar alert/notice, statusline line 2, Pi footer counts, i18n | `render/{cards,subagent-chip,monitor-inspector,monitor-timeline,attention,statusline-*}.ts`, `collectors/bar-notices.ts`, `harness/pi/footer.ts`, `render/i18n.ts`, visual baselines | visual tests at 32/40/48/56, EN/ZH, both colour modes; §8 checklist of `docs/ARCHITECTURE.md`; a card with a pending request shows the `⚑` line and the bar alert names it | M | frontend-implementer (design: Fable-max) |
-| **WP8** HUD Pi package | Parent in-process tools, child `ask_orchestrator`, wake, footer | `packages/hud-pi/*`, `src/harness/pi/{hud-parent,hud-child,footer}.ts`; delete `extensions/pi/hud-delegate.ts`, `extensions/pi/hud-footer.ts`, `integrations/pi/hud-wake.ts`, `harness/pi/{delegation-bridge,delegation-channel,delegation-context,wake-extension}.ts` | tests (pi): a Pi rpc child's `ask_orchestrator` → `request` event → `hud_respond` → tool returns the answer; a parent session's tools call the fake host with the right owner; footer line from a fake subscription; pi-roles note filed for the `ask_orchestrator` registration rule | M | Grok (tests: pi) |
-| **WP9** Installer, registration, skill, docs | One install + one registration; docs match | `install.sh` (build hud-mcp, link the Pi bundle, print registrations), `hud setup` (prints the same and checks the socket dir), `integrations/skills/hud-delegate/SKILL.md` rewritten for `hud_*`, `docs/ARCHITECTURE.md` §"Children", `docs/reference.md` child display + env table, `docs/delegation.md`; historical docs moved to `docs/archive/` | `./install.sh --sync` on a clean clone builds both programs; `hud setup` output matches the doc; `docs/reference.md` lists every new model input | S | Grok |
-| **WP10** Real-client matrix | Close F2–F8 on real clients | `scripts/local-validation/*` without `delegate.json`/`native.json`/hook; 3 parents × 2 children + Jev, each create/send/read/resume/close/wake; performance checks of §2.6 | the results table of `docs/cloud/handoff/local-real-client-results-20261107.md` re-run with all rows PASS, wake rows included; no process left after the last close (`pgrep -f hud-mcp|host-entry|app-server` empty) | L | Hermes-style human-interaction run by the owner; pi for the scripts |
-| **WP11** Non-Codex roots (phase 2) | Claude/Pi roots get the recap and a standalone panel | `claudeMainTranscript`, `piMainTranscript`, `hud panel --session`, status card variants without Codex-only fields | dry-run `--root claude` prints recap material within limits; the standalone panel shows a Claude root with its children | M | Grok + frontend-implementer |
+| **WP0** Baselines and manifest | Freeze what must stay green | tag `v1-historical` at `9e46378`; record review SHA `9e46378` and main SHA `9108482`; `tests/main-features.json`: every main feature → its test files and visual scenes; `tests/run-main.sh` runs that selection (replacing `tests/run-core.sh:35-40`, which selects contracts/core/ledger/facade and is not a main-feature gate); for every MIXED test file the manifest names the assertions to preserve before it is split; the inventory's per-file classifications are re-verified as each file is touched (they are unverified) | the manifest exists, `run-main.sh` passes at `9e46378` and at `main`; `npm test` and `npm run test:visual` results recorded | S | Grok (manifest), pi (script) |
+| **WP0.5** Feasibility probes | Settle the unverified mechanisms before any deletion | P1 attachment switching on real clients: Claude `/clear`, `--resume`, Codex `/new`, Pi switch/fork → registry/`_meta` freshness, generation fencing; P2 wake modes: Codex queue on the owner's embedded TUI with and without a daemon, Claude `run_in_background` waiter arming and re-arming, Pi followUp; P3 Pi: `ctx.ui.input/select` from a tool in `--mode rpc` with `{signal}` cancellation, the composed `-e <hud-pi> -e <roles>` load and duplicate `ask_orchestrator` behaviour, `pi install <dir>`; P4 process cleanup: host `SIGKILL` → fate of each harness child and its descendants, Claude SDK child-process access, process-group kill; P5 Codex single-carrier `_meta` cases. Results in `docs/probes/v2-*.md` | each probe has a result row with the client versions; decisions that depend on them (§6.1.3 launcher, §5.1 capabilities) are confirmed or amended in this document | M | pi (scripts), owner (real clients, Hermes-style) |
+| **WP1** Extraction and hot-spot cuts | Live processes stop importing the historical stack; shared code gets a neutral home | move `readProcess`/`sameProcessStamp` to `src/core/process-stamp.ts` (`packages/hud-mcp/src/lifetime.ts:1-2` imports `core/run/process` and `core/supervision`); `HudIO` → `src/cli/io.ts`; drop `CallBudget` from `server.ts:1-4`; `render/monitor.ts:1-35` off `core/link` and `delegation/*`; the readers' `core/checkpoint.ts` → `core/observation.ts` dependency extracted; the generic material boundary of §4.2(1); `src/index.ts` (H1), `src/tree-page.ts` (H2), `src/cli/statusline.ts` + `src/core/statusline-summary.ts` (H3), `src/cli/hud.ts` (H4), `src/harness/pi/footer.ts:8` + `extensions/pi/hud-footer.ts` (H16); a temporary `ChildrenCollector` returning `[]` replaces `NativeCallCollector` + `merge` | `tests/module-closure.mjs` (an `--import` hook that records every module loaded by `dist/index.js`, `dist/tree-page.js`, `bin/hud-statusline`, `packages/hud-mcp` main — the inventory's method; **not** `tsc --listFiles`, which lists all of `src/**/*` per `tsconfig.json:18`) shows no `src/ledger`, `src/core/link`, `src/core/run`, `integrations/herdr`; visual baselines unchanged except the removed delegation scenes; `run-main.sh` green | M | Grok |
+| **WP2a** hud-mcp v2 core and the host/event contract (additive) | Identity, shared tools, child mode, env capture, records, summaries, events, subscription | `packages/hud-mcp/src/{identity,tools,env-capture}.ts` (§1.9), `server.ts` without resolver/bodies; `src/managed/{child-record,child-summary,active-index}.ts`, subscription in `host-ipc.ts`; the new `hud_*` tools coexist with the old `managed_*` until WP2c | tests (pi): `_meta` of the three shapes → owner; both carriers disagreeing → `carrier_mismatch`; single carrier accepted; Claude registry fixture with a changed session → generation bump; child mode from env, from a fake `/proc` environ, from the active index → empty `tools/list`, `depth_limit` on call, no socket; `create` by an active child refused at the host; record written before turn 1; subscription snapshot → deltas → `gap` on generation change | M | Grok (tests: pi) |
+| **WP2b** Delete segment A (historical stack) | Remove the dead code and its tests | `src/ledger/*`, `src/core/run/*`, `src/core/link/*`, `src/core/capacity.ts`, `src/core/observation.ts` projections, `src/collectors/delegation.ts`, `src/render/delegation/*`, `integrations/herdr/*`, capability/qualification modules, `src/cli/{run,run-wait,cache,migrate,digest,pi,launcher,link-export}.ts`, `bin/hud-run` + `package.json` `bin.hud-run`, runtime package scripts, `packages/hud-mcp/src/tools.ts` (legacy), `tests/fixtures/b10b-*`; the HIST-ONLY tests and the MIXED-mostly-historical tests after their main assertions are moved per the WP0 manifest; dead stubs of inventory §7 | `run-main.sh` and `npm test` green; `git grep -l 'ledger\|delegate_\|hud-run' src packages bin` returns only `src/types/node-sqlite.d.ts` and docs; `tsconfig.test.json` builds | M | Grok (+ pi: shared fixtures the kept tests need) |
+| **WP2c** Delete segment B (hud-mcp and host legacy) | Remove what WP2a replaced | `resolvers.ts`, `registry.ts`, `config.ts` (delegate/native parts), `hook/*`, `bin/hud-claude-hook.mjs`, `pi-channel.ts`, `pi-host.ts`, `wake-registration.ts`, `managed-tools.ts`, `src/collectors/native-calls.ts`, `src/core/delegation-summary-pi.ts`, `src/managed/relations.ts`, per-owner host paths, `src/managed/jev-bridge.py` + `PythonJevBridge` (with J5) | `run-main.sh` green; the MCP serves only Appendix B | S | Grok |
+| **WP3** Host lifecycle and cleanup | One host per home with bounded everything | `src/managed/{host,host-ipc,host-entry}.ts`: retention accounting (§6.1.1), shutdown with draining (§6.1.2), close ladder and process groups (§6.1.3), crash sweep, quiescent idle, blocked/abandoned, limits, startup deadline, `lost` on boot, protocol version in the hello (`host_incompatible` for an older running host); clock injected | tests (pi, fake adapters and a fake process table): host exits `graceExitMs` after the last close while a `wait` long-poll is open; `create` during the grace cancels shutdown; ladder reaches `SIGKILL` on a child that ignores EOF within 15 s; sweep terminates a recorded orphan with a matching stamp and leaves a reused pid alone; idle never fires during a turn, a pending request, or after a `hud_read`; fires after `hud_send` + 30 min quiet; abandoned at 2 h; `limit_exceeded` at 9 | M | Grok (tests: pi) |
+| **WP4** Normalisation, requests, reads | Three adapters → `ChildEvent`; native requests kept whole; compact and sourced reads | `harness/*/…-adapter.ts` normalisation; `HudRequest`/`HudResponse` mapping per harness (§3.3, incl. Pi `value`/`confirmed`/`cancelled` and `{signal}`); multiple pending requests; `hud_read` (`status` ≤ 2 KiB, F8: never `initializationResult`, `sdk-adapter.ts:229-235`; `requests`, `result`, `transcript` from the recorded source) | tests (pi, fixtures from the adapter code): each native request kind round-trips; a Codex two-question `user_input` answered by id; a cancelled Pi dialog writes `{cancelled:true}`; `status` ≤ 2 KiB with a 3 KiB request pending; a Claude child under another `CLAUDE_CONFIG_DIR` has its transcript read directly | M | Grok (tests: pi) |
+| **WP5** Wake | Three wake paths, honest capabilities, cursors | `src/managed/wake.ts`, `src/cli/wait.ts` (`hud wait`), Pi delivery in WP8; bindings refreshed on reattach | tests (pi): fake `codex` binary slow by 3 s → `accepted`; debounce aggregates two events into one line; read cursor advance suppresses the retry; truncated page does not advance past what it returned; waiter ignores `message`/`tool`, prints one line on `turn_done`, exits 2/3/4 as specified, exits when its parent pid is gone; `degraded` for a `codex exec` parent | S | Grok (tests: pi) |
+| **WP6** Children collector and tree merge | Children are agents in the tree; dry-run shows them; Codex recap unchanged | `src/collectors/children.ts`, `src/types.ts` (4 fields), `src/index.ts`, `src/tree-page.ts`, `src/collectors/brief-dry-run.ts`, `subagent-tree.ts` multi-root parent map, `harness/claude/topology.ts` for Claude child subagents; `main-transcript.ts` with `codexMainTranscript`; `recapInput`/`briefingSchedule` over `MainTranscript` | tests (pi): fixture host → nodes with the mapping table of §2.8 (every row); host down → `lost` nodes, not empty; `agentCounts` counts children; dry-run output contains child lines within §4.3; Codex recap and brief fingerprints byte-identical on the existing fixtures; `CODEX_HUD_PROFILE` `children` stage ≤ 5 ms p99 with three fake children | M | Grok (tests: pi) |
+| **WP7** Rendering | Harness glyph, request line and count, lifecycle line, Inspector sections, bar alert/notice keyed by turn, statusline line 2, Pi footer counts, i18n | `render/{cards,subagent-chip,monitor-inspector,monitor-timeline,attention,statusline-*}.ts`, `collectors/bar-notices.ts`, `harness/pi/footer.ts`, `render/i18n.ts`, visual baselines | visual tests at 32/40/48/56, EN/ZH, both colour modes; §8 checklist of `docs/ARCHITECTURE.md`; a card with two pending requests shows `⚑ … +1`; a `lost` child shows the recovery line; two turns completing between ticks give two notices | M | frontend-implementer (design: Fable-max) |
+| **WP8** HUD Pi package | Parent in-process tools over the shared dispatch, child `ask_orchestrator`, wake, footer, `pi install` | `packages/hud-pi/*`, `src/harness/pi/{hud-parent,hud-child,footer}.ts`; delete `extensions/pi/hud-delegate.ts`, `extensions/pi/hud-footer.ts`, `integrations/pi/hud-wake.ts`, `harness/pi/{delegation-bridge,delegation-channel,delegation-context,wake-extension}.ts` | tests (pi): a Pi rpc child's `ask_orchestrator` → `request` → `hud_respond{value}` → tool returns the answer; `hud_respond{cancelled:true}` → tool returns `(cancelled)`; a parent session's tools call the fake host with the right owner and attachment; footer line from a fake subscription; the composed launch line with pi-roles loads with one `ask_orchestrator` (P3 evidence); `pi install packages/hud-pi` on a temporary `PI_CODING_AGENT_DIR` registers it | M | Grok (tests: pi) |
+| **WP9** Summaries pipeline | Every summary feature for Codex roots and children of all harnesses | generic material boundary wired for all collectors (if not finished in WP1); causes from child error events; approval words over child requests; `brief --dry-run` parity | tests (pi): brief, recap, progress, digest, names, causes, approval words each produce material for a Codex child, a Claude child, a Pi child and a Jev job within §4.3 limits; dry-run text equals the generator input; reasoning blocks never appear | M | Grok (tests: pi) |
+| **WP10** Non-Codex roots (Q5: inside v2 acceptance) | Claude/Pi roots get recap, brief and a standalone panel | `claudeMainTranscript` (reader extended with prompt heads), `piMainTranscript`, `hud panel --session` with the single-live-transcript rule, status card variants without Codex-only fields, `brief --dry-run --root` | dry-run `--root claude` / `--root pi` prints recap material within limits; the standalone panel shows a Claude root with its children; two live Claude transcripts in one cwd → the candidate list, not a guess | M | Grok + frontend-implementer |
+| **WP11** Installer, registration, upgrade validation, skill, docs | One install + one registration; upgrades do not leave debris; docs match | `install.sh` (build hud-mcp and hud-pi, print the three registrations); `hud setup` (prints the same, checks the socket dir, `--check` reports obsolete Claude hook entries, old Pi extension paths in pi settings, stale `dist/`, an incompatible running host, leftover `native-hosts/*.sock`, and prints the exact lines to remove without editing unrelated configuration; `--sweep`); `integrations/skills/hud-delegate/SKILL.md` for `hud_*` (arming and re-arming the Claude waiter); `docs/ARCHITECTURE.md` §"Children", `docs/reference.md` (child display, env table, the host-loss limitation), `docs/delegation.md`; historical docs to `docs/archive/` | `./install.sh --sync` on a clean clone builds all three programs; `hud setup --check` on a home with a v1 hook and an old host reports both; `docs/reference.md` lists every new model input | S | Grok + pi |
+| **WP12** Real-client matrix | Close F2–F8 on real clients with exact process tracking | `scripts/local-validation/*` without `delegate.json`/`native.json`/hook; 3 parents × 2 children + Jev, each create/send/read/resume/close/wake, plus host-loss recovery and `jev_close` → host exit; performance checks of §2.6; the scripts record every pid HUD started (host, child pgid + stamp, waiter, Jev tabs) from the records and host log | the results table of `docs/cloud/handoff/local-real-client-results-20261107.md` re-run with all rows PASS including the wake rows; after each `hud_close` the recorded group is gone within `closeTimeoutMs`; after the last close + `graceExitMs` the host pid is gone and the socket unlinked; the parent's hud-mcp exits with the parent; **no blanket `pgrep -f` assertion** (parent-owned MCP processes legitimately live on, unrelated sessions may match, Pi descendants may be missed) | L | owner (Hermes-style) + pi (scripts); Codex cells on `codex2` with `gpt-6-luna` medium |
+| **J1–J9** Jev | per JEV1 §6 | `src/jev/*`, `src/managed/jev-host.ts`, `jev-tools.ts`, TUI rows, licences, jev-ask lock, real dry-runs | per JEV1 §5 | per JEV1 | per JEV1 |
 
-Ordering: WP0 → WP1 → WP2 → WP3 → WP4 → WP5 → (WP6 ∥ WP8) → WP7 → WP9 → WP10 → WP11. WP3 and WP4 can start
-on a branch during WP2 because they touch `packages/hud-mcp` and `src/managed` only; they merge after WP2.
+Ordering: WP0 → WP0.5 → WP1 → WP2a → WP2b → WP2c → WP3 → WP4 → WP5 → (WP6 ∥ WP8 ∥ J1–J4) → WP7 → WP9 → WP10 →
+(J5–J8) → WP11 → WP12 (+ J9). WP2a may start on a branch during WP1 (it touches `packages/hud-mcp` and
+`src/managed` only) and merges after WP1. Each package is one Opus-subagent review; the same reviewer re-checks the
+fix.
+
+Changes from v2's plan, for the record: baselines and a real main-feature gate first (v2's WP0 reused
+`run-core.sh`, which never gated main features); probes before deletion (v2 deleted first); extraction before
+deletion (v2's WP2 deleted modules that `server.ts:1,9`, `lifetime.ts:1-2`, `render/monitor.ts:1-35` and
+`npm test` (`package.json:20`, `build:hud-mcp`) still consumed until its WP3); the old WP2/WP4 split by acceptance
+boundary (WP2a/2b/2c; WP3 lifecycle vs WP4 normalisation); the `tsc --listFiles` gate replaced; upgrade validation
+added; WP10's `pgrep`-empty assertion replaced by owned-process tracking; non-Codex roots inside acceptance.
 
 ---
 
-## 8. Open questions for the owner
+## 8. Decisions on the open questions and forks
 
-1. **Pi attaches in-process** (§3.1): the HUD Pi package registers the tool table through `pi.registerTool` and
-   talks to the host directly, with no `hud-mcp` subprocess. This reads the fixed input's "parent-side MCP
-   connection" as the attachment, not as a stdio MCP process. Confirm, or require the stdio form (cost: one
-   process + handshake per Pi session, the identity hello of §3 instead of fd 3).
-2. **One host per user** (§6.1) versus one per owner. Chosen: per user (lighter, one socket for the TUI, natural
-   "parent exits, host continues"). The price is blast radius: a host crash takes every owner's children with it.
-3. **Codex children see the `hud` tools** and are refused on call (§1.4). Alternative: pass
-   `thread/start.config = { mcp_servers.hud.enabled: false }` to Codex children only, which keeps the child's
-   context free of the tool schemas but is a configuration change HUD makes on the child's behalf.
-4. **Default `idleCloseMs` = 30 min** for a child with no running turn and no parent read/send. Shorter saves
-   memory (a Codex child with 8 MCP servers is not small); longer keeps warm contexts for follow-ups.
-5. **Non-Codex roots in v2 or phase 2** (WP11). v2 as planned gives a Claude root the statusline (line 1 + children
-   line 2) and a Pi root the footer, with the standalone panel and recap for those roots in WP11.
+Decided by the owner on 2026-11-07 (with Pro's recommendation where it was adopted; the three forks as this
+document recommended them):
 
-Everything else in §1–§7 is decided here and does not need the owner.
+| Q | Decision | Where |
+|---|---|---|
+| Q1 Pi in-process or stdio MCP | **In-process**; validation, dispatch, errors and results shared with hud-mcp | §3.1, §1.9 |
+| Q2 One host per user or per owner | **One host per effective HUD home** (normally one per user), owner-scoped state, per-child source and environment; the shared crash domain accepted with the tested close ladder and sweep | §6.1 |
+| Q3 Advertise HUD tools to Codex children and refuse them | **No**: launch marker / ancestor environ / active index → empty HUD tool table in child mode; direct-call refusal kept; depth enforced again at the host; no change to unrelated native configuration | §1.4 |
+| Q4 30-minute idle close | **Yes**, configurable, quiescent-only; passive reads never extend it; blocked/abandoned children have their own policy | §6.1.4 |
+| Q5 Non-Codex roots in v2 or phase 2 | **Inside v2 acceptance**: panel, recap, brief and the other summaries for Claude and Pi roots (WP10); statusline/footer-only support does not complete the fixed scope | §4.2, §7 |
+| JEV1 D4 Jev lock granularity | **Decided in JEV1** (`docs/design/jev-in-hud.md`): only send, reconcile and connector approval hold the shared-Chrome lock; observation runs unlocked; the lock is a heartbeat lease with a nonce | JEV1 §4.5; §6.1.1 |
+| JEV1 D7 Jev CLI retirement | **Decided in JEV1**: the CLI's ChatGPT/Gemini path retires behind the threshold of JEV1 §4.5 (matrix green plus one real answer per provider through MCP) | JEV1 §4.5 |
+| F1 Crash containment | **Process groups + recorded `{pgid, procStart}` + a sweep at the next host boot**; no extra daemon, no native code; the window between a host `SIGKILL` and the next boot is accepted; a per-child parent-death guard (Linux `PR_SET_PDEATHSIG`) is considered only if probe P4 shows a harness ignoring stdin EOF | §6.1.3, §7 WP0.5 |
+| F2 Abandoned requests | **Re-wake at 1 h (`requestStaleMs`), close with `closeReason:'abandoned'` at 2 h (`requestAbandonMs`)**, both configurable; the native session stays resumable | §6.1.4, §1.5 |
+| F3 Turn wall-clock deadline | **None by default**; `turnDeadlineMs` is opt-in and, when set, interrupts with `hud_cancel` semantics (outcome `interrupted`, never "idle") | §6.1.4, §1.5 |
+
+No forks remain open: everything in §1–§7 is decided here or in JEV1.
 
 ## 9. Risks
 
 - **Undocumented carriers.** `x-codex-turn-metadata` and Claude's `sessions/<pid>.json` are not documented
-  interfaces; a version may change their shape or stop updating the registry on `/clear`. Mitigation: WP10 pins
-  the versions it was verified against in the validation doc; the identity module has one function per carrier
-  with a fixture test; a change shows as `invalid_arguments` with the raw `_meta` keys named, never as a silent
-  mis-attribution.
+  interfaces; a version may change their shape or stop updating the registry on `/clear` or some resume path
+  (P1 covers the paths the owner uses). Mitigation: WP12 pins the versions it was verified against; the identity
+  module has one function per carrier with a fixture test; a change shows as `invalid_arguments` with the raw
+  `_meta` keys named, or `identity_unavailable`, never as a silent mis-attribution.
 - **Codex daemon mode.** When Codex runs its shared daemon, MCP servers are spawned by the daemon and the
-  harness ancestor's environment is the daemon's, not the TUI's (§6.2). The owner's TUIs run embedded today
-  (matrix §2.2); if that changes, the Codex parent should pass `env` through `mcp_servers.hud.env` for the few
-  variables that matter, which is still one registration.
+  harness ancestor's environment is the daemon's, not the TUI's (§6.2), and `codex queue` is `degraded` (§5.1). The
+  owner's TUIs run embedded today (matrix §2.2); if that changes, the Codex parent should pass `env` through
+  `mcp_servers.hud.env` for the few variables that matter, which is still one registration.
 - **`codex queue` reliability** is bounded by Codex (idle-only, ~10 s poll, daemon guard). The design tolerates a
   lost wake (the parent's next call drains events) but a Codex parent that never calls again stays asleep.
-- **Single host crash** (Q2) ends every child; children's native sessions remain resumable, and the panel shows
-  `closeReason: host_exit`.
+- **Host crash** ends every live child's connection; records show `lost`, children's native sessions remain
+  resumable, orphans are swept at the next boot (§6.1.3); the window before that boot is accepted (§8 F1) and is
+  revisited only if P4 shows a harness ignoring stdin EOF.
 - **Claude SDK pin vs installed `claude`.** `package.json` pins `@anthropic-ai/claude-agent-sdk 0.3.319` while the
-  child runs the user's installed executable (`sdk-adapter.ts:69-91`); drift can break callbacks. WP10 records the
-  pair that passed.
+  child runs the user's installed executable (`sdk-adapter.ts:69-91`); drift can break callbacks, and whether the SDK
+  exposes the child process for containment is P4's question. WP12 records the pair that passed.
 - **Pi rpc `ctx.ui` in a tool.** §3.3 assumes a tool-initiated `ctx.ui.input/select` surfaces as an
-  `extension_ui_request` in `--mode rpc` (the adapter already relays that request type). WP8's first test checks
-  it against the installed pi; if it does not, the fallback is a `hud_ask` rpc-side custom event with the same
-  host mapping.
-- **Deletion churn.** 205 tests need edits (Appendix A); the risk is dropping main coverage by accident. WP0's list
-  is the guard, and WP2 must leave the visual baselines byte-identical outside the removed scenes.
+  `extension_ui_request` in `--mode rpc` and honours `{signal}`; P3 checks it against the installed pi; if it does
+  not, the fallback is a `hud_ask` rpc-side custom event with the same host mapping.
+- **Deletion churn.** 205 tests need edits (Appendix A); the risk is dropping main coverage by accident. WP0's
+  manifest is the guard, and WP2b must leave the visual baselines byte-identical outside the removed scenes.
 - **Child startup cost** (7–15 s) stays as long as the user's configuration loads many MCP servers; HUD will not
   trim it (non-interference). The card's `starting` clock makes it visible rather than hidden.
 - **Attribution of native-subagent callers to the root** (§1.3) means a Codex implementer's reviewer subagent could
   create a HUD child that the tree shows under the root, not under the reviewer. Acceptable for depth-one display;
   noted so it is not mistaken for a bug.
+- **Jev: the sidebar may not render in a headless viewport**, so the sidebar-diff locator is the second path, not
+  the first (JEV1 §3); **the TypeScript port may drift in timing** from the Python original (post-input waits, stale
+  detection), mitigated by verbatim page scripts, translated upstream tests and the real-browser guard check
+  (JEV1 §4.1). The Jev lock and CLI-retirement questions are decided in JEV1 (D4, D7; §8), not here.
 
 ---
 
@@ -677,13 +1010,15 @@ Everything else in §1–§7 is decided here and does not need the owner.
 
 Totals: `src/` + `packages/hud-mcp/` 391 files / 99 164 lines, of which 139 files / 31 803 lines are removable with
 the historical stack. Tests: 630 files / 179 002 lines — 72 HIST-ONLY (13 165 lines) and 98 MIXED-mostly-historical
-(32 005) to delete, 205 MIXED-mostly-keep (78 565) to trim. Docs: 250 historical files / 65 291 lines.
+(32 005) to delete, 205 MIXED-mostly-keep (78 565) to trim. Docs: 250 historical files / 65 291 lines. These
+classifications and the module-load totals are the inventory's and were not independently verified; WP0's manifest
+and WP2b's file-by-file pass are where they get checked.
 
 Process-start module loads: `hud run wait` 119 modules / 31 592 lines (37 historical, 14 in `src/ledger/*`); bar
 `src/index.ts` 149 / 44 646 (36 historical / 11 420); panel `src/tree-page.ts` 193 / 63 945 (46 / 13 887);
 statusline 44 / 13 192 (2 historical); hud-mcp `main` 39 / 7 606 (0); `host-entry` 16 / 3 340 (0).
 
-"KEEP?" groups and their v2 fate: cli-pi 11 modules / 4 655 lines (Claude/Pi transcript readers, `core/checkpoint.ts`,
+"KEEP?" groups and their v2.1 fate: cli-pi 11 modules / 4 655 lines (Claude/Pi transcript readers, `core/checkpoint.ts`,
 `harness/claude/background|todos`) → readers kept for roots (§2.3, §4.2), `hud pi inspect` deleted; pi-footer 6 / 966 →
 kept, data source changed (§2.4); cli-cache 2 / 595, cli-migrate 4 / 556, cli-launch 3 / 351 → deleted; brief-dry-run
 2 / 119 → kept and extended (§4.3).
@@ -691,30 +1026,37 @@ kept, data source changed (§2.4); cli-cache 2 / 595, cli-migrate 4 / 556, cli-l
 Hot spots (inventory §6) and the package that cuts each: H1 bar collector/merge (`src/index.ts`) → WP1; H2 panel
 collector, Herdr `PanelHostController`, `DelegationLogView`, `PublicationWorker` (`src/tree-page.ts`) → WP1; H3
 statusline line 2 ledger read (`src/cli/statusline.ts`, `src/core/statusline-summary.ts`) → WP1; H4 `src/cli/hud.ts`
-static imports + `CallBudget` → WP1/WP2; H5 `src/cli/run.ts`, H6 `src/cli/run-wait.ts` (legacy wait beside
-`runNativeWait`, 306–359), H7 `src/cli/runtime.ts`, H8 `src/cli/link-export.ts` (`HudIO`) → WP2; H9
-`packages/hud-mcp/src/server.ts` bodies and `tools.ts` legacy → WP3; H10 type refs to `core/ledger-scope-read.ts`,
-`config.ts` validator, `FileCallerRegistry`, `WakeRegistration` → WP3; H11 `packages/hud-mcp/src/lifetime.ts` →
-`src/core/run/process.ts` (move `readProcess`/`sameProcessStamp` to a neutral module) → WP3; H12 native-call rows in
-`DelegationViewModel` / `LinkTreeProjection` → WP6 (own projection) then WP2 deletes `render/delegation/*`; H13
-packaging scripts → WP2; H14 `bin/hud-run` → WP2; H15 `tsconfig.test.json` single program + shared fixtures → WP2;
-H16 Pi footer → ledger → WP1/WP8; H17 `install.sh` builds only `npm run build` → WP9.
+static imports + `CallBudget` → WP1/WP2b; H5 `src/cli/run.ts`, H6 `src/cli/run-wait.ts` (legacy wait beside
+`runNativeWait`, 306–359), H7 `src/cli/runtime.ts`, H8 `src/cli/link-export.ts` (`HudIO`) → WP1 (extract) / WP2b
+(delete); H9 `packages/hud-mcp/src/server.ts` bodies and `tools.ts` legacy → WP2a/WP2c; H10 type refs to
+`core/ledger-scope-read.ts`, `config.ts` validator, `FileCallerRegistry`, `WakeRegistration` → WP2c; H11
+`packages/hud-mcp/src/lifetime.ts` → `src/core/run/process.ts` → WP1 (`core/process-stamp.ts`); H12 native-call rows
+in `DelegationViewModel` / `LinkTreeProjection` → WP6 (own projection) then WP2b deletes `render/delegation/*`; H13
+packaging scripts → WP2b; H14 `bin/hud-run` → WP2b; H15 `tsconfig.test.json` single program + shared fixtures → WP2b;
+H16 Pi footer → ledger → WP1/WP8; H17 `install.sh` builds only `npm run build` → WP11; plus `render/monitor.ts:1-35`
+(link/delegation imports) → WP1 and the readers' observation/checkpoint chain → WP1.
 
-## Appendix B. Tool table (served by hud-mcp to Codex and Claude parents; registered in-process for Pi)
+## Appendix B. Tool table (served by hud-mcp to Codex and Claude parents; registered in-process for Pi; empty in a child)
 
 | Tool | Arguments | Returns | Notes |
 |---|---|---|---|
-| `hud_create` | `{ harness:'codex'\|'claude'\|'pi', cwd, prompt?, name?, model?, effort?, resume?: NativeRef, fork?: NativeRef, options?: { args?: string[] /* pi only */, approvalPolicy?, sandbox? /* codex only, forwarded verbatim */ } }` | `{ child, harness, nativeRef, seq, wake: { kind:'automatic' } \| { kind:'background_command', command, note } }` | starts the host if needed; `prompt` sends turn 1; `resume` of a live child of another owner → `child_busy` |
+| `hud_create` | `{ harness:'codex'\|'claude'\|'pi', cwd, prompt?, name?, model?, effort?, resume?: NativeRef, fork?: NativeRef, options?: { args?: string[] /* pi only */ } }` | `{ child, harness, nativeRef: NativeRef \| null, seq, wake: { kind:'queue'\|'background_command'\|'followup'\|'none', capability:'available'\|'degraded'\|'unavailable', reason?, command?, note? } }` | starts the host if needed; `prompt` sends turn 1 after the record is published; `resume` of a live child of another owner → `child_busy`; no permission-mode fields (`approvalPolicy`/`sandbox` of v2 are removed: permission modes are the user's configuration; the adapter's ability to forward them, `managed-adapter.ts:157-166`, is not used) |
 | `hud_send` | `{ child, text, mode?: 'turn' \| 'steer' }` | `{ seq, turn }` | `steer` only while a turn runs (Codex `turn/steer`, Claude message push, Pi `steer`) |
-| `hud_wait` | `{ child?, afterSeq, waitMs?: ≤ 120000 }` | `{ events: ChildEvent[] ≤ 50, seq, truncated }` | long-poll; advances the owner's read cursor (wake retry suppression) |
-| `hud_read` | `{ child, what: 'status' \| 'result' \| 'transcript' \| 'context', offset?, limit? }` | `status` → `ChildSummary` (≤ 2 KiB); `result` → last turn text paged (≤ 32 KiB/page); `transcript` → recent public messages (`limit` ≤ 50, each ≤ 2 KiB); `context` → usage | never returns SDK init results (F8) |
-| `hud_respond` | `{ child, requestId, response: { decision?: 'allow' \| 'deny', text?, option? } }` | `{ ok }` | maps to Codex `execCommandApproval`/input answers, Claude `canUseTool`/elicitation/dialog results, Pi `extension_ui_response` |
+| `hud_wait` | `{ child?, afterSeq, waitMs?: ≤ 120000, wakeOnly?: boolean }` | `{ events: ChildEvent[] ≤ 50, seq, generation, truncated, gap? }` | long-poll; advances the owner's read cursor only to the last seq returned; `wakeOnly` filters to wake-worthy events (the waiter uses it) |
+| `hud_read` | `{ child, what: 'status' \| 'requests' \| 'request' \| 'result' \| 'transcript' \| 'context', requestId?, offset?, limit? }` | `status` → `ChildSummary` (≤ 2 KiB, first request summary + count); `requests` → `HudRequest[]` (≤ 10, each ≤ 8 KiB); `request` → one, paged; `result` → last turn text paged (≤ 32 KiB/page); `transcript` → recent public messages from the recorded source (`limit` ≤ 50, each ≤ 2 KiB); `context` → usage | never returns SDK init results (F8); passive: never extends the idle clock |
+| `hud_respond` | `{ child, requestId, response: HudResponse }` | `{ ok, how:'sent' }` | §3.3 mapping per harness; `request_done` arrives when the harness withdraws the request |
 | `hud_cancel` | `{ child }` | `{ ok }` | interrupts the running turn only |
-| `hud_close` | `{ child }` | `{ ok, closeReason:'closed' }` | ends the process; the native session stays resumable |
-| `hud_list` | `{}` | `{ children: ChildSummary[] ≤ 50, jev: JevSummary[], host: { uptimeMs } }` | read-only; answers from records when the host is down |
-| `jev_open` | `{ url, goals?, screenshots?: false, record_dir? }` | `{ instanceId }` | replaces `jev_create` |
-| `jev_run`, `jev_snapshot`, `jev_command`, `jev_close` | as today (`packages/hud-mcp/src/jev-tools.ts:26-67`) | as today | `jev_list` folds into `hud_list` |
+| `hud_close` | `{ child }` | `{ ok, released, exited, workStopped, closeReason:'closed' }` | the ladder of §6.1.3; the native session stays resumable |
+| `hud_list` | `{}` | `{ children: ChildSummary[] ≤ 50, jev: JevJobSummary[], host: { generation, uptimeMs } \| null, wake: WakeBinding, unavailable?: 'host_down' }` | read-only; answers from records when the host is down (`lost` where applicable) |
+| `jev_ask` | `{ provider:'chatgpt'\|'gemini', label, prompt_file?, prompt?, attach?, effort?, mode?, dry_run?, max_wait_ms?, wake_on_sent? }` | `{ key, state, seq, wake }` | JEV1 §4.4: idempotent on `key`, one send per key ever, returns ≤ 1 s |
+| `jev_ask_wait` | `{ key?, after_seq, wait_ms ≤ 120000, resume? }` | `{ events[], seq }` | long-poll; `resume` restarts wait/reconcile per JEV1 §4.7, never a send |
+| `jev_ask_read` | `{ key, what:'status'\|'answer', offset?, limit? }` | `status` ≤ 2 KiB; `answer` paged ≤ 32 KiB | read-only |
+| `jev_ask_close` | `{ key }` | `{ ok, run, work }` | aborts observation with the ladder of JEV1 §4.7; never undoes a send |
+| `jev_open` | `{ url, goals?, screenshots?: false, record_dir? }` | `{ instanceId }` | in-process Agent (JEV1 §4.4); replaces `jev_create` |
+| `jev_run`, `jev_snapshot`, `jev_command`, `jev_close` | as today (`packages/hud-mcp/src/jev-tools.ts:26-67`) | as today; `jev_run` yields are published on the subscription | in-process; one instance is serial; `jev_list` folds into `hud_list` |
 
 Codex `_meta`, Claude `claudecode/toolUseId` and Pi call ids are accepted on every call; nothing in `arguments`
-selects an owner. Error codes: `depth_limit`, `child_busy`, `host_unavailable`, `invalid_arguments`,
-`child_not_found`, `request_not_found`, `jev_python_not_found`.
+selects an owner. Error codes: `depth_limit`, `child_busy`, `host_unavailable`, `host_shutting_down`,
+`host_incompatible`, `invalid_arguments` (with `carrier_mismatch` detail), `identity_unavailable`, `source_mismatch`,
+`limit_exceeded`, `child_not_found`, `child_record_unavailable`, `request_not_found`, `jev_credentials_missing`,
+`ask_queue_full`, `ask_limit`, `browser_busy`.
