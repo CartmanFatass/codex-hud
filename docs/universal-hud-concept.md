@@ -731,6 +731,8 @@ Preserve all current source/identity/captured-generation checks, non-enforcing t
 | 运行前确认（F6） | 项目与现场工作流须 `plan` → 确认后启动；`workflows.confirm` 可配置 |
 | 缓存状态 | 子会话给出缓存估计（warm / expiring / expired / unknown），调用方决定复用或新开；TUI 由设置控制显示；各 provider 的 TTL 默认值待验证 |
 
+摘要模型回复缓存（同日，Jacob）：恢复 main 的位置 `<dir>/cache.json`，与 main 保持一致；分支 B17（7f07c5a）改到 `materials-v1/replies/cache.json` 的做法随 native-hud-v2 §4.2(1) 的材料边界替换一并撤回，届时相关测试改回构造生产 `SmallModel` 并沿用 main 的断言。
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
