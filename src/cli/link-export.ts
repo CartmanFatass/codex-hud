@@ -15,6 +15,7 @@ export const EXPORT_HELP = `${EXPORT_USAGE}
        hud digest --help          Summarize one explicitly selected completed report
        hud run --help
        hud cache show [--json]
+       hud roster --help           List, show, or select a session roster preset
        hud migrate --help         Preview, apply or restore compatible settings
        hud codex [ARG ...]          Existing codex-hud compatibility launcher
 

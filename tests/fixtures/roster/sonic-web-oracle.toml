@@ -1,0 +1,30 @@
+schema = 1
+default_preset = "daily"
+
+[backends.cli]
+executor = "herdr"
+harness = "pi"
+model = "synthetic-flash"
+
+[backends.web]
+executor = "jev"
+target = "aistudio"
+
+[backends.page]
+executor = "jev"
+target = "browser"
+
+[jev_decisions.typesafe-default]
+provider = "typesafe"
+
+[presets.daily]
+description = "Synthetic preset."
+jev_decisions = "typesafe-default"
+
+[presets.daily.roles]
+"oracle.propose" = "web"
+"oracle.converge" = "cli"
+imp = "cli"
+reviewer = "cli"
+sonic = "web"
+jev = "page"

@@ -152,31 +152,17 @@ test('source configuration accepts minimal native fields and never applies old r
   assert.equal(profile.source.label, 'native');
 });
 
-test('installed delegation skill examples match the native tool schemas and current waiter interface', async () => {
+test('delegation skill is the fixed-role roster skill', async () => {
   const { readFileSync } = await import('node:fs');
   const { resolve } = await import('node:path');
-  const { JEV_TOOLS } = await import('../../packages/hud-mcp/src/jev-tools.js');
   const skill = readFileSync(resolve('integrations/skills/hud-delegate/SKILL.md'), 'utf8');
-  const definitions = [...MANAGED_TOOLS, ...JEV_TOOLS];
-  const names = new Set(definitions.map((tool) => tool.name));
-  for (const match of skill.matchAll(/\b(?:managed|jev)_[a-z]+\b/g))
-    assert.ok(names.has(match[0]), `documented tool ${match[0]} exists`);
-  let examples = 0;
-  for (const match of skill.matchAll(/```json\s*([\s\S]*?)```/g)) {
-    const example = JSON.parse(match[1]) as { tool: string; arguments: unknown };
-    const definition = definitions.find((tool) => tool.name === example.tool);
-    assert.ok(definition, `example tool ${example.tool} exists`);
-    assert.equal(validateToolArguments(definition, example.arguments), true, example.tool);
-    examples++;
-  }
-  assert.ok(examples >= 3);
-  assert.match(skill, /backgroundWaiter\.argv/);
-  assert.match(skill, /--native-owner/);
-  assert.match(skill, /--after-seq/);
-  assert.match(skill, /truncated:true/);
-  assert.match(skill, /nativeAcknowledged:false/);
-  assert.doesNotMatch(
-    skill,
-    /delegate_spawn|delegate_wait|delegate_report|delegate_resume|delegate_close|request_key|owner-generation/
-  );
+  for (const role of ['oracle', 'imp', 'reviewer', 'sonic', 'jev']) assert.match(skill, new RegExp(`\\b${role}\\b`));
+  assert.match(skill, /oracle\.propose/);
+  assert.match(skill, /oracle\.converge/);
+  assert.match(skill, /hud roster show/);
+  assert.match(skill, /The main session owns every handoff/);
+  assert.match(skill, /herdr \/ jev recipes/);
+  assert.match(skill, /source: default \(no session identity\)/);
+  assert.doesNotMatch(skill, /\b(?:managed|jev)_[a-z]+\b/);
+  assert.doesNotMatch(skill, /delegate_spawn|delegate_wait|delegate_report|workflow_plan|gpt-|grok-/);
 });

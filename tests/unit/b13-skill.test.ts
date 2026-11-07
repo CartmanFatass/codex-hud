@@ -15,8 +15,8 @@ const IMPLEMENTER = 'integrations/skills/hud-delegate/roles/implementer.md';
 const REVIEWER = 'integrations/skills/hud-delegate/roles/reviewer.md';
 const HANDOFF = 'integrations/skills/hud-handoff/SKILL.md';
 
-/** The current native skill plus retained historical role/handoff documents. */
-const SKILL_FILES = [PARENT, IMPLEMENTER, REVIEWER, HANDOFF];
+/** Retained historical role and handoff documents. The parent file is the fixed-role roster skill. */
+const HISTORICAL_SKILL_FILES = [IMPLEMENTER, REVIEWER, HANDOFF];
 
 /** Design §6: sections mandatory and in this order. */
 const HANDOFF_SECTIONS = [
@@ -212,34 +212,55 @@ test('B13 docs/delegate.example.json loads through the shipped delegate.json val
   }
 });
 
-test('B13 current native and historical skill documents use only their own shipped tools and argument keys', () => {
-  for (const path of SKILL_FILES) checkDocument(path, read(path), MINIMUM.get(path)!);
+test('B13 historical role and handoff documents use only their shipped tools and argument keys', () => {
+  for (const path of HISTORICAL_SKILL_FILES) checkDocument(path, read(path), MINIMUM.get(path)!);
 });
 
+/**
+ * Synthetic native-tool corpus. The installed parent skill no longer carries these
+ * calls; this fixture keeps the scanner's typo checks above a non-zero floor.
+ */
+const NATIVE_SCANNER_CORPUS = [
+  'managed_list managed_status managed_read managed_wait managed_requests managed_respond',
+  'managed_cancel managed_close managed_create managed_send managed_ask',
+  'jev_create jev_run jev_snapshot jev_command jev_list jev_close',
+  'managed_wait{connectionId, afterSeq, waitMs}',
+  'managed_create{profileId, workspace, origin}',
+  'managed_send{connectionId, text}',
+  'managed_read{connectionId, options}',
+  'managed_respond{connectionId, requestId, result}',
+  'managed_cancel{connectionId, nativeTurnId}',
+  'managed_close{connectionId}',
+  'managed_ask{connectionId, text, waitMs}',
+  'managed_status{connectionId}',
+  'jev_run{instanceId}',
+  'jev_create{url, goals}',
+].join('\n');
+
 test('B13 scanner rejects suffix typos, case typos, key typos and empty documents', () => {
-  const parent = read(PARENT);
+  const parent = NATIVE_SCANNER_CORPUS;
   const minimum = MINIMUM.get(PARENT)!;
   const suffix = parent.replaceAll('managed_wait', 'managed_waitX');
-  assert.notEqual(suffix, parent, 'the parent skill must mention managed_wait for this control');
+  assert.notEqual(suffix, parent, 'the scanner corpus must mention managed_wait for this control');
   assert.throws(() => checkDocument(PARENT, suffix, minimum), /unknown tool/);
   const casing = parent.replaceAll('managed_wait', 'Managed_Wait');
-  assert.notEqual(casing, parent, 'the parent skill must mention managed_wait for this control');
+  assert.notEqual(casing, parent, 'the scanner corpus must mention managed_wait for this control');
   assert.throws(() => checkDocument(PARENT, casing, minimum), /unknown tool/);
   const key = parent.replaceAll('afterSeq', 'afterSeqX');
-  assert.notEqual(key, parent, 'the parent skill must mention afterSeq for this control');
+  assert.notEqual(key, parent, 'the scanner corpus must mention afterSeq for this control');
   assert.throws(() => checkDocument(PARENT, key, minimum), /unknown managed_wait argument/);
   assert.throws(() => checkDocument(PARENT, '', minimum), /expected at least/);
   const historical = parent.replaceAll('managed_wait', 'delegate_wait');
   assert.throws(() => checkDocument(PARENT, historical, minimum), /unknown tool/);
   const jevTypo = parent.replaceAll('jev_run', 'jev_runX');
-  assert.notEqual(jevTypo, parent, 'the native skill must cover Jev');
+  assert.notEqual(jevTypo, parent, 'the scanner corpus must cover Jev');
   assert.throws(() => checkDocument(PARENT, jevTypo, minimum), /unknown tool/);
 });
 
 test('B13 skill inline codes match the appropriate shipped API or documented native event', () => {
   const codes = shippedRefusalCodes();
   const adapters = shippedWakeAdapters();
-  for (const path of SKILL_FILES) {
+  for (const path of HISTORICAL_SKILL_FILES) {
     const tools = documentCatalog(path);
     // Native result/event names are protocol vocabulary, not historical MCP refusal codes.
     const nativeEvents = new Set(['agent_end', 'agent_settled']);
@@ -253,6 +274,34 @@ test('B13 skill inline codes match the appropriate shipped API or documented nat
         `${path} names a code or key the shipped MCP does not return: ${token}`
       );
     }
+  }
+});
+
+test('R1 delegation skill states the fixed roles, the recipes, and roster lookup', () => {
+  const text = read(PARENT);
+  for (const role of ['oracle', 'imp', 'reviewer', 'sonic', 'jev']) assert.match(text, new RegExp(`\\b${role}\\b`));
+  assert.match(text, /oracle\.propose/);
+  assert.match(text, /oracle\.converge/);
+  assert.match(text, /hud roster show/);
+  assert.match(text, /The main session owns every handoff/);
+  assert.match(text, /Dispatch with the existing herdr \/ jev recipes using the resolved binding/);
+  assert.match(text, /Arm the returned wait mechanism/);
+  assert.match(text, /read results when notified/);
+  assert.match(text, /question channel/);
+  assert.match(text, /indicated location/);
+  assert.match(text, /Keep request keys stable/);
+  assert.match(text, /never blindly re-create an uncertain launch/);
+  assert.match(text, /source: default \(no session identity\)/);
+  assert.doesNotMatch(text, /\bR\d\b/);
+  assert.match(text, /Design\./);
+  assert.match(text, /Build\./);
+  assert.match(text, /Small task\./);
+  assert.match(text, /Browser task\./);
+  assert.doesNotMatch(text, /```json/);
+  assert.doesNotMatch(text, /\b(?:managed|delegate|jev)_[A-Za-z0-9_]+\b/);
+  assert.doesNotMatch(text, /gpt-|grok-|claude-|opus|workflow_plan|workflow_start|selector/i);
+  for (const match of stripFences(text).matchAll(INLINE_CODE)) {
+    assert.equal(SNAKE_CASE.test(match[1]), false, `${PARENT} has a snake_case code: ${match[1]}`);
   }
 });
 

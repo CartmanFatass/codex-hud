@@ -1,0 +1,63 @@
+schema = 1
+default_preset = "daily"
+
+[backends.cli]
+executor = "herdr"
+harness = "pi"
+model = "synthetic-flash"
+effort = "max"
+recipe = "pi-implementer"
+
+[backends.alt]
+executor = "herdr"
+harness = "claude"
+model = "synthetic-opus"
+effort = "high"
+recipe = "claude-review"
+
+[backends.web]
+executor = "jev"
+target = "aistudio"
+mode = "argon"
+
+[backends.page]
+executor = "jev"
+target = "browser"
+
+[backends.spare]
+executor = "herdr"
+harness = "codex"
+model = "synthetic-luna"
+effort = "medium"
+env_profile = "synthetic-account"
+
+[jev_decisions.typesafe-default]
+provider = "typesafe"
+
+[jev_decisions.unused-openai]
+provider = "openai"
+model = "synthetic-luna"
+
+[presets.daily]
+description = "Synthetic daily preset."
+jev_decisions = "typesafe-default"
+
+[presets.daily.roles]
+"oracle.propose" = "web"
+"oracle.converge" = "cli"
+imp = "cli"
+reviewer = "alt"
+sonic = "cli"
+jev = "page"
+
+[presets.other]
+description = "Synthetic alternate preset."
+jev_decisions = "typesafe-default"
+
+[presets.other.roles]
+"oracle.propose" = "web"
+"oracle.converge" = "web"
+imp = "alt"
+reviewer = "alt"
+sonic = "cli"
+jev = "page"

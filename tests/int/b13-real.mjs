@@ -19,6 +19,10 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
+// Retired: the fixed-role roster skill replaced the native skill this probe fed to a paid Codex child.
+process.stdout.write('SKIP B13 real model probe (retired: parent skill is the fixed-role roster skill)\n');
+process.exit(0);
+
 if (process.env.B13_REAL !== '1') {
   process.stdout.write('SKIP B13 real model probe (set B13_REAL=1 to opt in)\n');
   process.exit(0);

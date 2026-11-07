@@ -1,0 +1,92 @@
+# Synthetic roster for the fixed roles. Names are profile labels.
+# Credentials, home directories, and account paths stay out of this file.
+# env_profile is a name the launch recipe already knows.
+# Target model and Jev decision model are separate fields.
+
+schema = 1
+default_preset = "daily"
+
+[backends.argon]
+executor = "jev"
+target = "aistudio"
+mode = "argon"
+
+[backends.pro]
+executor = "jev"
+target = "chatgpt-pro"
+mode = "pro"
+model = "GPT-6"
+
+[backends.grok-build]
+executor = "herdr"
+harness = "grok"
+model = "grok-4.7"
+effort = "high"
+recipe = "grok-build"
+
+[backends.claude-opus]
+executor = "herdr"
+harness = "claude"
+model = "opus"
+effort = "high"
+recipe = "claude-review"
+
+[backends.pi-fast]
+executor = "herdr"
+harness = "pi"
+model = "mistral/deepseek-v4-1-flash-1017"
+effort = "max"
+recipe = "pi-implementer"
+
+[backends.pi-imp]
+executor = "herdr"
+harness = "pi"
+model = "mistral/deepseek-v4-1-flash-1017"
+effort = "max"
+recipe = "pi-implementer"
+
+[backends.jev-local]
+executor = "jev"
+target = "browser"
+
+[backends.codex-test]
+executor = "herdr"
+harness = "codex"
+model = "gpt-6-luna"
+effort = "medium"
+recipe = "codex-test"
+env_profile = "codex2"
+
+[backends.codex-test.args]
+service_tier = "default"
+
+[jev_decisions.typesafe-default]
+provider = "typesafe"
+
+[jev_decisions.openai-decisions]
+provider = "openai"
+model = "gpt-6-luna"
+
+[presets.daily]
+description = "Web oracles, Grok implementer, Claude review, Pi for small work, local browser."
+jev_decisions = "typesafe-default"
+
+[presets.daily.roles]
+"oracle.propose" = "argon"
+"oracle.converge" = "pro"
+imp = "grok-build"
+reviewer = "claude-opus"
+sonic = "pi-fast"
+jev = "jev-local"
+
+[presets.pi-build]
+description = "Daily oracles and review, with the Pi implementer on imp."
+jev_decisions = "typesafe-default"
+
+[presets.pi-build.roles]
+"oracle.propose" = "argon"
+"oracle.converge" = "pro"
+imp = "pi-imp"
+reviewer = "claude-opus"
+sonic = "pi-fast"
+jev = "jev-local"
