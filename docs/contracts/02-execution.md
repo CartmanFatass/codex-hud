@@ -1,5 +1,9 @@
 # 02：执行协议与 ledger schema v1
 
+> **2026-11-07 新路径取代说明（用户已批准实施，验收未完成）：** [本机官方会话与 MCP 薄接口架构](../architecture/simplified-harness-architecture.md) 是新默认路径的依据。本文以下旧 ledger/run/report/claim/slot、supervision/retirement、资格矩阵与持久恢复政策仅用于理解旧实现及只读历史，不能约束或重新进入新路径。批准实施不等于真实 provider、恢复、父退出存活或通知已经验收。原生会话隔离、明确动作授权、原生事实与已有显示/总结能力仍保留。
+
+> **本契约的新边界：** 发送一次官方输入并保留原生 turn/request ID；不建立 task/operation 状态，不以 report/handover/验收标志决定下一轮，也不自动重发。原生请求回原调用会话，由其模型和 harness 决定响应。
+
 - 版本：`v0.4 draft`（2026-11-01；Oracle C01–C14、D01–D13 修订）。
 - 状态：A1 第一批草案；A9 通过不变量、失败案例、进程实证与探针后才可冻结，不能以“意见已采纳”代替验收。
 - depends-on：[01 身份](./01-identity.md)；[概念方案 v2.3](../universal-hud-concept.md) §6.6、§6.11、§15–16；[工程计划 v1.1](../universal-hud-engineering-plan.md) §3–4、§6；[第三轮评审](../reviews/2026-11-01-chatgpt-pro-v22-plan.md) §3②、§6。03 拥有完整 link/run/report 生命周期，04 拥有 supervisor 实现和回执格式；它们必须遵守本协议的证据门槛。

@@ -301,7 +301,7 @@ test('Claude production matcher admits only exact synthetic plan, pins argv and 
   }
 });
 
-test('hud claude routes through the production matcher and refuses the unchanged empty shipped manifest', async () => {
+test('hud claude launches natively without requiring a reviewed or shipped manifest', async () => {
   const f = await launchFixture();
   try {
     writeFileSync(join(f.root, 'delegate.json'), JSON.stringify({ version: 1, profiles: [f.input.profile] }));
@@ -339,20 +339,24 @@ test('hud claude routes through the production matcher and refuses the unchanged
       }),
       0
     );
-    await assert.rejects(
-      claudeCommand([], f.root, io, {
+    assert.equal(
+      await claudeCommand([], f.root, io, {
         production: {
-          observe: async () => f.startup,
-          configuration: () => ({ observation: f.input.configuration, reason: null }),
+          observe: async () => {
+            throw new Error('must not inspect machine qualification');
+          },
+          manifest: () => {
+            throw new Error('must not inspect release manifest');
+          },
         },
         launch: async () => {
           launches++;
           return 0;
         },
       }),
-      /capability_unverified/
+      0
     );
-    assert.equal(launches, 1);
+    assert.equal(launches, 2);
     assert.deepEqual(readdirSync(f.root), ['delegate.json']);
   } finally {
     f.close();

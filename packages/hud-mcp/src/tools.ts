@@ -1,4 +1,8 @@
-import { validateRequestKey } from '../../../src/core/execution.js';
+// Legacy definitions remain for historical callers, never the default native entry.
+function validateRequestKey(value: string): void {
+  if (typeof value !== 'string' || Array.from(value).length < 1 || Array.from(value).length > 256)
+    throw new Error('invalid_request_key');
+}
 import { object } from './io.js';
 export interface ToolDefinition {
   name: string;
@@ -91,8 +95,12 @@ export const TOOLS: ToolDefinition[] = [
   tool(
     'delegate_close',
     'End a confirmed current-owned headless delegation after proven termination. Acceptance may remain pending; replay returns the original outcome without advancing cleanup. Read status for progress. No visible surface close or reopening.',
-    { linkId: string, expectedRun: runId, request_key: { ...string, maxLength: 256 },
-      grace: { type: 'integer', minimum: 0, maximum: 60000 } },
+    {
+      linkId: string,
+      expectedRun: runId,
+      request_key: { ...string, maxLength: 256 },
+      grace: { type: 'integer', minimum: 0, maximum: 60000 },
+    },
     ['linkId', 'expectedRun', 'request_key']
   ),
   tool(
@@ -119,37 +127,119 @@ export const TOOLS: ToolDefinition[] = [
     ['runId', 'status', 'summary']
   ),
 ];
-function valid(value: unknown, schema: Record<string, unknown>): boolean {
-  if (schema.type === 'string')
+/** Transport bounds, not native response policy. The native harness interprets every JSON field. */
+export const JSON_VALUE_SCHEMA: Record<string, unknown> = {
+  type: ['object', 'array', 'string', 'number', 'boolean', 'null'],
+  maxLength: 65536,
+  maxItems: 1024,
+  maxProperties: 1024,
+  items: { $ref: '#/$defs/jsonValue' },
+  additionalProperties: { $ref: '#/$defs/jsonValue' },
+};
+const MAX_ARGUMENT_DEPTH = 32;
+const MAX_ARGUMENT_VALUES = 8192;
+const MAX_ARGUMENT_BYTES = 262144;
+interface ValidationBudget {
+  values: number;
+  bytes: number;
+}
+function valid(
+  value: unknown,
+  schema: Record<string, unknown>,
+  root: Record<string, unknown>,
+  budget: ValidationBudget,
+  depth = 0
+): boolean {
+  if (depth > MAX_ARGUMENT_DEPTH || ++budget.values > MAX_ARGUMENT_VALUES) return false;
+  if (schema.$ref !== undefined) {
+    // Only a local definition is supported. No external schemas or arbitrary object traversal.
+    const match = typeof schema.$ref === 'string' && /^#\/\$defs\/([A-Za-z0-9_]+)$/.exec(schema.$ref);
+    if (!match || !object(root.$defs) || !Object.hasOwn(root.$defs, match[1])) return false;
+    const resolved = root.$defs[match[1]];
+    if (!object(resolved) || resolved.$ref !== undefined) return false;
+    schema = resolved;
+  }
+  let type = schema.type;
+  if (Array.isArray(type)) {
+    const actual = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+    if (!type.includes(actual)) return false;
+    type = actual;
+  }
+  if (type === 'string') {
+    if (typeof value !== 'string') return false;
+    budget.bytes += Buffer.byteLength(JSON.stringify(value));
     return (
-      typeof value === 'string' &&
+      budget.bytes <= MAX_ARGUMENT_BYTES &&
       (schema.minLength === undefined || [...value].length >= (schema.minLength as number)) &&
       (schema.maxLength === undefined || [...value].length <= (schema.maxLength as number)) &&
       (schema.pattern === undefined || new RegExp(schema.pattern as string).test(value)) &&
       (!Array.isArray(schema.enum) || schema.enum.includes(value))
     );
-  if (schema.type === 'integer' || schema.type === 'number')
+  }
+  budget.bytes += typeof value === 'number' ? String(value).length : 5;
+  if (budget.bytes > MAX_ARGUMENT_BYTES) return false;
+  if (type === 'null') return value === null;
+  if (type === 'boolean') return typeof value === 'boolean';
+  if (type === 'integer' || type === 'number')
     return (
       typeof value === 'number' &&
       Number.isFinite(value) &&
-      (schema.type !== 'integer' || Number.isSafeInteger(value)) &&
+      (type !== 'integer' || Number.isSafeInteger(value)) &&
       (schema.minimum === undefined || value >= (schema.minimum as number)) &&
       (schema.maximum === undefined || value <= (schema.maximum as number))
     );
-  if (schema.type === 'array')
-    return (
-      Array.isArray(value) &&
-      value.length >= ((schema.minItems as number) || 0) &&
-      (!schema.uniqueItems || new Set(value).size === value.length) &&
-      value.every((v) => valid(v, schema.items as Record<string, unknown>))
-    );
+  if (type === 'array') {
+    if (
+      !Array.isArray(value) ||
+      value.length < ((schema.minItems as number) || 0) ||
+      (schema.maxItems !== undefined && value.length > (schema.maxItems as number)) ||
+      (schema.uniqueItems && new Set(value).size !== value.length) ||
+      !object(schema.items) ||
+      Object.getOwnPropertyNames(value).length !== value.length + 1
+    )
+      return false;
+    budget.bytes += value.length;
+    for (let index = 0; index < value.length; index++) {
+      const property = Object.getOwnPropertyDescriptor(value, String(index));
+      if (
+        !property ||
+        !Object.hasOwn(property, 'value') ||
+        !valid(property.value, schema.items, root, budget, depth + 1)
+      )
+        return false;
+    }
+    return budget.bytes <= MAX_ARGUMENT_BYTES && Object.getOwnPropertySymbols(value).length === 0;
+  }
+  if (type === 'object') {
+    if (!object(value) || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) return false;
+    const keys = Object.keys(value);
+    const properties = object(schema.properties) ? schema.properties : {};
+    if (
+      (schema.maxProperties !== undefined && keys.length > (schema.maxProperties as number)) ||
+      (Array.isArray(schema.required) &&
+        schema.required.some((key) => typeof key !== 'string' || !Object.hasOwn(value, key))) ||
+      Object.getOwnPropertySymbols(value).length !== 0 ||
+      Object.getOwnPropertyNames(value).length !== keys.length
+    )
+      return false;
+    for (const key of keys) {
+      budget.bytes += Buffer.byteLength(JSON.stringify(key)) + 2;
+      if (budget.bytes > MAX_ARGUMENT_BYTES) return false;
+      const property = Object.getOwnPropertyDescriptor(value, key)!;
+      const child = Object.hasOwn(properties, key) ? properties[key] : schema.additionalProperties;
+      if (!Object.hasOwn(property, 'value') || !object(child) || !valid(property.value, child, root, budget, depth + 1))
+        return false;
+    }
+    return true;
+  }
   return false;
 }
 export function validateToolArguments(definition: ToolDefinition, args: unknown): boolean {
   if (!object(args)) return false;
   const properties = definition.inputSchema.properties as Record<string, Record<string, unknown>>;
-  if ((definition.inputSchema.required as string[]).some((k) => !Object.hasOwn(args, k))) return false;
-  if (Object.entries(args).some(([k, v]) => !Object.hasOwn(properties, k) || !valid(v, properties[k]))) return false;
+  // The outer tool envelope always rejects unadvertised arguments, including target/owner hints.
+  if (Object.keys(args).some((key) => !Object.hasOwn(properties, key))) return false;
+  if (!valid(args, definition.inputSchema, definition.inputSchema, { values: 0, bytes: 0 })) return false;
   if (definition.name === 'delegate_wait' || definition.name === 'delegate_status')
     if (Object.hasOwn(args, 'runId') === Object.hasOwn(args, 'linkId')) return false;
   if (Object.hasOwn(args, 'request_key'))

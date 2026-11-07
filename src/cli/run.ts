@@ -33,7 +33,7 @@ export const RUN_USAGE = new Map([
   [
     'wait',
     `hud run wait (<runId> | --link <linkId>) [--after-seq N] [--until report,run_terminal,uncertain]
-                    [--owner-generation N] [--timeout-ms ms] [--notify | --json]`,
+                    [--owner-generation N] [--timeout-ms ms] [--notify | --json]\n       hud run wait --native-owner JSON [--connection ID] [--after-seq N] [--timeout-ms ms] [--notify | --json]`,
   ],
 ]);
 
@@ -41,7 +41,11 @@ export const RUN_HELP = `Usage: ${[...RUN_USAGE.values()].join('\n       ')}
 
 Use an existing absolute, canonical, private HUD_HOME owned by this uid (default ~/.hud).
 Resume uses the original B4 writer and requires verified capability evidence. It never impersonates the parent.
-Wait is read-only, defaults to 2 hours, and checks the parent process every 2 seconds; ledger/watch recovery is every 29 seconds.
+Native wait observes the authenticated owner's host result/request pointers, not ledger task state.
+Run it through Claude's native background-task facility for task notifications; MCP output alone does not wake Claude.
+Use --json to receive throughSeq and pass your previous cursor with --after-seq on the next wait.
+Native wait timeout, interrupt or frontend disconnect never cancels the child backend.
+Legacy wait is read-only, defaults to 2 hours, and checks the parent process every 2 seconds; ledger/watch recovery is every 29 seconds.
 Wait JSON emits one metadata page; event bodies and paths are omitted. Drain with runId/nextSeq while hasMore=true.
 Notify emits one bounded line; use your own delegate_wait cursor. A deadline is not cancellation.
 Visible cancellation currently accepts intent but cannot deliver a signal; stop the run in its pane.

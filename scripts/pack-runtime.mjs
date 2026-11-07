@@ -18,25 +18,72 @@ import {
 } from './runtime-package/safety.mjs';
 import { HELPERS, DEPENDENCIES, INSTALLER_FILES, verifyBundle } from './runtime-package/manifest.mjs';
 
+import { OMITTED_OPTIONAL_DEPENDENCIES, PRODUCTION_LOCK_SHA256 } from './runtime-package/dependencies.mjs';
+
 export function validateLock(lock) {
   if (lock.lockfileVersion !== 3) throw new Error('lockfile_v3_required');
   const prod = Object.entries(lock.packages).filter(([name, value]) => name && !value.dev);
-  if (prod.length !== 3) throw new Error('unreviewed_production_dependency_closure');
-  for (const [name, version] of Object.entries(DEPENDENCIES)) {
+  const reviewed = { ...DEPENDENCIES, ...OMITTED_OPTIONAL_DEPENDENCIES };
+  if (
+    prod.length !== Object.keys(reviewed).length ||
+    prod.some(([name]) => !Object.hasOwn(reviewed, name.replace(/^node_modules\//, '')))
+  )
+    throw new Error('unreviewed_production_dependency_closure');
+  for (const [name, version] of Object.entries(reviewed)) {
     const value = lock.packages[`node_modules/${name}`];
-    const basename = name.split('/').at(-1);
+    const packageName = name.split('/node_modules/').at(-1);
+    const basename = packageName.split('/').at(-1);
     if (
       !value ||
       value.version !== version ||
-      value.resolved !== `https://registry.npmjs.org/${name}/-/${basename}-${version}.tgz` ||
+      value.resolved !== `https://registry.npmjs.org/${packageName}/-/${basename}-${version}.tgz` ||
       !/^sha512-[A-Za-z0-9+/]+=*$/.test(value.integrity) ||
       value.link ||
       value.hasInstallScript
     )
       throw new Error('unreviewed_dependency_lock');
   }
+  if (digest(JSON.stringify(prod)) !== PRODUCTION_LOCK_SHA256) throw new Error('unreviewed_dependency_lock_metadata');
   return DEPENDENCIES;
 }
+
+// Inspect only the exact reviewed installation layout; no arbitrary package walk.
+export function validateInstalledClosure(nodeModules) {
+  const expected = new Map();
+  for (const name of Object.keys(DEPENDENCIES)) {
+    const split = name.lastIndexOf('/node_modules/');
+    const parent = split < 0 ? '' : name.slice(0, split + '/node_modules/'.length);
+    const local = split < 0 ? name : name.slice(split + '/node_modules/'.length);
+    if (!expected.has(parent)) expected.set(parent, []);
+    expected.get(parent).push(local);
+  }
+  for (const [parent, names] of expected) {
+    const root = path.join(nodeModules, parent);
+    const tops = [...new Set(names.map((name) => name.split('/')[0]))].sort();
+    const actual = listNames(root, 200)
+      .filter((name) => name !== '.package-lock.json')
+      .sort();
+    if (JSON.stringify(actual) !== JSON.stringify(tops)) throw new Error('unexpected_dependency_tree');
+    for (const top of tops) {
+      if (!fs.lstatSync(path.join(root, top)).isDirectory()) throw new Error('unsafe_dependency_directory');
+      if (top.startsWith('@')) {
+        const leaves = names
+          .filter((name) => name.startsWith(`${top}/`))
+          .map((name) => name.slice(top.length + 1))
+          .sort();
+        if (JSON.stringify(listNames(path.join(root, top), 200).sort()) !== JSON.stringify(leaves))
+          throw new Error('unexpected_scope_tree');
+      }
+    }
+    for (const name of names) {
+      const location = `${parent}${name}`;
+      if (!fs.lstatSync(path.join(nodeModules, location)).isDirectory()) throw new Error('unsafe_dependency_directory');
+      const pkg = JSON.parse(readBuildInput(nodeModules, `${location}/package.json`).data);
+      if (pkg.name !== name || pkg.version !== DEPENDENCIES[location]) throw new Error('dependency_identity_mismatch');
+    }
+  }
+}
+
 export async function runOwned(name, executable, args, cwd, env, out, timeoutMs = 180000) {
   const started = Date.now();
   const startedAt = new Date(started).toISOString();
@@ -263,7 +310,7 @@ export async function buildRuntime() {
     await step(
       'runtime-production-ci',
       'npm',
-      ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund'],
+      ['ci', '--omit=dev', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund', '--bin-links=false'],
       deps
     );
     const stage = path.join(out, 'runtime');
@@ -320,26 +367,21 @@ export async function buildRuntime() {
         'Application code and locked Node production dependencies only. No live capability qualification.';
       add(source, json(manifest), false, source);
     }
-    const installedNames = fs
-      .readdirSync(path.join(deps, 'node_modules'))
-      .filter((name) => name !== '.package-lock.json')
-      .sort();
-    if (JSON.stringify(installedNames) !== JSON.stringify(['@iarna', 'chokidar', 'readdirp']))
-      throw new Error('unexpected_dependency_tree');
-    if (JSON.stringify(listNames(path.join(deps, 'node_modules/@iarna'), 1)) !== JSON.stringify(['toml']))
-      throw new Error('unexpected_scope_tree');
+    validateInstalledClosure(path.join(deps, 'node_modules'));
     for (const name of Object.keys(DEPENDENCIES)) {
       const pkg = path.join(deps, 'node_modules', name);
       let hasLicense = false;
       let count = 0;
       function walk(directory, prefix = '') {
-        for (const file of listNames(directory, 1000)) {
-          if (++count > 1000) throw new Error('dependency_entry_limit');
+        for (const file of listNames(directory, 4000)) {
+          if (++count > 4000) throw new Error('dependency_entry_limit');
           const rel = prefix ? `${prefix}/${file}` : file;
           const full = path.join(directory, file);
           const stat = fs.lstatSync(full);
-          if (stat.isDirectory()) walk(full, rel);
-          else if (stat.isFile() && stat.nlink === 1 && stat.size <= MAX_FILE) {
+          if (stat.isDirectory()) {
+            // Nested packages are separately verified/copied by their lock paths.
+            if (rel !== 'node_modules') walk(full, rel);
+          } else if (stat.isFile() && stat.nlink === 1 && stat.size <= MAX_FILE) {
             if (/^licen[sc]e(?:\..*)?$/i.test(rel)) hasLicense = true;
             add(
               `node_modules/${name}/${rel}`,
@@ -372,9 +414,9 @@ export async function buildRuntime() {
       builtWithNode: process.versions.node,
       dependencies: DEPENDENCIES,
       provenance:
-        'Tracked allowlisted sources, fresh TypeScript builds and isolated npm ci --omit=dev --ignore-scripts with lockfile integrity. Not a publisher signature.',
+        'Tracked allowlisted sources, fresh TypeScript builds and isolated npm ci --omit=dev --omit=optional --ignore-scripts with lockfile integrity. Not a publisher signature.',
       capabilityLimitation:
-        'No live-provider, tmux, Jev, native-platform or release qualification. Capability manifests are preserved; packaging grants no capabilities. Node is not bundled. Legacy wrapper also needs bash, tmux, Codex, Python3 and Unix tools.',
+        'No live-provider, tmux, Jev, native-platform or release qualification. Historical capability manifests grant no capabilities and do not gate the native path. Node and harness executables are not bundled. Claude uses its installed user executable; SDK optional platform clients are omitted. Jev needs Python3 and its external Agent package. Legacy wrapper also needs bash, tmux and Unix tools.',
       entries,
     };
     fs.writeFileSync(path.join(stage, 'RUNTIME-MANIFEST.json'), json(manifest), { mode: 0o600, flag: 'wx' });

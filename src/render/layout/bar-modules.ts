@@ -1,3 +1,4 @@
+import { nativeCallsOnly } from '../../core/link/view-model.js';
 import { hudProblems } from '../hud-diagnostics.js';
 /**
  * The status bar's fields, each one declared with its importance and with
@@ -626,14 +627,15 @@ export function buildBarModules(data: HudData & HudDelegationData, options: BarM
   const words = options.words ?? iconSet() === 'text';
   const allowed = new Set<string>(DENSITY_MODULES[density] ?? DENSITY_MODULES.balanced);
   // No delegation tree, or none loaded: everything below is the bar as it always was.
-  const delegation: DelegationBar | null = data.delegation
-    ? {
-        vm: data.delegation,
-        ascii: useAscii(options.ascii),
-        backends: density === 'full' && (options.width ?? 0) >= BACKEND_COUNTS_FROM,
-        countsOnly: density === 'focus',
-      }
-    : null;
+  const delegation: DelegationBar | null =
+    data.delegation && !nativeCallsOnly(data.delegation)
+      ? {
+          vm: data.delegation,
+          ascii: useAscii(options.ascii),
+          backends: density === 'full' && (options.width ?? 0) >= BACKEND_COUNTS_FROM,
+          countsOnly: density === 'focus',
+        }
+      : null;
   // The focus density has no `agents` field, but with a delegation tree its counts are what the user asked the
   // bar to keep in view (design §4.1, 80-column sample; rulings B10b s1 round 2, Q1). Without a tree it is untouched.
   if (delegation) allowed.add('agents');
@@ -647,7 +649,19 @@ export function buildBarModules(data: HudData & HudDelegationData, options: BarM
     quotaModule(data, nowMs),
     activityModule(data, words, nowMs),
     speedModule(data),
-    agentsModule(data, delegation),
+    (() => {
+      const module = agentsModule(data, delegation);
+      if (!nativeCallsOnly(data.delegation)) return module;
+      const calls = `Native calls ${data.delegation!.nativeCalls!.count}`;
+      return {
+        ...module,
+        variants: {
+          ...module.variants,
+          full: [module.variants.full, calls].filter(Boolean).join(' · '),
+          short: [module.variants.short, calls].filter(Boolean).join(' · '),
+        },
+      };
+    })(),
     tasksModule(data),
     ...(delegation ? [] : [attentionModule(data, nowMs)]),
     noticeModule(data, nowMs, delegation),

@@ -1,3 +1,4 @@
+import { DEPENDENCIES } from '../../src/core/runtime-dependencies.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -79,10 +80,10 @@ for (const kind of [
     }
     if (kind === 'duplicate') m.entries.push(m.entries[0]);
     if (kind === 'escape') m.entries[0].path = '../outside';
-    if (kind === 'oversize') m.entries[0].bytes = 2097153;
+    if (kind === 'oversize') m.entries[0].bytes = 4 * 1024 * 1024 + 1;
     if (kind === 'total')
-      m.entries = Array.from({ length: 26 }, (_, i) => ({ ...m.entries[0], path: `x${i}`, bytes: 2097152 }));
-    if (kind === 'too-many') m.entries = Array.from({ length: 5001 }, (_, i) => ({ ...m.entries[0], path: `x${i}` }));
+      m.entries = Array.from({ length: 49 }, (_, i) => ({ ...m.entries[0], path: `x${i}`, bytes: 2097152 }));
+    if (kind === 'too-many') m.entries = Array.from({ length: 12001 }, (_, i) => ({ ...m.entries[0], path: `x${i}` }));
     if (kind === 'mode') chmodSync(join(f.root, 'synthetic.js'), 0o644);
     if (kind === 'unknown') m.override = true;
     if (kind === 'bad-meta') m.provenance = { load: '/outside' };
@@ -119,7 +120,7 @@ test('runtime metadata uses the exact inert shared whitelist and primitive types
     nodeRequirement: '^22.13.0 || ^24.0.0',
     sourceContentSha256: 'd'.repeat(64),
     builtWithNode: '24.22.1-vendor.1+build.2',
-    dependencies: { '@iarna/toml': '2.2.5', chokidar: '5.0.0', readdirp: '5.0.0' },
+    dependencies: { ...DEPENDENCIES },
     capabilityLimitation: 'SIMULATED only',
   };
   f.save(valid);
@@ -132,7 +133,7 @@ test('runtime metadata uses the exact inert shared whitelist and primitive types
     repositorySha: ['a'.repeat(40)],
     repositoryTree: ['b'.repeat(40)],
     lockfileSha256: ['c'.repeat(64)],
-    dependencies: { '@iarna/toml': '2.2.5', chokidar: '5.0.0', readdirp: '5.0.0', other: '1.0.0' },
+    dependencies: { ...DEPENDENCIES, other: '1.0.0' },
     provenance: '\ud800',
     capabilityLimitation: 'bad\0text',
   })) {

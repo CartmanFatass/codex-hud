@@ -1,10 +1,12 @@
+import { MANAGED_TOOLS } from '../../packages/hud-mcp/src/managed-tools.js';
+import { JEV_TOOLS } from '../../packages/hud-mcp/src/jev-tools.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runNativeScenario } from '../fixtures/managed-native-runner.js';
 test(
-  'SIMULATED strict production matcher → DelegationService → hud-run → whoami/report → scope end and exact-session resume',
+  'SIMULATED explicit historical matcher → DelegationService → hud-run → whoami/report → scope end and exact-session resume',
   { timeout: 50000, skip: process.platform !== 'linux' },
   async (t) => {
+    const { runNativeScenario } = await import('../fixtures/managed-native-runner.js');
     const result = await runNativeScenario(true);
     assert.equal(result.dispatches, 2);
     t.diagnostic(JSON.stringify(result));
@@ -80,8 +82,11 @@ for (const kind of ['missing', 'malformed'] as const)
       assert.ok(received.get(1)?.result.serverInfo);
       assert.deepEqual(received.get(2)?.result, {});
       const frame = received.get(3);
-      assert.ok(frame.result.tools.some((tool: { name: string }) => tool.name === 'delegate_list'));
-      assert.ok(frame.result.tools.some((tool: { name: string }) => tool.name === 'delegate_status'));
+      const names = frame.result.tools.map((tool: { name: string }) => tool.name).sort();
+      assert.deepEqual(names, [...MANAGED_TOOLS, ...JEV_TOOLS].map((tool) => tool.name).sort());
+      assert.ok(names.includes('managed_list'));
+      assert.ok(names.includes('managed_read'));
+      assert.ok(!names.some((name: string) => name.startsWith('delegate_')));
       child.stdin.end();
       const end = await exit;
       assert.deepEqual(end, { code: 0, signal: null });
@@ -90,7 +95,19 @@ for (const kind of ['missing', 'malformed'] as const)
         JSON.stringify({ synthetic: true, kind, pid: child.pid, start: stamp, deadlineAt, end, alive: false })
       );
     } finally {
-      clearTimeout(timer);
-      lines.close();
+      // Assertion failures must not leave the default-main process waiting on stdin.
+      // These signals target only this test's ChildProcess, never a provider/host.
+      child.stdin.end();
+      const cleanupTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      }, 1000);
+      try {
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+        await exit;
+      } finally {
+        clearTimeout(cleanupTimer);
+        clearTimeout(timer);
+        lines.close();
+      }
     }
   });

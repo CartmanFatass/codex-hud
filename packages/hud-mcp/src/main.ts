@@ -1,30 +1,26 @@
+import { JevTools } from './jev-tools.js';
+import { nativeParentWakeTarget } from './wake-registration.js';
+import type { AuthenticatedToolExtension } from './server.js';
+import type { ProcessStamp } from '../../../src/core/types/supervision.js';
+import { NativeManagedTools } from './managed-tools.js';
+import { NativeHostClient } from '../../../src/managed/host-ipc.js';
 import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
-import { loadDelegateConfig, validateDelegateConfig } from './config.js';
+import { loadNativeSourceConfig, validateNativeSourceConfig } from './config.js';
 import { LinuxProcessReader } from './process.js';
-import { FileCallerRegistry, MemoryCallerRegistry, registerCaller } from './registry.js';
-import { createLedgerCallerRegistry } from './ledger-registry.js';
+import { MemoryCallerRegistry, registerCaller } from './registry.js';
 import { SessionRefResolver } from './resolvers.js';
 import { HudMcpServer, serveStdioProcess } from './server.js';
-import { LedgerCallerRegistry } from './ledger-registry.js';
-import { ReadOnlyScopeSnapshot } from '../../../src/core/ledger-scope-read.js';
-import { DelegationService } from './delegation.js';
-import { createManagedNativeRuntime } from './managed-runtime.js';
 import { readHookConfig, selectsClaudeHook } from './hook/record.js';
-import { fileURLToPath } from 'node:url';
-import { openLedger } from '../../../src/ledger/ledger.js';
-import { shippedManifest, verifiedClientTimeout } from '../../../src/cli/capability.js';
 import { ParentLifetime } from './lifetime.js';
-import { loadCacheConfig } from '../../../src/core/cache-config.js';
 import { PiEvidenceChannel } from './pi-channel.js';
 const lifetime = new ParentLifetime();
 const home = process.env.HUD_HOME;
 if (!home || !isAbsolute(home)) throw new Error('HUD_HOME must name an absolute private HUD directory');
-// Loaded once per process: advice is a pure lookup, so a change takes effect in the next session.
-// An invalid file never stops startup; every advice field stays empty and carries the detail code.
-const cache = loadCacheConfig(home);
 const file = join(home, 'delegate.json');
-const config = existsSync(file) ? loadDelegateConfig(file) : validateDelegateConfig({ version: 1, profiles: [] });
+const config = existsSync(file)
+  ? loadNativeSourceConfig(file)
+  : validateNativeSourceConfig({ version: 1, profiles: [] });
 const profileName = process.env.HUD_MCP_PROFILE;
 const profile = config.profiles.find((p) => p.name === profileName) ?? null;
 if (profileName && !profile) throw new Error('HUD_MCP_PROFILE is not present in delegate.json');
@@ -35,25 +31,16 @@ const piChannel =
     : undefined;
 try {
   const piHost = piChannel && profile ? await piChannel.bindHost(reader, profile.source.root) : undefined;
-  const fakeDirectory = process.env.HUD_MCP_REGISTRY_DIR;
-  if (fakeDirectory && !isAbsolute(fakeDirectory)) throw new Error('HUD_MCP_REGISTRY_DIR must be absolute');
-  if (!existsSync(join(home, 'ledger.sqlite')) && !fakeDirectory) {
-    const directory = lstatSync(home);
-    if (
-      !directory.isDirectory() ||
-      realpathSync(home) !== home ||
-      directory.uid !== process.getuid?.() ||
-      (directory.mode & 0o077) !== 0
-    )
-      throw new Error('HUD_HOME must be a private owned directory');
-    const initial = await openLedger(join(home, 'ledger.sqlite'));
-    await initial.close();
-  }
-  const registry = existsSync(join(home, 'ledger.sqlite'))
-    ? await createLedgerCallerRegistry(home)
-    : fakeDirectory
-      ? new FileCallerRegistry(fakeDirectory)
-      : new MemoryCallerRegistry();
+  // Native sources are observed per call, not authorized by a HUD database.
+  const directory = lstatSync(home);
+  if (
+    !directory.isDirectory() ||
+    realpathSync(home) !== home ||
+    directory.uid !== process.getuid?.() ||
+    (directory.mode & 0o077) !== 0
+  )
+    throw new Error('HUD_HOME must be a private owned directory');
+  const registry = new MemoryCallerRegistry();
   const registration = await registerCaller({
     reader,
     registry,
@@ -64,86 +51,89 @@ try {
     envPane: process.env.HERDR_PANE_ID ?? null,
     nowMs: Date.now(),
   });
-  // The identity registry verified this harness instance and source; use its direct
-  // binary rather than PATH, a wrapper, profile overrides, or persisted target text.
-  let wakeExecutable: string | undefined;
-  if (registration.source?.harness === 'codex' && registration.harnessPid) {
-    try {
-      const before = reader.get(registration.harnessPid);
-      const executable = realpathSync(`/proc/${registration.harnessPid}/exe`);
-      const after = reader.get(registration.harnessPid);
-      if (before.procStart === registration.harnessProcStart && after.procStart === before.procStart)
-        wakeExecutable = executable;
-    } catch {
-      /* Endpoint unavailable is projected as adapter none. */
-    }
-  }
-  const scopes =
-    registry instanceof LedgerCallerRegistry ? new ReadOnlyScopeSnapshot(join(home, 'ledger.sqlite')) : undefined;
   const hookConfig = process.env.HUD_CLAUDE_HOOK_CONFIG;
-  const hook =
-    profile && selectsClaudeHook(profile) && hookConfig && scopes
-      ? { config: readHookConfig(hookConfig), scopes }
-      : undefined;
-  const { capability, launchExecutableIdentities } = await createManagedNativeRuntime({
-    registration,
-    reader,
-    config,
-    selected: profile,
-    env: process.env,
-  });
-  // B6 selects timeout numbers by first harness/source match. Never attest a different
-  // selected profile, or an ambiguous same-source configuration.
-  const timeoutProfiles = config.profiles.filter(
-    (p) => p.harness === registration.caller.harness && p.source.root === registration.source?.rootPath
-  );
-  const waitTimeoutVerified = verifiedClientTimeout({
-    manifest: shippedManifest(),
-    selected: profile,
-    matchingProfiles: timeoutProfiles,
-    // Native launch startup facts do not attest client timeout behavior.
-    // Release/B14 must supply measured timeout evidence matching T-05-14, not a child's
-    // launch cell, HookConfig version declaration, or arbitrary configured timeout.
-    actual: null,
-  });
-  const bodies =
-    registry instanceof LedgerCallerRegistry
-      ? new DelegationService({
-          ledger: registry.ledger,
-          home,
-          config,
-          registration,
-          reader,
-          capability,
-          launchExecutableIdentities,
-          waitTimeoutVerified,
-          wakeExecutable,
-          cache,
-          hudRunPath: fileURLToPath(new URL('../../../../../../bin/hud-run', import.meta.url)),
-        })
-      : undefined;
+  const hook = profile && selectsClaudeHook(profile) && hookConfig ? { config: readHookConfig(hookConfig) } : undefined;
+  const client = new NativeHostClient(home);
+  const extensions = [new NativeManagedTools(client), new JevTools(client)];
+  const nativeTools: AuthenticatedToolExtension = {
+    tools: extensions.flatMap((extension) => extension.tools),
+    async invoke(source, name, args, signal) {
+      let wake: unknown;
+      let stamp: ProcessStamp | null = null;
+      let executable: string | undefined;
+      try {
+        if (registration.harnessPid && registration.harnessProcStart) {
+          const before = reader.get(registration.harnessPid);
+          const domain = reader.domain();
+          if (before.procStart === registration.harnessProcStart) {
+            stamp = {
+              pid: before.pid,
+              proc_start: before.procStart,
+              boot_id: domain.bootId,
+              pid_domain: domain.pidDomain,
+            };
+            if (source.sessionRef.harness === 'codex') executable = realpathSync(`/proc/${before.pid}/exe`);
+            if (reader.get(before.pid).procStart !== before.procStart) {
+              stamp = null;
+              executable = undefined;
+            }
+          }
+        }
+        wake = await client.invoke(
+          source.sessionRef,
+          'wake_register',
+          { target: nativeParentWakeTarget(source.sessionRef, registration, home!, stamp, executable) },
+          signal
+        );
+      } catch (error) {
+        wake = { unavailable: error instanceof Error ? error.message : String(error) };
+      }
+      const extension = extensions.find((extension) => extension.tools.some((tool) => tool.name === name));
+      if (!extension) throw new Error('unknown_native_tool');
+      const result = await extension.invoke(source, name, args, signal);
+      const created =
+        name === 'managed_create'
+          ? (result as { value?: { connectionId?: string; throughSeq?: number } }).value
+          : undefined;
+      return {
+        ...(result as Record<string, unknown>),
+        wake,
+        ...(source.sessionRef.harness === 'claude'
+          ? {
+              backgroundWaiter: {
+                argv: [
+                  'hud',
+                  'run',
+                  'wait',
+                  '--native-owner',
+                  JSON.stringify(source.sessionRef),
+                  ...(created?.connectionId
+                    ? ['--connection', created.connectionId, '--after-seq', String(created.throughSeq ?? 0)]
+                    : []),
+                  '--notify',
+                ],
+                instruction:
+                  'Start this command using the native background-task facility to receive a notification. Ordinary MCP replies do not wake Claude. Reuse the last observed throughSeq with --after-seq for later waiters; never advance past an unread result.',
+              },
+            }
+          : {}),
+      };
+    },
+  };
   const server = new HudMcpServer(
-    new SessionRefResolver(registration, reader, profile, undefined, hook, scopes, piChannel),
-    bodies,
-    () => lifetime.alive()
+    new SessionRefResolver(registration, reader, profile, undefined, hook, undefined, piChannel),
+    undefined,
+    () => lifetime.alive(),
+    undefined,
+    nativeTools
   );
   piChannel?.signal.addEventListener('abort', () => server.shutdown(), { once: true });
   if (piChannel?.signal.aborted) server.shutdown();
   let discardPendingOutput = false;
-  let closing: Promise<void> | undefined;
-  server.shutdownSignal.addEventListener(
-    'abort',
-    () => {
-      closing ??= bodies?.close();
-    },
-    { once: true }
-  );
   try {
     ({ discardPendingOutput } = await serveStdioProcess(server, () => lifetime.alive()));
   } finally {
     piChannel?.close();
-    await (closing ?? bodies?.close());
-    if (registry instanceof LedgerCallerRegistry) await registry.ledger.close();
   }
   // All owned stores/waiters are closed; an unread native stdout WriteWrap must not retain the process.
   if (discardPendingOutput) process.exit(0);

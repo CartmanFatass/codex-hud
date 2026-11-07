@@ -28,6 +28,8 @@ export const REQUIRED_OUTPUTS = {
   'src/harness/pi/managed-launch.ts': 'dist/harness/pi/managed-launch.js',
   'src/harness/claude/managed-launch.ts': 'dist/harness/claude/managed-launch.js',
   'src/core/run/launch-artifacts.ts': 'dist/core/run/launch-artifacts.js',
+  'src/harness/pi/wake-extension.ts': 'dist/harness/pi/wake-extension.js',
+  'src/managed/wake-message.ts': 'dist/managed/wake-message.js',
   'src/harness/pi/footer.ts': 'dist/harness/pi/footer.js',
   'src/harness/pi/delegation-bridge.ts': 'dist/harness/pi/delegation-bridge.js',
   'src/harness/pi/delegation-channel.ts': 'dist/harness/pi/delegation-channel.js',
@@ -38,8 +40,11 @@ export const EXTRA_FILES = [
   'README.md',
   'bin/hud-statusline-preview',
   ...EXTENSION_ENTRIES,
+  'integrations/pi/hud-wake.ts',
   'packages/hud-mcp/bin/hud-mcp.mjs',
   'packages/hud-mcp/bin/hud-claude-hook.mjs',
+  // Explicit non-TS runtime asset shared by source/compiled host entrypoints.
+  'src/managed/jev-bridge.py',
 ];
 export function outputForSource(file, mcp = false) {
   if (!/^(src\/|packages\/hud-mcp\/src\/)/.test(file) || !file.endsWith('.ts') || file.endsWith('.d.ts')) return null;
@@ -95,6 +100,8 @@ async function selfTest() {
   for (const [source, output] of Object.entries(REQUIRED_OUTPUTS)) assert.equal(outputForSource(source), output);
   assert.equal(EXTRA_FILES.filter((file) => file.startsWith('extensions/')).length, 2);
   for (const entry of EXTENSION_ENTRIES) assert.equal(EXTRA_FILES.includes(entry), true);
+  assert.equal(EXTRA_FILES.includes('src/managed/jev-bridge.py'), true);
+  assert.equal(EXTRA_FILES.includes('integrations/pi/hud-wake.ts'), true);
   for (const name of [
     '.env',
     'node_modules/secret.ts',

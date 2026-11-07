@@ -1,18 +1,28 @@
-/** Explicit opt-in for @earendil-works/pi-coding-agent 1.4.0, commit 4a080252.
+/** Native Pi extension integration through its public API.
  * Build HUD + hud-mcp, configure one pi_extension_v1 profile, then load with -e.
  * No settings writes, native tool interception, or capability promotion.
  */
-import { VERSION, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import type { TSchema } from 'typebox';
 import { createRequire } from 'node:module';
 import { PiDelegationBridge } from '../../dist/harness/pi/delegation-bridge.js';
 // Consume the single shipped schema set. hud-mcp intentionally emits no declarations.
-const { TOOLS } = createRequire(import.meta.url)('../../packages/hud-mcp/dist/packages/hud-mcp/src/tools.js') as {
-  TOOLS: { name: string; description: string; inputSchema: Record<string, unknown> }[];
+const { MANAGED_TOOLS } = createRequire(import.meta.url)(
+  '../../packages/hud-mcp/dist/packages/hud-mcp/src/managed-tools.js'
+) as {
+  MANAGED_TOOLS: { name: string; description: string; inputSchema: Record<string, unknown> }[];
+};
+
+const { JEV_TOOLS } = createRequire(import.meta.url)(
+  '../../packages/hud-mcp/dist/packages/hud-mcp/src/jev-tools.js'
+) as {
+  JEV_TOOLS: { name: string; description: string; inputSchema: Record<string, unknown> }[];
 };
 
 export default function hudDelegate(pi: ExtensionAPI) {
-  if (VERSION !== '1.4.0') throw new Error('HUD delegation requires Pi 1.4.0');
+  for (const method of ['on', 'registerCommand', 'registerTool'] as const) {
+    if (typeof pi[method] !== 'function') throw new Error(`Pi extension API missing method: ${method}`);
+  }
   let bridge: PiDelegationBridge | null = null;
   let root: string | null = null;
   let generation = 0;
@@ -24,7 +34,7 @@ export default function hudDelegate(pi: ExtensionAPI) {
     return stopping;
   };
   pi.on('session_start', async (_event, ctx) => {
-    // This event covers startup, reload, new, resume and fork in the pinned API.
+    // This event covers startup, reload, new, resume and fork in the public API.
     // The source directory comes from the host, never tool input or PI_SESSION_*.
     const closed = stop();
     const epoch = generation;
@@ -67,7 +77,7 @@ export default function hudDelegate(pi: ExtensionAPI) {
       await bridge.start();
     },
   });
-  for (const tool of TOOLS) {
+  for (const tool of [...MANAGED_TOOLS, ...JEV_TOOLS]) {
     pi.registerTool({
       name: tool.name,
       label: tool.name,

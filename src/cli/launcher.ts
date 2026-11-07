@@ -5,11 +5,10 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { launchProfileDigest, resolveLaunchCommand, shellQuote, validateLaunchCommand } from '../core/capabilities.js';
 import { executableIdentity } from '../core/launch/fingerprint.js';
 import { snapshotBrief } from '../core/launch/brief.js';
-import { launchClaudeInTmux, type ClaudeProductionDependencies } from './claude-launch.js';
-import { digest } from '../core/canonical.js';
+import type { ClaudeProductionDependencies } from './claude-launch.js';
 import type { LaunchCommand, LaunchProfile } from '../core/types/capabilities.js';
 import type { HudIO } from './link-export.js';
-import { CliError, delegateConfig, identifier, installationRoot, mcpModule, options } from './runtime.js';
+import { CliError, nativeDelegateConfig, identifier, installationRoot, mcpModule, options } from './runtime.js';
 
 export const CLAUDE_HELP = `Usage: hud claude [--profile NAME] [--resume SESSION] [--settings FILE]
        hud claude --profile NAME -- <executable> [ARG ...]
@@ -18,8 +17,8 @@ export const CLAUDE_HELP = `Usage: hud claude [--profile NAME] [--resume SESSION
 Select a Claude profile from HUD_HOME/delegate.json (required when selection is ambiguous).
 argv templates preserve argument bytes; explicit shell templates run through shellPath -ic.
 The claude_pre_tool_use_v1 profile adds the synchronous HUD hook with --settings while preserving existing hooks.
-Only reviewed product capabilities may launch. This build ships no verified launch/resume cells.
-Panel/host integration and delegated Claude resume are deferred. hud codex [ARG ...] retains codex-hud compatibility.
+Launches the configured local executable directly, without a client-version or machine qualification gate.
+Native --resume follows the selected profile. hud codex [ARG ...] retains codex-hud compatibility.
 `;
 
 export function parseClaude(args: readonly string[]) {
@@ -55,6 +54,15 @@ export function appendArguments(command: LaunchCommand, args: readonly string[])
       };
 }
 
+/** Preserve configured argv while placing native resume flags before prompt data. */
+function nativeResumeTemplate(command: LaunchCommand): LaunchCommand {
+  if (!command.argv) throw new CliError('native_resume_template_required', 4);
+  const argv = [...command.argv];
+  const terminator = argv.indexOf('--', 1);
+  argv.splice(terminator < 0 ? argv.length : terminator, 0, '--resume', '{{sessionId}}');
+  return { argv };
+}
+
 function settingsInput(command: LaunchCommand, explicit: string | undefined) {
   const sources: string[] = explicit === undefined ? [] : [explicit];
   if (!command.argv) return { command, sources };
@@ -86,7 +94,7 @@ export async function claudeCommand(
   home: string,
   io: HudIO,
   trusted: {
-    /** Test/release composition only; no CLI flag, configuration or environment can select this verifier. */
+    /** Deprecated historical test seam. Ordinary launch never invokes a qualification verifier. */
     verify?: (
       profile: LaunchProfile,
       command: LaunchCommand,
@@ -97,21 +105,21 @@ export async function claudeCommand(
   } = {}
 ): Promise<number> {
   const parsed = parseClaude(args);
-  const config = await delegateConfig(home);
+  const config = await nativeDelegateConfig(home);
   const candidates = config.profiles.filter(
     (p) => p.harness === 'claude' && (!parsed.profile || p.name === parsed.profile)
   );
   if (candidates.length !== 1) throw new CliError('claude_profile_required');
   const configuredProfile = candidates[0];
   let profile = configuredProfile;
-  let template = parsed.resume ? profile.resume : profile.launch;
+  let template = parsed.resume ? (profile.resume ?? nativeResumeTemplate(profile.launch)) : profile.launch;
   if (parsed.argv) template = { argv: parsed.argv };
   if (parsed.shell !== undefined) {
     const shellPath = profile.launch.shellPath ?? io.env.SHELL;
     if (!shellPath || !isAbsolute(shellPath)) throw new CliError('explicit_shell_path_required');
     template = { shell: parsed.shell, shellPath };
   }
-  if (!template) throw new CliError('unsupported', 4);
+  if (!template || !validateLaunchCommand(template)) throw new CliError('invalid_native_launch_command', 4);
   if (parsed.argv || parsed.shell !== undefined) profile = { ...profile, launch: template };
   const values: Record<string, string> = { cwd: process.cwd(), sourceRoot: profile.source.root };
   if (parsed.resume) values.sessionId = parsed.resume;
@@ -139,7 +147,6 @@ export async function claudeCommand(
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CliError('invalid_settings');
     settings = value as Record<string, unknown>;
   }
-  const capabilityCommand = parsed.settings === undefined ? resolved : injectSettings(resolved, parsed.settings);
   const env: NodeJS.ProcessEnv = {
     ...io.env,
     ...profile.env,
@@ -149,44 +156,28 @@ export async function claudeCommand(
   };
   for (const key of ['HUD_CLAIM', 'HUD_RUN', 'HUD_LINK', 'HUD_MCP_REGISTRY_DIR', 'HUD_RUN_PORT_MODULE'])
     delete env[key];
-  if (!trusted.verify) {
-    return launchClaudeInTmux(
-      {
-        profile,
-        configuredProfile,
-        command: prepared.command,
-        ...(!parsed.argv ? { template: settingsInput(template, undefined).command } : {}),
-        settings,
-        hasSettings: prepared.sources.length > 0,
-        resume: !!parsed.resume,
-        home,
-        env,
-      },
-      { ...trusted.production, launch: trusted.launch ?? trusted.production?.launch }
-    );
-  }
+  // Local executable discovery is necessary; version strings, release manifests,
+  // machine fingerprints and tmux profiles are not admission requirements.
   const executable = await executableIdentity(resolved, env);
   if (!executable.resolved) throw new CliError('executable_unavailable', 4);
-  // Legacy test seam only. Production uses the complete startup matcher above.
-  if (!trusted.verify || !(await trusted.verify(profile, capabilityCommand, { settingsFingerprint: digest(settings) })))
-    throw new CliError('capability_unverified', 4);
+  delete env.HUD_CLAUDE_HOOK_CONFIG;
   let directory: string | undefined;
   try {
-    let command = prepared.command;
+    let command: LaunchCommand = prepared.command.argv
+      ? { argv: [executable.resolved, ...prepared.command.argv.slice(1)] }
+      : prepared.command;
     if (profile.callSource || prepared.sources.length) directory = await mkdtemp(join(home, 'claude-launch-'));
     if (profile.callSource?.kind === 'claude_pre_tool_use_v1') {
       const record = await mcpModule('hook/record');
       const hook = {
         version: 1,
         implementation: record.IMPLEMENTATION,
-        claudeVersion: record.CLAUDE_VERSION,
         claudeExecutable: executable.resolved,
         sourceRoot: profile.source.root,
-        ledgerPath: join(home, 'ledger.sqlite'),
         directory,
         serverName: profile.mcpServerName,
         // MCP selects delegate.json's original profile; the effective override
-        // remains separately bound by the launch capability verifier above.
+        // does not replace the native ancestry/session proof at each tool call.
         profileFingerprint: launchProfileDigest(configuredProfile),
         clockTicksPerSecond: 100,
       };
@@ -210,7 +201,7 @@ export async function claudeCommand(
       });
       command = injectSettings(command, settingsFile);
     }
-    return await (trusted.launch ?? foreground)(command, env);
+    return await (trusted.launch ?? trusted.production?.launch ?? foreground)(command, env);
   } finally {
     if (directory) await rm(directory, { recursive: true, force: true });
   }

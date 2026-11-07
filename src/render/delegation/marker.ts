@@ -14,6 +14,7 @@
 import type { StateSinceBasis } from '../../core/types/observation.js';
 import type { NodeFacts } from './facts.js';
 import type { Glyph, HarnessMark } from './glyphs.js';
+import { monitorText } from '../monitor-text.js';
 import { W, type Role } from './style.js';
 
 /** 0 needs a person, 1 alive, 2 alive but marked like an ending, 3 ended (§3.2). */
@@ -197,6 +198,10 @@ export function deriveMarker(f: NodeFacts): NodeMarker {
   };
   const dwell = (s: { at: number | null; basis: StateSinceBasis }): MarkerClock =>
     s.at === null ? NO_CLOCK : { kind: 'dwell', at: s.at, approx: s.basis === 'observed' };
+
+  // Direct calls expose literal native facts. Never classify completion through old report/slot rules.
+  if (f.nativeCallStatus !== null)
+    return base('unknown', 'muted', { words: [monitorText(f.nativeCallStatus)], rank: 1 });
 
   // 1. Contradicting records: not a guess at either one.
   if (f.conflictCount > 0)

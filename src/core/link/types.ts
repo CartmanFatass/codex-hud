@@ -103,7 +103,7 @@ export interface LinkTreeNode {
   identity: DisplayNodeIdentity;
   key: string;
   parentKey: string | null;
-  edge: 'delegated' | 'native' | 'intent' | 'simulation-job' | null;
+  edge: 'delegated' | 'native' | 'direct-call' | 'intent' | 'simulation-job' | null;
   /** Independent SIMULATED store data, never a committed session observation. */
   simulationJob?: SimulationJobDisplay;
   /** Additive transport; populated iff the projected edge is native. */

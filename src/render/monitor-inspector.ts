@@ -180,6 +180,32 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
     return lines.flatMap((line) => wrapped(line, width).map((text) => ({ text })));
   }
   const detail = view.vm.details[node.key];
+  if (detail?.jevCall) {
+    const call = detail.jevCall;
+    return [
+      `Direct Jev call: ${call.relation.callId}`,
+      `Parent: ${call.relation.owner.harness} ${call.relation.owner.sessionId}`,
+      `Agent instance: ${call.relation.instanceId}`,
+      `Owned target: ${call.relation.targetId ?? 'unavailable'}`,
+      `Browser session: ${call.relation.sessionId ?? 'unavailable'}`,
+      `Source: ${call.unavailable ?? 'Agent.snapshot'}`,
+      `Snapshot: ${(JSON.stringify(call.snapshot) ?? 'null').slice(0, 8192)}`,
+    ].flatMap((line) => wrapped(line, width).map((text) => ({ text })));
+  }
+  if (detail?.nativeCall) {
+    const call = detail.nativeCall;
+    const lines = [
+      `Direct native call: ${call.relation.callId}`,
+      `Parent: ${call.relation.owner.harness} ${call.relation.owner.sessionId}`,
+      `Native ref: ${JSON.stringify(call.relation.child)}`,
+      `Workspace: ${call.relation.workspace}`,
+      `Native source: ${call.unavailable ?? 'host snapshot/events; Pi get_state fields are cached, freshness unknown'}`,
+      `Snapshot: ${JSON.stringify(call.snapshot).slice(0, 8192)}`,
+      `Latest native message: ${JSON.stringify(call.latestEvent).slice(0, 8192)}`,
+      'Resume/input/interrupt: use the parent native session MCP tools',
+    ];
+    return lines.flatMap((line) => wrapped(line, width).map((text) => ({ text })));
+  }
   const observation = node.observation;
   const run = node.currentRun;
   const lines = [

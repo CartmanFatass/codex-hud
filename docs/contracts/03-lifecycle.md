@@ -1,5 +1,9 @@
 # 03：关系、运行、报告与转交生命周期
 
+> **2026-11-07 新路径取代说明（用户已批准实施，验收未完成）：** [本机官方会话与 MCP 薄接口架构](../architecture/simplified-harness-architecture.md) 是新默认路径的依据。本文以下旧 ledger/run/report/claim/slot、supervision/retirement、资格矩阵与持久恢复政策仅用于理解旧实现及只读历史，不能约束或重新进入新路径。批准实施不等于真实 provider、恢复、父退出存活或通知已经验收。原生会话隔离、明确动作授权、原生事实与已有显示/总结能力仍保留。
+
+> **本契约的新边界：** 创建/恢复/fork 直接映射官方接口与原生 ID。wait 超时只结束等待，不取消子会话；同父重连活宿主或明确官方 resume。宿主/机器退出不意味着能复活旧工具进程、callback 或未持久消息，不保存 HUD 恢复阶段。
+
 - 版本：`v0.4 draft`（2026-11-01；Oracle C01–C14、D01–D13 修订）。
 - 状态：A1 第二批草案，待主审与四契约一致性确认；A9 前不作为阶段 B 的冻结基线。
 - depends-on：[01 身份](./01-identity.md)、[02 执行协议](./02-execution.md)、[04 托管](./04-supervision.md)；[概念方案](../universal-hud-concept.md) §6.6、§6.10–11、§15–16；[工程计划](../universal-hud-engineering-plan.md) A1/B3a/B3b/B4/B6。

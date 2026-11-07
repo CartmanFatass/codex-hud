@@ -1,36 +1,23 @@
 import { realpathSync, readlinkSync, statSync } from 'node:fs';
-import { dirname, join, basename } from 'node:path';
-import { piSourceRootFromArgv, inferHarness, type ProcessInfo, type ProcessReaderPort } from './process.js';
-import { object, readJson } from './io.js';
+import { basename } from 'node:path';
+import { piEntrypointPackage, inferHarness, type ProcessInfo, type ProcessReaderPort } from './process.js';
 import { Refusal } from './errors.js';
-import {
-  PI_EXTENSION_VERSION,
-  PI_EXTENSION_CONTEXT_PROFILE,
-  canonicalPiPath,
-} from '../../../src/harness/pi/delegation-context.js';
+import { PI_EXTENSION_CONTEXT_PROFILE, canonicalPiPath } from '../../../src/harness/pi/delegation-context.js';
 import type { PiHostHello } from '../../../src/harness/pi/delegation-channel.js';
 
-/** Pin the actual npm entrypoint/package, not an env/version assertion or argv0 alone.
- * This does not promise integrity against an attacker who can replace installed same-UID code.
+/** Verify the installed package's declared Pi entrypoint, independently of its
+ * version or directory layout. Private channel ownership and physical process
+ * stamps remain the authority; same-UID installed-code replacement is out of scope.
  */
 export function piHostTuple(parent: ProcessInfo, hostEntrypoint: string): string {
   const entry = realpathSync(hostEntrypoint);
-  if (
-    !['node', 'pi'].includes(basename(parent.argv[0] ?? '')) ||
-    !entry.endsWith('/pi-coding-agent/dist/bundle/cli.js')
-  )
-    throw new Refusal('unsupported');
-  const pkg = readJson(join(dirname(dirname(dirname(entry))), 'package.json'), 16384);
-  if (
-    !object(pkg) ||
-    pkg.name !== '@earendil-works/pi-coding-agent' ||
-    pkg.version !== PI_EXTENSION_VERSION ||
-    !object(pkg.bin) ||
-    pkg.bin.pi !== 'dist/bundle/cli.js'
-  )
-    throw new Refusal('unsupported');
+  if (!['node', 'nodejs', 'pi'].includes(basename(parent.argv[0] ?? ''))) throw new Refusal('unsupported');
+  const packagePath = piEntrypointPackage(entry);
+  if (!packagePath) throw new Refusal('unsupported');
   const executable = readlinkSync(`/proc/${parent.pid}/exe`);
-  if (executable !== readlinkSync('/proc/self/exe')) throw new Refusal('unsupported');
+  // The extension spawns this MCP child with its own process.execPath. Compare
+  // their actual executable identities, not a fixed Node installation path.
+  if (executable !== readlinkSync('/proc/self/exe')) throw new Refusal('identity_unverified');
   const stat = statSync(entry);
   if (!stat.isFile()) throw new Refusal('unsupported');
   return JSON.stringify([
@@ -40,8 +27,7 @@ export function piHostTuple(parent: ProcessInfo, hostEntrypoint: string): string
     stat.size,
     stat.mtimeMs,
     executable,
-    pkg.name,
-    pkg.version,
+    packagePath,
     parent.pid,
     parent.procStart,
     parent.pidNamespace,
@@ -68,7 +54,6 @@ export class PiHostEvidence {
       parent = reader.get(self.ppid);
     if (
       hello.profile !== PI_EXTENSION_CONTEXT_PROFILE ||
-      hello.version !== PI_EXTENSION_VERSION ||
       hello.pid !== parent.pid ||
       inferHarness(parent) !== 'pi' ||
       self.pidNamespace !== parent.pidNamespace ||
@@ -79,8 +64,9 @@ export class PiHostEvidence {
       throw new Refusal('identity_unverified');
     const root = canonicalPiPath(hello.sourceRoot);
     if (realpathSync(root) !== root || !statSync(root).isDirectory()) throw new Refusal('identity_unverified');
-    // Parse the host's original argv separately. Never fabricate a ProcessReader observation.
-    if (piSourceRootFromArgv(hello.argv) !== root) throw new Refusal('identity_unverified');
+    // The root came from the native extension's sessionManager on the private
+    // channel. bindHost independently matches configured sourceRoot; each call
+    // rechecks the native context. CLI option position is not source authority.
     const evidence = new PiHostEvidence(
       root,
       canonicalPiPath(realpathSync(hello.entrypoint)),

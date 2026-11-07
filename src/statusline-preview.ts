@@ -42,8 +42,12 @@ export function readStatuslineInput(input: Readable, timeoutMs = 1000): Promise<
       input.off('end', end);
       input.off('error', fail);
       input.off('close', close);
-      if (error) reject(new Error(error));
-      else resolve(value);
+      if (error) {
+        // This command owns its one-shot input. An oversized open pipe can retain
+        // a pending read after pause(); close it without affecting stdout/backend work.
+        input.destroy();
+        reject(new Error(error));
+      } else resolve(value);
     };
     const data = (chunk: Buffer | string) => {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);

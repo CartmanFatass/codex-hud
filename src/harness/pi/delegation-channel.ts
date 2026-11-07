@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 import type { PiContextSnapshot } from './delegation-context.js';
-import { PI_EXTENSION_CONTEXT_PROFILE, PI_EXTENSION_VERSION } from './delegation-context.js';
+import { PI_EXTENSION_CONTEXT_PROFILE } from './delegation-context.js';
 
 export interface PiMcpResult {
   content: { type: 'text'; text: string }[];
@@ -18,7 +18,8 @@ export interface PiEvidenceFrame {
 export interface PiHostHello {
   kind: 'host';
   profile: string;
-  version: string;
+  /** Optional native diagnostic, not an admission gate. */
+  version?: string;
   pid: number;
   entrypoint: string;
   sourceRoot: string;
@@ -69,7 +70,6 @@ export class PiDelegationChannel {
     const hello: PiHostHello = {
       kind: 'host',
       profile: PI_EXTENSION_CONTEXT_PROFILE,
-      version: PI_EXTENSION_VERSION,
       pid: process.pid,
       entrypoint: process.argv[1],
       sourceRoot: options.sourceRoot,
@@ -82,7 +82,7 @@ export class PiDelegationChannel {
         return this.request('initialize', {
           protocolVersion: '2025-06-18',
           capabilities: {},
-          clientInfo: { name: 'hud-pi-extension', version: '1.4.0' },
+          clientInfo: { name: 'hud-pi-extension', version: '1' },
         });
       })
       .then((result) => {

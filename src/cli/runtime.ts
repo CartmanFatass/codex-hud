@@ -46,7 +46,10 @@ export function privateHome(env: NodeJS.ProcessEnv): string {
 
 /** Root tsc builds src only; load the existing independently-built MCP writer at runtime. */
 interface McpLibraries {
-  config: { loadDelegateConfig(file: string): DelegateConfig };
+  config: {
+    loadDelegateConfig(file: string): DelegateConfig;
+    loadNativeSourceConfig(file: string): DelegateConfig;
+  };
   delegation: { DelegationService: new (options: ResumeServiceOptions) => LocalResumeService };
   'hook/record': {
     IMPLEMENTATION: string;
@@ -79,6 +82,12 @@ export async function mcpModule<N extends keyof McpLibraries>(name: N): Promise<
 export async function delegateConfig(home: string): Promise<DelegateConfig> {
   const { loadDelegateConfig } = await mcpModule('config');
   return loadDelegateConfig(join(home, 'delegate.json'));
+}
+
+/** Only native source and launcher configuration, not old task/retirement policy. */
+export async function nativeDelegateConfig(home: string): Promise<DelegateConfig> {
+  const { loadNativeSourceConfig } = await mcpModule('config');
+  return loadNativeSourceConfig(join(home, 'delegate.json'));
 }
 
 export interface LocalResumeService {

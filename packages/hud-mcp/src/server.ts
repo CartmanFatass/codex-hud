@@ -1,9 +1,22 @@
-import { CallBudget, monotonicClock, type BudgetClock } from '../../../src/ledger/call-budget.js';
+import type { CallBudget, BudgetClock } from '../../../src/ledger/call-budget.js';
+import { performance } from 'node:perf_hooks';
+import { setTimeout as sleep } from 'node:timers/promises';
+const monotonicClock: BudgetClock = { now: () => performance.now(), sleep };
 import type { Readable, Writable } from 'node:stream';
 import { object } from './io.js';
 import { outcomeCode } from './errors.js';
 import type { CallResolution, CurrentCallSourcePort } from './resolvers.js';
-import { TOOLS, validateToolArguments } from './tools.js';
+import { TOOLS, validateToolArguments, type ToolDefinition } from './tools.js';
+/** Additional tools still pass the original authenticated native-session resolver. */
+export interface AuthenticatedToolExtension {
+  readonly tools: ToolDefinition[];
+  invoke(
+    source: Extract<CallResolution, { ok: true }>,
+    tool: string,
+    args: Record<string, unknown>,
+    signal: AbortSignal
+  ): Promise<unknown>;
+}
 export interface RpcRequest {
   jsonrpc: '2.0';
   id?: string | number | null;
@@ -38,8 +51,12 @@ export class HudMcpServer {
       decorateFailure?(tool: string, args: Record<string, unknown>, outcome: { ok: false; code: string }): unknown;
     },
     private readonly parentAlive: () => boolean = () => true,
-    private readonly clock: BudgetClock = monotonicClock
-  ) {}
+    private readonly clock: BudgetClock = monotonicClock,
+    private readonly extension?: AuthenticatedToolExtension
+  ) {
+    const names = [...(bodies || !extension ? TOOLS : []), ...(extension?.tools ?? [])].map((tool) => tool.name);
+    if (new Set(names).size !== names.length) throw new Error('duplicate_tool_definition');
+  }
   receiptTime(): number {
     return this.clock.now();
   }
@@ -79,14 +96,19 @@ export class HudMcpServer {
       case 'ping':
         return reply({});
       case 'tools/list':
-        return reply({ tools: TOOLS });
+        return reply({ tools: [...(this.bodies || !this.extension ? TOOLS : []), ...(this.extension?.tools ?? [])] });
       case 'tools/call': {
         const started = received;
-        const definition = TOOLS.find((t) => t.name === params.name);
+        const extended = this.extension?.tools.find((t) => t.name === params.name);
+        const definition =
+          extended ?? (this.bodies || !this.extension ? TOOLS.find((t) => t.name === params.name) : undefined);
         if (!definition) return error(id, -32602, 'Unknown tool');
-        const budget = ['delegate_list', 'delegate_status', 'delegate_wait'].includes(definition.name)
-          ? undefined
-          : new CallBudget(this.clock, started);
+        let budget: CallBudget | undefined;
+        if (!extended && !['delegate_list', 'delegate_status', 'delegate_wait'].includes(definition.name)) {
+          // The historical task authorization budget is not part of native tools.
+          const { CallBudget } = await import('../../../src/ledger/call-budget.js');
+          budget = new CallBudget(this.clock, started);
+        }
         if (!validateToolArguments(definition, params.arguments === undefined ? {} : params.arguments))
           return error(id, -32602, 'Invalid tool arguments');
         if (this.requests.has(id)) return error(id, -32600, 'Duplicate active request id');
@@ -109,9 +131,11 @@ export class HudMcpServer {
           budget?.check('source');
           controller.signal.throwIfAborted();
           outcome = resolution.ok
-            ? this.bodies
-              ? await this.bodies.invoke(resolution, definition.name, args, started, controller.signal, budget)
-              : { ok: false, code: 'not_implemented', tool: definition.name }
+            ? extended && this.extension
+              ? await this.extension.invoke(resolution, definition.name, args, controller.signal)
+              : this.bodies
+                ? await this.bodies.invoke(resolution, definition.name, args, started, controller.signal, budget)
+                : { ok: false, code: 'not_implemented', tool: definition.name }
             : failure(resolution.code);
         } catch (error) {
           // A committed intent is returned by its body even if subsequent dispatch fails.

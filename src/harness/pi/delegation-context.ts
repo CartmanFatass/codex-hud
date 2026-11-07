@@ -1,4 +1,4 @@
-/** Pi v1.4.0 (4a080252) context evidence. Linux, canonical paths, session format 3.
+/** Native Pi extension context evidence. Linux, canonical paths.
  * File validation is NOT provenance: only the owned extension channel admits it.
  */
 export interface PiContext {
@@ -19,7 +19,7 @@ interface SelectedSnapshot {
 }
 export interface PiContextSnapshot extends SelectedSnapshot {
   status: 'ready' | 'pending';
-  headerVersion: 3 | null;
+  headerVersion: number | null;
   headerDigest: string | null;
   pendingReason: string | null;
 }
@@ -33,8 +33,10 @@ import { constants } from 'node:fs';
 import { open, realpath, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
+// Historical print-launch qualification only; never used by the extension source path.
 export const PI_EXTENSION_VERSION = '1.4.0';
-export const PI_EXTENSION_CONTEXT_PROFILE = 'pi-extension-v1.4.0-4a080252';
+// HUD-owned wire format, not a Pi vendor version or source commit.
+export const PI_EXTENSION_CONTEXT_PROFILE = 'hud-pi-extension-v1';
 export const PI_EXTENSION_CONTEXT_LIMITS = Object.freeze({
   headerBytes: 64 * 1024,
   pathBytes: 4096,
@@ -138,24 +140,19 @@ async function headerBytes(handle: FileHandle) {
   return buffer.subarray(0, count);
 }
 
-function verifyHeader(bytes: Buffer, sessionId: string) {
+/** The native extension context, not a historical file format, supplies identity.
+ * Recognized header IDs can detect a mismatch; unknown formats remain readable.
+ */
+function inspectHeader(bytes: Buffer, sessionId: string): number | null {
   let header;
   try {
     header = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } catch {
-    fail('invalid_pi_session_header');
+    return null;
   }
-  if (
-    !header ||
-    typeof header !== 'object' ||
-    Array.isArray(header) ||
-    header.type !== 'session' ||
-    header.version !== 3 ||
-    typeof header.id !== 'string' ||
-    !/^[A-Za-z0-9_-]{1,128}$/.test(header.id)
-  )
-    fail('invalid_pi_session_header');
-  if (header.id !== sessionId) fail('pi_session_header_mismatch');
+  if (!header || typeof header !== 'object' || Array.isArray(header) || header.type !== 'session') return null;
+  if (typeof header.id === 'string' && header.id !== sessionId) fail('pi_session_header_mismatch');
+  return typeof header.version === 'number' && Number.isFinite(header.version) ? header.version : null;
 }
 
 export async function inspectPiSnapshot(
@@ -177,6 +174,7 @@ export async function inspectPiSnapshot(
     let parent = root;
     let parentPath = snapshot.sessionDir;
     let header = null;
+    let headerVersion = null;
     if (snapshot.sessionFile !== null) {
       const relative = path.relative(snapshot.sessionDir, snapshot.sessionFile).split(path.sep);
       const leaf = relative.pop();
@@ -206,7 +204,7 @@ export async function inspectPiSnapshot(
         await verifyHandlePath(file, snapshot.sessionFile);
         await requireCanonical(snapshot.sessionFile);
         header = await headerBytes(file);
-        verifyHeader(header, snapshot.sessionId);
+        headerVersion = inspectHeader(header, snapshot.sessionId);
         // Re-read only the bounded header: appending transcript records is fine.
         if (!header.equals(await headerBytes(file))) fail('pi_session_header_changed');
         await verifyHandlePath(file, snapshot.sessionFile);
@@ -220,7 +218,7 @@ export async function inspectPiSnapshot(
       snapshot: Object.freeze({
         ...snapshot,
         status: file ? 'ready' : 'pending',
-        headerVersion: file ? 3 : null,
+        headerVersion,
         headerDigest,
         pendingReason: file ? null : snapshot.sessionFile === null ? 'session_file_unassigned' : 'session_file_missing',
       }),
@@ -243,12 +241,9 @@ function trustedContext(ctx: PiContext, expectedManager?: PiContext['sessionMana
   if (!manager || typeof manager !== 'object' || (expectedManager && manager !== expectedManager)) {
     fail('pi_session_manager_changed');
   }
-  if (
-    typeof manager.getSessionId !== 'function' ||
-    typeof manager.getSessionFile !== 'function' ||
-    typeof manager.getSessionDir !== 'function'
-  )
-    fail('unsupported_pi_extension_context');
+  for (const method of ['getSessionId', 'getSessionFile', 'getSessionDir'] as const) {
+    if (typeof manager[method] !== 'function') fail(`unsupported_pi_extension_context: missing ${method}`);
+  }
   const sessionId = manager.getSessionId();
   const sessionFile = manager.getSessionFile();
   const sessionDir = manager.getSessionDir();

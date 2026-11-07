@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { test, type TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { loadDelegateConfig, RETIRE_DEFAULTS } from '../../packages/hud-mcp/src/config.js';
-import { TOOLS } from '../../packages/hud-mcp/src/tools.js';
+import { TOOLS, type ToolDefinition } from '../../packages/hud-mcp/src/tools.js';
+import { MANAGED_TOOLS } from '../../packages/hud-mcp/src/managed-tools.js';
+import { JEV_TOOLS } from '../../packages/hud-mcp/src/jev-tools.js';
 
 const repo = new URL('../../../', import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, repo), 'utf8');
@@ -13,7 +15,7 @@ const IMPLEMENTER = 'integrations/skills/hud-delegate/roles/implementer.md';
 const REVIEWER = 'integrations/skills/hud-delegate/roles/reviewer.md';
 const HANDOFF = 'integrations/skills/hud-handoff/SKILL.md';
 
-/** The skill documents that name delegate tools. */
+/** The current native skill plus retained historical role/handoff documents. */
 const SKILL_FILES = [PARENT, IMPLEMENTER, REVIEWER, HANDOFF];
 
 /** Design §6: sections mandatory and in this order. */
@@ -29,18 +31,23 @@ const HANDOFF_SECTIONS = [
   '## Content rule: actual task state the successor needs; no secrets or credentials; no transcript excerpts beyond what the task needs;',
 ];
 
-const TOOL_NAMES = new Set(TOOLS.map((tool) => tool.name));
-const SCHEMA_KEYS = new Map(
-  TOOLS.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema.properties as Record<string, unknown>))])
-);
-const ARGUMENT_KEYS = new Set([...SCHEMA_KEYS.values()].flatMap((keys) => [...keys]));
+function catalog(tools: ToolDefinition[]) {
+  const names = new Set(tools.map((tool) => tool.name));
+  const schemaKeys = new Map(
+    tools.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema.properties as Record<string, unknown>))])
+  );
+  return { names, schemaKeys, argumentKeys: new Set([...schemaKeys.values()].flatMap((keys) => [...keys])) };
+}
+const NATIVE_CATALOG = catalog([...MANAGED_TOOLS, ...JEV_TOOLS]);
+const HISTORICAL_CATALOG = catalog(TOOLS);
+const documentCatalog = (name: string) => (name === PARENT ? NATIVE_CATALOG : HISTORICAL_CATALOG);
 
 /**
  * Complete identifiers, case-sensitive. A valid lowercase prefix of a misspelled name must not
  * pass, and a call whose name is invalid must still be parsed so its arguments are checked.
  */
-const TOOL_MENTION = /\bdelegate_[A-Za-z0-9_]+/g;
-const TOOL_CALL = /\b(delegate_[A-Za-z0-9_]+)\{/g;
+const TOOL_MENTION = /\b(?:delegate|managed|jev)_[A-Za-z0-9_]+/gi;
+const TOOL_CALL = /\b((?:delegate|managed|jev)_[A-Za-z0-9_]+)\{/gi;
 
 interface Coverage {
   names: number;
@@ -62,13 +69,13 @@ interface Scan {
  * here instead of passing with zero matches. Every floor is above zero on purpose.
  */
 const MINIMUM = new Map<string, Coverage>([
-  [PARENT, { names: 14, calls: 8, keys: 26 }],
+  [PARENT, { names: 20, calls: 10, keys: 20 }],
   [IMPLEMENTER, { names: 7, calls: 3, keys: 10 }],
   [REVIEWER, { names: 5, calls: 2, keys: 7 }],
   [HANDOFF, { names: 2, calls: 1, keys: 4 }],
 ]);
 
-/** Splits a `delegate_x{...}` body on top-level commas and keeps the leading identifier of each part. */
+/** Splits a `tool_name{...}` body on top-level commas and keeps the leading identifier of each part. */
 function topLevelKeys(body: string): string[] {
   const parts: string[] = [];
   let depth = 0;
@@ -89,10 +96,10 @@ function topLevelKeys(body: string): string[] {
     .filter((key): key is string => key !== undefined);
 }
 
-/** `delegate_x{key, key: value, …}` mentions, with brace matching so nested values stay one mention. */
+/** `tool_name{key, key: value, …}` mentions, with brace matching so nested values stay one mention. */
 function braceCalls(text: string): Call[] {
   const calls: Call[] = [];
-  const start = new RegExp(TOOL_CALL.source, 'g');
+  const start = new RegExp(TOOL_CALL.source, TOOL_CALL.flags);
   for (let match = start.exec(text); match; match = start.exec(text)) {
     let depth = 0;
     let end = -1;
@@ -110,7 +117,7 @@ function braceCalls(text: string): Call[] {
   return calls;
 }
 
-/** JSON blocks in the skill documents are tool calls: `{"tool": "delegate_x", "arguments": {...}}`. */
+/** JSON blocks in the skill documents are tool calls: `{"tool": "tool_name", "arguments": {...}}`. */
 function jsonCalls(text: string): Call[] {
   return [...text.matchAll(/```json\n([\s\S]*?)```/g)].map((match) => {
     const value = JSON.parse(match[1]) as { tool?: unknown; arguments?: unknown };
@@ -124,18 +131,18 @@ function jsonCalls(text: string): Call[] {
 }
 
 function scanDocument(text: string): Scan {
-  const names = [...text.matchAll(new RegExp(TOOL_MENTION.source, 'g'))].map((match) => match[0]);
+  const names = [...text.matchAll(new RegExp(TOOL_MENTION.source, TOOL_MENTION.flags))].map((match) => match[0]);
   const calls = [...braceCalls(text), ...jsonCalls(text)];
   return { names, calls, keys: calls.flatMap((call) => call.keys) };
 }
 
 /** Fails on an unknown tool, an unknown argument key, or a document that names too little to check. */
-function checkDocument(name: string, text: string, minimum: Coverage): void {
+function checkDocument(name: string, text: string, minimum: Coverage, tools = documentCatalog(name)): void {
   const scan = scanDocument(text);
-  for (const tool of scan.names) assert.ok(TOOL_NAMES.has(tool), `${name} names an unknown tool: ${tool}`);
+  for (const tool of scan.names) assert.ok(tools.names.has(tool), `${name} names an unknown tool: ${tool}`);
   for (const call of scan.calls) {
-    assert.ok(TOOL_NAMES.has(call.tool), `${name} calls an unknown tool: ${call.tool}`);
-    const keys = SCHEMA_KEYS.get(call.tool)!;
+    assert.ok(tools.names.has(call.tool), `${name} calls an unknown tool: ${call.tool}`);
+    const keys = tools.schemaKeys.get(call.tool)!;
     for (const key of call.keys) assert.ok(keys.has(key), `${name} names an unknown ${call.tool} argument: ${key}`);
   }
   for (const field of ['names', 'calls', 'keys'] as const)
@@ -205,34 +212,44 @@ test('B13 docs/delegate.example.json loads through the shipped delegate.json val
   }
 });
 
-test('B13 skill documents name only shipped delegate tools and argument keys', () => {
+test('B13 current native and historical skill documents use only their own shipped tools and argument keys', () => {
   for (const path of SKILL_FILES) checkDocument(path, read(path), MINIMUM.get(path)!);
 });
 
 test('B13 scanner rejects suffix typos, case typos, key typos and empty documents', () => {
   const parent = read(PARENT);
   const minimum = MINIMUM.get(PARENT)!;
-  const suffix = parent.replaceAll('delegate_wait', 'delegate_waitX');
-  assert.notEqual(suffix, parent, 'the parent skill must mention delegate_wait for this control');
-  assert.throws(() => checkDocument('suffix typo', suffix, minimum), /unknown tool/);
-  const casing = parent.replaceAll('delegate_wait', 'delegate_Wait');
-  assert.notEqual(casing, parent, 'the parent skill must mention delegate_wait for this control');
-  assert.throws(() => checkDocument('case typo', casing, minimum), /unknown tool/);
+  const suffix = parent.replaceAll('managed_wait', 'managed_waitX');
+  assert.notEqual(suffix, parent, 'the parent skill must mention managed_wait for this control');
+  assert.throws(() => checkDocument(PARENT, suffix, minimum), /unknown tool/);
+  const casing = parent.replaceAll('managed_wait', 'Managed_Wait');
+  assert.notEqual(casing, parent, 'the parent skill must mention managed_wait for this control');
+  assert.throws(() => checkDocument(PARENT, casing, minimum), /unknown tool/);
   const key = parent.replaceAll('afterSeq', 'afterSeqX');
   assert.notEqual(key, parent, 'the parent skill must mention afterSeq for this control');
-  assert.throws(() => checkDocument('key typo', key, minimum), /unknown delegate_wait argument/);
-  assert.throws(() => checkDocument('empty parent', '', minimum), /expected at least/);
+  assert.throws(() => checkDocument(PARENT, key, minimum), /unknown managed_wait argument/);
+  assert.throws(() => checkDocument(PARENT, '', minimum), /expected at least/);
+  const historical = parent.replaceAll('managed_wait', 'delegate_wait');
+  assert.throws(() => checkDocument(PARENT, historical, minimum), /unknown tool/);
+  const jevTypo = parent.replaceAll('jev_run', 'jev_runX');
+  assert.notEqual(jevTypo, parent, 'the native skill must cover Jev');
+  assert.throws(() => checkDocument(PARENT, jevTypo, minimum), /unknown tool/);
 });
 
-test('B13 skill documents name only refusal codes the shipped MCP returns', () => {
+test('B13 skill inline codes match the appropriate shipped API or documented native event', () => {
   const codes = shippedRefusalCodes();
   const adapters = shippedWakeAdapters();
   for (const path of SKILL_FILES) {
+    const tools = documentCatalog(path);
+    // Native result/event names are protocol vocabulary, not historical MCP refusal codes.
+    const nativeEvents = new Set(['agent_end', 'agent_settled']);
     for (const match of stripFences(read(path)).matchAll(INLINE_CODE)) {
       const token = match[1];
-      if (!SNAKE_CASE.test(token) || TOOL_NAMES.has(token)) continue;
+      if (!SNAKE_CASE.test(token) || tools.names.has(token)) continue;
       assert.ok(
-        codes.has(token) || adapters.has(token) || ARGUMENT_KEYS.has(token) || NON_REFUSAL_TOKENS.has(token),
+        (path === PARENT ? nativeEvents.has(token) : codes.has(token) || adapters.has(token)) ||
+          tools.argumentKeys.has(token) ||
+          NON_REFUSAL_TOKENS.has(token),
         `${path} names a code or key the shipped MCP does not return: ${token}`
       );
     }

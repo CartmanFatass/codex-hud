@@ -1,3 +1,4 @@
+import { nativeCallsOnly } from '../core/link/view-model.js';
 /**
  * Each pane's rows: the agents (the compact tree, or the cards and their
  * summary), the worktrees, the changes, the timeline, and the brief and
@@ -575,6 +576,16 @@ export function agentsView(
 ): MonitorRow[] {
   // A delegation view model, whenever there is one, is the agents view (rulings B10B-s2 Q1).
   const delegation = input.hud?.delegation;
+  if (nativeCallsOnly(delegation)) {
+    const nativeRows =
+      state.style === 'rich'
+        ? richRows(input, state, width, now, spaced)
+        : [...agentRows(input, state, width, now), ...briefRows(input, state, width, now, spaced)];
+    const calls = delegationAgentsRows(delegation!, { width, nowMs: now, style: 'compact', showHistory: true }).map(
+      (row) => ({ text: row.text, key: row.key, item: undefined })
+    );
+    return [...nativeRows, ...calls];
+  }
   if (delegation)
     return delegationAgentsRows(delegation, {
       width,

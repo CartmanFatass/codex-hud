@@ -20,7 +20,8 @@ export function fixture(t, label = 'A') {
     if (name === 'package.json' || name === 'packages/hud-mcp/package.json')
       data = json({ name: 'codex-hud', type: 'module', version: '0.0.0' });
     for (const [pkg, version] of Object.entries(DEPENDENCIES))
-      if (name === `node_modules/${pkg}/package.json`) data = json({ name: pkg, version });
+      if (name === `node_modules/${pkg}/package.json`)
+        data = json({ name: pkg.split('/node_modules/').at(-1), version });
     if (Object.values(COMMANDS).includes(name))
       data = Buffer.from(
         name === 'bin/codex-hud'

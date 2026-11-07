@@ -33,9 +33,12 @@ import {
   makeHookSettings,
   publishRecord,
   recordPaths,
+  readHookConfig,
   type HookConfig,
   type HookRecord,
 } from '../../packages/hud-mcp/src/hook/record.js';
+import { JEV_TOOLS } from '../../packages/hud-mcp/src/jev-tools.js';
+import { MANAGED_TOOLS } from '../../packages/hud-mcp/src/managed-tools.js';
 import { SessionRefResolver } from '../../packages/hud-mcp/src/resolvers.js';
 import type { DelegateProfile } from '../../packages/hud-mcp/src/config.js';
 import type { ProcessInfo, ProcessReaderPort } from '../../packages/hud-mcp/src/process.js';
@@ -186,7 +189,6 @@ test('half-written, oversized, symlink and duplicate conflicting publications re
 for (const field of [
   'version',
   'implementation',
-  'claudeVersion',
   'profileFingerprint',
   'sourceId',
   'processKey',
@@ -280,6 +282,7 @@ test('CLI settings preserve existing hooks/config and match only the exact serve
     assert.equal(old.hooks.PreToolUse.length, 1);
     const regex = new RegExp(value.hooks.PreToolUse[1].matcher);
     assert.ok(HUD_TOOLS.includes('delegate_close'));
+    for (const tool of [...MANAGED_TOOLS, ...JEV_TOOLS]) assert.ok(HUD_TOOLS.includes(tool.name));
     assert.ok(regex.test('mcp__hud.special__delegate_close'));
     assert.ok(!regex.test('mcp__hud.special__delegate_close_suffix'));
     assert.ok(!regex.test('mcp__other__delegate_close'));
@@ -304,10 +307,10 @@ test(
     const f = fixture();
     let ledger;
     try {
-      const reader = new ReadOnlyScopeSnapshot(f.config.ledgerPath);
+      const reader = new ReadOnlyScopeSnapshot(f.config.ledgerPath!);
       assert.equal(reader.read(f.processKey).kind, 'missing_ledger');
       assert.equal(readdirSync(f.root).length, 0);
-      ledger = await openLedger(f.config.ledgerPath);
+      ledger = await openLedger(f.config.ledgerPath!);
       assert.deepEqual(reader.read(f.processKey), {
         kind: 'no_current',
         ledgerId: ledger.ledgerId,
@@ -569,5 +572,27 @@ test('E4 Claude close source record uses the exact tool and rejects suffix/serve
       f.input.tool_name = name;
       assert.throws(f.record);
     }
-  } finally { f.cleanup(); }
+  } finally {
+    f.cleanup();
+  }
 });
+
+for (const version of ['2.1.305', '99.7.1-next', undefined]) {
+  test(`native hook identity is independent of vendor version: ${version}`, () => {
+    const f = fixture();
+    try {
+      f.config.claudeVersion = version;
+      const path = join(f.root, 'config.json');
+      writeFileSync(path, JSON.stringify(f.config), { mode: 0o600 });
+      assert.equal(readHookConfig(path).claudeVersion, version);
+      const record = f.record();
+      assert.equal(Object.hasOwn(record, 'claudeVersion'), false);
+      // Old records may carry a diagnostic, but it is not identity authority.
+      if (version !== undefined) record.claudeVersion = version;
+      rewrite(f, record);
+      assert.equal(f.consume().record.sessionId, id);
+    } finally {
+      f.cleanup();
+    }
+  });
+}

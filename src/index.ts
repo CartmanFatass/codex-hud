@@ -1,3 +1,4 @@
+import { NativeCallCollector } from './collectors/native-calls.js';
 import { performance } from 'node:perf_hooks';
 import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
 import { initialParserState } from './core/observation.js';
@@ -110,6 +111,7 @@ let journal: ActivityJournal | undefined;
 let journalRoot = '';
 let configNeedsRefresh = false;
 let delegationCollector: HudDelegationCollector | null = null;
+const nativeCalls = NativeCallCollector.fromEnv();
 let delegationParseBudget: ReaderBudget | null = null;
 const parseRolloutSafely = createParseQueue(() =>
   rolloutParser.parse(
@@ -193,10 +195,11 @@ async function collectData(): Promise<HudData & HudDelegationData> {
     health.fail('session', error);
   }
 
-  const delegation = delegationCollector
+  const nativeRead = nativeCalls.collectCodex(session?.sessionId, getCodexHome());
+  const legacyDelegation = delegationCollector
     ? await delegationCollector.tick(session?.sessionId, delegationDeadline)
     : null;
-  delegationParseBudget = delegation
+  delegationParseBudget = legacyDelegation
     ? {
         maxBytes: 4 * 1024 * 1024,
         maxRecords: 2000,
@@ -221,7 +224,7 @@ async function collectData(): Promise<HudData & HudDelegationData> {
     }
   }
   const rootStats = rolloutParser.getReadStats();
-  if (delegation && rootStats && rootStats !== priorRootStats)
+  if (legacyDelegation && rootStats && rootStats !== priorRootStats)
     delegationCollector?.collector.chargeAdditionalRead(
       rootStats.bytesRead,
       rootStats.recordsRead,
@@ -233,6 +236,8 @@ async function collectData(): Promise<HudData & HudDelegationData> {
     health.read();
   }
 
+  await nativeRead;
+  const delegation = nativeCalls.merge(legacyDelegation);
   const delegationMs = delegationCollector?.collector.stats().totalMs ?? 0;
   if (delegationMs > 50)
     health.fail('tree', delegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms');
@@ -241,11 +246,11 @@ async function collectData(): Promise<HudData & HudDelegationData> {
     sessionId: session?.sessionId,
     stale,
     runtimeSession: paneRuntimeStateCollector?.collect() ?? undefined,
-    ...(delegation
+    ...(legacyDelegation
       ? { tree: { rootId: session?.sessionId ?? '', nodes: [], totalCount: 0, updatedAt: new Date() } }
       : {}),
   });
-  if (delegationCollector) Object.assign(hudData, { delegation });
+  if (delegation) Object.assign(hudData, { delegation });
   cachedHudData = hudData;
   return hudData;
 }
@@ -284,7 +289,7 @@ async function mainLoop(): Promise<void> {
       renderToStdout(data, HUD_PANE_HEIGHT);
       await delegationCollector?.afterPaint(
         (committed) => {
-          Object.assign(data, { delegation: committed });
+          Object.assign(data, { delegation: nativeCalls.merge(committed) });
           renderToStdout(data, HUD_PANE_HEIGHT);
         },
         collectionStartedAt,

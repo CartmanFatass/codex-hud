@@ -691,7 +691,7 @@ test('B11 standalone argv and explicit shell preserve special argument bytes in 
 });
 
 test(
-  'B11 Claude hook --settings preserves explicit user hooks and exact env; unverified launch makes no files',
+  'B11 Claude hook --settings preserves explicit user hooks and exact env without qualification gates',
   { skip },
   async () => {
     const root = mkdtempSync(join(tmpdir(), 'hud-b11-claude-'));
@@ -725,7 +725,15 @@ test(
     writeFileSync(settingsFile, JSON.stringify(settings));
     try {
       const before = readdirSync(root);
-      await assert.rejects(claudeCommand([], root, io(root).value), /capability_unverified/);
+      assert.equal(
+        await claudeCommand([], root, io(root).value, {
+          verify: async () => {
+            throw new Error('ordinary launch must not query qualification');
+          },
+          launch: async () => 0,
+        }),
+        0
+      );
       assert.deepEqual(readdirSync(root), before);
       let launched = 0;
       await claudeCommand(['--resume', 'synthetic-session', '--settings', settingsFile], root, io(root).value, {
@@ -754,18 +762,12 @@ test(
         overrideIO.value.env.SHELL = '/bin/sh';
         await claudeCommand(override, root, overrideIO.value, {
           verify: async (effective) => {
-            assert.notEqual(
-              launchProfileDigest(effective),
-              launchProfileDigest({ ...profile, retire: { ...RETIRE_DEFAULTS } } as LaunchProfile)
-            );
+            assert.notEqual(launchProfileDigest(effective), launchProfileDigest(profile as LaunchProfile));
             return true;
           },
           launch: async (_command, env) => {
             const hook = JSON.parse(readFileSync(env.HUD_CLAUDE_HOOK_CONFIG!, 'utf8'));
-            assert.equal(
-              hook.profileFingerprint,
-              launchProfileDigest({ ...profile, retire: { ...RETIRE_DEFAULTS } } as LaunchProfile)
-            );
+            assert.equal(hook.profileFingerprint, launchProfileDigest(profile as LaunchProfile));
             return 0;
           },
         });
@@ -800,10 +802,7 @@ test(
             assert.equal(merged.hooks.PreToolUse.length, 2);
             assert.deepEqual(merged.permissions, settings.permissions);
             const hook = JSON.parse(readFileSync(env.HUD_CLAUDE_HOOK_CONFIG!, 'utf8'));
-            assert.equal(
-              hook.profileFingerprint,
-              launchProfileDigest({ ...configured, retire: { ...RETIRE_DEFAULTS } } as LaunchProfile)
-            );
+            assert.equal(hook.profileFingerprint, launchProfileDigest(configured as LaunchProfile));
             return 0;
           },
         });

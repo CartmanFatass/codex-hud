@@ -2,6 +2,8 @@
 
 > **2026-11-05 cloud-development update:** See [the current cloud handbook and revised C–F roadmap](../cloud-development/README.md). Its development sequencing, simulation guidance and validation scope replace contrary blanket phase-order, local-only and every-package check requirements below. Applicable functional integration checks, security contracts and production capability gates remain in force; the historical record below is preserved.
 
+> **2026-11-06 owner clarification:** [Project repair authorization](../cloud-development/cloud-development.md#owner-clarification-project-repair-authorization-2026-11-06) supersedes earlier repair-count limits and count-triggered approval stops, including those repeated in historical briefs and reviews. Continue authorized in-scope repairs with fresh independent re-checks; substantive scope, contract, permission and safety boundaries, model roles and merge/production gates remain unchanged.
+
 dots has one main session that starts subagents with a named model and effort, its own Linux environment, and the repo
 through the GitHub connector. It reads `AGENTS.md`. The loop, rules and check set are those of
 [`README.md`](README.md); state and the package queue are in [`../handoff/STATE.md`](../handoff/STATE.md). This file
@@ -34,8 +36,10 @@ implementer's conversation, only these inputs:
 3. **Final review.** Start the review Oracle with the report and the saved check output. It verifies the report's
    claims, reviews the diff, and returns findings with a verdict.
 4. **Fix.** If the verdict is fix required, pass the Oracle's findings unchanged to the same implementer. Then start a
-   fresh re-check Oracle with the previous findings and the fix diff. Allow at most two fix rounds; after that, write
-   the open findings to `docs/handoff/questions/<wp>.md` and move on.
+   fresh re-check Oracle with the previous findings and the fix diff. Continue authorized in-scope implementation
+   and test repairs without a fixed round count or a count-triggered approval request. Report substantive new
+   findings and keep independent authorized packages moving. Escalate genuine owner decisions under step 6 and
+   applicable permission/safety requirements; preserve unresolved findings and actual check outcomes.
 5. **Merge.** When the verdict is accept, merge into `universal-hud` with `--no-ff`. Rerun the check set on the merged
    tree. If it is green (known flakes rerun alone, both runs recorded), push and update STATE.md. If it is not green,
    do not push: start an Oracle on the failure and follow its ruling.

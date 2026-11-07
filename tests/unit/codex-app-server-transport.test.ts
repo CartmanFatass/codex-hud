@@ -41,32 +41,33 @@ test('actual child: approval, malformed frame and exit fail without automatic re
     const c = fixture(t, mode);
     await c.initialize();
     await assert.rejects(c.threadStart());
-    assert.equal((await c.closed).reaped, true);
+    assert.equal((await c.shutdown()).reaped, true);
     assert.notEqual(c.snapshot().reason, null);
   }
 });
-test('actual silent child: bounded in-flight queue, deadline rejects all and reaps child', async (t) => {
+test('actual silent child: deadlines reject calls without stopping the connection', async (t) => {
   const c = fixture(t, 'silent', 1000);
   await c.initialize();
   const pending = Array.from({ length: 8 }, () => c.threadStart());
   const all = Promise.allSettled(pending);
   await assert.rejects(c.threadStart(), /pending_limit/);
   assert.ok((await all).every((r) => r.status === 'rejected'));
-  assert.equal(c.snapshot().reason, 'request_timeout');
-  assert.equal((await c.closed).reaped, true);
+  assert.equal(c.snapshot().reason, null);
+  assert.equal(c.snapshot().stopped, false);
+  assert.equal((await c.shutdown()).reaped, true);
 });
 
-test('owned child ignoring TERM is escalated and reaped; stderr limit is fail closed', async (t) => {
-  const c = fixture(t, 'ignore-term');
-  await c.initialize();
-  const closed = await c.shutdown();
-  assert.equal(closed.reaped, true);
-  assert.equal(closed.signal, 'SIGKILL');
-  const noisy = fixture(t, 'stderr-limit');
+test('stderr volume is diagnostic, not authority to terminate a native process', async (t) => {
+  const noisy = fixture(t, 'stderr-limit', 100);
+  const diagnostics: string[] = [];
+  noisy.onDiagnostic((e) => {
+    if (e.type === 'stderr') diagnostics.push(e.text);
+  });
   await noisy.initialize();
-  await assert.rejects(noisy.threadStart());
-  assert.equal(noisy.snapshot().reason, 'stderr_limit');
-  assert.equal((await noisy.closed).reaped, true);
+  await assert.rejects(noisy.threadStart(), /request_timeout/);
+  assert.ok(diagnostics.join('').length > 65536);
+  assert.equal(noisy.snapshot().stopped, false);
+  assert.equal((await noisy.shutdown()).reaped, true);
 });
 test('missing executable rejects initialization and resolves actual child close', async (t) => {
   const c = new CodexAppServerTransport({
@@ -78,5 +79,5 @@ test('missing executable rejects initialization and resolves actual child close'
   });
   t.after(() => c.shutdown());
   await assert.rejects(c.initialize());
-  assert.equal((await c.closed).reaped, true);
+  assert.equal((await c.shutdown()).reaped, true);
 });

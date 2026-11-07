@@ -1,6 +1,8 @@
+import { MANAGED_TOOLS } from '../../packages/hud-mcp/src/managed-tools.js';
+import { JEV_TOOLS } from '../../packages/hud-mcp/src/jev-tools.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -133,7 +135,7 @@ for (const code of ['EACCES', 'EPERM'] as const) {
 }
 
 test(
-  'int hud-mcp physical caller registration persists real procStart/cwd without logical authority',
+  'explicit legacy LedgerCallerRegistry persists real procStart/cwd without logical authority',
   { skip },
   async () => {
     const home = mkdtempSync(join(tmpdir(), 'hud-mcp-ledger-'));
@@ -191,31 +193,38 @@ test(
   }
 );
 
-test('int hud-mcp composition uses existing ledger even when diagnostic registry requested', { skip }, async () => {
-  const home = mkdtempSync(join(tmpdir(), 'hud-mcp-composition-'));
-  const ledger = await openLedger(join(home, 'ledger.sqlite'));
-  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
-    env: { ...process.env, HUD_HOME: home, HUD_MCP_REGISTRY_DIR: join(home, 'diagnostic') },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  let stderr = '';
-  child.stderr.on('data', (x) => (stderr += x));
-  const done = new Promise<number | null>((resolve) => child.once('exit', resolve));
-  child.stdin.end();
-  try {
-    assert.equal(await done, 0, stderr);
-    const rows = ledger.snapshot((tx) => tx.all('SELECT * FROM callers'));
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0].pid, child.pid);
-    assert.equal(rows[0].cwd, process.cwd());
-    assert.ok(rows[0].proc_start);
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    await done;
-    await ledger.close();
-    rmSync(home, { recursive: true, force: true });
+test(
+  'default native hud-mcp leaves an existing legacy ledger and diagnostic registry untouched',
+  { skip },
+  async () => {
+    const home = mkdtempSync(join(tmpdir(), 'hud-mcp-composition-'));
+    const ledger = await openLedger(join(home, 'ledger.sqlite'));
+    const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
+      env: { ...process.env, HUD_HOME: home, HUD_MCP_REGISTRY_DIR: join(home, 'diagnostic') },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr.on('data', (x) => (stderr += x));
+    const done = new Promise<number | null>((resolve) => child.once('exit', resolve));
+    child.stdin.end();
+    try {
+      assert.equal(await done, 0, stderr);
+      const rows = ledger.snapshot((tx) => tx.all('SELECT * FROM callers'));
+      assert.equal(rows.length, 0, 'default native main does not register callers in the legacy database');
+      for (const table of ['sources', 'caller_scopes', 'caller_contexts', 'child_bindings', 'claims'])
+        assert.equal(
+          ledger.snapshot((tx) => tx.get(`SELECT count(*) AS n FROM ${table}`)!.n),
+          0
+        );
+      assert.equal(existsSync(join(home, 'diagnostic')), false, 'legacy environment hint cannot select a registry');
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      await done;
+      await ledger.close();
+      rmSync(home, { recursive: true, force: true });
+    }
   }
-});
+);
 
 // Child exit can precede the last stdio data event. Only close completes capture.
 function captureMcpOutput(child: { stdout: Readable; stderr: Readable; once: EventEmitter['once'] }) {
@@ -295,65 +304,73 @@ for (const [name, tail] of [
   });
 }
 
-test('int unconfigured real MCP answers discovery and refuses whoami with JSON-RPC-only stdout', { skip }, async () => {
-  const home = mkdtempSync(join(tmpdir(), 'hud-mcp-ancestor-stdio-'));
-  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
-    env: { ...process.env, HOME: home, HUD_HOME: home, HUD_MCP_PROFILE: '', HUD_MCP_REGISTRY_DIR: '' },
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
-  const capture = captureMcpOutput(child);
-  let buffer = '';
-  let sequence = 0;
-  const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
-  child.stdout.on('data', (chunk) => {
-    buffer += chunk;
-    let index;
-    while ((index = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, index);
-      buffer = buffer.slice(index + 1);
-      try {
-        const reply = JSON.parse(line) as { id: number };
-        pending.get(reply.id)?.resolve(reply);
-      } catch {
-        for (const request of pending.values()) request.reject(new Error('non-JSON-RPC stdout'));
-      }
-    }
-  });
-  const done = capture.done.then((code) => {
-    for (const request of pending.values()) request.reject(new Error(`MCP closed early: ${capture.stderr}`));
-    return code;
-  });
-  const request = (method: string, params: unknown) =>
-    new Promise<unknown>((resolve, reject) => {
-      const id = ++sequence;
-      const finish = (value: unknown, error?: Error) => {
-        clearTimeout(timer);
-        pending.delete(id);
-        if (error) reject(error);
-        else resolve(value);
-      };
-      const timer = setTimeout(() => finish(null, new Error(`MCP deadline: ${method}: ${capture.stderr}`)), 5000);
-      pending.set(id, { resolve: (value) => finish(value), reject: (error) => finish(null, error) });
-      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+test(
+  'int unconfigured default MCP advertises native tools and refuses source-less managed_list with JSON-RPC-only stdout',
+  { skip },
+  async () => {
+    const home = mkdtempSync(join(tmpdir(), 'hud-mcp-ancestor-stdio-'));
+    const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
+      env: { ...process.env, HOME: home, HUD_HOME: home, HUD_MCP_PROFILE: '', HUD_MCP_REGISTRY_DIR: '' },
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
-  try {
-    const initialized = (await request('initialize', { protocolVersion: '2025-06-18' })) as {
-      result: { serverInfo: { name: string } };
-    };
-    assert.equal(initialized.result.serverInfo.name, 'hud-mcp');
-    const listed = (await request('tools/list', {})) as { result: { tools: unknown[] } };
-    assert.equal(listed.result.tools.length, 8);
-    const called = (await request('tools/call', { name: 'delegate_whoami', arguments: {} })) as {
-      result: { structuredContent: unknown };
-    };
-    assert.deepEqual(called.result.structuredContent, { ok: false, code: 'identity_source_missing' });
-    child.stdin.end();
-    assert.equal(await done, 0, capture.stderr);
-    assert.equal(buffer, '');
-    assertDiscoveryStdout(capture.stdout);
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
-    await done;
-    rmSync(home, { recursive: true, force: true });
+    const capture = captureMcpOutput(child);
+    let buffer = '';
+    let sequence = 0;
+    const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+    child.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      let index;
+      while ((index = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        try {
+          const reply = JSON.parse(line) as { id: number };
+          pending.get(reply.id)?.resolve(reply);
+        } catch {
+          for (const request of pending.values()) request.reject(new Error('non-JSON-RPC stdout'));
+        }
+      }
+    });
+    const done = capture.done.then((code) => {
+      for (const request of pending.values()) request.reject(new Error(`MCP closed early: ${capture.stderr}`));
+      return code;
+    });
+    const request = (method: string, params: unknown) =>
+      new Promise<unknown>((resolve, reject) => {
+        const id = ++sequence;
+        const finish = (value: unknown, error?: Error) => {
+          clearTimeout(timer);
+          pending.delete(id);
+          if (error) reject(error);
+          else resolve(value);
+        };
+        const timer = setTimeout(() => finish(null, new Error(`MCP deadline: ${method}: ${capture.stderr}`)), 5000);
+        pending.set(id, { resolve: (value) => finish(value), reject: (error) => finish(null, error) });
+        child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+      });
+    try {
+      const initialized = (await request('initialize', { protocolVersion: '2025-06-18' })) as {
+        result: { serverInfo: { name: string } };
+      };
+      assert.equal(initialized.result.serverInfo.name, 'hud-mcp');
+      const listed = (await request('tools/list', {})) as { result: { tools: { name: string }[] } };
+      assert.deepEqual(
+        listed.result.tools.map((tool) => tool.name).sort(),
+        [...MANAGED_TOOLS, ...JEV_TOOLS].map((tool) => tool.name).sort()
+      );
+      assert.ok(listed.result.tools.every((tool) => !tool.name.startsWith('delegate_')));
+      const called = (await request('tools/call', { name: 'managed_list', arguments: {} })) as {
+        result: { structuredContent: unknown };
+      };
+      assert.deepEqual(called.result.structuredContent, { ok: false, code: 'identity_source_missing' });
+      child.stdin.end();
+      assert.equal(await done, 0, capture.stderr);
+      assert.equal(buffer, '');
+      assertDiscoveryStdout(capture.stdout);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      await done;
+      rmSync(home, { recursive: true, force: true });
+    }
   }
-});
+);

@@ -61,7 +61,7 @@ async function fixture(t, { persisted = true } = {}) {
   };
 }
 
-test('pinned profile captures immutable ready context and verifies it independently', async (t) => {
+test('HUD wire profile captures immutable ready context and verifies it independently', async (t) => {
   const f = await fixture(t);
   const captured = await f.capture();
   assert.ok(Object.isFrozen(captured));
@@ -284,33 +284,39 @@ test('nonregular directory and FIFO are rejected without blocking', { timeout: 3
   await assert.rejects(validatePiSnapshot(f.snapshot({ sessionFile: fifo }), f.root), /pi_session_file_not_regular/);
 });
 
-for (const [name, bytes, expected] of [
-  ['wrong id', header('other-session'), /pi_session_header_mismatch/],
-  ['old version', header(undefined, { version: 2 }), /invalid_pi_session_header/],
-  ['missing version', '{"type":"session","id":"synthetic-session"}\n', /invalid_pi_session_header/],
-  ['string version', header(undefined, { version: '3' }), /invalid_pi_session_header/],
-  ['wrong type', header(undefined, { type: 'message' }), /invalid_pi_session_header/],
-  ['oversized id', header('x'.repeat(129)), /invalid_pi_session_header/],
-  ['array', '[]\n', /invalid_pi_session_header/],
-  ['null', 'null\n', /invalid_pi_session_header/],
-  ['empty', '', /invalid_pi_session_header/],
-  ['partial json', '{"type":"session"', /invalid_pi_session_header/],
-  ['invalid utf8', Buffer.from([0xff, 0x0a]), /invalid_pi_session_header/],
-  ['oversized first line', ' '.repeat(limits.headerBytes + 1) + header(), /pi_session_header_too_large/],
+for (const [name, bytes, version] of [
+  ['updated version', header(undefined, { version: 42 }), 42],
+  ['old version', header(undefined, { version: 2 }), 2],
+  ['missing version', '{"type":"session","id":"synthetic-session"}\n', null],
+  ['string version', header(undefined, { version: 'new-format' }), null],
+  ['unknown format', '{"format":"future","session":{"native":"synthetic-session"}}\n', null],
+  ['array', '[]\n', null],
+  ['empty', '', null],
 ]) {
-  test(`header validation rejects ${name}`, async (t) => {
+  test(`native extension identity does not depend on historical header format: ${name}`, async (t) => {
     const f = await fixture(t);
     await writeFile(f.state.sessionFile, bytes);
-    await assert.rejects(f.capture(), expected);
+    const captured = await f.capture();
+    assert.equal(captured.sessionId, f.state.sessionId);
+    assert.equal(captured.headerVersion, version);
+    assert.equal(captured.status, 'ready');
+    assert.deepEqual(await f.lifecycle.recheck(captured), captured);
   });
 }
+
+test('recognized conflicting header ID still rejects a context/file mismatch', async (t) => {
+  const f = await fixture(t);
+  await writeFile(f.state.sessionFile, header('other-session', { version: 42 }));
+  await assert.rejects(f.capture(), /pi_session_header_mismatch/);
+});
 
 test('only the first bounded line is parsed; arbitrary transcript tail is not an identity source', async (t) => {
   const f = await fixture(t);
   await writeFile(f.state.sessionFile, header() + 'untrusted transcript tail\n'.repeat(100000));
   assert.equal((await f.capture()).status, 'ready');
   await writeFile(f.state.sessionFile, '{"type":"message"}\n' + header());
-  await assert.rejects(f.capture(), /invalid_pi_session_header/);
+  // An in-epoch rewrite is fenced, independently of header format.
+  await assert.rejects(f.capture(), /pi_session_header_replaced/);
 });
 
 test('maximum bounded header is accepted and one byte more is refused', async (t) => {
@@ -477,6 +483,6 @@ test('unsupported context does not fall back to RPC, args or alternate method na
       'call',
       'delegate_spawn'
     ),
-    /unsupported_pi_extension_context/
+    /unsupported_pi_extension_context: missing getSessionId/
   );
 });

@@ -1,7 +1,6 @@
 import { join } from 'node:path';
-import { ReadOnlyScopeSnapshot, type ScopeSnapshotPort } from '../../../../src/core/ledger-scope-read.js';
+import type { ScopeSnapshotPort } from '../../../../src/core/ledger-scope-read.js';
 import {
-  CLAUDE_VERSION,
   IMPLEMENTATION,
   HUD_TOOLS,
   hash,
@@ -19,7 +18,7 @@ export function makeRecord(
   config: HookConfig,
   input: unknown,
   launch: ReturnType<typeof verifyLaunch>,
-  scopes: ScopeSnapshotPort
+  legacyScopes?: ScopeSnapshotPort
 ): HookRecord {
   if (
     !object(input) ||
@@ -31,17 +30,18 @@ export function makeRecord(
     !HUD_TOOLS.some((t) => input.tool_name === `mcp__${config.serverName}__${t}`)
   )
     throw new Error('Invalid hook input');
-  // Absent agent fields mean root ONLY under the pinned, no-custom-agent launch profile.
+  // Absent agent fields mean root only for the native root hook/registry pairing.
   // A one-sided, empty or null agent field is ambiguous, never a root default.
   const hasId = Object.hasOwn(input, 'agent_id'),
     hasType = Object.hasOwn(input, 'agent_type');
   if (hasId !== hasType || (hasId && (!text(input.agent_id) || !text(input.agent_type))))
     throw new Error('Ambiguous agent source');
-  const premise = scopes.read(launch.processKey);
+  // Native publisher does not supply a scope reader. This parameter is retained
+  // solely for explicit historical experiment fixtures.
+  const premise = legacyScopes?.read(launch.processKey);
   const value: Omit<HookRecord, 'fingerprint'> = {
     version: 1,
     implementation: IMPLEMENTATION,
-    claudeVersion: CLAUDE_VERSION,
     profileFingerprint: config.profileFingerprint,
     sourceId: launch.sourceId,
     processKey: launch.processKey,
@@ -51,7 +51,7 @@ export function makeRecord(
     toolName: input.tool_name,
     sessionId: input.session_id,
     agent: hasId ? { kind: 'native_child', id: input.agent_id as string } : { kind: 'root', id: null },
-    premise,
+    ...(premise ? { premise } : {}),
     hookStartMonoMs: launch.hookStartMonoMs,
     hookStartUncertaintyMs: launch.hookStartUncertaintyMs,
     publishedMonoMs: Number(process.hrtime.bigint()) / 1e6,
@@ -100,15 +100,7 @@ export async function runHook(
   )
     throw new Error('Current Claude registry mismatch');
   mark('registryVerified');
-  const scopes = new ReadOnlyScopeSnapshot(config.ledgerPath);
-  const record = makeRecord(config, input, launch, {
-    read: (key) => {
-      mark('scopeStart');
-      const premise = scopes.read(key);
-      mark('scopeRead');
-      return premise;
-    },
-  });
+  const record = makeRecord(config, input, launch);
   mark('recordBuilt');
   if (verifyLaunch(config).processKey !== launch.processKey) throw new Error('Launch changed before publication');
   mark('launchRechecked');

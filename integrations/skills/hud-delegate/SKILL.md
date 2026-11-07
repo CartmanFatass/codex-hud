@@ -1,167 +1,177 @@
 ---
 name: hud-delegate
-description: Delegate a scoped task to a child harness through hud-mcp's delegate_* tools instead of hand-written Herdr or pi-role recipes. Covers choosing a profile from delegate.json, spawning with a stable request_key, waiting per parent harness (Claude background waiter, Codex idle turn, pi hud-wake extension), cursor rules, capacity refusals, blocked reports, cancel and resume, and when to hand off instead of waiting. Use when the current task routes work to an implementer or reviewer child, or when a delegation is running and needs waiting, reading or intervention.
+description: Use hud-mcp's managed_* tools to create, read, resume and communicate with owned native Codex, Claude or Pi sessions. Covers native events and requests, live cursors, explicit interruption/close, and the existing Claude background waiter, Codex queue and Pi extension notification paths. Also identifies the thin Jev tools. Use only when the user's task scope and confirmation rules permit the requested work.
 ---
 
-# Delegating through hud-mcp
+# Native sessions through hud-mcp
 
-The parent session stays the orchestrator: it scopes the task, writes the brief, spawns, waits, reads the report and
-verifies it. The child never talks to the user. One delegation is one `delegate_spawn` plus reads of the ledger.
+HUD connects the calling native session to official harness APIs. The caller decides what to ask, how to answer
+native requests and whether the work meets the user's goal. HUD does not decide task success or automatically
+approve, retry, interrupt or close native work.
 
-## 1. When to delegate, and to which profile
+The default MCP entry advertises `managed_*` and `jev_*`. Use the server's `tools/list` schemas. Tool names may be
+prefixed by the MCP server name in your harness. Historical delegation tools and their ledger workflow are not the
+current entry's API.
 
-- Delegate work that is scoped, self-contained and verifiable by a command. Keep architecture, contract and
-  cross-cutting decisions in the parent.
-- The project's delegation doc decides which kind of work goes to which profile; this skill has no routing table.
-- A profile is a `name` in `<HUD_HOME>/delegate.json` and is passed as `backend`. Read that file for what exists.
-- Pass `role`; the profile's `roles` map resolves model and effort only. It loads no template (§2). Pass
-  `model`/`effort` only when the user or the brief names them.
-- One child per brief. A second opinion is a second delegation with its own brief and request key.
+## 1. Profile and source
 
-## 2. Spawn
+- Native backend profiles are `id` entries in `<HUD_HOME>/native.json`. If that file is absent, the defaults are
+  `codex`, `claude` and `pi`, using the user's installed executables. The file can configure executable, args,
+  environment and explicit native options. Do not silently change permission settings.
+- `<HUD_HOME>/delegate.json` is retained for trusted caller-source registration and ordinary launcher configuration;
+  its profile names are not automatically backend profile IDs in `native.json`.
+- HUD authenticates the native caller on every tool invocation. Do not pass an owner, caller identity or invented
+  MCP call ID. Missing source identity is an error to resolve, not a reason to share another parent's connection.
+- Supply the task's absolute workspace. Native references, profile IDs and source files returned by HUD identify
+  existing owned sessions; they are not interchangeable paths into another session.
 
-- `delegate_spawn{backend, role, brief, cwd, mode, request_key}`. `brief` is a file path; the child reads it first.
-- `role` selects model and effort from the profile's `roles` map. No role loader exists: the child receives the
-  brief plus generic whoami/report instructions, and nothing else.
-- So the brief must carry the role. Copy `roles/implementer.md` or `roles/reviewer.md` verbatim at the top, or tell
-  the child to read it by repo path (`<repo>/integrations/skills/hud-delegate/roles/<role>.md`).
-- The brief also names the absolute report path and the fallback question channel (the orchestrator's pane); the
-  child cannot discover either.
+## 2. Create, then send once
 
 ```json
 {
-  "tool": "delegate_spawn",
+  "tool": "managed_create",
   "arguments": {
-    "backend": "codex-implementer",
-    "role": "implementer",
-    "brief": "<repo>/tmp/tasks/<WP>/brief.md",
-    "cwd": "<repo>",
-    "mode": "headless",
-    "request_key": "<task>-impl-1"
+    "profileId": "codex",
+    "workspace": "/absolute/project",
+    "origin": { "kind": "new" }
   }
 }
 ```
 
-- The brief header, in this order:
+Creation does not send a prompt. A successful transport response is `{ok:true,value:...}`. Save
+`value.connectionId`, `value.nativeRef` when available, and `value.throughSeq`. An SDK may not supply its native ID
+until it receives input; use the returned `connectionId` in the meantime.
 
+```json
+{
+  "tool": "managed_send",
+  "arguments": {
+    "connectionId": "<returned connection ID>",
+    "text": "Implement the requested change in this workspace and report the commands and results you checked."
+  }
+}
 ```
-<contents of roles/implementer.md, verbatim>
-# Task
-<what to deliver and the acceptance command>
-# Report
-<absolute report path>
-# Fallback question channel
-herdr agent prompt <orchestrator pane> "[<name>] QUESTION: <question>"
+
+Keep a pre-send observation cursor so a fast result is not skipped. Send returns the official receipt and
+correlation when available, not a verdict on the task. `managed_ask` is a convenience that sends once and waits:
+its `value` contains `receipt` and `observation`. Its optional `waitMs` is 0–120000; expiration ends only the wait.
+
+A lost response is not permission to repeat input. HUD has no durable request-key replay guarantee. First inspect
+`managed_list`, `managed_requests`, native state/history and the available correlation. Decide whether another
+input is appropriate only after checking what the provider actually received.
+
+Input options select explicit native behavior, not HUD's guess:
+
+- Codex: ordinary send starts a turn. To steer, use
+  `options:{"mode":"steer","expectedTurnId":"<observed native turn ID>"}`.
+- Pi: use the public prompt/steer/follow-up options; for example
+  `options:{"streamingBehavior":"followUp"}` on a prompt. Do not infer completion from `agent_end`;
+  `agent_settled` is the corresponding settled observation.
+- Claude: ordinary sends enter the public SDK input stream. Only documented adapter options are supported.
+
+## 3. Read observations and native history
+
+- `managed_list{}` returns this parent's connection observations and persisted direct relationships. A relationship
+  is not proof that the old process remains alive.
+- `managed_status{connectionId}` reads the connection observation and official native state.
+- `managed_read{connectionId,options?}` reads the backend's public state/history. Examples are Codex's default
+  thread read, Pi `options:{"method":"get_entries"}`, and Claude
+  `options:{"method":"getSessionMessages","offset":0,"limit":20}`. Native payloads and errors retain their
+  own semantics. An outer `ok:true` is not task success and does not override a native error payload.
+- `managed_wait{connectionId,afterSeq,waitMs}` reads bounded live events and pending requests without resending.
+  Omitting both target fields observes all children of the authenticated native owner.
+- A target can instead be the exact returned `nativeRef`. Prefer `connectionId` for pending callbacks or when
+  multiple historical connections refer to one native session.
+
+A wait page has `events`, `requests`, `throughSeq` and `truncated`. Inspect the page before retaining `throughSeq`
+as your next `afterSeq`. Keep separate cursors for different connection filters; advancing an owner-wide cursor
+from a filtered page can skip another child's events. If `truncated:true`, the live buffer omitted data, possibly
+an oversized event. Read official history rather than assuming the missing output says nothing.
+
+These cursors belong to the live host, not durable native history. After a host restart, use the resumed connection's
+new cursor and official history. A native-history cursor such as Pi's entry ID is separate from HUD's `afterSeq`.
+A returned observation may be a request, an output, an actual disconnection or a process exit. Do not convert
+silence, a wait deadline or a disconnected pipe into an invented task result.
+
+## 4. Handle native requests, including during startup
+
+`managed_requests{}` lists live native callbacks. A request can arrive while `managed_create` or native resume is
+still waiting for its adapter to initialize. Another MCP call can list/wait for that request and respond using its
+`connectionId` and `requestId`; it need not wait for the original create reply.
+
+Read `kind` and the original `payload`. The caller and its harness apply their own confirmation and permission
+rules. Reply through:
+
+```json
+{
+  "tool": "managed_respond",
+  "arguments": {
+    "connectionId": "<request's connection ID>",
+    "requestId": "<exact returned request ID>",
+    "result": { "<native response field>": "<native response value>" }
+  }
+}
 ```
 
-- `mode` is `headless` in this build. Visible launch is not available in this build; use headless, and do not branch
-  on a code for it. Do not pass `layout`: it is refused with `visible_layout_not_in_this_build`.
-- `request_key` is stable for the intent: derive it once (for example `<task>-impl-1`) and reuse the same string.
-- After an uncertain result (transport error, timeout, `busy`) retry with the same key: the replay returns the
-  original run instead of starting a second child.
-- Never mint a new key for the same intent. A genuinely new intent gets a new key.
-- Keep `name` short and stable; it is the label the user sees in the HUD.
-- Read the response: `runId`, `linkId`, `advice.wake`. On a refusal read the code first (`backend_not_found`,
-  `capability_unverified`, `concurrency_limit`, `slot_busy`, `busy`, …) and report it instead of retrying blindly.
+The placeholder object is not a generic approval format: use that backend request's documented response shape.
+HUD forwards the JSON unchanged. `forwarded:true,nativeAcknowledged:false` records callback routing, not proof the
+provider accepted a decision. If the native request was withdrawn or its native timeout elapsed, reread current
+requests; do not fabricate a replacement allow/deny or repeatedly answer an expired ID.
 
-## 3. Waiting, per parent harness
+## 5. Existing native notification paths
 
-- Read `advice.wake` from the `delegate_spawn` result (or from `delegate_status`) before choosing a path.
-- `adapter` is `claude_background_wait_v1`, `codex_queue_v1`, `pi_extension_v1` or `none`.
-- `state` is `registered`, `unconfirmed`, `degraded` or `none`. Only `registered` means a working registration.
-- Rely on a native wake only when `adapter` is not `none` and `state` is `registered`.
-- `unconfirmed`: a delivery result is unknown, so a wake may or may not have arrived. Re-read status; do not count on
-  the wake.
-- `degraded` or `none`: no wake will arrive. Use a bounded wait and say in your report that delivery is unavailable.
-- Claude parent: `advice.wake.armCommand` is the waiter. Run it exactly as returned, verbatim, in a real background
-  task (`run_in_background`), one waiter per wait. It is present only for a valid registration.
-- Do not edit that command: it already carries this run's `--after-seq`, `--owner-generation` and `--notify`.
-- Claude parent without `armCommand`: run `hud run wait <runId> --after-seq <n> --timeout-ms <ms> --json` in a
-  background task. It is a bounded read, needs no `--owner-generation` and no `--notify`, and prints one page.
-- Codex parent: end the turn and idle. The queue wakes you with a new turn; no `sleep` loop and no polling tool call.
-- pi parent: the `hud-wake` extension wakes you; do nothing extra.
-- Any harness may use a bounded `delegate_wait{runId, afterSeq, timeoutMs}` when it needs the result in this turn.
-- A wait may return early with `timedOut:true` and `reason:'timeout_configuration_unverified'`; that is a short page,
-  not a failure.
-- Never chain waits faster than you need the result. A wait loop is not a cache warmer (§5.3).
+The default main adds a `wake` transport observation to tool responses. This is not a delivery/read guarantee;
+`modelReadAcknowledged:false` is explicit. `none` or `unavailable` means you must not rely on that channel. Even a
+queue helper's accepted exit does not establish that the model has read the message. Use a bounded `managed_wait`
+when you need the result in the current turn.
 
-## 4. Cursor rules
+- **Claude:** tool responses include `backgroundWaiter.argv`, an argument vector, plus instructions. Ordinary MCP
+  replies do not wake Claude. Start this command with Claude's real native background-task facility, such as
+  `run_in_background`; normal foreground execution is not an equivalent notification mechanism. Safely quote each
+  argv element if the tool accepts a shell command rather than an argument vector.
+- A create response's waiter argv includes that connection and its pre-input cursor. Keep this vector before
+  sending. The underlying command is `hud run wait --native-owner '<returned owner JSON>' --connection '<ID>'
+  --after-seq <cursor> --notify`. Use the returned owner JSON, not an identity guessed from cwd or configuration.
+- For subsequent waiters reuse the last page you actually inspected. `--json` can replace `--notify` when you need
+  the waiter's structured page and `throughSeq`. Do not pass both. `--timeout-ms` bounds only the waiter. A normal
+  background command exit produces the harness notification; a deadline does not mean the child finished.
+- **Codex:** the trusted registration selects the actual parent's executable, native thread and CODEX_HOME for
+  the existing `codex queue` path. A native result/request can notify that parent. Do not assume a closed or
+  unloaded parent has consumed it; use the reported transport fact and read the child when the parent returns.
+- **Pi:** explicitly load the packaged wake entrypoint in the target parent session with
+  `pi -e /path/to/runtime/integrations/pi/hud-wake.ts` (alongside your `hud-delegate` extension).
+  The entrypoint loads `dist/harness/pi/wake-extension.js` from that same build; a source checkout must be built first.
+  `hud-delegate` does not auto-register wake, so load the wake entrypoint only once. Its native
+  `sendMessage` follow-up can trigger the parent turn. A closed parent has no live extension to receive it.
 
-- Keep one `lastSeenSeq` per run in your own context; it starts at 0.
-- After every `delegate_wait` set it to the returned `nextSeq`; after `delegate_status` set it to `asOfSeq`.
-- Drain `hasMore` with the returned `runId` and `nextSeq` until `hasMore` is false.
-- A lost cursor after compaction or restart: call `delegate_status{runId}` and resume from `asOfSeq`.
-- A wake is a hint, not a fact. Re-check ownership with `delegate_status` before acting on it.
-- Ignore waiter lines from a stale generation (`orphaned`, `stale_generation`); they belong to an older context.
-- A duplicate wake costs one empty page and nothing more: reading is idempotent, so read.
+There is no `advice.wake.armCommand`, notification retry ledger or model-read acknowledgment in this path. Wake
+messages tell you which native session/request to read; they do not instruct you to accept an approval or declare
+the user's task complete.
 
-## 5. Capacity
+## 6. Resume, interrupt and close explicitly
 
-- Defaults: 6 active runs per ledger and 4 per owner, set in `delegate.json` `limits`; headless and visible runs count
-  alike.
-- `concurrency_limit` is a transient refusal: `{active, limit, occupants, retryAdvisable}`.
-- `retryAdvisable:true`: wait for a slot (a wake or a later turn), then retry with the same `request_key`.
-- `retryAdvisable:false`: nested exhaustion or `uncertain` occupants. Wait on, cancel or inline your own children;
-  reconcile `uncertain` runs. Never loop-retry.
-- A visible run is closed by the user: ask the user to close a finished pane. Never close it yourself.
-- A headless run that already reported keeps its slot until retirement: implementer 10 min, reviewer 2 min after the
-  report, blocked-wait 60 min, max runtime 4 h, grace 10 s.
+To reconnect an owned native session, use `managed_create` with the original `profileId`, original `workspace`, and
+`origin:{"kind":"resume","source":<returned nativeRef>}`. HUD reuses a still-live matching connection; after an
+observed transport end it invokes the official resume API. After host restart the same direct relation permits
+native-history recovery. This does not resurrect the old OS process, tools or callbacks.
 
-## 6. Reports and intervention
+Use `origin.kind:"fork"` only when explicitly requesting a new native session from that owned source. The source
+profile and locator remain the recorded ones. Pi's `sessionFile` must not be substituted; omitting it lets HUD use
+the recorded official file. A different file, profile or source workspace is rejected before native dispatch.
 
-- A child ends with `delegate_report{runId, status, summary, reportPath}`; verify the file at `reportPath`.
-- `status:'blocked'` means it needs you: an approval, a question or a decision (design §3.8 `needs`). Read the report,
-  then answer.
-- A report is not a terminal run: the process may still be alive and still hold its slot. Call
-  `delegate_status{runId}` first, always.
-- Answer a blocked child with `delegate_resume{linkId, mode, prompt, request_key}` or end it with
-  `delegate_cancel{runId}`.
-- Resume only when status shows a terminal `currentRun.state` (`ended`, `failed`, `cancelled`) and `slotHeld:false`.
-  `slot_busy` means the run or its slot is still alive: wait for the run to end or for retirement (blocked-wait 60
-  min, max runtime 4 h, §4.3), or cancel and wait, then resume. Never retry in a loop.
-- `status:'failed'`, an interrupted child, or a run that ended without a report: call `delegate_status{runId}` first,
-  then resume, cancel or reconcile per contract 03. The ledger says what happened; the prose does not.
-- `uncertain` (supervisor lost): read `reconciliation` in status. Show `hud run reconcile`; run it only when the user
-  asks.
-- Status `resumable` is advisory: the read path never attests capability, so its reason can be
-  `capability_unverified` even when a resume would be accepted.
+- `managed_cancel{connectionId,nativeTurnId?}` invokes only the public native interrupt. Codex requires the actual
+  native turn ID. An interrupt receipt is not proof every background tool has exited.
+- `managed_close{connectionId}` explicitly calls the backend's public close operation. Its receipt describes only
+  what that API reported. It does not delete native history or silently kill a process tree.
+- Parent exit, MCP EOF, waiter expiration and HUD panel closure do not close these child connections. There is no
+  automatic retirement or report requirement. The caller decides whether to continue or close after reviewing the
+  native results and the user's instructions.
 
-## 7. Cancel and resume
+## 7. Existing Jev Agent wrapper
 
-- `delegate_cancel{runId}` records the intent and returns without waiting for exit; `grace` is optional.
-- Visible runs: cancel returns `cancel.unconfirmed` with `visible_scope_control_unavailable`. Tell the user to stop the
-  run in its pane; never signal the pane yourself.
-- `delegate_resume{linkId, mode, request_key, prompt, expectedRun}` starts a new round on the same link.
-- Resume needs a terminal current run and a free slot, exactly as in §6: read `delegate_status` first.
-- Pass `expectedRun` with the runId you saw. On `expected_run_mismatch`, re-read status and decide again.
-- On `slot_busy`, wait for the run to end or for retirement, then retry with the same `request_key` and the
-  `expectedRun` you saw. Do not retry in a loop.
-- Never auto-retry a mismatch with a new key or a new `expectedRun`.
-
-## 8. Cache advice and handoff
-
-- `advice` is facts, not a verdict: `harness`, `auth`, `model`, TTLs and `provenance`; `null` means unknown.
-- HUD warming is off; pi's native `cacheWarming` is the only warming loop.
-- Decide in this order (§5.3): unrelated work → a new session with a clean brief; related work with outstanding
-  children or approvals → keep this session alive; short pause → native wake or a bounded wait; long or unknown pause
-  → hand off.
-- Hand off with the `hud-handoff` skill: write the fixed-form handoff, then continue in a fresh session.
-- Cache expiry alone does not invalidate the conversation; `handoffMinTokens` is advisory.
-
-## End a headless delegation
-
-`delegate_close({linkId, expectedRun, request_key, grace?})` ends a confirmed,
-current-owned headless relationship. Only its authenticated current parent may
-request it. `grace` is 0–60000 ms (default 10000); expectedRun and request_key are
-mandatory and unknown fields are rejected. Cancel stops a run while retaining
-possible resume; close permanently fences new resume/handover for this link.
-
-`ok:true` and `outcome.status:accepted` mean durable acceptance, not process exit.
-Inspect `current.closeState` or delegate_status/list/wait: unknown cleanup stays
-pending, changed relationships are incompatible, and only independently proven
-termination can produce closed. `current` may be null after a committed result.
-Retrying the same key returns the original immutable outcome without advancing
-cleanup; a changed request conflicts. Existing cancellation grace/clock is retained.
-No visible/local-manager close, reopening, send/ask, surface operation or deletion
-of sessions, reports, code or history is included. Generic mvpOperationPolicy(close)
-remains unsupported; this qualified MCP entry is its only approved exception.
+The same authenticated source can call `jev_create{url,goals,...}` and retain its returned `instanceId` and actual
+owned browser target. `jev_run{instanceId}` invokes the installed Agent's run generator and returns native
+snapshots. `jev_snapshot`, `jev_command`, `jev_list` and explicit `jev_close` wrap the existing Agent API; they do
+not define a second browser policy or task engine. A blocked/CAPTCHA page, native error, lost observer or timeout
+never implicitly calls close. Keep the page for the user's authorized verification/handoff rather than replacing
+it or retrying the agent blindly. Historical Jev relations alone do not restore a dead Agent instance.

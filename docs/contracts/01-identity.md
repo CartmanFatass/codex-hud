@@ -1,5 +1,9 @@
 # 01：调用者登记与绑定凭据
 
+> **2026-11-07 新路径取代说明（用户已批准实施，验收未完成）：** [本机官方会话与 MCP 薄接口架构](../architecture/simplified-harness-architecture.md) 是新默认路径的依据。本文以下旧 ledger/run/report/claim/slot、supervision/retirement、资格矩阵与持久恢复政策仅用于理解旧实现及只读历史，不能约束或重新进入新路径。批准实施不等于真实 provider、恢复、父退出存活或通知已经验收。原生会话隔离、明确动作授权、原生事实与已有显示/总结能力仍保留。
+
+> **本契约的新边界：** 新路径以可信父原生 SessionRef + MCP callId → 子原生 SessionRef（或 Jev 实例/owned target）记录直接归属；同目录、共享配置、模型自报 owner 不能授予控制权。不再要求多层 claim、scope/grant 或继承旧 owner generation。
+
 - 版本：`v0.4 draft`（2026-11-01；Oracle C01–C14、D01–D13 修订）。
 - 状态：A1 第一批草案；不是阶段 B 的冻结基线。A9 需同时审查不变量、失败案例、测试结果与探针原始证据。
 - depends-on：[概念方案 v2.3](../universal-hud-concept.md) §4、§6.6、§6.7、§15–16；[工程计划 v1.1](../universal-hud-engineering-plan.md) §3–4、§6；[第三轮评审](../reviews/2026-11-01-chatgpt-pro-v22-plan.md) §3①②；[02 执行协议](./02-execution.md) 的事务与 schema。

@@ -1,5 +1,9 @@
 # 07：材料外发、版本与兼容 facade
 
+> **2026-11-07 新路径取代说明（用户已批准实施，验收未完成）：** [本机官方会话与 MCP 薄接口架构](../architecture/simplified-harness-architecture.md) 是新默认路径的依据。本文以下旧 ledger/run/report/claim/slot、supervision/retirement、资格矩阵与持久恢复政策仅用于理解旧实现及只读历史，不能约束或重新进入新路径。批准实施不等于真实 provider、恢复、父退出存活或通知已经验收。原生会话隔离、明确动作授权、原生事实与已有显示/总结能力仍保留。
+
+> **本契约的新边界：** MCP 是官方会话与现成 Jev Agent 的薄接口，参数与返回保留原生语义，不要求旧 task/report/handover 工作流。Jev 直接包装 run/snapshot/command/close，不能用 fake job ledger 冒充真实后端；页面 blocked/CAPTCHA 不能因 wrapper 生命周期被关闭。旧 export 兼容仅服务历史消费，不定义新会话控制权。
+
 - 版本：`v0.2 draft`（2026-11-01；A2 + Oracle D01–D13）。外发与 v3 是待实现规格，不把现有单 Codex 代码写成已通过通用来源隔离。
 - depends-on：[01 身份](./01-identity.md) I-01-1、I-01-6、I-01-8；[02 执行](./02-execution.md)「ledger schema v1」、I-02-14；[03 生命周期](./03-lifecycle.md)「报告与 status」；[04 托管](./04-supervision.md)「文件、字段与原子提交」；[05 能力](./05-capabilities.md)；[06 观测](./06-observation.md)；[概念 v2.3](../universal-hud-concept.md) G8/G9、§6.11、§9、§11–12；[计划](../universal-hud-engineering-plan.md) A6/B17/D2/E；[Oracle](../reviews/2026-11-01-astra-contracts.md) C04、C11、C13。
 - 只规定材料/存储/命令的边界；信息呈现由 [Fable 设计](../design/hud-information-design.md) 决定。新通用数据时间为毫秒 epoch，旧 --json v2 的既有 ISO 格式是显式兼容边界。

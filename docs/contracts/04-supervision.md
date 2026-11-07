@@ -1,5 +1,9 @@
 # 04：hud-run 托管、回执与恢复证据
 
+> **2026-11-07 新路径取代说明（用户已批准实施，验收未完成）：** [本机官方会话与 MCP 薄接口架构](../architecture/simplified-harness-architecture.md) 是新默认路径的依据。本文以下旧 ledger/run/report/claim/slot、supervision/retirement、资格矩阵与持久恢复政策仅用于理解旧实现及只读历史，不能约束或重新进入新路径。批准实施不等于真实 provider、恢复、父退出存活或通知已经验收。原生会话隔离、明确动作授权、原生事实与已有显示/总结能力仍保留。
+
+> **本契约的新边界：** 按父原生会话的独立后台宿主只持有连接、回调和有界观察缓冲。父退出或 MCP EOF 默认不结束子连接；不接 supervisor、槽位、自动退休、强杀链或自有审批。只有明确请求才映射官方 interrupt/close，通知失败不停止后端。
+
 - 版本：`v0.4 draft`（2026-11-01；Oracle C01–C14、D01–D13 修订）。
 - 状态：A1 第二批草案；数据格式与证据生产要求待主审/A9，未宣称已实现进程协议。
 - depends-on：[01 身份](./01-identity.md)、[02 执行协议/唯一对账表](./02-execution.md)、[03 生命周期](./03-lifecycle.md)；[概念方案](../universal-hud-concept.md) §6.6.4–6、§6.10–11、§15–16；[工程计划](../universal-hud-engineering-plan.md) B3a/B3b/B4/B6。

@@ -66,7 +66,13 @@ test('input deadline and premature close stop a stalled producer', async () => {
   const stalled = new PassThrough();
   await assert.rejects(readStatuslineInput(stalled, 10), /statusline_input_timeout/);
   assert.equal(stalled.listenerCount('data'), 0);
-  stalled.destroy();
+  assert.equal(stalled.destroyed, true);
+  const oversized = new PassThrough();
+  const oversizedResult = readStatuslineInput(oversized);
+  oversized.write(Buffer.alloc(65537, 32));
+  await assert.rejects(oversizedResult, /statusline_input_too_large/);
+  assert.equal(oversized.destroyed, true);
+  assert.equal(oversized.listenerCount('data'), 0);
   const closed = new PassThrough();
   const result = readStatuslineInput(closed);
   closed.destroy();

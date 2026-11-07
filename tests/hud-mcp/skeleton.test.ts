@@ -258,13 +258,13 @@ for (const code of ['EACCES', 'EPERM'] as const) {
       };
       let scopeReads = 0;
       const resolver = new SessionRefResolver(registration, reader, p, locator(f.root), undefined, {
-        read: (processKey) => {
+        read: () => {
           scopeReads++;
-          return { kind: 'no_current', processKey, ledgerId: null, highWaterGeneration: 0, current: null };
+          throw new Error('native source must not consult legacy authorization scopes');
         },
       });
       assert.equal((await resolver.resolve(meta(), 'delegate_whoami')).ok, true);
-      assert.equal(scopeReads, 1);
+      assert.equal(scopeReads, 0);
       let dispatches = 0;
       const server = new HudMcpServer(resolver, {
         invoke: async () => {
@@ -282,11 +282,11 @@ for (const code of ['EACCES', 'EPERM'] as const) {
       })) as { result: { structuredContent: unknown } };
       assert.deepEqual(reply.result.structuredContent, { ok: false, code: 'identity_unverified' });
       assert.deepEqual(reads, [11, 10, 10, 9]);
-      assert.equal(scopeReads, 1, 'denial happens before scopes/contexts/claims/aliases can be selected');
+      assert.equal(scopeReads, 0, 'denied native source does not consult legacy authorization');
       assert.equal(dispatches, 0);
       deny = false;
       assert.equal((await resolver.resolve(meta(), 'delegate_whoami')).ok, true);
-      assert.equal(scopeReads, 2, 'subsequent root obtains independent current evidence');
+      assert.equal(scopeReads, 0, 'fresh native evidence is independent of legacy scope availability');
     } finally {
       f.cleanup();
     }
@@ -317,7 +317,7 @@ test('missing, conflicting and forged arguments metadata never falls back to rem
     f.cleanup();
   }
 });
-test('session switches remain source diagnostics; shared ledger supplies the generation gate', async () => {
+test('native session switches resolve each source independently of legacy generations', async () => {
   const f = fixture();
   try {
     const { registration, reader, p } = await registered(f.root);
@@ -330,13 +330,13 @@ test('session switches remain source diagnostics; shared ledger supplies the gen
     const next = new SessionRefResolver(nextRegistration, reader, p, loc);
     assert.equal((await next.resolve(meta(other), 'delegate_whoami')).ok, true);
     assert.equal((await old.resolve(meta(), 'delegate_report')).ok, true);
-    // These are source diagnostics, not distributed context authorization. B2/B5 supply
-    // the atomic generation gate before any future body may execute.
+    // Each resolution is the actual native session identity. Direct ownership, not
+    // a HUD scope generation, isolates children created by these different sessions.
   } finally {
     f.cleanup();
   }
 });
-test('PID reuse, source mismatch, missing header and unmeasured Codex versions refuse', async () => {
+test('updated Codex version metadata is accepted while PID reuse still refuses', async () => {
   const f = fixture();
   try {
     const { registration, reader, p } = await registered(f.root);
@@ -344,7 +344,7 @@ test('PID reuse, source mismatch, missing header and unmeasured Codex versions r
     const resolver = new SessionRefResolver(registration, reader, p, loc);
     const unknown = meta();
     unknown['x-codex-turn-metadata'].codex_version = '999';
-    assert.deepEqual(await resolver.resolve(unknown, 'delegate_whoami'), { ok: false, code: 'unsupported' });
+    assert.equal((await resolver.resolve(unknown, 'delegate_whoami')).ok, true);
     reader.rows.get(10)!.procStart = 'replacement';
     assert.deepEqual(await resolver.resolve(meta(), 'delegate_whoami'), { ok: false, code: 'identity_unverified' });
   } finally {
@@ -585,4 +585,29 @@ test('stdio framing rejects malformed JSON, ignores notifications and serializes
   assert.equal(rows.length, 2);
   assert.equal(rows[0].error?.code, -32700);
   assert.equal(rows[1].result?.tools.length, 9);
+});
+
+test('Codex native metadata and rollout retain identity across client upgrades', async () => {
+  const f = fixture();
+  try {
+    const { registration, reader, p } = await registered(f.root);
+    const loc = locator(f.root);
+    const file = loc.codex(f.root, id)!;
+    loc.codex = () => file;
+    writeFileSync(
+      file,
+      JSON.stringify({ type: 'session_meta', payload: { id, source: 'exec', cli_version: '99.0.0' } }) + '\n'
+    );
+    const resolver = new SessionRefResolver(registration, reader, p, loc);
+    const updated = meta();
+    updated['x-codex-turn-metadata'].codex_version = '99.0.0';
+    assert.equal((await resolver.resolve(updated, 'delegate_whoami')).ok, true);
+    writeFileSync(
+      file,
+      JSON.stringify({ type: 'session_meta', payload: { id: other, source: 'exec', cli_version: '99.0.0' } }) + '\n'
+    );
+    assert.deepEqual(await resolver.resolve(updated, 'delegate_whoami'), { ok: false, code: 'identity_unverified' });
+  } finally {
+    f.cleanup();
+  }
 });

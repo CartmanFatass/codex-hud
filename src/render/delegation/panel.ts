@@ -114,6 +114,8 @@ export function coverageChip(
 ): { text: string; warning: boolean } | null {
   const tree = proj.vm.tree;
   const ledger = tree.ledger;
+  if (proj.vm.nativeCalls && ledger.reason === 'legacy_ledger_not_used')
+    return { text: say('tree partial'), warning: false };
   if (ledger.state === 'degraded' && ledger.reason !== 'ledger_busy') {
     if (degradedSince === null || degradedSince > nowMs) degradedSince = nowMs;
     return { text: say('ledger unavailable'), warning: nowMs - degradedSince >= LEDGER_WARN_MS };

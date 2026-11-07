@@ -135,3 +135,62 @@ export function loadDelegateConfig(file: string): DelegateConfig {
     throw new Refusal('configuration_invalid');
   }
 }
+
+// The thin host uses only native executable/env/options configuration. Legacy delegate config above is source-registration compatibility, not runtime policy.
+export { loadNativeHostConfig, validateNativeHostConfig } from '../../../src/managed/host-config.js';
+export type { NativeHostConfig, NativeProfile } from '../../../src/managed/host-config.js';
+
+/** Native source registration only. Historical task/claim/retirement fields are never required or interpreted. */
+export function validateNativeSourceConfig(value: unknown): DelegateConfig {
+  if (!object(value) || value.version !== 1 || !Array.isArray(value.profiles)) bad();
+  const profiles = structuredClone(value.profiles) as Record<string, unknown>[];
+  const names = new Set<string>();
+  for (const profile of profiles) {
+    if (
+      !object(profile) ||
+      !text(profile.name) ||
+      names.has(profile.name) ||
+      !['codex', 'claude', 'pi'].includes(profile.harness as string)
+    )
+      bad();
+    names.add(profile.name);
+    if (!object(profile.source) || !text(profile.source.root) || !isAbsolute(profile.source.root)) bad();
+    try {
+      profile.source.root = realpathSync(profile.source.root);
+      if (!statSync(profile.source.root as string).isDirectory()) bad();
+    } catch {
+      bad();
+    }
+    profile.source.label ??= profile.name;
+    if (!text(profile.source.label)) bad();
+    profile.env ??= {};
+    if (
+      !object(profile.env) ||
+      Object.values(profile.env).some((item) => typeof item !== 'string' || item.includes('\0'))
+    )
+      bad();
+    profile.mcpServerName ??= 'hud';
+    if (!text(profile.mcpServerName)) bad();
+    profile.launch ??= { argv: [profile.harness] };
+    command(profile.launch, false);
+    if (profile.callSource !== undefined) {
+      if (
+        !object(profile.callSource) ||
+        Object.keys(profile.callSource).length !== 1 ||
+        !(
+          (profile.harness === 'claude' && profile.callSource.kind === 'claude_pre_tool_use_v1') ||
+          (profile.harness === 'pi' && profile.callSource.kind === 'pi_extension_v1')
+        )
+      )
+        bad();
+    }
+  }
+  return { version: 1, profiles } as unknown as DelegateConfig;
+}
+export function loadNativeSourceConfig(file: string): DelegateConfig {
+  try {
+    return validateNativeSourceConfig(readJson(file, 262144));
+  } catch {
+    throw new Refusal('configuration_invalid');
+  }
+}

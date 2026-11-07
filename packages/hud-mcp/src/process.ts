@@ -1,8 +1,8 @@
 import { readlinkSync, realpathSync, statSync } from 'node:fs';
-import { basename, isAbsolute } from 'node:path';
+import { basename, dirname, join, isAbsolute } from 'node:path';
 import type { Harness, ProcessDomainView } from '../../../src/core/types/identity.js';
 import { readProcessDomain, type DerivedProcessDomain } from '../../../src/core/process-domain.js';
-import { readBounded } from './io.js';
+import { readBounded, readJson, object } from './io.js';
 import { Refusal } from './errors.js';
 export interface ProcessInfo {
   pid: number;
@@ -54,21 +54,44 @@ export function inferHarness(process: ProcessInfo): Harness | null {
   if (name === 'codex') return 'codex';
   if (
     name === 'pi' ||
-    (name === 'node' && process.argv.slice(1, 3).some((a) => /\/pi-coding-agent\//.test(a))) ||
-    (name === 'node' && piEntrypoint(process.argv) !== null)
+    (['node', 'nodejs'].includes(name) && process.argv.slice(1, 3).some((a) => /\/pi-coding-agent\//.test(a))) ||
+    (['node', 'nodejs'].includes(name) && piEntrypoint(process.argv) !== null)
   )
     return 'pi';
   return null;
 }
-/** npm's normal .bin/pi symlink is resolved for discovery only, never caller authority. */
+/** Locate the installed package through its declared bin, not a release's layout.
+ * Package metadata is discovery evidence, not per-session authority.
+ */
+export function piEntrypointPackage(hostEntrypoint: string): string | null {
+  const entry = realpathSync(hostEntrypoint);
+  let directory = dirname(entry);
+  for (let depth = 0; depth < 128; depth++) {
+    const candidate = join(directory, 'package.json');
+    try {
+      const pkg = readJson(candidate, 65536);
+      if (object(pkg) && pkg.name === '@earendil-works/pi-coding-agent') {
+        const bin = typeof pkg.bin === 'string' ? pkg.bin : object(pkg.bin) ? pkg.bin.pi : null;
+        return typeof bin === 'string' && realpathSync(join(directory, bin)) === entry ? candidate : null;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const next = dirname(directory);
+    if (next === directory) break;
+    directory = next;
+  }
+  return null;
+}
 function piEntrypoint(argv: readonly string[]): string | null {
   try {
     const entry = realpathSync(argv[1] ?? '');
-    return entry.endsWith('/pi-coding-agent/dist/bundle/cli.js') ? entry : null;
+    return piEntrypointPackage(entry) ? entry : null;
   } catch {
     return null;
   }
 }
+
 export function findHarness(
   reader: ProcessReaderPort,
   ppid: number
@@ -113,14 +136,14 @@ export function piSourceRootFromArgv(argv: readonly string[]): string | null {
   // This is only a source hint for an already identified Pi process, not session authority.
   // Refuse an option terminator rather than interpret possible prompt text as an option.
   if (argv.includes('--')) return null;
-  // Pinned Pi accepts the split form. Require it first, so a preceding option cannot
+  // The source selector uses the public split form. Require it first, so a preceding option cannot
   // consume the selector as its value; do not emulate the rest of Pi's argument parser.
   const executable = basename(argv[0] ?? '');
   const entrypoint = argv[1] ?? '';
   const selectorIndex =
     executable === 'pi'
       ? 1
-      : executable === 'node' &&
+      : ['node', 'nodejs'].includes(executable) &&
           isAbsolute(entrypoint) &&
           (/\/pi-coding-agent\//.test(entrypoint) || piEntrypoint(argv))
         ? 2

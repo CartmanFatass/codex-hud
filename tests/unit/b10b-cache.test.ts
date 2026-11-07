@@ -51,6 +51,13 @@ const run = (r: NonNullable<Extract<NodeSpec['run'], object>>, spec: Partial<Nod
   child({ run: r, ...spec });
 
 const TABLE: Entry[] = [
+  {
+    fact: 'nativeCallStatus',
+    specs: child(),
+    mutate: (t) => {
+      t.detail.nativeCall = { relation: {}, snapshot: { connected: true }, latestEvent: null, unavailable: null };
+    },
+  },
   // Identity.
   {
     fact: 'idKind',

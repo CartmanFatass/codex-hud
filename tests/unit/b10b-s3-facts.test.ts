@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { comparatorFor, factsEqual, nodeFacts } from '../../src/render/delegation/facts.js';
+import { comparatorFor, factsEqual, newNodeFacts, nodeFacts } from '../../src/render/delegation/facts.js';
 import { situationC } from '../fixtures/b10b-delegation.js';
 
 interface Odd {
@@ -68,7 +68,7 @@ test('facts materialization: default calls return independent complete ordinary 
   assert.notStrictEqual(a, b);
   assert.deepEqual(a, b);
   assert.strictEqual(Object.getPrototypeOf(a), Object.prototype);
-  assert.equal(Object.keys(a).length, 66);
+  assert.deepEqual(Object.keys(a), Object.keys(newNodeFacts()));
   a.key = 'synthetic-changed-copy';
   assert.equal(b.key, node.key);
 });

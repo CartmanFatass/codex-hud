@@ -39,3 +39,25 @@ export function parentWakeRegistration(
     };
   return { ...common, adapter: 'none', target: {}, reason: 'verified_endpoint_unavailable' };
 }
+
+/** New path: direct native endpoint selection; no ledger record or delivery state. */
+export function nativeParentWakeTarget(
+  owner: import('../../../src/managed/relations.js').NativeOwner,
+  physical: Registration,
+  home: string,
+  stamp: ProcessStamp | null,
+  codexExecutable?: string
+): import('../../../src/managed/host-wake.js').NativeWakeTarget {
+  if (owner.harness === 'claude') return { adapter: 'claude_background_wait' };
+  if (physical.source?.sourceId !== owner.sourceId) return { adapter: 'none', reason: 'native_source_mismatch' };
+  if (owner.harness === 'codex' && codexExecutable)
+    return {
+      adapter: 'codex_queue',
+      codexHome: physical.source.rootPath,
+      threadId: owner.threadId ?? owner.sessionId,
+      executable: codexExecutable,
+    };
+  if (owner.harness === 'pi' && stamp)
+    return { adapter: 'pi_extension', socketPath: join(home, 'wake', `pi-${stamp.pid}-${stamp.proc_start}.sock`) };
+  return { adapter: 'none', reason: 'verified_endpoint_unavailable' };
+}

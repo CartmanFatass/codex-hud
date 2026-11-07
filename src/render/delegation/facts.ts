@@ -16,6 +16,7 @@ import type { LinkRelationProjection, LinkTreeNode } from '../../core/link/types
 import type { DelegationNodeDetails } from '../../core/link/view-model.js';
 import type { DisplayNodeIdentity } from '../../core/types/observation.js';
 import type { AgentTaskKind } from '../../types.js';
+import { nativeCallLabel, jevCallLabel } from '../../core/link/view-model.js';
 import type { HarnessMark } from './glyphs.js';
 
 export type Fact = string | number | boolean | null;
@@ -31,6 +32,7 @@ export interface NodeFacts {
   isRoot: boolean;
   edge: string | null;
   loaded: boolean;
+  nativeCallStatus: string | null;
   conflictCount: number;
   conflictSince: number | null;
   /** The shared label of the conflicting records, or their child's short form; null with no conflict (§3.4). */
@@ -146,6 +148,7 @@ export function newNodeFacts(): NodeFacts {
     isRoot: false,
     edge: null,
     loaded: false,
+    nativeCallStatus: null,
     conflictCount: 0,
     conflictSince: null,
     conflictName: null,
@@ -246,6 +249,11 @@ export function nodeFacts(
   facts.isRoot = isRoot;
   facts.edge = node.edge ?? null;
   facts.loaded = node.loaded;
+  facts.nativeCallStatus = detail?.nativeCall
+    ? nativeCallLabel(detail.nativeCall)
+    : detail?.jevCall
+      ? jevCallLabel(detail.jevCall)
+      : null;
   facts.conflictCount = node.conflict?.count ?? 0;
   facts.conflictSince = node.conflict?.since ?? null;
   facts.conflictName = conflictName;

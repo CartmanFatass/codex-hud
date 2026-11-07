@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, promises as fs } from 'node:fs';
+import { constants, existsSync, promises as fs } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { digest } from '../../core/canonical.js';
@@ -16,7 +16,7 @@ import { launchDigest } from '../../core/run/control.js';
 import { freezeRetirementPolicy, type PolicyRunLaunchInput } from '../../core/run/retirement-policy.js';
 import type { LaunchCommand } from '../../core/types/capabilities.js';
 import { MAX_PREPARED_PAYLOAD_BYTES, MAX_PROMPT_BYTES } from '../codex/profile.js';
-import { PI_EXTENSION_CONTEXT_PROFILE, PI_EXTENSION_VERSION, inspectPiSnapshot } from './delegation-context.js';
+import { PI_EXTENSION_CONTEXT_PROFILE, inspectPiSnapshot } from './delegation-context.js';
 
 /** Selected vendor surface, not a capability grant or an assertion about the installed binary. */
 export const PI_MANAGED_PROFILE = 'pi-print-json-1.4.0-4a080252-v1';
@@ -109,7 +109,7 @@ async function resumeFile(root: string, sessionId: string): Promise<string> {
       const file = join(directories[index], entry.name);
       try {
         // The existing fd-anchored validator refuses symlinks, nonregular files,
-        // path escapes, oversized headers and mismatching full v3 identities.
+        // path escapes, oversized headers and mismatching recognized native IDs.
         const result = await inspectPiSnapshot(
           {
             profile: PI_EXTENSION_CONTEXT_PROFILE,
@@ -122,7 +122,41 @@ async function resumeFile(root: string, sessionId: string): Promise<string> {
           },
           root
         );
-        if (result.snapshot.status === 'ready') candidates.push(file);
+        if (result.snapshot.status !== 'ready') continue;
+        // Native extension evidence may legitimately use an unknown file format.
+        // Disk-only discovery has no such native context: require an actual exact
+        // session header, but never gate on the vendor/header version number.
+        const handle = await fs.open(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+        try {
+          const stat = await handle.stat({ bigint: true });
+          if (!stat.isFile() || `${stat.dev}:${stat.ino}` !== result.identity.file) continue;
+          if ((await fs.realpath(`/proc/self/fd/${handle.fd}`)) !== file) continue;
+          const buffer = Buffer.alloc(65537);
+          let bytes = 0;
+          while (bytes < buffer.length) {
+            const read = await handle.read(buffer, bytes, buffer.length - bytes, bytes);
+            if (!read.bytesRead) break;
+            bytes += read.bytesRead;
+            if (buffer.subarray(0, bytes).includes(10)) break;
+          }
+          const data = buffer.subarray(0, bytes);
+          const newline = data.indexOf(10);
+          const header = newline < 0 ? data : data.subarray(0, newline);
+          if (
+            header.length > 65536 ||
+            createHash('sha256').update(header).digest('hex') !== result.snapshot.headerDigest
+          )
+            continue;
+          const parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(header));
+          // A rename/replacement during read must not turn a verified old fd into
+          // a resume argv naming a different file. Appended transcript is harmless.
+          if ((await fs.realpath(`/proc/self/fd/${handle.fd}`)) !== file) continue;
+          const current = await fs.lstat(file, { bigint: true });
+          if (!current.isFile() || `${current.dev}:${current.ino}` !== result.identity.file) continue;
+          if (parsed?.type === 'session' && parsed.id === sessionId) candidates.push(file);
+        } finally {
+          await handle.close();
+        }
       } catch (error) {
         if ((error as Error).message === 'pi_session_header_mismatch') continue;
         // Unrelated malformed entries do not bind. A candidate is selected only
@@ -194,8 +228,6 @@ export async function preparePiLaunch(options: PrepareManagedLaunchOptions): Pro
   // Never propagate a parent claim, previous extension channel or session hint.
   const env = Object.fromEntries(Object.entries(inherited).filter(([key]) => !authority(key)));
   const executable = await executableIdentity(command, env, options.executableIdentity);
-  if (executable.version !== null && executable.version !== PI_EXTENSION_VERSION)
-    throw new Error('unsupported_pi_managed_version');
   const agentDir = env.PI_CODING_AGENT_DIR ?? (env.HOME ? join(env.HOME, '.pi', 'agent') : null);
   if (!agentDir || !isAbsolute(agentDir)) throw new Error('absolute_pi_agent_directory_required');
   const extension = await snapshotBrief(PI_MANAGED_EXTENSION);
@@ -234,7 +266,7 @@ export async function preparePiLaunch(options: PrepareManagedLaunchOptions): Pro
   });
   const capabilityFingerprint = digest({
     protocol: PI_MANAGED_PROFILE,
-    package: { name: '@earendil-works/pi-coding-agent', version: PI_EXTENSION_VERSION, commit: '4a080252' },
+    package: { name: '@earendil-works/pi-coding-agent', observedVersion: executable.version },
     executable,
     template: capabilityTemplate(template, {
       sourceRoot: root,

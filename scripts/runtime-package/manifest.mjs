@@ -1,3 +1,6 @@
+import { DEPENDENCIES } from './dependencies.mjs';
+export { DEPENDENCIES } from './dependencies.mjs';
+
 import { Directory, digest, inventory, relative, MAX_FILE, MAX_TOTAL, MAX_ENTRIES } from './safety.mjs';
 
 export const COMMANDS = {
@@ -21,9 +24,9 @@ export const INSTALLER_FILES = [
   'install-runtime.mjs',
   'runtime-package/safety.mjs',
   'runtime-package/manifest.mjs',
+  'runtime-package/dependencies.mjs',
   'runtime-package/installer.mjs',
 ];
-export const DEPENDENCIES = { '@iarna/toml': '2.2.5', chokidar: '5.0.0', readdirp: '5.0.0' };
 export const CELLS = [
   'dist/core/launch/codex-cells.json',
   'dist/core/launch/managed-cells.json',
@@ -37,12 +40,16 @@ export const REQUIRED = [
   ...CELLS,
   'extensions/pi/hud-footer.ts',
   'extensions/pi/hud-delegate.ts',
+  'integrations/pi/hud-wake.ts',
+  'dist/harness/pi/wake-extension.js',
+  'dist/managed/wake-message.js',
   'package.json',
   'packages/hud-mcp/package.json',
   'dist/index.js',
   'dist/tree-page.js',
   'dist/cli/hud.js',
   'dist/cli/statusline.js',
+  'src/managed/jev-bridge.py',
   ...Object.keys(DEPENDENCIES).map((name) => `node_modules/${name}/package.json`),
 ];
 const ROOT_FIELDS = [
@@ -126,7 +133,7 @@ export function parseManifest(bytes) {
   if ('dependencies' in value) {
     fields(value.dependencies, Object.keys(DEPENDENCIES));
     if (
-      Object.keys(value.dependencies).length !== 3 ||
+      Object.keys(value.dependencies).length !== Object.keys(DEPENDENCIES).length ||
       Object.entries(DEPENDENCIES).some(([name, version]) => value.dependencies[name] !== version)
     )
       throw new Error('invalid_dependency_metadata');
@@ -149,7 +156,7 @@ export function parseManifest(bytes) {
       throw new Error('invalid_runtime_entry');
     if ('origin' in entry) textBytes += annotation(entry.origin, 1024);
     if ('provenance' in entry) textBytes += annotation(entry.provenance, 4096);
-    if (textBytes > 262144) throw new Error('manifest_annotation_total_limit');
+    if (textBytes > 3 * 1024 * 1024) throw new Error('manifest_annotation_total_limit');
     names.add(entry.path);
     total += entry.bytes;
   }
@@ -179,7 +186,8 @@ export function verifyBundle(root) {
     }
     for (const [name, version] of Object.entries(DEPENDENCIES)) {
       const pkg = JSON.parse(directory.read(`node_modules/${name}/package.json`).data);
-      if (pkg.name !== name || pkg.version !== version) throw new Error('dependency_identity_mismatch');
+      if (pkg.name !== name.split('/node_modules/').at(-1) || pkg.version !== version)
+        throw new Error('dependency_identity_mismatch');
     }
     if (JSON.stringify(inventory(directory, listed)) !== JSON.stringify(listed))
       throw new Error('bundle_changed_during_verification');

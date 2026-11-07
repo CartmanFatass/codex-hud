@@ -7,7 +7,12 @@ This is a source-level inventory against repository base
 accessed 2026-11-06: an **unversioned documentation snapshot**, not a tested Claude
 client version. Its example `version: "2.1.90"` is not a compatibility pin.
 
-## Shipped rendering
+## Compact/default rendering
+
+The historical inventory and observer labels below retain their original scope.
+The opt-in native-details source increment is based on
+`a1250f07995465b40e29a284a732978894c3e7ee`; it does not change compact/default bytes.
+Its new behavioral tests, build and formatting remain **NOT_RUN** at source delivery.
 
 | Feature | Current behavior | Evidence / observation scope |
 | --- | --- | --- |
@@ -32,22 +37,52 @@ The shared summary reader and fallback have their own
 A fresh display is not lifecycle/control authority. This tool does not time the
 internal reader separately or establish its 20 ms qualification.
 
+## Opt-in native details (source implementation and integration checks)
+
+The table's **NOT_RUN** entries preserve the original independent source-delivery
+status. On 2026-11-07, integrated source/test/MCP builds and a focused 184/184
+synthetic regression run passed, including the new native-details tests. See
+[native-details integration verification](native-details.md#integration-verification-2026-11-07)
+for the preserved initial failure, narrow input-stream repair, exact scope and
+remaining live/visual/performance exclusions. The integrated product can append
+an explicitly scoped `Native calls:` line; `--details` still affects only line one.
+
+`hud statusline --details [--lang en|zh]` and `hud-statusline --details` add the
+following native first-line presentation. English is the explicit-mode default;
+Chinese labels affect this first line only. No settings or default is changed.
+`hud-statusline-preview` remains compact. See [native details](native-details.md)
+for exact field types, omissions, labels, argument grammar and width degradation.
+
+| Feature | Opt-in behavior | Evidence / observation scope |
+| --- | --- | --- |
+| Native context bar | Ten cells from rounded `context_window.used_percentage`; no token inference | New direct-renderer and actual product CLI tests written; **NOT_RUN** |
+| Remaining context | Independently supplied `context_window.remaining_percentage`; never `100-used` | Contradictory/remaining-only synthetic cases written; **NOT_RUN** |
+| Directory | `workspace.current_dir`, then `cwd`; bounded sanitized display only | No Git, basename, path resolution or identity authority |
+| Context/cache counts | Exact safe integers at the admitted `context_window` keys; positive window capacity | No lifetime totals, model-window default or `prompt_cache` substitution |
+| Durations and changed lines | Supplied `cost.total_duration_ms`, `total_api_duration_ms`, `total_lines_added` / `total_lines_removed` | No live clock, output speed or Git lookup; known line-change sides only |
+| EN/ZH labels and width | Model first; rightmost optional segments removed, then bar/cost/context/model label before identity truncation | Both languages, 1–500 widths in new tests; **NOT_RUN**, no visual qualification |
+| Product composition | Original stdin identity still selects unchanged partial summary; second line is not localized | Age-free synthetic ledger composition tests written; **NOT_RUN** |
+
+The renderer is pure. Product commands retain the existing bounded summary reads
+outside rendering; they are not globally filesystem-free. All new-mode unknown
+or malformed facts omit their segment, and valid zeros remain facts. These source
+changes are not retroactively covered by the historical observer results above.
+
 ## Not rendered or not implemented
 
-The official documentation exposes more fields than this first-line renderer uses.
-These families are **not rendered**, rather than silently claimed as feature parity:
+The official documentation exposes more fields than either renderer uses. These
+families remain **not rendered**, rather than claimed as feature parity:
 
-- Workspace, cwd, repository/worktree and PR metadata.
-- Additional context token, cache, remaining and threshold fields.
-- Additional cost durations and change counts.
+- Repository/worktree identity, Git branch/change lookup and PR metadata.
+- Context threshold flags, inferred occupancy and derived token totals.
 - Effort, thinking and fast-mode indicators.
-- Rate limits, spend limits and prompt-cache data.
+- Rate limits, spend limits and `prompt_cache` data (distinct from the admitted
+  `context_window.current_usage` cache token counts).
 - `session_name`, `prompt_id`, `version`, `output_style`, Vim mode and agent name.
+- Tools/todos, output speed, quotas, toktrack tee and full-tree totals.
 
-There is no current tools/todo/git-change/output-speed/session-duration/quota
-statusline display, localized statusline labels, toktrack tee or full-tree totals.
-Those fields are not inferred from model names or missing input. The current
-upstream **`subagentStatusLine` tasks JSON → JSONL interface is separate** from main
+No missing facts are inferred from model names or provider state. The upstream
+**`subagentStatusLine` tasks JSON → JSONL interface is separate** from main
 `statusLine` stdin JSON and is **not implemented** by this product. Existing partial
 HUD delegation output must not be described as native subagent interface parity.
 

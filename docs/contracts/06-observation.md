@@ -1,5 +1,9 @@
 # 06：观测口径、采集一致性与运行预算
 
+> **2026-11-07 新路径取代说明（用户已批准实施，验收未完成）：** [本机官方会话与 MCP 薄接口架构](../architecture/simplified-harness-architecture.md) 是新默认路径的依据。本文以下旧 ledger/run/report/claim/slot、supervision/retirement、资格矩阵与持久恢复政策仅用于理解旧实现及只读历史，不能约束或重新进入新路径。批准实施不等于真实 provider、恢复、父退出存活或通知已经验收。原生会话隔离、明确动作授权、原生事实与已有显示/总结能力仍保留。
+
+> **本契约的新边界：** 官方 API、事件、日志/历史是状态来源；HUD 仅保存直接关系与已有只读展示缓存，不把显示推断变成控制真相。保留 bar/panel/statusline 和 SmallModel/ProgressSummarizer/RecapStore；原生消息触发现有 Codex queue、Claude background waiter、Pi extension 通道，不新增 wake 账本或任务级重试调度。
+
 - 版本：`v0.2 draft`（2026-11-01；A2 + Oracle D01–D13）。预算是验收要求，本批没有运行性能测试或声明已经达标。
 - depends-on：[01 身份](./01-identity.md) I-01-1、I-01-8；[02 执行](./02-execution.md) I-02-8–10 与唯一 R-02 对账表；[03 生命周期](./03-lifecycle.md)「报告与 status」「wait 游标与 runId 固定」；[04 托管](./04-supervision.md)「心跳、supervisor死亡与恢复」、I-04-15；[05 能力](./05-capabilities.md)「宿主、定位与 timeout」；[07 外发与兼容](./07-outbound-compat.md)；[概念 v2.3](../universal-hud-concept.md) G13/G14、§6.3–5、§6.8–12、§7、§9.3；[计划](../universal-hud-engineering-plan.md) B8/B12/B16/D2–D4。
 - [Oracle](../reviews/2026-11-01-astra-contracts.md) §2、C07、C11–13 是成本与恢复边界的依据；不复写 02 对账真值表。[信息设计](../design/hud-information-design.md) §7 是数据消费者要求；本文不决定标记、布局、计数桶或交互。其原生退出结果假设以 Oracle 的 nullable 结果为准。

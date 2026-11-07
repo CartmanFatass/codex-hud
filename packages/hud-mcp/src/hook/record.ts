@@ -15,11 +15,16 @@ import {
 import { join } from 'node:path';
 import type { ScopeSnapshot } from '../../../../src/core/ledger-scope-read.js';
 import type { DelegateProfile } from '../config.js';
+import { MANAGED_TOOLS } from '../managed-tools.js';
+import { JEV_TOOLS } from '../jev-tools.js';
 
 export const IMPLEMENTATION = 'claude-hook-2';
+// Historical probe fixture label only. Never a consumer-version admission requirement.
 export const CLAUDE_VERSION = '2.1.305';
 export const MAX_RECORD_BYTES = 8192;
 export const HUD_TOOLS = [
+  ...MANAGED_TOOLS.map((tool) => tool.name),
+  ...JEV_TOOLS.map((tool) => tool.name),
   'delegate_spawn',
   'delegate_resume',
   'delegate_report',
@@ -33,10 +38,12 @@ export const HUD_TOOLS = [
 export interface HookConfig {
   version: 1;
   implementation: typeof IMPLEMENTATION;
-  claudeVersion: typeof CLAUDE_VERSION;
+  /** Optional diagnostic supplied by the launcher, never identity evidence. */
+  claudeVersion?: string;
   claudeExecutable: string;
   sourceRoot: string;
-  ledgerPath: string;
+  /** Historical hook fixtures only; native source evidence does not read a ledger. */
+  ledgerPath?: string;
   directory: string;
   serverName: string;
   profileFingerprint: string;
@@ -45,7 +52,8 @@ export interface HookConfig {
 export interface HookRecord {
   version: 1;
   implementation: typeof IMPLEMENTATION;
-  claudeVersion: typeof CLAUDE_VERSION;
+  /** Optional diagnostic supplied by the launcher, never identity evidence. */
+  claudeVersion?: string;
   profileFingerprint: string;
   sourceId: string;
   processKey: string;
@@ -55,7 +63,8 @@ export interface HookRecord {
   toolName: string;
   sessionId: string;
   agent: { kind: 'root'; id: null } | { kind: 'native_child'; id: string };
-  premise: ScopeSnapshot;
+  /** Optional legacy experiment evidence; never emitted by the native hook. */
+  premise?: ScopeSnapshot;
   hookStartMonoMs: number;
   hookStartUncertaintyMs: number;
   publishedMonoMs: number;
@@ -134,14 +143,15 @@ export function readHookConfig(path: string): HookConfig {
   const value: unknown = JSON.parse(privateRead(path, MAX_RECORD_BYTES));
   if (
     !object(value) ||
-    Object.keys(value).sort().join(',') !==
+    Object.keys(value)
+      .filter((key) => key !== 'claudeVersion' && key !== 'ledgerPath')
+      .sort()
+      .join(',') !==
       [
         'version',
         'implementation',
-        'claudeVersion',
         'claudeExecutable',
         'sourceRoot',
-        'ledgerPath',
         'directory',
         'serverName',
         'profileFingerprint',
@@ -151,14 +161,13 @@ export function readHookConfig(path: string): HookConfig {
         .join(',') ||
     value.version !== 1 ||
     value.implementation !== IMPLEMENTATION ||
-    value.claudeVersion !== CLAUDE_VERSION ||
     value.clockTicksPerSecond !== 100 ||
     !text(value.serverName) ||
     !text(value.profileFingerprint) ||
     !/^[a-f0-9]{64}$/.test(value.profileFingerprint)
   )
     throw new Error('Unsupported hook config');
-  for (const key of ['claudeExecutable', 'sourceRoot', 'ledgerPath', 'directory'])
+  for (const key of ['claudeExecutable', 'sourceRoot', 'directory'])
     if (!text(value[key], 4096) || !(value[key] as string).startsWith('/'))
       throw new Error('Absolute hook path required');
   const config = value as unknown as HookConfig;
@@ -172,16 +181,19 @@ export function readHookConfig(path: string): HookConfig {
 }
 export function recordPaths(
   config: HookConfig,
-  premise: ScopeSnapshot,
+  source: { processKey: string; bootId: string; sessionId: string } | ScopeSnapshot,
   callId: string
 ): { directory: string; record: string; seen: string; conflict: string } {
-  // Missing ledger uses an explicit path namespace; it can never authorize a real ledger.
-  const namespace = hash([
-    premise.ledgerId,
-    premise.ledgerId === null ? config.ledgerPath : null,
-    premise.processKey,
-    config.serverName,
-  ]);
+  // Native one-shot evidence is scoped to this actual process and MCP server.
+  // The ledgerId branch only supports explicit historical experiment callers.
+  const namespace = !('ledgerId' in source)
+    ? hash(['native-hook-v1', source.bootId, source.processKey, source.sessionId, config.serverName])
+    : hash([
+        source.ledgerId,
+        source.ledgerId === null ? config.ledgerPath : null,
+        source.processKey,
+        config.serverName,
+      ]);
   const directory = join(config.directory, namespace);
   try {
     mkdirSync(directory, { mode: 0o700 });
@@ -206,7 +218,7 @@ export function exists(path: string): boolean {
   }
 }
 export function publishRecord(config: HookConfig, record: HookRecord): void {
-  const paths = recordPaths(config, record.premise, record.toolUseId);
+  const paths = recordPaths(config, record.premise ?? record, record.toolUseId);
   const bytes = JSON.stringify(record) + '\n';
   if (Buffer.byteLength(bytes) > MAX_RECORD_BYTES) throw new Error('Hook record too large');
   if (exists(paths.seen) || exists(paths.conflict)) throw new Error('Call already attempted');

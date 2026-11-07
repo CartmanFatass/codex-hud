@@ -1,5 +1,9 @@
 # 05：能力矩阵、宿主与启动档案
 
+> **2026-11-07 新路径取代说明（用户已批准实施，验收未完成）：** [本机官方会话与 MCP 薄接口架构](../architecture/simplified-harness-architecture.md) 是新默认路径的依据。本文以下旧 ledger/run/report/claim/slot、supervision/retirement、资格矩阵与持久恢复政策仅用于理解旧实现及只读历史，不能约束或重新进入新路径。批准实施不等于真实 provider、恢复、父退出存活或通知已经验收。原生会话隔离、明确动作授权、原生事实与已有显示/总结能力仍保留。
+
+> **本契约的新边界：** 用户安装并持续更新的 Codex/Claude/Pi 是实际客户端；厂商版本、机器指纹及旧 capability manifest 都不是新路径准入。只报告实际缺失的方法/字段或启动错误。SDK/library 锁文件是可复现依赖完整性，不是 harness 客户端资格。此次仅本机，不扩 Windows 原生或远程机器控制。
+
 - 版本：`v0.2 draft`（2026-11-01；A2 + Oracle D01–D13）。以下是待实现的契约，不是能力验收报告。
 - depends-on：[01 身份](./01-identity.md)「SessionRef resolver 的证据边界」、I-01-1、I-01-4；[02 执行](./02-execution.md)「意图、执行权与外部提交」、I-02-1–3；[03 生命周期](./03-lifecycle.md)「resume 与 handover 事务」「wait 游标与 runId 固定」；[04 托管](./04-supervision.md)「运行、启动输入和范围」「取消与父断连」；[06 观测](./06-observation.md)；[概念 v2.3](../universal-hud-concept.md) §6.3、§6.9–12、§7、§9.1；[计划 v1.1](../universal-hud-engineering-plan.md) A2/B4/B7/B11/B14。
 - 裁决优先：[Oracle consult 1](../reviews/2026-11-01-astra-contracts.md) C05、C06、C10–14 及 consult 2 D01–D13；01–04 已同步候选契约。A8 关键证据于 `8fdf4cf` 接受，仍不等于产品能力格 verified；身份、执行权、槽与终结规则由01–04拥有，本文不另设状态表。

@@ -1,4 +1,5 @@
-// SIMULATED Codex target. Direct Node child of owned ELF fixture. Real registry,
+// SIMULATED historical DelegationService target, not default native MCP.
+// Direct Node child of owned ELF fixture. Real explicitly selected legacy registry,
 // resolver, ledger, handshake and report paths; no network/model/provider.
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -12,6 +13,7 @@ const { createLedgerCallerRegistry } = await load('packages/hud-mcp/src/ledger-r
 const { validateDelegateConfig } = await load('packages/hud-mcp/src/config.js');
 const { SessionRefResolver } = await load('packages/hud-mcp/src/resolvers.js');
 const { DelegationService } = await load('packages/hud-mcp/src/delegation.js');
+const { makeProcessKey } = await load('src/core/identity.js');
 const { ReadOnlyScopeSnapshot } = await load('src/core/ledger-scope-read.js');
 const { createManagedNativeRuntime } = await load('packages/hud-mcp/src/managed-runtime.js');
 const argv = process.argv.slice(2);
@@ -62,7 +64,15 @@ const registration = await registerCaller({
 });
 const runtime = await createManagedNativeRuntime({ registration, reader, config, selected, env: process.env });
 const scopes = new ReadOnlyScopeSnapshot(join(home, 'ledger.sqlite'));
-const resolver = new SessionRefResolver(registration, reader, selected, undefined, undefined, scopes);
+const resolver = new SessionRefResolver(registration, reader, selected);
+assert.ok(registration.source && registration.harnessPid && registration.harnessProcStart);
+const legacyProcessKey = makeProcessKey(
+  selected.harness,
+  registration.source.sourceId,
+  reader.domain().pidDomain,
+  registration.harnessPid,
+  registration.harnessProcStart
+);
 const service = new DelegationService({
   ledger: registry.ledger,
   home,
@@ -74,6 +84,8 @@ const service = new DelegationService({
 });
 let n = 0;
 const call = async (tool, args = {}) => {
+  // Explicit historical authorization belongs to this fixture, never the native resolver.
+  const scopePremise = scopes.read(legacyProcessKey);
   const meta = {
     callId: `simulated-${++n}`,
     sessionId,
@@ -86,7 +98,11 @@ const call = async (tool, args = {}) => {
       codex_version: '0.166.0',
     },
   };
-  return service.invoke(await resolver.resolve(meta, tool), tool, args);
+  const source = await resolver.resolve(meta, tool);
+  assert.ok(source.ok, JSON.stringify(source));
+  assert.equal(source.scopePremise, undefined);
+  assert.equal(source.processKey, legacyProcessKey);
+  return service.invoke({ ...source, scopePremise }, tool, args);
 };
 try {
   let who;

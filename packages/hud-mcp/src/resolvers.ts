@@ -11,7 +11,7 @@ import { object, readBounded, readJson } from './io.js';
 import type { Registration } from './registry.js';
 import { actualSourceRoot, findHarness, type ProcessInfo, type ProcessReaderPort } from './process.js';
 import { consumeHookRecord, type ClaudeHookSourceOptions } from './hook/resolve.js';
-import { CLAUDE_VERSION, IMPLEMENTATION, hookProfileFingerprint, selectsClaudeHook } from './hook/record.js';
+import { IMPLEMENTATION, hookProfileFingerprint, selectsClaudeHook } from './hook/record.js';
 import { readlinkSync } from 'node:fs';
 import type { PiEvidenceChannel } from './pi-channel.js';
 
@@ -150,7 +150,8 @@ export class SessionRefResolver implements CurrentCallSourcePort {
     private readonly profile: DelegateProfile | null,
     private readonly locator: SessionRecordLocatorPort = new BoundedSessionLocator(),
     private readonly claudeHook?: ClaudeHookSourceOptions,
-    private readonly scopes?: ScopeSnapshotPort,
+    // Historical constructor position only. Native resolution never reads caller scopes.
+    _legacyScopes?: ScopeSnapshotPort,
     private readonly piChannel?: PiEvidenceChannel
   ) {}
   async resolve(meta: unknown, toolName: string): Promise<CallResolution> {
@@ -182,8 +183,6 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         harnessPid,
         harnessProcStart!
       );
-      // Captured before reading the source. A losing call must obtain fresh evidence.
-      const scopePremise = this.scopes?.read(processKey);
       let callId: string;
       let sessionRef: SessionRef;
       if (source.harness === 'claude') {
@@ -194,34 +193,40 @@ export class SessionRefResolver implements CurrentCallSourcePort {
           if (
             !hook ||
             hook.config.implementation !== IMPLEMENTATION ||
-            hook.config.claudeVersion !== CLAUDE_VERSION ||
             hook.config.profileFingerprint !== hookProfileFingerprint(this.profile) ||
             hook.config.sourceRoot !== source.rootPath ||
             hook.config.serverName !== this.profile.mcpServerName
           )
             return deny('unsupported');
-          // The launch profile pins an executable whose version was checked by the launcher.
+          // The configured executable must be the actual native ancestor.
           // Config/env alone never proves that the actual ancestor is this executable.
           if (readlinkSync(`/proc/${harnessPid}/exe`) !== hook.config.claudeExecutable) return deny('unsupported');
+          const currentNativeSession = (): string => {
+            const record = readJson(join(source.rootPath, 'sessions', `${harnessPid}.json`));
+            if (
+              !object(record) ||
+              record.pid !== harnessPid ||
+              record.procStart !== harnessProcStart ||
+              record.pidDomain !== domain.claudePidDomain ||
+              typeof record.sessionId !== 'string' ||
+              !uuid.test(record.sessionId) ||
+              typeof record.cwd !== 'string'
+            )
+              throw new Refusal('identity_unverified');
+            return record.sessionId;
+          };
+          // Native namespace is selected by the real current registry, never MCP args.
+          const expectedSessionId = hook.scopes ? undefined : currentNativeSession();
           const evidence = consumeHookRecord(hook, {
             processKey,
             sourceId: source.sourceId,
             bootId: domain.bootId,
             callId,
             toolName: `mcp__${this.profile.mcpServerName}__${toolName}`,
+            sessionId: expectedSessionId,
           });
-          const record = readJson(join(source.rootPath, 'sessions', `${harnessPid}.json`));
-          if (
-            !object(record) ||
-            record.pid !== harnessPid ||
-            record.procStart !== harnessProcStart ||
-            record.pidDomain !== domain.claudePidDomain ||
-            typeof record.sessionId !== 'string' ||
-            !uuid.test(record.sessionId) ||
-            typeof record.cwd !== 'string'
-          )
-            return deny('identity_unverified');
-          if (evidence.record.sessionId !== record.sessionId) return deny('identity_unverified');
+          const sessionId = currentNativeSession();
+          if (evidence.record.sessionId !== sessionId) return deny('identity_unverified');
           if (
             this.reader.get(harnessPid).procStart !== harnessProcStart ||
             this.reader.get(caller.pid).procStart !== caller.procStart
@@ -230,10 +235,10 @@ export class SessionRefResolver implements CurrentCallSourcePort {
           return {
             ok: true,
             callId,
-            sessionRef: { harness: 'claude', sourceId: source.sourceId, sessionId: record.sessionId, threadId: null },
+            sessionRef: { harness: 'claude', sourceId: source.sourceId, sessionId, threadId: null },
             processKey,
             evidenceDigest: evidence.record.fingerprint,
-            scopePremise: evidence.premise,
+            ...(evidence.premise ? { scopePremise: evidence.premise } : {}),
           };
         }
         const record = readJson(join(source.rootPath, 'sessions', `${harnessPid}.json`));
@@ -282,7 +287,6 @@ export class SessionRefResolver implements CurrentCallSourcePort {
           turn.subagent_kind !== undefined
         )
           return deny('identity_unverified');
-        if (turn.codex_version !== '0.166.0') return deny('unsupported');
         const file = this.locator.codex(source.rootPath, meta.sessionId);
         if (!file || !realpathSync(file).startsWith(source.rootPath + '/sessions/'))
           return deny('identity_source_missing');
@@ -291,11 +295,7 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         if (!object(header) || header.type !== 'session_meta' || !object(header.payload))
           return deny('identity_unverified');
         const payload = header.payload;
-        if (
-          payload.id !== meta.threadId ||
-          payload.cli_version !== '0.166.0' ||
-          !['cli', 'exec'].includes(payload.source as string)
-        )
+        if (payload.id !== meta.threadId || !['cli', 'exec'].includes(payload.source as string))
           return deny('identity_unverified');
         // Only the measured direct exec path is currently evidenced here. TUI source is
         // diagnosable but no product capability is upgraded by this resolver.
@@ -330,7 +330,6 @@ export class SessionRefResolver implements CurrentCallSourcePort {
             callId: frame.snapshot.toolCallId,
             sessionRef,
             processKey,
-            scopePremise,
             evidenceDigest: digest([frame, processKey]),
           };
         } catch (error) {
@@ -358,7 +357,6 @@ export class SessionRefResolver implements CurrentCallSourcePort {
         sessionRef,
         processKey,
         evidenceDigest: digest([callId, sessionRef, processKey]),
-        scopePremise,
       };
     } catch {
       return deny('identity_source_missing');

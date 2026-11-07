@@ -1,3 +1,5 @@
+import { nativeCallsOnly } from './core/link/view-model.js';
+import { NativeCallCollector } from './collectors/native-calls.js';
 import { performance } from 'node:perf_hooks';
 import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
 import {
@@ -283,6 +285,7 @@ async function runLivePage(): Promise<void> {
       delete process.env[key];
   const allDelegations = process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
   const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
+  const nativeCalls = NativeCallCollector.fromEnv();
   let delegation: DelegationViewModel | null = null;
   // Opened again, the panel reads only what each rollout gained since it last saved its scan.
   useTreeScanStore(new TreeScanStore(path.join(getHudHome(), 'scan')));
@@ -1022,6 +1025,7 @@ async function runLivePage(): Promise<void> {
     let stage: HealthSource = 'session';
     try {
       session = finder.check();
+      const nativeRead = nativeCalls.collectCodex(session?.sessionId, getCodexHome(), allDelegations);
       delegation = delegationCollector
         ? await delegationCollector.tick(
             allDelegations ? undefined : session?.sessionId,
@@ -1029,6 +1033,7 @@ async function runLivePage(): Promise<void> {
             publicationWorker ? 2 * 1024 * 1024 : undefined
           )
         : null;
+      const legacyDelegation = delegation;
       if (workerRefresh) workerRefresh = false;
       else publicationWorker?.request(allDelegations ? undefined : session?.sessionId);
       stage = 'rollout';
@@ -1047,7 +1052,7 @@ async function runLivePage(): Promise<void> {
           lastParsedRollout = signature;
           try {
             main = await parser.parse(
-              delegation || publicationWorker
+              legacyDelegation || publicationWorker
                 ? {
                     budget: {
                       maxBytes: (publicationWorker ? 2 : 4) * 1024 * 1024,
@@ -1058,7 +1063,10 @@ async function runLivePage(): Promise<void> {
                   }
                 : undefined
             );
-            if (delegation && ((parser.getReadStats()?.remainingBytes ?? 0) > 0 || parser.getReadStats()?.continuation))
+            if (
+              legacyDelegation &&
+              ((parser.getReadStats()?.remainingBytes ?? 0) > 0 || parser.getReadStats()?.continuation)
+            )
               lastParsedRollout = null;
           } catch (err) {
             // A failed read is not "already parsed"; let the next tick retry.
@@ -1068,7 +1076,7 @@ async function runLivePage(): Promise<void> {
         }
       }
       const rootStats = parser.getReadStats();
-      if (delegation && rootStats && rootStats !== priorRootStats)
+      if (legacyDelegation && rootStats && rootStats !== priorRootStats)
         delegationCollector?.collector.chargeAdditionalRead(
           rootStats.bytesRead,
           rootStats.recordsRead,
@@ -1076,6 +1084,8 @@ async function runLivePage(): Promise<void> {
         );
       hudStatus.health.bind(Boolean(session));
       hudStatus.health.read();
+      await nativeRead;
+      delegation = nativeCalls.merge(legacyDelegation);
       stage = 'tree';
       const rootId = main?.session?.id ?? session?.sessionId ?? '';
       if (rootId !== tree.rootId) {
@@ -1102,7 +1112,7 @@ async function runLivePage(): Promise<void> {
       // on this tick too, rather than waiting for the quiet-file budget.
       if (session) priority.add(session.path);
       const listed =
-        rootId && !delegation
+        rootId && (!delegation || nativeCallsOnly(delegation))
           ? await timeAsync('tree.list', () =>
               findRolloutsInDaysYielding(
                 treeLookbackDays(
@@ -1115,7 +1125,7 @@ async function runLivePage(): Promise<void> {
             )
           : undefined;
       tree =
-        rootId && !delegation
+        rootId && (!delegation || nativeCallsOnly(delegation))
           ? await timeAsync('tree.build', () =>
               buildSubagentTreeYielding(rootId, main?.subagents ?? [], 3, Date.now(), listed)
             )
@@ -1150,7 +1160,7 @@ async function runLivePage(): Promise<void> {
           delegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms'
         );
       built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree });
-      if (delegationCollector) Object.assign(built, { delegation });
+      if (delegation) Object.assign(built, { delegation });
       markActivitySourceSuccess('status');
     } catch (err) {
       hudStatus.health.fail('status', err); /* The foot keeps its last good rows. */
@@ -1170,7 +1180,7 @@ async function runLivePage(): Promise<void> {
       const publicationToken = delegationCollector?.publicationToken();
       await delegationCollector?.afterPaint(
         (committed) => {
-          delegation = committed;
+          delegation = nativeCalls.merge(committed);
           if (built) Object.assign(built, { delegation });
           render();
         },
@@ -1317,10 +1327,11 @@ async function runLivePage(): Promise<void> {
       return;
     }
     const root = tree.rootId;
-    const view = delegation;
+    const view = nativeCallsOnly(delegation) ? null : delegation;
     const selected = state.tree.selectedId;
     const label = view ? undefined : uniquePickerLabel(tree, id);
     const selectedIdentity = (snapshot: DelegationViewModel | null) => {
+      if (nativeCallsOnly(snapshot)) snapshot = null;
       const node = snapshot?.tree.nodes.find((item) => item.key === selected);
       return snapshot
         ? JSON.stringify({
@@ -1503,10 +1514,12 @@ async function runLivePage(): Promise<void> {
           else if (action?.type === 'pin') journal.pin(action.agentId, action.value);
           else if (action?.type === 'viewed') journal.markViewed(action.receipt);
           else if (action?.type === 'target') {
-            const target = delegation ? delegationActivityTarget(delegation, tree.rootId, action.agentId) : null;
+            const nativeOnly = nativeCallsOnly(delegation);
+            const target =
+              delegation && !nativeOnly ? delegationActivityTarget(delegation, tree.rootId, action.agentId) : null;
             const selected = target?.key ?? null;
-            let live = delegation ? target !== null : action.agentId === tree.rootId;
-            if (!delegation)
+            let live = delegation && !nativeOnly ? target !== null : action.agentId === tree.rootId;
+            if (!delegation || nativeOnly)
               walkNodes(tree.nodes, (node) => {
                 if (node.id === action.agentId) live = true;
               });

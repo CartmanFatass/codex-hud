@@ -1,4 +1,4 @@
-// SYNTHETIC Pi 1.4.0 callback host, not the vendor client or provider validation.
+// SYNTHETIC Pi callback host with a non-socket native-host port, not provider/IPC validation.
 // Copied under a synthetic installed-package tuple by the test. All production
 // bridge, process verification, stdio MCP, registry and ledger code is unchanged.
 import { registerHooks, syncBuiltinESMExports } from 'node:module';
@@ -16,6 +16,9 @@ registerHooks({
 const owned = new Set();
 const originalSpawn = childProcess.spawn;
 childProcess.spawn = (...args) => {
+  if (args[0] === process.execPath && args[1]?.some((arg) => arg.endsWith('/hud-mcp.mjs'))) {
+    args[1] = ['--import', process.env.HUD_TEST_REPO + '/tests/fixtures/pi-native-host-port.mjs', ...args[1]];
+  }
   const child = originalSpawn(...args);
   owned.add(child);
   child.once('close', () => owned.delete(child));

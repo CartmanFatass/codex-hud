@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, copyFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, copyFile, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -144,6 +144,8 @@ async function fixture(t, { persisted = true, packageVersion = '1.4.0' } = {}) {
     request,
     init,
     call: (tool, callId, args) => request({ kind: 'call', tool, callId, args }),
+    portCalls: async () =>
+      (await readFile(join(home, 'synthetic-native-port.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse),
     contexts: () => {
       const db = new DatabaseSync(join(home, 'ledger.sqlite'), { readOnly: true });
       try {
@@ -156,42 +158,28 @@ async function fixture(t, { persisted = true, packageVersion = '1.4.0' } = {}) {
 }
 
 hostTest(
-  'explicit product extension exposes all tools and real hud-mcp binds exact session without capability promotion',
+  'product native tools bind exact Pi source through real stdio with an explicit synthetic non-socket host port',
   { timeout: 25000 },
   async (t) => {
     const f = await fixture(t);
-    assert.ok(f.init.tools.includes('delegate_spawn'));
-    assert.ok(f.init.tools.includes('delegate_report'));
-    assert.ok(f.init.tools.includes('delegate_close'));
-    const who = await f.call('delegate_whoami', 'call-who');
-    assert.equal(JSON.parse(who.error).code, 'claim_missing');
-    const close = await f.call('delegate_close', 'call-close', {
-      linkId: 'synthetic-unmanaged', expectedRun: 'synthetic-run', request_key: 'synthetic-close',
-    });
-    assert.equal(JSON.parse(close.error).code, 'link_not_found');
-    const list = await f.call('delegate_list', 'call-list');
-    assert.equal(list.result.details.ok, true);
+    for (const name of ['managed_create', 'managed_list', 'managed_close', 'jev_run'])
+      assert.ok(f.init.tools.includes(name), name);
+    assert.ok(f.init.tools.every((name) => !name.startsWith('delegate_')));
+    const list = await f.call('managed_list', 'call-list');
+    assert.deepEqual(list.result.details.value, { connections: [], relations: [] });
+    assert.deepEqual(list.result.details.wake, { adapter: 'pi_extension', last: null, modelReadAcknowledged: false });
     const contexts = f.contexts();
-    assert.equal(contexts.length, 1);
-    assert.equal(JSON.parse(contexts[0].session_ref)[2], 'synthetic-a');
-    const spawn = await f.call('delegate_spawn', 'call-spawn', {
-      backend: 'unconfigured-backend',
-      role: 'worker',
-      brief: join(f.root, 'brief.md'),
-      cwd: f.root,
-      mode: 'headless',
-      request_key: 'synthetic-spawn',
-    });
-    assert.equal(JSON.parse(spawn.error).code, 'backend_not_found');
-    const duplicate = await f.call('delegate_spawn', 'call-spawn', {
-      backend: 'unconfigured-backend',
-      role: 'worker',
-      brief: join(f.root, 'brief.md'),
-      cwd: f.root,
-      mode: 'headless',
-      request_key: 'synthetic-spawn',
-    });
+    assert.equal(contexts.length, 0, 'native calls do not create a legacy claim/context workflow');
+    const createArgs = { profileId: 'unconfigured-backend', workspace: f.root };
+    const created = await f.call('managed_create', 'call-create', createArgs);
+    assert.equal(JSON.parse(created.error).code, 'native_profile_not_configured');
+    const duplicate = await f.call('managed_create', 'call-create', createArgs);
     assert.equal(duplicate.error, 'pi_duplicate_tool_call');
+    const close = await f.call('managed_close', 'call-close', { connectionId: 'foreign-child' });
+    assert.equal(JSON.parse(close.error).code, 'native_connection_not_owned');
+    const calls = await f.portCalls();
+    assert.ok(calls.every((call) => call.owner.harness === 'pi' && call.owner.sessionId === 'synthetic-a'));
+    assert.equal(calls.filter((call) => call.method === 'create').length, 1);
   }
 );
 
@@ -200,36 +188,37 @@ hostTest(
   { timeout: 25000 },
   async (t) => {
     const f = await fixture(t, { persisted: false });
-    const pending = await f.call('delegate_whoami', 'lazy-call');
+    const pending = await f.call('managed_list', 'lazy-call');
     assert.equal(JSON.parse(pending.error).code, 'identity_source_missing');
     assert.deepEqual((await f.request({ kind: 'children' })).result, []);
     await f.request({ kind: 'persist' });
-    assert.equal(JSON.parse((await f.call('delegate_whoami', 'lazy-call')).error).code, 'claim_missing');
+    assert.equal((await f.call('managed_list', 'lazy-call')).result.details.ok, true);
   }
 );
 
-hostTest('actual installed-package version mismatch cannot assert Pi authority', { timeout: 25000 }, async (t) => {
-  const f = await fixture(t, { packageVersion: '0.73.1' });
-  const result = await f.call('delegate_whoami', 'wrong-version');
-  assert.equal(result.error, 'pi_channel_closed_outcome_unknown');
-  await assert.rejects(
-    import('node:fs/promises').then(({ stat }) => stat(join(f.home, 'ledger.sqlite'))),
-    { code: 'ENOENT' }
-  );
-});
+hostTest(
+  'installed Pi versions do not gate authenticated native source calls (synthetic non-socket port)',
+  { timeout: 25000 },
+  async (t) => {
+    const f = await fixture(t, { packageVersion: '99.123.456' });
+    const result = await f.call('managed_list', 'different-version');
+    assert.equal(result.result.details.ok, true);
+    assert.equal((await f.portCalls()).find((call) => call.method === 'list').owner.sessionId, 'synthetic-a');
+  }
+);
 
 hostTest(
   'switch, new, fork and tree fence old identity; reconnect never resubmits a call',
   { timeout: 30000 },
   async (t) => {
     const f = await fixture(t);
-    await f.call('delegate_whoami', 'first');
+    await f.call('managed_list', 'first');
     const killed = await f.request({ kind: 'kill' });
     assert.equal(killed.result.length, 1);
     // Allow the OS close event to reach the host. A fresh explicit call reconnects.
     await new Promise((resolve) => setTimeout(resolve, 100));
-    assert.equal((await f.call('delegate_whoami', 'first')).error, 'pi_duplicate_tool_call');
-    assert.equal(JSON.parse((await f.call('delegate_whoami', 'second')).error).code, 'claim_missing');
+    assert.equal((await f.call('managed_list', 'first')).error, 'pi_duplicate_tool_call');
+    assert.equal((await f.call('managed_list', 'second')).result.details.ok, true);
     assert.equal((await f.request({ kind: 'children' })).result.length, 1);
     for (const [before, after, reason] of [
       ['session_before_switch', 'session_start', 'new'],
@@ -239,20 +228,19 @@ hostTest(
     ]) {
       await f.request({ kind: 'event', event: before, reason });
       assert.deepEqual((await f.request({ kind: 'children' })).result, []);
-      assert.equal((await f.call('delegate_whoami', 'inactive-' + before + reason)).error, 'pi_session_inactive');
+      assert.equal((await f.call('managed_list', 'inactive-' + before + reason)).error, 'pi_session_inactive');
       if (after === 'session_start') {
         const sessionId = 'synthetic-' + reason;
         await f.request({ kind: 'set', state: { sessionId, sessionFile: join(f.root, sessionId + '.jsonl') } });
         await f.request({ kind: 'persist' });
       }
       await f.request({ kind: 'event', event: after, reason });
-      assert.equal(
-        JSON.parse((await f.call('delegate_whoami', 'after-' + before + reason)).error).code,
-        'claim_missing'
-      );
+      assert.equal((await f.call('managed_list', 'after-' + before + reason)).result.details.ok, true);
     }
-    const current = f.contexts().filter((row) => row.closed_at === null);
-    assert.ok(current.every((row) => JSON.parse(row.session_ref)[2] === 'synthetic-fork'));
+    const calls = (await f.portCalls()).filter((call) => call.method === 'list');
+    assert.equal(calls.at(-1).owner.sessionId, 'synthetic-fork');
+    for (const id of ['synthetic-new', 'synthetic-resume', 'synthetic-fork'])
+      assert.ok(calls.some((call) => call.owner.sessionId === id));
   }
 );
 
@@ -284,11 +272,11 @@ test('concurrent reconnects share cleanup barrier and uncertain close fences eve
   const ctx = {
     sessionManager: { getSessionId: () => 'synthetic', getSessionFile: () => file, getSessionDir: () => dir },
   };
-  const first = assert.rejects(bridge.execute('delegate_list', 'first', {}, undefined, ctx), /pi_cleanup_uncertain/);
+  const first = assert.rejects(bridge.execute('managed_list', 'first', {}, undefined, ctx), /pi_cleanup_uncertain/);
   await closingStarted;
   let secondSettled = false;
   const second = assert
-    .rejects(bridge.execute('delegate_list', 'second', {}, undefined, ctx), /pi_cleanup_uncertain/)
+    .rejects(bridge.execute('managed_list', 'second', {}, undefined, ctx), /pi_cleanup_uncertain/)
     .finally(() => {
       secondSettled = true;
     });
@@ -307,15 +295,15 @@ hostTest(
   { timeout: 25000 },
   async (t) => {
     const f = await fixture(t);
-    assert.equal(JSON.parse((await f.call('delegate_whoami', 'parallel-bind')).error).code, 'claim_missing');
-    const results = await Promise.all(Array.from({ length: 8 }, (_, i) => f.call('delegate_list', 'parallel-' + i)));
+    assert.equal((await f.call('managed_list', 'parallel-bind')).result.details.ok, true);
+    const results = await Promise.all(Array.from({ length: 8 }, (_, i) => f.call('managed_list', 'parallel-' + i)));
     assert.ok(
       results.every((value) => value.result?.details.ok === true),
       JSON.stringify(results)
     );
     assert.equal((await f.request({ kind: 'children' })).result.length, 1);
     const [raced] = await Promise.all([
-      f.call('delegate_list', 'shutdown-race'),
+      f.call('managed_list', 'shutdown-race'),
       f.request({ kind: 'event', event: 'session_shutdown' }),
     ]);
     assert.match(raced.error, /stale_pi_extension_epoch|pi_session_inactive|pi_channel_closed_outcome_unknown/);
@@ -325,8 +313,8 @@ hostTest(
 
 hostTest('server rechecks the installed entrypoint on every call', { timeout: 25000 }, async (t) => {
   const f = await fixture(t);
-  assert.equal(JSON.parse((await f.call('delegate_whoami', 'replace-bind')).error).code, 'claim_missing');
-  assert.equal((await f.call('delegate_list', 'before-replace')).result.details.ok, true);
+  assert.equal((await f.call('managed_list', 'replace-bind')).result.details.ok, true);
+  assert.equal((await f.call('managed_list', 'before-replace')).result.details.ok, true);
   await writeFile(join(f.pkg, 'dist/bundle/cli.js'), '// Synthetic replaced entrypoint\n');
-  assert.equal(JSON.parse((await f.call('delegate_list', 'after-replace')).error).code, 'identity_unverified');
+  assert.equal(JSON.parse((await f.call('managed_list', 'after-replace')).error).code, 'identity_unverified');
 });

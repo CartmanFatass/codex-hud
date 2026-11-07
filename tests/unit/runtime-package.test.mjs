@@ -4,20 +4,25 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fixture, rewriteManifest } from '../../scripts/runtime-package/test-fixture.mjs';
-import { verifyBundle, parseManifest, HELPERS } from '../../scripts/runtime-package/manifest.mjs';
-import { validateLock } from '../../scripts/pack-runtime.mjs';
-import { selectedOutputs } from '../../scripts/pack-cloud-preview.mjs';
-import { json, Directory } from '../../scripts/runtime-package/safety.mjs';
+import { verifyBundle, parseManifest, HELPERS, DEPENDENCIES } from '../../scripts/runtime-package/manifest.mjs';
+import { validateLock, validateInstalledClosure } from '../../scripts/pack-runtime.mjs';
+import { selectedOutputs, EXTRA_FILES } from '../../scripts/pack-cloud-preview.mjs';
+import { json, Directory, MAX_FILE, MAX_ENTRIES } from '../../scripts/runtime-package/safety.mjs';
 
 test('manifest validates complete bounded payload and exact locked production identities', (t) => {
   const f = fixture(t);
   const bundle = verifyBundle(f.bundle);
   bundle.directory.close();
   const lock = JSON.parse(fs.readFileSync(new URL('../../package-lock.json', import.meta.url)));
-  assert.deepEqual(Object.keys(validateLock(lock)), ['@iarna/toml', 'chokidar', 'readdirp']);
+  assert.deepEqual(validateLock(lock), DEPENDENCIES);
+  assert.ok(DEPENDENCIES['@anthropic-ai/claude-agent-sdk']);
+  assert.equal(DEPENDENCIES['@earendil-works/pi-coding-agent'], undefined);
   lock.packages['node_modules/foreign'] = { version: '1' };
   assert.throws(() => validateLock(lock), /closure/);
   assert.ok(HELPERS.includes('bin/codex-with-herdr-context'));
+});
+test('Jev Python asset is explicitly selected for preview and runtime bundles', () => {
+  assert.ok(EXTRA_FILES.includes('src/managed/jev-bridge.py'));
 });
 test('exact shared source mapping never selects arbitrary output or source files', () => {
   const outputs = selectedOutputs(
@@ -37,11 +42,25 @@ test('E2 shared helper mapping', () => {
     output: 'packages/hud-mcp/dist/src/utils/hud-env.js',
     generatedPath: 'mcp/src/utils/hud-env.js',
   };
-  assert.deepEqual(selectedOutputs([source], () => false), [main]);
-  assert.deepEqual(selectedOutputs([source], (file) => file === mcp.generatedPath), [main, mcp]);
-  assert.deepEqual(selectedOutputs([source], (file) => file === 'mcp/src/unrelated.js'), [main]);
+  assert.deepEqual(
+    selectedOutputs([source], () => false),
+    [main]
+  );
+  assert.deepEqual(
+    selectedOutputs([source], (file) => file === mcp.generatedPath),
+    [main, mcp]
+  );
+  assert.deepEqual(
+    selectedOutputs([source], (file) => file === 'mcp/src/unrelated.js'),
+    [main]
+  );
 });
-for (const name of ['bin/hud', 'bin/codex-with-herdr-context', 'node_modules/chokidar/package.json']) {
+for (const name of [
+  'bin/hud',
+  'bin/codex-with-herdr-context',
+  'node_modules/chokidar/package.json',
+  'src/managed/jev-bridge.py',
+]) {
   test(`tampered and missing runtime closure fails: ${name}`, (t) => {
     const f = fixture(t);
     const file = path.join(f.bundle, name);
@@ -86,7 +105,7 @@ test('bounded regular read rejects FIFO and oversize file without blocking', (t)
   const f = fixture(t);
   const d = new Directory(f.bundle);
   t.after(() => d.close());
-  fs.writeFileSync(path.join(f.bundle, 'huge'), Buffer.alloc(2 * 1024 * 1024 + 1));
+  fs.writeFileSync(path.join(f.bundle, 'huge'), Buffer.alloc(MAX_FILE + 1));
   assert.throws(() => d.read('huge'), /oversize/);
   spawnSync('/usr/bin/mkfifo', [path.join(f.bundle, 'fifo')], { env: f.env, timeout: 1000 });
   assert.throws(() => d.read('fifo'), /unsafe/);
@@ -153,7 +172,7 @@ test('valid optional metadata stays inert; dirty development bundles remain vali
   const f = fixture(t);
   Object.assign(f.manifest, {
     builtWithNode: '24.0.0-vendor.1+build.2',
-    dependencies: { '@iarna/toml': '2.2.5', chokidar: '5.0.0', readdirp: '5.0.0' },
+    dependencies: { ...DEPENDENCIES },
     sourceContentSha256: 'd'.repeat(64),
   });
   f.manifest.entries[0].provenance = 'inert synthetic text';
@@ -171,12 +190,17 @@ test('valid optional metadata stays inert; dirty development bundles remain vali
   for (const entry of f.manifest.entries) delete entry.origin;
   assert.equal(parseManifest(json(f.manifest)).schemaVersion, 1);
   assert.throws(() => parseManifest(Buffer.from([0xff])), /encoded data/);
-  assert.throws(() => parseManifest(Buffer.alloc(2 * 1024 * 1024 + 1)), /manifest_byte_limit/);
+  assert.throws(() => parseManifest(Buffer.alloc(MAX_FILE + 1)), /manifest_byte_limit/);
 });
 test('annotation aggregate and payload total are independently bounded', (t) => {
   const f = fixture(t);
-  for (let i = 0; i < 80; i++)
-    f.manifest.entries.push({ ...f.manifest.entries[0], path: `extra-${i}`, provenance: 'x'.repeat(4096) });
+  for (let i = 0; i < 650; i++)
+    f.manifest.entries.push({
+      ...f.manifest.entries[0],
+      path: `extra-${i}`,
+      origin: 'x'.repeat(1024),
+      provenance: 'x'.repeat(4096),
+    });
   assert.throws(() => parseManifest(json(f.manifest)), /annotation_total_limit/);
   const g = fixture(t);
   for (const entry of g.manifest.entries) entry.bytes = 2 * 1024 * 1024;
@@ -232,9 +256,9 @@ for (const [name, mode] of [
     fs.chmodSync(path.join(f.bundle, name), mode);
     assert.throws(() => verifyBundle(f.bundle), /mode|permission|private|integrity/);
   });
-test('fix1 exactly 5000 payload files plus manifest is valid; 5001 payload files is rejected', (t) => {
+test('exactly MAX_ENTRIES payload files plus manifest is valid; one extra is rejected', (t) => {
   const f = fixture(t);
-  while (f.manifest.entries.length < 5000) {
+  while (f.manifest.entries.length < MAX_ENTRIES) {
     const name = `padding/file-${String(f.manifest.entries.length).padStart(4, '0')}`;
     const file = path.join(f.bundle, name);
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -262,7 +286,7 @@ test('fix1 builder selected-input reader bounds allocation and avoids readFileSy
   assert.equal(typeof module.readBuildInput, 'function');
   const file = path.join(f.root, 'oversize');
   const fd = fs.openSync(file, 'wx', 0o600);
-  fs.ftruncateSync(fd, 2097153);
+  fs.ftruncateSync(fd, MAX_FILE + 1);
   fs.closeSync(fd);
   const { createRequire, syncBuiltinESMExports } = await import('node:module');
   const mutable = createRequire(import.meta.url)('node:fs');
@@ -315,12 +339,173 @@ test('fix1 owned runner records a quick normal child without uncertainty', async
 });
 
 test('F4 digest exact source output mapping', () => {
-  const sources = ['src/cli/digest.ts', 'src/core/delegated-report-read.ts',
-    'src/core/materials/source-config.ts', 'src/core/materials/delegated-digest.ts'];
+  const sources = [
+    'src/cli/digest.ts',
+    'src/core/delegated-report-read.ts',
+    'src/core/materials/source-config.ts',
+    'src/core/materials/delegated-digest.ts',
+  ];
   const ordinary = selectedOutputs(sources, () => false);
-  assert.deepEqual(ordinary.map((entry) => entry.output), sources.map((file) => `dist/${file.slice(4, -3)}.js`));
+  assert.deepEqual(
+    ordinary.map((entry) => entry.output),
+    sources.map((file) => `dist/${file.slice(4, -3)}.js`)
+  );
   const actualMcp = 'mcp/src/core/materials/source-config.js';
   const withMcp = selectedOutputs(sources, (file) => file === actualMcp);
-  assert.deepEqual(withMcp.filter((entry) => entry.generatedPath.startsWith('mcp/')).map((entry) => entry.generatedPath), [actualMcp]);
+  assert.deepEqual(
+    withMcp.filter((entry) => entry.generatedPath.startsWith('mcp/')).map((entry) => entry.generatedPath),
+    [actualMcp]
+  );
   assert.equal(withMcp.length, ordinary.length + 1);
+});
+
+test('declared SDK library stays required; client executables are not HUD runtime dependencies', () => {
+  const manifest = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url)));
+  const lock = JSON.parse(fs.readFileSync(new URL('../../package-lock.json', import.meta.url)));
+  assert.equal(
+    manifest.dependencies['@anthropic-ai/claude-agent-sdk'],
+    lock.packages[''].dependencies['@anthropic-ai/claude-agent-sdk']
+  );
+  assert.equal(manifest.dependencies['@earendil-works/pi-coding-agent'], undefined);
+  assert.ok(!Object.keys(lock.packages).some((name) => name.includes('@earendil-works/pi-coding-agent')));
+  for (const mutate of [
+    (l) => {
+      l.packages['node_modules/@anthropic-ai/claude-agent-sdk'].version = '0.0.0';
+    },
+    (l) => {
+      l.packages['node_modules/@anthropic-ai/claude-agent-sdk'].peerDependencies.zod = '*';
+    },
+    (l) => {
+      l.packages['node_modules/@anthropic-ai/claude-agent-sdk-linux-x64'].integrity = 'sha512-AAAA';
+    },
+    (l) => {
+      l.packages['node_modules/chokidar'].hasInstallScript = true;
+    },
+    (l) => {
+      delete l.packages['node_modules/express/node_modules/content-type'];
+    },
+  ]) {
+    const changed = structuredClone(lock);
+    mutate(changed);
+    assert.throws(() => validateLock(changed), /unreviewed/);
+  }
+});
+
+test('installed closure rejects extra packages, client bundles, and identity drift including nested dependencies', (t) => {
+  const f = fixture(t);
+  const modules = path.join(f.bundle, 'node_modules');
+  validateInstalledClosure(modules);
+  fs.mkdirSync(path.join(modules, 'foreign'));
+  assert.throws(() => validateInstalledClosure(modules), /unexpected_dependency_tree/);
+  fs.rmdirSync(path.join(modules, 'foreign'));
+  fs.mkdirSync(path.join(modules, '@anthropic-ai', 'claude-agent-sdk-linux-x64'));
+  assert.throws(() => validateInstalledClosure(modules), /unexpected_scope_tree/);
+  fs.rmdirSync(path.join(modules, '@anthropic-ai', 'claude-agent-sdk-linux-x64'));
+  const nested = path.join(modules, 'express/node_modules/content-type/package.json');
+  fs.writeFileSync(nested, JSON.stringify({ name: 'content-type', version: '0.0.0' }));
+  assert.throws(() => validateInstalledClosure(modules), /dependency_identity_mismatch/);
+});
+
+test('actual SDK imports and selects explicit simulated user executable without bundled clients', (t) => {
+  const f = fixture(t);
+  const root = new URL('../../', import.meta.url);
+  const isolated = path.join(f.root, 'sdk-import');
+  fs.mkdirSync(isolated);
+  for (const location of Object.keys(DEPENDENCIES)) {
+    const source = new URL(`node_modules/${location}/`, root);
+    if (!fs.existsSync(source)) {
+      t.skip(`Installed development dependency unavailable: ${location}`);
+      return;
+    }
+    const target = path.join(isolated, 'node_modules', location);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.cpSync(source, target, {
+      recursive: true,
+      filter: (name) => !name.slice(source.pathname.length).split(path.sep).includes('node_modules'),
+    });
+  }
+  validateInstalledClosure(path.join(isolated, 'node_modules'));
+  const fake = path.join(isolated, 'user-claude.mjs');
+  const receipt = path.join(isolated, 'executable-receipt.json');
+  fs.writeFileSync(
+    fake,
+    `import fs from 'node:fs'; fs.writeFileSync(${JSON.stringify(receipt)}, JSON.stringify(process.argv)); process.exit(42);\n`,
+    { mode: 0o700 }
+  );
+  fs.writeFileSync(
+    path.join(isolated, 'check.mjs'),
+    `import {query} from '@anthropic-ai/claude-agent-sdk';
+     if (typeof query !== 'function') throw new Error('query unavailable');
+     const stream = query({prompt:'synthetic packaging probe', options:{pathToClaudeCodeExecutable:${JSON.stringify(fake)}, cwd:${JSON.stringify(isolated)}, settingSources:[], env:process.env}});
+     try { for await (const message of stream) {} } catch (error) { console.log('Simulated client exit:', error.message); } finally { stream.close(); }
+     console.log('SDK import OK');\n`
+  );
+  const result = spawnSync(process.execPath, [path.join(isolated, 'check.mjs')], {
+    cwd: isolated,
+    env: f.env,
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /SDK import OK/);
+  assert.ok(fs.existsSync(receipt), result.stdout);
+  assert.equal(JSON.parse(fs.readFileSync(receipt))[1], fake);
+});
+
+test('Pi wake entrypoint loads from a relocated package without any src tree', async (t) => {
+  const { transpileModule, ModuleKind, ScriptTarget } = await import('typescript');
+  const { REQUIRED } = await import('../../scripts/runtime-package/manifest.mjs');
+  const f = fixture(t);
+  const root = new URL('../../', import.meta.url);
+  const destination = path.join(f.root, 'relocated');
+  fs.mkdirSync(destination);
+  fs.writeFileSync(path.join(destination, 'package.json'), JSON.stringify({ type: 'module' }));
+  const entry = 'integrations/pi/hud-wake.ts';
+  assert.ok(EXTRA_FILES.includes(entry));
+  assert.ok(REQUIRED.includes(entry));
+  for (const source of ['src/harness/pi/wake-extension.ts', 'src/managed/wake-message.ts']) {
+    const [mapping] = selectedOutputs([source], () => false);
+    assert.ok(mapping);
+    assert.ok(REQUIRED.includes(mapping.output));
+    const compiled = transpileModule(fs.readFileSync(new URL(source, root), 'utf8'), {
+      compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
+      fileName: source,
+    }).outputText;
+    const target = path.join(destination, mapping.output);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, compiled);
+  }
+  fs.mkdirSync(path.join(destination, 'integrations/pi'), { recursive: true });
+  fs.copyFileSync(new URL(entry, root), path.join(destination, entry));
+  assert.equal(fs.existsSync(path.join(destination, 'src')), false);
+  fs.writeFileSync(
+    path.join(destination, 'probe.mjs'),
+    `
+    import assert from 'node:assert/strict';
+    import wake from './integrations/pi/hud-wake.ts';
+    import { nativeWakeMessage } from './dist/managed/wake-message.js';
+    import { validWakeRequest, deliverPiWake } from './dist/harness/pi/wake-extension.js';
+    const handlers = new Map();
+    const messages = [];
+    const api = {on:(event,handler)=>handlers.set(event,handler),sendMessage:(...args)=>messages.push(args)};
+    wake(api);
+    assert.equal(typeof handlers.get('session_start'), 'function');
+    assert.equal(typeof handlers.get('session_shutdown'), 'function');
+    const details = {connectionId:'connection-a',nativeRef:{harness:'codex',threadId:'thread-a'},eventSeq:1,kind:'result'};
+    const request = {parentSessionId:'parent-a',content:nativeWakeMessage(details),details,command:'read native session'};
+    assert.equal(validWakeRequest(request),true);
+    assert.equal(deliverPiWake(api,request,'parent-a',{sessionManager:{getSessionId:()=> 'parent-a'}}).result,'accepted');
+    assert.deepEqual(messages[0][1],{triggerTurn:true,deliverAs:'followUp'});
+    await handlers.get('session_shutdown')();
+    console.log('relocated Pi wake OK');
+  `
+  );
+  const result = spawnSync(process.execPath, ['--experimental-strip-types', path.join(destination, 'probe.mjs')], {
+    cwd: f.cwd,
+    env: f.env,
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /relocated Pi wake OK/);
 });

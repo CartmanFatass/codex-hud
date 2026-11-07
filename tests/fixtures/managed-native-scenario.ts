@@ -1,4 +1,5 @@
-// SIMULATED native parent/target composition, constructor-only package fixture.
+// SIMULATED historical DelegationService composition, constructor-only package fixture.
+// Not the default native-session MCP path. Legacy scope evidence is composed explicitly here.
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -11,6 +12,7 @@ import { createLedgerCallerRegistry } from '../../packages/hud-mcp/src/ledger-re
 import { ManagedNativeRuntime, createManagedNativeRuntime } from '../../packages/hud-mcp/src/managed-runtime.js';
 import { SessionRefResolver } from '../../packages/hud-mcp/src/resolvers.js';
 import { DelegationService } from '../../packages/hud-mcp/src/delegation.js';
+import { makeProcessKey } from '../../src/core/identity.js';
 import { ReadOnlyScopeSnapshot } from '../../src/core/ledger-scope-read.js';
 import { openLedger } from '../../src/ledger/ledger.js';
 import { prepareCodexLaunch } from '../../src/harness/codex/profile.js';
@@ -358,16 +360,20 @@ export async function scenario(root: string, integration: boolean, parentMismatc
   try {
     if (integration) {
       const sessionId = session(source);
-      const resolver = new SessionRefResolver(
-        registration,
-        reader,
-        selected,
-        undefined,
-        undefined,
-        new ReadOnlyScopeSnapshot(join(home, 'ledger.sqlite'))
+      const resolver = new SessionRefResolver(registration, reader, selected);
+      const scopes = new ReadOnlyScopeSnapshot(join(home, 'ledger.sqlite'));
+      assert.ok(registration.source && registration.harnessPid && registration.harnessProcStart);
+      const legacyProcessKey = makeProcessKey(
+        selected.harness,
+        registration.source.sourceId,
+        reader.domain().pidDomain,
+        registration.harnessPid,
+        registration.harnessProcStart
       );
       let sequence = 0;
       const sourceCall = async () => {
+        // Only this historical service fixture requires HUD generation evidence.
+        const scopePremise = scopes.read(legacyProcessKey);
         const result = await resolver.resolve(
           {
             callId: `SIMULATED-${++sequence}`,
@@ -383,8 +389,10 @@ export async function scenario(root: string, integration: boolean, parentMismatc
           },
           'delegate_spawn'
         );
-        assert.equal(result.ok, true, JSON.stringify(result));
-        return result;
+        assert.ok(result.ok, JSON.stringify(result));
+        assert.equal(result.scopePremise, undefined, 'native resolver never reads the legacy database');
+        assert.equal(result.processKey, legacyProcessKey);
+        return { ...result, scopePremise };
       };
       const common = {
         ledger: registry.ledger,

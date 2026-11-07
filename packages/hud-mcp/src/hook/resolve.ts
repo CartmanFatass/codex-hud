@@ -1,7 +1,6 @@
 import { unlinkSync } from 'node:fs';
 import type { ScopeSnapshot, ScopeSnapshotPort } from '../../../../src/core/ledger-scope-read.js';
 import {
-  CLAUDE_VERSION,
   IMPLEMENTATION,
   MAX_RECORD_BYTES,
   canonical,
@@ -18,7 +17,8 @@ import {
 
 export interface ClaudeHookSourceOptions {
   config: HookConfig;
-  scopes: ScopeSnapshotPort;
+  /** Explicit historical experiment only; absent on the native source path. */
+  scopes?: ScopeSnapshotPort;
   /** Probe-only timing observer, after validation; never receives hook stdin. */
   observe?: (sample: {
     hookStartMonoMs: number;
@@ -39,11 +39,12 @@ export function consumeHookRecord(
     toolName: string;
     sessionId?: string;
   }
-): { record: HookRecord; premise: ScopeSnapshot } {
+): { record: HookRecord; premise?: ScopeSnapshot } {
   const { config, scopes } = options;
   privateDirectory(config.directory);
-  const premise = scopes.read(expected.processKey);
-  const paths = recordPaths(config, premise, expected.callId);
+  const premise = scopes?.read(expected.processKey);
+  if (!premise && !expected.sessionId) throw new Error('Native session source required');
+  const paths = recordPaths(config, premise ?? { ...expected, sessionId: expected.sessionId! }, expected.callId);
   // Retain the small tombstone through harness exit. A late publication can never
   // revive a refused call, including through another physical MCP instance.
   marker(paths.seen);
@@ -58,7 +59,6 @@ export function consumeHookRecord(
       hash(body) !== fingerprint ||
       value.version !== 1 ||
       value.implementation !== IMPLEMENTATION ||
-      value.claudeVersion !== CLAUDE_VERSION ||
       value.profileFingerprint !== config.profileFingerprint ||
       value.sourceId !== expected.sourceId ||
       value.processKey !== expected.processKey ||
@@ -74,7 +74,7 @@ export function consumeHookRecord(
         (value.agent.kind === 'root' && value.agent.id === null) ||
         (value.agent.kind === 'native_child' && typeof value.agent.id === 'string' && value.agent.id.length > 0)
       ) ||
-      canonical(value.premise) !== canonical(premise)
+      (premise ? canonical(value.premise) !== canonical(premise) : value.premise !== undefined)
     )
       throw new Error('Conflicting hook record');
     const now = Number(process.hrtime.bigint()) / 1e6;

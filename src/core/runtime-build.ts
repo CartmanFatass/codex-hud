@@ -1,3 +1,4 @@
+import { DEPENDENCIES as RUNTIME_DEPENDENCIES } from './runtime-dependencies.js';
 import { createHash } from 'node:crypto';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
@@ -6,16 +7,15 @@ import { canonicalJson } from './canonical.js';
 import { parseCapabilityManifest, parseStrictJson } from './capability-manifest.js';
 import type { CapabilityManifestV1 } from './types/capabilities.js';
 
-const MAX_FILES = 5000;
-const MAX_FILE = 2 * 1024 * 1024;
-const MAX_TOTAL = 50 * 1024 * 1024;
+const MAX_FILES = 12000;
+const MAX_FILE = 4 * 1024 * 1024;
+const MAX_TOTAL = 96 * 1024 * 1024;
 export const RUNTIME_CAPABILITY_FILES = [
   'dist/core/launch/codex-cells.json',
   'dist/core/launch/managed-cells.json',
   'packages/hud-mcp/dist/src/core/launch/codex-cells.json',
   'packages/hud-mcp/dist/src/core/launch/managed-cells.json',
 ] as const;
-const RUNTIME_DEPENDENCIES = { '@iarna/toml': '2.2.5', chokidar: '5.0.0', readdirp: '5.0.0' } as const;
 export const MINIMUM_RUNTIME_FILES = [
   ...RUNTIME_CAPABILITY_FILES,
   'package.json',
@@ -67,13 +67,18 @@ const relativePath = (value: unknown): value is string =>
   !isAbsolute(value) &&
   value.split('/').every((part) => part !== '' && !part.startsWith('.'));
 const dependencyPath = (path: string) => {
-  const parts = path.split('/');
-  if (!parts.includes('node_modules')) return true;
-  if (parts[0] !== 'node_modules' || parts.slice(1).includes('node_modules')) return false;
-  if (path === 'node_modules' || path === 'node_modules/@iarna') return true;
-  return Object.keys(RUNTIME_DEPENDENCIES).some(
-    (name) => path === `node_modules/${name}` || path.startsWith(`node_modules/${name}/`)
-  );
+  if (!path.split('/').includes('node_modules')) return true;
+  return Object.keys(RUNTIME_DEPENDENCIES).some((name) => {
+    const root = `node_modules/${name}`;
+    if (path === root || root.startsWith(`${path}/`)) return true;
+    return (
+      path.startsWith(`${root}/`) &&
+      !path
+        .slice(root.length + 1)
+        .split('/')
+        .includes('node_modules')
+    );
+  });
 };
 const fields = (value: object, required: string[], optional: string[] = []) =>
   required.every((key) => Object.hasOwn(value, key)) &&
@@ -128,10 +133,8 @@ function validEnvelope(value: unknown): boolean {
       !d ||
       typeof d !== 'object' ||
       Array.isArray(d) ||
-      !fields(d, ['@iarna/toml', 'chokidar', 'readdirp']) ||
-      d['@iarna/toml'] !== '2.2.5' ||
-      d.chokidar !== '5.0.0' ||
-      d.readdirp !== '5.0.0'
+      !fields(d, Object.keys(RUNTIME_DEPENDENCIES)) ||
+      Object.entries(RUNTIME_DEPENDENCIES).some(([name, version]) => d[name] !== version)
     )
       return false;
   }
@@ -156,7 +159,7 @@ function validEnvelope(value: unknown): boolean {
         total += Buffer.byteLength(entry[key]);
       }
   }
-  return total <= 262144;
+  return total <= 3 * 1024 * 1024;
 }
 
 /** Startup integrity observation, not publisher authentication or a capability grant.
@@ -301,7 +304,7 @@ export function observeRuntimeBuild(root: string): RuntimeBuild | null {
     }
     for (const [name, version] of Object.entries(RUNTIME_DEPENDENCIES)) {
       const pkg = packageObject(`node_modules/${name}/package.json`);
-      if (pkg.name !== name || pkg.version !== version) return null;
+      if (pkg.name !== name.split('/node_modules/').at(-1) || pkg.version !== version) return null;
       if (name === '@iarna/toml') {
         if (
           pkg.main !== 'toml.js' ||
@@ -309,7 +312,7 @@ export function observeRuntimeBuild(root: string): RuntimeBuild | null {
           Object.hasOwn(pkg, 'exports')
         )
           return null;
-      } else {
+      } else if (name === 'chokidar' || name === 'readdirp') {
         const exports =
           name === 'chokidar'
             ? { '.': { default: './index.js' }, './handler.js': { default: './handler.js' } }

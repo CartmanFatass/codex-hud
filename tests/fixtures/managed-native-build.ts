@@ -1,3 +1,4 @@
+import { DEPENDENCIES } from '../../src/core/runtime-dependencies.js';
 // SIMULATED runtime package bytes. Never a shipped capability or publisher attestation.
 import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
@@ -18,6 +19,11 @@ export function syntheticBuild(root: string) {
       { mode: name === 'bin/hud-run' ? 0o700 : 0o600 }
     );
   }
+  for (const [name, version] of Object.entries(DEPENDENCIES))
+    writeFileSync(
+      join(root, 'node_modules', name, 'package.json'),
+      JSON.stringify({ name: name.split('/node_modules/').at(-1), version })
+    );
   for (const [path, value] of [
     ['package.json', { name: 'codex-hud', type: 'module' }],
     ['packages/hud-mcp/package.json', { name: '@myhud/hud-mcp', type: 'module' }],
@@ -64,6 +70,7 @@ export function sealSyntheticBuild(root: string) {
     repositoryTree: 'b'.repeat(40),
     dirty: false,
     lockfileSha256: 'c'.repeat(64),
+    dependencies: DEPENDENCIES,
     entries,
     provenance: 'SIMULATED test-only package',
   };

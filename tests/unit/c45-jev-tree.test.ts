@@ -207,7 +207,7 @@ test('job-only collector updates invalidate warm memo, preserve selection, and n
   assert.equal(vm.details[key].statusSource, 'unavailable');
   assert.equal(vm.details[key].status, null);
   assert.equal(vm.details[key].reconcile, null);
-  assert.equal(vm.details[key].resumable.resumable, false);
+  assert.equal(vm.details[key].resumable?.resumable, false);
   const changed = f.lab.snapshot();
   changed.jobs[0].label = 'synthetic-visible';
   changed.jobs[0].holderLabel = 'synthetic-visible';

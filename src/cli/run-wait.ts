@@ -1,3 +1,7 @@
+import { NativeHostClient, type NativeHostPort } from '../managed/host-ipc.js';
+import type { NativeOwner } from '../managed/relations.js';
+import type { HostMessage } from '../managed/host.js';
+import { nativeWakeDetails, nativeWakeMessage } from '../managed/wake-message.js';
 import { performance } from 'node:perf_hooks';
 import { readProcess } from '../core/run/process.js';
 import { sameProcessStamp } from '../core/supervision.js';
@@ -11,6 +15,13 @@ import type { Run } from '../core/types/execution.js';
 import type { HudIO } from './link-export.js';
 import { CliError, existingLedger, identifier, integer, options } from './runtime.js';
 
+export interface NativeWaitArguments {
+  nativeOwner: NativeOwner;
+  connectionId?: string;
+  afterSeq: number;
+  timeoutMs: number;
+  json: boolean;
+}
 export interface WaitArguments {
   target: { runId: string } | { linkId: string };
   afterSeq: number;
@@ -21,7 +32,38 @@ export interface WaitArguments {
 }
 /** Independent of ledger/watch recovery; never configurable through CLI or environment. */
 export const PARENT_LIVENESS_INTERVAL_MS = 2000;
-export function parseWait(args: readonly string[]): WaitArguments {
+export function parseWait(args: readonly string[]): WaitArguments | NativeWaitArguments {
+  if (args.includes('--native-owner')) {
+    const flags = options(
+      args,
+      ['--notify', '--json'],
+      ['--native-owner', '--connection', '--after-seq', '--timeout-ms']
+    );
+    if (flags.has('--notify') && flags.has('--json')) throw new CliError('invalid_arguments');
+    let owner: NativeOwner;
+    try {
+      owner = JSON.parse(String(flags.get('--native-owner')));
+    } catch {
+      throw new CliError('invalid_native_owner');
+    }
+    if (
+      !owner ||
+      !['codex', 'claude', 'pi'].includes(owner.harness) ||
+      typeof owner.sourceId !== 'string' ||
+      !owner.sourceId ||
+      typeof owner.sessionId !== 'string' ||
+      !owner.sessionId ||
+      (owner.threadId !== null && typeof owner.threadId !== 'string')
+    )
+      throw new CliError('invalid_native_owner');
+    return {
+      nativeOwner: owner,
+      ...(flags.has('--connection') ? { connectionId: identifier(String(flags.get('--connection'))) } : {}),
+      afterSeq: flags.has('--after-seq') ? integer(String(flags.get('--after-seq')), Number.MAX_SAFE_INTEGER) : 0,
+      timeoutMs: flags.has('--timeout-ms') ? integer(String(flags.get('--timeout-ms')), 2_147_483_647) : 7_200_000,
+      json: flags.has('--json'),
+    };
+  }
   const positional = args[0] && !args[0].startsWith('--') ? identifier(args[0]) : undefined;
   const flags = options(
     positional ? args.slice(1) : args,
@@ -146,7 +188,7 @@ export function notification(page: Page & { watchUnavailable: boolean }): string
 
 /** Parent liveness and ledger/watch recovery have separate bounded timers. */
 export async function runWait(
-  args: WaitArguments,
+  args: WaitArguments | NativeWaitArguments,
   home: string,
   io: HudIO,
   trusted: {
@@ -155,6 +197,7 @@ export async function runWait(
     afterWait?: (page: WaitPage) => Promise<void>;
   } = {}
 ): Promise<number> {
+  if ('nativeOwner' in args) return runNativeWait(args, home, io);
   const ppid = process.ppid;
   const parent = readProcess(ppid)?.stamp;
   if (!parent || ppid <= 1) throw new CliError('orphaned', 4);
@@ -256,5 +299,61 @@ export async function runWait(
     process.off('SIGINT', interrupt);
     process.off('SIGTERM', terminate);
     await ledger.close();
+  }
+}
+
+/** Claude's native background task runs this observer. Closing it never closes the backend. */
+export async function runNativeWait(
+  args: NativeWaitArguments,
+  home: string,
+  io: HudIO,
+  host: NativeHostPort = new NativeHostClient(home, false)
+): Promise<number> {
+  const controller = new AbortController();
+  const interrupt = () => controller.abort(new CliError('interrupted', 130));
+  const terminate = () => controller.abort(new CliError('terminated', 143));
+  process.once('SIGINT', interrupt);
+  process.once('SIGTERM', terminate);
+  const deadline = performance.now() + args.timeoutMs;
+  let afterSeq = args.afterSeq;
+  try {
+    for (;;) {
+      controller.signal.throwIfAborted();
+      const page = (await host.invoke(
+        args.nativeOwner,
+        'wait',
+        {
+          ...(args.connectionId ? { connectionId: args.connectionId } : {}),
+          afterSeq,
+          waitMs: Math.max(0, Math.min(120000, Math.ceil(deadline - performance.now()))),
+        },
+        controller.signal
+      )) as { events: HostMessage[]; throughSeq: number; truncated: boolean; requests?: unknown[] };
+      const pointers = page.events.map(nativeWakeDetails).filter((details) => details !== undefined);
+      const timedOut = performance.now() >= deadline;
+      if (pointers.length || page.truncated || timedOut) {
+        if (args.json)
+          await io.stdout(
+            JSON.stringify({
+              events: pointers,
+              throughSeq: page.throughSeq,
+              truncated: page.truncated,
+              timedOut: !pointers.length && timedOut,
+            }) + '\n'
+          );
+        else if (pointers.length) await io.stdout(pointers.map(nativeWakeMessage).join('\n') + '\n');
+        else
+          await io.stdout(
+            page.truncated
+              ? '[hud] Native observation buffer changed. Read native history and managed_requests. No task outcome inferred.\n'
+              : '[hud] Native wait deadline reached. No backend cancellation or task outcome inferred.\n'
+          );
+        return 0;
+      }
+      afterSeq = page.throughSeq;
+    }
+  } finally {
+    process.off('SIGINT', interrupt);
+    process.off('SIGTERM', terminate);
   }
 }

@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import {
+  appendFileSync,
+  promises as fsp,
+  renameSync,
   chmodSync,
   mkdtempSync,
   mkdirSync,
@@ -194,7 +197,7 @@ test('Pi managed delivery freezes literal bytes, adds whoami/report role instruc
   assert.equal(p.forRun(f.run).input.launch.argv[0], f.executable);
 });
 
-test('Pi resume selects exactly one existing canonical v3 header and uses the exact file, never fuzzy ID', async (t) => {
+test('Pi resume selects exactly one existing canonical native header and uses the exact file, never fuzzy ID', async (t) => {
   const f = fixture(t),
     file = join(f.source, 'arbitrary-name.jsonl');
   session(file);
@@ -209,7 +212,7 @@ test('Pi resume selects exactly one existing canonical v3 header and uses the ex
   assert.equal(argv.includes('--fork'), false);
 });
 
-test('Pi resume refuses missing/empty/replaced/ambiguous/non-v3 sessions rather than allowing native creation', async (t) => {
+test('Pi resume refuses missing/empty/replaced/ambiguous sessions rather than allowing native creation', async (t) => {
   const f = fixture(t),
     file = join(f.source, 'target.jsonl');
   const options = { ...f.options, operation: 'resume', resumeSessionId: id };
@@ -218,11 +221,57 @@ test('Pi resume refuses missing/empty/replaced/ambiguous/non-v3 sessions rather 
   await assert.rejects(preparePiLaunch(options), /pi_resume_session_unavailable/);
   session(file, otherId);
   await assert.rejects(preparePiLaunch(options), /pi_resume_session_unavailable/);
-  session(file, id, { version: 2 });
+  for (const version of [2, 3, 99]) {
+    session(file, id, { version });
+    const prepared = await preparePiLaunch(options);
+    const argv = prepared.forRun(f.run).input.launch.argv;
+    assert.equal(argv[argv.indexOf('--session') + 1], file);
+  }
+  writeFileSync(file, JSON.stringify({ type: 'tool_result', id }) + '\n');
+  await assert.rejects(preparePiLaunch(options), /pi_resume_session_unavailable/);
+  writeFileSync(file, JSON.stringify({ type: 'session', version: 3 }) + '\n');
   await assert.rejects(preparePiLaunch(options), /pi_resume_session_unavailable/);
   session(file);
   session(join(f.source, 'duplicate.jsonl'));
   await assert.rejects(preparePiLaunch(options), /ambiguous_pi_resume_session/);
+});
+
+test('Pi exact-ID disk discovery rejects replacement during read but permits transcript append', async (t) => {
+  for (const kind of ['replace', 'append']) {
+    const f = fixture(t),
+      file = join(f.source, 'selected.jsonl');
+    session(file);
+    const originalOpen = fsp.open;
+    let injected = false;
+    fsp.open = async function (name, ...args) {
+      const handle = await originalOpen.call(this, name, ...args);
+      if (name === file && !injected) {
+        const read = handle.read.bind(handle);
+        handle.read = async (...readArgs) => {
+          if (!injected) {
+            injected = true;
+            if (kind === 'replace') {
+              renameSync(file, join(f.root, 'old-session.jsonl'));
+              session(file, otherId);
+            } else appendFileSync(file, JSON.stringify({ type: 'message', message: { role: 'assistant' } }) + '\n');
+          }
+          return read(...readArgs);
+        };
+      }
+      return handle;
+    };
+    try {
+      const options = { ...f.options, operation: 'resume', resumeSessionId: id };
+      if (kind === 'replace') await assert.rejects(preparePiLaunch(options), /pi_resume_session_unavailable/);
+      else {
+        const argv = (await preparePiLaunch(options)).forRun(f.run).input.launch.argv;
+        assert.equal(argv[argv.indexOf('--session') + 1], file);
+      }
+      assert.equal(injected, true);
+    } finally {
+      fsp.open = originalOpen;
+    }
+  }
 });
 
 test('Pi resume rejects path escapes, symlinks, partial IDs and oversized headers', async (t) => {
@@ -280,15 +329,16 @@ test('Pi managed profile refuses unsupported selectors, duplicates, prompts, she
   );
 });
 
-test('Pi managed role mapping, mode, extension and vendor-version refusals are explicit', async (t) => {
+test('Pi managed role mapping, mode and extension checks do not gate vendor versions', async (t) => {
   const f = fixture(t);
   await assert.rejects(preparePiLaunch({ ...f.options, role: 'unmapped' }), /role_model_unconfigured/);
   await assert.rejects(preparePiLaunch({ ...f.options, effort: 'ultra' }), /unsupported_pi_thinking/);
   await assert.rejects(preparePiLaunch({ ...f.options, mode: 'visible' }), /visible_launch_not_in_this_build/);
-  await assert.rejects(
-    preparePiLaunch({ ...f.options, executableIdentity: { path: f.executable, version: '0.73.1' } }),
-    /unsupported_pi_managed_version/
-  );
+  for (const version of ['0.73.1', '1.4.0', '99.123.456']) {
+    const prepared = await preparePiLaunch({ ...f.options, executableIdentity: { path: f.executable, version } });
+    assert.equal(prepared.capabilityRequest().executableIdentity.version, version);
+    assert.equal(prepared.forRun(f.run).input.launch.argv[0], f.executable);
+  }
   await assert.rejects(
     preparePiLaunch({ ...f.options, profile: { ...f.profile, callSource: undefined } }),
     /pi_managed_extension_required/

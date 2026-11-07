@@ -92,7 +92,7 @@ test('ordinary collector and actual panel expose Pi source/session usage and cov
   assert.equal(node.observation?.coverage.state, 'complete');
   assert.equal(node.observation?.spent.tokens.value?.input, 20);
   assert.equal(node.observation?.spent.costUsd.value, 0.125);
-  assert.equal(view.details[f.key].resumable.resumable, false);
+  assert.equal(view.details[f.key].resumable?.resumable, false);
   assert.deepEqual(new PiAdapter().capabilities, {});
   const frame = draw(view, { width: 120, height: 40, showAll: true, selected: f.key, now: Date.now() });
   const text = frame.lines.map(stripAnsi).join('\n');
@@ -139,5 +139,5 @@ test('ordinary Pi publisher uses existing lease/stamp publication and keeps mana
   assert.ok(node?.observation?.statusProjection.observationStamp);
   assert.deepEqual(node.observation.statusProjection.observationStamp.ref, f.ref);
   assert.equal(node.observation.spent.tokens.value?.input, 20);
-  assert.equal(view?.details[f.key].resumable.reason, 'capability_unverified');
+  assert.equal(view?.details[f.key].resumable?.reason, 'capability_unverified');
 });

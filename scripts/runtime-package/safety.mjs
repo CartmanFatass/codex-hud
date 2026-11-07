@@ -2,9 +2,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
 
-export const MAX_FILE = 2 * 1024 * 1024;
-export const MAX_TOTAL = 50 * 1024 * 1024;
-export const MAX_ENTRIES = 5000;
+// Bounds include the reviewed SDK library/peer closure (~8,019 files, 41.2 MB)
+// plus compiled HUD sources and their manifest. Client binaries remain excluded.
+export const MAX_FILE = 4 * 1024 * 1024;
+export const MAX_TOTAL = 96 * 1024 * 1024;
+export const MAX_ENTRIES = 12000;
 export const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 export const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + '\n');
 export function runtime() {

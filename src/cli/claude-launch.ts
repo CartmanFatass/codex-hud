@@ -280,7 +280,8 @@ export interface ClaudeProductionDependencies {
   launch?: typeof foreground;
 }
 
-/** The sole production Claude route. Missing facts never manufacture an expectation. */
+/** Historical tmux qualification experiment, not the ordinary hud claude entry.
+ * Retained for old evidence/tests only. Native launch lives in launcher.ts. */
 export async function launchClaudeInTmux(
   input: {
     profile: LaunchProfile;

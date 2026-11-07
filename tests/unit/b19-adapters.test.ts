@@ -8,7 +8,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { WakeAdapters, type WakeMessageDetails } from '../../src/core/wake/adapters.js';
 import type { WakeRegistration } from '../../src/ledger/notify-events.js';
 import { wakeMessage } from '../../src/core/wake/message.js';
-import hudWake, { piWakeSocketPath, type PiWakeAPI } from '../../integrations/pi/hud-wake.js';
+import hudWake, {
+  piWakeSocketPath,
+  validWakeRequest,
+  deliverPiWake,
+  type PiWakeAPI,
+} from '../../src/harness/pi/wake-extension.js';
+import { nativeWakeMessage, type NativeWakeDetails } from '../../src/managed/wake-message.js';
 
 const details: WakeMessageDetails = {
   linkId: 'link-synthetic',
@@ -304,7 +310,93 @@ function exchange(path: string, message: unknown): Promise<unknown> {
   });
 }
 
-test('B19 pi extension session lifecycle, exact allowlist, fresh stale fence, private socket', async () => {
+// The current extension receives native pointers, not the historical WakeAdapters ledger payload.
+function nativeRequest(parentSessionId: string) {
+  const details: NativeWakeDetails = {
+    connectionId: 'connection-synthetic',
+    nativeRef: { harness: 'claude', sessionId: 'native-child-synthetic' },
+    eventSeq: 3,
+    kind: 'request',
+    requestId: 'request-synthetic',
+  };
+  return { parentSessionId, content: nativeWakeMessage(details), details, command: 'read native session' as const };
+}
+function invalidNativeRequests(request: ReturnType<typeof nativeRequest>): unknown[] {
+  return [
+    { ...request, command: 'execute this' },
+    { ...request, content: 'arbitrary instructions' },
+    { ...request, unexpected: 'field' },
+    { ...request, content: 'é'.repeat(257) },
+    { ...request, content: 'a\nb' },
+    { ...request, details: { ...request.details, unexpected: true } },
+    { ...request, details: { ...request.details, eventSeq: 0 } },
+    { ...request, details: { ...request.details, requestId: undefined } },
+    { ...request, content, details, command: 'read the ledger' },
+  ];
+}
+
+test('B19 pi extension native validator and delivery boundary execute without a socket', () => {
+  const sent: { message: unknown; options: unknown }[] = [];
+  const api: PiWakeAPI = {
+    on() {},
+    sendMessage(message, options) {
+      sent.push({ message, options });
+    },
+  };
+  let sessionId = 'session-synthetic';
+  const ctx = { sessionManager: { getSessionId: () => sessionId } };
+  const request = nativeRequest(sessionId);
+  assert.equal(validWakeRequest(request), true);
+  for (const invalid of invalidNativeRequests(request)) assert.equal(validWakeRequest(invalid), false);
+  assert.deepEqual(deliverPiWake(api, request, sessionId, ctx), { result: 'accepted' });
+  assert.deepEqual(sent[0], {
+    message: { customType: 'hud_wake', content: request.content, display: true, details: request.details },
+    options: { triggerTurn: true, deliverAs: 'followUp' },
+  });
+  sessionId = 'replacement-synthetic';
+  assert.deepEqual(deliverPiWake(api, request, 'session-synthetic', ctx), {
+    result: 'rejected',
+    reason: 'stale_session',
+  });
+  assert.deepEqual(deliverPiWake(api, { ...request, parentSessionId: sessionId }, 'session-synthetic', ctx), {
+    result: 'rejected',
+    reason: 'stale_session',
+  });
+  assert.equal(sent.length, 1, 'stale wakes must never trigger a turn');
+  assert.deepEqual(deliverPiWake(api, { ...request, parentSessionId: sessionId }, sessionId, ctx), {
+    result: 'accepted',
+  });
+});
+
+function skipDeniedSocketListen(error: unknown, skip: () => void): void {
+  const failure = error as NodeJS.ErrnoException | null;
+  if (failure?.code !== 'EPERM' || failure.syscall !== 'listen') throw error;
+  skip();
+}
+
+test('B19 pi extension skips only listen EPERM, never procfs or other startup failures', () => {
+  let skips = 0;
+  const skip = () => {
+    skips++;
+  };
+  skipDeniedSocketListen(Object.assign(new Error('socket denied'), { code: 'EPERM', syscall: 'listen' }), skip);
+  assert.equal(skips, 1);
+  for (const fields of [
+    { code: 'EPERM', syscall: 'open', path: '/proc/123/stat' },
+    { code: 'EPERM', syscall: 'read' },
+    { code: 'EPERM' },
+    { code: 'EACCES', syscall: 'listen' },
+  ]) {
+    const failure = Object.assign(new Error('startup failed'), fields);
+    assert.throws(
+      () => skipDeniedSocketListen(failure, skip),
+      (error) => error === failure
+    );
+  }
+  assert.equal(skips, 1, 'non-listen failures must propagate without marking the test skipped');
+});
+
+test('B19 pi extension native session lifecycle, exact allowlist, fresh stale fence, private socket', async (t) => {
   const f = await fixture();
   const oldHome = process.env.HUD_HOME;
   process.env.HUD_HOME = f.root;
@@ -325,26 +417,25 @@ test('B19 pi extension session lifecycle, exact allowlist, fresh stale fence, pr
   const ctx = { sessionManager: { getSessionId: () => sessionId } };
   hudWake(api);
   try {
-    await handlers.get('session_start')!({}, ctx);
+    try {
+      await handlers.get('session_start')!({}, ctx);
+    } catch (error) {
+      skipDeniedSocketListen(error, () =>
+        t.skip('Unix socket listen is prohibited by this sandbox (EPERM); native validator/delivery tested separately')
+      );
+      return;
+    }
     const path = await piWakeSocketPath(f.root);
     assert.match(path, /pi-\d+-\d+\.sock$/);
     assert.equal((await lstat(path)).mode & 0o777, 0o600);
     assert.equal((await lstat(join(f.root, 'wake'))).mode & 0o777, 0o700);
-    const request = { parentSessionId: sessionId, content, details, command: 'read the ledger' };
+    const request = nativeRequest(sessionId);
     assert.deepEqual(await exchange(path, request), { result: 'accepted' });
     assert.deepEqual(sent[0], {
-      message: { customType: 'hud_wake', content, display: true, details },
+      message: { customType: 'hud_wake', content: request.content, display: true, details: request.details },
       options: { triggerTurn: true, deliverAs: 'followUp' },
     });
-    for (const invalid of [
-      { ...request, command: 'execute this' },
-      { ...request, content: 'arbitrary instructions' },
-      { ...request, unexpected: 'field' },
-      { ...request, content: 'é'.repeat(257) },
-      { ...request, content: 'a\nb' },
-      { ...request, details: { ...details, unexpected: true } },
-      { ...request, details: { ...details, runs: [{ ...details.runs[0], path: '/synthetic' }] } },
-    ])
+    for (const invalid of invalidNativeRequests(request))
       assert.deepEqual(await exchange(path, invalid), { result: 'rejected', reason: 'invalid_request' });
     sessionId = 'replacement-synthetic';
     assert.deepEqual(await exchange(path, { ...request, content: 'x'.repeat(65536) }), {

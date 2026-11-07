@@ -1,3 +1,4 @@
+import { nativeCallsOnly } from '../core/link/view-model.js';
 import type { ProgressState, ProgressContext } from '../collectors/progress-summary.js';
 /** Default F12 view: a monitor, not another transcript. No I/O or terminal input here. */
 import type { HudData, SubagentTree } from '../types.js';
@@ -439,6 +440,7 @@ export function reconcileMonitor(
   nowMs: number = Date.now(),
   delegation?: DelegationViewModel | null
 ): MonitorState {
+  if (nativeCallsOnly(delegation)) delegation = null;
   if (delegation === null && state.delegating) {
     const { delegating: _mark, ...unmarked } = state;
     state = unmarked;
@@ -645,7 +647,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const width = Math.max(0, Math.floor(input.width));
   const height = Math.max(0, Math.floor(input.height));
   const now = input.nowMs ?? Date.now();
-  const delegation = input.hud?.delegation ?? null;
+  const delegation = nativeCallsOnly(input.hud?.delegation) ? null : (input.hud?.delegation ?? null);
   const state = reconcileMonitor(input.state, input.tree, input.git, input.worktrees, now, delegation);
   const frame: MonitorFrame = { lines: [], panes: [], controls: [], state };
   if (delegation)
