@@ -1,8 +1,8 @@
 # HUD workflows: fixed and ad-hoc topologies of custom agents, run by the host
 
-Design decision document WF1, revision 2 (2026-11-07, design oracle; revision 1 was reviewed by Pro, verdict REWORK;
-all eight required changes are applied, §14). Companion to `native-hud-v2.md` (v2.2) and `jev-in-hud.md` (JEV1 v4),
-both of which stand (§8.4 lists the additions to v2.2 types). The owner's request of 2026-11-07: a main session
+Design decision document WF1, revision 3 (2026-11-07). Companion to `native-hud-v2.md` (v2.3) and `jev-in-hud.md`
+(JEV1 v5, advanced to v6 by the §7 additions below). Converged by Pro (ACCEPT WITH CHANGES, applied; §14). The
+owner's request of 2026-11-07: a main session
 (Claude Code, Codex or Pi) starts a named workflow once; the HUD host runs a fixed topology of custom agents
 (implementer → reviewer and/or tester → fix loop → done), advances between steps itself and wakes the main session
 only at the end or when something needs it. Also decided: workflows designed on the spot (§4) and a prompt-cache
@@ -20,15 +20,11 @@ The thesis in four lines:
 4. **Fewer wakes by construction.** Child-level wakes are consumed by the run; a healthy run produces one logical
    completion notification plus an intervention notice whenever something needs the owner (§6).
 
-## 0. Fixed inputs, restated as constraints
+## 0. Fixed inputs
 
-| Fixed input (concept §15, v2.2, JEV1) | What it pins here |
-|---|---|
-| One level of MCP delegation; children get no HUD tools | workflow children carry `HUD_CHILD`; `workflow_*` tools are parent-only; a child cannot start a run (§7) |
-| Non-interference: children run on the user's own harness configuration | agent definitions carry no permission, tool or MCP settings for Codex/Claude; the role reaches the agent as the first prompt and a file (§1) |
-| Pi is the customisable exception | Pi agents name a pi-roles role; the host passes `--role`, `--allow-write <run>/<child>/*` and the owner's extra args (§1) |
-| Child requests are answered by the main session; 1 h re-wake, 2 h abandon | the default request policy; a step may opt into `default`/`fail`; approvals always wake (§6) |
-| Lightweight, fast, few processes, clear visualisation; bounded lifecycles; one tree | no script process (§4); one run record under the owner's stamp; the run is a node under the root with its children (§9); every instance has an absolute deadline and a ladder (§5) |
+The owner's fixed inputs (concept §15), the native HUD contract and the Jev contract are not restated here. The rule
+that binds a workflow is written where it operates: definitions and non-interference (§1), confirmation (§4),
+admission, deadlines and the one tree (§5, §9), requests (§6), depth (§7).
 
 ## 1. Custom agents: definitions
 
@@ -60,7 +56,8 @@ bundle (`<run>/agents/<name>.md` + `{ source, path, sha256, harness, model, effo
 children launch from the bundle, never from the directories, so a file edited after confirmation or between rounds
 changes nothing in a live run; a definition that fails validation is listed with its error and the plan cannot start.
 **Role delivery:** turn 1 is `<step prompt>` + a fixed trailer ("Your role: `<run>/agents/<name>.md`. Brief: `<brief>`.
-Write your report to `<instance dir>/report.md` and end by writing `<instance dir>/verdict.json`"); one prompt, no
+Write your report to `<instance dir>/report.md` and end by writing `<instance dir>/attempt-<n>/verdict.json`"); the
+attempt path is persisted before that prompt (§3); one prompt, no
 flags; a Pi agent gets the role through `--role` and the same trailer.
 
 ## 2. Workflows: definitions
@@ -80,8 +77,8 @@ max_turns = 24                               # hard cap on hud_create + hud_send
 agent = "implementer"                        # fresh child; verdicts default to ["done"]
 prompt = "Read {brief} and do exactly what it asks in {cwd}. Base commit {base}."
 on.done = "check"
-[steps.check]                                # host-run command, argv form, no shell
-run = "{check}"
+[steps.check]                                # host-run command, no shell
+run = "{check}"                              # argv shorthand (§3): the whole value names kind = "argv"; resolves to ["npm", "test"]
 on.pass = "review"
 on.fail = { to = "fix-test", max = 2, else = "end:needs_owner" }
 [steps.fix-test]
@@ -106,13 +103,13 @@ on.done = "check"
 | Element | Rule |
 |---|---|
 | step kinds | `agent` (one child turn per instance; `verdicts` default `["done"]`), `run` (host command → `pass`/`fail` by exit code), `jev` (`{ provider, prompt_file }` → §5.4; **disabled until W2c**: `invalid_definition{unsupported}`), `parallel = ["a","b"]` (§2.1), `foreach` on an `agent` step (§2.1) |
-| edges | `on.<token> = "<step>" \| "end:<outcome>"` or a counted edge `{ to, max (≤ 5), else = "end:<outcome>" }`; `max` counts traversals of that edge in the run; `else` **must be terminal**. `on.failed`, `on.timeout`, `on.lost` default `end:failed`; `end:needs_owner` is the "ask the owner" outcome |
-| total routing | every token in `verdicts` needs an `on.<token>`; `run` needs `on.pass` and `on.fail`; `parallel`/`foreach` need `on.accept` and `on.reject`, `foreach` also `on.empty`; a result with no edge cannot occur at run time |
+| edges | `on.<token> = "<step>" \| "end:<outcome>"` or a counted edge `{ to, max (≤ 5), else = "end:<outcome>" }`; `max` counts traversals of that edge in the run; `else` **must be terminal**. `on.failed`, `on.timeout`, `on.lost` are optional host-generated handlers and default `end:failed`; they are not rejected because they are absent from an agent's `verdicts`. `end:needs_owner` is the "ask the owner" outcome. `question` is intercepted by the verdict protocol and is never a graph edge (`on.question` → `invalid_definition`) |
+| routing | by step kind, not one alphabet for every construct (§2.1). A sequential agent routes every declared verdict token (`verdicts` default `["done"]`). A sequential command routes `pass` and `fail`. A parallel container routes `accept` and `reject`. A foreach container routes `accept`, `reject` and `empty`. A parallel leaf has no `on.*`; its result returns to the container. A foreach member's `verdicts` describe each item's agent outcomes; the enclosing step's `on.*` routes the container outcome. A Jev step, once enabled, routes `answered` and `incomplete`; handoffs are outside graph routing (§5.4) |
 | loop bound | delete every counted edge from the graph: **the remainder must be acyclic**. Every cycle then passes a counted edge, each fires ≤ `max` times and exits to a terminal `else`, so the run terminates. Revision 1 accepted `{ to = "b", max = 1, else = "b" }`; this rule rejects it, in linear time, without cycle enumeration |
 | budget | `[budget] max_turns` (default 24, cap 48) counts every `hud_create` and `hud_send` of the run: first prompts, nudges, question answers, continuations after recovery. Exhaustion → the run ends `needs_owner{budget}`, nothing more is dispatched. `step_deadline` 2 h (F5), `run_deadline` 8 h |
-| reuse | `reuse = "<step>"`: the instance is a new turn to that step's child, the continuation of the same conversation; valid only when both steps resolve to the **identical** bundled agent (same `sha256`, harness, model, effort, pi args, writes) → else `invalid_definition{reuse_mismatch}`; an idle-closed child is resumed (`hud_create{resume}`). Not allowed on or into `parallel` members or `foreach` steps. Cache estimates (§8) are advisory: the author chooses `reuse` or a fresh step |
+| reuse | `reuse = "<step>"`: the instance is a new turn to that step's child, the continuation of the same conversation. The target must be a **distinct sequential agent step that strictly dominates** the reusing step (self-reuse, mutual reuse, and a path that can reach the reusing step before the target has executed are `invalid_definition`). Both steps resolve to the **identical** bundled agent (same `sha256`, harness, model, effort, pi args, writes) → else `invalid_definition{reuse_mismatch}`. At dispatch the host binds the **latest settled instance** of that target preceding the current instance and persists its instance id and child reference. If that instance has no usable child or native session, the reusing instance settles `failed{reuse_unavailable}` → `on.failed`; the host does not pick an older instance and does not create a fresh child. An idle-closed child of the bound instance is resumed (`hud_create{resume}`). Not allowed on or into `parallel` members or `foreach` steps. Cache warmth never changes this selection (§8.3) |
 | placeholders | `{cwd} {base} {run} {step} {round} {item} {brief} {<param>} {report:<s>} {verdict:<s>} {output:<s>} {lines:<s>} {index:<s>} {answer:<s>}`; `:<s>` = the newest instance of `s`, and `s` must lie on every path from `start` to the step (`invalid_definition{unbound_reference}`: revision 1's single `fix` read `{report:review}` after a test failure that preceded any review); values are paths or short strings, never file contents; in `run` steps they are **arguments or env values, never shell text** (§3) |
-| validation (static) | unknown step/agent/param; unreachable step; edge token not in `verdicts`; reserved token (`question failed timeout lost empty`) in `verdicts`; non-total routing; the loop rule; `reuse` rules; §2.1 rules; `jev` before W2c; budgets over caps; non-interference keys; a plan that could exceed `maxChildren`/`maxParallel` |
+| validation (static) | unknown step/agent/param; unreachable step; a required token of the routing table with no edge; `on.question`; a parallel leaf with `on.*`; a host token (`failed`, `timeout`, `lost`) is allowed as a handler and is not required to appear in `verdicts`; reserved token (`question failed timeout lost empty`) in an agent's `verdicts`; the loop rule; `reuse` rules above; §2.1 rules; `jev` before W2c (`invalid_definition{unsupported}`); budgets over caps; non-interference keys; a plan that could exceed `maxChildren`/`maxParallel` |
 
 The validator derives the **plan** the owner confirms: steps in topological order with counted edges marked, each
 agent with source · harness · model · effort and body hash, every command verbatim (shell ones flagged), params and
@@ -125,7 +122,7 @@ nudge or answer per instance is possible, so the plan shows the hard cap, not a 
 |---|---|
 | `parallel` members | leaf `agent` or `run` steps only; no `reuse`, no `foreach`, no nesting, no own `on.*`, no incoming edges from elsewhere; results return to the container |
 | `join` | `all` only (`any` → `unsupported`: implementer → reviewer/tester does not need it, and it adds completion-order state) |
-| container tokens | `accept` iff every member token ∈ `accept_when` (default `["accept","pass","done"]`), else `reject`; a member `failed`/`timeout`/`lost` → stop intent on the group, the other members are cancelled and **settled** (ladder complete) before the container settles `failed{member}` → its `on.failed` |
+| container tokens | `accept` iff every member token ∈ `accept_when` (default `["accept","pass","done"]`), else `reject`; a member `failed`/`timeout`/`lost` persists `groupStop` (§5.1) **before** the other members are cancelled, and those members are **settled** (ladder complete) before the container settles `failed{member}` → its `on.failed`. `join.decided` is the final aggregate only; it does not stand in for a group that has failed while sibling cleanup is unfinished |
 | `foreach` | `foreach = "{lines:<s>}"`, `max_items` ≤ 16 (default 8), `concurrency` ≤ `maxParallel`; the **manifest** (trimmed, non-empty, de-duplicated lines in order) is persisted on the instance before any dispatch; 0 items → `empty`; more than `max_items` → `failed{too_many_items}` (never a silent partial review); members are instances `<step>-<n>/<i>` with `{item}`; container token and failure rule as above; `{index:<s>}` = a host-written `index.json` `[{ item, verdict, summary, report }]` so the next step addresses the collection |
 | not in WF1 | `foreach` of a subgraph, nested fan-out, quorum/best-of joins, reducing structured per-item results. The first expected wall is "for each discovered package: implement → test → review": when the item set is known the main session writes the expanded graph, when it is discovered the run stops at the boundary; use cases are collected before W6 or subgraph composition is decided |
 
@@ -135,33 +132,55 @@ nudge or answer per instance is possible, so the plan shows the hard cap, not a 
 `kind = "file"` params (`brief.md`), `bundle.json` (normalised graph, params, agents, commands, provenance),
 `agents/<name>.md`, and one directory per instance: `<child>/<step>-<n>/` for agent instances (a per-child subtree, so
 a reused Pi child's launch-time `--allow-write <run>/<child>/*` covers every instance it ever runs), `host/<step>-<n>/`
-for `run` and `jev` instances; contents `prompt.md`, `report.md`, `verdict.json`, `question-<k>.json`, `output.txt`,
-`items.json`, `index.json`, `answer.md`. Artefacts live outside the working tree: a reviewer's `git diff` stays clean.
+for `run` and `jev` instances. Instance contents: `report.md`, `question-<k>.json`, `output.txt`, `items.json`,
+`index.json`, `answer.md`, and one directory per issued prompt or command attempt, `attempt-<n>/`, holding `prompt.md`
+and `verdict.json`. An empty instance directory only stops a previous instance's files from being read. A nudge, an
+answer continuation or a recovery continuation inside the same instance gets a new `attempt-<n>/`. `nudgeUsed`, the
+question count, the budget and the deadline stay at instance scope, so a new attempt directory cannot reset them.
+Artefacts live outside the working tree: a reviewer's `git diff` stays clean.
 
-**Verdict protocol (every agent step).** The host creates the instance directory empty and names the verdict path in
-the trailer, so no stale file can be read. On `turn_done{completed}` `verdict.json` must be a JSON object ≤ 16 KiB
+**Verdict protocol (every agent step).** Before the host issues a prompt it persists the dispatch identity (§5.1) and
+the verdict path `<instance>/attempt-<n>/verdict.json`, and the trailer names that exact path. On a **matching
+successful completion** of that dispatch and turn, the host reads only that attempt's `verdict.json`. A verdict file
+with no matching completion is uncertain evidence (§5.3), not a settled outcome. The file is a JSON object ≤ 16 KiB
 with `verdict` ∈ the step's tokens or `question`, `summary` ≤ 600, optional `details` ≤ 8 KiB, optional `question:
-{ text ≤ 2 KiB, options?: ≤ 8 × 200, default? }`. Missing, unreadable, partial, oversized or unknown token → **one**
-nudge (`nudgeUsed` persisted before the `hud_send` "Finish by writing <path>"; one turn of budget; the deadline does not
-move) → then `failed{no_verdict | bad_verdict}` → `on.failed`. `verdict: "question"` → the host **moves** the file to
-`question-<k>.json` (consumed: an unchanged file cannot ask twice), raises a `workflow_question` request on the child
-record (§6) and, on the answer, sends exactly one continuation ("Answer: … Then finish by writing <path>"); ≤ 3
-questions per instance, then `failed{too_many_questions}`. `turn_done{failed | interrupted}` → `failed{child_failed}`
-unless a persisted cause wins (§5.1); `lost` → `on.lost`. A valid verdict proves protocol compliance; tester and
-reviewer steps establish whether the work is right. A file, not a tool, because children have no HUD tool table (v2.2
-§1.4) and the file is the artefact the next step reads; parsing the final message for `VERDICT:` lines is rejected
-(fragile across three harnesses). Revision 1 let a step without `verdicts` end `done` on any completed turn, so an
-implementer finishing with "Which interface should I keep?" (v2.2 §3.3's Codex fallback) advanced to review while
-`hud_send` on its child was refused; that path is gone.
+{ text ≤ 2 KiB, options?: ≤ 8 × 200, default? }`. For `verdict: "question"`, `question.text` is required and nonempty.
+When `options` are present, `default` must identify one of them. A missing or malformed question payload is
+`bad_verdict`. Missing, unreadable, partial, oversized or unknown token → **one** nudge (`nudgeUsed` persisted before
+the `hud_send` "Finish by writing <path>"; one turn of budget; the deadline does not move; the nudge is a new attempt)
+→ then `failed{no_verdict | bad_verdict}` → `on.failed`. The same single persisted repair allowance covers a malformed
+question. `{verdict:<s>}` resolves to the accepted terminal artifact of the bound instance.
 
-**`run` steps.** `run = ["cmd", "arg", …]` (argv, no shell; `{…}` placeholders expand to whole arguments) or `shell =
-"…"` (explicit `sh -c`, **no substitution inside the string**: data arrives through `args = [...]` / `env = { NAME =
-"{brief}" }`). cwd = the run's cwd, env = the captured environment plus bindings, `detached`, own process group, stdio
-captured; `timeout` default 20 min, cap 2 h → SIGTERM group, 5 s, SIGKILL; `idempotent = true` declares that the
-command may be replayed on recovery (§5.3). Outcome = exit code (`pass`/`fail`); `output.txt` keeps head + tail
-≤ 64 KiB and ends with the exit line; `{lines:<s>}` = the last ≤ 256 stdout lines. The plan prints every command
-verbatim and flags `shell` ones: "no code runs" (§4) describes the graph interpreter, not the commands the owner
-authorises.
+**Question consumption.** The order is fixed: validate the question verdict; persist the question payload, a stable
+request id, the incremented question count and `phase: 'asking'`; archive the attempt file to `question-<k>.json`
+idempotently; then publish the request (§6). The persisted request is authoritative. A crash between the record and
+the archive must not create another question and must not drop the one already recorded. ≤ 3 questions per instance,
+then `failed{too_many_questions}`. On `hud_respond` the host persists the accepted answer and the continuation intent
+in the run's serialised transition **before** the continuation `hud_send`. Recovery reconciles that intent under §5.1.
+The continuation is one new attempt ("Answer: … Then finish by writing <path>"). A duplicate response stays
+`request_not_pending`. An answer after `stop` is recorded and dispatches nothing.
+
+Matching `turn_done{failed | interrupted}` → `failed{child_failed}` unless a persisted cause wins (§5.1); `lost` →
+`on.lost`. A valid verdict together with matching successful completion proves protocol compliance; tester and
+reviewer steps establish whether the work is right. A file, not a tool, because children have no HUD tool table
+(native HUD §1.4) and the file is the artefact the next step reads; parsing the final message for `VERDICT:` lines is
+rejected (fragile across three harnesses). Revision 1 let a step without `verdicts` end `done` on any completed turn,
+so an implementer finishing with "Which interface should I keep?" (native HUD §3.3's Codex fallback) advanced to
+review while `hud_send` on its child was refused; that path is gone.
+
+**`run` steps.** `run` is an argv array `["cmd", "arg", …]` (no shell; `{…}` placeholders expand to whole arguments),
+the argv shorthand, or `shell = "…"`. **Argv shorthand:** `run = "{<argv-param>}"` is permitted only when the entire
+value references a declared `kind = "argv"` parameter. Resolution replaces it with that argv array before plan display
+and bundling. The §2 example's `run = "{check}"` normalises to `["npm", "test"]`. Any other string-valued `run` is
+invalid. Shell execution uses the explicit form `shell = "…"` (`sh -c`, **no substitution inside the string**: data
+arrives through `args = [...]` / `env = { NAME = "{brief}" }`). cwd = the run's cwd, env = the captured environment
+plus bindings, `detached`, own process group, stdio captured; `timeout` default 20 min, cap 2 h → SIGTERM group, 5 s,
+SIGKILL; `idempotent = true` declares that the command may be replayed on recovery (§5.3). Completion is a
+host-authored receipt `{ attempt, exit code or termination cause, at }` in the run record, not a line in `output.txt`.
+`output.txt` is the bounded display log (head + tail ≤ 64 KiB). A command can print text that looks like an exit
+footer; without a matching receipt the uncertain-command rule applies (§5.3). `{lines:<s>}` = the last ≤ 256 stdout
+lines. The plan prints every command verbatim and flags `shell` ones: "no code runs" (§4) describes the graph
+interpreter, not the commands the owner authorises.
 
 ## 4. Ad-hoc workflows: designed on the spot
 
@@ -187,7 +206,7 @@ explicit decision. **F6 applies transitively:** confirmation is required when **
 bundle — the workflow or an agent it resolves — is project-sourced or inline (a project file may come from a public
 clone; Grok Build gates project hooks on folder trust for the same reason). A user-level workflow whose agents all
 resolve to user files starts in one call (`workflow_start{ workflow, params, cwd }`); one that resolves a project agent
-answers `confirmation_required{ sources }` and goes through `plan` (fork F7, §13). `workflows.confirm =
+answers `confirmation_required{ sources }` and goes through `plan` (F7(a), §13). `workflows.confirm =
 "project+inline" (default) | "always" | "never"`. A `proposed` run not started within 1 h is deleted; a second `start`
 of one `proposed` run answers `already_started`. **Saving** is the owner's decision, so it is a CLI: `hud workflow save
 <run> <name> [--project]` writes the bundle's graph back as TOML; `hud workflow list|show <name>` complete it.
@@ -201,14 +220,19 @@ export interface StepInstance {                      // one per execution: the u
   id: string; step: string; n: number;               // '<step>-<n>', foreach members '<step>-<n>/<i>'
   kind: 'agent' | 'run' | 'jev' | 'parallel' | 'foreach'; group: string | null;
   item?: { index: number; value: string }; items?: string[];           // foreach member value / container manifest
-  work: { kind: 'child'; child: string; turn: number | null }          // tagged work reference, written before dispatch
-      | { kind: 'process'; pgid: number; startedAt: number }           // pid + start time: no pid-reuse kills
+  dispatch: { attempt: string; kind: 'launch' | 'input' | 'command' | 'jev'; at: number;
+              verdictPath?: string } | null;        // persisted before launch, input, spawn or Jev submission
+  work: { kind: 'child'; child: string; turn: number | null }          // returned reference, associated with dispatch
+      | { kind: 'process'; pgid: number; startedAt: number }           // after the process exists; no pid-reuse kills
       | { kind: 'jev'; key: string; label: string } | null;
+  receipt?: { attempt: string; exit: number | null; cause: 'exit' | 'signal' | 'timeout' | 'cancel'; at: number };
   phase: 'waiting' | 'dispatched' | 'nudged' | 'asking' | 'settled';
   dispatchedAt: number | null; deadlineAt: number | null;              // absolute, set once at dispatch, never moved
   nudgeUsed: boolean; questions: number; turns: number; cause: 'timeout' | 'cancel' | null;   // cause persists first
   result: { token: string; summary: string } | null;                   // written exactly once (settlement)
-  effects: 'none' | 'uncertain' | 'settled'; join?: { decided: string };   // recovery boundary (§5.3); container decision
+  pendingSuccessor?: string | null;                // same rewrite as result: successor id, or null while the cursor is pending
+  effects: 'none' | 'uncertain' | 'settled'; join?: { decided: string };   // recovery boundary (§5.3); final aggregate only
+  groupStop?: { cause: 'member_failed'; member: string; at: number };      // persisted before sibling cancellation
 }
 export interface WorkflowRun {
   run: string; owner: Owner; createdBy: string; name: string; bundle: WorkflowBundle;   // bundle frozen at plan
@@ -217,25 +241,37 @@ export interface WorkflowRun {
   outcome: string | null; stop: { intent: 'cancel' | 'run_timeout'; at: number } | null;   // intent persists first
   instances: StepInstance[]; edges: Record<string, number>; turns: number;           // 'review.reject' → 2
   children: Array<{ child: string; agent: string; instances: string[]; active: boolean }>;  // one entry per child
-  requests: Array<{ requestId: string; child: string; instance: string; kind: string; policy: string; since: number }>;
+  requests: Array<{ requestId: string; instance: string; kind: string; policy: string; since: number;
+    source: { kind: 'child'; child: string } | { kind: 'jev'; key: string } }>;
   startedAt: number | null; deadlineAt: number | null; hostGeneration: string; seq: number;   // deadlines absolute
   createdAt: number; lastEventAt: number; endedAt?: number; wake: WakeBinding;
 }
 ```
 
 Each run has one in-memory queue: the engine takes one event at a time, computes the transition, rewrites the record
-(atomic rename, under the owner's stamp like Jev job files) and only then performs side effects. An event for a
-`settled` instance, or whose work reference does not match the instance's (a late `turn_done` of an earlier turn, the
-exit of a replaced process group), is logged `late` and dropped; `result` is written once. **Stop intent first:**
-`workflow_cancel` and the run deadline write `stop` before any `hud_cancel`, a step deadline writes `cause: 'timeout'`
-before the interrupt; with `stop` set nothing is dispatched, no edge is followed and later outcomes settle `cancelled`;
-with `cause` set the `turn_done{interrupted}` settles `failed{timeout}` → `on.timeout`, never `child_failed`. Cleanup is
-complete when every work reference is released (child closed through the ladder, process group gone, Jev observation
-closed); only then `state` becomes `cancelled` / `failed{run_timeout}`. **States:** `proposed → running` → `blocked`
-while an intervention request waits (§6) → `running` when all are settled → terminal `done | failed | needs_owner |
-cancelled`; `interrupted` at host boot (§5.3). Inside `running`/`blocked` every path is defined: total routing leaves
-no result without an edge; a failed dispatch (`hud_create` error, spawn error, admission timeout) settles
-`failed{dispatch}` → `on.failed`; a partial group follows §2.1; non-agent work recovers per §5.3.
+(atomic rename, under the owner's stamp like Jev job files) and only then performs side effects. **Dispatch intent
+precedes the call.** Before every launch or input submission the host persists a unique `dispatch.attempt` and its
+kind. Returned child, turn, process or Jev references are associated with that attempt. An instance with no dispatch
+intent is unstarted and returns to admission. An intent with no conclusive result is reconciled against recorded
+launch, session and process evidence; a missing `nativeRef` does not prove that dispatch did not occur. A command's
+intent is persisted before spawn; the PGID and process-start marker are written only once the process exists.
+**Settlement is one rewrite:** `result`, the selected edge, counter changes and the successor instance id — or
+`pendingSuccessor` when that id is not created yet — land in the same run-record rewrite. An event for a `settled`
+instance, or whose originating turn and attempt (native HUD §2.8) do not match the instance's current dispatch, is
+logged `late` and dropped. The check uses the identity stamped on the event when it was normalised. It does not read
+the child's current turn at processing time. `result` is written once. **Stop intent first:** `workflow_cancel` and
+the run deadline write `stop` before any `hud_cancel`, a step deadline writes `cause: 'timeout'` before the interrupt,
+and a member failure writes `groupStop` before sibling cancellation. With `stop` set nothing is dispatched, no edge
+is followed and later outcomes settle `cancelled`. With `cause` set a matching `turn_done{interrupted}` settles
+`failed{timeout}` → `on.timeout`, never `child_failed`. Cleanup is complete when every work reference is released
+(child closed through the ladder, process group gone, Jev observation closed); only then `state` becomes `cancelled`
+/ `failed{run_timeout}`. **States:** `proposed → running` → `blocked` while an intervention request waits (§6) →
+`running` when all are settled → terminal `done | failed | needs_owner | cancelled`; `interrupted` at host boot
+(§5.3). Inside `running`/`blocked` every routable result has an edge (§2). A create or spawn failure settles
+`failed{dispatch}` → `on.failed`. An admission timeout settles `failed{capacity}` → `on.failed` (§5.2). Both are
+host outcomes. A partial group follows §2.1; non-agent work recovers per §5.3. An attempted agent dispatch that
+cannot be reconciled and has no recoverable native session stops at `needs_owner{uncertain_work}` and does not follow
+an edge that can repeat the work.
 
 ### 5.2 Children, admission, limits, isolation
 
@@ -272,49 +308,90 @@ per owner) prunes terminal runs oldest-first.
 ### 5.3 Recovery and the side-effect boundary
 
 At host boot a `running`/`blocked` run with a foreign `hostGeneration` becomes `interrupted`; its live children are
-`lost` and swept by the v2.2 crash sweep. `workflow_start{ run }` on an `interrupted` run recaptures the environment
-from the **resuming** attachment (v2.2 §6.2 persists none; the recorded native `source` is kept) and treats each
-unsettled instance by evidence. **Guarantee:** a settled instance is never dispatched again; an instance with uncertain
-effects is reconciled before anything continues or is replayed.
+`lost` and swept by the native HUD crash sweep. `workflow_start{ run }` on an `interrupted` run recaptures the
+environment from the **resuming** attachment (native HUD §6.2 persists none; the recorded native `source` is kept)
+and treats each unsettled instance by evidence. **Guarantee:** a settled instance is never dispatched again; an
+instance with uncertain effects is reconciled before anything continues or is replayed.
+
+**Precedence, applied before the table.** A persisted run `stop` or timeout `cause` keeps precedence during recovery.
+A stopped run performs cleanup only and follows no successor edge. A stopped group settles its remaining members
+before the container settles; recovery does not restart those siblings. New dispatches, replays and continuations
+must pass the original absolute deadlines and the remaining budget. Recovery never resets deadlines, edge counters,
+question counts or `nudgeUsed`. A matching terminal receipt whose timestamp shows the work finished before a deadline
+is kept. An elapsed deadline blocks new execution. It does not manufacture a timeout for an already-recorded timely
+completion.
 
 | Unsettled instance | Evidence | Action |
 |---|---|---|
-| agent, valid `verdict.json` | the turn finished before the record was written | settle from the file; route normally |
-| agent, no verdict, `nativeRef` recorded | effects uncertain (a commit or external action may have landed; v2.2 §6.1: resume restores history, not pending state) | resume (`hud_create{resume}`) and send one continuation: "the host was interrupted; first state what you already did, then finish by writing <path>" — one turn of budget, same `deadlineAt` (past → `failed{timeout}`) |
-| agent, no verdict, no `nativeRef` | nothing to continue | `failed{lost}` → `on.lost` |
-| `run`, exit line in `output.txt` | the host writes it last | settle from it |
-| `run`, no exit, `idempotent = true` | declared safe | replay in a fresh instance directory |
-| `run`, no exit, not idempotent | effects uncertain | the run ends `needs_owner{uncertain_command}` naming the instance; `workflow_start{ run, replay: ["<id>"] }` is the owner's explicit decision to run it again |
-| `jev` | JEV1 record by key | JEV1 `resume`: wait or reconcile, never a resend (§5.4) |
-| `parallel`/`foreach` container | member instances | members individually; a persisted `join.decided` is final |
+| agent, no `dispatch` | unstarted; still waiting for admission | return to admission. Do not treat the absence of a `nativeRef` as `lost` |
+| agent, `dispatch` set, no conclusive result, no recoverable native session | the launch may have happened | `needs_owner{uncertain_work}`. Do not follow an edge that can repeat the work |
+| agent, recoverable native session, no matching terminal completion | effects uncertain (a commit or external action may have landed; native HUD §6.1: resume restores history, not pending state) | resume (`hud_create{resume}`) and send one continuation: "the host was interrupted; first state what you already did, then finish by writing <path>" — one new attempt, one turn of budget, same `deadlineAt` |
+| agent, matching successful completion for this dispatch and turn | terminal evidence. A `verdict.json` alone proves only that a file was written | the same verdict-validation and question transition as live execution (§3) |
+| agent, matching failed or interrupted completion | terminal evidence for this dispatch and turn | ordinary failure, timeout and cancellation precedence (`cause` wins over `child_failed`) |
+| agent, verdict file, no matching completion | uncertain evidence | do not settle from the file; `needs_owner{uncertain_work}` |
+| `run`, host receipt for this attempt | the receipt carries the attempt, the exit code or termination cause, and the completion time. It may live in the run record. `output.txt` is not completion authority | settle from the receipt |
+| `run`, no matching receipt, `idempotent = true` | declared safe | replay as a new attempt of the same instance; prior artefacts stay |
+| `run`, no matching receipt, not idempotent | effects uncertain, including output that merely resembles an exit footer | `needs_owner{uncertain_command}` naming the instance. Replay is §10 |
+| `jev` | JEV1 record by key | §5.4, not a blanket wait |
+| `parallel`/`foreach`, `groupStop` set, members unsettled | sibling cleanup unfinished. `join.decided` is not this state | settle the remaining members, then the container. Do not restart siblings |
+| `parallel`/`foreach`, `join.decided` set | final aggregate | keep it |
 
 Settled results, counters and the budget are kept; `interrupted` is reported once (§6).
 
-### 5.4 Jev steps (W2c, after J4 / J5a / J5b)
+### 5.4 Jev steps (W2c, after W2a, J4, J5a and J5b)
 
-A `jev` step is a `jev_ask` under the owner with JEV1's rules plus five of its own. (1) **Identity before dispatch:**
-`label = "<run>-<step>-<n>"` (a slug ≤ 64, within JEV1 M1) is persisted on the instance first, so the JEV1 key
-(provider + label + prompt digest) is distinct per instance and stable across recovery: two instances never attach to
-one operation and no stale answer is read. (2) **Key persisted** (`work.kind: 'jev'`); recovery goes through JEV1's
-`resume` (wait/reconcile) and a generic restart never becomes an unconfirmed resend. (3) **Every JEV1 state mapped:**
-`answered`, `incomplete` → tokens; `needs_human` → blocks the run; `sent`/`awaiting`/`reconciling`/`uncertain` →
-still running; `not_submitted`, `pre_send_failed`, `wait_failed`, `timed_out`, `abandoned`, `interrupted` →
-`failed{<state>}` → `on.failed`; `dry_run_ok` cannot occur. (4) **`needs_human` is a handoff, not a question:**
-`blocked{dialog}` with JEV1's reason (login, challenge, quota, connector approval); `hud_respond` cannot answer it and
-the run resumes when the job leaves `needs_human`. (5) **Wakes and cancel:** the job is workflow-owned, so JEV1's own
-wakes (§4.8) are consumed by the run like child wakes (§6); cancel uses `jev_ask_close` (observation ladder, sent-tab
-rules; a send is never undone). Asks of JEV1 (for its editor; not edited here): a `jev_ask` owner flag (`owned_by:
-'workflow:<run>'`) routing the job's wakes to the run, and `jev_ask_close` idempotent on a terminal job.
+A `jev` step stays `invalid_definition{unsupported}` until W2c passes. It is a `jev_ask` under the owner with JEV1's
+rules plus the following.
+
+(1) **Identity before the first submission.** The resolved prompt bytes and their digest are snapshotted and kept
+across recovery. The label is a bounded deterministic slug of owner, run and instance identity (≤ 64, JEV1's slug
+alphabet), not a truncation of an unbounded concatenation. The label and the JEV1 key are persisted before
+submission, so the key (provider + label + prompt digest; `owned_by` is not an input) is distinct per instance and
+stable across recovery.
+
+(2) **State map.** JEV1's `queued` and `sending` are real states, and `interrupted` is recoverable bookkeeping.
+
+| Jev condition | Workflow behaviour |
+|---|---|
+| `queued`, `sending`, `sent`, `awaiting`, `reconciling` | active, unsettled work |
+| initial `uncertain` while the permitted automatic reconciliation is still pending | active, unsettled work |
+| `uncertain` remaining after that reconciliation | block with an external-operation intervention and emit one run-level intervention notice |
+| `needs_human` | block with an external handoff; never answer through `hud_respond` |
+| `interrupted` | recover from the authoritative operation record; do not immediately settle `failed` |
+| `answered`, `incomplete` | route that result token |
+| other stated failure outcomes (`not_submitted`, `pre_send_failed`, `wait_failed`, `timed_out`, `abandoned`) | `failed{<state>}` → `on.failed`, with the documented reason |
+| `dry_run_ok` | unreachable for an enabled workflow Jev step |
+
+(3) **Recovery, by what the record proves.** A sent operation resumes waiting. An attempted send whose effect is
+uncertain uses JEV1's permitted read-only reconciliation. A record that proves no send was attempted may start the
+original first send under the same frozen operation identity, with the ordinary deadline and admission checks.
+A released key is not retried: generic workflow recovery never manufactures `confirm_resend: true`. The last two
+cases differ because JEV1 resume does not itself start a send, so "always wait or reconcile" does not cover an
+interruption before the first send.
+
+(4) **`needs_human` and persistent uncertainty are handoffs, not questions.** `blocked{dialog}` carries JEV1's
+reason (login, challenge, quota, connector approval) or the post-reconciliation uncertainty notice. `hud_respond`
+cannot answer either. The run does not move by itself when observation has stopped. `workflow_start{run}` accepts a
+run blocked on a Jev external intervention after the owner has addressed it, and then performs the record-based
+recovery above, keeping the same instance, key, deadlines and budget. That call cannot supply resend confirmation
+(§10).
+
+(5) **Wakes and cancel.** The job carries `owned_by: 'workflow:<run>'` (JEV1 v6). Raw job events stay readable.
+Wake decisions enter this run's serialised queue. Completion and intervention notices, including persistent
+uncertainty, are emitted at run level. Cancel uses idempotent `jev_ask_close` (observation ladder, sent-tab rules;
+a send is never undone; a close after `answered` does not rewrite the Jev outcome).
 
 ## 6. Requests, who answers, and when the main session wakes
 
 Every request raised in a run — harness approvals (`exec_approval`, `patch_approval`, `tool_permission`), harness
 questions (Codex `requestUserInput`, Claude `AskUserQuestion`/elicitation, Pi `ask_orchestrator` dialogs), verdict-file
-questions (§3), Jev `needs_human` and unknown shapes (`other`) — follows **one ordering**: (1) record it on the child
-record and the run; (2) precedence: approvals and `other` always require intervention (the engine never grants
-permissions and never guesses at an unknown dialog), otherwise the step's policy applies; (3) only if intervention is
-required does the run go `blocked` and emit one run-level `blocked` notification; (4) the raw child event stays
-readable through `hud_wait`/`hud_read` and never wakes on its own. Per step, `requests = "wake" | "default" | "fail"`:
+questions (§3), Jev external handoffs and unknown shapes (`other`) — follows **one ordering**: (1) record it on the
+originating work record and on the run, with `source` either `{ kind: 'child', child }` or `{ kind: 'jev', key }`
+(§5.1); (2) precedence: approvals, unknown dialogs and Jev external handoffs always require intervention (the engine
+never grants permissions, never guesses at an unknown dialog, and never answers a Jev handoff). `wake` / `default` /
+`fail` apply only to answerable questions; (3) only if intervention is required does the run go `blocked` and emit
+one run-level `blocked` notification; (4) the raw child or job event stays readable through `hud_wait` / `hud_read`
+/ `jev_ask_read` and never wakes on its own. Per step, `requests = "wake" | "default" | "fail"`:
 
 | Policy | Behaviour |
 |---|---|
@@ -322,16 +399,17 @@ readable through `hud_wait`/`hud_read` and never wakes on its own. Per step, `re
 | `default` | a verdict-file question with `default`, or an `ask_orchestrator` call with `default`, is answered at once and `{question, default}` recorded on the instance; without a default → `wake` |
 | `fail` | the request is withdrawn through the harness's cancel path; the instance settles `failed{asked}` → `on.failed` |
 
-**Pi `default` carrier.** The dialog cannot carry it (`ctx.ui.select/input` take title, options/placeholder, signal),
-but the `ask_orchestrator` tool call with its arguments precedes the `extension_ui_request` in the child's rpc stream,
-and `rpc-adapter.ts:96-127` relays the whole dialog record: the engine pairs the dialog with the preceding call of the
-same child whose `question` equals the title and whose options match, and takes the default from the call; an
-unpaired dialog is an arbitrary extension dialog, `kind:'other'`, and always wakes. Probe **P7** (3 trials) confirms
-the rpc stream exposes tool arguments in child mode; until it passes, `default` on a Pi step behaves as `wake`. The HUD
-Pi package's child-mode tool gains `default?: string` (additive).
+**Pi `default` correlation.** The dialog cannot carry the default (`ctx.ui.select/input` take title,
+options/placeholder, signal). The HUD Pi package's child-mode tool gains `default?: string` (additive). The engine
+prefers the harness's tool-call or request identifier. Otherwise it matches only inside the same active turn, against
+exactly one unmatched, causally preceding `ask_orchestrator` call with the same title and options, and it consumes
+that match once. `rpc-adapter.ts:96-127` relays the dialog record, which is what makes the fallback match possible.
+Missing or ambiguous correlation is `kind:'other'` and wakes the owner. Probe **P7** must show repeated identical
+questions with different defaults, and more than one outstanding call. Until that linkage is demonstrated, `default`
+on a Pi step behaves as `wake`.
 
-**Blockers and events.** The run leaves `blocked` only when all blockers are settled; an answer after `stop` is
-recorded and dispatches nothing. `WorkflowEvent{ type:'workflow', run, kind, step?, instance?, result? }` shares the
+**Blockers and events.** The run leaves `blocked` only when all blockers are settled. An answer after `stop` is
+recorded and dispatches nothing (§3). `WorkflowEvent{ type:'workflow', run, kind, step?, instance?, result? }` shares the
 ring with child events; wake-worthy: `done`, `failed`, `needs_owner`, `interrupted`, `blocked`; `step_done` is
 published for `hud_wait` and never wakes. For a child with `workflow.active`, **every** child-level wake-worthy event
 of v2.2 §5.1 (`turn_done`, `request`, `request_stale`, `closed{abandoned}`, `exit`, `error`, `lost`) is consumed by the
@@ -365,10 +443,14 @@ step is two reviews of one change; the role text should tell it not to (the owne
 
 **Normalisation:** `totalInputTokens` = `input_tokens` for OpenAI (it already includes the cached part) and `input +
 cacheRead + cacheWrite` for Anthropic and Pi; `cachedReadTokens`, `cacheWriteTokens`; `scope: 'request' | 'turn' |
-'cumulative'` is recorded with every sample and a ratio is shown only for `request`/`turn` samples. **Timing:**
-`lastRequestAt` is the start of the last model request when the host observes it (a `turn_started`/message event
-preceding the result), else the turn's end, labelled an estimate: a four-minute response leaves about one minute of a
-five-minute lifetime. A tool event does not prove that a model request followed; only observed requests count.
+'cumulative'` is recorded with every sample and a ratio is shown only for `request`/`turn` samples. **Timing.**
+`request_start` requires an observed model-request start. A turn start may be used as a conservative
+`turn_start_estimate`; it must not be labelled an observed request start. `turn_started` does not identify the last
+model request in a turn that contains tool loops. If neither an observed request start nor a turn-start estimate is
+available, forecast timing and expiry stay unknown. Turn completion never starts or refreshes the cache timer. A tool
+event does not prove that a model request followed. After compaction or resume, the prior forecast anchor is invalid
+until new evidence after that boundary is observed. Historical usage stays visible and does not restore the old
+forecast. Observed token usage, TTL assumptions and conversation reuse stay separate facts.
 
 ### 8.2 Estimate and config
 
@@ -378,45 +460,44 @@ export interface CacheEstimate {
               scope: 'request' | 'turn' | 'cumulative' } | null;                 // last sample; shown whenever present
   forecast: { state: 'warm' | 'expiring' | 'expired' | 'unknown'; provider: string | null; ttlMs: number | null;
               basis: 'documented' | 'observed' | 'configured' | null; lastRequestAt: number | null;
-              lastRequestAtIs: 'request_start' | 'turn_end_estimate' | null; expiresAt: number | null };
+              lastRequestAtIs: 'request_start' | 'turn_start_estimate' | null; expiresAt: number | null };
 }
 ```
 
 `forecast.state` is `unknown` whenever `ttlMs` is `null` **regardless of observed hits**, before the first observed
-request, after a compaction event (the prefix changed; the next sample tells) and on `hud_create{resume}` (a resumed
-session may well be warm). Otherwise by clock: `expired` past `expiresAt`, `expiring` within `max(cache.expiringMs
-60 s, 20 % of ttl)`, else `warm`. The context meter is not a compaction signal (a 30 % drop proves nothing); a low hit
-ratio after a `warm` forecast is shown as evidence, not interpreted. Computed on each record write and by the TUI at
-render time. **Config (`config.json cache`):** `ttl: { anthropic: { ms: 300000, basis: 'documented', note: '5 min
-default; the 1 h extended TTL is not detectable' }, openai: null, deepseek: null, mistral: null, zai: null }`: `openai`
-stays `null` because the Codex subscription route's retention is undocumented (Pro cites the current API guide for a
-30-minute minimum on GPT-5.6+ and a 12-hour Responses option; not verified here, and API documentation does not
-establish the subscription route); the owner sets values with `basis: 'observed' | 'configured'`; `byModel: {}` (exact
-model id wins); `providerByHarness: { codex: 'openai', claude: 'anthropic' }`; `expiringMs`.
+request, and whenever the forecast anchor was invalidated. Compaction or `hud_create{resume}` invalidates that anchor
+until new evidence after the boundary is observed; the `observed` sample can stay visible without restoring the old
+forecast. Otherwise by clock: `expired` past `expiresAt`, `expiring` within `max(cache.expiringMs 60 s, 20 % of ttl)`,
+else `warm`. The context meter is not a compaction signal (a 30 % drop proves nothing); a low hit ratio after a
+`warm` forecast is shown as evidence, not interpreted. Computed on each record write and by the TUI at render time.
+**Config (`config.json cache`):** `ttl: { anthropic: { ms: 300000, basis: 'documented', note: '5 min default; the 1 h
+extended TTL is not detectable' }, openai: null, deepseek: null, mistral: null, zai: null }`. `openai` stays `null`,
+the conservative default, because the subscription route's retention is not a configured TTL. The owner sets values
+with `basis: 'observed' | 'configured'`; `byModel: {}` (exact model id wins); `providerByHarness: { codex: 'openai',
+claude: 'anthropic' }`; `expiringMs`.
 
 ### 8.3 Use and TUI
 
 Advisory everywhere (the owner's decision: the child reports the estimate, the caller decides reuse or fresh). In a
 workflow the author writes `reuse` or a fresh step; the plan shows a reusable child's estimate at `plan` time and each
 reused instance records it; the main session sees the same estimate on `hud_read{what:'status'}` and `hud_list`.
-Revision 1's `reuse_if = "warm"` is withdrawn: it turned "continue this conversation" into "start another one" on an
-estimate without a self-contained handoff, and provider cache expiry does not erase native history; a fresh-fallback
-feature would need an explicit handoff prompt and both alternatives in the plan. **TUI:** a card setting **Cache**
+A revision-1 rule that switched a declared continuation to a fresh child when the forecast looked warm is withdrawn.
+It turned "continue this conversation" into "start another one" on an estimate, without a self-contained handoff, and
+provider cache expiry does not erase native history. A fresh-fallback feature would need an explicit handoff prompt
+and both alternatives in the plan. Cache warmth never changes which instance `reuse` binds (§2). **TUI:** a card setting **Cache**
 (Settings → Cards → Cache, default off) adds a badge after `model·effort` when the forecast is known: `♨ 4m` (warm,
 time left; U+2668), `♨ <1m` in the warning colour (expiring), `♨ ×` muted (expired); nothing for `unknown`. Compact
 rows show glyph and time only; the Inspector always shows one line: `cache: last turn 92 % read (24k/26k) · forecast
 warm 4m (anthropic 5m, documented; from request start)` or `… · forecast unknown (openai: no TTL configured)`. Bar and
 statusline show nothing. The information-design doc owns glyph and placement.
 
-### 8.4 Exact additions v2.2 needs (to fold into `native-hud-v2.md`)
+### 8.4 Host additions
 
-| Where | Addition |
-|---|---|
-| §2.8 `ChildRecord` / `ChildEvent` | `cache?: CacheEstimate`; `usage` gains `cachedReadTokens?`, `cacheWriteTokens?`, `scope?`; `workflow?: { run; agent; active }` (`createdBy` unchanged); `turn_done.usage` carries the cache fields; new `{ type: 'compaction' }` and `{ type: 'workflow'; run; kind; step?; instance?; result? }`; `HudRequest.kind` gains `'workflow_question'` (engine-resolved) |
-| §2.2 `SubagentTreeNode`; §1.5 `config.json` | `cache?: CacheEstimate`, `workflow?: { run; agent; active }`; `cache: {…}` (§8.2), `workflows: { maxRuns, maxParallel, stepDeadlineMs, runDeadlineMs, admissionWaitMs, keepRuns, confirm }` |
-| §3.3 / §5.1 / §6.1 | Pi child `ask_orchestrator` gains `default?` and the pairing rule (§6); run-level wake events, children with `workflow.active` and workflow-owned Jev jobs excluded from child-level wakes, the run-aware `--timeout-ms` (§6); admission at dispatch shared by `hud_create` and the engine (§5.2) |
-| §7.2 | probe **P6** (usage and compaction shapes per harness, 3 trials each, scopes recorded) and **P7** (Pi tool arguments visible in the child rpc stream) |
-| Appendix B | `hud_create` returns `cache` with `forecast.state: 'unknown'`; `hud_read{what:'context'}` includes the cache fields; mutations on an active workflow child → `workflow_owned`; `hud_respond` on a `workflow_question`; the five `workflow_*` tools (§10); `hud_list` gains `workflows: WorkflowRunSummary[]` |
+Folded into `native-hud-v2.md` v2.3. That document is the home for the shared fields: §1.5 (`cache`, `workflows`),
+§2.2 (`cache?`, `workflow?`), §2.8 (usage cache fields, `compaction` and `workflow` events, originating turn and
+attempt), §3.3 (`workflow_question`, discriminated `source`, Pi `default`), §5.1 (run-level wakes), §6.1 (shared
+admission), §7.2 (P6, P7) and Appendix B (workflow tools, `owned_by`, idempotent `jev_ask_close`). This section does
+not restate them.
 
 ## 9. TUI
 
@@ -445,7 +526,7 @@ stages, not in extra rows. No separate pane, no grouping by backend; the run nod
 |---|---|---|---|
 | `workflow_list` | `{ what?: 'definitions' \| 'runs' }` | definitions `{ name, source, description, params, valid, error? }[]`, runs `WorkflowRunSummary[]` (≤ 50) | read-only; never starts a host |
 | `workflow_plan` | `{ workflow?: string, definition?: object, params?, cwd: string }` | `{ run, plan, toml, warnings[] }` or `invalid_definition{ errors: 'L:C message'[] }` | validates, resolves, freezes the bundle, writes a `proposed` record; starts the host if needed |
-| `workflow_start` | `{ workflow?, params?, cwd? } \| { run, confirmed?: true, replay?: string[] }` | `{ run, seq, wake }` | one-call start when nothing in the bundle is project/inline (F6); `run` form starts a `proposed` run or resumes an `interrupted` one; `confirmation_required{sources}`, `already_started`, `limit_exceeded`, `run_not_found` |
+| `workflow_start` | `{ workflow?, params?, cwd? } \| { run, confirmed?: true, replay?: string[] }` | `{ run, seq, wake }` | one-call start when nothing in the bundle is project/inline (F6); `run` form starts a `proposed` run, resumes an `interrupted` run, resumes a run blocked on a Jev external intervention (§5.4; same instance, key, deadlines and budget; the call cannot supply resend confirmation), or replays `needs_owner{uncertain_command}`. Replay requires `replay` to name exactly the unresolved uncertain command instances; settled, unknown or unrelated ids are rejected; each replay is a new attempt of the same instance and keeps prior artefacts; the original deadlines, counters, budget and frozen bundle stay in force. Other terminal outcomes are not generally restartable. Errors: `confirmation_required{sources}`, `already_started`, `limit_exceeded`, `run_not_found` |
 | `workflow_status` | `{ run }` | the `WorkflowRun` with heads trimmed (≤ 4 KiB) | passive |
 | `workflow_cancel` | `{ run }` | `{ ok, children: closeResult[] }` | §5.2 |
 | CLI | `hud workflow list \| show <name> \| save <run> <name> [--project]` | — | owner-facing |
@@ -453,15 +534,11 @@ stages, not in extra rows. No separate pane, no grouping by backend; the run nod
 New error codes: `invalid_definition`, `confirmation_required`, `already_started`, `workflow_owned`, `run_not_found`.
 `hud_list` gains `workflows: WorkflowRunSummary[]` (`{ run, name, state, current, turns, startedAt, endedAt? }`).
 
-## 11. Prior art and what is taken from it
+## 11. Prior art
 
-Read on 2026-11-07 from shallow clones (Apache-2.0 both; read only, nothing run or built).
-
-| Source | What it does | Adopt | Do not adopt (and why) |
-|---|---|---|---|
-| **Claude Code `Workflow` tool** | JS script with a `meta` literal for the permission dialog, `agent()/parallel()/pipeline()/phase()`, journal-cached resume, `Date.now`/`Math.random` banned, caps 16 concurrent / 1000 agents, `isolation:'worktree'` | approval before run against a declared plan; caps as structural bounds; "same inputs → cached result" as our settled-instance rule | the script runtime (sandbox and determinism discipline; §4) |
-| **ZCode dynamic workflows** (`apps/zcode-cli/packages/dynamic-workflow{,-runtime}`, ≈ 25k lines excl. tests/UI) | TypeScript scripts typechecked against a facade `.d.ts`; a static analyser derives graphs for a confirmation window; the script runs in a separate `node` child inside a `vm.createContext` realm with five host functions and banned non-determinism; NDJSON protocol; journal rows per site; resume gated on a byte-identical script hash; `escalate` → a question with no timeout; per-run + shared adaptive concurrency | the confirmation step with a timeline the owner sees **before** running (ours from the validator); "a subagent asked again keeps its context" = our `reuse`; `escalate` = our request path; `L:C` diagnostics the model resubmits against; **if W6 is ever built**: port the curated-realm pattern of `dynamic-workflow-runtime/src/child-source.ts` and the shape of `tests/security.test.ts` (≈ 150 lines, Apache-2.0 header kept, file and commit named in `THIRD_PARTY_NOTICES.md`, ZCode's `NOTICE.md` attribution reproduced per §4(d)) | the compiler/analyser (heavier than the whole host); journal replay with settle-order gating; the provider governor (HUD makes no model requests). No code there launches Claude Code, Codex, Gemini CLI or OpenCode as workers, so it is not prior art for cross-harness children |
-| **Grok Build** (`xai-grok-pager/docs/user-guide/{16-subagents,10-hooks}.md`, `xai-tool-types/src/task.rs`, `xai-grok-hooks`) | `spawn_subagent`/`task` with agent `.md` files, `isolation: none \| worktree`, `resume_from` a completed subagent; personas with `inputs`/`outputs` contracts; Claude-compatible hooks with `Stop` gates; project hooks gated on folder trust | the inputs/outputs contract → our placeholders and instance directories; `resume_from` only for completed children = our `reuse`; the "keep working until the check passes" gate as a host-run `run` step routing back; folder trust → F6 and its transitive form | hooks or personas injected into the user's harness (non-interference); Rust code |
+Claude Code Workflow, ZCode dynamic workflows and Grok Build. The operative choices taken from them are in §4.
+If W6 is ever built, a port of ZCode's curated-realm pattern keeps the Apache-2.0 header, names the source file and
+commit in `THIRD_PARTY_NOTICES.md`, and reproduces ZCode's NOTICE attribution.
 
 ## 12. Work packages, order and tests
 
@@ -470,18 +547,30 @@ frontend-implementer for W4, an Opus subagent reviews each package. W2 is split 
 
 | WP | Content | Acceptance (node --test unless stated) | Size / who · when |
 |---|---|---|---|
-| **W1** definitions | `src/workflows/{frontmatter,agent-def,workflow-def,resolve,validate,plan,placeholders}.ts`; TOML and JSON in, bundle out | the §2 example is the **acceptance fixture**: it parses with root `start`, validates, binds `{output:check}` and `{report:review}` on every path, reports 8 agent instances and the hard cap 24; a failing fixture and an `L:C` message per rule of §2/§2.1 incl. `{ to="b", max=1, else="b" }`, `join="any"`, nested `parallel`, `reuse` of a mismatched agent, a verdict with no edge, unbound `{report:…}`; project shadows user and the bundle records both sources; a file edited after `plan` changes nothing; `save` round-trips TOML → JSON → TOML byte-stable | S / Grok (tests pi) · from WP2a |
+| **W1** definitions | `src/workflows/{frontmatter,agent-def,workflow-def,resolve,validate,plan,placeholders}.ts`; TOML and JSON in, bundle out | the §2 example is the **acceptance fixture**: it parses with root `start`, validates, binds `{output:check}` and `{report:review}` on every path, reports 8 agent instances and the hard cap 24, and normalises `run = "{check}"` to `["npm", "test"]`; a failing fixture and an `L:C` message per rule of §2/§2.1 incl. `{ to="b", max=1, else="b" }`, `join="any"`, nested `parallel`, `reuse` of a mismatched agent, a declared verdict token with no edge, unbound `{report:…}`; project shadows user and the bundle records both sources; a file edited after `plan` changes nothing. Normalization is preserved across TOML/JSON round-trip; repeated canonical TOML serialization is byte-stable. Further cases: the revision-3 table below | S / Grok (tests pi) · from WP2a |
 | **W1b** contracts | `StepInstance`, `WorkflowRun`, `workflow_question`, `workflow.active` ownership, the admission function signature — agreed with WP2a's record contract and WP4's normalisation | types + fixtures; `hud_create` and the engine call one admission function | S / Grok · with WP2a/WP4 |
 | **W2a** serial engine | `src/managed/workflow-engine.ts`: serialised transitions, settlement, stop intent, absolute deadlines, verdict protocol + nudge + questions + synthetic responder, `run` steps (argv/shell, bindings, groups), counters, budget, `reuse` with resume-on-idle-closed, request policies incl. Pi pairing (behind P7), wake consumption and `WorkflowEvent`, cancel, `interrupted` + the recovery table | fake adapters + fake clock + fake process table: the fixture runs accept-first-round, test-fail→fix→accept, reject×3 → `needs_owner`; **boundary tests**: crash before dispatch / after turn end before record write / after settlement before successor; cancel racing a completing turn (no new dispatch, one settlement); timeout cause wins over `child_failed`; late and duplicate `turn_done`; duplicate `start` of one `proposed` run → `already_started`; missing, malformed, oversized, repeated-question verdicts; nudge exhaustion across restart; every approval kind under `wake`/`default`/`fail`; two blockers and a late answer after cancel; budget exhaustion → `needs_owner{budget}`; non-idempotent command interrupted → `needs_owner{uncertain_command}`, `replay` reruns it; idempotent → replayed; process group killed at deadline; capacity shortage waits then fails; a run's idle reusable child is closed to admit; `turn_done` of an active child never wakes, `done` wakes once | M / Grok (tests pi) · after WP3–WP5 |
 | **W2b** parallel/foreach | `parallel` + `join:all`, `foreach` manifest, `index.json`, group stop intent | partial completion recovery (one member settled, one not); empty and oversized manifests; member failure cancels and settles siblings before the container routes; concurrency vs `maxParallel` with command groups | S / Grok (tests pi) · after W2a |
-| **W2c** Jev step | the §5.4 adapter | fake Jev host: same key across restart with no second send; every JEV1 state mapped; `needs_human` blocks and `hud_respond` is refused; Jev wake consumed, run wakes once; cancel closes observation | S / Grok · after J4, J5a, J5b |
+| **W2c** Jev step | the §5.4 adapter | fake Jev host: same key across restart with no second send; every JEV1 state mapped; `needs_human` blocks and `hud_respond` is refused; Jev wake consumed, run wakes once; cancel closes observation. `jev` stays `unsupported` until this package passes. Further cases: the revision-3 table below | S / Grok · after W2a, J4, J5a and J5b |
 | **W3** tools, CLI, skill | the five tools in `hud-tools.ts`, F6 transitive, `hud_list.workflows`, `hud workflow save/list/show`, Pi child `ask_orchestrator{default}`, `hud-delegate/SKILL.md` section (worktree recipe, plan → confirm → start, when a workflow beats `hud_create`) | plan writes `proposed` and starts nothing; `start` of a user workflow resolving a project agent → `confirmation_required{sources}`; all-user one-call start; child mode exposes no `workflow_*` tool | S / Grok + pi · after W2a |
 | **C1** cache | P6, usage extraction per adapter with `scope`, normalisation, `CacheEstimate`, config with `basis`, badge + Inspector line (with W4) | fixtures per harness → `observed` with the right denominator; `ttl: null` with known hits → `unknown`; compaction → `unknown`; resume → `unknown`; `expiring → expired` at render time; `byModel` beats provider; a 4-minute response does not refresh age at completion | S / Grok (tests pi) · after P6, independent of W2 |
 | **W4** TUI | `ChildrenCollector` nests by `workflow.run`, run node and stages (§9), one row per child, Inspector sections, `proposed`/`waiting` rendering, attention/notice keying, i18n | visual tests 32/40/48/56, EN/ZH; a reused child is one row; quiet **and** changed ticks measured with a run record present (one filesystem call per quiet tick still holds) | S / frontend-implementer · after WP7 |
 | **W5** real clients (in WP12) | the fixture with a pi implementer and a Codex (`codex2`, `gpt-6-luna` medium) reviewer from each of the three parents, plus one Claude workflow child; one `default`-answered question; one host kill mid-review and restart | one completion notification per run (plus `blocked` when asked); every child group gone within `closeTimeoutMs` after `done`; `workflow_status` matches the records; restart continues only the interrupted instance | S / owner + pi · with WP12 |
 
 Order: W1 (from WP2a) → W1b (with WP2a/WP4) → W2a (after WP5) → W2b → W3 → (W4 after WP7) → W5 with WP12; W2c after
-J4/J5a/J5b; C1 after P6. W6 (script step) is not scheduled; it is a separate decision after W5.
+W2a, J4, J5a and J5b (including JEV1 v6 ownership and close); C1 after P6. W6 (script step) is not scheduled; it is a
+separate decision after W5. Its license and NOTICE obligations are in §11.
+
+**Revision 3 acceptance cases**, added to the package tests above.
+
+| Package | Additional acceptance cases |
+|---|---|
+| W1 / W1b | Valid parallel leaves and foreach containers under typed routing; legal host failure handlers; rejected `on.question`; rejected unbound, self and mutual reuse; deterministic latest-instance reuse; normalised argv shorthand; event, request and group-stop contract fields |
+| W2a | Never-dispatched recovery; dispatch-intent/result gap; a valid verdict written before a failed or interrupted completion; command output resembling an exit footer; question-record/archive crash boundary; accepted-answer/send boundary; command replay through the actual `workflow_start` state check; no replay after stop or an elapsed deadline |
+| W2b | Recovery during group cancellation does not restart siblings; the container settles only after sibling settlement and cleanup |
+| W2c | Complete state mapping; interrupted recovery; persistent uncertainty intervention; pre-send and post-send handoff resumption; ownership conflict and restart persistence; repeated close and the answer-versus-close race |
+| C1 / P6 | A long response with an observed request start, and one without; a multi-request turn with only a turn-start estimate; completion never refreshes age; old usage cannot restore a forecast invalidated by resume or compaction |
+| P7 | Repeated identical questions with different defaults; multiple outstanding calls; missing or ambiguous linkage always falls back to intervention |
 
 ## 13. Decisions
 
@@ -493,33 +582,45 @@ inline need `plan` → `confirmed` by default, `workflows.confirm` in config.
 
 Decided in revision 2 (design, no owner fork): durable instances with tagged work references, serialised transitions,
 single settlement, persisted stop intent and causes, absolute deadlines, the recovery table (§5); the frozen bundle
-(§1, §4); the composition contract, `join:all` only, total routing, the counted-edge loop rule (§2); verdicts required
+(§1, §4); the composition contract, `join:all` only, the counted-edge loop rule (§2); verdicts required
 for every agent step, the question protocol and the engine-resolved responder (§3, §6); Jev steps gated on W2c with the
-five rules (§5.4); `reuse` = continuation with identical resolved agent, cache advisory, `reuse_if` withdrawn (§8.3);
-one wake ordering and dispatch-time admission (§6, §5.2); one row per child (§9); W2 split (§12).
+rules in §5.4; `reuse` = continuation of one identical bundled agent, cache advisory and never a silent fresh child
+(§8.3); one wake ordering and dispatch-time admission (§6, §5.2); one row per child (§9); W2 split (§12).
 
-**F7 (new): project agents inside user workflows.** (a) F6 transitive as written: a user-level workflow that resolves
-a project agent needs `plan` → `confirmed` in that repo (one extra call, zero new config); (b) user-level workflows
-resolve user agents only (one-call start kept, but a repo cannot customise a role for the owner's own workflows); (c) a
-per-repo trust entry in `config.json` restoring the one-call start after one confirmation. **Recommendation: (a) now**,
-(c) only if the extra confirmation grates in real use; the doc proceeds with (a).
+**F7(a), transitive confirmation.** The effective executable bundle determines whether F6 applies. A user-level
+workflow that resolves a project-level agent requires confirmation under the default policy. Project-first resolution
+stays. The frozen bundle is what was confirmed, so a later edit of an agent file does not change the approved
+definition. Under the default confirmation policy, confirmation is required whenever any selected executable workflow
+or agent definition is project-sourced or inline. Per-repository trust is deferred. (b) is rejected for this version:
+it would change agent resolution according to where the workflow file lives, and a repository could not customise a
+user workflow. (c) is deferred: repository identity, trust scope, invalidation and revocation are another policy
+surface, and there is no evidence yet that the extra confirmation is a practical problem. `workflows.confirm` stays.
+This decision does not freeze the harness's native configuration or the external pi-roles installation.
 
-## 14. Review response (Pro, revision 1 → 2)
+## 14. Review response (Pro, revision 2 → 3)
 
-Each finding was checked against the cited lines before the change; all eight hold, and §13 lists what changed.
-Evidence: P1-1, P1-3, P1-4, P1-6, P2-2, P2-4 and the example defects are visible in the revision-1 text (`start` under
-`[params]`, optional verdicts with `hud_send` refused, `request` absent from the suppression list, two rows for one
-reused child, a counted edge with a non-terminal `else`, `reuse_if`); `src/managed/host.ts:257` throws
-`native_request_not_pending` for anything outside the native pending map, hence the engine-resolved request (§6); v2.2
-§6.2 (`native-hud-v2.md:964`) persists no environment, hence recapture on resume; JEV1 §4.5 derives the key from
-provider, label and prompt digest and §4.8 wakes on every terminal state, hence the per-instance label and wake
-consumption of §5.4. P2-1 code points confirmed (`codex/index.ts:303-315` cumulative `token_count`;
-`managed-adapter.ts:310-318` raw `turn/completed`; `pi/projection.ts:139-140` separate provider); one nuance: revision
-1's Pi field names `input/cacheRead/cacheWrite` do stand (`projection.ts:168-186`), only the provider derivation and
-the shared denominator were wrong. Pro's two documentation claims (Anthropic lifetime from request start; OpenAI
-30-minute default on GPT-5.6+) could not be verified here (no browser) and are adopted conservatively, so nothing
-depends on them. Two findings are answered differently from Pro's proposal: the Pi `default` need not cross the
-dialog — the tool call's arguments are in the rpc stream and `rpc-adapter.ts:96-127` relays the full record, so
-pairing gives provenance and the default (P7 gates it); and the Claude waiter needs no new capability
-(`src/cli/run-wait.ts:63` accepts `--timeout-ms`). Adopted in a stronger shape: terminal `else` became the
-counted-edge DAG rule, which also answers the SCC objection; capacity shortage waits (`admissionWaitMs`) then fails.
+Pro's verdict on revision 2 was ACCEPT WITH CHANGES. Each amendment is applied as written.
+
+| Pro | Where it landed |
+|---|---|
+| 2A Dispatch intent, unstarted admission, uncertain work, command intent before PGID, one settlement rewrite | §5.1, §5.3 |
+| 2B Verdict file is not completion; originating turn and attempt on the normalised event | §3, §5.3; native HUD §2.8 |
+| 2C Host command receipt; `output.txt` is display only | §3, §5.3 |
+| 2D Durable `groupStop`; recovery precedence | §2.1, §5.1, §5.3 |
+| 2E `workflow_start` replay of `needs_owner{uncertain_command}`; `failed{capacity}` and `failed{dispatch}` | §5.1, §5.2, §10 |
+| 3A Typed routing | §2, §2.1 |
+| 3B Deterministic reuse; `failed{reuse_unavailable}` | §2, §8.3 |
+| 3C Argv shorthand; W1 round-trip wording | §2 example, §3, §12 W1 |
+| 4A Per-attempt verdict path | §3 |
+| 4B Durable question order and answer intent | §3, §6 |
+| 4C Question variant validation | §3 |
+| 4D Pi correlation; P7 cases | §6, §12; native HUD §3.3, §7.2 |
+| 5 Cache anchor; completion does not refresh; compaction and resume invalidate | §8.1, §8.2, §12 C1 |
+| 6 F7(a) | §4, §13 |
+| 7A Jev state map, recovery cases, prompt snapshot, bounded slug | §5.4 |
+| 7B Handoff precedence, discriminated `source`, `workflow_start` after a Jev intervention | §5.4, §6, §10; native HUD §3.3 |
+| 7C `owned_by` | JEV1 §4.4, §4.5, §4.7, §4.8 |
+| 7D Idempotent terminal `jev_ask_close` | JEV1 §4.4, §4.7; native HUD Appendix B |
+| 7E J5a / J5b deliverables; W2c depends on W2a, J4, J5a, J5b; companion was JEV1 v5 and is now v6 | §12; JEV1 §6; native HUD Appendix B |
+| 8 Trims | §0, §11, §8.4 (additions live in native HUD v2.3) |
+| 9 Acceptance cases | §12 |

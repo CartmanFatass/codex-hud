@@ -1,4 +1,6 @@
-# Native HUD v2.2: identity, display, Pi package, summaries, wake, lifecycle, migration
+# Native HUD v2.3: identity, display, Pi package, summaries, wake, lifecycle, migration
+
+v2.3 (2026-11-07) folds WF1 revision 3's host additions into the sections named in that document's §8.4: cache and workflow fields, the normalised event's originating turn and attempt, and the discriminated request `source`.
 
 Design decision document, revision 2.2 (2026-11-07), branch `universal-hud` at `e9dc2d1` (the code is identical to
 `9e46378` and `e533c44`; the later commits only added documents). v2.1 applied the ChatGPT Pro review of v2 (ACCEPT
@@ -204,11 +206,13 @@ is uniform. (Q3 of v2 is closed; §8.)
 - `HUD_HOME` defaults to `~/.hud` (0700). Tests set it explicitly; users never do.
 - `~/.hud/config.json` is optional and small: `{ idleCloseMs, graceExitMs, requestStaleMs, requestAbandonMs,
   turnDeadlineMs?, startTimeoutMs, closeTimeoutMs, maxChildren, codex: { executable }, claude: { executable },
-  pi: { executable }, jev: { … } }`.
+  pi: { executable }, jev: { … }, cache: { … }, workflows: { … } }`.
+  `cache` is WF1 §8.2 (`ttl` with `basis`, `byModel`, `providerByHarness`, `expiringMs`). `workflows` is
+  `{ maxRuns, maxParallel, stepDeadlineMs, runDeadlineMs, admissionWaitMs, keepRuns, confirm }`. Both are HUD-side.
   The `jev` block is JEV1 §4.6 (shared-Chrome settings, `stateDir`, proxy, decision backend, ask limits); Jev
   credentials live in `~/.hud/jev.env` (0600), read per job; there is no interpreter setting because there is no
-  Python (JEV1 §4.1). Nothing in the file changes a child's behaviour; it only says where HUD finds programs and how
-  long it keeps processes.
+  Python (JEV1 §4.1). The harness blocks do not change a child's permission mode or tool table. `cache` and
+  `workflows` are HUD-side timers and display. The file says where HUD finds programs and how long it keeps processes.
 
 ### 1.6 Fate of today's pieces
 
@@ -315,7 +319,8 @@ root                       (the session this TUI belongs to; any harness)
 - A new collector `src/collectors/children.ts` turns child records and Jev job files into `SubagentTreeNode[]`
   and the bar/panel/dry-run append them to `tree.nodes`. The panel keeps *one* tree, *one* set of counts
   (`agentCounts`, `src/collectors/subagent-tree.ts:1304-1326`), one selection model.
-- `SubagentTreeNode` gets four additive optional fields; nothing existing changes meaning:
+- `SubagentTreeNode` gets four additive optional fields from v2.2, plus `cache?` and `workflow?` from WF1
+  (v2.3). Nothing existing changes meaning:
 
 ```ts
 // src/types.ts (additive)
@@ -323,6 +328,8 @@ harness?: 'codex' | 'claude' | 'pi' | 'jev';          // glyph beside the name w
 origin?: 'native' | 'hud';                              // 'hud' = created through hud_create / jev_ask / jev_open
 link?: { lifecycle: ChildRecord['lifecycle']; outcome: ChildRecord['outcome']['status']; closeReason?: ChildRecord['closeReason']; pendingRequests: number };
 request?: { requestId: string; kind: string; summary: string; since: Date };   // the first unanswered request (Jev: kind 'dialog')
+cache?: CacheEstimate;                                 // WF1 §8.2; absent until a sample or a forecast exists
+workflow?: { run: string; agent: string; active: boolean };
 ```
 
 - `DelegationViewModel`, `HudDelegationData`, `nativeCallLabel`, `jevCallLabel` (`src/core/link/view-model.ts`),
@@ -441,7 +448,10 @@ export interface ChildRecord {
   requests: Array<{ requestId: string; kind: string; summary: string /* ≤ 300 */; since: number; answeredAt?: number }>;   // pending; answeredAt set by hud_respond until request_done
   lastMessage: { at: number; head: string /* ≤ 600 */; bytes: number } | null;
   action: { name: string; target: string /* ≤ 200 */; since: number } | null;
-  usage: { contextTokens?: number; contextWindow?: number; inputTokens?: number; outputTokens?: number; costUsd?: number } | null;
+  usage: { contextTokens?: number; contextWindow?: number; inputTokens?: number; outputTokens?: number; costUsd?: number;
+           cachedReadTokens?: number; cacheWriteTokens?: number; scope?: 'request' | 'turn' | 'cumulative' } | null;
+  cache?: CacheEstimate;                   // WF1 §8.2
+  workflow?: { run: string; agent: string; active: boolean };   // createdBy unchanged; WF1 §5.2
   process: { pgid: number; procStart: string } | null;   // §6.1 containment; null for a harness the host cannot address
   createdAt: number; lastEventAt: number;
   closedAt?: number;
@@ -451,8 +461,12 @@ export interface ChildRecord {
   wake: WakeBinding;                   // §5
 }
 
-export type ChildEvent = { generation: string; seq: number; child: string; at: number } & (
-  | { type: 'created' | 'turn_started' | 'lost' }
+export type ChildEvent = {
+  generation: string; seq: number; child: string; at: number;
+  originTurn: number | null;   // turn that produced this event, stamped when the adapter normalises it
+  attempt: string | null;      // WF1 dispatch attempt when the child is workflow-owned; otherwise null
+} & (
+  | { type: 'created' | 'turn_started' | 'lost' | 'compaction' }
   | { type: 'closed'; closeReason: NonNullable<ChildRecord['closeReason']> }
   | { type: 'turn_done'; status: 'completed' | 'interrupted' | 'failed'; text: string /* head+tail ≤ 8 KiB */; usage?: ChildRecord['usage'] }
   | { type: 'message'; role: 'assistant'; head: string /* ≤ 600 */ }
@@ -461,7 +475,13 @@ export type ChildEvent = { generation: string; seq: number; child: string; at: n
   | { type: 'request_stale'; requestId: string; ageMs: number }    // once per unanswered request at requestStaleMs (H1)
   | { type: 'request_done'; requestId: string; how: 'answered' | 'withdrawn' | 'expired'; evidence: 'native' | 'inferred' }  // §3.3
   | { type: 'exit'; code: number | null; signal: string | null }
-  | { type: 'error'; code: string; message: string });
+  | { type: 'error'; code: string; message: string }
+  | { type: 'workflow'; run: string; kind: string; step?: string; instance?: string; result?: string });
+
+// `turn_done.usage` carries the cache fields on `ChildRecord['usage']`. `originTurn` and `attempt` are the
+// identity WF1's late-event check compares with the instance's current dispatch. Filling them later by reading
+// `ChildRecord.outcome.turn` is not allowed: that field may already be a newer turn. A run-level `workflow`
+// event sets `child` to '' when it is not about one child.
 
 // src/collectors/children.ts — no socket, no callbacks
 export class ChildrenCollector {
@@ -499,7 +519,7 @@ environment, so it does not use that reader), Pi session file. Pages are bounded
 `usage`, `startedAt = createdAt`, `turnStartedAt = outcome.startedAt`, `model`, `effort`, `rolloutPath =
 transcriptPath` **for Codex children only** (it feeds `readAgentTokens` and the cause job's rollout read, L6; Claude
 and Pi files are not rollouts), `harness`, `origin:'hud'`, `link`, `request` = first entry of `requests` without
-`answeredAt`. `lastEventAt` = latest evidence of any kind. `status` and `statusAt`:
+`answeredAt`, `cache` and `workflow` copy onto the node. `lastEventAt` = latest evidence of any kind. `status` and `statusAt`:
 
 | lifecycle | outcome | `status` | `statusAt` | shown as |
 |---|---|---|---|---|
@@ -557,7 +577,7 @@ protocol; the harness's official stream *is* the structured report.
 pi.registerTool({
   name: 'ask_orchestrator',
   description: 'Ask the orchestrator one question and wait for the answer. Use only for decisions you cannot make from the brief.',
-  parameters: { question: string, options?: string[] },
+  parameters: { question: string, options?: string[], default?: string },   // default is additive; correlation is WF1 §6
   async execute(_id, { question, options }, signal, _update, ctx) {
     const answer = options?.length
       ? await ctx.ui.select(question, options, { signal })        // → extension_ui_request{method:'select'}
@@ -579,7 +599,16 @@ adapters already relay complete payloads (`managed-adapter.ts:338-349`, `sdk-ada
 `rpc-adapter.ts:122-138`). v2.2 uses one discriminated request and one `hud_respond`:
 
 ```ts
-export type HudRequest = { requestId: string; child: string; since: number; summary: string /* ≤ 300 */ } & (
+export type RequestSource =
+  | { kind: 'child'; child: string }
+  | { kind: 'jev'; key: string };
+
+export type HudRequest = {
+  requestId: string;
+  source: RequestSource;                  // replaces a mandatory top-level child (WF1 rev 3)
+  since: number;
+  summary: string;                         // ≤ 300
+} & (
   | { harness: 'codex'; kind: 'exec_approval' | 'patch_approval'; command?: string; cwd?: string; reason?: string }
   | { harness: 'codex'; kind: 'user_input'; questions: Array<{ id: string; text: string; options?: string[] }> }
   | { harness: 'claude'; kind: 'ask_user_question'; questions: Array<{ id: string; text: string; options?: string[] }> }  // AskUserQuestion via canUseTool (M2)
@@ -587,8 +616,15 @@ export type HudRequest = { requestId: string; child: string; since: number; summ
   | { harness: 'claude'; kind: 'elicitation'; message: string; schema: unknown /* ≤ 8 KiB */ }
   | { harness: 'claude'; kind: 'user_dialog'; message: string; options?: string[] }
   | { harness: 'pi'; kind: 'select' | 'confirm' | 'input' | 'editor'; title: string; options?: string[]; placeholder?: string }
-  | { harness: 'codex' | 'claude' | 'pi'; kind: 'other'; nativeKind: string; payload: unknown /* ≤ 8 KiB */ });
+  | { harness: 'codex' | 'claude' | 'pi'; kind: 'workflow_question'; question: string; options?: string[]; default?: string }  // engine-resolved, WF1 §6
+  | { harness: 'codex' | 'claude' | 'pi'; kind: 'other'; nativeKind: string; payload: unknown /* ≤ 8 KiB */ }
+  | { kind: 'dialog'; reason: string });   // Jev external handoff; source.kind is 'jev'. hud_respond does not answer it
+```
 
+A child-sourced request carries `source.child`. `hud_respond` still addresses that child. A `source.kind: 'jev'`
+request is recorded for the handoff and is not a pending native request.
+
+```ts
 export interface HudResponse {
   decision?: 'allow' | 'deny';                         // approvals / tool permission
   answers?: Record<string, string | string[]>;         // codex user_input and claude ask_user_question: question id → answer(s); claude elicitation: field → value
@@ -792,8 +828,12 @@ binding, not the one captured when the child was created).
 Events that wake (the host's `wakeOnly` filter and the waiter use the same list): `turn_done`, `request`,
 `request_stale` (the decided 1 h re-wake, H1), `closed` with `closeReason:'abandoned'` (the decided 2 h close),
 `exit`, `error`, `lost`. `message`, `tool`, `created`, `turn_started`, `request_done` and other `closed` reasons never
-wake. Jev (JEV1 §4.8): `answered`, `incomplete`, `needs_human`, `uncertain`, `not_submitted`, `pre_send_failed`,
-`wait_failed`, `timed_out`, `abandoned`; `sent` only with `wake_on_sent`.
+wake. Jev jobs without workflow ownership (JEV1 §4.8): `answered`, `incomplete`, `needs_human`, `uncertain`,
+`not_submitted`, `pre_send_failed`, `wait_failed`, `timed_out`, `abandoned`; `sent` only with `wake_on_sent`.
+A child with `workflow.active`, and a Jev job with `owned_by`, are excluded from those child-level wakes. The run
+emits the wake-worthy `workflow` events (`done`, `failed`, `needs_owner`, `interrupted`, `blocked`; WF1 §6). For a
+workflow run the Claude waiter's `--timeout-ms` is the run's remaining deadline plus 5 min. `compaction` does not
+wake.
 
 ### 5.2 Coalescing, retry, cursors
 
@@ -863,7 +903,11 @@ established by v2; §6.1.3 makes it a tested mechanism.
 | bar / panel / statusline | tmux / Claude | — | as on main |
 
 Limits: `maxChildren` 8 live children per owner and 24 per host, plus JEV1's `liveLimit`/`queueLimit`; beyond them
-`limit_exceeded`. A 30-minute timer alone does not bound their number; the limits do.
+`limit_exceeded`. A 30-minute timer alone does not bound their number; the limits do. Admission is one function
+shared by `hud_create` and the workflow engine (WF1 §5.2): it counts live children, including retained reusable
+ones, startup reservations, and a run's `maxParallel` across children and command process groups. `workflow_plan`
+does not reserve a slot. An admission timeout on a workflow instance is `failed{capacity}`; a create or spawn
+failure is `failed{dispatch}`.
 
 #### 6.1.2 Host shutdown with draining
 
@@ -1031,6 +1075,8 @@ Nothing here needs code that does not exist at `9e46378`.
 | P3b Codex child question path | a Codex app-server child created with today's `managed_create` under the owner's default config, prompted to ask the user a question before proceeding | whether a `requestUserInput`-style server request arrives, 3 trials recorded either way | §3.3 (request path or `turn_done` + `hud_send`) | WP4: the chosen mapping |
 | P4 process cleanup | today's host with one child per harness; `SIGKILL` the host; separately `kill(-pgid)` on a `setsid`-launched child with a subprocess; read the pinned SDK's types for a child-process/spawn hook | per harness: child exits within 5 s of stdin EOF (3/3) or not; descendants' fate recorded; group kill removes the subprocess in 3/3; the SDK hook question answered yes/no with the type name | §6.1.3 launcher and the stated limitation | WP3: the real ladder and sweep |
 | P5 Codex `_meta` shapes | capture `_meta` on TUI calls, `codex exec` calls, native-subagent calls and the P2 queue-woken turn (`tests/probes/codex-mcp-launch.sh` already records `mcp.jsonl`) | every shape carries at least one of the two carriers; which ones are single-carrier recorded | §1.2 rule 1 | WP2a: the fixture set |
+| P6 usage and compaction shapes | one synthetic prompt per harness, 3 trials; record the usage event and any compaction event | each trial names the event and the scope (`request`, `turn` or `cumulative`); compaction is the observed event name or "none observed" | WF1 §8.1 | C1 |
+| P7 Pi tool-call correlation | a Pi rpc child that asks twice with the same title and different defaults, and that leaves two calls outstanding | the stream exposes a tool-call or request id, or exactly one unmatched causally preceding `ask_orchestrator` in the same turn; missing and ambiguous linkage are recorded as not pairable | WF1 §6 | W2a. Until it passes, Pi `default` behaves as `wake` |
 
 ### 7.3 Work packages
 
@@ -1168,24 +1214,27 @@ H16 Pi footer → ledger → WP1/WP8; H17 `install.sh` builds only `npm run buil
 
 | Tool | Arguments | Returns | Notes |
 |---|---|---|---|
-| `hud_create` | `{ harness:'codex'\|'claude'\|'pi', cwd, prompt?, name?, model?, effort?, resume?: NativeRef, fork?: NativeRef, options?: { args?: string[] /* pi only */ } }` | `{ child, harness, nativeRef: NativeRef \| null, seq, wake: { kind:'queue'\|'background_command'\|'followup'\|'none', capability:'available'\|'degraded'\|'unavailable', reason?, command?, note? } }` | starts the host if needed; `prompt` sends turn 1 after the record is published; `resume` of a live child of another owner → `child_busy`; no permission-mode fields (`approvalPolicy`/`sandbox` of v2 are removed and the adapter's `options` spread goes in WP2c: permission modes are the user's configuration); `options` on a non-Pi create → `invalid_arguments{options_not_allowed}` |
-| `hud_send` | `{ child, text, mode?: 'turn' \| 'steer' }` | `{ seq, turn }` | `steer` only while a turn runs (Codex `turn/steer`, Claude message push, Pi `steer`) |
+| `hud_create` | `{ harness:'codex'\|'claude'\|'pi', cwd, prompt?, name?, model?, effort?, resume?: NativeRef, fork?: NativeRef, options?: { args?: string[] /* pi only */ } }` | `{ child, harness, nativeRef: NativeRef \| null, seq, wake: { kind:'queue'\|'background_command'\|'followup'\|'none', capability:'available'\|'degraded'\|'unavailable', reason?, command?, note? }, cache: CacheEstimate }` | starts the host if needed; `cache.forecast.state` is `unknown` at create; `prompt` sends turn 1 after the record is published; `resume` of a live child of another owner → `child_busy`; `resume` of an active workflow child → `workflow_owned` (WF1 §5.2); no permission-mode fields (`approvalPolicy`/`sandbox` of v2 are removed and the adapter's `options` spread goes in WP2c: permission modes are the user's configuration); `options` on a non-Pi create → `invalid_arguments{options_not_allowed}` |
+| `hud_send` | `{ child, text, mode?: 'turn' \| 'steer' }` | `{ seq, turn }` | `steer` only while a turn runs (Codex `turn/steer`, Claude message push, Pi `steer`); an active workflow child → `workflow_owned` |
 | `hud_wait` | `{ child?, afterSeq, waitMs?, wakeOnly?: boolean, observe?: boolean }` | `{ events: ChildEvent[] ≤ 50, seq, generation, truncated, gap? }` | long-poll with `effectiveWaitMs = min(waitMs, 120000, clientToolTimeoutMs − margin)` (the rule JEV1 §4.4 cites from `docs/contracts/05-capabilities.md`); advances the owner's read cursor only to the last seq returned, and not at all with `observe:true` (the waiter and the Pi package); `wakeOnly` filters to the wake-worthy list of §5.1; `gap` → re-read `hud_list` |
-| `hud_read` | `{ child, what: 'status' \| 'requests' \| 'request' \| 'result' \| 'transcript' \| 'context', requestId?, offset?, limit? }` | `status` → the `ChildRecord` with heads trimmed (task ≤ 300, outcome ≤ 600, lastMessage ≤ 300), `requests` reduced to the first unanswered entry plus `pendingRequests`, ≤ 2 KiB; `requests` → `HudRequest[]` (≤ 10, each ≤ 8 KiB); `request` → one, paged; `result` → last turn text paged (≤ 32 KiB/page); `transcript` → recent public messages from the recorded source (`limit` ≤ 50, each ≤ 2 KiB); `context` → usage | never returns SDK init results (F8); passive: never extends the idle clock |
-| `hud_respond` | `{ child, requestId, response: HudResponse }` | `{ ok, how:'sent', answeredAt }` | §3.3 mapping per harness; `request_done{how:'answered', evidence}` follows on the harness's evidence; answers never change permissions (M10) |
-| `hud_cancel` | `{ child }` | `{ ok }` | interrupts the running turn only |
-| `hud_close` | `{ child }` | `{ ok, released, exited, workStopped, closeReason:'closed' }` | the ladder of §6.1.3; the native session stays resumable |
-| `hud_list` | `{}` | `{ children: ChildRecord[] ≤ 50 (status form), jev: JevJobSummary[], host: { generation, protocol, uptimeMs } \| null, wake: WakeBinding, unavailable?: 'host_down' }` | read-only; answers from records when the host is down (`lost` where applicable) |
-| `jev_ask` | `{ provider:'chatgpt'\|'gemini', label, prompt_file?, prompt?, attach?, mode?, dry_run?, max_wait_ms?, wake_on_sent?, decisions?, confirm_resend? }` | `{ key, state, seq, wake }` | JEV1 §4.4 verbatim: idempotent on `key`; `label` matches `[a-z0-9][a-z0-9-]{0,63}`; a `released` key needs `confirm_resend:true` (else `resend_needs_confirmation`), which may come only from the user's explicit decision; one send per key ever; returns ≤ 1 s (D3). (`effort` of v2.1 is gone: the model and effort word are configuration, D6) |
+| `hud_read` | `{ child, what: 'status' \| 'requests' \| 'request' \| 'result' \| 'transcript' \| 'context', requestId?, offset?, limit? }` | `status` → the `ChildRecord` with heads trimmed (task ≤ 300, outcome ≤ 600, lastMessage ≤ 300), `requests` reduced to the first unanswered entry plus `pendingRequests`, ≤ 2 KiB; `requests` → `HudRequest[]` (≤ 10, each ≤ 8 KiB); `request` → one, paged; `result` → last turn text paged (≤ 32 KiB/page); `transcript` → recent public messages from the recorded source (`limit` ≤ 50, each ≤ 2 KiB); `context` → usage and the cache fields (WF1 §8.2) | never returns SDK init results (F8); passive: never extends the idle clock |
+| `hud_respond` | `{ child, requestId, response: HudResponse }` | `{ ok, how:'sent', answeredAt }` | §3.3 mapping per harness; `request_done{how:'answered', evidence}` follows on the harness's evidence; answers never change permissions (M10). A `workflow_question` is engine-resolved (WF1 §6): the engine persists the answer, then sends one continuation; a second respond is `request_not_pending`. `source.kind: 'jev'` is not answered here |
+| `hud_cancel` | `{ child }` | `{ ok }` | interrupts the running turn only; an active workflow child → `workflow_owned` |
+| `hud_close` | `{ child }` | `{ ok, released, exited, workStopped, closeReason:'closed' }` | the ladder of §6.1.3; the native session stays resumable; an active workflow child → `workflow_owned` |
+| `hud_list` | `{}` | `{ children: ChildRecord[] ≤ 50 (status form), jev: JevJobSummary[], workflows: WorkflowRunSummary[], host: { generation, protocol, uptimeMs } \| null, wake: WakeBinding, unavailable?: 'host_down' }` | read-only; answers from records when the host is down (`lost` where applicable). `WorkflowRunSummary` is `{ run, name, state, current, turns, startedAt, endedAt? }` (WF1 §10) |
+| `jev_ask` | `{ provider:'chatgpt'\|'gemini', label, prompt_file?, prompt?, attach?, mode?, dry_run?, max_wait_ms?, wake_on_sent?, decisions?, confirm_resend?, owned_by?: 'workflow:<run>' }` | `{ key, state, seq, wake }` | JEV1 §4.4 verbatim: idempotent on `key`; `label` matches `[a-z0-9][a-z0-9-]{0,63}`; a `released` key needs `confirm_resend:true` (else `resend_needs_confirmation`), which may come only from the user's explicit decision; one send per key ever; returns ≤ 1 s (D3). (`effort` of v2.1 is gone: the model and effort word are configuration, D6). `owned_by` is routing and lifecycle metadata (JEV1 v6). It is not an input to the operation key. The run must belong to the authenticated owner. The same key and association returns the existing job; a conflicting association is rejected |
 | `jev_ask_wait` | `{ key?, after_seq, wait_ms, resume? }` | `{ events[], seq }` | JEV1 §4.4: long-poll with the same `effectiveWaitMs` rule; `resume:true` restarts wait or reconcile per JEV1 §4.7, never a send |
 | `jev_ask_read` | `{ key, what:'status'\|'answer', offset?, limit? }` | `status` ≤ 2 KiB; `answer` paged ≤ 32 KiB | JEV1 §4.4: read-only; the answer comes from the record's `answer_file` |
-| `jev_ask_close` | `{ key }` | `{ ok, run, work }` | JEV1 §4.4: aborts observation with the ladder of JEV1 §4.7; the record is untouched; never undoes a send |
+| `jev_ask_close` | `{ key }` | `{ ok, run, work }` | JEV1 §4.4 and §4.7: aborts observation with the ladder; never undoes a send. Idempotent on a terminal or already-closed known job: a repeat returns success with the current `{ok, run, work}`, keeps the operation outcome, answer files and send/release evidence, and joins any remaining cleanup under the original close deadline. A close after `answered` does not rewrite the outcome as cancelled and does not emit another completion wake. An unknown key stays a typed not-found |
 | `jev_open` | `{ url, goals?, screenshots?: false, record_dir?, decisions? }` | `{ instanceId }` | in-process Agent (JEV1 §4.4); replaces `jev_create` |
 | `jev_run`, `jev_snapshot`, `jev_command`, `jev_close` | as today (`packages/hud-mcp/src/jev-tools.ts:26-67`) | as today; `jev_run` yields are published as host events (the ring, for `hud_wait`) and folded into the instance's job file (and the owner's stamp, for the TUI) | in-process; one instance is serial; `jev_list` folds into `hud_list` |
+| `workflow_list`, `workflow_plan`, `workflow_start`, `workflow_status`, `workflow_cancel` | WF1 §10 | WF1 §10 | parent table only. `workflow_start` also resumes `interrupted`, replays `needs_owner{uncertain_command}` under §10's replay rules, and resumes a run blocked on a Jev external intervention without supplying resend confirmation |
 
 Codex `_meta`, Claude `claudecode/toolUseId` and Pi call ids are accepted on every call; nothing in `arguments`
 selects an owner. Error codes: `depth_limit`, `child_busy`, `host_unavailable`, `host_shutting_down`,
 `host_incompatible`, `invalid_arguments` (with `carrier_mismatch` / `options_not_allowed` detail),
 `identity_unavailable`, `source_mismatch`, `limit_exceeded`, `child_not_found`, `child_record_unavailable`,
-`request_not_found`, and from JEV1 §4.10: `jev_credentials_missing`, `ask_queue_full`, `ask_limit`, `browser_busy`,
-`resend_needs_confirmation`, `decision_refused`, `decision_provider_error`.
+`request_not_found`, WF1's `invalid_definition`, `confirmation_required`, `already_started`, `workflow_owned`,
+`run_not_found`, and from JEV1 §4.10: `jev_credentials_missing`, `ask_queue_full`, `ask_limit`, `browser_busy`,
+`resend_needs_confirmation`, `decision_refused`, `decision_provider_error`. A conflicting `owned_by` is rejected
+rather than folded into an existing job.
