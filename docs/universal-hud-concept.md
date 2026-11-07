@@ -716,6 +716,7 @@ Preserve all current source/identity/captured-generation checks, non-enforcing t
 | Jev 决策后端 | TypeSafe 与 OpenAI Decisions API 都支持、可自由配置；TypeSafe 凭据复用现有 Jev 安装的 `.env`；两者都有且未指定时缺省 TypeSafe（Jev） |
 | Jev 发送 | 强度滑块用键盘 `End`；Gemini 模式交给 Jev；`jev_ask` 立即返回；浏览器锁只在发送、核对与连接器授权段持有；`uncertain` 后自动只读核对，重发须显式确认；`model` + `effort_word` 取代 `"6 Pro"` 标签并退役 `5.6 Pro` 后备 |
 | Jev 记录 | 与 jev-ask CLI 共用记录与状态目录，答案写入其 `out/`；CLI 的 ChatGPT / Gemini 路径达到设计中的门槛后退役 |
+| Jev 页面判断（v5） | 页面状态（就绪、已发出、需人处理、回答完成等）交给 Jev 的判断原语，带阈值与有界的加载感知等待；硬安全关口仍由代码守。写 `sent` 必须至少有一个确定性佐证（地址移到 `/c/…`、新用户消息、停止按钮、侧栏新增），模型只加权不造证（F9） |
 
 ### 2026-11-07 工作流（Jacob）
 
