@@ -88,6 +88,14 @@ export function claudeModel() {
   if (!MODEL_TOKEN.test(model)) fail('LV_CLAUDE_MODEL must be a single token without spaces');
   return model;
 }
+/**
+ * Account directory of the zsh `codex2` function, before realpath.
+ * `LV_CODEX_HOME` overrides it. `codex.sh` uses the same default.
+ */
+export function codexAccountHome() {
+  const home = process.env.HOME || homedir();
+  return process.env.LV_CODEX_HOME || join(home, '.codex');
+}
 function writePrivate(path, text, force) {
   if (existsSync(path)) {
     const current = readFileSync(path, 'utf8');
@@ -186,7 +194,7 @@ export async function setupHome(input, options = {}) {
   const home = canonicalHome(input);
   const force = options.force === true;
   const { makeHookSettings, hookProfileFingerprint } = await loadHookRecord();
-  const codexHome = existingDirectory(join(homedir(), '.codex-account2'), 'Codex account home');
+  const codexHome = existingDirectory(codexAccountHome(), 'Codex account home');
   const claudeRoot = existingDirectory(
     process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'),
     'Claude config directory'

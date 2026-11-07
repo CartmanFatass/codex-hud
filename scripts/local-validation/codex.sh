@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Parent Codex for one session, using the zsh `codex` function's semantics:
-# CODEX_HOME=$HOME/.codex-account2, then the Herdr context wrapper and the
-# installed binary. Session -c flags attach hud-mcp; they do not edit config.toml.
+# Parent Codex for one session. Follows the zsh `codex2` function:
+# CODEX_HOME=${LV_CODEX_HOME:-$HOME/.codex}, then the Herdr context wrapper and
+# the installed binary. That default is codexAccountHome() in setup-home.mjs.
+# Session -c flags attach hud-mcp; they do not edit config.toml.
 set -euo pipefail
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 root=$(CDPATH= cd -- "$here/../.." && pwd)
@@ -19,7 +20,8 @@ toml() {
 }
 node_bin=$(realpath "$(command -v node)")
 mcp=$root/packages/hud-mcp/bin/hud-mcp.mjs
-CODEX_HOME=$HOME/.codex-account2 exec "$wrapper" "$binary" \
+# Same default as setup-home.mjs codexAccountHome(): LV_CODEX_HOME or $HOME/.codex.
+CODEX_HOME=${LV_CODEX_HOME:-$HOME/.codex} exec "$wrapper" "$binary" \
   -m gpt-6-luna \
   -c "model_reasoning_effort=$(toml medium)" \
   -c "mcp_servers.hud.command=$(toml "$node_bin")" \

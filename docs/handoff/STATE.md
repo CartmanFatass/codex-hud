@@ -2,7 +2,7 @@
 
 ## Local validation phase (from 2026-11-07)
 
-After the native thin delivery (`aa4b9dd`) development is back on the owner's machine, to run the real-client checks the cloud could not run ([local validation guide](../cloud/handoff/native-hud-local-validation.md)). Routing for this phase: Claude Code (Opus) orchestrates and merges; Grok 4.7 (high) implements; pi implementers run test tasks; Codex-related tests use the owner's second Codex account with `gpt-6-luna` at medium effort. When Grok quota runs out, implementation moves to pi. **Temporary:** while the owner's Codex quota is low, the orchestrator also does the reviews; Codex reviewer/Oracle review resumes when quota allows. Remote sessions should not merge into `universal-hud` during this phase.
+After the native thin delivery (`aa4b9dd`) development is back on the owner's machine, to run the real-client checks the cloud could not run ([local validation guide](../cloud/handoff/native-hud-local-validation.md)). Routing for this phase: Claude Code (Opus) orchestrates and merges; Grok 4.7 (high) implements; pi implementers run test tasks; Codex-related tests use the owner's `codex2` test account (`CODEX_HOME=~/.codex`) with `gpt-6-luna` at medium effort. When Grok quota runs out, implementation moves to pi. **Temporary:** while the owner's Codex quota is low, the orchestrator also does the reviews; Codex reviewer/Oracle review resumes when quota allows. Remote sessions should not merge into `universal-hud` during this phase.
 
 Status:
 
