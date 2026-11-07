@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, copyFile, realpath, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -147,6 +148,10 @@ async function fixture(t, { persisted = true, packageVersion = '1.4.0' } = {}) {
     portCalls: async () =>
       (await readFile(join(home, 'synthetic-native-port.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse),
     contexts: () => {
+      // The native default registers callers in memory and never creates the historical ledger.
+      // A missing file is the strongest form of "no legacy claim/context workflow"; if a
+      // historical path did create one, it still must not contain caller contexts.
+      if (!existsSync(join(home, 'ledger.sqlite'))) return [];
       const db = new DatabaseSync(join(home, 'ledger.sqlite'), { readOnly: true });
       try {
         return db.prepare('SELECT * FROM caller_contexts').all();

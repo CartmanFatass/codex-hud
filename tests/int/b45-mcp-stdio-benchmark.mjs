@@ -152,6 +152,9 @@ function stdioClient(f) {
       },
     },
     {
+      budget(clock, started) {
+        return f.service.budget(clock, started);
+      },
       invoke: async (...args) => {
         const start = performance.now();
         try {

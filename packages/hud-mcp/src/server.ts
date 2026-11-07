@@ -39,6 +39,8 @@ export class HudMcpServer {
     private readonly source: CurrentCallSourcePort,
     private readonly bodies?: {
       parentCall?(): void;
+      /** Historical admission budget from the original receipt. Synchronous; omitted by the native default. */
+      budget?(clock: BudgetClock, started: number): CallBudget;
       invoke(
         source: Extract<CallResolution, { ok: true }>,
         tool: string,
@@ -105,9 +107,8 @@ export class HudMcpServer {
         if (!definition) return error(id, -32602, 'Unknown tool');
         let budget: CallBudget | undefined;
         if (!extended && !['delegate_list', 'delegate_status', 'delegate_wait'].includes(definition.name)) {
-          // The historical task authorization budget is not part of native tools.
-          const { CallBudget } = await import('../../../src/ledger/call-budget.js');
-          budget = new CallBudget(this.clock, started);
+          // Historical callers own the class. This call is synchronous, and the native default has no bodies.
+          budget = this.bodies?.budget?.(this.clock, started);
         }
         if (!validateToolArguments(definition, params.arguments === undefined ? {} : params.arguments))
           return error(id, -32602, 'Invalid tool arguments');

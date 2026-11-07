@@ -1,5 +1,15 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
+## Local validation phase (from 2026-11-07)
+
+After the native thin delivery (`aa4b9dd`) development is back on the owner's machine, to run the real-client checks the cloud could not run ([local validation guide](../cloud/handoff/native-hud-local-validation.md)). Routing for this phase: Claude Code (Opus) orchestrates and merges; Grok 4.7 (high) implements; pi implementers run test tasks; Codex-related tests use the owner's second Codex account with `gpt-6-luna` at medium effort. When Grok quota runs out, implementation moves to pi. **Temporary:** while the owner's Codex quota is low, the orchestrator also does the reviews; Codex reviewer/Oracle review resumes when quota allows. Remote sessions should not merge into `universal-hud` during this phase.
+
+Status:
+
+- **LV0, local baseline:** on this machine (Unix sockets and procfs available) the cloud's socket/procfs/ptrace failures do not occur. Five remaining failures were fixed: three Claude render tests assumed `NO_COLOR`; a Pi bridge test opened the no-longer-created ledger file; and a real regression in the historical MCP composition (the lazy `call-budget` import in `server.ts` let a second same-chunk call advance the clock before the first call's admission check) — historical callers now supply the budget synchronously via `bodies.budget`, and the native default still loads no ledger module. Full local run after the fixes (WSL2, Node 24.22.1, non-tmpfs `TMPDIR`, `NO_COLOR` unset): builds PASS; MCP 210 PASS / 1 opt-in benchmark SKIP; core 211 PASS / 1 SKIP; unit 3350 PASS / 16 opt-in SKIP / 1 FAIL (`RUNZ1 same-session outsider…`, which ran while another agent was rebuilding `dist`; 24/24 PASS when rerun alone); mjs 317 PASS / 1 optional-Pi SKIP / 2 FAIL — both in `runtime-compose.test.mjs` (`installer-apply: deadline`, the fixture's fixed 15 s child deadline under full-suite load; their ~31 subtests then do not run). That file passes 33/33 alone and passed in the first full run. Recorded as load-sensitive; no deadline was changed.
+- **LV1, validation kit:** `scripts/local-validation/` ([kit doc](../cloud/handoff/local-validation-kit.md)) sets up an isolated `HUD_HOME` and launches real Codex/Claude/Pi with hud-mcp attached for one session, without editing user configs. `smoke-discovery.mjs` checks tool discovery for all three without model spend.
+- **Next:** LV2 Codex end-to-end (create/send/read/resume, parent exit and reconnect, cross-session isolation), then Claude, Pi with their wake paths, Jev, and terminal HUD checks.
+
 ## Authorized implementation status: native thin path (2026-11-07)
 
 The owner approved the revised [local native-session architecture](../architecture/simplified-harness-architecture.md), parallel implementation, and changes directly on `universal-hud`. This supersedes older sequencing, separate-branch and policy-framework requirements below **for this approved implementation**, not unrelated permission or safety requirements. The historical snapshots and their test counts remain historical.

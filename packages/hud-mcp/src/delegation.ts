@@ -198,6 +198,10 @@ export class DelegationService {
       },
     };
   }
+  /** Server calls this synchronously, before source resolution, with the original receipt. */
+  budget(clock: BudgetClock, started: number): CallBudget {
+    return new CallBudget(clock, started);
+  }
   async invoke(
     source: Extract<CallResolution, { ok: true }>,
     tool: string,
@@ -242,13 +246,21 @@ export class DelegationService {
       // A close uses an already selected current context. Never establish or retire a
       // context during immutable replay; currentAuthority rechecks its premise in TX.
       const authority = await this.options.ledger.readSnapshot((tx) => this.readAuthority(tx, source), budget);
-      const result = await requestClose(this.options.ledger, args as unknown as CloseRequest, authority, Date.now(), budget);
+      const result = await requestClose(
+        this.options.ledger,
+        args as unknown as CloseRequest,
+        authority,
+        Date.now(),
+        budget
+      );
       let current: CloseProgress | null = null;
       try {
         current = await this.options.ledger.readSnapshot((tx) => {
           return readDelegationIn(tx, { runId: result.outcome.runId }, authority).close;
         });
-      } catch { /* An observation failure never retracts a committed acceptance. */ }
+      } catch {
+        /* An observation failure never retracts a committed acceptance. */
+      }
       return { ok: true, ...result, current };
     }
     const handshake = new HandshakeService({

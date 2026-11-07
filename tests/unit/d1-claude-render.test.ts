@@ -39,10 +39,13 @@ function fixture(spec: Partial<NodeSpec> = {}) {
   return { ...built, key, detail, node: built.vm.tree.nodes.find((node) => node.key === key)! };
 }
 
+// The focus sentence is asserted for content, not colour, and the renderer legitimately emits SGR when
+// NO_COLOR is unset. Strip only its own SGR sequences (the same helper the panel assertions use), so a raw
+// control character that escaped from untrusted input would still be visible to the safety assertions.
 function focus(vm: DelegationViewModel, key: string, cache = new ProjectionCache()): string | null {
   const pn = projectDelegation(vm, cache).byKey.get(key)!;
   const line = focusLine(pn, NOW, glyphSet(false), plainSay);
-  return line ? focusText(line, 160, 160, glyphSet(false), PLAIN_INK) : null;
+  return line ? stripAnsi(focusText(line, 160, 160, glyphSet(false), PLAIN_INK)) : null;
 }
 
 function inspect(vm: DelegationViewModel, key: string, width = 160) {

@@ -247,6 +247,9 @@ test('MCP receipt includes parent callback and source work, read-only tools neve
       parentCall() {
         c.advance(parentDelay);
       },
+      budget(clock, started) {
+        return new CallBudget(clock, started);
+      },
       async invoke(_source, tool, _args, started, _signal, budget) {
         bodyCalls++;
         if (tool === 'delegate_whoami') {
@@ -342,6 +345,9 @@ test('multiple MCP calls in one chunk retain the same original receipt', async (
     {
       parentCall() {
         c.advance(150);
+      },
+      budget(clock, started) {
+        return new CallBudget(clock, started);
       },
       async invoke() {
         return { ok: true };
