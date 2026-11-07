@@ -110,7 +110,7 @@ ask 路径不需要（提交文本逐字 `Input.insertText`，`agent.ts` 注入�
 | `jev_ask_wait` | `{ key?, after_seq, wait_ms, resume? }` | `{ events[], seq }` | 长轮询，`effectiveWaitMs = min(wait_ms, 120000, clientToolTimeoutMs − margin)`（`docs/contracts/05-capabilities.md` 规则，L4）；`resume:true` 按 §4.7 重起 wait 或 reconcile，从不重起 send |
 | `jev_ask_read` | `{ key, what:'status'\|'answer', offset?, limit? }` | `status` ≤ 2 KiB；`answer` 分页 ≤ 32 KiB | 只读；答案来自记录 `answer_file` |
 | `jev_ask_close` | `{ key }` | `{ ok, run, work }` | 中止观测（§4.7 阶梯）；记录不动；从不撤销发送 |
-| `jev_open` / `jev_run` / `jev_snapshot` / `jev_command` / `jev_close` | v2 附录 B，`jev_open` 加 `decisions?` | 同 | 进程内 Agent；`jev_run` 的 yield 作为宿主消息发布；每实例串行；`jev_list` 并入 `hud_list` |
+| `jev_open` / `jev_run` / `jev_snapshot` / `jev_command` / `jev_close` | v2.2 附录 B，`jev_open` 加 `decisions?` | 同 | 进程内 Agent；`jev_run` 的 yield 作为宿主事件发布，并按 owner 的变更标记折叠进实例的作业文件（TUI 读文件，没有订阅）；每实例串行；`jev_list` 并入 `hud_list` |
 
 工具描述写明："一个 key 只发送一次；`uncertain` 与 `needs_human` 只能观测或交用户；`released` 的 key 要 `confirm_resend:true`，而它只能来自用户的明确决定"。
 
@@ -140,7 +140,7 @@ ask 路径不需要（提交文本逐字 `Input.insertText`，`agent.ts` 注入�
 | 项 | 规则 |
 |---|---|
 | 运行方式 | 每个作业是宿主内的一个异步任务（一个 `AbortController`、一到两条 CDP 会话），不是子进程；每个 CDP 调用有超时（§2），send 总时长 ≤ 约 8 min，wait ≤ `maxWaitMs`；作业内未捕获异常 → `*_failed{internal}` 并记日志，宿主不倒 |
-| 保持宿主 | `hasRetainedHandles()` 计入 `run != null` 的作业与活的通用实例；长轮询与订阅不计入；终态与无运行的 `needs_human` 不计入 |
+| 保持宿主 | `hasRetainedHandles()` 计入 `run != null` 的作业与活的通用实例；长轮询（含 `observe`）不计入；终态与无运行的 `needs_human` 不计入 |
 | 关闭阶梯 | `jev_ask_close`/宿主 SIGTERM：期限从调用时刻起算；`abort()` → 在途 CDP/HTTP 调用在其超时内拒绝 → 关作业自建的观测标签（≤ 5 s）→ 关会话；发送标签只按 §3；写回 `run.ended`、`tabs`，`work` 由记录决定 |
 | 时限与重起 | `maxWaitMs` 默认 2 h、上限 4 h → `timed_out`；wait 非终态结束自动重起 ≤ 3 次，再失败 `wait_failed` 唤醒 |
 | 准入与数量 | 队列 ≤ `queueLimit`(4)；每用户非终态作业 ≤ `liveLimit`(8) → `ask_limit`；`needs_human`/`uncertain` 超过 `abandonMs`(24 h) → `abandoned`；通用实例同受 `liveLimit`、无调用 30 min 关闭、`blocked` 保留到 `abandonMs`。一个 Pro 提问：一次 send + 一次 wait，零子进程（共享 Chrome 是用户的进程） |
@@ -148,13 +148,15 @@ ask 路径不需要（提交文本逐字 `Input.insertText`，`agent.ts` 注入�
 
 ### 4.8 唤醒与 TUI
 
-唤醒：`answered`、`incomplete`、`needs_human`、`uncertain`（reconcile 后仍不明）、`not_submitted`、`pre_send_failed`、`wait_failed`、`timed_out`、`abandoned`；`sent` 不唤醒（`wake_on_sent` 可开）。一行 ≤ 512 字节，例：`[hud] ask Pro "review-v2" answered · 1h12m · jev_ask_read{key:"…", what:"answer"}`。TUI：`SubagentTreeNode`，`harness:'jev'`，`origin:'hud'`；`name = "Pro·review-v2"`；`status`：queued/sending/awaiting/reconciling → `running`，needs_human → `running` + `request{kind:'dialog', text:'needs you in the shared Chrome: login'}`，answered/incomplete/not_submitted/dry_run_ok → `completed`，pre_send_failed/wait_failed/timed_out/interrupted/abandoned → `error`；`task` = 提示头 ≤ 300；`action` = 阶段行；`lastReport.text` = 答案头 ≤ 600；`model` = 决策后端模型。视觉按 WP7 规则。
+唤醒：`answered`、`incomplete`、`needs_human`、`uncertain`（reconcile 后仍不明）、`not_submitted`、`pre_send_failed`、`wait_failed`、`timed_out`、`abandoned`；`sent` 不唤醒（`wake_on_sent` 可开）。一行 ≤ 512 字节，例：`[hud] ask Pro "review-v2" answered · 1h12m · jev_ask_read{key:"…", what:"answer"}`。TUI：`SubagentTreeNode`，`harness:'jev'`，`origin:'hud'`；`name = "Pro·review-v2"`；`status`：queued/sending/awaiting/reconciling → `running`，needs_human → `running` + `request{requestId, kind:'dialog', summary:'needs you in the shared Chrome: login', since}`，answered/incomplete/not_submitted/dry_run_ok → `completed`，pre_send_failed/wait_failed/timed_out/interrupted/abandoned → `error`；`task` = 提示头 ≤ 300；`action` = 阶段行；`lastReport.text` = 答案头 ≤ 600；`model` = 决策后端模型。视觉按 WP7 规则。
 
 ### 4.9 许可与署名（公开仓库）
 
 仓库根新增 `THIRD_PARTY_NOTICES.md`（Jev Ultrafast 完整 MIT 文本、上游地址与 commit、被移植文件清单）与仓库自己的 `LICENSE`（`package.json` 声明 MIT，但根目录今天没有该文件）；`packages/hud-mcp/package.json` 今天没有 `license` 字段，加 `"license": "MIT"`。`src/jev/*.ts` 文件头：`// Ported from Jev Ultrafast <file> (github.com/browser-use/jev-ultrafast @ 1231850a), MIT License, Copyright (c) 2026 Browser Use. Deviations: …`；`snapshot.js` 正文不变，仅顶部注释；`decide.ts`/`providers/*` 是新代码，头注释只说明与 `model.py` 的关系；`src/jev/ask/*` 注明移植自 owner 的 jev-ask。
 
 ### 4.10 `native-hud-v2.md` 需要改的地方
+
+已在 v2.2 全部落实。
 
 附录 B 加 `jev_ask*` 四行与错误码（`jev_credentials_missing`、`ask_queue_full`、`ask_limit`、`browser_busy`、`resend_needs_confirmation`、`decision_refused`、`decision_provider_error`）；§2.3 加 ask 行；§5 加 §4.8 的事件；§6.1 删 "Jev bridge (python)" 行，改为"Jev 作业 / 实例：宿主内异步任务，abort 阶梯，期限从关闭调用起算"；§6.2/§6.3 改为 §4.6（凭据文件、代理、无解释器），删 "later export" 说法；§1.5 的 `config.json` 改为 §4.6；§7 加本文件 §6；§9 加"侧栏在 headless 可能不渲染"、"TS 移植时序漂移"、"Decisions API 选项数/输入上限未公开"；F7 按 Pro 第 3 点改写。
 
@@ -189,7 +191,7 @@ export interface DecisionProvider {
 | 错误 | 429/503/529 退避重试 2 次，其余 → `DecisionProviderError{status}`，网络 → `{cause:'network'}`；都不执行动作 | 同左；指南未列错误码；选项数与输入上限未公开，候选仍按上游 250 截断 |
 | 时延 / 成本 | 宣称亚秒 | 本地 3.9 s 首次 / 1.2 s 第二次（经代理）；$0.10 / 1M 输入 token，输出免费；登录态 ChatGPT 页约 5–10k token 每决策，一次提问 ≤ 14 决策，成本约一分钱量级 |
 
-选择：`config.json jev.decisions.provider` 显式优先；未设则取有 key 的那家；两家都有 → OpenAI Decisions API（D9）；都没有 → `jev_credentials_missing`。`jev_ask{decisions}` / `jev_open{decisions}` 逐作业覆盖。作业文件、决策证据与 TUI `model` 记 provider + model。
+选择：`config.json jev.decisions.provider` 显式优先；未设则取有 key 的那家；两家都有 → TypeSafe（D9）；都没有 → `jev_credentials_missing`。`jev_ask{decisions}` / `jev_open{decisions}` 逐作业覆盖。作业文件、决策证据与 TUI `model` 记 provider + model。
 
 ## 5. 测试计划（本仓库 `node --test`；jev-ask 仓库只测锁与 `--confirm-resend`）
 
@@ -225,7 +227,7 @@ export interface DecisionProvider {
 
 ## 7. 待 owner 决定的分叉
 
-无。D9（owner，2026-11-07）：两家后端都要可用、可自由配置；TypeSafe 凭据直接复用现有 Jev 安装的 `.env`（`TYPESAFE_API_KEY`、`TYPESAFE_MODEL`、`TEXT_MODEL_*`），由 `hud setup --import-jev-env` 导入，不另申请；`OPENAI_API_KEY` 由 owner 提供的私有 env 文件导入。两家 key 都在且未配置 `jev.decisions.provider` 时缺省 OpenAI gpt-6-luna（§4.11 的理由）；`config.json` 与每个作业/实例的 `decisions` 可随时改用 TypeSafe。
+无。D9（owner，2026-11-07）：两家后端都要可用、可自由配置；TypeSafe 凭据直接复用现有 Jev 安装的 `.env`（`TYPESAFE_API_KEY`、`TYPESAFE_MODEL`、`TEXT_MODEL_*`），由 `hud setup --import-jev-env` 导入，不另申请；`OPENAI_API_KEY` 由 owner 提供的私有 env 文件导入。两家 key 都在且未配置 `jev.decisions.provider` 时缺省 TypeSafe（owner 2026-11-07 改定，取代原先的 OpenAI 缺省；首次探测 TypeSafe 1.7 s / 置信 1.0，OpenAI Decisions API 3.4 s / 0.8；以小规模 A/B 复核）；`config.json` 与每个作业/实例的 `decisions` 可随时改用 TypeSafe。
 
 ## 8. 评审回应（v3 → v4）
 

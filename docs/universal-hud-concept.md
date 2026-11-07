@@ -713,7 +713,7 @@ Preserve all current source/identity/captured-generation checks, non-enforcing t
 | 子会话请求 | 由主会话经 `hud_respond` 处理（同 herdr 的 ask_orchestrator）；主会话 1 小时未回应再唤醒一次，2 小时撤回请求并以 `abandoned` 关闭，两者可配置 |
 | 单轮时限 | 默认无；`turnDeadlineMs` 可选 |
 | Jev 内化 | hud-mcp 是独立 MCP：Jev Ultrafast（MIT）移植为 TypeScript 进入本仓库，ChatGPT / Gemini 提问驱动在 host 进程内运行；不再依赖 Python bridge 与外部 jev-ask |
-| Jev 决策后端 | TypeSafe 与 OpenAI Decisions API 都支持、可自由配置；TypeSafe 凭据复用现有 Jev 安装的 `.env`；两者都有且未指定时缺省 OpenAI Decisions API |
+| Jev 决策后端 | TypeSafe 与 OpenAI Decisions API 都支持、可自由配置；TypeSafe 凭据复用现有 Jev 安装的 `.env`；两者都有且未指定时缺省 TypeSafe（Jev） |
 | Jev 发送 | 强度滑块用键盘 `End`；Gemini 模式交给 Jev；`jev_ask` 立即返回；浏览器锁只在发送、核对与连接器授权段持有；`uncertain` 后自动只读核对，重发须显式确认；`model` + `effort_word` 取代 `"6 Pro"` 标签并退役 `5.6 Pro` 后备 |
 | Jev 记录 | 与 jev-ask CLI 共用记录与状态目录，答案写入其 `out/`；CLI 的 ChatGPT / Gemini 路径达到设计中的门槛后退役 |
 
