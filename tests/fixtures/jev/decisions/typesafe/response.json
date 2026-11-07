@@ -1,0 +1,30 @@
+{
+  "model": "jev-1.14.0",
+  "answers": {
+    "operation": {
+      "type": "choice",
+      "choice": "TYPE_TEXT",
+      "confidence": 0.96,
+      "probabilities": {
+        "TYPE_TEXT": 0.97,
+        "CLICK": 0.02,
+        "WAIT": 0,
+        "DONE": 0,
+        "BLOCKED": 0.01
+      }
+    },
+    "type_text_target": {
+      "type": "choice",
+      "choice": "1",
+      "confidence": 1,
+      "probabilities": { "1": 1 }
+    },
+    "click_target": {
+      "type": "choice",
+      "choice": "1",
+      "confidence": 1,
+      "probabilities": { "1": 1, "2": 0 }
+    }
+  },
+  "usage": { "input_tokens": 1531, "output_tokens": 108 }
+}

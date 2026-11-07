@@ -29,6 +29,11 @@ test('manifest validates complete bounded payload and exact locked production id
 });
 test('Jev Python asset is explicitly selected for preview and runtime bundles', () => {
   assert.ok(EXTRA_FILES.includes('src/managed/jev-bridge.py'));
+  assert.ok(REQUIRED.includes('src/managed/jev-bridge.py'));
+  assert.ok(EXTRA_FILES.includes('src/jev/snapshot.js'));
+  assert.ok(REQUIRED.includes('src/jev/snapshot.js'));
+  assert.ok(EXTRA_FILES.includes('THIRD_PARTY_NOTICES.md'));
+  assert.ok(REQUIRED.includes('THIRD_PARTY_NOTICES.md'));
 });
 test('spawned native host entry is packed when the mcp build emits it', () => {
   const source = 'src/managed/host-entry.ts';
@@ -80,6 +85,8 @@ for (const name of [
   'bin/codex-with-herdr-context',
   'node_modules/chokidar/package.json',
   'src/managed/jev-bridge.py',
+  'src/jev/snapshot.js',
+  'THIRD_PARTY_NOTICES.md',
 ]) {
   test(`tampered and missing runtime closure fails: ${name}`, (t) => {
     const f = fixture(t);

@@ -50,6 +50,8 @@ export const REQUIRED = [
   'dist/cli/hud.js',
   'dist/cli/statusline.js',
   'src/managed/jev-bridge.py',
+  'src/jev/snapshot.js',
+  'THIRD_PARTY_NOTICES.md',
   // Spawned by NativeHostClient. The hud-mcp build emits it only because that tsconfig includes the source.
   'packages/hud-mcp/dist/src/managed/host-entry.js',
   ...Object.keys(DEPENDENCIES).map((name) => `node_modules/${name}/package.json`),

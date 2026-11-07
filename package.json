@@ -11,12 +11,12 @@
     "hud-statusline": "./bin/hud-statusline"
   },
   "scripts": {
-    "build": "node ./node_modules/typescript/bin/tsc",
+    "build": "node ./node_modules/typescript/bin/tsc && node scripts/copy-jev-assets.mjs dist",
     "dev": "node ./node_modules/typescript/bin/tsc --watch",
     "start": "node dist/index.js",
     "test:render": "npm run build && node dist/index.js",
     "test:windows": "powershell -ExecutionPolicy Bypass -File ./tests/windows/test-powershell-entrypoints.ps1",
-    "build:test": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
+    "build:test": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json && node scripts/copy-jev-assets.mjs dist-test",
     "test": "npm run build && npm run build:test && npm run build:hud-mcp && npm run test:unit && npm run test:mjs",
     "test:core": "bash tests/run-core.sh",
     "test:herdr": "bash tests/herdr/run.sh",

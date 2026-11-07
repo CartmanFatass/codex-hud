@@ -1,0 +1,45 @@
+{
+  "model": "gpt-6-luna",
+  "answers": [
+    {
+      "type": "choice",
+      "name": "operation",
+      "choice": "TYPE_TEXT",
+      "confidence": 0.33,
+      "probabilities": [
+        { "value": "TYPE_TEXT", "probability": 0.46 },
+        { "value": "CLICK", "probability": 0.09 },
+        { "value": "WAIT", "probability": 0.05 },
+        { "value": "DONE", "probability": 0.11 },
+        { "value": "BLOCKED", "probability": 0.29 }
+      ]
+    },
+    {
+      "type": "choice",
+      "name": "type_text_target",
+      "choice": "1",
+      "confidence": 0.94,
+      "probabilities": [
+        { "value": "1", "probability": 0.97 },
+        { "value": "NONE", "probability": 0.03 }
+      ]
+    },
+    {
+      "type": "choice",
+      "name": "click_target",
+      "choice": "1",
+      "confidence": 0.72,
+      "probabilities": [
+        { "value": "1", "probability": 0.86 },
+        { "value": "2", "probability": 0.14 }
+      ]
+    }
+  ],
+  "usage": {
+    "input_tokens": 1276,
+    "input_tokens_details": { "cached_tokens": 0, "cache_write_tokens": 0 },
+    "output_tokens": 0,
+    "output_tokens_details": { "reasoning_tokens": 0 },
+    "total_tokens": 1276
+  }
+}

@@ -45,6 +45,9 @@ export const EXTRA_FILES = [
   'packages/hud-mcp/bin/hud-claude-hook.mjs',
   // Explicit non-TS runtime asset shared by source/compiled host entrypoints.
   'src/managed/jev-bridge.py',
+  // Jev snapshot body and the MIT notice that has to travel with the port.
+  'src/jev/snapshot.js',
+  'THIRD_PARTY_NOTICES.md',
 ];
 export function outputForSource(file, mcp = false) {
   if (!/^(src\/|packages\/hud-mcp\/src\/)/.test(file) || !file.endsWith('.ts') || file.endsWith('.d.ts')) return null;
@@ -101,6 +104,8 @@ async function selfTest() {
   assert.equal(EXTRA_FILES.filter((file) => file.startsWith('extensions/')).length, 2);
   for (const entry of EXTENSION_ENTRIES) assert.equal(EXTRA_FILES.includes(entry), true);
   assert.equal(EXTRA_FILES.includes('src/managed/jev-bridge.py'), true);
+  assert.equal(EXTRA_FILES.includes('src/jev/snapshot.js'), true);
+  assert.equal(EXTRA_FILES.includes('THIRD_PARTY_NOTICES.md'), true);
   assert.equal(EXTRA_FILES.includes('integrations/pi/hud-wake.ts'), true);
   for (const name of [
     '.env',
