@@ -670,6 +670,12 @@ Preserve all current source/identity/captured-generation checks, non-enforcing t
 
 ### 2026-11-07 本地对齐：产品定义重置（Jacob）
 
+> Scope status: the later "2026-11-07 Scope convergence: fixed roles, herdr
+> execution, owned Jev" entry supersedes conflicting execution, host, workflow,
+> request/wake, and installation requirements here. Retained main features,
+> non-interference, observation, and explicitly preserved Jev work still apply.
+
+
 本节取代上文与之冲突的决定。依据：首轮真实客户端测试（[结果](./cloud/handoff/local-real-client-results-20261107.md)）与只读保留/删除盘点。
 
 **术语。** main 功能 = `origin/main` 上已有、日常在用的 codex-hud（bar、panel、brief 与模型摘要、安装器）；分支新增 = `universal-hud` 上新增且属于目标产品的部分（hud-mcp、native host、三个适配器、Jev、native-calls、Pi 包）；旧委派栈 = 分支上新增、已被 native 路径取代的部分（账本、`delegate_*`、`hud-run` 托管、capability / qualification、runtime 包、`hud` CLI 子命令）；native 路径 = MCP → native host → 各 harness 官方接口。
@@ -700,6 +706,12 @@ Preserve all current source/identity/captured-generation checks, non-enforcing t
 
 ### 2026-11-07 设计定稿：native HUD v2.1 与 Jev 内化（Jacob）
 
+> Scope status: the later "2026-11-07 Scope convergence: fixed roles, herdr
+> execution, owned Jev" entry supersedes conflicting execution, host, workflow,
+> request/wake, and installation requirements here. Retained main features,
+> non-interference, observation, and explicitly preserved Jev work still apply.
+
+
 设计稿 `docs/design/native-hud-v2.md`（v2 经 ChatGPT Pro 评审 ACCEPT WITH CHANGES，v2.1 落实其十项必改）与
 `docs/design/jev-in-hud.md`（Jev 内化，经 Opus 评审 ACCEPT WITH CHANGES 后修订为 v4）。两份设计的待定分叉均已关闭。
 
@@ -720,6 +732,12 @@ Preserve all current source/identity/captured-generation checks, non-enforcing t
 
 ### 2026-11-07 工作流（Jacob）
 
+> Scope status: the later "2026-11-07 Scope convergence: fixed roles, herdr
+> execution, owned Jev" entry supersedes conflicting execution, host, workflow,
+> request/wake, and installation requirements here. Retained main features,
+> non-interference, observation, and explicitly preserved Jev work still apply.
+
+
 设计稿 `docs/design/hud-workflows.md`（WF1）。主会话一次发起，host 按固定拓扑运行 custom agents，步骤间自行推进，整次运行只唤醒主会话一次；所有 agent 都是 host 启动的一层子会话。Owner 采纳全部建议：
 
 | 决定 | 内容 |
@@ -733,6 +751,54 @@ Preserve all current source/identity/captured-generation checks, non-enforcing t
 | 缓存状态 | 子会话给出缓存估计（warm / expiring / expired / unknown），调用方决定复用或新开；TUI 由设置控制显示；各 provider 的 TTL 默认值待验证 |
 
 摘要模型回复缓存（同日，Jacob）：恢复 main 的位置 `<dir>/cache.json`，与 main 保持一致；分支 B17（7f07c5a）改到 `materials-v1/replies/cache.json` 的做法随 native-hud-v2 §4.2(1) 的材料边界替换一并撤回，届时相关测试改回构造生产 `SmallModel` 并沿用 main 的断言。
+
+### 2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev
+
+Adopt the owner's fixed-role candidate with main-session sequencing.
+This supersedes the prior observer-only scope recommendation, including its
+prohibition on a launch MCP and its deferral of the owned Jev runtime.
+It does not reactivate WF1 or the general native agent execution host.
+
+| Decision | Accepted scope |
+| --- | --- |
+| Public roles | Exactly oracle, imp, reviewer, sonic, and jev. Role meaning remains stable when bindings change. |
+| Oracle | One role with explicit propose and converge phases, bound through oracle.propose and oracle.converge. Each invocation creates one job. |
+| Jev | A first-class browser capability implemented through src/jev, supporting browser goals, web-oracle questions, and read-only page judgments. It is not a generic informer role. |
+| Role versus executor | An oracle bound to a Jev web target is one oracle job executed by Jev. Do not create a second child for the transport. |
+| Classic recipes | Design: oracle.propose → oracle.converge. Build: imp → required checks, optionally via sonic → reviewer. Small tasks use sonic; browser tasks use jev. |
+| Chaining | The main session and its skill perform every handoff, evaluate results, and decide repair cycles. HUD does not launch a next role from completion or verdict evidence. |
+| WF1 | Deferred in full. No workflow executor, workflow_plan/start, graph loader, execution bundle, automatic fix loop, or workflow-owned Jev job. |
+| MCP purpose | Resolve a role, create one job through its executor, provide consistent observation and supported input/cleanup operations, and associate that job with the tree. |
+| MCP surface | hud_roster, hud_create, hud_read, hud_send, hud_respond, hud_close. Schemas and the role enum are static. |
+| CLI execution | herdr remains the executor for CLI harnesses. Reuse working launch/prompt/read/wait/cleanup recipes. No silent direct SDK/app-server/RPC fallback when herdr is unavailable. |
+| Jev lifetime | One lazy Jev execution process per HUD home owns browser jobs/instances and exits after retained work/resources drain and a grace period. It contains no CLI launcher, role policy, workflow engine, or next-step selection. |
+| Jev targets | ChatGPT Pro and AI Studio are required targets. AI Studio needs its own adapter and operation identity; Gemini consumer-chat support does not satisfy it. |
+| Jev decisions | TypeSafe and OpenAI Decisions API are selectable for actions and page judgments. Target model and decision model are separate. Keep the existing TypeSafe default when both credentials exist and no explicit selection is made. |
+| Binding data | One user-level $HUD_HOME/routing.toml contains backend profiles, named presets, role bindings, Jev decision profiles, and a default preset. No project overlays or persistent override layers in this release. |
+| Switching | Owner-directed actions change persistent bindings/defaults. The main session may select a declared preset under existing routing instructions. Selection is scoped to stable main-session identity and affects future jobs only. |
+| Job binding | Resolve once at creation and record actual role, phase, backend, model, environment profile, and Jev decision provider. Existing jobs and same-key retries retain that binding. |
+| Retry contract | Persist a per-job dispatch receipt before side effects. Same key/same request returns the existing job; changed request conflicts. Ambiguous launch/send is reconciled and never blindly repeated. |
+| Requests | hud_respond forwards a real outstanding request through a supported adapter. Unsupported native/browser interactions remain explicit external handoffs. A written/forwarded answer is not reported consumed without evidence. |
+| Waiting | Reuse the main harness's proven background notification path and herdr/Jev waits. Reads have independent cursors; TUI reads do not consume parent notifications. Main-session wakes between recipe stages are accepted. |
+| Cleanup | herdr owns CLI process cleanup; Jev owns its browser-job cleanup. HUD requests cleanup and reports observed outcomes. No general agent idle/abandon timers, process-group sweeps, or automatic restart service. |
+| Jev recovery | Preserve send-attempt evidence, same-key behavior, read-only reconciliation after uncertainty, bounded cleanup, and idempotent close. Close does not undo a submitted question or erase an answer. |
+| Skill | One short repository-maintained delegation skill defines role choice and recipe order. The owner maintains bindings. No hardcoded model inventory, browser selectors, or runtime-generated per-preset skills. |
+| Tree and main features | Keep one root-independent tree, explicit association, native descendants, external herdr tasks, Jev jobs, summaries, brief/dry-run, Pi footer, and existing main behavior. Keep WP0 mandatory. |
+| Exclusions | No general workflow engine, automatic quota broker, silent backend switching, dynamic tool schemas, or duplicate CLI execution supervisor. |
+
+The current queue is R0 scope/baseline, R1 roles/bindings/skill,
+R2 herdr facade, R3 Jev runtime/judgments, R4 web targets/recovery,
+R5 tree/summaries, R6 installation/retirement, R7 end-to-end acceptance.
+It replaces the earlier O0–O6 observer-only queue.
+
+Keep J1/J1b/J2 foundations and tests. Complete the relevant remaining Jev work.
+Extract Jev from the shared native host before removing that host's dependencies.
+Existing live work is drained through its owning version; migration never
+replays it or silently adopts its execution.
+
+Preserve the accepted production summary restoration and <dir>/cache.json
+response-cache location. New prompt-cache lifetime forecasts and scheduling
+policies remain deferred.
 
 ## 16. 评审状态与下一次评审
 

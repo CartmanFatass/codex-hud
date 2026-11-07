@@ -1,5 +1,33 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
+## Current queue (2026-11-07): R0–R7
+
+Authoritative scope: `docs/universal-hud-concept.md` §15, "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev". This is the current queue. Sections below are
+earlier results and are not a second queue. The general agent host and the observer-only
+retirement plan are outside this queue. WF1 stays deferred.
+
+Dependency order: R0, then R1 → R2 ∥ R3 → R4. R5 proceeds against R2 and R3 fixtures.
+R6 follows acceptance of the replacement paths. R7 closes delivery.
+
+After R1, R2 and R3 can proceed in parallel. R4 depends on R3; R5 can develop against their fixtures. R6 follows the replacement paths’ acceptance, and R7 closes delivery.
+
+| Package | Deliverable | Acceptance |
+| --- | --- | --- |
+| R0 — Scope and baseline | Apply the concept §15 scope entry and the companion document updates for this queue. Preserve WP0, J1/J1b/J2, relevant fixtures/licenses, and retained HUD features. Remove WF1 executor work from the active queue. | One active implementation plan; bash tests/run-main.sh baseline recorded; no weakened main assertions or scenes. |
+| R1 — Roles, bindings, and skill | Define the five roles, oracle phases, routing.toml, session-scoped selection, capability validation, and static skill. Import actual backend settings from installed recipes. | Switching a preset changes the next dispatch; existing jobs remain unchanged; two main sessions can select independently; incompatible role bindings fail clearly. |
+| R2 — Herdr-backed MCP facade | Implement the six tools for CLI jobs, stable parent attribution, atomic job receipts, same-key serialization/reconciliation, supported question adapters, continuation, and explicit cleanup. Reuse existing launch recipes. | Pi/Grok and supported Codex/Claude recipes work through the common API; Pi questions round-trip; duplicate/ambiguous creates do not relaunch; missing herdr is reported honestly; no TUI is required. |
+| R3 — Owned Jev runtime and judgments | Extract a lazy Jev-only runtime from reusable IPC/lifetime pieces. Connect src/jev, preserve J2 records/leases, and complete both judge() provider mappings. Map it into the same job API. | Direct browser and read-only judgment jobs work; TypeSafe/OpenAI are selectable; disconnect ends observation only; runtime cleanup is bounded; no CLI-launch modules load. |
+| R4 — Web-oracle targets and recovery | Complete ChatGPT support and add a distinct AI Studio adapter from the existing owner driver. Complete wait/reconcile/result collection. Preserve cross-language compatibility while old and new writers coexist. | Prompt/attachment handling, target selection, send evidence, result extraction, crash windows, and same-key recovery pass for each target. Recovery never repeats Send. Both decision providers are checked. |
+| R5 — Unified tree and retained summaries | Adapt the tree/collectors to one job per invocation, role/phase/backend attribution, pending requests, results, and external herdr tasks. Preserve non-Codex roots, Pi footer, generic materials, brief/dry-run, and production summary restoration. | One tree correctly shows CLI, native descendants, oracle-through-Jev, and direct Jev jobs; no duplicate “oracle + Jev” nodes; stale observation is honest; main visual behavior remains protected. |
+| R6 — Installation and retirement | Install the small facade and skill/shims. Replace the general native execution path only after herdr and owned Jev paths pass. Drain existing live handles through their owning version. Remove unused direct-launch adapters, obsolete bridge wiring, and dependencies. | CLI-only use starts no detached HUD execution host; Jev starts only its narrow runtime; existing work is not killed or replayed during migration; old/new control paths do not compete. |
+| R7 — End-to-end acceptance | Validate all three supported main harnesses, representative concrete bindings, both oracle phases, repair continuation, questions, provider switching, restart/recovery, cleanup, and WP0. | Actual results and limitations recorded. Fixture success does not substitute for real parent notification or browser-target checks. |
+
+Native-v2 mapping: keep attribution, observation, tree, summaries, and necessary parent integration. Replace its execution interfaces with the role facade. Cancel its general agent host, process-group sweeps, agent idle/abandon timers, direct native dispatch adapters, and workflow fields. Keep useful herdr code during pruning.
+
+Jev package mapping: retain J1/J2; finish J1b judgments; implement J3a plus a new AI Studio package; retain J4; narrow J5 to the Jev-only runtime and common facade; retain J6/J7/J8/J9 as relevant. Gemini consumer-chat and Flow remain separate targets; neither is required to satisfy the newly specified ChatGPT Pro + AI Studio scope.
+
+WP0 remains necessary, including its documented qualification that several model-feature carriers currently use the B17 test double. Production summary restoration and the accepted <dir>/cache.json location remain active work.
+
 ## Local validation phase (from 2026-11-07)
 
 After the native thin delivery (`aa4b9dd`) development is back on the owner's machine, to run the real-client checks the cloud could not run ([local validation guide](../cloud/handoff/native-hud-local-validation.md)). Routing for this phase: Claude Code (Opus) orchestrates and merges; Grok 4.7 (high) implements; pi implementers run test tasks; Codex-related tests use the owner's `codex2` test account (`CODEX_HOME=~/.codex`) with `gpt-6-luna` at medium effort. When Grok quota runs out, implementation moves to pi. **Temporary:** while the owner's Codex quota is low, reviews are done by an Opus subagent; Codex reviewer/Oracle review resumes when quota allows. Remote sessions should not merge into `universal-hud` during this phase.
@@ -10,9 +38,14 @@ Status:
 - **LV1, validation kit:** `scripts/local-validation/` ([kit doc](../cloud/handoff/local-validation-kit.md)) sets up an isolated `HUD_HOME` and launches real Codex/Claude/Pi with hud-mcp attached for one session, without editing user configs. `smoke-discovery.mjs` checks tool discovery for all three without model spend.
 - **LV2–LV5, real clients:** Codex, Claude and Pi pass create/send/read, parent exit with the host continuing, same-parent resume, cross-session refusal, explicit child resume and close/drain; Jev passes create/run/snapshot/list, tab retention, isolation and explicit close. Details and eight findings (Codex queue-woken turns refused, child proxy/environment, Jev interpreter/credentials, Jev hosts not draining, among others) in [the results record](../cloud/handoff/local-real-client-results-20261107.md). The missing hud-mcp host entry found by the first run is fixed.
 - **Design alignment (2026-11-07):** the owner reset the product definition — symmetric cross-harness dispatch (any of Claude/Codex/Pi as the main session), MCP as the single interface and TUI data source, non-interference with each harness's own workflow, Pi as the customisable exception, and removal of the historical delegation stack. Recorded in the [decision log](../universal-hud-concept.md) ("2026-11-07 本地对齐").
-- **Next:** design oracle on the identity/attachment model, the root-agnostic display model, the HUD Pi package and model summaries for all sessions; then pruning in reviewed segments, implementation, the open findings and the full test matrix.
+- **Next:** the active queue is R0–R7 at the top of this file. Scope is concept §15, "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev".
 
 ## Authorized implementation status: native thin path (2026-11-07)
+
+> Historical status of the 2026-11-07 native thin path. The current queue is R0–R7
+> above. Scope: concept §15, "2026-11-07 Scope convergence: fixed roles, herdr
+> execution, owned Jev".
+
 
 The owner approved the revised [local native-session architecture](../architecture/simplified-harness-architecture.md), parallel implementation, and changes directly on `universal-hud`. This supersedes older sequencing, separate-branch and policy-framework requirements below **for this approved implementation**, not unrelated permission or safety requirements. The historical snapshots and their test counts remain historical.
 
@@ -210,8 +243,7 @@ been accepted or merged. Preserve these branches, failures and full evidence.
 
 ## Package queue for dots
 
-Run the items in order. Packages in the same wave touch disjoint files and may run in parallel. A package without a
-brief gets one from an Oracle first (`docs/cloud/dots.md`, step 0).
+Historical queue (2026-11-03). The active queue is R0–R7 at the top of this file. The notes below record that queue: packages in the same wave touched disjoint files and could run in parallel. A package without a brief was to get one from an Oracle first (`docs/cloud/dots.md`, step 0).
 
 | Wave | Package | Brief | Notes |
 |---|---|---|---|
@@ -234,7 +266,7 @@ Data-layer additions for wave 3:
 
 The real resume gate waits for B14.
 
-After the queue: B14, the production acceptance and capability matrix, is mostly local; see below. Then B15, the phase
+After that historical queue: B14, the production acceptance and capability matrix, is mostly local; see below. Then B15, the phase
 review (ARCH); B3b-C after B15; then phases C–F of the plan.
 
 ## Decisions recorded on 2026-11-03

@@ -16,10 +16,10 @@ Read `docs/ARCHITECTURE.md` before changing code: the two processes (bar `src/in
 
 # Universal HUD effort (branch `universal-hud`)
 
-This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi, with a delegation MCP (`hud-mcp`) and a run supervisor (`hud-run`). From 2026-11-03 the effort runs remotely: remote sessions (Claude Code cloud, dots) follow `AGENTS.md` and `docs/handoff/STATE.md`, not the local routing below. On the owner's machine, before doing anything on this branch read, in order:
+This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi. The product scope is concept §15, "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev": a fixed-role MCP facade, herdr for CLI execution, an owned Jev runtime for browser jobs, and main-session chaining. The active queue is R0–R7 in `docs/handoff/STATE.md`. From 2026-11-03 the effort runs remotely: remote sessions (Claude Code cloud, dots) follow `AGENTS.md` and `docs/handoff/STATE.md`, not the local routing below. On the owner's machine, before doing anything on this branch read, in order:
 
 1. `docs/delegation.md`: who does which kind of task (Pro for architecture, Codex sol max reviewers, Codex sol implementers for core work, pi implementers for ordinary work with an escalation rule, the `frontend-implementer` subagent for rendering, Hermes for human-interaction tests).
-2. `docs/universal-hud-engineering-plan.md`: the work packages, their order, roles and acceptance. The orchestrator works through it phase by phase.
-3. `docs/universal-hud-concept.md`: what is being built and why; §15 is the decision log, update it when a decision changes.
+2. `docs/handoff/STATE.md`: the active queue is R0–R7. `docs/universal-hud-engineering-plan.md` remains the historical phase plan.
+3. `docs/universal-hud-concept.md`: what is being built and why; §15 is the decision log. The current scope entry is "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev". Update §15 when a decision changes.
 
 Reviews live in `docs/reviews/`. Task scratch lives in `tmp/tasks/<WP>/` (git-ignored). Fixtures and docs use synthetic data only: the repo is public.

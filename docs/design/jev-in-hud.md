@@ -1,6 +1,6 @@
 # JEV1 设计：以 Jev 为中心重做 ChatGPT/Gemini 提问驱动，并把它做进独立的 hud-mcp
 
-设计稿 v6（2026-11-07）。v6 落实 Pro 对 WF1 修订 2 的 §7 C–E：`owned_by: 'workflow:<run>'`，以及终态 `jev_ask_close` 幂等。v5（2026-11-07，design oracle）。v2：hud-mcp 是独立 MCP，Jev Ultrafast（MIT，Copyright (c) 2026 Browser Use）与 jev-ask 需要的部分并入本仓库。v3：记录 owner 的决定，加入 OpenAI Decisions API 后端。v4：按 Opus 评审（`review.md`）修正 H1–H5，并入 M1–M8 与 L 项，按"轻、快、少进程"削减。v5：按 owner 当日方向把页面状态问题交给决策后端做"页面判断"（§2.4），confirm 等固定超时改为证据 + 负载感知等待；起因是当天一次真实发送已点击却被记为 `uncertain`——CLI 固定 45 s 只等"用户回合含附件"一个条件，页面仍在加载，而 URL 已到 `/c/…`、stop 按钮、侧栏新条目、输入框清空全被忽略。依据：已合并的 `decide.ts`、`providers/{typesafe,openai}.ts`、`model.ts`、`ask/records.ts`（J1/J1b/J2）、`jev_send.py`（2094 行）、`cdp_observer.py`、SKILL.md、Jev Ultrafast @ `1231850a`（`agent.py` 174 / `browser.py` 194 / `model.py` 198 / `questions.py` 26 / `snapshot.js` 107）、今天的操作记录（key `ask-pro:59b5…`：四步 `TYPE_TEXT → STALE → TYPE_TEXT → CLICK 发送`，之后靠手工传入 URL 才补上地址）、HUD 侧 `jev-host.ts`、`jev-bridge.py`、`jev-tools.ts`、`host.ts`、`host-ipc.ts`、`native-hud-v2.md` 与 Pro 对其 §6 的评审、`openai-decisions.md`。所有示例为合成数据；文中不含会话地址、账号、密钥与家目录。
+设计稿 v7（2026-11-07）。v7 按概念 §15「2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev」：J1/J2 保留，J1b 的 judge() 待完成，AI Studio 单独成包，宿主收成按需的纯 Jev 运行时，`owned_by: "workflow:<run>"` 与工作流唤醒改为持久的调用会话/作业关联，幂等关闭与发送/恢复证据保留。v6（2026-11-07）。v6 落实 Pro 对 WF1 修订 2 的 §7 C–E：`owned_by: 'workflow:<run>'`，以及终态 `jev_ask_close` 幂等。v5（2026-11-07，design oracle）。v2：hud-mcp 是独立 MCP，Jev Ultrafast（MIT，Copyright (c) 2026 Browser Use）与 jev-ask 需要的部分并入本仓库。v3：记录 owner 的决定，加入 OpenAI Decisions API 后端。v4：按 Opus 评审（`review.md`）修正 H1–H5，并入 M1–M8 与 L 项，按"轻、快、少进程"削减。v5：按 owner 当日方向把页面状态问题交给决策后端做"页面判断"（§2.4），confirm 等固定超时改为证据 + 负载感知等待；起因是当天一次真实发送已点击却被记为 `uncertain`——CLI 固定 45 s 只等"用户回合含附件"一个条件，页面仍在加载，而 URL 已到 `/c/…`、stop 按钮、侧栏新条目、输入框清空全被忽略。依据：已合并的 `decide.ts`、`providers/{typesafe,openai}.ts`、`model.ts`、`ask/records.ts`（J1/J1b/J2）、`jev_send.py`（2094 行）、`cdp_observer.py`、SKILL.md、Jev Ultrafast @ `1231850a`（`agent.py` 174 / `browser.py` 194 / `model.py` 198 / `questions.py` 26 / `snapshot.js` 107）、今天的操作记录（key `ask-pro:59b5…`：四步 `TYPE_TEXT → STALE → TYPE_TEXT → CLICK 发送`，之后靠手工传入 URL 才补上地址）、HUD 侧 `jev-host.ts`、`jev-bridge.py`、`jev-tools.ts`、`host.ts`、`host-ipc.ts`、`native-hud-v2.md` 与 Pro 对其 §6 的评审、`openai-decisions.md`。所有示例为合成数据；文中不含会话地址、账号、密钥与家目录。
 
 **一个决定性的事实。** Jev 的元素表只收 `snapshot.js` 第 24 行列出的角色（button、link、checkbox、radio、switch、tab、menuitem、menuitemradio、option、gridcell、combobox、textbox、searchbox、spinbutton）；`role="slider"` 不在其中，而 ChatGPT 当前的强度控件是一个 slider（包在 `aria-label="强度"` 的 menuitem 里，点击其中心落在滑轨中点）。分工：**离散控件交 Jev 的目标；唯一的连续控件 slider 由代码用键盘 `End` 推到最大，并以 ARIA 值核验**；若将来各档效果渲染成 menuitem/menuitemradio，Jev 目标覆盖，核验按 §2 第 3 步的 (b) 形式通过。
 
@@ -64,7 +64,9 @@
 
 ### 2.3 AI Studio 与 Flow
 
-留在 jev-ask，不动。Flow 的点数确认与下载必须保持代码所有。
+v7：AI Studio 是必做目标，单独成包（自有适配器、操作身份、抽取与恢复夹具），从既有驱动移植。Gemini 消费端聊天不算完成该包。Flow 仍是独立目标，不在 ChatGPT Pro 与 AI Studio 的验收里。Flow 的点数确认与下载必须保持代码所有。
+
+v6 原文「留在 jev-ask，不动」只作历史。
 
 ### 2.4 页面判断：状态问题交给决策后端（v5）
 
@@ -101,6 +103,9 @@
 
 ## 4. 独立的 hud-mcp：Jev 与 ask 驱动并入本仓库
 
+> 状态（v7）：自有 Jev 继续做。每个 HUD home 一个按需启动的纯 Jev 运行时，只在有 Jev 工作时启动，持有浏览器作业与 Agent 实例，保留的工作与资源排空并经过短暂宽限后退出。运行时内没有 CLI 启动器、角色策略、工作流引擎或下一步选择。`judge()` 的两家映射仍须完成。决策后端切换只影响新作业。发送尝试落盘、不确定后不自动第二次发送、按记录恢复、有界清理、幂等关闭和已完成答案保留，这些保证保留。
+
+
 ### 4.1 移植到 TypeScript，而不是 vendor Python 再架桥（已定）
 
 规模：Jev 四模块约 590 行 Python → 约 700 行 TS（`snapshot.js` 正文原样作资产）+ 决策后端约 250；ask 驱动约 1.9k（页面事实 JS 约 450 行原样、记录/锁/配置/Chrome 约 450、阶段机约 400、wait/observer 约 450、reconcile 约 100）；合计约 2.9k TS + 约 1.8k 测试。进程：hud-mcp（每 harness 一个 stdio）+ 宿主（每用户一个）+ 用户的共享 Chrome；无 Python、无 venv、无 browser-harness 守护进程。依赖：零新增（宿主由 hud-mcp 程序构建，其 `engines` 为 `^22.13 || >=24`，全局 `WebSocket` 与 `fetch` 可用；根 `package.json` 的 `>=18` 不是宿主的运行条件；`@iarna/toml` 已有）。风险：`observe/act` 时序（输入后 rAF 等待、stale 判定）与决策后端契约；缓解：页面 JS 逐字搬运、上游 `tests/test_agent.py` 逐条翻译、两家后端 fixture、J9 真浏览器守卫。vendor 方案则保留解释器解析（F4）、`.env` 定位与串行桥，小时级 wait 还要再加线程层（Pro 第 1、2 点）。上游跟踪：`src/jev/UPSTREAM.md` 钉住 commit，文件一一对应，列出偏离（异步、直连 CDP、`fetch`、文本模型可选、决策后端抽象、`setGoal`）。直连 CDP 可行：`cdp_observer.py` 已直连同一端点，且 Node 24 的 `WebSocket` 握手不带 `Origin`（评审探针）。
@@ -132,7 +137,7 @@ ask 路径不需要（提交文本逐字 `Input.insertText`，`agent.ts` 注入�
 
 | 工具 | 参数 | 返回 | 说明 |
 |---|---|---|---|
-| `jev_ask` | `{ provider:'chatgpt'\|'gemini', label, prompt_file?, prompt?, attach?, mode?, dry_run?, max_wait_ms?, wake_on_sent?, decisions?, confirm_resend?, owned_by?: 'workflow:<run>' }` | `{ key, state, seq, wake }` | 幂等于 key（§4.5）。`label` 限 `[a-z0-9][a-z0-9-]{0,63}`（M1）。`prompt` 文本写到 `state_dir/out/<key'>.prompt.md` 再按文件提交。同 key 活作业 → 原作业；记录 `send_attempted` → 不发送，直接 `awaiting`（或 `uncertain → reconciling`）；记录 `released:true` 而无 `confirm_resend:true` → `resend_needs_confirmation`（H5）。≤ 1 s 返回（D3）。`owned_by` 只是路由与生命周期元数据，不进入 §4.5 的 key。被引用的 run 必须属于已认证的 HUD owner；run/instance 关联在执行或出事件前落盘。同 key 且关联相同 → 返回既有作业；关联冲突 → 拒绝，不能接管别人的唤醒。关联过重启仍在。没有 `owned_by` 的作业保持 §4.8 的普通唤醒 |
+| `jev_ask` | `{ provider:'chatgpt'\|'gemini'\|'aistudio', label, prompt_file?, prompt?, attach?, mode?, dry_run?, max_wait_ms?, wake_on_sent?, decisions?, confirm_resend? }` | `{ key, state, seq, wake }` | 幂等于 key（§4.5）。`label` 限 `[a-z0-9][a-z0-9-]{0,63}`（M1）。`prompt` 文本写到 `state_dir/out/<key'>.prompt.md` 再按文件提交。同 key 活作业 → 原作业；记录 `send_attempted` → 不发送，直接 `awaiting`（或 `uncertain → reconciling`）；记录 `released:true` 而无 `confirm_resend:true` → `resend_needs_confirmation`（H5）。≤ 1 s 返回（D3）。v7：不再使用 `owned_by: "workflow:<run>"`。调用会话与本作业的关联在执行或出事件前落盘，不进入 §4.5 的 key。同 key 且关联相同 → 返回既有作业；关联冲突 → 拒绝。关联过重启仍在。有关联的作业把完成和干预唤醒调用会话（§4.8）；没有关联的作业保持 §4.8 的普通唤醒。AI Studio 使用独立的 provider 值；Gemini 消费端聊天不代替它 |
 | `jev_ask_wait` | `{ key?, after_seq, wait_ms, resume? }` | `{ events[], seq }` | 长轮询，`effectiveWaitMs = min(wait_ms, 120000, clientToolTimeoutMs − margin)`（`docs/contracts/05-capabilities.md` 规则，L4）；`resume:true` 按 §4.7 重起 wait 或 reconcile，从不重起 send |
 | `jev_ask_read` | `{ key, what:'status'\|'answer', offset?, limit? }` | `status` ≤ 2 KiB；`answer` 分页 ≤ 32 KiB | 只读；答案来自记录 `answer_file` |
 | `jev_ask_close` | `{ key }` | `{ ok, run, work }` | 中止观测（§4.7 阶梯）；从不撤销发送。终态和已关闭的已知作业上幂等：重复关闭成功，返回当前 `{ok, run, work}`，保留权威操作结果、答案文件和发送/释放证据；把剩余观测清理做完或并入同一次清理，沿用原来的关闭期限和既有发送标签规则。并发关闭加入这一次清理，不另起超时。`answered` 之后关闭不得把结果改写成 cancelled，也不再发一次完成唤醒。未知 key 仍是有类型的 not-found。工作流的取消结果和这里记下的答案是两件事实 |
@@ -140,14 +145,14 @@ ask 路径不需要（提交文本逐字 `Input.insertText`，`agent.ts` 注入�
 
 工具描述写明："一个 key 只发送一次；`uncertain` 与 `needs_human` 只能观测或交用户；`released` 的 key 要 `confirm_resend:true`，而它只能来自用户的明确决定"。
 
-### 4.5 与 jev-ask CLI 及 `state_dir` 的兼容："记录 schema v1"协议（CLI 仍服务 owner 的 skill；AI Studio / Flow 留在 jev-ask）
+### 4.5 与 jev-ask CLI 及 `state_dir` 的兼容："记录 schema v1"协议（CLI 仍服务 owner 的 skill；Flow 仍留在 jev-ask；AI Studio 见 §2.3）
 
 - **记录**：路径 `state_dir/operations/<key'>.json`（`key'` = key 中 `:` → `_`；`out/` 同样映射，L9）；字段与今天相同，新增 `attempts[]`、`tabs`、`pill_text`；CLI 对未知字段用 `.get`。
 - **写规则（H1）**：(1) `send`/`reconcile` 在**第一次读或写记录之前**取浏览器锁，两边都是；(2) 每次保存 = 重读文件 → 合并增量 → 写唯一临时名 `<key'>.<pid>.<rand>.tmp` → rename（CLI 今天整字典覆盖、固定 `<key'>.tmp`，J7 改）；`send_attempted:true` 黏性，只有带 `released:true` 的 reconcile 增量能清它；(3) 点击落盘前在锁内重读磁盘，已真则 `already_attempted`；(4) 该次落盘 fsync 文件与目录。
 - **浏览器锁 = 心跳租约（H2）**：`state_dir/browser.lock`，`wx` 创建，内容 `{nonce, holder:'cli'|'hud', pid, pidns, jobId, phase, since, heartbeat}`；持有者每 5 s 重写 `heartbeat`（CLI 用守护线程）；陈旧 = `heartbeat` 早于 30 s，或同 `pidns` 且 pid 已死/启动时间不符；破锁经 `browser.lock.break` 互斥（`wx`），重读锁，只有 nonce 与 heartbeat 未变才 unlink；获得后重读核对自己的 nonce；`finally` 释放，宿主在作业结束时也释放。宿主的 `host.sock.start` 锁（裸 pid + unlink）不复用：它有 TOCTOU、不查 pid 复用、看不见沙箱内的 pid。同一方案做**每 key 的 wait 租约** `operations/<key'>.wait.lease`：第二个 waiter 只 tail 记录，不开观测页（L1）。
 - **锁范围（D4，L5）**：send/reconcile 全程与 wait 的连接器授权段持锁；观测不持锁，多个 wait 并行。CLI 遇锁立即 `browser_busy{holder}`；宿主作业遇锁保持 `queued` 轮询，≤ 10 min 后 `browser_busy`。宿主内部同 `cdpUrl` 的 send/reconcile 段串行，队列 ≤ `queueLimit`。`chrome-headless` 标记两边共用。
 - **释放与重发（H5，落实 SKILL "重新发送必须先取得用户明确决定"）**：自动 release 需相隔 ≥ 10 s 的两次读都显示：提交文本仍在框内、无用户回合、无 stop 按钮、（ChatGPT）侧栏相对 `sidebar_before` 无新条目、URL 未离开根页，且两读 `submitted` ≤ 0.10（§2.4）；否则保持 `uncertain`。`released:true` 的 key：`jev_ask` 需 `confirm_resend:true`，CLI 需 `--confirm-resend`（J7）。`uncertain` 超过 `abandonMs` → `abandoned` 并唤醒（L6）。
-- **key 与摘要一致（M1）**：key = `PREFIX[provider] + sha256(json.dumps([label, sha256(strip(prompt))]))`。`owned_by` 不是输入。Python `json.dumps` 的 `", "` 分隔与 `ensure_ascii`（DEL 与非 ASCII 转 `\uXXXX`、代理对）在 label 限 slug 后不再出现差异；文本读入按 Python 文本模式归一换行（`\r\n`/`\r` → `\n`）；`pyStrip`/`pySquash` 用 Python `str.isspace` 的显式字符集（含 U+001C–U+001F、U+0085，不含 U+FEFF）。交叉 fixture 由 Python CLI 产出：CRLF、孤立 CR、BOM、NEL、U+3000、非 slug label 被拒。
+- **key 与摘要一致（M1）**：key = `PREFIX[provider] + sha256(json.dumps([label, sha256(strip(prompt))]))`。调用会话与作业的关联不是输入。v7 不再使用 `owned_by: "workflow:<run>"`。Python `json.dumps` 的 `", "` 分隔与 `ensure_ascii`（DEL 与非 ASCII 转 `\uXXXX`、代理对）在 label 限 slug 后不再出现差异；文本读入按 Python 文本模式归一换行（`\r\n`/`\r` → `\n`）；`pyStrip`/`pySquash` 用 Python `str.isspace` 的显式字符集（含 U+001C–U+001F、U+0085，不含 U+FEFF）。交叉 fixture 由 Python CLI 产出：CRLF、孤立 CR、BOM、NEL、U+3000、非 slug label 被拒。
 - **`state_dir` 来源**：`config.json jev.stateDir` 缺省时读 `~/.config/jev-ask/config.toml` 的 `[jev]`（`@iarna/toml`）；禁止换到空目录。**产物（D8）**：`state_dir/out/<key'>.md`、`.html`、`.partial.txt`、`.prompt.md`。
 - **退役（D7）**：门槛 = J9 全绿 + 每家各一次经 MCP 的真实提问收到答案（真发是 owner 的决定）。过门后 SKILL.md 的 ChatGPT/Gemini 节改为"已注册 hud-mcp 的会话用 `jev_ask`，否则用 CLI"，CLI 对这两家打印一行提示；何时删除是 owner 的政策，不写进代码。
 
@@ -168,14 +173,14 @@ ask 路径不需要（提交文本逐字 `Input.insertText`，`agent.ts` 注入�
 | 运行方式 | 每个作业是宿主内的一个异步任务（一个 `AbortController`、一到两条 CDP 会话），不是子进程；每个 CDP 调用有超时（§2），send 总时长 ≤ 约 8 min，wait ≤ `maxWaitMs`；作业内未捕获异常 → `*_failed{internal}` 并记日志，宿主不倒 |
 | 保持宿主 | `hasRetainedHandles()` 计入 `run != null` 的作业与活的通用实例；长轮询（含 `observe`）不计入；终态与无运行的 `needs_human` 不计入 |
 | 关闭阶梯 | `jev_ask_close`/宿主 SIGTERM：期限从调用时刻起算；`abort()` → 在途 CDP/HTTP 调用在其超时内拒绝 → 关作业自建的观测标签（≤ 5 s）→ 关会话；发送标签只按 §3；写回 `run.ended`、`tabs`，`work` 由记录决定。终态上的重复关闭见 §4.4：成功返回当前结果，并发关闭并入同一次清理，`answered` 之后不改写结果、不再发完成唤醒 |
-| 工作流所有权 | `owned_by: 'workflow:<run>'`（§4.4）。run 属于已认证 owner；关联在执行或出事件前落盘，重启后仍在；同 key 同关联返回既有作业，冲突关联拒绝。原始作业事件仍可读。唤醒决定进入该 run 的串行转移队列。完成和干预（含 reconcile 之后仍 `uncertain`）在 run 级发出。没有所有权的作业保持普通 Jev 唤醒。所有权不改变 key |
+| 调用关联 | v7 取代 `owned_by: "workflow:<run>"`。调用会话与本作业的关联在执行或出事件前落盘，重启后仍在；同 key 同关联返回既有作业，冲突关联拒绝。关联不改变 key，也不进入工作流 run。原始作业事件仍可读。完成和干预（含 reconcile 之后仍 `uncertain`）唤醒调用会话。没有关联的作业保持普通 Jev 唤醒。幂等关闭与发送/恢复证据不变 |
 | 时限与重起 | `maxWaitMs` 默认 2 h、上限 4 h → `timed_out`；wait 非终态结束自动重起 ≤ 3 次，再失败 `wait_failed` 唤醒 |
 | 准入与数量 | 队列 ≤ `queueLimit`(4)；每用户非终态作业 ≤ `liveLimit`(8) → `ask_limit`；`needs_human`/`uncertain` 超过 `abandonMs`(24 h) → `abandoned`；通用实例同受 `liveLimit`、无调用 30 min 关闭、`blocked` 保留到 `abandonMs`。一个 Pro 提问：一次 send + 一次 wait，零子进程（共享 Chrome 是用户的进程） |
 | 崩溃清理 | 宿主被 SIGKILL：浏览器里最多剩一个观测标签与发送标签——下一次 wait 按记录 `tabs.observer` 关掉自己创建的；`sent` 标签按 §3。多宿主（v2 之前的每 owner 宿主）下跨进程只靠文件锁与租约 |
 
 ### 4.8 唤醒与 TUI
 
-唤醒：`answered`、`incomplete`、`needs_human`、`uncertain`（reconcile 后仍不明）、`not_submitted`、`pre_send_failed`、`wait_failed`、`timed_out`、`abandoned`；`sent` 不唤醒（`wake_on_sent` 可开）。带 `owned_by` 的作业不走这条子级唤醒：完成和干预（含持续 `uncertain`）由 run 发一条（WF1 §6）；原始事件仍可读。没有所有权的作业仍按本段唤醒。一行 ≤ 512 字节，例：`[hud] ask Pro "review-v2" answered · 1h12m · jev_ask_read{key:"…", what:"answer"}`。TUI：`SubagentTreeNode`，`harness:'jev'`，`origin:'hud'`；`name = "Pro·review-v2"`；`status`：queued/sending/awaiting/reconciling → `running`，needs_human → `running` + `request{requestId, kind:'dialog', summary:'needs you in the shared Chrome: login', since}`，answered/incomplete/not_submitted/dry_run_ok → `completed`，pre_send_failed/wait_failed/timed_out/interrupted/abandoned → `error`；`task` = 提示头 ≤ 300；`action` = 阶段行；`lastReport.text` = 答案头 ≤ 600；`model` = 决策后端模型。视觉按 WP7 规则。
+唤醒：`answered`、`incomplete`、`needs_human`、`uncertain`（reconcile 后仍不明）、`not_submitted`、`pre_send_failed`、`wait_failed`、`timed_out`、`abandoned`；`sent` 不唤醒（`wake_on_sent` 可开）。v7：已落盘调用会话关联的作业，其完成和干预（含持续 `uncertain`）唤醒该调用会话，不进入工作流 run；原始事件仍可读。没有关联的作业仍按本段唤醒。一行 ≤ 512 字节，例：`[hud] ask Pro "review-v2" answered · 1h12m · jev_ask_read{key:"…", what:"answer"}`。TUI：`SubagentTreeNode`，`harness:'jev'`，`origin:'hud'`；`name = "Pro·review-v2"`；`status`：queued/sending/awaiting/reconciling → `running`，needs_human → `running` + `request{requestId, kind:'dialog', summary:'needs you in the shared Chrome: login', since}`，answered/incomplete/not_submitted/dry_run_ok → `completed`，pre_send_failed/wait_failed/timed_out/interrupted/abandoned → `error`；`task` = 提示头 ≤ 300；`action` = 阶段行；`lastReport.text` = 答案头 ≤ 600；`model` = 决策后端模型。视觉按 WP7 规则。
 
 ### 4.9 许可与署名（公开仓库）
 
@@ -183,7 +188,7 @@ ask 路径不需要（提交文本逐字 `Input.insertText`，`agent.ts` 注入�
 
 ### 4.10 `native-hud-v2.md` 需要改的地方
 
-v2.2 已落实当时的行。v2.3 附录 B 抄 v6 的 `owned_by` 与幂等 `jev_ask_close`。
+v2.2 已落实当时的行。v2.3 附录 B 抄 v6 的 `owned_by` 与幂等 `jev_ask_close`。v7：那份 `owned_by: "workflow:<run>"` 与工作流唤醒路由改为持久的调用会话/作业关联；幂等 `jev_ask_close` 与发送/恢复证据仍保留。
 
 附录 B 加 `jev_ask*` 四行与错误码（`jev_credentials_missing`、`ask_queue_full`、`ask_limit`、`browser_busy`、`resend_needs_confirmation`、`decision_refused`、`decision_provider_error`）；§2.3 加 ask 行；§5 加 §4.8 的事件；§6.1 删 "Jev bridge (python)" 行，改为"Jev 作业 / 实例：宿主内异步任务，abort 阶梯，期限从关闭调用起算"；§6.2/§6.3 改为 §4.6（凭据文件、代理、无解释器），删 "later export" 说法；§1.5 的 `config.json` 改为 §4.6；§7 加本文件 §6；§9 加"侧栏在 headless 可能不渲染"、"TS 移植时序漂移"、"Decisions API 选项数/输入上限未公开"；F7 按 Pro 第 3 点改写。
 
@@ -235,29 +240,33 @@ export interface DecisionProvider {
 4. 阶段机（J3a/J3b；假 Agent/Browser）：slider 0 → End → 4；已在 4 不发键；End 无效 → ArrowRight；Jev 点 `强度` 拨中 → 纠正；Jev 打开 "+" 菜单 → Escape、排除、重预测；Jev 选 Send/composer → 闸门拒绝；ready 等到表稳定；gate 的 `pill_changed`/`composer_changed`；**Send act 抛 StalePage → 零后续 act、状态 `uncertain`**（H3）；拒答两次 → `*.decision_refused`；dry_run 不写 `send_attempted`；Gemini allow-list 与标签证明。判断（假 judge provider）：confirm `sent(facts)` 快路径 0 次调用；页面加载 50 s 后 `url_moved` + `stop_button` 且 p=0.9 → `sent` 带 `sent_evidence`；p=0.95 但零佐证 → 120 s 后仍 `uncertain`；judge 恒返回 1.0 → `acts` 仍恰好 1；provider 断网或拒答两次 → 只跑快路径、到界 `uncertain`（退化为 v4）；第 7 次 confirm 调用不发出；`readyState != 'complete'` 时不调后端；open 的 `needs_human` 0.9 → `needs_human{kind}`；`mode_set` 无 ARIA 证明 0.95 → 放行并记证据、0.5 两次 → 原 `mode.*` 码；`composer_clean` 0.9 放行、0.1 → `gate.composer_changed`。
 5. 记录与租约（J2）：schema v1；合并写（两个写者交错，`send_attempted` 不被降级）；临时名唯一；点击前重读 → `already_attempted`；fsync 调用；`attempts[]` 上限；key/`squashed_sha256` 与 Python fixture 逐字相等（CRLF、CR、BOM、NEL、U+3000、非 slug label）；租约：心跳、陈旧判定、破锁互斥、nonce 核对、沙箱 pid 不被误破；wait 租约第二 waiter 只 tail；TOML 映射与 `config.json` 覆盖；凭据每作业重读。
 6. wait/reconcile（J4）：`FakeWaitBrowser` 与 Gemini `Tab` 用例全部翻译；三路定位；`reconcile_sent_tab` 两种结论；自动释放需两次稳定读，否则 `uncertain`；COMPLETE 后关 Gemini 发送标签但不关最后一页；`acts` 从无第二个 click。判断只在转换点：COMPLETE 候选 `answer_complete` 0.95 → COMPLETE、0.5 → 继续观测且该候选 ≤ 3 次；dead-stream `still_generating` 0.8 → 延长一次且 5 min 内不再问；长流无转换 30 min → 零调用；reconcile 两读 ≤ 0.10 + 硬条件 → 释放，一读 0.5 → `uncertain`，p=0 但硬条件不满足 → `uncertain`，任一读 ≥ 0.85 带佐证 → `sent`。
-7. 作业与工具（J5a/J5b）：状态机；同 key 幂等；`released` 需 `confirm_resend`；`uncertain` 自动 reconcile 一次且从不 send；重起 ≤ 3；`timed_out`；关闭阶梯；长轮询不保持宿主；`effectiveWaitMs` 规则；队列/上限；作业文件 0600 且不含地址/`@`/密钥；唤醒行 ≤ 512；`hud_list`；启动标 `interrupted`；`ChildrenCollector` 映射。**崩溃窗口**（M8）：在落盘前、落盘后 act 前、act 后 confirm 前、locate 中各中止作业（abort + 用同一文件新建作业管理器模拟 SIGKILL），断言 `resume`、重复 `jev_ask`、CLI `send` 都零第二次 act。**跨语言竞争**：Python CLI send 与 Node 持锁者同 key。**所有权与关闭（v6）**：同 key 同 `owned_by` 返回既有作业，冲突关联拒绝，重启后关联仍在，无所有权仍走普通唤醒；终态重复 `jev_ask_close` 成功且不改写 `answered`；并发关闭并入同一次清理；answer 与 close 竞态下操作结果与工作流取消分开。
+7. 作业与工具（J5a/J5b）：状态机；同 key 幂等；`released` 需 `confirm_resend`；`uncertain` 自动 reconcile 一次且从不 send；重起 ≤ 3；`timed_out`；关闭阶梯；长轮询不保持宿主；`effectiveWaitMs` 规则；队列/上限；作业文件 0600 且不含地址/`@`/密钥；唤醒行 ≤ 512；`hud_list`；启动标 `interrupted`；`ChildrenCollector` 映射。**崩溃窗口**（M8）：在落盘前、落盘后 act 前、act 后 confirm 前、locate 中各中止作业（abort + 用同一文件新建作业管理器模拟 SIGKILL），断言 `resume`、重复 `jev_ask`、CLI `send` 都零第二次 act。**跨语言竞争**：Python CLI send 与 Node 持锁者同 key。**调用关联与关闭（v7）**：同 key 同调用会话/作业关联返回既有作业，冲突关联拒绝，重启后关联仍在，无关联仍走普通唤醒；终态重复 `jev_ask_close` 成功且不改写 `answered`，不擦除已有答案；并发关闭并入同一次清理；answer 与 close 竞态下操作结果与关闭请求分开。发送/恢复证据仍断言不确定后零第二次发送。
 8. jev-ask 仓库（J7，pytest）：取锁早于首次读写；心跳与陈旧破锁；合并写；`--confirm-resend`；两进程同 key 第二个 `browser_busy{holder}`；J7b：证据判定四例（含 `url_moved` 单独不算）、计时从稳定起算、到界自动只读 reconcile 且零第二次点击。
 
 实机 dry-run（绝不真发；等当前 `wait` 结束、锁空闲后）：(1) `jev_open` + `jev_snapshot` 开本地合成页，观测、点链接、核对导航，不调模型；(2) ChatGPT `jev_ask{dry_run:true, mode:'headed'}` 带小附件 → `dry_run_ok`，证据含 `MENU_STATE`、`pill_text`、`COMPOSER_CHIPS`、`sidebar_hrefs` 是否非空；headless 再一次；手动把强度拨到 `即时` 再一次（证据出现键盘步骤）；两家后端各一次，只记时延与 `cached_tokens`；(3) Gemini 手动改成非 `Argon 高` 后 dry_run，再跑一次零决策；(4) Claude 与 Codex 主会话各做一次 (2)：`jev_ask_wait` 见 `dry_run_ok`，`hud_list` 有行，同 key 第二次返回同一作业，宿主 grace 后退出，`pgrep` 无 Python；(5) dry-run 中用 CLI `jev-ask send --dry-run` → `browser_busy`，反向宿主作业 `queued`；(6) Hermes 或 owner 看一次 `needs_human` 的 TUI 行与唤醒行（登出的 profile 副本）；(7) 今天两条 `uncertain` 记录经 `resume` 只读 reconcile（判断开启）→ 预期 `sent` 带 `sent_evidence`，记两家后端的 p 与时延；绝不发送。
 
 ## 6. 工作包（Grok 4.7 high 做核心，pi 做测试，frontend-implementer 做 TUI，Opus 子代理评审）
 
+v7 包状态（Jev package mapping: retain J1/J2; finish J1b judgments; implement J3a plus a new AI Studio package; retain J4; narrow J5 to the Jev-only runtime and common facade; retain J6/J7/J8/J9 as relevant. Gemini consumer-chat and Flow remain separate targets; neither is required to satisfy the newly specified ChatGPT Pro + AI Studio scope.）：保留 J1 与 J2；完成 J1b 的 `judge()`；实现 J3a，并新增下面的 AI Studio 包；保留 J4；J5 收成纯 Jev 运行时与统一门面；J6、J7、J8、J9 在仍相关时保留。J3b（Gemini 消费端）与 Flow 不作为 ChatGPT Pro 与 AI Studio 的验收条件。
+
+
 | WP | 内容 | 验收 | 规模 / 执行者 |
 |---|---|---|---|
-| J1 Jev 移植 | `src/jev/{cdp,browser,model,agent,questions}.ts`（含 `setGoal`）、`snapshot.js` 定位、`UPSTREAM.md`、头注释、`THIRD_PARTY_NOTICES.md`；`agent.ts` 以 `DecisionProvider` 为参数 | §5 第 1 项；零新依赖；实机 (1) | M / Grok（测试：pi） |
-| J1b 决策后端 | `decide.ts`、两家 provider、选择规则、凭据变量、代理启动；v5 追加 `judge()` 两家映射与 `predicate` 归一（§2.4）；**首项交付：≥ 200 元素页的 live smoke 结论（概率覆盖）**，据此定回退 | §5 第 2 项；两家 live smoke 各通过一次 | S / Grok（测试：pi），与 J1 并行 |
-| J2 记录、租约、配置、Chrome | `records.ts`（合并写、pyStrip/pySquash、key）、`lease.ts`、`config.ts`、`mask.ts`、`chrome.ts`；schema v1 文档 | §5 第 5 项；Python 交叉 fixture 相等 | S / Grok（测试：pi），不依赖 J1 |
-| J7 jev-ask 侧（Python） | 取锁早于首次读写、心跳租约、合并写与唯一临时名、`--confirm-resend`、label slug、`browser_busy`；J7b：confirm 按证据 + 稳定起算 + 到界自动只读 reconcile（§2.4 末段） | §5 第 8 项 | S / pi（在 J3+ 的实机 dry-run 之前完成） |
+| J1 Jev 移植 | v7：保留。`src/jev/{cdp,browser,model,agent,questions}.ts`（含 `setGoal`）、`snapshot.js` 定位、`UPSTREAM.md`、头注释、`THIRD_PARTY_NOTICES.md`；`agent.ts` 以 `DecisionProvider` 为参数 | §5 第 1 项；零新依赖；实机 (1) | M / Grok（测试：pi） |
+| J1b 决策后端 | v7：须完成两家 `judge()`，现有 `decide()` 不算完成。`decide.ts`、两家 provider、选择规则、凭据变量、代理启动；v5 追加 `judge()` 两家映射与 `predicate` 归一（§2.4）；**首项交付：≥ 200 元素页的 live smoke 结论（概率覆盖）**，据此定回退 | §5 第 2 项；两家 live smoke 各通过一次 | S / Grok（测试：pi），与 J1 并行 |
+| J2 记录、租约、配置、Chrome | v7：保留。`records.ts`（合并写、pyStrip/pySquash、key）、`lease.ts`、`config.ts`、`mask.ts`、`chrome.ts`；schema v1 文档 | §5 第 5 项；Python 交叉 fixture 相等 | S / Grok（测试：pi），不依赖 J1 |
+| J7 jev-ask 侧（Python） | v7：仍相关则保留。 取锁早于首次读写、心跳租约、合并写与唯一临时名、`--confirm-resend`、label slug、`browser_busy`；J7b：confirm 按证据 + 稳定起算 + 到界自动只读 reconcile（§2.4 末段） | §5 第 8 项 | S / pi（在 J3+ 的实机 dry-run 之前完成） |
 | J3a ChatGPT 事实与阶段机 | `facts/chatgpt.ts`、`MENU_STATE`/`COMPOSER_CHIPS`/`STATE_FACTS` 与差分、`phases.ts`、`send.ts`（§2、§3 第 1–2 条、H3 点击规则）；v5：`src/jev/judge.ts`（`awaitState`、阈值、预算、证据）、`ask/judgments.ts`（陈述与 `JUDGE_RULES`）、confirm 重写、`before`/`sent_evidence` 字段 | §5 第 3–4 项（含判断用例）；实机 (2) | M / Grok（测试：pi），依赖 J1、J1b、J2 |
-| J3b Gemini 与拒答 | `facts/gemini.ts`、Gemini allow-list 与模式目标、拒答处理 | §5 第 4 项 Gemini 与拒答用例；实机 (3) | S / Grok（测试：pi），依赖 J3a |
-| J4 wait / reconcile / 恢复 | `observer.ts`、`wait.ts`、`reconcile.ts`（§3、两次稳定读释放、L2）；v5：转换点判断 `answer_complete`/`still_generating`/`needs_human` 与速率限制、reconcile 两读 `submitted` 与硬佐证 | §5 第 6 项；实机 (7) | M / Grok（测试：pi），依赖 J2；与 J3a 并行 |
-| J5a 作业管理与工具 | `jev-host.ts` 重写（作业状态机、保持、阶梯、准入、`interrupted`）、`jev-tools.ts`；删 `jev-bridge.py`/`PythonJevBridge` 及其测试。v6：所有权落盘（§4.4、§4.7）与终态 `jev_ask_close` 幂等 | §5 第 7 项（含崩溃窗口、所有权与关闭）；实机 (4)(5) | M / Grok（测试：pi），用假 Agent 开发，与 J3a 并行 |
-| J5b 配置、凭据、唤醒、列表 | `config.json jev`、`hud setup --import-jev-env`、`--use-env-proxy` 启动、唤醒事件、`hud_list` 折叠。v6：带 `owned_by` 的唤醒进 run，无所有权保持 §4.8 | §5 第 7 项的对应用例，含工作流唤醒路由 | S / Grok（测试：pi），依赖 J5a |
-| J6 TUI 行 | `ChildrenCollector` 的 ask 映射、阶段行、`request` 行、`model` 徽章、notice/attention、i18n、视觉基线 | 视觉测试 32/40/48/56、EN/ZH；§8 清单 | S / frontend-implementer |
-| J8 文档、许可、skill | README、`LICENSE`、`THIRD_PARTY_NOTICES.md` 定稿、`docs/reference.md`、`native-hud-v2.md` §4.10、`docs/delegation.md`、§15 决定记录（D1–D9）、SKILL.md 的 MCP 指引与 `--confirm-resend` | 文档与工具描述一致；无家目录/地址/密钥 | S / pi |
-| J9 实机矩阵 | 上节 (1)–(7)，结果写本地结果表 | 七项均有证据路径 | S / owner + pi（脚本） |
+| J3c AI Studio | 独立目标适配器、操作身份、抽取与恢复夹具；从既有驱动移植。Gemini 消费端聊天不计入本包 | 提示与附件、目标选择、发送证据、结果抽取、崩溃窗口与同 key 恢复通过；恢复从不重复 Send；两家决策后端都检查 | R4，依赖 J1、J1b、J2 与纯 Jev 运行时，不依赖 J3b |
+| J3b Gemini 与拒答 | v7：独立目标，不作为本范围验收条件。`facts/gemini.ts`、Gemini allow-list 与模式目标、拒答处理 | §5 第 4 项 Gemini 与拒答用例；实机 (3) | S / Grok（测试：pi），依赖 J3a |
+| J4 wait / reconcile / 恢复 | v7：保留。`observer.ts`、`wait.ts`、`reconcile.ts`（§3、两次稳定读释放、L2）；v5：转换点判断 `answer_complete`/`still_generating`/`needs_human` 与速率限制、reconcile 两读 `submitted` 与硬佐证 | §5 第 6 项；实机 (7) | M / Grok（测试：pi），依赖 J2；与 J3a 并行 |
+| J5a 作业管理与工具 | `jev-host.ts` 重写（作业状态机、保持、阶梯、准入、`interrupted`）、`jev-tools.ts`；删 `jev-bridge.py`/`PythonJevBridge` 及其测试。v7：收成按需的纯 Jev 运行时（无 CLI 启动器、角色策略、工作流图或下一步选择）；调用会话/作业关联在执行前落盘（§4.4、§4.7）；终态 `jev_ask_close` 幂等，发送与恢复证据保留 | §5 第 7 项（含崩溃窗口、调用关联与幂等关闭）；实机 (4)(5) | M / Grok（测试：pi），用假 Agent 开发，与 J3a 并行 |
+| J5b 配置、凭据、唤醒、列表 | `config.json jev`、`hud setup --import-jev-env`、`--use-env-proxy` 启动、唤醒事件、`hud_list` 折叠。v7：完成和干预唤醒调用会话，不进入工作流 run；无关联的作业保持 §4.8 | §5 第 7 项的对应用例，含调用会话唤醒 | S / Grok（测试：pi），依赖 J5a |
+| J6 TUI 行 | v7：仍相关则保留。`ChildrenCollector` 的 ask 映射、阶段行、`request` 行、`model` 徽章、notice/attention、i18n、视觉基线 | 视觉测试 32/40/48/56、EN/ZH；§8 清单 | S / frontend-implementer |
+| J8 文档、许可、skill | v7：仍相关则保留。 README、`LICENSE`、`THIRD_PARTY_NOTICES.md` 定稿、`docs/reference.md`、`native-hud-v2.md` §4.10、`docs/delegation.md`、§15 决定记录（D1–D9）、SKILL.md 的 MCP 指引与 `--confirm-resend` | 文档与工具描述一致；无家目录/地址/密钥 | S / pi |
+| J9 实机矩阵 | v7：仍相关则保留。 上节 (1)–(7)，结果写本地结果表 | 七项均有证据路径 | S / owner + pi（脚本） |
 
-顺序：J1 ∥ J1b ∥ J2 → J7 → (J3a → J3b) ∥ J4 ∥ J5a → J5b ∥ J6 → J8 → J9。每包一个 Opus 子代理主审，修复后同一主审复核。
+当前依赖以概念 §15 的 R 队列为准：R3 覆盖纯 Jev 运行时与 `judge()`，R4 在 R3 之后完成 ChatGPT 与 AI Studio。v6 顺序留作历史：J1 ∥ J1b ∥ J2 → J7 → (J3a → J3b) ∥ J4 ∥ J5a → J5b ∥ J6 → J8 → J9。每包一个 Opus 子代理主审，修复后同一主审复核。
 
 ## 7. Owner 决定（无待定分叉）
 

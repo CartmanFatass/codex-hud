@@ -4,21 +4,23 @@
 
 > **2026-11-06 owner clarification:** [Project repair authorization](docs/cloud-development/cloud-development.md#owner-clarification-project-repair-authorization-2026-11-06) supersedes earlier repair-count limits and count-triggered approval stops, including those repeated in historical briefs and reviews. Continue authorized in-scope repairs with fresh independent re-checks; substantive scope, contract, permission and safety boundaries, model roles and merge/production gates remain unchanged.
 
-This repo is codex-hud, being turned into one HUD for Claude Code, Codex and pi, with a delegation MCP (`hud-mcp`) and
-a run supervisor (`hud-run`). Work happens on branch `universal-hud`. From 2026-11-03 it is developed remotely; this
+This repo is codex-hud, being turned into one HUD for Claude Code, Codex and pi. The product scope is concept §15,
+"2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev": a fixed-role MCP facade, herdr for CLI
+execution, an owned Jev runtime for browser jobs, and main-session chaining. The active queue is R0–R7 in
+`docs/handoff/STATE.md`. Work happens on branch `universal-hud`. From 2026-11-03 it is developed remotely; this
 file is the entry point for remote agents (dots). `CLAUDE.md` holds the same project guide for Claude Code, plus local
 routing that does not apply here.
 
 ## Read first
 
-1. `docs/handoff/STATE.md`: current status, the package queue, merge rules, owner questions, local-only work.
+1. `docs/handoff/STATE.md`: current status, the package queue (R0–R7), merge rules, owner questions, local-only work.
 2. `docs/cloud/dots.md`: roles, the loop, and the prompts for subagents.
 3. `docs/cloud/README.md`: rules every agent keeps and the check set. The Claude-specific tool names there (Agent
    tool, SendMessage) map to dots subagents.
 4. `docs/ARCHITECTURE.md`: the two processes (bar `src/index.ts`, panel `src/tree-page.ts`), data collection,
    rendering, recipes, and §8, the rules every change keeps. What users see is in `docs/reference.md`.
 5. The binding specs: `docs/contracts/01–07`, `docs/design/hud-information-design.md`, and
-   `docs/universal-hud-concept.md` §15 (the decision log).
+   `docs/universal-hud-concept.md` §15 (the decision log; current scope entry "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev").
 
 Directory notes live in `CLAUDE.md` files next to the code: `src/`, `src/collectors/`, `src/render/`,
 `src/render/lines/` and `bin/`. Read the one for the directory you change.

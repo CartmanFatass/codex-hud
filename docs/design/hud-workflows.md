@@ -1,5 +1,16 @@
 # HUD workflows: fixed and ad-hoc topologies of custom agents, run by the host
 
+> Status: DEFERRED — superseded for the current release by concept §15,
+> "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev".
+> This document remains a reviewed design reference. Its executor, MCP tools,
+> frozen bundles, recovery machinery, and cache forecasts are not active work.
+> The main agent currently advances workflow recipes through existing skills.
+>
+> Classic recipes belong to the delegation skill: design is oracle.propose →
+> oracle.converge; build is imp → required checks, optionally via sonic → reviewer;
+> small tasks use sonic; browser tasks use jev. HUD does not run those recipes.
+
+
 Design decision document WF1, revision 3 (2026-11-07). Companion to `native-hud-v2.md` (v2.3) and `jev-in-hud.md`
 (JEV1 v5, advanced to v6 by the §7 additions below). Converged by Pro (ACCEPT WITH CHANGES, applied; §14). The
 owner's request of 2026-11-07: a main session
@@ -541,6 +552,13 @@ If W6 is ever built, a port of ZCode's curated-realm pattern keeps the Apache-2.
 commit in `THIRD_PARTY_NOTICES.md`, and reproduces ZCode's NOTICE attribution.
 
 ## 12. Work packages, order and tests
+
+> Not the active queue. W1, W1b, W2a, W2b, W2c, W3, W4, W5 and W6 are deferred
+> with this document. C1 cache forecasts are not active work. The current queue is
+> R0–R7 in concept §15, "2026-11-07 Scope convergence: fixed roles, herdr execution,
+> owned Jev". Classic recipes belong to the delegation skill. The table below stays
+> as reviewed reference.
+
 
 Nothing here touches WP0–WP2. Sizes as in v2.2 (S ≤ half a day, M ≤ 2 days); Grok 4.7 high for core, pi for tests,
 frontend-implementer for W4, an Opus subagent reviews each package. W2 is split so each increment is reviewable.

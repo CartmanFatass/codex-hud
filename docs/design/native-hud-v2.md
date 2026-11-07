@@ -1,5 +1,24 @@
 # Native HUD v2.3: identity, display, Pi package, summaries, wake, lifecycle, migration
 
+> Status: PARTIALLY SUPERSEDED by concept §15, "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev".
+>
+> Replacement contract. Five fixed roles (oracle with propose and converge phases,
+> imp, reviewer, sonic, jev) sit behind six static tools: hud_roster, hud_create,
+> hud_read, hud_send, hud_respond, hud_close. herdr is the CLI executor and keeps
+> launch, prompt, read, wait and cleanup. There is no silent direct SDK, app-server
+> or RPC fallback. One lazy Jev-only process per HUD home owns browser jobs and
+> exits after retained work drains and a grace period. The main session and its
+> skill chain every step. Keep attribution, observation, the tree, materials,
+> summaries and the parent integration those need, including a small Pi parent shim
+> and the footer. Cancel the general agent host, process-group sweeps, agent idle
+> and abandon timers, direct native dispatch adapters, and workflow fields. Keep
+> useful herdr code during pruning.
+>
+> Thesis item 3 and the sections marked below (§0, §1.4, §1.9, §3, §5, §6,
+> Appendix B) are the execution, tool and host sections this contract replaces.
+> The active queue is R0–R7 in §7.0. Everything else in this document stays.
+
+
 v2.3 (2026-11-07) folds WF1 revision 3's host additions into the sections named in that document's §8.4: cache and workflow fields, the normalised event's originating turn and attempt, and the discriminated request `source`.
 
 Design decision document, revision 2.2 (2026-11-07), branch `universal-hud` at `e9dc2d1` (the code is identical to
@@ -42,6 +61,10 @@ The thesis in four lines:
 ---
 
 ## 0. Fixed inputs, restated as constraints on the design
+
+> Superseded as an execution, tool or host section by the role facade in the banner.
+> herdr is the CLI executor. The text below stays as design history.
+
 
 | Fixed input | What it pins in this document |
 |---|---|
@@ -153,6 +176,10 @@ unverified: probe P1 (§7) checks it on the real clients before the deletions st
 
 ### 1.4 Child mode (Q3 decided): no HUD tools in a child, refusal, host-side depth
 
+> Superseded as an execution, tool or host section by the role facade in the banner.
+> herdr is the CLI executor. The text below stays as design history.
+
+
 A child Codex or Claude starts with the user's configuration, which includes the `hud` MCP registration (F3 counted
 8 MCP servers per Codex child). HUD does not change that configuration; the same `hud-mcp` binary detects that it
 runs inside a HUD child and exposes nothing:
@@ -258,6 +285,10 @@ Claude call and ~300 lines per harness.
   under a live MCP process; the cheap rebind of §1.2 is what the evidence supports.
 
 ### 1.9 Interfaces
+
+> Superseded as an execution, tool or host section by the role facade in the banner.
+> herdr is the CLI executor. The text below stays as design history.
+
 
 ```ts
 // packages/hud-mcp/src/identity.ts (replaces resolvers.ts, registry.ts, hook/*, pi-channel.ts, pi-host.ts)
@@ -540,6 +571,10 @@ and Pi files are not rollouts), `harness`, `origin:'hud'`, `link`, `request` = f
 
 ## 3. HUD Pi package
 
+> Superseded as an execution, tool or host section by the role facade in the banner.
+> herdr is the CLI executor. The text below stays as design history.
+
+
 ### 3.1 Shape (Q1 decided: in-process)
 
 `packages/hud-pi/` with `package.json { "pi": { "extensions": ["./dist/hud.js"] } }`, built from
@@ -799,6 +834,10 @@ for (brief, recap, progress, digest, names) once children are agents.
 
 ## 5. Wake
 
+> Superseded as an execution, tool or host section by the role facade in the banner.
+> herdr is the CLI executor. The text below stays as design history.
+
+
 Facts from `docs/design/notify-wake-lifecycle-cache.md` §2 (versions as read there): Claude's background command
 completion starts a new turn in an idle interactive TUI (2.1.305); the 30-min default / 2-h maximum background cap
 applies to **unattended** sessions, interactive sessions have no limit (line 41); `codex queue --thread` writes a
@@ -876,6 +915,10 @@ wake.
 ---
 
 ## 6. Lifecycle and environment
+
+> Superseded as an execution, tool or host section by the role facade in the banner.
+> herdr is the CLI executor. The text below stays as design history.
+
 
 ### 6.1 Host and children
 
@@ -1034,7 +1077,37 @@ v2's §6.3 (interpreter resolution, caller-env credentials, `import jev` probe) 
 
 ## 7. Migration plan
 
-Principles: pin the baselines first; probe the unverified mechanisms before deleting what currently works, with
+### 7.0 Active queue: R0–R7
+
+This queue replaces the v2.3 execution packages as the active plan. Scope:
+concept §15, "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev".
+
+Dependency order: R0, then R1 → R2 ∥ R3 → R4. R5 proceeds against R2 and R3 fixtures.
+R6 follows acceptance of the replacement paths. R7 closes delivery.
+
+After R1, R2 and R3 can proceed in parallel. R4 depends on R3; R5 can develop against their fixtures. R6 follows the replacement paths’ acceptance, and R7 closes delivery.
+
+| Package | Deliverable | Acceptance |
+| --- | --- | --- |
+| R0 — Scope and baseline | Apply the concept §15 scope entry and the companion document updates for this queue. Preserve WP0, J1/J1b/J2, relevant fixtures/licenses, and retained HUD features. Remove WF1 executor work from the active queue. | One active implementation plan; bash tests/run-main.sh baseline recorded; no weakened main assertions or scenes. |
+| R1 — Roles, bindings, and skill | Define the five roles, oracle phases, routing.toml, session-scoped selection, capability validation, and static skill. Import actual backend settings from installed recipes. | Switching a preset changes the next dispatch; existing jobs remain unchanged; two main sessions can select independently; incompatible role bindings fail clearly. |
+| R2 — Herdr-backed MCP facade | Implement the six tools for CLI jobs, stable parent attribution, atomic job receipts, same-key serialization/reconciliation, supported question adapters, continuation, and explicit cleanup. Reuse existing launch recipes. | Pi/Grok and supported Codex/Claude recipes work through the common API; Pi questions round-trip; duplicate/ambiguous creates do not relaunch; missing herdr is reported honestly; no TUI is required. |
+| R3 — Owned Jev runtime and judgments | Extract a lazy Jev-only runtime from reusable IPC/lifetime pieces. Connect src/jev, preserve J2 records/leases, and complete both judge() provider mappings. Map it into the same job API. | Direct browser and read-only judgment jobs work; TypeSafe/OpenAI are selectable; disconnect ends observation only; runtime cleanup is bounded; no CLI-launch modules load. |
+| R4 — Web-oracle targets and recovery | Complete ChatGPT support and add a distinct AI Studio adapter from the existing owner driver. Complete wait/reconcile/result collection. Preserve cross-language compatibility while old and new writers coexist. | Prompt/attachment handling, target selection, send evidence, result extraction, crash windows, and same-key recovery pass for each target. Recovery never repeats Send. Both decision providers are checked. |
+| R5 — Unified tree and retained summaries | Adapt the tree/collectors to one job per invocation, role/phase/backend attribution, pending requests, results, and external herdr tasks. Preserve non-Codex roots, Pi footer, generic materials, brief/dry-run, and production summary restoration. | One tree correctly shows CLI, native descendants, oracle-through-Jev, and direct Jev jobs; no duplicate “oracle + Jev” nodes; stale observation is honest; main visual behavior remains protected. |
+| R6 — Installation and retirement | Install the small facade and skill/shims. Replace the general native execution path only after herdr and owned Jev paths pass. Drain existing live handles through their owning version. Remove unused direct-launch adapters, obsolete bridge wiring, and dependencies. | CLI-only use starts no detached HUD execution host; Jev starts only its narrow runtime; existing work is not killed or replayed during migration; old/new control paths do not compete. |
+| R7 — End-to-end acceptance | Validate all three supported main harnesses, representative concrete bindings, both oracle phases, repair continuation, questions, provider switching, restart/recovery, cleanup, and WP0. | Actual results and limitations recorded. Fixture success does not substitute for real parent notification or browser-target checks. |
+
+Native-v2 mapping: keep attribution, observation, tree, summaries, and necessary parent integration. Replace its execution interfaces with the role facade. Cancel its general agent host, process-group sweeps, agent idle/abandon timers, direct native dispatch adapters, and workflow fields. Keep useful herdr code during pruning.
+
+WP0 remains necessary, including its documented qualification that several model-feature carriers currently use the B17 test double. Production summary restoration and the accepted <dir>/cache.json location remain active work.
+
+Jev package status for J1–J9 is in `docs/design/jev-in-hud.md` (v7), not in §7.3.
+
+§7.1–§7.3 record the v2.3 plan. WP0 in §7.1 remains required and is preserved by R0.
+§7.2 and §7.3 are not implementation instructions.
+
+Principles (v2.3, historical): pin the baselines first; probe the unverified mechanisms before deleting what currently works, with
 only the code each probe needs; extract shared code before deleting its old home; delete in segments that each
 leave the main suite green; build v2.2 on the cleaned tree; the main features (`origin/main` codex-hud bar, panel,
 brief, installer) work after every package. Implementers per the owner's routing (2026-11-07): **Grok 4.7 high**
@@ -1079,6 +1152,9 @@ Nothing here needs code that does not exist at `9e46378`.
 | P7 Pi tool-call correlation | a Pi rpc child that asks twice with the same title and different defaults, and that leaves two calls outstanding | the stream exposes a tool-call or request id, or exactly one unmatched causally preceding `ask_orchestrator` in the same turn; missing and ambiguous linkage are recorded as not pairable | WF1 §6 | W2a. Until it passes, Pi `default` behaves as `wake` |
 
 ### 7.3 Work packages
+
+> Historical v2.3 package table. Not the active queue. See §7.0.
+
 
 | WP | Goal | Files / areas | Acceptance | Size | Who |
 |---|---|---|---|---|---|
@@ -1211,6 +1287,10 @@ H16 Pi footer → ledger → WP1/WP8; H17 `install.sh` builds only `npm run buil
 `core/materials/request.ts` → WP1.
 
 ## Appendix B. Tool table (served by hud-mcp to Codex and Claude parents; registered in-process for Pi; empty in a child)
+
+> Superseded as an execution, tool or host section by the role facade in the banner.
+> herdr is the CLI executor. The text below stays as design history.
+
 
 | Tool | Arguments | Returns | Notes |
 |---|---|---|---|
