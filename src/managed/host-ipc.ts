@@ -127,11 +127,15 @@ export function spawnDetachedHost(entry: string, home: string, owner: NativeOwne
     closeSync(log);
   }
 }
+/** Spawned process entry. Nothing imports it, so callers must use this path rather than a module graph. */
+export function nativeHostEntryPath(): string {
+  return fileURLToPath(new URL('./host-entry.js', import.meta.url));
+}
 export class NativeHostClient implements NativeHostPort {
   constructor(
     readonly home: string,
     private readonly launch: boolean = true,
-    private readonly entry = fileURLToPath(new URL('./host-entry.js', import.meta.url))
+    private readonly entry = nativeHostEntryPath()
   ) {}
   private async exchange(
     owner: NativeOwner,

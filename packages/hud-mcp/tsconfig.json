@@ -7,6 +7,6 @@
     "declarationMap": false,
     "noEmitOnError": true
   },
-  "include": ["src/**/*.ts", "../../tests/hud-mcp/**/*.ts"],
+  "include": ["src/**/*.ts", "../../tests/hud-mcp/**/*.ts", "../../src/managed/host-entry.ts"],
   "exclude": ["dist", "node_modules"]
 }

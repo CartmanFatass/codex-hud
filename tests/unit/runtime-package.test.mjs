@@ -4,7 +4,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fixture, rewriteManifest } from '../../scripts/runtime-package/test-fixture.mjs';
-import { verifyBundle, parseManifest, HELPERS, DEPENDENCIES } from '../../scripts/runtime-package/manifest.mjs';
+import {
+  verifyBundle,
+  parseManifest,
+  HELPERS,
+  DEPENDENCIES,
+  REQUIRED,
+} from '../../scripts/runtime-package/manifest.mjs';
 import { validateLock, validateInstalledClosure } from '../../scripts/pack-runtime.mjs';
 import { selectedOutputs, EXTRA_FILES } from '../../scripts/pack-cloud-preview.mjs';
 import { json, Directory, MAX_FILE, MAX_ENTRIES } from '../../scripts/runtime-package/safety.mjs';
@@ -23,6 +29,20 @@ test('manifest validates complete bounded payload and exact locked production id
 });
 test('Jev Python asset is explicitly selected for preview and runtime bundles', () => {
   assert.ok(EXTRA_FILES.includes('src/managed/jev-bridge.py'));
+});
+test('spawned native host entry is packed when the mcp build emits it', () => {
+  const source = 'src/managed/host-entry.ts';
+  const mcpOutput = 'packages/hud-mcp/dist/src/managed/host-entry.js';
+  const generated = 'mcp/src/managed/host-entry.js';
+  assert.deepEqual(
+    selectedOutputs([source], () => false).map((entry) => entry.output),
+    ['dist/managed/host-entry.js']
+  );
+  assert.deepEqual(
+    selectedOutputs([source], (file) => file === generated).map((entry) => entry.output),
+    ['dist/managed/host-entry.js', mcpOutput]
+  );
+  assert.ok(REQUIRED.includes(mcpOutput));
 });
 test('exact shared source mapping never selects arbitrary output or source files', () => {
   const outputs = selectedOutputs(
