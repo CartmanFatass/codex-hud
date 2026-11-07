@@ -668,6 +668,36 @@ Record P-06-5 as not applicable to status/wait's read-only path, rather than man
 Preserve all current source/identity/captured-generation checks, non-enforcing timing observation and zero ledger writes on these read-only paths. Spawn/resume/cancel/whoami/report retain the original 30 ms enforcement before source resolution, including refusal and replay. This records the delegated Oracle decision, not a compute lease, acceptance, capability promotion or merge.
 
 
+### 2026-11-07 本地对齐：产品定义重置（Jacob）
+
+本节取代上文与之冲突的决定。依据：首轮真实客户端测试（[结果](./cloud/handoff/local-real-client-results-20261107.md)）与只读保留/删除盘点。
+
+**术语。** main 功能 = `origin/main` 上已有、日常在用的 codex-hud（bar、panel、brief 与模型摘要、安装器）；分支新增 = `universal-hud` 上新增且属于目标产品的部分（hud-mcp、native host、三个适配器、Jev、native-calls、Pi 包）；旧委派栈 = 分支上新增、已被 native 路径取代的部分（账本、`delegate_*`、`hud-run` 托管、capability / qualification、runtime 包、`hud` CLI 子命令）；native 路径 = MCP → native host → 各 harness 官方接口。
+
+**产品目标。** Claude、Codex、Pi 任一个作主会话，都能把另外两个当子代理调度，位置互换功能相同。MCP 负责隔离各 harness 的差异、提供统一接口（创建、发送、读取、恢复、关闭、唤醒），同时是 TUI 的数据源；TUI 负责展示、追踪与 brief 等模型摘要增强。
+
+**原则。**
+
+- 不干预：MCP 只连接与观测，不控制 harness 自身的工作流（原生子代理、插件、MCP 服务器、权限模式、AGENTS.md）。子会话按该 harness 自己的配置原样启动；HUD 只保证用户的正常环境完整到达。
+- Pi 例外：Codex / Claude 只用官方接口（app-server、Agent SDK）。Pi 可完全自定义，属于 HUD 的设计自由区：子 Pi 以 `pi -ne -ns -e <HUD Pi 包> [-e pi-roles]` 启动，HUD 的 Pi 包同时提供父侧 MCP 连接、唤醒、footer 与结构化事件上报。
+- 删减只针对旧委派栈和不需要的分支新增；main 功能一律保留。
+
+| 决定 | 内容 |
+| --- | --- |
+| 产品范围 | 删除旧委派栈全部（含对历史账本运行的只读展示）；历史留在 git |
+| 委派层级 | 经 MCP 的跨 harness 委派只有一层（子会话不获得 hud MCP）；子会话的原生子代理不受限制 |
+| 展示 | TUI 展示根会话（任一 harness，含用户自己打开的 Claude / Pi 主会话）、其 MCP 子会话，以及子会话的原生子代理（只读）；不展示无关的普通会话 |
+| 展示模型 | 重新设计为与根 harness 无关的会话树，不再塞进旧委派视图模型（交设计 oracle） |
+| 模型摘要 | brief / recap / progress / digest / agent names 推广到任一根会话与任一 harness 的子会话，输入改为通用事件形状 |
+| 身份与接入 | 重新设计为进程级、启动时确立的身份，去掉逐调用验证；三个 harness 作调用方对等；接入成本为一次安装加每 harness 一次 MCP 注册（交设计 oracle）。现有逐调用验证导致 queue 唤醒的 Codex 回合被拒（结果记录 F2） |
+| 子会话环境 | 按原生配置原样继承（撤销"默认最小化"建议）；修复 host 丢失用户登录环境（F3）；Jev 解释器与凭据取自 Jev 自身安装与配置（F4） |
+| `hud` CLI | 删除 `hud pi inspect`、`hud migrate`、`hud cache`、`hud-statusline-preview`；`hud claude` 随身份模型重设计决定；Claude / Pi transcript 读取器保留用于根会话 |
+| Pi footer | 保留，数据源改为 native 会话记录 |
+| 安装与打包 | 只保留 main 的安装器，扩展为构建 hud-mcp 并给出各 harness 的 MCP 注册命令；删除 runtime 包（库闭包、完整性、capability cells） |
+| brief | main 功能，保留，含 `codex-hud brief --dry-run` |
+| 测试与文档 | 历史测试随代码一并删除；历史文档归档或删除，只留当前参考 |
+| 测试矩阵 | 3 种主会话 × 2 种子会话 + Jev，每格覆盖创建、发送、读取、恢复、关闭与唤醒 |
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
