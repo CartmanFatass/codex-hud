@@ -717,6 +717,20 @@ Preserve all current source/identity/captured-generation checks, non-enforcing t
 | Jev 发送 | 强度滑块用键盘 `End`；Gemini 模式交给 Jev；`jev_ask` 立即返回；浏览器锁只在发送、核对与连接器授权段持有；`uncertain` 后自动只读核对，重发须显式确认；`model` + `effort_word` 取代 `"6 Pro"` 标签并退役 `5.6 Pro` 后备 |
 | Jev 记录 | 与 jev-ask CLI 共用记录与状态目录，答案写入其 `out/`；CLI 的 ChatGPT / Gemini 路径达到设计中的门槛后退役 |
 
+### 2026-11-07 工作流（Jacob）
+
+设计稿 `docs/design/hud-workflows.md`（WF1）。主会话一次发起，host 按固定拓扑运行 custom agents，步骤间自行推进，整次运行只唤醒主会话一次；所有 agent 都是 host 启动的一层子会话。Owner 采纳全部建议：
+
+| 决定 | 内容 |
+| --- | --- |
+| 格式（F1） | 磁盘上 TOML，现场传入 JSON，同一个加载器 |
+| 现场设计（F2） | 现在做声明式图：主会话当场写图，经 `workflow_plan` 校验与确认后运行；脚本步骤（ZCode 式）推迟到 W6 视实际运行再定 |
+| 运行中的提问（F3） | 默认唤醒主会话；每步可设为按默认答案继续；权限审批始终唤醒 |
+| 隔离（F4） | 调用方准备 worktree，host 只记录 base，不跑 git |
+| 单步时限（F5） | 工作流内每个 agent 默认 2 小时，可配置 |
+| 运行前确认（F6） | 项目与现场工作流须 `plan` → 确认后启动；`workflows.confirm` 可配置 |
+| 缓存状态 | 子会话给出缓存估计（warm / expiring / expired / unknown），调用方决定复用或新开；TUI 由设置控制显示；各 provider 的 TTL 默认值待验证 |
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
