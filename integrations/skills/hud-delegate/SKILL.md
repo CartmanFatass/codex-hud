@@ -34,7 +34,7 @@ Give every job a clear brief, the relevant artifacts, the working location, and 
 
 ### Wait
 
-Arm the returned wait mechanism, and read results when notified. For herdr jobs, hud_create returns a `hud wait` command; background it in the main session and let its completion reach you. Jev jobs instead return a hud_read mechanism: use that returned mechanism, not `hud wait`. For dispatch-backed Pi jobs, the caller-armed wait is the only wake channel, and it settles on STATUS idle_grace, `closed` or `failed`. DONE means settled, not accepted: read the report yourself. Re-arm the returned mechanism after you answer a question, send a fix, or the wait times out.
+Arm the returned wait mechanism, and read results when notified. For herdr jobs, hud_create returns `wait.command` and `wait.argv`: the absolute path of the running package's `bin/hud`, not a bare `hud` that may be off PATH, with an explicit 3600000 ms bound. If no bin resolves, the command keeps `hud` and adds `wait_path: unresolved`. Background that command in the main session and let its completion reach you. Jev jobs instead return a hud_read mechanism: use that returned mechanism, not `hud wait`, and its behavior is unchanged. For dispatch-backed Pi jobs, the caller-armed wait is the only wake channel, and it settles on STATUS idle_grace, `closed` or `failed`. DONE means settled, not accepted: read the report yourself. A timeout is not a failure: the command exits 6 with `event: TIMEOUT` and the current observation, so re-arm the same command. Re-arm the returned mechanism after you answer a question, send a fix, or the wait times out.
 
 ### Questions
 

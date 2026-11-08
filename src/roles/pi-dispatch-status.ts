@@ -1,7 +1,6 @@
 /** Bounded native STATUS observation. Snapshots are evidence, not a heartbeat. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { performance } from 'node:perf_hooks';
 import { isRecord } from './herdr-run.js';
 import { dispatchText, type PiDispatch } from './pi-dispatch.js';
 
@@ -241,7 +240,9 @@ export async function waitDispatch<T extends { event?: DispatchObservation['even
   timeoutMs: number,
   options?: DispatchWaitOptions
 ): Promise<T & { event: NonNullable<DispatchObservation['event']> }> {
-  const deadline = performance.now() + timeoutMs;
+  // hrtime is monotonic without loading Node's performance-observer subsystem.
+  const monotonicNow = () => Number(process.hrtime.bigint()) / 1_000_000;
+  const deadline = monotonicNow() + timeoutMs;
   const watchers = new Map<string, fs.FSWatcher>();
   const unavailable = new Set<string>();
   let coalesce: ReturnType<typeof setTimeout> | undefined;
@@ -290,21 +291,21 @@ export async function waitDispatch<T extends { event?: DispatchObservation['even
     }
   };
   let interval = 1000;
-  let nextPoll = performance.now();
+  let nextPoll = monotonicNow();
   try {
     refresh(); // Before the first read: do not lose a rename in the read/arm gap.
     for (;;) {
-      const checkHerdr = performance.now() >= nextPoll;
-      const value = await observe(Math.max(0, Math.ceil(deadline - performance.now())), checkHerdr);
+      const checkHerdr = monotonicNow() >= nextPoll;
+      const value = await observe(Math.max(0, Math.ceil(deadline - monotonicNow())), checkHerdr);
       if (value.event) return { ...value, event: value.event };
-      const now = performance.now();
+      const now = monotonicNow();
       if (now >= deadline) return { ...value, event: 'timeout' };
       refresh();
       if (checkHerdr) {
         nextPoll = now + interval;
         interval = Math.min(interval * 2, 8000);
       }
-      const sleep = Math.max(1, Math.ceil(Math.min(nextPoll, deadline) - performance.now()));
+      const sleep = Math.max(1, Math.ceil(Math.min(nextPoll, deadline) - monotonicNow()));
       await new Promise<void>((resolve) => {
         const timer = setTimeout(() => {
           wake = undefined;

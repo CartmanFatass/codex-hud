@@ -56,8 +56,7 @@ export function isLostAck(error: unknown): boolean {
 }
 
 export type JevMapped =
-  | { ok: true; tag: 'ask' | 'browse' | 'judge'; input: JevJobInput }
-  | { ok: false; field: string };
+  { ok: true; tag: 'ask' | 'browse' | 'judge'; input: JevJobInput } | { ok: false; field: string };
 
 /**
  * Oracle on a web target and `jev` ask become `ask`.
@@ -102,47 +101,14 @@ export function mapJevLaunch(request: JevLaunchRequest): JevMapped {
   };
 }
 
-/** The runtime body stored on a receipt. A retry sends this object again. */
-export function readStoredJevInput(value: unknown): JevJobInput | null {
-  if (!isRecord(value)) return null;
-  if (value.tag === 'ask') {
-    if (
-      (value.target !== 'chatgpt-pro' && value.target !== 'aistudio') ||
-      typeof value.label !== 'string' ||
-      typeof value.prompt !== 'string'
-    ) {
-      return null;
-    }
-    return value.confirmResend === true
-      ? { tag: 'ask', target: value.target, label: value.label, prompt: value.prompt, confirmResend: true }
-      : { tag: 'ask', target: value.target, label: value.label, prompt: value.prompt };
-  }
-  if (value.tag === 'browse') {
-    if (typeof value.goal !== 'string' || typeof value.url !== 'string') return null;
-    return { tag: 'browse', goal: value.goal, url: value.url };
-  }
-  if (value.tag !== 'judge' || typeof value.url !== 'string' || !Array.isArray(value.statements)) return null;
-  const statements: Array<{ name: string; statement: string }> = [];
-  for (const item of value.statements) {
-    if (!isRecord(item) || typeof item.name !== 'string' || typeof item.statement !== 'string') return null;
-    statements.push({ name: item.name, statement: item.statement });
-  }
-  return { tag: 'judge', url: value.url, statements };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
+export { readStoredJevInput } from './job-receipt.js';
 
 /**
  * One handle for this facade context. An injected handle is used as-is.
  * Otherwise the real runtime starts on the first call and is reused after that.
  * A failed start is not cached: the next call tries again.
  */
-export function connectRoleRuntime(
-  home: string,
-  injected?: JevRuntimeHandle | null
-): () => Promise<JevRuntimeHandle> {
+export function connectRoleRuntime(home: string, injected?: JevRuntimeHandle | null): () => Promise<JevRuntimeHandle> {
   if (injected) return () => Promise.resolve(injected);
   let handle: JevRuntimeHandle | null = null;
   let opening: Promise<JevRuntimeHandle> | null = null;

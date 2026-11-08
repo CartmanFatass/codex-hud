@@ -33,6 +33,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { REPO_ROOT } from '../fixtures/paths.js';
+import { parsePiRoleArgs } from '../../src/roles/launch.js';
 
 const PI_ROLES_DIR = process.env.PI_ROLES_DIR ?? '';
 const SKIP = PI_ROLES_DIR ? false : 'set PI_ROLES_DIR to a pi-roles checkout';
@@ -464,6 +465,35 @@ test('real pi-dispatch and pi-role-reap conform with fake herdr and fake pi', { 
   assert.deepEqual(inventory.panes, []);
   assert.deepEqual(inventory.tabs, []);
 });
+
+// The R2 direct path runs `pi-role --args-json` and feeds the output through
+// parsePiRoleArgs. pi-roles must keep that value inside the BARE charset; a JSON
+// role bundle there is rejected as unsafe_launch. One test per pi role so a
+// regression names the role.
+for (const role of ['implementer', 'sonic', 'reviewer', 'architect'] as const) {
+  test(`real pi-role --args-json for ${role} is accepted by parsePiRoleArgs`, { skip: SKIP }, (t) => {
+    const piRoles = realpathSync(PI_ROLES_DIR);
+    const bin = join(piRoles, 'bin', 'pi-role');
+    assert.ok(existsSync(bin), `missing ${bin}`);
+    const s = stage(t);
+    // Same scrubbed environment as the HUD direct path: fixture-only HOME,
+    // HUD_HOME, PI_CODING_AGENT_DIR and PI_ROLES_LEDGER, HERDR_ENV=1, and no
+    // inherited notify or orchestrator pane.
+    const env: NodeJS.ProcessEnv = { ...s.env, HERDR_ENV: '1' };
+    delete env.PI_ROLE_NOTIFY;
+    delete env.PI_ORCHESTRATOR_PANE;
+    const qaDir = join(s.root, 'qa', role);
+    const printed = spawnSync('/bin/bash', [bin, '--args-json', role, '--qa-dir', qaDir], {
+      cwd: s.work,
+      env,
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    assert.equal(printed.status, 0, `${printed.stdout}\n${printed.stderr}`);
+    const argv = parsePiRoleArgs(printed.stdout);
+    assert.ok(argv.length > 0, 'parsePiRoleArgs accepts a nonempty argv');
+  });
+}
 
 test('real pi-role-reap refuses a tab whose label changed', { skip: SKIP }, (t) => {
   const piRoles = realpathSync(PI_ROLES_DIR);

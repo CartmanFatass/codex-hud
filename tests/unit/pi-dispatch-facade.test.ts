@@ -300,7 +300,7 @@ test('historical QA files do not end a wait for a later helper', async (t) => {
   const result = await hudRead(f.ctx, { job: a.job, wait_ms: 30 });
   assert.equal(result.event, 'timeout');
   assert.equal((result.pending as unknown[]).length, 1);
-  assert.equal((await waitForJob(f.home, f.env, String(a.job), 0)).event, 'timeout');
+  assert.equal((await waitForJob(f.home, f.env, String(a.job), 0)).event, 'TIMEOUT');
   fs.writeFileSync(
     statusFile,
     JSON.stringify({
@@ -412,7 +412,7 @@ test('wait ignores immediate herdr idle and artifact presence; bounded timeout i
 test('facade and CLI share event wake; zero CLI timeout is an observation timeout', async (t) => {
   const f = fixture(t);
   const a = await f.create();
-  assert.equal((await waitForJob(f.home, f.env, String(a.job), 0)).event, 'timeout');
+  assert.equal((await waitForJob(f.home, f.env, String(a.job), 0)).event, 'TIMEOUT');
   const started = performance.now();
   const waiting = hudRead(f.ctx, { job: a.job, wait_ms: 2000 });
   const timer = setTimeout(() => f.settle(a.job), 40);
