@@ -9,8 +9,8 @@
  */
 
 import type { HudIO } from './link-export.js';
-import { CliError, privateHome } from './runtime.js';
-import { waitForJob } from '../roles/facade.js';
+import { CliError, privateHome } from './private-home.js';
+import { waitForJob } from '../roles/job-wait.js';
 
 export const WAIT_USAGE = 'hud wait --job <id> [--timeout-ms N]';
 
@@ -23,8 +23,15 @@ on the timeout; a direct job uses herdr state. None of those states is
 acceptance. Background the command hud_create returns, and re-arm it after an
 answer, a fix prompt or a timeout; there is no separate wake broker.
 
---timeout-ms is optional. When it is omitted the wait stops after 60000 ms.
-The maximum is 10800000. The value bounds the wait.
+--timeout-ms is optional. A bare 'hud wait' stops after 1800000 ms. The wait
+command hud_create returns for a herdr job passes 3600000 ms explicitly. A Jev
+job does not return this command. The maximum is 10800000. The value bounds the
+wait.
+
+A timeout is not a failure. On a timeout the command prints
+{"ok":true,"event":"TIMEOUT",...} with the current observation and exits 6;
+re-arm the same command to keep waiting. Exit 4 is a real wait failure, an
+unknown job, or an unresolved launch.
 HUD_HOME defaults to ~/.hud and must be an absolute, private directory owned by this uid.
 
 Exit codes:
@@ -32,7 +39,8 @@ Exit codes:
   1  Unexpected internal or output failure
   2  Invalid arguments
   3  Invalid, missing, inaccessible, or non-private HUD_HOME
-  4  Unknown job, unresolved launch, or wait failed
+  4  Unknown job, unresolved launch, or a real wait failure
+  6  The wait timed out; re-arm the same command
 `;
 
 export async function waitCommand(args: readonly string[], io: HudIO): Promise<number> {
@@ -59,5 +67,5 @@ export async function waitCommand(args: readonly string[], io: HudIO): Promise<n
   if (!job) throw new CliError('invalid_arguments');
   const result = await waitForJob(privateHome(io.env), io.env, job, timeout);
   await io.stdout(`${JSON.stringify(result)}\n`);
-  return result.ok ? 0 : 4;
+  return !result.ok ? 4 : result.event === 'TIMEOUT' ? 6 : 0;
 }

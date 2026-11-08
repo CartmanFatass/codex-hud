@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -11,11 +12,13 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import test, { type TestContext } from 'node:test';
 import { main } from '../../src/cli/hud.js';
@@ -389,8 +392,8 @@ test('create read send respond close against the fake herdr', async (t) => {
   assert.equal(association.closed, false);
   assert.equal(created.acceptance, undefined);
   const wait = created.wait as { command: string; argv: string[] };
-  assert.equal(wait.command, `hud wait --job ${job}`);
-  assert.deepEqual(wait.argv, ['hud', 'wait', '--job', job]);
+  assert.deepEqual(wait.argv, [join(REPO_ROOT, 'bin/hud'), 'wait', '--job', job, '--timeout-ms', '3600000']);
+  assert.equal(wait.command, wait.argv.map((arg) => `'${arg.replaceAll("'", "'\\''")}'`).join(' '));
 
   const launched = herdrLog(s.log());
   assert.equal(launched[0]?.receipt_before, true);
@@ -593,6 +596,53 @@ test('two roots do not see each other’s jobs', async (t) => {
   assert.notEqual(other.job, created.job);
 });
 
+test('returned wait resolves the running package with spaces/quotes, works off PATH, and marks a missing bin', async (t) => {
+  const s = stage(t);
+  const args = imp(s.work, 'relocated-wait');
+  const created = await hudCreate(s.ctx(), args);
+  assert.equal(created.ok, true);
+  const receiptFile = join(s.home, 'jobs', String(created.job), 'receipt.json');
+  const stored = JSON.parse(readFileSync(receiptFile, 'utf8'));
+  writeFileSync(receiptFile, JSON.stringify({ ...stored, state: 'closed' }), { mode: 0o600 });
+  const root = join(s.home, "package space ' quote");
+  mkdirSync(join(root, 'bin'), { recursive: true });
+  cpSync(join(REPO_ROOT, 'dist'), join(root, 'dist'), { recursive: true });
+  symlinkSync(join(REPO_ROOT, 'node_modules'), join(root, 'node_modules'), 'dir');
+  writeFileSync(join(root, 'package.json'), '{"name":"synthetic-package","type":"module"}');
+  for (const name of ['hud', 'hud-run']) cpSync(join(REPO_ROOT, 'bin', name), join(root, 'bin', name));
+  const node = join(s.home, 'bin/node');
+  writeFileSync(node, `#!/bin/sh\nexec ${quote(process.execPath)} "$@"\n`, { mode: 0o755 });
+  const source = `const {hudCreate}=await import(${JSON.stringify(pathToFileURL(join(root, 'dist/roles/facade.js')).href)}); console.log(JSON.stringify(await hudCreate(JSON.parse(process.argv[1]),JSON.parse(process.argv[2]))));`;
+  const make = () => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        source,
+        JSON.stringify({ home: s.home, env: s.env, root: s.root }),
+        JSON.stringify(args),
+      ],
+      { env: s.env, encoding: 'utf8', timeout: 10000 }
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const made = JSON.parse(result.stdout);
+    assert.equal(made.ok, true, result.stdout);
+    return made.wait;
+  };
+  const wait = make();
+  assert.deepEqual(wait.argv, [join(root, 'bin/hud'), 'wait', '--job', created.job, '--timeout-ms', '3600000']);
+  assert.equal(wait.wait_path, undefined);
+  const waited = spawnSync('/bin/bash', ['-c', wait.command], { env: s.env, encoding: 'utf8', timeout: 10000 });
+  assert.equal(waited.status, 0, waited.stderr);
+  assert.equal(JSON.parse(waited.stdout).status, 'closed');
+  rmSync(join(root, 'bin/hud'));
+  const missing = make();
+  assert.equal(missing.argv[0], 'hud');
+  assert.equal(missing.wait_path, 'unresolved');
+  assert.equal(missing.command, missing.argv.map(quote).join(' '));
+});
+
 test('codex wrapper selects the account and a missing row does not launch', { timeout: 20_000 }, async (t) => {
   const s = stage(t);
   const created = await hudCreate(s.ctx(), {
@@ -730,7 +780,9 @@ test('hud wait prints one herdr wait and does not accept the job', async (t) => 
   const help = await main(['wait', '--help'], io);
   assert.equal(help, 0);
   assert.match(stdout, /hud wait --job <id>/);
-  assert.match(stdout, /60000/);
+  assert.match(stdout, /1800000/);
+  assert.match(stdout, /3600000/);
+  assert.match(stdout, /6  The wait timed out/);
   const bad = await main(['wait'], io);
   assert.equal(bad, 2);
 });
@@ -1653,7 +1705,10 @@ test('a jev retry uses the binding stored on the receipt', async (t) => {
   assert.equal(lost.code, 'launch_unknown');
   writeFileSync(
     join(s.home, 'routing.toml'),
-    ROUTING.replace('target = "chatgpt-pro"', 'target = "aistudio"').replace('provider = "typesafe"', 'provider = "openai"'),
+    ROUTING.replace('target = "chatgpt-pro"', 'target = "aistudio"').replace(
+      'provider = "typesafe"',
+      'provider = "openai"'
+    ),
     { mode: 0o600 }
   );
   const created = await hudCreate(ctx, args);

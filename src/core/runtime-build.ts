@@ -26,6 +26,8 @@ export const MINIMUM_RUNTIME_FILES = [
   'dist/cli/roster.js',
   'dist/cli/setup.js',
   'dist/cli/wait.js',
+  'dist/cli/hud-main.js',
+  'dist/cli/private-home.js',
   'dist/roles/adapters.js',
   'dist/roles/association.js',
   'dist/roles/caller.js',
@@ -33,6 +35,8 @@ export const MINIMUM_RUNTIME_FILES = [
   'dist/roles/herdr-run.js',
   'dist/roles/index.js',
   'dist/roles/job-store.js',
+  'dist/roles/job-receipt.js',
+  'dist/roles/job-wait.js',
   'dist/roles/launch.js',
   'dist/roles/pi-dispatch.js',
   'dist/roles/pi-dispatch-status.js',
@@ -54,6 +58,8 @@ export const MINIMUM_RUNTIME_FILES = [
   'packages/hud-mcp/dist/src/roles/herdr-run.js',
   'packages/hud-mcp/dist/src/roles/index.js',
   'packages/hud-mcp/dist/src/roles/job-store.js',
+  'packages/hud-mcp/dist/src/roles/job-receipt.js',
+  'packages/hud-mcp/dist/src/roles/job-wait.js',
   'packages/hud-mcp/dist/src/roles/launch.js',
   'packages/hud-mcp/dist/src/roles/pi-dispatch.js',
   'packages/hud-mcp/dist/src/roles/pi-dispatch-status.js',
@@ -128,7 +134,7 @@ const dependencyPath = (path: string) => {
     );
   });
 };
-const fields = (value: object, required: string[], optional: string[] = []) =>
+const fields = (value: Record<string, unknown>, required: string[], optional: string[] = []) =>
   required.every((key) => Object.hasOwn(value, key)) &&
   Object.keys(value).every((key) => [...required, ...optional].includes(key));
 const text = (value: unknown, limit: number): value is string =>
