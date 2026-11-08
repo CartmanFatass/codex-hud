@@ -20,8 +20,20 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
 - Next is R4 (ChatGPT Pro and AI Studio target adapters), then R5. It was paused for Codex usage; since 2026-11-07 code tasks run on the pi harness with gpt-6.1-sol (`docs/delegation.md`), so R4 no longer waits on the Codex CLI.
 - R2b added 2026-11-08 (concept §15, "Pi execution through the pi-roles dispatch prototype"): the facade runs pi roles through `pi-dispatch` / STATUS / `pi-role-reap` instead of its own pi launch. Starts once pi-roles DISPATCH-2B and DISPATCH-3 have settled the contract.
 - Live Jev smoke (2026-11-08, owner-approved) found three R3 defects: production config was never found, judge markers were compared by identity, and a missing Chrome surfaced as `internal`. R3F (`aa6e86c`) fixed them and added a single-settlement CDP deadline. Re-smoke: the OpenAI judge settles in 1 call; the runtime auto-starts a detached headless Chrome and leaves it running.
-- Open (judge quality): the runtime sends the judge plain page text with `elements: []`. TypeSafe then stays unsettled on structural statements ("shows the heading …", p≈0.2–0.3; 1.0 when headings and links are marked), while OpenAI infers them. Follow-up: pass page structure (actions and headings) into judge observations.
-- R2b, R4 and PIBUNDLE (pi-roles one-extension bundle, in Fishpref) are in progress.
+- Judge structure (SONIC-AB-02, merged `1b0865f`): judge observations now carry the observed actions as `elements` (via `actionSpace`) and up to 12 visible h1–h3 headings in `facts.headings`; a vm test runs the real expression. Live: on a synthetic localhost page a TypeSafe judge job passes "main heading is …" in 1 call (p=1.0). The earlier p≈0.2 on example.com was mostly the page itself: it no longer has an h1 (the phrase is only its title). A/B result in `docs/sonic-ab.md`: DS max best (9/10), GLM max 8, GLM high 7, DS high 3 (invalid expression with green tests). Next: SONIC-AB-03 after R4, then decide the sonic default.
+- R2b merged (`178e5bd`) and accepted live on 2026-11-08 through `HUD_MCP_SURFACE=roles` with a synthetic scratch repo:
+  - a pi imp called sonic and the reviewer itself and settled; the caller-backgrounded `hud wait` returned DONE;
+  - SESSION `ORCH` was empty, so there is no second wake channel;
+  - `hud_close` reaped every agent and the tab, and a repeated close was idempotent;
+  - with `pi-dispatch` off PATH the R2 direct path launched, waited and closed.
+- The direct path first failed live with `unsafe_launch`: pi-roles' one-extension bundle (PIBUNDLE) put raw JSON in `--role-bundle`. pi-roles now encodes it as base64url (Fishpref `f7f2481`).
+- R2c merged (`e2e9d4e`), accepted live on 2026-11-08 with a sonic job through the roles facade:
+  - the returned wait command is the absolute `bin/hud` path with `--timeout-ms 3600000`; bare waits default to 30 min;
+  - a short `--timeout-ms` printed `TIMEOUT` and exited 6; the full wait returned DONE, exit 0;
+  - waiter RSS: about 98 MB before, about 50 MB on the synthetic fixture, 62 MB live while polling herdr; an import-graph test pins the waiter;
+  - pi-roles PIAUTOCLOSE (Fishpref `92fc938`): the sonic tab closed itself after its clean finish, before `hud_close`, which then reaped idempotently.
+- Known debt: `node scripts/pack-cloud-preview.mjs --self-test` fails on `dist/harness/pi/managed-launch.js` (pre-existing on the base); B11's spaces-path test; the panel publisher test under load.
+- In progress: R4 (fix round after review 1: recoverable outcomes, resume, attachment digest, refusal codes, observer cancellation).
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |

@@ -3,7 +3,6 @@
  * Account homes come from the caller's env map, not from this file.
  */
 
-import { spawn } from 'node:child_process';
 import type { HerdrHarness } from './routing.js';
 
 export interface HerdrOutcome {
@@ -38,13 +37,15 @@ export interface HerdrCallOptions {
  * Spawn `bin` with `argv`. A timer kills the child and the outcome is `timeout`,
  * which the facade reports as `herdr_timeout`. An external signal stays `lost`.
  */
-export function runCommand(
+export async function runCommand(
   bin: string,
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
   options?: HerdrCallOptions
 ): Promise<HerdrOutcome> {
   const budget = options?.budgetMs ?? (bin === 'herdr' ? herdrBudget(argv) : HERDR_DEFAULT_BUDGET_MS);
+  // File-only dispatch observations must not load subprocess machinery.
+  const { spawn } = await import('node:child_process');
   return new Promise((resolve) => {
     let settled = false;
     let killedByUs = false;

@@ -40,7 +40,7 @@ export const ROLE_TOOLS: readonly RoleToolDefinition[] = [
   ),
   tool(
     'hud_create',
-    'Create one job for a fixed role. Oracle requires phase propose or converge. The same request_key and the same request return the same job. Background the returned wait command; it is the only wake channel.',
+    'Create one job for a fixed role. Oracle requires phase propose or converge. The same request_key and the same request return the same job. A herdr job returns wait.command and wait.argv: the absolute path of this package’s bin/hud (or `hud` plus wait_path unresolved when none resolves) with an explicit 3600000 ms bound. Background it; it is the only wake channel. Re-arm it after an answer, a fix, or a timeout (exit 6, event TIMEOUT). A Jev job returns the hud_read mechanism unchanged.',
     {
       role,
       phase,
@@ -79,7 +79,7 @@ export const ROLE_TOOLS: readonly RoleToolDefinition[] = [
   ),
   tool(
     'hud_read',
-    'Read one job, or list this session’s jobs when job is omitted. wait_ms waits for settlement: dispatch STATUS idle_grace, closed or failed, a question, a corroborated block, or the deadline. Settlement is not acceptance.',
+    'Read one job, or list this session’s jobs when job is omitted. wait_ms waits for settlement: dispatch STATUS idle_grace, closed or failed, a question, a corroborated block, or the deadline. Settlement is not acceptance. This is the wait mechanism for Jev jobs; herdr jobs use the returned hud wait command.',
     { job, wait_ms: { type: 'integer', minimum: 0, maximum: 120000 } },
     []
   ),

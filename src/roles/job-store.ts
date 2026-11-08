@@ -47,17 +47,7 @@ export function writePrivate(file: string, content: string): void {
   }
 }
 
-export function readPrivateJson(file: string, maxBytes: number): unknown | undefined {
-  let info: fs.Stats;
-  try {
-    info = fs.lstatSync(file);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw error;
-  }
-  if (info.isSymbolicLink() || !info.isFile() || info.size > maxBytes) throw new Error('unsafe_path');
-  return JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
-}
+export { readPrivateJson } from './job-receipt.js';
 
 function lockAlive(pid: number): boolean {
   if (!Number.isInteger(pid) || pid < 2) return false;

@@ -28,6 +28,8 @@ export const REQUIRED_OUTPUTS = {
   'src/cli/roster.ts': 'dist/cli/roster.js',
   'src/cli/setup.ts': 'dist/cli/setup.js',
   'src/cli/wait.ts': 'dist/cli/wait.js',
+  'src/cli/hud-main.ts': 'dist/cli/hud-main.js',
+  'src/cli/private-home.ts': 'dist/cli/private-home.js',
   'src/harness/pi/managed-launch.ts': 'dist/harness/pi/managed-launch.js',
   'src/harness/claude/managed-launch.ts': 'dist/harness/claude/managed-launch.js',
   'src/core/run/launch-artifacts.ts': 'dist/core/run/launch-artifacts.js',
@@ -44,6 +46,8 @@ export const REQUIRED_OUTPUTS = {
   'src/roles/herdr-run.ts': 'dist/roles/herdr-run.js',
   'src/roles/index.ts': 'dist/roles/index.js',
   'src/roles/job-store.ts': 'dist/roles/job-store.js',
+  'src/roles/job-receipt.ts': 'dist/roles/job-receipt.js',
+  'src/roles/job-wait.ts': 'dist/roles/job-wait.js',
   'src/roles/launch.ts': 'dist/roles/launch.js',
   'src/roles/pi-dispatch.ts': 'dist/roles/pi-dispatch.js',
   'src/roles/pi-dispatch-status.ts': 'dist/roles/pi-dispatch-status.js',
@@ -95,6 +99,8 @@ export const MCP_RUNTIME_OUTPUTS = [
   'packages/hud-mcp/dist/src/roles/herdr-run.js',
   'packages/hud-mcp/dist/src/roles/index.js',
   'packages/hud-mcp/dist/src/roles/job-store.js',
+  'packages/hud-mcp/dist/src/roles/job-receipt.js',
+  'packages/hud-mcp/dist/src/roles/job-wait.js',
   'packages/hud-mcp/dist/src/roles/launch.js',
   'packages/hud-mcp/dist/src/roles/pi-dispatch.js',
   'packages/hud-mcp/dist/src/roles/pi-dispatch-status.js',
@@ -224,8 +230,8 @@ async function selfTest() {
   let original;
   try {
     original = JSON.parse(fs.readFileSync(safeFile('package.json'), 'utf8'));
-  } catch (error) {
-    throw new Error('preview_self_test_package_json', { cause: error });
+  } catch (cause) {
+    throw new Error('invalid_package_manifest', { cause });
   }
   const value = previewManifest(original);
   const bins = { ...original.bin };

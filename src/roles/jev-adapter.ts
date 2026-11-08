@@ -115,38 +115,7 @@ export function mapJevLaunch(request: JevLaunchRequest): JevMapped {
   };
 }
 
-/** The runtime body stored on a receipt. A retry sends this object again. */
-export function readStoredJevInput(value: unknown): JevJobInput | null {
-  if (!isRecord(value)) return null;
-  if (value.tag === 'ask') {
-    if (
-      (value.target !== 'chatgpt-pro' && value.target !== 'aistudio') ||
-      typeof value.label !== 'string' ||
-      typeof value.prompt !== 'string'
-    ) {
-      return null;
-    }
-    const optional: Partial<Extract<JevJobInput, { tag: 'ask' }>> = {};
-    for (const name of ['model', 'thinking', 'effortWord', 'conversation', 'attach'] as const) {
-      if (typeof value[name] === 'string') optional[name] = value[name];
-    }
-    if (typeof value.maxWaitMs === 'number') optional.maxWaitMs = value.maxWaitMs;
-    if (value.dryRun === true) optional.dryRun = true;
-    if (value.confirmResend === true) optional.confirmResend = true;
-    return { tag: 'ask', target: value.target, label: value.label, prompt: value.prompt, ...optional };
-  }
-  if (value.tag === 'browse') {
-    if (typeof value.goal !== 'string' || typeof value.url !== 'string') return null;
-    return { tag: 'browse', goal: value.goal, url: value.url };
-  }
-  if (value.tag !== 'judge' || typeof value.url !== 'string' || !Array.isArray(value.statements)) return null;
-  const statements: Array<{ name: string; statement: string }> = [];
-  for (const item of value.statements) {
-    if (!isRecord(item) || typeof item.name !== 'string' || typeof item.statement !== 'string') return null;
-    statements.push({ name: item.name, statement: item.statement });
-  }
-  return { tag: 'judge', url: value.url, statements };
-}
+export { readStoredJevInput } from './job-receipt.js';
 
 /** hud_read recovers an interrupted browser ask, but never turns a plain runtime read into a send. */
 export async function readRoleJevJob(runtime: JevRuntimeHandle, jobId: string, options: JevReadOptions) {
@@ -159,10 +128,6 @@ export async function readRoleJevJob(runtime: JevRuntimeHandle, jobId: string, o
     return runtime.readJob(jobId, { ...options, resume: true });
   }
   return observed;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /**
