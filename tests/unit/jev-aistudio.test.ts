@@ -7,7 +7,9 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, closeSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
+import { hiddenChrome } from '../fixtures/jev-hidden-chrome.js';
+import { Browser } from '../../src/jev/browser.js';
 import vm from 'node:vm';
 
 import { JevFailure } from '../../src/jev/ask/error.js';
@@ -33,6 +35,8 @@ import {
   withStudioLock,
 } from '../../src/jev/runtime/aistudio-state.js';
 import type { OracleBrowser } from '../../src/jev/runtime/chatgpt.js';
+import { jevCall } from '../../src/jev/runtime/ipc.js';
+import { createRoleJevExecutor, hudCreate, hudRead } from '../../src/roles/facade.js';
 import type { JevAskInput } from '../../src/jev/runtime/types.js';
 
 function workspace(t: { after(fn: () => void): void }, prefix = 'hud-jev-aistudio-'): string {
@@ -78,6 +82,271 @@ async function within<T>(ms: number, promise: Promise<T>): Promise<T> {
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+test(
+  'T9: real hidden Chrome scripts confirm, wait and collect without compositor or renderer waits',
+  { timeout: 30_000 },
+  async (t) => {
+    const isolated = await hiddenChrome(t);
+    if (!isolated) return;
+    const { cdp, url } = isolated;
+    let id: string | undefined;
+    let screenshots = 0;
+    try {
+      id = ((await cdp.call('Target.createTarget', { url: 'about:blank', background: true })) as { targetId: string })
+        .targetId;
+      const browser = await Browser.attach(id, { cdpUrl: url, timeoutMs: 1_000 });
+      // All writes and scrolls are confined to this owned synthetic background tab.
+      await browser.evaluate(
+        `document.body.innerHTML=${JSON.stringify('<ms-account-switcher><button aria-label="synthetic@example.test">Account</button></ms-account-switcher><textarea formcontrolname="promptText"></textarea><ms-chat-turn><div data-turn-role="User"><ms-text-chunk>synthetic prompt</ms-text-chunk></div></ms-chat-turn><ms-chat-turn><div data-turn-role="Model"><ms-text-chunk>437</ms-text-chunk><button class="response-feedback-button" aria-label="Good response"></button></div></ms-chat-turn>')}`
+      );
+      assert.equal(await browser.evaluate('document.visibilityState'), 'hidden', 'never bring the owned tab forward');
+      const command = browser.command.bind(browser);
+      browser.command = (method, params, ms) => {
+        if (method === 'Page.captureScreenshot') screenshots++;
+        assert.notEqual(method, 'Page.bringToFront');
+        return command(method, params, ms);
+      };
+      let clicks = 0;
+      browser.act = async () => {
+        clicks++;
+        throw new Error('unexpected_send');
+      };
+      const dir = workspace(t);
+      const ticks = clock();
+      const target = aistudioTarget({
+        config: { stateDir: dir, models: ['gemini-4-argon'], model: 'gemini-4-argon', thinking: 'High' },
+        model: 'gemini-4-argon',
+        thinking: 'High',
+        open: async () => Browser.attach(id!, { cdpUrl: url, timeoutMs: 1_000 }),
+        attach: async () => {
+          const attached = await Browser.attach(id!, { cdpUrl: url, timeoutMs: 1_000 });
+          const command = attached.command.bind(attached);
+          attached.command = (method, params, ms) => {
+            if (method === 'Page.captureScreenshot') screenshots++;
+            assert.notEqual(method, 'Page.bringToFront');
+            return command(method, params, ms);
+          };
+          attached.act = async () => {
+            clicks++;
+            throw new Error('unexpected_send');
+          };
+          return attached;
+        },
+        targets: async () => [{ targetId: id!, url: 'about:blank' }],
+        readTimeoutMs: 1_000,
+        now: ticks.now,
+        sleep: async (ms) => {
+          await ticks.sleep(ms);
+        },
+      });
+      await browser.detach();
+      const key = studioKey(INPUT.label, INPUT.prompt, 'gemini-4-argon', 'High', 'new');
+      writeFileSync(
+        join(dir, 'aistudio_chat_state.json'),
+        JSON.stringify({
+          keys: {
+            [key]: {
+              send_attempted: true,
+              attempted_at: '2026-01-01T00:00:00Z',
+              status: 'send_attempted',
+              send_effect: 'uncertain',
+              unresolved: 'confirm',
+              user_turn: 1,
+              sent_target_id: id,
+              conversation_url: null,
+              before: { url: target.root, turns: [], sidebar: [] },
+            },
+          },
+        })
+      );
+      const phases: string[] = [];
+      const result = await within(
+        8_000,
+        runOracle({
+          stateDir: dir,
+          key,
+          jobId: 'jev-t9',
+          input: INPUT,
+          target,
+          store: studioStore(dir, key),
+          provider: {} as never,
+          fields: {},
+          resumeOnly: true,
+          signal: new AbortController().signal,
+          now: ticks.now,
+          sleep: ticks.sleep,
+          readTimeoutMs: 1_000,
+          phase: (phase) => {
+            phases.push(phase);
+          },
+        })
+      );
+      assert.equal(result.status, 'answered', JSON.stringify(result));
+      assert.equal(result.answer, '437');
+      assert.deepEqual(phases, ['reconcile', 'confirm', 'wait', 'collect']);
+      assert.equal(clicks, 0);
+      assert.equal(screenshots, 0, 'oracle facts must not use the compositor');
+    } finally {
+      if (id) await cdp.call('Target.closeTarget', { targetId: id }).catch(() => undefined);
+    }
+  }
+);
+
+for (const heldPhase of ['prepare', 'confirm', 'wait', 'collect', 'cross_check'] as const) {
+  test(`T10: never-settling CDP in ${heldPhase} has a finite public result and post-send resume never clicks`, async (t) => {
+    const home = workspace(t);
+    const dir = join(home, 'state');
+    mkdirSync(dir);
+    writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-t10\n', { mode: 0o600 });
+    const ticks = clock();
+    const stub = studioStub();
+    virtualStudioDom(stub);
+    let phase = 'execute';
+    let blocked = true;
+    let crossChecking = false;
+    const evaluate = stub.browser.evaluate.bind(stub.browser);
+    stub.browser.evaluate = (script, ...args) =>
+      blocked && (heldPhase === 'cross_check' ? crossChecking : phase === heldPhase)
+        ? new Promise<never>(() => {})
+        : evaluate(script, ...args);
+    stub.browser.act = async () => {
+      stub.acted++;
+      stub.state.composer = '';
+      stub.state.url = 'https://aistudio.google.com/prompts/abcdefghijklmnopqrst';
+      stub.reply = { users: 1, model_turns: 1, final: true, text: '437', error: null };
+    };
+    const options = studioOptions(stub, ticks);
+    const target = aistudioTarget({
+      ...options,
+      readTimeoutMs: 40,
+      open: async (url) => {
+        crossChecking = phase === 'collect';
+        return options.open(url);
+      },
+    });
+    const runtime = new JevRuntime({
+      hudHome: home,
+      stateDir: dir,
+      fake: true,
+      graceMs: 60_000,
+      oracleTargets: { aistudio: target },
+      oracleReadTimeoutMs: 40,
+      oracleNow: ticks.now,
+      oracleSleep: ticks.sleep,
+      studioConfigLoader: () => ({ ...options.config, stateDir: dir }),
+    });
+    const lifecycle = runtime.lifecycle.bind(runtime);
+    runtime.lifecycle = (event, code, job, metrics) => {
+      if (event === 'phase' && code && !code.startsWith('failed.')) phase = code;
+      lifecycle(event, code, job, metrics);
+    };
+    await runtime.start();
+    t.after(() => runtime.stop());
+    const socket = join(home, 'jev-runtime', 'runtime.sock');
+    const handle = {
+      createJob: (request: unknown) =>
+        jevCall(socket, 'createJob', request as Record<string, unknown>) as Promise<JevJob>,
+      readJob: (jobId: string, opts = {}) => jevCall(socket, 'readJob', { jobId, ...opts }) as Promise<JevJob>,
+      closeJob: (jobId: string) => jevCall(socket, 'closeJob', { jobId }) as Promise<JevJob>,
+      sendFollowUp: (jobId: string, followUp: unknown) =>
+        jevCall(socket, 'sendFollowUp', { jobId, followUp }) as Promise<JevJob>,
+    };
+    writeFileSync(
+      join(home, 'routing.toml'),
+      `schema=1
+ default_preset="test"
+ [backends.web]
+ executor="jev"
+ target="aistudio"
+ [backends.cli]
+ executor="herdr"
+ harness="pi"
+ model="synthetic"
+ recipe="pi-role"
+ [jev_decisions.test]
+ provider="typesafe"
+ [presets.test]
+ description="Synthetic timeout fixture"
+ jev_decisions="test"
+ [presets.test.roles]
+ "oracle.propose"="web"
+ "oracle.converge"="cli"
+ imp="cli"
+ reviewer="cli"
+ sonic="cli"
+ jev="web"
+ `
+    );
+    const ctx = {
+      home,
+      root: { namespace: 'synthetic', sessionId: 't10' },
+      env: {},
+      jev: createRoleJevExecutor(home, handle),
+    };
+    const launched = await hudCreate(ctx, {
+      role: 'oracle',
+      phase: 'propose',
+      request_key: 'timeout',
+      task: INPUT.prompt,
+      cwd: home,
+    });
+    assert.equal(launched.ok, true, JSON.stringify(launched));
+    const id = (launched.executor as { job: string }).job;
+    const terminal = async () => {
+      for (let i = 0; i < 400; i++) {
+        const job = await handle.readJob(id);
+        if (job.state !== 'queued' && job.state !== 'running') return job;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      throw new Error('job_did_not_settle');
+    };
+    const done = await within(3_000, terminal());
+    assert.notEqual(done.error?.code, 'internal', JSON.stringify(done));
+    if (heldPhase === 'prepare') {
+      assert.equal(done.state, 'failed');
+      assert.equal(done.error?.code, 'browser_timeout');
+      const observed = await hudRead(ctx, { job: launched.job });
+      assert.equal(observed.status, 'browser_timeout');
+      assert.equal((observed.error as { code: string }).code, 'browser_timeout');
+      assert.equal(stub.acted, 0);
+    } else if (heldPhase === 'cross_check') {
+      assert.equal(done.state, 'completed', JSON.stringify(done));
+      assert.equal(done.recoverable, false);
+      assert.equal((done.result as { answer: string }).answer, '437');
+      assert.equal((done.result as { cross_check: string }).cross_check, 'browser_timeout');
+      const log = readFileSync(join(home, 'jev-runtime', 'child.err'), 'utf8');
+      assert.ok(log.includes('cross_check.browser_timeout'));
+      const observed = await hudRead(ctx, { job: launched.job });
+      assert.equal(observed.state, 'done', JSON.stringify(observed));
+      assert.ok(JSON.stringify(observed).includes('browser_timeout'));
+      assert.equal(stub.acted, 1);
+    } else {
+      assert.equal(done.state, 'completed', JSON.stringify(done));
+      assert.equal(done.recoverable, true);
+      assert.equal((done.result as { reason: string }).reason, 'browser_timeout');
+      assert.equal(done.error, undefined, 'completed outcomes carry a reason, not an error');
+      const observed = await hudRead(ctx, { job: launched.job });
+      assert.equal(observed.state, 'open');
+      assert.ok(JSON.stringify(observed).includes('browser_timeout'), JSON.stringify(observed));
+      // hudRead may already have admitted the next read-only resume; let it time
+      // out again before releasing the fake transport and explicitly resuming.
+      await terminal();
+      const clicks = stub.acted;
+      blocked = false;
+      await handle.readJob(id, { resume: true });
+      const resumed = await within(3_000, terminal());
+      assert.equal((resumed.result as { answer: string }).answer, '437', JSON.stringify(resumed));
+      assert.equal(stub.acted, clicks, 'a timeout resume never clicks or sends again');
+      assert.equal(clicks, 1, 'only the original, reserved send');
+      const disk = JSON.parse(readFileSync(join(home, 'jev-runtime', 'jobs', `${id}.json`), 'utf8'));
+      const key = studioKey(disk.input.label, INPUT.prompt, options.model, options.thinking, 'new');
+      const record = await studioStore(dir, key).read();
+      assert.equal(record?.send_attempted, true);
+      assert.equal(record?.completion, 'COMPLETE');
+    }
+  });
 }
 
 // ---------------------------------------------------------------- key vectors
@@ -621,6 +890,46 @@ test('R1: real Studio facts bind a virtualised user before scrolling to the fina
   assert.deepEqual(target.binding(facts, INPUT, { user_turn: 1 }), { found: true, answer: '437', final: true });
 });
 
+test('T11: a single facts sample preserves exact prompt proof through same-document URL settlement', async () => {
+  const stub = studioStub({ reply: { users: 1 } });
+  const dom = virtualStudioDom(stub);
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  const url = 'https://aistudio.google.com/prompts/abcdefghijklmnopqrst';
+  stub.state.documentId = 1;
+  stub.browser.evaluate = async (script) => {
+    if (script === STUDIO_PAGE_STATE && dom.modelRenders() > 0) return { ...stub.state, url };
+    return evaluate(script);
+  };
+  const target = aistudioTarget(studioOptions(stub));
+  const page = await target.attach('target-1');
+  target.bindPage?.(page, { user_turn: 1 }, new AbortController().signal);
+  const facts = await page.facts();
+  assert.equal(facts.url, url);
+  assert.deepEqual(target.binding(facts, INPUT, { user_turn: 1 }), { found: true, answer: '437', final: true });
+});
+
+for (const url of [
+  'https://aistudio.google.com/prompts/abcdefghijklmnopqrst',
+  'https://other.example/prompts/abcdefghijklmnopqrst',
+  'https://aistudio.google.com/prompts/new_chat?model=other',
+]) {
+  test(`R4F2: changed documents or unrelated URL transitions never preserve prompt proof (${new URL(url).hostname}/${new URL(url).search})`, async () => {
+    const stub = studioStub({ reply: { users: 1 } });
+    const dom = virtualStudioDom(stub);
+    const evaluate = stub.browser.evaluate.bind(stub.browser);
+    stub.state.documentId = 1;
+    stub.browser.evaluate = async (script) => {
+      if (script === STUDIO_PAGE_STATE && dom.modelRenders() > 0)
+        return { ...stub.state, url, documentId: url.includes('other') ? 1 : 2 };
+      return evaluate(script);
+    };
+    const target = aistudioTarget(studioOptions(stub));
+    const page = await target.attach('target-1');
+    target.bindPage?.(page, { user_turn: 1 }, new AbortController().signal);
+    assert.equal(target.binding(await page.facts(), INPUT, { user_turn: 1 }).found, false);
+  });
+}
+
 test('R1: a prompt proof is discarded if the tab navigates during model extraction', async () => {
   const stub = studioStub({ reply: { users: 1 } });
   const dom = virtualStudioDom(stub);
@@ -682,6 +991,14 @@ test('T4: Studio numeric prompt binding confirms and collects from the live tab 
 });
 
 test('T5: runtime resumes the D3 send_attempted/uncertain/confirm record with zero Run clicks or preparations', async (t) => {
+  await resumeStudio(t, 'none');
+});
+for (const settlement of ['before', 'during'] as const) {
+  test(`T11: runtime resumes D3 with URL settlement ${settlement} attach/sample and zero sends`, async (t) => {
+    await resumeStudio(t, settlement);
+  });
+}
+async function resumeStudio(t: TestContext, settlement: 'none' | 'before' | 'during') {
   const home = workspace(t);
   const stateDir = join(home, 'state');
   const jobs = join(home, 'jev-runtime', 'jobs');
@@ -690,7 +1007,17 @@ test('T5: runtime resumes the D3 send_attempted/uncertain/confirm record with ze
   writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-t5\n', { mode: 0o600 });
   const ticks = clock();
   const stub = studioStub({ reply: { users: 1, model_turns: 1, final: true, text: '437', error: null } });
-  virtualStudioDom(stub);
+  const dom = virtualStudioDom(stub);
+  const settledUrl = 'https://aistudio.google.com/prompts/abcdefghijklmnopqrst?model=gemini-4-argon';
+  stub.state.documentId = 1;
+  if (settlement === 'before') stub.state.url = settledUrl;
+  if (settlement === 'during') {
+    const evaluate = stub.browser.evaluate.bind(stub.browser);
+    stub.browser.evaluate = async (script) => {
+      if (script === STUDIO_PAGE_STATE && dom.modelRenders() > 0) stub.state.url = settledUrl;
+      return evaluate(script);
+    };
+  }
   const options = studioOptions(stub, ticks);
   const target = aistudioTarget(options);
   const key = studioKey(INPUT.label, INPUT.prompt, options.model, options.thinking, 'new');
@@ -764,8 +1091,13 @@ test('T5: runtime resumes the D3 send_attempted/uncertain/confirm record with ze
   assert.equal((job.result as { answer: string }).answer, '437');
   assert.equal(stub.acted, 0, 'resumption never clicks Run');
   assert.ok(!stub.opened.includes(target.root), 'resume never enters prepare/open-new-chat');
-  assert.equal((await studioStore(stateDir, key).read())?.completion, 'COMPLETE');
-});
+  const final = await studioStore(stateDir, key).read();
+  assert.equal(final?.completion, 'COMPLETE');
+  if (settlement !== 'none') {
+    assert.equal(final?.conversation_url, settledUrl);
+    assert.equal(final?.conversation_url_source, 'tab');
+  }
+}
 
 test('Studio numeric binding refuses a different prompt at the expected user turn', async () => {
   const stub = studioStub({ reply: { users: 1, model_turns: 1, final: true, text: '437' } });

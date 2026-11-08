@@ -17,6 +17,7 @@ import {
 import { normalizeStudioPrompt, type StudioConfig } from './aistudio-state.js';
 import type { OracleBrowser, TargetBrowserOptions } from './chatgpt.js';
 import { oracleDelay, type OracleFacts, type OraclePage, type OracleTarget } from './oracle.js';
+import { boundedOracleBrowser } from './oracle-read.js';
 
 export const STUDIO_PAGE_STATE = `(() => {
  const visible=e=>!!e&&e.getClientRects().length&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
@@ -60,10 +61,14 @@ class StudioPage implements OraclePage {
   outputLimit?: number;
   send?: { action: ObservedAction; page: PageState };
   signal = new AbortController().signal;
+  readonly browser: OracleBrowser;
   constructor(
-    readonly browser: OracleBrowser,
-    readonly sleep?: (ms: number) => Promise<void>
-  ) {}
+    browser: OracleBrowser,
+    readonly sleep?: (ms: number) => Promise<void>,
+    timeoutMs?: number
+  ) {
+    this.browser = boundedOracleBrowser(browser, () => this.signal, timeoutMs);
+  }
   get id() {
     return this.browser.id;
   }
@@ -96,9 +101,8 @@ class StudioPage implements OraclePage {
   }
   async facts(): Promise<OracleFacts> {
     this.signal.throwIfAborted();
-    // Background tabs are virtualised; force a render before reading each exchange.
-    await this.browser.command('Page.captureScreenshot', { format: 'jpeg', quality: 20 });
-    this.signal.throwIfAborted();
+    // Compositor screenshots can block forever after scrolling a hidden tab.
+    // Read DOM/layout only; virtualisation gets a host-clock pause after scroll.
     const state = (await this.browser.evaluate(STUDIO_PAGE_STATE)) as StudioState;
     this.signal.throwIfAborted();
     if (!state || typeof state.url !== 'string') throw new JevFailure('page_facts_invalid', 'page_facts_invalid');
@@ -114,8 +118,6 @@ class StudioPage implements OraclePage {
       const visible = await this.browser.evaluate(makeUserPromptScrollScript(this.userTurn));
       if (visible === true) {
         await this.pause(1500);
-        await this.browser.command('Page.captureScreenshot', { format: 'jpeg', quality: 20 });
-        this.signal.throwIfAborted();
         userPrompt = await this.browser.evaluate(makeUserPromptScript(this.userTurn));
         this.signal.throwIfAborted();
       }
@@ -136,8 +138,6 @@ class StudioPage implements OraclePage {
           break;
         }
         await this.pause(1500);
-        await this.browser.command('Page.captureScreenshot', { format: 'jpeg', quality: 20 });
-        this.signal.throwIfAborted();
         const one = (await this.browser.evaluate(makeReplyScript(this.userTurn, j))) as Reply;
         if (!one || !one.model_turns) {
           final = false;
@@ -153,9 +153,14 @@ class StudioPage implements OraclePage {
     this.signal.throwIfAborted();
     const current = (await this.browser.evaluate(STUDIO_PAGE_STATE)) as StudioState;
     this.signal.throwIfAborted();
-    if (current?.url !== state.url || current?.documentId !== state.documentId) userPrompt = null;
+    const settledInPlace =
+      current?.documentId !== undefined &&
+      current.documentId === state.documentId &&
+      studioSettled(current.url) &&
+      isStudioNewChat(state.url);
+    if (current?.documentId !== state.documentId || (current?.url !== state.url && !settledInPlace)) userPrompt = null;
     return {
-      url: state.url,
+      url: settledInPlace ? current.url : state.url,
       // An absent account/composer is hydration, not affirmative login evidence.
       readyState:
         state.readyState === 'complete' && state.authenticated === false && !state.login
@@ -209,24 +214,12 @@ export function aistudioTarget(
   return {
     provider: 'aistudio',
     root,
-    settled(url): url is string {
-      if (typeof url !== 'string') return false;
-      try {
-        const value = new URL(url);
-        return (
-          value.origin === 'https://aistudio.google.com' &&
-          /^\/prompts\/[A-Za-z0-9_-]{20,}$/.test(value.pathname) &&
-          !value.pathname.endsWith('/new_chat')
-        );
-      } catch {
-        return false;
-      }
-    },
+    settled: studioSettled,
     async open(url) {
-      return new StudioPage(await options.open(url), options.sleep);
+      return new StudioPage(await options.open(url), options.sleep, options.readTimeoutMs);
     },
     async attach(id) {
-      return new StudioPage(await options.attach(id), options.sleep);
+      return new StudioPage(await options.attach(id), options.sleep, options.readTimeoutMs);
     },
     targets: options.targets,
     bindPage(page, record, signal) {
@@ -352,6 +345,23 @@ export function aistudioTarget(
       return normalizeStudioPrompt(facts.composer ?? '') === normalizeStudioPrompt(input.prompt);
     },
   };
+}
+function studioSettled(url: unknown): url is string {
+  if (typeof url !== 'string') return false;
+  try {
+    const value = new URL(url);
+    return value.origin === 'https://aistudio.google.com' && /^\/prompts\/[A-Za-z0-9_-]{20,}$/.test(value.pathname);
+  } catch {
+    return false;
+  }
+}
+function isStudioNewChat(url: string): boolean {
+  try {
+    const value = new URL(url);
+    return value.origin === 'https://aistudio.google.com' && value.pathname === '/prompts/new_chat';
+  } catch {
+    return false;
+  }
 }
 function shownThinking(settings: Settings): string {
   return settings.selects?.['Thinking Level']?.split('\n')[0]?.trim() ?? '';

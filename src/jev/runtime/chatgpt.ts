@@ -11,6 +11,7 @@ import { awaitState, type JudgmentProvider, type PageObservation } from '../judg
 import { actionSpace, type ObservedAction, type PageState } from '../model.js';
 import { COMPOSER_LOOKUP, FOCUS_COMPOSER, NODE_FACTS, PAGE_FACTS, UPLOAD_LOOKUP } from './chatgpt-facts.js';
 import { oracleDelay, type OracleFacts, type OraclePage, type OracleTarget, type OracleTurn } from './oracle.js';
+import { boundedOracleBrowser } from './oracle-read.js';
 import type { JevAskInput } from './types.js';
 
 export interface OracleBrowser extends BrowserPort {
@@ -25,6 +26,8 @@ export interface TargetBrowserOptions {
   attach(id: string): Promise<OracleBrowser>;
   targets(): Promise<Array<{ targetId: string; url: string }>>;
   now?: () => number;
+  /** Host-clock per-read CDP bound; tests may shorten it. */
+  readTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   diagnostic?: (phase: string, verdict: string, calls: number, elapsedMs: number) => void;
 }
@@ -76,7 +79,11 @@ interface RawFacts {
 class ChatPage implements OraclePage {
   page?: PageState;
   send?: { action: ObservedAction; page: PageState };
-  constructor(readonly browser: OracleBrowser) {}
+  signal?: AbortSignal;
+  readonly browser: OracleBrowser;
+  constructor(browser: OracleBrowser, timeoutMs?: number) {
+    this.browser = boundedOracleBrowser(browser, () => this.signal, timeoutMs);
+  }
   get id() {
     return this.browser.id;
   }
@@ -162,14 +169,18 @@ export function chatgptTarget(
       }
     },
     async open(url) {
-      return new ChatPage(await options.open(url));
+      return new ChatPage(await options.open(url), options.readTimeoutMs);
     },
     async attach(id) {
-      return new ChatPage(await options.attach(id));
+      return new ChatPage(await options.attach(id), options.readTimeoutMs);
     },
     targets: options.targets,
+    bindPage(page, _record, signal) {
+      (page as ChatPage).signal = signal;
+    },
     async prepare(oraclePage, input, provider, signal, committed) {
       const page = oraclePage as ChatPage;
+      page.signal = signal;
       const digest = () =>
         input.attach ? createHash('sha256').update(readFileSync(input.attach)).digest('hex') : undefined;
       const expectedAttachment = committed?.attachment_sha256 ?? digest();
