@@ -21,7 +21,17 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
 - R2b added 2026-11-08 (concept §15, "Pi execution through the pi-roles dispatch prototype"): the facade runs pi roles through `pi-dispatch` / STATUS / `pi-role-reap` instead of its own pi launch. Starts once pi-roles DISPATCH-2B and DISPATCH-3 have settled the contract.
 - Live Jev smoke (2026-11-08, owner-approved) found three R3 defects: production config was never found, judge markers were compared by identity, and a missing Chrome surfaced as `internal`. R3F (`aa6e86c`) fixed them and added a single-settlement CDP deadline. Re-smoke: the OpenAI judge settles in 1 call; the runtime auto-starts a detached headless Chrome and leaves it running.
 - Open (judge quality): the runtime sends the judge plain page text with `elements: []`. TypeSafe then stays unsettled on structural statements ("shows the heading …", p≈0.2–0.3; 1.0 when headings and links are marked), while OpenAI infers them. Follow-up: pass page structure (actions and headings) into judge observations.
-- R2b, R4 and PIBUNDLE (pi-roles one-extension bundle, in Fishpref) are in progress.
+- R2b merged (`178e5bd`) and accepted live on 2026-11-08 through `HUD_MCP_SURFACE=roles` with a synthetic scratch repo:
+  - a pi imp called sonic and the reviewer itself and settled; the caller-backgrounded `hud wait` returned DONE;
+  - SESSION `ORCH` was empty, so there is no second wake channel;
+  - `hud_close` reaped every agent and the tab, and a repeated close was idempotent;
+  - with `pi-dispatch` off PATH the R2 direct path launched, waited and closed.
+- The direct path first failed live with `unsafe_launch`: pi-roles' one-extension bundle (PIBUNDLE) put raw JSON in `--role-bundle`. pi-roles now encodes it as base64url (Fishpref `f7f2481`).
+- In progress: R4 (integrated with R3F/R2b, final review) and R2c (R2b live follow-ups):
+  - the returned wait command gets a 1 h bound and an absolute `bin/hud` path;
+  - a timeout gets exit code 6 / `TIMEOUT`;
+  - the `hud wait` import graph is cut (about 80 MB RSS today, target ≤ 50 MB);
+  - the conformance test checks the real `pi-role --args-json` output.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
