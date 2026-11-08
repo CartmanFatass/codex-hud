@@ -50,6 +50,23 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   AI Studio tab was hidden (background). Suspects: a CDP call that never settles on a hidden tab (60 s CDP timeout),
   and the URL settling to `prompts/<id>` after the send. Nothing was clicked or sent. R4F2 is fixing it. The
   ChatGPT Pro run waits for R4F2.
+- R4F2 merged (`406fe52`):
+  - Root cause: on a background tab, the post-scroll `Page.captureScreenshot` never settles. Oracle reads no
+    longer use compositor screenshots.
+  - Browser timeouts are now the finite code `browser_timeout`: `failed` before a send, completed + recoverable
+    after one.
+  - A same-document URL settlement keeps the prompt proof.
+  - Internal failures now get finite diagnostics.
+  - T9 runs on an isolated Chromium; the shared CDP endpoint is opt-in only.
+- Live acceptance, second run (2026-11-08 22:35Z):
+  - **D3 accepted.** The `r4-studio-1` resume completed `answered` (`437`) with zero resends, and the record is
+    `done/sent`. Collect took 1 min 44 s; the cause is being investigated.
+  - **D1 accepted.** ChatGPT `page_ready` passed in 2.9 s, and the stale draft was cleared.
+  - **D2 accepted.** The failure below surfaced as its own code.
+  - **New failure:** a ChatGPT Pro ask with an attachment (`r4-pro-attach-2`) failed `upload_finished_denied`.
+    The judge denied "uploaded" about 1 s after the file input was set. Nothing was sent.
+  - R4F2 fix round 2 is working on it: `upload_finished` becomes pass-only, real upload failures are detected
+    from facts, card matching and leftover attachments are checked, and the collect latency is explained.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
