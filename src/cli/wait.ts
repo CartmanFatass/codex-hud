@@ -1,5 +1,6 @@
 /**
- * `hud wait --job <id>` normalises one herdr wait. It does not accept a result
+ * `hud wait --job <id>` normalises one bounded wait. A dispatch job ends on its
+ * STATUS settlement; a direct job uses herdr state. It does not accept a result
  * and it does not wake any other session.
  *
  * There is no owner check. Anyone who can read this HUD_HOME can wait on the
@@ -16,12 +17,14 @@ export const WAIT_USAGE = 'hud wait --job <id> [--timeout-ms N]';
 export const WAIT_HELP = `Usage: ${WAIT_USAGE}
        hud wait --help
 
-Wait until the job's herdr agent is idle, done, or blocked, then print one JSON
-object. None of those states is acceptance. Arm the command hud_create returns;
-there is no separate wake broker.
+Wait until the job settles, then print one JSON object. A dispatch job settles on
+STATUS idle_grace, closed or failed, on a question, on a corroborated block, or
+on the timeout; a direct job uses herdr state. None of those states is
+acceptance. Background the command hud_create returns, and re-arm it after an
+answer, a fix prompt or a timeout; there is no separate wake broker.
 
 --timeout-ms is optional. When it is omitted the wait stops after 60000 ms.
-The maximum is 10800000. The value is passed through to herdr.
+The maximum is 10800000. The value bounds the wait.
 HUD_HOME defaults to ~/.hud and must be an absolute, private directory owned by this uid.
 
 Exit codes:
@@ -29,7 +32,7 @@ Exit codes:
   1  Unexpected internal or output failure
   2  Invalid arguments
   3  Invalid, missing, inaccessible, or non-private HUD_HOME
-  4  Unknown job, unresolved launch, or herdr wait failed
+  4  Unknown job, unresolved launch, or wait failed
 `;
 
 export async function waitCommand(args: readonly string[], io: HudIO): Promise<number> {

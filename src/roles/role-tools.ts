@@ -40,7 +40,7 @@ export const ROLE_TOOLS: readonly RoleToolDefinition[] = [
   ),
   tool(
     'hud_create',
-    'Create one job for a fixed role. Oracle requires phase propose or converge. The same request_key and the same request return the same job.',
+    'Create one job for a fixed role. Oracle requires phase propose or converge. The same request_key and the same request return the same job. Background the returned wait command; it is the only wake channel.',
     {
       role,
       phase,
@@ -79,19 +79,19 @@ export const ROLE_TOOLS: readonly RoleToolDefinition[] = [
   ),
   tool(
     'hud_read',
-    'Read one job, or list this session’s jobs when job is omitted. wait_ms waits for a herdr state change. Idle is not acceptance.',
+    'Read one job, or list this session’s jobs when job is omitted. wait_ms waits for settlement: dispatch STATUS idle_grace, closed or failed, a question, a corroborated block, or the deadline. Settlement is not acceptance.',
     { job, wait_ms: { type: 'integer', minimum: 0, maximum: 120000 } },
     []
   ),
   tool(
     'hud_send',
-    'Send one follow-up to an open job. The same message_key and the same text are not sent twice.',
+    'Send one follow-up to an open job. The same message_key and the same text are not sent twice. A dispatch implementer accepts a fix only during idle_grace; after it closes, create a new job.',
     { job, message_key: key, text: { type: 'string', minLength: 1, maxLength: 4096 } },
     ['job', 'message_key', 'text']
   ),
   tool(
     'hud_respond',
-    'Answer one outstanding pi question by writing qN.answer.md, or return a handoff when the backend has no such channel.',
+    'Answer one outstanding pi question by writing qN.answer.md, or return a handoff when the backend has no such channel. The file protocol has no consumption receipt; dispatch uses its legacy QA timeout, default 1200 seconds.',
     {
       job,
       request_id: { type: 'string', minLength: 2, maxLength: 8 },
@@ -101,7 +101,7 @@ export const ROLE_TOOLS: readonly RoleToolDefinition[] = [
   ),
   tool(
     'hud_close',
-    'Quit the job’s agent and close its herdr tab. A repeated close keeps the result and does not launch anything.',
+    'Reap the job’s agents and tab; a dispatch job is reaped through pi-role-reap. A repeated close keeps the result and does not launch anything.',
     { job },
     ['job']
   ),
