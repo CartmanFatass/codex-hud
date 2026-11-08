@@ -4,6 +4,8 @@ sonic 角色的两个候选模型：`mistral/deepseek-v4-1-flash-1017`（DS）�
 
 计划（Jacob，2026-11-07）：再测 2 个纯后端代码任务，连同 SONIC-AB-01 一起定 sonic 的默认模型或分流规则。
 
+暂停（Jacob，2026-11-08）：两轮之后停止对比，默认 DS，GLM 备选；sonic 不再写测试。规则见 `docs/delegation.md`。
+
 每行一个任务：同一 brief、同一基线、同一 effort，各自 worktree，一个 reviewer 盲评两份 diff（A/B 标签）。tps 取各自会话的 `tps` 条目。只记合成或公开信息。
 
 | 日期 | 任务 | 类型 | effort | DS：用时 / 成本 / tps / 质量 | GLM：用时 / 成本 / tps / 质量 | 采用 | 备注 |

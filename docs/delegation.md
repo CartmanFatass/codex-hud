@@ -27,7 +27,7 @@
 
 | 角色 | 模型 | 职责 |
 |---|---|---|
-| **sonic** | `mistral/deepseek-v4-1-flash-1017` 或 `mistral/zai-glm-5-3-flash`，effort 按任务类型 | 简单代码任务、按既定方法补测试、scout（侦察定位，跑 informer 只读角色）、杂务与机械任务。需要设计判断的不归 sonic |
+| **sonic** | `mistral/deepseek-v4-1-flash-1017` 或 `mistral/zai-glm-5-3-flash`，effort 按任务类型 | 简单代码任务、scout（侦察定位，跑 informer 只读角色）、杂务与机械任务、跑检查收集日志。需要设计判断的不归 sonic；**测试不归 sonic**（见下） |
 
 旧 Oracle 角色按擅长点拆开：工作包级的设计方案交 architect，insight 交 Argon，收敛与优化交 Pro。改名为 architect 也避开了产品里的 oracle 角色 / 阶段（R1）。Claude 内只保留 `frontend-implementer` 子代理（sonnet，xhigh）；其他 Claude 子代理（Fable 设计、Opus 评审、Explore 等）不用于项目工作，Oracle 独立 tab 与 Grok 也已退出工作流。Codex 调度（skill `herdr-delegate-codex`）保留为 legacy 备份，只在 Jacob 明确要求时使用。
 
@@ -46,22 +46,28 @@
 2. **工作包需不需要先设计？** 引入新结构、新契约、拥有进程或生命周期、影响稳定性或运行成本的，编排者先调 architect 出方案（独立 tab，`pi-role-call architect`），再自己定稿，implementer 的 brief 指向定稿设计。小改动、设计已在规格里写死的跳过。
 3. **谁来写？**
    - 需要判断、改动成片或涉及核心的代码 → **implementer**。它在左侧窗格实现；简单子任务可交 sonic（右侧窗格）；设计分叉上报编排者；检查通过后自己起 reviewer，修复到 `accept`（最多 3 轮）。
-   - 目标、方法、验收都写死的简单任务 → **sonic**，按下表选 effort；会合入的代码与测试写 `review: yes`，杂务与机械任务由编排者自己的检查验收。
-   - scout（找代码、摸清现状、汇总）→ sonic 模型跑 informer 只读角色，effort high。
+   - 目标、方法、验收都写死的简单任务 → **sonic**，按下表选 effort；会合入的代码写 `review: yes`，杂务与机械任务由编排者自己的检查验收。
+   - 测试（新增测试、改断言、写测试替身与表达预期的 fixture）→ 写这段代码的 **implementer** 自己写，不交 sonic（Jacob，2026-11-08）。测试是质量链上最关键的一环：SONIC-AB-02 里一份测试全绿的产出，真实页面上根本跑不通。sonic 只做按给定命令跑测试、收集日志，以及改名、搬路径这类不改断言含义的跟随修改。
+   - 排查、复现问题、测量（读日志找原因、复现偶发失败、二分定位、性能与内存测量）→ **implementer**（sol high），不交 sonic（Jacob，2026-11-08）：这类工作靠判断，结论错了比没有更糟。
+   - scout（找代码、摸清现状、汇总）→ sonic 模型跑 informer 只读角色，effort 见下表。
    - 前端设计（呈现哪些信息、怎么可视化）→ **Argon** 出方案，编排者判断定稿，不送 Pro 收敛（Jacob，2026-11-08）；定稿写进 `docs/design/` 后交 `frontend-implementer` 子代理（sonnet，xhigh）实现；评审交 pi reviewer。
    - 需要人类互动的测试 → Hermes。
-4. **sonic 用哪个模型？** 对比期间，sonic 任务可以两个模型同时跑（每个模型一个 tab，代码任务各自 worktree），一个 reviewer 盲评两份产出，择优采用，成本、用时与质量记入 `docs/sonic-ab.md`。积累够了再定默认模型或按任务类型分流。
+4. **sonic 用哪个模型？** 默认 DeepSeek V4.1 Flash：两轮对比（`docs/sonic-ab.md`）里它都更好；GLM-5.3 Flash 保留为备选。双模型对比已暂停（Jacob，2026-11-08），只在新模型上线或改规则时再做。
 5. **验收与提交。** 编排者读 report 与每轮 review，重跑检查，确认最后一轮是 `accept`；通过后提交、推送，把有用的 review 与 architect 答复归档到 `docs/reviews/`。不收敛时按升级规则处理。
 6. **收尾。** 关 agent、关 tab、跑 `herdr agent list` 检查点。
 
-两个 sonic 模型只支持 `low`、`high`、`max`（`medium` 会被 pi 映射成 `high`）：
+两个 sonic 模型只支持 `low`、`high`、`max`（`medium` 会被 pi 映射成 `high`）。暂定（Jacob，2026-11-08）：
 
 | sonic 任务 | effort |
 |---|---|
-| 机械任务（改名、移动、重新生成、格式化、搬运文案）、简单杂务（文档、配置） | low |
-| scout、脚本、fixture、简单代码、按既定方法补测试、按评审意见修复 | high |
+| 机械任务（改名、移动、按现有脚本重新生成、格式化、搬运文案）、简单查找型 scout（定位代码、列清单） | low |
+| 杂务（文档、配置、脚本、合成数据）、需要判断的调研型 scout（外部资料、来源失败要换路径）、按给定命令跑检查收集日志 | high |
+| 简单代码、按评审意见修复 | max |
 
-需要 `max` 的任务不归 sonic，交 implementer。
+- 混合任务按其中最难的部分定档。
+- 失败或拿不准时升一档重跑一次；max 也不行就交 implementer。同档不反复重试。
+- max 卡顿更多、用时更长：赶时间的任务拆小，不要整个丢给 max。
+- 验收看真实执行：sonic 产出的代码要在真实路径上跑过（或由 implementer 的测试执行到），不能只看测试全绿。
 
 ## 路由表
 
@@ -71,8 +77,10 @@
 | 方案明确的关键架构评审、Argon 方案的优化 | **Pro** | skill `jev-ask` |
 | 工作包设计方案、实现中上报的分叉 | **architect**（astra high），只由编排者调用；编排者定稿 | 编排者用 `pi-role-call architect`（独立 tab） |
 | 需要判断的代码任务（核心、开放型、成片改动、进程与生命周期代码） | **implementer**（sol high）+ 自调 reviewer（sol xhigh） | skill `herdr-delegate`：一个 WP 一个 tab，implementer 左、helper pane 右 |
-| 简单代码、补测试、按评审修复、杂务、机械任务 | **sonic**（DeepSeek V4.1 Flash / GLM-5.3 Flash，effort 见上） | skill `herdr-delegate` 的 sonic 流程；对比期可双模型并跑 |
-| scout | sonic 模型上的 **informer** 只读角色 | `pi-role informer ... -- --model <sonic 模型> --thinking high` |
+| 简单代码、按评审修复、杂务、机械任务、跑检查 | **sonic**（默认 DeepSeek V4.1 Flash，effort 见上） | skill `herdr-delegate` 的 sonic 流程 |
+| 测试的编写与修改 | 写这段代码的 **implementer**（编排者直接派的测试任务也交 implementer） | 同上，不交 sonic |
+| 排查、复现问题、测量 | **implementer**（sol high） | 同上，不交 sonic |
+| scout | sonic 模型上的 **informer** 只读角色 | `pi-role informer ... -- --model <sonic 模型> --thinking <low|high>` |
 | Claude 写的变更的评审 | **reviewer**（sol xhigh），编排者单独起 | skill `herdr-delegate` 的 review-only 流程 |
 | 前端设计：呈现哪些信息、可视化方式 | **Argon** 出方案 → 编排者定稿（不走 Pro） | skill `jev-ask` 的 `jev-aistudio`；定稿写进 `docs/design/` |
 | 前端实现：按已定设计写渲染、布局、文案、视觉基线 | **Claude Code 子代理 `frontend-implementer`**（sonnet，xhigh） | Agent 工具，`subagent_type: frontend-implementer`，传 brief 路径；设计以定稿设计文档（`docs/design/`）为准 |
