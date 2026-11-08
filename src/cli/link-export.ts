@@ -17,6 +17,7 @@ export const EXPORT_HELP = `${EXPORT_USAGE}
        hud cache show [--json]
        hud roster --help           List, show, or select a session roster preset
        hud wait --job <id> [--timeout-ms N]  Wait for one role job
+       hud setup --help            Copy known Jev credential names into jev.env
        hud migrate --help         Preview, apply or restore compatible settings
        hud codex [ARG ...]          Existing codex-hud compatibility launcher
 

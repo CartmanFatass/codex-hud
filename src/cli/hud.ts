@@ -11,6 +11,7 @@ import { panelCommand, PANEL_HELP } from './panel.js';
 import { piCommand } from './pi.js';
 import { ROSTER_HELP, rosterCommand } from './roster.js';
 import { WAIT_HELP, waitCommand } from './wait.js';
+import { setupCommand } from './setup.js';
 
 function writeStdout(text: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -82,6 +83,7 @@ export async function main(
       return await cacheCommand(args.slice(1), privateHome(io.env), io);
     }
     if (args[0] === 'pi') return await piCommand(args.slice(1), io);
+    if (args[0] === 'setup') return await setupCommand(args.slice(1), io);
     if (args[0] === 'roster') {
       if (args.length === 2 && args[1] === '--help') {
         await io.stdout(ROSTER_HELP);

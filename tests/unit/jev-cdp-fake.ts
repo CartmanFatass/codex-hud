@@ -143,6 +143,7 @@ function resultFor(
   if (method === 'Target.attachToTarget') return { sessionId: 'jev1-session' };
   if (method === 'Runtime.evaluate') {
     const expression = typeof params.expression === 'string' ? params.expression : '';
+    if (expression.trim() === 'document.readyState') return { result: { value: 'complete' } };
     const ready = locationReady(expression, reportedHref);
     if (ready !== undefined) return { result: { value: ready } };
     return {

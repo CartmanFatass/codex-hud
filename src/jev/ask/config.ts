@@ -5,10 +5,12 @@
 // Credentials are re-read from the env file on every call. They never come from
 // the caller's environment, and they are not written into errors.
 
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import * as path from 'node:path';
 import * as TOML from '@iarna/toml';
+import { decideProviderId } from '../decide.js';
 import { JevFailure } from './error.js';
 
 export const ASK_MAX_WAIT_MS = 2 * 60 * 60 * 1000;
@@ -179,39 +181,31 @@ export function readJevEnv(file: string): JevCredentials {
 
 /**
  * Choose the decision backend. Explicit `decisions.provider` wins. Otherwise a
- * single present key wins, and both keys default to OpenAI gpt-6-luna.
- * Neither key, and no explicit provider, reports the OpenAI variable: that is
- * the default backend. The returned error never includes a key value.
+ * single present key wins, and both keys default to TypeSafe (owner, 2026-11-07).
+ * The same rule is `decideProviderId`. The returned error never includes a key value.
  */
 export function selectDecisionProvider(config: JevConfig, creds: JevCredentials): DecisionChoice {
-  const explicit = config.decisions.provider;
-  const want =
-    explicit ??
-    (creds.openaiApiKey && creds.typesafeApiKey
-      ? 'openai'
-      : creds.typesafeApiKey && !creds.openaiApiKey
-        ? 'typesafe'
-        : 'openai');
-  if (want === 'typesafe') {
-    if (!creds.typesafeApiKey) {
-      return { ok: false, error: 'jev_credentials_missing', provider: 'typesafe', variable: 'TYPESAFE_API_KEY' };
-    }
+  const decision = decideProviderId(config.decisions.provider, {
+    typesafe: Boolean(creds.typesafeApiKey),
+    openai: Boolean(creds.openaiApiKey),
+  });
+  if (!decision.ok) {
+    return { ok: false, error: 'jev_credentials_missing', provider: decision.provider, variable: decision.variable };
+  }
+  if (decision.provider === 'typesafe') {
     return {
       ok: true,
       provider: 'typesafe',
       model: config.decisions.typesafe.model || creds.typesafeModel || DEFAULT_TYPESAFE_MODEL,
-      apiKey: creds.typesafeApiKey,
+      apiKey: creds.typesafeApiKey ?? '',
     };
-  }
-  if (!creds.openaiApiKey) {
-    return { ok: false, error: 'jev_credentials_missing', provider: 'openai', variable: 'OPENAI_API_KEY' };
   }
   return {
     ok: true,
     provider: 'openai',
     model: OPENAI_DECISION_MODEL,
     baseUrl: config.decisions.openai.baseUrl || creds.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL,
-    apiKey: creds.openaiApiKey,
+    apiKey: creds.openaiApiKey ?? '',
   };
 }
 
@@ -220,23 +214,82 @@ export function credentialsForJob(envFile: string, config: JevConfig): DecisionC
   return selectDecisionProvider(config, readJevEnv(envFile));
 }
 
+/** Names `hud setup --import-jev-env` copies. Anything else in the source is ignored. */
+export const IMPORT_ENV_NAMES = ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'TYPESAFE_API_KEY', 'TYPESAFE_MODEL'] as const;
+
+/**
+ * The Jev install's `.env`, `<root>/.env`, from the jev-ask `[jev].root` the spec names.
+ * This does not read the file. Job time still uses only `$HUD_HOME/jev.env`.
+ */
+export function jevInstallEnvPath(options: { tomlPath?: string; tomlText?: string; home?: string } = {}): string {
+  const home = options.home ?? homedir();
+  const table = readToml({ tomlPath: options.tomlPath ?? defaultJevTomlPath(home), tomlText: options.tomlText });
+  const root = table?.root;
+  if (typeof root !== 'string' || !root.trim()) {
+    throw new JevFailure('config', 'configuration must name [jev].root to locate the Jev .env');
+  }
+  return path.join(expandUser(root, home), '.env');
+}
+
+/**
+ * Copy the known credential names into `$HUD_HOME/jev.env` (mode 0600, temp file then rename).
+ * The source is not required to be 0600; `readJevEnv` still refuses that at job time.
+ * The returned list is names only.
+ */
+export function importJevEnv(options: {
+  hudHome: string;
+  from?: string;
+  home?: string;
+  tomlPath?: string;
+  tomlText?: string;
+}): { file: string; names: string[] } {
+  if (!options.hudHome.startsWith('/')) throw new JevFailure('config', 'HUD home must be absolute');
+  const source = options.from ?? jevInstallEnvPath(options);
+  const copied = readImportSource(source);
+  if (copied.length === 0) {
+    throw new JevFailure('jev_env_empty', 'no known Jev credential names in source');
+  }
+  const lines = copied.map((entry) => `${entry.name}=${entry.value}`);
+  const body = lines.length ? `${lines.join('\n')}\n` : '';
+  const file = path.join(options.hudHome, 'jev.env');
+  writePrivate(file, body);
+  return { file, names: copied.map((entry) => entry.name) };
+}
+
+/** Proxy variables for a runtime child. Config wins, then the captured environment. */
+export function proxyForSpawn(captured: Record<string, string | undefined>, home?: string): Record<string, string> {
+  try {
+    return hostProxyEnv(loadJevConfig({ capturedEnv: captured, home }));
+  } catch (error) {
+    if (!(error instanceof JevFailure)) throw error;
+    return proxyProcessEnv({
+      server: firstEnv(captured, ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY', 'all_proxy', 'ALL_PROXY']),
+      bypass: firstEnv(captured, ['no_proxy', 'NO_PROXY']),
+    });
+  }
+}
+
 /**
  * Environment for the host process (`--use-env-proxy`). `NO_PROXY` always
  * contains `127.0.0.1` and `localhost`, so CDP and `/json/*` stay direct.
  */
 export function hostProxyEnv(config: JevConfig): Record<string, string> {
+  return proxyProcessEnv(config.proxy);
+}
+
+export function proxyProcessEnv(proxy: JevProxy): Record<string, string> {
   const hosts: string[] = [];
   const add = (host: string) => {
     if (host && !hosts.includes(host)) hosts.push(host);
   };
   add('127.0.0.1');
   add('localhost');
-  for (const part of (config.proxy.bypass ?? '').split(',')) add(part.trim());
+  for (const part of (proxy.bypass ?? '').split(',')) add(part.trim());
   const list = hosts.join(',');
   const env: Record<string, string> = { NO_PROXY: list, no_proxy: list };
-  if (config.proxy.server) {
-    env.HTTPS_PROXY = config.proxy.server;
-    env.https_proxy = config.proxy.server;
+  if (proxy.server) {
+    env.HTTPS_PROXY = proxy.server;
+    env.https_proxy = proxy.server;
   }
   return env;
 }
@@ -459,4 +512,63 @@ function unquoteEnv(value: string): string {
     if ((quote === '"' || quote === "'") && value.endsWith(quote)) return value.slice(1, -1);
   }
   return value;
+}
+
+function importableName(name: string): boolean {
+  if ((IMPORT_ENV_NAMES as readonly string[]).includes(name)) return true;
+  return /^TEXT_MODEL_[A-Z0-9_]+$/.test(name);
+}
+
+/** Source files are not always 0600. Symlinks and FIFOs are still refused. Values never enter errors. */
+function readImportSource(file: string): Array<{ name: string; value: string }> {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') throw new JevFailure('config', 'Jev .env was not found');
+    if (code === 'ELOOP' || code === 'EPERM' || code === 'ENOTSUP' || code === 'ENXIO') {
+      throw new JevFailure('jev_env_perms', 'Jev .env must be a regular file');
+    }
+    throw new JevFailure('config', 'Jev .env could not be read');
+  }
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) throw new JevFailure('jev_env_perms', 'Jev .env must be a regular file');
+    const found = new Map<string, string>();
+    for (const rawLine of fs.readFileSync(fd, 'utf8').split('\n')) {
+      const assignment = parseEnvAssignment(rawLine);
+      if (!assignment || !importableName(assignment.name)) continue;
+      found.set(assignment.name, assignment.value);
+    }
+    const ordered: Array<{ name: string; value: string }> = [];
+    for (const name of IMPORT_ENV_NAMES) {
+      const value = found.get(name);
+      if (value !== undefined) ordered.push({ name, value });
+    }
+    for (const name of [...found.keys()].filter((item) => item.startsWith('TEXT_MODEL_')).sort()) {
+      ordered.push({ name, value: found.get(name) ?? '' });
+    }
+    return ordered;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function writePrivate(file: string, body: string): void {
+  const temporary = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  const fd = fs.openSync(temporary, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
+  try {
+    fs.writeFileSync(fd, body);
+    fs.fchmodSync(fd, 0o600);
+  } finally {
+    fs.closeSync(fd);
+  }
+  try {
+    fs.renameSync(temporary, file);
+    fs.chmodSync(file, 0o600);
+  } catch (error) {
+    fs.rmSync(temporary, { force: true });
+    throw error;
+  }
 }

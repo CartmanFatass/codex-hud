@@ -70,6 +70,11 @@ export interface AcquireOptions extends LockRequest {
   kind?: 'browser' | 'wait';
   /** Required when `kind` is `wait`. */
   key?: string;
+  /**
+   * Browser-lease file name inside `stateDir`. The default is `browser.lock`.
+   * The runtime process uses `runtime.lock` so it does not take the browser lease.
+   */
+  lockFile?: string;
   waitMs?: number;
   pollMs?: number;
 }
@@ -474,7 +479,11 @@ function lockPaths(options: AcquireOptions): { path: string; breakPath: string }
     const file = path.join(options.stateDir, 'operations', `${operationStem(options.key)}.wait.lease`);
     return { path: file, breakPath: `${file}.break` };
   }
-  const file = path.join(options.stateDir, 'browser.lock');
+  const name = options.lockFile ?? 'browser.lock';
+  if (!/^[a-z0-9][a-z0-9._-]{0,40}$/.test(name)) {
+    throw new JevFailure('invalid_key', 'lock name is invalid');
+  }
+  const file = path.join(options.stateDir, name);
   return { path: file, breakPath: `${file}.break` };
 }
 
