@@ -1,0 +1,60 @@
+/**
+ * `hud wait --job <id>` normalises one herdr wait. It does not accept a result
+ * and it does not wake any other session.
+ *
+ * There is no owner check. Anyone who can read this HUD_HOME can wait on the
+ * job. That is acceptable for a local CLI. MCP sessions use `hud_read`, which
+ * checks the session root.
+ */
+
+import type { HudIO } from './link-export.js';
+import { CliError, privateHome } from './runtime.js';
+import { waitForJob } from '../roles/facade.js';
+
+export const WAIT_USAGE = 'hud wait --job <id> [--timeout-ms N]';
+
+export const WAIT_HELP = `Usage: ${WAIT_USAGE}
+       hud wait --help
+
+Wait until the job's herdr agent is idle, done, or blocked, then print one JSON
+object. None of those states is acceptance. Arm the command hud_create returns;
+there is no separate wake broker.
+
+--timeout-ms is optional. When it is omitted the wait stops after 60000 ms.
+The maximum is 10800000. The value is passed through to herdr.
+HUD_HOME defaults to ~/.hud and must be an absolute, private directory owned by this uid.
+
+Exit codes:
+  0  Success or help
+  1  Unexpected internal or output failure
+  2  Invalid arguments
+  3  Invalid, missing, inaccessible, or non-private HUD_HOME
+  4  Unknown job, unresolved launch, or herdr wait failed
+`;
+
+export async function waitCommand(args: readonly string[], io: HudIO): Promise<number> {
+  if (args.length === 1 && args[0] === '--help') {
+    await io.stdout(WAIT_HELP);
+    return 0;
+  }
+  let job: string | undefined;
+  let timeout: number | null = null;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === '--job') {
+      job = args[++index];
+      if (!job) throw new CliError('invalid_arguments');
+    } else if (arg === '--timeout-ms') {
+      const raw = args[++index];
+      if (!raw || !/^\d+$/.test(raw)) throw new CliError('invalid_arguments');
+      timeout = Number(raw);
+      if (!Number.isSafeInteger(timeout) || timeout > 10_800_000) throw new CliError('invalid_arguments');
+    } else {
+      throw new CliError('invalid_arguments');
+    }
+  }
+  if (!job) throw new CliError('invalid_arguments');
+  const result = await waitForJob(privateHome(io.env), io.env, job, timeout);
+  await io.stdout(`${JSON.stringify(result)}\n`);
+  return result.ok ? 0 : 4;
+}

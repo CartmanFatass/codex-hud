@@ -6,8 +6,17 @@ if (!((major === 22 && minor >= 13) || major >= 24)) {
   );
   process.exit(1);
 }
+import { selectMcpEntry } from './surface.mjs';
+
+let entry;
 try {
-  await import('../dist/packages/hud-mcp/src/main.js');
+  entry = selectMcpEntry(process.env.HUD_MCP_SURFACE);
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : 'unknown_surface'}\n`);
+  process.exit(1);
+}
+try {
+  await import(entry);
 } catch (error) {
   process.stderr.write(`hud-mcp startup failed: ${error instanceof Error ? error.message : 'unknown_error'}\n`);
   process.exitCode = 1;

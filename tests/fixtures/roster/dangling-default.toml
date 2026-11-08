@@ -5,6 +5,7 @@ default_preset = "missing"
 executor = "herdr"
 harness = "pi"
 model = "synthetic-flash"
+recipe = "pi-role"
 
 [backends.page]
 executor = "jev"

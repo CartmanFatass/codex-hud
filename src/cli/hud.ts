@@ -10,6 +10,7 @@ import { CLAUDE_HELP, claudeCommand, codexCommand } from './launcher.js';
 import { panelCommand, PANEL_HELP } from './panel.js';
 import { piCommand } from './pi.js';
 import { ROSTER_HELP, rosterCommand } from './roster.js';
+import { WAIT_HELP, waitCommand } from './wait.js';
 
 function writeStdout(text: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -87,6 +88,13 @@ export async function main(
         return 0;
       }
       return await rosterCommand(args.slice(1), io);
+    }
+    if (args[0] === 'wait') {
+      if (args.length === 2 && args[1] === '--help') {
+        await io.stdout(WAIT_HELP);
+        return 0;
+      }
+      return await waitCommand(args.slice(1), io);
     }
     if (args[0] === 'claude') {
       if (args.length === 2 && args[1] === '--help') {

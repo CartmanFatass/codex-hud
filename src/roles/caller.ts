@@ -163,21 +163,37 @@ function codexSession(proc: CallerProcess, probe: CallerProbe): RosterRoot | nul
   return rootFrom('codex', root, thread);
 }
 
+export interface CallerIdentity {
+  readonly harness: Harness;
+  readonly root: RosterRoot;
+}
+
 /** Null when this process is not a child of a harness whose session can be proved. */
-export function callerRoot(probe: CallerProbe): RosterRoot | null {
+export function callerIdentity(probe: CallerProbe): CallerIdentity | null {
   let pid = probe.ppid;
   for (let depth = 0; depth < 8 && pid > 1; depth++) {
     const proc = probe.read(pid);
     if (!proc) return null;
     if (proc.env.NODE_TEST_CONTEXT) return null;
     const harness = harnessOf(proc.argv);
-    if (harness === 'claude') return claudeSession(proc, probe);
-    if (harness === 'pi') return piSession(proc, probe);
-    if (harness === 'codex') return codexSession(proc, probe);
-    if (proc.ppid === pid) return null;
+    const root =
+      harness === 'claude'
+        ? claudeSession(proc, probe)
+        : harness === 'pi'
+          ? piSession(proc, probe)
+          : harness === 'codex'
+            ? codexSession(proc, probe)
+            : undefined;
+    if (root) return { harness: harness!, root };
+    if (root === null || proc.ppid === pid) return null;
     pid = proc.ppid;
   }
   return null;
+}
+
+/** Null when this process is not a child of a harness whose session can be proved. */
+export function callerRoot(probe: CallerProbe): RosterRoot | null {
+  return callerIdentity(probe)?.root ?? null;
 }
 
 function liveRead(pid: number): CallerProcess | null {
@@ -228,9 +244,8 @@ function liveRealpath(path: string): string | null {
  * Live identity. Under `node --test` this returns null without reading a home
  * directory: the test process is not a harness session.
  */
-export function liveCallerRoot(env: NodeJS.ProcessEnv): RosterRoot | null {
-  if (process.env.NODE_TEST_CONTEXT) return null;
-  return callerRoot({
+function liveProbe(env: NodeJS.ProcessEnv): CallerProbe {
+  return {
     ppid: process.ppid,
     env,
     read: liveRead,
@@ -238,5 +253,15 @@ export function liveCallerRoot(env: NodeJS.ProcessEnv): RosterRoot | null {
     realpath: liveRealpath,
     codexThread: (root, pid, since) => resolveDaemonThread(join(root, 'logs_2.sqlite'), { pid, since }),
     started: processStart,
-  });
+  };
+}
+
+/** Live identity, including the harness. Under `node --test` this returns null. */
+export function liveCallerIdentity(env: NodeJS.ProcessEnv): CallerIdentity | null {
+  if (process.env.NODE_TEST_CONTEXT) return null;
+  return callerIdentity(liveProbe(env));
+}
+
+export function liveCallerRoot(env: NodeJS.ProcessEnv): RosterRoot | null {
+  return liveCallerIdentity(env)?.root ?? null;
 }

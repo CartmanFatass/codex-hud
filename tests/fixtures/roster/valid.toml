@@ -6,14 +6,14 @@ executor = "herdr"
 harness = "pi"
 model = "synthetic-flash"
 effort = "max"
-recipe = "pi-implementer"
+recipe = "pi-role"
 
 [backends.alt]
 executor = "herdr"
 harness = "claude"
 model = "synthetic-opus"
 effort = "high"
-recipe = "claude-review"
+recipe = "claude"
 
 [backends.web]
 executor = "jev"
@@ -29,6 +29,8 @@ executor = "herdr"
 harness = "codex"
 model = "synthetic-luna"
 effort = "medium"
+recipe = "codex-zsh"
+wrapper = "codex"
 env_profile = "synthetic-account"
 
 [jev_decisions.typesafe-default]

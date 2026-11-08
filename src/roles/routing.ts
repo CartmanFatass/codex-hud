@@ -8,9 +8,11 @@
  * direct Jev work, not an oracle.
  */
 
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import * as TOML from '@iarna/toml';
+import { ADAPTER_HARNESS, isLaunchAdapter } from './adapters.js';
 import { CAPABILITIES, SLOTS, slotContract, type Capability, type Slot } from './roles.js';
 
 export const ROUTING_FILE = 'routing.toml';
@@ -65,6 +67,11 @@ export interface BackendProfile {
   readonly effort: string | null;
   readonly recipe: string | null;
   readonly envProfile: string | null;
+  /**
+   * `codex` or `codex2` for a `codex-zsh` backend. The function selects the
+   * account. Null for every other backend. It is not inferred from `envProfile`.
+   */
+  readonly wrapper: 'codex' | 'codex2' | null;
   readonly target: JevTarget | null;
   readonly mode: string | null;
   readonly args: StructuredArgs | null;
@@ -84,12 +91,20 @@ export interface RoutingPreset {
   readonly roles: Readonly<Record<Slot, string>>;
 }
 
+/**
+ * Name → environment for one `env_profile` label.
+ * Values are absolute paths from the user's file. The facade never invents a home.
+ */
+export type EnvProfile = Readonly<Record<string, string>>;
+
 export interface RoutingFile {
   readonly schema: 1;
   readonly defaultPreset: string;
   readonly backends: Readonly<Record<string, BackendProfile>>;
   readonly decisions: Readonly<Record<string, JevDecision>>;
   readonly presets: Readonly<Record<string, RoutingPreset>>;
+  /** Absent from older files. An `env_profile` with no row stays unresolved until launch. */
+  readonly envProfiles: Readonly<Record<string, EnvProfile>>;
 }
 
 const ID = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
@@ -97,8 +112,11 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const FIELD_KEY = /^[A-Za-z0-9._-]{1,80}$/;
 const ARG_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,32}$/;
 
-const TOP_KEYS = ['schema', 'default_preset', 'backends', 'jev_decisions', 'presets'];
-const HERDR_KEYS = ['executor', 'harness', 'model', 'effort', 'recipe', 'env_profile', 'args'];
+const TOP_KEYS = ['schema', 'default_preset', 'backends', 'jev_decisions', 'presets', 'env_profiles'];
+/** Account homes a profile may name. Anything else would be an arbitrary process environment. */
+const ENV_PROFILE_VARS = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR'] as const;
+const HERDR_KEYS = ['executor', 'harness', 'model', 'effort', 'recipe', 'env_profile', 'args', 'wrapper'];
+const CODEX_WRAPPERS = ['codex', 'codex2'] as const;
 const JEV_KEYS = ['executor', 'target', 'model', 'mode'];
 const DECISION_KEYS = ['provider', 'model'];
 const PRESET_KEYS = ['description', 'jev_decisions', 'roles'];
@@ -266,9 +284,17 @@ function parseBackend(id: string, value: unknown): BackendProfile {
     const harness = oneOf(required(body, 'harness', `${field}.harness`), HERDR_HARNESSES, `${field}.harness`);
     const model = modelName(required(body, 'model', `${field}.model`), `${field}.model`);
     const effort = own(body, 'effort') ? label(body.effort, `${field}.effort`) : null;
-    const recipe = own(body, 'recipe') ? identifier(body.recipe, `${field}.recipe`) : null;
+    const recipe = identifier(required(body, 'recipe', `${field}.recipe`), `${field}.recipe`);
+    if (!isLaunchAdapter(recipe)) fail('invalid_value', `${field}.recipe`);
+    if (ADAPTER_HARNESS[recipe] !== harness) fail('invalid_value', `${field}.harness`);
     const envProfile = own(body, 'env_profile') ? label(body.env_profile, `${field}.env_profile`) : null;
     const args = own(body, 'args') ? structuredArgs(body.args, `${field}.args`) : null;
+    // The wrapper is the account. Do not infer it from the env-profile name.
+    const wrapper =
+      recipe === 'codex-zsh'
+        ? oneOf(required(body, 'wrapper', `${field}.wrapper`), CODEX_WRAPPERS, `${field}.wrapper`)
+        : null;
+    if (recipe !== 'codex-zsh' && own(body, 'wrapper')) fail('invalid_value', `${field}.wrapper`);
     return {
       id,
       executor,
@@ -277,6 +303,7 @@ function parseBackend(id: string, value: unknown): BackendProfile {
       effort,
       recipe,
       envProfile,
+      wrapper,
       target: null,
       mode: null,
       args,
@@ -294,6 +321,7 @@ function parseBackend(id: string, value: unknown): BackendProfile {
     effort: null,
     recipe: null,
     envProfile: null,
+    wrapper: null,
     target,
     mode,
     args: null,
@@ -341,6 +369,54 @@ function parsePreset(
   return { name, description, jevDecisions, roles };
 }
 
+/** An absolute path the user wrote. `~` is not expanded and `..` is rejected. */
+function absoluteEnvPath(value: unknown, field: string): string {
+  if (typeof value !== 'string') fail('invalid_type', field);
+  const parts = value.split('/');
+  if (
+    value.length < 2 ||
+    value.length > 256 ||
+    !value.startsWith('/') ||
+    value.includes('\0') ||
+    /[\r\n]/.test(value) ||
+    parts.some((part) => part === '..' || part === '.')
+  ) {
+    fail('invalid_value', field);
+  }
+  return value;
+}
+
+function parseEnvProfiles(value: unknown): Record<string, EnvProfile> {
+  const body = record(value, 'env_profiles');
+  const ids = Object.keys(body);
+  if (ids.length > 16) fail('invalid_value', 'env_profiles');
+  const profiles: Record<string, EnvProfile> = blankMap();
+  for (const id of ids) {
+    label(id, `env_profiles.${FIELD_KEY.test(id) ? id : 'id'}`);
+    const row = record(body[id], `env_profiles.${id}`);
+    const keys = Object.keys(row);
+    if (keys.length === 0 || keys.length > ENV_PROFILE_VARS.length) fail('invalid_value', `env_profiles.${id}`);
+    const vars: Record<string, string> = blankMap();
+    for (const key of keys) {
+      if (!(ENV_PROFILE_VARS as readonly string[]).includes(key)) fail('unknown_key', `env_profiles.${id}.${key}`);
+      vars[key] = absoluteEnvPath(row[key], `env_profiles.${id}.${key}`);
+    }
+    profiles[id] = vars;
+  }
+  return profiles;
+}
+
+/**
+ * Environment for a backend `env_profile` name.
+ * `{}` when the backend names none. `null` when the name has no table row:
+ * the caller must not launch on the ambient account.
+ */
+export function envProfileVars(routing: RoutingFile, name: string | null): EnvProfile | null {
+  if (!name) return {};
+  const row = idValue(routing.envProfiles, name);
+  return row ? row : null;
+}
+
 function parseDocument(value: unknown): RoutingFile {
   const root = record(value, 'routing.toml');
   assertKeys(root, TOP_KEYS, '');
@@ -376,7 +452,16 @@ function parseDocument(value: unknown): RoutingFile {
     presets[name] = parsePreset(name, presetBody[name], { backends, decisions });
   }
   if (!own(presets, defaultPreset)) fail('dangling_id', 'default_preset');
-  return { schema: 1, defaultPreset, backends, decisions, presets };
+  const envProfiles = own(root, 'env_profiles') ? parseEnvProfiles(root.env_profiles) : blankMap<EnvProfile>();
+  // A codex-zsh wrapper hardcodes its own account home, so an env-profile
+  // CODEX_HOME on the same backend would be ignored. Reject that combination.
+  for (const id of backendIds) {
+    const backend = backends[id];
+    if (!backend?.wrapper || !backend.envProfile) continue;
+    const row = idValue(envProfiles, backend.envProfile);
+    if (row && Object.hasOwn(row, 'CODEX_HOME')) fail('invalid_value', `backends.${id}.env_profile`);
+  }
+  return { schema: 1, defaultPreset, backends, decisions, presets, envProfiles };
 }
 
 export function parseRouting(text: string): RoutingFile {
@@ -405,19 +490,33 @@ function refuseSymlink(path: string, field: string): fs.Stats {
   return info;
 }
 
-/** Read and validate `$HUD_HOME/routing.toml`. Does not create the file. */
-export function loadRouting(home: string): RoutingFile {
+export interface LoadedRouting {
+  readonly routing: RoutingFile;
+  /** SHA-256 of the same bytes `routing` was parsed from. */
+  readonly revision: string;
+}
+
+function readRoutingText(home: string): string {
   const path = join(home, ROUTING_FILE);
   const info = refuseSymlink(path, ROUTING_FILE);
   if (!info.isFile()) fail('file_unreadable', ROUTING_FILE);
   if (info.size > ROUTING_MAX_BYTES) fail('file_too_large', ROUTING_FILE);
-  let text: string;
   try {
-    text = fs.readFileSync(path, 'utf8');
+    return fs.readFileSync(path, 'utf8');
   } catch {
     fail('file_unreadable', ROUTING_FILE);
   }
-  return parseRouting(text);
+}
+
+/** Read and validate `$HUD_HOME/routing.toml`. The revision hashes those bytes. */
+export function readRouting(home: string): LoadedRouting {
+  const text = readRoutingText(home);
+  return { routing: parseRouting(text), revision: createHash('sha256').update(text).digest('hex') };
+}
+
+/** Read and validate `$HUD_HOME/routing.toml`. Does not create the file. */
+export function loadRouting(home: string): RoutingFile {
+  return readRouting(home).routing;
 }
 
 /** JSON view of a backend. Keys are stable and match the file's vocabulary. */
@@ -429,6 +528,7 @@ export function backendJson(backend: BackendProfile): {
   effort: string | null;
   recipe: string | null;
   env_profile: string | null;
+  wrapper: 'codex' | 'codex2' | null;
   target: JevTarget | null;
   mode: string | null;
   args: StructuredArgs | null;
@@ -442,6 +542,7 @@ export function backendJson(backend: BackendProfile): {
     effort: backend.effort,
     recipe: backend.recipe,
     env_profile: backend.envProfile,
+    wrapper: backend.wrapper,
     target: backend.target,
     mode: backend.mode,
     args: backend.args,

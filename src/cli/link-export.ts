@@ -16,6 +16,7 @@ export const EXPORT_HELP = `${EXPORT_USAGE}
        hud run --help
        hud cache show [--json]
        hud roster --help           List, show, or select a session roster preset
+       hud wait --job <id> [--timeout-ms N]  Wait for one role job
        hud migrate --help         Preview, apply or restore compatible settings
        hud codex [ARG ...]          Existing codex-hud compatibility launcher
 

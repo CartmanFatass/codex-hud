@@ -118,6 +118,7 @@ test('valid fixture keeps unused profiles and accepts a CLI oracle', () => {
   const routing = parseRouting(text('valid.toml'));
   assert.equal(routing.defaultPreset, 'daily');
   assert.equal(routing.backends.spare.envProfile, 'synthetic-account');
+  assert.equal(routing.backends.spare.wrapper, 'codex');
   assert.equal(routing.decisions['unused-openai'].provider, 'openai');
   assert.equal(
     Object.values(routing.presets).some((preset) => Object.values(preset.roles).includes('spare')),
@@ -277,6 +278,7 @@ test('the example reproduces the daily and pi-build routing without home paths',
   assert.equal(routing.backends['codex-test'].model, 'gpt-6-luna');
   assert.equal(routing.backends['codex-test'].effort, 'medium');
   assert.equal(routing.backends['codex-test'].envProfile, 'codex2');
+  assert.equal(routing.backends['codex-test'].wrapper, 'codex2');
   assert.equal(routing.backends['codex-test'].harness, 'codex');
   assert.deepEqual(routing.backends['codex-test'].args, { service_tier: 'default' });
   assert.equal(routing.decisions['typesafe-default'].provider, 'typesafe');
@@ -450,7 +452,7 @@ test('prototype preset and backend ids are unknown, and a path after = is reject
   assert.equal(named.field, 'preset');
 
   const withArgs = (line: string) =>
-    text('valid.toml').replace('recipe = "pi-implementer"\n', `recipe = "pi-implementer"\n${line}\n`);
+    text('valid.toml').replace('recipe = "pi-role"\n', `recipe = "pi-role"\n${line}\n`);
   for (const line of ['args = ["--config=/tmp/synthetic"]', 'args = ["--x=~/synthetic"]']) {
     const error = routingError(() => parseRouting(withArgs(line)));
     assert.equal(error.code, 'invalid_value', line);
