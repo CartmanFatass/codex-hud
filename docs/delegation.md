@@ -29,29 +29,32 @@
 |---|---|---|
 | **sonic** | `mistral/deepseek-v4-1-flash-1017` 或 `mistral/zai-glm-5-3-flash`，effort 按任务类型 | 简单代码任务、按既定方法补测试、scout（侦察定位，跑 informer 只读角色）、杂务与机械任务。需要设计判断的不归 sonic |
 
-旧 Oracle 角色按擅长点拆开：工作包内的体系设计与分叉交 architect，insight 交 Argon，收敛与优化交 Pro。改名为 architect 也避开了产品里的 oracle 角色 / 阶段（R1）。Fable 设计子代理、Oracle 独立 tab、Opus 子代理临时评审与 Grok 都已退出工作流。Codex 调度（skill `herdr-delegate-codex`）保留为 legacy 备份，只在 Jacob 明确要求时使用。
+旧 Oracle 角色按擅长点拆开：工作包内的体系设计与分叉交 architect，insight 交 Argon，收敛与优化交 Pro。改名为 architect 也避开了产品里的 oracle 角色 / 阶段（R1）。Claude 内只保留 `frontend-implementer` 子代理（sonnet，xhigh）；其他 Claude 子代理（Fable 设计、Opus 评审、Explore 等）不用于项目工作，Oracle 独立 tab 与 Grok 也已退出工作流。Codex 调度（skill `herdr-delegate-codex`）保留为 legacy 备份，只在 Jacob 明确要求时使用。
 
 ## 调度流程
 
-编排者（Claude Code 主会话）每接到一项工作，按下面的顺序判断：
+编排者（Claude Code 主会话）启动的每个 agent（implementer、sonic、architect、单独的 reviewer、对比的每一臂）都开独立 tab，一个任务一个 tab，便于观察；只有 implementer 的 tab 分左右，右侧窗格由 implementer 自己调 architect 与 reviewer。每接到一项工作，按下面的顺序判断：
 
 1. **是不是宏观问题？** 新功能方向、范围变化、项目卡住的关键问题、跨多个工作包的取舍。是：需要新思路时先发 Argon 出提案，再把提案交 Pro 评审优化；需求与方案已经明确的直接交 Pro。定稿写进概念方案 §15 或 `docs/design/`，再拆成工作包。编排者不自己裁决这类问题。
-2. **工作包需不需要先设计？** 引入新结构、新契约、拥有进程或生命周期、影响稳定性或运行成本的，先由 architect 出设计（tab 右侧窗格，`pi-role-call architect`），implementer 的 brief 指向这份设计。小改动、设计已在规格里写死的跳过。
+2. **工作包需不需要先设计？** 引入新结构、新契约、拥有进程或生命周期、影响稳定性或运行成本的，先由 architect 出设计（独立 tab，`pi-role-call architect`），implementer 的 brief 指向这份设计。小改动、设计已在规格里写死的跳过。
 3. **谁来写？**
    - 需要判断、改动成片或涉及核心的代码 → **implementer**。它在左侧窗格实现，分叉时自己问 architect，检查通过后自己起 reviewer，修复到 `accept`（最多 3 轮）。
    - 目标、方法、验收都写死的简单任务 → **sonic**，按下表选 effort；会合入的代码与测试写 `review: yes`，杂务与机械任务由编排者自己的检查验收。
-   - scout（找代码、摸清现状、汇总）→ sonic 模型跑 informer 只读角色，effort medium。
+   - scout（找代码、摸清现状、汇总）→ sonic 模型跑 informer 只读角色，effort high。
    - 渲染与视觉 → `frontend-implementer` 子代理，按定稿设计；评审交 pi reviewer。
    - 需要人类互动的测试 → Hermes。
-4. **sonic 用哪个模型？** 对比期间，sonic 任务可以两个模型同时跑（同一 tab 左右两格，各自 worktree），一个 reviewer 盲评两份 diff，择优采用，结果记入 `docs/sonic-ab.md`。积累够了再定默认模型或按任务类型分流。
+4. **sonic 用哪个模型？** 对比期间，sonic 任务可以两个模型同时跑（每个模型一个 tab，代码任务各自 worktree），一个 reviewer 盲评两份产出，择优采用，成本、用时与质量记入 `docs/sonic-ab.md`。积累够了再定默认模型或按任务类型分流。
 5. **验收与提交。** 编排者读 report 与每轮 review，重跑检查，确认最后一轮是 `accept`；通过后提交、推送，把有用的 review 与 architect 答复归档到 `docs/reviews/`。不收敛时按升级规则处理。
 6. **收尾。** 关 agent、关 tab、跑 `herdr agent list` 检查点。
 
+两个 sonic 模型只支持 `low`、`high`、`max`（`medium` 会被 pi 映射成 `high`）：
+
 | sonic 任务 | effort |
 |---|---|
-| 机械任务：改名、移动、重新生成、格式化、搬运文案 | low |
-| 杂务：文档、配置、脚本、fixture；scout | medium |
-| 简单代码、按既定方法补测试、按评审意见修复 | high |
+| 机械任务（改名、移动、重新生成、格式化、搬运文案）、简单杂务（文档、配置） | low |
+| scout、脚本、fixture、简单代码、按既定方法补测试、按评审意见修复 | high |
+
+需要 `max` 的任务不归 sonic，交 implementer。
 
 ## 路由表
 
@@ -62,7 +65,7 @@
 | 工作包设计、实现中的设计分叉 | **architect**（astra high） | 编排者或 implementer 用 `pi-role-call architect` |
 | 需要判断的代码任务（核心、开放型、成片改动、进程与生命周期代码） | **implementer**（sol high）+ 自调 reviewer（sol xhigh） | skill `herdr-delegate`：一个 WP 一个 tab，implementer 左、helper pane 右 |
 | 简单代码、补测试、按评审修复、杂务、机械任务 | **sonic**（DeepSeek V4.1 Flash / GLM-5.3 Flash，effort 见上） | skill `herdr-delegate` 的 sonic 流程；对比期可双模型并跑 |
-| scout | sonic 模型上的 **informer** 只读角色 | `pi-role informer ... -- --model <sonic 模型> --thinking medium` |
+| scout | sonic 模型上的 **informer** 只读角色 | `pi-role informer ... -- --model <sonic 模型> --thinking high` |
 | Claude 写的变更的评审 | **reviewer**（sol xhigh），编排者单独起 | skill `herdr-delegate` 的 review-only 流程 |
 | 前端实现：按已定设计写渲染、布局、文案、视觉基线 | **Claude Code 子代理 `frontend-implementer`**（sonnet，xhigh） | Agent 工具，`subagent_type: frontend-implementer`，传 brief 路径；设计以定稿设计文档（`docs/design/`）为准 |
 | 需要人类互动的测试：对话框、真实输入、Windows Terminal 视觉验收 | **Hermes**（Windows computer use，grok-4.7，一次性运行） | 脚本先摆好状态，再给 Hermes 一个任务文件；证据以其 usage JSON 与截图为准。参照 ux / JevFocus 项目的做法 |
