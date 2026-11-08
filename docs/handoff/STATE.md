@@ -11,6 +11,15 @@ R6 follows acceptance of the replacement paths. R7 closes delivery.
 
 After R1, R2 and R3 can proceed in parallel. R4 depends on R3; R5 can develop against their fixtures. R6 follows the replacement paths’ acceptance, and R7 closes delivery.
 
+Progress (2026-11-07):
+
+- Done, reviewed and pushed: R0 (`5abc76a`), R1 (`c5deb38`), R2 (`1bce8d9`), R3 (merge `37725d1`), and the R2↔R3 Jev adapter (`3c34a7d`).
+- The six role tools are served only with `HUD_MCP_SURFACE=roles`. Default sessions keep the old tools until R6.
+- Merge gate from now: full `test:unit`, `test:mjs`, `test:hud-mcp` and WP0, compared against the base commit.
+- At `3c34a7d` two unit failures remain. `B11 … path with spaces` already failed before R1. A statusline test is flaky under the full suite.
+- Next is R4 (ChatGPT Pro and AI Studio target adapters). It is **paused until Codex usage refreshes**, because Grok hit its weekly limit (owner decision). R5 follows.
+- Not yet done: a live smoke of the real Jev runtime. It needs `hud setup --import-jev-env` against the owner's Jev env, and the owner's go-ahead.
+
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
 | R0 — Scope and baseline | Apply the concept §15 scope entry and the companion document updates for this queue. Preserve WP0, J1/J1b/J2, relevant fixtures/licenses, and retained HUD features. Remove WF1 executor work from the active queue. | One active implementation plan; bash tests/run-main.sh baseline recorded; no weakened main assertions or scenes. |
