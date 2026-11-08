@@ -1993,12 +1993,12 @@ async function submitJev(ctx: FacadeContext, receipt: JobReceipt, openRuntime: O
     const runtime = await openRuntime();
     const job = await createJevJob(runtime, body);
     receipt.executor = { kind: 'jev', job: job.id };
-    receipt.state = facadeState(job.state);
+    receipt.state = facadeState(job.state, job.result);
     receipt.launch_error = null;
     receipt.jev_seq = job.seq;
     remember(ctx.home, receipt);
     const view = present(ctx.home, receipt, false);
-    return { ...view, result: job.result ?? null };
+    return { ...view, result: job.result ?? null, recoverable: job.recoverable === true };
   } catch (error) {
     return jevCallError(ctx.home, receipt, error);
   }
@@ -2070,7 +2070,7 @@ async function readJev(ctx: FacadeContext, receipt: JobReceipt, waitMs: number):
       async () => {
         const current = loadReceipt(ctx.home, receipt.job) ?? receipt;
         if (current.state === 'closed') return observation(ctx.home, current, 'closed');
-        const state = facadeState(job.state);
+        const state = facadeState(job.state, job.result);
         current.state = state;
         current.jev_seq = job.seq;
         if (state === 'closed') current.closed_observation ??= 'closed';
@@ -2080,6 +2080,7 @@ async function readJev(ctx: FacadeContext, receipt: JobReceipt, waitMs: number):
           ...observation(ctx.home, current, status),
           state,
           result: job.result ?? null,
+          recoverable: job.recoverable === true,
           error: job.error ?? null,
         };
       },

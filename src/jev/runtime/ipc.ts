@@ -111,6 +111,13 @@ const PUBLIC_CODES = new Set([
   'empty_prompt',
   'invalid_key',
   'record_corrupt',
+  'aistudio_paid_key_selected',
+  'aistudio_model_not_allowed',
+  'aistudio_model_mismatch',
+  'aistudio_thinking_mismatch',
+  'aistudio_not_ready',
+  'unsupported_attachment',
+  'attach.changed',
 ]);
 
 export function isPublicIpcCode(code: string): boolean {

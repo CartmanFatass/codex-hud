@@ -6,7 +6,12 @@
 
 import { createHash } from 'node:crypto';
 import { createJevExecutor } from '../jev/runtime/index.js';
-import type { JevJobInput, JevJobState, JevReadOptions } from '../jev/runtime/types.js';
+import {
+  recoverableOracleResult,
+  type JevJobInput,
+  type JevJobState,
+  type JevReadOptions,
+} from '../jev/runtime/types.js';
 import type { JevExecutor as RuntimeHandle } from '../jev/runtime/types.js';
 import type { JevLaunchRequest } from './facade.js';
 
@@ -33,7 +38,8 @@ export function askLabel(runtimeKey: string): string {
   return `o-${sha256(runtimeKey).slice(0, 12)}`;
 }
 
-export function facadeState(state: JevJobState): 'open' | 'done' | 'error' | 'closed' {
+export function facadeState(state: JevJobState, result?: unknown): 'open' | 'done' | 'error' | 'closed' {
+  if (state === 'completed' && recoverableOracleResult(result)) return 'open';
   if (state === 'queued' || state === 'running') return 'open';
   if (state === 'completed') return 'done';
   if (state === 'closed') return 'closed';
@@ -145,7 +151,11 @@ export function readStoredJevInput(value: unknown): JevJobInput | null {
 /** hud_read recovers an interrupted browser ask, but never turns a plain runtime read into a send. */
 export async function readRoleJevJob(runtime: JevRuntimeHandle, jobId: string, options: JevReadOptions) {
   const observed = await runtime.readJob(jobId, options);
-  if (observed.tag === 'ask' && observed.state === 'interrupted' && !observed.closed) {
+  if (
+    observed.tag === 'ask' &&
+    !observed.closed &&
+    (observed.state === 'interrupted' || (observed.state === 'completed' && recoverableOracleResult(observed.result)))
+  ) {
     return runtime.readJob(jobId, { ...options, resume: true });
   }
   return observed;

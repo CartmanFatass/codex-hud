@@ -175,6 +175,8 @@ function sleep(ms: number): Promise<void> {
 
 /** Owned background tab on an already-running Chrome. close() closes only this target. */
 export class Browser {
+  /** Actual shared-Chrome startup/reuse mode, supplied by the runtime opener. */
+  mode?: 'headless' | 'headed';
   private afterInput: ObservedAction | null = null;
   operate = browserOperation;
 

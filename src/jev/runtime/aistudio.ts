@@ -2,7 +2,7 @@
 // Model selection is a read/refuse gate. No paid API key, consent or approval is ever clicked.
 import { JevFailure } from '../ask/error.js';
 import type { OperationRecord } from '../ask/records.js';
-import type { PageObservation } from '../judge.js';
+import { awaitState, type PageObservation } from '../judge.js';
 import type { ObservedAction, PageState } from '../model.js';
 import { makeReplyScript, SCROLL_JS, SEL_PROMPT, SEL_RUN, SETTINGS_JS } from './aistudio-facts.js';
 import { normalizeStudioPrompt, type StudioConfig } from './aistudio-state.js';
@@ -16,7 +16,8 @@ export const STUDIO_PAGE_STATE = `(() => {
  const label=(account?.innerText||'')+' '+(account?.getAttribute('aria-label')||'');
  const dialogs=[...document.querySelectorAll('[role="dialog"],mat-dialog-container')].filter(visible);
  return {url:location.href, readyState:document.readyState, selector:sel||null, composer:sel?document.querySelector(sel).value:null,
- login:location.hostname!=='aistudio.google.com'||!/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i.test(label),
+ authenticated:/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i.test(label),
+ login:location.hostname==='accounts.google.com'||!![...document.querySelectorAll('a[href*="accounts.google.com/ServiceLogin"],button[aria-label="Sign in"]')].find(visible),
  dialog:dialogs.length>0, stop:!![...document.querySelectorAll('ms-run-button button')].find(e=>/stop/i.test(e.getAttribute('aria-label')||e.innerText||'')),
  page_error:location.protocol==='chrome-error:'};
 })()`;
@@ -26,6 +27,7 @@ interface StudioState {
   selector: string | null;
   composer: string | null;
   login: boolean;
+  authenticated?: boolean;
   dialog: boolean;
   stop: boolean;
   page_error: boolean;
@@ -55,10 +57,40 @@ class StudioPage implements OraclePage {
   get id() {
     return this.browser.id;
   }
+  private async pause(ms: number): Promise<void> {
+    this.signal.throwIfAborted();
+    if (!this.sleep) return oracleDelay(ms, this.signal);
+    await new Promise<void>((resolve, reject) => {
+      const signal = this.signal;
+      const abort = () => {
+        signal.removeEventListener('abort', abort);
+        reject(signal.reason ?? new Error('aborted'));
+      };
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) {
+        abort();
+        return;
+      }
+      void this.sleep!(ms).then(
+        () => {
+          signal.removeEventListener('abort', abort);
+          resolve();
+        },
+        (error) => {
+          signal.removeEventListener('abort', abort);
+          reject(error);
+        }
+      );
+    });
+    this.signal.throwIfAborted();
+  }
   async facts(): Promise<OracleFacts> {
+    this.signal.throwIfAborted();
     // Background tabs are virtualised; force a render before reading each exchange.
     await this.browser.command('Page.captureScreenshot', { format: 'jpeg', quality: 20 });
+    this.signal.throwIfAborted();
     const state = (await this.browser.evaluate(STUDIO_PAGE_STATE)) as StudioState;
+    this.signal.throwIfAborted();
     if (!state || typeof state.url !== 'string') throw new JevFailure('page_facts_invalid', 'page_facts_invalid');
     let reply = (await this.browser.evaluate(makeReplyScript(this.userTurn))) as Reply;
     if (!reply || !Number.isInteger(reply.users) || !Number.isInteger(reply.model_turns))
@@ -70,15 +102,17 @@ class StudioPage implements OraclePage {
       // Exact owner-driver read_exchange: make every virtual model turn render, never
       // call a missing placeholder final, and join only public ms-text-chunk Markdown.
       for (let j = 0; j < reply.model_turns; j++) {
-        if (j > 100) throw new JevFailure('exchange_too_large', 'exchange_too_large');
+        this.signal.throwIfAborted();
+        if (j >= 100) throw new JevFailure('exchange_too_large', 'exchange_too_large');
         const visible = await this.browser.evaluate(`(${SCROLL_JS})(${this.userTurn}, ${j})`);
         if (!visible) {
           final = false;
           texts.length = 0;
           break;
         }
-        await (this.sleep ? this.sleep(1500) : oracleDelay(1500, this.signal));
+        await this.pause(1500);
         await this.browser.command('Page.captureScreenshot', { format: 'jpeg', quality: 20 });
+        this.signal.throwIfAborted();
         const one = (await this.browser.evaluate(makeReplyScript(this.userTurn, j))) as Reply;
         if (!one || !one.model_turns) {
           final = false;
@@ -93,10 +127,14 @@ class StudioPage implements OraclePage {
     }
     return {
       url: state.url,
-      readyState: state.readyState,
+      // An absent account/composer is hydration, not affirmative login evidence.
+      readyState:
+        state.readyState === 'complete' && state.authenticated === false && !state.login
+          ? 'interactive'
+          : state.readyState,
       composer: state.composer,
       stop: state.stop,
-      marker: JSON.stringify([state.url, state.composer, state.stop, reply.users, reply.text, reply.final]),
+      marker: JSON.stringify([state.url, state.selector, state.authenticated, state.stop, reply.users]),
       sidebar: [],
       cards: [],
       human: state.login ? 'login' : state.dialog ? 'approval' : undefined,
@@ -156,23 +194,52 @@ export function aistudioTarget(
       return new StudioPage(await options.attach(id), options.sleep);
     },
     targets: options.targets,
-    bindPage(page, record) {
+    bindPage(page, record, signal) {
       (page as StudioPage).userTurn = typeof record.user_turn === 'number' ? record.user_turn : 0;
+      (page as StudioPage).signal = signal;
     },
-    async prepare(oraclePage, input, _provider, signal) {
+    async prepare(oraclePage, input, provider, signal) {
       if (input.attach) throw new JevFailure('unsupported_attachment', 'unsupported_attachment');
       const page = oraclePage as StudioPage;
       page.signal = signal;
       const sleep = options.sleep ?? ((ms: number) => oracleDelay(ms, signal));
       let facts: OracleFacts | undefined;
-      for (let i = 0; i < 90; i++) {
-        signal.throwIfAborted();
-        facts = await page.facts();
-        if (facts.human) throw new JevFailure('needs_human', 'needs_human');
-        if (facts.readyState === 'complete' && facts.composer !== null && !facts.stop) break;
-        await sleep(500);
-      }
-      if (!facts || facts.composer === null || facts.stop || facts.error)
+      const ready = await awaitState(
+        { name: 'page_ready', statement: 'The logged-in AI Studio composer is ready and idle.' },
+        {
+          async observe() {
+            facts = await page.facts();
+            return page.observation(facts);
+          },
+        },
+        {
+          judge:
+            provider.judge?.bind(provider) ??
+            (async () => {
+              throw new Error('judge_unavailable');
+            }),
+        },
+        {
+          maxMs: 45_000,
+          maxLoadMs: 45_000,
+          maxCalls: 4,
+          now: options.now,
+          sleep,
+          signal,
+          fastPath: () =>
+            facts &&
+            facts.readyState === 'complete' &&
+            facts.composer !== null &&
+            !facts.stop &&
+            !facts.human &&
+            !facts.error
+              ? 'pass'
+              : null,
+        }
+      );
+      if (facts?.human || ready.verdict === 'needs_human')
+        throw new JevFailure('needs_human', facts?.human ?? ready.humanKind ?? 'approval');
+      if (ready.verdict !== 'pass' || !facts || facts.composer === null || facts.stop || facts.error)
         throw new JevFailure('aistudio_not_ready', 'aistudio_not_ready');
       await gateSettings(page.browser, options.model, undefined);
       let settings = (await page.browser.evaluate(SETTINGS_JS)) as Settings;

@@ -9,7 +9,7 @@ import { homedir } from 'node:os';
 import type { Server } from 'node:net';
 import { Agent, type BrowserPort } from '../agent.js';
 import { DEFAULT_CDP_URL, defaultJevTomlPath, loadJevConfig, readJevEnv, type JevConfig } from '../ask/config.js';
-import { chromeStart } from '../ask/chrome.js';
+import { chromeStart, type ChromeVersion, type ChromeMode } from '../ask/chrome.js';
 import { loopbackJson } from '../cdp.js';
 import { JevFailure } from '../ask/error.js';
 import { tryAcquireBrowserLock, type HeldLease } from '../ask/lease.js';
@@ -39,6 +39,7 @@ import { chatgptStore, runOracle, type OracleTarget } from './oracle.js';
 import { aistudioTarget } from './aistudio.js';
 import { loadStudioConfig, studioKey, studioStore, type StudioConfig } from './aistudio-state.js';
 import { errorBody, jevCall, serveLine } from './ipc.js';
+import { recoverableOracleResult } from './types.js';
 import type {
   JevCreateRequest,
   JevDecisionId,
@@ -73,6 +74,74 @@ export class JevRuntimeError extends Error {
     readonly variable?: string
   ) {
     super(message);
+  }
+}
+
+/** One start/probe per endpoint in flight. Never launch an account endpoint with the default profile. */
+export class RuntimeChrome {
+  private readonly starting = new Map<string, Promise<void>>();
+  private readonly modes = new Map<string, ChromeMode>();
+
+  mode(cdpUrl: string): ChromeMode | undefined {
+    try {
+      return this.modes.get(new URL(cdpUrl).href);
+    } catch {
+      return undefined;
+    }
+  }
+
+  constructor(
+    private readonly start: typeof chromeStart = chromeStart,
+    private readonly fetchVersion: (cdpUrl: string, remainingMs?: number) => Promise<ChromeVersion | null> = (
+      cdpUrl,
+      remainingMs
+    ) => loopbackJson(new URL('/json/version', cdpUrl).href, Math.min(1_000, remainingMs ?? 1_000))
+  ) {}
+
+  async ensure(config: JevConfig, cdpUrl: string): Promise<void> {
+    let endpoint: string;
+    let account: boolean;
+    try {
+      endpoint = new URL(cdpUrl).href;
+      account = endpoint !== new URL(config.cdpUrl).href;
+    } catch {
+      throw new JevRuntimeError('browser_unavailable', 'browser_unavailable');
+    }
+    let pending = this.starting.get(endpoint);
+    if (!pending) {
+      pending = (async () => {
+        try {
+          if (account) {
+            const version = await this.fetchVersion(cdpUrl, config.cdpTimeoutMs);
+            if (
+              !version ||
+              typeof version !== 'object' ||
+              !('webSocketDebuggerUrl' in version) ||
+              typeof version.webSocketDebuggerUrl !== 'string' ||
+              !version.webSocketDebuggerUrl
+            )
+              throw new Error('account_unavailable');
+          } else {
+            const started = await this.start(config, 'headless', {
+              reuseAnyMode: true,
+              fetchVersion: this.fetchVersion,
+            });
+            this.modes.set(endpoint, started.mode);
+          }
+        } catch {
+          throw new JevRuntimeError(
+            'browser_unavailable',
+            account ? 'browser_unavailable: account' : 'browser_unavailable'
+          );
+        }
+      })();
+      this.starting.set(endpoint, pending);
+    }
+    try {
+      await pending;
+    } finally {
+      if (this.starting.get(endpoint) === pending) this.starting.delete(endpoint);
+    }
   }
 }
 
@@ -171,7 +240,7 @@ export class JevRuntime implements JevExecutor {
   private stopping = false;
   private started = false;
   private config?: JevConfig;
-  private chromeStarting?: Promise<void>;
+  private readonly chrome = new RuntimeChrome();
 
   constructor(options: RuntimeOptions) {
     if (!options.hudHome.startsWith('/')) throw new JevRuntimeError('invalid_request', 'HUD home must be absolute');
@@ -375,7 +444,8 @@ export class JevRuntime implements JevExecutor {
     const current = this.require(jobId);
     if (
       options.resume &&
-      current.state === 'interrupted' &&
+      !this.stopping &&
+      (current.state === 'interrupted' || (current.state === 'completed' && recoverableOracleResult(current.result))) &&
       current.input.tag === 'ask' &&
       !current.closed &&
       !this.runs.has(jobId)
@@ -394,13 +464,15 @@ export class JevRuntime implements JevExecutor {
         current.input.target === 'chatgpt-pro'
           ? readOperation(this.stateDir, key)
           : await studioStore(current.askStateDir ?? this.studioConfig().stateDir, key).read();
-      // The AI aggregate read awaits flock. Another resume may have started while it waited.
+      // Aggregate reads await flock. Revalidate admission after close/stop or another
+      // resume may have completed while that read was pending.
       if (
-        current.state === 'interrupted' &&
+        !current.closed &&
+        !this.stopping &&
+        (current.state === 'interrupted' ||
+          (current.state === 'completed' && recoverableOracleResult(current.result))) &&
         !this.runs.has(jobId) &&
-        (record?.send_attempted === true || record?.attempted_at) &&
-        record?.completion !== 'COMPLETE' &&
-        !['done', 'failed', 'empty'].includes(String(record?.status))
+        (record?.send_attempted === true || record?.attempted_at)
       ) {
         const resolved = this.resolveDecision(
           current.provider ? { provider: current.provider.id, model: current.provider.model } : undefined
@@ -508,11 +580,13 @@ export class JevRuntime implements JevExecutor {
   }
 
   private async execute(job: StoredJob, resolved: ResolvedDecision, resumeOnly = false): Promise<void> {
+    if (job.closed || this.stopping) return;
     const abort = new AbortController();
     this.aborts.set(job.id, abort);
     this.markRunning(job);
     try {
       const provider = await this.providerFor(resolved);
+      if (job.closed || this.stopping || abort.signal.aborted) return;
       if (job.input.tag === 'ask') await this.runAsk(job, provider, abort.signal, resumeOnly);
       else if (job.input.tag === 'browse') await this.runBrowse(job, provider, abort.signal);
       else await this.runJudge(job, provider, abort.signal);
@@ -553,7 +627,7 @@ export class JevRuntime implements JevExecutor {
           open: async (url) =>
             this.options.browserFactory
               ? ((await this.options.browserFactory(url)) as OracleBrowser)
-              : Browser.open(url, cdp),
+              : this.openSharedBrowser(url, cdp.cdpUrl),
           attach: (id) => Browser.attach(id, cdp),
           targets: () => Browser.targets(cdp),
           now: this.options.oracleNow,
@@ -602,7 +676,7 @@ export class JevRuntime implements JevExecutor {
           open: async (url) =>
             this.options.browserFactory
               ? ((await this.options.browserFactory(url)) as OracleBrowser)
-              : Browser.open(url, options),
+              : this.openSharedBrowser(url),
           attach: (id) => Browser.attach(id, options),
           targets: () => Browser.targets(options),
           now: this.options.oracleNow,
@@ -631,7 +705,10 @@ export class JevRuntime implements JevExecutor {
           ...(input.attach
             ? {
                 attachment: basename(input.attach),
-                attachment_sha256: createHash('sha256').update(readFileSync(input.attach)).digest('hex'),
+                // Recovery observes the committed bytes; it never needs the original upload file.
+                attachment_sha256: resumeOnly
+                  ? readOperation(this.stateDir, key)?.attachment_sha256
+                  : createHash('sha256').update(readFileSync(input.attach)).digest('hex'),
               }
             : {}),
         },
@@ -771,31 +848,13 @@ export class JevRuntime implements JevExecutor {
     return browser;
   }
 
-  private async openSharedBrowser(url: string): Promise<BrowserPort> {
+  private async openSharedBrowser(url: string, cdpUrl = this.cdpUrl): Promise<Browser> {
     const config = this.config;
     if (!config) throw new JevRuntimeError('browser_unavailable', 'browser_unavailable');
-    // Concurrent jobs in this runtime join one start. Chrome itself is shared
-    // with the CLI and is never stopped by runtime cleanup.
-    if (!this.chromeStarting) {
-      this.chromeStarting = (async () => {
-        try {
-          await chromeStart(config, 'headless', {
-            reuseAnyMode: true,
-            fetchVersion: (cdpUrl, remainingMs) =>
-              loopbackJson(new URL('/json/version', cdpUrl).href, Math.min(1_000, remainingMs ?? 1_000)),
-          });
-        } catch {
-          throw new JevRuntimeError('browser_unavailable', 'browser_unavailable');
-        }
-      })();
-    }
-    const starting = this.chromeStarting;
-    try {
-      await starting;
-    } finally {
-      if (this.chromeStarting === starting) this.chromeStarting = undefined;
-    }
-    return Browser.open(url, { cdpUrl: this.cdpUrl, timeoutMs: config.cdpTimeoutMs });
+    await this.chrome.ensure(config, cdpUrl);
+    const browser = await Browser.open(url, { cdpUrl, timeoutMs: config.cdpTimeoutMs });
+    browser.mode = this.chrome.mode(cdpUrl);
+    return browser;
   }
 
   private async closeBrowser(browser: BrowserPort): Promise<void> {
@@ -1005,6 +1064,7 @@ export class JevRuntime implements JevExecutor {
       closed: job.closed,
       seq: job.seq,
       result: job.result,
+      ...(job.tag === 'ask' ? { recoverable: recoverableOracleResult(job.result) } : {}),
       ...(job.error ? { error: job.error } : {}),
     };
   }

@@ -1,5 +1,7 @@
 // ChatGPT adapter: owner's jev_send.py facts/binding; v5 linked-menu selection and judgments.
 import { basename } from 'node:path';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { BrowserPort } from '../agent.js';
 import { StalePage } from '../browser.js';
 import { JevFailure } from '../ask/error.js';
@@ -13,6 +15,7 @@ import type { JevAskInput } from './types.js';
 
 export interface OracleBrowser extends BrowserPort {
   readonly id: string | null;
+  readonly mode?: 'headless' | 'headed';
   evaluate(expression: string, awaitPromise?: boolean, timeoutMs?: number): Promise<unknown>;
   command(method: string, params?: Record<string, unknown>, timeoutMs?: number): Promise<unknown>;
   detach(): Promise<void>;
@@ -153,8 +156,11 @@ export function chatgptTarget(
       return new ChatPage(await options.attach(id));
     },
     targets: options.targets,
-    async prepare(oraclePage, input, provider, signal) {
+    async prepare(oraclePage, input, provider, signal, committed) {
       const page = oraclePage as ChatPage;
+      const digest = () =>
+        input.attach ? createHash('sha256').update(readFileSync(input.attach)).digest('hex') : undefined;
+      const expectedAttachment = committed?.attachment_sha256 ?? digest();
       const delay = options.sleep ?? ((ms: number) => oracleDelay(ms, signal));
       const model = input.model ?? options.model ?? 'GPT-6';
       const effort = input.effortWord ?? options.effortWord ?? 'Pro';
@@ -231,6 +237,9 @@ export function chatgptTarget(
           selector: `input[id="${id}"]`,
         })) as { nodeId: number };
         if (!found.nodeId) throw new JevFailure('attach.no_input', 'attach.no_input');
+        // Owner attach(expected_sha256): asynchronous readiness/model selection must
+        // not change the bytes bound in the operation record before upload.
+        if (digest() !== expectedAttachment) throw new JevFailure('attach.changed', 'attach.changed');
         await page.browser.command('DOM.setFileInputFiles', { nodeId: found.nodeId, files: [input.attach] });
         let enabled = 0;
         facts = await wait(
@@ -290,7 +299,9 @@ export function chatgptTarget(
         throw new JevFailure('gate.changed', 'gate.changed');
       if (!page.send || !(await page.browser.fresh(page.send.page, page.send.action)))
         throw new JevFailure('gate.stale', 'gate.stale');
-      return facts;
+      if (input.attach && digest() !== expectedAttachment) throw new JevFailure('attach.changed', 'attach.changed');
+      // Production opener supplies the real reused/started mode. Factories are synthetic.
+      return { ...facts, recordFields: { ...facts.recordFields, mode: page.browser.mode ?? 'headless' } };
     },
     async click(oraclePage, signal) {
       signal.throwIfAborted();

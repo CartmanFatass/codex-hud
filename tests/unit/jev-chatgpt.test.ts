@@ -3,22 +3,32 @@
 // No browser, provider, config, state dir or HOME access.
 
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
 
 import { JevFailure } from '../../src/jev/ask/error.js';
-import { squashedSha256 } from '../../src/jev/ask/records.js';
+import {
+  promptSha256,
+  readOperation,
+  sha256Hex,
+  squashedSha256,
+  type OperationRecord,
+} from '../../src/jev/ask/records.js';
 import type { Answer, DecisionProvider } from '../../src/jev/decide.js';
 import type { DecisionRequest, ObservedAction, PageState } from '../../src/jev/model.js';
 import { bindChatgpt, chatgptTarget, MENU_STATE, type OracleBrowser } from '../../src/jev/runtime/chatgpt.js';
 import { PAGE_FACTS } from '../../src/jev/runtime/chatgpt-facts.js';
-import type { OracleFacts, OracleTurn } from '../../src/jev/runtime/oracle.js';
+import { chatgptStore, runOracle, type OracleFacts, type OracleTurn } from '../../src/jev/runtime/oracle.js';
 import type { JevAskInput } from '../../src/jev/runtime/types.js';
 
 const ROOT = 'https://chatgpt.example/';
 const CONVERSATION = 'https://chatgpt.example/c/00000000-0000-4000-8000-000000000000';
 const PROMPT = 'synthetic prompt one';
 const ANSWER = 'synthetic answer';
+const KEY = 'ask-pro:synthetic0001';
 const INPUT: JevAskInput = {
   tag: 'ask',
   target: 'chatgpt-pro',
@@ -33,6 +43,30 @@ function failure(code: string): (error: unknown) => boolean {
 
 async function rejects(code: string, run: () => Promise<unknown>): Promise<void> {
   await assert.rejects(run, failure(code));
+}
+
+/**
+ * The owner CLI's command_wait reads `args.mode or data["mode"]` and command_reconcile
+ * indexes `data["mode"]`; every other field those commands read must be present too.
+ * A missing key is a Python KeyError, so this helper throws like one.
+ */
+function ownerWaitView(data: Record<string, unknown>, argsMode?: string): Record<string, unknown> {
+  const mode = argsMode || data['mode'];
+  if (mode === undefined) throw new Error("KeyError: 'mode'");
+  const view: Record<string, unknown> = { mode };
+  for (const field of [
+    'prompt_sha256',
+    'squashed_sha256',
+    'conversation_url',
+    'send_attempted',
+    'sent_target_id',
+    'before',
+    'sidebar_before',
+  ]) {
+    if (data[field] === undefined) throw new Error(`KeyError: '${field}'`);
+    view[field] = data[field];
+  }
+  return view;
 }
 
 /** Time only moves on sleep, so every wait costs its sleeps and nothing else. */
@@ -96,6 +130,7 @@ interface StubOptions {
   extraFill?: boolean;
   uploadedCards?: string[] | null;
   uploadId?: string | null;
+  mode?: 'headless' | 'headed';
 }
 
 /** The model pill the page shows for the current menu state. */
@@ -176,6 +211,7 @@ function chatgptStub(overrides: StubOptions = {}): Stub {
   } as unknown as Stub;
   stub.browser = {
     id: 'target-1',
+    mode: overrides.mode,
     async evaluate(expression: string): Promise<unknown> {
       if (expression === PAGE_FACTS) return pageFacts(stub);
       if (expression === MENU_STATE) {
@@ -389,6 +425,8 @@ test('chatgpt target: proves the menu, fills the exact prompt and binds one Send
   assert.equal(facts.composer, PROMPT);
   assert.equal(facts.human, undefined);
   assert.equal(facts.stop, false);
+  // A synthetic browser without a mode falls back to the requested headless mode.
+  assert.equal(facts.recordFields?.mode, 'headless');
   assert.equal(target.matchesDraft(facts, INPUT), true);
   assert.equal(target.matchesDraft(facts, { ...INPUT, prompt: 'other prompt' }), false);
   // One fill decision, then one send decision: the slider and the radios were not provider work.
@@ -471,18 +509,100 @@ test('chatgpt target: a changed draft at the final gate rejects before the click
   assert.equal(stub.sendClicks, 0, 'the gate is read again before the persisted click');
 });
 
-test('chatgpt target: an attachment card with the wrong name is refused before the send', async () => {
+test('chatgpt target: an attachment card with the wrong name is refused before the send', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'jev-chatgpt-attach-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const attachment = join(dir, 'attachment-report.txt');
+  writeFileSync(attachment, 'synthetic attachment bytes\n');
   const stub = chatgptStub({ uploadedCards: ['other-file.txt'] });
   const target = chatgptTarget(targetOptions(stub));
   const page = await target.open(stub.state.url);
-  const input: JevAskInput = { ...INPUT, attach: '/synthetic/attachment-report.txt' };
+  const input: JevAskInput = { ...INPUT, attach: attachment };
   // The upload wait ends without the requested card, so the gate fails closed and nothing is sent.
   await rejects('upload_finished_timeout', () =>
     target.prepare(page, input, providerOf(stub), new AbortController().signal)
   );
-  assert.deepEqual(stub.files, ['/synthetic/attachment-report.txt']);
+  assert.deepEqual(stub.files, [attachment]);
   assert.equal(stub.typed, PROMPT);
   assert.equal(stub.sendClicks, 0);
+});
+
+test('chatgpt target: an attachment changed during model selection is refused before upload', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'jev-chatgpt-attach-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const attachment = join(dir, 'attachment-report.txt');
+  writeFileSync(attachment, 'synthetic initial bytes\n');
+  const committed: OperationRecord = { attachment_sha256: sha256Hex('synthetic initial bytes\n') };
+  // An unlinked menu makes the model step decide and act before the upload.
+  const stub = chatgptStub({ menu: { linked: false, allowed: [] } });
+  const target = chatgptTarget(targetOptions(stub));
+  const page = await target.open(stub.state.url);
+  const provider = providerOf(stub, {
+    onDecide: (goal) => {
+      if (goal.startsWith('Open the composer model menu')) writeFileSync(attachment, 'synthetic changed bytes\n');
+    },
+  });
+  const input: JevAskInput = { ...INPUT, attach: attachment };
+  await rejects('attach.changed', () => target.prepare(page, input, provider, new AbortController().signal, committed));
+  assert.deepEqual(stub.files, [], 'the changed bytes were never uploaded');
+  assert.equal(stub.typed, PROMPT, 'the prompt fill happened before the attachment check');
+  assert.equal(stub.sendClicks, 0, 'no Send happened');
+});
+
+test('chatgpt target: a new record carries the actual mode and every owner CLI wait field', async (t) => {
+  const state = mkdtempSync(join(tmpdir(), 'jev-chatgpt-state-'));
+  t.after(() => rmSync(state, { recursive: true, force: true }));
+  const stub = chatgptStub({ mode: 'headed' });
+  const ticks = clock();
+  const target = chatgptTarget({ ...targetOptions(stub), now: ticks.now, sleep: ticks.sleep });
+  // The stub submits the committed prompt on its one Send click.
+  const act = stub.browser.act.bind(stub.browser);
+  stub.browser.act = async (action, page, text) => {
+    await act(action, page, text);
+    if (action.id === 'send') {
+      stub.state.url = CONVERSATION;
+      stub.state.composer = null;
+      stub.state.turns = [
+        { role: 'user', text: PROMPT },
+        { role: 'assistant', text: ANSWER, final_controls: true },
+      ];
+      stub.state.sidebar = [CONVERSATION];
+    }
+  };
+  const fields: OperationRecord = {
+    key: KEY,
+    provider: 'chatgpt',
+    prompt_sha256: promptSha256(PROMPT),
+    squashed_sha256: squashedSha256(PROMPT),
+    conversation: 'new',
+  };
+  const result = await runOracle({
+    stateDir: state,
+    key: KEY,
+    jobId: 'job-1',
+    input: INPUT,
+    target,
+    store: chatgptStore(state, KEY),
+    provider: providerOf(stub),
+    signal: new AbortController().signal,
+    fields,
+    now: ticks.now,
+    sleep: ticks.sleep,
+  });
+  assert.equal(result.status, 'answered');
+  assert.equal(result.answer, ANSWER);
+  const record = readOperation(state, KEY)!;
+  assert.equal(record.mode, 'headed', 'the persisted mode is the browser mode, not the requested one');
+  const view = ownerWaitView(record);
+  assert.equal(view.mode, 'headed');
+  assert.equal(ownerWaitView(record, 'headed').mode, 'headed');
+  assert.equal(view.prompt_sha256, promptSha256(PROMPT));
+  assert.equal(view.squashed_sha256, squashedSha256(PROMPT));
+  assert.equal(view.conversation_url, CONVERSATION);
+  assert.equal(view.send_attempted, true);
+  assert.equal(view.sent_target_id, 'target-1');
+  assert.deepEqual(view.before, { url: ROOT, turns: [], sidebar: [], composer_sha256: sha256Hex(PROMPT) });
+  assert.deepEqual(view.sidebar_before, []);
 });
 
 // ---------------------------------------------------------------- binding

@@ -6,11 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { operationPath } from '../../src/jev/ask/names.js';
-import { squashedSha256 } from '../../src/jev/ask/records.js';
+import { sha256Hex, squashedSha256 } from '../../src/jev/ask/records.js';
 import { studioKey } from '../../src/jev/runtime/aistudio-state.js';
 import { JevRuntime, askRecordKey } from '../../src/jev/runtime/executor.js';
 import { fakeProvider } from '../../src/jev/runtime/fake.js';
-import type { OracleFacts, OraclePage, OracleTarget } from '../../src/jev/runtime/oracle.js';
+import { writeOracleFile, type OracleFacts, type OraclePage, type OracleTarget } from '../../src/jev/runtime/oracle.js';
 import type { JevJob } from '../../src/jev/runtime/types.js';
 
 const session = { namespace: 'synthetic', sessionId: 'r4-restart' };
@@ -92,14 +92,21 @@ function fixture(targetId: 'chatgpt-pro' | 'aistudio') {
     opens: () => opens,
   };
 }
+const WINDOWS = [
+  'before_attempt',
+  'after_attempt_before_click_result',
+  'after_confirm',
+  'during_wait',
+  'after_final_record',
+  'cli_completed_while_down',
+] as const;
+type RestartWindow = (typeof WINDOWS)[number];
+/** The answer file and its digest were persisted before the crash; only the receipt is stale. */
+const COMPLETED_WINDOWS = new Set<RestartWindow>(['after_final_record', 'cli_completed_while_down']);
+
 for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
   for (const provider of ['typesafe', 'openai'] as const) {
-    for (const window of [
-      'before_attempt',
-      'after_attempt_before_click_result',
-      'after_confirm',
-      'during_wait',
-    ] as const) {
+    for (const window of WINDOWS) {
       test(`R4 ${targetId}/${provider}: restart ${window} only reconciles/observes`, async (t) => {
         const home = mkdtempSync(join(tmpdir(), 'r4-recovery-'));
         t.after(() => rmSync(home, { recursive: true, force: true }));
@@ -148,6 +155,8 @@ for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
           { mode: 0o600 }
         );
         if (window !== 'before_attempt') {
+          const completedWindow = COMPLETED_WINDOWS.has(window);
+          const answerFile = completedWindow ? writeOracleFile(stateDir, key, '.md', `${answer}\n`) : '';
           const record = {
             key,
             provider: targetId === 'chatgpt-pro' ? 'chatgpt' : 'aistudio',
@@ -161,8 +170,24 @@ for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
             ...(window === 'during_wait'
               ? { partial_answer_chars: 7, tabs: { observer: 'stale-observer', sent: 'send' } }
               : {}),
+            ...(completedWindow
+              ? {
+                  completion: 'COMPLETE',
+                  answer_file: answerFile,
+                  answer_sha256: sha256Hex(answer),
+                  ...(targetId === 'aistudio' ? { out: answerFile } : {}),
+                  // The HUD writes its association; a CLI-written snapshot has none and adds its own fields.
+                  ...(window === 'after_final_record'
+                    ? { hud_association: session }
+                    : { cli_unknown_field: 'preserved', cli_unknown_nested: { keep: true } }),
+                }
+              : {}),
             ...(targetId === 'aistudio'
-              ? { attempted_at: '2026-01-01T00:00:00+00:00', user_turn: 1, status: 'interrupted' }
+              ? {
+                  attempted_at: '2026-01-01T00:00:00+00:00',
+                  user_turn: 1,
+                  status: completedWindow ? 'done' : 'interrupted',
+                }
               : {}),
           };
           if (targetId === 'chatgpt-pro') {
@@ -208,13 +233,28 @@ for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
           assert.equal(done.state, 'completed', JSON.stringify(done));
           assert.equal((done.result as { status: string }).status, 'answered');
           assert.equal((done.result as { answer: string }).answer, answer);
+          if (COMPLETED_WINDOWS.has(window)) {
+            // The cached answer settles the receipt with no page at all.
+            assert.equal(h.opens(), 0, 'a completed operation record settles without a page');
+            const cachedFile = (done.result as { answer_file?: string }).answer_file ?? '';
+            assert.equal(readFileSync(cachedFile, 'utf8'), `${answer}\n`, 'the answer comes from the cached file');
+            assert.equal((done.result as { recoverable?: boolean }).recoverable, false);
+            assert.equal(done.recoverable, false);
+          }
           const closed = await runtime.closeJob('jev-crashed');
           assert.deepEqual(closed.result, done.result);
-          if (targetId === 'aistudio')
-            assert.equal(
-              JSON.parse(readFileSync(join(stateDir, 'aistudio_chat_state.json'), 'utf8')).unknown_cli_field,
-              'preserved'
-            );
+          if (targetId === 'aistudio') {
+            const aggregate = JSON.parse(readFileSync(join(stateDir, 'aistudio_chat_state.json'), 'utf8'));
+            assert.equal(aggregate.unknown_cli_field, 'preserved');
+            if (window === 'cli_completed_while_down') {
+              assert.equal(aggregate.keys[key].cli_unknown_field, 'preserved');
+              assert.deepEqual(aggregate.keys[key].cli_unknown_nested, { keep: true });
+            }
+          } else if (window === 'cli_completed_while_down') {
+            const cli = JSON.parse(readFileSync(operationPath(stateDir, key), 'utf8'));
+            assert.equal(cli.cli_unknown_field, 'preserved');
+            assert.deepEqual(cli.cli_unknown_nested, { keep: true });
+          }
         }
         assert.equal(h.clicks(), 0, 'a restart must never repeat Send');
       });

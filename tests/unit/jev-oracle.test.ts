@@ -32,9 +32,13 @@ import type { JevAskInput } from '../../src/jev/runtime/types.js';
 
 const ROOT = 'https://chatgpt.example/';
 const CONVERSATION = 'https://chatgpt.example/c/00000000-0000-4000-8000-000000000000';
+const STUDIO_ROOT = 'https://aistudio.google.com/prompts/new_chat?model=gemini-4-argon';
+const STUDIO_CONVERSATION = 'https://aistudio.google.com/prompts/abcdefghijklmnopqrst';
 const PROMPT = 'synthetic prompt one';
 const KEY = 'ask-pro:synthetic0001';
 const ANSWER = 'synthetic answer';
+const LIVE = 'synthetic live answer';
+const SAVED_LONGER = 'synthetic live answer with a saved suffix';
 const FIELDS: OperationRecord = {
   key: KEY,
   provider: 'chatgpt',
@@ -43,9 +47,35 @@ const FIELDS: OperationRecord = {
   conversation: 'new',
   effort: 'Pro',
 };
+const STUDIO_FIELDS: OperationRecord = {
+  key: KEY,
+  provider: 'aistudio',
+  prompt_sha256: promptSha256(PROMPT),
+  squashed_sha256: squashedSha256(PROMPT),
+  conversation: 'new',
+};
 
 function settled(url: unknown): url is string {
   return typeof url === 'string' && /^https:\/\/chatgpt\.example\/c\/[0-9a-f]{8}-[0-9a-f-]{27}$/.test(url);
+}
+
+function studioSettled(url: unknown): url is string {
+  return (
+    typeof url === 'string' &&
+    /^https:\/\/aistudio\.google\.com\/prompts\/[A-Za-z0-9_-]{20,}$/.test(url) &&
+    !url.endsWith('/new_chat')
+  );
+}
+
+/** The AI Studio target's binding, over source-compatible facts with an exchange. */
+function studioBinding(facts: OracleFacts, _input: JevAskInput, record: OperationRecord) {
+  const nth = typeof record.user_turn === 'number' ? record.user_turn : 0;
+  const reply = facts.exchange;
+  return {
+    found: nth >= 1 && Boolean(reply && reply.users >= nth),
+    answer: nth >= 1 ? (reply?.text ?? '') : '',
+    final: nth >= 1 && reply?.final === true && !reply.error,
+  };
 }
 
 interface World {
@@ -57,6 +87,7 @@ interface World {
   sidebar: string[];
   cards: string[] | null;
   turns: OracleTurn[];
+  exchange?: { users: number; text: string; final: boolean; error?: string };
 }
 
 function makeWorld(overrides: Partial<World> = {}): World {
@@ -75,6 +106,7 @@ function factsOf(world: World): OracleFacts {
     sidebar: [...world.sidebar],
     turns: world.turns.map((turn) => ({ ...turn })),
     cards: world.cards,
+    ...(world.exchange ? { exchange: { ...world.exchange } } : {}),
   };
 }
 
@@ -317,6 +349,36 @@ test('oracle: a thrown click still confirms from the facts and waits', async (t)
   assert.equal(record.completion, 'COMPLETE');
 });
 
+for (const provider of ['chatgpt', 'aistudio'] as const) {
+  test(`oracle: ${provider} confirmResend cannot force an unreleased attempt`, async (t) => {
+    const state = stateDir(t);
+    seed(state, {
+      send_attempted: true,
+      ...(provider === 'aistudio' ? { attempted_at: '2026-01-01T00:00:00Z' } : {}),
+      send_effect: 'uncertain',
+      before: { url: ROOT, turns: [], sidebar: [] },
+      sidebar_before: [],
+      sent_target_id: 'send-target',
+    });
+    const h = harness(makeWorld());
+    h.target = { ...h.target, provider };
+    const result = await run(state, h, judge({ submitted: 0.5 }), {
+      input: {
+        tag: 'ask',
+        target: provider === 'chatgpt' ? 'chatgpt-pro' : 'aistudio',
+        label: 'note',
+        prompt: PROMPT,
+        confirmResend: true,
+      },
+    });
+    assert.equal(result.status, 'already_attempted');
+    assert.equal(h.count('prepare'), 0);
+    assert.equal(h.count('click'), 0);
+    assert.equal(readOperation(state, KEY)!.send_attempted, true);
+    assert.notEqual(readOperation(state, KEY)!.released, true);
+  });
+}
+
 test('oracle: an attempted key reconciles the surviving send target and never clicks', async (t) => {
   const state = stateDir(t);
   seed(state, {
@@ -414,6 +476,73 @@ test('oracle: a judgment pass without hard evidence stays uncertain', async (t) 
   assert.equal(record.send_effect, 'uncertain');
   assert.notEqual(record.released, true);
 });
+
+for (const variant of ['open_fails', 'read_fails', 'shorter', 'not_final', 'longer'] as const) {
+  test(`oracle: aistudio keeps the live final answer when the saved view is ${variant}`, async (t) => {
+    const state = stateDir(t);
+    // A confirmed send: recovery enters only the wait, never prepare or click.
+    seed(state, {
+      provider: 'aistudio',
+      user_turn: 1,
+      send_attempted: true,
+      attempted_at: '2026-01-01T00:00:00Z',
+      send_effect: 'sent',
+      conversation_url: STUDIO_CONVERSATION,
+      sent_target_id: 'send-target',
+      before: { url: STUDIO_ROOT, turns: [], sidebar: [] },
+      sidebar_before: [],
+    });
+    const world = makeWorld({ url: STUDIO_CONVERSATION, exchange: { users: 1, text: LIVE, final: true } });
+    const h = harness(world);
+    const originalOpen = h.target.open.bind(h.target);
+    const savedWorld = makeWorld({
+      url: STUDIO_CONVERSATION,
+      exchange:
+        variant === 'shorter'
+          ? { users: 1, text: 'short', final: true }
+          : variant === 'not_final'
+            ? { users: 1, text: SAVED_LONGER, final: false }
+            : { users: 1, text: SAVED_LONGER, final: true },
+    });
+    let opens = 0;
+    let saved: FakePage | undefined;
+    // The first open is the live observer; the second is the saved-view cross-check.
+    h.target = {
+      ...h.target,
+      provider: 'aistudio',
+      settled: studioSettled,
+      binding: studioBinding,
+      async open(url) {
+        opens += 1;
+        if (opens === 1) return originalOpen(url);
+        if (variant === 'open_fails') throw new Error('synthetic saved open failure');
+        saved = new FakePage(savedWorld, 'saved-target');
+        if (variant === 'read_fails')
+          saved.facts = async () => {
+            throw new Error('synthetic saved read failure');
+          };
+        return saved;
+      },
+    };
+    const result = await run(state, h, judge(), {
+      fields: STUDIO_FIELDS,
+      input: { tag: 'ask', target: 'aistudio', label: 'note', prompt: PROMPT },
+    });
+    const expected = variant === 'longer' ? SAVED_LONGER : LIVE;
+    assert.equal(result.status, 'answered');
+    assert.equal(result.answer, expected);
+    assert.equal(h.count('prepare'), 0, 'no send was prepared');
+    assert.equal(h.count('click'), 0, 'no extra send happened');
+    const record = readOperation(state, KEY)!;
+    assert.equal(record.completion, 'COMPLETE');
+    assert.equal(record.status, 'done');
+    assert.equal(record.answer_sha256, sha256Hex(expected));
+    const file = record.answer_file as string;
+    assert.equal(record.out, file);
+    assert.equal(readFileSync(file, 'utf8'), `${expected}\n`);
+    if (saved) assert.equal(saved.closed, 1, 'the saved observer was cleaned up');
+  });
+}
 
 test('oracle binding: duplicates, final controls and the next user turn', () => {
   const input: JevAskInput = { tag: 'ask', target: 'chatgpt-pro', label: 'note', prompt: PROMPT };

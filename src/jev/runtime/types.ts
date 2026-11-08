@@ -59,6 +59,24 @@ export interface JevFollowUp {
 
 export type JevJobState = 'queued' | 'running' | 'completed' | 'failed' | 'closed' | 'interrupted';
 
+const RECOVERABLE_ORACLE_STATUSES = new Set([
+  'uncertain',
+  'needs_human',
+  'timed_out',
+  'wait_failed',
+  'incomplete',
+  'already_attempted',
+]);
+
+/** Completed means settled for now when recoverable is true; resume only reconciles/waits. */
+export function recoverableOracleResult(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as { status?: unknown; recoverable?: unknown };
+  return (
+    result.recoverable !== false && typeof result.status === 'string' && RECOVERABLE_ORACLE_STATUSES.has(result.status)
+  );
+}
+
 export interface JevJob {
   executor: 'jev';
   id: string;
@@ -74,6 +92,8 @@ export interface JevJob {
   closed: boolean;
   seq: number;
   result: unknown;
+  /** A bounded ask observation settled for now; resume reconciles, never sends. */
+  recoverable?: boolean;
   error?: { code: string; message: string; variable?: string };
   /** Set when a read ended because the caller disconnected. The job itself is unchanged. */
   observationEnded?: boolean;

@@ -18,7 +18,7 @@ import {
 } from '../ask/records.js';
 import { awaitState, type JudgmentProvider, type PageObservation } from '../judge.js';
 import type { DecisionProvider } from '../decide.js';
-import type { JevAskInput } from './types.js';
+import { recoverableOracleResult, type JevAskInput } from './types.js';
 
 export interface OracleTurn {
   role: string;
@@ -58,8 +58,14 @@ export interface OracleTarget {
   open(url: string): Promise<OraclePage>;
   attach(id: string): Promise<OraclePage>;
   targets(): Promise<Array<{ targetId: string; url: string }>>;
-  bindPage?(page: OraclePage, record: OperationRecord): void;
-  prepare(page: OraclePage, input: JevAskInput, provider: DecisionProvider, signal: AbortSignal): Promise<OracleFacts>;
+  bindPage?(page: OraclePage, record: OperationRecord, signal: AbortSignal): void;
+  prepare(
+    page: OraclePage,
+    input: JevAskInput,
+    provider: DecisionProvider,
+    signal: AbortSignal,
+    committed?: OperationRecord
+  ): Promise<OracleFacts>;
   click(page: OraclePage, signal: AbortSignal): Promise<void>;
   binding(
     facts: OracleFacts,
@@ -114,6 +120,7 @@ export interface OracleResult {
   answer?: string;
   answer_file?: string;
   reason?: string;
+  recoverable?: boolean;
 }
 
 export function oracleDelay(ms: number, signal: AbortSignal): Promise<void> {
@@ -148,7 +155,7 @@ export function corroborators(facts: OracleFacts, before: Partial<OracleFacts>, 
   return evidence;
 }
 function result(ctx: OracleContext, status: string, extra: Partial<OracleResult> = {}): OracleResult {
-  return { status, key: ctx.key, ...extra };
+  return { status, key: ctx.key, recoverable: recoverableOracleResult({ status }), ...extra };
 }
 function completed(ctx: OracleContext, record: OperationRecord | null): OracleResult | null {
   if (!record || (record.completion !== 'COMPLETE' && record.status !== 'done')) return null;
@@ -207,7 +214,7 @@ export async function runOracle(ctx: OracleContext): Promise<OracleResult> {
         page = await ctx.target.open(
           ctx.input.conversation && ctx.input.conversation !== 'new' ? ctx.input.conversation : ctx.target.root
         );
-        const before = await ctx.target.prepare(page, ctx.input, ctx.provider, ctx.signal);
+        const before = await ctx.target.prepare(page, ctx.input, ctx.provider, ctx.signal, ctx.fields);
         aborted(ctx);
         if (ctx.input.dryRun) {
           safeToClose = true;
@@ -243,11 +250,13 @@ export async function runOracle(ctx: OracleContext): Promise<OracleResult> {
           /* confirm and reconcile only */
         }
       } else {
+        // No force resend: release first, then confirm_resend. An unreleased
+        // attempt remains read-only even when the caller acknowledges a retry.
         ctx.phase?.('reconcile');
         page = await locate(ctx, record);
       }
       if (page) {
-        ctx.target.bindPage?.(page, record);
+        ctx.target.bindPage?.(page, record, ctx.signal);
         const confirmation = await confirm(ctx, page, record, attempted ? 120_000 : 0, now, sleep);
         if (confirmation.facts && confirmation.sent) {
           record = await ctx.store.save(
@@ -276,10 +285,13 @@ export async function runOracle(ctx: OracleContext): Promise<OracleResult> {
               { ...(ctx.target.provider === 'aistudio' ? { status: 'uncertain' } : {}), unresolved: 'confirm' },
               lease
             );
-            return result(ctx, 'uncertain');
+            return result(ctx, ctx.input.confirmResend ? 'already_attempted' : 'uncertain');
           }
         }
-      } else return result(ctx, 'uncertain', { reason: 'NoConversationAddress' });
+      } else
+        return result(ctx, ctx.input.confirmResend ? 'already_attempted' : 'uncertain', {
+          reason: 'NoConversationAddress',
+        });
     }
     // Keep the attempted send tab through unresolved locate and all exceptional exits.
     safeToClose = ctx.target.provider === 'chatgpt' && ctx.target.settled(record.conversation_url);
@@ -306,6 +318,10 @@ export async function runOracle(ctx: OracleContext): Promise<OracleResult> {
         },
         lease
       );
+    if (!attempted && error instanceof JevFailure && error.code === 'needs_human') {
+      const reason = ['login', 'challenge', 'approval'].includes(error.message) ? error.message : 'approval';
+      return result(ctx, 'needs_human', { reason, recoverable: false });
+    }
     throw error;
   } finally {
     lease.release();
@@ -463,6 +479,7 @@ async function locate(ctx: OracleContext, record: OperationRecord): Promise<Orac
   if (sent) return ctx.target.attach(sent.targetId);
   const root = await ctx.target.open(ctx.target.root);
   try {
+    ctx.target.bindPage?.(root, record, ctx.signal);
     const facts = await root.facts();
     const before = Array.isArray(record.sidebar_before) ? (record.sidebar_before as string[]) : [];
     const added = facts.sidebar.filter((href) => !before.includes(href)).filter((href) => ctx.target.settled(href));
@@ -510,7 +527,7 @@ async function waitForAnswer(
     }
     page = await locate(ctx, record);
     if (!page) return result(ctx, 'wait_failed', { reason: 'NoConversationAddress' });
-    ctx.target.bindPage?.(page, record);
+    ctx.target.bindPage?.(page, record, ctx.signal);
     await ctx.store.save(
       { tabs: { sent: initial.sent_target_id, observer: page.id !== initial.sent_target_id ? page.id : null } },
       joined.lease
@@ -521,11 +538,12 @@ async function waitForAnswer(
       try {
         facts = await page.facts();
       } catch {
+        aborted(ctx);
         await page.detach().catch(() => undefined);
         if (++recoveries > 2) return result(ctx, 'wait_failed', { reason: 'browser_recovery_exhausted' });
         page = await locate(ctx, (await ctx.store.read()) ?? record);
         if (!page) return result(ctx, 'wait_failed', { reason: 'NoConversationAddress' });
-        ctx.target.bindPage?.(page, record);
+        ctx.target.bindPage?.(page, record, ctx.signal);
         continue;
       }
       if (facts.human) return result(ctx, 'needs_human', { reason: facts.human });
@@ -593,19 +611,35 @@ async function waitForAnswer(
           // and use the saved view only if it is final and not shorter (owner driver).
           for (let poll = 0; poll < 20 && !ctx.target.settled(facts.url) && now() < deadline; poll++) {
             await sleep(2_000);
-            facts = await page.facts();
+            try {
+              facts = await page.facts();
+            } catch {
+              aborted(ctx);
+              break; // Drive settling is best effort once the live answer is proven final.
+            }
           }
           if (ctx.target.settled(facts.url)) {
             record = await ctx.store.save({ conversation_url: facts.url }, joined.lease);
-            const saved = await ctx.target.open(facts.url);
+            let saved: OraclePage | undefined;
             try {
-              ctx.target.bindPage?.(saved, record);
+              saved = await ctx.target.open(facts.url);
+              // A bounded, best-effort cross-check must never discard the proven live answer.
+              ctx.target.bindPage?.(saved, record, AbortSignal.any([ctx.signal, AbortSignal.timeout(30_000)]));
               const view = await saved.facts();
               const reread = ctx.target.binding(view, ctx.input, record);
-              if (!view.error && reread.found && reread.final && reread.answer.length >= finalAnswer.length)
+              if (
+                !view.human &&
+                !view.error &&
+                reread.found &&
+                reread.final &&
+                reread.answer.length >= finalAnswer.length
+              )
                 finalAnswer = reread.answer;
+            } catch {
+              aborted(ctx);
+              // Transient saved-view failure: keep the stable, final live answer.
             } finally {
-              await saved.close().catch(() => undefined);
+              await saved?.close().catch(() => undefined);
             }
           }
         }

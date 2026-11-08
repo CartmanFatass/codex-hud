@@ -38,6 +38,37 @@ async function rejects(code: string, run: () => Promise<unknown>): Promise<void>
   await assert.rejects(run, failure(code));
 }
 
+/** Time only moves on sleep, and every sleep is recorded. */
+function clock(start = 1_700_000_000_000): {
+  now: () => number;
+  sleep: (ms: number) => Promise<void>;
+  sleeps: number[];
+} {
+  let time = start;
+  const sleeps: number[] = [];
+  return {
+    now: () => time,
+    sleeps,
+    sleep: async (ms: number) => {
+      sleeps.push(ms);
+      time += ms;
+    },
+  };
+}
+
+/** A real timer only to prove a promise settles; the timer is cleared either way. */
+async function within<T>(ms: number, promise: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timed out')), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 // ---------------------------------------------------------------- key vectors
 
 // The owner's driver: `hashlib.sha256("\x1f".join((model, thinking, conversation,
@@ -510,7 +541,9 @@ test('makeReplyScript is the driver wrapper and the page constants stay verbatim
   assert.equal(makeReplyScript(2, 1.9), `(${REPLY_JS})(2, 1)`);
   assert.match(SCROLL_JS, /scrollIntoView/);
   assert.match(SETTINGS_JS, /ms-paid-api-key-button/);
-  assert.match(STUDIO_PAGE_STATE, /aistudio\.google\.com/);
+  // Login is affirmative sign-in evidence; an absent account/composer is hydration.
+  assert.match(STUDIO_PAGE_STATE, /accounts\.google\.com/);
+  assert.match(STUDIO_PAGE_STATE, /authenticated:/);
 });
 
 // ---------------------------------------------------------------- target gates
@@ -522,6 +555,11 @@ interface StudioStub {
   reply: Record<string, unknown>;
   opened: string[];
   acted: number;
+  screenshots: number;
+  scrolls: number;
+  replies: number;
+  closed: number;
+  detached: number;
 }
 
 function studioStub(
@@ -529,6 +567,8 @@ function studioStub(
     state?: Record<string, unknown>;
     settings?: Record<string, unknown>;
     reply?: Record<string, unknown>;
+    /** Successive page-state reads before the stub settles on `state`. */
+    states?: Array<Record<string, unknown>>;
   } = {}
 ): StudioStub {
   const stub: StudioStub = {
@@ -538,6 +578,7 @@ function studioStub(
       selector: 'textarea[formcontrolname="promptText"]',
       composer: '',
       login: false,
+      authenticated: true,
       dialog: false,
       stop: false,
       page_error: false,
@@ -553,19 +594,36 @@ function studioStub(
     reply: { users: 0, model_turns: 0, final: false, text: '', error: null, ...overrides.reply },
     opened: [],
     acted: 0,
+    screenshots: 0,
+    scrolls: 0,
+    replies: 0,
+    closed: 0,
+    detached: 0,
     browser: undefined as unknown as OracleBrowser,
   };
+  let stateCursor = 0;
   const browser: OracleBrowser = {
     id: 'target-1',
     async evaluate(expression: string): Promise<unknown> {
-      if (expression === STUDIO_PAGE_STATE) return { ...stub.state };
+      if (expression === STUDIO_PAGE_STATE) {
+        const states = overrides.states;
+        if (states && stateCursor < states.length) return { ...states[stateCursor++] };
+        return { ...stub.state };
+      }
       if (expression === SETTINGS_JS) return { ...stub.settings };
-      if (expression.startsWith(`(${REPLY_JS})`)) return { ...stub.reply };
-      if (expression.startsWith(`(${SCROLL_JS})`)) return true;
+      if (expression.startsWith(`(${REPLY_JS})`)) {
+        stub.replies += 1;
+        return { ...stub.reply };
+      }
+      if (expression.startsWith(`(${SCROLL_JS})`)) {
+        stub.scrolls += 1;
+        return true;
+      }
       if (expression.includes('__jevFast')) return true;
       return true;
     },
     async command(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+      if (method === 'Page.captureScreenshot') stub.screenshots += 1;
       if (method === 'Input.insertText' && typeof params.text === 'string') stub.state.composer = params.text;
       return {};
     },
@@ -579,17 +637,25 @@ function studioStub(
       stub.acted += 1;
     },
     async close() {
-      return undefined;
+      stub.closed += 1;
     },
     async detach() {
-      return undefined;
+      stub.detached += 1;
     },
   };
   stub.browser = browser;
   return stub;
 }
 
-function studioOptions(stub: StudioStub, overrides: { model?: string; thinking?: string } = {}) {
+function studioOptions(
+  stub: StudioStub,
+  overrides: {
+    model?: string;
+    thinking?: string;
+    sleep?: (ms: number) => Promise<void>;
+    now?: () => number;
+  } = {}
+) {
   return {
     config: {
       stateDir: join(tmpdir(), 'synthetic-state'),
@@ -608,7 +674,8 @@ function studioOptions(stub: StudioStub, overrides: { model?: string; thinking?:
       return stub.browser;
     },
     targets: async () => [{ targetId: 'target-1', url: String(stub.state.url) }],
-    sleep: async () => undefined,
+    sleep: overrides.sleep ?? (async () => undefined),
+    now: overrides.now,
   };
 }
 
@@ -678,8 +745,87 @@ test('aistudioTarget prepare fills, gates and binds the single Run click; click 
   await target.click(page, new AbortController().signal);
   assert.equal(stub.acted, 1);
   await rejects('send.not_chosen', () => target.click(page, new AbortController().signal));
-  target.bindPage?.(page, { user_turn: 1 });
+  target.bindPage?.(page, { user_turn: 1 }, new AbortController().signal);
   const bound = target.binding(await page.facts(), INPUT, { user_turn: 1 });
   assert.deepEqual(bound, { found: true, answer: 'synthetic answer', final: true });
   assert.equal(target.binding(facts, INPUT, { user_turn: 2 }).found, false);
+});
+
+test('aistudioTarget prepare waits out an unhydrated page instead of calling it a login gate', async () => {
+  const url = 'https://aistudio.google.com/prompts/new_chat?model=gemini-4-argon';
+  const shell = {
+    url,
+    readyState: 'complete',
+    selector: null,
+    composer: null,
+    login: false,
+    authenticated: false,
+    dialog: false,
+    stop: false,
+    page_error: false,
+  };
+  const hydrated = { ...shell, selector: 'textarea[formcontrolname="promptText"]', composer: '', authenticated: true };
+  const stub = studioStub({ states: [shell, hydrated] });
+  const ticks = clock();
+  const target = aistudioTarget(studioOptions(stub, { sleep: ticks.sleep, now: ticks.now }));
+  const page = await target.open(url);
+  const facts = await target.prepare(page, INPUT, {} as never, new AbortController().signal);
+  // The absent account/composer was hydration, not affirmative login evidence.
+  assert.equal(facts.human, undefined);
+  assert.equal(facts.readyState, 'complete');
+  assert.equal(facts.composer, 'synthetic prompt');
+  assert.equal(stub.acted, 0, 'prepare never sends');
+  assert.ok(ticks.sleeps.length >= 2, 'the loading shell was polled, not refused');
+  // A streaming answer changes the exchange, not the page marker.
+  stub.reply = { users: 1, model_turns: 1, final: false, text: 'streaming one', error: null };
+  const first = await page.facts();
+  stub.reply.text = 'streaming two';
+  const second = await page.facts();
+  assert.notEqual(first.exchange?.text, second.exchange?.text);
+  assert.equal(first.marker, second.marker);
+});
+
+test('aistudioTarget facts stops a long virtualized read when the job signal aborts', async () => {
+  for (const mode of ['attach', 'open'] as const) {
+    const stub = studioStub({ reply: { users: 1, model_turns: 100, final: false, text: '', error: null } });
+    let entered!: () => void;
+    const held = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let heldSleeps = 0;
+    const target = aistudioTarget(
+      studioOptions(stub, {
+        sleep: async (ms) => {
+          if (ms === 1500 && heldSleeps++ === 0) {
+            entered();
+            await gate;
+          }
+        },
+      })
+    );
+    const controller = new AbortController();
+    const page = mode === 'attach' ? await target.attach('target-1') : await target.open(String(stub.state.url));
+    target.bindPage?.(page, { user_turn: 1 }, controller.signal);
+    const reading = page.facts();
+    await held; // the first 1500ms render pause is in flight
+    const atHold = { screenshots: stub.screenshots, scrolls: stub.scrolls, replies: stub.replies };
+    controller.abort(new Error('synthetic abort'));
+    try {
+      await within(1_000, assert.rejects(reading, /synthetic abort/));
+    } finally {
+      release();
+      await page.detach();
+    }
+    assert.equal(stub.detached, 1, `${mode}: the observer was detached`);
+    assert.deepEqual(
+      { screenshots: stub.screenshots, scrolls: stub.scrolls, replies: stub.replies },
+      atHold,
+      `${mode}: no read continued after the abort`
+    );
+    assert.equal(stub.acted, 0);
+  }
 });
