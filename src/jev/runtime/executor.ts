@@ -7,7 +7,10 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync
 import { join } from 'node:path';
 import type { Server } from 'node:net';
 import { Agent, type BrowserPort } from '../agent.js';
-import { DEFAULT_CDP_URL, loadJevConfig, readJevEnv } from '../ask/config.js';
+import { homedir } from 'node:os';
+import { DEFAULT_CDP_URL, defaultJevTomlPath, loadJevConfig, readJevEnv, type JevConfig } from '../ask/config.js';
+import { chromeStart } from '../ask/chrome.js';
+import { loopbackJson } from '../cdp.js';
 import { JevFailure } from '../ask/error.js';
 import { tryAcquireBrowserLock, type HeldLease } from '../ask/lease.js';
 import { assertStateDir } from '../ask/names.js';
@@ -103,7 +106,7 @@ export interface RuntimeOptions {
   browserFactory?: (url: string) => Promise<BrowserPort> | BrowserPort;
   providerFactory?: (resolved: ResolvedDecision) => Promise<DecisionProvider> | DecisionProvider;
   askTargets?: Partial<Record<'chatgpt-pro' | 'aistudio', AskTarget>>;
-  /** Tests inject the config. Production calls `loadJevConfig()` when `stateDir` is omitted. */
+  /** Tests inject the config. Production resolves TOML and this runtime's HUD config. */
   configLoader?: () => { stateDir: string; cdpUrl: string };
 }
 
@@ -154,6 +157,8 @@ export class JevRuntime implements JevExecutor {
   private writers = 0;
   private stopping = false;
   private started = false;
+  private config?: JevConfig;
+  private chromeStarting?: Promise<void>;
 
   constructor(options: RuntimeOptions) {
     if (!options.hudHome.startsWith('/')) throw new JevRuntimeError('invalid_request', 'HUD home must be absolute');
@@ -250,14 +255,18 @@ export class JevRuntime implements JevExecutor {
 
   /** The shared record directory. Missing means a typed error, never a new folder. */
   private bindState(): void {
-    if (this.options.stateDir) {
-      this.stateDir = this.options.stateDir;
-      this.cdpUrl = this.options.cdpUrl || DEFAULT_CDP_URL;
-    } else {
-      const config = this.options.configLoader ? this.options.configLoader() : loadJevConfig();
-      this.stateDir = config.stateDir;
-      this.cdpUrl = config.cdpUrl || DEFAULT_CDP_URL;
-    }
+    // Explicit test state never reads production configuration. Normal starts use
+    // the same TOML as the CLI, overlaid by this HUD home's own `jev` section.
+    this.config = this.options.stateDir
+      ? loadJevConfig({
+          configJson: { jev: { stateDir: this.options.stateDir, cdpUrl: this.options.cdpUrl } },
+          capturedEnv: process.env,
+        })
+      : this.options.configLoader
+        ? loadJevConfig({ configJson: { jev: this.options.configLoader() }, capturedEnv: process.env })
+        : loadRuntimeConfig(this.hudHome);
+    this.stateDir = this.config.stateDir;
+    this.cdpUrl = this.config.cdpUrl || DEFAULT_CDP_URL;
     try {
       assertStateDir(this.stateDir);
     } catch (error) {
@@ -568,9 +577,36 @@ export class JevRuntime implements JevExecutor {
       ? await this.options.browserFactory(url)
       : this.options.fake
         ? fakeBrowser(this.hudHome)
-        : await Browser.open(url, { cdpUrl: this.cdpUrl });
+        : await this.openSharedBrowser(url);
     this.browsers.add(browser);
     return browser;
+  }
+
+  private async openSharedBrowser(url: string): Promise<BrowserPort> {
+    const config = this.config;
+    if (!config) throw new JevRuntimeError('browser_unavailable', 'browser_unavailable');
+    // Concurrent jobs in this runtime join one start. Chrome itself is shared
+    // with the CLI and is never stopped by runtime cleanup.
+    if (!this.chromeStarting) {
+      this.chromeStarting = (async () => {
+        try {
+          await chromeStart(config, 'headless', {
+            reuseAnyMode: true,
+            fetchVersion: (cdpUrl, remainingMs) =>
+              loopbackJson(new URL('/json/version', cdpUrl).href, Math.min(1_000, remainingMs ?? 1_000)),
+          });
+        } catch {
+          throw new JevRuntimeError('browser_unavailable', 'browser_unavailable');
+        }
+      })();
+    }
+    const starting = this.chromeStarting;
+    try {
+      await starting;
+    } finally {
+      if (this.chromeStarting === starting) this.chromeStarting = undefined;
+    }
+    return Browser.open(url, { cdpUrl: this.cdpUrl, timeoutMs: config.cdpTimeoutMs });
   }
 
   private async closeBrowser(browser: BrowserPort): Promise<void> {
@@ -780,6 +816,16 @@ export class JevRuntime implements JevExecutor {
   private stamp(): string {
     return new Date(this.options.now ? this.options.now() : Date.now()).toISOString();
   }
+}
+
+/** Explicit sources: HUD JSON overrides TOML; the loader itself never reads process.env. */
+export function loadRuntimeConfig(hudHome: string): JevConfig {
+  return loadJevConfig({
+    tomlPath: process.env.JEV_ASK_CONFIG || defaultJevTomlPath(),
+    configJsonPath: join(hudHome, 'config.json'),
+    capturedEnv: process.env,
+    home: homedir(),
+  });
 }
 
 /** ChatGPT Pro key. AI Studio returns no key; R4 ports the driver's hash into its own record file. */
