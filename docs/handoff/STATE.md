@@ -33,7 +33,12 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - waiter RSS: about 98 MB before, about 50 MB on the synthetic fixture, 62 MB live while polling herdr; an import-graph test pins the waiter;
   - pi-roles PIAUTOCLOSE (Fishpref `92fc938`): the sonic tab closed itself after its clean finish, before `hud_close`, which then reaped idempotently.
 - Known debt: `node scripts/pack-cloud-preview.mjs --self-test` fails on `dist/harness/pi/managed-launch.js` (pre-existing on the base); B11's spaces-path test; the panel publisher test under load.
-- In progress: R4 (fix round after review 1: recoverable outcomes, resume, attachment digest, refusal codes, observer cancellation).
+- R4 merged (`d489581`): ChatGPT Pro and AI Studio oracle targets, three review rounds, 24-case crash-window matrix, close/stop admission fences checked by in-memory negative controls.
+- R4 live acceptance (2026-11-08) found three defects; R4F is fixing them:
+  - D1 ChatGPT: `page_ready_timeout` before Send on a ready, logged-in page that held a stale composer draft (nothing was sent);
+  - D2 the pre-send code reached the job as `internal`;
+  - D3 AI Studio: the send succeeded (answer visible in the tab), but confirmation never settled because the URL stayed `new_chat`; closing the job left it `failed` instead of closed and recoverable.
+  The AI Studio record `r4-studio-1` stays `send_attempted`; after R4F, a resume must collect it with zero clicks.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
