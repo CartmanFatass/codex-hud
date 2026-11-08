@@ -12,7 +12,7 @@ const PAGE = {
   text: 'synthetic page',
   actions: [],
   fingerprint: 'fixture',
-  marker: 'stable',
+  marker: [1, 'https://example.invalid/fixture', 0, 0, 1280, 900, 'Fixture', 'synthetic page', [], 0],
   readyState: 'complete',
 } as PageState & { readyState: string };
 
@@ -27,7 +27,8 @@ export function fakeBrowser(hudHome: string): BrowserPort {
     async observe() {
       while (!closed && existsSync(hold)) await delay(15);
       if (closed) throw new Error('closed');
-      return PAGE;
+      // CDP returns a newly decoded marker array on every observation.
+      return structuredClone(PAGE);
     },
     async act() {
       return { executed: 'fixture' };

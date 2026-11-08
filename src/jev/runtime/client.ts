@@ -7,9 +7,10 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { proxyForSpawn } from '../ask/config.js';
+import { hostProxyEnv, proxyForSpawn } from '../ask/config.js';
+import { JevFailure } from '../ask/error.js';
 import { probePid } from '../ask/lease.js';
-import { cappedReadWaitMs, JevRuntimeError } from './executor.js';
+import { cappedReadWaitMs, JevRuntimeError, loadRuntimeConfig } from './executor.js';
 import { isPublicIpcCode, jevCall } from './ipc.js';
 import type { JevCreateRequest, JevExecutor, JevFollowUp, JevJob, JevReadOptions } from './types.js';
 
@@ -41,6 +42,7 @@ export interface ConnectedJev extends JevExecutor {
 const EXACT_ENV = new Set([
   'PATH',
   'HOME',
+  'JEV_ASK_CONFIG',
   'TMPDIR',
   'LANG',
   'HTTP_PROXY',
@@ -255,7 +257,7 @@ function spawnChild(
 ): { child: ChildProcess; errFile: string; errAt: number } {
   const entry = options.entry ?? fileURLToPath(new URL('./entry.js', import.meta.url));
   const support = options.envProxy ?? detectEnvProxySupport();
-  const env = childEnv(options, support);
+  const env = childEnv(hudHome, options, support);
   const errFile = join(dirname(socketPath), 'child.err');
   let errAt = 0;
   try {
@@ -300,7 +302,7 @@ function childStartError(file: string, from: number): JevRuntimeError {
 }
 
 /** Allow-list, then drop credential names. Config proxy wins. A missing config does not block the spawn. */
-function childEnv(options: ConnectOptions, support: EnvProxySupport): NodeJS.ProcessEnv {
+function childEnv(hudHome: string, options: ConnectOptions, support: EnvProxySupport): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (value === undefined || !forwardable(name)) continue;
@@ -314,7 +316,14 @@ function childEnv(options: ConnectOptions, support: EnvProxySupport): NodeJS.Pro
   if (options.cdpUrl) env.JEV_RUNTIME_CDP_URL = options.cdpUrl;
   if (support.envVar) env.NODE_USE_ENV_PROXY = '1';
   else delete env.NODE_USE_ENV_PROXY;
-  for (const [name, value] of Object.entries(proxyForSpawn(process.env))) {
+  let proxy: Record<string, string>;
+  try {
+    proxy = options.stateDir ? proxyForSpawn(process.env) : hostProxyEnv(loadRuntimeConfig(hudHome));
+  } catch (error) {
+    if (!(error instanceof JevFailure)) throw error;
+    proxy = proxyForSpawn(process.env);
+  }
+  for (const [name, value] of Object.entries(proxy)) {
     if (!forwardable(name)) continue;
     env[name] = value;
   }

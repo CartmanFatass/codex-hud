@@ -195,9 +195,25 @@ function judgmentRequest(observation: PageObservation, pending: readonly AwaitSt
   };
 }
 
-function visiblyLoading(observation: PageObservation, seenMarker: boolean, previousMarker: unknown): boolean {
+// Normalise here, not in a browser adapter: every observer (including ask
+// phases) must compare JSON markers by value, independent of object key order.
+function canonicalMarker(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalMarker).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalMarker(record[key])}`)
+    .join(',')}}`;
+}
+
+function visiblyLoading(
+  observation: PageObservation,
+  seenMarker: boolean,
+  previousMarker: string | undefined,
+  marker: string
+): boolean {
   const ready = observation.facts.readyState;
-  const marker = observation.facts.marker;
   const markerChanged = seenMarker && marker !== previousMarker;
   return ready !== 'complete' || markerChanged;
 }
@@ -240,7 +256,7 @@ export async function awaitStates(
   let loadUsed = 0;
   let calls = 0;
   let seenMarker = false;
-  let previousMarker: unknown;
+  let previousMarker: string | undefined;
   let previousLoading = false;
   let backoff = 0;
   let last: PageObservation | undefined;
@@ -273,10 +289,11 @@ export async function awaitStates(
     const t = now();
     const dt = Math.max(0, t - cursor);
     cursor = t;
-    const loadingNow = visiblyLoading(observation, seenMarker, previousMarker);
+    const marker = canonicalMarker(observation.facts.marker);
+    const loadingNow = visiblyLoading(observation, seenMarker, previousMarker, marker);
     const first = !seenMarker;
     seenMarker = true;
-    previousMarker = observation.facts.marker;
+    previousMarker = marker;
     const extend = loadingNow || previousLoading;
     if (extend && loadUsed < maxLoadMs) {
       const room = maxLoadMs - loadUsed;
