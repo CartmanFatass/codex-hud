@@ -18,9 +18,10 @@ import {
   type OperationRecord,
 } from '../../src/jev/ask/records.js';
 import type { Answer, DecisionProvider } from '../../src/jev/decide.js';
+import { awaitState } from '../../src/jev/judge.js';
 import type { DecisionRequest, ObservedAction, PageState } from '../../src/jev/model.js';
 import { bindChatgpt, chatgptTarget, MENU_STATE, type OracleBrowser } from '../../src/jev/runtime/chatgpt.js';
-import { PAGE_FACTS } from '../../src/jev/runtime/chatgpt-facts.js';
+import { FOCUS_COMPOSER, PAGE_FACTS } from '../../src/jev/runtime/chatgpt-facts.js';
 import { chatgptStore, runOracle, type OracleFacts, type OracleTurn } from '../../src/jev/runtime/oracle.js';
 import type { JevAskInput } from '../../src/jev/runtime/types.js';
 
@@ -175,7 +176,7 @@ function chatgptStub(overrides: StubOptions = {}): Stub {
   const stub = {
     state: {
       url: ROOT,
-      composer: null,
+      composer: '',
       turns: [],
       cards: [],
       send: true,
@@ -240,6 +241,7 @@ function chatgptStub(overrides: StubOptions = {}): Stub {
         stub.keys.push(key);
         // One key press is a keyDown and a keyUp; the page sees it once.
         if (key === 'Escape' && params.type === 'keyDown') stub.events.push('escape');
+        if (key === 'Backspace' && params.type === 'keyDown') stub.state.composer = '';
         if (key === 'End' && stub.menu.slider) {
           stub.menu.slider.now = stub.menu.slider.max;
           stub.menu.slider.effort = 'Pro';
@@ -355,7 +357,7 @@ function providerOf(
   options: { pick?: Picker; judge?: Record<string, number>; onDecide?: (goal: string) => void } = {}
 ): DecisionProvider {
   const pick = options.pick ?? defaultPick;
-  // The composer is empty on a fresh page, so the readiness judgment is the provider's.
+  // Hydrated empty composers use facts; unresolved page states use these judgments.
   const judged: Record<string, number> = { page_ready: 0.95, ...options.judge };
   return {
     id: 'typesafe',
@@ -411,6 +413,231 @@ function providerOf(
 }
 
 // ---------------------------------------------------------------- prepare and click
+
+test('T1: ready heavy ChatGPT facts and a long restored draft pass the real page_ready wait', async () => {
+  const stub = chatgptStub({ state: { composer: 'synthetic restored draft '.repeat(4000) } });
+  let elapsed = 0;
+  let samples = 0;
+  let readyAt = -1;
+  const originalObserve = stub.browser.observe.bind(stub.browser);
+  stub.browser.observe = async () => {
+    samples++;
+    elapsed += 75; // CDP/snapshot cost is charged to awaitState's real clock seam.
+    const page = await originalObserve(false);
+    return { ...page, text: 'synthetic heavy DOM '.repeat(40_000) };
+  };
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  stub.browser.evaluate = async (script) => {
+    if (script === MENU_STATE && readyAt < 0) readyAt = elapsed;
+    if (script === PAGE_FACTS && elapsed < 2_000) return { ...pageFacts(stub), composer: null };
+    return evaluate(script);
+  };
+  const target = chatgptTarget({
+    ...targetOptions(stub),
+    now: () => elapsed,
+    sleep: async (ms) => {
+      elapsed += ms;
+    },
+  });
+  const provider = providerOf(stub);
+  let judgments = 0;
+  provider.judge = async () => {
+    judgments++;
+    return { answers: [{ name: 'page_ready', kind: 'predicate', probability: 0 }], usage: {}, latencyMs: 0, raw: null };
+  };
+  const page = await target.open(ROOT);
+  await target.prepare(page, INPUT, provider, new AbortController().signal);
+  assert.ok(readyAt >= 0 && readyAt < 5_000, `page_ready + draft clear cost ${readyAt}ms`);
+  assert.equal(judgments, 0, 'never ask a denying judge about the unhydrated shell');
+  assert.ok(samples >= 2, 'the real awaitState stability loop ran');
+  assert.equal(stub.sendClicks, 0);
+});
+
+test('T1b: replay the recorded loading=.99 judgment across shell hydration, call exhaustion and changing markers', async (t) => {
+  for (const mode of ['hydrates', 'never', 'changing_marker'] as const) {
+    const stub = chatgptStub({ state: { composer: null } });
+    let elapsed = 0;
+    let judgments = 0;
+    let samples = 0;
+    const evaluate = stub.browser.evaluate.bind(stub.browser);
+    stub.browser.evaluate = async (script) => {
+      if (script === PAGE_FACTS) {
+        samples++;
+        const composer =
+          mode === 'never' || elapsed < 3_600
+            ? null
+            : 'synthetic long restored draft '.repeat(1000) + (mode === 'changing_marker' ? samples : '');
+        return { ...pageFacts(stub), composer };
+      }
+      // Readiness is the step under test. Stop before any mode/fill preparation.
+      if (script === FOCUS_COMPOSER || script === MENU_STATE) throw new Error('readiness_passed');
+      return evaluate(script);
+    };
+    stub.browser.observe = async () => ({ url: ROOT, text: 'synthetic DOM '.repeat(40_000), actions: [] });
+    const provider = providerOf(stub);
+    provider.judge = async () => {
+      judgments++;
+      return {
+        answers: [
+          { name: 'loading', kind: 'predicate', probability: 0.99 },
+          { name: 'page_ready', kind: 'predicate', probability: 0 },
+          { name: 'needs_human', kind: 'predicate', probability: 0 },
+          { name: 'human_kind', kind: 'choice', choice: 'none', probabilities: { none: 1 }, confidence: 1 },
+        ],
+        usage: {},
+        latencyMs: 0,
+        raw: null,
+      };
+    };
+    const target = chatgptTarget({
+      ...targetOptions(stub),
+      now: () => elapsed,
+      sleep: async (ms) => {
+        elapsed += ms;
+      },
+    });
+    const page = await target.open(ROOT);
+    if (mode === 'hydrates') {
+      await assert.rejects(target.prepare(page, INPUT, provider, new AbortController().signal), /readiness_passed/);
+      assert.ok(elapsed < 6_000, 'facts fast path is rechecked after loading/hydration');
+    } else {
+      await rejects('page_ready_timeout', () => target.prepare(page, INPUT, provider, new AbortController().signal));
+      assert.equal(elapsed, mode === 'never' ? 30_000 : 90_000);
+    }
+    assert.equal(judgments, 0, 'hydration and changing markers do not spend the judge budget');
+    t.diagnostic(`${mode}: elapsed=${elapsed}, samples=${samples}, calls=${judgments}`);
+  }
+});
+
+test('T1b slow loading call rechecks real ChatPage facts after the load backoff no longer fits', async () => {
+  const stub = chatgptStub();
+  let elapsed = 0;
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  stub.browser.evaluate = async (script) =>
+    script === PAGE_FACTS
+      ? { ...pageFacts(stub), composer: elapsed < 3_600 ? null : 'synthetic draft '.repeat(1000) }
+      : evaluate(script);
+  const target = chatgptTarget(targetOptions(stub));
+  const page = await target.open(ROOT);
+  const outcome = await awaitState(
+    { name: 'page_ready', statement: 'The composer is ready and idle.' },
+    {
+      async observe() {
+        const observation = await page.observation(await page.facts());
+        // Reproduce the original adapter's document.complete shell. T1 separately
+        // pins the new hydration rule; this test isolates the shared wait bug.
+        observation.facts.readyState = 'complete';
+        return observation;
+      },
+    },
+    {
+      async judge() {
+        elapsed += 30_000;
+        return {
+          answers: [
+            { name: 'loading', kind: 'predicate', probability: 0.99 },
+            { name: 'page_ready', kind: 'predicate', probability: 0 },
+            { name: 'needs_human', kind: 'predicate', probability: 0 },
+            { name: 'human_kind', kind: 'choice', choice: 'none', probabilities: { none: 1 }, confidence: 1 },
+          ],
+          usage: {},
+          latencyMs: 30_000,
+          raw: null,
+        };
+      },
+    },
+    {
+      maxMs: 60_000,
+      maxLoadMs: 30_000,
+      maxCalls: 4,
+      now: () => elapsed,
+      sleep: async (ms) => {
+        elapsed += ms;
+      },
+      fastPath: (observation) =>
+        observation.facts.composer_sha256 === squashedSha256('synthetic draft '.repeat(1000)) ? 'pass' : null,
+    }
+  );
+  assert.equal(outcome.verdict, 'pass');
+  assert.equal(outcome.calls, 1);
+  assert.ok(elapsed < 40_000, `rechecked the ready facts at ${elapsed}ms`);
+});
+
+test('T1 fault: a ChatGPT shell that never hydrates expires at maxLoadMs, not the stable budget', async () => {
+  const stub = chatgptStub({ state: { composer: null } });
+  const ticks = clock(0);
+  const target = chatgptTarget({ ...targetOptions(stub), ...ticks });
+  const page = await target.open(ROOT);
+  await rejects('page_ready_timeout', () =>
+    target.prepare(page, INPUT, providerOf(stub), new AbortController().signal)
+  );
+  assert.equal(ticks.now(), 30_000, 'hydration cannot consume the additional stable-page budget');
+  assert.equal(stub.sendClicks, 0);
+});
+
+test('page_ready judgment deny is page_ready_denied, not a timeout', async () => {
+  const stub = chatgptStub({ state: { composer: null } });
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  // Affirmative page-error evidence is not hydration; a judgment may deny it.
+  stub.browser.evaluate = async (script) =>
+    script === PAGE_FACTS ? { ...pageFacts(stub), page_error: true } : evaluate(script);
+  const target = chatgptTarget(targetOptions(stub));
+  const page = await target.open(ROOT);
+  await rejects('page_ready_denied', () =>
+    target.prepare(page, INPUT, providerOf(stub, { judge: { page_ready: 0 } }), new AbortController().signal)
+  );
+});
+
+test('T2: clear a stale draft exactly as the owner driver before filling; never mix it into the prompt', async () => {
+  const draft = 'synthetic stale draft '.repeat(300);
+  const stub = chatgptStub({ state: { composer: draft } });
+  const events: Array<unknown> = [];
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  stub.browser.evaluate = async (script) => {
+    if (script === FOCUS_COMPOSER) events.push('focus');
+    return evaluate(script);
+  };
+  const command = stub.browser.command.bind(stub.browser);
+  stub.browser.command = async (method, params) => {
+    if (method === 'Input.dispatchKeyEvent') events.push(params);
+    return command(method, params);
+  };
+  const act = stub.browser.act.bind(stub.browser);
+  stub.browser.act = async (action, page, text) => {
+    if (action.kind === 'fill') assert.equal(stub.state.composer, '', 'clear before the hit-tested fill');
+    return act(action, page, text);
+  };
+  const target = chatgptTarget(targetOptions(stub));
+  const facts = await target.prepare(await target.open(ROOT), INPUT, providerOf(stub), new AbortController().signal);
+  assert.deepEqual(events.slice(0, 5), [
+    'focus',
+    { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2, commands: ['selectAll'] },
+    { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 },
+    { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 },
+    { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 },
+  ]);
+  assert.equal(facts.recordFields?.draft_replaced_sha256, sha256Hex(draft));
+  assert.equal(facts.composer, PROMPT);
+  assert.deepEqual(stub.fillTexts, [PROMPT]);
+  assert.equal(stub.sendClicks, 0);
+});
+
+test('D1 cancellation during a slow observation is an abort, not page_ready_timeout', async () => {
+  const stub = chatgptStub({ state: { composer: '' } });
+  const controller = new AbortController();
+  let time = 0;
+  stub.browser.observe = async () => {
+    time += 90_000;
+    controller.abort(new Error('synthetic_stop'));
+    return { url: ROOT, text: '', actions: [] };
+  };
+  const target = chatgptTarget({ ...targetOptions(stub), now: () => time });
+  await assert.rejects(
+    target.prepare(await target.open(ROOT), INPUT, providerOf(stub), controller.signal),
+    /synthetic_stop/
+  );
+  assert.equal(stub.sendClicks, 0);
+});
 
 test('chatgpt target: proves the menu, fills the exact prompt and binds one Send click', async () => {
   const stub = chatgptStub();
@@ -519,7 +746,7 @@ test('chatgpt target: an attachment card with the wrong name is refused before t
   const page = await target.open(stub.state.url);
   const input: JevAskInput = { ...INPUT, attach: attachment };
   // The upload wait ends without the requested card, so the gate fails closed and nothing is sent.
-  await rejects('upload_finished_timeout', () =>
+  await rejects('upload_finished_denied', () =>
     target.prepare(page, input, providerOf(stub), new AbortController().signal)
   );
   assert.deepEqual(stub.files, [attachment]);

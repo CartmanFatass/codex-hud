@@ -41,7 +41,7 @@ export interface OracleFacts {
   turns: OracleTurn[];
   cards: string[] | null;
   /** AI Studio can provide a pre-bound exchange and its own finality proof. */
-  exchange?: { text: string; final: boolean; error?: string; users: number };
+  exchange?: { text: string; final: boolean; error?: string; users: number; userPromptSha256?: string };
   recordFields?: OperationRecord;
 }
 export interface OraclePage {
@@ -257,6 +257,7 @@ export async function runOracle(ctx: OracleContext): Promise<OracleResult> {
       }
       if (page) {
         ctx.target.bindPage?.(page, record, ctx.signal);
+        ctx.phase?.('confirm');
         const confirmation = await confirm(ctx, page, record, attempted ? 120_000 : 0, now, sleep);
         if (confirmation.facts && confirmation.sent) {
           record = await ctx.store.save(
@@ -643,6 +644,7 @@ async function waitForAnswer(
             }
           }
         }
+        ctx.phase?.('collect');
         const file = writeOracleFile(ctx.stateDir, ctx.key, '.md', finalAnswer + '\n');
         await ctx.store.save(
           {

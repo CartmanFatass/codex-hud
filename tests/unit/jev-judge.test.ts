@@ -181,6 +181,75 @@ test('awaitState times out on a stable unsettled page without spending the load 
   assert.equal(outcome.extendedMs, 0);
 });
 
+test('T1b loading call consumes load room only once before a stable fallback poll', async () => {
+  const world = clocked(0);
+  const outcome = await awaitState(
+    { name: 'page_ready', statement: 'The page is ready.' },
+    {
+      async observe() {
+        return {
+          ...(await world.observer.observe()),
+          facts: { readyState: 'complete', marker: 'm', ready: world.now() >= 3_600 },
+        };
+      },
+    },
+    {
+      async judge() {
+        await world.sleep(30_000);
+        return result([predicate('loading', 0.99), predicate('page_ready', 0)]);
+      },
+    },
+    {
+      maxMs: 1_000,
+      maxLoadMs: 30_000,
+      maxCalls: 4,
+      now: world.now,
+      sleep: world.sleep,
+      fastPath: (observation) => (observation.facts.ready ? 'pass' : null),
+    }
+  );
+  assert.equal(outcome.verdict, 'pass');
+  assert.equal(outcome.calls, 1);
+  assert.equal(outcome.extendedMs, 30_000);
+  assert.equal(world.now(), 31_000);
+});
+
+for (const mode of ['unsettled', 'error'] as const) {
+  test(`T1c ${mode} backoff clips to remaining room and rechecks facts at the deadline`, async () => {
+    const world = clocked(0);
+    let samples = 0;
+    world.provider.judge = async () => {
+      if (mode === 'error') throw new Error('synthetic_judge_error');
+      return result([predicate('loading', 0), predicate('needs_human', 0), predicate('page_ready', 0.5)]);
+    };
+    const outcome = await awaitState(
+      { name: 'page_ready', statement: 'The page is ready.' },
+      {
+        async observe() {
+          samples++;
+          return {
+            ...(await world.observer.observe()),
+            facts: { readyState: 'complete', marker: 'm', ready: world.now() >= 4_000 },
+          };
+        },
+      },
+      world.provider,
+      {
+        maxMs: 5_000,
+        maxLoadMs: 0,
+        maxCalls: 4,
+        now: world.now,
+        sleep: world.sleep,
+        fastPath: (observation) => (observation.facts.ready ? 'pass' : null),
+      }
+    );
+    assert.equal(outcome.verdict, 'pass');
+    assert.equal(world.now(), 5_000);
+    assert.equal(outcome.calls, 2);
+    assert.equal(samples, 4, 'a final facts observation occurs instead of early timeout');
+  });
+}
+
 test('a page that stays loading spends maxLoadMs and does not call the model', async () => {
   const world = clocked(1_000_000);
   let judged = 0;
@@ -367,7 +436,11 @@ test('a backoff sleep counts the model call already in flight', async () => {
   );
   assert.equal(outcome.verdict, 'timeout');
   assert.equal(outcome.calls, 1);
-  assert.equal(slept, 500);
+  // Previously this returned at 2500ms merely because a 3000ms backoff
+  // did not fit. The clipped 2500ms sleep now uses the remaining budget,
+  // accounting for the 2000ms call and the initial 500ms stability poll.
+  assert.equal(slept, 3_000);
+  assert.equal(clock, 5_000);
 });
 
 test(

@@ -3,7 +3,17 @@
 // A caller disconnect ends that read only. Close is idempotent and keeps results.
 
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Server } from 'node:net';
@@ -291,6 +301,7 @@ export class JevRuntime implements JevExecutor {
       this.runtimeLease = lease;
       this.started = true;
       this.writeRuntimeFile();
+      this.lifecycle('start');
       this.armGrace();
     } catch (error) {
       lease.release();
@@ -298,9 +309,10 @@ export class JevRuntime implements JevExecutor {
     }
   }
 
-  async stop(): Promise<void> {
+  async stop(reason = 'explicit'): Promise<void> {
     if (this.stopping) return;
     this.stopping = true;
+    this.lifecycle('stop', reason);
     if (this.graceTimer) clearTimeout(this.graceTimer);
     this.graceTimer = undefined;
     for (const abort of this.aborts.values()) abort.abort();
@@ -542,6 +554,23 @@ export class JevRuntime implements JevExecutor {
       this.cleanups.set(jobId, cleanup);
     }
     await cleanup;
+    // Closing ends observation, not the persisted send. Keep the attempted key
+    // and an honest recovery outcome even when close interrupted confirmation.
+    if (job.state === 'closed' && job.input.tag === 'ask' && job.result === null) {
+      const input = job.input;
+      const key =
+        input.target === 'chatgpt-pro'
+          ? askRecordKey('chatgpt-pro', input.label, input.prompt)
+          : studioKey(input.label, input.prompt, input.model ?? '', input.thinking ?? '', input.conversation ?? 'new');
+      const record =
+        input.target === 'chatgpt-pro'
+          ? readOperation(this.stateDir, key)
+          : await studioStore(job.askStateDir ?? this.studioConfig().stateDir, key).read();
+      if (record?.send_attempted === true || record?.attempted_at) {
+        job.result = { status: 'uncertain', key, recoverable: true, reason: 'observation_closed' };
+        this.save(job);
+      }
+    }
     return this.view(this.jobs.get(jobId) ?? job);
   }
 
@@ -645,6 +674,7 @@ export class JevRuntime implements JevExecutor {
         resumeOnly,
         now: this.options.oracleNow,
         sleep: this.options.oracleSleep,
+        phase: (phase) => this.lifecycle('phase', phase, job.id),
         fields: {
           key,
           label: input.label,
@@ -671,6 +701,8 @@ export class JevRuntime implements JevExecutor {
         this.options.oracleTargets?.['chatgpt-pro'] ??
         chatgptTarget({
           root: this.askConfig.providerRoot,
+          diagnostic: (phase, verdict, calls, elapsedMs) =>
+            this.lifecycle('phase', `${phase}.${verdict}`, job.id, { calls, elapsedMs }),
           model: this.askConfig.model,
           effortWord: this.askConfig.effortWord,
           open: async (url) =>
@@ -694,6 +726,7 @@ export class JevRuntime implements JevExecutor {
         resumeOnly,
         now: this.options.oracleNow,
         sleep: this.options.oracleSleep,
+        phase: (phase) => this.lifecycle('phase', phase, job.id),
         fields: {
           key,
           provider: 'chatgpt',
@@ -919,6 +952,7 @@ export class JevRuntime implements JevExecutor {
   private fail(job: StoredJob, error: unknown): void {
     if (job.closed) return;
     const body = errorBody(error);
+    this.lifecycle('phase', `failed.${body.code}`, job.id);
     job.state = 'failed';
     job.error = body;
     job.result = job.result ?? null;
@@ -942,6 +976,8 @@ export class JevRuntime implements JevExecutor {
         parsed.state = 'interrupted';
         parsed.error = { code: 'interrupted', message: 'interrupted' };
         parsed.run = parsed.run ? { ...parsed.run, endedAt: this.stamp() } : null;
+        parsed.seq += 1;
+        this.lifecycle('phase', 'interrupted', parsed.id);
         this.writeFile(parsed);
       }
       this.jobs.set(parsed.id, parsed);
@@ -991,6 +1027,43 @@ export class JevRuntime implements JevExecutor {
     chmodSync(file, 0o600);
   }
 
+  /** Bounded diagnostics: only lifecycle codes and synthetic/opaque job ids. */
+  lifecycle(
+    event: 'start' | 'stop' | 'phase' | 'exit',
+    code = '',
+    jobId = '',
+    metrics?: { calls: number; elapsedMs: number }
+  ): void {
+    const safe = (value: string) => (/^[A-Za-z0-9_.:-]{0,100}$/.test(value) ? value : 'internal');
+    try {
+      const file = join(this.runtimeDir, 'child.err');
+      // Keep the inode: the detached entry's stderr is already open with O_APPEND.
+      if (existsSync(file) && statSync(file).size > 131_072) {
+        const tail = readFileSync(file).subarray(-65_536).toString('utf8');
+        writeFileSync(file, tail.slice(tail.indexOf('\n') + 1), { mode: 0o600 });
+      }
+      const version = createHash('sha256')
+        .update(readFileSync(new URL('./executor.js', import.meta.url)))
+        .digest('hex')
+        .slice(0, 12);
+      appendFileSync(
+        file,
+        JSON.stringify({
+          at: this.stamp(),
+          event,
+          pid: process.pid,
+          version,
+          code: safe(code),
+          job: safe(jobId),
+          ...(metrics ? { calls: metrics.calls, elapsedMs: Math.round(metrics.elapsedMs) } : {}),
+        }) + '\n',
+        { mode: 0o600 }
+      );
+    } catch {
+      // Diagnostics must never change send/close semantics.
+    }
+  }
+
   private writeRuntimeFile(): void {
     const file = join(this.hudHome, 'jev-runtime', 'runtime.json');
     writeFileSync(file, JSON.stringify({ pid: process.pid, startedAt: this.stamp() }) + '\n', { mode: 0o600 });
@@ -1014,7 +1087,7 @@ export class JevRuntime implements JevExecutor {
         return;
       }
       for (const abort of this.aborts.values()) abort.abort();
-      void this.stop();
+      void this.stop('idle');
     }, this.graceMs);
   }
 

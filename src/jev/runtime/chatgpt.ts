@@ -9,7 +9,7 @@ import { pySquash, squashedSha256, type OperationRecord } from '../ask/records.j
 import { choose, DecisionRefused, type DecisionProvider } from '../decide.js';
 import { awaitState, type JudgmentProvider, type PageObservation } from '../judge.js';
 import { actionSpace, type ObservedAction, type PageState } from '../model.js';
-import { COMPOSER_LOOKUP, NODE_FACTS, PAGE_FACTS, UPLOAD_LOOKUP } from './chatgpt-facts.js';
+import { COMPOSER_LOOKUP, FOCUS_COMPOSER, NODE_FACTS, PAGE_FACTS, UPLOAD_LOOKUP } from './chatgpt-facts.js';
 import { oracleDelay, type OracleFacts, type OraclePage, type OracleTarget, type OracleTurn } from './oracle.js';
 import type { JevAskInput } from './types.js';
 
@@ -26,6 +26,7 @@ export interface TargetBrowserOptions {
   targets(): Promise<Array<{ targetId: string; url: string }>>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  diagnostic?: (phase: string, verdict: string, calls: number, elapsedMs: number) => void;
 }
 
 // A menu is actionable only when explicitly linked to a composer menu trigger AND
@@ -86,7 +87,18 @@ class ChatPage implements OraclePage {
     const sidebar = [...new Set((raw.sidebar_hrefs ?? []).map((href) => new URL(href, raw.url).href))];
     return {
       url: raw.url,
-      readyState: raw.readyState,
+      // document.complete precedes React hydration. A stable shell is not a
+      // ready composer and must not invite a premature negative page judgment.
+      readyState:
+        raw.readyState === 'complete' &&
+        raw.composer === null &&
+        !raw.login &&
+        !raw.auth_required &&
+        !raw.challenge &&
+        !raw.approval?.length &&
+        !raw.page_error
+          ? 'interactive'
+          : raw.readyState,
       marker: JSON.stringify([
         raw.url,
         raw.composer,
@@ -179,11 +191,23 @@ export function chatgptTarget(
         calls: number
       ) => {
         let facts: OracleFacts | undefined;
+        const started = (options.now ?? Date.now)();
         const outcome = await awaitState(
           { name, statement },
           {
             async observe() {
               facts = await page.facts();
+              signal.throwIfAborted();
+              // maxLoadMs is a hydration bound, not permission to spend another
+              // entire stable-page budget on a shell that never becomes usable.
+              if (
+                name === 'page_ready' &&
+                facts.readyState !== 'complete' &&
+                (options.now ?? Date.now)() - started >= 30_000
+              ) {
+                options.diagnostic?.(name, 'hydration_timeout', 0, (options.now ?? Date.now)() - started);
+                throw new JevFailure('page_ready_timeout', 'page_ready_timeout');
+              }
               return page.observation(facts);
             },
           },
@@ -198,8 +222,10 @@ export function chatgptTarget(
             fastPath: () => (facts && !facts.human && !facts.error && fast(facts) ? 'pass' : null),
           }
         );
+        options.diagnostic?.(name, outcome.verdict, outcome.calls, (options.now ?? Date.now)() - started);
         if (facts?.human || outcome.verdict === 'needs_human')
           throw new JevFailure('needs_human', facts?.human ?? outcome.humanKind ?? 'approval');
+        if (outcome.verdict === 'deny') throw new JevFailure(`${name}_denied`, `${name}_denied`);
         if (outcome.verdict !== 'pass' || !facts) throw new JevFailure(`${name}_timeout`, `${name}_timeout`);
         return facts;
       };
@@ -212,6 +238,34 @@ export function chatgptTarget(
       );
       if (target.binding(facts, input, {}).found) throw new JevFailure('already_submitted', 'already_submitted');
       if (facts.cards === null || facts.cards.length) throw new JevFailure('cards_present', 'cards_present');
+      // Match the owner driver: restored drafts can put the composer's centre
+      // outside the viewport. Clear them before Jev observes or fills the box.
+      const draftHash = facts.composer ? createHash('sha256').update(facts.composer).digest('hex') : undefined;
+      if (facts.composer) {
+        await page.browser.evaluate(FOCUS_COMPOSER);
+        for (const [key, code, virtual, extra] of [
+          ['a', 'KeyA', 65, { modifiers: 2, commands: ['selectAll'] }],
+          ['Backspace', 'Backspace', 8, {}],
+        ] as const) {
+          signal.throwIfAborted();
+          await page.browser.command('Input.dispatchKeyEvent', {
+            type: 'keyDown',
+            key,
+            code,
+            windowsVirtualKeyCode: virtual,
+            ...extra,
+          });
+          await page.browser.command('Input.dispatchKeyEvent', {
+            type: 'keyUp',
+            key,
+            code,
+            windowsVirtualKeyCode: virtual,
+            ...('modifiers' in extra ? { modifiers: extra.modifiers } : {}),
+          });
+        }
+        facts = await wait('draft_cleared', 'The restored draft is cleared.', (f) => f.composer === '', 10_000, 0);
+        if (facts.composer !== '') throw new JevFailure('draft_clear_failed', 'draft_clear_failed');
+      }
       const baseline = await chips(page.browser);
       // Mode: Jev chooses discrete controls; only code owns the continuous slider.
       const budget = { remaining: 14 };
@@ -301,7 +355,14 @@ export function chatgptTarget(
         throw new JevFailure('gate.stale', 'gate.stale');
       if (input.attach && digest() !== expectedAttachment) throw new JevFailure('attach.changed', 'attach.changed');
       // Production opener supplies the real reused/started mode. Factories are synthetic.
-      return { ...facts, recordFields: { ...facts.recordFields, mode: page.browser.mode ?? 'headless' } };
+      return {
+        ...facts,
+        recordFields: {
+          ...facts.recordFields,
+          mode: page.browser.mode ?? 'headless',
+          ...(draftHash ? { draft_replaced_sha256: draftHash } : {}),
+        },
+      };
     },
     async click(oraclePage, signal) {
       signal.throwIfAborted();
