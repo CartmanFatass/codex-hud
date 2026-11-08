@@ -187,6 +187,7 @@ export class Browser {
 
   /** No Chrome attached. Offline tests replace fresh and operate before any CDP call. */
   static bare(): Browser {
+    // SAFETY: offline tests replace all CDP-using methods; a bare browser owns no target.
     return new Browser(undefined as unknown as CdpConnection, null, '', DEFAULT_CDP_TIMEOUT_MS);
   }
 
@@ -233,6 +234,53 @@ export class Browser {
       connection.close();
       throw error;
     }
+  }
+
+  /** Read-only recovery attaches to the existing send tab, without navigating it. */
+  static async attach(targetId: string, options: { cdpUrl?: string; timeoutMs?: number } = {}): Promise<Browser> {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS;
+    const connection = await CdpConnection.connect(options.cdpUrl ?? 'http://127.0.0.1:9222', timeoutMs);
+    try {
+      const attached = (await connection.call('Target.attachToTarget', { targetId, flatten: true })) as {
+        sessionId: string;
+      };
+      return new Browser(connection, targetId, attached.sessionId, timeoutMs);
+    } catch (error) {
+      connection.close();
+      throw error;
+    }
+  }
+
+  static async targets(
+    options: { cdpUrl?: string; timeoutMs?: number } = {}
+  ): Promise<Array<{ targetId: string; url: string }>> {
+    const connection = await CdpConnection.connect(
+      options.cdpUrl ?? 'http://127.0.0.1:9222',
+      options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS
+    );
+    try {
+      const result = (await connection.call('Target.getTargets')) as {
+        targetInfos: Array<{ targetId: string; url: string; type: string }>;
+      };
+      return result.targetInfos.filter((target) => target.type === 'page');
+    } finally {
+      connection.close();
+    }
+  }
+
+  get id(): string | null {
+    return this.targetId;
+  }
+
+  /** End this CDP observation only. An attempted send tab must survive an abort. */
+  async detach(): Promise<void> {
+    this.targetId = null;
+    this.connection.close();
+  }
+
+  /** Code-owned keyboard/upload operations outside Jev's action space. */
+  command(method: string, params: Record<string, unknown> = {}, timeoutMs = this.timeoutMs): Promise<unknown> {
+    return this.call(method, params, timeoutMs);
   }
 
   private call(method: string, params: Record<string, unknown> = {}, timeoutMs = this.timeoutMs): Promise<unknown> {

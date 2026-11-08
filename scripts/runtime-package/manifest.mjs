@@ -19,11 +19,31 @@ const MCP_RUNTIME_OUTPUTS = [
   'packages/hud-mcp/dist/src/roles/roles.js',
   'packages/hud-mcp/dist/src/roles/routing.js',
   'packages/hud-mcp/dist/src/roles/selection.js',
+  'packages/hud-mcp/dist/src/jev/agent.js',
+  'packages/hud-mcp/dist/src/jev/ask/config.js',
+  'packages/hud-mcp/dist/src/jev/ask/error.js',
+  'packages/hud-mcp/dist/src/jev/ask/lease.js',
+  'packages/hud-mcp/dist/src/jev/ask/names.js',
+  'packages/hud-mcp/dist/src/jev/ask/records.js',
+  'packages/hud-mcp/dist/src/jev/browser.js',
+  'packages/hud-mcp/dist/src/jev/cdp.js',
+  'packages/hud-mcp/dist/src/jev/decide.js',
+  'packages/hud-mcp/dist/src/jev/judge.js',
+  'packages/hud-mcp/dist/src/jev/model.js',
+  'packages/hud-mcp/dist/src/jev/providers/openai.js',
+  'packages/hud-mcp/dist/src/jev/providers/typesafe.js',
+  'packages/hud-mcp/dist/src/jev/questions.js',
+  'packages/hud-mcp/dist/src/jev/runtime/aistudio-facts.js',
+  'packages/hud-mcp/dist/src/jev/runtime/aistudio-state.js',
+  'packages/hud-mcp/dist/src/jev/runtime/aistudio.js',
+  'packages/hud-mcp/dist/src/jev/runtime/chatgpt-facts.js',
+  'packages/hud-mcp/dist/src/jev/runtime/chatgpt.js',
   'packages/hud-mcp/dist/src/jev/runtime/client.js',
   'packages/hud-mcp/dist/src/jev/runtime/executor.js',
   'packages/hud-mcp/dist/src/jev/runtime/fake.js',
   'packages/hud-mcp/dist/src/jev/runtime/index.js',
   'packages/hud-mcp/dist/src/jev/runtime/ipc.js',
+  'packages/hud-mcp/dist/src/jev/runtime/oracle.js',
   'packages/hud-mcp/dist/src/jev/runtime/types.js',
 ];
 
@@ -90,12 +110,32 @@ export const REQUIRED = [
   'dist/roles/roles.js',
   'dist/roles/routing.js',
   'dist/roles/selection.js',
+  'dist/jev/agent.js',
+  'dist/jev/ask/config.js',
+  'dist/jev/ask/error.js',
+  'dist/jev/ask/lease.js',
+  'dist/jev/ask/names.js',
+  'dist/jev/ask/records.js',
+  'dist/jev/browser.js',
+  'dist/jev/cdp.js',
+  'dist/jev/decide.js',
+  'dist/jev/judge.js',
+  'dist/jev/model.js',
+  'dist/jev/providers/openai.js',
+  'dist/jev/providers/typesafe.js',
+  'dist/jev/questions.js',
+  'dist/jev/runtime/aistudio-facts.js',
+  'dist/jev/runtime/aistudio-state.js',
+  'dist/jev/runtime/aistudio.js',
+  'dist/jev/runtime/chatgpt-facts.js',
+  'dist/jev/runtime/chatgpt.js',
   'dist/jev/runtime/client.js',
   'dist/jev/runtime/entry.js',
   'dist/jev/runtime/executor.js',
   'dist/jev/runtime/fake.js',
   'dist/jev/runtime/index.js',
   'dist/jev/runtime/ipc.js',
+  'dist/jev/runtime/oracle.js',
   'dist/jev/runtime/types.js',
   ...MCP_RUNTIME_OUTPUTS,
   'packages/hud-mcp/bin/surface.mjs',
@@ -144,7 +184,13 @@ function annotation(value, limit) {
 }
 export function parseManifest(bytes) {
   if (!(bytes instanceof Uint8Array) || bytes.length > MAX_FILE) throw new Error('manifest_byte_limit');
-  const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  let value;
+  try {
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch (error) {
+    // Keep the decoder/parser's established error contract for package validators.
+    throw error;
+  }
   fields(value, ROOT_FIELDS);
   if (
     value.schemaVersion !== 1 ||

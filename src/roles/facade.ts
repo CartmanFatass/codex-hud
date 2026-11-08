@@ -46,6 +46,7 @@ import {
   jevErrorCode,
   mapJevLaunch,
   readStoredJevInput,
+  readRoleJevJob,
   runtimeRequestKey,
   type JevRuntimeHandle,
 } from './jev-adapter.js';
@@ -390,6 +391,7 @@ function loadReceipt(home: string, job: string): JobReceipt | undefined {
   if (!JOB_ID.test(job)) return undefined;
   const parsed = readPrivateJson(receiptPath(home, job), 64 * 1024);
   if (!isRecord(parsed) || parsed.schema !== 1 || parsed.job !== job) return undefined;
+  // SAFETY: the envelope above is private/schema-bound; the fields used below are normalized before use.
   const receipt = parsed as unknown as JobReceipt;
   if (!isRecord(parsed.executor)) return undefined;
   const stored = isRecord(parsed.steps) ? parsed.steps : {};
@@ -1736,7 +1738,7 @@ async function readJev(ctx: FacadeContext, receipt: JobReceipt, waitMs: number):
   const jobId = receipt.executor.job;
   let job: Awaited<ReturnType<JevRuntimeHandle['readJob']>>;
   try {
-    job = await runtime.readJob(jobId, {
+    job = await readRoleJevJob(runtime, jobId, {
       waitMs,
       ...(typeof receipt.jev_seq === 'number' ? { afterSeq: receipt.jev_seq } : {}),
     });

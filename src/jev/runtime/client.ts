@@ -96,6 +96,7 @@ export async function connectJevExecutor(hudHome: string, options: ConnectOption
     callWithRetry(hudHome, socketPath, options, method, args, signal, timeoutMs);
   return {
     socketPath,
+    // SAFETY: the typed request is a JSON object, revalidated by the runtime's parseCreate.
     createJob: (request) => invoke('createJob', request as unknown as Record<string, unknown>) as Promise<JevJob>,
     readJob: (jobId, read) => readCall(invoke, jobId, read),
     sendFollowUp: (jobId, followUp) => invoke('sendFollowUp', { jobId, followUp }) as Promise<JevJob>,
@@ -106,6 +107,7 @@ export async function connectJevExecutor(hudHome: string, options: ConnectOption
 
 function readCall(invoke: Invoke, jobId: string, options: JevReadOptions = {}): Promise<JevJob> {
   const args: Record<string, unknown> = { jobId };
+  if (options.resume === true) args.resume = true;
   if (options.waitMs !== undefined) args.waitMs = options.waitMs;
   if (options.afterSeq !== undefined) args.afterSeq = options.afterSeq;
   return invoke('readJob', args, options.signal, readDeadlineMs(options.waitMs)) as Promise<JevJob>;

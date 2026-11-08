@@ -6,7 +6,7 @@
 
 import { createHash } from 'node:crypto';
 import { createJevExecutor } from '../jev/runtime/index.js';
-import type { JevJobInput, JevJobState } from '../jev/runtime/types.js';
+import type { JevJobInput, JevJobState, JevReadOptions } from '../jev/runtime/types.js';
 import type { JevExecutor as RuntimeHandle } from '../jev/runtime/types.js';
 import type { JevLaunchRequest } from './facade.js';
 
@@ -56,8 +56,7 @@ export function isLostAck(error: unknown): boolean {
 }
 
 export type JevMapped =
-  | { ok: true; tag: 'ask' | 'browse' | 'judge'; input: JevJobInput }
-  | { ok: false; field: string };
+  { ok: true; tag: 'ask' | 'browse' | 'judge'; input: JevJobInput } | { ok: false; field: string };
 
 /**
  * Oracle on a web target and `jev` ask become `ask`.
@@ -68,12 +67,20 @@ export function mapJevLaunch(request: JevLaunchRequest): JevMapped {
   const target = request.binding.target;
   const web = target === 'chatgpt-pro' || target === 'aistudio';
   const key = runtimeRequestKey(`${request.root.namespace}/${request.root.sessionId}`, request.requestKey);
+  const targetOptions = {
+    ...(request.binding.model ? { model: request.binding.model } : {}),
+    ...(request.binding.mode
+      ? target === 'aistudio'
+        ? { thinking: request.binding.mode }
+        : { effortWord: request.binding.mode }
+      : {}),
+  };
   if (request.role === 'oracle') {
     if (!web || !request.task) return { ok: false, field: web ? 'task' : 'target' };
     return {
       ok: true,
       tag: 'ask',
-      input: { tag: 'ask', target, label: askLabel(key), prompt: request.task },
+      input: { tag: 'ask', target, label: askLabel(key), prompt: request.task, ...targetOptions },
     };
   }
   const input = request.input;
@@ -83,7 +90,7 @@ export function mapJevLaunch(request: JevLaunchRequest): JevMapped {
     return {
       ok: true,
       tag: 'ask',
-      input: { tag: 'ask', target, label: askLabel(key), prompt: input.text },
+      input: { tag: 'ask', target, label: askLabel(key), prompt: input.text, ...targetOptions },
     };
   }
   if (input.kind === 'browse') {
@@ -113,9 +120,14 @@ export function readStoredJevInput(value: unknown): JevJobInput | null {
     ) {
       return null;
     }
-    return value.confirmResend === true
-      ? { tag: 'ask', target: value.target, label: value.label, prompt: value.prompt, confirmResend: true }
-      : { tag: 'ask', target: value.target, label: value.label, prompt: value.prompt };
+    const optional: Partial<Extract<JevJobInput, { tag: 'ask' }>> = {};
+    for (const name of ['model', 'thinking', 'effortWord', 'conversation', 'attach'] as const) {
+      if (typeof value[name] === 'string') optional[name] = value[name];
+    }
+    if (typeof value.maxWaitMs === 'number') optional.maxWaitMs = value.maxWaitMs;
+    if (value.dryRun === true) optional.dryRun = true;
+    if (value.confirmResend === true) optional.confirmResend = true;
+    return { tag: 'ask', target: value.target, label: value.label, prompt: value.prompt, ...optional };
   }
   if (value.tag === 'browse') {
     if (typeof value.goal !== 'string' || typeof value.url !== 'string') return null;
@@ -130,6 +142,15 @@ export function readStoredJevInput(value: unknown): JevJobInput | null {
   return { tag: 'judge', url: value.url, statements };
 }
 
+/** hud_read recovers an interrupted browser ask, but never turns a plain runtime read into a send. */
+export async function readRoleJevJob(runtime: JevRuntimeHandle, jobId: string, options: JevReadOptions) {
+  const observed = await runtime.readJob(jobId, options);
+  if (observed.tag === 'ask' && observed.state === 'interrupted' && !observed.closed) {
+    return runtime.readJob(jobId, { ...options, resume: true });
+  }
+  return observed;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -139,10 +160,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Otherwise the real runtime starts on the first call and is reused after that.
  * A failed start is not cached: the next call tries again.
  */
-export function connectRoleRuntime(
-  home: string,
-  injected?: JevRuntimeHandle | null
-): () => Promise<JevRuntimeHandle> {
+export function connectRoleRuntime(home: string, injected?: JevRuntimeHandle | null): () => Promise<JevRuntimeHandle> {
   if (injected) return () => Promise.resolve(injected);
   let handle: JevRuntimeHandle | null = null;
   let opening: Promise<JevRuntimeHandle> | null = null;

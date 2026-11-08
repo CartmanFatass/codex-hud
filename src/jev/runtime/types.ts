@@ -16,8 +16,23 @@ export interface JevDecisionProfile {
   model?: string | null;
 }
 
+export interface JevAskInput {
+  tag: 'ask';
+  target: JevAskTarget;
+  label: string;
+  prompt: string;
+  confirmResend?: boolean;
+  model?: string;
+  thinking?: string;
+  effortWord?: string;
+  conversation?: string;
+  attach?: string;
+  dryRun?: boolean;
+  maxWaitMs?: number;
+}
+
 export type JevJobInput =
-  | { tag: 'ask'; target: JevAskTarget; label: string; prompt: string; confirmResend?: boolean }
+  | JevAskInput
   | { tag: 'browse'; goal: string; url: string }
   | { tag: 'judge'; url: string; statements: Array<{ name: string; statement: string }> };
 
@@ -30,6 +45,8 @@ export interface JevCreateRequest {
 }
 
 export interface JevReadOptions {
+  /** Explicit recovery: only a persisted send can resume, never a fresh send. */
+  resume?: boolean;
   waitMs?: number;
   afterSeq?: number;
   signal?: AbortSignal;

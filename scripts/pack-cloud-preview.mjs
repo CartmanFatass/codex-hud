@@ -49,12 +49,32 @@ export const REQUIRED_OUTPUTS = {
   'src/roles/roles.ts': 'dist/roles/roles.js',
   'src/roles/routing.ts': 'dist/roles/routing.js',
   'src/roles/selection.ts': 'dist/roles/selection.js',
+  'src/jev/agent.ts': 'dist/jev/agent.js',
+  'src/jev/ask/config.ts': 'dist/jev/ask/config.js',
+  'src/jev/ask/error.ts': 'dist/jev/ask/error.js',
+  'src/jev/ask/lease.ts': 'dist/jev/ask/lease.js',
+  'src/jev/ask/names.ts': 'dist/jev/ask/names.js',
+  'src/jev/ask/records.ts': 'dist/jev/ask/records.js',
+  'src/jev/browser.ts': 'dist/jev/browser.js',
+  'src/jev/cdp.ts': 'dist/jev/cdp.js',
+  'src/jev/decide.ts': 'dist/jev/decide.js',
+  'src/jev/judge.ts': 'dist/jev/judge.js',
+  'src/jev/model.ts': 'dist/jev/model.js',
+  'src/jev/providers/openai.ts': 'dist/jev/providers/openai.js',
+  'src/jev/providers/typesafe.ts': 'dist/jev/providers/typesafe.js',
+  'src/jev/questions.ts': 'dist/jev/questions.js',
+  'src/jev/runtime/aistudio-facts.ts': 'dist/jev/runtime/aistudio-facts.js',
+  'src/jev/runtime/aistudio-state.ts': 'dist/jev/runtime/aistudio-state.js',
+  'src/jev/runtime/aistudio.ts': 'dist/jev/runtime/aistudio.js',
+  'src/jev/runtime/chatgpt-facts.ts': 'dist/jev/runtime/chatgpt-facts.js',
+  'src/jev/runtime/chatgpt.ts': 'dist/jev/runtime/chatgpt.js',
   'src/jev/runtime/client.ts': 'dist/jev/runtime/client.js',
   'src/jev/runtime/entry.ts': 'dist/jev/runtime/entry.js',
   'src/jev/runtime/executor.ts': 'dist/jev/runtime/executor.js',
   'src/jev/runtime/fake.ts': 'dist/jev/runtime/fake.js',
   'src/jev/runtime/index.ts': 'dist/jev/runtime/index.js',
   'src/jev/runtime/ipc.ts': 'dist/jev/runtime/ipc.js',
+  'src/jev/runtime/oracle.ts': 'dist/jev/runtime/oracle.js',
   'src/jev/runtime/types.ts': 'dist/jev/runtime/types.js',
 };
 /**
@@ -77,11 +97,31 @@ export const MCP_RUNTIME_OUTPUTS = [
   'packages/hud-mcp/dist/src/roles/roles.js',
   'packages/hud-mcp/dist/src/roles/routing.js',
   'packages/hud-mcp/dist/src/roles/selection.js',
+  'packages/hud-mcp/dist/src/jev/agent.js',
+  'packages/hud-mcp/dist/src/jev/ask/config.js',
+  'packages/hud-mcp/dist/src/jev/ask/error.js',
+  'packages/hud-mcp/dist/src/jev/ask/lease.js',
+  'packages/hud-mcp/dist/src/jev/ask/names.js',
+  'packages/hud-mcp/dist/src/jev/ask/records.js',
+  'packages/hud-mcp/dist/src/jev/browser.js',
+  'packages/hud-mcp/dist/src/jev/cdp.js',
+  'packages/hud-mcp/dist/src/jev/decide.js',
+  'packages/hud-mcp/dist/src/jev/judge.js',
+  'packages/hud-mcp/dist/src/jev/model.js',
+  'packages/hud-mcp/dist/src/jev/providers/openai.js',
+  'packages/hud-mcp/dist/src/jev/providers/typesafe.js',
+  'packages/hud-mcp/dist/src/jev/questions.js',
+  'packages/hud-mcp/dist/src/jev/runtime/aistudio-facts.js',
+  'packages/hud-mcp/dist/src/jev/runtime/aistudio-state.js',
+  'packages/hud-mcp/dist/src/jev/runtime/aistudio.js',
+  'packages/hud-mcp/dist/src/jev/runtime/chatgpt-facts.js',
+  'packages/hud-mcp/dist/src/jev/runtime/chatgpt.js',
   'packages/hud-mcp/dist/src/jev/runtime/client.js',
   'packages/hud-mcp/dist/src/jev/runtime/executor.js',
   'packages/hud-mcp/dist/src/jev/runtime/fake.js',
   'packages/hud-mcp/dist/src/jev/runtime/index.js',
   'packages/hud-mcp/dist/src/jev/runtime/ipc.js',
+  'packages/hud-mcp/dist/src/jev/runtime/oracle.js',
   'packages/hud-mcp/dist/src/jev/runtime/types.js',
 ];
 const EXTENSION_ENTRIES = ['extensions/pi/hud-footer.ts', 'extensions/pi/hud-delegate.ts'];
@@ -175,7 +215,12 @@ async function selfTest() {
   assert.throws(() =>
     previewManifest({ name: 'synthetic', version: '0', type: 'module', main: 'dist/index.js', bin: { x: '../../bad' } })
   );
-  const original = JSON.parse(fs.readFileSync(safeFile('package.json'), 'utf8'));
+  let original;
+  try {
+    original = JSON.parse(fs.readFileSync(safeFile('package.json'), 'utf8'));
+  } catch (error) {
+    throw new Error('preview_self_test_package_json', { cause: error });
+  }
   const value = previewManifest(original);
   const bins = { ...original.bin };
   delete bins['hud-statusline'];

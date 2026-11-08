@@ -4,7 +4,8 @@
 
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { homedir } from 'node:os';
 import type { Server } from 'node:net';
 import { Agent, type BrowserPort } from '../agent.js';
 import { DEFAULT_CDP_URL, loadJevConfig, readJevEnv } from '../ask/config.js';
@@ -21,6 +22,8 @@ import {
   promptSha256,
   pyStrip,
   squashedSha256,
+  pythonUniversalNewlines,
+  readOperation,
 } from '../ask/records.js';
 import { Browser } from '../browser.js';
 import { decideProviderId, type DecisionProvider, type DecisionProviderId } from '../decide.js';
@@ -29,6 +32,10 @@ import type { PageState } from '../model.js';
 import { OpenAIDecisionProvider } from '../providers/openai.js';
 import { TypeSafeDecisionProvider } from '../providers/typesafe.js';
 import { fakeBrowser, fakeProvider } from './fake.js';
+import { chatgptTarget, type OracleBrowser } from './chatgpt.js';
+import { chatgptStore, runOracle, type OracleTarget } from './oracle.js';
+import { aistudioTarget } from './aistudio.js';
+import { loadStudioConfig, studioKey, studioStore, type StudioConfig } from './aistudio-state.js';
 import { errorBody, jevCall, serveLine } from './ipc.js';
 import type {
   JevCreateRequest,
@@ -103,6 +110,11 @@ export interface RuntimeOptions {
   browserFactory?: (url: string) => Promise<BrowserPort> | BrowserPort;
   providerFactory?: (resolved: ResolvedDecision) => Promise<DecisionProvider> | DecisionProvider;
   askTargets?: Partial<Record<'chatgpt-pro' | 'aistudio', AskTarget>>;
+  /** Synthetic target seam; production always constructs the owned adapters. */
+  oracleTargets?: Partial<Record<'chatgpt-pro' | 'aistudio', OracleTarget>>;
+  oracleNow?: () => number;
+  oracleSleep?: (ms: number) => Promise<void>;
+  studioConfigLoader?: () => StudioConfig;
   /** Tests inject the config. Production calls `loadJevConfig()` when `stateDir` is omitted. */
   configLoader?: () => { stateDir: string; cdpUrl: string };
 }
@@ -116,6 +128,7 @@ interface StoredJob {
   tag: JevJob['tag'];
   input: JevJobInput;
   decisionProfile: string | null;
+  askStateDir?: string;
   provider: { id: JevDecisionId; model: string } | null;
   state: JevJobState;
   closed: boolean;
@@ -148,6 +161,7 @@ export class JevRuntime implements JevExecutor {
   private readonly keys = new Map<string, Promise<void>>();
   private readonly waiters = new Set<() => void>();
   private readonly targets: Record<'chatgpt-pro' | 'aistudio', AskTarget>;
+  private askConfig: Partial<ReturnType<typeof loadJevConfig>> = {};
   private server?: Server;
   private runtimeLease?: HeldLease;
   private graceTimer?: NodeJS.Timeout;
@@ -254,7 +268,13 @@ export class JevRuntime implements JevExecutor {
       this.stateDir = this.options.stateDir;
       this.cdpUrl = this.options.cdpUrl || DEFAULT_CDP_URL;
     } else {
-      const config = this.options.configLoader ? this.options.configLoader() : loadJevConfig();
+      const config = this.options.configLoader
+        ? this.options.configLoader()
+        : loadJevConfig({
+            configJsonPath: join(this.hudHome, 'config.json'),
+            tomlPath: process.env.JEV_ASK_CONFIG || join(homedir(), '.config', 'jev-ask', 'config.toml'),
+          });
+      this.askConfig = config;
       this.stateDir = config.stateDir;
       this.cdpUrl = config.cdpUrl || DEFAULT_CDP_URL;
     }
@@ -285,6 +305,7 @@ export class JevRuntime implements JevExecutor {
 
   async createJob(request: JevCreateRequest): Promise<JevJob> {
     const parsed = parseCreate(request);
+    const requestFingerprint = fingerprintOf(parsed.input);
     return this.withKey(parsed.requestKey, async () => {
       const existing = this.byKey(parsed.requestKey);
       if (existing) {
@@ -294,21 +315,42 @@ export class JevRuntime implements JevExecutor {
         ) {
           throw new JevRuntimeError('association_conflict', 'association_conflict');
         }
-        if (existing.fingerprint !== fingerprintOf(parsed.input)) {
+        if (existing.fingerprint !== requestFingerprint) {
           throw new JevRuntimeError('conflict', 'conflict');
         }
         return this.view(existing);
       }
       const resolved = this.resolveDecision(parsed.jevDecisions);
+      let askStateDir: string | undefined;
+      if (
+        parsed.input.tag === 'ask' &&
+        parsed.input.target === 'chatgpt-pro' &&
+        (!this.options.fake || this.options.oracleTargets?.['chatgpt-pro'])
+      ) {
+        parsed.input.model ??= this.askConfig.model ?? 'GPT-6';
+        parsed.input.effortWord ??= this.askConfig.effortWord ?? 'Pro';
+      }
+      if (
+        parsed.input.tag === 'ask' &&
+        parsed.input.target === 'aistudio' &&
+        (!this.options.fake || this.options.oracleTargets?.aistudio)
+      ) {
+        const config = this.studioConfig();
+        parsed.input.model ??= config.model;
+        parsed.input.thinking ??= config.thinking;
+        parsed.input.conversation ??= 'new';
+        askStateDir = config.stateDir;
+      }
       const job: StoredJob = {
         executor: 'jev',
         id: `jev-${randomUUID()}`,
         requestKey: parsed.requestKey,
-        fingerprint: fingerprintOf(parsed.input),
+        fingerprint: requestFingerprint,
         session: parsed.session,
         tag: parsed.input.tag,
         input: parsed.input,
         decisionProfile: parsed.jevDecisions?.id ?? null,
+        ...(askStateDir ? { askStateDir } : {}),
         provider: { id: resolved.id, model: resolved.model },
         state: 'queued',
         closed: false,
@@ -327,6 +369,42 @@ export class JevRuntime implements JevExecutor {
 
   async readJob(jobId: string, options: JevReadOptions = {}): Promise<JevJob> {
     const current = this.require(jobId);
+    if (
+      options.resume &&
+      current.state === 'interrupted' &&
+      current.input.tag === 'ask' &&
+      !current.closed &&
+      !this.runs.has(jobId)
+    ) {
+      const key =
+        current.input.target === 'chatgpt-pro'
+          ? askRecordKey('chatgpt-pro', current.input.label, current.input.prompt)
+          : studioKey(
+              current.input.label,
+              current.input.prompt,
+              current.input.model ?? '',
+              current.input.thinking ?? '',
+              current.input.conversation ?? 'new'
+            );
+      const record =
+        current.input.target === 'chatgpt-pro'
+          ? readOperation(this.stateDir, key)
+          : await studioStore(current.askStateDir ?? this.studioConfig().stateDir, key).read();
+      // The AI aggregate read awaits flock. Another resume may have started while it waited.
+      if (
+        current.state === 'interrupted' &&
+        !this.runs.has(jobId) &&
+        (record?.send_attempted === true || record?.attempted_at) &&
+        record?.completion !== 'COMPLETE' &&
+        !['done', 'failed', 'empty'].includes(String(record?.status))
+      ) {
+        const resolved = this.resolveDecision(
+          current.provider ? { provider: current.provider.id, model: current.provider.model } : undefined
+        );
+        const task = this.execute(current, resolved, true);
+        this.runs.set(current.id, task);
+      }
+    }
     const waitMs = cappedReadWaitMs(options.waitMs);
     const after = options.afterSeq ?? -1;
     if (waitMs <= 0 || current.seq > after || terminal(current)) return this.view(current);
@@ -401,12 +479,16 @@ export class JevRuntime implements JevExecutor {
     else this.writers += 1;
     try {
       if (method === 'status') return { pid: process.pid, retained: this.retained(), jobs: this.jobs.size };
-      if (method === 'createJob') return await this.createJob(args as unknown as JevCreateRequest);
+      if (method === 'createJob') {
+        // SAFETY: createJob validates every untrusted field through parseCreate before using it.
+        const request = args as unknown as JevCreateRequest;
+        return await this.createJob(request);
+      }
       if (method === 'readJob') {
         const jobId = typeof args.jobId === 'string' ? args.jobId : '';
         const waitMs = cappedReadWaitMs(typeof args.waitMs === 'number' ? args.waitMs : undefined);
         const afterSeq = typeof args.afterSeq === 'number' ? args.afterSeq : undefined;
-        return await this.readJob(jobId, { waitMs, afterSeq, signal });
+        return await this.readJob(jobId, { waitMs, afterSeq, signal, resume: args.resume === true });
       }
       if (method === 'sendFollowUp') {
         return await this.sendFollowUp(String(args.jobId ?? ''), args.followUp as JevFollowUp);
@@ -421,13 +503,13 @@ export class JevRuntime implements JevExecutor {
     }
   }
 
-  private async execute(job: StoredJob, resolved: ResolvedDecision): Promise<void> {
+  private async execute(job: StoredJob, resolved: ResolvedDecision, resumeOnly = false): Promise<void> {
     const abort = new AbortController();
     this.aborts.set(job.id, abort);
     this.markRunning(job);
     try {
       const provider = await this.providerFor(resolved);
-      if (job.input.tag === 'ask') await this.runAsk(job);
+      if (job.input.tag === 'ask') await this.runAsk(job, provider, abort.signal, resumeOnly);
       else if (job.input.tag === 'browse') await this.runBrowse(job, provider, abort.signal);
       else await this.runJudge(job, provider, abort.signal);
     } catch (error) {
@@ -443,8 +525,116 @@ export class JevRuntime implements JevExecutor {
     }
   }
 
-  private async runAsk(job: StoredJob): Promise<void> {
+  private async runAsk(
+    job: StoredJob,
+    provider: DecisionProvider,
+    signal: AbortSignal,
+    resumeOnly = false
+  ): Promise<void> {
     if (job.input.tag !== 'ask') return;
+    if (job.input.target === 'aistudio' && (this.options.oracleTargets?.aistudio || !this.options.fake)) {
+      const input = job.input;
+      const config = this.studioConfig();
+      const stateDir = job.askStateDir ?? config.stateDir;
+      const model = input.model ?? config.model;
+      const thinking = input.thinking ?? config.thinking;
+      const key = studioKey(input.label, input.prompt, model, thinking, input.conversation ?? 'new');
+      const cdp = { cdpUrl: config.cdpUrl ?? this.cdpUrl, timeoutMs: this.askConfig.cdpTimeoutMs };
+      const target =
+        this.options.oracleTargets?.aistudio ??
+        aistudioTarget({
+          config,
+          model,
+          thinking,
+          open: async (url) =>
+            this.options.browserFactory
+              ? ((await this.options.browserFactory(url)) as OracleBrowser)
+              : Browser.open(url, cdp),
+          attach: (id) => Browser.attach(id, cdp),
+          targets: () => Browser.targets(cdp),
+          now: this.options.oracleNow,
+          sleep: this.options.oracleSleep,
+        });
+      const result = await runOracle({
+        stateDir,
+        key,
+        jobId: job.id,
+        input,
+        target,
+        store: studioStore(stateDir, key, { signal }),
+        provider,
+        signal,
+        resumeOnly,
+        now: this.options.oracleNow,
+        sleep: this.options.oracleSleep,
+        fields: {
+          key,
+          label: input.label,
+          provider: 'aistudio',
+          model,
+          thinking,
+          hud_association: job.session,
+          prompt_sha256: promptSha256(pythonUniversalNewlines(input.prompt)),
+          parent_conversation: null,
+          conversation_url: input.conversation && input.conversation !== 'new' ? input.conversation : null,
+        },
+      });
+      this.complete(job, result);
+      return;
+    }
+    if (
+      job.input.target === 'chatgpt-pro' &&
+      (this.options.oracleTargets?.['chatgpt-pro'] || (!this.options.fake && !this.options.askTargets?.['chatgpt-pro']))
+    ) {
+      const input = { ...job.input, prompt: pyStrip(pythonUniversalNewlines(job.input.prompt)) };
+      const key = askRecordKey('chatgpt-pro', input.label, input.prompt);
+      const options = { cdpUrl: this.cdpUrl, timeoutMs: this.askConfig.cdpTimeoutMs };
+      const target =
+        this.options.oracleTargets?.['chatgpt-pro'] ??
+        chatgptTarget({
+          root: this.askConfig.providerRoot,
+          model: this.askConfig.model,
+          effortWord: this.askConfig.effortWord,
+          open: async (url) =>
+            this.options.browserFactory
+              ? ((await this.options.browserFactory(url)) as OracleBrowser)
+              : Browser.open(url, options),
+          attach: (id) => Browser.attach(id, options),
+          targets: () => Browser.targets(options),
+          now: this.options.oracleNow,
+          sleep: this.options.oracleSleep,
+        });
+      const result = await runOracle({
+        stateDir: this.stateDir,
+        key,
+        jobId: job.id,
+        input,
+        target,
+        store: chatgptStore(this.stateDir, key),
+        provider,
+        signal,
+        resumeOnly,
+        now: this.options.oracleNow,
+        sleep: this.options.oracleSleep,
+        fields: {
+          key,
+          provider: 'chatgpt',
+          hud_association: job.session,
+          prompt_sha256: promptSha256(input.prompt),
+          squashed_sha256: squashedSha256(input.prompt),
+          conversation: input.conversation ?? 'new',
+          effort: input.effortWord ?? this.askConfig.effortWord ?? 'Pro',
+          ...(input.attach
+            ? {
+                attachment: basename(input.attach),
+                attachment_sha256: createHash('sha256').update(readFileSync(input.attach)).digest('hex'),
+              }
+            : {}),
+        },
+      });
+      this.complete(job, result);
+      return;
+    }
     const target = this.targets[job.input.target];
     // AI Studio has no operation key in this runtime. R4 must port aistudio.py make_key
     // (hash of the prompt, model, thinking, and conversation) into aistudio_chat_state.json.
@@ -492,6 +682,10 @@ export class JevRuntime implements JevExecutor {
     } finally {
       opened.lease.release();
     }
+  }
+
+  private studioConfig(): StudioConfig {
+    return this.options.studioConfigLoader ? this.options.studioConfigLoader() : loadStudioConfig();
   }
 
   private async runBrowse(job: StoredJob, provider: DecisionProvider, signal: AbortSignal): Promise<void> {
@@ -617,6 +811,7 @@ export class JevRuntime implements JevExecutor {
   private markRunning(job: StoredJob): void {
     if (job.closed) return;
     job.state = 'running';
+    delete job.error;
     job.run = { startedAt: this.stamp() };
     job.seq += 1;
     this.save(job);
@@ -646,7 +841,13 @@ export class JevRuntime implements JevExecutor {
     if (!existsSync(this.jobsDir)) return;
     for (const name of readdirSync(this.jobsDir)) {
       if (!name.endsWith('.json')) continue;
-      const parsed = JSON.parse(readFileSync(join(this.jobsDir, name), 'utf8')) as StoredJob;
+      let parsed: StoredJob;
+      try {
+        parsed = JSON.parse(readFileSync(join(this.jobsDir, name), 'utf8')) as StoredJob;
+      } catch (error) {
+        // Do not silently replace a corrupt receipt, or infer permission to send from it.
+        throw error;
+      }
       if (parsed.state === 'queued' || parsed.state === 'running') {
         parsed.state = 'interrupted';
         parsed.error = { code: 'interrupted', message: 'interrupted' };
@@ -787,7 +988,7 @@ export function askRecordKey(target: 'chatgpt-pro', label: string, prompt: strin
 export function askRecordKey(target: 'aistudio', label: string, prompt: string): undefined;
 export function askRecordKey(target: 'chatgpt-pro' | 'aistudio', label: string, prompt: string): string | undefined {
   if (target === 'aistudio') return undefined;
-  return askKey('chatgpt', label, pyStrip(prompt));
+  return askKey('chatgpt', label, pyStrip(pythonUniversalNewlines(prompt)));
 }
 
 function observeBrowser(browser: BrowserPort): { observe(): Promise<PageObservation> } {
@@ -900,6 +1101,7 @@ function parseInput(input: JevJobInput): JevJobInput {
       target: input.target,
       label: input.label,
       prompt: input.prompt,
+      ...parseAskOptions(input),
       ...(input.confirmResend === true ? { confirmResend: true } : {}),
     };
   }
@@ -934,6 +1136,41 @@ function parseInput(input: JevJobInput): JevJobInput {
     return { tag: 'judge', url: httpUrl(input.url), statements };
   }
   throw new JevRuntimeError('invalid_request', 'invalid_request');
+}
+
+function parseAskOptions(input: Extract<JevJobInput, { tag: 'ask' }>): Partial<typeof input> {
+  const options: Partial<typeof input> = {};
+  for (const name of ['model', 'thinking', 'effortWord', 'conversation', 'attach'] as const) {
+    const value = input[name];
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || !value.trim() || value.length > 4096)
+      throw new JevRuntimeError('invalid_request', 'invalid_request');
+    options[name] = value;
+  }
+  if (input.conversation && input.conversation !== 'new') {
+    try {
+      const url = new URL(httpUrl(input.conversation));
+      if (
+        url.username ||
+        url.password ||
+        url.hostname !== (input.target === 'chatgpt-pro' ? 'chatgpt.com' : 'aistudio.google.com')
+      )
+        throw new JevRuntimeError('invalid_request', 'invalid_request');
+    } catch {
+      throw new JevRuntimeError('invalid_request', 'invalid_request');
+    }
+  }
+  if (input.attach && (input.target !== 'chatgpt-pro' || !input.attach.startsWith('/')))
+    throw new JevRuntimeError('unsupported_attachment', 'unsupported_attachment');
+  if (input.dryRun !== undefined && typeof input.dryRun !== 'boolean')
+    throw new JevRuntimeError('invalid_request', 'invalid_request');
+  if (input.dryRun) options.dryRun = true;
+  if (input.maxWaitMs !== undefined) {
+    if (!Number.isFinite(input.maxWaitMs) || input.maxWaitMs < 1 || input.maxWaitMs > 14_400_000)
+      throw new JevRuntimeError('invalid_request', 'invalid_request');
+    options.maxWaitMs = input.maxWaitMs;
+  }
+  return options;
 }
 
 function httpUrl(value: unknown): string {
