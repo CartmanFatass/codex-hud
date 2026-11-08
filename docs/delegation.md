@@ -20,14 +20,14 @@
 | 角色 | 模型 | 对应 | 职责 |
 |---|---|---|---|
 | **architect** | `openai/gpt-6-astra`，thinking high | 架构师：做正确的事 | 设计顾问：工作包级的体系设计方案（整体结构、边界与契约、扩展性、稳定性、运行成本），以及实现中上报的分叉的选项与建议。只由编排者调用，结论是建议，编排者定稿。只读 |
-| **implementer** | `openai/gpt-6.1-sol`，thinking high | 程序员：正确地做事 | 按 brief 与定稿设计实现代码、函数与局部性能，跑检查；只能调 sonic（简单子任务）与 reviewer（收尾），设计分叉用 `ask_orchestrator` 交编排者 |
+| **implementer** | `openai/gpt-6.1-sol`，thinking high | 程序员：正确地做事 | 按 brief 与定稿设计实现代码、函数与局部性能，跑检查；只能调 sonic（自己决定交什么）与 reviewer（收尾），设计分叉用 `ask_orchestrator` 交编排者 |
 | **reviewer** | `openai/gpt-6.1-sol`，thinking xhigh | 独立评审 | 只读评审最终 diff，首行 `Verdict: accept / changes-required`；每轮复核是新的 reviewer，最多 3 轮 |
 
 **快速执行层**：
 
 | 角色 | 模型 | 职责 |
 |---|---|---|
-| **sonic** | `mistral/deepseek-v4-1-flash-1017` 或 `mistral/zai-glm-5-3-flash`，effort 按任务类型 | 简单代码任务、scout（侦察定位，跑 informer 只读角色）、杂务与机械任务、跑检查收集日志。需要设计判断的不归 sonic；**测试不归 sonic**（见下） |
+| **sonic** | `mistral/deepseek-v4-1-flash-1017`（默认）或 `mistral/zai-glm-5-3-flash`，effort 按类型固定 | **helper**：替编排者和 implementer 分担零碎任务，减轻上下文压力。交什么、用什么档由调用方自己决定；底线是不写测试、不查 bug、不做设计判断 |
 
 旧 Oracle 角色按擅长点拆开：工作包级的设计方案交 architect，insight 交 Argon，收敛与优化交 Pro。改名为 architect 也避开了产品里的 oracle 角色 / 阶段（R1）。Claude 内只保留 `frontend-implementer` 子代理（sonnet，xhigh）；其他 Claude 子代理（Fable 设计、Opus 评审、Explore 等）不用于项目工作，Oracle 独立 tab 与 Grok 也已退出工作流。Codex 调度（skill `herdr-delegate-codex`）保留为 legacy 备份，只在 Jacob 明确要求时使用。
 
@@ -45,29 +45,27 @@
 1. **是不是宏观问题？** 新功能方向、范围变化、项目卡住的关键问题、跨多个工作包的取舍。是：需要新思路时先发 Argon 出提案，再把提案交 Pro 评审优化；需求与方案已经明确的直接交 Pro。编排者读完两者后定稿（拿不准问 Jacob），写进概念方案 §15 或 `docs/design/`，再拆成工作包。
 2. **工作包需不需要先设计？** 引入新结构、新契约、拥有进程或生命周期、影响稳定性或运行成本的，编排者先调 architect 出方案（独立 tab，`pi-role-call architect`），再自己定稿，implementer 的 brief 指向定稿设计。小改动、设计已在规格里写死的跳过。
 3. **谁来写？**
-   - 需要判断、改动成片或涉及核心的代码 → **implementer**。它在左侧窗格实现；简单子任务可交 sonic（右侧窗格）；设计分叉上报编排者；检查通过后自己起 reviewer，修复到 `accept`（最多 3 轮）。
-   - 目标、方法、验收都写死的简单任务 → **sonic**，按下表选 effort；会合入的代码写 `review: yes`，杂务与机械任务由编排者自己的检查验收。
-   - 测试（新增测试、改断言、写测试替身与表达预期的 fixture）→ 写这段代码的 **implementer** 自己写，不交 sonic（Jacob，2026-11-08）。测试是质量链上最关键的一环：SONIC-AB-02 里一份测试全绿的产出，真实页面上根本跑不通。sonic 只做按给定命令跑测试、收集日志，以及改名、搬路径这类不改断言含义的跟随修改。
-   - 排查、复现问题、测量（读日志找原因、复现偶发失败、二分定位、性能与内存测量）→ **implementer**（sol high），不交 sonic（Jacob，2026-11-08）：这类工作靠判断，结论错了比没有更糟。
-   - scout（找代码、摸清现状、汇总）→ sonic 模型跑 informer 只读角色，effort 见下表。
+   - 需要判断、改动成片或涉及核心的代码 → **implementer**。它在左侧窗格实现；零碎任务由它自己决定是否交 sonic（右侧窗格）；设计分叉上报编排者；检查通过后自己起 reviewer，修复到 `accept`（最多 3 轮）。
+   - 零碎任务（查找、调研、跑检查等）→ 编排者自己的可以交 **sonic** 省上下文；工作包内部的由 implementer 自己调度 sonic，编排者不干预（见下）。
+   - 测试（Jacob，2026-11-08）：**编排者出测试方案，implementer 实现**。编排者懂业务逻辑，在 brief 的「测试方案」一节写明：要证明的行为（逐条对应验收）、每个测试必须真实执行的代码路径、允许的替身及其不能代替的那一步、反例与故障场景、变异检查（故意弄坏哪里，测试必须变红）。implementer 可以加测试，不能删减；偏离方案先 `ask_orchestrator`。reviewer 对照方案验收测试。起因：SONIC-AB-02 里一份 7 个测试全绿的产出，真实页面上根本跑不通。
+   - 查 bug、排查、复现、测量、按评审意见修复 → **implementer**（Jacob，2026-11-08）：这类工作靠判断，结论错了比没有更糟。
    - 前端设计（呈现哪些信息、怎么可视化）→ **Argon** 出方案，编排者判断定稿，不送 Pro 收敛（Jacob，2026-11-08）；定稿写进 `docs/design/` 后交 `frontend-implementer` 子代理（sonnet，xhigh）实现；评审交 pi reviewer。
    - 需要人类互动的测试 → Hermes。
 4. **sonic 用哪个模型？** 默认 DeepSeek V4.1 Flash：两轮对比（`docs/sonic-ab.md`）里它都更好；GLM-5.3 Flash 保留为备选。双模型对比已暂停（Jacob，2026-11-08），只在新模型上线或改规则时再做。
 5. **验收与提交。** 编排者读 report 与每轮 review，重跑检查，确认最后一轮是 `accept`；通过后提交、推送，把有用的 review 与 architect 答复归档到 `docs/reviews/`。不收敛时按升级规则处理。
 6. **收尾。** 关 agent、关 tab、跑 `herdr agent list` 检查点。
 
-两个 sonic 模型只支持 `low`、`high`、`max`（`medium` 会被 pi 映射成 `high`）。暂定（Jacob，2026-11-08）：
+### sonic 的定位（Jacob，2026-11-08 定）
 
-| sonic 任务 | effort |
-|---|---|
-| 机械任务（改名、移动、按现有脚本重新生成、格式化、搬运文案）、简单查找型 scout（定位代码、列清单） | low |
-| 杂务（文档、配置、脚本、合成数据）、需要判断的调研型 scout（外部资料、来源失败要换路径）、按给定命令跑检查收集日志 | high |
-| 简单代码、按评审意见修复 | max |
+sonic 是 **helper**，不是低配 implementer：替各级会话分担零碎任务、减轻上下文压力。各级有各级的关注点：编排者管设计与测试方案，implementer 管实现，**implementer 完全负责自己的 sonic 调度**，包括交什么（查找、调研、边界明确的修改、杂务、跑检查等）和用什么档（机械性的 `low`，其余 `high`），并对 sonic 的产出负责。编排者的 brief 不规定 implementer 怎么用 sonic。
 
-- 混合任务按其中最难的部分定档。
-- 失败或拿不准时升一档重跑一次；max 也不行就交 implementer。同档不反复重试。
-- max 卡顿更多、用时更长：赶时间的任务拆小，不要整个丢给 max。
-- 验收看真实执行：sonic 产出的代码要在真实路径上跑过（或由 implementer 的测试执行到），不能只看测试全绿。
+三条底线，任何调用方都不交 sonic：
+
+- 写测试或改测试（测试方案由编排者出，implementer 实现）；
+- 查 bug、排查、复现、测量；
+- 需要设计判断的代码。
+
+sonic 失败或报告越界：调用方自己做，不升档重试。
 
 ## 路由表
 
@@ -77,9 +75,9 @@
 | 方案明确的关键架构评审、Argon 方案的优化 | **Pro** | skill `jev-ask` |
 | 工作包设计方案、实现中上报的分叉 | **architect**（astra high），只由编排者调用；编排者定稿 | 编排者用 `pi-role-call architect`（独立 tab） |
 | 需要判断的代码任务（核心、开放型、成片改动、进程与生命周期代码） | **implementer**（sol high）+ 自调 reviewer（sol xhigh） | skill `herdr-delegate`：一个 WP 一个 tab，implementer 左、helper pane 右 |
-| 简单代码、按评审修复、杂务、机械任务、跑检查 | **sonic**（默认 DeepSeek V4.1 Flash，effort 见上） | skill `herdr-delegate` 的 sonic 流程 |
-| 测试的编写与修改 | 写这段代码的 **implementer**（编排者直接派的测试任务也交 implementer） | 同上，不交 sonic |
-| 排查、复现问题、测量 | **implementer**（sol high） | 同上，不交 sonic |
+| 编排者自己的零碎任务（查找、调研、跑检查） | **sonic**（默认 DeepSeek V4.1 Flash） | skill `herdr-delegate` 的 sonic 流程；工作包内部的 sonic 由 implementer 自己调度 |
+| 测试方案 | **编排者**，写进 brief 的「测试方案」 | — |
+| 测试实现、查 bug、排查复现、测量、按评审修复 | **implementer**（sol high） | 同上，不交 sonic |
 | scout | sonic 模型上的 **informer** 只读角色 | `pi-role informer ... -- --model <sonic 模型> --thinking <low|high>` |
 | Claude 写的变更的评审 | **reviewer**（sol xhigh），编排者单独起 | skill `herdr-delegate` 的 review-only 流程 |
 | 前端设计：呈现哪些信息、可视化方式 | **Argon** 出方案 → 编排者定稿（不走 Pro） | skill `jev-ask` 的 `jev-aistudio`；定稿写进 `docs/design/` |
@@ -90,7 +88,7 @@
 
 ## 升级规则
 
-- sonic 报告需要设计判断、改动超出指定文件、或检查跑不绿且原因不在环境：这部分改交 implementer，brief 写明保留哪些成果。
+- sonic 报告需要判断、改动超出指定文件、或检查跑不绿且原因不在环境：调用方自己做，或交 implementer，brief 写明保留哪些成果。
 - implementer 评审到第 3 轮仍是 `changes-required`、检查跑不绿、或报告与实际不符：先分清是**代码缺陷**还是**环境 / 基线问题**（依赖没装、基线本来就红、Herdr 不在跑），环境问题修环境。代码缺陷交一个新 implementer，短 fix brief 写明保留什么、重做什么、相关 review 文件；涉及设计的先回 architect；仍不收敛就上 Pro 或问 Jacob。
 - 设计分叉：implementer 用 `ask_orchestrator` 上报并写下默认方案，继续不受影响的部分。编排者能从代码与规格判断的直接答复；需要设计意见的调 architect 再定；属于宏观层的（跨 WP、改范围、改契约所有权）按调度流程第 1 步走 Argon / Pro，拿不准问 Jacob。只暂停受影响的工作包。可逆的实现选择（内部结构、命名、先做哪个用例）由 implementer 自己定并在报告里写明理由。
 
@@ -100,9 +98,9 @@
 - 并行度（2026-11-08 所有者定）：用 implementer 数量控制并发，同时约 3 个（高并发对本机硬件压力大）。各 implementer 按需调 sonic / reviewer，通常同时只多一个 helper，所以整机约 5 个 pi agent，这只是参考值，不是硬上限。满 3 个时新 WP 排队，等一个 implementer 收尾（reap）后再开。
 - 所有权不重叠的 WP 可同时开（各自一个 tab，最好各自一个 worktree），写明独占路径；共享文件的串行。
 - 拥有进程、信号或生命周期的代码（起停子进程、组信号、清理、回收）→ implementer，编排者先调 architect 出方案并定稿，brief 把失败场景写进验收（对比评测 O1：名义上是普通任务，三臂都没过）。
-- 拿不准是 sonic 还是 implementer 的，给 implementer。
+- 编排者拿不准该不该交 sonic 的，不交。
 - 一个决定只审一次（Jacob，2026-11-02）：同一份设计不叠加两级评审；Pro 评审过的不再送 architect，architect 出过方案的不再送 Pro，除非编排者判断它属于宏观层。同一份 diff 只有一个 reviewer 链。
-- 核心 brief 写法（2026-11-02 起）：①把评审者常用的失败场景写进验收，要求真实进程测试（提交前后崩溃、竞态与交错、进程号/PGID 复用、中断后残留进程、重复/乱序事件、并发下的 p95）；②已知的设计分叉由编排者在 brief 里定好，不留给 implementer；③复杂包可拆里程碑推进，评审只在最终 diff 上做。
+- 核心 brief 写法（2026-11-02 起）：①把评审者常用的失败场景写进验收，要求真实进程测试（提交前后崩溃、竞态与交错、进程号/PGID 复用、中断后残留进程、重复/乱序事件、并发下的 p95）；②已知的设计分叉由编排者在 brief 里定好，不留给 implementer；③复杂包可拆里程碑推进，评审只在最终 diff 上做；④含测试的 brief 都有「测试方案」一节（2026-11-08 起）。
 
 ## 实施者对比评测结论（2026-11-02，Jacob 定）
 
