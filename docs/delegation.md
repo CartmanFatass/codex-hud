@@ -113,12 +113,12 @@
 
 ## 约定
 
-- 每个 WP 一个目录 `tmp/tasks/<WP>/`：`brief.md`、`SESSION.txt`（编排者写），运行中产生 `impl-notes.md`、`review-N.md`、`architect-N.md`、`report.md`、`qa/`、`sessions/`。`tmp/` 已被 git 忽略；合入时把最终 review 与 architect 答复归档到 `docs/reviews/`。
+- 每个 WP 一个目录 `tmp/tasks/<WP>/`：`brief.md`（编排者写）、`SESSION.txt`（`pi-dispatch` 写），运行中产生 `STATUS.json`、`impl-notes.md`、`review-N.md`、`architect-N.md`、`report.md`、`qa/`、`sessions/`。`tmp/` 已被 git 忽略；合入时把最终 review 与 architect 答复归档到 `docs/reviews/`。
 - 检查命令：`npm test`、`npm run format:check`、`npm run test:visual`，加上 WP 自己列的。实现者报告里必须贴实际输出。
 - **主审规则：** 每个变更一条 reviewer 链：implementer 自己起的 pi reviewer 做首评，每轮修复后由新的 reviewer 带上一轮 review 复核，最多 3 轮；"通过"绑定最终 diff，diff 再动就要再审。Claude（含 `frontend-implementer`）写的变更由编排者单独起 pi reviewer。不叠加第二个评审者；编排者自己的验证是验收，不是第二次评审。
 - **并行隔离：** 同时开的工作包各用自己的 git worktree，或在 brief 里划定互不重叠的文件所有权；先由编排者整合（合并 / 应用补丁、跑全量检查），再按整合后的状态验收，不对各自分支的结果单独算通过。
 - 提交由编排者在最后一轮 `Verdict: accept` 并验收后做；实现者、reviewer、architect 都不做 git 写操作。
-- **收尾顺序：** 先把报告存到 `tmp/tasks/<WP>/report.md`，再确认运行已结束（`herdr agent get` 为 idle / exited，或 hud-run 回执已到），最后才关表面（`/quit` + `herdr tab close`）。每个检查点跑 `herdr agent list` 清理。
+- **启动与收尾：** pi 角色一律用 `pi-dispatch <role> --task-dir tmp/tasks/<WP> --workdir <dir> --output tmp/tasks/<WP>/report.md`（implementer 加 `--split`）；完成时 DONE / FAILED 一行推到编排者窗格。报告验收后跑 `pi-role-reap tmp/tasks/<WP>` 关掉该任务的 agent 与 tab；每个检查点（提交前、阶段报告前）跑 `pi-role-reap --sweep tmp/tasks`。不手工 `/quit` 或关 tab。
 - Jev：浏览器作业走自有 Jev 运行时（按需、仅 Jev）；同一时段不与直接 CLI 混用；共享浏览器串行，每个 key 只发一次。
 - Argon / Pro 节奏：新功能与跨 WP 的分叉随时攒包，Argon 提案、Pro 收敛；R 队列的阶段边界送 Pro 一次；两者都不当代码评审用。
 - 仓库公开：fixture、文档、评审归档只用合成数据，不贴真实会话正文。
