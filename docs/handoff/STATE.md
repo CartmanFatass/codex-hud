@@ -11,7 +11,7 @@ R6 follows acceptance of the replacement paths. R7 closes delivery.
 
 After R1, R2 and R3 can proceed in parallel. R4 depends on R3; R5 can develop against their fixtures. R6 follows the replacement paths’ acceptance, and R7 closes delivery.
 
-Progress (2026-11-07):
+Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
 
 - Done, reviewed and pushed: R0 (`5abc76a`), R1 (`c5deb38`), R2 (`1bce8d9`), R3 (merge `37725d1`), and the R2↔R3 Jev adapter (`3c34a7d`).
 - The six role tools are served only with `HUD_MCP_SURFACE=roles`. Default sessions keep the old tools until R6.
