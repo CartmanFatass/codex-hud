@@ -19,6 +19,7 @@ import {
 import { awaitState, type JudgmentProvider, type PageObservation } from '../judge.js';
 import type { DecisionProvider } from '../decide.js';
 import { recoverableOracleResult, type JevAskInput } from './types.js';
+import { browserTimeout, oracleRead } from './oracle-read.js';
 
 export interface OracleTurn {
   role: string;
@@ -109,10 +110,12 @@ export interface OracleContext {
   signal: AbortSignal;
   /** Recovery-only entry may never enter prepare/click, even when no record exists. */
   resumeOnly?: boolean;
+  readTimeoutMs?: number;
   fields: OperationRecord;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   phase?: (phase: string) => void;
+  diagnostic?: (code: string, error?: unknown) => void;
 }
 export interface OracleResult {
   status: string;
@@ -121,6 +124,7 @@ export interface OracleResult {
   answer_file?: string;
   reason?: string;
   recoverable?: boolean;
+  cross_check?: 'ok' | 'browser_timeout' | 'unavailable';
 }
 
 export function oracleDelay(ms: number, signal: AbortSignal): Promise<void> {
@@ -170,6 +174,21 @@ function completed(ctx: OracleContext, record: OperationRecord | null): OracleRe
 
 /** Send under the browser lease; release it before the long read-only wait. */
 export async function runOracle(ctx: OracleContext): Promise<OracleResult> {
+  try {
+    return await runOracleLifecycle(ctx);
+  } catch (error) {
+    if (browserTimeout(error)) {
+      aborted(ctx);
+      ctx.diagnostic?.('browser_timeout', error);
+      const record = await ctx.store.read();
+      if (record?.send_attempted === true || record?.attempted_at)
+        return result(ctx, 'wait_failed', { reason: 'browser_timeout' });
+    }
+    throw error;
+  }
+}
+
+async function runOracleLifecycle(ctx: OracleContext): Promise<OracleResult> {
   const now = ctx.now ?? Date.now;
   const sleep = ctx.sleep ?? ((ms: number) => oracleDelay(ms, ctx.signal));
   const lease = await acquireBrowserLock({
@@ -211,8 +230,10 @@ export async function runOracle(ctx: OracleContext): Promise<OracleResult> {
         if (ctx.resumeOnly) return result(ctx, 'interrupted');
         assertCanSend(record, ctx.input.confirmResend === true);
         ctx.phase?.('prepare');
-        page = await ctx.target.open(
-          ctx.input.conversation && ctx.input.conversation !== 'new' ? ctx.input.conversation : ctx.target.root
+        page = await readPage(ctx, 'Target.createTarget', () =>
+          ctx.target.open(
+            ctx.input.conversation && ctx.input.conversation !== 'new' ? ctx.input.conversation : ctx.target.root
+          )
         );
         const before = await ctx.target.prepare(page, ctx.input, ctx.provider, ctx.signal, ctx.fields);
         aborted(ctx);
@@ -471,14 +492,58 @@ async function reconcile(
   return true;
 }
 
+// A target factory contains several CDP calls (discovery, attach, navigation).
+// Bound the aggregate too, including injected factories that never answer.
+function readTarget<T>(ctx: OracleContext, method: string, read: () => Promise<T>): Promise<T> {
+  return oracleRead(method, read, ctx.signal, ctx.readTimeoutMs);
+}
+
+/** A deadline ends observation, not the underlying factory. Retain ownership of
+ * a late result: close a newly opened observer, but only detach a send-tab attach.
+ * Track both arrival orders so a timeout racing resolution disposes exactly once. */
+async function readPage(
+  ctx: OracleContext,
+  method: 'Target.createTarget' | 'Target.attachToTarget',
+  read: () => Promise<OraclePage>
+): Promise<OraclePage> {
+  let abandoned = false;
+  let acquired: OraclePage | undefined;
+  let disposed = false;
+  const dispose = async () => {
+    const page = acquired;
+    if (!page || disposed) return;
+    disposed = true;
+    if (method === 'Target.createTarget')
+      await oracleRead('Target.closeTarget', () => page.close(), undefined, ctx.readTimeoutMs).catch(() => undefined);
+    // Detach also releases the connection if an owned target's close timed out.
+    await oracleRead('Target.detachFromTarget', () => page.detach(), undefined, ctx.readTimeoutMs).catch(
+      () => undefined
+    );
+  };
+  try {
+    return await readTarget(ctx, method, async () => {
+      acquired = await read();
+      if (abandoned) void dispose();
+      return acquired;
+    });
+  } catch (error) {
+    abandoned = true;
+    void dispose();
+    throw error;
+  }
+}
+
 /** Address -> surviving send target (even provisional) -> unique sidebar difference. No typing/clicking. */
 async function locate(ctx: OracleContext, record: OperationRecord): Promise<OraclePage | undefined> {
-  if (ctx.target.settled(record.conversation_url)) return ctx.target.open(record.conversation_url);
+  if (ctx.target.settled(record.conversation_url)) {
+    const url = record.conversation_url;
+    return readPage(ctx, 'Target.createTarget', () => ctx.target.open(url));
+  }
   const id = typeof record.sent_target_id === 'string' ? record.sent_target_id : '';
-  const targets = await ctx.target.targets();
+  const targets = await readTarget(ctx, 'Target.getTargets', () => ctx.target.targets());
   const sent = targets.find((target) => target.targetId === id);
-  if (sent) return ctx.target.attach(sent.targetId);
-  const root = await ctx.target.open(ctx.target.root);
+  if (sent) return readPage(ctx, 'Target.attachToTarget', () => ctx.target.attach(sent.targetId));
+  const root = await readPage(ctx, 'Target.createTarget', () => ctx.target.open(ctx.target.root));
   try {
     ctx.target.bindPage?.(root, record, ctx.signal);
     const facts = await root.facts();
@@ -486,7 +551,7 @@ async function locate(ctx: OracleContext, record: OperationRecord): Promise<Orac
     const added = facts.sidebar.filter((href) => !before.includes(href)).filter((href) => ctx.target.settled(href));
     if (added.length === 1) {
       await root.close();
-      return ctx.target.open(added[0]!);
+      return readPage(ctx, 'Target.createTarget', () => ctx.target.open(added[0]!));
     }
     // A root draft is useful for the one conservative release check.
     return root;
@@ -523,7 +588,10 @@ async function waitForAnswer(
   try {
     const tabs = record.tabs as { observer?: unknown } | undefined;
     if (typeof tabs?.observer === 'string' && tabs.observer !== record.sent_target_id) {
-      const old = await ctx.target.attach(tabs.observer).catch(() => undefined);
+      const observer = tabs.observer;
+      const old = await readPage(ctx, 'Target.attachToTarget', () => ctx.target.attach(observer)).catch(
+        () => undefined
+      );
       await old?.close().catch(() => undefined);
     }
     page = await locate(ctx, record);
@@ -535,11 +603,15 @@ async function waitForAnswer(
     );
     while (now() < deadline) {
       aborted(ctx);
+      // The next live sample is the final collection check, not a saved-view
+      // cross-check. A hang here still leaves the answer unproven/recoverable.
+      if (stable === 2) ctx.phase?.('collect');
       let facts: OracleFacts;
       try {
         facts = await page.facts();
-      } catch {
+      } catch (error) {
         aborted(ctx);
+        if (browserTimeout(error)) throw error;
         await page.detach().catch(() => undefined);
         if (++recoveries > 2) return result(ctx, 'wait_failed', { reason: 'browser_recovery_exhausted' });
         page = await locate(ctx, (await ctx.store.read()) ?? record);
@@ -603,10 +675,17 @@ async function waitForAnswer(
         await ctx.store.save({ status: 'empty', completion: 'INCOMPLETE' }, joined.lease);
         return result(ctx, 'incomplete', { reason: 'empty_answer' });
       }
+      const wasCollecting = stable >= 2;
       stable = bound.found && bound.answer && bound.final && !facts.stop && bound.answer === previous ? stable + 1 : 0;
+      if (wasCollecting && stable < 2) ctx.phase?.('wait');
       previous = bound.answer;
       if (stable >= 3) {
         let finalAnswer = bound.answer;
+        let crossCheck: OracleResult['cross_check'];
+        const crossCheckFailure = (error: unknown) => {
+          crossCheck = browserTimeout(error) ? 'browser_timeout' : 'unavailable';
+          ctx.diagnostic?.(`cross_check.${crossCheck}`, error);
+        };
         if (ctx.target.provider === 'aistudio') {
           // Drive persistence lags the final feedback bar. Preserve the live answer,
           // and use the saved view only if it is final and not shorter (owner driver).
@@ -614,8 +693,9 @@ async function waitForAnswer(
             await sleep(2_000);
             try {
               facts = await page.facts();
-            } catch {
+            } catch (error) {
               aborted(ctx);
+              crossCheckFailure(error);
               break; // Drive settling is best effort once the live answer is proven final.
             }
           }
@@ -623,7 +703,8 @@ async function waitForAnswer(
             record = await ctx.store.save({ conversation_url: facts.url }, joined.lease);
             let saved: OraclePage | undefined;
             try {
-              saved = await ctx.target.open(facts.url);
+              const url = facts.url;
+              saved = await readPage(ctx, 'Target.createTarget', () => ctx.target.open(url));
               // A bounded, best-effort cross-check must never discard the proven live answer.
               ctx.target.bindPage?.(saved, record, AbortSignal.any([ctx.signal, AbortSignal.timeout(30_000)]));
               const view = await saved.facts();
@@ -634,17 +715,19 @@ async function waitForAnswer(
                 reread.found &&
                 reread.final &&
                 reread.answer.length >= finalAnswer.length
-              )
+              ) {
                 finalAnswer = reread.answer;
-            } catch {
+                crossCheck = 'ok';
+              } else crossCheck = 'unavailable';
+            } catch (error) {
               aborted(ctx);
-              // Transient saved-view failure: keep the stable, final live answer.
+              crossCheckFailure(error);
+              // Every saved-view failure keeps the stable, final live answer.
             } finally {
               await saved?.close().catch(() => undefined);
             }
           }
         }
-        ctx.phase?.('collect');
         const file = writeOracleFile(ctx.stateDir, ctx.key, '.md', finalAnswer + '\n');
         await ctx.store.save(
           {
@@ -658,7 +741,11 @@ async function waitForAnswer(
           },
           joined.lease
         );
-        return result(ctx, 'answered', { answer: finalAnswer, answer_file: file });
+        return result(ctx, 'answered', {
+          answer: finalAnswer,
+          answer_file: file,
+          ...(crossCheck ? { cross_check: crossCheck } : {}),
+        });
       }
       await sleep(3_000);
     }

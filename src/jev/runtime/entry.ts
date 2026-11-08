@@ -3,6 +3,8 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DEFAULT_GRACE_MS, JevRuntime } from './executor.js';
+import { failureDiagnostic } from './diagnostic.js';
+import { errorBody } from './ipc.js';
 
 /** A stop that does not finish is ended after this long. Tests may set a shorter `JEV_RUNTIME_STOP_DEADLINE_MS`. */
 export const STOP_DEADLINE_MS = 10_000;
@@ -48,7 +50,9 @@ async function main(): Promise<void> {
       armed = true;
       setTimeout(() => process.exit(1), stopDeadlineMs()).unref();
     }
-    void runtime.stop(reason);
+    void runtime.stop(reason).catch((error: unknown) => {
+      runtime.lifecycle('phase', 'failed.internal', '', { diagnostic: failureDiagnostic(error, 'stop') });
+    });
   };
   process.on('SIGTERM', () => stop('SIGTERM'));
   process.on('SIGINT', () => stop('SIGINT'));
@@ -60,9 +64,10 @@ async function main(): Promise<void> {
 
 if (isMain()) {
   main().catch((error: unknown) => {
-    const code =
-      typeof (error as { code?: unknown })?.code === 'string' ? (error as { code: string }).code : 'internal';
-    process.stderr.write(`jev-runtime: ${code}\n`);
+    process.stderr.write(`jev-runtime: ${errorBody(error).code}\n`);
+    process.stderr.write(
+      JSON.stringify({ event: 'start_failed', diagnostic: failureDiagnostic(error, 'start') }) + '\n'
+    );
     process.exit(1);
   });
 }

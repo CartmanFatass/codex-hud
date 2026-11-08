@@ -49,6 +49,7 @@ import { chatgptStore, runOracle, type OracleTarget } from './oracle.js';
 import { aistudioTarget } from './aistudio.js';
 import { loadStudioConfig, studioKey, studioStore, type StudioConfig } from './aistudio-state.js';
 import { errorBody, jevCall, serveLine } from './ipc.js';
+import { failureDiagnostic, type FailureDiagnostic } from './diagnostic.js';
 import { recoverableOracleResult } from './types.js';
 import type {
   JevCreateRequest,
@@ -193,6 +194,7 @@ export interface RuntimeOptions {
   askTargets?: Partial<Record<'chatgpt-pro' | 'aistudio', AskTarget>>;
   /** Synthetic target seam; production always constructs the owned adapters. */
   oracleTargets?: Partial<Record<'chatgpt-pro' | 'aistudio', OracleTarget>>;
+  oracleReadTimeoutMs?: number;
   oracleNow?: () => number;
   oracleSleep?: (ms: number) => Promise<void>;
   studioConfigLoader?: () => StudioConfig;
@@ -216,6 +218,9 @@ interface StoredJob {
   seq: number;
   result: unknown;
   error?: { code: string; message: string; variable?: string };
+  /** Private, finite diagnostic metadata; never raw thrown messages. */
+  failureDiagnostic?: FailureDiagnostic;
+  phase?: string;
   createdAt: string;
   run: { startedAt: string; endedAt?: string } | null;
 }
@@ -661,6 +666,7 @@ export class JevRuntime implements JevExecutor {
           targets: () => Browser.targets(cdp),
           now: this.options.oracleNow,
           sleep: this.options.oracleSleep,
+          readTimeoutMs: this.options.oracleReadTimeoutMs,
         });
       const result = await runOracle({
         stateDir,
@@ -674,7 +680,9 @@ export class JevRuntime implements JevExecutor {
         resumeOnly,
         now: this.options.oracleNow,
         sleep: this.options.oracleSleep,
-        phase: (phase) => this.lifecycle('phase', phase, job.id),
+        readTimeoutMs: this.options.oracleReadTimeoutMs,
+        phase: (phase) => this.oraclePhase(job, phase),
+        diagnostic: (code, error) => this.oracleDiagnostic(job, code, error),
         fields: {
           key,
           label: input.label,
@@ -713,6 +721,7 @@ export class JevRuntime implements JevExecutor {
           targets: () => Browser.targets(options),
           now: this.options.oracleNow,
           sleep: this.options.oracleSleep,
+          readTimeoutMs: this.options.oracleReadTimeoutMs,
         });
       const result = await runOracle({
         stateDir: this.stateDir,
@@ -726,7 +735,9 @@ export class JevRuntime implements JevExecutor {
         resumeOnly,
         now: this.options.oracleNow,
         sleep: this.options.oracleSleep,
-        phase: (phase) => this.lifecycle('phase', phase, job.id),
+        readTimeoutMs: this.options.oracleReadTimeoutMs,
+        phase: (phase) => this.oraclePhase(job, phase),
+        diagnostic: (code, error) => this.oracleDiagnostic(job, code, error),
         fields: {
           key,
           provider: 'chatgpt',
@@ -935,6 +946,8 @@ export class JevRuntime implements JevExecutor {
     if (job.closed) return;
     job.state = 'running';
     delete job.error;
+    delete job.failureDiagnostic;
+    job.phase = 'execute';
     job.run = { startedAt: this.stamp() };
     job.seq += 1;
     this.save(job);
@@ -949,10 +962,21 @@ export class JevRuntime implements JevExecutor {
     this.save(job);
   }
 
+  private oraclePhase(job: StoredJob, phase: string): void {
+    job.phase = phase;
+    this.lifecycle('phase', phase, job.id);
+  }
+
+  private oracleDiagnostic(job: StoredJob, code: string, error: unknown): void {
+    job.failureDiagnostic = failureDiagnostic(error, job.phase ?? 'execute');
+    this.lifecycle('phase', code, job.id, { diagnostic: job.failureDiagnostic });
+  }
+
   private fail(job: StoredJob, error: unknown): void {
     if (job.closed) return;
     const body = errorBody(error);
-    this.lifecycle('phase', `failed.${body.code}`, job.id);
+    job.failureDiagnostic = failureDiagnostic(error, job.phase ?? 'execute');
+    this.lifecycle('phase', `failed.${body.code}`, job.id, { diagnostic: job.failureDiagnostic });
     job.state = 'failed';
     job.error = body;
     job.result = job.result ?? null;
@@ -1032,7 +1056,7 @@ export class JevRuntime implements JevExecutor {
     event: 'start' | 'stop' | 'phase' | 'exit',
     code = '',
     jobId = '',
-    metrics?: { calls: number; elapsedMs: number }
+    metrics?: { calls?: number; elapsedMs?: number; diagnostic?: FailureDiagnostic }
   ): void {
     const safe = (value: string) => (/^[A-Za-z0-9_.:-]{0,100}$/.test(value) ? value : 'internal');
     try {
@@ -1055,7 +1079,9 @@ export class JevRuntime implements JevExecutor {
           version,
           code: safe(code),
           job: safe(jobId),
-          ...(metrics ? { calls: metrics.calls, elapsedMs: Math.round(metrics.elapsedMs) } : {}),
+          ...(metrics?.calls !== undefined ? { calls: metrics.calls } : {}),
+          ...(metrics?.elapsedMs !== undefined ? { elapsedMs: Math.round(metrics.elapsedMs) } : {}),
+          ...(metrics?.diagnostic ? { diagnostic: metrics.diagnostic } : {}),
         }) + '\n',
         { mode: 0o600 }
       );

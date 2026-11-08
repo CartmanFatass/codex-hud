@@ -610,6 +610,46 @@ for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
   }
 }
 
+test('T12: internal failures log finite phase/class/code in lifecycle and private job, never page text', async (t) => {
+  const pageText = 'PRIVATE_PAGE_437 answer and prompt https://private.example/secret';
+  const h = fixture(
+    'aistudio',
+    { url: ROOT, turns: [], sidebar: [] },
+    {
+      prepare: () => {
+        throw new TypeError(pageText);
+      },
+    }
+  );
+  const env = setup(t, 'aistudio', h);
+  await env.runtime.start();
+  t.after(() => env.runtime.stop());
+  const created = await env.runtime.createJob({
+    requestKey: 't12',
+    session: SESSION,
+    input: askInput('aistudio', 't12'),
+  });
+  const job = await untilTerminal(env.runtime, created.id);
+  assert.equal(job.state, 'failed');
+  assert.equal(job.error?.code, 'internal');
+  const raw = readFileSync(join(env.jobs, `${job.id}.json`), 'utf8');
+  const privateJob = JSON.parse(raw);
+  assert.deepEqual(privateJob.failureDiagnostic, { phase: 'prepare', errorClass: 'TypeError', code: 'unclassified' });
+  const log = readFileSync(join(env.home, 'jev-runtime', 'child.err'), 'utf8');
+  const failure = log
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+    .find((entry) => entry.code === 'failed.internal');
+  assert.deepEqual(failure?.diagnostic, privateJob.failureDiagnostic);
+  for (const bytes of [raw, log, JSON.stringify(job)]) {
+    assert.ok(!bytes.includes(pageText));
+    assert.ok(!bytes.includes('PRIVATE_PAGE_437'));
+    assert.ok(!bytes.includes('private.example'));
+  }
+  assert.equal(h.clicks(), 0);
+});
+
 // The facade helper (hud_read) must recover the same receipt without a second task.
 for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
   test(`boundary ${targetId}: readRoleJevJob recovers a completed uncertain receipt`, async (t) => {

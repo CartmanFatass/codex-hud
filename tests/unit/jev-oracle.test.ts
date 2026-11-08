@@ -290,6 +290,99 @@ function run(
   });
 }
 
+for (const factory of ['open', 'attach'] as const) {
+  for (const interruption of ['timeout', 'abort'] as const) {
+    test(`R1: late ${factory} after ${interruption} disposes exactly once without closing a send-tab attach`, async (t) => {
+      const state = stateDir(t);
+      const h = harness(makeWorld());
+      if (factory === 'attach')
+        seed(state, {
+          send_attempted: true,
+          send_effect: 'uncertain',
+          sent_target_id: 'send-target',
+          before: { url: ROOT, turns: [], sidebar: [] },
+        });
+      const late = new FakePage(h.world, factory === 'attach' ? 'send-target' : 'late-observer');
+      let release!: (page: OraclePage) => void;
+      const pending = new Promise<OraclePage>((resolve) => {
+        release = resolve;
+      });
+      let entered!: () => void;
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      h.target[factory] = async () => {
+        entered();
+        return pending;
+      };
+      const controller = new AbortController();
+      const running = run(state, h, judge(), { signal: controller.signal, readTimeoutMs: 20 });
+      // Attach a rejection handler before the host deadline can fire.
+      const settled = running.then(
+        (result) => ({ result, error: undefined }),
+        (error: unknown) => ({ result: undefined, error })
+      );
+      await started;
+      if (interruption === 'abort') controller.abort(new Error('synthetic_abort'));
+      const outcome = await settled;
+      if (interruption === 'abort') assert.match(String(outcome.error), /synthetic_abort/);
+      else if (factory === 'open') assert.equal((outcome.error as JevFailure).code, 'browser_timeout');
+      else assert.equal(outcome.result?.reason, 'browser_timeout');
+      assert.equal(late.closed, 0);
+      assert.equal(late.detached, 0);
+      release(late);
+      for (let spin = 0; spin < 30 && !late.detached; spin++) await Promise.resolve();
+      assert.equal(late.closed, factory === 'open' ? 1 : 0, 'close only newly opened owned observers');
+      assert.equal(late.detached, 1, 'release every late CDP observation exactly once');
+      assert.equal(h.count('prepare'), 0);
+      assert.equal(h.count('click'), 0);
+      if (factory === 'attach') assert.equal(readOperation(state, KEY)?.send_attempted, true);
+    });
+  }
+}
+
+test('R1: a late saved-view open after its deadline is closed while the proven answer stays answered', async (t) => {
+  const state = stateDir(t);
+  seed(state, {
+    provider: 'aistudio',
+    user_turn: 1,
+    send_attempted: true,
+    attempted_at: '2026-01-01T00:00:00Z',
+    send_effect: 'sent',
+    conversation_url: STUDIO_CONVERSATION,
+    sent_target_id: 'send-target',
+    before: { url: STUDIO_ROOT, turns: [], sidebar: [] },
+  });
+  const h = harness(makeWorld({ url: STUDIO_CONVERSATION, exchange: { users: 1, text: LIVE, final: true } }));
+  const originalOpen = h.target.open.bind(h.target);
+  const late = new FakePage(h.world, 'late-saved');
+  let release!: (page: OraclePage) => void;
+  const pending = new Promise<OraclePage>((resolve) => {
+    release = resolve;
+  });
+  let opens = 0;
+  h.target = {
+    ...h.target,
+    provider: 'aistudio',
+    settled: studioSettled,
+    binding: studioBinding,
+    open: async (url) => (++opens === 1 ? originalOpen(url) : pending),
+  };
+  const result = await run(state, h, judge(), {
+    readTimeoutMs: 20,
+    fields: STUDIO_FIELDS,
+    input: { tag: 'ask', target: 'aistudio', label: 'note', prompt: PROMPT },
+  });
+  assert.equal(result.status, 'answered');
+  assert.equal(result.answer, LIVE);
+  assert.equal(result.cross_check, 'browser_timeout');
+  release(late);
+  for (let spin = 0; spin < 30 && !late.detached; spin++) await Promise.resolve();
+  assert.equal(late.closed, 1);
+  assert.equal(late.detached, 1);
+  assert.equal(h.count('click'), 0);
+});
+
 test('oracle: one send persisted before the click, then the whole answer', async (t) => {
   const state = stateDir(t);
   const world = makeWorld();

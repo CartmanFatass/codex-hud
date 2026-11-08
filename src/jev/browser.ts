@@ -58,6 +58,9 @@ function same(left: unknown, right: unknown): boolean {
 }
 
 const AFTER_INPUT = `(action => new Promise(resolve => {
+  // Hidden pages suspend animation frames and throttle timers. The host's next
+  // bounded DOM observation, not a renderer-side wait, establishes readiness.
+  if (document.hidden) { resolve(); return; }
   const field=window.__jevFast?.nodes.get(action.node);
   const autocomplete=action.kind==='fill' && field?.getAttribute('role')==='combobox';
   let frames=0, stopped=false;
