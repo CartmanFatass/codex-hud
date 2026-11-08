@@ -43,15 +43,18 @@ async function main(): Promise<void> {
     ...(cdpUrl ? { cdpUrl } : {}),
   });
   let armed = false;
-  const stop = () => {
+  const stop = (reason: string) => {
     if (!armed) {
       armed = true;
       setTimeout(() => process.exit(1), stopDeadlineMs()).unref();
     }
-    void runtime.stop();
+    void runtime.stop(reason);
   };
-  process.on('SIGTERM', stop);
-  process.on('SIGINT', stop);
+  process.on('SIGTERM', () => stop('SIGTERM'));
+  process.on('SIGINT', () => stop('SIGINT'));
+  process.on('SIGHUP', () => runtime.lifecycle('phase', 'SIGHUP_ignored'));
+  process.on('beforeExit', () => stop('event_loop_empty'));
+  process.on('exit', (code) => runtime.lifecycle('exit', String(code)));
   await runtime.start();
 }
 

@@ -2,6 +2,8 @@
 // target refusals as the runtime and its socket report them. Injected synthetic targets,
 // a fake clock and temporary state dirs. No browser, provider, key or user config is touched.
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { connectJevExecutor } from '../../src/jev/runtime/client.js';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,13 +13,19 @@ import { operationPath } from '../../src/jev/ask/names.js';
 import { promptSha256, readOperation, squashedSha256, type OperationRecord } from '../../src/jev/ask/records.js';
 import { studioKey, withStudioLock } from '../../src/jev/runtime/aistudio-state.js';
 import { aistudioTarget, STUDIO_PAGE_STATE } from '../../src/jev/runtime/aistudio.js';
-import { REPLY_JS, SCROLL_JS } from '../../src/jev/runtime/aistudio-facts.js';
+import {
+  makeUserPromptScript,
+  makeUserPromptScrollScript,
+  REPLY_JS,
+  SCROLL_JS,
+} from '../../src/jev/runtime/aistudio-facts.js';
 import type { OracleBrowser } from '../../src/jev/runtime/chatgpt.js';
 import { JevRuntime, askRecordKey } from '../../src/jev/runtime/executor.js';
 import { jevCall } from '../../src/jev/runtime/ipc.js';
 import type { OracleFacts, OraclePage, OracleTarget, OracleTurn } from '../../src/jev/runtime/oracle.js';
 import type { JevJob } from '../../src/jev/runtime/types.js';
 import { facadeState, readRoleJevJob } from '../../src/roles/jev-adapter.js';
+import { createRoleJevExecutor, hudCreate, hudRead } from '../../src/roles/facade.js';
 
 const SESSION = { namespace: 'synthetic', sessionId: 'r4-boundary' };
 const PROMPT = 'synthetic boundary question';
@@ -270,91 +278,219 @@ async function untilAnswered(runtime: JevRuntime, id: string): Promise<JevJob> {
   return job;
 }
 
-test('boundary aistudio: hud_close aborts an owned observer during virtualized extraction', async (t) => {
-  const h = fixture('aistudio', { url: CONVERSATION, turns: [], sidebar: [] });
-  const env = setup(t, 'aistudio', h);
-  let entered!: () => void;
-  const held = new Promise<void>((resolve) => {
-    entered = resolve;
-  });
-  let reads = 0;
-  let detached = 0;
-  const browser: OracleBrowser = {
-    id: 'send',
-    async evaluate(script) {
-      reads++;
-      if (script === STUDIO_PAGE_STATE)
-        return {
-          url: CONVERSATION,
-          readyState: 'complete',
-          authenticated: true,
-          selector: 'textarea',
-          composer: '',
-          login: false,
-          dialog: false,
-          stop: false,
-          page_error: false,
-        };
-      if (script.startsWith(`(${REPLY_JS})`))
-        return { users: 1, model_turns: 100, final: false, text: '', error: null };
-      if (script.startsWith(`(${SCROLL_JS})`)) return true;
-      throw new Error('unexpected_browser_read');
-    },
-    async command() {
-      reads++;
-      return {};
-    },
-    async observe() {
-      throw new Error('no_judgment_needed');
-    },
-    async fresh() {
-      return true;
-    },
-    async act() {
-      throw new Error('recovery_must_not_send');
-    },
-    async close() {},
-    async detach() {
-      detached++;
-    },
-  };
-  Object.assign(
-    h.target,
-    aistudioTarget({
-      config: { stateDir: env.stateDir, model: MODEL, models: [MODEL], thinking: THINKING },
-      model: MODEL,
-      thinking: THINKING,
-      open: async () => browser,
-      attach: async () => browser,
-      targets: async () => [{ targetId: 'send', url: CONVERSATION }],
-      sleep: async () => {
-        entered();
-        await new Promise<void>(() => undefined);
-      },
-    })
-  );
-  seedAttempted(env, 'aistudio', keyFor('aistudio', 'closing', PROMPT));
-  seedJob(env, 'aistudio', askInput('aistudio', 'closing'), { status: 'timed_out', recoverable: true });
-  await env.runtime.start();
-  t.after(() => env.runtime.stop());
-  await env.runtime.readJob('jev-boundary', { resume: true });
-  await held;
-  const atHold = reads;
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    const closed = await Promise.race([
-      env.runtime.closeJob('jev-boundary'),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('close_not_bounded')), 1_000);
-      }),
-    ]);
-    assert.equal(closed.state, 'closed');
-    assert.equal(reads, atHold, 'no additional virtual-turn reads after hud_close');
-    assert.equal(detached, 1);
-    assert.equal(h.clicks(), 0);
-  } finally {
-    clearTimeout(timer);
+for (const phase of ['confirm', 'wait'] as const) {
+  for (const heldAt of ['reply-read', 'render-pause'] as const) {
+    test(`T6: aistudio close during ${phase}/${heldAt} is closed and recoverable with no further reads`, async (t) => {
+      const h = fixture('aistudio', { url: CONVERSATION, turns: [], sidebar: [] });
+      const env = setup(t, 'aistudio', h);
+      let entered!: () => void;
+      const held = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let releaseReply!: () => void;
+      const replyGate = new Promise<void>((resolve) => {
+        releaseReply = resolve;
+      });
+      let reads = 0;
+      let detached = 0;
+      const browser: OracleBrowser = {
+        id: 'send',
+        async evaluate(script) {
+          reads++;
+          if (script === STUDIO_PAGE_STATE)
+            return {
+              url: CONVERSATION,
+              readyState: 'complete',
+              authenticated: true,
+              selector: 'textarea',
+              composer: '',
+              login: false,
+              dialog: false,
+              stop: false,
+              page_error: false,
+            };
+          if (script === makeUserPromptScrollScript(1)) return true;
+          if (script === makeUserPromptScript(1)) return PROMPT;
+          if (script.startsWith(`(${REPLY_JS})`)) {
+            if (heldAt === 'reply-read') {
+              entered();
+              await replyGate;
+            }
+            return { users: 1, model_turns: 100, final: false, text: '', error: null };
+          }
+          if (script.startsWith(`(${SCROLL_JS})`)) return true;
+          throw new Error('unexpected_browser_read');
+        },
+        async command() {
+          reads++;
+          return {};
+        },
+        async observe() {
+          throw new Error('no_judgment_needed');
+        },
+        async fresh() {
+          return true;
+        },
+        async act() {
+          throw new Error('recovery_must_not_send');
+        },
+        async close() {},
+        async detach() {
+          detached++;
+        },
+      };
+      Object.assign(
+        h.target,
+        aistudioTarget({
+          config: { stateDir: env.stateDir, model: MODEL, models: [MODEL], thinking: THINKING },
+          model: MODEL,
+          thinking: THINKING,
+          open: async () => browser,
+          attach: async () => browser,
+          targets: async () => [{ targetId: 'send', url: CONVERSATION }],
+          sleep: async () => {
+            entered();
+            await new Promise<void>(() => undefined);
+          },
+        })
+      );
+      const key = keyFor('aistudio', 'closing', PROMPT);
+      seedAttempted(env, 'aistudio', key);
+      if (phase === 'confirm') {
+        const path = join(env.stateDir, 'aistudio_chat_state.json');
+        const state = JSON.parse(readFileSync(path, 'utf8'));
+        Object.assign(state.keys[key], {
+          send_effect: 'uncertain',
+          status: 'send_attempted',
+          unresolved: 'confirm',
+          conversation_url: null,
+        });
+        writeFileSync(path, JSON.stringify(state));
+      }
+      seedJob(env, 'aistudio', askInput('aistudio', 'closing'), null);
+      const jobPath = join(env.jobs, 'jev-boundary.json');
+      const orphan = JSON.parse(readFileSync(jobPath, 'utf8'));
+      orphan.state = 'running';
+      writeFileSync(jobPath, JSON.stringify(orphan));
+      await env.runtime.start();
+      t.after(() => env.runtime.stop());
+      await env.runtime.readJob('jev-boundary', { resume: true });
+      await held;
+      const atHold = reads;
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        const closing = env.runtime.closeJob('jev-boundary');
+        releaseReply(); // the in-flight CDP read settles only after close has aborted
+        const closed = await Promise.race([
+          closing,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('close_not_bounded')), 1_000);
+          }),
+        ]);
+        assert.equal(closed.state, 'closed');
+        assert.equal(closed.closed, true);
+        assert.equal(closed.recoverable, true);
+        const record = recordFor(env, 'aistudio', key);
+        assert.equal(record?.send_attempted, true);
+        assert.ok(record?.attempted_at, 'the attempted record remains recoverable');
+        await env.runtime.readJob('jev-boundary', { resume: true });
+        assert.equal(reads, atHold, 'no additional virtual-turn reads after hud_close');
+        assert.equal(detached, 1);
+        assert.equal(h.clicks(), 0);
+      } finally {
+        clearTimeout(timer);
+      }
+    });
   }
+}
+
+test('T7/T8: runtime survives its client process-group exit, retains work and recovers an orphan only after lease takeover', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'r4f-lifetime-'));
+  const stateDir = join(home, 'state');
+  mkdirSync(stateDir);
+  mkdirSync(join(home, 'jev-runtime'));
+  writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-lifetime\n', { mode: 0o600 });
+  writeFileSync(join(home, 'jev-runtime', 'hold'), '1');
+  const clientModule = new URL('../../src/jev/runtime/client.js', import.meta.url).href;
+  const script = `import {connectJevExecutor} from ${JSON.stringify(clientModule)};
+    const h=await connectJevExecutor(${JSON.stringify(home)}, {fake:true,graceMs:50,stateDir:${JSON.stringify(stateDir)}});
+    const j=await h.createJob({requestKey:'lifetime',session:{namespace:'synthetic',sessionId:'life'},input:{tag:'browse',goal:'Read synthetic page',url:'https://example.invalid/'}});
+    console.log(JSON.stringify({pid:(await h.status()).pid,id:j.id}));setInterval(()=>{},1000);`;
+  const client = spawn(process.execPath, ['--input-type=module', '-e', script], {
+    detached: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const owned = new Set<number>();
+  t.after(() => {
+    client.kill('SIGKILL');
+    for (const pid of owned) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+      }
+    }
+    rmSync(home, { recursive: true, force: true });
+  });
+  const started = await new Promise<{ pid: number; id: string }>((resolve, reject) => {
+    let output = '';
+    const timer = setTimeout(() => reject(new Error('client_start_timeout')), 8_000);
+    client.once('error', reject);
+    client.stdout!.on('data', (chunk) => {
+      output += String(chunk);
+      if (!output.includes('\n')) return;
+      clearTimeout(timer);
+      try {
+        resolve(JSON.parse(output.split('\n')[0]!));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+  owned.add(started.pid);
+  assert.notEqual(started.pid, client.pid);
+  const exited = new Promise<void>((resolve) => client.once('exit', () => resolve()));
+  process.kill(-client.pid!, 'SIGTERM');
+  await exited;
+  const socket = join(home, 'jev-runtime', 'runtime.sock');
+  const lock = join(home, 'jev-runtime', 'runtime.lock');
+  const before = JSON.parse(readFileSync(lock, 'utf8'));
+  await new Promise((resolve) => setTimeout(resolve, 5_300)); // > heartbeat period and >> idle grace
+  const status = (await jevCall(socket, 'status', {})) as { pid: number; retained: number };
+  assert.equal(status.pid, started.pid, 'same detached runtime survives the old process group');
+  assert.equal(status.retained, 1, 'an outstanding observation pins the runtime past idle grace');
+  const after = JSON.parse(readFileSync(lock, 'utf8'));
+  assert.ok(after.heartbeat > before.heartbeat, 'async CDP waits do not stall the lease heartbeat');
+  // Even an unavailable socket does not let a second runtime take a live lease.
+  // Taking that lease directly follows the same admission primitive as start().
+  const contender = new JevRuntime({ hudHome: home, stateDir, fake: true });
+  await assert.rejects(contender.start(), (e: { code?: string }) => e.code === 'already_running');
+  process.kill(started.pid, 'SIGKILL');
+  const file = join(home, 'jev-runtime', 'jobs', `${started.id}.json`);
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).state, 'running', 'SIGKILL leaves an orphan receipt');
+  assert.ok(existsSync(lock), 'SIGKILL leaves its fresh lease on disk');
+  const handle = await connectJevExecutor(home, { fake: true, graceMs: 60_000, stateDir });
+  const replacement = await handle.status();
+  owned.add(replacement.pid);
+  assert.notEqual(replacement.pid, started.pid);
+  const replacementLock = JSON.parse(readFileSync(lock, 'utf8'));
+  assert.notEqual(
+    replacementLock.nonce,
+    after.nonce,
+    'dead-PID stale rule must take over before replacing runtime.json'
+  );
+  const job = await handle.readJob(started.id);
+  assert.equal(job.state, 'interrupted');
+  assert.equal(job.error?.code, 'interrupted');
+  assert.ok(job.seq > 2, 'startup recovery publishes a newer observation');
+  const logs = readFileSync(join(home, 'jev-runtime', 'child.err'), 'utf8');
+  assert.match(logs, /"event":"start"/);
+  assert.match(logs, /"code":"interrupted"/);
+  assert.ok(!logs.includes('Read synthetic page') && !logs.includes('synthetic-lifetime'));
+  process.kill(replacement.pid, 'SIGTERM');
+  // Wait for the owned runtime to finish before removing its temp tree.
+  for (let poll = 0; poll < 200 && existsSync(lock); poll++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(existsSync(lock), false);
 });
 
 async function drainRegisteredRuns(runtime: JevRuntime): Promise<void> {
@@ -600,6 +736,56 @@ for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
 
 // A finite target refusal keeps its code through the runtime, the job file and the socket.
 const REFUSALS: Array<{ code: string; targets: TargetId[] }> = [
+  ...[
+    'page_ready_timeout',
+    'page_ready_denied',
+    'upload_finished_denied',
+    'composer_clean_denied',
+    'draft_cleared_denied',
+    'page_facts_invalid',
+    'already_submitted',
+    'cards_present',
+    'draft_cleared_timeout',
+    'draft_clear_failed',
+    'upload_finished_timeout',
+    'composer_clean_timeout',
+    'mode.budget',
+    'mode.wrong_menu',
+    'fill.budget',
+    'fill.no_composer',
+    'fill.text_mismatch',
+    'fill.target_not_composer',
+    'send.budget',
+    'send.not_chosen',
+    'gate.changed',
+    'gate.stale',
+    'attach.no_input',
+    'attach.card_wrong',
+    'attach.changed',
+    'empty_conversation',
+    'exchange_too_large',
+    'aistudio_not_ready',
+    'aistudio_config',
+    'aistudio_lock_failed',
+    'aistudio_lock_unavailable',
+    'aistudio_release_forbidden',
+    'chrome',
+    'prompt_encoding',
+    'lease_required',
+    'lease_lost',
+    'wait_busy',
+    'browser_busy',
+    'already_sent',
+    'already_released',
+    'already_attempted',
+    'resend_needs_confirmation',
+    'provider_mismatch',
+    'invalid_label',
+    'empty_prompt',
+    'invalid_key',
+    'record_corrupt',
+    'association_conflict',
+  ].map((code) => ({ code, targets: ['chatgpt-pro'] as TargetId[] })),
   { code: 'aistudio_paid_key_selected', targets: ['aistudio'] },
   { code: 'aistudio_model_not_allowed', targets: ['aistudio'] },
   { code: 'aistudio_model_mismatch', targets: ['aistudio'] },
@@ -644,6 +830,59 @@ for (const refusal of REFUSALS) {
       assert.equal(overIpc.error?.code, refusal.code);
       assert.equal(overIpc.error?.message, refusal.code);
       assert.ok(!JSON.stringify(overIpc).includes(SECRET));
+      // T3: the real facade uses a handle whose every operation crosses the socket.
+      // No fake substitutes for serialization, job failure or facade observation.
+      const handle = {
+        createJob: (request: unknown) =>
+          jevCall(env.socket, 'createJob', request as Record<string, unknown>) as Promise<JevJob>,
+        readJob: (jobId: string, options = {}) =>
+          jevCall(env.socket, 'readJob', { jobId, ...options }) as Promise<JevJob>,
+        sendFollowUp: (jobId: string, followUp: unknown) =>
+          jevCall(env.socket, 'sendFollowUp', { jobId, followUp }) as Promise<JevJob>,
+        closeJob: (jobId: string) => jevCall(env.socket, 'closeJob', { jobId }) as Promise<JevJob>,
+      };
+      writeFileSync(
+        join(env.home, 'routing.toml'),
+        `schema = 1
+ default_preset = "test"
+ [backends.web]
+ executor = "jev"
+ target = "${targetId}"
+ [backends.cli]
+ executor = "herdr"
+ harness = "pi"
+ model = "synthetic"
+ recipe = "pi-role"
+ [jev_decisions.test]
+ provider = "typesafe"
+ [presets.test]
+ description = "Synthetic refusal fixture"
+ jev_decisions = "test"
+ [presets.test.roles]
+ "oracle.propose" = "web"
+ "oracle.converge" = "cli"
+ imp = "cli"
+ reviewer = "cli"
+ sonic = "cli"
+ jev = "web"
+ `,
+        { mode: 0o600 }
+      );
+      const ctx = { home: env.home, root: SESSION, env: {}, jev: createRoleJevExecutor(env.home, handle) };
+      const launched = await hudCreate(ctx, {
+        role: 'oracle',
+        phase: 'propose',
+        request_key: 'facade-refusal',
+        task: PROMPT,
+        cwd: env.home,
+      });
+      assert.equal(launched.ok, true, JSON.stringify(launched));
+      const runtimeId = (launched.executor as { job: string }).job;
+      await untilTerminal(env.runtime, runtimeId);
+      const observed = await hudRead(ctx, { job: launched.job });
+      assert.equal(observed.state, 'error');
+      assert.equal(observed.status, refusal.code);
+      assert.equal((observed.error as { code: string }).code, refusal.code);
     });
   }
 }

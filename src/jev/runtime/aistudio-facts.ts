@@ -143,6 +143,29 @@ export const SEL_RUN = 'ms-run-button button';
  * turn; `modelTurn` -1 (the driver's default) means the whole exchange, >= 0 one model
  * turn of it. Both are truncated to integers, as Python's `%d` does.
  */
+// Numeric position alone is not identity. Read only the public user prompt,
+// excluding the author label and turn controls. Missing/virtualised text fails closed.
+export function makeUserPromptScrollScript(userTurn: number): string {
+  return `(() => {
+    const users = [...document.querySelectorAll('ms-chat-turn')].filter(t =>
+      t.querySelector('[data-turn-role="User"]'));
+    const turn = users[${Math.trunc(userTurn)} - 1];
+    if (turn) turn.scrollIntoView({block: 'start'});
+    return !!turn;
+  })()`;
+}
+
+export function makeUserPromptScript(userTurn: number): string {
+  return `(() => {
+    const users = [...document.querySelectorAll('ms-chat-turn')].filter(t =>
+      t.querySelector('[data-turn-role="User"]'));
+    const turn = users[${Math.trunc(userTurn)} - 1];
+    const chunks = [...(turn?.querySelectorAll('ms-text-chunk') || [])]
+      .filter(c => !c.closest('ms-thought-chunk'));
+    return chunks.length ? chunks.map(c => c.innerText ?? c.textContent ?? '').join('\\n') : null;
+  })()`;
+}
+
 export function makeReplyScript(userTurn: number, modelTurn = -1): string {
   return `(${REPLY_JS})(${Math.trunc(userTurn)}, ${Math.trunc(modelTurn)})`;
 }

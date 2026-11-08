@@ -13,7 +13,18 @@ import vm from 'node:vm';
 import { JevFailure } from '../../src/jev/ask/error.js';
 import { acquireWaitLease, tryAcquireBrowserLock } from '../../src/jev/ask/lease.js';
 import { aistudioTarget, STUDIO_PAGE_STATE } from '../../src/jev/runtime/aistudio.js';
-import { makeReplyScript, REPLY_JS, SCROLL_JS, SETTINGS_JS } from '../../src/jev/runtime/aistudio-facts.js';
+import {
+  makeReplyScript,
+  makeUserPromptScript,
+  makeUserPromptScrollScript,
+  REPLY_JS,
+  SCROLL_JS,
+  SETTINGS_JS,
+} from '../../src/jev/runtime/aistudio-facts.js';
+import { promptSha256 } from '../../src/jev/ask/records.js';
+import { runOracle } from '../../src/jev/runtime/oracle.js';
+import { JevRuntime } from '../../src/jev/runtime/executor.js';
+import type { JevJob } from '../../src/jev/runtime/types.js';
 import {
   loadStudioConfig,
   normalizeStudioPrompt,
@@ -363,6 +374,7 @@ interface DomElement {
   querySelector(selector: string): DomElement | null;
   querySelectorAll(selector: string): DomElement[];
   closest(selector: string): DomElement | null;
+  scrollIntoView?(options?: { block: string }): void;
 }
 
 function textNode(value: string): DomText {
@@ -548,6 +560,225 @@ test('makeReplyScript is the driver wrapper and the page constants stay verbatim
 
 // ---------------------------------------------------------------- target gates
 
+/** CDP-only fake: execute the shipped user/model extraction and scroll scripts
+ * against virtualised turn DOM. The role containers survive; off-screen chunks
+ * are removed exactly like AI Studio's placeholders. */
+function virtualStudioDom(stub: StudioStub) {
+  const userChunk = element('ms-text-chunk', {}, [textNode(INPUT.prompt)]);
+  const modelChunk = element('ms-text-chunk', {}, [textNode('437')]);
+  const feedback = element('button', { class: 'response-feedback-button', 'aria-label': 'Good response' });
+  const user = turn('User', []);
+  const model = turn('Model', [modelChunk, feedback]);
+  const userBody = user.querySelector('[data-turn-role="User"]')!;
+  const modelBody = model.querySelector('[data-turn-role="Model"]')!;
+  const root = element('body', {}, []);
+  let userVisible = false;
+  let userRenders = 0;
+  let modelRenders = 0;
+  const render = (isUser: boolean) => {
+    userVisible = isUser;
+    userBody.childNodes = isUser ? [userChunk] : [];
+    modelBody.childNodes = isUser ? [] : [modelChunk, feedback];
+    userChunk.parentElement = userBody;
+    modelChunk.parentElement = modelBody;
+    feedback.parentElement = modelBody;
+  };
+  user.scrollIntoView = () => {
+    userRenders++;
+    render(true);
+  };
+  model.scrollIntoView = () => {
+    modelRenders++;
+    render(false);
+  };
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  stub.browser.evaluate = async (script) => {
+    if (
+      script === STUDIO_PAGE_STATE ||
+      script === SETTINGS_JS ||
+      script.includes('__jevFast') ||
+      script.includes('e.focus();e.select();')
+    )
+      return evaluate(script);
+    root.childNodes = Number(stub.reply.users) > 0 ? [user, model] : [];
+    return vm.runInNewContext(script, {
+      document: { querySelectorAll: (selector: string) => root.querySelectorAll(selector) },
+    });
+  };
+  return { userVisible: () => userVisible, userRenders: () => userRenders, modelRenders: () => modelRenders };
+}
+
+test('R1: real Studio facts bind a virtualised user before scrolling to the final model response', async () => {
+  const stub = studioStub({ reply: { users: 1 } });
+  const dom = virtualStudioDom(stub);
+  const target = aistudioTarget(studioOptions(stub));
+  const page = await target.attach('target-1');
+  target.bindPage?.(page, { user_turn: 1 }, new AbortController().signal);
+  const facts = await page.facts();
+  assert.ok(dom.userRenders() > 0, 'render the numeric user before extracting its hash');
+  assert.ok(dom.modelRenders() > 0, 'then render the model response');
+  assert.equal(dom.userVisible(), false, 'the user is an empty placeholder again after model scrolling');
+  assert.deepEqual(target.binding(facts, INPUT, { user_turn: 1 }), { found: true, answer: '437', final: true });
+});
+
+test('R1: a prompt proof is discarded if the tab navigates during model extraction', async () => {
+  const stub = studioStub({ reply: { users: 1 } });
+  const dom = virtualStudioDom(stub);
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  stub.browser.evaluate = async (script) => {
+    if (script === STUDIO_PAGE_STATE && dom.modelRenders() > 0) return { ...stub.state, documentId: 2 };
+    return evaluate(script);
+  };
+  const target = aistudioTarget(studioOptions(stub));
+  const page = await target.attach('target-1');
+  target.bindPage?.(page, { user_turn: 1 }, new AbortController().signal);
+  const facts = await page.facts();
+  assert.equal(target.binding(facts, INPUT, { user_turn: 1 }).found, false);
+});
+
+test('T4: Studio numeric prompt binding confirms and collects from the live tab with new_chat throughout', async (t) => {
+  const stateDir = workspace(t);
+  const ticks = clock();
+  const stub = studioStub();
+  virtualStudioDom(stub);
+  const click = stub.browser.act.bind(stub.browser);
+  stub.browser.act = async (action, page, text) => {
+    await click(action, page, text);
+    stub.state.composer = '';
+    stub.reply = { users: 1, model_turns: 1, final: true, text: '437', error: null };
+  };
+  const target = aistudioTarget(studioOptions(stub, ticks));
+  const key = studioKey(INPUT.label, INPUT.prompt, 'gemini-4-argon', 'High', 'new');
+  const phases: string[] = [];
+  const result = await within(
+    5_000,
+    runOracle({
+      stateDir,
+      key,
+      jobId: 'jev-t4',
+      input: INPUT,
+      target,
+      store: studioStore(stateDir, key),
+      provider: {} as never,
+      signal: new AbortController().signal,
+      now: ticks.now,
+      sleep: ticks.sleep,
+      phase: (phase) => {
+        phases.push(phase);
+      },
+      fields: { prompt_sha256: promptSha256(INPUT.prompt), conversation_url: null },
+    })
+  );
+  assert.equal(result.status, 'answered', JSON.stringify(result));
+  assert.equal(result.answer, '437');
+  assert.deepEqual(phases, ['prepare', 'click', 'confirm', 'wait', 'collect']);
+  assert.equal(stub.acted, 1, 'one reserved Run click');
+  const record = await studioStore(stateDir, key).read();
+  assert.equal(record?.send_effect, 'sent');
+  assert.equal(record?.conversation_url, null);
+  assert.equal(record?.completion, 'COMPLETE');
+  assert.equal(stub.opened.length, 2, 'prepare opens; wait attaches to the same live tab, never a saved view');
+  assert.equal(stub.closed, 0, 'unsaved send tab is retained');
+});
+
+test('T5: runtime resumes the D3 send_attempted/uncertain/confirm record with zero Run clicks or preparations', async (t) => {
+  const home = workspace(t);
+  const stateDir = join(home, 'state');
+  const jobs = join(home, 'jev-runtime', 'jobs');
+  mkdirSync(stateDir);
+  mkdirSync(jobs, { recursive: true });
+  writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-t5\n', { mode: 0o600 });
+  const ticks = clock();
+  const stub = studioStub({ reply: { users: 1, model_turns: 1, final: true, text: '437', error: null } });
+  virtualStudioDom(stub);
+  const options = studioOptions(stub, ticks);
+  const target = aistudioTarget(options);
+  const key = studioKey(INPUT.label, INPUT.prompt, options.model, options.thinking, 'new');
+  writeFileSync(
+    join(stateDir, 'aistudio_chat_state.json'),
+    JSON.stringify({
+      keys: {
+        [key]: {
+          key,
+          status: 'send_attempted',
+          send_effect: 'uncertain',
+          unresolved: 'confirm',
+          send_attempted: true,
+          attempted_at: '2026-01-01T00:00:00Z',
+          user_turn: 1,
+          conversation_url: null,
+          sent_target_id: 'target-1',
+          prompt_sha256: promptSha256(INPUT.prompt),
+          before: { url: target.root, turns: [], sidebar: [] },
+        },
+      },
+    }),
+    { mode: 0o600 }
+  );
+  writeFileSync(
+    join(jobs, 'jev-t5.json'),
+    JSON.stringify({
+      executor: 'jev',
+      id: 'jev-t5',
+      requestKey: 't5',
+      fingerprint: 'synthetic',
+      session: { namespace: 'synthetic', sessionId: 't5' },
+      tag: 'ask',
+      input: { ...INPUT, model: options.model, thinking: options.thinking },
+      askStateDir: stateDir,
+      decisionProfile: null,
+      provider: { id: 'typesafe', model: 'synthetic' },
+      state: 'running',
+      closed: false,
+      seq: 2,
+      result: null,
+      createdAt: '2026-01-01T00:00:00Z',
+      run: { startedAt: '2026-01-01T00:00:00Z' },
+    }),
+    { mode: 0o600 }
+  );
+  const runtime = new JevRuntime({
+    hudHome: home,
+    stateDir,
+    fake: true,
+    graceMs: 60_000,
+    oracleTargets: { aistudio: target },
+    oracleNow: ticks.now,
+    oracleSleep: ticks.sleep,
+    studioConfigLoader: () => ({ ...options.config, stateDir }),
+  });
+  await runtime.start();
+  t.after(() => runtime.stop());
+  assert.equal(
+    (await runtime.readJob('jev-t5')).state,
+    'interrupted',
+    'T8: orphan running job is interrupted on startup'
+  );
+  await runtime.readJob('jev-t5', { resume: true });
+  let job: JevJob = await runtime.readJob('jev-t5');
+  for (let poll = 0; poll < 500 && job.state !== 'completed'; poll++) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    job = await runtime.readJob('jev-t5');
+  }
+  assert.equal(job.state, 'completed', JSON.stringify(job));
+  assert.equal((job.result as { answer: string }).answer, '437');
+  assert.equal(stub.acted, 0, 'resumption never clicks Run');
+  assert.ok(!stub.opened.includes(target.root), 'resume never enters prepare/open-new-chat');
+  assert.equal((await studioStore(stateDir, key).read())?.completion, 'COMPLETE');
+});
+
+test('Studio numeric binding refuses a different prompt at the expected user turn', async () => {
+  const stub = studioStub({ reply: { users: 1, model_turns: 1, final: true, text: '437' } });
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  stub.browser.evaluate = async (script) =>
+    script === makeUserPromptScript(1) ? 'a different synthetic prompt' : evaluate(script);
+  const target = aistudioTarget(studioOptions(stub));
+  const page = await target.attach('target-1');
+  target.bindPage?.(page, { user_turn: 1 }, new AbortController().signal);
+  const bound = target.binding(await page.facts(), INPUT, { user_turn: 1 });
+  assert.deepEqual(bound, { found: false, answer: '', final: false });
+});
+
 interface StudioStub {
   browser: OracleBrowser;
   state: Record<string, unknown>;
@@ -611,6 +842,9 @@ function studioStub(
         return { ...stub.state };
       }
       if (expression === SETTINGS_JS) return { ...stub.settings };
+      if (expression === makeUserPromptScrollScript(1) || expression === makeUserPromptScrollScript(2)) return true;
+      if (expression === makeUserPromptScript(1) || expression === makeUserPromptScript(2))
+        return Number(stub.reply.users) > 0 ? INPUT.prompt : null;
       if (expression.startsWith(`(${REPLY_JS})`)) {
         stub.replies += 1;
         return { ...stub.reply };

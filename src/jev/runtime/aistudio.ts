@@ -1,10 +1,19 @@
 // Distinct AI Studio adapter, ported from owner's aistudio.py/aistudio_cdp.py.
 // Model selection is a read/refuse gate. No paid API key, consent or approval is ever clicked.
 import { JevFailure } from '../ask/error.js';
+import { sha256Hex } from '../ask/records.js';
 import type { OperationRecord } from '../ask/records.js';
 import { awaitState, type PageObservation } from '../judge.js';
 import type { ObservedAction, PageState } from '../model.js';
-import { makeReplyScript, SCROLL_JS, SEL_PROMPT, SEL_RUN, SETTINGS_JS } from './aistudio-facts.js';
+import {
+  makeReplyScript,
+  makeUserPromptScript,
+  makeUserPromptScrollScript,
+  SCROLL_JS,
+  SEL_PROMPT,
+  SEL_RUN,
+  SETTINGS_JS,
+} from './aistudio-facts.js';
 import { normalizeStudioPrompt, type StudioConfig } from './aistudio-state.js';
 import type { OracleBrowser, TargetBrowserOptions } from './chatgpt.js';
 import { oracleDelay, type OracleFacts, type OraclePage, type OracleTarget } from './oracle.js';
@@ -15,7 +24,7 @@ export const STUDIO_PAGE_STATE = `(() => {
  const account=document.querySelector('ms-account-switcher button');
  const label=(account?.innerText||'')+' '+(account?.getAttribute('aria-label')||'');
  const dialogs=[...document.querySelectorAll('[role="dialog"],mat-dialog-container')].filter(visible);
- return {url:location.href, readyState:document.readyState, selector:sel||null, composer:sel?document.querySelector(sel).value:null,
+ return {url:location.href, documentId:performance.timeOrigin, readyState:document.readyState, selector:sel||null, composer:sel?document.querySelector(sel).value:null,
  authenticated:/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i.test(label),
  login:location.hostname==='accounts.google.com'||!![...document.querySelectorAll('a[href*="accounts.google.com/ServiceLogin"],button[aria-label="Sign in"]')].find(visible),
  dialog:dialogs.length>0, stop:!![...document.querySelectorAll('ms-run-button button')].find(e=>/stop/i.test(e.getAttribute('aria-label')||e.innerText||'')),
@@ -23,6 +32,7 @@ export const STUDIO_PAGE_STATE = `(() => {
 })()`;
 interface StudioState {
   url: string;
+  documentId?: number;
   readyState: string;
   selector: string | null;
   composer: string | null;
@@ -93,8 +103,23 @@ class StudioPage implements OraclePage {
     this.signal.throwIfAborted();
     if (!state || typeof state.url !== 'string') throw new JevFailure('page_facts_invalid', 'page_facts_invalid');
     let reply = (await this.browser.evaluate(makeReplyScript(this.userTurn))) as Reply;
+    this.signal.throwIfAborted();
     if (!reply || !Number.isInteger(reply.users) || !Number.isInteger(reply.model_turns))
       throw new JevFailure('page_facts_invalid', 'page_facts_invalid');
+    // User turns are virtualised too. Prove this numeric turn while it is
+    // rendered, before model scrolling makes it an empty placeholder again.
+    // The proof is local to this facts sample, never cached across observations.
+    let userPrompt: unknown = null;
+    if (this.userTurn > 0 && reply.users >= this.userTurn) {
+      const visible = await this.browser.evaluate(makeUserPromptScrollScript(this.userTurn));
+      if (visible === true) {
+        await this.pause(1500);
+        await this.browser.command('Page.captureScreenshot', { format: 'jpeg', quality: 20 });
+        this.signal.throwIfAborted();
+        userPrompt = await this.browser.evaluate(makeUserPromptScript(this.userTurn));
+        this.signal.throwIfAborted();
+      }
+    }
     if (this.userTurn > 0 && reply.model_turns > 0) {
       const texts: string[] = [];
       let final = reply.final;
@@ -125,6 +150,10 @@ class StudioPage implements OraclePage {
       }
       reply = { ...reply, final, error, text: texts.join('\n\n') };
     }
+    this.signal.throwIfAborted();
+    const current = (await this.browser.evaluate(STUDIO_PAGE_STATE)) as StudioState;
+    this.signal.throwIfAborted();
+    if (current?.url !== state.url || current?.documentId !== state.documentId) userPrompt = null;
     return {
       url: state.url,
       // An absent account/composer is hydration, not affirmative login evidence.
@@ -140,7 +169,13 @@ class StudioPage implements OraclePage {
       human: state.login ? 'login' : state.dialog ? 'approval' : undefined,
       error: state.page_error || Boolean(reply.error),
       turns: Array.from({ length: reply.users }, () => ({ role: 'user', text: '' })),
-      exchange: { users: reply.users, text: reply.text, final: reply.final, error: reply.error ?? undefined },
+      exchange: {
+        users: reply.users,
+        text: reply.text,
+        final: reply.final,
+        error: reply.error ?? undefined,
+        userPromptSha256: typeof userPrompt === 'string' ? sha256Hex(normalizeStudioPrompt(userPrompt)) : undefined,
+      },
       ...(this.userTurn ? { recordFields: { user_turn: this.userTurn, output_limit: this.outputLimit } } : {}),
     };
   }
@@ -298,13 +333,19 @@ export function aistudioTarget(
       if (!send) throw new JevFailure('send.not_chosen', 'send.not_chosen');
       await page.browser.act(send.action, send.page);
     },
-    binding(facts, _input, record) {
+    binding(facts, input, record) {
       const nth = typeof record.user_turn === 'number' ? record.user_turn : 0;
       const reply = facts.exchange;
+      const found =
+        nth >= 1 &&
+        Number.isInteger(nth) &&
+        Boolean(
+          reply && reply.users >= nth && reply.userPromptSha256 === sha256Hex(normalizeStudioPrompt(input.prompt))
+        );
       return {
-        found: nth >= 1 && Boolean(reply && reply.users >= nth),
-        answer: nth >= 1 ? (reply?.text ?? '') : '',
-        final: nth >= 1 && reply?.final === true && !reply.error,
+        found,
+        answer: found ? (reply?.text ?? '') : '',
+        final: found && reply?.final === true && !reply.error,
       };
     },
     matchesDraft(facts, input) {

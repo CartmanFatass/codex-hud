@@ -237,7 +237,7 @@ export interface AwaitStatesResult {
  * One observation is one backend call covering every statement that is still pending.
  * The first sample has no previous marker, so it is not stable: wait one poll and do not call.
  * A page that is still loading extends the deadline up to `maxLoadMs`.
- * A wait that would run past the stable budget returns `timeout` without sleeping.
+ * Backoff is clipped to the remaining budget; a final affordable poll rechecks fresh facts.
  * Two errors or refusals in a row on one statement leave it on the fast path for the rest of the phase.
  */
 export async function awaitStates(
@@ -282,9 +282,30 @@ export async function awaitStates(
     return true;
   };
 
+  // A long model call or exponential backoff must not suppress the next facts
+  // check while a poll still fits. Share this rule across every backoff site.
+  const backoffWithin = async (ms: number, preferred: 'load' | 'stable'): Promise<boolean> => {
+    const spent = Math.max(0, now() - cursor);
+    let budget = preferred;
+    let room = (budget === 'load' ? maxLoadMs - loadUsed : options.maxMs - stableUsed) - spent;
+    if (budget === 'load' && room < pollMs) {
+      budget = 'stable';
+      // The load budget absorbs its share of an in-flight loading judgment;
+      // subtract only the overflow from stable room, not the entire call twice.
+      const stableSpent = Math.max(0, spent - Math.max(0, maxLoadMs - loadUsed));
+      room = options.maxMs - stableUsed - stableSpent;
+    }
+    if (room < pollMs) return false;
+    await sleep(Math.min(ms, room));
+    return true;
+  };
+
   for (let spin = 0; spin < 10_000 && pending.size > 0; spin += 1) {
     if (options.signal?.aborted) throw options.signal.reason ?? new Error('aborted');
     const observation = await observer.observe();
+    // An in-flight CDP read may settle after close/stop. Cancellation is not
+    // evidence of a page timeout (and must not start another judgment).
+    options.signal?.throwIfAborted();
     last = observation;
     const t = now();
     const dt = Math.max(0, t - cursor);
@@ -304,7 +325,7 @@ export async function awaitStates(
       stableUsed += dt;
     }
     previousLoading = loadingNow;
-    if (stableUsed >= options.maxMs) return finish(observation);
+    if (stableUsed > options.maxMs) return finish(observation);
 
     const unstable = first || loadingNow;
     if (unstable) {
@@ -320,7 +341,7 @@ export async function awaitStates(
       settled.set(statement.name, { name: statement.name, verdict: fast });
       pending.delete(statement.name);
     }
-    if (pending.size === 0) return finish(observation);
+    if (pending.size === 0 || stableUsed >= options.maxMs) return finish(observation);
 
     const askable = [...pending.values()].filter((statement) => (failures.get(statement.name) ?? 0) < 2);
     if (askable.length === 0 || calls >= options.maxCalls) {
@@ -341,7 +362,7 @@ export async function awaitStates(
       for (const statement of askable) failures.set(statement.name, (failures.get(statement.name) ?? 0) + 1);
       const delay = Math.min(24_000, 3_000 * 2 ** backoff);
       backoff += 1;
-      if (!(await within(delay, 'stable'))) return finish(observation);
+      if (!(await backoffWithin(delay, 'stable'))) return finish(observation);
       continue;
     }
 
@@ -350,7 +371,7 @@ export async function awaitStates(
       previousLoading = true;
       const delay = Math.min(24_000, 3_000 * 2 ** backoff);
       backoff += 1;
-      if (!(await within(delay, loadUsed < maxLoadMs ? 'load' : 'stable'))) return finish(observation);
+      if (!(await backoffWithin(delay, 'load'))) return finish(observation);
       continue;
     }
     backoff = 0;
@@ -386,7 +407,7 @@ export async function awaitStates(
     if (pending.size === 0) return finish(observation);
     const delay = Math.min(24_000, 3_000 * 2 ** backoff);
     backoff += 1;
-    if (!(await within(delay, 'stable'))) return finish(observation);
+    if (!(await backoffWithin(delay, 'stable'))) return finish(observation);
   }
   if (!last) throw new Error('await_state_empty');
   return finish(last);
