@@ -800,6 +800,29 @@ Preserve the accepted production summary restoration and <dir>/cache.json
 response-cache location. New prompt-cache lifetime forecasts and scheduling
 policies remain deferred.
 
+### 2026-11-08 Pi execution through the pi-roles dispatch prototype (Jacob)
+
+pi-roles (the owner's pi role bundle) gained a dispatch layer and is the working prototype for how the facade runs pi
+roles. Its pieces:
+- `pi-dispatch`: one tab per task, split for an implementer, stalled first prompt recovered once from session evidence.
+- A per-run task contract: task dir, output, slot.
+- A role-scoped extension: `call_sonic` and `call_reviewer` from the implementer, a `STATUS.json` per slot, one-shot
+  helpers that exit when settled, an implementer that exits at settle + prompt-cache TTL, warming only while a helper
+  runs (estimated per-session cap), and a DONE/FAILED line pushed to the caller.
+- `pi-role-reap` (+ `--sweep`): bounded cleanup that only touches recorded, owned agents and tabs.
+
+Decision: the facade does not reimplement this. For pi-backed roles, `hud_create` calls `pi-dispatch` with the task
+contract, `hud_read` reads the task's STATUS files, and `hud_close` calls `pi-role-reap`. The role map becomes
+imp → implementer, sonic → sonic, reviewer → reviewer, plus an architect binding. The MCP keeps what only it can do:
+- one interface for any main harness;
+- Jev and web oracles;
+- the session tree (R5);
+- its wake path, which consumes the same DONE/FAILED events.
+
+The dispatch contract (launch flags, SESSION.txt keys, STATUS shape, reap semantics) thereby becomes a HUD interface;
+pi-roles stays its reference implementation. Without pi-roles installed, the facade keeps today's direct pi launch.
+Queued as R2b, after the contract settles (pi-roles DISPATCH-2B fixes and the DISPATCH-3 run ledger).
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
