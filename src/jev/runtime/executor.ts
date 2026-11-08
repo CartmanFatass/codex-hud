@@ -28,7 +28,7 @@ import {
 import { Browser } from '../browser.js';
 import { decideProviderId, type DecisionProvider, type DecisionProviderId } from '../decide.js';
 import { RESERVED_STATEMENT_NAMES, awaitStates, type JudgmentProvider, type PageObservation } from '../judge.js';
-import type { PageState } from '../model.js';
+import { actionSpace, type PageState } from '../model.js';
 import { OpenAIDecisionProvider } from '../providers/openai.js';
 import { TypeSafeDecisionProvider } from '../providers/typesafe.js';
 import { fakeBrowser, fakeProvider } from './fake.js';
@@ -836,17 +836,21 @@ export function askRecordKey(target: 'chatgpt-pro' | 'aistudio', label: string, 
   return askKey('chatgpt', label, pyStrip(prompt));
 }
 
-function observeBrowser(browser: BrowserPort): { observe(): Promise<PageObservation> } {
+export function observeBrowser(browser: BrowserPort): { observe(): Promise<PageObservation> } {
   return {
     async observe() {
       const page = (await browser.observe(false)) as PageState & { readyState?: unknown };
       const stamped = typeof page.readyState === 'string' && page.readyState ? page.readyState : '';
       const evaluated = stamped ? '' : await evaluatedReadyState(browser);
       const readyState = stamped || evaluated || 'loading';
+      // The judge sees the same element records the decide path builds from the observed actions.
+      const [elements] = actionSpace(Array.isArray(page.actions) ? page.actions : []);
+      const headings = await evaluatedHeadings(browser);
       return {
         page: { url: page.url, title: page.title ?? '', text: page.text.slice(0, 6000) },
-        elements: [],
-        facts: { readyState, marker: page.marker ?? page.fingerprint ?? page.url, url: page.url },
+        elements,
+        // Headings and elements are request content only; the stability marker stays page-derived.
+        facts: { readyState, marker: page.marker ?? page.fingerprint ?? page.url, url: page.url, headings },
         deltas: {},
       };
     },
@@ -861,6 +865,61 @@ async function evaluatedReadyState(browser: BrowserPort): Promise<string> {
     return typeof value === 'string' ? value : '';
   } catch {
     return '';
+  }
+}
+
+const HEADING_LIMIT = 12;
+const HEADING_TEXT_LIMIT = 200;
+
+interface ObservedHeading {
+  level: 1 | 2 | 3;
+  text: string;
+}
+
+/**
+ * One evaluate call. Document order, visible headings only: an element with the
+ * `hidden` attribute, a computed `display:none`/`visibility:hidden`, or no rendered
+ * box (a `display:none` ancestor) is skipped. The expression bounds the result;
+ * `boundedHeadings` repeats the bound so a page (or a test double) cannot widen the request.
+ */
+const HEADINGS_EXPRESSION = `(() => {
+  const out = [];
+  for (const node of document.querySelectorAll('h1, h2, h3')) {
+    if (out.length >= ${HEADING_LIMIT}) break;
+    if (node.hidden) continue;
+    const style = window.getComputedStyle(node);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+    if (!node.getClientRects().length) continue;
+    const text = (node.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, ${HEADING_TEXT_LIMIT});
+    if (!text) continue;
+    out.push({ level: Number(node.tagName.slice(1)), text });
+  }
+  return out;
+})()`;
+
+function boundedHeadings(value: unknown): ObservedHeading[] {
+  if (!Array.isArray(value)) return [];
+  const headings: ObservedHeading[] = [];
+  for (const item of value) {
+    if (headings.length >= HEADING_LIMIT) break;
+    if (!item || typeof item !== 'object') continue;
+    const record = item as { level?: unknown; text?: unknown };
+    if (record.level !== 1 && record.level !== 2 && record.level !== 3) continue;
+    if (typeof record.text !== 'string') continue;
+    const text = record.text.trim().slice(0, HEADING_TEXT_LIMIT);
+    if (!text) continue;
+    headings.push({ level: record.level, text });
+  }
+  return headings;
+}
+
+async function evaluatedHeadings(browser: BrowserPort): Promise<ObservedHeading[]> {
+  const evaluate = (browser as BrowserPort & { evaluate?: (expression: string) => Promise<unknown> }).evaluate;
+  if (typeof evaluate !== 'function') return [];
+  try {
+    return boundedHeadings(await evaluate.call(browser, HEADINGS_EXPRESSION));
+  } catch {
+    return [];
   }
 }
 
