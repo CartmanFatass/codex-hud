@@ -2,10 +2,12 @@
 // and one speculative target per operation. This file is new; it is not a line port of model.py.
 
 import type { Answer, DecisionProvider, DecisionResult } from '../decide.js';
+import { JUDGE_RULES, type JudgmentRequest } from '../judge.js';
 import {
   OPENAI_NONE_CHOICE,
   OPENAI_NONE_DESCRIPTION,
   postJson,
+  type Choice,
   type ChoiceDescription,
   type DecisionQuestion,
   type DecisionRequest,
@@ -43,6 +45,50 @@ export function openAIDecisionsUrl(baseUrl?: string): string {
   let root = (baseUrl || 'https://api.openai.com').replace(/\/+$/, '');
   if (root.endsWith('/v1')) root = root.slice(0, -3).replace(/\/+$/, '');
   return `${root}/v1/decisions`;
+}
+
+/** One-choice questions stay padded. The Decisions API rejects fewer than two choices. */
+function padChoices(choices: Choice[]): Choice[] {
+  if (choices.length !== 1) return choices;
+  return [...choices, { value: OPENAI_NONE_CHOICE, description: OPENAI_NONE_DESCRIPTION }];
+}
+
+export function buildOpenAIJudgmentBody(request: JudgmentRequest, cacheKey: string): Record<string, unknown> {
+  const questions: Array<Record<string, unknown>> = [];
+  for (const statement of request.statements) {
+    questions.push({
+      type: 'predicate',
+      name: statement.name,
+      instructions: `${statement.statement}\n${JUDGE_RULES}`,
+    });
+  }
+  for (const choice of request.choices ?? []) {
+    const padded = padChoices(choice.choices);
+    questions.push({
+      type: 'choice',
+      name: choice.name,
+      instructions: `${choice.statement}\n${JUDGE_RULES}`,
+      choices: padded.map((item) => ({
+        value: item.value,
+        description: openAIChoiceDescription(item.description),
+      })),
+    });
+  }
+  return {
+    model: OPENAI_DECISION_MODEL,
+    input: [
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: PREFACE },
+          { type: 'input_json', data: { page: request.page, elements: request.elements } },
+          { type: 'input_json', data: { facts: request.facts, deltas: request.deltas } },
+        ],
+      },
+    ],
+    questions,
+    prompt_cache_key: cacheKey,
+  };
 }
 
 export function buildOpenAIBody(request: DecisionRequest, cacheKey: string): Record<string, unknown> {
@@ -86,6 +132,14 @@ export function parseOpenAIAnswers(payload: unknown): Answer[] {
       confidence?: unknown;
     };
     const name = typeof answer.name === 'string' ? answer.name : '';
+    if (answer.type === 'predicate') {
+      const probability = (answer as { probability?: unknown }).probability;
+      return {
+        name,
+        kind: 'predicate' as const,
+        probability: typeof probability === 'number' ? probability : Number.NaN,
+      };
+    }
     if (answer.type === 'refusal') return { name, kind: 'refusal' as const };
     const probabilities: Record<string, number> = {};
     if (Array.isArray(answer.probabilities)) {
@@ -125,6 +179,19 @@ export class OpenAIDecisionProvider implements DecisionProvider {
       openAIDecisionsUrl(this.#baseUrl),
       this.#apiKey,
       buildOpenAIBody(request, options.cacheKey),
+      options.signal,
+      this.#fetcher
+    );
+    const usage = (raw as { usage?: DecisionResult['usage'] } | null)?.usage ?? {};
+    return { answers: parseOpenAIAnswers(raw), usage, latencyMs: Math.round(performance.now() - started), raw };
+  }
+
+  async judge(request: JudgmentRequest, options: { signal?: AbortSignal; cacheKey: string }): Promise<DecisionResult> {
+    const started = performance.now();
+    const raw = await postJson(
+      openAIDecisionsUrl(this.#baseUrl),
+      this.#apiKey,
+      buildOpenAIJudgmentBody(request, options.cacheKey),
       options.signal,
       this.#fetcher
     );

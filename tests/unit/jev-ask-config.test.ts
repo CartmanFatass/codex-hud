@@ -233,8 +233,8 @@ test('credentials are re-read and errors omit key material', (t) => {
   assert.deepEqual(missing, {
     ok: false,
     error: 'jev_credentials_missing',
-    provider: 'openai',
-    variable: 'OPENAI_API_KEY',
+    provider: 'typesafe',
+    variable: 'TYPESAFE_API_KEY',
   });
   assert.equal(JSON.stringify(missing).includes(ENV_SENTINEL), false);
 
@@ -251,7 +251,8 @@ test('credentials are re-read and errors omit key material', (t) => {
   }
   writeEnv(envFile, `OPENAI_API_KEY=${FILE_KEY}\nTYPESAFE_API_KEY=synthetic-typesafe\nTYPESAFE_MODEL=custom-jev\n`);
   const both = credentialsForJob(envFile, config);
-  assert.equal(both.ok && both.provider, 'openai');
+  assert.equal(both.ok && both.provider, 'typesafe');
+  if (both.ok && both.provider === 'typesafe') assert.equal(both.model, 'custom-jev');
   const typesafeConfig = loadJevConfig({
     tomlText: toml(join(root, 'state')),
     configJson: { jev: { decisions: { provider: 'typesafe', typesafe: { model: 'from-config' } } } },

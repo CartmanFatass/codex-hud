@@ -1,6 +1,7 @@
 // Decision backend interface extracted from Jev Ultrafast model.py choose() (github.com/browser-use/jev-ultrafast @ 1231850a).
 // Wire formats live in providers/. validateChoice stays in model.ts and is unchanged for TypeSafe.
 
+import type { JudgmentRequest } from './judge.js';
 import {
   buildDecisionRequest,
   DecisionInvalid,
@@ -23,7 +24,10 @@ export interface Usage {
 
 export type Answer =
   | { name: string; kind: 'choice'; choice: string; probabilities: Record<string, number>; confidence: number }
+  | { name: string; kind: 'predicate'; probability: number }
   | { name: string; kind: 'refusal' };
+
+export type DecisionProviderId = 'typesafe' | 'openai';
 
 export interface DecisionResult {
   answers: Answer[];
@@ -33,9 +37,35 @@ export interface DecisionResult {
 }
 
 export interface DecisionProvider {
-  readonly id: 'typesafe' | 'openai';
+  readonly id: DecisionProviderId;
   readonly model: string;
   decide(request: DecisionRequest, options: { signal?: AbortSignal; cacheKey: string }): Promise<DecisionResult>;
+  /**
+   * Read-only page judgments. Both built-in providers implement this.
+   * A decide-only test double may omit it; judgment callers must not.
+   */
+  judge?(request: JudgmentRequest, options: { signal?: AbortSignal; cacheKey: string }): Promise<DecisionResult>;
+}
+
+/**
+ * Explicit provider wins. With none set, TypeSafe wins when its key is present,
+ * including when both keys are present. The result names a variable, never a key value.
+ */
+export function decideProviderId(
+  explicit: DecisionProviderId | undefined,
+  present: { typesafe: boolean; openai: boolean }
+): { ok: true; provider: DecisionProviderId } | { ok: false; provider: DecisionProviderId; variable: string } {
+  if (explicit === 'typesafe' || (!explicit && present.typesafe)) {
+    return present.typesafe
+      ? { ok: true, provider: 'typesafe' }
+      : { ok: false, provider: 'typesafe', variable: 'TYPESAFE_API_KEY' };
+  }
+  if (explicit === 'openai' || (!explicit && present.openai)) {
+    return present.openai
+      ? { ok: true, provider: 'openai' }
+      : { ok: false, provider: 'openai', variable: 'OPENAI_API_KEY' };
+  }
+  return { ok: false, provider: 'typesafe', variable: 'TYPESAFE_API_KEY' };
 }
 
 export interface ResolvedDecision {
@@ -156,20 +186,19 @@ export async function choose(
 
 /** Explicit provider wins. With none set, TypeSafe wins when its key is present, including when both keys are set. */
 export async function selectDecisionProvider(
-  explicit?: 'openai' | 'typesafe',
+  explicit?: DecisionProviderId,
   env: NodeJS.ProcessEnv = process.env,
   fetcher?: typeof fetch
 ): Promise<DecisionProvider> {
-  const provider = explicit ?? (env.TYPESAFE_API_KEY ? 'typesafe' : env.OPENAI_API_KEY ? 'openai' : undefined);
-  if (provider === 'openai') {
-    if (!env.OPENAI_API_KEY) throw new JevCredentialsMissing('openai', 'OPENAI_API_KEY');
+  const decision = decideProviderId(explicit, {
+    typesafe: Boolean(env.TYPESAFE_API_KEY),
+    openai: Boolean(env.OPENAI_API_KEY),
+  });
+  if (!decision.ok) throw new JevCredentialsMissing(decision.provider, decision.variable);
+  if (decision.provider === 'openai') {
     const { OpenAIDecisionProvider } = await import('./providers/openai.js');
-    return new OpenAIDecisionProvider({ apiKey: env.OPENAI_API_KEY, baseUrl: env.OPENAI_BASE_URL, fetcher });
+    return new OpenAIDecisionProvider({ apiKey: env.OPENAI_API_KEY ?? '', baseUrl: env.OPENAI_BASE_URL, fetcher });
   }
-  if (provider === 'typesafe') {
-    if (!env.TYPESAFE_API_KEY) throw new JevCredentialsMissing('typesafe', 'TYPESAFE_API_KEY');
-    const { TypeSafeDecisionProvider } = await import('./providers/typesafe.js');
-    return new TypeSafeDecisionProvider({ apiKey: env.TYPESAFE_API_KEY, model: env.TYPESAFE_MODEL, fetcher });
-  }
-  throw new JevCredentialsMissing('typesafe', 'TYPESAFE_API_KEY');
+  const { TypeSafeDecisionProvider } = await import('./providers/typesafe.js');
+  return new TypeSafeDecisionProvider({ apiKey: env.TYPESAFE_API_KEY ?? '', model: env.TYPESAFE_MODEL, fetcher });
 }

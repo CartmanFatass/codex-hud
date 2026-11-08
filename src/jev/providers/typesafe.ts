@@ -1,6 +1,7 @@
 // TypeSafe wire format, verbatim from Jev Ultrafast model.py choose() (github.com/browser-use/jev-ultrafast @ 1231850a).
 
 import type { Answer, DecisionProvider, DecisionResult } from '../decide.js';
+import { JUDGE_NO, JUDGE_RULES, JUDGE_YES, type JudgmentRequest } from '../judge.js';
 import { postJson, type DecisionQuestion, type DecisionRequest } from '../model.js';
 
 export function buildTypeSafeBody(request: DecisionRequest, model: string): Record<string, unknown> {
@@ -20,6 +21,40 @@ function typeSafeQuestion(question: DecisionQuestion, goal: string): Record<stri
     return { type: 'choice', criteria, instructions: { goal, rules: question.rules } };
   }
   return { type: 'choice', criteria, instructions: { goal, operation: question.operation, rules: question.rules } };
+}
+
+export function buildTypeSafeJudgmentBody(request: JudgmentRequest, model: string): Record<string, unknown> {
+  const questions: Record<string, unknown> = {};
+  for (const statement of request.statements) {
+    questions[statement.name] = {
+      type: 'choice',
+      criteria: { yes: JUDGE_YES, no: JUDGE_NO },
+      instructions: { goal: statement.statement, rules: JUDGE_RULES },
+    };
+  }
+  for (const choice of request.choices ?? []) {
+    const criteria: Record<string, unknown> = {};
+    for (const item of choice.choices) criteria[item.value] = item.description;
+    questions[choice.name] = {
+      type: 'choice',
+      criteria,
+      instructions: { goal: choice.statement, rules: JUDGE_RULES },
+    };
+  }
+  return {
+    model,
+    state: { page: request.page, elements: request.elements, facts: request.facts, deltas: request.deltas },
+    questions,
+  };
+}
+
+export function parseTypeSafeJudgment(payload: unknown): Answer[] {
+  return parseTypeSafeAnswers(payload).map((answer) => {
+    if (answer.kind !== 'choice') return answer;
+    if (!Object.prototype.hasOwnProperty.call(answer.probabilities, 'yes')) return answer;
+    const yes = answer.probabilities.yes;
+    return { name: answer.name, kind: 'predicate', probability: typeof yes === 'number' ? yes : Number.NaN };
+  });
 }
 
 export function parseTypeSafeAnswers(payload: unknown): Answer[] {
@@ -69,5 +104,18 @@ export class TypeSafeDecisionProvider implements DecisionProvider {
     );
     const usage = (raw as { usage?: DecisionResult['usage'] } | null)?.usage ?? {};
     return { answers: parseTypeSafeAnswers(raw), usage, latencyMs: Math.round(performance.now() - started), raw };
+  }
+
+  async judge(request: JudgmentRequest, options: { signal?: AbortSignal; cacheKey: string }): Promise<DecisionResult> {
+    const started = performance.now();
+    const raw = await postJson(
+      this.#url ?? 'https://api.typesafe.ai/v1/systemone',
+      this.#apiKey,
+      buildTypeSafeJudgmentBody(request, this.model),
+      options.signal,
+      this.#fetcher
+    );
+    const usage = (raw as { usage?: DecisionResult['usage'] } | null)?.usage ?? {};
+    return { answers: parseTypeSafeJudgment(raw), usage, latencyMs: Math.round(performance.now() - started), raw };
   }
 }
