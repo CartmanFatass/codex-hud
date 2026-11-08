@@ -1,18 +1,23 @@
 /**
- * Fixed-role job facade. herdr runs CLI jobs. A Jev binding returns
- * `backend_unavailable` until R3 supplies an executor.
+ * Fixed-role job facade. herdr runs CLI jobs. A Jev binding uses the role
+ * executor: the receipt and association are written first, then the runtime job.
+ * With no executor attached, a Jev binding returns `backend_unavailable` and
+ * writes nothing.
  *
  * The receipt at `$HUD_HOME/jobs/<job>/receipt.json` is written before any herdr
- * call. The same request key and the same fingerprint return that job. A changed
- * fingerprint is `conflict`. A lost tab acknowledgement is reconciled from
- * `herdr tab list` by label, then `herdr pane list`. The agent is checked only
- * after that tab is known. A step that was sent is not sent again.
+ * or Jev call. The same request key and the same fingerprint return that job. A
+ * changed fingerprint is `conflict`. A lost tab acknowledgement is reconciled
+ * from `herdr tab list` by label, then `herdr pane list`. A lost Jev `createJob`
+ * acknowledgement is reconciled by calling `createJob` again with the same
+ * runtime key. The agent is checked only after that tab is known. A step that
+ * was sent is not sent again.
  */
 
 import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import type { JevCreateRequest, JevJobInput } from '../jev/runtime/types.js';
 import { canonicalJson } from '../core/canonical.js';
 import { writeAssociation, type JobAssociation } from './association.js';
 import {
@@ -33,6 +38,17 @@ import {
 } from './herdr-run.js';
 import { LockBusy, readPrivateJson, withLock, writePrivate } from './job-store.js';
 import { ADAPTER_HARNESS, isLaunchAdapter } from './adapters.js';
+import {
+  connectRoleRuntime,
+  facadeState,
+  isLostAck,
+  isRuntimeStartError,
+  jevErrorCode,
+  mapJevLaunch,
+  readStoredJevInput,
+  runtimeRequestKey,
+  type JevRuntimeHandle,
+} from './jev-adapter.js';
 import {
   adapterOf,
   appendPiOverrides,
@@ -61,6 +77,7 @@ import { ORACLE_PHASES, ROLES, type OraclePhase, type RoleName, type Slot } from
 import {
   formatRosterRoot,
   loadRosterSelection,
+  parseRosterRoot,
   resolveRoster,
   saveRosterSelection,
   type RosterRoot,
@@ -80,19 +97,26 @@ export interface FacadeContext {
   /** Wall-clock cap for every herdr and pi-role spawn. Tests pass a short budget. */
   readonly herdrBudgetMs?: number;
   /**
-   * R3 plugs a Jev launcher here. When it is absent, a Jev binding returns
+   * Role Jev adapter. When it is absent, a Jev binding returns
    * `backend_unavailable` and the facade writes no receipt and starts nothing.
+   * `createRoleJevExecutor` supplies the runtime. One handle per context.
    */
   readonly jev?: JevExecutor | null;
+}
+
+export interface JevStatement {
+  readonly name: string;
+  readonly statement: string;
 }
 
 export interface JevInput {
   readonly kind: 'ask' | 'browse' | 'judge';
   readonly text: string | null;
-  readonly statements: readonly string[];
+  readonly url: string | null;
+  readonly statements: readonly JevStatement[];
 }
 
-/** The request R3 receives. No receipt exists yet. */
+/** What the adapter turns into one runtime job. The receipt does not exist yet. */
 export interface JevLaunchRequest {
   readonly root: RosterRoot;
   readonly role: RoleName;
@@ -103,23 +127,39 @@ export interface JevLaunchRequest {
   readonly routingRevision: string;
   readonly binding: ReturnType<typeof backendJson>;
   readonly input: JevInput | null;
+  /** Oracle prompt. Null for a `jev` role; that prompt is `input.text`. */
+  readonly task: string | null;
+  readonly cwd: string | null;
+  readonly jevDecisions: { id: string; provider: 'typesafe' | 'openai'; model: string | null };
 }
 
-/** Owned Jev runtime. R2 does not implement `launch`. */
+/**
+ * Role-facade Jev adapter. `launch` writes the receipt, then `createJob`.
+ * `runtime` is the one reconnecting handle. A test double may omit it and
+ * implement only `launch`.
+ */
 export interface JevExecutor {
   readonly id: 'jev';
   launch(ctx: FacadeContext, request: JevLaunchRequest): Promise<Result>;
+  runtime?(): Promise<JevRuntimeHandle>;
 }
 
 type Result = { ok: true; [key: string]: unknown } | { ok: false; code: string; [key: string]: unknown };
 
-interface ExecutorIds {
-  readonly kind: 'herdr';
-  readonly tab_id: string | null;
-  readonly pane_id: string | null;
-  readonly agent: string;
-  readonly workspace_id: string | null;
+interface HerdrExecutor {
+  kind: 'herdr';
+  tab_id: string | null;
+  pane_id: string | null;
+  agent: string;
+  workspace_id: string | null;
 }
+
+interface JevBoundExecutor {
+  kind: 'jev';
+  job: string | null;
+}
+
+type ExecutorIds = HerdrExecutor | JevBoundExecutor;
 
 type StepState = 'unsent' | 'sent' | 'acked';
 
@@ -146,7 +186,7 @@ interface JobReceipt {
   cwd: string;
   task_label: string;
   label: string;
-  state: 'launching' | 'open' | 'closed' | 'launch_unknown' | 'failed';
+  state: 'launching' | 'open' | 'done' | 'error' | 'closed' | 'launch_unknown' | 'failed';
   launch_error: string | null;
   prompted: boolean;
   steps: JobSteps;
@@ -154,6 +194,14 @@ interface JobReceipt {
   env?: Record<string, string>;
   executor: ExecutorIds;
   closed_observation: string | null;
+  /** Set on a Jev receipt. Ask, browse, or judge. */
+  jev_tag?: 'ask' | 'browse' | 'judge';
+  /** Runtime `requestKey`. A retry of this receipt uses this value and no other. */
+  runtime_request_key?: string;
+  /** Last runtime seq returned to a reader. The next wait passes it as `afterSeq`. */
+  jev_seq?: number;
+  /** Runtime body from the first launch. A retry sends this, not the current routing. */
+  jev_input?: JevJobInput;
 }
 
 interface KeyIndex {
@@ -334,15 +382,47 @@ function stepState(value: unknown, fallback: StepState): StepState {
   return value === 'unsent' || value === 'sent' || value === 'acked' ? value : fallback;
 }
 
+function requireHerdr(receipt: JobReceipt): asserts receipt is JobReceipt & { executor: HerdrExecutor } {
+  if (receipt.executor.kind !== 'herdr') throw new Error('internal_error');
+}
+
 function loadReceipt(home: string, job: string): JobReceipt | undefined {
   if (!JOB_ID.test(job)) return undefined;
   const parsed = readPrivateJson(receiptPath(home, job), 64 * 1024);
   if (!isRecord(parsed) || parsed.schema !== 1 || parsed.job !== job) return undefined;
   const receipt = parsed as unknown as JobReceipt;
-  if (!isRecord(receipt.executor)) return undefined;
+  if (!isRecord(parsed.executor)) return undefined;
   const stored = isRecord(parsed.steps) ? parsed.steps : {};
-  const tabKnown = typeof receipt.executor.tab_id === 'string' && receipt.executor.tab_id.length > 0;
   receipt.prompted = receipt.prompted === true;
+  if (parsed.executor.kind === 'jev') {
+    const jobId = parsed.executor.job;
+    receipt.executor = { kind: 'jev', job: typeof jobId === 'string' && jobId.length > 0 ? jobId : null };
+    if (receipt.jev_tag !== 'ask' && receipt.jev_tag !== 'browse' && receipt.jev_tag !== 'judge') {
+      delete receipt.jev_tag;
+    }
+    if (typeof receipt.runtime_request_key !== 'string') delete receipt.runtime_request_key;
+    if (typeof receipt.jev_seq !== 'number') delete receipt.jev_seq;
+    const storedInput = readStoredJevInput(parsed.jev_input);
+    if (storedInput) receipt.jev_input = storedInput;
+    else delete receipt.jev_input;
+    receipt.steps = {
+      tab_create: 'unsent',
+      launch: 'unsent',
+      rename: 'unsent',
+      prompt: 'unsent',
+      tab_closed: stored.tab_closed === true || receipt.state === 'closed',
+    };
+    return receipt;
+  }
+  const herdr = parsed.executor;
+  receipt.executor = {
+    kind: 'herdr',
+    tab_id: typeof herdr.tab_id === 'string' ? herdr.tab_id : null,
+    pane_id: typeof herdr.pane_id === 'string' ? herdr.pane_id : null,
+    agent: typeof herdr.agent === 'string' ? herdr.agent : '',
+    workspace_id: typeof herdr.workspace_id === 'string' ? herdr.workspace_id : null,
+  };
+  const tabKnown = receipt.executor.tab_id !== null && receipt.executor.tab_id.length > 0;
   receipt.steps = {
     tab_create: stepState(stored.tab_create, tabKnown ? 'acked' : 'unsent'),
     launch: stepState(stored.launch, receipt.state === 'open' || receipt.prompted ? 'acked' : 'unsent'),
@@ -381,12 +461,15 @@ function associationOf(home: string, receipt: JobReceipt, closed: boolean): JobA
       env_profile: receipt.binding.env_profile,
       recipe: receipt.binding.recipe,
     },
-    herdr: {
-      tab_id: receipt.executor.tab_id,
-      pane_id: receipt.executor.pane_id,
-      agent: receipt.executor.agent,
-      workspace_id: receipt.executor.workspace_id,
-    },
+    herdr:
+      receipt.executor.kind === 'herdr'
+        ? {
+            tab_id: receipt.executor.tab_id,
+            pane_id: receipt.executor.pane_id,
+            agent: receipt.executor.agent,
+            workspace_id: receipt.executor.workspace_id,
+          }
+        : { tab_id: null, pane_id: null, agent: null, workspace_id: null },
     report_path: join(jobDirectory(home, receipt.job), 'report.md'),
     closed,
   };
@@ -402,6 +485,7 @@ function waitCommand(job: string): { command: string; argv: string[] } {
 
 function present(home: string, receipt: JobReceipt, idempotent: boolean): Result {
   const directory = jobDirectory(home, receipt.job);
+  const jev = receipt.executor.kind === 'jev';
   return {
     ok: true,
     job: receipt.job,
@@ -416,9 +500,11 @@ function present(home: string, receipt: JobReceipt, idempotent: boolean): Result
     state: receipt.state,
     prompted: receipt.prompted,
     executor: receipt.executor,
-    brief_path: join(directory, 'brief.md'),
+    ...(jev ? {} : { brief_path: join(directory, 'brief.md') }),
     report_path: join(directory, 'report.md'),
-    wait: waitCommand(receipt.job),
+    wait: jev
+      ? { command: `hud_read --job ${receipt.job}`, argv: ['hud_read', '--job', receipt.job] }
+      : waitCommand(receipt.job),
   };
 }
 
@@ -500,6 +586,7 @@ async function lookupTab(run: Run, label: string): Promise<TabLookup> {
  * on that tab. Close does not use this pane check.
  */
 async function reconcileTab(run: Run, receipt: JobReceipt): Promise<Found> {
+  requireHerdr(receipt);
   const found = await lookupTab(run, receipt.label);
   if (found === 'timeout') return 'timeout';
   if (found === 'absent') return 'absent';
@@ -531,6 +618,7 @@ async function findNamed(run: Run, name: string): Promise<ListedAgent | 'timeout
 }
 
 function noteAgent(receipt: JobReceipt, agent: ListedAgent): void {
+  requireHerdr(receipt);
   receipt.executor = {
     ...receipt.executor,
     tab_id: agent.tabId ?? receipt.executor.tab_id,
@@ -549,6 +637,7 @@ async function closeRecorded(
   run: Run,
   receipt: JobReceipt
 ): Promise<'closed' | 'already_gone' | 'timeout' | 'unresolved' | 'failed'> {
+  requireHerdr(receipt);
   if (receipt.steps.tab_closed) return 'already_gone';
   let tabId = receipt.executor.tab_id;
   if (!tabId) {
@@ -589,6 +678,7 @@ async function failLaunch(
   code: string,
   extra: Record<string, unknown> = {}
 ): Promise<Result> {
+  requireHerdr(receipt);
   if (receipt.executor.tab_id || receipt.steps.tab_create !== 'unsent') {
     const closed = await closeRecorded(run, receipt);
     if (closed === 'timeout') {
@@ -609,6 +699,7 @@ async function failLaunch(
 }
 
 async function ensureTab(ctx: FacadeContext, run: Run, receipt: JobReceipt): Promise<Result | null> {
+  requireHerdr(receipt);
   if (receipt.steps.tab_create === 'acked' && receipt.executor.tab_id && receipt.executor.pane_id) return null;
   if (receipt.steps.tab_create !== 'unsent') {
     const found = await reconcileTab(run, receipt);
@@ -641,6 +732,7 @@ async function ensureTab(ctx: FacadeContext, run: Run, receipt: JobReceipt): Pro
 }
 
 async function renameCodex(ctx: FacadeContext, run: Run, receipt: JobReceipt): Promise<Result | null> {
+  requireHerdr(receipt);
   if (receipt.steps.rename === 'acked') return null;
   const pane = receipt.executor.pane_id;
   if (!pane) return markUnknown(ctx.home, receipt);
@@ -669,6 +761,7 @@ async function finishStart(
   receipt: JobReceipt,
   started: HerdrOutcome
 ): Promise<Result | null> {
+  requireHerdr(receipt);
   if (started.ok) {
     receipt.steps.launch = 'acked';
     receipt.steps.rename = 'acked';
@@ -693,6 +786,7 @@ async function ensureLaunch(
   receipt: JobReceipt,
   profile: BackendProfile
 ): Promise<Result | null> {
+  requireHerdr(receipt);
   const recipe = adapterOf(profile);
   if (receipt.steps.launch === 'acked' && (recipe !== 'codex-zsh' || receipt.steps.rename === 'acked')) return null;
   if (receipt.steps.launch !== 'unsent') {
@@ -747,6 +841,7 @@ async function ensureLaunch(
 }
 
 async function ensurePrompt(ctx: FacadeContext, run: Run, receipt: JobReceipt): Promise<Result> {
+  requireHerdr(receipt);
   const brief = join(jobDirectory(ctx.home, receipt.job), 'brief.md');
   const pointer = `Read ${brief} and do exactly what it asks.`;
   if (receipt.steps.prompt === 'acked') {
@@ -924,6 +1019,9 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
         routingRevision: revision,
         binding: bound.backend,
         input,
+        task,
+        cwd,
+        jevDecisions: resolved.jev_decisions,
       });
     }
     return await withLock(
@@ -1018,24 +1116,69 @@ function busyJob(ctx: FacadeContext, root: RosterRoot, requestKey: string): Resu
   return fail('busy');
 }
 
+const STATEMENT_NAME = /^[a-z][a-z0-9_]{0,40}$/;
+const RESERVED_STATEMENTS = new Set(['loading', 'needs_human', 'human_kind']);
+
 function parseJevInput(value: unknown): JevInput | null {
   if (!isRecord(value)) return null;
   if (value.kind !== 'ask' && value.kind !== 'browse' && value.kind !== 'judge') return null;
   const text = value.text === undefined ? null : value.text;
   if (text !== null && (typeof text !== 'string' || text.length < 1 || text.length > 65536)) return null;
-  const statements: string[] = [];
-  if (value.statements !== undefined) {
-    if (!Array.isArray(value.statements) || value.statements.length > 32) return null;
-    for (const item of value.statements) {
-      if (typeof item !== 'string' || item.length < 1 || item.length > 2000) return null;
-      statements.push(item);
-    }
-  }
+  const url = parseJevUrl(value.url);
+  if (url === undefined) return null;
+  const statements = parseJevStatements(value.statements);
+  if (!statements) return null;
   if (value.kind === 'judge' && statements.length === 0) return null;
   if (value.kind !== 'judge' && !text) return null;
-  const extra = Object.keys(value).filter((key) => !['kind', 'text', 'statements'].includes(key));
+  if ((value.kind === 'browse' || value.kind === 'judge') && !url) return null;
+  const extra = Object.keys(value).filter((key) => !['kind', 'text', 'statements', 'url'].includes(key));
   if (extra.length > 0) return null;
-  return { kind: value.kind, text, statements };
+  return { kind: value.kind, text, url, statements };
+}
+
+/** `null` when the field is absent. `undefined` when it is present and not an http(s) URL. */
+function parseJevUrl(value: unknown): string | null | undefined {
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || value.length < 1 || value.length > 4096) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Plain strings are named `s1..sN`. At most 12. Reserved judge names are rejected. */
+function parseJevStatements(value: unknown): JevStatement[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 12) return null;
+  const statements: JevStatement[] = [];
+  const names = new Set<string>();
+  let auto = 0;
+  for (const item of value) {
+    let name: string;
+    let statement: string;
+    if (typeof item === 'string') {
+      statement = item.trim();
+      if (statement.length < 1 || item.length > 2000) return null;
+      auto += 1;
+      name = `s${auto}`;
+    } else if (isRecord(item)) {
+      if (typeof item.name !== 'string' || typeof item.statement !== 'string') return null;
+      if (!STATEMENT_NAME.test(item.name) || RESERVED_STATEMENTS.has(item.name)) return null;
+      statement = item.statement.trim();
+      if (statement.length < 1 || item.statement.length > 2000) return null;
+      if (Object.keys(item).some((key) => key !== 'name' && key !== 'statement')) return null;
+      name = item.name;
+    } else {
+      return null;
+    }
+    if (names.has(name)) return null;
+    names.add(name);
+    statements.push({ name, statement });
+  }
+  return statements;
 }
 
 function questions(directory: string): { id: string; path: string }[] {
@@ -1131,7 +1274,9 @@ export async function hudRead(ctx: FacadeContext, args: Record<string, unknown>)
   if (typeof args.job !== 'string') return fail('invalid_arguments', { field: 'job' });
   const receipt = loadReceipt(ctx.home, args.job);
   if (!receipt || !owned(ctx, receipt)) return fail('not_found', { field: 'job' });
+  if (receipt.executor.kind === 'jev') return readJev(ctx, receipt, waitMs);
   if (receipt.state !== 'open') return observation(ctx.home, receipt, null);
+  requireHerdr(receipt);
   const run = runner(ctx);
   const directory = jobDirectory(ctx.home, receipt.job);
   if (waitMs > 0) {
@@ -1166,9 +1311,11 @@ export async function hudSend(ctx: FacadeContext, args: Record<string, unknown>)
   if (!text || text.includes('\n')) return fail('invalid_arguments', { field: 'text' });
   const receipt = loadReceipt(ctx.home, args.job);
   if (!receipt || !owned(ctx, receipt)) return fail('not_found', { field: 'job' });
+  if (receipt.executor.kind === 'jev') return sendJev(ctx, receipt, messageKey, text);
   if (receipt.state === 'launch_unknown' || receipt.state === 'launching')
     return fail('launch_unknown', { job: receipt.job });
   if (receipt.state !== 'open') return fail('job_closed', { job: receipt.job });
+  requireHerdr(receipt);
   if (!receipt.binding.capabilities.includes('interactive_or_continuable')) {
     return fail('handoff', {
       job: receipt.job,
@@ -1231,6 +1378,7 @@ function herdrLocation(receipt: JobReceipt): {
   pane_id: string | null;
   tab_id: string | null;
 } {
+  requireHerdr(receipt);
   return {
     kind: 'herdr',
     agent: receipt.executor.agent,
@@ -1250,6 +1398,14 @@ export async function hudRespond(ctx: FacadeContext, args: Record<string, unknow
   if (!answer) return fail('invalid_arguments', { field: 'answer' });
   const receipt = loadReceipt(ctx.home, args.job);
   if (!receipt || !owned(ctx, receipt)) return fail('not_found', { field: 'job' });
+  if (receipt.executor.kind === 'jev') {
+    return fail('handoff', {
+      job: receipt.job,
+      request_id: args.request_id,
+      location: { kind: 'jev', job: receipt.executor.job },
+      reason: 'unsupported_channel',
+    });
+  }
   if (receipt.binding.harness !== 'pi') {
     return fail('handoff', {
       job: receipt.job,
@@ -1295,6 +1451,7 @@ export async function hudClose(ctx: FacadeContext, args: Record<string, unknown>
   if (receipt.state === 'closed') {
     return { ok: true, job: receipt.job, closed: true, idempotent: true, observation: receipt.closed_observation };
   }
+  if (receipt.executor.kind === 'jev') return closeJev(ctx, receipt);
   try {
     return await withLock(
       ctx.home,
@@ -1310,6 +1467,7 @@ export async function hudClose(ctx: FacadeContext, args: Record<string, unknown>
             observation: current.closed_observation,
           };
         }
+        requireHerdr(current);
         const run = runner(ctx);
         if (current.steps.tab_closed) {
           return finishClose(ctx.home, current, 'already_gone');
@@ -1385,6 +1543,8 @@ export async function waitForJob(
   if (!JOB_ID.test(job)) return fail('invalid_arguments', { field: 'job' });
   const receipt = loadReceipt(home, job);
   if (!receipt) return fail('not_found', { field: 'job' });
+  if (receipt.executor.kind === 'jev') return fail('unsupported', { job, reason: 'use_hud_read' });
+  requireHerdr(receipt);
   if (receipt.state === 'launch_unknown' || receipt.state === 'launching') {
     return fail('launch_unknown', { job, acceptance: null });
   }
@@ -1396,4 +1556,318 @@ export async function waitForJob(
     return fail('wait_failed', { job, status, acceptance: null });
   }
   return { ok: true, job, status: agentStatus(waited.stdout) ?? 'unknown', acceptance: null };
+}
+
+type OpenRuntime = () => Promise<JevRuntimeHandle>;
+
+/**
+ * One Jev adapter for this HUD home. The runtime handle is created on the first
+ * Jev call and reused. Pass `injected` in tests so nothing starts a child or
+ * reads the owner jev-ask config.
+ */
+export function createRoleJevExecutor(home: string, injected?: JevRuntimeHandle | null): JevExecutor {
+  const openRuntime = connectRoleRuntime(home, injected);
+  return {
+    id: 'jev',
+    runtime: openRuntime,
+    launch: (ctx, request) => launchJev(ctx, request, openRuntime),
+  };
+}
+
+async function launchJev(ctx: FacadeContext, request: JevLaunchRequest, openRuntime: OpenRuntime): Promise<Result> {
+  const parent = parentOf(request.root);
+  const runtimeKey = runtimeRequestKey(parent, request.requestKey);
+  try {
+    return await withLock(
+      ctx.home,
+      keyLock(parent, request.requestKey),
+      async () => {
+        const existing = readPrivateJson(indexPath(ctx.home, request.root, request.requestKey), 4096);
+        if (existing !== undefined) {
+          if (!isRecord(existing) || existing.schema !== 1 || typeof existing.job !== 'string') {
+            return fail('receipt_unreadable');
+          }
+          const receipt = loadReceipt(ctx.home, existing.job);
+          if (!receipt || receipt.request_key !== request.requestKey || receipt.parent !== parent) {
+            return fail('receipt_unreadable');
+          }
+          if (receipt.fingerprint !== request.fingerprint || existing.fingerprint !== request.fingerprint) {
+            return fail('conflict', { job: receipt.job });
+          }
+          if (receipt.executor.kind !== 'jev') return fail('conflict', { job: receipt.job });
+          if (receipt.state === 'closed' || receipt.executor.job) return present(ctx.home, receipt, true);
+          if (!receipt.jev_input) return fail('receipt_unreadable');
+          return submitJev(ctx, receipt, openRuntime);
+        }
+        const mapped = mapJevLaunch(request);
+        if (!mapped.ok) return fail('invalid_arguments', { field: mapped.field });
+        const job = `j${randomBytes(8).toString('hex')}`;
+        const text = request.task ?? request.input?.text ?? request.input?.statements[0]?.statement ?? 'job';
+        const receipt: JobReceipt = {
+          schema: 1,
+          job,
+          parent,
+          request_key: request.requestKey,
+          fingerprint: request.fingerprint,
+          role: request.role,
+          phase: request.phase,
+          routing_revision: request.routingRevision,
+          preset: request.preset,
+          jev_decisions: request.jevDecisions,
+          binding: request.binding,
+          cwd: request.cwd ?? ctx.home,
+          task_label: taskLabel(text),
+          label: `${request.role}:${job.slice(1, 9)}`,
+          state: 'launching',
+          launch_error: null,
+          prompted: false,
+          steps: { tab_create: 'unsent', launch: 'unsent', rename: 'unsent', prompt: 'unsent', tab_closed: false },
+          executor: { kind: 'jev', job: null },
+          closed_observation: null,
+          jev_tag: mapped.tag,
+          runtime_request_key: runtimeKey,
+          jev_input: mapped.input,
+        };
+        saveReceipt(ctx.home, receipt);
+        writePrivate(
+          indexPath(ctx.home, request.root, request.requestKey),
+          JSON.stringify({ schema: 1, job, fingerprint: request.fingerprint, parent } satisfies KeyIndex) + '\n'
+        );
+        writeAssociation(ctx.home, associationOf(ctx.home, receipt, false));
+        return submitJev(ctx, receipt, openRuntime);
+      },
+      ctx.lockWaitMs
+    );
+  } catch (error) {
+    if (error instanceof LockBusy) return busyJob(ctx, request.root, request.requestKey);
+    throw error;
+  }
+}
+
+/** Body for `createJob`. Comes from the receipt, including on a retry. */
+function jevBody(receipt: JobReceipt): JevCreateRequest | null {
+  if (receipt.executor.kind !== 'jev' || !receipt.jev_input || !receipt.runtime_request_key) return null;
+  let root: ReturnType<typeof parseRosterRoot>;
+  try {
+    root = parseRosterRoot(receipt.parent);
+  } catch {
+    return null;
+  }
+  return {
+    requestKey: receipt.runtime_request_key,
+    session: { namespace: root.namespace, sessionId: root.sessionId },
+    jevDecisions: {
+      id: receipt.jev_decisions.id,
+      provider: receipt.jev_decisions.provider,
+      model: receipt.jev_decisions.model,
+    },
+    input: receipt.jev_input,
+  };
+}
+
+async function submitJev(ctx: FacadeContext, receipt: JobReceipt, openRuntime: OpenRuntime): Promise<Result> {
+  if (receipt.executor.kind !== 'jev') return fail('conflict', { job: receipt.job });
+  if (receipt.state === 'closed') return present(ctx.home, receipt, true);
+  const body = jevBody(receipt);
+  if (!body) return fail('receipt_unreadable');
+  try {
+    const runtime = await openRuntime();
+    const job = await createJevJob(runtime, body);
+    receipt.executor = { kind: 'jev', job: job.id };
+    receipt.state = facadeState(job.state);
+    receipt.launch_error = null;
+    receipt.jev_seq = job.seq;
+    remember(ctx.home, receipt);
+    const view = present(ctx.home, receipt, false);
+    return { ...view, result: job.result ?? null };
+  } catch (error) {
+    return jevCallError(ctx.home, receipt, error);
+  }
+}
+
+/** One lost acknowledgement is the same `requestKey` again. The runtime dedupes it. */
+async function createJevJob(
+  runtime: JevRuntimeHandle,
+  body: Parameters<JevRuntimeHandle['createJob']>[0]
+): Promise<Awaited<ReturnType<JevRuntimeHandle['createJob']>>> {
+  try {
+    return await runtime.createJob(body);
+  } catch (error) {
+    if (!isLostAck(error)) throw error;
+    return runtime.createJob(body);
+  }
+}
+
+function jevCallError(home: string, receipt: JobReceipt, error: unknown): Result {
+  const code = jevErrorCode(error);
+  if (isRuntimeStartError(error)) {
+    remember(home, receipt);
+    return fail('backend_unavailable', { executor: 'jev', reason: code, job: receipt.job });
+  }
+  if (code === 'association_conflict' || code === 'conflict' || code === 'invalid_request') {
+    return fail(code, { job: receipt.job });
+  }
+  receipt.state = 'launch_unknown';
+  receipt.launch_error = 'launch_unknown';
+  remember(home, receipt);
+  return fail('launch_unknown', { job: receipt.job, executor: receipt.executor });
+}
+
+/** Read, send, and close leave the receipt where it was. */
+function runtimeCallError(receipt: JobReceipt, error: unknown): Result {
+  const code = jevErrorCode(error);
+  if (isRuntimeStartError(error)) {
+    return fail('backend_unavailable', { executor: 'jev', reason: code, job: receipt.job });
+  }
+  return fail('runtime_unavailable', { executor: 'jev', reason: code, job: receipt.job });
+}
+
+async function readJev(ctx: FacadeContext, receipt: JobReceipt, waitMs: number): Promise<Result> {
+  if (receipt.executor.kind !== 'jev') return fail('internal_error');
+  const openRuntime = ctx.jev?.runtime;
+  if (!openRuntime) return fail('backend_unavailable', { executor: 'jev', reason: 'pending R3' });
+  if (!receipt.executor.job) return observation(ctx.home, receipt, null);
+  let runtime: JevRuntimeHandle;
+  try {
+    runtime = await openRuntime();
+  } catch (error) {
+    return runtimeCallError(receipt, error);
+  }
+  const jobId = receipt.executor.job;
+  let job: Awaited<ReturnType<JevRuntimeHandle['readJob']>>;
+  try {
+    job = await runtime.readJob(jobId, {
+      waitMs,
+      ...(typeof receipt.jev_seq === 'number' ? { afterSeq: receipt.jev_seq } : {}),
+    });
+  } catch (error) {
+    if (jevErrorCode(error) === 'not_found') return fail('not_found', { field: 'job' });
+    return runtimeCallError(receipt, error);
+  }
+  try {
+    return await withLock(
+      ctx.home,
+      keyLock(receipt.parent, receipt.request_key),
+      async () => {
+        const current = loadReceipt(ctx.home, receipt.job) ?? receipt;
+        if (current.state === 'closed') return observation(ctx.home, current, 'closed');
+        const state = facadeState(job.state);
+        current.state = state;
+        current.jev_seq = job.seq;
+        if (state === 'closed') current.closed_observation ??= 'closed';
+        remember(ctx.home, current);
+        const status = state === 'error' ? (job.error?.code ?? 'error') : resultStatus(job.result);
+        return {
+          ...observation(ctx.home, current, status),
+          state,
+          result: job.result ?? null,
+          error: job.error ?? null,
+        };
+      },
+      ctx.lockWaitMs
+    );
+  } catch (error) {
+    if (error instanceof LockBusy) return fail('busy', { job: receipt.job });
+    throw error;
+  }
+}
+
+function resultStatus(result: unknown): string | null {
+  if (!isRecord(result) || typeof result.status !== 'string') return null;
+  return result.status;
+}
+
+async function sendJev(ctx: FacadeContext, receipt: JobReceipt, messageKey: string, text: string): Promise<Result> {
+  if (receipt.executor.kind !== 'jev') return fail('internal_error');
+  if (receipt.state === 'launching' || receipt.state === 'launch_unknown') {
+    return fail('launch_unknown', { job: receipt.job });
+  }
+  if (receipt.state === 'closed') return fail('job_closed', { job: receipt.job });
+  if (receipt.jev_tag !== 'browse') {
+    return fail('unsupported', { job: receipt.job, reason: 'follow_up_requires_browse' });
+  }
+  if (!receipt.executor.job) return fail('launch_unknown', { job: receipt.job });
+  const openRuntime = ctx.jev?.runtime;
+  if (!openRuntime) return fail('backend_unavailable', { executor: 'jev', reason: 'pending R3' });
+  const jobId = receipt.executor.job;
+  try {
+    return await withLock(
+      ctx.home,
+      `job-${receipt.job}`,
+      async () => {
+        const runtime = await openRuntime();
+        const job = await runtime.sendFollowUp(jobId, { key: followKey(messageKey), text });
+        if (job.followUp && job.followUp.supported === false) {
+          return fail('unsupported', { job: receipt.job, reason: job.followUp.code });
+        }
+        return { ok: true, job: receipt.job, message_key: messageKey, idempotent: false };
+      },
+      ctx.lockWaitMs
+    );
+  } catch (error) {
+    if (error instanceof LockBusy) return fail('busy', { job: receipt.job });
+    if (jevErrorCode(error) === 'not_found') return fail('not_found', { field: 'job' });
+    return runtimeCallError(receipt, error);
+  }
+}
+
+function followKey(messageKey: string): string {
+  if (/^[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$/.test(messageKey)) return messageKey;
+  return runtimeRequestKey('message', messageKey);
+}
+
+async function closeJev(ctx: FacadeContext, receipt: JobReceipt): Promise<Result> {
+  if (receipt.executor.kind !== 'jev') return fail('internal_error');
+  const openRuntime = ctx.jev?.runtime;
+  try {
+    return await withLock(
+      ctx.home,
+      keyLock(receipt.parent, receipt.request_key),
+      async () => {
+        const current = loadReceipt(ctx.home, receipt.job) ?? receipt;
+        if (current.executor.kind !== 'jev') return fail('internal_error');
+        if (current.state === 'closed') {
+          return {
+            ok: true,
+            job: current.job,
+            closed: true,
+            idempotent: true,
+            observation: current.closed_observation,
+          };
+        }
+        let runtimeId = current.executor.job;
+        if (!runtimeId && current.state === 'launch_unknown') {
+          if (!openRuntime) return fail('backend_unavailable', { executor: 'jev', reason: 'pending R3' });
+          const body = jevBody(current);
+          if (!body) return fail('receipt_unreadable');
+          try {
+            const runtime = await openRuntime();
+            const job = await createJevJob(runtime, body);
+            runtimeId = job.id;
+            current.executor = { kind: 'jev', job: job.id };
+            current.jev_seq = job.seq;
+            remember(ctx.home, current);
+          } catch (error) {
+            if (jevErrorCode(error) === 'not_found') return finishClose(ctx.home, current, 'already_gone');
+            return runtimeCallError(current, error);
+          }
+        }
+        if (runtimeId) {
+          if (!openRuntime) return fail('backend_unavailable', { executor: 'jev', reason: 'pending R3' });
+          try {
+            const runtime = await openRuntime();
+            await runtime.closeJob(runtimeId);
+          } catch (error) {
+            if (jevErrorCode(error) === 'not_found') return finishClose(ctx.home, current, 'already_gone');
+            return runtimeCallError(current, error);
+          }
+        }
+        return finishClose(ctx.home, current, 'jev_closed');
+      },
+      ctx.lockWaitMs
+    );
+  } catch (error) {
+    if (error instanceof LockBusy) return fail('busy', { job: receipt.job });
+    return runtimeCallError(receipt, error);
+  }
 }

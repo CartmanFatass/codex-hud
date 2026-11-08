@@ -354,11 +354,8 @@ export function bundle(context, label) {
       fs.readFileSync(path.join(SOURCE, 'scripts', name)),
       name === 'install-runtime.mjs' ? 0o700 : 0o600
     );
-  write(
-    path.join(root, 'packages/hud-mcp/bin/hud-mcp.mjs'),
-    fs.readFileSync(path.join(SOURCE, 'packages/hud-mcp/bin/hud-mcp.mjs')),
-    0o700
-  );
+  for (const name of ['packages/hud-mcp/bin/hud-mcp.mjs', 'packages/hud-mcp/bin/surface.mjs'])
+    write(path.join(root, name), fs.readFileSync(path.join(SOURCE, name)), 0o700);
   for (const name of MODULES) {
     const output = name.replace(/\.ts$/, '.js');
     write(path.join(root, 'packages/hud-mcp/dist', output), fs.readFileSync(path.join(context.emitted, output)));

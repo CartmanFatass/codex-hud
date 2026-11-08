@@ -54,10 +54,21 @@ export const ROLE_TOOLS: readonly RoleToolDefinition[] = [
         properties: {
           kind: { type: 'string', enum: ['ask', 'browse', 'judge'] },
           text: { type: 'string', minLength: 1, maxLength: 65536 },
+          url: { type: 'string', minLength: 1, maxLength: 4096 },
           statements: {
             type: 'array',
-            maxItems: 32,
-            items: { type: 'string', minLength: 1, maxLength: 2000 },
+            maxItems: 12,
+            items: {
+              type: ['string', 'object'],
+              minLength: 1,
+              maxLength: 2000,
+              additionalProperties: false,
+              required: ['name', 'statement'],
+              properties: {
+                name: { type: 'string', minLength: 1, maxLength: 41 },
+                statement: { type: 'string', minLength: 1, maxLength: 2000 },
+              },
+            },
           },
         },
         required: ['kind'],

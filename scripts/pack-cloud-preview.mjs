@@ -25,6 +25,9 @@ export const ROOT_BINS = {
 const ENTRYPOINTS = Object.values(ROOT_BINS);
 export const REQUIRED_OUTPUTS = {
   'src/cli/statusline.ts': 'dist/cli/statusline.js',
+  'src/cli/roster.ts': 'dist/cli/roster.js',
+  'src/cli/setup.ts': 'dist/cli/setup.js',
+  'src/cli/wait.ts': 'dist/cli/wait.js',
   'src/harness/pi/managed-launch.ts': 'dist/harness/pi/managed-launch.js',
   'src/harness/claude/managed-launch.ts': 'dist/harness/claude/managed-launch.js',
   'src/core/run/launch-artifacts.ts': 'dist/core/run/launch-artifacts.js',
@@ -34,7 +37,53 @@ export const REQUIRED_OUTPUTS = {
   'src/harness/pi/delegation-bridge.ts': 'dist/harness/pi/delegation-bridge.js',
   'src/harness/pi/delegation-channel.ts': 'dist/harness/pi/delegation-channel.js',
   'src/harness/pi/delegation-context.ts': 'dist/harness/pi/delegation-context.js',
+  'src/roles/adapters.ts': 'dist/roles/adapters.js',
+  'src/roles/association.ts': 'dist/roles/association.js',
+  'src/roles/caller.ts': 'dist/roles/caller.js',
+  'src/roles/facade.ts': 'dist/roles/facade.js',
+  'src/roles/herdr-run.ts': 'dist/roles/herdr-run.js',
+  'src/roles/index.ts': 'dist/roles/index.js',
+  'src/roles/job-store.ts': 'dist/roles/job-store.js',
+  'src/roles/launch.ts': 'dist/roles/launch.js',
+  'src/roles/role-tools.ts': 'dist/roles/role-tools.js',
+  'src/roles/roles.ts': 'dist/roles/roles.js',
+  'src/roles/routing.ts': 'dist/roles/routing.js',
+  'src/roles/selection.ts': 'dist/roles/selection.js',
+  'src/jev/runtime/client.ts': 'dist/jev/runtime/client.js',
+  'src/jev/runtime/entry.ts': 'dist/jev/runtime/entry.js',
+  'src/jev/runtime/executor.ts': 'dist/jev/runtime/executor.js',
+  'src/jev/runtime/fake.ts': 'dist/jev/runtime/fake.js',
+  'src/jev/runtime/index.ts': 'dist/jev/runtime/index.js',
+  'src/jev/runtime/ipc.ts': 'dist/jev/runtime/ipc.js',
+  'src/jev/runtime/types.ts': 'dist/jev/runtime/types.js',
 };
+/**
+ * hud-mcp outputs the role entry imports. `src/cli/{roster,wait,setup}.ts` and
+ * `src/jev/runtime/entry.ts` are root-build only; that tsconfig does not reach them.
+ */
+export const MCP_RUNTIME_OUTPUTS = [
+  'packages/hud-mcp/dist/packages/hud-mcp/src/role-main.js',
+  'packages/hud-mcp/dist/packages/hud-mcp/src/role-extension.js',
+  'packages/hud-mcp/dist/packages/hud-mcp/src/surface.js',
+  'packages/hud-mcp/dist/src/roles/adapters.js',
+  'packages/hud-mcp/dist/src/roles/association.js',
+  'packages/hud-mcp/dist/src/roles/caller.js',
+  'packages/hud-mcp/dist/src/roles/facade.js',
+  'packages/hud-mcp/dist/src/roles/herdr-run.js',
+  'packages/hud-mcp/dist/src/roles/index.js',
+  'packages/hud-mcp/dist/src/roles/job-store.js',
+  'packages/hud-mcp/dist/src/roles/launch.js',
+  'packages/hud-mcp/dist/src/roles/role-tools.js',
+  'packages/hud-mcp/dist/src/roles/roles.js',
+  'packages/hud-mcp/dist/src/roles/routing.js',
+  'packages/hud-mcp/dist/src/roles/selection.js',
+  'packages/hud-mcp/dist/src/jev/runtime/client.js',
+  'packages/hud-mcp/dist/src/jev/runtime/executor.js',
+  'packages/hud-mcp/dist/src/jev/runtime/fake.js',
+  'packages/hud-mcp/dist/src/jev/runtime/index.js',
+  'packages/hud-mcp/dist/src/jev/runtime/ipc.js',
+  'packages/hud-mcp/dist/src/jev/runtime/types.js',
+];
 const EXTENSION_ENTRIES = ['extensions/pi/hud-footer.ts', 'extensions/pi/hud-delegate.ts'];
 export const EXTRA_FILES = [
   'README.md',
@@ -42,6 +91,8 @@ export const EXTRA_FILES = [
   ...EXTENSION_ENTRIES,
   'integrations/pi/hud-wake.ts',
   'packages/hud-mcp/bin/hud-mcp.mjs',
+  // The wrapper imports this sibling. A release without it cannot start.
+  'packages/hud-mcp/bin/surface.mjs',
   'packages/hud-mcp/bin/hud-claude-hook.mjs',
   // Explicit non-TS runtime asset shared by source/compiled host entrypoints.
   'src/managed/jev-bridge.py',
@@ -107,6 +158,10 @@ async function selfTest() {
   assert.equal(EXTRA_FILES.includes('src/jev/snapshot.js'), true);
   assert.equal(EXTRA_FILES.includes('THIRD_PARTY_NOTICES.md'), true);
   assert.equal(EXTRA_FILES.includes('integrations/pi/hud-wake.ts'), true);
+  assert.equal(EXTRA_FILES.includes('packages/hud-mcp/bin/surface.mjs'), true);
+  const { REQUIRED } = await import('./runtime-package/manifest.mjs');
+  for (const file of ['packages/hud-mcp/bin/surface.mjs', ...Object.values(REQUIRED_OUTPUTS), ...MCP_RUNTIME_OUTPUTS])
+    assert.equal(REQUIRED.includes(file), true, file);
   for (const name of [
     '.env',
     'node_modules/secret.ts',

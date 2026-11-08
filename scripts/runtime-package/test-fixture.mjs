@@ -29,6 +29,9 @@ export function fixture(t, label = 'A') {
           : `#!/usr/bin/env node\nconsole.log(${JSON.stringify(label)});\n`
       );
     if (INSTALLER_FILES.includes(name)) data = fs.readFileSync(path.join(scripts, name));
+    // The real wrapper imports this sibling. A stub here is not a module.
+    if (name === 'packages/hud-mcp/bin/surface.mjs')
+      data = fs.readFileSync(path.join(scripts, '../packages/hud-mcp/bin/surface.mjs'));
     const target = path.join(bundle, name);
     fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
     const mode = name.startsWith('bin/') || name === 'install-runtime.mjs' ? 0o700 : 0o600;

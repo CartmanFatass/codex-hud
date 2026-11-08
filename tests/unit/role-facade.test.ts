@@ -21,6 +21,7 @@ import test, { type TestContext } from 'node:test';
 import { main } from '../../src/cli/hud.js';
 import { canonicalJson } from '../../src/core/canonical.js';
 import {
+  createRoleJevExecutor,
   hudClose,
   hudCreate,
   hudRead,
@@ -30,6 +31,8 @@ import {
   type FacadeContext,
   type JevExecutor,
 } from '../../src/roles/facade.js';
+import { JevRuntime } from '../../src/jev/runtime/executor.js';
+import type { JevCreateRequest, JevJob } from '../../src/jev/runtime/types.js';
 import { listedAgents } from '../../src/roles/herdr-run.js';
 import { LOCK_WAIT_MS, withLock } from '../../src/roles/job-store.js';
 import { codexShell, parsePiRoleArgs, RENAME_BACKOFF_MS } from '../../src/roles/launch.js';
@@ -42,7 +45,7 @@ import { MANAGED_TOOLS } from '../../packages/hud-mcp/src/managed-tools.js';
 import { RoleFacadeTools } from '../../packages/hud-mcp/src/role-extension.js';
 import { selectMcpEntry } from '../../packages/hud-mcp/src/surface.js';
 import { ROLE_TOOLS } from '../../src/roles/role-tools.js';
-import { validateToolArguments, type ToolDefinition } from '../../packages/hud-mcp/src/tools.js';
+import { TOOLS, validateToolArguments, type ToolDefinition } from '../../packages/hud-mcp/src/tools.js';
 import { REPO_ROOT } from '../fixtures/paths.js';
 
 const FAKE = join(REPO_ROOT, 'tests/fakes/herdr.mjs');
@@ -306,6 +309,7 @@ test('role tool schemas are the six static tools', () => {
   assert.match(mainSrc, /new JevTools/);
   assert.doesNotMatch(mainSrc, /RoleFacadeTools/);
   assert.match(roleMain, /new RoleFacadeTools/);
+  assert.match(roleMain, /createRoleJevExecutor\(home\)/);
   assert.doesNotMatch(roleMain, /NativeHostClient/);
   const bogus = spawnSync(process.execPath, [join(REPO_ROOT, 'packages/hud-mcp/bin/hud-mcp.mjs')], {
     env: { ...process.env, HUD_MCP_SURFACE: 'bogus' },
@@ -1174,4 +1178,603 @@ test('hud_read polls at one second and then backs off', { timeout: 15_000 }, asy
   const waits = calls(s.log(), 'agent wait').map((entry) => Number(entry.argv[entry.argv.indexOf('--timeout') + 1]));
   assert.deepEqual(waits.slice(0, 2), [1000, 2000]);
   assert.ok((waits[2] ?? 0) > 0 && (waits[2] ?? 0) <= 500);
+});
+
+async function jevRuntime(t: TestContext, home: string, creds: boolean): Promise<JevRuntime> {
+  const stateDir = join(home, 'jev-state');
+  mkdirSync(stateDir, { mode: 0o700 });
+  if (creds) {
+    const file = join(home, 'jev.env');
+    writeFileSync(file, 'TYPESAFE_API_KEY=synthetic-r23-typesafe\n', { mode: 0o600 });
+    chmodSync(file, 0o600);
+  }
+  const runtime = new JevRuntime({ hudHome: home, stateDir, fake: true, graceMs: 60_000 });
+  await runtime.start();
+  t.after(() => runtime.stop());
+  return runtime;
+}
+
+async function untilTerminal(ctx: FacadeContext, job: string): Promise<Record<string, unknown>> {
+  let latest: Record<string, unknown> = { ok: false, code: 'missing' };
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    latest = (await hudRead(ctx, { job })) as Record<string, unknown>;
+    if (latest.ok === true && (latest.state === 'done' || latest.state === 'error' || latest.state === 'closed')) {
+      return latest;
+    }
+    await delay(50);
+  }
+  return latest;
+}
+
+test('oracle ask maps onto the runtime and reports target_pending', async (t) => {
+  const s = stage(t);
+  const runtime = await jevRuntime(t, s.home, true);
+  const jev = createRoleJevExecutor(s.home, runtime);
+  const ctx = s.ctx(s.root, jev);
+  const created = await hudCreate(ctx, {
+    role: 'oracle',
+    phase: 'propose',
+    request_key: 'oracle-web',
+    task: 'synthetic proposal',
+    cwd: s.work,
+  });
+  assert.equal(created.ok, true);
+  const executor = created.executor as { kind: string; job: string };
+  assert.equal(executor.kind, 'jev');
+  assert.match(executor.job, /^jev-/);
+  const again = await hudCreate(ctx, {
+    role: 'oracle',
+    phase: 'propose',
+    request_key: 'oracle-web',
+    task: 'synthetic proposal',
+    cwd: s.work,
+  });
+  assert.equal(again.ok, true);
+  assert.equal(again.idempotent, true);
+  assert.equal(again.job, created.job);
+  const read = await untilTerminal(ctx, String(created.job));
+  assert.equal(read.ok, true);
+  assert.equal(read.state, 'done');
+  const result = read.result as { status?: string; target?: string };
+  assert.equal(result.status, 'target_pending');
+  assert.equal(result.target, 'chatgpt-pro');
+  const stored = JSON.parse(readFileSync(join(s.home, 'jev-runtime', 'jobs', `${executor.job}.json`), 'utf8')) as {
+    requestKey: string;
+    input: { tag: string; target: string; label: string; prompt: string };
+  };
+  assert.equal(stored.input.tag, 'ask');
+  assert.equal(stored.input.target, 'chatgpt-pro');
+  assert.equal(stored.input.prompt, 'synthetic proposal');
+  assert.match(stored.input.label, /^o-[a-f0-9]{12}$/);
+  assert.match(stored.requestKey, /^r2-[a-f0-9]{40}$/);
+  assert.notEqual(stored.requestKey, 'oracle-web');
+  assert.equal(readdirSync(join(s.home, 'jev-runtime', 'jobs')).length, 1);
+  assert.equal(s.log().length, 0);
+  const browserAsk = await hudCreate(ctx, {
+    role: 'jev',
+    request_key: 'ask-browser',
+    input: { kind: 'ask', text: 'synthetic question' },
+  });
+  assert.equal(browserAsk.ok, false);
+  assert.equal(browserAsk.code, 'invalid_arguments');
+  assert.equal(browserAsk.field, 'input');
+  const sent = await hudSend(ctx, { job: created.job, message_key: 'note-1', text: 'follow up' });
+  assert.equal(sent.ok, false);
+  assert.equal(sent.code, 'unsupported');
+});
+
+test('browse and judge round-trip through create, read, and close', async (t) => {
+  const s = stage(t);
+  const runtime = await jevRuntime(t, s.home, true);
+  const jev = createRoleJevExecutor(s.home, runtime);
+  const ctx = s.ctx(s.root, jev);
+  const browse = await hudCreate(ctx, {
+    role: 'jev',
+    request_key: 'browse-1',
+    input: { kind: 'browse', text: 'Read the synthetic page.', url: 'https://example.invalid/fixture' },
+  });
+  assert.equal(browse.ok, true);
+  const browsed = await untilTerminal(ctx, String(browse.job));
+  assert.equal(browsed.ok, true);
+  assert.equal(browsed.state, 'done');
+  const judge = await hudCreate(ctx, {
+    role: 'jev',
+    request_key: 'judge-1',
+    input: {
+      kind: 'judge',
+      url: 'https://example.invalid/fixture',
+      statements: ['The page is ready.'],
+    },
+  });
+  assert.equal(judge.ok, true);
+  const judged = await untilTerminal(ctx, String(judge.job));
+  assert.equal(judged.ok, true);
+  assert.equal(judged.state, 'done');
+  const verdicts = (judged.result as { statements?: Array<{ name: string; verdict: string }> }).statements ?? [];
+  assert.equal(verdicts[0]?.name, 's1');
+  assert.equal(verdicts[0]?.verdict, 'pass');
+  const closed = await hudClose(ctx, { job: browse.job });
+  assert.equal(closed.ok, true);
+  assert.equal(closed.closed, true);
+  assert.equal(closed.idempotent, false);
+  const again = await hudClose(ctx, { job: browse.job });
+  assert.equal(again.ok, true);
+  assert.equal(again.idempotent, true);
+  const judgeClosed = await hudClose(ctx, { job: judge.job });
+  assert.equal(judgeClosed.ok, true);
+  assert.equal(judgeClosed.closed, true);
+  assert.equal(s.log().length, 0);
+});
+
+test('the same request key on two parents does not conflict', async (t) => {
+  const s = stage(t);
+  const runtime = await jevRuntime(t, s.home, true);
+  const jev = createRoleJevExecutor(s.home, runtime);
+  const input = { kind: 'browse', text: 'Read the synthetic page.', url: 'https://example.invalid/shared' };
+  const first = await hudCreate(s.ctx(s.root, jev), { role: 'jev', request_key: 'shared-key', input });
+  const second = await hudCreate(s.ctx(s.other, jev), { role: 'jev', request_key: 'shared-key', input });
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.notEqual(first.job, second.job);
+  assert.notEqual(first.code, 'association_conflict');
+  assert.notEqual(second.code, 'association_conflict');
+  const keys = readdirSync(join(s.home, 'jev-runtime', 'jobs')).map((name) => {
+    const job = JSON.parse(readFileSync(join(s.home, 'jev-runtime', 'jobs', name), 'utf8')) as { requestKey: string };
+    return job.requestKey;
+  });
+  assert.equal(keys.length, 2);
+  assert.equal(new Set(keys).size, 2);
+  assert.ok(keys.every((key) => /^r2-[a-f0-9]{40}$/.test(key)));
+});
+
+test('a lost createJob acknowledgement retries the same runtime key', async (t) => {
+  const s = stage(t);
+  const runtime = await jevRuntime(t, s.home, true);
+  const keys: string[] = [];
+  let calls = 0;
+  const wrapped = {
+    async createJob(request: JevCreateRequest): Promise<JevJob> {
+      calls += 1;
+      keys.push(request.requestKey);
+      if (calls === 1) {
+        const files = receipts(s.home);
+        assert.equal(files.length, 1);
+        const stored = JSON.parse(readFileSync(files[0]!, 'utf8')) as {
+          job: string;
+          executor: { kind: string; job: string | null };
+        };
+        assert.equal(stored.executor.kind, 'jev');
+        assert.equal(stored.executor.job, null);
+        assert.equal(existsSync(join(s.home, 'assoc', `${stored.job}.json`)), true);
+      }
+      if (calls < 3) throw Object.assign(new Error('lost'), { code: 'runtime_timeout' });
+      return runtime.createJob(request);
+    },
+    readJob: (jobId: string, options?: { waitMs?: number; afterSeq?: number }) => runtime.readJob(jobId, options),
+    sendFollowUp: (jobId: string, followUp: { key: string; text: string }) => runtime.sendFollowUp(jobId, followUp),
+    closeJob: (jobId: string) => runtime.closeJob(jobId),
+  };
+  const jev = createRoleJevExecutor(s.home, wrapped);
+  const ctx = s.ctx(s.root, jev);
+  const args = {
+    role: 'oracle',
+    phase: 'propose',
+    request_key: 'lost-ack',
+    task: 'synthetic proposal',
+    cwd: s.work,
+  };
+  const lost = await hudCreate(ctx, args);
+  assert.equal(lost.ok, false);
+  assert.equal(lost.code, 'launch_unknown');
+  assert.equal(calls, 2);
+  const created = await hudCreate(ctx, args);
+  assert.equal(created.ok, true);
+  assert.equal(created.job, lost.job);
+  assert.equal(calls, 3);
+  assert.equal(new Set(keys).size, 1);
+  assert.match(keys[0] ?? '', /^r2-[a-f0-9]{40}$/);
+  assert.notEqual(keys[0], 'lost-ack');
+  assert.equal(readdirSync(join(s.home, 'jev-runtime', 'jobs')).length, 1);
+});
+
+test('a runtime that cannot start returns its typed code', async (t) => {
+  const s = stage(t);
+  const missingCreds = await jevRuntime(t, s.home, false);
+  const creds = createRoleJevExecutor(s.home, missingCreds);
+  const failed = await hudCreate(s.ctx(s.root, creds), {
+    role: 'oracle',
+    phase: 'propose',
+    request_key: 'missing-creds',
+    task: 'synthetic proposal',
+    cwd: s.work,
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.code, 'backend_unavailable');
+  assert.equal(failed.executor, 'jev');
+  assert.equal(failed.reason, 'jev_credentials_missing');
+  const stateDir = {
+    async createJob(): Promise<JevJob> {
+      throw Object.assign(new Error('missing'), { code: 'jev_state_dir_missing' });
+    },
+    async readJob(): Promise<JevJob> {
+      throw Object.assign(new Error('missing'), { code: 'jev_state_dir_missing' });
+    },
+    async sendFollowUp(): Promise<JevJob> {
+      throw Object.assign(new Error('missing'), { code: 'jev_state_dir_missing' });
+    },
+    async closeJob(): Promise<JevJob> {
+      throw Object.assign(new Error('missing'), { code: 'jev_state_dir_missing' });
+    },
+  };
+  const unavailable = await hudCreate(s.ctx(s.root, createRoleJevExecutor(s.home, stateDir)), {
+    role: 'jev',
+    request_key: 'missing-state',
+    input: { kind: 'browse', text: 'Read the synthetic page.', url: 'https://example.invalid/fixture' },
+  });
+  assert.equal(unavailable.ok, false);
+  assert.equal(unavailable.code, 'backend_unavailable');
+  assert.equal(unavailable.executor, 'jev');
+  assert.equal(unavailable.reason, 'jev_state_dir_missing');
+  const create = ROLE_TOOLS.find((tool) => tool.name === 'hud_create') as ToolDefinition;
+  const statements = Array.from({ length: 13 }, () => 'synthetic statement');
+  assert.equal(
+    validateToolArguments(create, { role: 'jev', request_key: 'too-many', input: { kind: 'judge', statements } }),
+    false
+  );
+  assert.equal(
+    validateToolArguments(create, {
+      role: 'jev',
+      request_key: 'named',
+      input: {
+        kind: 'judge',
+        url: 'https://example.invalid/fixture',
+        statements: [{ name: 'page_ready', statement: 'The page is ready.' }],
+      },
+    }),
+    true
+  );
+  const tooMany = await hudCreate(s.ctx(), {
+    role: 'jev',
+    request_key: 'too-many',
+    input: { kind: 'judge', url: 'https://example.invalid/fixture', statements },
+  });
+  assert.equal(tooMany.ok, false);
+  assert.equal(tooMany.code, 'invalid_arguments');
+  assert.equal(tooMany.field, 'input');
+});
+
+test('delegate_status still accepts one run id', () => {
+  const status = TOOLS.find((tool) => tool.name === 'delegate_status');
+  const wait = TOOLS.find((tool) => tool.name === 'delegate_wait');
+  assert.ok(status && wait);
+  assert.equal(validateToolArguments(status, { runId: 'r1' }), true);
+  assert.equal(validateToolArguments(status, { linkId: 'x' }), true);
+  assert.equal(validateToolArguments(status, { runId: 'r1', linkId: 'x' }), false);
+  assert.equal(validateToolArguments(status, {}), false);
+  assert.equal(validateToolArguments(wait, { runId: 'r1' }), true);
+  const create = ROLE_TOOLS.find((tool) => tool.name === 'hud_create') as ToolDefinition;
+  assert.equal(
+    validateToolArguments(create, {
+      role: 'jev',
+      request_key: 'named',
+      input: { kind: 'judge', url: 'https://example.invalid/fixture', statements: ['The page is ready.'] },
+    }),
+    true
+  );
+  assert.equal(
+    validateToolArguments(create, {
+      role: 'jev',
+      request_key: 'named',
+      input: {
+        kind: 'judge',
+        url: 'https://example.invalid/fixture',
+        statements: [{ name: 'page_ready', statement: 'The page is ready.', extra: true }],
+      },
+    }),
+    false
+  );
+});
+
+test('a closed jev job stays closed', async (t) => {
+  const s = stage(t);
+  const runtime = await jevRuntime(t, s.home, true);
+  let calls = 0;
+  let mode: 'lose' | 'hold' | 'pass' = 'lose';
+  let blocked = false;
+  let release = (): void => {};
+  const wrapped = {
+    async createJob(request: JevCreateRequest): Promise<JevJob> {
+      calls += 1;
+      if (mode === 'lose' && calls === 1) {
+        await runtime.createJob(request);
+        throw Object.assign(new Error('lost'), { code: 'runtime_timeout' });
+      }
+      if (mode === 'lose' && calls === 2) throw Object.assign(new Error('lost'), { code: 'runtime_timeout' });
+      if (mode === 'hold') {
+        blocked = true;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      }
+      return runtime.createJob(request);
+    },
+    readJob: (jobId: string, options?: { waitMs?: number; afterSeq?: number }) => runtime.readJob(jobId, options),
+    sendFollowUp: (jobId: string, followUp: { key: string; text: string }) => runtime.sendFollowUp(jobId, followUp),
+    closeJob: (jobId: string) => runtime.closeJob(jobId),
+  };
+  const jev = createRoleJevExecutor(s.home, wrapped);
+  const ctx = s.ctx(s.root, jev);
+  const input = { kind: 'browse', text: 'Read the synthetic page.', url: 'https://example.invalid/fixture' };
+  const lost = await hudCreate(ctx, { role: 'jev', request_key: 'close-lost', input });
+  assert.equal(lost.ok, false);
+  assert.equal(lost.code, 'launch_unknown');
+  assert.equal(calls, 2);
+  const closed = await hudClose(ctx, { job: lost.job });
+  assert.equal(closed.ok, true);
+  assert.equal(closed.closed, true);
+  assert.equal(closed.idempotent, false);
+  assert.equal(calls, 3);
+  const stored = JSON.parse(readFileSync(join(s.home, 'jobs', String(lost.job), 'receipt.json'), 'utf8')) as {
+    state: string;
+  };
+  assert.equal(stored.state, 'closed');
+  const again = await hudCreate(ctx, { role: 'jev', request_key: 'close-lost', input });
+  assert.equal(again.ok, true);
+  assert.equal(again.idempotent, true);
+  assert.equal(again.job, lost.job);
+  assert.equal(again.state, 'closed');
+  assert.equal(calls, 3);
+  const runtimeJobs = readdirSync(join(s.home, 'jev-runtime', 'jobs')).map((name) => {
+    return JSON.parse(readFileSync(join(s.home, 'jev-runtime', 'jobs', name), 'utf8')) as { closed?: boolean };
+  });
+  assert.equal(runtimeJobs.length, 1);
+  assert.equal(runtimeJobs[0]?.closed, true);
+
+  mode = 'hold';
+  let closeDone = false;
+  const creating = hudCreate(ctx, { role: 'jev', request_key: 'close-race', input });
+  for (let attempt = 0; attempt < 50 && !blocked; attempt += 1) await delay(10);
+  assert.equal(blocked, true);
+  const raceFile = receipts(s.home).find((file) => {
+    const body = JSON.parse(readFileSync(file, 'utf8')) as { request_key?: string };
+    return body.request_key === 'close-race';
+  });
+  assert.ok(raceFile);
+  const raceJob = (JSON.parse(readFileSync(raceFile, 'utf8')) as { job: string }).job;
+  const closing = hudClose(ctx, { job: raceJob }).then((result) => {
+    closeDone = true;
+    return result;
+  });
+  await delay(80);
+  assert.equal(closeDone, false);
+  release();
+  const raced = await creating;
+  const raceClosed = await closing;
+  assert.equal(raced.ok, true);
+  assert.equal(raceClosed.ok, true);
+  assert.equal(raceClosed.idempotent, false);
+  const racedAgain = await hudCreate(ctx, { role: 'jev', request_key: 'close-race', input });
+  assert.equal(racedAgain.ok, true);
+  assert.equal(racedAgain.job, raced.job);
+  assert.equal(racedAgain.state, 'closed');
+  assert.equal(racedAgain.idempotent, true);
+});
+
+test('a transient jev error leaves the job state unchanged', async (t) => {
+  const s = stage(t);
+  const runtime = await jevRuntime(t, s.home, true);
+  let failRead = false;
+  let failSend = false;
+  let missingClose = false;
+  const wrapped = {
+    createJob: (request: JevCreateRequest) => runtime.createJob(request),
+    async readJob(jobId: string, options?: { waitMs?: number; afterSeq?: number }): Promise<JevJob> {
+      if (failRead) {
+        failRead = false;
+        throw Object.assign(new Error('reset'), { code: 'ECONNRESET' });
+      }
+      return runtime.readJob(jobId, options);
+    },
+    async sendFollowUp(jobId: string, followUp: { key: string; text: string }): Promise<JevJob> {
+      if (failSend) {
+        failSend = false;
+        throw Object.assign(new Error('reset'), { code: 'ECONNRESET' });
+      }
+      return runtime.sendFollowUp(jobId, followUp);
+    },
+    async closeJob(jobId: string): Promise<JevJob> {
+      if (missingClose) throw Object.assign(new Error('missing'), { code: 'not_found' });
+      return runtime.closeJob(jobId);
+    },
+  };
+  const ctx = s.ctx(s.root, createRoleJevExecutor(s.home, wrapped));
+  const created = await hudCreate(ctx, {
+    role: 'jev',
+    request_key: 'transient',
+    input: { kind: 'browse', text: 'Read the synthetic page.', url: 'https://example.invalid/fixture' },
+  });
+  assert.equal(created.ok, true);
+  const done = await untilTerminal(ctx, String(created.job));
+  assert.equal(done.state, 'done');
+  const file = join(s.home, 'jobs', String(created.job), 'receipt.json');
+  failRead = true;
+  const reset = await hudRead(ctx, { job: created.job });
+  assert.equal(reset.ok, false);
+  assert.equal(reset.code, 'runtime_unavailable');
+  assert.equal(reset.executor, 'jev');
+  assert.equal(reset.reason, 'ECONNRESET');
+  assert.equal((JSON.parse(readFileSync(file, 'utf8')) as { state: string }).state, 'done');
+  const again = await hudRead(ctx, { job: created.job });
+  assert.equal(again.ok, true);
+  assert.equal(again.state, 'done');
+  failSend = true;
+  const sent = await hudSend(ctx, { job: created.job, message_key: 'note-reset', text: 'Look again.' });
+  assert.equal(sent.ok, false);
+  assert.equal(sent.code, 'runtime_unavailable');
+  assert.equal(sent.reason, 'ECONNRESET');
+  assert.equal((JSON.parse(readFileSync(file, 'utf8')) as { state: string }).state, 'done');
+  missingClose = true;
+  const closed = await hudClose(ctx, { job: created.job });
+  assert.equal(closed.ok, true);
+  assert.equal(closed.observation, 'already_gone');
+  assert.equal((JSON.parse(readFileSync(file, 'utf8')) as { state: string }).state, 'closed');
+});
+
+test('a jev retry uses the binding stored on the receipt', async (t) => {
+  const s = stage(t);
+  const runtime = await jevRuntime(t, s.home, true);
+  const seen: string[] = [];
+  let calls = 0;
+  const wrapped = {
+    async createJob(request: JevCreateRequest): Promise<JevJob> {
+      calls += 1;
+      seen.push(request.input.tag === 'ask' ? request.input.target : request.input.tag);
+      if (calls === 1) {
+        await runtime.createJob(request);
+        throw Object.assign(new Error('lost'), { code: 'runtime_timeout' });
+      }
+      if (calls === 2) throw Object.assign(new Error('lost'), { code: 'runtime_timeout' });
+      return runtime.createJob(request);
+    },
+    readJob: (jobId: string, options?: { waitMs?: number; afterSeq?: number }) => runtime.readJob(jobId, options),
+    sendFollowUp: (jobId: string, followUp: { key: string; text: string }) => runtime.sendFollowUp(jobId, followUp),
+    closeJob: (jobId: string) => runtime.closeJob(jobId),
+  };
+  const ctx = s.ctx(s.root, createRoleJevExecutor(s.home, wrapped));
+  const args = {
+    role: 'oracle',
+    phase: 'propose',
+    request_key: 'stored-binding',
+    task: 'synthetic proposal',
+    cwd: s.work,
+  };
+  const lost = await hudCreate(ctx, args);
+  assert.equal(lost.ok, false);
+  assert.equal(lost.code, 'launch_unknown');
+  writeFileSync(
+    join(s.home, 'routing.toml'),
+    ROUTING.replace('target = "chatgpt-pro"', 'target = "aistudio"').replace('provider = "typesafe"', 'provider = "openai"'),
+    { mode: 0o600 }
+  );
+  const created = await hudCreate(ctx, args);
+  assert.equal(created.ok, true);
+  assert.equal(created.job, lost.job);
+  assert.equal(calls, 3);
+  assert.deepEqual(seen, ['chatgpt-pro', 'chatgpt-pro', 'chatgpt-pro']);
+  const binding = created.binding as { target?: string };
+  assert.equal(binding.target, 'chatgpt-pro');
+  const jobs = readdirSync(join(s.home, 'jev-runtime', 'jobs'));
+  assert.equal(jobs.length, 1);
+  const runtimeJob = JSON.parse(readFileSync(join(s.home, 'jev-runtime', 'jobs', jobs[0]!), 'utf8')) as {
+    input: { target: string };
+  };
+  assert.equal(runtimeJob.input.target, 'chatgpt-pro');
+});
+
+test('hud_read carries the runtime error code', async (t) => {
+  const s = stage(t);
+  const failed: JevJob = {
+    executor: 'jev',
+    id: 'jev-synthetic-failed',
+    requestKey: 'r2-synthetic',
+    fingerprint: 'synthetic',
+    session: { namespace: s.root.namespace, sessionId: s.root.sessionId },
+    tag: 'browse',
+    decisionProfile: null,
+    provider: null,
+    state: 'failed',
+    closed: false,
+    seq: 2,
+    result: null,
+    error: { code: 'synthetic_failed', message: 'synthetic failure' },
+  };
+  const handle = {
+    async createJob(request: JevCreateRequest): Promise<JevJob> {
+      return { ...failed, requestKey: request.requestKey, session: request.session };
+    },
+    async readJob(): Promise<JevJob> {
+      return failed;
+    },
+    async sendFollowUp(): Promise<JevJob> {
+      return failed;
+    },
+    async closeJob(): Promise<JevJob> {
+      return { ...failed, state: 'closed', closed: true };
+    },
+  };
+  const ctx = s.ctx(s.root, createRoleJevExecutor(s.home, handle));
+  const created = await hudCreate(ctx, {
+    role: 'jev',
+    request_key: 'failed-read',
+    input: { kind: 'browse', text: 'Read the synthetic page.', url: 'https://example.invalid/fixture' },
+  });
+  assert.equal(created.ok, true);
+  const read = await hudRead(ctx, { job: created.job });
+  assert.equal(read.ok, true);
+  assert.equal(read.state, 'error');
+  assert.equal(read.status, 'synthetic_failed');
+  assert.equal((read.error as { code?: string }).code, 'synthetic_failed');
+});
+
+test('a jev create points at hud_read', async (t) => {
+  const s = stage(t);
+  const runtime = await jevRuntime(t, s.home, true);
+  const ctx = s.ctx(s.root, createRoleJevExecutor(s.home, runtime));
+  const created = await hudCreate(ctx, {
+    role: 'oracle',
+    phase: 'propose',
+    request_key: 'read-wait',
+    task: 'synthetic proposal',
+    cwd: s.work,
+  });
+  assert.equal(created.ok, true);
+  const wait = created.wait as { command: string; argv: string[] };
+  assert.equal(wait.command, `hud_read --job ${created.job}`);
+  assert.deepEqual(wait.argv, ['hud_read', '--job', created.job]);
+  assert.equal(wait.command.includes('hud wait'), false);
+  assert.equal(created.brief_path, undefined);
+});
+
+test('hud_read does not reopen a closed jev job', async (t) => {
+  const s = stage(t);
+  const runtime = await jevRuntime(t, s.home, true);
+  let hold = false;
+  let held = false;
+  let release = (): void => {};
+  const wrapped = {
+    createJob: (request: JevCreateRequest) => runtime.createJob(request),
+    async readJob(jobId: string, options?: { waitMs?: number; afterSeq?: number }): Promise<JevJob> {
+      const job = await runtime.readJob(jobId, hold ? { waitMs: 0 } : options);
+      if (!hold) return job;
+      held = true;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return { ...job, state: 'running' };
+    },
+    sendFollowUp: (jobId: string, followUp: { key: string; text: string }) => runtime.sendFollowUp(jobId, followUp),
+    closeJob: (jobId: string) => runtime.closeJob(jobId),
+  };
+  const ctx = s.ctx(s.root, createRoleJevExecutor(s.home, wrapped));
+  const created = await hudCreate(ctx, {
+    role: 'jev',
+    request_key: 'read-close',
+    input: { kind: 'browse', text: 'Read the synthetic page.', url: 'https://example.invalid/fixture' },
+  });
+  assert.equal(created.ok, true);
+  const done = await untilTerminal(ctx, String(created.job));
+  assert.equal(done.state, 'done');
+  hold = true;
+  const reading = hudRead(ctx, { job: created.job });
+  for (let attempt = 0; attempt < 50 && !held; attempt += 1) await delay(10);
+  assert.equal(held, true);
+  const closed = await hudClose(ctx, { job: created.job });
+  assert.equal(closed.ok, true);
+  const file = join(s.home, 'jobs', String(created.job), 'receipt.json');
+  assert.equal((JSON.parse(readFileSync(file, 'utf8')) as { state: string }).state, 'closed');
+  release();
+  const read = await reading;
+  assert.equal(read.ok, true);
+  assert.equal(read.state, 'closed');
+  assert.equal((JSON.parse(readFileSync(file, 'utf8')) as { state: string }).state, 'closed');
 });

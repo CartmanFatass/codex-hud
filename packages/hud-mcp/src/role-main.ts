@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { lstatSync, realpathSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { liveCallerIdentity } from '../../../src/roles/caller.js';
+import { createRoleJevExecutor } from '../../../src/roles/facade.js';
 import { ParentLifetime } from './lifetime.js';
 import { RoleFacadeTools } from './role-extension.js';
 import { HudMcpServer, serveStdioProcess } from './server.js';
@@ -50,7 +51,7 @@ const server = new HudMcpServer(
   undefined,
   () => lifetime.alive(),
   undefined,
-  new RoleFacadeTools(home)
+  new RoleFacadeTools(home, process.env, createRoleJevExecutor(home))
 );
 const { discardPendingOutput } = await serveStdioProcess(server, () => lifetime.alive());
 if (discardPendingOutput) process.exit(0);

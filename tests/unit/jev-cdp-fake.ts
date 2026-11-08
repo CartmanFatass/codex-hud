@@ -92,7 +92,7 @@ export function startFakeCdp(
   return new Promise((resolve, reject) => {
     const onError = (error: Error) => reject(error);
     server.once('error', onError);
-    server.listen(0, '127.0.0.1', () => {
+    server.listen({ port: 0, host: '127.0.0.1', exclusive: true }, () => {
       server.removeListener('error', onError);
       const address = server.address();
       if (!address || typeof address === 'string') {

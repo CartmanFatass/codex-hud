@@ -1,6 +1,32 @@
 import { DEPENDENCIES } from './dependencies.mjs';
 export { DEPENDENCIES } from './dependencies.mjs';
 
+// Keep in step with MCP_RUNTIME_OUTPUTS in scripts/pack-cloud-preview.mjs.
+// This file is copied into the runtime bundle, so it cannot import the packer.
+const MCP_RUNTIME_OUTPUTS = [
+  'packages/hud-mcp/dist/packages/hud-mcp/src/role-main.js',
+  'packages/hud-mcp/dist/packages/hud-mcp/src/role-extension.js',
+  'packages/hud-mcp/dist/packages/hud-mcp/src/surface.js',
+  'packages/hud-mcp/dist/src/roles/adapters.js',
+  'packages/hud-mcp/dist/src/roles/association.js',
+  'packages/hud-mcp/dist/src/roles/caller.js',
+  'packages/hud-mcp/dist/src/roles/facade.js',
+  'packages/hud-mcp/dist/src/roles/herdr-run.js',
+  'packages/hud-mcp/dist/src/roles/index.js',
+  'packages/hud-mcp/dist/src/roles/job-store.js',
+  'packages/hud-mcp/dist/src/roles/launch.js',
+  'packages/hud-mcp/dist/src/roles/role-tools.js',
+  'packages/hud-mcp/dist/src/roles/roles.js',
+  'packages/hud-mcp/dist/src/roles/routing.js',
+  'packages/hud-mcp/dist/src/roles/selection.js',
+  'packages/hud-mcp/dist/src/jev/runtime/client.js',
+  'packages/hud-mcp/dist/src/jev/runtime/executor.js',
+  'packages/hud-mcp/dist/src/jev/runtime/fake.js',
+  'packages/hud-mcp/dist/src/jev/runtime/index.js',
+  'packages/hud-mcp/dist/src/jev/runtime/ipc.js',
+  'packages/hud-mcp/dist/src/jev/runtime/types.js',
+];
+
 import { Directory, digest, inventory, relative, MAX_FILE, MAX_TOTAL, MAX_ENTRIES } from './safety.mjs';
 
 export const COMMANDS = {
@@ -49,6 +75,30 @@ export const REQUIRED = [
   'dist/tree-page.js',
   'dist/cli/hud.js',
   'dist/cli/statusline.js',
+  'dist/cli/roster.js',
+  'dist/cli/setup.js',
+  'dist/cli/wait.js',
+  'dist/roles/adapters.js',
+  'dist/roles/association.js',
+  'dist/roles/caller.js',
+  'dist/roles/facade.js',
+  'dist/roles/herdr-run.js',
+  'dist/roles/index.js',
+  'dist/roles/job-store.js',
+  'dist/roles/launch.js',
+  'dist/roles/role-tools.js',
+  'dist/roles/roles.js',
+  'dist/roles/routing.js',
+  'dist/roles/selection.js',
+  'dist/jev/runtime/client.js',
+  'dist/jev/runtime/entry.js',
+  'dist/jev/runtime/executor.js',
+  'dist/jev/runtime/fake.js',
+  'dist/jev/runtime/index.js',
+  'dist/jev/runtime/ipc.js',
+  'dist/jev/runtime/types.js',
+  ...MCP_RUNTIME_OUTPUTS,
+  'packages/hud-mcp/bin/surface.mjs',
   'src/managed/jev-bridge.py',
   'src/jev/snapshot.js',
   'THIRD_PARTY_NOTICES.md',

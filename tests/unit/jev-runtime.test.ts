@@ -21,7 +21,7 @@ import test, { type TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { operationPath } from '../../src/jev/ask/names.js';
 import { promptSha256, pyStrip, squashedSha256 } from '../../src/jev/ask/records.js';
-import { Browser } from '../../src/jev/browser.js';
+import { Browser, DEFAULT_CDP_TIMEOUT_MS } from '../../src/jev/browser.js';
 import {
   connectJevExecutor,
   detectEnvProxySupport,
@@ -657,17 +657,33 @@ test('one process serves a HUD home and exits after grace', async (t) => {
   assert.equal(await waitDead(heldPid, 3_000), true);
 });
 
-test('browse completes through the fake CDP browser', async (t) => {
+test('browse completes through the fake CDP browser', { timeout: DEFAULT_CDP_TIMEOUT_MS + 5_000 }, async (t) => {
   const hudHome = home(t);
   bothKeys(hudHome);
+  const stateDir = tempState(hudHome);
   const fake = await startFakeCdp();
   t.after(() => fake.close());
+  // complete() publishes the job before finally closes the browser. Wait for that close.
+  let browserClosed = Promise.resolve();
   const runtime = await started(t, hudHome, {
     hudHome,
+    stateDir,
     fake: false,
     browserFactory: async (url) => {
+      const browser = await Browser.open(url, { cdpUrl: fake.httpUrl, timeoutMs: DEFAULT_CDP_TIMEOUT_MS });
+      const finish = browser.close.bind(browser);
+      browserClosed = new Promise((resolve, reject) => {
+        browser.close = () =>
+          finish().then(
+            () => resolve(),
+            (error: unknown) => {
+              reject(error);
+              throw error;
+            }
+          );
+      });
+      browserClosed.catch(() => undefined);
       // The loopback CDP stand-in does not run page JavaScript, so the marker check cannot pass.
-      const browser = await Browser.open(url, { cdpUrl: fake.httpUrl, timeoutMs: 3_000 });
       browser.fresh = async () => true;
       return browser;
     },
@@ -678,12 +694,19 @@ test('browse completes through the fake CDP browser', async (t) => {
     session,
     input: { tag: 'browse', goal: 'Stop on the synthetic page.', url: 'http://127.0.0.1/synthetic' },
   });
-  const finished = await until(() => runtime.readJob(job.id), 'completed');
+  const deadline = Date.now() + DEFAULT_CDP_TIMEOUT_MS;
+  let finished = await runtime.readJob(job.id);
+  while (finished.state !== 'completed' && finished.state !== 'failed' && Date.now() < deadline) {
+    await delay(20);
+    finished = await runtime.readJob(job.id);
+  }
   assert.equal(finished.state, 'completed', JSON.stringify(finished.error ?? finished.result));
+  await browserClosed;
   assert.equal((finished.result as { status: string }).status, 'done');
   assert.equal(finished.provider?.id, 'typesafe');
   assert.ok(fake.navigated.includes('http://127.0.0.1/synthetic'));
   assert.equal(fake.closedTargets.length > 0, true);
+  assert.equal(new URL(fake.httpUrl).hostname, '127.0.0.1');
 });
 
 test('judge runs read-only against the fake page', async (t) => {
