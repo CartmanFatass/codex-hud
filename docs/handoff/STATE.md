@@ -17,7 +17,7 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
 - The six role tools are served only with `HUD_MCP_SURFACE=roles`. Default sessions keep the old tools until R6.
 - Merge gate from now: full `test:unit`, `test:mjs`, `test:hud-mcp` and WP0, compared against the base commit.
 - At `3c34a7d` two unit failures remain. `B11 … path with spaces` already failed before R1. A statusline test is flaky under the full suite.
-- Next is R4 (ChatGPT Pro and AI Studio target adapters). It is **paused until Codex usage refreshes**, because Grok hit its weekly limit (owner decision). R5 follows.
+- Next is R4 (ChatGPT Pro and AI Studio target adapters), then R5. It was paused for Codex usage; since 2026-11-07 code tasks run on the pi harness with gpt-6.1-sol (`docs/delegation.md`), so R4 no longer waits on the Codex CLI.
 - Not yet done: a live smoke of the real Jev runtime. It needs `hud setup --import-jev-env` against the owner's Jev env, and the owner's go-ahead.
 
 | Package | Deliverable | Acceptance |
@@ -39,7 +39,7 @@ WP0 remains necessary, including its documented qualification that several model
 
 ## Local validation phase (from 2026-11-07)
 
-After the native thin delivery (`aa4b9dd`) development is back on the owner's machine, to run the real-client checks the cloud could not run ([local validation guide](../cloud/handoff/native-hud-local-validation.md)). Routing for this phase, including the temporary Opus-subagent reviews and the current Grok/Codex quota state, is in `docs/delegation.md` ("当前阶段"). Remote sessions should not merge into `universal-hud` during this phase.
+After the native thin delivery (`aa4b9dd`) development is back on the owner's machine, to run the real-client checks the cloud could not run ([local validation guide](../cloud/handoff/native-hud-local-validation.md)). Routing is in `docs/delegation.md`. Remote sessions should not merge into `universal-hud` during this phase.
 
 Status:
 

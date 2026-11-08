@@ -16,9 +16,9 @@ Read `docs/ARCHITECTURE.md` before changing code: the two processes (bar `src/in
 
 # Universal HUD effort (branch `universal-hud`)
 
-This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi. The product scope is concept §15, "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev": a fixed-role MCP facade, herdr for CLI execution, an owned Jev runtime for browser jobs, and main-session chaining. The active queue is R0–R7 in `docs/handoff/STATE.md`. From 2026-11-03 the effort runs remotely: remote sessions (Claude Code cloud, dots) follow `AGENTS.md` and `docs/handoff/STATE.md`, not the local routing below. On the owner's machine, before doing anything on this branch read, in order:
+This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi. The product scope is concept §15, "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev": a fixed-role MCP facade, herdr for CLI execution, an owned Jev runtime for browser jobs, and main-session chaining. The active queue is R0–R7 in `docs/handoff/STATE.md`. Development is local again since 2026-11-07; remote sessions (Claude Code cloud, dots), when used, follow `AGENTS.md` and `docs/handoff/STATE.md`, not the local routing below. On the owner's machine, before doing anything on this branch read, in order:
 
-1. `docs/delegation.md`: who does which kind of task (Pro for architecture, Codex sol max reviewers, Codex sol implementers for core work, pi implementers for ordinary work with an escalation rule, the `frontend-implementer` subagent for rendering, Hermes for human-interaction tests).
+1. `docs/delegation.md`: who does which kind of task. Code tasks: pi implementer (sol high) that consults the architect (astra high) and closes with the reviewer (sol xhigh) itself, all via the `herdr-delegate` skill. Key decisions: Argon proposes, Pro converges. Rendering: the `frontend-implementer` subagent; human-interaction tests: Hermes. Codex delegation is a legacy backup.
 2. `docs/handoff/STATE.md`: the active queue is R0–R7. `docs/universal-hud-engineering-plan.md` remains the historical phase plan.
 3. `docs/universal-hud-concept.md`: what is being built and why; §15 is the decision log. The current scope entry is "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev". Update §15 when a decision changes.
 
