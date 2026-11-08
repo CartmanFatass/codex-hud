@@ -16,6 +16,15 @@ export class CdpClosed extends Error {
   }
 }
 
+/** Browser discovery/connection failed; never expose network diagnostics to IPC callers. */
+export class BrowserUnavailable extends Error {
+  readonly code = 'browser_unavailable';
+  constructor() {
+    super('browser_unavailable');
+    this.name = 'BrowserUnavailable';
+  }
+}
+
 export interface DirectSocket {
   send(text: string): void;
   close(): void;
@@ -31,28 +40,48 @@ export function loopbackJson(urlString: string, timeoutMs: number): Promise<Reco
   }
   const request = url.protocol === 'https:' ? httpsRequest : httpRequest;
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    const finish = (error?: Error, value?: Record<string, unknown>) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(value!);
+    };
     const req = request(url, { method: 'GET', agent: false, headers: { Accept: 'application/json' } }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
+      res.once('aborted', () => finish(new Error('cdp_http_aborted')));
+      res.once('error', () => finish(new Error('cdp_http_closed')));
+      res.once('close', () => {
+        if (!res.complete) finish(new Error('cdp_http_closed'));
+      });
       res.on('end', () => {
         if ((res.statusCode ?? 0) >= 400) {
-          reject(new Error(`cdp_http_${res.statusCode}`));
+          finish(new Error(`cdp_http_${res.statusCode}`));
           return;
         }
         try {
           const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
           if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            reject(new Error('cdp_http_invalid'));
+            finish(new Error('cdp_http_invalid'));
             return;
           }
-          resolve(parsed as Record<string, unknown>);
+          finish(undefined, parsed as Record<string, unknown>);
         } catch {
-          reject(new Error('cdp_http_invalid'));
+          finish(new Error('cdp_http_invalid'));
         }
       });
     });
-    req.setTimeout(timeoutMs, () => req.destroy(new Error('cdp_http_timeout')));
-    req.on('error', reject);
+    // Settle independently of socket events: destroying an already-closed
+    // request need not emit another error. Only settlement clears this deadline.
+    timer = setTimeout(() => {
+      finish(new Error('cdp_http_timeout'));
+      req.destroy();
+    }, timeoutMs);
+    req.once('close', () => finish(new Error('cdp_http_closed')));
+    req.on('error', () => finish(new Error('cdp_http_closed')));
     req.end();
   });
 }
@@ -250,12 +279,16 @@ export class CdpConnection {
   }
 
   static async connect(cdpHttpUrl: string, timeoutMs: number): Promise<CdpConnection> {
-    const versionUrl = new URL('/json/version', cdpHttpUrl);
-    const version = await loopbackJson(versionUrl.href, timeoutMs);
-    const websocketUrl = version.webSocketDebuggerUrl;
-    if (typeof websocketUrl !== 'string' || !websocketUrl) throw new Error('cdp_browser_websocket_missing');
-    const socket = await connectDirectWebSocket(websocketUrl, timeoutMs);
-    return new CdpConnection(socket, timeoutMs);
+    try {
+      const versionUrl = new URL('/json/version', cdpHttpUrl);
+      const version = await loopbackJson(versionUrl.href, timeoutMs);
+      const websocketUrl = version.webSocketDebuggerUrl;
+      if (typeof websocketUrl !== 'string' || !websocketUrl) throw new Error('cdp_browser_websocket_missing');
+      const socket = await connectDirectWebSocket(websocketUrl, timeoutMs);
+      return new CdpConnection(socket, timeoutMs);
+    } catch {
+      throw new BrowserUnavailable();
+    }
   }
 
   call(method: string, params: Record<string, unknown> = {}, options: CdpCallOptions = {}): Promise<unknown> {

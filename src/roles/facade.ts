@@ -37,6 +37,16 @@ import {
   type ListedAgent,
 } from './herdr-run.js';
 import { LockBusy, readPrivateJson, withLock, writePrivate } from './job-store.js';
+import {
+  discoverDispatch,
+  dispatchText,
+  launchDispatch,
+  readDispatchSession,
+  reapDispatch,
+  validDispatch,
+  type PiDispatch,
+} from './pi-dispatch.js';
+import { observeDispatch, waitDispatch, type DispatchObservation } from './pi-dispatch-status.js';
 import { ADAPTER_HARNESS, isLaunchAdapter } from './adapters.js';
 import {
   connectRoleRuntime,
@@ -173,6 +183,7 @@ interface JobSteps {
 }
 
 interface JobReceipt {
+  pi_dispatch?: PiDispatch;
   schema: 1;
   job: string;
   parent: string;
@@ -389,11 +400,26 @@ function requireHerdr(receipt: JobReceipt): asserts receipt is JobReceipt & { ex
 
 function loadReceipt(home: string, job: string): JobReceipt | undefined {
   if (!JOB_ID.test(job)) return undefined;
-  const parsed = readPrivateJson(receiptPath(home, job), 64 * 1024);
+  let parsed: unknown;
+  try {
+    parsed = readPrivateJson(receiptPath(home, job), 64 * 1024);
+  } catch {
+    return undefined;
+  }
   if (!isRecord(parsed) || parsed.schema !== 1 || parsed.job !== job) return undefined;
   // SAFETY: the envelope above is private/schema-bound; the fields used below are normalized before use.
   const receipt = parsed as unknown as JobReceipt;
   if (!isRecord(parsed.executor)) return undefined;
+  if (Object.hasOwn(parsed, 'pi_dispatch')) {
+    if (
+      parsed.executor.kind !== 'herdr' ||
+      !isRecord(parsed.binding) ||
+      parsed.binding.executor !== 'herdr' ||
+      parsed.binding.harness !== 'pi' ||
+      !validDispatch(parsed.pi_dispatch, receipt.role)
+    )
+      return undefined;
+  }
   const stored = isRecord(parsed.steps) ? parsed.steps : {};
   receipt.prompted = receipt.prompted === true;
   if (parsed.executor.kind === 'jev') {
@@ -502,6 +528,7 @@ function present(home: string, receipt: JobReceipt, idempotent: boolean): Result
     state: receipt.state,
     prompted: receipt.prompted,
     executor: receipt.executor,
+    ...(receipt.pi_dispatch ? dispatchView(home, receipt) : {}),
     ...(jev ? {} : { brief_path: join(directory, 'brief.md') }),
     report_path: join(directory, 'report.md'),
     wait: jev
@@ -532,6 +559,7 @@ function writeBrief(home: string, receipt: JobReceipt, task: string): string {
     '',
     task,
     '',
+    `Write the final artifact to ${report}. Stdout is not the report.`,
     `Report path: ${report}`,
     `Question directory: ${join(directory, 'qa')}`,
     '',
@@ -902,6 +930,219 @@ async function openJob(
   return ensurePrompt(ctx, run, receipt);
 }
 
+function dispatchView(
+  home: string,
+  receipt: JobReceipt
+): DispatchObservation & { executor: ExecutorIds; launch: string } {
+  const directory = jobDirectory(home, receipt.job);
+  const view = observeDispatch(directory, receipt.pi_dispatch!, receipt.state === 'closed');
+  const session = readDispatchSession(directory);
+  const executor =
+    receipt.executor.kind === 'herdr' && session
+      ? {
+          ...receipt.executor,
+          tab_id: session.TAB,
+          pane_id: session.LEFT,
+          agent: session.PRIMARY,
+          workspace_id: null,
+        }
+      : receipt.executor;
+  // SESSION and the initial working snapshot do not prove the first prompt was submitted.
+  if (receipt.pi_dispatch!.launch === 'sent' && view.state === 'open' && !receipt.pi_dispatch!.continuation) {
+    view.state = 'launch_unknown';
+  }
+  return { ...view, executor, launch: receipt.pi_dispatch!.launch };
+}
+
+async function openDispatch(
+  ctx: FacadeContext,
+  receipt: JobReceipt,
+  task: string,
+  idempotent: boolean
+): Promise<Result> {
+  const metadata = receipt.pi_dispatch!;
+  const directory = jobDirectory(ctx.home, receipt.job);
+  if (metadata.launch === 'unsent' && receipt.state !== 'closed') {
+    // The key lock and the per-job mutation lock are held, in that order.
+    const brief = join(directory, 'brief.md');
+    if (!fs.existsSync(brief)) writeBrief(ctx.home, receipt, task);
+    if (!dispatchText(brief, 128 * 1024)?.trim()) return fail('receipt_unreadable', { job: receipt.job });
+    metadata.launch = 'sent';
+    receipt.state = 'launch_unknown';
+    remember(ctx.home, receipt);
+    const outcome = await launchDispatch(
+      metadata,
+      fs.realpathSync(directory),
+      receipt.cwd,
+      receipt.binding.model,
+      receipt.binding.effort,
+      ctx.env,
+      ctx.herdrBudgetMs
+    );
+    const session = readDispatchSession(directory);
+    if (outcome.ok && session) {
+      metadata.launch = 'acked';
+      receipt.state = 'open';
+      receipt.prompted = true;
+      receipt.launch_error = null;
+    } else receipt.launch_error = 'launch_unknown';
+  }
+  const session = readDispatchSession(directory);
+  if (session && receipt.executor.kind === 'herdr') {
+    receipt.executor = {
+      kind: 'herdr',
+      tab_id: session.TAB,
+      pane_id: session.LEFT,
+      agent: session.PRIMARY,
+      workspace_id: null,
+    };
+    receipt.label = session.TAB_NAME;
+  }
+  remember(ctx.home, receipt);
+  const view = present(ctx.home, receipt, idempotent);
+  const state = dispatchView(ctx.home, receipt).state;
+  return state === 'launch_unknown' ? { ...view, ok: false, code: 'launch_unknown' } : view;
+}
+
+async function readDispatch(
+  ctx: FacadeContext,
+  receipt: JobReceipt,
+  waitMs: number,
+  armed = waitMs > 0
+): Promise<Result> {
+  const observe = async (remainingMs: number, checkHerdr = true) => {
+    // Reload on every observation: a waiter holds no mutation lock and must see
+    // a concurrent close or a continuation intent, even after process restart.
+    const current = loadReceipt(ctx.home, receipt.job);
+    if (!current?.pi_dispatch) return { ok: false as const, code: 'receipt_unreadable', event: 'BLOCKED' as const };
+    const view = dispatchView(ctx.home, current);
+    let herdr: string | null = null;
+    if (checkHerdr && !view.event && remainingMs > 0 && view.executor.kind === 'herdr' && view.executor.agent) {
+      const budget = Math.max(1, Math.min(1000, remainingMs, ctx.herdrBudgetMs ?? 1000));
+      const got = ctx.run
+        ? await ctx.run(['agent', 'get', view.executor.agent], ctx.env)
+        : await runHerdr(['agent', 'get', view.executor.agent], ctx.env, { budgetMs: budget });
+      herdr = got.ok ? agentStatus(got.stdout) : 'unknown';
+      if (herdr === 'blocked') view.event = 'BLOCKED';
+    }
+    return {
+      ok: true as const,
+      job: current.job,
+      role: current.role,
+      phase: current.phase,
+      prompted: current.prompted,
+      binding: current.binding,
+      preset: current.preset,
+      ...view,
+      herdr,
+    };
+  };
+  return armed ? waitDispatch(observe, waitMs, { directory: jobDirectory(ctx.home, receipt.job) }) : observe(0);
+}
+
+async function sendDispatch(
+  ctx: FacadeContext,
+  receipt: JobReceipt,
+  messageKey: string,
+  text: string
+): Promise<Result> {
+  try {
+    return await withLock(
+      ctx.home,
+      `job-${receipt.job}`,
+      async () => {
+        const current = loadReceipt(ctx.home, receipt.job);
+        if (!current?.pi_dispatch || !owned(ctx, current)) return fail('receipt_unreadable');
+        const path = messagePath(ctx.home, receipt.job, messageKey);
+        const prior = readPrivateJson(path, 8192);
+        if (isRecord(prior) && prior.schema === 1) {
+          if (prior.text !== text) return fail('conflict', { job: current.job, message_key: messageKey });
+          return prior.state === 'sent'
+            ? { ok: true, job: current.job, message_key: messageKey, idempotent: true }
+            : fail('send_unknown', { job: current.job, message_key: messageKey });
+        }
+        const directory = jobDirectory(ctx.home, current.job);
+        const session = readDispatchSession(directory);
+        const view = dispatchView(ctx.home, current);
+        const native = view.dispatch;
+        if (
+          current.state === 'closed' ||
+          !native ||
+          !session ||
+          view.continuation ||
+          native.state === 'closed' ||
+          native.state === 'failed' ||
+          (native.state === 'idle_grace' && current.pi_dispatch.role !== 'implementer')
+        ) {
+          return fail('continuation_unavailable', { job: current.job, ...view });
+        }
+        if (current.pi_dispatch.launch !== 'acked' && native.state !== 'idle_grace')
+          return fail('launch_unknown', { job: current.job });
+        if (native.state === 'idle_grace') {
+          if (!native.settled_at || !native.idle_deadline_at || Date.parse(native.idle_deadline_at) <= Date.now()) {
+            return fail('continuation_unavailable', { job: current.job, ...view });
+          }
+          current.pi_dispatch.continuation = {
+            message_key: messageKey,
+            previous_session_id: native.session_id,
+            previous_settled_at: native.settled_at,
+          };
+          remember(ctx.home, current);
+        }
+        const record: SentMessage = { schema: 1, message_key: messageKey, text, state: 'sending' };
+        writePrivate(path, JSON.stringify(record) + '\n');
+        const outcome = await runner(ctx)(promptArgs(session.PRIMARY, text, false));
+        record.state = outcome.ok ? 'sent' : 'send_unknown';
+        writePrivate(path, JSON.stringify(record) + '\n');
+        return outcome.ok
+          ? { ok: true, job: current.job, message_key: messageKey, idempotent: false }
+          : fail('send_unknown', { job: current.job, message_key: messageKey });
+      },
+      ctx.lockWaitMs
+    );
+  } catch (error) {
+    if (error instanceof LockBusy) return fail('busy', { job: receipt.job });
+    throw error;
+  }
+}
+
+async function closeDispatch(ctx: FacadeContext, receipt: JobReceipt): Promise<Result> {
+  try {
+    return await withLock(
+      ctx.home,
+      keyLock(receipt.parent, receipt.request_key),
+      () =>
+        withLock(
+          ctx.home,
+          `job-${receipt.job}`,
+          async () => {
+            const current = loadReceipt(ctx.home, receipt.job);
+            if (!current?.pi_dispatch || !owned(ctx, current)) return fail('receipt_unreadable');
+            if (current.state === 'closed') return { ok: true, job: current.job, closed: true, idempotent: true };
+            const directory = jobDirectory(ctx.home, current.job);
+            const session = readDispatchSession(directory);
+            const outcome = await reapDispatch(current.pi_dispatch, directory, ctx.env, ctx.herdrBudgetMs);
+            // An empty reaper inventory without recorded ownership cannot disprove
+            // the tab-created-before-SESSION crash window. Preserve uncertainty.
+            if (!outcome.ok || !session)
+              return fail('close_unresolved', {
+                job: current.job,
+                reason: outcome.reason,
+                session_path: join(directory, 'SESSION.txt'),
+                ...dispatchView(ctx.home, current),
+              });
+            return finishClose(ctx.home, current, 'reaped');
+          },
+          ctx.lockWaitMs
+        ),
+      ctx.lockWaitMs
+    );
+  } catch (error) {
+    if (error instanceof LockBusy) return fail('busy', { job: receipt.job });
+    throw error;
+  }
+}
+
 interface LaunchPlan extends JobReceipt {
   env: Record<string, string>;
   task: string;
@@ -997,6 +1238,36 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
   if (role !== 'jev' && !cwd) return fail('cwd_unavailable', { field: 'cwd' });
   const fingerprint = fingerprintOf({ role, phase, task, cwd, preset, profile: profileName, input });
   try {
+    // A receipt pins the adapter even if routing now selects a different
+    // executor (or the original preset was removed). Do not redetect it.
+    const indexed = readPrivateJson(indexPath(ctx.home, root, requestKey), 4096);
+    if (isRecord(indexed) && typeof indexed.job === 'string') {
+      const pinned = loadReceipt(ctx.home, indexed.job);
+      if (pinned?.pi_dispatch)
+        return await withLock(
+          ctx.home,
+          keyLock(parentOf(root), requestKey),
+          async () => {
+            const currentIndex = readPrivateJson(indexPath(ctx.home, root, requestKey), 4096);
+            const current = loadReceipt(ctx.home, indexed.job as string);
+            if (!current || !owned(ctx, current) || current.request_key !== requestKey || !isRecord(currentIndex))
+              return fail('receipt_unreadable');
+            if (current.fingerprint !== fingerprint || currentIndex.fingerprint !== fingerprint)
+              return fail('conflict', { job: current.job });
+            return withLock(
+              ctx.home,
+              `job-${current.job}`,
+              async () => {
+                const locked = loadReceipt(ctx.home, current.job);
+                if (!locked?.pi_dispatch) return fail('receipt_unreadable');
+                return openDispatch(ctx, locked, task!, true);
+              },
+              ctx.lockWaitMs
+            );
+          },
+          ctx.lockWaitMs
+        );
+    }
     const loaded = readRouting(ctx.home);
     const routing = loaded.routing;
     const revision = loaded.revision;
@@ -1042,6 +1313,17 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
           if (receipt.fingerprint !== fingerprint || existing.fingerprint !== fingerprint) {
             return fail('conflict', { job: receipt.job });
           }
+          if (receipt.pi_dispatch)
+            return withLock(
+              ctx.home,
+              `job-${receipt.job}`,
+              async () => {
+                const current = loadReceipt(ctx.home, receipt.job);
+                if (!current) return fail('receipt_unreadable');
+                return openDispatch(ctx, current, task!, true);
+              },
+              ctx.lockWaitMs
+            );
           if (receipt.state === 'open' || receipt.state === 'closed') return present(ctx.home, receipt, true);
           if (receipt.state === 'failed') return fail(receipt.launch_error ?? 'launch_failed', { job: receipt.job });
           const stored = profileFromReceipt(receipt);
@@ -1054,6 +1336,16 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
         }
         const envVars = envProfileVars(routing, profile.envProfile);
         if (!envVars) return fail('env_profile_unresolved', { env_profile: profile.envProfile });
+        let dispatch: PiDispatch | null = null;
+        if (profile.harness === 'pi') {
+          try {
+            dispatch = discoverDispatch(ctx.env, role);
+          } catch (error) {
+            return fail((error as Error).message);
+          }
+          if (dispatch && Object.keys(envVars).length > 0) return fail('dispatch_env_unsupported');
+          if (dispatch && /[\r\n]/.test(ctx.home + cwd)) return fail('invalid_arguments', { field: 'cwd' });
+        }
         const job = `j${randomBytes(8).toString('hex')}`;
         const receipt: LaunchPlan = {
           schema: 1,
@@ -1078,9 +1370,10 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
             kind: 'herdr',
             tab_id: null,
             pane_id: null,
-            agent: `hud-${job}`,
-            workspace_id: workspaceOf(ctx.env),
+            agent: dispatch ? '' : `hud-${job}`,
+            workspace_id: dispatch ? null : workspaceOf(ctx.env),
           },
+          ...(dispatch ? { pi_dispatch: dispatch } : {}),
           closed_observation: null,
           env: { ...envVars },
           task: task!,
@@ -1092,7 +1385,9 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
         );
         writeAssociation(ctx.home, associationOf(ctx.home, receipt, false));
         const run = runner(ctx);
-        const outcome = await openJob(ctx, run, receipt, profile, task!);
+        const outcome = dispatch
+          ? await withLock(ctx.home, `job-${job}`, () => openDispatch(ctx, receipt, task!, false), ctx.lockWaitMs)
+          : await openJob(ctx, run, receipt, profile, task!);
         if (!outcome.ok && outcome.code === 'rollback') {
           forgetJob(ctx.home, root, requestKey, job);
           return fail('backend_unavailable', { executor: 'herdr', reason: 'herdr_missing' });
@@ -1262,11 +1557,13 @@ export async function hudRead(ctx: FacadeContext, args: Record<string, unknown>)
       if (!isRecord(parsed) || typeof parsed.job !== 'string') continue;
       const receipt = loadReceipt(ctx.home, parsed.job);
       if (!receipt || !owned(ctx, receipt)) continue;
+      const dispatch = receipt.pi_dispatch ? dispatchView(ctx.home, receipt) : null;
       jobs.push({
         job: receipt.job,
         role: receipt.role,
         phase: receipt.phase,
-        state: receipt.state,
+        state: dispatch?.state ?? receipt.state,
+        ...(dispatch ? { status: dispatch.status } : {}),
         task_label: receipt.task_label,
         preset: receipt.preset,
       });
@@ -1277,6 +1574,7 @@ export async function hudRead(ctx: FacadeContext, args: Record<string, unknown>)
   const receipt = loadReceipt(ctx.home, args.job);
   if (!receipt || !owned(ctx, receipt)) return fail('not_found', { field: 'job' });
   if (receipt.executor.kind === 'jev') return readJev(ctx, receipt, waitMs);
+  if (receipt.pi_dispatch) return readDispatch(ctx, receipt, waitMs);
   if (receipt.state !== 'open') return observation(ctx.home, receipt, null);
   requireHerdr(receipt);
   const run = runner(ctx);
@@ -1314,6 +1612,7 @@ export async function hudSend(ctx: FacadeContext, args: Record<string, unknown>)
   const receipt = loadReceipt(ctx.home, args.job);
   if (!receipt || !owned(ctx, receipt)) return fail('not_found', { field: 'job' });
   if (receipt.executor.kind === 'jev') return sendJev(ctx, receipt, messageKey, text);
+  if (receipt.pi_dispatch) return sendDispatch(ctx, receipt, messageKey, text);
   if (receipt.state === 'launch_unknown' || receipt.state === 'launching')
     return fail('launch_unknown', { job: receipt.job });
   if (receipt.state !== 'open') return fail('job_closed', { job: receipt.job });
@@ -1417,6 +1716,14 @@ export async function hudRespond(ctx: FacadeContext, args: Record<string, unknow
     });
   }
   const qa = join(jobDirectory(ctx.home, receipt.job), 'qa');
+  if (receipt.pi_dispatch) {
+    if (!answer.trim()) return fail('invalid_arguments', { field: 'answer' });
+    try {
+      if (fs.realpathSync(qa) !== qa) return fail('request_missing');
+    } catch {
+      return fail('request_missing');
+    }
+  }
   const question = join(qa, `${args.request_id}.md`);
   try {
     if (!fs.lstatSync(question).isFile())
@@ -1430,7 +1737,15 @@ export async function hudRespond(ctx: FacadeContext, args: Record<string, unknow
     try {
       const info = fs.lstatSync(target);
       if (info.isSymbolicLink() || !info.isFile()) return fail('request_missing', { request_id: args.request_id });
-      const current = fs.readFileSync(target, 'utf8');
+      const current = receipt.pi_dispatch ? dispatchText(target, 16 * 1024 + 1) : fs.readFileSync(target, 'utf8');
+      // Only demonstrably empty/stale answers may be refreshed. Unreadable or
+      // oversized files are not permission to overwrite an eligible answer.
+      if (current === null) return fail('conflict', { job: receipt.job, request_id: args.request_id });
+      const refresh = receipt.pi_dispatch && (!current.trim() || info.mtimeMs < fs.lstatSync(question).mtimeMs);
+      if (refresh) {
+        writePrivate(target, body);
+        return { ok: true, job: receipt.job, request_id: args.request_id, idempotent: false, consumed: false };
+      }
       if (current === body) {
         return { ok: true, job: receipt.job, request_id: args.request_id, idempotent: true, consumed: false };
       }
@@ -1454,6 +1769,7 @@ export async function hudClose(ctx: FacadeContext, args: Record<string, unknown>
     return { ok: true, job: receipt.job, closed: true, idempotent: true, observation: receipt.closed_observation };
   }
   if (receipt.executor.kind === 'jev') return closeJev(ctx, receipt);
+  if (receipt.pi_dispatch) return closeDispatch(ctx, receipt);
   try {
     return await withLock(
       ctx.home,
@@ -1546,6 +1862,7 @@ export async function waitForJob(
   const receipt = loadReceipt(home, job);
   if (!receipt) return fail('not_found', { field: 'job' });
   if (receipt.executor.kind === 'jev') return fail('unsupported', { job, reason: 'use_hud_read' });
+  if (receipt.pi_dispatch) return readDispatch({ home, root: null, env }, receipt, timeoutMs ?? 60_000, true);
   requireHerdr(receipt);
   if (receipt.state === 'launch_unknown' || receipt.state === 'launching') {
     return fail('launch_unknown', { job, acceptance: null });

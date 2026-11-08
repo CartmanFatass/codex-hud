@@ -105,6 +105,7 @@ const PUBLIC_CODES = new Set([
   'resend_needs_confirmation',
   'provider_mismatch',
   'browser_busy',
+  'browser_unavailable',
   'lease_lost',
   'invalid_label',
   'empty_prompt',

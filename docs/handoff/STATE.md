@@ -19,7 +19,9 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
 - At `3c34a7d` two unit failures remain. `B11 … path with spaces` already failed before R1. A statusline test is flaky under the full suite.
 - Next is R4 (ChatGPT Pro and AI Studio target adapters), then R5. It was paused for Codex usage; since 2026-11-07 code tasks run on the pi harness with gpt-6.1-sol (`docs/delegation.md`), so R4 no longer waits on the Codex CLI.
 - R2b added 2026-11-08 (concept §15, "Pi execution through the pi-roles dispatch prototype"): the facade runs pi roles through `pi-dispatch` / STATUS / `pi-role-reap` instead of its own pi launch. Starts once pi-roles DISPATCH-2B and DISPATCH-3 have settled the contract.
-- Not yet done: a live smoke of the real Jev runtime. It needs `hud setup --import-jev-env` against the owner's Jev env, and the owner's go-ahead.
+- Live Jev smoke (2026-11-08, owner-approved) found three R3 defects: production config was never found, judge markers were compared by identity, and a missing Chrome surfaced as `internal`. R3F (`aa6e86c`) fixed them and added a single-settlement CDP deadline. Re-smoke: the OpenAI judge settles in 1 call; the runtime auto-starts a detached headless Chrome and leaves it running.
+- Open (judge quality): the runtime sends the judge plain page text with `elements: []`. TypeSafe then stays unsettled on structural statements ("shows the heading …", p≈0.2–0.3; 1.0 when headings and links are marked), while OpenAI infers them. Follow-up: pass page structure (actions and headings) into judge observations.
+- R2b, R4 and PIBUNDLE (pi-roles one-extension bundle, in Fishpref) are in progress.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |

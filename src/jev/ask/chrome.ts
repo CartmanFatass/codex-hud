@@ -28,7 +28,9 @@ export interface ChromeSpawnHandle {
 }
 
 export interface ChromeDeps {
-  fetchVersion: (cdpUrl: string) => ChromeVersion | null | Promise<ChromeVersion | null>;
+  fetchVersion: (cdpUrl: string, remainingMs?: number) => ChromeVersion | null | Promise<ChromeVersion | null>;
+  /** Runtime callers reuse shared Chrome regardless of its mode. CLI behaviour is unchanged. */
+  reuseAnyMode?: boolean;
   /** Return value is ignored except for `{ error }` from the real spawn. */
   spawn?: (argv: string[], options: { logPath: string }) => unknown;
   now?: () => number;
@@ -75,13 +77,15 @@ export function chromeLaunchArgs(config: JevConfig, mode: ChromeMode): string[] 
  */
 export async function chromeStart(config: JevConfig, mode: ChromeMode, deps: ChromeDeps): Promise<ChromeStartResult> {
   assertStateDir(config.stateDir);
-  const version = await loadVersion(config.cdpUrl, deps);
+  const now = deps.now ?? Date.now;
+  const deadline = now() + CHROME_START_TIMEOUT_MS;
+  const version = await loadVersion(config.cdpUrl, deps, deadline - now());
   if (version) {
     const running = runningMode(config.stateDir, version);
-    if (running !== mode) {
+    if (running !== mode && !deps.reuseAnyMode) {
       throw new JevFailure('chrome', `Chrome already runs ${running}; stop it before asking for ${mode}`);
     }
-    return { chrome: 'reused', mode };
+    return { chrome: 'reused', mode: running };
   }
   const argv = chromeLaunchArgs(config, mode);
   const marker = markerPath(config.stateDir);
@@ -90,20 +94,19 @@ export async function chromeStart(config: JevConfig, mode: ChromeMode, deps: Chr
   const logPath = path.join(config.stateDir, 'chrome.log');
   fs.closeSync(fs.openSync(logPath, 'a', 0o600));
   const spawned = (deps.spawn ?? defaultSpawn)(argv, { logPath });
-  const now = deps.now ?? Date.now;
   const sleep = deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const poll = deps.pollMs ?? CHROME_POLL_MS;
-  const deadline = now() + CHROME_START_TIMEOUT_MS;
   for (let attempt = 0; attempt < 70 && now() < deadline; attempt += 1) {
     const failed = spawnFailure(spawned);
     if (failed) {
       const code = (failed as NodeJS.ErrnoException).code ?? 'error';
       throw new JevFailure('chrome', `Chrome could not be started: ${code}`);
     }
-    if (await loadVersion(config.cdpUrl, deps)) {
+    if (await loadVersion(config.cdpUrl, deps, deadline - now())) {
       return { chrome: 'started', mode, proxy: chromeProxyFlags(config.proxy).length > 0 };
     }
-    await sleep(poll);
+    const remaining = deadline - now();
+    if (remaining > 0) await sleep(Math.min(poll, remaining));
   }
   const failed = spawnFailure(spawned);
   if (failed) {
@@ -137,9 +140,10 @@ function cdpPort(cdpUrl: string): string {
   return url.port;
 }
 
-async function loadVersion(cdpUrl: string, deps: ChromeDeps): Promise<ChromeVersion | null> {
+async function loadVersion(cdpUrl: string, deps: ChromeDeps, remainingMs?: number): Promise<ChromeVersion | null> {
+  if (remainingMs !== undefined && remainingMs <= 0) return null;
   try {
-    return (await deps.fetchVersion(cdpUrl)) ?? null;
+    return (await deps.fetchVersion(cdpUrl, remainingMs)) ?? null;
   } catch {
     return null;
   }

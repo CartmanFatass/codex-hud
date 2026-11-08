@@ -18,7 +18,7 @@ export interface FakeCdp {
 }
 
 export function startFakeCdp(
-  options: { reply?: boolean; reportedHref?: (navigated: string) => string } = {}
+  options: { reply?: boolean; reportedHref?: (navigated: string) => string; port?: number } = {}
 ): Promise<FakeCdp> {
   const reply = options.reply !== false;
   const paths: string[] = [];
@@ -92,7 +92,7 @@ export function startFakeCdp(
   return new Promise((resolve, reject) => {
     const onError = (error: Error) => reject(error);
     server.once('error', onError);
-    server.listen({ port: 0, host: '127.0.0.1', exclusive: true }, () => {
+    server.listen({ port: options.port ?? 0, host: '127.0.0.1', exclusive: true }, () => {
       server.removeListener('error', onError);
       const address = server.address();
       if (!address || typeof address === 'string') {
@@ -153,6 +153,18 @@ function resultFor(
           title: 'Synthetic',
           text: 'Hello',
           scroll: { y: 0 },
+          marker: [
+            1,
+            navigatedUrl,
+            0,
+            0,
+            1280,
+            900,
+            'Synthetic',
+            'Hello',
+            [{ id: 'e1', kind: 'click', label: 'Land', role: 'link', node: 1 }],
+            0,
+          ],
           actions: [{ id: 'e1', kind: 'click', label: 'Land', role: 'link', node: 1 }],
         },
       },

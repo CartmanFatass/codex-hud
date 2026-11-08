@@ -88,7 +88,8 @@
 ## 分类规则
 
 - 每个 WP 或里程碑一个新 implementer / sonic，做完即关；不在一个 pi 会话里串多个任务。
-- 并行度按情况提高：所有权不重叠的 WP 可同时开（各自一个 tab，最好各自一个 worktree），写明独占路径；共享文件的串行。
+- 并行度（2026-11-08 所有者定）：用 implementer 数量控制并发，同时约 3 个（高并发对本机硬件压力大）。各 implementer 按需调 sonic / reviewer，通常同时只多一个 helper，所以整机约 5 个 pi agent，这只是参考值，不是硬上限。满 3 个时新 WP 排队，等一个 implementer 收尾（reap）后再开。
+- 所有权不重叠的 WP 可同时开（各自一个 tab，最好各自一个 worktree），写明独占路径；共享文件的串行。
 - 拥有进程、信号或生命周期的代码（起停子进程、组信号、清理、回收）→ implementer，编排者先调 architect 出方案并定稿，brief 把失败场景写进验收（对比评测 O1：名义上是普通任务，三臂都没过）。
 - 拿不准是 sonic 还是 implementer 的，给 implementer。
 - 一个决定只审一次（Jacob，2026-11-02）：同一份设计不叠加两级评审；Pro 评审过的不再送 architect，architect 出过方案的不再送 Pro，除非编排者判断它属于宏观层。同一份 diff 只有一个 reviewer 链。

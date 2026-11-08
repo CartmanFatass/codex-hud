@@ -63,12 +63,18 @@ export function runCommand(
       if (settled) return;
       killedByUs = true;
       child.kill('SIGKILL');
+      // A launcher descendant may retain the pipes. The outer budget still ends
+      // this call; do not wait for close or sweep unrelated process groups.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      finish({ ok: false, reason: 'timeout', stdout, stderr, exitCode: null });
     }, budget);
     const take = (chunk: Buffer, which: 'out' | 'err') => {
       const text = chunk.toString('utf8');
-      if (which === 'out') stdout += text;
-      else stderr += text;
-      if (stdout.length + stderr.length > MAX_OUTPUT) {
+      const available = Math.max(0, MAX_OUTPUT - stdout.length - stderr.length);
+      if (which === 'out') stdout += text.slice(0, available);
+      else stderr += text.slice(0, available);
+      if (text.length > available) {
         overflow = true;
         child.kill();
       }
