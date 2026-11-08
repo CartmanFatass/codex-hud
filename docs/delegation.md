@@ -48,7 +48,7 @@
    - 需要判断、改动成片或涉及核心的代码 → **implementer**。它在左侧窗格实现；简单子任务可交 sonic（右侧窗格）；设计分叉上报编排者；检查通过后自己起 reviewer，修复到 `accept`（最多 3 轮）。
    - 目标、方法、验收都写死的简单任务 → **sonic**，按下表选 effort；会合入的代码与测试写 `review: yes`，杂务与机械任务由编排者自己的检查验收。
    - scout（找代码、摸清现状、汇总）→ sonic 模型跑 informer 只读角色，effort high。
-   - 渲染与视觉 → `frontend-implementer` 子代理，按定稿设计；评审交 pi reviewer。
+   - 前端设计（呈现哪些信息、怎么可视化）→ **Argon** 出方案，编排者判断定稿，不送 Pro 收敛（Jacob，2026-11-08）；定稿写进 `docs/design/` 后交 `frontend-implementer` 子代理（sonnet，xhigh）实现；评审交 pi reviewer。
    - 需要人类互动的测试 → Hermes。
 4. **sonic 用哪个模型？** 对比期间，sonic 任务可以两个模型同时跑（每个模型一个 tab，代码任务各自 worktree），一个 reviewer 盲评两份产出，择优采用，成本、用时与质量记入 `docs/sonic-ab.md`。积累够了再定默认模型或按任务类型分流。
 5. **验收与提交。** 编排者读 report 与每轮 review，重跑检查，确认最后一轮是 `accept`；通过后提交、推送，把有用的 review 与 architect 答复归档到 `docs/reviews/`。不收敛时按升级规则处理。
@@ -74,6 +74,7 @@
 | 简单代码、补测试、按评审修复、杂务、机械任务 | **sonic**（DeepSeek V4.1 Flash / GLM-5.3 Flash，effort 见上） | skill `herdr-delegate` 的 sonic 流程；对比期可双模型并跑 |
 | scout | sonic 模型上的 **informer** 只读角色 | `pi-role informer ... -- --model <sonic 模型> --thinking high` |
 | Claude 写的变更的评审 | **reviewer**（sol xhigh），编排者单独起 | skill `herdr-delegate` 的 review-only 流程 |
+| 前端设计：呈现哪些信息、可视化方式 | **Argon** 出方案 → 编排者定稿（不走 Pro） | skill `jev-ask` 的 `jev-aistudio`；定稿写进 `docs/design/` |
 | 前端实现：按已定设计写渲染、布局、文案、视觉基线 | **Claude Code 子代理 `frontend-implementer`**（sonnet，xhigh） | Agent 工具，`subagent_type: frontend-implementer`，传 brief 路径；设计以定稿设计文档（`docs/design/`）为准 |
 | 需要人类互动的测试：对话框、真实输入、Windows Terminal 视觉验收 | **Hermes**（Windows computer use，grok-4.7，一次性运行） | 脚本先摆好状态，再给 Hermes 一个任务文件；证据以其 usage JSON 与截图为准。参照 ux / JevFocus 项目的做法 |
 | Codex 相关测试（产品对 Codex 客户端的真实检查） | `codex2`（`CODEX_HOME=~/.codex`，免费账号），`gpt-6-luna` medium | `codex` 函数是主账号（`~/.codex-account2`），不用于测试 |
