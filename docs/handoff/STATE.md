@@ -27,11 +27,13 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - `hud_close` reaped every agent and the tab, and a repeated close was idempotent;
   - with `pi-dispatch` off PATH the R2 direct path launched, waited and closed.
 - The direct path first failed live with `unsafe_launch`: pi-roles' one-extension bundle (PIBUNDLE) put raw JSON in `--role-bundle`. pi-roles now encodes it as base64url (Fishpref `f7f2481`).
-- In progress: R4 (integrated with R3F/R2b, final review) and R2c (R2b live follow-ups):
-  - the returned wait command gets a 1 h bound and an absolute `bin/hud` path;
-  - a timeout gets exit code 6 / `TIMEOUT`;
-  - the `hud wait` import graph is cut (about 80 MB RSS today, target ≤ 50 MB);
-  - the conformance test checks the real `pi-role --args-json` output.
+- R2c merged (`e2e9d4e`), accepted live on 2026-11-08 with a sonic job through the roles facade:
+  - the returned wait command is the absolute `bin/hud` path with `--timeout-ms 3600000`; bare waits default to 30 min;
+  - a short `--timeout-ms` printed `TIMEOUT` and exited 6; the full wait returned DONE, exit 0;
+  - waiter RSS: about 98 MB before, about 50 MB on the synthetic fixture, 62 MB live while polling herdr; an import-graph test pins the waiter;
+  - pi-roles PIAUTOCLOSE (Fishpref `92fc938`): the sonic tab closed itself after its clean finish, before `hud_close`, which then reaped idempotently.
+- Known debt: `node scripts/pack-cloud-preview.mjs --self-test` fails on `dist/harness/pi/managed-launch.js` (pre-existing on the base); B11's spaces-path test; the panel publisher test under load.
+- In progress: R4 (fix round after review 1: recoverable outcomes, resume, attachment digest, refusal codes, observer cancellation).
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
