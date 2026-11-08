@@ -39,6 +39,17 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - D2 the pre-send code reached the job as `internal`;
   - D3 AI Studio: the send succeeded (answer visible in the tab), but confirmation never settled because the URL stayed `new_chat`; closing the job left it `failed` instead of closed and recoverable.
   The AI Studio record `r4-studio-1` stays `send_attempted`; after R4F, a resume must collect it with zero clicks.
+- R4F merged (`14b13fc`):
+  - D1 mechanism: `awaitStates` timed out whenever a backoff did not fit the remaining budget. An offline replay with
+    a recorded real judgment proved this. The historical latency was not observed.
+  - D2: the public code list is now complete.
+  - D3: confirmation binds to the numeric user turn.
+  - Runtime lifecycle diagnostics were added.
+  - 70/70 mutation variants were killed.
+- R4F live acceptance, first run (2026-11-08 20:32Z): the D3 resume failed `internal` exactly 60 s into confirm. The
+  AI Studio tab was hidden (background). Suspects: a CDP call that never settles on a hidden tab (60 s CDP timeout),
+  and the URL settling to `prompts/<id>` after the send. Nothing was clicked or sent. R4F2 is fixing it. The
+  ChatGPT Pro run waits for R4F2.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
