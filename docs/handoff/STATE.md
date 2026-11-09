@@ -81,6 +81,19 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
     conversation page hides its composer while thinking, so it looked like loading. Reconcile bound the turn and
     the job completed.
   - R4F3 is fixing it (scope the rule to `page_ready`).
+- R4F3 merged (`e34af41`): both targets normalise hydration only in prepare's `page_ready` observation; every other
+  phase sees raw facts.
+- **R4 accepted live (2026-11-09 01:40Z).** ChatGPT Pro ask with an attachment and a mid-wait runtime restart:
+  - Timeline: prepare → `page_ready` → upload 5 s → Send (attempt 1) → confirm in 2.4 s → wait → SIGTERM to the
+    runtime at 01:40:49. The job went `interrupted`.
+  - Resume on a fresh runtime went straight to wait → collect → `answered`. The answer was correct (code word plus
+    a computed count).
+  - Exactly one Send click in total; the record ended `send_effect: sent`, and every owned tab was closed.
+  - Together with the D3 resume (`437`, zero resends), all R4 acceptance items are now met live on both targets.
+- Decision (orchestrator, 2026-11-09): the `submitted` and `answer_complete` thresholds stay as they are.
+  - `answer_complete`: the oracle collects through deterministic finality, not this judgment.
+  - `submitted`: a deny in confirm only leads to a read-only reconcile, never to a resend.
+  - Revisit if a live run shows a stall.
   - Pro answered within seconds, so the mid-wait runtime restart is still to do. It needs a longer-thinking prompt
     after R4F3.
 - Follow-ups:
