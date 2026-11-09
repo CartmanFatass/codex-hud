@@ -1,4 +1,12 @@
 import { nativeCallsOnly } from './core/link/view-model.js';
+import { pathToFileURL } from 'node:url';
+import { makeSourceId } from './core/identity.js';
+import { externalRootHash } from './roles/external-association.js';
+import { parseRosterRoot, formatRosterRoot } from './roles/selection.js';
+import type { SessionRef } from './core/types/identity.js';
+import { JobObservationCollector, type JobObserverOptions, type JobReadSlice } from './collectors/job-observations.js';
+import type { JobSnapshot } from './collectors/job-display-types.js';
+import { composeJobTree, type JobTreeResult } from './collectors/job-tree.js';
 import { NativeCallCollector } from './collectors/native-calls.js';
 import { performance } from 'node:perf_hooks';
 import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
@@ -128,7 +136,14 @@ import { cardSummaryTargets } from './render/cards.js';
 import { controlBar } from './render/control-bar.js';
 import { RecapStore } from './collectors/recap.js';
 import { AgentLog, logsIn } from './collectors/agent-log.js';
-import { ModelJobs, NO_JOBS, type JobSwitches } from './collectors/model-jobs.js';
+import {
+  ModelJobs,
+  NO_JOBS,
+  jobOnlyNode,
+  summaryTree,
+  displayOnlySummaryRoot,
+  type JobSwitches,
+} from './collectors/model-jobs.js';
 import { WorkbenchHistory } from './collectors/workbench-events.js';
 import type { WorkbenchEvent } from './render/workbench-state.js';
 import { getCodexHome, getHudHome } from './utils/codex-path.js';
@@ -146,10 +161,231 @@ import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.
 import type { HealthSource } from './collectors/hud-health.js';
 import type { SubagentTree, SubagentTreeNode } from './types.js';
 
+/** The live refresh and tests share this lifecycle: no I/O in compose/afterPaint. */
+export class PanelJobPipeline {
+  private observer: JobObservationCollector;
+  private snapshot: JobSnapshot | null = null;
+  private generation = 0;
+  private closed = false;
+  constructor(
+    readonly home: string,
+    private root: string | null,
+    private readonly options: JobObserverOptions = {}
+  ) {
+    this.observer = new JobObservationCollector(home, { ...options, root });
+  }
+  setRoot(root: string | null): void {
+    if (root === this.root) return;
+    this.generation++;
+    this.root = root;
+    this.snapshot = null;
+    this.observer.dispose();
+    this.observer = new JobObservationCollector(this.home, { ...this.options, root });
+  }
+  dispose(): void {
+    this.closed = true;
+    this.generation++;
+    this.snapshot = null;
+    this.observer.dispose();
+  }
+  get live() {
+    return this.observer.live;
+  }
+  async refresh(
+    charge?: (bytes: number, entries: number, elapsed: number) => void,
+    slice?: JobReadSlice
+  ): Promise<boolean> {
+    const generation = this.generation;
+    const start = performance.now();
+    const snapshot = await this.observer.refresh(slice);
+    if (this.closed || generation !== this.generation) return false;
+    this.snapshot = snapshot;
+    charge?.(snapshot.coverage.bytes, snapshot.coverage.entries + snapshot.coverage.files, performance.now() - start);
+    return true;
+  }
+  afterPaint(tree: SubagentTree, legacy: DelegationViewModel | null, nowMs: number, boundRoot?: string): JobTreeResult {
+    return this.compose(tree, legacy, nowMs, boundRoot);
+  }
+  /** Always recompose from the unmodified native tree and newly committed legacy view. */
+  compose(tree: SubagentTree, legacy: DelegationViewModel | null, nowMs: number, boundRoot?: string): JobTreeResult {
+    const snapshot = this.snapshot ?? {
+      generation: this.generation,
+      root: this.root,
+      jobs: [],
+      coverage: {
+        entries: 0,
+        files: 0,
+        bytes: 0,
+        incomplete: true,
+        omitted: null,
+        diagnostics: [],
+      },
+    };
+    if (this.closed) return { tree, legacy, aliases: {}, coverage: snapshot.coverage, diagnostics: [] };
+    const nativeRefs = new Map<string, SessionRef>();
+    if (boundRoot && boundRoot.endsWith(`/${tree.rootId}`)) {
+      const sourceId = boundRoot.slice(0, boundRoot.indexOf('/'));
+      const add = (id: string) => nativeRefs.set(id, { harness: 'codex', sourceId, sessionId: id, threadId: null });
+      add(tree.rootId);
+      walkNodes(tree.nodes, (node) => {
+        if (!node.ref && !jobOnlyNode(node)) add(node.id);
+      });
+    }
+    if (this.root !== null) {
+      if (legacy) {
+        const admitted = new Set(
+          legacy.tree.nodes
+            .filter(
+              (node) =>
+                node.parentKey === null &&
+                node.identity.kind === 'session' &&
+                `${node.identity.ref.sourceId}/${node.identity.ref.sessionId}` === this.root
+            )
+            .map((node) => node.key)
+        );
+        for (let n = 0; n < legacy.tree.nodes.length; n++)
+          for (const node of legacy.tree.nodes)
+            if (node.parentKey && admitted.has(node.parentKey)) admitted.add(node.key);
+        const scoped = legacy.tree.nodes.filter((node) => admitted.has(node.key));
+        legacy = {
+          ...legacy,
+          tree: {
+            ...legacy.tree,
+            nodes: scoped,
+            counts: {
+              ...legacy.tree.counts,
+              confirmedSessions: scoped.filter((node) => node.identity.kind === 'session').length,
+              jobs: scoped.filter((node) => node.identity.kind === 'job').length,
+            },
+          },
+        };
+      }
+      return composeJobTree({ tree, legacy, snapshot, root: this.root, nowMs, nativeRefs });
+    }
+    const roots = new Set(snapshot.jobs.map((job) => job.root));
+    const nodes = tree.nodes.map((node) => ({ ...node, children: [...node.children] }));
+    const aliases: Record<string, string> = {};
+    const diagnostics: string[] = [];
+    let incomplete = snapshot.coverage.incomplete;
+    const remaining = () => {
+      let count = legacy?.tree.nodes.length ?? 0;
+      walkNodes(nodes, () => {
+        count++;
+      });
+      return Math.max(0, 200 - count);
+    };
+    for (const root of roots) {
+      const match = (ref: SessionRef | undefined) => ref && `${ref.sourceId}/${ref.sessionId}` === root;
+      let native = nodes.find((node) => match(node.ref));
+      const legacyRoot = legacy?.tree.nodes.find(
+        (node) => node.parentKey === null && node.identity.kind === 'session' && match(node.identity.ref)
+      );
+      if (!native && root !== boundRoot && remaining() < 2) {
+        incomplete = true;
+        continue;
+      }
+      // A known native root is represented by its original key/ref, never by job-root metadata.
+      if (!native && root !== boundRoot && legacyRoot?.identity.kind === 'session') {
+        native = displayOnlySummaryRoot({
+          id: legacyRoot.key,
+          name: legacyRoot.identity.ref.sessionId,
+          ref: legacyRoot.identity.ref,
+          status: 'unknown',
+          depth: 1,
+          children: [],
+        });
+        nodes.push(native);
+      }
+      if (!native && root === boundRoot) {
+        const result = composeJobTree({
+          tree: { ...tree, nodes },
+          legacy,
+          snapshot: { ...snapshot, jobs: snapshot.jobs.filter((job) => job.root === root) },
+          root,
+          nowMs,
+          nativeRefs,
+          maxAdditionalNodes: remaining(),
+        });
+        incomplete ||= result.coverage.incomplete;
+        nodes.splice(0, nodes.length, ...result.tree.nodes);
+        legacy = result.legacy;
+        Object.assign(aliases, result.aliases);
+        diagnostics.push(...result.diagnostics);
+        continue;
+      }
+      if (!native) {
+        if (remaining() < 2) {
+          incomplete = true;
+          continue;
+        }
+        native = { id: `job-root:${externalRootHash(root)}`, name: root, status: 'unknown', depth: 1, children: [] };
+        nodes.push(native);
+      }
+      const result = composeJobTree({
+        tree: { ...tree, rootId: native.id, nodes: native.children },
+        legacy,
+        snapshot: { ...snapshot, jobs: snapshot.jobs.filter((job) => job.root === root) },
+        root,
+        nowMs,
+        maxAdditionalNodes: remaining(),
+      });
+      incomplete ||= result.coverage.incomplete;
+      native.children = result.tree.nodes;
+      legacy = result.legacy;
+      Object.assign(aliases, result.aliases);
+      diagnostics.push(...result.diagnostics);
+    }
+    let count = 0;
+    const depth = (items: SubagentTreeNode[], n: number) => {
+      for (const node of items) {
+        node.depth = n;
+        count++;
+        depth(node.children, n + 1);
+      }
+    };
+    depth(nodes, 1);
+    return {
+      tree: { ...tree, nodes, totalCount: count },
+      legacy,
+      aliases,
+      coverage: { ...snapshot.coverage, incomplete, omitted: incomplete ? null : snapshot.coverage.omitted },
+      diagnostics,
+    };
+  }
+}
+
+/** Final action boundary, shared by keyboard, mouse and legacy dispatch. */
+export function panelActionAllowed(tree: SubagentTree, id: string): boolean {
+  if (jobOnlyNode({ id })) return false;
+  let denied = false;
+  walkNodes(tree.nodes, (node) => {
+    if (node.id === id && jobOnlyNode(node)) denied = true;
+  });
+  return !denied;
+}
+/** Shared final dispatch seam: every keyboard/mouse switch or legacy action goes through it. */
+export function dispatchPanelAction<T>(tree: SubagentTree, id: string, dispatch: () => T): T | undefined {
+  return panelActionAllowed(tree, id) ? dispatch() : undefined;
+}
+
+/** Feed global observation uncertainty into the panel's existing empty-state and notice vocabulary. */
+export function panelJobRenderState(
+  result: Pick<JobTreeResult, 'coverage' | 'diagnostics'> | null,
+  loading: boolean
+): { loading: boolean; notice: string | null } {
+  if (!result) return { loading, notice: null };
+  const { coverage, diagnostics } = result;
+  const partial =
+    coverage.incomplete || (coverage.omitted ?? 0) > 0 || coverage.diagnostics.length > 0 || diagnostics.length > 0;
+  let notice: string | null = null;
+  if (partial) notice = coverage.omitted ? t('{n} not loaded', { n: coverage.omitted }) : t('tree partial');
+  return { loading: loading || partial, notice };
+}
+
 /** At most one tail read per agent per this long, however often we repaint. */
 const AGENT_CONTEXT_INTERVAL_MS = 3000;
 // This identifies the entry file observed at startup, not files replaced later.
-const runtimeIdentity = captureRuntimeIdentity({ entryFile: new URL(import.meta.url) });
+const runtimeIdentity = captureRuntimeIdentity({ entryFile: import.meta.url });
 
 /** A path as people write it: the home directory as `~`. */
 function shortPath(file: string): string {
@@ -283,9 +519,26 @@ async function runLivePage(): Promise<void> {
       'TMUX_PANE',
     ])
       delete process.env[key];
-  const allDelegations = process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
+  const selectedRoot = process.env.CODEX_HUD_PANEL_ROOT
+    ? formatRosterRoot(parseRosterRoot(process.env.CODEX_HUD_PANEL_ROOT))
+    : null;
+  const allDelegations = !selectedRoot && process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
   const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
   const nativeCalls = NativeCallCollector.fromEnv();
+  const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot);
+  let nativeTree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
+  let boundJobRoot = '';
+  let jobComposition: JobTreeResult | null = null;
+  const applyJobComposition = (legacy: DelegationViewModel | null, afterPaint = false) => {
+    const composed = afterPaint
+      ? jobPipeline.afterPaint(nativeTree, nativeCalls.merge(legacy), Date.now(), boundJobRoot)
+      : jobPipeline.compose(nativeTree, nativeCalls.merge(legacy), Date.now(), boundJobRoot);
+    jobComposition = composed;
+    tree = composed.tree;
+    delegation = composed.legacy;
+    const selected = state.tree.selectedId;
+    if (selected && composed.aliases[selected]) state.tree.selectedId = composed.aliases[selected]!;
+  };
   let delegation: DelegationViewModel | null = null;
   // Opened again, the panel reads only what each rollout gained since it last saved its scan.
   useTreeScanStore(new TreeScanStore(path.join(getHudHome(), 'scan')));
@@ -569,6 +822,7 @@ async function runLivePage(): Promise<void> {
   // while it is open. Fed from this page's own parse of the rollout.
   const hudStatus = new HudStatus(HUD_CWD, () => render(), 30_000);
   const currentHud = () => {
+    if (selectedRoot && selectedRoot !== boundJobRoot) return undefined;
     const data = hudStatus.current();
     return data
       ? {
@@ -747,6 +1001,7 @@ async function runLivePage(): Promise<void> {
         const width = process.stdout.columns || 30;
         const nowMs = Date.now();
         const hud = currentHud();
+        const jobRender = panelJobRenderState(jobComposition, !collected || treeBuiltFor !== tree.rootId);
         const agentLogs = logsIn(
           agentLog.snapshot(),
           resolveLanguage(settings.language),
@@ -768,8 +1023,9 @@ async function runLivePage(): Promise<void> {
             (panelHostTarget(panelDelegation, state.tree.selectedId) && !panelHost.snapshot
               ? 'Open unavailable: verifying exact host identity.'
               : null) ||
+            jobRender.notice ||
             hudProblems(hud, nowMs, t)[0],
-          loading: !collected || treeBuiltFor !== tree.rootId,
+          loading: jobRender.loading,
           art: drawArt,
           prefix: prefixName(settings.prefixKey),
           brief:
@@ -975,7 +1231,7 @@ async function runLivePage(): Promise<void> {
           } else inspectAgain = true;
         }
       }
-    } catch (err) {
+    } catch {
       if (state.preview === 'file') diff = ['Unable to read this file preview'];
     } finally {
       inspecting = false;
@@ -1025,12 +1281,27 @@ async function runLivePage(): Promise<void> {
     let stage: HealthSource = 'session';
     try {
       session = finder.check();
-      const nativeRead = nativeCalls.collectCodex(session?.sessionId, getCodexHome(), allDelegations);
+      boundJobRoot = session ? `${makeSourceId('codex', fs.realpathSync(getCodexHome()))}/${session.sessionId}` : '';
+      if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
+      const observationRoot = allDelegations ? null : (selectedRoot ?? boundJobRoot);
+      jobPipeline.setRoot(allDelegations ? null : observationRoot || 'unbound/no-session');
+      let jobCharge: [number, number, number] | undefined;
+      const jobRead = jobPipeline.refresh(
+        (bytes, entries, ms) => {
+          jobCharge = [bytes, entries, ms];
+        },
+        { deadline: delegationDeadline }
+      );
+      await jobRead;
+      if (closed) return;
+      const nativeRead = selectedRoot
+        ? nativeCalls.collect()
+        : nativeCalls.collectCodex(session?.sessionId, getCodexHome(), allDelegations);
       delegation = delegationCollector
         ? await delegationCollector.tick(
             allDelegations ? undefined : session?.sessionId,
             delegationDeadline,
-            publicationWorker ? 2 * 1024 * 1024 : undefined
+            Math.max(0, (publicationWorker ? 2 : 4) * 1024 * 1024 - (jobCharge?.[0] ?? 0))
           )
         : null;
       const legacyDelegation = delegation;
@@ -1055,7 +1326,12 @@ async function runLivePage(): Promise<void> {
               legacyDelegation || publicationWorker
                 ? {
                     budget: {
-                      maxBytes: (publicationWorker ? 2 : 4) * 1024 * 1024,
+                      maxBytes: Math.max(
+                        0,
+                        (publicationWorker ? 2 : 4) * 1024 * 1024 -
+                          (jobCharge?.[0] ?? 0) -
+                          (delegationCollector?.collector.stats().bytesRead ?? 0)
+                      ),
                       maxRecords: 2000,
                       budgetMs: Math.max(0, Math.min(20, Math.floor(delegationDeadline - performance.now()))),
                     },
@@ -1085,9 +1361,12 @@ async function runLivePage(): Promise<void> {
       hudStatus.health.bind(Boolean(session));
       hudStatus.health.read();
       await nativeRead;
+      await jobRead;
+      if (jobCharge) delegationCollector?.collector.chargeAdditionalRead(...jobCharge);
+      if (closed) return;
       delegation = nativeCalls.merge(legacyDelegation);
       stage = 'tree';
-      const rootId = main?.session?.id ?? session?.sessionId ?? '';
+      const rootId = main?.session?.id ?? session?.sessionId ?? selectedRoot ?? '';
       if (rootId !== tree.rootId) {
         state = configuredState();
         diff = undefined;
@@ -1112,7 +1391,7 @@ async function runLivePage(): Promise<void> {
       // on this tick too, rather than waiting for the quiet-file budget.
       if (session) priority.add(session.path);
       const listed =
-        rootId && (!delegation || nativeCallsOnly(delegation))
+        rootId && !!session
           ? await timeAsync('tree.list', () =>
               findRolloutsInDaysYielding(
                 treeLookbackDays(
@@ -1125,17 +1404,20 @@ async function runLivePage(): Promise<void> {
             )
           : undefined;
       tree =
-        rootId && (!delegation || nativeCallsOnly(delegation))
+        rootId && !!session
           ? await timeAsync('tree.build', () =>
               buildSubagentTreeYielding(rootId, main?.subagents ?? [], 3, Date.now(), listed)
             )
           : { rootId, nodes: [], totalCount: 0, updatedAt: new Date() };
+      if (closed) return;
+      nativeTree = tree;
+      applyJobComposition(legacyDelegation);
       treeBuiltFor = rootId;
       markActivitySourceSuccess('tree');
       applyAgentContext();
       jobs.apply(tree, switches(), resolveLanguage(settings.language));
       // On the same tick as the tree, so the log never lags it.
-      if (time('agentlog.observe', () => agentLog.observe(tree))) agentLog.flush();
+      if (time('agentlog.observe', () => agentLog.observe(summaryTree(tree)))) agentLog.flush();
       timeline = time('timeline', () =>
         history.timeline(tree, main, logsIn(agentLog.snapshot(), resolveLanguage(settings.language)))
       );
@@ -1180,7 +1462,9 @@ async function runLivePage(): Promise<void> {
       const publicationToken = delegationCollector?.publicationToken();
       await delegationCollector?.afterPaint(
         (committed) => {
-          delegation = nativeCalls.merge(committed);
+          if (closed) return;
+          applyJobComposition(committed, true);
+          jobs.apply(tree, switches(), resolveLanguage(settings.language));
           if (built) Object.assign(built, { delegation });
           render();
         },
@@ -1297,6 +1581,7 @@ async function runLivePage(): Promise<void> {
       if (!clean) process.stderr.write('observation_worker_cleanup_unconfirmed\n');
     });
     delegationCollector?.close();
+    jobPipeline.dispose();
     briefer.stop();
     jobs.stop();
     progress.stop();
@@ -1320,7 +1605,7 @@ async function runLivePage(): Promise<void> {
     // Settle bounded local telemetry writes before the terminal process exits.
     void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing, workerClosing]).finally(resolveDone);
   };
-  const switchSession = (id: string) => {
+  const switchNativeSession = (id: string) => {
     if (STANDALONE_PANEL) {
       navigationMessage = t('Switching is unavailable in the standalone panel.');
       render();
@@ -1367,6 +1652,7 @@ async function runLivePage(): Promise<void> {
       }
     );
   };
+  const switchSession = (id: string) => dispatchPanelAction(tree, id, () => switchNativeSession(id));
   /**
    * A command from the prefix table as the input it stands for. An open
    * overlay keeps the ones that move inside it or close it; any other
@@ -1782,43 +2068,45 @@ async function runLivePage(): Promise<void> {
         const action = result.action;
         const selected = state.tree.selectedId;
         const execute = () =>
-          dispatchDelegationAction(
-            action,
-            actionFrame?.delegation?.vm,
-            panelDelegation,
-            actionRoot === tree.rootId && actionEpoch === collectionEpoch,
-            {
-              home: delegationCollector?.home ?? null,
-              copy: clipboard.copy,
-              openLog: () => {
-                if (!delegationCollector?.home) return false;
-                const opened = runLogs.open(delegationCollector.home, action.key, logContext());
-                if (opened) {
-                  focusPanel();
-                  render();
-                }
-                return opened;
-              },
-              open: async () => {
-                const target = panelHostTarget(panelDelegation, action.key);
-                const epoch = panelEpoch;
-                const root = tree.rootId;
-                return target
-                  ? panelHost.open(target, () => {
-                      const next = panelHostTarget(delegation, action.key);
-                      return (
-                        !closed &&
-                        root === tree.rootId &&
-                        epoch === panelEpoch &&
-                        state.tree.selectedId === selected &&
-                        !!next &&
-                        panelHostStamp(next) === panelHostStamp(target)
-                      );
-                    })
-                  : 'Open unavailable for this run.';
-              },
-            }
-          );
+          dispatchPanelAction(tree, action.key, () =>
+            dispatchDelegationAction(
+              action,
+              actionFrame?.delegation?.vm,
+              panelDelegation,
+              actionRoot === tree.rootId && actionEpoch === collectionEpoch,
+              {
+                home: delegationCollector?.home ?? null,
+                copy: clipboard.copy,
+                openLog: () => {
+                  if (!delegationCollector?.home) return false;
+                  const opened = runLogs.open(delegationCollector.home, action.key, logContext());
+                  if (opened) {
+                    focusPanel();
+                    render();
+                  }
+                  return opened;
+                },
+                open: async () => {
+                  const target = panelHostTarget(panelDelegation, action.key);
+                  const epoch = panelEpoch;
+                  const root = tree.rootId;
+                  return target
+                    ? panelHost.open(target, () => {
+                        const next = panelHostTarget(delegation, action.key);
+                        return (
+                          !closed &&
+                          root === tree.rootId &&
+                          epoch === panelEpoch &&
+                          state.tree.selectedId === selected &&
+                          !!next &&
+                          panelHostStamp(next) === panelHostStamp(target)
+                        );
+                      })
+                    : 'Open unavailable for this run.';
+                },
+              }
+            )
+          ) ?? Promise.resolve('');
         void (action.type === 'delegation-open' ? openOnce(action.key, execute) : execute()).then((message) => {
           if (
             message === null ||
@@ -1934,13 +2222,14 @@ async function runLivePage(): Promise<void> {
   });
 }
 
-runLivePage()
-  .catch((error) => {
-    process.stderr.write(`${String(error)}\n`);
-    process.exitCode = 1;
-  })
-  .finally(() => {
-    if (process.stdin.isTTY) process.stdin.setRawMode(false);
-    process.stdout.write(LEAVE);
-    process.exit(process.exitCode ?? 0);
-  });
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)
+  runLivePage()
+    .catch((error) => {
+      process.stderr.write(`${String(error)}\n`);
+      process.exitCode = 1;
+    })
+    .finally(() => {
+      if (process.stdin.isTTY) process.stdin.setRawMode(false);
+      process.stdout.write(LEAVE);
+      process.exit(process.exitCode ?? 0);
+    });

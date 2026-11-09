@@ -16,6 +16,8 @@ export interface JobTreeInput {
   nowMs: number;
   legacy?: DelegationViewModel | null;
   nativeRefs?: ReadonlyMap<string, SessionRef>;
+  /** Shared all-roots projection allowance remaining after other roots/containers. */
+  maxAdditionalNodes?: number;
 }
 export interface JobTreeResult {
   tree: SubagentTree;
@@ -81,7 +83,10 @@ export function composeJobTree(input: JobTreeInput): JobTreeResult {
   for (const [key, count] of claimants) if (count > 1) diagnostics.push(`ambiguous_native_ownership:${key}`);
   const suppressed = new Set<string>();
   let added = 0;
-  const room = Math.max(0, JOB_BOUNDS.nodes - seen.size - (input.legacy?.tree.nodes.length ?? 0));
+  const room = Math.min(
+    input.maxAdditionalNodes ?? JOB_BOUNDS.nodes,
+    Math.max(0, JOB_BOUNDS.nodes - seen.size - (input.legacy?.tree.nodes.length ?? 0))
+  );
   let omitted = 0;
   const legacyNodes = input.legacy?.tree.nodes ?? [];
   const movable = (n: LinkTreeNode) =>

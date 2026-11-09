@@ -30,7 +30,14 @@ import {
   worktreeOfItem,
 } from './monitor-labels.js';
 import { paneRows, agentsView, putAwayCount, summaryRow } from './monitor-panes.js';
-import { delegationPutAway, delegationView, type DelegationView, type PlanOptions } from './delegation/panel.js';
+import {
+  delegationPutAway,
+  delegationView,
+  rememberMixedDestinations,
+  mixedOrdinaryNodes,
+  type DelegationView,
+  type PlanOptions,
+} from './delegation/panel.js';
 import { resolveSelection } from './delegation/selection.js';
 import { selectedActions, type DelegationAction } from './delegation/actions.js';
 import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
@@ -445,6 +452,11 @@ export function reconcileMonitor(
     const { delegating: _mark, ...unmarked } = state;
     state = unmarked;
   }
+  if (delegation)
+    rememberMixedDestinations(
+      delegation,
+      listedAgents(mixedOrdinaryNodes(tree.nodes, delegation), state, nowMs).map((row) => row.node.id)
+    );
   const view = delegation
     ? delegationView(delegation, { ...planOptions(state, nowMs), style: state.style === 'rich' ? 'rich' : 'compact' })
     : null;

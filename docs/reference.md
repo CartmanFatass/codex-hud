@@ -168,6 +168,37 @@ Below about 63 columns Codex stops printing UUIDs in the picker. The agent is th
 
 ### Agents in the list
 
+The panel also observes role-facade CLI/browser jobs, dispatch helpers and explicitly
+registered external Herdr tasks in the same Agents pane. Jobs attach only to their exact
+recorded root. Native sessions are enriched only by a complete matching native reference;
+labels, pane names or reused session strings do not establish a match. Source freshness,
+lifecycle and outcome remain separate: an unavailable host is not a task failure, and a
+report file is not proof of successful work. Stale live work is counted as unknown.
+Job-only summaries are unavailable: local labels, questions and report text are never sent
+to the model. Native-enriched rows keep the ordinary native summary path. Brief dry-run
+explicitly reports omitted job-only summaries without starting a backend or writing state.
+These observation ids cannot be used for Codex Switch, legacy Open or Resume.
+
+`hud panel` opens the existing all-delegations view. To view only one root, use
+`hud panel --root <namespace/session-id>`; this is an observation selector, not execution
+identity or permission. Without a native root, all-roots mode uses a metadata-only root
+container, not a fabricated Codex session or footer. Embedded no-argument panels continue
+to follow the current bound session.
+
+External tasks appear only after explicit metadata registration:
+
+```sh
+hud observe-herdr --root synthetic/main --id checks --agent synthetic-agent \
+  --pane pane-1 --tab tab-1 --label 'Synthetic checks'
+hud observe-herdr --root synthetic/main --id checks --remove
+```
+
+Registration does not launch/adopt a task; removal does not close its agent, pane or tab.
+Optional `--workspace <id>` records its locator. Conflicting targets for the same root/id
+are refused. Herdr is sampled read-only at most every five seconds; failed or mismatched
+live evidence leaves last-known/unknown state. Jev liveness is file/process-only, with no
+runtime connection, resume or launch from observation.
+
 Active sorting only rearranges siblings. A running descendant brings its entire branch forward;
 latest turn starts determine order, while ordinary token and log updates do not reshuffle the tree.
 Parent links support both metadata locations. Missing status evidence stays unknown.

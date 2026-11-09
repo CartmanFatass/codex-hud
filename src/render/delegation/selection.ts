@@ -30,6 +30,30 @@ export interface Destinations {
   index: ReadonlyMap<string, number>;
 }
 
+/** Ordinary rows share navigation destinations, never the legacy projection/action plan. */
+export function ordinaryDestination(key: string, view: { plan: RowPlan; dest: Destinations }): boolean {
+  return view.dest.index.has(key) && !view.plan.index.has(key);
+}
+export function mixedDestinations(legacy: Destinations, keys: readonly string[]): Destinations {
+  const rows = [...legacy.rows];
+  for (const key of keys)
+    if (!legacy.index.has(key))
+      rows.push({
+        kind: 'node',
+        key,
+        pn: null,
+        depth: 0,
+        ancestors: [],
+        tee: 'none',
+        unconfirmed: false,
+        flat: false,
+        fold: null,
+        put: null,
+        parentKey: null,
+      });
+  return { rows, index: new Map(rows.map((row, index) => [row.key, index])) };
+}
+
 const destinationMemo = new WeakMap<RowPlan, Partial<Record<PanelStyle, Destinations>>>();
 
 /**

@@ -27,8 +27,7 @@ export async function main(args: readonly string[], io: HudIO, received?: number
         await io.stdout(PANEL_HELP);
         return 0;
       }
-      if (args.length !== 1) throw new CliError('invalid_arguments');
-      return await panelCommand(io);
+      return await panelCommand(io, args.slice(1));
     }
     if (args[0] === 'run') {
       if (args.length === 2 && args[1] === '--help') {

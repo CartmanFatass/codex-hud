@@ -316,6 +316,7 @@ function usableCharge(value: string | undefined): string | undefined {
  * apart, else a plaintext task. Empty when Codex kept both sealed.
  */
 export function labelSource(node: SubagentTreeNode): string | undefined {
+  if (summaryExcludedNode(node)) return undefined;
   const charge = usableCharge(node.charge);
   if (charge) {
     const where = [node.agentPath, node.role].filter((part): part is string => Boolean(part)).join(' ');
@@ -501,8 +502,46 @@ export function approvalKey(approval: PendingApproval): string {
 
 // ---------------------------------------------------------------- the jobs
 
+/** Synthetic observation ids are neither Codex control ids nor legacy material authority. */
+export function jobOnlyNode(node: Pick<SubagentTreeNode, 'id'>): boolean {
+  return /^(?:role-job:|external-herdr:|job-root:)/.test(node.id);
+}
+
+// Enumerable symbols survive the composer's shallow copies, but never enter JSON/log/cache keys.
+const displayOnlyRoot = Symbol('display-only-job-root');
+/** A constructed native-key wrapper carries display identity, not rollout/material authority. */
+export function displayOnlySummaryRoot<T extends SubagentTreeNode>(node: T): T {
+  return Object.assign(node, { [displayOnlyRoot]: true });
+}
+function summaryExcludedNode(node: SubagentTreeNode): boolean {
+  return jobOnlyNode(node) || displayOnlyRoot in node;
+}
+
+/** Exclude job-only branches before text, cache keys and legacy material planning. */
+export function summaryTree(tree: SubagentTree): SubagentTree {
+  let count = 0;
+  const filter = (nodes: SubagentTreeNode[]): SubagentTreeNode[] => {
+    const kept: SubagentTreeNode[] = [];
+    let changed = false;
+    for (const node of nodes) {
+      if (summaryExcludedNode(node)) {
+        changed = true;
+        continue;
+      }
+      count++;
+      const children = filter(node.children);
+      kept.push(children === node.children ? node : { ...node, children });
+      if (children !== node.children) changed = true;
+    }
+    return changed ? kept : nodes;
+  };
+  const nodes = filter(tree.nodes);
+  return nodes === tree.nodes ? tree : { ...tree, nodes, totalCount: count };
+}
+
 function walk(nodes: readonly SubagentTreeNode[], visit: (node: SubagentTreeNode) => void): void {
   for (const node of nodes) {
+    if (summaryExcludedNode(node)) continue;
     visit(node);
     walk(node.children, visit);
   }
@@ -835,6 +874,9 @@ export class ModelJobs {
   }
 
   apply(tree: SubagentTree, switches: JobSwitches, language: Language): void {
+    // Plan with filtered copies, but mutate the original retained native display nodes.
+    // walk excludes observation-only branches in both representations.
+    const materialTree = summaryTree(tree);
     this.resetLocalDisplay(tree.rootId);
     const bindings = new Set<string>();
     const hydrationKeys = new Set<string>();
@@ -848,8 +890,8 @@ export class ModelJobs {
     for (const key of this.localViews) if (!bindings.has(key)) this.localViews.delete(key);
     for (const [id, value] of this.displayLabels) if (!bindings.has(value.binding)) this.displayLabels.delete(id);
     const epoch = this.localDisplayEpoch;
-    if (switches.agentLabels) this.hydrateDisplayLabels(tree, language);
-    const localSubjects = legacyTreeSubjects(tree);
+    if (switches.agentLabels) this.hydrateDisplayLabels(materialTree, language);
+    const localSubjects = legacyTreeSubjects(materialTree);
     walk(tree.nodes, (node) => {
       const binding = this.displayBinding(tree, node);
       if (!this.localViews.has(binding) && !this.localViewPending.has(binding)) {
@@ -915,6 +957,7 @@ export class ModelJobs {
 
   /** Start whatever is due. Cheap when nothing is: no reads, no calls. */
   update(input: JobsInput): void {
+    input = { ...input, tree: summaryTree(input.tree) };
     this.resetLocalDisplay(input.tree.rootId);
     this.materialSubjects = legacyTreeSubjects(input.tree, input.main?.session?.rolloutPath);
     const root = this.materialSubjects.find((subject) => subject.sessionId === input.tree.rootId);

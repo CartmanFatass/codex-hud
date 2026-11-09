@@ -1,5 +1,6 @@
 /** Incremental bounded file observation. This module has no execution/control port. */
 import * as fs from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import { promises as fsp } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { parseAssociation, DISPATCH_SLOT, type JobAssociation } from '../roles/association.js';
@@ -122,11 +123,17 @@ function immutable<T>(value: T): T {
   return value;
 }
 
+export interface JobReadSlice {
+  deadline?: number;
+  maxBytes?: number;
+}
 export interface JobObserverOptions {
   root?: string | null;
   now?: () => number;
   herdr?: HerdrListRunner;
   process?: JevProcessProbe;
+  /** Offline preview observes files only, never launches even the read-only herdr CLI. */
+  live?: boolean;
 }
 export class JobObservationCollector {
   readonly home: string;
@@ -144,6 +151,7 @@ export class JobObservationCollector {
   private round = 0;
   private nowMs = 0;
   private budget!: MutableBudget;
+  private slice: JobReadSlice = {};
   constructor(
     home: string,
     private readonly options: JobObserverOptions = {}
@@ -248,6 +256,10 @@ export class JobObservationCollector {
     }
   }
   private async execute(op: Op): Promise<{ value: Value } | null> {
+    if (performance.now() >= (this.slice.deadline ?? Infinity)) {
+      this.budget.incomplete = true;
+      return null;
+    }
     if (op.kind === 'entry') {
       if (this.budget.entries >= JOB_BOUNDS.entries) {
         this.budget.incomplete = true;
@@ -293,7 +305,7 @@ export class JobObservationCollector {
         this.budget.files++;
         return { value: cached.value };
       }
-      if (size > JOB_BOUNDS.bytes - this.budget.bytes) {
+      if (size > Math.min(JOB_BOUNDS.bytes, this.slice.maxBytes ?? JOB_BOUNDS.bytes) - this.budget.bytes) {
         this.budget.incomplete = true;
         return null;
       }
@@ -893,8 +905,9 @@ export class JobObservationCollector {
       'herdr_uncorroborated'
     );
   }
-  refresh(): Promise<JobSnapshot> {
+  refresh(slice: JobReadSlice = {}): Promise<JobSnapshot> {
     if (this.pending) return this.pending;
+    this.slice = slice;
     const generation = this.generation;
     this.pending = this.collect(generation).finally(() => {
       this.pending = null;
@@ -905,7 +918,7 @@ export class JobObservationCollector {
     this.nowMs = this.options.now?.() ?? Date.now();
     this.budget = { entries: 0, files: 0, bytes: 0, incomplete: false, diagnostics: [] };
     if (this.disposed) return this.snapshot();
-    this.live.tick(this.nowMs);
+    if (this.options.live !== false) this.live.tick(this.nowMs);
     // Reserve discovery work; its cursor never restarts at the first 128 names.
     for (let n = 0; n < 16; n++) {
       if (!this.discoveryOp) {

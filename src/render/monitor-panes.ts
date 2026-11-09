@@ -41,7 +41,7 @@ import {
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
 import { timelineRows } from './monitor-timeline.js';
-import { delegationAgentsRows } from './delegation/panel.js';
+import { delegationAgentsRows, mixedAgentsRows, mixedOrdinaryNodes } from './delegation/panel.js';
 
 /**
  * What the linger window put away from the list, counted whether or not it
@@ -586,18 +586,27 @@ export function agentsView(
     );
     return [...nativeRows, ...calls];
   }
-  if (delegation)
-    return delegationAgentsRows(delegation, {
-      width,
-      nowMs: now,
-      style: state.style === 'rich' ? 'rich' : 'compact',
-      selectedId: state.tree.selectedId,
-      collapsed: state.tree.collapsed,
-      showHistory: state.tree.showAll,
-      sortByCreation: state.tree.sort === 'created',
-      viewport,
-      empty: () => emptyAgentsRows(input, width),
-    });
+  if (delegation) {
+    const mixedInput = { ...input, tree: { ...input.tree, nodes: mixedOrdinaryNodes(input.tree.nodes, delegation) } };
+    const ordinary =
+      state.style === 'rich'
+        ? richRows(mixedInput, state, width, now, spaced)
+        : [...agentRows(mixedInput, state, width, now), ...briefRows(mixedInput, state, width, now, spaced)];
+    return mixedAgentsRows(
+      delegationAgentsRows(delegation, {
+        width,
+        nowMs: now,
+        style: state.style === 'rich' ? 'rich' : 'compact',
+        selectedId: state.tree.selectedId,
+        collapsed: state.tree.collapsed,
+        showHistory: state.tree.showAll,
+        sortByCreation: state.tree.sort === 'created',
+        viewport,
+        empty: () => emptyAgentsRows(input, width),
+      }),
+      ordinary
+    );
+  }
   if (state.style === 'rich') return richRows(input, state, width, now, spaced);
   return [...agentRows(input, state, width, now), ...briefRows(input, state, width, now, spaced)];
 }
