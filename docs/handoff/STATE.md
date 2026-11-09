@@ -150,7 +150,11 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   A2 ordinary-session binding (A1/A2 first), A3 panel control, A4 Claude plugin, A5 pi package and status segment,
   A6 role-summary cache, A7 `tree-page.ts` lifecycle hunk (after P2), A8 Codex activation and rehearsal, PIROLE
   (pi-roles built in; plan `docs/reviews/2026-11-09-pirole-plan-architect.md`, slices PR1–PR5, PR1 when a slot frees).
-  Running: A1 (`r6a-a1`), A2 (`r6a-a2`), next to R5-UX P1.
+  A2 merged (`bd13045`, reviews `docs/reviews/2026-11-09-r6a-a2-review-{1,2}.md`): per-call binding for Claude,
+  Codex and pi; ordinary Codex 0.167.0 daemon-backed MCP admission is refused (`identity_unverified`, ancestry ends
+  at the app-server daemon), so follow-up **A2b** (Codex connection-native admission) is queued.
+  Running: A1 (`r6a-a1`, pi), PIROLE PR1 (`pirole-pr1`, Codex trial), next to R5-UX P1. Codex trial (2026-11-09):
+  new implementer packages run on Codex for a rough comparison with pi (`docs/delegation.md`).
   The r5-acc demo stage is merged (`1f20f01`).
 
 | Package | Deliverable | Acceptance |
