@@ -90,8 +90,9 @@ sonic 失败或报告越界：调用方自己做，不升档重试。
 
 从此刻起，新开的 implementer 工作包改用 Codex（`codex` 函数，主账号，gpt-6.1-sol high，Fast off），按 legacy
 skill `herdr-delegate-codex` 的旧方式：一个工作包一个 tab，按规模定子代理计划，收尾用原生 `spawn_agent` 起
-reviewer 子代理（`fork_turns: "none"`，sol high），问题经 herdr 推到编排者 pane。已在 pi 上运行的工作包照常跑完；
-architect、sonic、前端、Hermes 的路由不变。目的是粗略比较 Codex 与 pi 在同一 OAI 模型上的数据（不是严格对照）：
+reviewer 子代理（`fork_turns: "none"`，gpt-6.1-sol **xhigh**，与 pi reviewer 强度一致），问题经 herdr 推到编排者 pane。
+architect 也改用 Codex：gpt-6-astra high（与 pi 一致），独立 tab，只读，只写 `architect-N.md`，仍只由编排者调用。
+已在 pi 上运行的工作包照常跑完；sonic、前端、Hermes 的路由不变。目的是粗略比较 Codex 与 pi 在同一 OAI 模型上的数据（不是严格对照）：
 每个包记墙钟时间、评审轮数与发现、提问次数、编排者验收时发现的缺陷、token；记录在
 `tmp/tasks/CODEX-TRIAL/ledger.md`，结束后汇总进本文。
 
