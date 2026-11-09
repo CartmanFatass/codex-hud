@@ -823,6 +823,26 @@ The dispatch contract (launch flags, SESSION.txt keys, STATUS shape, reap semant
 pi-roles stays its reference implementation. Without pi-roles installed, the facade keeps today's direct pi launch.
 Queued as R2b, after the contract settles (pi-roles DISPATCH-2B fixes and the DISPATCH-3 run ledger).
 
+### 2026-11-09 Agent cards show work progress, not process state (Jacob)
+
+After the first live look at the R5 panel, the owner judged it overloaded with process facts and short on the facts
+that let a person steer delegated work. Decisions:
+- Cards stay. A role's own helpers (an imp's sonic and reviewer) live inside its card, never as parallel cards; the
+  user does not read their content.
+- Card state is one of four: needs you, in progress, awaiting acceptance, stalled (no new evidence for N minutes).
+  Inferred process states (stale, unknown, per-helper running/done) leave the card for the Inspector.
+- A card has at most three lines: title (task name in its role colour, state, elapsed in minutes); the phase strip
+  (implement → review rN verdict → fixing → done), where helpers appear only as phase results; one human sentence
+  that depends on state (what it is doing now; the question and its default; the result with review verdict, test
+  counts and changed files; or how long it has been stalled and its last activity).
+- Tool calls, context meters, tok/s and model badges leave the card (Inspector only). Times default to minutes.
+- Each role (imp, reviewer, sonic, oracle, Jev) gets a fixed colour; status keeps its own colours. This supersedes
+  R5's "no new colour" rule.
+- The "doing now" sentence comes from the small model reading the job's own output (option B), not from agents
+  reporting progress: agent behaviour must not change, and small-model capacity is ample. This makes a job-scoped
+  material authority (R5 follow-up) a prerequisite: job text may reach the small model only through it.
+Queued as R5-UX before R6; the R5 live-look findings in that package's notes are folded in.
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。

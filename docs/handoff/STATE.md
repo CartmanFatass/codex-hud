@@ -120,7 +120,11 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - Reviews: `docs/reviews/2026-11-09-r5b-core-review-*` (accept round 2), `2026-11-09-r5b-ui-review-*` (accept
     round 3).
   - Merged-tree gate: unit 4079/0 fail (24 skip), mjs 383/0, hud-mcp 212/0, WP0 1176/1176, format clean.
-  - Next: Hermes live visual acceptance on Windows Terminal (job rows, Inspector, stale/unknown, EN/ZH), then R6.
+  - Live look (owner, 2026-11-09, staged by `scripts/demo-r5-jobs.mjs` on branch `r5-acc`): cards read as process
+    state, not work progress. Decision in concept §15 "Agent cards show work progress, not process state".
+    Hermes stalled on a multi-line prompt (killed after 11 min); retry with a single-line prompt later.
+  - Next: R5-UX (card redesign, role colours, minute times, small-model progress via a job-scoped material
+    authority), then R6.
   - Follow-ups: job-scoped material authority; per-root change stamp; no native-ref writer yet (exact-ref
     enrichment is fixture-only).
 
