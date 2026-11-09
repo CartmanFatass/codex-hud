@@ -1,0 +1,44 @@
+ Home  [Work]  Inspect  Settings  Help   Ctrl+\ then key
+›│ Synthetic browser finished wait                      
+ ┌ ✓ Synthetic browser finished ────── jev synthetic-web
+ └ ─────────────────────────────────────────────────────
+ │ DONE phase unknown                                   
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+↑↓ move · → expand · Enter: Work · v inspect · ? help   

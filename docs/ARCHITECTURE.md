@@ -12,6 +12,62 @@ be worth keeping. To find one, search for the symbol, or run
 
 ---
 
+## R5UX-P1 update: passive Home and Work
+
+> **Current for the panel's Home and Work tabs.** This section supersedes the older stacked-monitor description of
+the panel's job and agent panes wherever the two disagree: §4.5, §6.2 and the `renderMonitor` note under
+"Off the live path". Those passages remain as the historical and secondary renderer description, not as the live
+behaviour.
+
+The panel's live path is one passive pipeline: `TaskObservationCollector` reads task artifacts, `buildWorkboard`
+(`collectors/workboard.ts`) turns them into a `WorkboardSnapshot` (`workboard-types.ts`), and the Home and Work
+views (`render/home-view.ts`, `render/work-view.ts`, shared rows in `render/workboard-rows.ts`) render it.
+`tree-page.ts` builds the snapshot in `PanelJobPipeline.workboard` and always passes an explicit
+`MonitorData.workboard` to `renderMonitor`, in standalone and embedded mode alike. There is no second, implicit
+source for those tabs.
+
+**What is read.** `TaskObservationCollector` (`collectors/task-observations.ts`) lists only the immediate
+`tmp/tasks` children of the workspace it was explicitly bound to (`CODEX_HUD_CWD` / the selected workspace). It
+never joins a facade job to a task directory by cwd or name, and facade jobs and task lanes stay separate
+invocation lanes. With no bound workspace it reports the `workspace_not_bound` coverage diagnostic and crawls
+nothing. A source list is capped at 200 entries; beyond that the lane reports `lane_capacity` rather than growing.
+
+**Read-only.** The new task/artifact observation modules import no execution path: no watchers, no writes, no model calls, no
+execution or Herdr imports. Existing job observation retains its existing bounded liveness sampler. Symlinked, FIFO, escaping or replaced-ancestor paths are refused.
+
+**Budgets.** Collection is bounded at every level, and the whole pipeline shares one allowance:
+
+| Bound | Value |
+|---|---|
+| Resident task/invocation sources | 200 total |
+| QA pairs per source | 100 |
+| Resident artifact metadata / text | 2048 / 2 MiB |
+| Pipeline files / bytes / directory entries | 32 / 1 MiB / 128 (`JOB_BOUNDS`) |
+| One artifact slice | 8 files, 256 KiB, 64 metadata probes, 10 ms |
+| Per-file read caps | `STATUS.json` 64 KiB, answers 16 KiB, `qa/*` 64 KiB, other artifacts 32 KiB |
+
+**Cost of a warm refresh.** Membership is cached by stat signature and cursors are persistent and round-robin. An
+unchanged warm scan does zero body reads, zero directory enumeration and zero re-parses. A retained failure is shown
+as stale, not as a fresh fact. QA reductions are cached per coherent dependency pair; a bounded persistent pair cursor
+validates only changed/pending pairs. Pending membership, initial file reads and pair reductions persist across all
+retained sources, independently of which source got a turn; ordinary warm signature rotation is not pending work.
+Switching the root or disposing the pipeline resets the cached state.
+
+**Timestamps stay honest.** Source and decision timestamps keep the basis they were read with: file mtime for
+observed files, the producer's own stamp where a producer wrote one. No deadline, queue position or merge fact is
+invented when the files do not state it; unknown phase or order is shown as unknown.
+
+**Facade closure.** The additive facade closure is separate from the Pi dispatcher closure. Helpers are not owners:
+a helper's records never become a task's or a job's authority.
+
+**The retained legacy renderer.** `renderMonitor` keeps its no-sidecar path to the old stacked Agents renderer for
+legacy, secondary and fixture callers only (owner ruling q2). The live Home and Work path cannot use that seam, and
+the old renderer gets no new features; it is removed in P2.
+
+**Scope of P1.** Work is transitional in this package: lane headers, decision rows and the existing cards, so that
+every Home → Work jump lands somewhere real. It is not the final P2 compact card and peek redesign. The snapshot
+publisher, the recap and brief backends, the main summary, the Timeline, Changes and the diagnostics are unchanged.
+
 ## 1. The mental model in one screen
 
 codex-hud wraps the OpenAI Codex CLI in a tmux session. Codex runs unchanged in
@@ -287,6 +343,9 @@ Iterate with `eachThread`. Do not walk the tree by hand.
   entries survive the upgrade.
 
 ### 4.5 Read-only role jobs in the panel (R5)
+
+*Superseded where it disagrees with [R5UX-P1 update: passive Home and Work](#r5ux-p1-update-passive-home-and-work);
+kept as the historical/secondary description.*
 
 The panel alone owns `JobObservationCollector` and `PanelJobPipeline` (`tree-page.ts`).
 Each refresh reads bounded association/receipt/STATUS, helper/QA and external-registration
@@ -615,6 +674,9 @@ skipped. Never show a zero you do not have.
 The bar is English-only.
 
 ### 6.2 The panel
+
+*Superseded where it disagrees with [R5UX-P1 update: passive Home and Work](#r5ux-p1-update-passive-home-and-work);
+kept as the historical/secondary description of the stacked monitor.*
 
 `tree-page.ts` runs the panel:
 

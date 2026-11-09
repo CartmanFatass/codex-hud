@@ -101,7 +101,7 @@ export class WorkbenchInputDecoder {
   private readonly utf8 = new StringDecoder('utf8');
   private readonly forward: boolean;
   constructor(
-    private readonly profile: 'workbench' | 'monitor' = 'workbench',
+    private readonly profile: 'workbench' | 'monitor' | 'workboard' = 'workbench',
     options: DecoderOptions = {}
   ) {
     this.forward = options.forward ?? false;
@@ -140,11 +140,23 @@ export class WorkbenchInputDecoder {
       if (this.pending[0] !== '\x1b') {
         const ch = String.fromCodePoint(this.pending.codePointAt(0) ?? 0);
         const name =
-          this.profile === 'monitor' && ch === '2'
-            ? 'timeline'
-            : this.profile === 'monitor' && ch === '4'
-              ? 'details'
-              : KEYS[ch];
+          this.profile === 'workboard'
+            ? ((
+                {
+                  '1': 'home-tab',
+                  '2': 'work-tab',
+                  '4': 'inspect',
+                  t: 'timeline',
+                  v: 'inspect',
+                  ' ': 'inspect',
+                  S: 'summary',
+                } as Record<string, string>
+              )[ch] ?? KEYS[ch])
+            : this.profile === 'monitor' && ch === '2'
+              ? 'timeline'
+              : this.profile === 'monitor' && ch === '4'
+                ? 'details'
+                : KEYS[ch];
         this.pending = this.pending.slice(ch.length);
         key(name, ch);
         continue;

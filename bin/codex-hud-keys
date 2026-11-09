@@ -62,7 +62,6 @@ bind_command() {
 }
 
 bind_command 0 m main
-bind_command 0 b brief
 bind_command 0 a older
 bind_command 0 , settings
 bind_command 0 d diagnostics
@@ -70,11 +69,12 @@ bind_command 0 u activity
 bind_command 0 p find-agent
 bind_command 0 c observability
 bind_command 0 '?' help
-bind_command 0 r level
 bind_command 0 1 pane-1
 bind_command 0 2 pane-2
 bind_command 0 3 pane-3
 bind_command 0 4 pane-4
+bind_command 0 t timeline
+bind_command 0 S summary
 bind_command 0 x close-pane
 bind_command 0 Tab next-pane
 bind_command 0 BTab previous-pane
@@ -84,7 +84,7 @@ bind_command 0 / filter
 bind_command 0 s order
 bind_command 0 q quit
 bind_command 0 o switch
-bind_command 0 Enter inspect
+bind_command 0 Enter activate
 bind_command 0 v inspect
 bind_command 0 Space inspect
 bind_command 0 g first
@@ -95,7 +95,6 @@ bind_command 0 l right
 bind_command 0 n next-trouble
 bind_command 0 N previous-trouble
 bind_command 0 L log
-bind_command 0 R resume-reconcile
 bind_command 0 Escape back
 # Within repeat-time the next of these needs no prefix: prefix j j j.
 bind_command 1 j down

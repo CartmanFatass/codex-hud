@@ -1,0 +1,44 @@
+ Home ?1  [Work]  v  ,  ?                Ctrl+\ then key
+›│ CHECK review                                   1 call
+ ▸ pi     reviewer Revie… gpt-synthetic-review·high  30m
+   working                                              
+ < CHECK Sent back r2                                 2m
+ │ DESIGN awaiting-acceptance                     1 call
+ ✓ pi     oracle   Sourc… gpt-synthetic·high          5m
+   idle_grace                                           
+ ! DESIGN recommendation: Keep one explicit source    2m
+          boundary.                                     
+   one-way · recommendation                             
+   instead: Infer a name-based join                     
+   why: Never guess task ownership.                     
+ │ UI-1 build                                    6 calls
+ ▸ pi     imp      首页…  gpt-synthetic·high         30m
+   working                                              
+ ≠ UI-1 B                                             2m
+   answer                                               
+   instead: A                                           
+   why: The explicit source is sufficient.              
+   source context: Should compatibility stay? — Synthet…
+ · UI-1 A                                             2m
+ · UI-1 A                                             2m
+ · UI-1 A                                             2m
+ · UI-1 A                                             2m
+ · UI-1 A                                             2m
+ │ Synthetic browser handoff wait                       
+ ┌ ? Synthetic browser handoff ─────── jev synthetic-web
+ └ ─────────────────────────────────────────────────────
+ │ MOCKUP phase unknown                                 
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+↑↓ move · → expand · Enter: Work · v inspect · ? help   

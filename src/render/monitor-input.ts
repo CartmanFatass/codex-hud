@@ -12,6 +12,7 @@ import type {
 } from './monitor.js';
 import { MONITOR_PANES, HELP_TABS, listedAgents } from './monitor.js';
 import { applyKey } from './panel-state.js';
+import { workboardInput } from './workboard-input.js';
 import {
   logKeyAction,
   openButtonAction,
@@ -152,6 +153,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     }
     return result();
   }
+  const boardResult = workboardInput(next, input, ctx);
+  if (boardResult) return boardResult;
   if (input.type === 'mouse') {
     const control =
       input.button === 'left'
@@ -320,6 +323,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     next.scroll.details = 0;
     return result();
   }
+  if (key === 'inspect' || key === 'activate') key = 'enter';
   if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
   // `r` is Reset on the settings page; here it changes how much the status card shows.
   if (key === 'reset') {

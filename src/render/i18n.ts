@@ -11,6 +11,7 @@
  * caller wants the same answer.
  */
 
+import { WORKBOARD_ZH } from './workboard-i18n.js';
 import { DIAGNOSTIC_ZH } from '../diagnostics/diagnostic-translations.js';
 
 export type Language = 'en' | 'zh';
@@ -37,6 +38,7 @@ export function language(): Language {
 }
 
 const ZH: Record<string, string> = {
+  ...WORKBOARD_ZH,
   'Lite effort': '轻量档推理',
   'Low effort': '低档推理',
   'Medium effort': '中档推理',

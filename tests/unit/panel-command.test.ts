@@ -11,7 +11,9 @@ import {
 } from '../../src/utils/panel-command.js';
 
 test('Inspector commands have one descriptor and obsolete card commands are rejected', () => {
-  assert.equal(monitorKey('inspect'), 'enter');
+  assert.equal(monitorKey('inspect'), 'inspect');
+  assert.equal(monitorKey('activate'), 'activate');
+  assert.equal(overlayKey('activate', 'help'), 'enter');
   assert.equal(overlayKey('inspect', 'help'), 'enter');
   assert.equal(overlayKey('inspect', 'settings'), 'enter');
   assert.equal(needsOpenPanel('inspect'), true);
@@ -24,13 +26,15 @@ test('Inspector commands have one descriptor and obsolete card commands are reje
   }
 });
 
-test('prefix keys bind Enter, Space and v to inspect, omit e, and preserve compact folding', () => {
+test('prefix keys bind Enter to Work activation, Space and v to inspect, omit e, and preserve compact folding', () => {
   const source = readFileSync(new URL('../../../bin/codex-hud-keys', import.meta.url), 'utf8');
   const bindings = [...source.matchAll(/^bind_command [01] (\S+) (\S+)$/gm)].map(([, key, command]) => ({
     key,
     command,
   }));
-  for (const key of ['Enter', 'Space', 'v']) assert.ok(bindings.some((b) => b.key === key && b.command === 'inspect'));
+  assert.ok(bindings.some((b) => b.key === 'Enter' && b.command === 'activate'));
+  for (const key of ['Space', 'v']) assert.ok(bindings.some((b) => b.key === key && b.command === 'inspect'));
+  for (const key of ['r', 'b', 'R']) assert.ok(!bindings.some((b) => b.key === key));
   assert.ok(!bindings.some((b) => b.key === 'e'));
   assert.ok(bindings.some((b) => b.key === 'h' && b.command === 'left'));
   assert.ok(bindings.some((b) => b.key === 'l' && b.command === 'right'));

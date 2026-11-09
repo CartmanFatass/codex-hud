@@ -6,7 +6,7 @@
  * component at once. See `palette.ts`.
  */
 
-import { palette } from './palette.js';
+import { palette, workboardPalette } from './palette.js';
 
 // ANSI escape codes
 const ESC = '\x1b[';
@@ -61,6 +61,11 @@ export const theme = {
   projectName: (text: string) => palette().project(text),
   projectPath: (text: string) => palette().muted(text),
 
+  /** Passive Home/Work-only inks; other state colours stay unchanged. */
+  get board() {
+    return workboardPalette();
+  },
+
   // Status indicators
   success: (text: string) => palette().success(text),
   warning: (text: string) => palette().warning(text),
@@ -82,6 +87,10 @@ export const theme = {
   /** The ink calibrated for `selectedBand`, per role (`palette.ts`, design §5.2 "选中行"). */
   get onSelectedBand() {
     return palette().onSelectedBand;
+  },
+  /** One ink per work role, on the role word only (`palette.ts`). */
+  get roleInk() {
+    return palette().roleInk;
   },
   chip: (text: string) => palette().chip(text),
   tab: (text: string) => palette().tab(text),

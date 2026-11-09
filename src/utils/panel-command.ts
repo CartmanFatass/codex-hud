@@ -38,6 +38,9 @@ export const PANEL_COMMANDS = [
   'quit',
   'switch',
   'inspect',
+  'activate',
+  'timeline',
+  'summary',
   'first',
   'last',
   'back',
@@ -70,8 +73,8 @@ const MONITOR_KEYS: Record<PanelCommand, string> = {
   observability: 'observability',
   help: 'help',
   level: 'reset',
-  'pane-1': 'agents',
-  'pane-2': 'timeline',
+  'pane-1': 'home-tab',
+  'pane-2': 'work-tab',
   'pane-3': 'changes',
   'pane-4': 'details',
   'close-pane': 'pane-close',
@@ -82,7 +85,10 @@ const MONITOR_KEYS: Record<PanelCommand, string> = {
   order: 'sort',
   quit: 'close',
   switch: 'open-session',
-  inspect: 'enter',
+  inspect: 'inspect',
+  activate: 'activate',
+  timeline: 'timeline',
+  summary: 'summary',
   first: 'home',
   last: 'end',
   back: 'escape',
@@ -123,6 +129,7 @@ export function overlayKey(command: PanelCommand, overlay: 'settings' | 'help'):
     case 'quit':
       return 'escape';
     case 'inspect':
+    case 'activate':
       return 'enter';
     case 'settings':
       return overlay === 'settings' ? 'escape' : null;

@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { promises as fsp } from 'node:fs';
-import { join, basename, resolve } from 'node:path';
+import { join, basename, resolve, dirname } from 'node:path';
 import { parseAssociation, DISPATCH_SLOT, type JobAssociation } from '../roles/association.js';
 import {
   parseExternalAssociation,
@@ -35,13 +35,22 @@ export const JOB_BOUNDS = Object.freeze({
 });
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 type JsonRecord = Record<string, unknown> | null;
+const jsonCache = new Map<string, JsonRecord>();
 const json = (text: string | null): JsonRecord => {
+  if (text === null) return null;
+  if (jsonCache.has(text)) return jsonCache.get(text)!;
+  let result: JsonRecord = null;
   try {
-    const value: unknown = text === null ? null : JSON.parse(text);
-    return object(value) ? value : null;
+    const value: unknown = JSON.parse(text);
+    result = object(value) ? value : null;
   } catch {
-    return null;
+    /* Unknown input. */
   }
+  if (Buffer.byteLength(text) <= 64 * 1024) {
+    jsonCache.set(text, result);
+    if (jsonCache.size > 128) jsonCache.delete(jsonCache.keys().next().value!);
+  }
+  return result;
 };
 const time = (v: unknown): number | null =>
   typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null;
@@ -61,6 +70,9 @@ interface Work {
   op?: Op;
   value?: Value;
   done: boolean;
+  dependencies: Map<string, string>;
+  probe: number;
+  faults: string[];
   view?: JobDisplay;
 }
 interface MutableBudget {
@@ -126,6 +138,8 @@ function immutable<T>(value: T): T {
 export interface JobReadSlice {
   deadline?: number;
   maxBytes?: number;
+  maxFiles?: number;
+  maxEntries?: number;
 }
 export interface JobObserverOptions {
   root?: string | null;
@@ -144,11 +158,20 @@ export class JobObservationCollector {
   private pending: Promise<JobSnapshot> | null = null;
   private readonly works = new Map<string, Work>();
   private readonly dirs = new Map<string, fs.Dir>();
+  private readonly memberships = new Map<
+    string,
+    { stamp: string; entries: fs.Dirent[]; complete: boolean; cursor: number }
+  >();
+  private activeWork?: Work;
+  readonly costs = { probes: 0, enumerations: 0, bodyReads: 0 };
   private readonly cache = new Map<string, { signature: string; value: ReadValue }>();
+  private readonly ancestorPins = new Map<string, string>();
+  private readonly checkedAncestors = new Set<string>();
   private discovery: Generator<Op, void, Value>;
   private discoveryOp?: Op;
   private discoveryValue?: Value;
   private round = 0;
+  private probeRound = 0;
   private nowMs = 0;
   private budget!: MutableBudget;
   private slice: JobReadSlice = {};
@@ -172,6 +195,7 @@ export class JobObservationCollector {
     this.root = root;
     this.works.clear();
     this.cache.clear();
+    this.memberships.clear();
     this.closeDirs();
     this.discovery = this.discover();
     this.discoveryOp = undefined;
@@ -194,11 +218,14 @@ export class JobObservationCollector {
       }
       this.dirs.delete(path);
     }
+    const cached = this.memberships.get(path);
+    if (cached) cached.cursor = 0;
   }
   private closeDirs(): void {
     for (const path of this.dirs.keys()) this.closeDir(path);
   }
   private diagnostic(reason: string): void {
+    if (this.activeWork && this.activeWork.faults.length < 10) this.activeWork.faults.push(reason);
     if (this.budget.diagnostics.length < 100) this.budget.diagnostics.push(reason);
   }
   private admit(path: string, external: boolean): boolean {
@@ -213,7 +240,15 @@ export class JobObservationCollector {
       }
       this.works.delete(victim.path);
     }
-    const work: Work = { path, external, iterator: undefined!, done: false };
+    const work: Work = {
+      path,
+      external,
+      iterator: undefined!,
+      done: false,
+      dependencies: new Map(),
+      probe: 0,
+      faults: [],
+    };
     work.iterator = this.observe(work);
     this.works.set(path, work);
     this.trimHelpers();
@@ -255,44 +290,81 @@ export class JobObservationCollector {
       yield { kind: 'entry', path: '' }; // Yield a cycle boundary even for absent directories.
     }
   }
+  private async pinAncestors(file: string, force = false): Promise<void> {
+    const directory = dirname(file);
+    if (!force && this.checkedAncestors.has(directory)) return;
+    if (dirname(directory) !== directory) await this.pinAncestors(directory, force);
+    const s = await fsp.lstat(directory);
+    this.costs.probes++;
+    const id = `${s.dev}:${s.ino}`;
+    if (
+      !s.isDirectory() ||
+      s.isSymbolicLink() ||
+      (this.ancestorPins.has(directory) && this.ancestorPins.get(directory) !== id)
+    )
+      throw new Error('unsafe_ancestor');
+    if (this.ancestorPins.size >= 2048 && !this.ancestorPins.has(directory)) throw new Error('metadata_capacity');
+    this.ancestorPins.set(directory, id);
+    this.checkedAncestors.add(directory);
+  }
   private async execute(op: Op): Promise<{ value: Value } | null> {
     if (performance.now() >= (this.slice.deadline ?? Infinity)) {
       this.budget.incomplete = true;
       return null;
     }
     if (op.kind === 'entry') {
-      if (this.budget.entries >= JOB_BOUNDS.entries) {
+      if (this.budget.entries >= (this.slice.maxEntries ?? JOB_BOUNDS.entries)) {
         this.budget.incomplete = true;
         return null;
       }
       this.budget.entries++;
       if (!op.path) return { value: null };
       try {
+        await this.pinAncestors(join(op.path, '.'));
         if ((await fsp.realpath(op.path)) !== op.path) return { value: 'unreadable' };
         const info = await fsp.lstat(op.path);
+        this.costs.probes++;
         if (!info.isDirectory() || !(info.mode & 0o444)) return { value: 'unreadable' };
+        const signature = `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+        this.activeWork?.dependencies.set(op.path, signature);
+        let membership = this.memberships.get(op.path);
+        if (membership?.stamp !== signature) {
+          this.closeDir(op.path);
+          membership = { stamp: signature, entries: [], complete: false, cursor: 0 };
+          this.memberships.set(op.path, membership);
+        }
+        if (membership.complete) {
+          const entry = membership.entries[membership.cursor++];
+          if (!entry) membership.cursor = 0;
+          return { value: entry ?? null };
+        }
         let dir = this.dirs.get(op.path);
         if (!dir) {
           dir = fs.opendirSync(op.path);
+          this.costs.enumerations++;
           this.dirs.set(op.path, dir);
         }
         const entry = dir.readSync();
         if (!entry) {
           dir.closeSync();
           this.dirs.delete(op.path);
-        }
+          membership.complete = true;
+          membership.cursor = 0;
+        } else membership.entries.push(entry);
         return { value: entry };
       } catch {
+        this.activeWork?.dependencies.set(op.path, 'missing');
         return { value: 'unreadable' };
       }
     }
-    if (this.budget.files >= JOB_BOUNDS.files) {
+    if (this.budget.files >= (this.slice.maxFiles ?? JOB_BOUNDS.files)) {
       this.budget.incomplete = true;
       return null;
     }
     let fd: fsp.FileHandle | undefined;
     let charged = false;
     try {
+      await this.pinAncestors(op.path);
       if ((await fsp.realpath(op.path)) !== op.path) throw new Error('unsafe_path');
       fd = await fsp.open(op.path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
       if ((await fsp.realpath(op.path)) !== op.path) throw new Error('unsafe_path');
@@ -300,6 +372,8 @@ export class JobObservationCollector {
       if (!s.isFile() || !(s.mode & 0o444) || (!op.prefix && s.size > op.cap)) throw new Error('unsafe_or_oversized');
       const size = Math.min(s.size, op.cap);
       const signature = `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
+      this.costs.probes++;
+      this.activeWork?.dependencies.set(op.path, signature);
       const cached = this.cache.get(op.path);
       if (cached?.signature === signature) {
         this.budget.files++;
@@ -310,11 +384,15 @@ export class JobObservationCollector {
         return null;
       }
       this.budget.files++;
+      this.costs.bodyReads++;
       charged = true;
       const buffer = Buffer.alloc(size);
       const { bytesRead } = await fd.read(buffer, 0, buffer.length, 0);
       this.budget.bytes += bytesRead;
       const after = await fd.stat();
+      await this.pinAncestors(op.path, true);
+      const named = await fsp.lstat(op.path);
+      if (named.dev !== s.dev || named.ino !== s.ino) throw new Error('changed_during_read');
       if (bytesRead !== size || after.size !== s.size || after.mtimeMs !== s.mtimeMs || after.ctimeMs !== s.ctimeMs)
         throw new Error('changed_during_read');
       const value = { text: buffer.toString('utf8'), mtime: s.mtimeMs, reason: null };
@@ -323,6 +401,7 @@ export class JobObservationCollector {
       if (this.cache.size > 512) this.cache.delete(this.cache.keys().next().value!);
       return { value };
     } catch (e) {
+      this.activeWork?.dependencies.set(op.path, 'missing');
       if (!charged) this.budget.files++;
       return {
         value: {
@@ -365,6 +444,15 @@ export class JobObservationCollector {
       preset: a.preset,
       backend: { ...a.backend },
       location: { ...a.herdr },
+      work: {
+        facadeClosed: a.closed,
+        facadeClosedAt: a.closed ? time(a.closed_at) : null,
+        settledAt: null,
+        runtimeTerminal: false,
+        homeNeedsHuman: false,
+        endedAt: null,
+        outputWritten: null,
+      },
       lifecycle: a.closed ? 'closed' : 'unknown',
       runtimePhase: null,
       dispatchSession: null,
@@ -399,6 +487,10 @@ export class JobObservationCollector {
       yield* this.external(work, file);
       return;
     }
+    if (file.reason === 'missing') {
+      work.view = undefined;
+      return;
+    }
     const a = parseAssociation(json(file.text), basename(work.path, '.json'));
     if (!a) {
       this.stale(work, 'association_invalid_or_unreadable');
@@ -421,6 +513,7 @@ export class JobObservationCollector {
       return;
     }
     let view = { ...this.base(a, file.mtime), lifecycle: a.closed ? 'closed' : r.state, decision: r.decision };
+    view = { ...view, work: { ...view.work!, facadeClosed: a.closed || r.state === 'closed' } };
     const previous = work.view;
     if (a.backend.executor === 'jev') {
       const id = r.executor.job;
@@ -522,6 +615,15 @@ export class JobObservationCollector {
       view = {
         ...view,
         lifecycle: raw.closed || a.closed ? 'closed' : String(raw.state),
+        work: {
+          ...view.work!,
+          runtimeTerminal: ['completed', 'failed', 'closed', 'interrupted'].includes(String(raw.state)),
+          endedAt: time(object(raw.run) ? raw.run.endedAt : null),
+          settledAt: time(object(raw.run) ? raw.run.endedAt : null),
+          homeNeedsHuman:
+            ['completed', 'failed', 'closed', 'interrupted'].includes(String(raw.state)) &&
+            (outcome === 'needs_human' || judgments?.some((s) => s.verdict === 'needs_human') === true),
+        },
         outcome,
         judgments,
         status: resultStatus,
@@ -728,6 +830,11 @@ export class JobObservationCollector {
           : null;
     return {
       ...view,
+      work: {
+        ...view.work!,
+        settledAt: continuation ? null : time(s.settled_at),
+        outputWritten: !continuation && s.output_written,
+      },
       lifecycle: view.lifecycle === 'closed' ? 'closed' : s.state,
       outcome,
       observedModel: s.model,
@@ -917,6 +1024,8 @@ export class JobObservationCollector {
   private async collect(generation: number): Promise<JobSnapshot> {
     this.nowMs = this.options.now?.() ?? Date.now();
     this.budget = { entries: 0, files: 0, bytes: 0, incomplete: false, diagnostics: [] };
+    this.costs.probes = this.costs.enumerations = this.costs.bodyReads = 0;
+    this.checkedAncestors.clear();
     if (this.disposed) return this.snapshot();
     if (this.options.live !== false) this.live.tick(this.nowMs);
     // Reserve discovery work; its cursor never restarts at the first 128 names.
@@ -932,22 +1041,73 @@ export class JobObservationCollector {
       if (!read.value) break;
     }
     const work = [...this.works.values()];
-    for (const w of work)
-      if (w.done) {
+    let probes = 0;
+    for (let i = 0; i < work.length && probes < 64; i++) {
+      const w = work[this.probeRound++ % work.length];
+      if (!w.done) continue;
+      const dependencies = [...w.dependencies];
+      const view = w.view;
+      const runtime = this.cache.get(join(this.home, 'jev-runtime', 'runtime.json'))?.value.text ?? null;
+      const current =
+        view?.backend?.executor === 'jev'
+          ? jevRuntimeAlive(json(runtime), this.options.process)
+          : !!view && !!this.live.match(view.location, this.nowMs);
+      let changed =
+        !!view &&
+        !terminal(view) &&
+        (current !== (view.freshness.state === 'current') ||
+          (current && view.freshness.liveDeadline !== null && view.freshness.liveDeadline < this.nowMs));
+      for (
+        let n = 0;
+        n < dependencies.length && probes < 64 && performance.now() < (this.slice.deadline ?? Infinity);
+        n++
+      ) {
+        const [path, signature] = dependencies[w.probe++ % dependencies.length];
+        probes++;
+        this.costs.probes++;
+        let next = 'missing';
+        try {
+          // Leaf signatures alone are insufficient: an intermediate symlink can preserve every leaf inode.
+          await this.pinAncestors(path);
+          const s = await fsp.lstat(path);
+          if (
+            s.isSymbolicLink() ||
+            (s.isDirectory() && this.ancestorPins.has(path) && this.ancestorPins.get(path) !== `${s.dev}:${s.ino}`)
+          )
+            throw new Error('unsafe_dependency');
+          next = `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            this.stale(w, 'dependency_unavailable');
+            this.budget.incomplete = true;
+            changed = true;
+          }
+        }
+        if (next !== signature) {
+          changed = true;
+          break;
+        }
+      }
+      if (changed) {
         w.done = false;
+        w.dependencies.clear();
+        w.faults = [];
         w.iterator = this.observe(w);
         w.op = undefined;
         w.value = undefined;
       }
+    }
     const finished = new Set<Work>();
     let steps = 0;
     while (
       work.length &&
       steps++ < 1024 &&
-      this.budget.files < JOB_BOUNDS.files &&
-      this.budget.entries < JOB_BOUNDS.entries
+      this.budget.files < (this.slice.maxFiles ?? JOB_BOUNDS.files) &&
+      this.budget.entries < (this.slice.maxEntries ?? JOB_BOUNDS.entries)
     ) {
       const w = work[this.round++ % work.length]!;
+      if (w.done) finished.add(w);
+      this.activeWork = w;
       if (finished.has(w)) {
         if (finished.size === work.length) break;
         continue;
@@ -967,6 +1127,7 @@ export class JobObservationCollector {
       w.value = read.value;
       w.op = undefined;
     }
+    this.activeWork = undefined;
     if (work.some((w) => !w.done)) this.budget.incomplete = true;
     return this.snapshot();
   }
@@ -981,7 +1142,7 @@ export class JobObservationCollector {
     for (const v of views) {
       if (this.root && v.root !== this.root) continue;
       if (
-        v.lifecycle === 'closed' &&
+        (v.work?.facadeClosed ?? v.lifecycle === 'closed') &&
         (++closed > JOB_BOUNDS.closed || (v.closedAt !== null && nowMs - v.closedAt > JOB_BOUNDS.historyMs))
       )
         continue;
@@ -997,7 +1158,12 @@ export class JobObservationCollector {
         const jev = job.backend?.executor === 'jev';
         if (
           jev
-            ? job.freshness.liveDeadline !== null && nowMs <= job.freshness.liveDeadline
+            ? job.freshness.liveDeadline !== null &&
+              nowMs <= job.freshness.liveDeadline &&
+              jevRuntimeAlive(
+                json(this.cache.get(join(this.home, 'jev-runtime', 'runtime.json'))?.value.text ?? null),
+                this.options.process
+              )
             : this.live.match(job.location, nowMs)
         )
           return job;
@@ -1015,7 +1181,9 @@ export class JobObservationCollector {
     }
     const coverage: JobCoverage = {
       ...this.budget,
-      diagnostics: [...this.budget.diagnostics],
+      diagnostics: [
+        ...new Set([...this.budget.diagnostics, ...[...this.works.values()].flatMap((w) => w.faults)]),
+      ].slice(0, 100),
       omitted: this.budget.incomplete ? null : 0,
     };
     return immutable({ generation: this.generation, root: this.root, jobs, coverage });

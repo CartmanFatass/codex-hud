@@ -4308,7 +4308,7 @@
       "branch": ["tests/unit/panel-command.test.ts"],
       "assertions": [
         "Inspector commands have one descriptor and obsolete card commands are rejected",
-        "prefix keys bind Enter, Space and v to inspect, omit e, and preserve compact folding"
+        "prefix keys bind Enter to Work activation, Space and v to inspect, omit e, and preserve compact folding"
       ],
       "assertStatements": [
         "bd5740ab1bc6d0caf8d6183c36b96ac32bb95f6f2207d37aec3e331e6741bd0c",
@@ -4325,7 +4325,19 @@
         "3d56524a4504185894a973433cc23f7728de965b3df8ba8a21c86391be39abd6",
         "4d6d64cd339b2188f0d4f4a9b9dc078f99e037268bf3ef5c21ca2b25ee72e43f",
         "fd564b4e8a2a3a38b32506a82b0380c7db50e4b18c91a6e3bcee64600939f320"
-      ]
+      ],
+      "assertExceptions": {
+        "Inspector commands have one descriptor and obsolete card commands are rejected": [
+          {
+            "main": "bd5740ab1bc6d0caf8d6183c36b96ac32bb95f6f2207d37aec3e331e6741bd0c",
+            "branch": "ab4bf6e6eafac3757e85e78193a50fbcb39d3dc19da06779749618f5ce75fe3d"
+          }
+        ]
+      },
+      "divergence": {
+        "Inspector commands have one descriptor and obsolete card commands are rejected": "R5UX-P1 q1/q3 approval; concept §15 (2026-11-09), Home and Work tabs: approved layout; R5-UX-PLAN q2 separates Enter (Home → Work; Work inert) from v/4 Inspector. Replace inspect→enter with inspect→inspect and add the distinct activate command; overlays retain Enter activation. All unrelated assertions and main hashes retained.",
+        "prefix keys bind Enter to Work activation, Space and v to inspect, omit e, and preserve compact folding": "R5UX-P1 q1/q3 approval; concept §15 (2026-11-09), Home and Work tabs: approved layout and records, does not steer; R5-UX-PLAN q2. Rename the obsolete Enter-inspects title and assert Enter→activate, Space/v→inspect, and no r/b/R generation/status/recovery prefix controls. Folding, obsolete e absence and command validation remain."
+      }
     },
     "tests/unit/panel-repaint.test.ts": {
       "branch": ["tests/unit/panel-repaint.test.ts"],
@@ -7592,7 +7604,10 @@
       "assertStatements": [
         "dcd670d48fd1d7d77d02ff4e17275bbd1b3cf47855bdde65c2cc538da7caae51",
         "d0766701328eb3df7326d8c54f8af2b97a4aee8c9ed61447d8481ae114e95455"
-      ]
+      ],
+      "divergence": {
+        "live PTY: navigation, diff, zoom, resize, wheel and terminal cleanup": "R5UX-P1 q4 approval: concept §15 (2026-11-09), Home and Work tabs: approved layout; R5-UX-PLAN q2. Replace the obsolete stacked Agents first-page/footer/key expectations with passive Home → Work navigation and separate Enter/Inspector activation. Preserve the named real-PTY navigation, Changes diff, zoom, resize, wheel and terminal-cleanup coverage through retained secondary views. The existing assertion title, branch carrier and TS assert-statement hashes remain unchanged."
+      }
     },
     "tests/unit/workbench.test.ts": {
       "branch": ["tests/unit/workbench.test.ts"],

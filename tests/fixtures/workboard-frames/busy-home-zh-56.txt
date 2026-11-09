@@ -1,0 +1,44 @@
+ [首页 ?1]  工作  详情  设置  帮助         Ctrl+\ 再按键
+ 需要你 1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+›┃? Synthetic browser handoff: 已结束，需要人工处理 10分
+ 值得一看 2 ────────────────────────────────────────────
+ ! DESIGN 建议（非采纳记录）: Keep one explicit      2分
+          source boundary.                              
+   不可逆 · 建议（非采纳记录）                          
+   备选： Infer a name-based join                       
+   原因： Never guess task ownership.                   
+ ≠ UI-1 q1 Should compatibili… → B: drop the shim    2分
+   答复                                                 
+   备选： A                                             
+   原因： The explicit source is sufficient.            
+   提问上下文： Should compatibility stay? — Synthetic …
+ 代你决定 6 ────────────────────────────────────────────
+ < CHECK 退回修改 r2                                 2分
+ · UI-1 q2 Should IDs stay op… → A: Retain UUID ide… 2分
+ · UI-1 q3 Should audit event… → A: Keep audit even… 2分
+ 另有 3 条较早                                          
+ 进度 · 按观察到的开始时间 ─────────────────────────────
+ │ CHECK    ━━━━━▸──── 评审                       决定 1
+ │ DESIGN   ━━━━━━▸─── 待验收                     决定 1
+ │ UI-1     ━━━▸────── 实现                       决定 6
+ │ Synthetic browser handoff wait                       
+ │ MOCKUP 阶段未知                                      
+ 代理 ──────────────────────────────────────────────────
+ ▸ pi     reviewer Revie… gpt-synthetic-review·high 30分
+ ✓ pi     oracle   Sourc… gpt-synthetic·high         5分
+ ▸ pi     imp      首页…  gpt-synthetic·high        30分
+ ?        jev      Synth… synthetic-web             10分
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+↑↓ 移动 · → 展开 · Enter 工作 · v 详情 · ? 帮助         

@@ -1,0 +1,44 @@
+ [Home]  Work  Inspect  Settings  Help                                                         Ctrl+\ then key
+ ✓ nothing needs you                                             │ work · observed start order ───────────────
+                                                                 │ › Synthetic browser finished wait          
+                                                                 │ │ DONE phase unknown                       
+ workers ─────────────────────────────────────────────────────────────────────────────────────────────────────
+ ✓        jev      Synthetic browser finished                                               synthetic-web  10m
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+↑↓ move · → expand · Enter: Work · v inspect · ? help                                                         

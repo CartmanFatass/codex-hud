@@ -42,6 +42,8 @@ import { resolveSelection } from './delegation/selection.js';
 import { selectedActions, type DelegationAction } from './delegation/actions.js';
 import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
 import { roleSet } from './directions.js';
+import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
+import { renderWorkboardFrame, renderWorkboardHelp } from './work-view.js';
 
 // The panel is drawn by the modules beside this one; what they export is
 // exported here too, so a caller imports the monitor from one place.
@@ -97,6 +99,18 @@ export type MonitorPane = (typeof MONITOR_PANES)[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
+  /** Home/Work are main pages; focus tracks retained secondary views separately. */
+  mainTab?: 'home' | 'work';
+  homeTarget?: WorkTarget;
+  workTarget?: WorkTarget;
+  homeScroll?: number;
+  workScroll?: number;
+  boardExpanded?: ReadonlySet<string>;
+  boardFolded?: ReadonlySet<string>;
+  boardRevealed?: string;
+  /** Display-only fold cursor; never a workflow identity or native selection. */
+  boardAnchor?: string;
+  boardInspect?: WorkTarget | 'summary';
   tree: PanelState;
   focus: MonitorPane;
   modes: MonitorModes;
@@ -222,6 +236,12 @@ export interface MonitorControl {
    */
   kind:
     | 'main'
+    | 'board-home'
+    | 'board-work'
+    | 'board-pick'
+    | 'board-activate'
+    | 'board-inspect'
+    | 'board-summary'
     | 'settings'
     | 'tab'
     | 'older'
@@ -247,6 +267,12 @@ export interface MonitorControl {
   width: number;
 }
 export interface MonitorFrame {
+  workboard?: {
+    snapshot: WorkboardSnapshot;
+    targets: ReadonlyMap<string, WorkTarget>;
+    selected?: WorkTarget;
+    rows: MonitorRow[];
+  };
   lines: string[];
   panes: MonitorRect[];
   controls: MonitorControl[];
@@ -261,6 +287,7 @@ export interface MonitorData {
   /** The HUD's data; `delegation`, when non-null, draws the agents view from the delegation view model. */
   hud?: HudData & HudDelegationData;
   tree: SubagentTree;
+  workboard?: WorkboardSnapshot;
   /** The tmux prefix as the help writes it ("Ctrl+\"). */
   prefix?: string;
   state: MonitorState;
@@ -328,6 +355,7 @@ export interface MonitorContext {
   frame?: MonitorFrame;
   /** Leaving a modal via a navigation tab selects/opens its pane instead of toggling it shut. */
   navigationOverlay?: boolean;
+  standalone?: boolean;
 }
 export interface MonitorOutcome {
   state: MonitorState;
@@ -344,6 +372,7 @@ export interface MonitorOutcome {
 
 export function initialMonitorState(): MonitorState {
   return {
+    mainTab: 'home',
     tree: { ...initialPanelState(), sort: 'active' },
     focus: 'agents',
     modes: { agents: 'open', timeline: 'closed', changes: 'closed', details: 'closed' },
@@ -662,12 +691,17 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const delegation = nativeCallsOnly(input.hud?.delegation) ? null : (input.hud?.delegation ?? null);
   const state = reconcileMonitor(input.state, input.tree, input.git, input.worktrees, now, delegation);
   const frame: MonitorFrame = { lines: [], panes: [], controls: [], state };
+  // Secondary views keep the board context so prefix 1/2/S always returns to the live main tabs.
+  if (input.workboard)
+    frame.workboard = { snapshot: input.workboard, targets: new Map(), selected: state.workTarget, rows: [] };
   if (delegation)
     frame.delegation = delegationView(delegation, {
       ...planOptions(state, now),
       style: state.style === 'rich' ? 'rich' : 'compact',
     });
   if (!width || !height) return frame;
+  if (state.help && input.workboard && (!state.helpTab || state.helpTab === 'keys'))
+    return renderWorkboardHelp(input, state, input.workboard, input.nowMs ?? Date.now());
   if (state.help) {
     // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
     // An entry is a key, two spaces, what it does: "{p} {p}  {p} itself" is
@@ -783,6 +817,11 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     frame.lines = frame.lines.slice(0, height).map((line) => truncateAnsi(line, width));
     return frame;
   }
+  // P1 sidecar seam (q2): live callers always provide this. The no-sidecar path below is
+  // retained only for legacy/secondary callers and fixtures; P2 migrates/removes it.
+  if (input.workboard && (state.focus === 'agents' || (state.focus === 'details' && state.boardInspect))) {
+    return renderWorkboardFrame(input, state, input.workboard, now);
+  }
   // A pane is drawn as the status card is: a title naming it, then its rows
   // behind a gutter on the left only. Under 24 columns the gutter is its rule
   // alone, without the space after it. In the frame look the rows sit
@@ -801,7 +840,9 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       : [];
   // The status card takes the foot, at the level chosen, at most about a
   // third of the panel; it replaces the key hint's own line.
-  let footPlan = planFoot(input, state, width, height, now, noticeRows.length);
+  let footPlan = input.workboard
+    ? { rows: 0, draw: (_frame: MonitorFrame, _foot: number) => {} }
+    : planFoot(input, state, width, height, now, noticeRows.length);
   let footRows = footPlan.rows;
   // Every control the panel has is on its first rows; nothing else is a button.
   const dview = frame.delegation;
@@ -866,7 +907,9 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   }
   // Rows no pane has a use for are the status card's, as far as its brief fills them.
   if (budget > 0 && footRows && state.style !== 'rich') {
-    footPlan = planFoot(input, state, width, height, now, noticeRows.length, footRows + budget);
+    footPlan = input.workboard
+      ? { rows: 0, draw: (_frame: MonitorFrame, _foot: number) => {} }
+      : planFoot(input, state, width, height, now, noticeRows.length, footRows + budget);
     budget += footRows - footPlan.rows;
     footRows = footPlan.rows;
   }

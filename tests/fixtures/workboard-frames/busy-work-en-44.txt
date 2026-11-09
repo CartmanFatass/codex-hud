@@ -1,0 +1,44 @@
+ Home ?1  [Work]  v  ,  ?    Ctrl+\ then key
+›│ CHECK review                       1 call
+ ▸ pi  reviewer  gpt-synthetic-re…·high  30m
+   working                                  
+ < CHECK Sent back r2                     2m
+ │ DESIGN awaiting-acceptance         1 call
+ ✓ pi  oracle    gpt-synthetic·high       5m
+   idle_grace                               
+ ! DESIGN recommendation: Keep one        2m
+          explicit source boundary.         
+   one-way · recommendation                 
+   instead: Infer a name-based join         
+   why: Never guess task ownership.         
+ │ UI-1 build                        6 calls
+ ▸ pi  imp       gpt-synthetic·high      30m
+   working                                  
+ ≠ UI-1 B                                 2m
+   answer                                   
+   instead: A                               
+   why: The explicit source is sufficient.  
+ · UI-1 A                                 2m
+ · UI-1 A                                 2m
+ · UI-1 A                                 2m
+ · UI-1 A                                 2m
+ · UI-1 A                                 2m
+ │ Synthetic browser handoff wait           
+ ┌ ? Synthetic browser handoff ───────── jev
+ └ ─────────────────────────────────────────
+ │ MOCKUP phase unknown                     
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+↑↓ move · → expand · Enter: Work · v inspec…
