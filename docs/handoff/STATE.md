@@ -151,6 +151,8 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   A6 role-summary cache, A7 `tree-page.ts` lifecycle hunk (after P2), A8 Codex activation and rehearsal, PIROLE
   (pi-roles built in; plan `docs/reviews/2026-11-09-pirole-plan-architect.md`, slices PR1–PR5, PR1 when a slot frees).
   Running: A1 (`r6a-a1`), A2 (`r6a-a2`), next to R5-UX P1.
+- Codex/Claude/Grok as delegated workers frozen (concept §15, 2026-11-09): existing R2 adapters kept as is, no new
+  work, out of R7; R6b decides removal. Main sessions on all three harnesses unchanged.
   The r5-acc demo stage is merged (`1f20f01`).
 
 | Package | Deliverable | Acceptance |
