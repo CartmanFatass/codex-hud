@@ -155,8 +155,12 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   at the app-server daemon), so a Codex consult (A2b, `docs/reviews/2026-11-09-a2b-codex-admission-architect.md`) decided: Codex role calls
   stay fail closed (concept §15); the disclosure text and refusal tests fold into A8; the live provenance
   qualification is deferred (owner item).
-  Running: A1 (`r6a-a1`, pi), PIROLE PR1 (`pirole-pr1`, Codex trial), next to R5-UX P1. Codex trial (2026-11-09):
-  new implementer packages run on Codex for a rough comparison with pi (`docs/delegation.md`).
+  A1 merged (`8f972aa`, reviews `docs/reviews/2026-11-09-r6a-a1-review-{1,2}.md`): release staging and reversible
+  activation through `hud install` / `hud uninstall`; integrated gate green. PIROLE PR1 merged (`856e576`, Codex trial).
+  Running: R5-UX P1 fix round (pi, warm implementer); PIROLE PR2 as a same-task A/B, pi arm `pirole-pr2-pi` and native
+  Codex arm `pirole-pr2-cdx` (record `docs/codex-vs-pi-ab.md`; the pick decides the implementer flow, no clear gap →
+  Codex). Waiting on P1: P2, A0. Codex trial (2026-11-09): new implementer packages run on Codex for a rough
+  comparison with pi (`docs/delegation.md`).
   The r5-acc demo stage is merged (`1f20f01`).
 
 | Package | Deliverable | Acceptance |
