@@ -898,6 +898,18 @@ spines and phase bars).
 - Display only and passive data, as in the entry above. Implementation is planned with the architect and built by
   pi implementers, who also get the mockup PNGs as the visual reference.
 
+### 2026-11-09 Panel model roles (Jacob)
+
+- Rules first: states, phases, times, verdicts, counts and needs-human come from files, never from a model.
+- Judgements (yes/no or pick-one: an answer departing from the worker's default when rules are unsure, a card
+  needing attention, a stall's category) go to the decision provider. TypeSafe and the OpenAI Decisions API are
+  interchangeable implementations of it; one is primary, the other takes over on quota or error.
+- Sentences (card progress line, result and change digests, recap, failure cause) go to DeepSeek V4.1 Flash on
+  Mistral, called directly with the key read from the owner's existing key file, not copied. Its efforts are
+  none/low/high/xhigh/max; the orchestrator sets them per task (labels none, digests and progress low, recap and
+  cause high; never xhigh/max in the background).
+- Calls are change-driven, batched, limited to visible live work, queued per provider, and never block a repaint.
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
