@@ -32,7 +32,7 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - a short `--timeout-ms` printed `TIMEOUT` and exited 6; the full wait returned DONE, exit 0;
   - waiter RSS: about 98 MB before, about 50 MB on the synthetic fixture, 62 MB live while polling herdr; an import-graph test pins the waiter;
   - pi-roles PIAUTOCLOSE (Fishpref `92fc938`): the sonic tab closed itself after its clean finish, before `hud_close`, which then reaped idempotently.
-- Known debt: `node scripts/pack-cloud-preview.mjs --self-test` fails on `dist/harness/pi/managed-launch.js` (pre-existing on the base); B11's spaces-path test; the panel publisher test under load.
+- Known debt (cleared by DEBT1, 2026-11-09): pack-cloud-preview self-test, B11 spaces path, panel publisher under load.
 - R4 merged (`d489581`): ChatGPT Pro and AI Studio oracle targets, three review rounds, 24-case crash-window matrix, close/stop admission fences checked by in-memory negative controls.
 - R4 live acceptance (2026-11-08) found three defects; R4F is fixing them:
   - D1 ChatGPT: `page_ready_timeout` before Send on a ready, logged-in page that held a stale composer draft (nothing was sent);
@@ -94,12 +94,16 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - `answer_complete`: the oracle collects through deterministic finality, not this judgment.
   - `submitted`: a deny in confirm only leads to a read-only reconcile, never to a resend.
   - Revisit if a live run shows a stall.
-- Next (2026-11-09, owner-approved): R5 starts with an architect design (`tmp/tasks/R5/`), then an implementer.
-  Two debt packages run beside it, with no shared files:
-  - DEBT1 (this repo): B11's spaces-path test, the `pack-cloud-preview --self-test` failure on
-    `dist/harness/pi/managed-launch.js`, and the load-sensitive panel publisher and statusline tests.
-  - PIGUARD (pi-roles, Fishpref): the reviewer guard treats any `>` (JS `=>`, comparisons) as a redirect; it should
-    ignore quoted text.
+- R5 (2026-11-09, owner-approved): architect design decided in `tmp/tasks/R5/design.md` (archived with R5a).
+  R5 runs as R5a (records, external registration, observation, pure tree composition) then R5b (panel,
+  presentation, summaries/dry-run, performance). R5a in progress.
+- DEBT1 merged (`18dca62`): B11 spaces path (missing fixture dependency), cloud preview self-test (stale
+  inventory; now checked against real build output, run after builds), load-sensitive statusline (test-child
+  clock pin + real-clock degradation tests), panel publisher and runtime-compose fixture guards (measured).
+  Production deadlines unchanged. Remaining load-sensitive failures are recorded in the DEBT1 report, not fixed.
+  `format:check` still fails on 20 untouched baseline files; a format-only commit follows the R5a merge.
+- PIGUARD merged in Fishpref (`19d2828`): the pi-roles reviewer guard no longer treats a quoted `>` in simple
+  commands as a redirect; complex shell syntax keeps the old raw check.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
