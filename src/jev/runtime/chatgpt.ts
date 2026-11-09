@@ -96,18 +96,7 @@ class ChatPage implements OraclePage {
     const sidebar = [...new Set((raw.sidebar_hrefs ?? []).map((href) => new URL(href, raw.url).href))];
     return {
       url: raw.url,
-      // document.complete precedes React hydration. A stable shell is not a
-      // ready composer and must not invite a premature negative page judgment.
-      readyState:
-        raw.readyState === 'complete' &&
-        raw.composer === null &&
-        !raw.login &&
-        !raw.auth_required &&
-        !raw.challenge &&
-        !raw.approval?.length &&
-        !raw.page_error
-          ? 'interactive'
-          : raw.readyState,
+      readyState: raw.readyState,
       marker: JSON.stringify([
         raw.url,
         raw.composer,
@@ -132,13 +121,19 @@ class ChatPage implements OraclePage {
       cards: raw.attachment_cards ?? null,
     };
   }
-  async observation(facts: OracleFacts): Promise<PageObservation> {
+  async observation(facts: OracleFacts, readiness = false): Promise<PageObservation> {
     const observed = await this.browser.observe(false);
     return {
       page: { url: facts.url, title: observed.title ?? '', text: observed.text.slice(0, 6000) },
       elements: actionSpace(observed.actions, false)[0],
       facts: {
         ...facts,
+        // document.complete precedes React hydration, but a missing composer
+        // after Send is normal. Only prepare's page_ready observes a shell as load.
+        readyState:
+          readiness && facts.readyState === 'complete' && facts.composer === null && !facts.human && !facts.error
+            ? 'interactive'
+            : facts.readyState,
         composer: undefined,
         turns: undefined,
         composer_sha256: squashedSha256(facts.composer ?? ''),
@@ -211,6 +206,7 @@ export function chatgptTarget(
             async observe() {
               facts = await page.facts();
               signal.throwIfAborted();
+              const observation = await page.observation(facts, name === 'page_ready');
               // Like the owner driver, a missing/incomplete name pair may hydrate;
               // a present wrong/duplicate card is a factual failure, not progress.
               if (
@@ -224,13 +220,13 @@ export function chatgptTarget(
               // entire stable-page budget on a shell that never becomes usable.
               if (
                 name === 'page_ready' &&
-                facts.readyState !== 'complete' &&
+                observation.facts.readyState !== 'complete' &&
                 (options.now ?? Date.now)() - started >= 30_000
               ) {
                 options.diagnostic?.(name, 'hydration_timeout', 0, (options.now ?? Date.now)() - started);
                 throw new JevFailure('page_ready_timeout', 'page_ready_timeout');
               }
-              return page.observation(facts);
+              return observation;
             },
           },
           judgeProvider,
