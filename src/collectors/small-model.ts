@@ -360,8 +360,11 @@ function acceptable(request: ModelRequest, text: string): boolean {
   return validFormat(request, text) && (!request.language || !wrongLanguage(text, request.language));
 }
 function validFormat(request: ModelRequest, text: string): boolean {
-  try { return request.validateResponse ? request.validateResponse(text) === true : true; }
-  catch { return false; }
+  try {
+    return request.validateResponse ? request.validateResponse(text) === true : true;
+  } catch {
+    return false;
+  }
 }
 
 /** Calls within `windowMs` before `now`. */
@@ -1217,9 +1220,11 @@ export class SmallModel {
     } else if (request.materialUnchanged) {
       job.resolve({ ok: false, error: 'unchanged', unchanged: true });
     } else if (legacy && request.legacyCachedText !== undefined) {
-      job.resolve(validFormat(request, request.legacyCachedText)
-        ? { ok: true, text: request.legacyCachedText, cached: true }
-        : { ok: false, error: 'Invalid response', classification: 'invalid-response' });
+      job.resolve(
+        validFormat(request, request.legacyCachedText)
+          ? { ok: true, text: request.legacyCachedText, cached: true }
+          : { ok: false, error: 'Invalid response', classification: 'invalid-response' }
+      );
     } else if (hit) {
       job.generatedAt = hit.at;
       job.resolve({ ok: true, text: hit.text, cached: true });

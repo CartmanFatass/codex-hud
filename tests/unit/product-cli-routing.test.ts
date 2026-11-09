@@ -93,7 +93,6 @@ test('package and lock agree on executable aliases', () => {
   assert.equal(pkg.bin['hud-statusline'], './bin/hud-statusline');
 });
 
-
 test('E2 panel help is read-only with neutral selectors and missing or unsafe homes', () => {
   const f = fixture();
   try {
@@ -124,7 +123,6 @@ test('E2 panel help is read-only with neutral selectors and missing or unsafe ho
     f.close();
   }
 });
-
 
 test('E2 existing panel entry receives neutral and legacy environment unchanged (mock spawn only)', async () => {
   const f = fixture();
@@ -179,12 +177,19 @@ test('F4 installed digest help and syntax refusals do not open missing or unsafe
     writeFileSync(file, 'synthetic', { mode: 0o600 });
     for (const home of [join(f.home, 'missing'), file]) {
       const help = f.run('bin/hud', ['digest', '--help'], '', { HUD_HOME: home });
-      assert.equal(help.status, 0); assert.match(help.stdout, /hud digest run/);
+      assert.equal(help.status, 0);
+      assert.match(help.stdout, /hud digest run/);
       const bad = f.run('bin/hud', ['digest', 'run', '--json'], '', { HUD_HOME: home });
-      assert.equal(bad.status, 2); assert.equal(bad.stdout, '');
-      const plan = f.run('bin/hud', ['digest', 'plan', '--run', 'r', '--report', 'p', '--json'], '', { HUD_HOME: home });
-      assert.equal(plan.status, 3); assert.equal(plan.stdout, '');
+      assert.equal(bad.status, 2);
+      assert.equal(bad.stdout, '');
+      const plan = f.run('bin/hud', ['digest', 'plan', '--run', 'r', '--report', 'p', '--json'], '', {
+        HUD_HOME: home,
+      });
+      assert.equal(plan.status, 3);
+      assert.equal(plan.stdout, '');
     }
     assert.match(f.run('bin/hud', ['--help']).stdout, /hud digest --help/);
-  } finally { f.close(); }
+  } finally {
+    f.close();
+  }
 });

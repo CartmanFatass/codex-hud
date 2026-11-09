@@ -472,7 +472,6 @@ test('the prefix: Ctrl+\\ on a fresh install, Ctrl+] kept by a file saved withou
   });
 });
 
-
 test('E2 settings B shadows A for UI and explicit saves without moving homes or importing unknown keys', () => {
   withSettingsFile((a, directory) => {
     const b = path.join(directory, 'settings B with spaces.json');

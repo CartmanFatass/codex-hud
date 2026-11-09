@@ -217,7 +217,10 @@ test(
     // call ledger.transaction at all, even if a second transaction could later acquire its lock.
     assert.deepEqual(clocks.map((clock) => clock.transactions).sort(), [1, 1]);
     assert.deepEqual(clocks.map((clock) => clock.rollbacks).sort(), [0, 1]);
-    assert.deepEqual(clocks.map((clock) => clock.now).sort((a, b) => a - b), [0, 20]);
+    assert.deepEqual(
+      clocks.map((clock) => clock.now).sort((a, b) => a - b),
+      [0, 20]
+    );
     assert.ok(clocks.every((clock) => clock.mode === 'exhausted' && clock.restored));
   }
 );

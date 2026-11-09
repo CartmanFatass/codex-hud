@@ -58,10 +58,23 @@ WHERE p.run_id=? AND p.report_id=? AND p.status='completed'
 LIMIT 2`;
 
 export interface CompletedReportMetadata {
-  ledgerId: string; linkId: string; runId: string; reportId: string; ref: SessionRef;
-  status: 'completed'; runSeq: number; generation: number; bindingId: string;
-  callerId: string; callerContextId: string; contextGeneration: number; evidenceId: string;
-  acceptedSeq: number; acceptedAt: number; createdAt: number; summaryBytes: number;
+  ledgerId: string;
+  linkId: string;
+  runId: string;
+  reportId: string;
+  ref: SessionRef;
+  status: 'completed';
+  runSeq: number;
+  generation: number;
+  bindingId: string;
+  callerId: string;
+  callerContextId: string;
+  contextGeneration: number;
+  evidenceId: string;
+  acceptedSeq: number;
+  acceptedAt: number;
+  createdAt: number;
+  summaryBytes: number;
 }
 export interface CompletedReportTarget {
   readonly metadata: CompletedReportMetadata;
@@ -71,32 +84,61 @@ export interface CompletedReportTarget {
   close(): void;
 }
 const token = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
-const safe = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 1024 && !/[\x00-\x1f\x7f-\x9f]/.test(v);
+const safe = (v: unknown): v is string =>
+  typeof v === 'string' && v.length > 0 && v.length <= 1024 && !/[\x00-\x1f\x7f-\x9f]/.test(v);
 function metadata(row: Row, ledgerId: string): CompletedReportMetadata {
   const tuple: unknown = JSON.parse(String(row.session_ref));
   if (!Array.isArray(tuple) || tuple.length !== 4) throw new DigestFailure('target_unavailable');
   const ref: SessionRef = { harness: tuple[0], sourceId: tuple[1], sessionId: tuple[2], threadId: tuple[3] };
   validateSessionRef(ref);
-  if (sessionRefKey(ref) !== row.session_ref || !safe(ref.sessionId) || !(ref.threadId === null || safe(ref.threadId)) ||
-      !token(ledgerId) || !token(row.link_id) || !token(row.run_id) || !token(row.report_id))
+  if (
+    sessionRefKey(ref) !== row.session_ref ||
+    !safe(ref.sessionId) ||
+    !(ref.threadId === null || safe(ref.threadId)) ||
+    !token(ledgerId) ||
+    !token(row.link_id) ||
+    !token(row.run_id) ||
+    !token(row.report_id)
+  )
     throw new DigestFailure('target_unavailable');
-  for (const key of ['run_seq', 'expected_generation', 'context_generation', 'accepted_seq', 'accepted_at', 'created_at', 'summary_bytes'])
+  for (const key of [
+    'run_seq',
+    'expected_generation',
+    'context_generation',
+    'accepted_seq',
+    'accepted_at',
+    'created_at',
+    'summary_bytes',
+  ])
     if (typeof row[key] !== 'number' || !Number.isSafeInteger(row[key]) || Number(row[key]) < 0)
       throw new DigestFailure('target_unavailable');
   for (const key of ['binding_id', 'caller_id', 'caller_context_id', 'evidence_id'])
     if (!safe(row[key])) throw new DigestFailure('target_unavailable');
   return {
-    ledgerId, linkId: String(row.link_id), runId: String(row.run_id), reportId: String(row.report_id), ref,
-    status: 'completed', runSeq: Number(row.run_seq), generation: Number(row.expected_generation),
-    bindingId: String(row.binding_id), callerId: String(row.caller_id), callerContextId: String(row.caller_context_id),
-    contextGeneration: Number(row.context_generation), evidenceId: String(row.evidence_id),
-    acceptedSeq: Number(row.accepted_seq), acceptedAt: Number(row.accepted_at), createdAt: Number(row.created_at),
+    ledgerId,
+    linkId: String(row.link_id),
+    runId: String(row.run_id),
+    reportId: String(row.report_id),
+    ref,
+    status: 'completed',
+    runSeq: Number(row.run_seq),
+    generation: Number(row.expected_generation),
+    bindingId: String(row.binding_id),
+    callerId: String(row.caller_id),
+    callerContextId: String(row.caller_context_id),
+    contextGeneration: Number(row.context_generation),
+    evidenceId: String(row.evidence_id),
+    acceptedSeq: Number(row.accepted_seq),
+    acceptedAt: Number(row.accepted_at),
+    createdAt: Number(row.created_at),
     summaryBytes: Number(row.summary_bytes),
   };
 }
 
 export async function openCompletedReport(
-  home: string, runId: string, reportId: string,
+  home: string,
+  runId: string,
+  reportId: string,
   options: { onQuery?: (sql: string) => void } = {}
 ): Promise<CompletedReportTarget> {
   if (!token(runId) || !token(reportId)) throw new DigestFailure('invalid_target', 2);
@@ -108,7 +150,10 @@ export async function openCompletedReport(
     db.exec('PRAGMA busy_timeout=0');
     gate.check();
     const database = db;
-    const query = (sql: string) => { options.onQuery?.(sql); return database.prepare(sql); };
+    const query = (sql: string) => {
+      options.onQuery?.(sql);
+      return database.prepare(sql);
+    };
     let invalid = false;
     let closed = false;
     let materialFailed = false;
@@ -116,7 +161,8 @@ export async function openCompletedReport(
       gate.check();
       database.exec('BEGIN');
       try {
-        if (query('PRAGMA user_version').get()?.user_version !== 1) throw new DigestFailure('unsupported_ledger_schema', 5);
+        if (query('PRAGMA user_version').get()?.user_version !== 1)
+          throw new DigestFailure('unsupported_ledger_schema', 5);
         const value = read();
         gate.check();
         database.exec('COMMIT');
@@ -139,15 +185,30 @@ export async function openCompletedReport(
     }
     function current(): boolean {
       if (invalid || closed) return false;
-      try { transaction(checkSelected); return true; }
-      catch { invalid = true; return false; }
+      try {
+        transaction(checkSelected);
+        return true;
+      } catch {
+        invalid = true;
+        return false;
+      }
     }
     const recordFingerprint = fingerprint([
-      'ledger.completed-report.summary:v1', selected.ledgerId, selected.ref,
-      selected.runId, selected.generation, selected.reportId, selected.acceptedSeq, 'summary',
+      'ledger.completed-report.summary:v1',
+      selected.ledgerId,
+      selected.ref,
+      selected.runId,
+      selected.generation,
+      selected.reportId,
+      selected.acceptedSeq,
+      'summary',
     ]);
     const subject: MaterialSubject = {
-      ref: { ...selected.ref }, origin: 'delegated', field: 'result', kind: 'public_text', recordFingerprint,
+      ref: { ...selected.ref },
+      origin: 'delegated',
+      field: 'result',
+      kind: 'public_text',
+      recordFingerprint,
       // This is coverage of ONE record, not the session, task or transcript.
       coverage: { state: 'complete', loaded: true, skipped: {}, gaps: [] },
       read() {
@@ -155,11 +216,18 @@ export async function openCompletedReport(
           return transaction(() => {
             checkSelected();
             if (selected.summaryBytes > 32768) throw new DigestFailure('material_invalid', 6);
-            const row = query('SELECT summary FROM reports WHERE run_id=? AND report_id=? AND link_id=? AND length(CAST(summary AS BLOB))<=32768')
-              .get(runId, reportId, selected.linkId);
+            const row = query(
+              'SELECT summary FROM reports WHERE run_id=? AND report_id=? AND link_id=? AND length(CAST(summary AS BLOB))<=32768'
+            ).get(runId, reportId, selected.linkId);
             const value = row?.summary;
-            if (typeof value !== 'string' || Buffer.byteLength(value) > 32768 || Array.from(value).length > 8000 ||
-                !value.trim() || value.includes('gAAAAA')) throw new DigestFailure('material_invalid', 6);
+            if (
+              typeof value !== 'string' ||
+              Buffer.byteLength(value) > 32768 ||
+              Array.from(value).length > 8000 ||
+              !value.trim() ||
+              value.includes('gAAAAA')
+            )
+              throw new DigestFailure('material_invalid', 6);
             return value;
           });
         } catch (error) {
@@ -169,8 +237,20 @@ export async function openCompletedReport(
         }
       },
     };
-    return { metadata: selected, subject, current, get materialFailed() { return materialFailed; },
-      close() { if (!closed) { closed = true; database.close(); } } };
+    return {
+      metadata: selected,
+      subject,
+      current,
+      get materialFailed() {
+        return materialFailed;
+      },
+      close() {
+        if (!closed) {
+          closed = true;
+          database.close();
+        }
+      },
+    };
   } catch (error) {
     db?.close();
     if (error instanceof DigestFailure) throw error;
