@@ -8,6 +8,13 @@
  * stored recap).
  */
 import * as path from 'node:path';
+import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { makeSourceId } from '../core/identity.js';
+import type { SessionRef } from '../core/types/identity.js';
+import type { SubagentTreeNode } from '../types.js';
+import { JobObservationCollector } from './job-observations.js';
+import { composeJobTree } from './job-tree.js';
 import { SessionFinder } from './session-finder.js';
 import { RolloutParser } from './rollout.js';
 import { buildSubagentTree, useTreeScanStore } from './subagent-tree.js';
@@ -15,7 +22,7 @@ import { TreeScanStore } from './tree-scan-store.js';
 import { AgentLog, logsIn } from './agent-log.js';
 import { RecapStore } from './recap.js';
 import { SmallModel } from './small-model.js';
-import { ModelJobs, NO_JOBS } from './model-jobs.js';
+import { ModelJobs, NO_JOBS, summaryTree } from './model-jobs.js';
 import { briefMaterial, lastNoteAt, REPORT_BYTES } from './briefing.js';
 import { codexGoal } from './codex-goal.js';
 import { briefingScope, type HudSettings } from '../settings.js';
@@ -29,6 +36,8 @@ export interface DryRunOptions {
   codexHome: string;
   /** The HUD's own state: the agent log, the recaps, the labels. */
   hudHome: string;
+  /** Observation records are separate from the original Codex summary/cache home. */
+  jobHome?: string;
   now?: number;
 }
 
@@ -47,8 +56,38 @@ export async function dryRunText(options: DryRunOptions): Promise<{ text: string
   if (!rootId) return { error: `The session at ${session.path} has no id yet` };
   // The panel's saved scans spare a read of every rollout from its start; none is written.
   useTreeScanStore(new TreeScanStore(path.join(options.hudHome, 'scan'), { readOnly: true, now }));
-  const tree = buildSubagentTree(rootId, main?.subagents ?? []);
+  const nativeTree = buildSubagentTree(rootId, main?.subagents ?? []);
   useTreeScanStore(undefined);
+  const sourceId = makeSourceId('codex', realpathSync(options.codexHome));
+  const root = `${sourceId}/${rootId}`;
+  const nativeRefs = new Map<string, SessionRef>();
+  const remember = (id: string) => nativeRefs.set(id, { harness: 'codex', sourceId, sessionId: id, threadId: null });
+  remember(rootId);
+  const visit = (nodes: SubagentTreeNode[]) => {
+    for (const node of nodes) {
+      remember(node.id);
+      visit(node.children);
+    }
+  };
+  visit(nativeTree.nodes);
+  const observer = new JobObservationCollector(
+    options.jobHome ?? process.env.HUD_HOME ?? path.join(process.env.HOME ?? homedir(), '.hud'),
+    { root, now: () => now, live: false }
+  );
+  let composed;
+  try {
+    composed = composeJobTree({
+      tree: nativeTree,
+      snapshot: await observer.refresh(),
+      root,
+      nowMs: now,
+      nativeRefs,
+    }).tree;
+  } finally {
+    observer.dispose();
+  }
+  const tree = summaryTree(composed);
+  const omitted = composed.totalCount - tree.totalCount;
   const language = resolveLanguage(settings.language);
   // Read, never flushed: the log on disk stays as it is.
   const log = new AgentLog(path.join(options.hudHome, 'agent-log'));
@@ -79,11 +118,15 @@ export async function dryRunText(options: DryRunOptions): Promise<{ text: string
     overall: same ? recap?.overall : undefined,
     now,
   });
-  if (!material) return { error: 'Nothing to brief yet: no agents, and nothing said in the main session' };
+  if (!material)
+    return {
+      error: `Nothing to brief yet: no agents, and nothing said in the main session${omitted ? '; job summaries omitted (native material unavailable)' : ''}`,
+    };
   const { system, prompt } = material.write();
   const notes = [
     `# codex-hud brief --dry-run: what the panel would send now. Nothing was sent.`,
     `# session ${rootId}, scope ${scope}, language ${language}, backend ${settings.briefing}`,
+    '# Job-only summaries omitted: observation metadata is not model material.',
     ...(settings.briefing === 'off'
       ? ['# The brief is off in Settings: this is what it would send once a backend is chosen.']
       : []),

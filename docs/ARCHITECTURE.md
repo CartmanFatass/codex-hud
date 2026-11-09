@@ -286,7 +286,40 @@ Iterate with `eachThread`. Do not walk the tree by hand.
   anything the scan reads changes, bump `SCAN_VERSION`. Otherwise stale cache
   entries survive the upgrade.
 
-### 4.5 Per-agent data the panel adds
+### 4.5 Read-only role jobs in the panel (R5)
+
+The panel alone owns `JobObservationCollector` and `PanelJobPipeline` (`tree-page.ts`).
+Each refresh reads bounded association/receipt/STATUS, helper/QA and external-registration
+files under `$HUD_HOME` (default `~/.hud`), separately from the original Codex cache home.
+Collection shares the panel deadline/byte allowance and charges its bytes, entries/files and
+elapsed time to panel accounting. Painting only uses the retained snapshot. Herdr evidence
+is a bounded, single-flight `herdr agent list --json`, at most every five seconds; Jev
+liveness uses runtime.json plus PID/cmdline evidence, never runtime IPC or startup.
+
+`composeJobTree` enriches an exact complete-ref native match without replacing its native
+id, rollout, evidence or production summary path. Otherwise it adds `role-job:<job>`,
+dispatch-helper or explicitly registered external nodes. The same pure composition runs
+after legacy publication, from the original native tree, so duplicates cannot reappear.
+Mixed legacy rows retain their renderer/actions; ordinary rows share one Agents pane and
+selection. Job/helper/external and metadata-root ids are fenced at action dispatch.
+
+An embedded panel shows only the bound exact source/session root. Standalone `hud panel`
+retains all-delegations mode; `hud panel --root <namespace/session-id>` selects observations
+only, not control identity. All-roots collection runs once and partitions the snapshot by
+exact root. Missing native roots use metadata-only `job-root:<root-hash>` containers,
+without invented rollout, footer or recap material. Discovery/projection limits can leave
+partial coverage; absence never proves success or no pending work. Global collection and
+projection uncertainty is retained across publication and feeds the existing `tree partial` /
+`not loaded` notice; it suppresses the affirmative empty-state text until coverage is known.
+
+There is no job-material bridge. Job-only branches are filtered before label/cause/brief/
+progress material planning, text formatting and cache-key hashing. Local task labels,
+reports and questions are not model material and cannot borrow a parent grant. Native
+nodes enriched with `job` keep the existing eligibility/SmallModel/cache path. Dry-run
+uses the same composition/filter, reports omitted job summaries, and performs no model
+or Herdr startup and no writes. The bar import graph reaches none of the job collectors.
+
+### 4.6 Per-agent data the panel adds
 
 | Module | What it keeps |
 |---|---|

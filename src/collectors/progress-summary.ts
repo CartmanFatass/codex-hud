@@ -8,6 +8,7 @@ import { eachThread } from './subagent-tree.js';
 import type { AgentLog } from './agent-log.js';
 import type { ModelHandle, SmallModel } from './small-model.js';
 import { summarySentence } from '../utils/summary-sentence.js';
+import { summaryTree } from './model-jobs.js';
 
 export const PROGRESS_COOLDOWN_MS = 60_000;
 export const PROGRESS_RETRY_MS = 10 * 60_000;
@@ -86,7 +87,7 @@ export interface ProgressSummarizerOptions {
 /** Request only explicitly visible summary subjects; hidden descendants never widen the scope. */
 export function progressTargets(tree: SubagentTree, visible: ReadonlySet<string>): Set<string> {
   const targets = new Set<string>();
-  eachThread(tree.nodes, (node) => {
+  eachThread(summaryTree(tree).nodes, (node) => {
     if (visible.has(node.id) && isLive(node)) targets.add(node.id);
   });
   return targets;
@@ -215,6 +216,7 @@ interface ProgressSchedule {
 }
 function progressSchedule(node: SubagentTreeNode, log: AgentLog): ProgressSchedule | null {
   const identityMetadata = (subject: SubagentTreeNode) => {
+    // SAFETY: optional identity metadata is inspected as unknown, never treated as authorization.
     const identity = subject as unknown as { ref?: unknown; origin?: unknown; sourceId?: unknown; harness?: unknown };
     return [
       subject.id,
@@ -313,6 +315,7 @@ export class ProgressSummarizer {
   }
 
   update(input: ProgressSummaryInput): void {
+    input = { ...input, tree: summaryTree(input.tree) };
     this.now = input.now;
     if (input.tree.rootId !== this.rootId || input.language !== this.language) {
       this.stop();

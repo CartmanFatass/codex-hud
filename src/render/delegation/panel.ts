@@ -33,7 +33,8 @@ import {
   type RowPlan,
 } from './rows.js';
 import { richRows } from './cards.js';
-import { destinationsOf, type Destinations } from './selection.js';
+import { destinationsOf, mixedDestinations, type Destinations } from './selection.js';
+import type { SubagentTreeNode } from '../../types.js';
 import { panelSay, W, type Say } from './style.js';
 
 export interface DelegationPanelOptions {
@@ -65,6 +66,40 @@ export interface DelegationView {
 
 export type PlanOptions = Pick<DelegationPanelOptions, 'nowMs' | 'collapsed' | 'showHistory' | 'sortByCreation'>;
 
+const ordinaryKeys = new WeakMap<DelegationViewModel, readonly string[]>();
+/** Called by reconciliation with exactly the ordinary rows eligible for this frame. */
+export function rememberMixedDestinations(vm: DelegationViewModel, keys: readonly string[]): void {
+  ordinaryKeys.set(vm, keys);
+}
+/** Suppress only the ordinary copy of an exact legacy identity, retaining its children. */
+export function mixedOrdinaryNodes(nodes: SubagentTreeNode[], vm: DelegationViewModel): SubagentTreeNode[] {
+  const hasJobs = (items: SubagentTreeNode[]): boolean =>
+    items.some((node) => !!node.job || node.id.startsWith('job-root:') || hasJobs(node.children));
+  if (!hasJobs(nodes)) return [];
+  const keys = new Set(vm.tree.nodes.map((node) => node.key));
+  const suppress = (items: SubagentTreeNode[]): SubagentTreeNode[] =>
+    items.flatMap((node) => (keys.has(node.id) ? suppress(node.children) : [node]));
+  return suppress(nodes);
+}
+/** Keep one heading/summary; row presentation remains the existing renderers'. */
+export function mixedAgentsRows(legacy: MonitorRow[], ordinary: MonitorRow[]): MonitorRow[] {
+  if (!ordinary.some((row) => row.item)) return legacy;
+  const a = legacy.find((row) => row.counts);
+  const b = ordinary.find((row) => row.counts);
+  return [
+    ...legacy.map((row) =>
+      row === a && a?.counts && b?.counts
+        ? {
+            ...row,
+            counts: (words: boolean, figure: boolean) =>
+              [a.counts!(words, figure), b.counts!(words, figure)].filter(Boolean).join('  '),
+          }
+        : row
+    ),
+    ...ordinary.filter((row) => !row.counts),
+  ];
+}
+
 /** The view of a view model: the same memoised projection and plan the rows are drawn from. */
 export function delegationView(
   vm: DelegationViewModel,
@@ -77,7 +112,8 @@ export function delegationView(
     showHistory: options.showHistory,
     sortByCreation: options.sortByCreation,
   });
-  return { vm, proj, plan, dest: destinationsOf(plan, options.style), style: options.style, nowMs: options.nowMs };
+  const dest = mixedDestinations(destinationsOf(plan, options.style), ordinaryKeys.get(vm) ?? []);
+  return { vm, proj, plan, dest, style: options.style, nowMs: options.nowMs };
 }
 
 /**

@@ -52,6 +52,16 @@ test('R5 bar runtime import graph reaches none of the new observation/compositio
     []
   );
 });
+test('R5 panel reaches collector but not facade, Jev adapter/client/executor/factory', () => {
+  const files = graph('dist/tree-page.js');
+  assert.ok(files.includes('dist/collectors/job-observations.js'));
+  assert.deepEqual(
+    files.filter((path) =>
+      /roles\/(?:facade|jev-adapter)\.js$|jev\/runtime\/(?:client|executor|index)\.js$/.test(path)
+    ),
+    []
+  );
+});
 test('R5 collector runtime graph cannot reach facade, Jev adapter/client/executor/factory', () => {
   const files = graph('dist/collectors/job-observations.js');
   assert.ok(files.includes('dist/collectors/job-live-observation.js'));

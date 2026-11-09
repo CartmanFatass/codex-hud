@@ -50,7 +50,7 @@ import {
 } from './recap.js';
 import type { RolloutParseResult } from './rollout.js';
 import { logsIn, type AgentLog, type AgentLogEntry } from './agent-log.js';
-import { readLabel } from './model-jobs.js';
+import { readLabel, summaryTree } from './model-jobs.js';
 import type { CodexGoal } from './codex-goal.js';
 import { headTail, RESULT_RAW_CHARS } from './agent-stages.js';
 import { directions, subtasks, reviewsUnder, isImportant, type Directions } from '../render/directions.js';
@@ -876,6 +876,7 @@ export interface BriefOptions {
 
 /** The brief's material for this moment, or null when there is none. */
 export function briefMaterial(tree: SubagentTree, options: BriefOptions): BriefMaterial | null {
+  tree = summaryTree(tree);
   const { scope, language, now } = options;
   const labels = options.labels ?? false;
   const roles = options.roles ?? new Set<string>();
@@ -1053,6 +1054,7 @@ export class Briefer {
     paused = false,
     context?: BriefingContext
   ): void {
+    tree = summaryTree(tree);
     this.rootPath = context?.main?.session?.rolloutPath;
     if (tree.rootId !== this.rootId) {
       // Another session's brief would describe the wrong agents.
