@@ -870,9 +870,15 @@ later only when the record shows a problem.
   answer files with the stated default, review verdicts, design notes). The planned `hud_decision` MCP tool is not
   required of the orchestrator; calls made only in conversation may be missing, and that gap is accepted until the
   record proves insufficient.
-- Display-only rules stay (one line per decision, worker answers folded, a default countdown shown only where a
-  default with a deadline already exists). Fields the workflow does not write (for example reversibility) are shown
-  only when present, never asked for.
+- Display-only rules stay (one line per decision, worker answers folded). Fields the workflow does not write (for
+  example reversibility) are shown only when present, never asked for.
+- What exists today, and therefore what the page shows: worker questions (`qa/qN.md` with options and a suggested
+  default, never auto-adopted in managed runs) and the orchestrator's answer files; review verdicts; design notes.
+  Questions the orchestrator asks the owner exist only in chat, with no default or deadline. So there is no default
+  countdown and no "asked you, settled by default" class (superseding those parts of the previous entry); a decision
+  stands out when the answer departs from the worker's suggested default. "Needs you" holds only states already
+  observable without the orchestrator declaring them (a job ended needing a human, such as a login or captcha), shown
+  with waited minutes.
 - No overturn interaction: the HUD shows decisions and a HUD-local "seen" mark only. If the owner disagrees, they
   talk to the main session themselves. This supersedes "seen/overturn per item" in the previous entry.
 
