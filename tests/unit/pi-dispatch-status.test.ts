@@ -23,7 +23,12 @@ import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import test, { type TestContext } from 'node:test';
 import type { PiDispatch } from '../../src/roles/pi-dispatch.js';
-import { dispatchQuestions, observeDispatch, waitDispatch } from '../../src/roles/pi-dispatch-status.js';
+import {
+  dispatchQuestions,
+  observeDispatch,
+  waitDispatch,
+  parseDispatchStatus,
+} from '../../src/roles/pi-dispatch-status.js';
 
 interface Stage {
   home: string;
@@ -127,6 +132,17 @@ test('every native STATUS state maps to its facade row', (t) => {
     writePrimary(st, { state: native });
     const view = observeDispatch(st.dir, metadata());
     assert.equal(view.status, native);
+    assert.deepEqual(
+      parseDispatchStatus(
+        statusRow(st.dir, 'primary', 'implementer', reportPath(st), { state: native }),
+        st.dir,
+        'primary',
+        'implementer',
+        reportPath(st)
+      ),
+      view.dispatch,
+      'incremental single-file parser agrees with the existing observer'
+    );
     assert.equal(view.state, state, native);
     assert.equal(view.event, event, native);
     assert.equal(view.continuation, null, native);

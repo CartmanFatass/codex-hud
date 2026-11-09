@@ -100,9 +100,20 @@ export class NativeCallCollector {
     try {
       relations = this.readJev(this.home, owner, 64);
     } catch {
-      this.jevCalls = [];
+      this.jevCalls = this.jevCalls
+        .filter((call) => !owner || ownerKey(call.relation.owner) === ownerKey(owner))
+        .map((call) => ({ ...call, unavailable: 'jev_relations_unavailable' }));
       return;
     }
+    const previous = new Map(
+      this.jevCalls.map((call) => [`${ownerKey(call.relation.owner)}:${call.relation.instanceId}`, call])
+    );
+    const retained = (relation: JevRelation, unavailable: string): JevCallDisplay => ({
+      ...previous.get(`${ownerKey(relation.owner)}:${relation.instanceId}`),
+      relation,
+      snapshot: previous.get(`${ownerKey(relation.owner)}:${relation.instanceId}`)?.snapshot ?? null,
+      unavailable,
+    });
     const signal = AbortSignal.timeout(40);
     const owners = new Map(relations.map((r) => [ownerKey(r.owner), r.owner]));
     const listings = new Map<string, Promise<unknown>>(
@@ -115,7 +126,7 @@ export class NativeCallCollector {
           const live = Array.isArray(listing.instances)
             ? listing.instances.find((value) => record(value).instanceId === relation.instanceId)
             : undefined;
-          if (!live) return { relation, snapshot: null, unavailable: 'jev_instance_not_live' };
+          if (!live) return retained(relation, 'jev_instance_not_live');
           const observation = record(record(live).observation);
           if (
             ['run_yield', 'snapshot', 'command'].includes(observation.source as string) &&
@@ -138,11 +149,7 @@ export class NativeCallCollector {
           );
           return { relation, snapshot, unavailable: null };
         } catch (error) {
-          return {
-            relation,
-            snapshot: null,
-            unavailable: error instanceof Error ? error.message : 'jev_snapshot_unavailable',
-          };
+          return retained(relation, error instanceof Error ? error.message : 'jev_snapshot_unavailable');
         }
       })
     );
@@ -153,8 +160,10 @@ export class NativeCallCollector {
     try {
       relations = this.read(this.home, owner, 64);
     } catch (error) {
-      this.calls = [];
       this.unavailable = error instanceof Error ? error.message : 'relations_unavailable';
+      this.calls = this.calls
+        .filter((call) => !owner || ownerKey(call.relation.owner) === ownerKey(owner))
+        .map((call) => ({ ...call, unavailable: this.unavailable }));
       return;
     }
     const owners = new Map(relations.map((r) => [ownerKey(r.owner), r.owner]));
@@ -181,6 +190,9 @@ export class NativeCallCollector {
         }
       })
     );
+    const previous = new Map(
+      this.calls.map((call) => [`${ownerKey(call.relation.owner)}:${nativeKey(call.relation.child)}`, call])
+    );
     this.calls = relations.map((relation) => {
       const observation = observations.get(ownerKey(relation.owner))!;
       const matching = observation.connections.filter((value) => {
@@ -196,10 +208,11 @@ export class NativeCallCollector {
           e.nativeRef &&
           nativeKey(e.nativeRef) === nativeKey(relation.child)
       );
+      const old = previous.get(`${ownerKey(relation.owner)}:${nativeKey(relation.child)}`);
       return {
         relation,
-        snapshot,
-        latestEvent: events.at(-1) ?? null,
+        snapshot: snapshot ?? old?.snapshot ?? null,
+        latestEvent: events.at(-1) ?? (snapshot ? null : (old?.latestEvent ?? null)),
         unavailable: observation.error ?? (snapshot ? null : 'native_connection_not_loaded'),
       };
     });
@@ -257,7 +270,7 @@ export class NativeCallCollector {
       };
       const next = node(ref, parent.key, parent.depth + 1);
       next.key = `native-call:${ownerKey(relation.owner)}:${nativeKey(child)}`;
-      next.loaded = call.snapshot !== null;
+      next.loaded = call.snapshot !== null && !call.unavailable;
       const previous = nodes.findIndex((n) => n.key === next.key);
       if (previous < 0) nodes.push(next);
       else nodes[previous] = next;
@@ -283,7 +296,7 @@ export class NativeCallCollector {
         ...node(relation.owner, parent.key, parent.depth + 1),
         identity,
         key: displayNodeKey(identity),
-        loaded: call.snapshot !== null,
+        loaded: call.snapshot !== null && !call.unavailable,
       };
       const previous = nodes.findIndex((n) => n.key === next.key);
       if (previous < 0) nodes.push(next);

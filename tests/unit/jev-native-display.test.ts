@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readdirSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createJevHost, readJevRelations, type JevBridge } from '../../src/managed/jev-host.js';
@@ -55,6 +55,14 @@ test('Jev Agent.snapshot enters actual HUD job nodes without simulated ledger or
     assert.equal(projected.proj.detail.managed, false);
     assert.deepEqual(methods, ['create', 'snapshot']);
     assert.equal(existsSync(join(home, 'ledger.sqlite')), false);
+    chmodSync(join(home, 'native-relations'), 0o777);
+    await collector.collect(owner);
+    const stale = collector.merge(null)!;
+    assert.deepEqual(stale.details[job.key].jevCall!.snapshot, snapshot);
+    assert.match(jevCallLabel(stale.details[job.key].jevCall!), /unavailable/);
+    assert.equal(stale.tree.nodes.find((n) => n.key === job.key)!.loaded, false);
+    await collector.collect({ ...owner, sourceId: 'b'.repeat(64) });
+    assert.equal(collector.merge(null), null);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

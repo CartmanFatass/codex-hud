@@ -384,6 +384,9 @@ test('create read send respond close against the fake herdr', async (t) => {
     report_path: string;
     closed: boolean;
   };
+  const observation = association as typeof association & { created_at: string; native?: unknown };
+  assert.ok(Number.isFinite(Date.parse(observation.created_at)));
+  assert.equal(observation.native, undefined, 'no complete source-qualified evidence exists at launch');
   assert.equal(association.schema, 1);
   assert.equal(association.preset, 'daily');
   assert.equal(association.herdr.tab_id, 'tab1');
@@ -484,6 +487,9 @@ test('create read send respond close against the fake herdr', async (t) => {
   assert.equal(existsSync(join(directory, 'qa', 'q1.answer.md')), true);
   const afterClose = JSON.parse(readFileSync(join(s.home, 'assoc', `${job}.json`), 'utf8')) as { closed: boolean };
   assert.equal(afterClose.closed, true);
+  const closedMetadata = JSON.parse(readFileSync(join(s.home, 'assoc', `${job}.json`), 'utf8'));
+  assert.ok(Number.isFinite(Date.parse(closedMetadata.closed_at)));
+  assert.ok(Date.parse(closedMetadata.closed_at) >= Date.parse(closedMetadata.created_at));
   const second = await hudClose(s.ctx(), { job });
   assert.equal(second.ok, true);
   assert.equal(second.idempotent, true);

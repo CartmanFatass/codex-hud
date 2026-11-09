@@ -138,6 +138,9 @@ for (const [role, phase, mapped] of [
     assert.equal(launch.task, f.dir(made.job));
     assert.equal(launch.output, join(f.dir(made.job), 'report.md'));
     assert.deepEqual(launch.checks, { receipt: true, index: true, association: true, brief: true });
+    const association = JSON.parse(fs.readFileSync(join(f.home, 'assoc', `${made.job}.json`), 'utf8'));
+    assert.ok(Number.isFinite(Date.parse(association.created_at)));
+    assert.equal(association.native, undefined, 'STATUS session_id alone cannot establish a source');
     assert.equal(launch.notify + launch.herdrPane + launch.orchestrator, '');
     assert.equal(launch.argv[launch.argv.indexOf('--model') + 1], 'synthetic/model');
     assert.equal(launch.argv[launch.argv.indexOf('--thinking') + 1], 'high');
