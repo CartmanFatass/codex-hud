@@ -466,6 +466,27 @@ test('T1: ready heavy ChatGPT facts and a long restored draft pass the real page
   assert.equal(stub.sendClicks, 0);
 });
 
+test('T23: raw home-shell facts remain complete but prepare page_ready still waits for hydration', async () => {
+  const stub = chatgptStub({ state: { composer: null } });
+  const ticks = clock();
+  const target = chatgptTarget({ ...targetOptions(stub), now: ticks.now, sleep: ticks.sleep });
+  const page = await target.open(ROOT);
+  const facts = await page.facts();
+  assert.equal(facts.readyState, 'complete', 'facts never invent a document loading state');
+  assert.equal((await page.observation(facts)).facts.readyState, 'complete');
+  let judgments = 0;
+  const provider = providerOf(stub);
+  provider.judge = async () => {
+    judgments++;
+    throw new Error('shell_must_not_be_judged');
+  };
+  const started = ticks.now();
+  await rejects('page_ready_timeout', () => target.prepare(page, INPUT, provider, new AbortController().signal));
+  assert.equal(ticks.now() - started, 30_000);
+  assert.equal(judgments, 0, 'page_ready alone treats the complete home shell as loading');
+  assert.equal(stub.sendClicks, 0);
+});
+
 test('T1b: replay the recorded loading=.99 judgment across shell hydration, call exhaustion and changing markers', async (t) => {
   for (const mode of ['hydrates', 'never', 'changing_marker'] as const) {
     const stub = chatgptStub({ state: { composer: null } });
@@ -1174,6 +1195,94 @@ test('chatgpt target: a new record carries the actual mode and every owner CLI w
   assert.equal(view.sent_target_id, 'target-1');
   assert.deepEqual(view.before, { url: ROOT, turns: [], sidebar: [], composer_sha256: sha256Hex(PROMPT) });
   assert.deepEqual(view.sidebar_before, []);
+});
+
+test('T21/T22: null-composer conversation binds the attachment before any answer, then waits and collects', async (t) => {
+  const state = mkdtempSync(join(tmpdir(), 'jev-null-composer-'));
+  t.after(() => rmSync(state, { recursive: true, force: true }));
+  const attach = join(state, 'attach.txt');
+  writeFileSync(attach, 'synthetic attachment\n');
+  const stub = chatgptStub({ uploadedCards: ['attach.txt'] });
+  const ticks = clock();
+  const target = chatgptTarget({ ...targetOptions(stub), now: ticks.now, sleep: ticks.sleep });
+  const provider = providerOf(stub);
+  const judge = provider.judge!.bind(provider);
+  let judgments = 0;
+  let sentAt = -1;
+  provider.judge = async (...args) => {
+    if (sentAt < 0) return judge(...args); // Upload may need a progress judgment.
+    judgments++;
+    throw new Error('unexpected_post_send_judgment');
+  };
+  const act = stub.browser.act.bind(stub.browser);
+  stub.browser.act = async (action, page, text) => {
+    await act(action, page, text);
+    if (action.id === 'send') {
+      sentAt = ticks.now();
+      stub.state.url = CONVERSATION;
+      stub.state.composer = null;
+      stub.state.send = false;
+      stub.state.stop = false;
+      stub.state.turns = [
+        { role: 'user', text: `You said: ${PROMPT}`, message_body: PROMPT, attachment_names: ['attach.txt'] },
+      ];
+    }
+  };
+  let phase = '';
+  let waitingAt = -1;
+  const phases: string[] = [];
+  const samples = new Set<string>();
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  stub.browser.evaluate = async (script) => {
+    if (script === PAGE_FACTS && sentAt >= 0) {
+      samples.add(phase);
+      if (phase === 'wait' && ticks.now() - waitingAt >= 3_000 && stub.state.turns.length === 1)
+        stub.state.turns.push({ role: 'assistant', text: ANSWER, final_controls: true });
+    }
+    return evaluate(script);
+  };
+  const result = await runOracle({
+    stateDir: state,
+    key: KEY,
+    jobId: 'job-null-composer',
+    input: { ...INPUT, attach, maxWaitMs: 30_000 },
+    target,
+    store: chatgptStore(state, KEY),
+    provider,
+    signal: new AbortController().signal,
+    fields: {
+      provider: 'chatgpt',
+      prompt_sha256: promptSha256(PROMPT),
+      squashed_sha256: squashedSha256(PROMPT),
+      attachment: 'attach.txt',
+      attachment_sha256: sha256Hex('synthetic attachment\n'),
+    },
+    now: ticks.now,
+    sleep: ticks.sleep,
+    phase: (next) => {
+      phase = next;
+      phases.push(next);
+      if (next === 'wait') {
+        waitingAt = ticks.now();
+        assert.ok(waitingAt - sentAt <= 2_000, `confirm took ${waitingAt - sentAt}ms`);
+        assert.equal(stub.state.turns.length, 1, 'confirm binds before the assistant turn exists');
+        assert.deepEqual(readOperation(state, KEY)?.sent_evidence, {
+          via: 'facts',
+          corroborators: ['url_moved', 'user_turn_added'],
+        });
+      }
+    },
+  });
+  assert.equal(result.status, 'answered', JSON.stringify(result));
+  assert.equal(result.answer, ANSWER);
+  assert.equal(result.recoverable, false);
+  assert.deepEqual(phases, ['prepare', 'click', 'confirm', 'wait', 'collect']);
+  assert.deepEqual([...samples], ['confirm', 'wait', 'collect']);
+  assert.ok(ticks.now() - sentAt <= 15_000, `post-send lifecycle took ${ticks.now() - sentAt}ms`);
+  assert.equal(judgments, 0);
+  assert.equal(stub.sendClicks, 1, 'wait and collect add zero clicks');
+  assert.equal(stub.state.composer, null);
+  assert.equal(readOperation(state, KEY)?.completion, 'COMPLETE');
 });
 
 // ---------------------------------------------------------------- binding

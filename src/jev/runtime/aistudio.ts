@@ -43,6 +43,9 @@ interface StudioState {
   stop: boolean;
   page_error: boolean;
 }
+interface StudioFacts extends OracleFacts {
+  authenticated?: boolean;
+}
 interface Settings {
   model: string | null;
   selects: Record<string, string>;
@@ -99,7 +102,7 @@ class StudioPage implements OraclePage {
     });
     this.signal.throwIfAborted();
   }
-  async facts(): Promise<OracleFacts> {
+  async facts(): Promise<StudioFacts> {
     this.signal.throwIfAborted();
     // Compositor screenshots can block forever after scrolling a hidden tab.
     // Read DOM/layout only; virtualisation gets a host-clock pause after scroll.
@@ -161,11 +164,8 @@ class StudioPage implements OraclePage {
     if (current?.documentId !== state.documentId || (current?.url !== state.url && !settledInPlace)) userPrompt = null;
     return {
       url: settledInPlace ? current.url : state.url,
-      // An absent account/composer is hydration, not affirmative login evidence.
-      readyState:
-        state.readyState === 'complete' && state.authenticated === false && !state.login
-          ? 'interactive'
-          : state.readyState,
+      readyState: state.readyState,
+      authenticated: state.authenticated,
       composer: state.composer,
       stop: state.stop,
       marker: JSON.stringify([state.url, state.selector, state.authenticated, state.stop, reply.users]),
@@ -184,12 +184,18 @@ class StudioPage implements OraclePage {
       ...(this.userTurn ? { recordFields: { user_turn: this.userTurn, output_limit: this.outputLimit } } : {}),
     };
   }
-  async observation(facts: OracleFacts): Promise<PageObservation> {
+  async observation(facts: StudioFacts, readiness = false): Promise<PageObservation> {
     return {
       page: { url: facts.url, title: 'AI Studio', text: '' },
       elements: [],
       facts: {
         ...facts,
+        // Missing account chrome is a hydration hint only during page_ready,
+        // never evidence of loading during post-send binding or collection.
+        readyState:
+          readiness && facts.readyState === 'complete' && facts.authenticated === false && facts.human !== 'login'
+            ? 'interactive'
+            : facts.readyState,
         composer: undefined,
         turns: undefined,
         exchange: undefined,
@@ -231,13 +237,13 @@ export function aistudioTarget(
       const page = oraclePage as StudioPage;
       page.signal = signal;
       const sleep = options.sleep ?? ((ms: number) => oracleDelay(ms, signal));
-      let facts: OracleFacts | undefined;
+      let facts: StudioFacts | undefined;
       const ready = await awaitState(
         { name: 'page_ready', statement: 'The logged-in AI Studio composer is ready and idle.' },
         {
           async observe() {
             facts = await page.facts();
-            return page.observation(facts);
+            return page.observation(facts, true);
           },
         },
         {
@@ -257,6 +263,7 @@ export function aistudioTarget(
           fastPath: () =>
             facts &&
             facts.readyState === 'complete' &&
+            facts.authenticated !== false &&
             facts.composer !== null &&
             !facts.stop &&
             !facts.human &&

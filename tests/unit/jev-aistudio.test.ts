@@ -1004,6 +1004,83 @@ test('T4/T17: finished Studio live answer collects without waiting for a Drive U
   assert.equal(ticks.sleeps.includes(2_000), false, 'no optional URL-settlement sleep');
 });
 
+test('T21/T22 Studio: absent account chrome does not starve confirm, wait or collect', async (t) => {
+  const stateDir = workspace(t);
+  const ticks = clock();
+  const stub = studioStub();
+  const click = stub.browser.act.bind(stub.browser);
+  let sentAt = -1;
+  stub.browser.act = async (...args) => {
+    await click(...args);
+    sentAt = ticks.now();
+    stub.state.composer = null;
+    stub.state.selector = null;
+    stub.state.authenticated = false;
+    stub.reply = { users: 1, model_turns: 0, final: false, text: '', error: null };
+  };
+  let phase = '';
+  let waitingAt = -1;
+  const samples = new Set<string>();
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  stub.browser.evaluate = async (...args) => {
+    if (args[0] === STUDIO_PAGE_STATE && sentAt >= 0) {
+      samples.add(phase);
+      if (phase === 'wait' && ticks.now() - waitingAt >= 3_000)
+        stub.reply = { users: 1, model_turns: 1, final: true, text: '437', error: null };
+    }
+    return evaluate(...args);
+  };
+  const target = aistudioTarget(studioOptions(stub, ticks));
+  const key = studioKey(INPUT.label, INPUT.prompt, 'gemini-4-argon', 'High', 'new');
+  let judgments = 0;
+  const phases: string[] = [];
+  const result = await runOracle({
+    stateDir,
+    key,
+    jobId: 'jev-studio-no-account',
+    input: { ...INPUT, maxWaitMs: 45_000 },
+    target,
+    store: studioStore(stateDir, key),
+    provider: {
+      id: 'typesafe',
+      model: 'synthetic',
+      async decide() {
+        throw new Error('unexpected_decision');
+      },
+      async judge() {
+        judgments++;
+        throw new Error('unexpected_judgment');
+      },
+    },
+    signal: new AbortController().signal,
+    fields: { prompt_sha256: promptSha256(INPUT.prompt), conversation_url: null },
+    now: ticks.now,
+    sleep: ticks.sleep,
+    phase: (next) => {
+      phase = next;
+      phases.push(next);
+      if (next === 'wait') {
+        waitingAt = ticks.now();
+        assert.ok(waitingAt - sentAt <= 5_000, `confirm took ${waitingAt - sentAt}ms`);
+        assert.equal(stub.reply.model_turns, 0, 'confirm binds before a model turn exists');
+      }
+    },
+  });
+  assert.equal(result.status, 'answered', JSON.stringify(result));
+  assert.equal(result.answer, '437');
+  assert.deepEqual(phases, ['prepare', 'click', 'confirm', 'wait', 'collect']);
+  assert.deepEqual([...samples], ['confirm', 'wait', 'collect']);
+  assert.ok(ticks.now() - sentAt <= 35_000, `post-send lifecycle took ${ticks.now() - sentAt}ms`);
+  assert.equal(judgments, 0);
+  assert.equal(stub.acted, 1, 'wait and collect add zero Run clicks');
+  assert.equal((await studioStore(stateDir, key).read())?.completion, 'COMPLETE');
+  const page = await target.attach('target-1');
+  target.bindPage?.(page, { user_turn: 1 }, new AbortController().signal);
+  const facts = await page.facts();
+  assert.equal(facts.readyState, 'complete');
+  assert.equal((await page.observation(facts)).facts.readyState, 'complete');
+});
+
 test('T17: saved-view open and facts share one short host-clock budget', async (t) => {
   const stateDir = workspace(t);
   const ticks = clock();
@@ -1573,6 +1650,37 @@ test('aistudioTarget prepare waits out an unhydrated page instead of calling it 
   const second = await page.facts();
   assert.notEqual(first.exchange?.text, second.exchange?.text);
   assert.equal(first.marker, second.marker);
+});
+
+test('T23 Studio: account hydration still suppresses premature readiness judgments within its bound', async () => {
+  const stub = studioStub({ state: { authenticated: false } });
+  const ticks = clock();
+  const target = aistudioTarget(studioOptions(stub, ticks));
+  const page = await target.open(String(stub.state.url));
+  assert.equal((await page.facts()).readyState, 'complete');
+  let judgments = 0;
+  const start = ticks.now();
+  await rejects('aistudio_not_ready', () =>
+    target.prepare(
+      page,
+      INPUT,
+      {
+        id: 'typesafe',
+        model: 'synthetic',
+        async decide() {
+          throw new Error('unexpected_decision');
+        },
+        async judge() {
+          judgments++;
+          throw new Error('unexpected_judgment');
+        },
+      },
+      new AbortController().signal
+    )
+  );
+  assert.equal(ticks.now() - start, 90_000, 'unchanged stable + load readiness budget');
+  assert.equal(judgments, 0, 'complete composer without account chrome remains a readiness shell');
+  assert.equal(stub.acted, 0);
 });
 
 test('aistudioTarget facts stops a long virtualized read when the job signal aborts', async () => {
