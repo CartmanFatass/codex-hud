@@ -94,11 +94,12 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - `answer_complete`: the oracle collects through deterministic finality, not this judgment.
   - `submitted`: a deny in confirm only leads to a read-only reconcile, never to a resend.
   - Revisit if a live run shows a stall.
-  - Pro answered within seconds, so the mid-wait runtime restart is still to do. It needs a longer-thinking prompt
-    after R4F3.
-- Follow-ups:
-  - The pi-roles reviewer guard treats any `>` (JS `=>`, comparisons) as a redirect; it should ignore quoted text.
-  - The `submitted` and `answer_complete` thresholds may need to be pass-only. That is my decision, pending.
+- Next (2026-11-09, owner-approved): R5 starts with an architect design (`tmp/tasks/R5/`), then an implementer.
+  Two debt packages run beside it, with no shared files:
+  - DEBT1 (this repo): B11's spaces-path test, the `pack-cloud-preview --self-test` failure on
+    `dist/harness/pi/managed-launch.js`, and the load-sensitive panel publisher and statusline tests.
+  - PIGUARD (pi-roles, Fishpref): the reviewer guard treats any `>` (JS `=>`, comparisons) as a redirect; it should
+    ignore quoted text.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
