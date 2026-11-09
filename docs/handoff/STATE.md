@@ -131,7 +131,11 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
 - R5-UX planned (2026-11-09). Layout approved by the owner from mockup `HOME-VIS4` (concept §15 "Home and Work tabs:
   approved layout"); display only, passive data, model roles and the HUD's own credentials file decided the same day.
   Architect plan archived in `docs/reviews/2026-11-09-r5-ux-plan-architect.md`. Packages:
-  - P1 passive records + Home + transitional Work (running, branch `r5ux-p1`);
+  - P1 passive records + Home + transitional Work merged (`9d18bff`; reviews
+    `docs/reviews/2026-11-09-r5ux-p1-review-{1..5}.md`, accept on the fix-round-4 re-check; gate on the merged tree:
+    unit 4157/0 fail, mjs 465/0, hud-mcp 218/0, WP0 1176/1176, format/fixtures clean). Follow-up: A1's
+    `runtime-install.test.mjs` "fix1 output ENOSPC" test failed once under load (empty stderr) and passed alone 3/3;
+    load-sensitive, watch it;
   - KEYS merged (`7ef5b2f`; reviews `docs/reviews/2026-11-09-r5ux-keys-review-*`, accept round 2; gate on the
     same code: unit 4092/0 fail, mjs 391/0, hud-mcp 212/0, WP0 1176/1176, format clean). Owner machine configured:
     `~/.hud/credentials.env`, `~/.hud/config.json` (Jev + AI Studio, migrated from the jev-ask TOML), HUD settings on
@@ -157,9 +161,11 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   qualification is deferred (owner item).
   A1 merged (`8f972aa`, reviews `docs/reviews/2026-11-09-r6a-a1-review-{1,2}.md`): release staging and reversible
   activation through `hud install` / `hud uninstall`; integrated gate green. PIROLE PR1 merged (`856e576`, Codex trial).
-  Running: R5-UX P1 fix round (pi, warm implementer); PIROLE PR2 as a same-task A/B, pi arm `pirole-pr2-pi` and native
-  Codex arm `pirole-pr2-cdx` (record `docs/codex-vs-pi-ab.md`; the pick decides the implementer flow, no clear gap →
-  Codex). Waiting on P1: P2, A0. Codex trial (2026-11-09): new implementer packages run on Codex for a rough
+  R5-UX P1 merged (`9d18bff`). Running: PIROLE PR2 as a same-task A/B, pi arm `pirole-pr2-pi` (running) and native
+  Codex arm `pirole-pr2-cdx` (done, reviewer ACCEPT, awaiting orchestrator acceptance) (record
+  `docs/codex-vs-pi-ab.md`; the pick decides the implementer flow, no clear gap → Codex). Token cost from toktrack
+  only after a rescan (`toktrack daily --json`) and full pagination; cross-checked against native session records.
+  Ready on `9d18bff`: P2, A0 (start on the picked flow). Codex trial (2026-11-09): new implementer packages run on Codex for a rough
   comparison with pi (`docs/delegation.md`).
   The r5-acc demo stage is merged (`1f20f01`).
 
