@@ -131,7 +131,6 @@ export async function stage(dir) {
       cardContext: false,
       glyphs: 'text',
       motion: 'reduced',
-      theme: 'none',
       briefing: 'off',
       agentProgress: false,
       agentLabels: false,
@@ -459,6 +458,9 @@ async function panelRun(dir, title, language) {
   requireStage(dir);
   if (!WINDOWS.some((w) => w.title === title && w.language === language)) throw new Error('invalid stage window');
   isolate(stageEnv(dir, language));
+  // Live windows show the panel in colour; reference frames stay plain.
+  delete process.env.NO_COLOR;
+  process.env.COLORTERM = 'truecolor';
   process.chdir(join(dir, 'project'));
   await record(dir, [{ pid: process.pid, startTime: processStart(process.pid), kind: 'wrapper', title }]);
   // This is the real `hud panel --root` command handler, not a substitute panel launcher.
