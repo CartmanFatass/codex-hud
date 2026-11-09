@@ -10,7 +10,15 @@ export class PiDelegationBridge {
   private submitted = new Set<string>();
   private closing: Promise<void> = Promise.resolve();
   private generation = 0;
-  constructor(private readonly options: { sourceRoot: string; env: NodeJS.ProcessEnv; cwd: string }) {
+  constructor(
+    private readonly options: {
+      sourceRoot: string;
+      env: NodeJS.ProcessEnv;
+      cwd: string;
+      surface?: 'roles';
+      entry?: string;
+    }
+  ) {
     this.guard = createPiDelegationContextGuard({
       profile: PI_EXTENSION_CONTEXT_PROFILE,
       canonicalSourceDir: options.sourceRoot,
@@ -43,12 +51,16 @@ export class PiDelegationBridge {
     if (!lifecycle) throw Error('pi_session_inactive');
     signal?.throwIfAborted();
     const captured = await lifecycle.capture(ctx, callId, tool);
-    if (captured.status !== 'ready')
+    if (captured.status !== 'ready') {
+      // An unassigned file cannot have admitted work. Re-arm with a fresh epoch
+      // so native lazy assignment can be captured without relaxing guard pinning.
+      if (captured.sessionFile === null && this.lifecycle === lifecycle) this.lifecycle = this.guard.start();
       return {
         content: [{ type: 'text', text: 'Pi session is not persisted yet; delegation identity is pending.' }],
         isError: true,
         structuredContent: { ok: false, code: 'identity_source_missing' },
       };
+    }
     // Keep admission history across epochs/reconnects. Never repeat an admitted host call.
     const key = JSON.stringify([captured.sessionDir, captured.sessionId, callId]);
     if (this.submitted.has(key)) throw Error('pi_duplicate_tool_call');
@@ -62,8 +74,9 @@ export class PiDelegationBridge {
       await this.closing;
       if (this.lifecycle !== lifecycle) throw Error('stale_pi_extension_epoch');
       this.channel ??= new PiDelegationChannel({
-        entry: fileURLToPath(new URL('../../../packages/hud-mcp/bin/hud-mcp.mjs', import.meta.url)),
-        env: this.options.env,
+        entry:
+          this.options.entry ?? fileURLToPath(new URL('../../../packages/hud-mcp/bin/hud-mcp.mjs', import.meta.url)),
+        env: this.options.surface === 'roles' ? { ...this.options.env, HUD_MCP_SURFACE: 'roles' } : this.options.env,
         cwd: this.options.cwd,
         sourceRoot: this.options.sourceRoot,
       });

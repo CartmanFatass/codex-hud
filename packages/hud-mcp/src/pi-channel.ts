@@ -35,7 +35,7 @@ export class PiEvidenceChannel {
     void this.helloReady.catch(() => {});
     void this.read();
   }
-  async bindHost(reader: ProcessReaderPort, root: string): Promise<PiHostEvidence> {
+  async bindHost(reader: ProcessReaderPort, root?: string): Promise<PiHostEvidence> {
     let timer: NodeJS.Timeout | undefined;
     try {
       await Promise.race([
@@ -47,7 +47,7 @@ export class PiEvidenceChannel {
       this.assertLive();
       if (this.host || !this.hello) throw new Refusal('identity_unverified');
       this.host = PiHostEvidence.capture(reader, this.hello);
-      if (this.host.rootPath !== root) throw new Refusal('identity_unverified');
+      if (root !== undefined && this.host.rootPath !== root) throw new Refusal('identity_unverified');
       this.hello = null;
       return this.host;
     } catch (error) {

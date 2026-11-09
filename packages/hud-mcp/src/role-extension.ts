@@ -18,9 +18,11 @@ export class RoleFacadeTools implements AuthenticatedToolExtension {
   constructor(
     private readonly home: string,
     private readonly env: NodeJS.ProcessEnv = process.env,
-    private readonly jev: JevExecutor | null = null
+    private readonly jev: JevExecutor | null = null,
+    private readonly admission?: (source: Resolved) => void
   ) {}
   async invoke(source: Resolved, name: string, args: Record<string, unknown>): Promise<unknown> {
+    this.admission?.(source);
     const root = parseRosterRoot(`${source.sessionRef.sourceId}/${source.sessionRef.sessionId}`);
     return dispatchRoleTool({ home: this.home, root, env: this.env, jev: this.jev }, name, args);
   }

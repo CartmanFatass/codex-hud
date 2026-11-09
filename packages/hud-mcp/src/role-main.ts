@@ -6,10 +6,10 @@
  * this surface with HUD_MCP_SURFACE=roles.
  */
 
-import { randomUUID } from 'node:crypto';
 import { lstatSync, realpathSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
-import { liveCallerIdentity } from '../../../src/roles/caller.js';
+import { PiEvidenceChannel } from './pi-channel.js';
+import { RoleCallSource } from './role-source.js';
 import { createRoleJevExecutor } from '../../../src/roles/facade.js';
 import { ParentLifetime } from './lifetime.js';
 import { RoleFacadeTools } from './role-extension.js';
@@ -29,29 +29,15 @@ if (
 }
 
 const lifetime = new ParentLifetime();
-const identity = liveCallerIdentity(process.env);
+const pi = process.env.HUD_PI_DELEGATION_FD === '3' ? PiEvidenceChannel.inherited() : null;
+const source = new RoleCallSource(undefined, pi);
 const server = new HudMcpServer(
-  {
-    async resolve() {
-      if (!identity) return { ok: false as const, code: 'identity_source_missing' as const };
-      return {
-        ok: true as const,
-        callId: randomUUID(),
-        sessionRef: {
-          harness: identity.harness,
-          sourceId: identity.root.namespace,
-          sessionId: identity.root.sessionId,
-          threadId: null,
-        },
-        processKey: `role:${process.pid}`,
-        evidenceDigest: identity.root.namespace,
-      };
-    },
-  },
+  source,
   undefined,
   () => lifetime.alive(),
   undefined,
-  new RoleFacadeTools(home, process.env, createRoleJevExecutor(home))
+  new RoleFacadeTools(home, process.env, createRoleJevExecutor(home), (resolved) => source.assertCurrent(resolved))
 );
 const { discardPendingOutput } = await serveStdioProcess(server, () => lifetime.alive());
+pi?.close();
 if (discardPendingOutput) process.exit(0);
