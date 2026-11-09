@@ -86,9 +86,16 @@ sonic 失败或报告越界：调用方自己做，不升档重试。
 | Codex 相关测试（产品对 Codex 客户端的真实检查） | `codex2`（`CODEX_HOME=~/.codex`，免费账号），`gpt-6-luna` medium | `codex` 函数是主账号（`~/.codex-account2`），不用于测试 |
 | 编排、验收、提交 | **Claude Code 编排者**（Herdr 内，opus） | 本文 + STATE.md |
 
-## Codex 试用（2026-11-09，Jacob 定）
+## Codex 试用：已结束，选 pi（2026-11-09，Jacob 定）
 
-从此刻起，新开的 implementer 工作包改用 Codex（`codex` 函数，主账号，gpt-6.1-sol high，Fast off），按 legacy
+PIROLE-PR2 同任务 A/B 后，Jacob 选 pi 流程（记录 `docs/codex-vs-pi-ab.md`）：pi 交付无遗留 major、花费低
+（$3.49 vs $4.76），Codex 快约一倍但其常驻 reviewer 漏了一个 major。implementer、reviewer、architect 全部回到 pi
+（skill `herdr-delegate`），Codex 调度恢复为 legacy 备份。同时 pi-roles 改为：implementer 把每项检查写入
+`checks/<name>.log`（末行 `exit=<code>`），长测试放后台，全量检查只在首轮 review 前和报告前各跑一次；reviewer
+核对新鲜日志，首轮跑相关测试、复查轮只跑回归测试，日志缺失 / 失败 / 过期时自己重跑；全量 gate 由编排者验收时跑
+（Fishpref `ed0cf77`）。以下为试用期间的原规则，仅作记录：
+
+（原文）从此刻起，新开的 implementer 工作包改用 Codex（`codex` 函数，主账号，gpt-6.1-sol high，Fast off），按 legacy
 skill `herdr-delegate-codex` 的旧方式：一个工作包一个 tab，按规模定子代理计划，收尾用原生 `spawn_agent` 起
 reviewer 子代理（`fork_turns: "none"`，gpt-6.1-sol **xhigh**，与 pi reviewer 强度一致），问题经 herdr 推到编排者 pane。
 architect 也改用 Codex：gpt-6-astra high（与 pi 一致），独立 tab，只读，只写 `architect-N.md`，仍只由编排者调用。

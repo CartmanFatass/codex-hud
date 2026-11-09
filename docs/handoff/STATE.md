@@ -161,12 +161,12 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   qualification is deferred (owner item).
   A1 merged (`8f972aa`, reviews `docs/reviews/2026-11-09-r6a-a1-review-{1,2}.md`): release staging and reversible
   activation through `hud install` / `hud uninstall`; integrated gate green. PIROLE PR1 merged (`856e576`, Codex trial).
-  R5-UX P1 merged (`9d18bff`). Running: PIROLE PR2 as a same-task A/B, pi arm `pirole-pr2-pi` (running) and native
-  Codex arm `pirole-pr2-cdx` (done, reviewer ACCEPT, awaiting orchestrator acceptance) (record
-  `docs/codex-vs-pi-ab.md`; the pick decides the implementer flow, no clear gap → Codex). Token cost from toktrack
-  only after a rescan (`toktrack daily --json`) and full pagination; cross-checked against native session records.
-  Ready on `9d18bff`: P2, A0 (start on the picked flow). Codex trial (2026-11-09): new implementer packages run on Codex for a rough
-  comparison with pi (`docs/delegation.md`).
+  R5-UX P1 merged (`9d18bff`). PIROLE PR2 A/B decided (owner): **pi flow** (record `docs/codex-vs-pi-ab.md`: pi 0
+  open major, $3.49, 93 min; Codex 1 open major, $4.76, 44 min). pi arm merged as PIROLE PR2 (`c8eba24`, reviews
+  `docs/reviews/2026-11-09-pirole-pr2-review-{1,2}.md`); Codex arm kept on branch `pirole-pr2-cdx`. All roles back on
+  pi; pi-roles optimised for throughput (Fishpref `ed0cf77`: check logs, background suites, reviewers verify logs).
+  PR3 design inputs: `tmp/tasks/PIROLE-PLAN/design-after-pr2.md`. Token cost from toktrack only after a rescan
+  (`toktrack daily --json`) and full pagination. Next: P2, A0 on the pi flow (≤ 3 implementers).
   The r5-acc demo stage is merged (`1f20f01`).
 
 | Package | Deliverable | Acceptance |
