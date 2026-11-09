@@ -941,6 +941,15 @@ Two deliberate external ties:
   reap) move into this repo and are maintained here. The HUD no longer discovers `pi-dispatch` or `pi-role-reap` on
   PATH. Fishpref's pi-roles stays the owner's personal tool and may diverge.
 
+### 2026-11-09 Codex role calls fail closed until native provenance exists (orchestrator)
+
+An ordinary Codex 0.167.0 session runs its MCP servers under the shared `codex app-server` daemon, so the HUD cannot
+tell which thread issued a role call. Role calls from such a connection return `identity_unverified`, all six tools
+included; passive observation of Codex sessions is unaffected. Codex activation says so and never claims verified
+role admission. The candidate native field (`_meta.threadId`, overwritten by the app-server on direct RPC) is not
+authority until a model-path and lifecycle qualification or an upstream contract exists
+([consult](./reviews/2026-11-09-a2b-codex-admission-architect.md)). Claude and pi role calls are unaffected.
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
