@@ -72,6 +72,8 @@ const before = (a: Stamp, b: Stamp) => a.ts < b.ts || (a.ts === b.ts && a.nanos 
 const STARTUP_WINDOW_S = 10;
 /** Rows read per question; the questions are narrow, these only bound a pathological log. */
 const ROW_LIMIT = 200;
+/** Shared native wall-clock vs /proc boot/start rounding tolerance (also Claude startedAt). */
+export const NATIVE_START_TOLERANCE_MS = 2000;
 
 const THREAD_SPAN = /rpc\.method="thread\/(start|resume|fork)"/;
 const SPAN_CONNECTION = /\bapp_server\.connection_id=(\d+)(?!\d)/;
@@ -86,6 +88,8 @@ export interface ResolveQuery {
   since: number;
   /** Unix seconds: rows after this are not read. For a look back at a past moment. */
   until?: number;
+  /** Role authority: refuse timing ambiguity instead of the display's best-effort ranking. */
+  strict?: boolean;
 }
 
 /** A TUI's daemon connection, and where in the log its latest thread was read. */
@@ -109,8 +113,70 @@ function firstRow(db: Database, q: ResolveQuery): Stamp | null {
        AND target = 'codex_tui::app::startup'
        AND ts >= ? AND ts <= ? ORDER BY ts, ts_nanos LIMIT 1`
     )
-    .all(prefix, `pid:${q.pid};`, Math.floor(q.since), q.until ?? Number.MAX_SAFE_INTEGER);
-  return rows[0] ? { ts: num(rows[0].ts), nanos: num(rows[0].ts_nanos) } : null;
+    .all(
+      prefix,
+      `pid:${q.pid};`,
+      Math.floor(q.since - (q.strict ? NATIVE_START_TOLERANCE_MS / 1000 : 0)),
+      q.until ?? Number.MAX_SAFE_INTEGER
+    );
+  if (!rows[0]) return null;
+  const found = { ts: num(rows[0].ts), nanos: num(rows[0].ts_nanos) };
+  if (q.strict && found.ts + found.nanos / 1e9 < q.since - NATIVE_START_TOLERANCE_MS / 1000) return null;
+  return found;
+}
+
+/** Strict authority needs the connection's earliest retained evidence, not merely
+ * a unique resume inside this TUI's window. Inspect all request kinds and history
+ * without a lower time bound; bound correlation work, never guess past the bound.
+ */
+function strictConnectionStart(db: Database, q: ResolveQuery, connection: { server: string; id: number }): boolean {
+  const rows = db
+    .prepare(
+      `SELECT ts, ts_nanos, feedback_log_body AS body FROM logs
+    WHERE process_uuid = ? AND ts <= ? AND
+      (feedback_log_body LIKE ? OR feedback_log_body LIKE ? OR feedback_log_body LIKE ?)
+    ORDER BY ts, ts_nanos, id LIMIT ?`
+    )
+    .all(
+      connection.server,
+      q.until ?? Number.MAX_SAFE_INTEGER,
+      `%app_server.connection_id=${connection.id}%`,
+      `%connection_id=ConnectionId(${connection.id})%`,
+      `%connection_id: ConnectionId(${connection.id})%`,
+      ROW_LIMIT
+    );
+  const exact = rows.filter((row) => {
+    const body = text(row.body);
+    const match = SPAN_CONNECTION.exec(body) ?? /\bconnection_id(?:=|: )ConnectionId\((\d+)\)/.exec(body);
+    return match && Number(match[1]) === connection.id;
+  });
+  const earliest = exact[0];
+  if (!earliest || num(earliest.ts) + num(earliest.ts_nanos) / 1e9 < q.since - NATIVE_START_TOLERANCE_MS / 1000)
+    return false;
+  // initialize/account requests can precede thread creation on an ordinary TUI.
+  const threadIndex = exact.findIndex(
+    (row) => THREAD_SPAN.test(text(row.body)) || REQUEST_CONNECTION.test(text(row.body))
+  );
+  if (threadIndex < 0) return false;
+  const first = text(exact[threadIndex].body);
+  const span = THREAD_SPAN.exec(first);
+  if (span) return span[1] !== 'fork' && /\bapp_server\.client_name="codex-tui"/.test(first);
+  const trace = REQUEST_CONNECTION.exec(first);
+  const requestId = /\brequest_id=String\(("(?:[^"\\]|\\.)*")\)/.exec(first);
+  if (!trace || trace[1] === 'fork' || !requestId) return false;
+  let id: unknown;
+  try {
+    id = JSON.parse(requestId[1]);
+  } catch {
+    return false;
+  }
+  if (typeof id !== 'string' || !id || id.length > 256) return false;
+  return exact.slice(threadIndex + 1).some((row) => {
+    const body = text(row.body);
+    const method = THREAD_SPAN.exec(body);
+    const correlated = /\brpc\.request_id=([^\s}]+)/.exec(body)?.[1];
+    return method?.[1] === trace[1] && correlated === id && /\bapp_server\.client_name="codex-tui"/.test(body);
+  });
 }
 
 /**
@@ -123,15 +189,17 @@ function firstRow(db: Database, q: ResolveQuery): Stamp | null {
 export function findConnection(db: Database, q: ResolveQuery): Connection | null {
   const from = firstRow(db, q);
   if (!from) return null;
-  const end = Math.min(from.ts + STARTUP_WINDOW_S, q.until ?? Number.MAX_SAFE_INTEGER);
+  const end = Math.min((q.strict ? q.since : from.ts) + STARTUP_WINDOW_S, q.until ?? Number.MAX_SAFE_INTEGER);
+  const start = q.strict ? Math.floor(q.since - NATIVE_START_TOLERANCE_MS / 1000) : from.ts - STARTUP_WINDOW_S;
   const requests = db
     .prepare(
       `SELECT ts, ts_nanos, process_uuid, feedback_log_body AS body FROM logs
        WHERE ts >= ? AND ts <= ? AND (feedback_log_body LIKE '%rpc.method="thread/%'
          OR feedback_log_body LIKE 'app-server request: thread/%')
-       ORDER BY ts, ts_nanos, id LIMIT ${ROW_LIMIT}`
+       ORDER BY ts, ts_nanos, id LIMIT ${q.strict ? ROW_LIMIT + 1 : ROW_LIMIT}`
     )
-    .all(from.ts - STARTUP_WINDOW_S, end);
+    .all(start, end);
+  if (q.strict && requests.length > ROW_LIMIT) return null;
   // One entry per connection, at its first request.
   const seen = new Map<string, Stamp & { server: string; id: number }>();
   for (const row of requests) {
@@ -150,9 +218,10 @@ export function findConnection(db: Database, q: ResolveQuery): Connection | null
   const tuis = db
     .prepare(
       `SELECT process_uuid, ts, ts_nanos FROM logs WHERE ts >= ? AND ts <= ? AND thread_id IS NULL
-       AND target = 'codex_tui::app::startup' ORDER BY ts, ts_nanos, id LIMIT ${ROW_LIMIT * 5}`
+       AND target = 'codex_tui::app::startup' ORDER BY ts, ts_nanos, id LIMIT ${ROW_LIMIT * 5 + (q.strict ? 1 : 0)}`
     )
-    .all(from.ts - STARTUP_WINDOW_S, end);
+    .all(start, end);
+  if (q.strict && tuis.length > ROW_LIMIT * 5) return null;
   const starts = new Map<string, Stamp>();
   for (const row of tuis) {
     const uuid = text(row.process_uuid);
@@ -160,6 +229,11 @@ export function findConnection(db: Database, q: ResolveQuery): Connection | null
   }
   const own = [...starts.keys()].find((uuid) => uuid.startsWith(`pid:${q.pid}:`));
   const after = connections.filter((c) => !before(c, from));
+  if (q.strict) {
+    if (!own || starts.size !== 1 || connections.length !== 1 || !strictConnectionStart(db, q, connections[0]))
+      return null;
+    return { server: connections[0].server, id: connections[0].id, from };
+  }
   if (own && starts.size > 1) {
     const order = [...starts.entries()].sort(([, a], [, b]) => (before(a, b) ? -1 : before(b, a) ? 1 : 0));
     const rank = order.findIndex(([uuid]) => uuid === own);

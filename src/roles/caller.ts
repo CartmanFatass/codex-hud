@@ -14,7 +14,7 @@ import { basename, join } from 'node:path';
 import { isCanonicalAbsolutePath } from '../core/canonical.js';
 import { makeSourceId } from '../core/identity.js';
 import type { Harness } from '../core/types/identity.js';
-import { resolveDaemonThread, processStart } from '../collectors/daemon-binding.js';
+import { resolveDaemonThread, processStart, NATIVE_START_TOLERANCE_MS } from '../collectors/daemon-binding.js';
 import { parseRosterRoot, type RosterRoot } from './selection.js';
 
 const ENV_KEYS = new Set([
@@ -43,7 +43,7 @@ export interface CallerProbe {
   /** Canonical directory, or null. */
   realpath(path: string): string | null;
   /** Codex thread from the daemon log. Null when the bar cannot tell. */
-  codexThread(root: string, pid: number, since: number): string | null;
+  codexThread(root: string, pid: number, since: number, strict?: boolean): string | null;
   started(pid: number): number | null;
 }
 
@@ -81,8 +81,20 @@ function claudeSession(proc: CallerProcess, probe: CallerProbe): RosterRoot | nu
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   const body = parsed as Record<string, unknown>;
-  if (body.pid !== proc.pid || String(body.procStart) !== proc.procStart || typeof body.sessionId !== 'string')
-    return null;
+  if (body.pid !== proc.pid || typeof body.sessionId !== 'string') return null;
+  if (body.procStart !== undefined) {
+    if (String(body.procStart) !== proc.procStart) return null;
+  } else {
+    const started = probe.started(proc.pid);
+    const native =
+      typeof body.startedAt === 'number'
+        ? body.startedAt
+        : typeof body.startedAt === 'string'
+          ? Date.parse(body.startedAt)
+          : NaN;
+    if (started === null || !Number.isFinite(native) || Math.abs(native - started * 1000) > NATIVE_START_TOLERANCE_MS)
+      return null;
+  }
   const claimed = probe.env.CLAUDE_CODE_SESSION_ID;
   if (claimed !== undefined && claimed !== body.sessionId) return null;
   return rootFrom('claude', root, body.sessionId);
@@ -153,12 +165,12 @@ function piSession(proc: CallerProcess, probe: CallerProbe): RosterRoot | null {
   return rootFrom('pi', root, sessionId);
 }
 
-function codexSession(proc: CallerProcess, probe: CallerProbe): RosterRoot | null {
+function codexSession(proc: CallerProcess, probe: CallerProbe, strict = false): RosterRoot | null {
   const root = canonicalRoot(probe, proc.env.CODEX_HOME, proc.env.HOME ? `${proc.env.HOME}/.codex` : undefined);
   if (!root) return null;
   const since = probe.started(proc.pid);
   if (since === null) return null;
-  const thread = probe.codexThread(root, proc.pid, Math.floor(since));
+  const thread = probe.codexThread(root, proc.pid, strict ? since : Math.floor(since), strict);
   if (!thread) return null;
   return rootFrom('codex', root, thread);
 }
@@ -166,6 +178,34 @@ function codexSession(proc: CallerProcess, probe: CallerProbe): RosterRoot | nul
 export interface CallerIdentity {
   readonly harness: Harness;
   readonly root: RosterRoot;
+}
+
+/** Physical ancestry only. Never derives session authority from argv/env hints. */
+export function callerAncestry(probe: CallerProbe): { process: CallerProcess; harness: Harness; stamp: string } | null {
+  let pid = probe.ppid;
+  const chain: unknown[] = [];
+  for (let depth = 0; depth < 8 && pid > 1; depth++) {
+    const proc = probe.read(pid);
+    if (!proc || proc.env.NODE_TEST_CONTEXT) return null;
+    chain.push([proc.pid, proc.ppid, proc.procStart]);
+    const harness = harnessOf(proc.argv);
+    if (harness) return { process: proc, harness, stamp: JSON.stringify(chain) };
+    if (proc.ppid === pid) return null;
+    pid = proc.ppid;
+  }
+  return null;
+}
+
+/** Current native evidence, not an inherited MCP startup session hint. Pi requires its private bridge. */
+export function currentNativeCaller(probe: CallerProbe): CallerIdentity | null {
+  const found = callerAncestry(probe);
+  if (!found || found.harness === 'pi') return null;
+  const nativeProbe = { ...probe, env: {} };
+  const root =
+    found.harness === 'claude'
+      ? claudeSession(found.process, nativeProbe)
+      : codexSession(found.process, nativeProbe, true);
+  return root ? { harness: found.harness, root } : null;
 }
 
 /** Null when this process is not a child of a harness whose session can be proved. */
@@ -244,14 +284,14 @@ function liveRealpath(path: string): string | null {
  * Live identity. Under `node --test` this returns null without reading a home
  * directory: the test process is not a harness session.
  */
-function liveProbe(env: NodeJS.ProcessEnv): CallerProbe {
+export function liveProbe(env: NodeJS.ProcessEnv): CallerProbe {
   return {
     ppid: process.ppid,
     env,
     read: liveRead,
     readText: liveReadText,
     realpath: liveRealpath,
-    codexThread: (root, pid, since) => resolveDaemonThread(join(root, 'logs_2.sqlite'), { pid, since }),
+    codexThread: (root, pid, since, strict) => resolveDaemonThread(join(root, 'logs_2.sqlite'), { pid, since, strict }),
     started: processStart,
   };
 }
