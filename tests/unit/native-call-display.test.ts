@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, existsSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NativeCallCollector } from '../../src/collectors/native-calls.js';
@@ -70,6 +70,14 @@ test('direct calls are discovered without ledger and render raw state without ta
     assert.equal(projection.proj.detail.managed, false);
     // Legacy publication may replace its view: direct nodes are restored, never lost afterPaint.
     assert.equal(collector.merge(null)!.tree.nodes.filter((n) => n.edge === 'direct-call').length, 1);
+    chmodSync(join(home, 'native-relations'), 0o777);
+    await collector.collect(owner);
+    const stale = collector.merge(null)!;
+    assert.deepEqual(stale.details[child.key].nativeCall!.snapshot, view.details[child.key].nativeCall!.snapshot);
+    assert.match(nativeCallLabel(stale.details[child.key].nativeCall!), /unavailable/);
+    assert.equal(stale.tree.nodes.find((n) => n.key === child.key)!.loaded, false);
+    await collector.collect({ ...owner, sourceId: 'b'.repeat(64) });
+    assert.equal(collector.merge(null), null, 'last-known data never crosses an explicit root change');
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

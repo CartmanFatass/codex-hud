@@ -449,6 +449,10 @@ export interface AgentAction {
 }
 
 export interface SubagentTreeNode {
+  /** Optional observation data, never an execution or model-material capability. */
+  job?: import('./collectors/job-display-types.js').JobDisplay;
+  /** Complete native identity only when supplied by a source-aware reader. */
+  ref?: import('./core/types/identity.js').SessionRef;
   /** Public agent-authored excerpt; not verified completion or a file attribution. */
   lastReport?: AgentReport;
   /** The newest stages, oldest first; `stageCount` counts them all. */

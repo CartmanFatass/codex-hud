@@ -330,7 +330,21 @@ function saveReceipt(home: string, receipt: JobReceipt): void {
   writePrivate(receiptPath(home, receipt.job), JSON.stringify(stored) + '\n');
 }
 
+function associationTimestamp(home: string, job: string, field: 'created_at' | 'closed_at'): string | undefined {
+  try {
+    const record = JSON.parse(dispatchText(join(home, 'assoc', `${job}.json`), 16 * 1024) ?? 'null');
+    const value = record?.[field];
+    return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function associationOf(home: string, receipt: JobReceipt, closed: boolean): JobAssociation {
+  // Old records have no creation clock. A later rewrite is not evidence of their creation time.
+  const createdAt =
+    associationTimestamp(home, receipt.job, 'created_at') ??
+    (!fs.existsSync(join(home, 'assoc', `${receipt.job}.json`)) ? new Date().toISOString() : undefined);
   return {
     schema: 1,
     job: receipt.job,
@@ -360,6 +374,8 @@ function associationOf(home: string, receipt: JobReceipt, closed: boolean): JobA
         : { tab_id: null, pane_id: null, agent: null, workspace_id: null },
     report_path: join(jobDirectory(home, receipt.job), 'report.md'),
     closed,
+    ...(createdAt ? { created_at: createdAt } : {}),
+    ...(closed ? { closed_at: associationTimestamp(home, receipt.job, 'closed_at') ?? new Date().toISOString() } : {}),
   };
 }
 

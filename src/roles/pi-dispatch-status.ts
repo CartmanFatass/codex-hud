@@ -52,6 +52,17 @@ function snapshot(file: string, directory: string, slot: string, role: string, o
   } catch {
     return null;
   }
+  return parseDispatchStatus(raw, directory, slot, role, output);
+}
+
+/** Single-file parser shared with the incremental read-only tree observer. */
+export function parseDispatchStatus(
+  raw: unknown,
+  directory: string,
+  slot: string,
+  role: string,
+  output: string
+): DispatchStatus | null {
   if (
     !isRecord(raw) ||
     raw.version !== 1 ||

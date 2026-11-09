@@ -11,12 +11,14 @@ import { panelCommand, PANEL_HELP } from './panel.js';
 import { piCommand } from './pi.js';
 import { ROSTER_HELP, rosterCommand } from './roster.js';
 import { setupCommand } from './setup.js';
+import { observeHerdrCommand } from './observe-herdr.js';
 
 /** The non-wait CLI. Loaded only after the lightweight entry has dispatched wait. */
 export async function main(args: readonly string[], io: HudIO, received?: number): Promise<number> {
   const callBudget =
     args[0] === 'run' && ['resume', 'cancel'].includes(args[1]) ? new CallBudget(undefined, received) : undefined;
   try {
+    if (args[0] === 'observe-herdr') return await observeHerdrCommand(args.slice(1), io);
     if (args[0] === 'digest') return await digestCommand(args.slice(1), io);
     if (args[0] === 'migrate') return await migrateCommand(args.slice(1), io);
     if (args[0] === 'statusline') return await statuslineCommand(args.slice(1), io);
