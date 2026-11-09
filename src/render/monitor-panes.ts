@@ -39,6 +39,15 @@ import {
   rateText,
 } from './monitor-labels.js';
 import { contextLine, CONTEXT_METER_WIDTH } from './monitor-meter.js';
+import {
+  effectiveStatus,
+  withEffectiveStatus,
+  jobParts,
+  fitParts,
+  shownNode,
+  badgeOf,
+  needsInput,
+} from './job-details.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
 import { timelineRows } from './monitor-timeline.js';
 import { delegationAgentsRows, mixedAgentsRows, mixedOrdinaryNodes } from './delegation/panel.js';
@@ -64,7 +73,8 @@ export function putAwayCount(nodes: SubagentTreeNode[], state: MonitorState, now
  * the linger window put away is on the control bar.
  */
 export function summaryRow(input: Pick<MonitorData, 'tree'>, now?: number): { row: MonitorRow } {
-  const { agents, subtasks: subs, reviews } = agentCounts(input.tree.nodes);
+  // A job counts as its row draws it: a stale running job is not "running" in the title either.
+  const { agents, subtasks: subs, reviews } = agentCounts(withEffectiveStatus(input.tree.nodes));
   // How fast every running agent writes, subtasks and reviews too, together;
   // it gives way with the subtasks figure. The main session's own rate is the band's.
   let total: number | undefined;
@@ -143,16 +153,18 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     const prefix = `${node.id === state.tree.selectedId ? theme.accent('›') : ' '}${colors.dim(branch)}${row.collapsed && row.hasChildren ? '+' : ''}${status.paint(status.icon)} `;
     // A finished parent kept only to show whose child a live agent is recedes,
     // and so does a finished row once the news of it finishing is a minute old.
-    const finished = node.status === 'completed' && now - (finishedAt(node)?.getTime() ?? 0) > FRESH_FINISH_MS;
+    const finished =
+      effectiveStatus(node) === 'completed' && now - (finishedAt(node)?.getTime() ?? 0) > FRESH_FINISH_MS;
     const dimName = row.context || finished;
     // Same celestial badges as the compact HUD. Narrow panes keep glyphs only.
     // The widest whole form that fits a quarter of the row; never a cut one.
+    const bound = badgeOf(node);
     const badge =
       width < 10
         ? ''
         : fitModelEffortToken(
-            node.model ? monitorText(node.model) : undefined,
-            node.effort ? monitorText(node.effort) : undefined,
+            bound.model ? monitorText(bound.model) : undefined,
+            bound.effort ? monitorText(bound.effort) : undefined,
             Math.max(2, Math.floor(width / 4)),
             width < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs
           );
@@ -162,18 +174,36 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
     // shows nothing rather than an empty meter.
     // The meter and the clock keep their columns on every row, blank when
     // there is nothing to draw, so meters and clocks line up down the pane.
+    // A job has no context to meter, so it keeps no blank column for one.
     const ctx =
       width < 26
         ? ''
         : node.contextUsage
           ? contextLine(node.contextUsage.percent, CONTEXT_METER_WIDTH)
-          : ' '.repeat(CONTEXT_METER_WIDTH);
+          : node.job
+            ? ''
+            : ' '.repeat(CONTEXT_METER_WIDTH);
     const clock = width < 12 ? '' : turnClock(node, now) || ' ';
-    const right = [guardianChip(node.children), badge, ctx, clock].filter(Boolean).join(' ');
-    const room = Math.max(1, width - visualLength(prefix) - (right ? visualLength(right) + 1 : 0));
     // Codex's own name, as its /subagents picker prints it: what the agent
-    // is doing is the log's to say, under the tree.
-    const squeezed = squeeze(monitorText(shownName(node, state.labelAsName)), room);
+    // is doing is the log's to say, under the tree. A job's is its task label.
+    const text = monitorText(shownName(shownNode(node), state.labelAsName));
+    let right: string;
+    if (node.job) {
+      // The name keeps eight columns; then role and phase, a source not corroborated, model and effort, and
+      // the attention mark are given what is left, in that order.
+      const lead = guardianChip(node.children);
+      const last = [ctx, clock].filter(Boolean).join(' ');
+      const room =
+        width -
+        visualLength(prefix) -
+        1 -
+        Math.min(8, visualLength(text)) -
+        (lead ? visualLength(lead) + 1 : 0) -
+        (last ? visualLength(last) + 1 : 0);
+      right = [lead, fitParts(jobParts(node, badge), room).join(' '), last].filter(Boolean).join(' ');
+    } else right = [guardianChip(node.children), badge, ctx, clock].filter(Boolean).join(' ');
+    const room = Math.max(1, width - visualLength(prefix) - (right ? visualLength(right) + 1 : 0));
+    const squeezed = squeeze(text, room);
     const name = dimName ? colors.dim(squeezed) : squeezed;
     const selected = node.id === state.tree.selectedId;
     const line = pair(prefix + name, right, width);
@@ -534,8 +564,9 @@ function logRows(input: MonitorData, state: MonitorState, width: number, now: nu
     const st = nodeStatus(node, now);
     // What the panel knows for itself is not left to the model: a failed or
     // quiet agent needs a look, and so does one the latest note flagged.
-    const attention = node.status === 'error' || isQuiet(node, now) || Boolean(entries.at(-1)?.attention);
-    const title = agentTitle(node, state.labelAsName);
+    const attention =
+      effectiveStatus(node) === 'error' || needsInput(node) || isQuiet(node, now) || Boolean(entries.at(-1)?.attention);
+    const title = agentTitle(shownNode(node), state.labelAsName);
     const head = `${attention ? theme.warning('!') : ' '}${st.paint(st.icon)} ${title.icon ? colors.dim(title.icon) + ' ' : ''}`;
     const name = squeeze(title.name, Math.max(1, width - visualLength(head)));
     push(head + (attention ? theme.warning(name) : theme.strong(name)));
