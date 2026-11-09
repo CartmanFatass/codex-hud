@@ -879,8 +879,10 @@ later only when the record shows a problem.
   stands out when the answer departs from the worker's suggested default. "Needs you" holds only states already
   observable without the orchestrator declaring them (a job ended needing a human, such as a login or captcha), shown
   with waited minutes.
-- No overturn interaction: the HUD shows decisions and a HUD-local "seen" mark only. If the owner disagrees, they
-  talk to the main session themselves. This supersedes "seen/overturn per item" in the previous entry.
+- Display only: no interaction that the main session can already do or that records owner input (no overturn, no
+  reply to a question, no seen mark). Keys only navigate (cursor, expand in place, switch tabs, jump to a card). The
+  owner acts in the main session. This supersedes "seen/overturn per item" in the previous entry; lists rank by
+  class, then newest first, with older items folded.
 
 ## 16. 评审状态与下一次评审
 
