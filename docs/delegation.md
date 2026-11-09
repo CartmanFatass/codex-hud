@@ -50,7 +50,7 @@
    - 测试（Jacob，2026-11-08）：**编排者出测试方案，implementer 实现**。编排者懂业务逻辑，在 brief 的「测试方案」一节写明：要证明的行为（逐条对应验收）、每个测试必须真实执行的代码路径、允许的替身及其不能代替的那一步、反例与故障场景、变异检查（故意弄坏哪里，测试必须变红）。implementer 可以加测试，不能删减；偏离方案先 `ask_orchestrator`。reviewer 对照方案验收测试。起因：SONIC-AB-02 里一份 7 个测试全绿的产出，真实页面上根本跑不通。
    - 查 bug、排查、复现、测量、按评审意见修复 → **implementer**（Jacob，2026-11-08）：这类工作靠判断，结论错了比没有更糟。
    - 前端设计（呈现哪些信息、怎么可视化）→ **Argon** 出方案，编排者判断定稿，不送 Pro 收敛（Jacob，2026-11-08）；定稿写进 `docs/design/` 后交 `frontend-implementer` 子代理（sonnet，xhigh）实现；评审交 pi reviewer。
-   - 需要人类互动的测试 → Hermes。
+   - 需要人类互动的测试 → Hermes（Windows，full access，默认模型 Mistral DeepSeek V4.1 Flash）。
 4. **sonic 用哪个模型？** 默认 DeepSeek V4.1 Flash：两轮对比（`docs/sonic-ab.md`）里它都更好；GLM-5.3 Flash 保留为备选。双模型对比已暂停（Jacob，2026-11-08），只在新模型上线或改规则时再做。
 5. **验收与提交。** 编排者读 report 与每轮 review，重跑检查，确认最后一轮是 `accept`；通过后提交、推送，把有用的 review 与 architect 答复归档到 `docs/reviews/`。不收敛时按升级规则处理。
 6. **收尾。** 关 agent、关 tab、跑 `herdr agent list` 检查点。
@@ -82,7 +82,7 @@ sonic 失败或报告越界：调用方自己做，不升档重试。
 | Claude 写的变更的评审 | **reviewer**（sol xhigh），编排者单独起 | skill `herdr-delegate` 的 review-only 流程 |
 | 前端设计：呈现哪些信息、可视化方式 | **Argon** 出方案 → 编排者定稿（不走 Pro） | skill `jev-ask` 的 `jev-aistudio`；定稿写进 `docs/design/` |
 | 前端实现：按已定设计写渲染、布局、文案、视觉基线 | **Claude Code 子代理 `frontend-implementer`**（sonnet，xhigh） | Agent 工具，`subagent_type: frontend-implementer`，传 brief 路径；设计以定稿设计文档（`docs/design/`）为准 |
-| 需要人类互动的测试：对话框、真实输入、Windows Terminal 视觉验收 | **Hermes**（Windows computer use，grok-4.7，一次性运行） | 脚本先摆好状态，再给 Hermes 一个任务文件；证据以其 usage JSON 与截图为准。参照 ux / JevFocus 项目的做法 |
+| 需要人类互动的测试：对话框、真实输入、Windows Terminal 视觉验收 | **Hermes**（Windows 下运行，computer use，full access；模型为 Mistral 提供的 DeepSeek V4.1 Flash，即 Hermes 当前默认；一次性运行。Jacob，2026-11-09） | 脚本先摆好状态，再给 Hermes 一个任务文件；证据以其 usage JSON 与截图为准。参照 ux / JevFocus 项目的做法 |
 | Codex 相关测试（产品对 Codex 客户端的真实检查） | `codex2`（`CODEX_HOME=~/.codex`，免费账号），`gpt-6-luna` medium | `codex` 函数是主账号（`~/.codex-account2`），不用于测试 |
 | 编排、验收、提交 | **Claude Code 编排者**（Herdr 内，opus） | 本文 + STATE.md |
 
