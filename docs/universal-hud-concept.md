@@ -916,14 +916,6 @@ spines and phase bars).
   name; superseded by "Plugin independence": read only by `hud import`). Non-secret provider settings (base URLs, models, efforts) stay in configuration, never keys. No key is read
   from another tool's files (pi, jev-ask, Codex); the process environment may override for tests.
 
-### 2026-11-09 Pi main session with Codex/Claude workers: no separate work (Jacob)
-
-The owner has no need for a pi main session dispatching Codex or Claude workers. There is no pi-specific code for it:
-workers launch through the common herdr path (R2 adapters `codex-zsh`, `claude`, `grok`), whichever harness the main
-session runs, and pi's main-session binding (R6a A2) is needed for pi workers anyway. So nothing is removed and the
-worker adapters stay supported as before; the only saving is in R7, which does not test the pi-main × Codex/Claude-
-worker combinations separately.
-
 ### 2026-11-09 Plugin independence (Jacob)
 
 The HUD is an independent plugin. Everything it writes or configures lives under its own home, `$HUD_HOME` (default
