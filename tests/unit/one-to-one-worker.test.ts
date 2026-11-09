@@ -285,11 +285,15 @@ test('real hud panel owns its publisher and releases its lease on exit', options
   let childClosed = false;
   try {
     const file = join(f.root, 'sources', f.child.ref.sourceId, 'observation.sqlite');
-    const deadline = Date.now() + 12_000;
+    // Measured at 14.3 s with two CPU competitors on one core: 12 s was not a
+    // publication contract. Keep a finite fixture guard and wait for both I/O paths.
+    const started = Date.now();
+    const deadline = started + 30_000;
     let observed = false;
     let busyReads = 0;
-    while (Date.now() < deadline && child.exitCode === null && !observed) {
-      if (existsSync(file)) {
+    const rendered = () => /implementer|Synthetic B21 task outcome/.test(output);
+    while (Date.now() < deadline && child.exitCode === null && (!observed || !rendered())) {
+      if (!observed && existsSync(file)) {
         try {
           const store = await openObservationStore({ hudHome: f.root, sourceId: f.child.ref.sourceId, readOnly: true });
           try {
@@ -302,10 +306,10 @@ test('real hud panel owns its publisher and releases its lease on exit', options
           busyReads++;
         }
       }
-      if (!observed) await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+      if (!observed || !rendered()) await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
     }
     assert.ok(observed, `panel did not publish a child observation: ${stderr}`);
-    t.diagnostic(`read-only observation checks that returned busy: ${busyReads}`);
+    t.diagnostic(`publication and render ready after ${Date.now() - started} ms; busy reads: ${busyReads}`);
     assert.match(output, /implementer|Synthetic B21 task outcome/, 'the real panel also renders the delegation');
     const closed = once(child, 'close');
     child.stdin!.end();

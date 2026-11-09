@@ -132,12 +132,22 @@ test(
     process.env.NODE_OPTIONS = '--private-marker-do-not-inherit';
     let report;
     try {
-      report = await observe({ samples: 1 });
+      // Content/ownership qualification, not the observer's advisory latency gate.
+      // Keep real spawn and the full product path; isolate only the child's read clock.
+      report = await observe({ samples: 1 }, (exe, args, options) =>
+        spawn(exe, args, {
+          ...options,
+          env: {
+            ...options.env,
+            NODE_OPTIONS: `--import=${new URL('../fixtures/pinned-budget-clock.mjs', import.meta.url).href}`,
+          },
+        })
+      );
     } finally {
       if (previous === undefined) delete process.env.NODE_OPTIONS;
       else process.env.NODE_OPTIONS = previous;
     }
-    assert.equal(report.status, 'PASS');
+    assert.equal(report.status, 'PASS', JSON.stringify(report));
     assert.equal(report.scenarios.length, 8);
     assert.equal(report.cleanup, 'removed_after_confirmed_close');
     assert.equal(

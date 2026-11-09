@@ -99,7 +99,6 @@ export const MCP_RUNTIME_OUTPUTS = [
   'packages/hud-mcp/dist/src/roles/caller.js',
   'packages/hud-mcp/dist/src/roles/facade.js',
   'packages/hud-mcp/dist/src/roles/herdr-run.js',
-  'packages/hud-mcp/dist/src/roles/index.js',
   'packages/hud-mcp/dist/src/roles/job-store.js',
   'packages/hud-mcp/dist/src/roles/job-receipt.js',
   'packages/hud-mcp/dist/src/roles/job-wait.js',
@@ -207,7 +206,20 @@ export function previewManifest(original, mcp = false) {
 async function selfTest() {
   assert.equal(outputForSource('src/cli/hud.ts'), 'dist/cli/hud.js');
   assert.equal(outputForSource('src/cli/hud.ts', true), 'packages/hud-mcp/dist/src/cli/hud.js');
-  for (const [source, output] of Object.entries(REQUIRED_OUTPUTS)) assert.equal(outputForSource(source), output);
+  const built = selectedOutputs(Object.keys(REQUIRED_OUTPUTS), (file) =>
+    fs.existsSync(path.join(ROOT, 'packages/hud-mcp/dist', file.slice(4)))
+  );
+  for (const [source, output] of Object.entries(REQUIRED_OUTPUTS)) {
+    assert.equal(outputForSource(source), output);
+    assert.ok(fs.lstatSync(safeFile(source)).isFile(), source);
+    assert.ok(fs.lstatSync(path.join(ROOT, output)).isFile(), `missing build output: ${output}`);
+    assert.ok(
+      built.some((entry) => entry.source === source && entry.output === output),
+      output
+    );
+  }
+  for (const output of MCP_RUNTIME_OUTPUTS)
+    assert.ok(fs.lstatSync(path.join(ROOT, output)).isFile(), `missing MCP build output: ${output}`);
   assert.equal(EXTRA_FILES.filter((file) => file.startsWith('extensions/')).length, 2);
   for (const entry of EXTENSION_ENTRIES) assert.equal(EXTRA_FILES.includes(entry), true);
   assert.equal(EXTRA_FILES.includes('src/managed/jev-bridge.py'), true);
