@@ -9,6 +9,9 @@ import { planInstall, executeInstall } from './runtime-package/installer.mjs';
 export const HELP = `Opt-in private runtime installation (Linux, Node 22.13+ within 22.x, or 24.x).
 node <bundle>/install-runtime.mjs preview --prefix ABS
 node <bundle>/install-runtime.mjs apply --prefix ABS --expect PLAN_DIGEST
+node <bundle>/install-runtime.mjs preview --prefix ABS --stage-only yes
+node <bundle>/install-runtime.mjs stage --prefix ABS --expect PLAN_DIGEST
+Stage retains the previous selector; activate separately with activate-runtime.mjs.
 node <bundle>/install-runtime.mjs preview --prefix ABS --restore-receipt ABS
 node <bundle>/install-runtime.mjs restore --prefix ABS --receipt ABS --expect PLAN_DIGEST
 The prefix must already exist, be canonical, owned by you, and private (0700).
@@ -36,17 +39,20 @@ export function main(args = process.argv.slice(2)) {
   }
   runtime();
   const [command, ...rest] = args;
-  if (!['preview', 'apply', 'restore'].includes(command) || rest.length % 2)
+  if (!['preview', 'apply', 'restore', 'stage'].includes(command) || rest.length % 2)
     throw new Error('invalid_arguments; use --help');
   const options = {};
   for (let i = 0; i < rest.length; i += 2) {
     const key = rest[i];
-    if (!['--prefix', '--expect', '--receipt', '--restore-receipt'].includes(key) || key in options)
+    if (!['--prefix', '--expect', '--receipt', '--restore-receipt', '--stage-only'].includes(key) || key in options)
       throw new Error('invalid_or_duplicate_option');
     options[key] = rest[i + 1];
   }
   if (
     !options['--prefix'] ||
+    (options['--stage-only'] &&
+      (command !== 'preview' || options['--stage-only'] !== 'yes' || options['--restore-receipt'])) ||
+    (command === 'stage' && options['--receipt']) ||
     (command === 'preview' && (options['--expect'] || options['--receipt'])) ||
     (command !== 'preview' && (!options['--expect'] || options['--restore-receipt'])) ||
     (command === 'apply' && options['--receipt']) ||
@@ -57,8 +63,9 @@ export function main(args = process.argv.slice(2)) {
   let published = false;
   const result =
     command === 'preview'
-      ? planInstall(root, options['--prefix'], options['--restore-receipt'])
+      ? planInstall(root, options['--prefix'], options['--restore-receipt'], false, options['--stage-only'] === 'yes')
       : executeInstall(root, options['--prefix'], options['--expect'], options['--receipt'], {
+          stageOnly: command === 'stage',
           publish(result) {
             output(JSON.stringify(result, null, 2) + '\n');
             published = true;

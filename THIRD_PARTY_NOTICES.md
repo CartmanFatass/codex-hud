@@ -1,5 +1,16 @@
 # Third-party notices
 
+## Standard Webhooks JavaScript library
+
+Runtime bundles include `standardwebhooks@1.1.1` through `@anthropic-ai/sdk` (the Claude SDK library closure).
+Its published tarball omits the parent `libraries/LICENSE`. The packer supplies that exact MIT license as
+`node_modules/standardwebhooks/LICENSE`, without modifying the library. Source:
+https://github.com/standard-webhooks/standard-webhooks/blob/b4d2c14fc5b4ccff3ff271e3b087dff812254c59/libraries/LICENSE
+(captured 2026-11-09; that commit's `libraries/javascript/package.json` is version 1.1.1).
+The pinned supplement and SHA-256 are in `scripts/runtime-package/license-supplements.mjs`;
+`license-supplements/standardwebhooks-1.1.1-LICENSE.txt` holds the unmodified text.
+A package version or tarball-integrity change requires a fresh review; the general missing-license guard remains.
+
 ## Jev Ultrafast
 
 The browser-action core under `src/jev/` is a TypeScript port of Jev Ultrafast.

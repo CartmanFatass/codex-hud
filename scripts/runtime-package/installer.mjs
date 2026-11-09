@@ -203,7 +203,12 @@ function ownedDirectory(directory, name) {
 function readOptional(directory, name) {
   return directory.withParent(name, (file) => exists(file)) ? directory.read(name) : null;
 }
-function selectorValue(bytes) {
+export function selectorBytes(target, generation) {
+  const bytes = target ? json({ schemaVersion: 2, manifestDigest: target, generation }).toString() : null;
+  selectorValue(bytes);
+  return bytes;
+}
+export function selectorValue(bytes) {
   if (bytes === null) return null;
   if (typeof bytes !== 'string') throw new Error('foreign_selector');
   const value = JSON.parse(bytes);
@@ -219,7 +224,7 @@ function selectorValue(bytes) {
     throw new Error('foreign_selector');
   return value.manifestDigest;
 }
-function inspectPrefix(directory, ignoreLock = false, preparing = false) {
+export function inspectPrefix(directory, ignoreLock = false, preparing = false) {
   const names = listNames(directory.base, 6);
   if (names.includes('install-lock') && !ignoreLock) throw new Error('installation_locked_manual_inspection_required');
   if (
@@ -273,7 +278,7 @@ function inspectPrefix(directory, ignoreLock = false, preparing = false) {
       const value = JSON.parse(read.data);
       if (
         value.schemaVersion !== 2 ||
-        !['apply', 'restore'].includes(value.operation) ||
+        !['apply', 'restore', 'stage'].includes(value.operation) ||
         value.transaction !== name.slice(0, -5) ||
         value.prefix !== directory.root ||
         !same(value.prefixIdentity, directory.chain) ||
@@ -284,8 +289,16 @@ function inspectPrefix(directory, ignoreLock = false, preparing = false) {
         throw new Error('foreign_receipt_contents');
       selectorValue(value.before);
       selectorValue(value.after);
-      if (value.after !== null && JSON.parse(value.after).generation !== value.transaction)
+      try {
+        if (
+          value.operation !== 'stage' &&
+          value.after !== null &&
+          JSON.parse(value.after).generation !== value.transaction
+        )
+          throw new Error('foreign_receipt_contents');
+      } catch {
         throw new Error('foreign_receipt_contents');
+      }
       receipts[name] = digest(read.data);
     }
   if (!preparing && dirCount === 3 && (!releases.length || !Object.keys(receipts).length))
@@ -313,7 +326,7 @@ function receiptFor(directory, receiptPath, state) {
   if (prior && !state.releases.includes(prior)) throw new Error('previous_release_missing');
   return { path: receiptPath, sha256: digest(bytes), before: receipt.before, prior };
 }
-export function planInstall(bundleRoot, prefix, restoreReceipt, ignoreLock = false) {
+export function planInstall(bundleRoot, prefix, restoreReceipt, ignoreLock = false, stageOnly = false) {
   const bundle = verifyBundle(bundleRoot);
   let directory;
   try {
@@ -322,18 +335,20 @@ export function planInstall(bundleRoot, prefix, restoreReceipt, ignoreLock = fal
     const restore = restoreReceipt ? receiptFor(directory, restoreReceipt, state) : null;
     const plan = {
       schemaVersion: 1,
-      operation: restore ? 'restore' : 'apply',
+      operation: restore ? 'restore' : stageOnly ? 'stage' : 'apply',
       prefix,
       prefixIdentity: directory.chain,
       bundleDigest: bundle.digest,
       state,
       restore,
       target: restore ? restore.prior : bundle.digest,
-      noOp: !restore && selectorValue(state.current) === bundle.digest,
+      noOp:
+        !restore &&
+        (stageOnly ? state.releases.includes(bundle.digest) : selectorValue(state.current) === bundle.digest),
     };
     if (!plan.noOp) {
       if (Object.keys(state.receipts).length >= 1024) throw new Error('receipt_capacity_exhausted');
-      if (plan.operation === 'apply' && !state.releases.includes(plan.bundleDigest) && state.releases.length >= 64)
+      if (plan.operation !== 'restore' && !state.releases.includes(plan.bundleDigest) && state.releases.length >= 64)
         throw new Error('release_capacity_exhausted');
     }
     return { ...plan, planDigest: digest(json(plan)) };
@@ -346,7 +361,8 @@ function samePlan(actual, expected) {
   if (!HASH.test(expected) || actual.planDigest !== expected) throw new Error('stale_plan_preview_again');
 }
 export function executeInstall(bundleRoot, prefix, expected, restoreReceipt, hooks = {}) {
-  const plan = planInstall(bundleRoot, prefix, restoreReceipt);
+  const stageOnly = hooks.stageOnly === true;
+  const plan = planInstall(bundleRoot, prefix, restoreReceipt, false, stageOnly);
   samePlan(plan, expected);
   if (plan.noOp)
     return {
@@ -363,7 +379,7 @@ export function executeInstall(bundleRoot, prefix, expected, restoreReceipt, hoo
     locked = true;
     directory.mkdir('install-lock');
     hooks.checkpoint?.('locked');
-    const underLock = planInstall(bundleRoot, prefix, restoreReceipt, true);
+    const underLock = planInstall(bundleRoot, prefix, restoreReceipt, true, stageOnly);
     samePlan(underLock, expected);
     const id = randomUUID();
     directory.write(
@@ -399,11 +415,13 @@ export function executeInstall(bundleRoot, prefix, expected, restoreReceipt, hoo
     if (plan.state.dirs.bin && !same(state.shims, plan.state.shims)) throw new Error('shims_changed');
     // Selection identity is one atomic object. A restore selects the exact old
     // release with a new generation, never the old selector bytes or authority.
-    const after = plan.target
-      ? json({ schemaVersion: 2, manifestDigest: plan.target, generation: id }).toString()
-      : null;
-    if (after !== null) directory.write(`install-lock/next`, Buffer.from(after));
-    const afterIdentity = after === null ? null : directory.read('install-lock/next').identity;
+    const after = stageOnly ? plan.state.current : selectorBytes(plan.target, id);
+    if (!stageOnly && after !== null) directory.write(`install-lock/next`, Buffer.from(after));
+    const afterIdentity = stageOnly
+      ? state.currentIdentity
+      : after === null
+        ? null
+        : directory.read('install-lock/next').identity;
     const receipt = {
       schemaVersion: 2,
       operation: plan.operation,
@@ -448,12 +466,18 @@ export function executeInstall(bundleRoot, prefix, expected, restoreReceipt, hoo
       if (!same(read.identity, state.shims[command].identity) || digest(read.data) !== state.shims[command].sha256)
         throw new Error('shim_changed_before_switch');
     }
-    if (after === null) directory.unlink(SELECTOR);
-    else directory.rename('install-lock/next', SELECTOR);
+    if (!stageOnly) {
+      if (after === null) directory.unlink(SELECTOR);
+      else directory.rename('install-lock/next', SELECTOR);
+    }
     phase = 'selected';
     hooks.checkpoint?.('after-selection');
     directory.assert();
-    const result = { status: after === null ? 'INACTIVE' : 'SELECTED', receipt: recovery, manifestDigest: plan.target };
+    const result = {
+      status: stageOnly ? 'STAGED' : after === null ? 'INACTIVE' : 'SELECTED',
+      receipt: recovery,
+      manifestDigest: plan.target,
+    };
     // CLI publication is inside the transaction so a failed write retains the barrier.
     hooks.publish?.(result);
     phase = 'finalizing';

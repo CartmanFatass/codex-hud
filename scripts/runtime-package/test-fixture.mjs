@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { REQUIRED, INSTALLER_FILES, DEPENDENCIES, COMMANDS } from './manifest.mjs';
+import { REQUIRED, INSTALLER_FILES, DEPENDENCIES, COMMANDS, ACTIVATION_PROCESS_FILES } from './manifest.mjs';
 import { digest, json } from './safety.mjs';
 const scripts = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export function fixture(t, label = 'A') {
@@ -29,6 +29,7 @@ export function fixture(t, label = 'A') {
           : `#!/usr/bin/env node\nconsole.log(${JSON.stringify(label)});\n`
       );
     if (INSTALLER_FILES.includes(name)) data = fs.readFileSync(path.join(scripts, name));
+    if (ACTIVATION_PROCESS_FILES.includes(name)) data = fs.readFileSync(path.join(scripts, '..', name));
     // The real wrapper imports this sibling. A stub here is not a module.
     if (name === 'packages/hud-mcp/bin/surface.mjs')
       data = fs.readFileSync(path.join(scripts, '../packages/hud-mcp/bin/surface.mjs'));

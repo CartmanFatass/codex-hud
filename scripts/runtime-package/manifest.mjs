@@ -74,10 +74,14 @@ export const HELPERS = [
 ];
 export const INSTALLER_FILES = [
   'install-runtime.mjs',
+  'activate-runtime.mjs',
   'runtime-package/safety.mjs',
   'runtime-package/manifest.mjs',
   'runtime-package/dependencies.mjs',
   'runtime-package/installer.mjs',
+  'runtime-package/activation.mjs',
+  'runtime-package/activation-lock.mjs',
+  'runtime-package/activation-cli.mjs',
 ];
 export const CELLS = [
   'dist/core/launch/codex-cells.json',
@@ -85,7 +89,15 @@ export const CELLS = [
   'packages/hud-mcp/dist/src/core/launch/codex-cells.json',
   'packages/hud-mcp/dist/src/core/launch/managed-cells.json',
 ];
+export const ACTIVATION_PROCESS_FILES = [
+  'dist/core/run/process.js',
+  'dist/core/run/process-census.js',
+  'dist/core/run/group-leader.js',
+  'dist/core/run/group-pipe.js',
+  'dist/core/process-domain.js',
+];
 export const REQUIRED = [
+  ...ACTIVATION_PROCESS_FILES,
   ...Object.values(COMMANDS),
   ...HELPERS,
   ...INSTALLER_FILES,
@@ -93,6 +105,9 @@ export const REQUIRED = [
   'extensions/pi/hud-footer.ts',
   'extensions/pi/hud-delegate.ts',
   'integrations/pi/hud-wake.ts',
+  'integrations/skills/hud-delegate/SKILL.md',
+  'integrations/claude/README.md',
+  'integrations/pi/package/README.md',
   'dist/harness/pi/wake-extension.js',
   'dist/harness/pi/managed-launch.js',
   'dist/harness/claude/managed-launch.js',
@@ -107,6 +122,7 @@ export const REQUIRED = [
   'dist/index.js',
   'dist/tree-page.js',
   'dist/cli/hud.js',
+  'dist/cli/install.js',
   'dist/cli/statusline.js',
   'dist/cli/roster.js',
   'dist/cli/setup.js',
@@ -179,6 +195,7 @@ const ROOT_FIELDS = [
   'nodeRequirement',
   'sourceContentSha256',
   'builtWithNode',
+  'releaseVersion',
   'dependencies',
   'provenance',
   'capabilityLimitation',
@@ -186,6 +203,8 @@ const ROOT_FIELDS = [
 const ENTRY_FIELDS = ['path', 'bytes', 'sha256', 'mode', 'origin', 'provenance'];
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const hex = (value, length) => typeof value === 'string' && new RegExp(`^[a-f0-9]{${length}}$`).test(value);
+const SEMVER =
+  /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 function fields(value, allowed) {
   if (!object(value) || Object.keys(value).some((key) => !allowed.includes(key)))
     throw new Error('unknown_or_invalid_manifest_fields');
@@ -235,11 +254,16 @@ export function parseManifest(bytes) {
     'builtWithNode' in value &&
     (typeof value.builtWithNode !== 'string' ||
       Buffer.byteLength(value.builtWithNode) > 128 ||
-      !/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(
-        value.builtWithNode
-      ))
+      !SEMVER.test(value.builtWithNode))
   )
     throw new Error('invalid_node_metadata');
+  if (
+    'releaseVersion' in value &&
+    (typeof value.releaseVersion !== 'string' ||
+      Buffer.byteLength(value.releaseVersion) > 128 ||
+      !SEMVER.test(value.releaseVersion))
+  )
+    throw new Error('invalid_release_version');
   if ('builtWithNode' in value) {
     const core = value.builtWithNode.split('+', 1)[0];
     const separator = core.indexOf('-');

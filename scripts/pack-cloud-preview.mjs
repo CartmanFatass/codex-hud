@@ -25,6 +25,7 @@ export const ROOT_BINS = {
 const ENTRYPOINTS = Object.values(ROOT_BINS);
 export const REQUIRED_OUTPUTS = {
   'src/cli/statusline.ts': 'dist/cli/statusline.js',
+  'src/cli/install.ts': 'dist/cli/install.js',
   'src/cli/roster.ts': 'dist/cli/roster.js',
   'src/cli/setup.ts': 'dist/cli/setup.js',
   'src/cli/wait.ts': 'dist/cli/wait.js',
@@ -145,6 +146,9 @@ export const EXTRA_FILES = [
   'bin/hud-statusline-preview',
   ...EXTENSION_ENTRIES,
   'integrations/pi/hud-wake.ts',
+  'integrations/skills/hud-delegate/SKILL.md',
+  'integrations/claude/README.md',
+  'integrations/pi/package/README.md',
   'packages/hud-mcp/bin/hud-mcp.mjs',
   // The wrapper imports this sibling. A release without it cannot start.
   'packages/hud-mcp/bin/surface.mjs',
@@ -173,9 +177,11 @@ export function selectedOutputs(inputs, hasOutput) {
   }
   return selected;
 }
-export function previewManifest(original, mcp = false) {
+export function previewManifest(original, mcp = false, releaseVersion = original.version) {
   if (typeof original.name !== 'string' || typeof original.version !== 'string' || original.type !== 'module')
     throw new Error('invalid_package_manifest');
+  // One canonical release version for every manifest in the release.
+  if (typeof releaseVersion !== 'string' || !releaseVersion) throw new Error('invalid_release_version');
   const expected = mcp ? { 'hud-mcp': 'bin/hud-mcp.mjs' } : ROOT_BINS;
   const entries = (bins) =>
     Object.entries(bins)
@@ -192,7 +198,7 @@ export function previewManifest(original, mcp = false) {
   // No lifecycle scripts, dev dependencies, release configuration or implicit installer in the preview.
   return {
     name: original.name,
-    version: original.version,
+    version: releaseVersion,
     private: true,
     type: 'module',
     ...(original.main ? { main: original.main } : {}),
@@ -369,8 +375,13 @@ async function main() {
         file
       );
     }
+    const releaseVersion = JSON.parse(fs.readFileSync(safeFile('package.json'), 'utf8')).version;
     for (const file of ['package.json', 'packages/hud-mcp/package.json']) {
-      const manifest = previewManifest(JSON.parse(fs.readFileSync(safeFile(file), 'utf8')), file !== 'package.json');
+      const manifest = previewManifest(
+        JSON.parse(fs.readFileSync(safeFile(file), 'utf8')),
+        file !== 'package.json',
+        releaseVersion
+      );
       add(file, Buffer.from(JSON.stringify(manifest, null, 2) + '\n'), 0o644, file);
     }
     add(
