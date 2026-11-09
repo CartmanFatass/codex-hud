@@ -105,6 +105,31 @@ export interface RoutingFile {
   readonly presets: Readonly<Record<string, RoutingPreset>>;
   /** Absent from older files. An `env_profile` with no row stays unresolved until launch. */
   readonly envProfiles: Readonly<Record<string, EnvProfile>>;
+  readonly piHelpers: PiHelperBindings;
+}
+
+export const PI_EFFORTS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+export interface PiHelperBinding {
+  readonly model: string;
+  readonly effort: string;
+}
+export interface PiHelperBindings {
+  readonly sonic: PiHelperBinding;
+  readonly reviewer: PiHelperBinding;
+}
+export const PI_ROLE_DEFAULTS = Object.freeze({
+  implementer: Object.freeze({ model: 'openai/gpt-6.1-sol', effort: 'high' }),
+  reviewer: Object.freeze({ model: 'openai/gpt-6.1-sol', effort: 'xhigh' }),
+  architect: Object.freeze({ model: 'openai/gpt-6-astra', effort: 'high' }),
+  sonic: Object.freeze({ model: 'mistral/deepseek-v4-1-flash-1017', effort: 'high' }),
+});
+
+/** Copy at parent creation, then persist in its immutable slot contract. */
+export function snapshotPiHelpers(routing: Pick<RoutingFile, 'piHelpers'>): PiHelperBindings {
+  return Object.freeze({
+    sonic: Object.freeze({ ...routing.piHelpers.sonic }),
+    reviewer: Object.freeze({ ...routing.piHelpers.reviewer }),
+  });
 }
 
 const ID = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
@@ -112,7 +137,7 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const FIELD_KEY = /^[A-Za-z0-9._-]{1,80}$/;
 const ARG_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,32}$/;
 
-const TOP_KEYS = ['schema', 'default_preset', 'backends', 'jev_decisions', 'presets', 'env_profiles'];
+const TOP_KEYS = ['schema', 'default_preset', 'backends', 'jev_decisions', 'presets', 'env_profiles', 'pi_helpers'];
 /** Account homes a profile may name. Anything else would be an arbitrary process environment. */
 const ENV_PROFILE_VARS = ['CODEX_HOME', 'CLAUDE_CONFIG_DIR'] as const;
 const HERDR_KEYS = ['executor', 'harness', 'model', 'effort', 'recipe', 'env_profile', 'args', 'wrapper'];
@@ -406,6 +431,24 @@ function parseEnvProfiles(value: unknown): Record<string, EnvProfile> {
   return profiles;
 }
 
+function parsePiHelpers(value: unknown): PiHelperBindings {
+  const body = record(value, 'pi_helpers');
+  assertKeys(body, ['sonic', 'reviewer'], 'pi_helpers');
+  const result = {} as Record<'sonic' | 'reviewer', PiHelperBinding>;
+  for (const kind of ['sonic', 'reviewer'] as const) {
+    const field = `pi_helpers.${kind}`;
+    const row = own(body, kind) ? record(body[kind], field) : {};
+    assertKeys(row, ['model', 'effort'], field);
+    result[kind] = {
+      model: own(row, 'model') ? modelName(row.model, `${field}.model`) : PI_ROLE_DEFAULTS[kind].model,
+      effort: own(row, 'effort')
+        ? oneOf(row.effort, kind === 'sonic' ? ['low', 'high'] : PI_EFFORTS, `${field}.effort`)
+        : PI_ROLE_DEFAULTS[kind].effort,
+    };
+  }
+  return result;
+}
+
 /**
  * Environment for a backend `env_profile` name.
  * `{}` when the backend names none. `null` when the name has no table row:
@@ -461,7 +504,8 @@ function parseDocument(value: unknown): RoutingFile {
     const row = idValue(envProfiles, backend.envProfile);
     if (row && Object.hasOwn(row, 'CODEX_HOME')) fail('invalid_value', `backends.${id}.env_profile`);
   }
-  return { schema: 1, defaultPreset, backends, decisions, presets, envProfiles };
+  const piHelpers = parsePiHelpers(own(root, 'pi_helpers') ? root.pi_helpers : {});
+  return { schema: 1, defaultPreset, backends, decisions, presets, envProfiles, piHelpers };
 }
 
 export function parseRouting(text: string): RoutingFile {

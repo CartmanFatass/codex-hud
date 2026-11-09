@@ -110,7 +110,7 @@ export function loadReceipt(home: string, job: string): JobReceipt | undefined {
       !isRecord(parsed.binding) ||
       parsed.binding.executor !== 'herdr' ||
       parsed.binding.harness !== 'pi' ||
-      !validDispatch(parsed.pi_dispatch, receipt.role)
+      !validDispatch(parsed.pi_dispatch, receipt.role, jobDirectory(home, job))
     )
       return undefined;
   }
