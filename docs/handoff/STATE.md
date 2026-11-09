@@ -140,6 +140,9 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - P2 final Work lanes and cards + 110-column peek (after P1);
   - P3a job material authority (parallel with P2 in disjoint files), P3b option-B sentences (after P2 + P3a);
   - later: decision-provider judgements (`≠` when rules are unsure, card attention, stall category).
+  Parallel plan (owner approved 2026-11-09): line A P1 → P2 → P3b; line B P3a → decision-provider judgements (after
+  P1); line C R6a packaging/installation (architect consult `tmp/tasks/R6A-PLAN/` running); line D R7 scenario and
+  Hermes script preparation; R6b retirement after R5-UX merges. At most three implementers at once.
   The r5-acc demo stage is merged (`1f20f01`).
 
 | Package | Deliverable | Acceptance |
