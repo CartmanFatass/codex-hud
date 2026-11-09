@@ -854,10 +854,26 @@ worker question and made the calls. The owner's view is therefore the owner ↔ 
 - Workers shrink to one line each on the home page: harness, role, task, model, effort. An implementer's own helpers
   are not separate items. The detailed cards (previous entry) move to their own Agents tab.
 - Recording: the orchestrator records decisions through a new MCP tool; worker-question answers on disk are picked up
-  automatically as a fallback.
+  automatically as a fallback. (Superseded by the next entry: passive recording only.)
 - Argon is asked for the first layout proposal with rendered mockups; the orchestrator decides from it. The previous
   entry's card design (architect consult archived in `docs/reviews/2026-11-09-r5-ux-architect.md`) now applies to the
   Agents tab.
+
+### 2026-11-09 The HUD records, it does not steer (Jacob)
+
+The owner is satisfied with how the orchestrator decides today and wants a record of those decisions, not new rules.
+While the default experience is satisfactory, the HUD makes no invasive change to model behaviour; rules are tuned
+later only when the record shows a problem.
+- Dropped: the proposed policies "irreversible decisions are never defaulted" and "overturning merged work first posts
+  a rollback plan". The orchestrator keeps its current behaviour.
+- Recording is passive: the decision list is built from what the workflow already writes (worker questions and their
+  answer files with the stated default, review verdicts, design notes). The planned `hud_decision` MCP tool is not
+  required of the orchestrator; calls made only in conversation may be missing, and that gap is accepted until the
+  record proves insufficient.
+- Display-only rules stay (one line per decision, worker answers folded, a default countdown shown only where a
+  default with a deadline already exists). Fields the workflow does not write (for example reversibility) are shown
+  only when present, never asked for.
+- Overturn is an owner action sent to the orchestrator's session; it does not add steps to the orchestrator's own work.
 
 ## 16. 评审状态与下一次评审
 
