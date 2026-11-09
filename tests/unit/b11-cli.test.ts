@@ -310,6 +310,8 @@ test('B11 real bin entry reports an unavailable MCP build in an installation pat
     cpSync(resolve('bin/hud'), join(root, 'bin/hud'));
     writeFileSync(join(root, 'bin/hud-run'), '');
     writeFileSync(join(root, 'package.json'), '{"type":"module"}');
+    // This fixture removes the MCP build, not the ordinary CLI's installed libraries.
+    symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
     const result = spawnSync(process.execPath, [join(root, 'bin/hud'), 'claude'], {
       env: { PATH: '/usr/bin:/bin', HOME: root, HUD_HOME: root },
       encoding: 'utf8',

@@ -13,10 +13,14 @@ Use Linux and Node 22.x >=22.13 or Node 24. From the repository root:
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund
 node scripts/check-cloud.mjs --self-test
-node scripts/pack-cloud-preview.mjs --self-test
 node scripts/check-cloud.mjs
+node scripts/pack-cloud-preview.mjs --self-test
 node scripts/pack-cloud-preview.mjs
 ```
+
+The preview self-test verifies the actual root and MCP build outputs as well as
+inventory mappings. Run it after the cloud checks have built them, not immediately
+after dependency installation in a clean checkout.
 
 Dependency download may need registry access. The two scripts make no provider
 or network calls themselves and do not install dependencies. They spawn commands

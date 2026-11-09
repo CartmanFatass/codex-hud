@@ -33,16 +33,17 @@ jobs:
       - name: Locked dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Check harness negative controls
-        run: |
-          node scripts/check-cloud.mjs --self-test
-          node scripts/pack-cloud-preview.mjs --self-test
+        run: node scripts/check-cloud.mjs --self-test
       - name: Credential-free builds and focused simulations
         run: node scripts/check-cloud.mjs
+      - name: Check preview inventory against built outputs
+        run: node scripts/pack-cloud-preview.mjs --self-test
       - name: Local allowlisted archive preview only
         run: node scripts/pack-cloud-preview.mjs
       - name: Preserve bounded results and preview
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        # actions/upload-artifact v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: cloud-simulation-node-${{ matrix.node }}-${{ github.sha }}
           path: tmp/cloud-development/

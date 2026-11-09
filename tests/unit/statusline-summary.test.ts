@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { handshakeFixture } from './b45-handshake-fixture.js';
 import { HandshakeService } from '../../packages/hud-mcp/src/handshake.js';
@@ -323,10 +324,14 @@ test('render is bounded, terminal-safe and never supplies capacity or tree total
 test('actual hud-statusline and hud statusline render line 2 without settings or transcript reads', async (t) => {
   const f = await fixture(t);
   f.publish();
+  const env = {
+    ...f.env,
+    NODE_OPTIONS: `--import=${pathToFileURL(resolve('tests/fixtures/pinned-budget-clock.mjs')).href}`,
+  };
   for (const argv of [[resolve('bin/hud-statusline')], [resolve('bin/hud'), 'statusline']]) {
     const result = spawnSync(process.execPath, [...argv, '--width', '120'], {
       input: JSON.stringify(f.input),
-      env: f.env,
+      env,
       encoding: 'utf8',
       timeout: 5000,
     });
@@ -347,11 +352,51 @@ test('actual hud-statusline and hud statusline render line 2 without settings or
   assert.equal(fallback.stdout, 'Stdin model · ctx 42% · $0.12\n');
   const explicit = spawnSync(process.execPath, [resolve('bin/hud-statusline'), '--source', f.sourceRoot], {
     input: JSON.stringify(f.input),
-    env: { HOME: f.root, HUD_HOME: f.root },
+    env: { HOME: f.root, HUD_HOME: f.root, NODE_OPTIONS: env.NODE_OPTIONS },
     encoding: 'utf8',
     timeout: 5000,
   });
   assert.match(explicit.stdout, /\n.*partial/);
+});
+
+test('real-clock slow summary read degrades both product bins to stdin-only output', async (t) => {
+  const f = await fixture(t);
+  f.publish();
+  const preload = join(f.root, 'slow-summary-read.mjs');
+  const measurement = join(f.root, 'read-elapsed.json');
+  fs.writeFileSync(
+    preload,
+    `import fs from 'node:fs';
+     import { syncBuiltinESMExports } from 'node:module';
+     const lstat = fs.lstatSync;
+     let delayed = false;
+     fs.lstatSync = function(file, ...args) {
+       if (!delayed && String(file).startsWith(process.env.HUD_HOME)) {
+         delayed = true;
+         const start = performance.now();
+         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
+         fs.writeFileSync(${JSON.stringify(measurement)}, JSON.stringify(performance.now() - start));
+       }
+       return lstat.call(this, file, ...args);
+     };
+     syncBuiltinESMExports();
+    `
+  );
+  for (const argv of [[resolve('bin/hud-statusline')], [resolve('bin/hud'), 'statusline']]) {
+    const result = spawnSync(process.execPath, argv, {
+      input: JSON.stringify(f.input),
+      env: { ...f.env, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, 'Stdin model · ctx 42% · $0.12\n');
+    assert.equal(result.stderr, '');
+    const elapsed = JSON.parse(fs.readFileSync(measurement, 'utf8'));
+    assert.ok(elapsed >= 20, `read delay ${elapsed} ms must exceed the 20 ms budget`);
+    t.diagnostic(`real-clock read delay: ${elapsed} ms (budget 20 ms)`);
+    fs.unlinkSync(measurement);
+  }
 });
 
 test('projection byte charge includes stored whitespace and malformed JSON before decode', async (t) => {

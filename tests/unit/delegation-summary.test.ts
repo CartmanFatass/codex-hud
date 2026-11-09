@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { syncBuiltinESMExports } from 'node:module';
 import { handshakeFixture } from './b45-handshake-fixture.js';
@@ -380,7 +381,11 @@ test('real owned worker publishes cache consumed first by actual hud-statusline,
   assert.equal((await readStatuslineSummary(input, env, undefined, { clock: () => 0 })).source, 'committed_summary');
   const result = spawnSync(process.execPath, [resolve('bin/hud-statusline'), '--width', '180'], {
     input: JSON.stringify(input),
-    env: { ...env, PATH: process.env.PATH },
+    env: {
+      ...env,
+      PATH: process.env.PATH,
+      NODE_OPTIONS: `--import=${pathToFileURL(resolve('tests/fixtures/pinned-budget-clock.mjs')).href}`,
+    },
     encoding: 'utf8',
     timeout: 10000,
   });

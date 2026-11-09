@@ -418,15 +418,23 @@ export async function install(context, root, prefix, receipt) {
   ]);
   assert.equal(preview.status, 0, preview.stderr);
   const plan = JSON.parse(preview.stdout);
-  const applied = await run(context, receipt ? 'installer-restore' : 'installer-apply', process.execPath, [
-    cli,
-    receipt ? 'restore' : 'apply',
-    '--prefix',
-    prefix,
-    '--expect',
-    plan.planDigest,
-    ...(receipt ? ['--receipt', receipt] : []),
-  ]);
+  // Applying a bundle fsyncs its complete inventory. Four concurrent fixtures
+  // hit the old 15 s child guard (15,012–15,047 ms), not a product deadline.
+  const applied = await run(
+    context,
+    receipt ? 'installer-restore' : 'installer-apply',
+    process.execPath,
+    [
+      cli,
+      receipt ? 'restore' : 'apply',
+      '--prefix',
+      prefix,
+      '--expect',
+      plan.planDigest,
+      ...(receipt ? ['--receipt', receipt] : []),
+    ],
+    { timeout: 60000 }
+  );
   assert.equal(applied.status, 0, applied.stderr);
   return { plan, result: JSON.parse(applied.stdout) };
 }
