@@ -141,8 +141,15 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - P3a job material authority (parallel with P2 in disjoint files), P3b option-B sentences (after P2 + P3a);
   - later: decision-provider judgements (`≠` when rules are unsure, card attention, stall category).
   Parallel plan (owner approved 2026-11-09): line A P1 → P2 → P3b; line B P3a → decision-provider judgements (after
-  P1); line C R6a packaging/installation (architect consult `tmp/tasks/R6A-PLAN/` running); line D R7 scenario and
-  Hermes script preparation; R6b retirement after R5-UX merges. At most three implementers at once.
+  P1); line C R6a packaging/installation; line D R7 scenario and Hermes script preparation; R6b retirement after
+  R5-UX merges. At most three implementers at once.
+- R6a planned (2026-11-09): architect plan plus the decided amendments in
+  `docs/reviews/2026-11-09-r6a-plan-architect.md`. Concept §15 "Plugin independence" (same day): everything under
+  `$HUD_HOME` for every harness, Codex included; old locations only through `hud import`; Jev keeps the shared Chrome
+  as explicit config; pi-roles is built into the HUD. Packages: A0 independence (after P1), A1 release/activation,
+  A2 ordinary-session binding (A1/A2 first), A3 panel control, A4 Claude plugin, A5 pi package and status segment,
+  A6 role-summary cache, A7 `tree-page.ts` lifecycle hunk (after P2), A8 Codex activation and rehearsal, PIROLE
+  (pi-roles built in; architect consult first).
   The r5-acc demo stage is merged (`1f20f01`).
 
 | Package | Deliverable | Acceptance |

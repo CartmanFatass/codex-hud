@@ -823,6 +823,8 @@ The dispatch contract (launch flags, SESSION.txt keys, STATUS shape, reap semant
 pi-roles stays its reference implementation. Without pi-roles installed, the facade keeps today's direct pi launch.
 Queued as R2b, after the contract settles (pi-roles DISPATCH-2B fixes and the DISPATCH-3 run ledger).
 
+Superseded 2026-11-09 by "Plugin independence": the HUD owns this dispatch layer itself.
+
 ### 2026-11-09 Agent cards show work progress, not process state (Jacob)
 
 After the first live look at the R5 panel, the owner judged it overloaded with process facts and short on the facts
@@ -911,8 +913,33 @@ spines and phase bars).
 - Calls are change-driven, batched, limited to visible live work, queued per provider, and never block a repaint.
 - The project is self-contained: its keys live in its own `~/.hud/credentials.env` (mode 0600; TypeSafe, OpenAI,
   Mistral), read by the existing hardened env reader that Jev's `~/.hud/jev.env` uses today (which becomes the legacy
-  name). Non-secret provider settings (base URLs, models, efforts) stay in configuration, never keys. No key is read
+  name; superseded by "Plugin independence": read only by `hud import`). Non-secret provider settings (base URLs, models, efforts) stay in configuration, never keys. No key is read
   from another tool's files (pi, jev-ask, Codex); the process environment may override for tests.
+
+### 2026-11-09 Plugin independence (Jacob)
+
+The HUD is an independent plugin. Everything it writes or configures lives under its own home, `$HUD_HOME` (default
+`~/.hud`), for every harness, Codex included:
+- settings: `$HUD_HOME/hud-settings.json`, one file, not one per Codex account home;
+- panel caches and display state: `$HUD_HOME/display/`, never under `CODEX_HOME/hud`;
+- keys: `credentials.env` only. The settings field `briefingApiKey`, the `jev.env` fallback and the runtime read of
+  `JEV_ASK_CONFIG` are removed;
+- product defaults follow the current decisions (DeepSeek V4.1 Flash on Mistral for sentences, efforts none/low/high;
+  the decision provider's primary and fallback named in `config.json`), not codex-hud's old defaults.
+
+Old locations (`~/.codex*/hud-settings.json`, `CODEX_HOME/hud`, `~/.hud/jev.env`, the jev-ask TOML) are read only by
+an explicit one-time `hud import`, with a preview and backup, never as a default or fallback. Reading harness session
+files is observation and stays.
+
+Two deliberate external ties:
+- **Jev shares the existing logged-in Chrome** (owner's choice, saves a second login). The browser, its profile, CDP
+  URL and the Jev state directory are explicit values in `config.json`; no code default names jev-ask's paths. The
+  state directory stays shared with the jev-ask skill because its browser lease and one-send-per-key records are what
+  serialize the shared browser.
+- **pi-roles is built into the HUD**, superseding "Pi execution through the pi-roles dispatch prototype": the parts the
+  facade uses (launch into a herdr tab, task contract, STATUS files, questions, helper calls, DONE/FAILED, bounded
+  reap) move into this repo and are maintained here. The HUD no longer discovers `pi-dispatch` or `pi-role-reap` on
+  PATH. Fishpref's pi-roles stays the owner's personal tool and may diverge.
 
 ## 16. 评审状态与下一次评审
 
