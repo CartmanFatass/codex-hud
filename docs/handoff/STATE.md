@@ -110,6 +110,19 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   `format:check` still fails on 20 untouched baseline files; a format-only commit follows the R5a merge.
 - PIGUARD merged in Fishpref (`19d2828`): the pi-roles reviewer guard no longer treats a quoted `>` in simple
   commands as a redirect; complex shell syntax keeps the old raw check.
+- R5b merged (core `4eb53a0`, ui `0ca866a`), so R5 is code-complete.
+  - Core: live panel job pipeline (generation fences, all-roots composition, afterPaint), `hud panel --root`,
+    final action fence for observation-only ids (mouse and keyboard), job material excluded before
+    brief/progress/model planning, dry-run omission notice, global coverage into the existing partial notices.
+  - UI: effective status at render time (stale non-terminal → `?`, no running glyph or clock), job name/role/backend
+    badge in rows, Inspector job sections (`src/render/job-details.ts`), Timeline admits native terminal events
+    only when they agree with the job.
+  - Reviews: `docs/reviews/2026-11-09-r5b-core-review-*` (accept round 2), `2026-11-09-r5b-ui-review-*` (accept
+    round 3).
+  - Merged-tree gate: unit 4079/0 fail (24 skip), mjs 383/0, hud-mcp 212/0, WP0 1176/1176, format clean.
+  - Next: Hermes live visual acceptance on Windows Terminal (job rows, Inspector, stale/unknown, EN/ZH), then R6.
+  - Follow-ups: job-scoped material authority; per-root change stamp; no native-ref writer yet (exact-ref
+    enrichment is fixture-only).
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
