@@ -7,7 +7,7 @@ import type { HerdrHarness } from './routing.js';
 
 export interface HerdrOutcome {
   readonly ok: boolean;
-  readonly reason: 'ok' | 'unavailable' | 'lost' | 'failed' | 'timeout';
+  readonly reason: 'ok' | 'unavailable' | 'lost' | 'failed' | 'timeout' | 'aborted';
   readonly stdout: string;
   readonly stderr: string;
   readonly exitCode: number | null;
@@ -31,6 +31,7 @@ export function herdrBudget(argv: readonly string[]): number {
 
 export interface HerdrCallOptions {
   readonly budgetMs?: number;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -47,6 +48,10 @@ export async function runCommand(
   // File-only dispatch observations must not load subprocess machinery.
   const { spawn } = await import('node:child_process');
   return new Promise((resolve) => {
+    if (options?.signal?.aborted) {
+      resolve({ ok: false, reason: 'aborted', stdout: '', stderr: '', exitCode: null });
+      return;
+    }
     let settled = false;
     let killedByUs = false;
     let stdout = '';
@@ -57,19 +62,22 @@ export async function runCommand(
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      options?.signal?.removeEventListener('abort', abort);
       resolve(outcome);
     };
     const child = spawn(bin, argv, { env, stdio: ['ignore', 'pipe', 'pipe'] });
-    timer = setTimeout(() => {
+    const stop = (reason: 'timeout' | 'aborted') => {
       if (settled) return;
       killedByUs = true;
       child.kill('SIGKILL');
-      // A launcher descendant may retain the pipes. The outer budget still ends
-      // this call; do not wait for close or sweep unrelated process groups.
+      // Descendants can retain pipes. Kill only our CLI child, never the workload.
       child.stdout?.destroy();
       child.stderr?.destroy();
-      finish({ ok: false, reason: 'timeout', stdout, stderr, exitCode: null });
-    }, budget);
+      finish({ ok: false, reason, stdout, stderr, exitCode: null });
+    };
+    const abort = () => stop('aborted');
+    options?.signal?.addEventListener('abort', abort, { once: true });
+    timer = setTimeout(() => stop('timeout'), Math.max(0, budget));
     const take = (chunk: Buffer, which: 'out' | 'err') => {
       const text = chunk.toString('utf8');
       const available = Math.max(0, MAX_OUTPUT - stdout.length - stderr.length);
