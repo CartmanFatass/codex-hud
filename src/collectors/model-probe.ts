@@ -42,7 +42,10 @@ export function probeFingerprint(settings: HudSettings, env: NodeJS.ProcessEnv =
         apiSettings(settings),
         env.CODEX_HUD_BRIEF_MODEL,
         env.CODEX_HUD_BRIEF_API_KEY,
-        env.OPENAI_API_KEY,
+        (() => {
+          const request = modelHttpRequest(apiSettings(settings), { ...question, feature: 'probe' }, env);
+          return 'error' in request ? request.error : request.headers.authorization;
+        })(),
         settings.modelCallsPerHour,
       ])
     )
@@ -54,7 +57,11 @@ export function apiSettings(settings: HudSettings) {
     base: settings.briefingApiBase,
     key: settings.briefingApiKey,
     model: settings.briefingApiModel,
-    reasoning: settings.briefingApiReasoning,
+    efforts: {
+      lite: settings.briefingApiLiteEffort,
+      low: settings.briefingApiLowEffort,
+      medium: settings.briefingApiMediumEffort,
+    },
     models: {
       lite: settings.briefingApiLiteModel,
       low: settings.briefingApiLowModel,
@@ -114,7 +121,7 @@ export class ModelProbe {
       running: true,
       rows: ROUTES.map((route) => {
         const request = modelHttpRequest(api, { ...question, feature: route.feature }, this.options.env);
-        return { tier: route.tier, model: 'error' in request ? '' : JSON.parse(request.body).model, status: 'waiting' };
+        return { tier: route.tier, model: 'error' in request ? '' : request.model, status: 'waiting' };
       }),
     };
     this.onChange();

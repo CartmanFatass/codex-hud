@@ -27,7 +27,7 @@ async function unusedCdpUrl(): Promise<string> {
   return url;
 }
 
-test('R3F production child discovers default/env TOML and HUD-home JSON overrides', async (t) => {
+test('R3F production child discovers HUD JSON and explicit env TOML with HUD-home overrides', async (t) => {
   const root = workspace(t);
   const saved = { HOME: process.env.HOME, JEV_ASK_CONFIG: process.env.JEV_ASK_CONFIG };
   t.after(() => {
@@ -50,10 +50,12 @@ test('R3F production child discovers default/env TOML and HUD-home JSON override
   mkdirSync(join(root, '.hud'));
   writeFileSync(join(root, '.hud', 'config.json'), JSON.stringify({ jev: { stateDir: join(root, 'wrong-state') } }));
 
-  for (const source of ['default', 'env', 'overlay', 'json-only']) {
+  for (const source of ['hud-json', 'env', 'overlay', 'json-only']) {
     const hudHome = join(root, source);
     mkdirSync(hudHome);
-    if (source !== 'default') {
+    if (source === 'hud-json') {
+      writeFileSync(join(hudHome, 'config.json'), JSON.stringify({ jev: { stateDir: state } }));
+    } else {
       process.env.JEV_ASK_CONFIG = join(root, 'selected.toml');
       if (source === 'env') {
         // Ignoring JEV_ASK_CONFIG now fails rather than falling back successfully.

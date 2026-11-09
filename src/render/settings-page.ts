@@ -392,6 +392,17 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     values: [false, true],
     help: 'Pause all model generation; keep stored text',
   },
+  ...(['lite', 'low', 'medium'] as const).map((tier): SettingRow => ({
+    key: { lite: 'briefingApiLiteEffort', low: 'briefingApiLowEffort', medium: 'briefingApiMediumEffort' }[
+      tier
+    ] as keyof HudSettings,
+    group: 'LLM',
+    label: { lite: 'Lite effort', low: 'Low effort', medium: 'Medium effort' }[tier],
+    short: { lite: 'Lite effort', low: 'Low effort', medium: 'Med effort' }[tier],
+    values: ['off', 'none', 'low', 'high', 'xhigh', 'max'],
+    help: 'API tier effort; off omits it, none disables reasoning',
+    literal: true,
+  })),
   {
     key: 'briefAgents',
     group: 'LLM',
@@ -721,6 +732,7 @@ function connectionLines(draft: HudSettings, file: string, width: number): strin
               key: t(draft.briefingApiKey ? 'set' : 'empty, uses CODEX_HUD_BRIEF_API_KEY'),
             }),
             t('Models: briefingApiLiteModel, briefingApiLowModel, briefingApiMediumModel'),
+            t('Keys: $HUD_HOME/credentials.env (0600); OpenAI/Mistral origins only'),
           ];
   return text.flatMap((line) => flowLines(line, width)).map((line) => colors.dim(line));
 }

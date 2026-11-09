@@ -35,6 +35,9 @@ test('missing settings keep display defaults and hide optional tasks and activit
     assert.deepEqual(loadSettings(), {
       ...defaultCardVisibility(),
       density: 'balanced',
+      briefingApiLiteEffort: 'off',
+      briefingApiLowEffort: 'off',
+      briefingApiMediumEffort: 'off',
       theme: 'terminal',
       glyphs: 'both',
       motion: 'full',
@@ -137,6 +140,9 @@ test('load validates known settings without importing unknown or invalid values'
     );
     assert.deepEqual(loadSettings(), {
       ...defaultCardVisibility(),
+      briefingApiLiteEffort: 'off',
+      briefingApiLowEffort: 'off',
+      briefingApiMediumEffort: 'off',
       density: 'focus',
       theme: 'latte',
       glyphs: 'text',

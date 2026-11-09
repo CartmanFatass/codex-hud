@@ -115,7 +115,10 @@ test('defaults, blank state dir, and a HUD file without jev', (t) => {
 
   assert.throws(
     () => loadJevConfig({}),
-    (error: unknown) => error instanceof JevFailure && error.message === 'configuration not found'
+    (error: unknown) =>
+      error instanceof JevFailure &&
+      error.message.startsWith('configuration not found: ') &&
+      error.message.endsWith('config.json')
   );
   assert.throws(
     () =>
@@ -318,7 +321,8 @@ test('a missing config parent is not created', (t) => {
   const parent = join(root, 'missing-parent');
   assert.throws(
     () => loadJevConfig({ tomlPath: join(parent, 'config.toml'), configJsonPath: join(parent, 'config.json') }),
-    (error: unknown) => error instanceof JevFailure && error.message === 'configuration not found'
+    (error: unknown) =>
+      error instanceof JevFailure && error.message === `configuration not found: ${join(parent, 'config.json')}`
   );
   assert.equal(existsSync(parent), false);
 });

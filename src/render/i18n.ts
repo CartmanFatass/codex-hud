@@ -37,6 +37,13 @@ export function language(): Language {
 }
 
 const ZH: Record<string, string> = {
+  'Lite effort': '轻量档推理',
+  'Low effort': '低档推理',
+  'Medium effort': '中档推理',
+  'Med effort': '中档推理',
+  'API tier effort; off omits it, none disables reasoning': 'API 各档推理强度；off 不发送，none 关闭推理',
+  'Keys: $HUD_HOME/credentials.env (0600); OpenAI/Mistral origins only':
+    '密钥：$HUD_HOME/credentials.env（0600）；仅限 OpenAI/Mistral 官方源',
   'Last confirmed: {name}': '最近确认：{name}',
   'Last confirmed: {time}': '最近确认：{time}',
   'Action: {name}': '动作：{name}',
