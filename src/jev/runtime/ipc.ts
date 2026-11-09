@@ -90,6 +90,9 @@ const PUBLIC_CODES = new Set([
   'not_found',
   'jev_credentials_missing',
   'judge_unavailable',
+  'decision_refused',
+  'decision_invalid',
+  'decision_provider_error',
   'internal',
   'already_running',
   'interrupted',
@@ -170,7 +173,11 @@ export function errorBody(error: unknown): IpcError {
   const variable = typeof value?.variable === 'string' ? value.variable : undefined;
   return {
     code,
-    message: code === 'internal' ? 'internal' : typeof value?.message === 'string' ? value.message : code,
+    message: ['internal', 'decision_refused', 'decision_invalid', 'decision_provider_error'].includes(code)
+      ? code
+      : typeof value?.message === 'string'
+        ? value.message
+        : code,
     ...(variable ? { variable } : {}),
   };
 }

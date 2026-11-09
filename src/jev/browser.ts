@@ -26,6 +26,17 @@ export interface BrowserRequest {
 
 export type CdpInvoker = (method: string, params: Record<string, unknown>) => unknown | Promise<unknown>;
 
+/** Available before navigation/readiness (or attach) finishes. Never expose target ids in diagnostics. */
+export interface BrowserOwnership {
+  close(): Promise<void>;
+  detach(): Promise<void>;
+}
+export type BrowserAcquired = (ownership: BrowserOwnership) => void;
+export interface BrowserAcquisition {
+  onAcquire?: BrowserAcquired;
+  signal?: AbortSignal;
+}
+
 /** Adjacent compiled asset first, then the source tree, same walk as the Python bridge. */
 export function locateJevSnapshot(moduleDirectory: string): string {
   const adjacent = join(moduleDirectory, 'snapshot.js');
@@ -196,15 +207,34 @@ export class Browser {
     return new Browser(undefined as unknown as CdpConnection, null, '', DEFAULT_CDP_TIMEOUT_MS);
   }
 
-  static async open(url: string, options: { cdpUrl?: string; timeoutMs?: number } = {}): Promise<Browser> {
+  static async open(
+    url: string,
+    options: { cdpUrl?: string; timeoutMs?: number } & BrowserAcquisition = {}
+  ): Promise<Browser> {
+    options.signal?.throwIfAborted();
     const timeoutMs = options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS;
     const connection = await CdpConnection.connect(options.cdpUrl ?? 'http://127.0.0.1:9222', timeoutMs);
     let targetId: string | undefined;
+    let closing: Promise<void> | undefined;
+    const ownership: BrowserOwnership = {
+      close: () =>
+        (closing ??= (async () => {
+          try {
+            if (targetId) await connection.call('Target.closeTarget', { targetId }, { timeoutMs: 2_000 });
+          } finally {
+            connection.close();
+          }
+        })()),
+      detach: async () => connection.close(),
+    };
     try {
+      options.signal?.throwIfAborted();
       const created = (await connection.call('Target.createTarget', { url: 'about:blank', background: true })) as {
         targetId: string;
       };
       targetId = created.targetId;
+      options.onAcquire?.(ownership);
+      options.signal?.throwIfAborted();
       const attached = (await connection.call('Target.attachToTarget', { targetId, flatten: true })) as {
         sessionId: string;
       };
@@ -221,6 +251,7 @@ export class Browser {
       // about:blank is already complete. A normalised or redirected URL is ready once it has left about:blank.
       const deadline = Date.now() + 15_000;
       while (Date.now() < deadline) {
+        options.signal?.throwIfAborted();
         try {
           const ready = await browser.evaluate(
             "document.readyState === 'complete' && location.href !== 'about:blank'",
@@ -229,23 +260,36 @@ export class Browser {
           );
           if (ready === true) break;
         } catch {
-          // The document can be mid-navigation on the first polls.
+          // The document can be mid-navigation on the first polls, but an
+          // abandoned acquisition must not keep scheduling readiness reads.
+          options.signal?.throwIfAborted();
         }
         await sleep(20);
       }
       return browser;
     } catch (error) {
-      if (targetId) await connection.call('Target.closeTarget', { targetId }).catch(() => undefined);
-      connection.close();
+      await ownership.close().catch(() => undefined);
       throw error;
     }
   }
 
   /** Read-only recovery attaches to the existing send tab, without navigating it. */
-  static async attach(targetId: string, options: { cdpUrl?: string; timeoutMs?: number } = {}): Promise<Browser> {
+  static async attach(
+    targetId: string,
+    options: { cdpUrl?: string; timeoutMs?: number } & BrowserAcquisition = {}
+  ): Promise<Browser> {
+    options.signal?.throwIfAborted();
     const timeoutMs = options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS;
     const connection = await CdpConnection.connect(options.cdpUrl ?? 'http://127.0.0.1:9222', timeoutMs);
     try {
+      // Recovery owns the connection, not permission to close the existing send tab.
+      options.onAcquire?.({
+        close: async () => {
+          throw new Error('attach_close_forbidden');
+        },
+        detach: async () => connection.close(),
+      });
+      options.signal?.throwIfAborted();
       const attached = (await connection.call('Target.attachToTarget', { targetId, flatten: true })) as {
         sessionId: string;
       };

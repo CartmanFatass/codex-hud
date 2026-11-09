@@ -3,13 +3,19 @@
 // No browser, provider, config, state dir or HOME access.
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
 
 import { JevFailure } from '../../src/jev/ask/error.js';
+import { Browser } from '../../src/jev/browser.js';
+import { hiddenChrome } from '../fixtures/jev-hidden-chrome.js';
+import { errorBody, jevCall } from '../../src/jev/runtime/ipc.js';
+import { JevRuntime } from '../../src/jev/runtime/executor.js';
+import type { JevJob } from '../../src/jev/runtime/types.js';
+import { actionDecisionDiagnostic, type ActionDecisionDiagnostic } from '../../src/jev/runtime/diagnostic.js';
 import {
   promptSha256,
   readOperation,
@@ -20,7 +26,14 @@ import {
 import type { Answer, DecisionProvider } from '../../src/jev/decide.js';
 import { awaitState } from '../../src/jev/judge.js';
 import type { DecisionRequest, ObservedAction, PageState } from '../../src/jev/model.js';
-import { bindChatgpt, chatgptTarget, MENU_STATE, type OracleBrowser } from '../../src/jev/runtime/chatgpt.js';
+import {
+  bindChatgpt,
+  cardsMatch,
+  chips,
+  chatgptTarget,
+  MENU_STATE,
+  type OracleBrowser,
+} from '../../src/jev/runtime/chatgpt.js';
 import { FOCUS_COMPOSER, PAGE_FACTS } from '../../src/jev/runtime/chatgpt-facts.js';
 import { chatgptStore, runOracle, type OracleFacts, type OracleTurn } from '../../src/jev/runtime/oracle.js';
 import type { JevAskInput } from '../../src/jev/runtime/types.js';
@@ -746,13 +759,344 @@ test('chatgpt target: an attachment card with the wrong name is refused before t
   const page = await target.open(stub.state.url);
   const input: JevAskInput = { ...INPUT, attach: attachment };
   // The upload wait ends without the requested card, so the gate fails closed and nothing is sent.
-  await rejects('upload_finished_denied', () =>
-    target.prepare(page, input, providerOf(stub), new AbortController().signal)
-  );
+  await rejects('attach.card_wrong', () => target.prepare(page, input, providerOf(stub), new AbortController().signal));
   assert.deepEqual(stub.files, [attachment]);
   assert.equal(stub.typed, PROMPT);
   assert.equal(stub.sendClicks, 0);
 });
+
+for (const shape of ['slow', 'slow_collision', 'in_progress', 'missing_card'] as const) {
+  const finishes = shape === 'slow' || shape === 'slow_collision';
+  test(`${finishes ? 'T13' : 'T14'}: real prepare polls ${shape} upload despite p=0`, async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'jev-upload-progress-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const attach = join(dir, 'r4f2-file.txt');
+    writeFileSync(attach, 'synthetic attachment bytes\n');
+    const stub = chatgptStub();
+    const options = targetOptions(stub);
+    let uploadedAt: number | undefined;
+    let polls = 0;
+    let judgments = 0;
+    const command = stub.browser.command.bind(stub.browser);
+    stub.browser.command = async (method, params) => {
+      const value = await command(method, params);
+      if (method === 'DOM.setFileInputFiles') uploadedAt = options.now();
+      return value;
+    };
+    const evaluate = stub.browser.evaluate.bind(stub.browser);
+    stub.browser.evaluate = async (script) => {
+      if (script === PAGE_FACTS && uploadedAt !== undefined) {
+        polls++;
+        const done = finishes && options.now() - uploadedAt >= 5_000;
+        return {
+          ...pageFacts(stub),
+          attachment_cards: done
+            ? [shape === 'slow_collision' ? 'r4f2-file(1).txt' : 'r4f2-file.txt']
+            : shape === 'missing_card'
+              ? []
+              : null,
+          send_button: shape === 'missing_card' || done,
+        };
+      }
+      return evaluate(script);
+    };
+    const provider = providerOf(stub, { judge: { upload_finished: 0 } });
+    const judge = provider.judge!.bind(provider);
+    provider.judge = async (...args) => {
+      if (args[0].statements.some((s) => s.name === 'upload_finished')) judgments++;
+      return judge(...args);
+    };
+    const target = chatgptTarget(options);
+    const input = { ...INPUT, attach, dryRun: true };
+    const store = chatgptStore(dir, KEY);
+    const run = () =>
+      runOracle({
+        stateDir: dir,
+        key: KEY,
+        jobId: 'jev-upload-progress',
+        input,
+        target,
+        store,
+        provider,
+        signal: new AbortController().signal,
+        fields: {
+          prompt_sha256: promptSha256(PROMPT),
+          attachment: 'r4f2-file.txt',
+          attachment_sha256: sha256Hex('synthetic attachment bytes\n'),
+        },
+        now: options.now,
+        sleep: options.sleep,
+      });
+    if (finishes) {
+      const result = await run();
+      assert.equal(result.status, 'dry_run_ok');
+      assert.ok(options.now() - uploadedAt! >= 5_000);
+      assert.ok(options.now() - uploadedAt! < 10_000);
+    } else {
+      await assert.rejects(run, (error: unknown) => {
+        assert.ok(error instanceof JevFailure);
+        assert.equal(error.code, 'upload_finished_timeout');
+        assert.equal(errorBody(error).code, 'upload_finished_timeout', 'must survive public IPC mapping');
+        return true;
+      });
+      assert.ok(options.now() - uploadedAt! >= 120_000);
+      assert.ok(options.now() - uploadedAt! <= 150_000, '120s stable budget plus at most 30s load');
+      const record = await store.read();
+      assert.equal(record?.attempts?.at(-1)?.error?.code, 'upload_finished_timeout');
+    }
+    assert.ok(polls >= 5, 'the incomplete card was polled, not denied');
+    assert.equal(judgments, 2, 'the real awaitState judgment budget is exercised with p=0');
+    const record = await store.read();
+    assert.notEqual(record?.send_attempted, true);
+    assert.equal(stub.sendClicks, 0);
+    assert.equal(stub.closed, 1, 'the dry-run/failure tab is closed');
+  });
+}
+
+test(
+  'T15: live-shaped ChatGPT cards run through real DOM facts and strict cardsMatch',
+  { timeout: 20_000 },
+  async (t) => {
+    const chrome = await hiddenChrome(t);
+    if (!chrome) return;
+    const browser = await Browser.open('about:blank', { cdpUrl: chrome.url, timeoutMs: 2_000 });
+    try {
+      // Sanitized structure from r4f2-dry-1: the named button and removal are
+      // siblings in nested composer-attachment spans (not a sent resource-card).
+      await browser.evaluate(
+        `document.body.innerHTML = ${JSON.stringify(`<form>
+    <div id="prompt-textarea" contenteditable="true" role="textbox">synthetic prompt</div>
+    <span class="group/composer-attachment relative block h-30.5 w-40 shrink-0 select-none">
+      <span class="composer-attachment-surface flex size-full flex-col overflow-hidden rounded-2xl bg-surface-secondary text-default">
+        <button type="button" aria-label="r4f2-file.txt">r4f2-file.txt</button>
+        <div>synthetic document type</div>
+      </span><button type="button" aria-label="移除 r4f2-file.txt"></button>
+    </span><button data-testid="send-button" type="submit" aria-label="发送"></button>
+  </form>`)}`
+      );
+      let raw = (await browser.evaluate(PAGE_FACTS)) as RawPageFacts;
+      assert.deepEqual(raw.attachment_cards, ['r4f2-file.txt']);
+      assert.equal(raw.send_button, true);
+      assert.equal(await chips(browser), '', 'the requested attachment is not an extra tool');
+      await browser.evaluate(
+        `document.querySelector('form').insertAdjacentHTML('beforeend', '<span data-synthetic-tool>synthetic extra tool</span>')`
+      );
+      assert.equal(await chips(browser), 'synthetic extra tool', 'unrelated tool text remains visible to the gate');
+      await browser.evaluate(`document.querySelector('[data-synthetic-tool]').remove()`);
+      assert.equal(cardsMatch(raw.attachment_cards, '/synthetic/r4f2-file.txt'), true);
+      assert.equal(cardsMatch(raw.attachment_cards, '/synthetic/different.txt'), false);
+      // Live dry-run 3 exposed ChatGPT's no-space collision name; the owner
+      // driver accepts only a positive, non-zero-prefixed integer suffix.
+      await browser.evaluate(`(() => {
+      document.querySelector('button[aria-label="r4f2-file.txt"]').setAttribute('aria-label', 'r4f2-file(1).txt');
+      document.querySelector('button[aria-label="移除 r4f2-file.txt"]').setAttribute('aria-label', '移除 r4f2-file(1).txt');
+    })()`);
+      raw = (await browser.evaluate(PAGE_FACTS)) as RawPageFacts;
+      assert.deepEqual(raw.attachment_cards, ['r4f2-file(1).txt']);
+      assert.equal(cardsMatch(raw.attachment_cards, '/synthetic/r4f2-file.txt'), true);
+      for (const wrong of ['different(1).txt', 'r4f2-file(0).txt', 'r4f2-file(01).txt', 'r4f2-file (1).txt'])
+        assert.equal(cardsMatch([wrong], '/synthetic/r4f2-file.txt'), false);
+      await browser.evaluate(`document.querySelector('button[aria-label="r4f2-file(1).txt"]').remove()`);
+      raw = (await browser.evaluate(PAGE_FACTS)) as RawPageFacts;
+      assert.equal(raw.attachment_cards, null, 'in-progress removal without name is not ready');
+      assert.equal(cardsMatch(raw.attachment_cards, '/synthetic/r4f2-file.txt'), false);
+      assert.equal(cardsMatch([], '/synthetic/r4f2-file.txt'), false);
+      assert.equal(cardsMatch(['r4f2-file.txt', 'different.txt'], '/synthetic/r4f2-file.txt'), false);
+    } finally {
+      await browser.close();
+    }
+  }
+);
+
+for (const cards of [['leftover.txt'], null]) {
+  test(`T16: prepare refuses ${cards ? 'leftover' : 'ambiguous'} draft cards before fill or Send`, async () => {
+    const stub = chatgptStub({ state: { cards, composer: 'synthetic restored draft' } });
+    const target = chatgptTarget(targetOptions(stub));
+    const page = await target.open(ROOT);
+    await rejects('cards_present', () => target.prepare(page, INPUT, providerOf(stub), new AbortController().signal));
+    assert.equal(stub.sendClicks, 0);
+    assert.deepEqual(stub.fillTexts, []);
+    assert.deepEqual(stub.files, []);
+    assert.equal(stub.state.composer, 'synthetic restored draft');
+    assert.equal(errorBody(new JevFailure('cards_present', 'cards_present')).code, 'cards_present');
+  });
+}
+
+test('decision diagnostics: default runtime adapter logs refusal attempts and public code over its socket', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'jev-decision-log-'));
+  const stateDir = join(home, 'state');
+  mkdirSync(stateDir);
+  writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-key\n', { mode: 0o600 });
+  const stub = chatgptStub();
+  const provider = providerOf(stub);
+  const decide = provider.decide.bind(provider);
+  provider.decide = async (...args) =>
+    args[0].goal.startsWith('Click Send')
+      ? { answers: [{ name: 'operation', kind: 'refusal' }], usage: {}, latencyMs: 0, raw: null }
+      : decide(...args);
+  const ticks = clock();
+  const runtime = new JevRuntime({
+    hudHome: home,
+    stateDir,
+    graceMs: 60_000,
+    providerFactory: () => provider,
+    browserFactory: async () => stub.browser,
+    oracleNow: ticks.now,
+    oracleSleep: ticks.sleep,
+  });
+  t.after(async () => {
+    await runtime.stop();
+    rmSync(home, { recursive: true, force: true });
+  });
+  await runtime.start();
+  const socket = join(home, 'jev-runtime', 'runtime.sock');
+  const created = (await jevCall(socket, 'createJob', {
+    requestKey: 'decision-log',
+    session: { namespace: 'synthetic', sessionId: 'decision-log' },
+    input: { ...INPUT, dryRun: true },
+  })) as JevJob;
+  let job = created;
+  for (let i = 0; i < 400 && (job.state === 'queued' || job.state === 'running'); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    job = (await jevCall(socket, 'readJob', { jobId: created.id })) as JevJob;
+  }
+  assert.equal(job.state, 'failed');
+  assert.equal(job.error?.code, 'decision_refused');
+  const log = readFileSync(join(home, 'jev-runtime', 'child.err'), 'utf8');
+  const decisions = log
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line))
+    .filter((entry) => entry.code === 'decision')
+    .map((entry) => entry.decision as ActionDecisionDiagnostic);
+  assert.deepEqual(
+    decisions.filter((d) => d.phase === 'send').map((d) => [d.attempt, d.code]),
+    [
+      [1, 'operation_refusal'],
+      [2, 'operation_refusal'],
+      [3, 'operation_refusal'],
+    ]
+  );
+  assert.equal(log.includes(PROMPT), false);
+  assert.ok(log.includes('DecisionRefused'));
+  assert.equal(stub.sendClicks, 0);
+});
+
+for (const refusal of ['operation', 'target'] as const) {
+  test(`decision diagnostics: ${refusal} refusal identifies the phase and all attempts, without page text`, async () => {
+    const stub = chatgptStub();
+    const traces: ActionDecisionDiagnostic[] = [];
+    const target = chatgptTarget({ ...targetOptions(stub), decisionDiagnostic: (d) => traces.push(d) });
+    const provider = providerOf(stub);
+    const decide = provider.decide.bind(provider);
+    provider.decide = async (...args) => {
+      const result = await decide(...args);
+      if (args[0].goal.startsWith('Click Send'))
+        result.answers = result.answers.map((answer) =>
+          answer.name === (refusal === 'operation' ? 'operation' : 'click_target')
+            ? { name: answer.name, kind: 'refusal' }
+            : answer
+        );
+      return result;
+    };
+    const page = await target.open(ROOT);
+    await assert.rejects(
+      () => target.prepare(page, INPUT, provider, new AbortController().signal),
+      (e: unknown) => errorBody(e).code === 'decision_refused'
+    );
+    assert.deepEqual(
+      traces.filter((d) => d.phase === 'send').map((d) => [d.attempt, d.operation, d.code]),
+      [1, 2, 3].map((n) => [n, refusal === 'operation' ? 'unclassified' : 'CLICK', `${refusal}_refusal`])
+    );
+    assert.ok(
+      traces.some(
+        (d) => d.phase === 'fill' && d.operation === 'TYPE_TEXT' && d.targetNode === 1 && d.targetRole === 'textbox'
+      )
+    );
+    assert.equal(JSON.stringify(traces).includes(PROMPT), false);
+    assert.equal(stub.sendClicks, 0);
+  });
+}
+
+test('decision diagnostic vocabulary rejects page-like operation, target and role strings', () => {
+  const secret = 'PRIVATE_PAGE_TEXT';
+  const page: PageState = {
+    url: ROOT,
+    text: secret,
+    actions: [{ id: secret, label: secret, role: secret, kind: 'click', node: 7 }],
+  };
+  const decision = { choice: secret, operation: secret } as never;
+  const diagnostic = actionDecisionDiagnostic(
+    'send',
+    1,
+    page,
+    [{ name: 'operation', kind: 'choice', choice: secret, confidence: 1, probabilities: {} }],
+    decision
+  );
+  assert.deepEqual(diagnostic, {
+    phase: 'send',
+    attempt: 1,
+    operation: 'unclassified',
+    code: 'selected',
+    targetNode: 7,
+  });
+  assert.equal(JSON.stringify(diagnostic).includes(secret), false);
+  const none = actionDecisionDiagnostic(
+    'send',
+    2,
+    page,
+    [
+      { name: 'operation', kind: 'choice', choice: 'CLICK', confidence: 1, probabilities: {} },
+      { name: 'click_target', kind: 'choice', choice: 'NONE', confidence: 1, probabilities: {} },
+    ],
+    { refused: true, question: 'click_target', operation: 'CLICK' }
+  );
+  assert.equal(none.code, 'no_target');
+});
+
+test('composer_clean keeps its deny band for an unrelated tool chip', async () => {
+  const stub = chatgptStub();
+  const evaluate = stub.browser.evaluate.bind(stub.browser);
+  let chipReads = 0;
+  stub.browser.evaluate = async (script) => {
+    if (script.includes('cloneNode')) return chipReads++ === 0 ? '' : 'synthetic extra tool';
+    return evaluate(script);
+  };
+  const target = chatgptTarget(targetOptions(stub));
+  const page = await target.open(ROOT);
+  await rejects('composer_clean_denied', () =>
+    target.prepare(page, INPUT, providerOf(stub, { judge: { composer_clean: 0 } }), new AbortController().signal)
+  );
+  assert.equal(stub.sendClicks, 0);
+  assert.equal(
+    stub.goals.some((goal) => goal.startsWith('Click Send')),
+    false
+  );
+});
+
+for (const extraArrives of ['upload', 'final_gate'] as const) {
+  test(`T16: requested plus leftover attachment at ${extraArrives} fails before Send`, async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'jev-extra-card-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const attach = join(dir, 'r4f2-file.txt');
+    writeFileSync(attach, 'synthetic bytes');
+    const stub = chatgptStub({
+      uploadedCards: extraArrives === 'upload' ? ['r4f2-file.txt', 'leftover.txt'] : ['r4f2-file.txt'],
+    });
+    const target = chatgptTarget(targetOptions(stub));
+    const provider = providerOf(stub, {
+      onDecide: (goal) => {
+        if (extraArrives === 'final_gate' && goal.startsWith('Click Send'))
+          stub.state.cards = ['r4f2-file.txt', 'leftover.txt'];
+      },
+    });
+    const page = await target.open(ROOT);
+    await rejects(extraArrives === 'upload' ? 'attach.card_wrong' : 'gate.changed', () =>
+      target.prepare(page, { ...INPUT, attach }, provider, new AbortController().signal)
+    );
+    assert.equal(stub.sendClicks, 0);
+  });
+}
 
 test('chatgpt target: an attachment changed during model selection is refused before upload', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'jev-chatgpt-attach-'));
