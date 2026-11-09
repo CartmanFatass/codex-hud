@@ -18,7 +18,13 @@ export interface FakeCdp {
 }
 
 export function startFakeCdp(
-  options: { reply?: boolean; reportedHref?: (navigated: string) => string; port?: number } = {}
+  options: {
+    reply?: boolean;
+    reportedHref?: (navigated: string) => string;
+    port?: number;
+    delayMs?: Record<string, number>;
+    hang?: string[];
+  } = {}
 ): Promise<FakeCdp> {
   const reply = options.reply !== false;
   const paths: string[] = [];
@@ -28,6 +34,7 @@ export function startFakeCdp(
   const created: Record<string, unknown>[] = [];
   const expressions: string[] = [];
   const sockets = new Set<Duplex>();
+  const timers = new Set<ReturnType<typeof setTimeout>>();
   let navigatedUrl = 'about:blank';
 
   const server: Server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -81,10 +88,23 @@ export function startFakeCdp(
           navigatedUrl = message.params.url;
           navigated.push(message.params.url);
         }
-        if (message.method === 'Target.closeTarget' && typeof message.params?.targetId === 'string') {
-          closedTargets.push(message.params.targetId);
+        const respond = () => {
+          if (socket.destroyed) return;
+          if (message.method === 'Target.closeTarget' && typeof message.params?.targetId === 'string') {
+            closedTargets.push(message.params.targetId);
+          }
+          socket.write(textFrame(JSON.stringify({ id: message.id, result })));
+        };
+        if (options.hang?.includes(message.method)) return;
+        const delay = options.delayMs?.[message.method] ?? 0;
+        if (!delay) respond();
+        else {
+          const timer = setTimeout(() => {
+            timers.delete(timer);
+            respond();
+          }, delay);
+          timers.add(timer);
         }
-        socket.write(textFrame(JSON.stringify({ id: message.id, result })));
       });
     });
   });
@@ -109,6 +129,7 @@ export function startFakeCdp(
         expressions,
         close: () =>
           new Promise((done) => {
+            for (const timer of timers) clearTimeout(timer);
             for (const socket of sockets) socket.destroy();
             server.close(() => done());
           }),

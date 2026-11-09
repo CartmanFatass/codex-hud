@@ -215,11 +215,11 @@ export function aistudioTarget(
     provider: 'aistudio',
     root,
     settled: studioSettled,
-    async open(url) {
-      return new StudioPage(await options.open(url), options.sleep, options.readTimeoutMs);
+    async open(url, acquisition) {
+      return new StudioPage(await options.open(url, acquisition), options.sleep, options.readTimeoutMs);
     },
-    async attach(id) {
-      return new StudioPage(await options.attach(id), options.sleep, options.readTimeoutMs);
+    async attach(id, acquisition) {
+      return new StudioPage(await options.attach(id, acquisition), options.sleep, options.readTimeoutMs);
     },
     targets: options.targets,
     bindPage(page, record, signal) {

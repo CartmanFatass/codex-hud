@@ -42,7 +42,8 @@ export const STATEMENT_THRESHOLDS: Record<string, JudgmentThreshold> = {
   page_ready: { pass: 0.8, deny: 0.2 },
   needs_human: { pass: 0.8 },
   mode_set: { pass: 0.9, deny: 0.1 },
-  upload_finished: { pass: 0.85, deny: 0.15 },
+  // Progress, not an invariant: "not yet" must keep polling until the bound.
+  upload_finished: { pass: 0.85 },
   composer_clean: { pass: 0.85, deny: 0.15 },
   submitted: { pass: 0.85, deny: 0.1 },
   answer_complete: { pass: 0.9, deny: 0.1 },

@@ -37,7 +37,7 @@ import {
   pythonUniversalNewlines,
   readOperation,
 } from '../ask/records.js';
-import { Browser } from '../browser.js';
+import { Browser, type BrowserAcquisition } from '../browser.js';
 import { decideProviderId, type DecisionProvider, type DecisionProviderId } from '../decide.js';
 import { RESERVED_STATEMENT_NAMES, awaitStates, type JudgmentProvider, type PageObservation } from '../judge.js';
 import { actionSpace, type PageState } from '../model.js';
@@ -49,7 +49,7 @@ import { chatgptStore, runOracle, type OracleTarget } from './oracle.js';
 import { aistudioTarget } from './aistudio.js';
 import { loadStudioConfig, studioKey, studioStore, type StudioConfig } from './aistudio-state.js';
 import { errorBody, jevCall, serveLine } from './ipc.js';
-import { failureDiagnostic, type FailureDiagnostic } from './diagnostic.js';
+import { failureDiagnostic, type FailureDiagnostic, type ActionDecisionDiagnostic } from './diagnostic.js';
 import { recoverableOracleResult } from './types.js';
 import type {
   JevCreateRequest,
@@ -242,6 +242,7 @@ export class JevRuntime implements JevExecutor {
   private readonly browsers = new Set<BrowserPort>();
   private readonly runs = new Map<string, Promise<void>>();
   private readonly cleanups = new Map<string, Promise<void>>();
+  private readonly oracleCleanups = new Set<Promise<void>>();
   private readonly aborts = new Map<string, AbortController>();
   private readonly followUps = new Set<string>();
   private readonly keys = new Map<string, Promise<void>>();
@@ -326,6 +327,9 @@ export class JevRuntime implements JevExecutor {
     for (const agent of this.agents.values()) await agent.close().catch(() => undefined);
     this.agents.clear();
     await Promise.allSettled([...this.runs.values()]);
+    // Job abortion schedules ownership cleanup. Drain it on every stop path,
+    // including signals, not just idle. Each task has its own finite deadline.
+    while (this.oracleCleanups.size) await Promise.allSettled([...this.oracleCleanups]);
     let failure: unknown;
     try {
       for (const job of this.jobs.values()) {
@@ -386,7 +390,7 @@ export class JevRuntime implements JevExecutor {
   }
 
   retained(): number {
-    let count = 0;
+    let count = this.oracleCleanups.size;
     for (const job of this.jobs.values()) {
       if (job.state === 'queued' || job.state === 'running' || this.agents.has(job.id)) count += 1;
     }
@@ -658,11 +662,11 @@ export class JevRuntime implements JevExecutor {
           config,
           model,
           thinking,
-          open: async (url) =>
+          open: async (url, acquisition) =>
             this.options.browserFactory
               ? ((await this.options.browserFactory(url)) as OracleBrowser)
-              : this.openSharedBrowser(url, cdp.cdpUrl),
-          attach: (id) => Browser.attach(id, cdp),
+              : this.openSharedBrowser(url, cdp.cdpUrl, acquisition),
+          attach: (id, acquisition) => Browser.attach(id, { ...cdp, ...acquisition }),
           targets: () => Browser.targets(cdp),
           now: this.options.oracleNow,
           sleep: this.options.oracleSleep,
@@ -683,6 +687,9 @@ export class JevRuntime implements JevExecutor {
         readTimeoutMs: this.options.oracleReadTimeoutMs,
         phase: (phase) => this.oraclePhase(job, phase),
         diagnostic: (code, error) => this.oracleDiagnostic(job, code, error),
+        retainCleanup: (task) => this.retainOracleCleanup(task),
+        cleanup: (step, elapsedMs, code) => this.lifecycle('phase', `cleanup.${step}.${code}`, job.id, { elapsedMs }),
+        timing: (step, elapsedMs) => this.lifecycle('phase', `collect.${step}`, job.id, { elapsedMs }),
         fields: {
           key,
           label: input.label,
@@ -711,13 +718,14 @@ export class JevRuntime implements JevExecutor {
           root: this.askConfig.providerRoot,
           diagnostic: (phase, verdict, calls, elapsedMs) =>
             this.lifecycle('phase', `${phase}.${verdict}`, job.id, { calls, elapsedMs }),
+          decisionDiagnostic: (decision) => this.lifecycle('phase', 'decision', job.id, { decision }),
           model: this.askConfig.model,
           effortWord: this.askConfig.effortWord,
-          open: async (url) =>
+          open: async (url, acquisition) =>
             this.options.browserFactory
               ? ((await this.options.browserFactory(url)) as OracleBrowser)
-              : this.openSharedBrowser(url),
-          attach: (id) => Browser.attach(id, options),
+              : this.openSharedBrowser(url, this.cdpUrl, acquisition),
+          attach: (id, acquisition) => Browser.attach(id, { ...options, ...acquisition }),
           targets: () => Browser.targets(options),
           now: this.options.oracleNow,
           sleep: this.options.oracleSleep,
@@ -738,6 +746,8 @@ export class JevRuntime implements JevExecutor {
         readTimeoutMs: this.options.oracleReadTimeoutMs,
         phase: (phase) => this.oraclePhase(job, phase),
         diagnostic: (code, error) => this.oracleDiagnostic(job, code, error),
+        retainCleanup: (task) => this.retainOracleCleanup(task),
+        cleanup: (step, elapsedMs, code) => this.lifecycle('phase', `cleanup.${step}.${code}`, job.id, { elapsedMs }),
         fields: {
           key,
           provider: 'chatgpt',
@@ -892,11 +902,16 @@ export class JevRuntime implements JevExecutor {
     return browser;
   }
 
-  private async openSharedBrowser(url: string, cdpUrl = this.cdpUrl): Promise<Browser> {
+  private async openSharedBrowser(
+    url: string,
+    cdpUrl = this.cdpUrl,
+    acquisition?: BrowserAcquisition
+  ): Promise<Browser> {
     const config = this.config;
     if (!config) throw new JevRuntimeError('browser_unavailable', 'browser_unavailable');
+    acquisition?.signal?.throwIfAborted();
     await this.chrome.ensure(config, cdpUrl);
-    const browser = await Browser.open(url, { cdpUrl, timeoutMs: config.cdpTimeoutMs });
+    const browser = await Browser.open(url, { cdpUrl, timeoutMs: config.cdpTimeoutMs, ...acquisition });
     browser.mode = this.chrome.mode(cdpUrl);
     return browser;
   }
@@ -1056,7 +1071,12 @@ export class JevRuntime implements JevExecutor {
     event: 'start' | 'stop' | 'phase' | 'exit',
     code = '',
     jobId = '',
-    metrics?: { calls?: number; elapsedMs?: number; diagnostic?: FailureDiagnostic }
+    metrics?: {
+      calls?: number;
+      elapsedMs?: number;
+      diagnostic?: FailureDiagnostic;
+      decision?: ActionDecisionDiagnostic;
+    }
   ): void {
     const safe = (value: string) => (/^[A-Za-z0-9_.:-]{0,100}$/.test(value) ? value : 'internal');
     try {
@@ -1082,6 +1102,7 @@ export class JevRuntime implements JevExecutor {
           ...(metrics?.calls !== undefined ? { calls: metrics.calls } : {}),
           ...(metrics?.elapsedMs !== undefined ? { elapsedMs: Math.round(metrics.elapsedMs) } : {}),
           ...(metrics?.diagnostic ? { diagnostic: metrics.diagnostic } : {}),
+          ...(metrics?.decision ? { decision: metrics.decision } : {}),
         }) + '\n',
         { mode: 0o600 }
       );
@@ -1094,6 +1115,16 @@ export class JevRuntime implements JevExecutor {
     const file = join(this.hudHome, 'jev-runtime', 'runtime.json');
     writeFileSync(file, JSON.stringify({ pid: process.pid, startedAt: this.stamp() }) + '\n', { mode: 0o600 });
     chmodSync(file, 0o600);
+  }
+
+  private retainOracleCleanup(task: Promise<void>): void {
+    this.oracleCleanups.add(task);
+    this.armGrace();
+    const release = () => {
+      this.oracleCleanups.delete(task);
+      this.armGrace();
+    };
+    void task.then(release, release);
   }
 
   private armGrace(): void {

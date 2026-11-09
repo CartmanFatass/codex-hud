@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { hiddenChrome } from '../fixtures/jev-hidden-chrome.js';
+import { startFakeCdp } from './jev-cdp-fake.js';
 import { Browser } from '../../src/jev/browser.js';
 import vm from 'node:vm';
 
@@ -239,7 +240,8 @@ for (const heldPhase of ['prepare', 'confirm', 'wait', 'collect', 'cross_check']
     });
     const lifecycle = runtime.lifecycle.bind(runtime);
     runtime.lifecycle = (event, code, job, metrics) => {
-      if (event === 'phase' && code && !code.startsWith('failed.')) phase = code;
+      if (event === 'phase' && code && ['prepare', 'click', 'reconcile', 'confirm', 'wait', 'collect'].includes(code))
+        phase = code;
       lifecycle(event, code, job, metrics);
     };
     await runtime.start();
@@ -945,7 +947,7 @@ test('R1: a prompt proof is discarded if the tab navigates during model extracti
   assert.equal(target.binding(facts, INPUT, { user_turn: 1 }).found, false);
 });
 
-test('T4: Studio numeric prompt binding confirms and collects from the live tab with new_chat throughout', async (t) => {
+test('T4/T17: finished Studio live answer collects without waiting for a Drive URL', async (t) => {
   const stateDir = workspace(t);
   const ticks = clock();
   const stub = studioStub();
@@ -959,6 +961,8 @@ test('T4: Studio numeric prompt binding confirms and collects from the live tab 
   const target = aistudioTarget(studioOptions(stub, ticks));
   const key = studioKey(INPUT.label, INPUT.prompt, 'gemini-4-argon', 'High', 'new');
   const phases: string[] = [];
+  let collectingAt = -1;
+  const timings: Array<{ step: string; ms: number }> = [];
   const result = await within(
     5_000,
     runOracle({
@@ -974,7 +978,9 @@ test('T4: Studio numeric prompt binding confirms and collects from the live tab 
       sleep: ticks.sleep,
       phase: (phase) => {
         phases.push(phase);
+        if (phase === 'collect') collectingAt = ticks.now();
       },
+      timing: (step, ms) => timings.push({ step, ms }),
       fields: { prompt_sha256: promptSha256(INPUT.prompt), conversation_url: null },
     })
   );
@@ -988,7 +994,215 @@ test('T4: Studio numeric prompt binding confirms and collects from the live tab 
   assert.equal(record?.completion, 'COMPLETE');
   assert.equal(stub.opened.length, 2, 'prepare opens; wait attaches to the same live tab, never a saved view');
   assert.equal(stub.closed, 0, 'unsaved send tab is retained');
+  assert.equal(result.cross_check, 'unavailable');
+  assert.equal(ticks.now() - collectingAt, 3_000, 'only the final live user/model render pauses remain');
+  assert.deepEqual(timings, [
+    { step: 'live_facts', ms: 3_000 },
+    { step: 'persist', ms: 0 },
+    { step: 'live_cleanup', ms: 0 },
+  ]);
+  assert.equal(ticks.sleeps.includes(2_000), false, 'no optional URL-settlement sleep');
 });
+
+test('T17: saved-view open and facts share one short host-clock budget', async (t) => {
+  const stateDir = workspace(t);
+  const ticks = clock();
+  const url = 'https://aistudio.google.com/prompts/synthetic-settled-conversation';
+  const stub = studioStub();
+  const saved = studioStub({ state: { url }, reply: { users: 1, model_turns: 1, final: true, text: '437' } });
+  const click = stub.browser.act.bind(stub.browser);
+  stub.browser.act = async (...args) => {
+    await click(...args);
+    stub.state.url = url;
+    stub.state.composer = '';
+    stub.reply = { users: 1, model_turns: 1, final: true, text: '437', error: null };
+  };
+  const evaluate = saved.browser.evaluate.bind(saved.browser);
+  saved.browser.evaluate = async (...args) => {
+    // Two 15ms state reads fit inside the 50ms facts bound. Together with
+    // opening (30ms), only the aggregate cross-check bound catches the lag.
+    if (args[0] === STUDIO_PAGE_STATE) await new Promise((resolve) => setTimeout(resolve, 15));
+    return evaluate(...args);
+  };
+  const options = studioOptions(stub, ticks);
+  let collecting = false;
+  const target = aistudioTarget({
+    ...options,
+    readTimeoutMs: 50,
+    open: async (address) => {
+      if (!collecting) return options.open(address);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return { ...saved.browser, id: 'saved-view' };
+    },
+  });
+  const key = studioKey(INPUT.label, INPUT.prompt, 'gemini-4-argon', 'High', 'new');
+  const timings: Array<{ step: string; ms: number }> = [];
+  const result = await within(
+    1_000,
+    runOracle({
+      stateDir,
+      key,
+      jobId: 'jev-saved-budget',
+      input: INPUT,
+      target,
+      store: studioStore(stateDir, key),
+      provider: {} as never,
+      signal: new AbortController().signal,
+      fields: { prompt_sha256: promptSha256(INPUT.prompt) },
+      now: ticks.now,
+      sleep: ticks.sleep,
+      readTimeoutMs: 50,
+      phase: (phase) => {
+        collecting = phase === 'collect';
+      },
+      timing: (step, ms) => timings.push({ step, ms }),
+    })
+  );
+  assert.equal(result.status, 'answered');
+  assert.equal(result.answer, '437', 'optional loading never discards the proven live answer');
+  assert.equal(result.cross_check, 'browser_timeout', 'individual RPCs fit; the aggregate must still time out');
+  assert.equal(saved.closed, 1);
+  assert.equal(stub.acted, 1);
+  assert.deepEqual(
+    timings.map((t) => t.step),
+    ['live_facts', 'saved_open', 'saved_facts', 'saved_close', 'persist', 'live_cleanup']
+  );
+  assert.ok(timings.every((t) => Number.isFinite(t.ms) && t.ms >= 0));
+  assert.equal((await studioStore(stateDir, key).read())?.completion, 'COMPLETE');
+});
+
+for (const scenario of ['idle', 'signal', 'hung_close'] as const) {
+  const id = scenario === 'idle' ? 'T18' : scenario === 'signal' ? 'T19' : 'T20';
+  test(`${id}: pending saved target ownership survives ${scenario} shutdown`, { timeout: 15_000 }, async (t) => {
+    const home = workspace(t);
+    const stateDir = join(home, 'state');
+    mkdirSync(stateDir);
+    writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-ownership\n', { mode: 0o600 });
+    // Real Browser.open/CDP: create succeeds immediately, navigation won't
+    // return until 8s. A close response is deliberately later than the answer.
+    const cdp = await startFakeCdp({
+      delayMs: { 'Page.navigate': 8_000, 'Target.closeTarget': 500 },
+      hang: scenario === 'hung_close' ? ['Target.closeTarget'] : [],
+    });
+    t.after(() => cdp.close());
+    const ticks = clock();
+    const url = 'https://aistudio.google.com/prompts/synthetic-owned-saved-view';
+    const live = studioStub({ state: { url }, reply: { users: 1, model_turns: 1, final: true, text: '437' } });
+    const options = studioOptions(live, ticks);
+    let openedAt = 0;
+    let openReturned = false;
+    const target = aistudioTarget({
+      ...options,
+      open: async (address, acquisition) => {
+        openedAt = Date.now();
+        const browser = await Browser.open(address, { cdpUrl: cdp.httpUrl, ...acquisition });
+        openReturned = true;
+        return browser;
+      },
+    });
+    const key = studioKey(INPUT.label, INPUT.prompt, options.model, options.thinking, 'new');
+    // Enter wait with the surviving send tab. No preparation or sends are faked.
+    // The full real wait/collect lifecycle must prove and persist the live answer.
+    writeFileSync(
+      join(stateDir, 'aistudio_chat_state.json'),
+      JSON.stringify({
+        keys: {
+          [key]: {
+            send_attempted: true,
+            attempted_at: '2026-01-01T00:00:00Z',
+            send_effect: 'sent',
+            user_turn: 1,
+            sent_target_id: 'target-1',
+            conversation_url: null,
+          },
+        },
+      })
+    );
+    const runtime = new JevRuntime({
+      hudHome: home,
+      stateDir,
+      fake: true,
+      oracleTargets: { aistudio: target },
+      oracleNow: ticks.now,
+      oracleSleep: ticks.sleep,
+      studioConfigLoader: () => ({ ...options.config, stateDir }),
+      // Deliberately no grace override: T18 pins the production 2s grace.
+    });
+    let stopped = false;
+    let stopReason = '';
+    const realStop = runtime.stop.bind(runtime);
+    let stoppedResolve!: () => void;
+    const stoppedPromise = new Promise<void>((resolve) => {
+      stoppedResolve = resolve;
+    });
+    runtime.stop = async (reason = 'explicit') => {
+      stopReason = reason;
+      await realStop(reason);
+      stopped = true;
+      stoppedResolve();
+    };
+    await runtime.start();
+    t.after(() => realStop());
+    assert.equal(runtime.graceMs, 2_000);
+    const created = await runtime.createJob({
+      requestKey: `ownership-${scenario}`,
+      session: { namespace: 'synthetic', sessionId: 'ownership' },
+      input: INPUT,
+    });
+    let job = created;
+    for (let n = 0; n < 1_200 && job.state !== 'completed'; n++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      job = await runtime.readJob(created.id);
+    }
+    assert.equal(job.state, 'completed', JSON.stringify(job));
+    assert.equal((job.result as { answer: string }).answer, '437');
+    assert.equal((job.result as { cross_check: string }).cross_check, 'browser_timeout');
+    assert.ok(Date.now() - openedAt >= 4_900, 'keep the five-second answer budget');
+    assert.ok(Date.now() - openedAt < 5_450, 'the answer never waits for the 500ms close (or hanging close)');
+    assert.equal(openReturned, false, 'factory navigation is still pending at the answer deadline');
+    assert.equal(cdp.created.length, 1);
+    assert.equal(cdp.closedTargets.length, 0, 'cleanup is separate from answer persistence');
+    const retainedAtAnswer = runtime.retained();
+    assert.equal((await studioStore(stateDir, key).read())?.completion, 'COMPLETE');
+    if (scenario !== 'idle') {
+      // Same signal-to-stop edge as entry.ts, without terminating the test runner.
+      const onSignal = () => {
+        void runtime.stop('SIGTERM');
+      };
+      process.once('SIGTERM', onSignal);
+      t.after(() => process.removeListener('SIGTERM', onSignal));
+      process.emit('SIGTERM');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      assert.equal(stopped, false, 'signal shutdown must drain the in-flight close');
+    }
+    await within(5_000, stoppedPromise);
+    assert.equal(stopReason, scenario === 'idle' ? 'idle' : 'SIGTERM');
+    assert.equal(
+      cdp.closedTargets.length,
+      scenario === 'hung_close' ? 0 : 1,
+      'owned target closes before runtime stops'
+    );
+    assert.ok(retainedAtAnswer > 0, 'real runtime retains ownership cleanup after the job completes');
+    assert.equal(runtime.retained(), 0);
+    assert.equal((await runtime.readJob(created.id)).state, 'completed');
+    const lifecycle = readFileSync(join(home, 'jev-runtime', 'child.err'), 'utf8');
+    const cleanups = lifecycle
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { code: string; elapsedMs?: number })
+      .filter((entry) => entry.code.startsWith('cleanup.'));
+    const expected = scenario === 'hung_close' ? 'cleanup.open.abandoned' : 'cleanup.open.closed';
+    assert.ok(
+      cleanups.some((entry) => entry.code === expected),
+      lifecycle
+    );
+    assert.ok(cleanups.every((entry) => Number.isFinite(entry.elapsedMs) && entry.elapsedMs! <= 3_500));
+    assert.equal(lifecycle.includes(INPUT.prompt), false);
+    assert.equal(lifecycle.includes('jev1-owned-tab'), false, 'no target ids in cleanup diagnostics');
+    assert.ok(Date.now() - openedAt < 10_000, 'bounded cleanup, including a hanging Target.closeTarget');
+    assert.equal(live.acted, 0, 'never send again');
+  });
+}
 
 test('T5: runtime resumes the D3 send_attempted/uncertain/confirm record with zero Run clicks or preparations', async (t) => {
   await resumeStudio(t, 'none');
@@ -1093,6 +1307,16 @@ async function resumeStudio(t: TestContext, settlement: 'none' | 'before' | 'dur
   assert.ok(!stub.opened.includes(target.root), 'resume never enters prepare/open-new-chat');
   const final = await studioStore(stateDir, key).read();
   assert.equal(final?.completion, 'COMPLETE');
+  const lifecycle = readFileSync(join(home, 'jev-runtime', 'child.err'), 'utf8');
+  const steps = lifecycle
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as { code: string; elapsedMs?: number })
+    .filter((entry) => /^collect\./.test(entry.code));
+  assert.ok(steps.some((entry) => entry.code === 'collect.live_facts' && entry.elapsedMs === 3_000));
+  assert.ok(steps.some((entry) => entry.code === 'collect.persist'));
+  assert.ok(steps.every((entry) => Number.isFinite(entry.elapsedMs) && entry.elapsedMs! >= 0));
+  assert.equal(lifecycle.includes(INPUT.prompt), false, 'collect timings never log the prompt');
   if (settlement !== 'none') {
     assert.equal(final?.conversation_url, settledUrl);
     assert.equal(final?.conversation_url_source, 'tab');

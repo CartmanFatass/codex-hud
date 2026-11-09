@@ -9,6 +9,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { JevFailure } from '../../src/jev/ask/error.js';
+import { DecisionRefused } from '../../src/jev/decide.js';
+import { DecisionInvalid, DecisionProviderError } from '../../src/jev/model.js';
 import { operationPath } from '../../src/jev/ask/names.js';
 import { promptSha256, readOperation, squashedSha256, type OperationRecord } from '../../src/jev/ask/records.js';
 import { studioKey, withStudioLock } from '../../src/jev/runtime/aistudio-state.js';
@@ -777,6 +779,9 @@ for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
 // A finite target refusal keeps its code through the runtime, the job file and the socket.
 const REFUSALS: Array<{ code: string; targets: TargetId[] }> = [
   ...[
+    'decision_refused',
+    'decision_invalid',
+    'decision_provider_error',
     'page_ready_timeout',
     'page_ready_denied',
     'upload_finished_denied',
@@ -840,6 +845,9 @@ for (const refusal of REFUSALS) {
         { url: ROOT, turns: [], sidebar: [] },
         {
           prepare: () => {
+            if (refusal.code === 'decision_refused') throw new DecisionRefused();
+            if (refusal.code === 'decision_invalid') throw new DecisionInvalid(SECRET);
+            if (refusal.code === 'decision_provider_error') throw new DecisionProviderError('http', 503);
             throw new JevFailure(refusal.code, refusal.code);
           },
         }

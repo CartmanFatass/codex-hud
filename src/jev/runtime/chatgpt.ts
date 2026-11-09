@@ -3,15 +3,16 @@ import { basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import type { BrowserPort } from '../agent.js';
-import { StalePage } from '../browser.js';
+import { StalePage, type BrowserAcquisition } from '../browser.js';
 import { JevFailure } from '../ask/error.js';
 import { pySquash, squashedSha256, type OperationRecord } from '../ask/records.js';
-import { choose, DecisionRefused, type DecisionProvider } from '../decide.js';
+import { choose, DecisionRefused, type Answer, type DecisionProvider } from '../decide.js';
 import { awaitState, type JudgmentProvider, type PageObservation } from '../judge.js';
 import { actionSpace, type ObservedAction, type PageState } from '../model.js';
 import { COMPOSER_LOOKUP, FOCUS_COMPOSER, NODE_FACTS, PAGE_FACTS, UPLOAD_LOOKUP } from './chatgpt-facts.js';
 import { oracleDelay, type OracleFacts, type OraclePage, type OracleTarget, type OracleTurn } from './oracle.js';
 import { boundedOracleBrowser } from './oracle-read.js';
+import { actionDecisionDiagnostic, type ActionDecisionDiagnostic } from './diagnostic.js';
 import type { JevAskInput } from './types.js';
 
 export interface OracleBrowser extends BrowserPort {
@@ -22,14 +23,15 @@ export interface OracleBrowser extends BrowserPort {
   detach(): Promise<void>;
 }
 export interface TargetBrowserOptions {
-  open(url: string): Promise<OracleBrowser>;
-  attach(id: string): Promise<OracleBrowser>;
+  open(url: string, acquisition?: BrowserAcquisition): Promise<OracleBrowser>;
+  attach(id: string, acquisition?: BrowserAcquisition): Promise<OracleBrowser>;
   targets(): Promise<Array<{ targetId: string; url: string }>>;
   now?: () => number;
   /** Host-clock per-read CDP bound; tests may shorten it. */
   readTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   diagnostic?: (phase: string, verdict: string, calls: number, elapsedMs: number) => void;
+  decisionDiagnostic?: (diagnostic: ActionDecisionDiagnostic) => void;
 }
 
 // A menu is actionable only when explicitly linked to a composer menu trigger AND
@@ -168,11 +170,11 @@ export function chatgptTarget(
         return false;
       }
     },
-    async open(url) {
-      return new ChatPage(await options.open(url), options.readTimeoutMs);
+    async open(url, acquisition) {
+      return new ChatPage(await options.open(url, acquisition), options.readTimeoutMs);
     },
-    async attach(id) {
-      return new ChatPage(await options.attach(id), options.readTimeoutMs);
+    async attach(id, acquisition) {
+      return new ChatPage(await options.attach(id, acquisition), options.readTimeoutMs);
     },
     targets: options.targets,
     bindPage(page, _record, signal) {
@@ -209,6 +211,15 @@ export function chatgptTarget(
             async observe() {
               facts = await page.facts();
               signal.throwIfAborted();
+              // Like the owner driver, a missing/incomplete name pair may hydrate;
+              // a present wrong/duplicate card is a factual failure, not progress.
+              if (
+                name === 'upload_finished' &&
+                input.attach &&
+                facts.cards?.length &&
+                !cardsMatch(facts.cards, input.attach)
+              )
+                throw new JevFailure('attach.card_wrong', 'attach.card_wrong');
               // maxLoadMs is a hydration bound, not permission to spend another
               // entire stable-page budget on a shell that never becomes usable.
               if (
@@ -280,7 +291,18 @@ export function chatgptTarget(
       const baseline = await chips(page.browser);
       // Mode: Jev chooses discrete controls; only code owns the continuous slider.
       const budget = { remaining: 14 };
-      let modePill = await setMode(page, model, effort, provider, signal, judgeProvider, delay, budget, options.now);
+      let modePill = await setMode(
+        page,
+        model,
+        effort,
+        provider,
+        signal,
+        judgeProvider,
+        delay,
+        budget,
+        options.now,
+        options.decisionDiagnostic
+      );
       await predictAct(
         page,
         'Fill the prompt composer with the committed text. Do not send or upload.',
@@ -289,7 +311,8 @@ export function chatgptTarget(
         provider,
         signal,
         3,
-        budget
+        budget,
+        options.decisionDiagnostic
       );
       facts = await page.facts();
       if (!target.matchesDraft(facts, input)) throw new JevFailure('fill.text_mismatch', 'fill.text_mismatch');
@@ -341,7 +364,18 @@ export function chatgptTarget(
         `(() => {const f=(${COMPOSER_LOOKUP})()?.closest('form'); return [...(f?.querySelectorAll('[aria-haspopup="menu"]')||[])].map(e=>(e.innerText||'').trim()).filter(t=>t.includes(${JSON.stringify(effort)}));})()`
       );
       if (!Array.isArray(pill) || pill.length !== 1 || pill[0] !== modePill)
-        modePill = await setMode(page, model, effort, provider, signal, judgeProvider, delay, budget, options.now);
+        modePill = await setMode(
+          page,
+          model,
+          effort,
+          provider,
+          signal,
+          judgeProvider,
+          delay,
+          budget,
+          options.now,
+          options.decisionDiagnostic
+        );
       await predictAct(
         page,
         'Click Send once to submit the committed prompt. Do not type, upload or change models.',
@@ -350,7 +384,8 @@ export function chatgptTarget(
         provider,
         signal,
         3,
-        budget
+        budget,
+        options.decisionDiagnostic
       );
       // A model decision is not a gate: re-read all hard facts immediately before persistence.
       facts = await page.facts();
@@ -392,14 +427,16 @@ export function chatgptTarget(
   };
   return target;
 }
-function cardsMatch(cards: string[] | null, path: string): boolean {
+export function cardsMatch(cards: string[] | null, path: string): boolean {
   if (!cards || cards.length !== 1) return false;
   const wanted = basename(path);
   const escaped = wanted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const dot = wanted.lastIndexOf('.');
   const stem = (dot > 0 ? wanted.slice(0, dot) : wanted).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const suffix = (dot > 0 ? wanted.slice(dot) : '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^(?:${escaped}|${stem} \\(\\d+\\)${suffix})$`).test(cards[0]!);
+  // Provider collision names have no intervening space: report(1).txt.
+  // Match the owner driver's positive integer suffix, not an arbitrary file.
+  return new RegExp(`^(?:${escaped}|${stem}\\([1-9][0-9]*\\)${suffix})$`).test(cards[0]!);
 }
 export function bindChatgpt(facts: OracleFacts, input: JevAskInput, record: OperationRecord) {
   const digest = typeof record.squashed_sha256 === 'string' ? record.squashed_sha256 : squashedSha256(input.prompt);
@@ -431,12 +468,51 @@ export function bindChatgpt(facts: OracleFacts, input: JevAskInput, record: Oper
   }
   return { found: true, answer: answer?.text ?? '', final: answer?.final_controls === true };
 }
-async function chips(browser: OracleBrowser): Promise<string> {
+export async function chips(browser: OracleBrowser): Promise<string> {
   return String(
     await browser.evaluate(
-      `(() => { const c=(${COMPOSER_LOOKUP})(); const f=c?.closest('form'); if(!f)return null; const copy=f.cloneNode(true); copy.querySelectorAll('#prompt-textarea,[data-composer-markdown],[aria-haspopup="menu"],button,[class~="group/resource-card"]').forEach(e=>e.remove());return (copy.textContent||'').replace(/\\s+/g,' ').trim();})()`
+      `(() => { const c=(${COMPOSER_LOOKUP})(); const f=c?.closest('form'); if(!f)return null; const copy=f.cloneNode(true); copy.querySelectorAll('#prompt-textarea,[data-composer-markdown],[aria-haspopup="menu"],button,[class~="group/resource-card"],[class~="group/composer-attachment"]').forEach(e=>e.remove());return (copy.textContent||'').replace(/\\s+/g,' ').trim();})()`
     )
   );
+}
+async function chooseAction(
+  observed: PageState,
+  goal: string,
+  phase: ActionDecisionDiagnostic['phase'],
+  attempt: number,
+  provider: DecisionProvider,
+  signal: AbortSignal,
+  diagnostic?: TargetBrowserOptions['decisionDiagnostic']
+): ReturnType<typeof choose> {
+  let answers: Answer[] = [];
+  const traced: DecisionProvider = {
+    id: provider.id,
+    model: provider.model,
+    async decide(request, options) {
+      const result = await provider.decide(request, options);
+      answers = result.answers;
+      return result;
+    },
+  };
+  const emit = (decision?: Awaited<ReturnType<typeof choose>>, error?: unknown) => {
+    try {
+      diagnostic?.(actionDecisionDiagnostic(phase, attempt, observed, answers, decision, error));
+    } catch {
+      /* Diagnostics must not change action/retry semantics. */
+    }
+  };
+  try {
+    const decision = await choose(observed, goal, [], traced, {
+      signal,
+      cacheKey: phase === 'mode' ? 'hud-jev:mode' : 'hud-jev:ask',
+      includeFill: phase === 'fill',
+    });
+    emit(decision);
+    return decision;
+  } catch (error) {
+    emit(undefined, error);
+    throw error;
+  }
 }
 async function predictAct(
   page: ChatPage,
@@ -446,17 +522,14 @@ async function predictAct(
   provider: DecisionProvider,
   signal: AbortSignal,
   max: number,
-  budget: { remaining: number }
+  budget: { remaining: number },
+  diagnostic?: TargetBrowserOptions['decisionDiagnostic']
 ): Promise<void> {
   for (let i = 0; i < max; i++) {
     signal.throwIfAborted();
     const observed = await page.browser.observe(false);
     if (budget.remaining-- <= 0) throw new JevFailure('send.budget', 'send.budget');
-    const decision = await choose(observed, goal, [], provider, {
-      signal,
-      cacheKey: 'hud-jev:ask',
-      includeFill: phase === 'fill',
-    });
+    const decision = await chooseAction(observed, goal, phase, i + 1, provider, signal, diagnostic);
     if ('refused' in decision) {
       if (i === max - 1) throw new DecisionRefused(decision.question);
       continue;
@@ -493,7 +566,8 @@ async function setMode(
   judge: JudgmentProvider,
   sleep: (ms: number) => Promise<void>,
   budget: { remaining: number },
-  now?: () => number
+  now?: () => number,
+  diagnostic?: TargetBrowserOptions['decisionDiagnostic']
 ): Promise<string> {
   const excluded = new Set<number>();
   for (let i = 0; i < 8; i++) {
@@ -549,12 +623,14 @@ async function setMode(
       }
     }
     if (budget.remaining-- <= 0) throw new JevFailure('mode.budget', 'mode.budget');
-    const decision = await choose(
+    const decision = await chooseAction(
       observed,
       `Open the composer model menu, choose model ${model} and effort ${effort}. Do not type, send or upload. When selected, finish.`,
-      [],
+      'mode',
+      i + 1,
       provider,
-      { signal, cacheKey: 'hud-jev:mode', includeFill: false }
+      signal,
+      diagnostic
     );
     if ('refused' in decision) continue;
     const action = observed.actions.find((a) => a.id === decision.choice);

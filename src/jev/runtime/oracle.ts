@@ -1,6 +1,7 @@
 // Owned web-oracle lifecycle. Ported from the owner's jev-ask send/wait/reconcile.
 // Only prepare() and the single persisted click may act; every recovery path is read-only.
 import { randomUUID } from 'node:crypto';
+import type { BrowserAcquired, BrowserAcquisition, BrowserOwnership } from '../browser.js';
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { acquireBrowserLock, acquireWaitLease, type HeldLease } from '../ask/lease.js';
@@ -56,8 +57,8 @@ export interface OracleTarget {
   readonly provider: 'chatgpt' | 'aistudio';
   readonly root: string;
   settled(url: unknown): url is string;
-  open(url: string): Promise<OraclePage>;
-  attach(id: string): Promise<OraclePage>;
+  open(url: string, acquisition?: BrowserAcquisition): Promise<OraclePage>;
+  attach(id: string, acquisition?: BrowserAcquisition): Promise<OraclePage>;
   targets(): Promise<Array<{ targetId: string; url: string }>>;
   bindPage?(page: OraclePage, record: OperationRecord, signal: AbortSignal): void;
   prepare(
@@ -99,6 +100,9 @@ export function chatgptStore(stateDir: string, key: string): OracleStore {
     },
   };
 }
+export type CollectTimingStep =
+  'live_facts' | 'saved_open' | 'saved_facts' | 'saved_close' | 'persist' | 'live_cleanup';
+
 export interface OracleContext {
   stateDir: string;
   key: string;
@@ -116,6 +120,15 @@ export interface OracleContext {
   sleep?: (ms: number) => Promise<void>;
   phase?: (phase: string) => void;
   diagnostic?: (code: string, error?: unknown) => void;
+  /** Finite step names and elapsed time only; no page content. */
+  timing?: (step: CollectTimingStep, elapsedMs: number) => void;
+  /** Retain/drain acquisition cleanup independently of the job/answer. */
+  retainCleanup?: (task: Promise<void>) => void;
+  cleanup?: (
+    step: 'open' | 'attach' | 'saved_close',
+    elapsedMs: number,
+    code: 'closed' | 'detached' | 'abandoned'
+  ) => void;
 }
 export interface OracleResult {
   status: string;
@@ -230,9 +243,10 @@ async function runOracleLifecycle(ctx: OracleContext): Promise<OracleResult> {
         if (ctx.resumeOnly) return result(ctx, 'interrupted');
         assertCanSend(record, ctx.input.confirmResend === true);
         ctx.phase?.('prepare');
-        page = await readPage(ctx, 'Target.createTarget', () =>
+        page = await readPage(ctx, 'Target.createTarget', (onAcquire) =>
           ctx.target.open(
-            ctx.input.conversation && ctx.input.conversation !== 'new' ? ctx.input.conversation : ctx.target.root
+            ctx.input.conversation && ctx.input.conversation !== 'new' ? ctx.input.conversation : ctx.target.root,
+            onAcquire
           )
         );
         const before = await ctx.target.prepare(page, ctx.input, ctx.provider, ctx.signal, ctx.fields);
@@ -498,37 +512,80 @@ function readTarget<T>(ctx: OracleContext, method: string, read: () => Promise<T
   return oracleRead(method, read, ctx.signal, ctx.readTimeoutMs);
 }
 
-/** A deadline ends observation, not the underlying factory. Retain ownership of
- * a late result: close a newly opened observer, but only detach a send-tab attach.
- * Track both arrival orders so a timeout racing resolution disposes exactly once. */
+/** Cleanup has its own host-clock bound, never the already-aborted job signal.
+ * The answer doesn't await it; the runtime retains and drains it before exit. */
+function cleanPage(
+  ctx: OracleContext,
+  step: 'open' | 'attach' | 'saved_close',
+  resource: Promise<BrowserOwnership>,
+  close: boolean
+): Promise<void> {
+  const started = Date.now();
+  return (async () => {
+    let owned: BrowserOwnership | undefined;
+    let code: 'closed' | 'detached' | 'abandoned' = 'abandoned';
+    try {
+      await oracleRead(
+        'Target.closeTarget',
+        async () => {
+          owned = await resource;
+          if (close) await owned.close();
+          else await owned.detach();
+        },
+        undefined,
+        2_000
+      );
+      code = close ? 'closed' : 'detached';
+    } catch {
+      // A stuck close must not retain the transport or runtime indefinitely.
+    } finally {
+      const acquired = owned;
+      if (acquired && (close || code === 'abandoned'))
+        await oracleRead('Target.detachFromTarget', () => acquired.detach(), undefined, 1_000).catch(() => undefined);
+      ctx.cleanup?.(step, Math.max(0, Date.now() - started), code);
+    }
+  })();
+}
+
+/** Register ownership at creation, before the factory's navigation can hang.
+ * A recovery attach owns only a connection: abort must never close the send tab.
+ * Late injected factories without early ownership still get a bounded disposal. */
 async function readPage(
   ctx: OracleContext,
   method: 'Target.createTarget' | 'Target.attachToTarget',
-  read: () => Promise<OraclePage>
+  read: (acquisition: BrowserAcquisition) => Promise<OraclePage>
 ): Promise<OraclePage> {
-  let abandoned = false;
-  let acquired: OraclePage | undefined;
-  let disposed = false;
-  const dispose = async () => {
-    const page = acquired;
-    if (!page || disposed) return;
-    disposed = true;
-    if (method === 'Target.createTarget')
-      await oracleRead('Target.closeTarget', () => page.close(), undefined, ctx.readTimeoutMs).catch(() => undefined);
-    // Detach also releases the connection if an owned target's close timed out.
-    await oracleRead('Target.detachFromTarget', () => page.detach(), undefined, ctx.readTimeoutMs).catch(
-      () => undefined
-    );
-  };
+  const cancel = new AbortController();
+  let release!: () => void;
+  const lifetime = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  ctx.retainCleanup?.(lifetime);
+  let acquired = false;
+  let provide!: BrowserAcquired;
+  const resource = new Promise<BrowserOwnership>((resolve) => {
+    provide = (ownership) => {
+      if (acquired) return;
+      acquired = true;
+      resolve(ownership);
+    };
+  });
   try {
-    return await readTarget(ctx, method, async () => {
-      acquired = await read();
-      if (abandoned) void dispose();
-      return acquired;
+    const page = await readTarget(ctx, method, async () => {
+      const page = await read({ onAcquire: provide, signal: AbortSignal.any([ctx.signal, cancel.signal]) });
+      provide(page);
+      return page;
     });
+    release();
+    return page;
   } catch (error) {
-    abandoned = true;
-    void dispose();
+    cancel.abort(error);
+    void cleanPage(
+      ctx,
+      method === 'Target.createTarget' ? 'open' : 'attach',
+      resource,
+      method === 'Target.createTarget'
+    ).then(release, release);
     throw error;
   }
 }
@@ -537,13 +594,13 @@ async function readPage(
 async function locate(ctx: OracleContext, record: OperationRecord): Promise<OraclePage | undefined> {
   if (ctx.target.settled(record.conversation_url)) {
     const url = record.conversation_url;
-    return readPage(ctx, 'Target.createTarget', () => ctx.target.open(url));
+    return readPage(ctx, 'Target.createTarget', (acquired) => ctx.target.open(url, acquired));
   }
   const id = typeof record.sent_target_id === 'string' ? record.sent_target_id : '';
   const targets = await readTarget(ctx, 'Target.getTargets', () => ctx.target.targets());
   const sent = targets.find((target) => target.targetId === id);
-  if (sent) return readPage(ctx, 'Target.attachToTarget', () => ctx.target.attach(sent.targetId));
-  const root = await readPage(ctx, 'Target.createTarget', () => ctx.target.open(ctx.target.root));
+  if (sent) return readPage(ctx, 'Target.attachToTarget', (acquired) => ctx.target.attach(sent.targetId, acquired));
+  const root = await readPage(ctx, 'Target.createTarget', (acquired) => ctx.target.open(ctx.target.root, acquired));
   try {
     ctx.target.bindPage?.(root, record, ctx.signal);
     const facts = await root.facts();
@@ -551,7 +608,7 @@ async function locate(ctx: OracleContext, record: OperationRecord): Promise<Orac
     const added = facts.sidebar.filter((href) => !before.includes(href)).filter((href) => ctx.target.settled(href));
     if (added.length === 1) {
       await root.close();
-      return readPage(ctx, 'Target.createTarget', () => ctx.target.open(added[0]!));
+      return readPage(ctx, 'Target.createTarget', (acquired) => ctx.target.open(added[0]!, acquired));
     }
     // A root draft is useful for the one conservative release check.
     return root;
@@ -585,13 +642,21 @@ async function waitForAnswer(
   let recoveries = 0;
   let changedAt = now();
   let lastGeneratingJudgment = -Infinity;
+  const timed = async <T>(step: CollectTimingStep, read: () => T | Promise<T>): Promise<T> => {
+    const started = now();
+    try {
+      return await read();
+    } finally {
+      ctx.timing?.(step, Math.max(0, now() - started));
+    }
+  };
   try {
     const tabs = record.tabs as { observer?: unknown } | undefined;
     if (typeof tabs?.observer === 'string' && tabs.observer !== record.sent_target_id) {
       const observer = tabs.observer;
-      const old = await readPage(ctx, 'Target.attachToTarget', () => ctx.target.attach(observer)).catch(
-        () => undefined
-      );
+      const old = await readPage(ctx, 'Target.attachToTarget', (acquired) =>
+        ctx.target.attach(observer, acquired)
+      ).catch(() => undefined);
       await old?.close().catch(() => undefined);
     }
     page = await locate(ctx, record);
@@ -608,7 +673,8 @@ async function waitForAnswer(
       if (stable === 2) ctx.phase?.('collect');
       let facts: OracleFacts;
       try {
-        facts = await page.facts();
+        const live = page;
+        facts = stable === 2 ? await timed('live_facts', () => live.facts()) : await live.facts();
       } catch (error) {
         aborted(ctx);
         if (browserTimeout(error)) throw error;
@@ -687,27 +753,30 @@ async function waitForAnswer(
           ctx.diagnostic?.(`cross_check.${crossCheck}`, error);
         };
         if (ctx.target.provider === 'aistudio') {
-          // Drive persistence lags the final feedback bar. Preserve the live answer,
-          // and use the saved view only if it is final and not shorter (owner driver).
-          for (let poll = 0; poll < 20 && !ctx.target.settled(facts.url) && now() < deadline; poll++) {
-            await sleep(2_000);
-            try {
-              facts = await page.facts();
-            } catch (error) {
-              aborted(ctx);
-              crossCheckFailure(error);
-              break; // Drive settling is best effort once the live answer is proven final.
-            }
-          }
+          // A stable, final live answer is authoritative. Do not spend 20 ×
+          // (2s + virtualised facts) waiting for an optional Drive address.
+          // If already settled, give the *whole* saved-view cross-check 5s,
+          // including opening a hidden tab and its render pauses, not 5s per RPC.
           if (ctx.target.settled(facts.url)) {
             record = await ctx.store.save({ conversation_url: facts.url }, joined.lease);
             let saved: OraclePage | undefined;
+            const budget = new AbortController();
+            const timer = setTimeout(
+              () => budget.abort(new JevFailure('browser_timeout', 'browser_timeout')),
+              Math.min(5_000, ctx.readTimeoutMs ?? 5_000)
+            );
+            const signal = AbortSignal.any([ctx.signal, budget.signal]);
+            const crossContext = { ...ctx, signal };
             try {
               const url = facts.url;
-              saved = await readPage(ctx, 'Target.createTarget', () => ctx.target.open(url));
-              // A bounded, best-effort cross-check must never discard the proven live answer.
-              ctx.target.bindPage?.(saved, record, AbortSignal.any([ctx.signal, AbortSignal.timeout(30_000)]));
-              const view = await saved.facts();
+              saved = await timed('saved_open', () =>
+                readPage(crossContext, 'Target.createTarget', (acquired) => ctx.target.open(url, acquired))
+              );
+              ctx.target.bindPage?.(saved, record, signal);
+              const observer = saved;
+              const view = await timed('saved_facts', () =>
+                oracleRead('Runtime.evaluate', () => observer.facts(), signal, ctx.readTimeoutMs)
+              );
               const reread = ctx.target.binding(view, ctx.input, record);
               if (
                 !view.human &&
@@ -724,10 +793,18 @@ async function waitForAnswer(
               crossCheckFailure(error);
               // Every saved-view failure keeps the stable, final live answer.
             } finally {
-              await saved?.close().catch(() => undefined);
+              clearTimeout(timer);
+              if (saved) {
+                const observer = saved;
+                const cleanup = timed('saved_close', () =>
+                  cleanPage(ctx, 'saved_close', Promise.resolve(observer), true)
+                );
+                ctx.retainCleanup?.(cleanup);
+              }
             }
-          }
+          } else crossCheck = 'unavailable';
         }
+        const persistedAt = now();
         const file = writeOracleFile(ctx.stateDir, ctx.key, '.md', finalAnswer + '\n');
         await ctx.store.save(
           {
@@ -741,6 +818,7 @@ async function waitForAnswer(
           },
           joined.lease
         );
+        ctx.timing?.('persist', Math.max(0, now() - persistedAt));
         return result(ctx, 'answered', {
           answer: finalAnswer,
           answer_file: file,
@@ -762,13 +840,15 @@ async function waitForAnswer(
     if (page) {
       // Only an owned observer may close. A send target is retained until final collection.
       const disk = await ctx.store.read().catch(() => null);
-      if (
-        page.id !== initial.sent_target_id ||
+      const observer = page;
+      const cleanup = () =>
+        observer.id !== initial.sent_target_id ||
         (disk?.completion === 'COMPLETE' &&
           (ctx.target.provider !== 'aistudio' || ctx.target.settled(disk.conversation_url)))
-      )
-        await page.close().catch(() => undefined);
-      else await page.detach().catch(() => undefined);
+          ? observer.close().catch(() => undefined)
+          : observer.detach().catch(() => undefined);
+      if (disk?.completion === 'COMPLETE') await timed('live_cleanup', cleanup);
+      else await cleanup();
     }
   }
 }
