@@ -884,6 +884,20 @@ later only when the record shows a problem.
   owner acts in the main session. This supersedes "seen/overturn per item" in the previous entry; lists rank by
   class, then newest first, with older items folded.
 
+### 2026-11-09 Home and Work tabs: approved layout (Jacob)
+
+From four mockup rounds (Argon, two open explorations, one final), the owner approved `HOME-VIS4`: the panel has two
+tabs in the HOME-VIS2 visual language (colour means demand on the owner; role colours only on role words; lane
+spines and phase bars).
+- **Home (Triage):** needs you (jobs that ended needing a human, with waited minutes), then "worth a look" (an
+  answer that departs from the worker's suggested default, or a one-way field when present), then other calls
+  (answers, review verdicts, design notes), newest first and folded; then packages with phase bars and call counts;
+  then one line per worker (harness, role, task, model, effort). No bottom status card.
+- **Work (Lanes):** one lane per package in queue order, worker cards inside it (the card design of the entry above,
+  helpers as phase results), the package's calls beside them. `↵` on Home jumps to the matching lane or card.
+- Display only and passive data, as in the entry above. Implementation is planned with the architect and built by
+  pi implementers, who also get the mockup PNGs as the visual reference.
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
