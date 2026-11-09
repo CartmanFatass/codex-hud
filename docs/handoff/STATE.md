@@ -132,8 +132,11 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   approved layout"); display only, passive data, model roles and the HUD's own credentials file decided the same day.
   Architect plan archived in `docs/reviews/2026-11-09-r5-ux-plan-architect.md`. Packages:
   - P1 passive records + Home + transitional Work (running, branch `r5ux-p1`);
-  - KEYS `$HUD_HOME/credentials.env`, origin-bound keys, per-tier effort for DeepSeek, no jev-ask TOML fallback
-    (running in parallel, branch `r5ux-keys`);
+  - KEYS merged (`7ef5b2f`; reviews `docs/reviews/2026-11-09-r5ux-keys-review-*`, accept round 2; gate on the
+    same code: unit 4092/0 fail, mjs 391/0, hud-mcp 212/0, WP0 1176/1176, format clean). Owner machine configured:
+    `~/.hud/credentials.env`, `~/.hud/config.json` (Jev + AI Studio, migrated from the jev-ask TOML), HUD settings on
+    `https://api.mistral.ai/v1` with `deepseek-v4-1-flash-1017` at none/low/high (live check: 200 on all three tiers,
+    0.7–1.7 s); settings backups `hud-settings.json.bak.20261109-keys`;
   - P2 final Work lanes and cards + 110-column peek (after P1);
   - P3a job material authority (parallel with P2 in disjoint files), P3b option-B sentences (after P2 + P3a);
   - later: decision-provider judgements (`≠` when rules are unsure, card attention, stall category).
