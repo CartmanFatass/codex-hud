@@ -123,8 +123,9 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - Live look (owner, 2026-11-09, staged by `scripts/demo-r5-jobs.mjs` on branch `r5-acc`): cards read as process
     state, not work progress. Decision in concept §15 "Agent cards show work progress, not process state".
     Hermes stalled on a multi-line prompt (killed after 11 min); retry with a single-line prompt later.
-  - Next: R5-UX (card redesign, role colours, minute times, small-model progress via a job-scoped material
-    authority), then R6.
+  - Next: R5-UX, refocused the same day (concept §15 "Home page: decisions made for you"): home page = decisions
+    made for you, needs you, work progress, one-line workers; detailed cards move to an Agents tab. Argon layout
+    proposal requested (`tmp/tasks/HOME-ARGON/`); architect card design archived for the Agents tab. Then R6.
   - Follow-ups: job-scoped material authority; per-root change stamp; no native-ref writer yet (exact-ref
     enrichment is fixture-only).
 

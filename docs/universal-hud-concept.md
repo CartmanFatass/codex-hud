@@ -843,6 +843,22 @@ that let a person steer delegated work. Decisions:
   material authority (R5 follow-up) a prerequisite: job text may reach the small model only through it.
 Queued as R5-UX before R6; the R5 live-look findings in that package's notes are folded in.
 
+### 2026-11-09 Home page: decisions made for you (Jacob)
+
+Same day, refined: in a real day of work the owner never interacted with a worker; the orchestrator answered every
+worker question and made the calls. The owner's view is therefore the owner ↔ orchestrator relationship.
+- The home page summarises, by priority: **decisions made for you** (most important: every choice the orchestrator
+  made where it could have asked; "asked you, settled by default" first; seen/overturn per item, overturn delivered to
+  the orchestrator's session), **needs you** (only what the orchestrator waits on from the owner), **work progress**
+  by package and queue, and one summary line.
+- Workers shrink to one line each on the home page: harness, role, task, model, effort. An implementer's own helpers
+  are not separate items. The detailed cards (previous entry) move to their own Agents tab.
+- Recording: the orchestrator records decisions through a new MCP tool; worker-question answers on disk are picked up
+  automatically as a fallback.
+- Argon is asked for the first layout proposal with rendered mockups; the orchestrator decides from it. The previous
+  entry's card design (architect consult archived in `docs/reviews/2026-11-09-r5-ux-architect.md`) now applies to the
+  Agents tab.
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
