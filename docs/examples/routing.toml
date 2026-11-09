@@ -94,3 +94,17 @@ imp = "pi-imp"
 reviewer = "claude-opus"
 sonic = "pi-fast"
 jev = "jev-local"
+
+# Internal pi helpers are independent of the public reviewer preset (Claude here).
+# Missing fields use these HUD defaults; only model and effort are accepted.
+# Sonic supports low/high; reviewer uses pi's effort vocabulary and startup checks.
+# Effective helpers are copied at parent creation; existing parents keep their pair.
+# Adopting these tables is optional. Older executables reject them: when rolling
+# back, restore the matching routing configuration rather than silently stripping it.
+[pi_helpers.sonic]
+model = "mistral/deepseek-v4-1-flash-1017"
+effort = "high"
+
+[pi_helpers.reviewer]
+model = "openai/gpt-6.1-sol"
+effort = "xhigh"

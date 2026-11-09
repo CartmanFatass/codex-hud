@@ -146,6 +146,7 @@ for (const [role, phase, mapped] of [
     assert.equal(launch.argv[launch.argv.indexOf('--thinking') + 1], 'high');
     assert.equal(f.calls.length, 0, 'no direct herdr launch or first prompt');
     assert.equal(f.receipt(made.job).pi_dispatch.launch, 'acked');
+    assert.equal(f.receipt(made.job).pi_dispatch.contract_version, 1, 'PR1 retains the external transport');
     assert.equal(made.prompted, true);
     assert.deepEqual(made.executor, {
       kind: 'herdr',

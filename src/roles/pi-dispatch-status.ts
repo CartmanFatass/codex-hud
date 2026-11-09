@@ -70,7 +70,8 @@ export function parseDispatchStatus(
     raw.slot !== slot ||
     raw.role !== role ||
     raw.output_path !== output ||
-    !STATES.includes(String(raw.state)) ||
+    typeof raw.state !== 'string' ||
+    !STATES.includes(raw.state) ||
     typeof raw.output_written !== 'boolean' ||
     typeof raw.session_id !== 'string' ||
     raw.session_id.length < 1 ||
