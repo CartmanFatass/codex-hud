@@ -916,13 +916,13 @@ spines and phase bars).
   name; superseded by "Plugin independence": read only by `hud import`). Non-secret provider settings (base URLs, models, efforts) stay in configuration, never keys. No key is read
   from another tool's files (pi, jev-ask, Codex); the process environment may override for tests.
 
-### 2026-11-09 Codex and Claude as workers: frozen (Jacob)
+### 2026-11-09 Pi main session with Codex/Claude workers: no separate work (Jacob)
 
-Delegated workers run on pi (imp, reviewer, sonic, architect) and Jev (oracle). Launching Codex, Claude or Grok as a
-delegated worker has no current need. The launch adapters R2 already shipped (`codex-zsh`, `claude`, `grok`) stay in
-the code untouched, but get no new work: no adaptation in PIROLE or R6a, no R7 acceptance scenarios, no fixes beyond
-keeping existing tests green. R6b decides whether to remove them. Codex, Claude and pi as **main sessions** (bar,
-panel, statusline, role tools) are unaffected.
+The owner has no need for a pi main session dispatching Codex or Claude workers. There is no pi-specific code for it:
+workers launch through the common herdr path (R2 adapters `codex-zsh`, `claude`, `grok`), whichever harness the main
+session runs, and pi's main-session binding (R6a A2) is needed for pi workers anyway. So nothing is removed and the
+worker adapters stay supported as before; the only saving is in R7, which does not test the pi-main × Codex/Claude-
+worker combinations separately.
 
 ### 2026-11-09 Plugin independence (Jacob)
 
