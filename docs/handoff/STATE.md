@@ -149,7 +149,8 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   as explicit config; pi-roles is built into the HUD. Packages: A0 independence (after P1), A1 release/activation,
   A2 ordinary-session binding (A1/A2 first), A3 panel control, A4 Claude plugin, A5 pi package and status segment,
   A6 role-summary cache, A7 `tree-page.ts` lifecycle hunk (after P2), A8 Codex activation and rehearsal, PIROLE
-  (pi-roles built in; architect consult first).
+  (pi-roles built in; plan `docs/reviews/2026-11-09-pirole-plan-architect.md`, slices PR1–PR5, PR1 when a slot frees).
+  Running: A1 (`r6a-a1`), A2 (`r6a-a2`), next to R5-UX P1.
   The r5-acc demo stage is merged (`1f20f01`).
 
 | Package | Deliverable | Acceptance |
