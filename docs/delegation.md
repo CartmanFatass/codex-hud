@@ -96,6 +96,10 @@ architect 也改用 Codex：gpt-6-astra high（与 pi 一致），独立 tab，�
 已在 pi 上运行的工作包照常跑完；sonic、前端、Hermes 的路由不变。目的是粗略比较 Codex 与 pi 在同一 OAI 模型上的数据（不是严格对照）：
 数据直接看 toktrack，事后一起分析；编排者不另做逐包记录（Jacob，2026-11-09）。
 
+## sonic 对所有角色开放（2026-11-09，Jacob 定）
+
+sonic 是工具型 worker：除 sonic 自身外，所有角色（编排者、implementer、reviewer、architect，以及 Codex/Claude worker）都可调用；sonic 不能再调用 sonic 或任何角色，避免递归。其他 worker 仍只一层。只读角色调用时 sonic 也只读（只写自己的报告）。调用者对 sonic 产出负责；sonic 仍不写测试、不排错、不做设计决定。产品实现见 PIROLE（PR1 小补丁、PR3 工具、PR4 Codex/Claude worker 的 sonic 通道），决定记录在概念 §15。现有 pi-roles 工具链中 reviewer/architect 暂无 call_sonic，产品落地前以此为准。
+
 ## 升级规则
 
 - sonic 报告需要判断、改动超出指定文件、或检查跑不绿且原因不在环境：调用方自己做，或交 implementer，brief 写明保留哪些成果。
