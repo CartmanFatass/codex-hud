@@ -905,10 +905,14 @@ spines and phase bars).
   needing attention, a stall's category) go to the decision provider. TypeSafe and the OpenAI Decisions API are
   interchangeable implementations of it; one is primary, the other takes over on quota or error.
 - Sentences (card progress line, result and change digests, recap, failure cause) go to DeepSeek V4.1 Flash on
-  Mistral, called directly with the key read from the owner's existing key file, not copied. Its efforts are
+  Mistral, called directly. Its efforts are
   none/low/high/xhigh/max; the orchestrator sets them per task (labels none, digests and progress low, recap and
   cause high; never xhigh/max in the background).
 - Calls are change-driven, batched, limited to visible live work, queued per provider, and never block a repaint.
+- The project is self-contained: its keys live in its own `~/.hud/credentials.env` (mode 0600; TypeSafe, OpenAI,
+  Mistral), read by the existing hardened env reader that Jev's `~/.hud/jev.env` uses today (which becomes the legacy
+  name). Non-secret provider settings (base URLs, models, efforts) stay in configuration, never keys. No key is read
+  from another tool's files (pi, jev-ask, Codex); the process environment may override for tests.
 
 ## 16. 评审状态与下一次评审
 
