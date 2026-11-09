@@ -128,6 +128,16 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
     proposal requested (`tmp/tasks/HOME-ARGON/`); architect card design archived for the Agents tab. Then R6.
   - Follow-ups: job-scoped material authority; per-root change stamp; no native-ref writer yet (exact-ref
     enrichment is fixture-only).
+- R5-UX planned (2026-11-09). Layout approved by the owner from mockup `HOME-VIS4` (concept §15 "Home and Work tabs:
+  approved layout"); display only, passive data, model roles and the HUD's own credentials file decided the same day.
+  Architect plan archived in `docs/reviews/2026-11-09-r5-ux-plan-architect.md`. Packages:
+  - P1 passive records + Home + transitional Work (running, branch `r5ux-p1`);
+  - KEYS `$HUD_HOME/credentials.env`, origin-bound keys, per-tier effort for DeepSeek, no jev-ask TOML fallback
+    (running in parallel, branch `r5ux-keys`);
+  - P2 final Work lanes and cards + 110-column peek (after P1);
+  - P3a job material authority (parallel with P2 in disjoint files), P3b option-B sentences (after P2 + P3a);
+  - later: decision-provider judgements (`≠` when rules are unsure, card attention, stall category).
+  The r5-acc demo stage is merged (`1f20f01`).
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
