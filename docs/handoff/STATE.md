@@ -96,7 +96,13 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   - Revisit if a live run shows a stall.
 - R5 (2026-11-09, owner-approved): architect design decided in `tmp/tasks/R5/design.md` (archived with R5a).
   R5 runs as R5a (records, external registration, observation, pure tree composition) then R5b (panel,
-  presentation, summaries/dry-run, performance). R5a in progress.
+  presentation, summaries/dry-run, performance).
+- R5a merged (`1817a64`): optional association timestamps and native refs (no native-ref writer yet: the facade
+  holds no complete ref), `hud observe-herdr` external registration, bounded read-only job collector (herdr
+  list matched to recorded agents only; Jev liveness from `runtime.json` + `/proc`, no socket), pure
+  composition into `SubagentTree` (one node per job; exact-ref dedupe enriches the native node). Archives:
+  `docs/reviews/2026-11-09-r5-*`, `2026-11-09-r5a-review-*`. Merge gate on the integrated tree: unit 4007/0
+  fail, mjs 381/0, hud-mcp 211/0, WP0 1176/1176 — the first fully green gate. Next: R5b.
 - DEBT1 merged (`18dca62`): B11 spaces path (missing fixture dependency), cloud preview self-test (stale
   inventory; now checked against real build output, run after builds), load-sensitive statusline (test-child
   clock pin + real-clock degradation tests), panel publisher and runtime-compose fixture guards (measured).
