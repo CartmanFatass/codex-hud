@@ -14,6 +14,7 @@ import { diagnosticLines, tokenRateDetails } from './hud-diagnostics.js';
 import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
 import { newestIntent } from './cards.js';
+import { effectiveStatus, shownNode, badgeOf, jobSections, facadeOnly } from './job-details.js';
 import { conflictDetails } from '../core/link/conflict-details.js';
 import { formatTokenRate } from '../collectors/token-rate.js';
 import { sameSessionRef } from '../core/identity.js';
@@ -158,13 +159,26 @@ function candidateLines(view: DelegationView, node: LinkTreeNode, isRoot: boolea
 }
 
 /** Read only the same planned destination and immutable view used by this frame. */
-function delegationInspectorRows(view: DelegationView, selected: string | null, width: number): MonitorRow[] {
+function delegationInspectorRows(
+  view: DelegationView,
+  selected: string | null,
+  width: number,
+  input: MonitorData,
+  state: MonitorState,
+  now: number
+): MonitorRow[] {
   const matches = view.dest.rows.filter((row) => row.key === selected);
   if (matches.length !== 1) return wrapped('Selection unavailable', width).map((text) => ({ text }));
   const row = matches[0];
   if (row.kind === 'putAway') return wrapped('Put away · aggregate', width).map((text) => ({ text }));
   const pn = row.pn;
-  if (!pn) return wrapped('Selection unavailable', width).map((text) => ({ text }));
+  if (!pn) {
+    // A destination with no projected node is an ordinary tree row (a job, or a native thread the ledger does not
+    // hold) added beside the ledger's: its Inspector is the ordinary one.
+    const ordinary = selected === null ? undefined : findNode(input.tree.nodes, selected);
+    if (ordinary) return agentInspectorRows(input, state, ordinary, width, now);
+    return wrapped('Selection unavailable', width).map((text) => ({ text }));
+  }
   const node = pn.node;
   if (!node) {
     const conflict = pn.relation && conflictDetails(pn.relation);
@@ -372,6 +386,210 @@ function delegationInspectorRows(view: DelegationView, selected: string | null, 
   return lines.flatMap((line) => wrapped(line, width).map((text) => ({ text })));
 }
 
+/** The Inspector's rows for one agent of the tree: an ordinary node, or a facade job and its job sections. */
+function agentInspectorRows(
+  input: MonitorData,
+  state: MonitorState,
+  node: SubagentTreeNode,
+  width: number,
+  now: number
+): MonitorRow[] {
+  // The glyphs, then the model and the effort in words: here there is room to say them.
+  const bound = badgeOf(node);
+  const model = bound.model ? monitorText(bound.model) : undefined;
+  const effort = bound.effort ? monitorText(bound.effort) : undefined;
+  const glyphs =
+    displayConfig().glyphs !== 'text' && classifyModelFamily(model)
+      ? renderModelEffortToken(model, effort, { mode: 'glyph' })
+      : '';
+  const named = [model, effort].filter(Boolean).join(' · ');
+  const token = glyphs ? `${glyphs}${named ? ` ${colors.dim(named)}` : ''}` : named;
+  const status = nodeStatus(node, now);
+  // Sanitize external text before painting. Never pass our own ANSI spans
+  // back through monitorText (which correctly escapes untrusted controls).
+  // Both names show here: the model's name for what the agent does, and
+  // the name Codex's own picker and transcript print.
+  // The heading in the agent's own colour, as the timeline names it.
+  // With labels as names the label heads it and Codex's name is under
+  // it; without, the name heads it and the label is under it.
+  const own = agentPaint(node.id);
+  const rows: MonitorRow[] = wrapped(shownName(shownNode(node), state.labelAsName), width).map((text) => ({
+    text: theme.strong(own(text)),
+  }));
+  // A job heads the Inspector by its own name whatever the setting; the native name and the model's label are facts under it.
+  const alias = node.job
+    ? [
+        ...(node.name !== node.job.name ? [t('name {name}', { name: node.name })] : []),
+        ...(labelled(node) && node.label !== node.job.name ? [t('label {label}', { label: node.label! })] : []),
+      ]
+    : labelled(node)
+      ? [state.labelAsName ? t('name {name}', { name: node.name }) : t('label {label}', { label: node.label! })]
+      : [];
+  for (const fact of alias) rows.push(...wrapped(fact, width).map((text) => ({ text: colors.dim(text) })));
+  // A path of two or more segments locates the agent (`/root/<task>`).
+  // One segment says nothing the name did not.
+  if (node.agentPath && node.agentPath.split('/').filter(Boolean).length > 1)
+    rows.push(...wrapped(node.agentPath, width).map((text) => ({ text: colors.dim(text) })));
+  if (token) rows.push({ text: truncateAnsi(token, width) });
+  const settled = effectiveStatus(node);
+  // A job's settling time is its evidence's; with none recorded the line says nothing of when.
+  const finished =
+    settled === 'completed' && (!node.job || finishedAt(node))
+      ? colors.dim(` · ${t('{age} ago', { age: age(finishedAt(node), now) })}`)
+      : '';
+  rows.push({ text: truncateAnsi(`${status.paint(status.icon)} ${t(settled)}${finished}`, width) });
+  const ctx = node.contextUsage;
+  if (ctx)
+    rows.push({
+      text: truncateAnsi(
+        `${colors.dim(t('Ctx'))} ${ctx.percent}% (${formatTokenCount(ctx.used)}/${formatTokenCount(ctx.total)})`,
+        width
+      ),
+    });
+  const rate = agentRate(node, now);
+  if (rate !== undefined) rows.push({ text: truncateAnsi(`${colors.dim(t('Out'))} ${rateText(rate)}`, width) });
+  if (node.tokensSpent) rows.push({ text: spentLine(node.tokensSpent, width) });
+  if (state.expanded)
+    rows.push(
+      ...tokenRateDetails(node.outputRate, node.turnStartedAt, node.status === 'running', now).flatMap((line) =>
+        helpLines(monitorText(line), width).map((text) => ({ text }))
+      )
+    );
+  // Short facts sit with the heading. The long text is a section each,
+  // under a rule, so a charge, an update and the log do not run together.
+  // A job has no turn to age and no rollout to be active in: with none recorded, no "?" stands in.
+  const facts: string[] = [];
+  if (!node.job || node.turnStartedAt) facts.push(t('Turn age: {age}', { age: age(node.turnStartedAt, now) }));
+  if (!node.job || node.lastEventAt)
+    facts.push(
+      t('Last activity: {age}', { age: age(node.lastEventAt, now) }) + (isQuiet(node, now) ? t(' (quiet)') : '')
+    );
+  if (node.nickname && node.nickname !== node.name) facts.push(t('Nickname: {name}', { name: node.nickname }));
+  // The job section names the job's own role; a native row it enriched keeps its native role here.
+  if (node.role && node.role !== node.job?.role) facts.push(t('Role: {role}', { role: node.role }));
+  if (state.expanded)
+    facts.push(
+      t('Turn start: {at}', {
+        at:
+          node.turnStartedAt && Number.isFinite(node.turnStartedAt.getTime())
+            ? node.turnStartedAt.toISOString()
+            : t('unknown'),
+      }),
+      `UUID: ${node.id}`
+    );
+  rows.push(...facts.flatMap((line) => helpLines(monitorText(line), width).map((text) => ({ text }))));
+  const section = (title: string, body: string[]) => {
+    if (!body.length) return;
+    rows.push({ text: '' }, { text: sectionRule(title, width) }, ...body.map((text) => ({ text })));
+  };
+  // A facade job, helper or registered external task: kind, binding, location, requests, report, freshness.
+  for (const part of jobSections(node, width, now)) section(part.title, part.lines);
+  // The parent's own words from before this agent was created. A sealed
+  // payload is not shown; the card keeps only a short name made from this.
+  const given = node.charge?.replace(/\s+/g, ' ').trim();
+  if (given && !given.includes('gAAAAA')) section(t('What it was given'), proseLines(monitorText(given), width));
+  // A task the rollout keeps sealed: what the agent said it would do, in
+  // its own words, as it opened its newest stage. The card leaves it here.
+  const intent = node.task || isGuardian(node) ? undefined : newestIntent(node);
+  if (intent) section(t('Took on'), proseLines(monitorText(intent), width));
+  // What the agent last said about its work. It is the agent's own words,
+  // not a checked result, so it is labelled as such and kept to a few
+  // lines until asked for in full.
+  const report = node.lastReport;
+  if (report) {
+    const prior = node.turnStartedAt && report.at < node.turnStartedAt;
+    const title = `${t(prior ? 'Previous turn' : 'Latest update')} · ${t('{age} ago', { age: age(report.at, now) })}`;
+    section(
+      title,
+      proseLines(
+        monitorText(plainText(report.text).replace(/\s+/g, ' ').trim()),
+        width,
+        state.expanded ? undefined : REPORT_LINES
+      )
+    );
+  }
+  // What a model read from the final answer and from the failure, marked as such.
+  const log = input.agentLog?.get(node.id) ?? [];
+  const latest = (kind: AgentLogKind) => [...log].reverse().find((entry) => entry.kind === kind);
+  const written = (kind: AgentLogKind, heading: string) => {
+    const entry = latest(kind);
+    if (!entry || (kind === 'digest' && node.status !== 'completed') || (kind === 'cause' && node.status !== 'error'))
+      return;
+    const parts = entry.text
+      .split(' · ')
+      .map((part) => part.trim())
+      .filter(Boolean);
+    section(
+      `~ ${t(heading)} · ${writtenAge(entry.at, now)}`,
+      parts.flatMap((part) => proseLines(monitorText(part), width))
+    );
+  };
+  const note = latest('note');
+  const request = input.progress?.get(node.id);
+  const gate = input.progressContext ? progressReason(node, input.progressContext) : undefined;
+  const reason = gate ?? request?.reason;
+  const progress = reason
+    ? t(PROGRESS_REASONS[reason])
+    : request?.phase === 'queued'
+      ? t('queued')
+      : request?.running
+        ? t('writing')
+        : request?.error
+          ? t('Progress summary failed')
+          : request?.phase === 'idle'
+            ? t('up to date')
+            : '';
+  const details: string[] = [];
+  if (note) {
+    details.push(
+      ...proseLines(
+        monitorText(plainText(note.text).replace(/\s+/g, ' ').trim()),
+        width,
+        state.expanded ? undefined : REPORT_LINES
+      )
+    );
+    // Legacy and periodic notes don't establish a coverage boundary.
+    // Only explicit metadata may claim which public snapshot was covered.
+    details.push(
+      ...proseLines(
+        t(note.coverageAt !== undefined ? 'Coverage: {at}' : 'Recorded: {at}', {
+          at: timestamp(note.coverageAt ?? note.at),
+        }),
+        width,
+        2
+      )
+    );
+    if (note.generatedAt !== undefined)
+      details.push(...proseLines(t('Generated: {at}', { at: timestamp(note.generatedAt) }), width, 2));
+  }
+  // A facade-only job has no summary to wait for: its section says why there is none.
+  if (progress && !facadeOnly(node))
+    details.push(...proseLines(t('Progress: {status}', { status: progress }), width, 2));
+  if (!facadeOnly(node) && !gate && request?.retryAt !== undefined && request.retryAt > now)
+    details.push(
+      ...proseLines(t('Retry: {age}', { age: age(new Date(now - (request.retryAt - now)), now) }), width, 2)
+    );
+  section(`~ ${t('Model summary')}`, details);
+  written('digest', 'Result digest');
+  written('cause', 'Failure cause');
+  // A guardian's task is Codex's review prompt, the same every time. The
+  // cards leave the task here, so it is always shown.
+  const task = node.task?.replace(/\s+/g, ' ').trim();
+  if (task && !task.includes('gAAAAA') && !isGuardian(node)) section(t('Task'), proseLines(monitorText(task), width));
+  // The agent's whole log, newest first, less the update shown above. Started
+  // and finished alone say no more than the status line and the turn's age.
+  const kept = log.filter(
+    (entry) => entry !== note && !(entry.kind === 'report' && report && entry.at === report.at.getTime())
+  );
+  if (kept.some((entry) => entry.kind !== 'started' && entry.kind !== 'finished')) {
+    rows.push({ text: '' }, { text: sectionRule(t('Log'), width) });
+    for (const entry of [...kept].reverse())
+      rows.push(...logEntryLines(entry, width, now, 2).map((text) => ({ text })));
+  }
+  rows.push({ text: colors.dim(truncateAnsi(t(state.expanded ? '▴ Less' : '▾ More'), width)) });
+  return rows;
+}
+
 /** The Inspector's rows: the agent, worktree or file it was opened on. */
 export function inspectorRows(
   input: MonitorData,
@@ -393,194 +611,10 @@ export function inspectorRows(
     ];
   }
   if (state.preview === 'agent') {
-    if (delegation) return delegationInspectorRows(delegation, state.tree.selectedId, width);
+    if (delegation) return delegationInspectorRows(delegation, state.tree.selectedId, width, input, state, now);
     const node = findNode(input.tree.nodes, state.tree.selectedId);
     if (!node) lines = [];
-    else {
-      // The glyphs, then the model and the effort in words: here there is room to say them.
-      const model = node.model ? monitorText(node.model) : undefined;
-      const effort = node.effort ? monitorText(node.effort) : undefined;
-      const glyphs =
-        displayConfig().glyphs !== 'text' && classifyModelFamily(model)
-          ? renderModelEffortToken(model, effort, { mode: 'glyph' })
-          : '';
-      const named = [model, effort].filter(Boolean).join(' · ');
-      const token = glyphs ? `${glyphs}${named ? ` ${colors.dim(named)}` : ''}` : named;
-      const status = nodeStatus(node, now);
-      // Sanitize external text before painting. Never pass our own ANSI spans
-      // back through monitorText (which correctly escapes untrusted controls).
-      // Both names show here: the model's name for what the agent does, and
-      // the name Codex's own picker and transcript print.
-      // The heading in the agent's own colour, as the timeline names it.
-      // With labels as names the label heads it and Codex's name is under
-      // it; without, the name heads it and the label is under it.
-      const own = agentPaint(node.id);
-      const rows: MonitorRow[] = wrapped(shownName(node, state.labelAsName), width).map((text) => ({
-        text: theme.strong(own(text)),
-      }));
-      if (labelled(node))
-        rows.push(
-          ...wrapped(
-            state.labelAsName ? t('name {name}', { name: node.name }) : t('label {label}', { label: node.label! }),
-            width
-          ).map((text) => ({ text: colors.dim(text) }))
-        );
-      // A path of two or more segments locates the agent (`/root/<task>`).
-      // One segment says nothing the name did not.
-      if (node.agentPath && node.agentPath.split('/').filter(Boolean).length > 1)
-        rows.push(...wrapped(node.agentPath, width).map((text) => ({ text: colors.dim(text) })));
-      if (token) rows.push({ text: truncateAnsi(token, width) });
-      const finished =
-        node.status === 'completed' ? colors.dim(` · ${t('{age} ago', { age: age(finishedAt(node), now) })}`) : '';
-      rows.push({ text: truncateAnsi(`${status.paint(status.icon)} ${t(node.status)}${finished}`, width) });
-      const ctx = node.contextUsage;
-      if (ctx)
-        rows.push({
-          text: truncateAnsi(
-            `${colors.dim(t('Ctx'))} ${ctx.percent}% (${formatTokenCount(ctx.used)}/${formatTokenCount(ctx.total)})`,
-            width
-          ),
-        });
-      const rate = agentRate(node, now);
-      if (rate !== undefined) rows.push({ text: truncateAnsi(`${colors.dim(t('Out'))} ${rateText(rate)}`, width) });
-      if (node.tokensSpent) rows.push({ text: spentLine(node.tokensSpent, width) });
-      if (state.expanded)
-        rows.push(
-          ...tokenRateDetails(node.outputRate, node.turnStartedAt, node.status === 'running', now).flatMap((line) =>
-            helpLines(monitorText(line), width).map((text) => ({ text }))
-          )
-        );
-      // Short facts sit with the heading. The long text is a section each,
-      // under a rule, so a charge, an update and the log do not run together.
-      const facts = [
-        t('Turn age: {age}', { age: age(node.turnStartedAt, now) }),
-        t('Last activity: {age}', { age: age(node.lastEventAt, now) }) + (isQuiet(node, now) ? t(' (quiet)') : ''),
-      ];
-      if (node.nickname && node.nickname !== node.name) facts.push(t('Nickname: {name}', { name: node.nickname }));
-      if (node.role) facts.push(t('Role: {role}', { role: node.role }));
-      if (state.expanded)
-        facts.push(
-          t('Turn start: {at}', {
-            at:
-              node.turnStartedAt && Number.isFinite(node.turnStartedAt.getTime())
-                ? node.turnStartedAt.toISOString()
-                : t('unknown'),
-          }),
-          `UUID: ${node.id}`
-        );
-      rows.push(...facts.flatMap((line) => helpLines(monitorText(line), width).map((text) => ({ text }))));
-      const section = (title: string, body: string[]) => {
-        if (!body.length) return;
-        rows.push({ text: '' }, { text: sectionRule(title, width) }, ...body.map((text) => ({ text })));
-      };
-      // The parent's own words from before this agent was created. A sealed
-      // payload is not shown; the card keeps only a short name made from this.
-      const given = node.charge?.replace(/\s+/g, ' ').trim();
-      if (given && !given.includes('gAAAAA')) section(t('What it was given'), proseLines(monitorText(given), width));
-      // A task the rollout keeps sealed: what the agent said it would do, in
-      // its own words, as it opened its newest stage. The card leaves it here.
-      const intent = node.task || isGuardian(node) ? undefined : newestIntent(node);
-      if (intent) section(t('Took on'), proseLines(monitorText(intent), width));
-      // What the agent last said about its work. It is the agent's own words,
-      // not a checked result, so it is labelled as such and kept to a few
-      // lines until asked for in full.
-      const report = node.lastReport;
-      if (report) {
-        const prior = node.turnStartedAt && report.at < node.turnStartedAt;
-        const title = `${t(prior ? 'Previous turn' : 'Latest update')} · ${t('{age} ago', { age: age(report.at, now) })}`;
-        section(
-          title,
-          proseLines(
-            monitorText(plainText(report.text).replace(/\s+/g, ' ').trim()),
-            width,
-            state.expanded ? undefined : REPORT_LINES
-          )
-        );
-      }
-      // What a model read from the final answer and from the failure, marked as such.
-      const log = input.agentLog?.get(node.id) ?? [];
-      const latest = (kind: AgentLogKind) => [...log].reverse().find((entry) => entry.kind === kind);
-      const written = (kind: AgentLogKind, heading: string) => {
-        const entry = latest(kind);
-        if (
-          !entry ||
-          (kind === 'digest' && node.status !== 'completed') ||
-          (kind === 'cause' && node.status !== 'error')
-        )
-          return;
-        const parts = entry.text
-          .split(' · ')
-          .map((part) => part.trim())
-          .filter(Boolean);
-        section(
-          `~ ${t(heading)} · ${writtenAge(entry.at, now)}`,
-          parts.flatMap((part) => proseLines(monitorText(part), width))
-        );
-      };
-      const note = latest('note');
-      const request = input.progress?.get(node.id);
-      const gate = input.progressContext ? progressReason(node, input.progressContext) : undefined;
-      const reason = gate ?? request?.reason;
-      const progress = reason
-        ? t(PROGRESS_REASONS[reason])
-        : request?.phase === 'queued'
-          ? t('queued')
-          : request?.running
-            ? t('writing')
-            : request?.error
-              ? t('Progress summary failed')
-              : request?.phase === 'idle'
-                ? t('up to date')
-                : '';
-      const details: string[] = [];
-      if (note) {
-        details.push(
-          ...proseLines(
-            monitorText(plainText(note.text).replace(/\s+/g, ' ').trim()),
-            width,
-            state.expanded ? undefined : REPORT_LINES
-          )
-        );
-        // Legacy and periodic notes don't establish a coverage boundary.
-        // Only explicit metadata may claim which public snapshot was covered.
-        details.push(
-          ...proseLines(
-            t(note.coverageAt !== undefined ? 'Coverage: {at}' : 'Recorded: {at}', {
-              at: timestamp(note.coverageAt ?? note.at),
-            }),
-            width,
-            2
-          )
-        );
-        if (note.generatedAt !== undefined)
-          details.push(...proseLines(t('Generated: {at}', { at: timestamp(note.generatedAt) }), width, 2));
-      }
-      if (progress) details.push(...proseLines(t('Progress: {status}', { status: progress }), width, 2));
-      if (!gate && request?.retryAt !== undefined && request.retryAt > now)
-        details.push(
-          ...proseLines(t('Retry: {age}', { age: age(new Date(now - (request.retryAt - now)), now) }), width, 2)
-        );
-      section(`~ ${t('Model summary')}`, details);
-      written('digest', 'Result digest');
-      written('cause', 'Failure cause');
-      // A guardian's task is Codex's review prompt, the same every time. The
-      // cards leave the task here, so it is always shown.
-      const task = node.task?.replace(/\s+/g, ' ').trim();
-      if (task && !task.includes('gAAAAA') && !isGuardian(node))
-        section(t('Task'), proseLines(monitorText(task), width));
-      // The agent's whole log, newest first, less the update shown above. Started
-      // and finished alone say no more than the status line and the turn's age.
-      const kept = log.filter(
-        (entry) => entry !== note && !(entry.kind === 'report' && report && entry.at === report.at.getTime())
-      );
-      if (kept.some((entry) => entry.kind !== 'started' && entry.kind !== 'finished')) {
-        rows.push({ text: '' }, { text: sectionRule(t('Log'), width) });
-        for (const entry of [...kept].reverse())
-          rows.push(...logEntryLines(entry, width, now, 2).map((text) => ({ text })));
-      }
-      rows.push({ text: colors.dim(truncateAnsi(t(state.expanded ? '▴ Less' : '▾ More'), width)) });
-      return rows;
-    }
+    else return agentInspectorRows(input, state, node, width, now);
   } else if (state.preview === 'worktree') {
     const entry = input.worktrees?.entries.find((e) => e.path === state.selectedWorktree);
     if (!entry) lines = [];

@@ -10,6 +10,7 @@
 
 import type { SubagentTreeNode } from '../types.js';
 import type { TreeKey } from '../utils/tree-keys.js';
+import { effectiveStatus, jobClosed, jobSettledAt, needsInput } from './job-details.js';
 
 export type PanelView = 'tree' | 'detail' | 'session' | 'help';
 export type PanelFilter = 'all' | 'active' | 'failed' | 'unknown';
@@ -50,13 +51,14 @@ export function initialPanelState(): PanelState {
 }
 
 function matchesFilter(node: SubagentTreeNode, filter: PanelFilter): boolean {
+  const status = effectiveStatus(node);
   switch (filter) {
     case 'active':
-      return node.status === 'running' || node.status === 'starting';
+      return status === 'running' || status === 'starting';
     case 'failed':
-      return node.status === 'error';
+      return status === 'error';
     case 'unknown':
-      return node.status === 'unknown';
+      return status === 'unknown';
     default:
       return true;
   }
@@ -75,11 +77,16 @@ export function isExpired(node: SubagentTreeNode, state: PanelState, nowMs: numb
   if (!state.lingerMs || state.lingerMs <= 0 || state.showAll || state.filter !== 'all') {
     return false;
   }
-  if (node.status !== 'completed' && node.status !== 'unknown') {
+  const status = effectiveStatus(node);
+  if (status !== 'completed' && status !== 'unknown') {
     return false;
   }
-  const settled =
-    node.status === 'completed' ? (node.statusAt ?? node.lastEventAt) : (node.lastEventAt ?? node.statusAt);
+  // A job waiting on the person is news until it is answered. One still open with no outcome on record is not
+  // known to have finished, however long its source has been silent; an external task stays until it is removed.
+  if (needsInput(node) || (node.job && status === 'unknown' && !jobClosed(node.job))) return false;
+  // The status is the job's, so is the time: an older native event must not date a job that settled since.
+  const native = status === 'completed' ? (node.statusAt ?? node.lastEventAt) : (node.lastEventAt ?? node.statusAt);
+  const settled = (node.job ? jobSettledAt(node) : undefined) ?? native;
   const at = settled?.getTime();
   return at === undefined || !Number.isFinite(at) || nowMs - at > state.lingerMs;
 }
@@ -133,8 +140,9 @@ export function countExpired(nodes: SubagentTreeNode[], state: PanelState, nowMs
 function orderedSiblings(nodes: SubagentTreeNode[], mode: PanelState['sort']): SubagentTreeNode[] {
   if (!mode) return nodes;
   const priority = (node: SubagentTreeNode): { rank: number; started: number } => {
-    const active = node.status === 'running' || node.status === 'starting';
-    let rank = active ? 0 : node.status === 'error' ? 1 : node.status === 'unknown' ? 2 : 3;
+    const status = effectiveStatus(node);
+    const active = status === 'running' || status === 'starting';
+    let rank = active ? 0 : status === 'error' ? 1 : status === 'unknown' ? 2 : 3;
     let started = active ? ((node.turnStartedAt ?? node.startedAt)?.getTime() ?? 0) : 0;
     for (const child of node.children) {
       const sub = priority(child);

@@ -26,6 +26,7 @@ import { agentTitle } from './agent-title.js';
 import { monitorText, plainText, flowLines, pair } from './monitor-text.js';
 import { formatWindowLabel } from './quota.js';
 import { age, iconic, isLive, agentPaint, clockFace } from './monitor-labels.js';
+import { effectiveStatus, shownNode } from './job-details.js';
 import { directions, subtasks, isImportant, type Directions } from './directions.js';
 
 export type TimelineStyle = 'rail' | 'indent' | 'lanes';
@@ -139,13 +140,38 @@ interface Entry {
 const flat = (text: string) => monitorText(plainText(text).replace(/\s+/g, ' ').trim());
 
 /**
+ * Whether an event may state its outcome on its agent's line. A node carrying a job is the job's: a native finish,
+ * failure or ended stage is drawn under the job's name only where the job's own effective status is terminal and
+ * says the same (completed with finished, error with failed). Under a job still running, unknown or stale, or one
+ * that ended the other way, the native outcome is some earlier turn's, and the node's Inspector keeps it as a fact.
+ * Every other event, and every node without a job, is admitted as it always was.
+ */
+function admitted(event: WorkbenchEvent, dirs: Directions): boolean {
+  const ended =
+    event.kind === 'agent-finished'
+      ? 'completed'
+      : event.kind === 'agent-failed'
+        ? 'error'
+        : event.kind === 'agent-stage' && (event.stage ?? 'done') !== 'running'
+          ? event.stage === 'failed'
+            ? 'error'
+            : event.stage === 'aborted'
+              ? 'aborted'
+              : 'completed'
+          : undefined;
+  const node = ended && event.agentId ? dirs.node.get(event.agentId)?.node : undefined;
+  return !node?.job || ended === effectiveStatus(node);
+}
+
+/**
  * The entries, newest first. An agent's start the log paired with a finish
  * later in the list is one entry, at the finish; the same main-session
  * event again with nothing between is one entry, "×5".
  */
 function timelineEntries(input: MonitorData, now: number): Entry[] {
-  const events = input.timeline ?? [];
   const dirs = directions(input.tree);
+  // What is left out here is left out of the pairing, the failures merged into stages and the subtask counts too.
+  const events = (input.timeline ?? []).filter((event) => admitted(event, dirs));
   const roles = input.state.importantRoles ?? new Set<string>();
   const words = !iconic();
   // An agent the log saw start and finish: one entry, at the finish.
@@ -267,19 +293,22 @@ function agentEntry(
   const dir = event.serves ?? (l1 ? (dirs.serves.get(l1) ?? l1) : undefined);
   // Names: their colour only where agent colours are on names.
   const paint = dir ? dirs.name(dir) : event.agentId ? agentPaint(event.agentId) : plain;
-  const name = (of: SubagentTreeNode) => monitorText(agentTitle(of, input.state.labelAsName).name);
+  const name = (of: SubagentTreeNode) => monitorText(agentTitle(shownNode(of), input.state.labelAsName).name);
   const called = paint(node ? name(node) : monitorText(event.subject ?? ''));
   const lead = event.serves && event.serves !== l1 ? dirs.node.get(event.serves)?.node : undefined;
+  // A job's start with no end on record is history, not a claim: unless the job is live now with its source current
+  // (its effective status), the entry keeps what was seen, that it started, and draws no running glyph, clock or live flag.
+  const unconfirmed = stage === 'running' && Boolean(node?.job) && !isLive(node!);
+  const running = stage === 'running' && !unconfirmed;
   // When it started: the stage's start, the log's start paired with this end, or this event, a start.
   const began = event.startedAt ?? start?.at ?? (stage === 'running' ? event.at : undefined);
   // How long it took; running, its clock face: the time column already says when it started.
   let right = '';
-  if (began)
-    right =
-      stage === 'running' ? theme.info(clockFace(now - began.getTime())) : colors.dim(age(began, event.at.getTime()));
-  if (level === 1 && began && node) {
+  if (began && !unconfirmed)
+    right = running ? theme.info(clockFace(now - began.getTime())) : colors.dim(age(began, event.at.getTime()));
+  if (level === 1 && began && node && !unconfirmed) {
     // The subtasks that finished while the stage ran.
-    const until = stage === 'running' ? now : event.at.getTime();
+    const until = running ? now : event.at.getTime();
     let ok = 0,
       bad = 0;
     for (const end of ends.get(node.id) ?? [])
@@ -292,13 +321,13 @@ function agentEntry(
   }
   let summary = '';
   let lines = 0;
-  if (stage === 'running') {
-    // What it said it would do, in its own words.
+  if (running) {
+    // What it said it would do, in its own words; an unconfirmed start says nothing of what it is doing now.
     if (level === 1 && event.intent) {
       summary = flat(event.intent);
       lines = INTENT_LINES;
     }
-  } else {
+  } else if (!unconfirmed) {
     const id = node?.id ?? event.agentId ?? '';
     if (!told.has(id) && event.summary) {
       summary = flat(event.summary);
@@ -306,12 +335,13 @@ function agentEntry(
     }
     told.add(id);
   }
-  const [glyph, glyphPaint] = STAGE_GLYPHS[stage];
+  // The unknown mark of the Agents rows, dim, stands where the running one would.
+  const [glyph, glyphPaint] = unconfirmed ? ['?', colors.dim] : STAGE_GLYPHS[stage];
   let text = level === 1 ? theme.bold(called) : called;
   if (words) {
     // "name finished", the state's word where the language puts it.
     const [before, after = ''] = t(STAGE_WORDS[stage], { agent: '\0' }).split('\0');
-    const word = stage === 'failed' ? theme.error : stage === 'running' ? theme.info : colors.dim;
+    const word = stage === 'failed' ? theme.error : running ? theme.info : colors.dim;
     text = `${before ? word(before) : ''}${text}${after ? word(after) : ''}`;
   }
   return {
@@ -328,7 +358,7 @@ function agentEntry(
     id: event.id,
     fold: event.id,
     count: 1,
-    live: stage === 'running',
+    live: running,
     ...(node ? { agent: node.id } : {}),
   };
 }

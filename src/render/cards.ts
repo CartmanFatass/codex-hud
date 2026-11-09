@@ -47,6 +47,19 @@ import {
 } from './monitor.js';
 import { helpLines } from './monitor-text.js';
 import { directions, subtasks, reviewsUnder, talk, isImportant, rolePrefix, TALK_MIN } from './directions.js';
+import {
+  effectiveStatus,
+  jobUncertain,
+  jobFlagged,
+  jobParts,
+  fitParts,
+  shownNode,
+  badgeOf,
+  needsInput,
+  waitingIds,
+  jobSeenAt,
+  facadeOnly,
+} from './job-details.js';
 
 /** The fewest columns a subtask's digest or cause starts with beside its name; less, it starts on the next line. */
 const KID_SAID_BESIDE = 8;
@@ -276,7 +289,8 @@ function cardTime(node: SubagentTreeNode, now: number): string {
   if (isLive(node)) {
     const start = (node.turnStartedAt ?? node.startedAt)?.getTime();
     if (start === undefined || !Number.isFinite(start))
-      return `${iconic() ? theme.info('◌') + ' ' : ''}${colors.dim(t('starting'))}`;
+      // A job with no recorded start has no clock; "starting" would claim a launch the record does not show.
+      return node.job ? '' : `${iconic() ? theme.info('◌') + ' ' : ''}${colors.dim(t('starting'))}`;
     const quiet = isQuiet(node, now);
     // The clock face is the time's scale, in the tick colour; quiet, it is the warning.
     const face = stripAnsi(turnClock(node, now));
@@ -285,9 +299,20 @@ function cardTime(node: SubagentTreeNode, now: number): string {
   const at = settledAt(node);
   return at ? colors.dim(agoText(at, now)) : '';
 }
-/** When a card's agent last settled: finished, failed, or last heard from. */
+/**
+ * When a card's agent last settled: finished, failed, or last heard from. A
+ * job whose source is not corroborated was last heard from when it last
+ * answered; one whose outcome is on record, when that evidence was written.
+ */
 function settledAt(node: SubagentTreeNode): Date | undefined {
-  const at = node.status === 'unknown' ? node.lastEventAt : finishedAt(node);
+  const unknown = effectiveStatus(node) === 'unknown';
+  const at = node.job
+    ? unknown && jobUncertain(node)
+      ? jobSeenAt(node)
+      : finishedAt(node)
+    : unknown
+      ? node.lastEventAt
+      : finishedAt(node);
   return at && Number.isFinite(at.getTime()) ? at : undefined;
 }
 
@@ -312,13 +337,14 @@ export function briefLine(log: readonly AgentLogEntry[]): string {
  * descendants) dim. The selection is the "›" and the name, not the colour.
  */
 function cardPaint(node: SubagentTreeNode, old: boolean, context: boolean, now: number): Paint {
-  return node.status === 'error'
+  const status = effectiveStatus(node);
+  return status === 'error'
     ? theme.error
     : isQuiet(node, now)
       ? theme.warning
       : isLive(node)
         ? theme.info
-        : node.status === 'completed' && !old && !context
+        : status === 'completed' && !old && !context
           ? theme.success
           : colors.dim;
 }
@@ -329,7 +355,7 @@ function cardPaint(node: SubagentTreeNode, old: boolean, context: boolean, now: 
  */
 function isOld(node: SubagentTreeNode, now: number): boolean {
   return (
-    node.status === 'completed' &&
+    effectiveStatus(node) === 'completed' &&
     now - (finishedAt(node)?.getTime() ?? 0) > FRESH_FINISH_MS &&
     !subtasks(node).some(isLive)
   );
@@ -396,7 +422,8 @@ export function newestIntent(node: SubagentTreeNode): string | undefined {
  */
 function relationLine(node: SubagentTreeNode, input: MonitorData, state: MonitorState, width: number): string {
   const dirs = directions(input.tree);
-  const name = (other: SubagentTreeNode) => agentTitle(other, visibility(state).cardLabel && state.labelAsName).name;
+  const name = (other: SubagentTreeNode) =>
+    agentTitle(shownNode(other), visibility(state).cardLabel && state.labelAsName).name;
   const leads = (other: SubagentTreeNode) => subtasks(other).length > 0;
   const ranked = (pick: (other: SubagentTreeNode) => boolean) =>
     input.tree.nodes
@@ -432,6 +459,17 @@ function actionLine(node: SubagentTreeNode, width: number): string {
   return `${fieldLabel('now', column)} ${truncateAnsi(monitorText(node.action.text.replace(/\s+/g, ' ').trim()), Math.max(1, width - column - 1))}`;
 }
 
+/**
+ * A job waiting on the person, in the brief's own "needs" vocabulary: the
+ * warning-coloured label, then the ids of the requests it waits on. Only a
+ * request marked current counts; a historical pointer is the Inspector's.
+ */
+function needsLine(node: SubagentTreeNode, width: number): string {
+  if (!needsInput(node)) return '';
+  const column = labelColumn(['needs']);
+  return `${fieldLabel('needs', column)} ${theme.warning(truncateAnsi(t('answer {ids}', { ids: waitingIds(node) }), Math.max(1, width - column - 1)))}`;
+}
+
 /** The same descendant selection drives both rendering and progress requests. */
 function shownKids(
   node: SubagentTreeNode,
@@ -447,9 +485,11 @@ function shownKids(
       (kid) =>
         v.cardSubagentScope === 'all' ||
         isLive(kid) ||
-        (v.cardSubagentScope === 'important' && isImportant(kid, input.agentLog?.get(kid.id), roles))
+        // A helper waiting on the person, or not known to have settled, matters as much as a failed one.
+        (v.cardSubagentScope === 'important' &&
+          (jobFlagged(kid) || isImportant(kid, input.agentLog?.get(kid.id), roles)))
     )
-    .sort((a, b) => Number(b.status === 'error') - Number(a.status === 'error') || at(b) - at(a));
+    .sort((a, b) => Number(effectiveStatus(b) === 'error') - Number(effectiveStatus(a) === 'error') || at(b) - at(a));
 }
 
 /** IDs whose summaries can appear; collection owns the running/model/privacy gates. */
@@ -526,21 +566,29 @@ function kidLines(
   // Active work must never fall back to a stale digest or failure cause.
   const raw = live
     ? newest('note')
-    : kid.status === 'error'
+    : effectiveStatus(kid) === 'error'
       ? (newest('cause') ?? newest('note'))
       : (kid.digest ?? newest('digest') ?? newest('note'));
   const said = v.cardSubagentSummary && raw ? cardSentence(raw) : '';
   const room = Math.max(1, width - visualLength(head) - (when ? visualLength(when) + 1 : 0));
-  const name = squeeze(agentTitle(kid, v.cardLabel && state.labelAsName).name, room);
+  const kidName = agentTitle(shownNode(kid), v.cardLabel && state.labelAsName).name;
+  // A job's role, a source that is not corroborated and a request it waits on follow its name; the name keeps eight columns first.
+  const words = fitParts(jobParts(kid), room - 1 - Math.min(8, visualLength(kidName)));
+  const aside = words.length ? ` ${words.join(' ')}` : '';
+  const name = squeeze(kidName, Math.max(1, room - visualLength(aside)));
   const named = directions(input.tree).name(kid.id)(name);
   const indent = visualLength(head);
-  const beside = room - visualLength(name) - 1;
+  const beside = room - visualLength(name) - visualLength(aside) - 1;
   const rest = Math.max(1, width - indent);
-  const words = !said ? [] : beside >= KID_SAID_BESIDE ? hangLines(said, beside, rest) : ['', ...flowLines(said, rest)];
-  const one = words[0] ? ` ${colors.dim(words[0])}` : '';
+  const wrapped = !said
+    ? []
+    : beside >= KID_SAID_BESIDE
+      ? hangLines(said, beside, rest)
+      : ['', ...flowLines(said, rest)];
+  const one = wrapped[0] ? ` ${colors.dim(wrapped[0])}` : '';
   return [
-    pair(`${head}${named}${one}`, right, width),
-    ...words.slice(1).map((line) => ' '.repeat(indent) + colors.dim(line)),
+    pair(`${head}${named}${aside}${one}`, right, width),
+    ...wrapped.slice(1).map((line) => ' '.repeat(indent) + colors.dim(line)),
     ...(v.cardSubagentSummary ? progressLines(kid, input, rest).map((line) => ' '.repeat(indent) + line) : []),
   ];
 }
@@ -601,7 +649,7 @@ export function agentCard(
   const old = isOld(node, now);
   const paint = cardPaint(node, old, Boolean(row.context), now);
   const st = nodeStatus(node, now);
-  const title = agentTitle(node, v.cardLabel && state.labelAsName);
+  const title = agentTitle(shownNode(node), v.cardLabel && state.labelAsName);
   const key = `card:${node.id}`;
   const rows: MonitorRow[] = [];
   const control: RowControl = { kind: 'log', item: node.id, x: 0, width: w };
@@ -609,12 +657,13 @@ export function agentCard(
 
   const corner = selected ? theme.accent('›') : paint(topCorner);
   // The widest whole form that fits a quarter of the card; never a cut one.
+  const bound = badgeOf(node);
   const badge =
     !v.cardModel || w < BADGE_MIN
       ? ''
       : fitModelEffortToken(
-          node.model ? monitorText(node.model) : undefined,
-          node.effort ? monitorText(node.effort) : undefined,
+          bound.model ? monitorText(bound.model) : undefined,
+          bound.effort ? monitorText(bound.effort) : undefined,
           Math.max(2, Math.floor(w / 4)),
           w < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs
         );
@@ -629,11 +678,18 @@ export function agentCard(
     w - visualLength(head) - visualLength(tails.join(' ')) - 3 < Math.min(8, visualLength(title.name))
   )
     tails.pop();
+  if (node.job) {
+    // A job's words by priority: role and phase, a source that is not corroborated, model and effort, then the attention mark.
+    const room =
+      w - visualLength(head) - 3 - Math.min(8, visualLength(title.name)) - (chip ? visualLength(chip) + 1 : 0);
+    tails = [chip, ...fitParts(jobParts(node, badge), room)].filter(Boolean);
+  }
   const tail = tails.map((part) => ' ' + part).join('');
   const room = Math.max(1, w - visualLength(head) - visualLength(tail) - 2);
   const name = squeeze(title.name, room);
   const dashes = Math.max(0, w - visualLength(head) - visualLength(name) - 1 - visualLength(tail));
-  const link = input.linkNames !== false;
+  // The name is a link to its Codex session; a job only the facade knows has none to switch to.
+  const link = input.linkNames !== false && !facadeOnly(node);
   const shownName = link ? colors.underline(name) : name;
   const named =
     (old || row.context) && !selected
@@ -667,6 +723,8 @@ export function agentCard(
   if (v.cardAction) {
     const action = actionLine(node, inner);
     if (action) push(action);
+    const needs = needsLine(node, inner);
+    if (needs) push(needs);
   }
   for (const kid of shownKids(node, input, state))
     for (const line of kidLines(kid, input, state, inner, now)) push(line, kid.id);
@@ -727,6 +785,26 @@ function cardNow(node: SubagentTreeNode, state: MonitorState, now: number): numb
   return live(node) ? Math.floor(now / 1000) : null;
 }
 
+/** What a card says of a job: its status, source freshness, role, waiting requests and the times it prints. */
+function jobStamp(node: SubagentTreeNode, now: number): unknown {
+  const job = node.job;
+  if (!job) return null;
+  return [
+    job.name,
+    job.kind,
+    job.role,
+    job.phase,
+    job.status,
+    job.freshness.state,
+    job.requests?.filter((request) => request.current).map((request) => request.id) ?? null,
+    job.backend?.model ?? null,
+    job.backend?.effort ?? null,
+    textBucket(job.freshness.lastSuccessfulReadAt ?? undefined, now),
+    textBucket(job.freshness.evidenceAt ?? undefined, now),
+    textBucket(job.closedAt ?? undefined, now),
+  ];
+}
+
 /** What a card says, without the wall second of a clock that is not on it. */
 function nodeStamp(node: SubagentTreeNode, now: number): unknown {
   return [
@@ -755,6 +833,7 @@ function nodeStamp(node: SubagentTreeNode, now: number): unknown {
     textBucket(node.turnStartedAt?.getTime(), now),
     textBucket(node.statusAt?.getTime(), now),
     textBucket(node.lastEventAt?.getTime(), now),
+    jobStamp(node, now),
     node.children.map((child) => nodeStamp(child, now)),
   ];
 }
@@ -763,7 +842,8 @@ function nodeStamp(node: SubagentTreeNode, now: number): unknown {
 function treeIdentity(nodes: readonly SubagentTreeNode[]): unknown {
   const walk = (node: SubagentTreeNode): unknown => [
     node.id,
-    node.status,
+    effectiveStatus(node),
+    node.job?.name ?? null,
     node.name,
     node.label,
     node.nickname,
