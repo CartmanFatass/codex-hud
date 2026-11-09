@@ -67,6 +67,25 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
     The judge denied "uploaded" about 1 s after the file input was set. Nothing was sent.
   - R4F2 fix round 2 is working on it: `upload_finished` becomes pass-only, real upload failures are detected
     from facts, card matching and leftover attachments are checked, and the collect latency is explained.
+- R4F2 round 2 + R4F2B merged (`57fa531`):
+  - `upload_finished` is pass-only.
+  - The collision-name rule and the attachment-chip exclusion are fixed.
+  - The public decision codes are complete.
+  - The AI Studio collect replay drops from 104 s to 3 s.
+  - Owned-tab cleanup now survives timeouts and runtime stop.
+  - The review found one major issue (an orphaned saved-view tab), fixed by R4F2B and then accepted.
+- Live acceptance, third run (2026-11-09 00:53Z): **ChatGPT Pro with an attachment answered correctly, end to
+  end.**
+  - Timeline: page_ready took 2.9 s, the upload 5.0 s, and the Send decision passed on its first attempt.
+  - Defect: confirm never bound (about 2.5 min) because R4F's hydration rewrite applies to every facts read. A
+    conversation page hides its composer while thinking, so it looked like loading. Reconcile bound the turn and
+    the job completed.
+  - R4F3 is fixing it (scope the rule to `page_ready`).
+  - Pro answered within seconds, so the mid-wait runtime restart is still to do. It needs a longer-thinking prompt
+    after R4F3.
+- Follow-ups:
+  - The pi-roles reviewer guard treats any `>` (JS `=>`, comparisons) as a redirect; it should ignore quoted text.
+  - The `submitted` and `answer_complete` thresholds may need to be pass-only. That is my decision, pending.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
