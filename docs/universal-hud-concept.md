@@ -873,7 +873,8 @@ later only when the record shows a problem.
 - Display-only rules stay (one line per decision, worker answers folded, a default countdown shown only where a
   default with a deadline already exists). Fields the workflow does not write (for example reversibility) are shown
   only when present, never asked for.
-- Overturn is an owner action sent to the orchestrator's session; it does not add steps to the orchestrator's own work.
+- No overturn interaction: the HUD shows decisions and a HUD-local "seen" mark only. If the owner disagrees, they
+  talk to the main session themselves. This supersedes "seen/overturn per item" in the previous entry.
 
 ## 16. 评审状态与下一次评审
 
