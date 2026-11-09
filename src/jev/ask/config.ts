@@ -1,9 +1,8 @@
 // Ported from the owner's jev-ask settings and credential loading (design §4.6).
-// `config.json` `jev` overrides TOML `[jev]`; a blank state directory is an error,
-// never a fresh empty folder. Proxy falls through to the environment captured at
-// the jev_ask call. This module does not read `process.env` itself.
-// Credentials are re-read from the env file on every call. They never come from
-// the caller's environment, and they are not written into errors.
+// HUD `config.json` `jev` overrides explicitly selected TOML `[jev]`.
+// A blank state directory is an error, never a fresh empty folder.
+// Credentials are re-read on each call, with environment overrides for tests/CI.
+// Credential values are never written into errors.
 
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -85,6 +84,8 @@ export interface JevCredentials {
   openaiBaseUrl?: string;
   typesafeApiKey?: string;
   typesafeModel?: string;
+  mistralApiKey?: string;
+  mistralBaseUrl?: string;
   textModel: Record<string, string>;
 }
 
@@ -101,15 +102,27 @@ export function defaultJevEnvPath(home = homedir()): string {
   return path.join(home, '.hud', 'jev.env');
 }
 
+export function defaultHudHome(
+  env: Record<string, string | undefined> = process.env,
+  home = env.HOME || homedir()
+): string {
+  return env.HUD_HOME || path.join(home, '.hud');
+}
+
 export function defaultHudConfigPath(home = homedir()): string {
   return path.join(home, '.hud', 'config.json');
 }
 
 export function loadJevConfig(options: LoadJevConfigOptions = {}): JevConfig {
   const home = options.home ?? homedir();
-  const toml = readToml(options);
-  const json = readJsonJev(options);
-  if (!toml && !json) throw new JevFailure('config', 'configuration not found');
+  const sources = {
+    ...options,
+    configJsonPath: options.configJsonPath ?? path.join(defaultHudHome(options.capturedEnv ?? {}, home), 'config.json'),
+    tomlPath: options.tomlPath ?? options.capturedEnv?.JEV_ASK_CONFIG,
+  };
+  const toml = readToml(sources);
+  const json = readJsonJev(sources);
+  if (!toml && !json) throw new JevFailure('config', `configuration not found: ${sources.configJsonPath}`);
   const stateDir = requiredStateDir(pickString(json, 'stateDir', toml, 'state_dir', home, true));
   const cdpSeconds = pickNumber(undefined, '', toml, 'jev_cdp_seconds');
   const jsonTimeout = pickNumber(json, 'cdpTimeoutMs', undefined, '');
@@ -145,13 +158,23 @@ export function loadJevConfig(options: LoadJevConfigOptions = {}): JevConfig {
  * Line format: optional `export ` prefix, `NAME=VALUE`, and one matching pair of
  * single or double quotes around the value. There is no interpolation.
  */
-export function readJevEnv(file: string): JevCredentials {
+export function readCredentialsEnv(file: string): JevCredentials {
+  const creds: JevCredentials = { textModel: {} };
+  for (const [name, value] of readPrivateAssignments(file)) {
+    const field = CREDENTIAL_FIELDS[name as keyof typeof CREDENTIAL_FIELDS];
+    if (Object.hasOwn(CREDENTIAL_FIELDS, name)) creds[field] = value;
+    else if (name.startsWith('TEXT_MODEL_')) creds.textModel[name] = value;
+  }
+  return creds;
+}
+
+function readPrivateAssignments(file: string): Map<string, string> {
   let fd: number;
   try {
     fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return { textModel: {} };
+    if (code === 'ENOENT') return new Map();
     if (code === 'ELOOP' || code === 'EPERM' || code === 'ENOTSUP') {
       throw new JevFailure('jev_env_perms', 'credential file must be a regular file with mode 0600');
     }
@@ -159,24 +182,47 @@ export function readJevEnv(file: string): JevCredentials {
   }
   try {
     const stat = fs.fstatSync(fd);
-    if (!stat.isFile() || (stat.mode & 0o077) !== 0) {
+    if (!stat.isFile() || (stat.mode & 0o777) !== 0o600) {
       throw new JevFailure('jev_env_perms', 'credential file must be a regular file with mode 0600');
     }
-    const creds: JevCredentials = { textModel: {} };
+    const assignments = new Map<string, string>();
     for (const rawLine of fs.readFileSync(fd, 'utf8').split('\n')) {
       const assignment = parseEnvAssignment(rawLine);
-      if (!assignment) continue;
-      const { name, value } = assignment;
-      if (name === 'OPENAI_API_KEY') creds.openaiApiKey = value;
-      else if (name === 'OPENAI_BASE_URL') creds.openaiBaseUrl = value;
-      else if (name === 'TYPESAFE_API_KEY') creds.typesafeApiKey = value;
-      else if (name === 'TYPESAFE_MODEL') creds.typesafeModel = value;
-      else if (name.startsWith('TEXT_MODEL_')) creds.textModel[name] = value;
+      if (assignment) assignments.set(assignment.name, assignment.value);
     }
-    return creds;
+    return assignments;
   } finally {
     fs.closeSync(fd);
   }
+}
+
+/** Compatibility name for callers that explicitly read a legacy file. */
+export const readJevEnv = readCredentialsEnv;
+
+const CREDENTIAL_FIELDS = {
+  OPENAI_API_KEY: 'openaiApiKey',
+  OPENAI_BASE_URL: 'openaiBaseUrl',
+  TYPESAFE_API_KEY: 'typesafeApiKey',
+  TYPESAFE_MODEL: 'typesafeModel',
+  MISTRAL_API_KEY: 'mistralApiKey',
+  MISTRAL_BASE_URL: 'mistralBaseUrl',
+} as const;
+
+/** Per-name precedence: environment > credentials.env > legacy jev.env. No other tool's files. */
+export function readHudCredentials(
+  env: Record<string, string | undefined> = process.env,
+  hudHome = defaultHudHome(env)
+): JevCredentials {
+  const legacy = readCredentialsEnv(path.join(hudHome, 'jev.env'));
+  const current = readCredentialsEnv(path.join(hudHome, 'credentials.env'));
+  const creds: JevCredentials = { ...legacy, ...current, textModel: { ...legacy.textModel, ...current.textModel } };
+  for (const [name, field] of Object.entries(CREDENTIAL_FIELDS)) {
+    if (env[name] !== undefined) creds[field as (typeof CREDENTIAL_FIELDS)[keyof typeof CREDENTIAL_FIELDS]] = env[name];
+  }
+  for (const [name, value] of Object.entries(env)) {
+    if (name.startsWith('TEXT_MODEL_') && value !== undefined) creds.textModel[name] = value;
+  }
+  return creds;
 }
 
 /**
@@ -219,11 +265,14 @@ export const IMPORT_ENV_NAMES = ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'TYPESAFE_
 
 /**
  * The Jev install's `.env`, `<root>/.env`, from the jev-ask `[jev].root` the spec names.
- * This does not read the file. Job time still uses only `$HUD_HOME/jev.env`.
+ * Explicit import only; no discovery in another tool's home. Job time uses HUD credentials.
  */
 export function jevInstallEnvPath(options: { tomlPath?: string; tomlText?: string; home?: string } = {}): string {
   const home = options.home ?? homedir();
-  const table = readToml({ tomlPath: options.tomlPath ?? defaultJevTomlPath(home), tomlText: options.tomlText });
+  if (!options.tomlPath && options.tomlText === undefined) {
+    throw new JevFailure('config', 'import requires --from or JEV_ASK_CONFIG');
+  }
+  const table = readToml({ tomlPath: options.tomlPath, tomlText: options.tomlText });
   const root = table?.root;
   if (typeof root !== 'string' || !root.trim()) {
     throw new JevFailure('config', 'configuration must name [jev].root to locate the Jev .env');
@@ -232,7 +281,7 @@ export function jevInstallEnvPath(options: { tomlPath?: string; tomlText?: strin
 }
 
 /**
- * Copy the known credential names into `$HUD_HOME/jev.env` (mode 0600, temp file then rename).
+ * Merge imported known names into `$HUD_HOME/credentials.env` (0600, temp file then rename).
  * The source is not required to be 0600; `readJevEnv` still refuses that at job time.
  * The returned list is names only.
  */
@@ -249,9 +298,11 @@ export function importJevEnv(options: {
   if (copied.length === 0) {
     throw new JevFailure('jev_env_empty', 'no known Jev credential names in source');
   }
-  const lines = copied.map((entry) => `${entry.name}=${entry.value}`);
-  const body = lines.length ? `${lines.join('\n')}\n` : '';
-  const file = path.join(options.hudHome, 'jev.env');
+  const file = path.join(options.hudHome, 'credentials.env');
+  const merged = readPrivateAssignments(file);
+  for (const entry of copied) merged.set(entry.name, entry.value);
+  // Quotes retain leading/trailing spaces literally; this format never evaluates shell syntax.
+  const body = [...merged].map(([name, value]) => `${name}="${value}"`).join('\n') + '\n';
   writePrivate(file, body);
   return { file, names: copied.map((entry) => entry.name) };
 }
@@ -502,7 +553,7 @@ function parseEnvAssignment(rawLine: string): { name: string; value: string } | 
   const eq = line.indexOf('=');
   if (eq <= 0) return null;
   const name = line.slice(0, eq).trim();
-  if (!name) return null;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return null;
   return { name, value: unquoteEnv(line.slice(eq + 1).trim()) };
 }
 

@@ -18,7 +18,7 @@ import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Server } from 'node:net';
 import { Agent, type BrowserPort } from '../agent.js';
-import { DEFAULT_CDP_URL, defaultJevTomlPath, loadJevConfig, readJevEnv, type JevConfig } from '../ask/config.js';
+import { DEFAULT_CDP_URL, loadJevConfig, readHudCredentials, type JevConfig } from '../ask/config.js';
 import { chromeStart, type ChromeVersion, type ChromeMode } from '../ask/chrome.js';
 import { loopbackJson } from '../cdp.js';
 import { JevFailure } from '../ask/error.js';
@@ -179,7 +179,7 @@ export interface ResolvedDecision {
 
 export interface RuntimeOptions {
   hudHome: string;
-  /** Tests pass a temporary directory. Production reads `state_dir` from the jev-ask config. */
+  /** Tests pass a temporary directory. Production reads `stateDir` from the HUD config. */
   stateDir?: string;
   /** Tests pass this with `stateDir`. Production reads `cdp_url` from the same config. */
   cdpUrl?: string;
@@ -198,7 +198,7 @@ export interface RuntimeOptions {
   oracleNow?: () => number;
   oracleSleep?: (ms: number) => Promise<void>;
   studioConfigLoader?: () => StudioConfig;
-  /** Tests inject the config. Production resolves TOML and this runtime's HUD config. */
+  /** Tests inject the config. Production resolves this runtime's HUD config and only explicitly selected TOML. */
   configLoader?: () => { stateDir: string; cdpUrl: string };
 }
 
@@ -359,7 +359,7 @@ export class JevRuntime implements JevExecutor {
   /** The shared record directory. Missing means a typed error, never a new folder. */
   private bindState(): void {
     // Explicit test state never reads production configuration. Normal starts use
-    // the same TOML as the CLI, overlaid by this HUD home's own `jev` section.
+    // this HUD home's own `jev` section (TOML is opt-in only).
     this.config = this.options.stateDir
       ? loadJevConfig({
           configJson: { jev: { stateDir: this.options.stateDir, cdpUrl: this.options.cdpUrl } },
@@ -820,7 +820,9 @@ export class JevRuntime implements JevExecutor {
   }
 
   private studioConfig(): StudioConfig {
-    return this.options.studioConfigLoader ? this.options.studioConfigLoader() : loadStudioConfig();
+    return this.options.studioConfigLoader
+      ? this.options.studioConfigLoader()
+      : loadStudioConfig({ configJsonPath: join(this.hudHome, 'config.json') });
   }
 
   private async runBrowse(job: StoredJob, provider: DecisionProvider, signal: AbortSignal): Promise<void> {
@@ -935,7 +937,7 @@ export class JevRuntime implements JevExecutor {
     if (explicit !== undefined && explicit !== 'typesafe' && explicit !== 'openai') {
       throw new JevRuntimeError('invalid_request', 'invalid_request');
     }
-    const creds = readJevEnv(join(this.hudHome, 'jev.env'));
+    const creds = readHudCredentials(process.env, this.hudHome);
     const decision = decideProviderId(explicit, {
       typesafe: Boolean(creds.typesafeApiKey),
       openai: Boolean(creds.openaiApiKey),
@@ -1207,7 +1209,7 @@ export class JevRuntime implements JevExecutor {
 /** Explicit sources: HUD JSON overrides TOML; the loader itself never reads process.env. */
 export function loadRuntimeConfig(hudHome: string): JevConfig {
   return loadJevConfig({
-    tomlPath: process.env.JEV_ASK_CONFIG || defaultJevTomlPath(),
+    tomlPath: process.env.JEV_ASK_CONFIG,
     configJsonPath: join(hudHome, 'config.json'),
     capturedEnv: process.env,
     home: homedir(),

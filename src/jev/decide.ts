@@ -190,15 +190,17 @@ export async function selectDecisionProvider(
   env: NodeJS.ProcessEnv = process.env,
   fetcher?: typeof fetch
 ): Promise<DecisionProvider> {
+  const { readHudCredentials } = await import('./ask/config.js');
+  const creds = readHudCredentials(env);
   const decision = decideProviderId(explicit, {
-    typesafe: Boolean(env.TYPESAFE_API_KEY),
-    openai: Boolean(env.OPENAI_API_KEY),
+    typesafe: Boolean(creds.typesafeApiKey),
+    openai: Boolean(creds.openaiApiKey),
   });
   if (!decision.ok) throw new JevCredentialsMissing(decision.provider, decision.variable);
   if (decision.provider === 'openai') {
     const { OpenAIDecisionProvider } = await import('./providers/openai.js');
-    return new OpenAIDecisionProvider({ apiKey: env.OPENAI_API_KEY ?? '', baseUrl: env.OPENAI_BASE_URL, fetcher });
+    return new OpenAIDecisionProvider({ apiKey: creds.openaiApiKey ?? '', baseUrl: creds.openaiBaseUrl, fetcher });
   }
   const { TypeSafeDecisionProvider } = await import('./providers/typesafe.js');
-  return new TypeSafeDecisionProvider({ apiKey: env.TYPESAFE_API_KEY ?? '', model: env.TYPESAFE_MODEL, fetcher });
+  return new TypeSafeDecisionProvider({ apiKey: creds.typesafeApiKey ?? '', model: creds.typesafeModel, fetcher });
 }

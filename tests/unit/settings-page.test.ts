@@ -250,6 +250,9 @@ test('every model feature sits in the LLM group, and the calls made today show u
   assert.deepEqual(llm, [
     'briefing',
     'briefingPaused',
+    'briefingApiLiteEffort',
+    'briefingApiLowEffort',
+    'briefingApiMediumEffort',
     'briefAgents',
     'briefMain',
     'agentProgress',
@@ -273,7 +276,8 @@ test('every model feature sits in the LLM group, and the calls made today show u
       row.key !== 'briefingMs' &&
       row.key !== 'modelCallsPerHour' &&
       row.key !== 'briefing' &&
-      row.key !== 'briefingPaused'
+      row.key !== 'briefingPaused' &&
+      !['briefingApiLiteEffort', 'briefingApiLowEffort', 'briefingApiMediumEffort'].includes(row.key)
   ))
     assert.match(row.help, /^Sends /, row.key);
   assert.equal(defaultSettings().briefMain, false, 'sending the main session is opt-in');

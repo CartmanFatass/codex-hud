@@ -422,7 +422,36 @@ Background job answers are cached by their input, backend, endpoint and actual m
   "briefingApiKey": "" }
 ```
 
-An empty base is OpenAI's. An empty key falls back to `CODEX_HUD_BRIEF_API_KEY`; `OPENAI_API_KEY` is used only for the official OpenAI origin, never for a custom endpoint. With none the request is sent without one, for a local server. The file is written with mode 0600. API tasks route by feature: labels, titles and approval descriptions use the lite tier; active progress summaries, agents briefs, result digests and change summaries use low; main recaps and failure causes use medium. A nonempty `briefingApiModel` overrides all API tiers; `CODEX_HUD_BRIEF_MODEL` overrides either backend. In this GLM example the internal lite/low/medium tiers use none/low/high aliases; effort is encoded in the model name, not an extra parameter, and there is no silent fallback to another model on failure. HTTP redirects are refused rather than forwarding credentials or session material. `agy` keeps its default `gemini-3.8-flash-low`. Only the fields every compatible server accepts are sent to an `api` endpoint; set `"briefingApiReasoning": true` if yours takes `reasoning_effort` and it will be sent too.
+An empty base is OpenAI's. Key resolution is: a nonempty `briefingApiKey` (legacy explicit override), then `CODEX_HUD_BRIEF_API_KEY`, then the HUD's own credentials by **exact endpoint origin**: `https://api.mistral.ai` gets `MISTRAL_API_KEY`, `https://api.openai.com` gets `OPENAI_API_KEY`. Provider environment variables override the matching credentials-file names for tests/CI. Custom/local endpoints, lookalike hosts, HTTP variants and non-default ports receive neither general provider key; URLs with userinfo are rejected. With no matching key the request goes without one. HTTP redirects are refused rather than forwarding credentials or session material. Keep new keys in the credentials file, not settings (legacy settings keys remain honoured and settings are written 0600).
+
+API tasks route by feature: labels, titles and approval descriptions use the lite tier; active progress summaries, agents briefs, result digests and change summaries use low; main recaps and failure causes use medium. A nonempty `briefingApiModel` overrides all API tiers; `CODEX_HUD_BRIEF_MODEL` overrides either backend. In the GLM example above, effort is encoded in model aliases, not an extra parameter. Product model/base defaults are unchanged; `agy` keeps `gemini-3.8-flash-low`.
+
+Settings → LLM offers **Lite effort**, **Low effort**, **Medium effort** (`briefingApiLiteEffort`, `briefingApiLowEffort`, `briefingApiMediumEffort`). Each defaults to `off` and offers `off | none | low | high | xhigh | max`. `off` omits `reasoning_effort`; `none` explicitly disables reasoning. Other values send exactly the chosen effort. `minimal` and `medium` are accepted only when explicitly typed in a settings file for an endpoint that supports them; they are never inferred or offered by the panel. DeepSeek V4.1 Flash on Mistral rejects those two values. There are no silent fallback/retry requests with another model or effort. When a bounded request sends reasoning other than `none`, `max_tokens` includes 512 extra reasoning tokens above its ordinary output bound. Thinking parts in a multipart Mistral response are ignored; only answer text is displayed.
+
+Legacy `briefingApiReasoning` files migrate only missing tier fields:
+
+| Legacy value | lite | low | medium |
+| --- | --- | --- | --- |
+| `false` (or absent) | `off` | `off` | `off` |
+| `true` | `none` | `low` | `low` |
+
+Explicit tier fields win over the legacy switch. The conservative `true` mapping preserves the old ordinary task efforts without inventing endpoint-unsupported `minimal`/`medium` values. A new configuration should use the explicit tier fields.
+
+### HUD credentials and Jev configuration
+
+The HUD reads `$HUD_HOME/credentials.env` (`HUD_HOME` defaults to `~/.hud`). It must be a regular file with mode **0600**; symlinks and FIFOs are refused without following/blocking. Format is `NAME=VALUE`, optionally prefixed `export ` and/or quoted; there is **no interpolation**. Known names are `TYPESAFE_API_KEY`, `TYPESAFE_MODEL`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `MISTRAL_API_KEY`, `MISTRAL_BASE_URL` and `TEXT_MODEL_*`. Model/base settings otherwise stay in configuration; file names for these non-secret legacy settings are retained for compatibility.
+
+```dotenv
+TYPESAFE_API_KEY=synthetic-typesafe-key
+OPENAI_API_KEY=synthetic-openai-key
+MISTRAL_API_KEY=synthetic-mistral-key
+```
+
+Credentials are re-read, not cached. Each name resolves from the process environment first, then `credentials.env`, then legacy `$HUD_HOME/jev.env` for names missing from the new file. Missing files yield no keys. No key is read implicitly from pi, Codex, or jev-ask files. Jev keeps its decision selection: an explicit provider wins; otherwise TypeSafe wins when both keys exist, and a lone OpenAI key selects OpenAI.
+
+For an explicit legacy import, run `hud setup --import-jev-env --from /synthetic/source.env`. Without `--from`, you must explicitly set `JEV_ASK_CONFIG` to a TOML file whose `[jev].root` locates the source `.env`; there is no default TOML discovery. The importer accepts only the known Jev names (`OPENAI_*`, `TYPESAFE_*` above and `TEXT_MODEL_*`), merges them into `credentials.env` per name, preserves existing names not imported (including Mistral), and atomically writes mode 0600. Stdout lists imported names only, never values. Unsafe existing destinations are refused rather than overwritten.
+
+Jev's browser settings live in the `jev` section of `$HUD_HOME/config.json`. AI Studio settings live beside it in `aistudio`, using the existing TOML field names: `state_dir`, `models`, `default_model`, `default_thinking`, `cdp_url`. AI Studio also reads this runtime's HUD file, not another tool's default config; explicit TOML is overlaid field by field by HUD JSON. Its `state_dir` and existing default `~/.local/state/jev-aistudio` keep their deliberately shared one-send-per-key semantics and must already exist. A missing configuration reports the HUD file. `~/.config/jev-ask/config.toml` is **not** an implicit fallback; a TOML configuration is read only when explicitly named by `JEV_ASK_CONFIG` (HUD JSON overrides it field by field). `jev.stateDir` still explicitly names the owner's existing shared operation-record directory: this deliberately shared state preserves one-send-per-key records and is not replaced with a fresh HUD directory.
 
 ### Picture
 

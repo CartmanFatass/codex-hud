@@ -104,14 +104,14 @@ test('custom endpoints never receive the general OpenAI key; deliberate HUD keys
   assert.ok('error' in modelHttpRequest({ ...api, base: 'https://user:pass@api.openai.com/v1' }, question, env));
 });
 
-test('reasoning_effort is opt-in and unknown efforts are omitted', () => {
+test('legacy reasoning opt-in maps by tier without inventing minimal or medium', () => {
   const request = { ...question, thinking: 'high' as const };
   const plain = modelHttpRequest(api, request, {});
   const marked = modelHttpRequest({ ...api, reasoning: true }, request, {});
   const unknown = modelHttpRequest({ ...api, reasoning: true }, { ...question, thinking: 'max' }, {});
   assert.ok(!('error' in plain) && !('reasoning_effort' in JSON.parse(plain.body)));
-  assert.ok(!('error' in marked) && JSON.parse(marked.body).reasoning_effort === 'high');
-  assert.ok(!('error' in unknown) && !('reasoning_effort' in JSON.parse(unknown.body)));
+  assert.ok(!('error' in marked) && JSON.parse(marked.body).reasoning_effort === 'none');
+  assert.ok(!('error' in unknown) && JSON.parse(unknown.body).reasoning_effort === 'none');
 });
 
 test('call counts: last hour and since midnight', () => {

@@ -1,3 +1,4 @@
+import type { ApiEffort } from './collectors/small-model.js';
 import { resolveHudEnv } from './utils/hud-env.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -79,15 +80,15 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
   briefingApiMediumModel: string;
   /**
    * `api` brief: the key. Empty falls back to CODEX_HUD_BRIEF_API_KEY, then
-   * OPENAI_API_KEY only on the official OpenAI origin; custom endpoints never
-   * receive that general key. A local server may need none. The file is written 0600.
+   * the HUD credentials file's origin-bound OPENAI_API_KEY or MISTRAL_API_KEY;
+   * custom endpoints never receive those general keys. A local server may need none. The file is written 0600.
    */
   briefingApiKey: string;
-  /**
-   * `api` brief: the endpoint accepts `reasoning_effort`, so each request's
-   * thinking level is sent. Off sends only fields every server accepts.
-   */
+  /** Legacy input, migrated to explicit tier efforts when loading older files. */
   briefingApiReasoning: boolean;
+  briefingApiLiteEffort: ApiEffort;
+  briefingApiLowEffort: ApiEffort;
+  briefingApiMediumEffort: ApiEffort;
   /** The agents brief: subagents' tasks and latest updates go to the backend. On by default once a backend is chosen. */
   briefAgents: boolean;
   /** Public progress summaries for enabled visible card subjects; independent of the periodic brief. */
@@ -210,6 +211,9 @@ export function defaultSettings(): HudSettings {
     briefingApiModel: '',
     briefingApiKey: '',
     briefingApiReasoning: false,
+    briefingApiLiteEffort: 'off',
+    briefingApiLowEffort: 'off',
+    briefingApiMediumEffort: 'off',
     briefingApiLiteModel: 'gemini-3.5-flash-lite',
     briefingApiLowModel: 'gemini-3.8-flash-low',
     briefingApiMediumModel: 'gemini-3.8-flash-medium',
@@ -289,6 +293,9 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   briefingApiMediumModel: isText(200),
   briefingApiKey: isText(4096),
   briefingApiReasoning: isBoolean,
+  briefingApiLiteEffort: oneOf('off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'),
+  briefingApiLowEffort: oneOf('off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'),
+  briefingApiMediumEffort: oneOf('off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'),
   briefAgents: isBoolean,
   agentProgress: isBoolean,
   briefMain: isBoolean,
@@ -331,6 +338,16 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result = { ...base };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
   const values = { ...(raw as Record<string, unknown>) };
+  // Only missing tier values inherit the legacy switch; explicit tier values always win.
+  if (typeof values.briefingApiReasoning === 'boolean') {
+    for (const [key, effort] of Object.entries({
+      briefingApiLiteEffort: 'none',
+      briefingApiLowEffort: 'low',
+      briefingApiMediumEffort: 'low',
+    })) {
+      if (!Object.hasOwn(values, key)) values[key] = values.briefingApiReasoning ? effort : 'off';
+    }
+  }
   // OMP was removed: preserve opt-in intent by migrating to API, never AGY.
   if (values.briefing === 'omp') values.briefing = 'api';
   // A pane is open or closed; one saved folded, as earlier versions could, is closed.

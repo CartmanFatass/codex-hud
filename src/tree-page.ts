@@ -785,7 +785,11 @@ async function runLivePage(): Promise<void> {
         base: settings.briefingApiBase,
         model: settings.briefingApiModel,
         key: settings.briefingApiKey,
-        reasoning: settings.briefingApiReasoning,
+        efforts: {
+          lite: settings.briefingApiLiteEffort,
+          low: settings.briefingApiLowEffort,
+          medium: settings.briefingApiMediumEffort,
+        },
         models: {
           lite: settings.briefingApiLiteModel,
           low: settings.briefingApiLowModel,

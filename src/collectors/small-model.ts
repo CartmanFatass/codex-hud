@@ -21,6 +21,7 @@
  * Feature formatters run only after the materials entry grants their public
  * observations. Queue dispatch, cache consumption and write-back revalidate it.
  */
+import { readHudCredentials } from '../jev/ask/config.js';
 import { resolveHudEnv } from '../utils/hud-env.js';
 import { sessionRefKey } from '../core/identity.js';
 import { outboundDecision } from '../core/export.js';
@@ -65,6 +66,10 @@ import {
 } from './model-telemetry.js';
 
 export type ModelBackend = 'off' | 'agy' | 'api';
+/** minimal/medium are advanced typed-only compatibility values, never inferred. */
+export type ApiEffort = 'off' | 'none' | 'low' | 'high' | 'xhigh' | 'max' | 'minimal' | 'medium';
+export const REASONING_TOKEN_ALLOWANCE = 512;
+export const LEGACY_API_EFFORTS = { lite: 'none', low: 'low', medium: 'low' } as const;
 /** Thinking levels; agy and `api` take the subset they know. */
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto';
 
@@ -75,11 +80,9 @@ export interface ModelApi {
   model: string;
   models?: Partial<Record<ApiModelTier, string>>;
   key: string;
-  /**
-   * The endpoint accepts `reasoning_effort`. Off by default: only fields
-   * every compatible server accepts are sent unless the person says so.
-   */
+  /** Legacy switch: missing efforts map to lite=none, low=low, medium=low. */
   reasoning?: boolean;
+  efforts?: Partial<Record<ApiModelTier, ApiEffort>>;
 }
 
 export interface ModelRequest {
@@ -195,15 +198,10 @@ const AGY_MODEL_FAMILY = 'gemini-3.8-flash';
 const AGY_MODEL_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high'];
 /** Levels agy's `--effort` flag accepts. */
 const AGY_EFFORTS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
-/** `reasoning_effort` values OpenAI-compatible servers know, by our level. */
-const API_EFFORTS: Partial<Record<ThinkingLevel, string>> = {
-  off: 'none',
-  minimal: 'minimal',
-  low: 'low',
-  medium: 'medium',
-  high: 'high',
-  xhigh: 'xhigh',
-};
+/** A tier's explicit effort wins. The legacy switch never invents unsupported values. */
+export function apiEffort(api: ModelApi, tier: ApiModelTier): ApiEffort {
+  return api.efforts?.[tier] ?? (api.reasoning ? LEGACY_API_EFFORTS[tier] : 'off');
+}
 
 const TIMEOUT_MS = 90_000;
 const MAX_OUTPUT_BYTES = 64 * 1024;
@@ -230,7 +228,7 @@ export function apiModelTier(feature: string): ApiModelTier {
 
 /** The program and arguments for one request. No shell is involved. */
 export function modelCommand(
-  backend: 'agy',
+  _backend: 'agy',
   request: Pick<ModelRequest, 'system' | 'prompt' | 'thinking'>,
   env: NodeJS.ProcessEnv = process.env
 ): { file: string; args: string[] } {
@@ -263,38 +261,48 @@ export function modelCommand(
 
 /**
  * One chat completions request. The base may be given up to `/v1` or as the
- * full `/chat/completions` URL. The key falls back to CODEX_HUD_BRIEF_API_KEY,
- * then OPENAI_API_KEY only for the official OpenAI origin; custom endpoints
- * never receive the general OpenAI key. With none it goes without, for a local server. CODEX_HUD_BRIEF_MODEL overrides the model. Only the fields every
- * compatible server accepts are sent, plus `reasoning_effort` when the
- * endpoint is marked as taking it.
+ * full `/chat/completions` URL. Key precedence: settings, CODEX_HUD_BRIEF_API_KEY,
+ * then the HUD credentials' origin-bound OpenAI/Mistral key (environment overrides
+ * matching file names). Custom endpoints never receive general provider keys.
+ * With none it goes without, for a local server. CODEX_HUD_BRIEF_MODEL overrides
+ * the model. Each tier explicitly controls its optional reasoning_effort.
  */
 export function modelHttpRequest(
   api: ModelApi,
   request: Pick<ModelRequest, 'feature' | 'system' | 'prompt' | 'thinking' | 'maxOutputTokens'>,
   env: NodeJS.ProcessEnv = process.env
-): { url: string; headers: Record<string, string>; body: string } | { error: string } {
+): { url: string; headers: Record<string, string>; body: string; model: string } | { error: string } {
   const base = (api.base.trim() || OPENAI_BASE).replace(/\/+$/, '');
   const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
-  let official = false;
+  let origin: string;
   try {
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password)
       return { error: 'api: invalid endpoint' };
-    official = parsed.origin === 'https://api.openai.com';
+    origin = parsed.origin;
   } catch {
     return { error: 'api: invalid endpoint' };
   }
   const tier = apiModelTier(request.feature);
   const model =
     env.CODEX_HUD_BRIEF_MODEL?.trim() || api.model.trim() || api.models?.[tier]?.trim() || DEFAULT_API_MODELS[tier];
-  // An endpoint-specific HUD key is deliberate. Never leak OPENAI_API_KEY to a custom origin.
-  const key =
-    api.key.trim() || env.CODEX_HUD_BRIEF_API_KEY?.trim() || (official ? env.OPENAI_API_KEY?.trim() : '') || '';
+  // General provider keys are bound to exact HTTPS origins, never a lookalike or custom port.
+  let key = api.key.trim() || env.CODEX_HUD_BRIEF_API_KEY?.trim() || '';
+  if (!key && (origin === 'https://api.openai.com' || origin === 'https://api.mistral.ai')) {
+    try {
+      const creds = readHudCredentials(env);
+      key = (origin === 'https://api.mistral.ai' ? creds.mistralApiKey : creds.openaiApiKey)?.trim() || '';
+    } catch {
+      return { error: 'api: credential file must be a regular file with mode 0600' };
+    }
+  }
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (key) headers.authorization = `Bearer ${key}`;
-  const effort = api.reasoning ? API_EFFORTS[request.thinking ?? DEFAULT_THINKING] : undefined;
-  const maxTokens = outputTokens(request.maxOutputTokens);
+  const configuredEffort = apiEffort(api, tier);
+  const effort = configuredEffort === 'off' ? undefined : configuredEffort;
+  const output = outputTokens(request.maxOutputTokens);
+  const maxTokens =
+    output === undefined ? undefined : output + (effort && effort !== 'none' ? REASONING_TOKEN_ALLOWANCE : 0);
   const body = JSON.stringify({
     model,
     stream: false,
@@ -305,7 +313,7 @@ export function modelHttpRequest(
       { role: 'user', content: request.prompt },
     ],
   });
-  return { url, headers, body };
+  return { url, headers, body, model };
 }
 
 /** The reply text of a chat completion; some servers send content as parts. */
@@ -338,7 +346,7 @@ export function cleanOutput(raw: string): string {
  */
 export function requestDigest(
   request: ModelRequest,
-  route?: { backend: ModelBackend; endpoint?: string; model?: string; reasoning?: boolean }
+  route?: { backend: ModelBackend; endpoint?: string; model?: string; reasoning?: boolean; effort?: ApiEffort }
 ): string {
   return createHash('sha256')
     .update(
@@ -566,7 +574,13 @@ export class SmallModel {
 
   configure(patch: { backend?: ModelBackend; api?: ModelApi; hourlyCap?: number }): void {
     const backend = patch.backend ?? this.backend;
-    const api = patch.api ? { ...patch.api, models: patch.api.models ? { ...patch.api.models } : undefined } : this.api;
+    const api = patch.api
+      ? {
+          ...patch.api,
+          models: patch.api.models ? { ...patch.api.models } : undefined,
+          efforts: patch.api.efforts ? { ...patch.api.efforts } : undefined,
+        }
+      : this.api;
     const changed = backend !== this.backend || JSON.stringify(api) !== JSON.stringify(this.api);
     if (changed) this.cancelAll();
     this.backend = backend;
@@ -700,18 +714,21 @@ export class SmallModel {
     }
   }
 
-  private route(feature: string, env: NodeJS.ProcessEnv = this.options.env ?? process.env): MaterialRoute {
+  private route(
+    feature: string,
+    env: NodeJS.ProcessEnv = this.options.env ?? process.env
+  ): MaterialRoute & { effort?: ApiEffort } {
     const empty = { feature, system: '', prompt: '' };
     const http = this.backend === 'api' ? modelHttpRequest(this.api, empty, env) : undefined;
     const command = this.backend === 'agy' ? modelCommand('agy', empty, env) : undefined;
     return {
       backend: this.backend,
       endpoint: http && !('error' in http) ? http.url : '',
-      model:
-        http && !('error' in http)
-          ? (JSON.parse(http.body).model as string)
-          : command?.args[command.args.indexOf('--model') + 1],
-      reasoning: this.backend === 'api' && !!this.api.reasoning,
+      model: http && !('error' in http) ? http.model : command?.args[command.args.indexOf('--model') + 1],
+      reasoning: this.backend === 'api' && apiEffort(this.api, apiModelTier(feature)) !== 'off',
+      ...(this.backend === 'api' && apiEffort(this.api, apiModelTier(feature)) !== 'off'
+        ? { effort: apiEffort(this.api, apiModelTier(feature)) }
+        : {}),
     };
   }
   private recipient(route: MaterialRoute): ResolvedRecipient | null {
@@ -1161,10 +1178,7 @@ export class SmallModel {
     if (!refusal)
       route = {
         ...route,
-        model:
-          http && !('error' in http)
-            ? (JSON.parse(http.body).model as string)
-            : command?.args[command.args.indexOf('--model') + 1],
+        model: http && !('error' in http) ? http.model : command?.args[command.args.indexOf('--model') + 1],
       };
     const digest =
       !refusal && request.cacheKey !== undefined

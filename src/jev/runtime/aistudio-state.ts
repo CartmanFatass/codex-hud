@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import * as TOML from '@iarna/toml';
 import { JevFailure } from '../ask/error.js';
+import { defaultHudHome } from '../ask/config.js';
 import { assertLeaseHeld, type HeldLease } from '../ask/lease.js';
 import { assertStateDir, fsyncDirectory } from '../ask/names.js';
 import {
@@ -49,20 +50,37 @@ export interface StudioConfig {
   thinking: string;
   cdpUrl?: string;
 }
-/** Separate from the Jev config loader: this is the owner's [aistudio] table. */
-export function loadStudioConfig(options: { tomlPath?: string; tomlText?: string; home?: string } = {}): StudioConfig {
+/** HUD JSON `aistudio` overlays an explicitly selected TOML table with the same field names. */
+export function loadStudioConfig(
+  options: {
+    configJsonPath?: string;
+    tomlPath?: string;
+    tomlText?: string;
+    home?: string;
+    capturedEnv?: Record<string, string | undefined>;
+  } = {}
+): StudioConfig {
   const home = options.home ?? homedir();
-  const file = options.tomlPath ?? process.env.JEV_ASK_CONFIG ?? join(home, '.config', 'jev-ask', 'config.toml');
-  let parsed: Record<string, unknown>;
+  const env = options.capturedEnv ?? process.env;
+  const file = options.tomlPath ?? env.JEV_ASK_CONFIG;
+  const configJsonPath = options.configJsonPath ?? join(defaultHudHome(env, home), 'config.json');
+  let toml: unknown;
+  let json: unknown;
   try {
-    parsed = TOML.parse(options.tomlText ?? readFileSync(file, 'utf8')) as Record<string, unknown>;
+    if (options.tomlText !== undefined) toml = TOML.parse(options.tomlText);
+    else if (file) toml = TOML.parse(readFileSync(file, 'utf8'));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') parsed = {};
-    else throw new JevFailure('aistudio_config', 'aistudio_config');
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new JevFailure('aistudio_config', 'aistudio_config');
   }
-  const table = (parsed.aistudio ?? {}) as Record<string, unknown>;
-  if (!table || typeof table !== 'object' || Array.isArray(table))
-    throw new JevFailure('aistudio_config', 'aistudio_config');
+  try {
+    json = JSON.parse(readFileSync(configJsonPath, 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new JevFailure('aistudio_config', 'aistudio_config');
+  }
+  if (toml === undefined && json === undefined) {
+    throw new JevFailure('aistudio_config', `configuration not found: ${configJsonPath}`);
+  }
+  const table = { ...studioTable(toml), ...studioTable(json) };
   const raw = table.state_dir;
   const stateDir =
     typeof raw === 'string' && raw.trim()
@@ -84,6 +102,17 @@ export function loadStudioConfig(options: { tomlPath?: string; tomlText?: string
   const cdpUrl = typeof table.cdp_url === 'string' && table.cdp_url ? table.cdp_url : undefined;
   return { stateDir, models: models as string[], model, thinking: thinking as string, ...(cdpUrl ? { cdpUrl } : {}) };
 }
+function studioTable(value: unknown): Record<string, unknown> {
+  if (value === undefined) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new JevFailure('aistudio_config', 'aistudio_config');
+  const table = (value as Record<string, unknown>).aistudio;
+  if (table === undefined) return {};
+  if (!table || typeof table !== 'object' || Array.isArray(table))
+    throw new JevFailure('aistudio_config', 'aistudio_config');
+  return table as Record<string, unknown>;
+}
+
 interface StudioState {
   keys: Record<string, OperationRecord>;
   [key: string]: unknown;
