@@ -19,7 +19,41 @@ import {
 import { HELPERS, DEPENDENCIES, INSTALLER_FILES, verifyBundle } from './runtime-package/manifest.mjs';
 
 import { OMITTED_OPTIONAL_DEPENDENCIES, PRODUCTION_LOCK_SHA256 } from './runtime-package/dependencies.mjs';
+import { licenseSupplement } from './runtime-package/license-supplements.mjs';
 
+// Transport only: never inherit npm config, auth, NODE_OPTIONS or client state.
+// Do not serialize this environment: proxy URLs can contain credentials.
+export function productionEnvironment(isolated, source = process.env) {
+  const env = { ...isolated };
+  for (const name of [
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'ALL_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'all_proxy',
+    'no_proxy',
+  ]) {
+    if (typeof source[name] === 'string') env[name] = source[name];
+  }
+  return env;
+}
+// Library tarballs contain development dot-metadata. Never omit a declared entrypoint.
+export function validateDependencyEntrypoints(pkg) {
+  function visit(value) {
+    if (
+      typeof value === 'string' &&
+      value.split('/').some((part) => part.startsWith('.') && part !== '.' && part !== '..')
+    )
+      throw new Error('dot_prefixed_dependency_entrypoint_refused');
+    if (value && typeof value === 'object') for (const child of Object.values(value)) visit(child);
+  }
+  for (const key of ['main', 'module', 'exports', 'imports', 'bin']) visit(pkg[key]);
+}
+export function dependencyMetadataPath(name) {
+  return name.startsWith('.');
+}
 export function validateLock(lock) {
   if (lock.lockfileVersion !== 3) throw new Error('lockfile_v3_required');
   const prod = Object.entries(lock.packages).filter(([name, value]) => name && !value.dev);
@@ -78,7 +112,12 @@ export function validateInstalledClosure(nodeModules) {
     for (const name of names) {
       const location = `${parent}${name}`;
       if (!fs.lstatSync(path.join(nodeModules, location)).isDirectory()) throw new Error('unsafe_dependency_directory');
-      const pkg = JSON.parse(readBuildInput(nodeModules, `${location}/package.json`).data);
+      let pkg;
+      try {
+        pkg = JSON.parse(readBuildInput(nodeModules, `${location}/package.json`).data);
+      } catch {
+        throw new Error('invalid_dependency_manifest');
+      }
       if (pkg.name !== name || pkg.version !== DEPENDENCIES[location]) throw new Error('dependency_identity_mismatch');
     }
   }
@@ -240,6 +279,7 @@ function sourceSnapshot(tracked) {
       name.startsWith('scripts/runtime-package/') ||
       [
         'scripts/install-runtime.mjs',
+        'scripts/activate-runtime.mjs',
         'scripts/pack-runtime.mjs',
         'scripts/pack-cloud-preview.mjs',
         'scripts/check-cloud.mjs',
@@ -275,8 +315,8 @@ export async function buildRuntime() {
     const lockBytes = readBuildInput(ROOT, 'package-lock.json').data;
     const lock = JSON.parse(lockBytes);
     validateLock(lock);
-    const step = async (name, executable, args, cwd = ROOT) =>
-      report.results.push(await runOwned(name, executable, args, cwd, env, out));
+    const step = async (name, executable, args, cwd = ROOT, childEnv = env) =>
+      report.results.push(await runOwned(name, executable, args, cwd, childEnv, out));
     await step('runtime-build', process.execPath, [
       'node_modules/typescript/bin/tsc',
       '--outDir',
@@ -311,7 +351,8 @@ export async function buildRuntime() {
       'runtime-production-ci',
       'npm',
       ['ci', '--omit=dev', '--omit=optional', '--ignore-scripts', '--no-audit', '--no-fund', '--bin-links=false'],
-      deps
+      deps,
+      productionEnvironment(env)
     );
     const stage = path.join(out, 'runtime');
     fs.mkdirSync(stage, { mode: 0o700 });
@@ -358,24 +399,44 @@ export async function buildRuntime() {
     for (const name of INSTALLER_FILES) {
       const source = `scripts/${name}`;
       if (!tracked.includes(source)) throw new Error(`untracked_installer_input: ${source}`);
-      add(name, readBuildInput(ROOT, source).data, name === 'install-runtime.mjs', source);
+      add(
+        name,
+        readBuildInput(ROOT, source).data,
+        name === 'install-runtime.mjs' || name === 'activate-runtime.mjs',
+        source
+      );
     }
+    // One canonical release version for every manifest in the bundle.
+    const releaseVersion = JSON.parse(readBuildInput(ROOT, 'package.json').data).version;
     for (const source of ['package.json', 'packages/hud-mcp/package.json']) {
-      const manifest = previewManifest(JSON.parse(readBuildInput(ROOT, source).data), source !== 'package.json');
+      const manifest = previewManifest(
+        JSON.parse(readBuildInput(ROOT, source).data),
+        source !== 'package.json',
+        releaseVersion
+      );
       delete manifest['x-cloud-preview'];
       manifest['x-runtime-bundle'] =
         'Application code and locked Node production dependencies only. No live capability qualification.';
       add(source, json(manifest), false, source);
     }
     validateInstalledClosure(path.join(deps, 'node_modules'));
+    const dependencyOmissions = { count: 0, paths: [] };
     for (const name of Object.keys(DEPENDENCIES)) {
       const pkg = path.join(deps, 'node_modules', name);
+      validateDependencyEntrypoints(JSON.parse(readBuildInput(pkg, 'package.json').data));
       let hasLicense = false;
       let count = 0;
       function walk(directory, prefix = '') {
         for (const file of listNames(directory, 4000)) {
           if (++count > 4000) throw new Error('dependency_entry_limit');
           const rel = prefix ? `${prefix}/${file}` : file;
+          if (dependencyMetadataPath(file)) {
+            dependencyOmissions.count++;
+            const omitted = `node_modules/${name}/${rel}`;
+            if (dependencyOmissions.paths.join(', ').length + omitted.length < 2500)
+              dependencyOmissions.paths.push(omitted);
+            continue;
+          }
           const full = path.join(directory, file);
           const stat = fs.lstatSync(full);
           if (stat.isDirectory()) {
@@ -393,7 +454,18 @@ export async function buildRuntime() {
         }
       }
       walk(pkg);
-      if (!hasLicense) throw new Error(`missing_dependency_license: ${name}`);
+      if (!hasLicense) {
+        const supplement = licenseSupplement(name, lock.packages[`node_modules/${name}`]);
+        if (!supplement || !tracked.includes(supplement.source)) throw new Error(`missing_dependency_license: ${name}`);
+        const data = readBuildInput(ROOT, supplement.source).data;
+        if (digest(data) !== supplement.sha256) throw new Error('license_supplement_integrity_mismatch');
+        add(
+          `node_modules/${name}/LICENSE`,
+          data,
+          false,
+          `${supplement.repository}@${supplement.commit}:libraries/LICENSE; tarball=${supplement.integrity}`
+        );
+      }
     }
     if (
       sourceSnapshot(tracked) !== snapshot ||
@@ -412,9 +484,9 @@ export async function buildRuntime() {
       platform: 'linux',
       nodeRequirement: '^22.13.0 || ^24.0.0',
       builtWithNode: process.versions.node,
+      releaseVersion,
       dependencies: DEPENDENCIES,
-      provenance:
-        'Tracked allowlisted sources, fresh TypeScript builds and isolated npm ci --omit=dev --omit=optional --ignore-scripts with lockfile integrity. Not a publisher signature.',
+      provenance: `Tracked allowlisted sources, fresh TypeScript builds and isolated npm ci --omit=dev --omit=optional --ignore-scripts with lockfile integrity. Not a publisher signature. Omitted ${dependencyOmissions.count} dot-prefixed dependency metadata roots (bounded list, declared entrypoints refused): ${dependencyOmissions.paths.join(', ')}`,
       capabilityLimitation:
         'No live-provider, tmux, Jev, native-platform or release qualification. Historical capability manifests grant no capabilities and do not gate the native path. Node and harness executables are not bundled. Claude uses its installed user executable; SDK optional platform clients are omitted. Jev needs Python3 and its external Agent package. Legacy wrapper also needs bash, tmux and Unix tools.',
       entries,
@@ -457,6 +529,8 @@ export async function buildRuntime() {
       archive,
       archiveSha256,
       manifestDigest,
+      releaseVersion,
+      dependencyOmissions,
       repositorySha,
       repositoryTree,
       dirty,
@@ -467,6 +541,7 @@ export async function buildRuntime() {
   } catch (error) {
     report.status = 'FAIL';
     report.reason = error.message;
+    error.runtimeBuildDirectory = out;
     throw error;
   } finally {
     report.finishedAt = new Date().toISOString();

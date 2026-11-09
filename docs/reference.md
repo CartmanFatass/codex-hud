@@ -7,6 +7,107 @@ The details behind the [README](../README.md): the panel part by part, every key
 - [Machine-readable state](#machine-readable-state)
 - [Configuration](#configuration): [Environment Variables](#environment-variables) · [Notifications](#notifications) · [config.toml](#configtoml)
 
+## Installing
+
+The opt-in Linux/WSL runtime requires Node **22.13+ within 22.x, or 24.x**. It does not install a harness,
+herdr, a browser or provider keys. Installation management is separate from `hud setup`; none of these commands
+calls a model, starts a job or opens a panel. Client activation templates are placeholders until the corresponding
+Claude/pi packages are delivered. Do not run the historical root `install.sh` for this workflow.
+
+A release contains clean-built `dist/`, `packages/hud-mcp/{bin,dist}`, the canonical
+`integrations/skills/hud-delegate/`, ordinary-named integration templates, notices and the bootstrap scripts.
+Its manifest digest is its identity; one `releaseVersion` is shared by runtime package metadata, with commit,
+source-content and lock provenance. A digest verifies integrity, not a publisher signature or live capability.
+Dot-prefixed client metadata is materialized later, not admitted into the release inventory.
+
+Example (synthetic absolute paths; create the chosen empty private prefix yourself):
+
+```sh
+mkdir -p /tmp/example-home/runtime
+chmod 700 /tmp/example-home/runtime
+node /tmp/example-bundle/install-runtime.mjs preview --prefix /tmp/example-home/runtime --stage-only yes
+node /tmp/example-bundle/install-runtime.mjs stage --prefix /tmp/example-home/runtime --expect RUNTIME_PLAN_DIGEST
+node /tmp/example-bundle/activate-runtime.mjs install preview \
+  --prefix /tmp/example-home/runtime --release MANIFEST_DIGEST \
+  --hud-home /tmp/example-home/hud --shim-dir /tmp/example-home/bin
+node /tmp/example-bundle/activate-runtime.mjs install apply --plan ACTIVATION_PLAN_ID \
+  --prefix /tmp/example-home/runtime --release MANIFEST_DIGEST \
+  --hud-home /tmp/example-home/hud --shim-dir /tmp/example-home/bin
+```
+
+Repeat the **exact preview options** at apply. Preview is deterministic and writes nothing, including no saved
+plan. Apply recomputes its content-addressed ID and refuses stale targets or the wrong ID.
+The normalized plan also binds the complete sorted receipt-history digest (names, hashes and identities;
+4096-receipt bound, no truncation). Restoring an attempt advances that history, so a fresh preview can install
+again without overwriting any retained receipt. A concurrent receipt edit makes the plan stale. The already-installed
+CLI has the same grammar: `hud install preview|apply --prefix ABS --release DIGEST ...`.
+`--hud-home` defaults to `$HUD_HOME` or `~/.hud`; `--shim-dir` defaults to `~/.local/bin`.
+Only **hud, hud-statusline, hud-mcp** are published there, as individually pinned owned files. Never add the
+runtime prefix's whole `bin/` to PATH: it also contains internal compatibility commands. `cx`, `codex-hud`,
+`hud-run` and legacy shell marker blocks are not published or changed. A foreign public-name collision refuses.
+The MCP shim selects the six-tool roles surface for that process only.
+
+Layout:
+
+```text
+/tmp/example-home/runtime/                 0700, existing runtime transaction
+  releases/<manifest-digest>/              immutable; old releases retained
+  current                                 atomic schema-v2 selector document
+  bin/                                    internal selectors, not the public PATH directory
+  receipts/                               runtime stage/install/restore receipts
+/tmp/example-home/hud/                     0700, one HUD home for every harness
+  display/  panels/                        missing owned directories only
+  installation/<transaction-id>.json       private plan, backups and before/after journal
+/tmp/example-home/bin/{hud,hud-statusline,hud-mcp}
+```
+
+Existing `credentials.env`, `config.json` and `routing.toml` keep their bytes and mode; activation never creates
+samples over them. Client adapters can supply declarative `private-dir`/`owned-file` steps. An existing client
+file needs its exact expected hash and explicit confirmation text; there is no generic overwrite permission.
+
+### Activation preview runbook
+
+Before approving apply, inspect: schema/transaction and plan IDs, exact runtime digest/version, canonical paths,
+original identity/hash/mode or absence, proposed hashes, public-name subset, preflight results, ordered actions,
+owner-confirmation items and the recovery route. Close editors and approve every concrete diff. Symlinked or
+foreign targets and unsupported layouts refuse; activation does not follow private configuration links.
+The runtime and activation writers share the runtime prefix lock; concurrent writers refuse, not retry.
+Both activation locks record the exact receipt and the owner's PID, start stamp, boot and PID domain.
+After a hard interruption, only explicit `install restore --receipt R` can reclaim matching activation locks,
+and only when that exact owner is provably dead. A live/unknown owner, different PID namespace, malformed lock
+or runtime-owned lock refuses with its path for manual inspection. Preview/apply never reclaim locks.
+
+No rc file is changed by default, nor when the shim directory is already on PATH. To request one POSIX shell
+insertion, pass `--rc-file /tmp/example-home/profile` in both preview and apply. One universal-hud marked block
+is appended; legacy codex-hud blocks remain untouched. Restore removes only that unchanged owned block and
+preserves edits outside it. A hand-edited block is a conflict, not a forced overwrite.
+
+Apply returns a receipt path; on interruption the error includes `restore_receipt=...`. It backs up before each
+mutation and journals intent and completion. Do not blindly repeat an uncertain apply. Inspect the receipt and use:
+
+```sh
+hud install restore --receipt /tmp/example-home/hud/installation/TRANSACTION.json
+hud uninstall preview --receipt /tmp/example-home/hud/installation/TRANSACTION.json
+hud uninstall apply --receipt /tmp/example-home/hud/installation/TRANSACTION.json --plan UNINSTALL_PLAN_ID
+# Before public shims exist, or after removal:
+node /tmp/example-bundle/activate-runtime.mjs install restore --receipt /tmp/example-home/hud/installation/TRANSACTION.json
+```
+
+Restore/uninstall reverse the journal, restoring prior bytes/modes/absence only while targets still match the
+recorded install. Changed files return a conflict report and remain untouched.
+A reverse mutation interrupted before its completion record is reconciled under the same locks and durably
+finalized before success; this preserves the proof needed to reverse an older activation after rolling back an upgrade. **Recovery metadata is the one
+retention exception:** `$HUD_HOME/installation/` and its parent remain even if HUD_HOME was originally absent.
+User-created keys, history and results are retained; nonempty created directories are not recursively removed.
+Immutable releases and recorded owners are never garbage-collected: successful reversal reports
+`deactivated; release retained`, not a purge. For multiple activations, reverse newest first.
+
+For upgrades, stage N+1 beside N with the same bootstrap, then preview/apply activation separately. Staging does
+not move `current`. New shims pin N+1; processes already holding N's immutable path keep using N.
+A shim supplies its installed HUD_HOME only when the caller's HUD_HOME is unset or empty; an explicit override wins. There is no hot
+replacement, automatic client reload or removal of old releases. Client settings/statusline pins need their own
+later-package confirmation; changing the public selector does not rewrite them.
+
 ## The panel
 
 ### Panes
