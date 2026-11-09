@@ -31,6 +31,7 @@ export function herdrBudget(argv: readonly string[]): number {
 
 export interface HerdrCallOptions {
   readonly budgetMs?: number;
+  readonly signal?: AbortSignal;
 }
 
 /**
@@ -44,6 +45,8 @@ export async function runCommand(
   options?: HerdrCallOptions
 ): Promise<HerdrOutcome> {
   const budget = options?.budgetMs ?? (bin === 'herdr' ? herdrBudget(argv) : HERDR_DEFAULT_BUDGET_MS);
+  if (options?.signal?.aborted || budget <= 0)
+    return { ok: false, reason: options?.signal?.aborted ? 'lost' : 'timeout', stdout: '', stderr: '', exitCode: null };
   // File-only dispatch observations must not load subprocess machinery.
   const { spawn } = await import('node:child_process');
   return new Promise((resolve) => {
@@ -57,19 +60,24 @@ export async function runCommand(
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
+      options?.signal?.removeEventListener('abort', abort);
       resolve(outcome);
     };
     const child = spawn(bin, argv, { env, stdio: ['ignore', 'pipe', 'pipe'] });
-    timer = setTimeout(() => {
+    const stop = (reason: 'lost' | 'timeout') => {
       if (settled) return;
-      killedByUs = true;
+      killedByUs = reason === 'timeout';
       child.kill('SIGKILL');
       // A launcher descendant may retain the pipes. The outer budget still ends
       // this call; do not wait for close or sweep unrelated process groups.
       child.stdout?.destroy();
       child.stderr?.destroy();
-      finish({ ok: false, reason: 'timeout', stdout, stderr, exitCode: null });
-    }, budget);
+      finish({ ok: false, reason, stdout, stderr, exitCode: null });
+    };
+    const abort = () => stop('lost');
+    options?.signal?.addEventListener('abort', abort, { once: true });
+    timer = setTimeout(() => stop('timeout'), budget);
+    if (options?.signal?.aborted) abort();
     const take = (chunk: Buffer, which: 'out' | 'err') => {
       const text = chunk.toString('utf8');
       const available = Math.max(0, MAX_OUTPUT - stdout.length - stderr.length);
