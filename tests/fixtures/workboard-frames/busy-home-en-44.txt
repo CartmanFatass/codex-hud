@@ -1,0 +1,44 @@
+ [Home ?1]  Work  v  ,  ?    Ctrl+\ then key
+ need you 1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+›┃? Synthetic browser handoff: Ended     10m
+   needing a human                          
+ worth a look 2 ────────────────────────────
+ ! DESIGN recommendation: Keep one        2m
+          explicit source boundary.         
+   one-way · recommendation                 
+   instead: Infer a name-based join         
+   why: Never guess task ownership.         
+ ≠ UI-1 q1 Should compa… → B: drop the s… 2m
+   answer                                   
+   instead: A                               
+   why: The explicit source is sufficient.  
+ decided for you 6 ─────────────────────────
+ < CHECK Sent back r2                     2m
+ · UI-1 q2 Should IDs s… → A: Retain UUI… 2m
+ · UI-1 q3 Should audit… → A: Keep audit… 2m
+ +3 earlier                                 
+ work · observed start order ───────────────
+ │ CHECK    ━━━━━▸──── review         1 call
+ │ DESIGN   ━━━━━━▸─── await accept   1 call
+ │ UI-1     ━━━▸────── build         6 calls
+ │ Synthetic browser handoff wait           
+ │ MOCKUP phase unknown                     
+ workers ───────────────────────────────────
+ ▸ pi  reviewer  gpt-synthetic-re…·high  30m
+ ✓ pi  oracle    gpt-synthetic·high       5m
+ ▸ pi  imp       gpt-synthetic·high      30m
+ ?     jev       synthetic-web           10m
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+↑↓ move · → expand · Enter: Work · v inspec…

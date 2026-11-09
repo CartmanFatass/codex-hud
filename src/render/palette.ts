@@ -13,6 +13,14 @@ import { displayConfig, type ThemeName } from './hud-config.js';
 export type Paint = (text: string) => string;
 
 /**
+ * The roles a worker runs as. Each one has its own ink, so a role word (and the card bracket beside it) says who is
+ * working without a badge or a second column (concept §15, 2026-11-09 "model roles").
+ */
+export type WorkRole = 'imp' | 'reviewer' | 'sonic' | 'oracle' | 'jev';
+
+export type RoleInk = Record<WorkRole, Paint>;
+
+/**
  * The ink calibrated for `selectedBand` (the selected row's surface): text >= 4.5:1 against it, muted >= 3:1 and
  * >= 1.5:1 from text, every hue >= 3:1 with its hue and saturation kept (lightness is all that moves). A role
  * that already meets its floor is the plain role itself; only a failing one is a constant of its own.
@@ -26,6 +34,7 @@ export interface OnSelectedBand {
   danger: Paint;
   info: Paint;
   model: Paint;
+  roleInk: RoleInk;
 }
 
 export interface Palette {
@@ -41,6 +50,11 @@ export interface Palette {
   danger: Paint;
   info: Paint;
   model: Paint;
+  /**
+   * One ink per work role, on the role word only: imp, reviewer, sonic, oracle and Jev. None is a status colour, so a
+   * role never reads as its state.
+   */
+  roleInk: RoleInk;
   branch: Paint;
   project: Paint;
   /** Emphasis without colour, for the identity of the session. */
@@ -154,6 +168,7 @@ function withSelectedInk(roles: Omit<Palette, 'onSelectedBand'>, calibrated: Par
       danger: roles.danger,
       info: roles.info,
       model: roles.model,
+      roleInk: roles.roleInk,
       ...calibrated,
     },
   };
@@ -173,6 +188,8 @@ const TERMINAL: Palette = withSelectedInk({
   danger: basic(31),
   info: basic(36),
   model: basic(96),
+  // Mid-tones of the 256-colour cube, legible on dark and light backgrounds.
+  roleInk: { imp: ansi256(81), reviewer: ansi256(170), sonic: ansi256(209), oracle: ansi256(141), jev: ansi256(79) },
   branch: basic(35),
   // Identity, not a category: the project name is emphasis without a hue of
   // its own, which leaves the accent free to mean one thing.
@@ -211,6 +228,13 @@ const MOCHA: Palette = withSelectedInk({
   danger: rgb('#F38BA8'),
   info: rgb('#89DCEB'),
   model: rgb('#CBA6F7'),
+  roleInk: {
+    imp: rgb('#4cc3ea'),
+    reviewer: rgb('#e26fce'),
+    sonic: rgb('#ff8f72'),
+    oracle: rgb('#a99df2'),
+    jev: rgb('#3fd9b0'),
+  },
   branch: rgb('#F5C2E7'),
   project: rgb('#B4BEFE'),
   strong: rgb('#B4BEFE'),
@@ -241,6 +265,14 @@ const LATTE_ROLES: Omit<Palette, 'onSelectedBand'> = {
   danger: rgb('#D20F39'),
   info: rgb('#04A5E5'),
   model: rgb('#8839EF'),
+  // The dark end of each role's family: the truecolor inks are too light to read on a light ground.
+  roleInk: {
+    imp: rgb('#087f9c'),
+    reviewer: rgb('#a63c91'),
+    sonic: rgb('#a84329'),
+    oracle: rgb('#6556ae'),
+    jev: rgb('#087a5d'),
+  },
   branch: rgb('#EA76CB'),
   project: rgb('#7287FD'),
   strong: rgb('#7287FD'),
@@ -293,6 +325,13 @@ const TITANIUM: Palette = withSelectedInk({
   danger: rgb('#FF4757'),
   info: rgb('#00B4FF'),
   model: rgb('#D4C090'),
+  roleInk: {
+    imp: rgb('#4cc3ea'),
+    reviewer: rgb('#e26fce'),
+    sonic: rgb('#ff8f72'),
+    oracle: rgb('#a99df2'),
+    jev: rgb('#3fd9b0'),
+  },
   branch: rgb('#D06FED'),
   project: rgbBold('#E8ECF4'),
   strong: rgbBold('#E8ECF4'),
@@ -322,6 +361,7 @@ const NONE: Palette = withSelectedInk({
   danger: identity,
   info: identity,
   model: identity,
+  roleInk: { imp: identity, reviewer: identity, sonic: identity, oracle: identity, jev: identity },
   branch: identity,
   project: identity,
   strong: identity,
@@ -351,6 +391,41 @@ const PALETTES: Record<ThemeName, Palette> = {
 
 export function palette(): Palette {
   return PALETTES[displayConfig().theme] ?? TERMINAL;
+}
+
+/** The approved Home/Work mockup inks are local roles, not changes to global state colours. */
+const boardFrom = (p: Palette) => ({
+  attention: p.warning,
+  danger: p.danger,
+  success: p.success,
+  active: p.accent,
+  muted: p.muted,
+  frame: p.frame,
+  selected: p.selected,
+  roleInk: p.roleInk,
+});
+const BOARD_NONE = boardFrom(NONE),
+  BOARD_TERMINAL = { ...boardFrom(TERMINAL), attention: ansi256(179) },
+  BOARD_LIGHT = boardFrom(LATTE);
+const BOARD_DARK = {
+  ...boardFrom(TITANIUM),
+  attention: rgb('#efc15a'),
+  danger: rgb('#f4727e'),
+  success: rgb('#8fd073'),
+  active: rgb('#6fa8ff'),
+  muted: rgb('#6c7789'),
+  frame: rgb('#363f4d'),
+  selected: surface('#1c2433'),
+};
+export function workboardPalette(): typeof BOARD_DARK {
+  const theme = displayConfig().theme;
+  return theme === 'none'
+    ? BOARD_NONE
+    : theme === 'terminal'
+      ? BOARD_TERMINAL
+      : theme === 'latte'
+        ? BOARD_LIGHT
+        : BOARD_DARK;
 }
 
 export function paletteNames(): ThemeName[] {

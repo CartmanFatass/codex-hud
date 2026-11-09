@@ -30,6 +30,16 @@ export interface JobDisplay {
   readonly preset: string | null;
   readonly backend: Readonly<JobAssociation['backend']> | null;
   readonly location: Readonly<JobAssociation['herdr']>;
+  /** Additive reduced work facts; absent in older snapshots means unknown. */
+  readonly work?: {
+    readonly facadeClosed: boolean;
+    readonly facadeClosedAt: number | null;
+    readonly settledAt: number | null;
+    readonly runtimeTerminal: boolean;
+    readonly homeNeedsHuman: boolean;
+    readonly endedAt: number | null;
+    readonly outputWritten: boolean | null;
+  };
   readonly lifecycle: string;
   readonly runtimePhase: string | null;
   /** Dispatch session evidence, not a complete native binding or a join key. */

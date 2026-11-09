@@ -7,6 +7,59 @@ The details behind the [README](../README.md): the panel part by part, every key
 - [Machine-readable state](#machine-readable-state)
 - [Configuration](#configuration): [Environment Variables](#environment-variables) · [Notifications](#notifications) · [config.toml](#configtoml)
 
+## Home and Work (R5UX-P1)
+
+> **This section supersedes the stacked-pane description under [The panel](#the-panel)** for the main tabs, their
+> keys and their content. The older text stays as the historical/secondary renderer description; the live panel
+> follows this section.
+
+The panel's main tabs are **Home** and **Work**. Both are passive: they display what the workflow already wrote to
+disk and steer nothing.
+
+| `Ctrl+\`, then | Opens |
+|---|---|
+| `1` | Home |
+| `2` | Work |
+| `3` | Changes |
+| `4` or `v` | Inspector |
+| `t` | Timeline |
+| `S` | Main summary, in the Inspector |
+
+**Keys on Home and Work.** Up/Down or `j`/`k` selects; Left/Right or `h`/`l` folds and expands; `v` inspects. Enter
+on Home opens the corresponding Work lane, card or decision; Enter in Work is inert. Esc returns from the Inspector,
+and standalone Esc on the main page exits as before.
+
+**What Home shows.** Its badge and needs-you items count only terminal runtime jobs that ended needing a human. A
+worker's QA result, a normal failure, a blocked job and a timeout never count. Partial coverage never reads as
+"nothing needs you".
+
+**Recorded calls are read-only.** A review counts only when its first line is exactly `Verdict: accept` or
+`Verdict: changes-required`. A recommendation is labelled as a recommendation, explicitly not as an adoption. An
+answer that leaves an explicit option is shown as `≠` with `instead`; an ambiguous answer or free text stays
+routine. Only an explicit `One-way: true` line is pinned red; a prose mention is not. Routine and departure items
+are capped at three with `+N earlier`, older than two hours fold, and the list rolls over at local midnight. There
+is no seen state. Home labels its routine tier **decided for you** and shows each answer with its source question
+and explicit selected-option text when resolvable. The question ID keeps clipped rows distinct; expansion/Inspector
+shows the full bounded text. Home progress has a ten-cell ordinal axis only for observed design/build/review/acceptance
+phases—not a completion percentage or evidence of an unobserved earlier phase. Unknown/mixed phases have no bar.
+
+The one visible cursor belongs to one physical row. Worker lists align glyph, harness, role, task, model·effort and
+right-hand minute age; unknown harness/age cells stay blank. The tab row carries the prefix hint and clickable
+Inspector/Settings/Help controls (compact `v`, `,`, `?` labels where needed), using a second header row only when
+necessary on narrower screens.
+
+**What Work shows.** Its lanes are observation navigation, not execution ownership; an unknown phase or order is
+shown as unknown. In this package the Work body is transitional P1 (lane headers, decision rows and the existing
+cards), not the final compact card and peek design.
+
+**What Home and Work do not have.** No old status-control footer, recovery, Resume, Reconcile, status-level or generation toggles. The
+existing settings and backends load unchanged. Nothing fakes a queue position, a merged age or the publish job's
+login blocker. The recap stays reachable through `S` and the Inspector, with its backend settings preserved.
+
+**Colour.** Role inks colour role words only: imp cyan, reviewer pink, sonic coral, oracle violet, Jev teal. Ages on
+Home and Work are minute-valued. Their local attention ink is the approved mockup's #efc15a; state colours elsewhere
+are unchanged. Light/terminal palettes retain their legible equivalents. Mono and ASCII output keep their meaning.
+
 ## The panel
 
 ### Panes

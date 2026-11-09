@@ -1,0 +1,44 @@
+ [首页 ?1]  工作  详情  设置  帮助                                                               Ctrl+\ 再按键
+ 需要你 1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ │ 进度 · 按观察到的开始时间 ─────────────────
+›┃? Synthetic browser handoff: 已结束，需要人工处理         10分 │ │ CHECK    ━━━━━▸──── 评审           决定 1
+ 值得一看 2 ──────────────────────────────────────────────────── │ │ DESIGN   ━━━━━━▸─── 待验收         决定 1
+ ! DESIGN 建议（非采纳记录）: Keep one explicit source       2分 │ │ UI-1     ━━━▸────── 实现           决定 6
+          boundary.                                              │ │ Synthetic browser handoff wait           
+   不可逆 · 建议（非采纳记录）                                   │ │ MOCKUP 阶段未知                          
+   备选： Infer a name-based join                                │                                            
+   原因： Never guess task ownership.                            │                                            
+ ≠ UI-1 q1 Should compatibility s… → B: drop the shim        2分 │                                            
+   答复                                                          │                                            
+   备选： A                                                      │                                            
+   原因： The explicit source is sufficient.                     │                                            
+   提问上下文： Should compatibility stay? — Synthetic public f… │                                            
+ 代你决定 6 ──────────────────────────────────────────────────── │                                            
+ < CHECK 退回修改 r2                                         2分 │                                            
+ · UI-1 q2 Should IDs stay opaque? → A: Retain UUID identif… 2分 │                                            
+ · UI-1 q3 Should audit events st… → A: Keep audit events    2分 │                                            
+ 另有 3 条较早                                                   │                                            
+ 代理 ────────────────────────────────────────────────────────────────────────────────────────────────────────
+ ▸ pi     reviewer Review the synthetic path                                    gpt-synthetic-review·high 30分
+ ✓ pi     oracle   Source boundaries 来源边界                                   gpt-synthetic·high         5分
+ ▸ pi     imp      首页与被动工作记录 Home and passive records                  gpt-synthetic·high        30分
+ ?        jev      Synthetic browser handoff                                    synthetic-web             10分
+ today 决定 8                                                                                                 
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+↑↓ 移动 · → 展开 · Enter 工作 · v 详情 · ? 帮助                                                               

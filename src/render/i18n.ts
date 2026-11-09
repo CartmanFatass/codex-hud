@@ -11,6 +11,7 @@
  * caller wants the same answer.
  */
 
+import { WORKBOARD_ZH } from './workboard-i18n.js';
 import { DIAGNOSTIC_ZH } from '../diagnostics/diagnostic-translations.js';
 
 export type Language = 'en' | 'zh';
@@ -37,6 +38,7 @@ export function language(): Language {
 }
 
 const ZH: Record<string, string> = {
+  ...WORKBOARD_ZH,
   'Last confirmed: {name}': '最近确认：{name}',
   'Last confirmed: {time}': '最近确认：{time}',
   'Action: {name}': '动作：{name}',

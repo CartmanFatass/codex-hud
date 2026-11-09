@@ -6,6 +6,9 @@ import { parseRosterRoot, formatRosterRoot } from './roles/selection.js';
 import type { SessionRef } from './core/types/identity.js';
 import { JobObservationCollector, type JobObserverOptions, type JobReadSlice } from './collectors/job-observations.js';
 import type { JobSnapshot } from './collectors/job-display-types.js';
+import { TaskObservationCollector } from './collectors/task-observations.js';
+import { buildWorkboard } from './collectors/workboard.js';
+import type { TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-types.js';
 import { composeJobTree, type JobTreeResult } from './collectors/job-tree.js';
 import { NativeCallCollector } from './collectors/native-calls.js';
 import { performance } from 'node:perf_hooks';
@@ -164,15 +167,26 @@ import type { SubagentTree, SubagentTreeNode } from './types.js';
 /** The live refresh and tests share this lifecycle: no I/O in compose/afterPaint. */
 export class PanelJobPipeline {
   private observer: JobObservationCollector;
+  private artifacts: TaskObservationCollector;
+  private taskSnapshot: TaskSnapshot | null = null;
+  private boardCache?: {
+    tree: SubagentTree;
+    legacy: DelegationViewModel | null;
+    jobs: JobSnapshot | null;
+    tasks: TaskSnapshot | null;
+    board: WorkboardSnapshot;
+  };
   private snapshot: JobSnapshot | null = null;
   private generation = 0;
   private closed = false;
   constructor(
     readonly home: string,
     private root: string | null,
-    private readonly options: JobObserverOptions = {}
+    private readonly options: JobObserverOptions = {},
+    private readonly workspace: string | null = null
   ) {
     this.observer = new JobObservationCollector(home, { ...options, root });
+    this.artifacts = new TaskObservationCollector(workspace);
   }
   setRoot(root: string | null): void {
     if (root === this.root) return;
@@ -180,13 +194,49 @@ export class PanelJobPipeline {
     this.root = root;
     this.snapshot = null;
     this.observer.dispose();
+    this.artifacts.dispose();
+    this.taskSnapshot = null;
+    this.boardCache = undefined;
+    this.artifacts = new TaskObservationCollector(this.workspace);
     this.observer = new JobObservationCollector(this.home, { ...this.options, root });
   }
   dispose(): void {
     this.closed = true;
     this.generation++;
     this.snapshot = null;
+    this.taskSnapshot = null;
+    this.boardCache = undefined;
+    this.artifacts.dispose();
     this.observer.dispose();
+  }
+  get artifactCost() {
+    return this.taskSnapshot?.cost;
+  }
+  workboard(tree: SubagentTree, legacy: DelegationViewModel | null = null): WorkboardSnapshot {
+    const cached = this.boardCache;
+    if (
+      cached &&
+      cached.tree === tree &&
+      cached.legacy === legacy &&
+      cached.jobs === this.snapshot &&
+      cached.tasks === this.taskSnapshot
+    )
+      return cached.board;
+    const jobs = this.snapshot ?? {
+      generation: this.generation,
+      root: this.root,
+      jobs: [],
+      coverage: { entries: 0, files: 0, bytes: 0, incomplete: true, omitted: null, diagnostics: [] },
+    };
+    const tasks = this.taskSnapshot ?? {
+      revision: 0,
+      lanes: [],
+      coverage: { incomplete: true, workspace: this.workspace, diagnostics: [] },
+      cost: { entries: 0, files: 0, bytes: 0, probes: 0, enumerations: 0, parses: 0, elapsedMs: 0 },
+    };
+    const board = buildWorkboard(this.observer.home, tasks, jobs, tree, legacy);
+    this.boardCache = { tree, legacy, jobs: this.snapshot, tasks: this.taskSnapshot, board };
+    return board;
   }
   get live() {
     return this.observer.live;
@@ -197,10 +247,21 @@ export class PanelJobPipeline {
   ): Promise<boolean> {
     const generation = this.generation;
     const start = performance.now();
-    const snapshot = await this.observer.refresh(slice);
+    const snapshot = await this.observer.refresh({ ...slice, maxFiles: 24, maxEntries: 112 });
     if (this.closed || generation !== this.generation) return false;
+    const tasks = this.artifacts.refresh(snapshot.jobs, this.observer.home, {
+      deadline: slice?.deadline,
+      maxFiles: 32 - snapshot.coverage.files,
+      maxEntries: 128 - snapshot.coverage.entries,
+      maxBytes: Math.max(0, Math.min(1024 * 1024, slice?.maxBytes ?? 1024 * 1024) - snapshot.coverage.bytes),
+    });
     this.snapshot = snapshot;
-    charge?.(snapshot.coverage.bytes, snapshot.coverage.entries + snapshot.coverage.files, performance.now() - start);
+    this.taskSnapshot = tasks;
+    charge?.(
+      snapshot.coverage.bytes + tasks.cost.bytes,
+      snapshot.coverage.entries + snapshot.coverage.files + tasks.cost.entries + tasks.cost.files + tasks.cost.probes,
+      performance.now() - start
+    );
     return true;
   }
   afterPaint(tree: SubagentTree, legacy: DelegationViewModel | null, nowMs: number, boundRoot?: string): JobTreeResult {
@@ -525,7 +586,7 @@ async function runLivePage(): Promise<void> {
   const allDelegations = !selectedRoot && process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
   const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
   const nativeCalls = NativeCallCollector.fromEnv();
-  const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot);
+  const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot, {}, allDelegations ? null : HUD_CWD_REAL);
   let nativeTree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
   let boundJobRoot = '';
   let jobComposition: JobTreeResult | null = null;
@@ -549,7 +610,7 @@ async function runLivePage(): Promise<void> {
   // run on its own), the keys drive the panel as they used to.
   const mainPane = STANDALONE_PANEL ? undefined : resolveMainPane();
   // Search modals need literal Unicode and paste even in a standalone panel.
-  const decoder = new WorkbenchInputDecoder('monitor', { forward: !STANDALONE_PANEL });
+  const decoder = new WorkbenchInputDecoder('workboard', { forward: !STANDALONE_PANEL });
   const forwarder = new KeyForwarder(
     () => mainPane,
     (call) => tmux(call.args, call.input)
@@ -1009,6 +1070,7 @@ async function runLivePage(): Promise<void> {
         );
         frame = renderMonitor({
           tree,
+          workboard: jobPipeline.workboard(tree, panelDelegation),
           state,
           git,
           worktrees,
@@ -1972,6 +2034,7 @@ async function runLivePage(): Promise<void> {
         worktrees,
         frame,
         navigationOverlay: fromSettings,
+        standalone: STANDALONE_PANEL,
       });
       state = result.state;
       syncPanelView();

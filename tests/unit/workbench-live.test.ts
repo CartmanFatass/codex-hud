@@ -92,34 +92,33 @@ try:
  plain=ansi.sub('', screen.decode('utf-8','replace'))
  assert 'FOUND_THE_CAUSE' not in plain, 'monitor must not show reply text'
  assert 'Checks' not in plain and 'Reports' not in plain
- # Agents is the page, with no box or title; every other pane starts closed.
- assert '▸14' in plain and '1 Agents' not in plain and '2 Timeline' not in plain
- # The changes, the worktrees over its files.
- send(b'3')
- wait_for('1 mod')
- # 1 would close the agents now: Tab is the way back to them.
- send(b'\tv')
+ # Concept §15, approved Home/Work layout (R5-UX-PLAN q2): live never lands on stacked Agents.
+ assert 'Home' in plain and 'Work' in plain and '▸14' not in plain
+ send(b'\r')
+ wait_for('[Work]')
+ # Work Enter is inert; the native worker is inspected with v instead.
+ send(b'j\rv')
  inspect=wait_for('Turn age:')
  assert b'\\x1b[' not in inspect, 'Inspector must not print escaped colour codes'
- send(b'x')
- wait_for('▸14')
- # 3 closes the changes and 3 again opens them, focused.
- send(b'33')
- wait_for('sample.ts')
+ send(b'\x1b')
+ wait_for('[Work]')
+ send(b'G')
+ wait_for('agent-13')
+ # Wheel changes the real Work viewport (SGR coordinates are one-based).
+ send(b'\x1b[<64;3;3M')
+ wait_for('agent-12')
+ # Changes remains a secondary view; its worktree/file and zoom paths are unchanged.
+ send(b'3')
+ wait_for('1 mod')
  send(b'z')
  zoom=wait_for('sample.ts')
  assert '▸14'.encode() not in zoom, 'zoom must hide other panes'
  send(b'\x1b')
- wait_for('▸14')
- send(b'\tG')
- wait_for('agent-13')
- # Wheel up over Agents (SGR coordinates are one-based).
- send(b'\x1b[<64;3;3M')
- wait_for('agent-12')
+ wait_for('1 mod')
  fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',30,100,0,0))
  os.kill(proc.pid,signal.SIGWINCH)
  wait_for('sample.ts')
- send(b'\t\r')
+ send(b'\r')
  zoom=wait_for('after')
  assert '▸14'.encode() not in zoom.rsplit(b'\x1b[H',1)[-1], 'opening diff must zoom automatically'
  send(b'z')
@@ -128,12 +127,7 @@ try:
  zoom=wait_for('after')
  assert '▸14'.encode() not in zoom, 'wide zoom must hide other panes'
  send(b'\x1b')
- wait_for('▸14')
- # The diff left the Inspector open and focused; close it so 4 has
- # something to reopen rather than relying on a timed repaint.
- send(b'x')
- closed=wait_for('▸14')
- assert b'Inspector' not in closed.rsplit(b'\x1b[H',1)[-1], 'x must close the Inspector'
+ wait_for('[Work]')
  send(b'4')
  wait_for('Inspector')
  send(b',')
@@ -143,10 +137,14 @@ try:
  send(b's')
  wait_for('Saved')
  send(b'\x1b')
- wait_for('▸14')
+ wait_for('Turn age:')
+ send(b'\x1b')
+ wait_for('[Work]')
+ send(b'1')
+ wait_for('[Home]')
  fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',12,16,0,0))
  os.kill(proc.pid,signal.SIGWINCH)
- wait_for('⌂')
+ wait_for('Home')
  send(b'?')
  wait_for('Shortcuts')
  # The legend is the help's third page: Tab twice, then its end.
@@ -155,7 +153,7 @@ try:
  send(b'G')
  wait_for('ultra')
  send(b'\x1b')
- wait_for('⌂')
+ wait_for('Home')
  send(b'q')
  tail=b''
  end=time.monotonic()+3
@@ -177,6 +175,9 @@ finally:
     const result = await exec('python3', ['-c', script, process.execPath, entry], {
       env: {
         ...process.env,
+        HOME: dir,
+        HUD_HOME: dir,
+        CODEX_HUD_STANDALONE_PANEL: '1',
         CODEX_HUD_CWD: repo,
         CODEX_SESSIONS_PATH: sessions,
         CODEX_HOME: dir,

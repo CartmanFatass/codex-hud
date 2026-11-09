@@ -112,12 +112,13 @@ test('the four commands are panel commands, mapped to keys of their own; R is na
     assert.deepEqual(decoder.push(Buffer.from(commandSequence(command as never))), [{ type: 'command', command }]);
   }
   assert.equal(NEW.R, 'resume-reconcile');
-  assert.equal(PANEL_COMMANDS.length, 36);
+  assert.equal(PANEL_COMMANDS.length, 39);
   // The map of every other command is as it was.
   assert.equal(monitorKey('older'), 'show-all');
   assert.equal(monitorKey('switch'), 'open-session');
   assert.equal(monitorKey('level'), 'reset');
-  assert.equal(monitorKey('inspect'), 'enter');
+  assert.equal(monitorKey('inspect'), 'inspect');
+  assert.equal(monitorKey('activate'), 'activate');
 });
 
 test('with the panel closed all four do nothing; every other command is as it was', () => {
@@ -152,7 +153,12 @@ test('the prefix table binds the four, never repeating, and the closed-panel scr
   }));
   for (const [key, command] of Object.entries(NEW)) {
     const bound = bindings.filter((b) => b.key === key);
-    assert.deepEqual(bound, [{ repeat: '0', key, command }], `${key}: bound once, with no repeat`);
+    // R5-UX-PLAN q2: Resume/Reconcile no longer has a main-page/prefix control.
+    assert.deepEqual(
+      bound,
+      key === 'R' ? [] : [{ repeat: '0', key, command }],
+      `${key}: bound once, with no repeat (R removed)`
+    );
   }
   // Nothing else moved: j and k still repeat, h and l do not.
   assert.deepEqual(

@@ -1,0 +1,44 @@
+ Home ?1  [Work]  Inspect  Settings  Help                                                      Ctrl+\ then key
+›│ CHECK  Review the synthetic path review                                                              1 call
+ ▸ pi     reviewer Review the synthetic path                                    gpt-synthetic-review·high  30m
+   working                                                                                                    
+ < CHECK Sent back r2                                                                                       2m
+ │ DESIGN  Source boundaries 来源边界 awaiting-acceptance                                               1 call
+ ✓ pi     oracle   Source boundaries 来源边界                                   gpt-synthetic·high          5m
+   idle_grace                                                                                                 
+ ! DESIGN recommendation: Keep one explicit source boundary.                                                2m
+   one-way · recommendation                                                                                   
+   instead: Infer a name-based join                                                                           
+   why: Never guess task ownership.                                                                           
+ │ UI-1  首页与被动工作记录 Home and passive records build                                             6 calls
+ ▸ pi     imp      首页与被动工作记录 Home and passive records                  gpt-synthetic·high         30m
+   working                                                                                                    
+ ≠ UI-1 B                                                                                                   2m
+   answer                                                                                                     
+   instead: A                                                                                                 
+   why: The explicit source is sufficient.                                                                    
+   source context: Should compatibility stay? — Synthetic public fixture.                                     
+ · UI-1 A                                                                                                   2m
+ · UI-1 A                                                                                                   2m
+ · UI-1 A                                                                                                   2m
+ · UI-1 A                                                                                                   2m
+ · UI-1 A                                                                                                   2m
+ │ Synthetic browser handoff  Synthetic browser handoff wait                                                  
+ ┌ ? Synthetic browser handoff ───────────────────────────────────────────────────────────── jev synthetic-web
+ └ ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+ │ MOCKUP  Scratch layout experiment phase unknown                                                            
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+↑↓ move · → expand · Enter: Work · v inspect · ? help                                                         
