@@ -218,6 +218,21 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
 
   Next: A6+A7 merged into one package (R6A-A67: panel self-registration and lifetime plus the role-summary cache);
   then A5; P2c, PR4 and P3b (after P3a).
+  R5UX-P3A merged (`f3fffa1`, clean merge `6a88620`; reviews `docs/reviews/2026-11-10-r5ux-p3a-review-{1..4}.md`, accept
+  on round 4, approved under q16). This is the inert job-material boundary:
+  - default-deny authority scoped to canonical home, exact root, invocation and episode, with concrete recipient
+    consent;
+  - bounded public output reductions (16 KiB, 32 fragments);
+  - a job-only request and typed-pending path in `small-model.ts`, with guarded settlement, a final publication fence
+    and reservation cleanup;
+  - native material formats unchanged.
+
+  Gate on the merged tree: unit 4412/4386/0 fail, mjs 708/706, hud-mcp 219/218, visual 331/331, WP0 1176/1176;
+  mutants, fixtures, format and diff clean. P3b is now unblocked.
+
+  FIX-RLL-HANG running. Root cause confirmed: INT/TERM arriving while a group-leader shell reads the protocol drops
+  partial bytes. The fix ignores INT/TERM only in the protocol readers, adds per-test timeouts, and cleans up the
+  test's own process groups.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
