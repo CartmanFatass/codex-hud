@@ -142,6 +142,7 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
     `https://api.mistral.ai/v1` with `deepseek-v4-1-flash-1017` at none/low/high (live check: 200 on all three tiers,
     0.7–1.7 s); settings backups `hud-settings.json.bak.20261109-keys`;
   - P2 final Work lanes and cards + 110-column peek (after P1);
+  - P2c cleanup (after P2): remove the test-only no-sidecar `renderMonitor` path and migrate its fixture tests (P2 q4);
   - P3a job material authority (parallel with P2 in disjoint files), P3b option-B sentences (after P2 + P3a);
   - later: decision-provider judgements (`≠` when rules are unsure, card attention, stall category).
   Parallel plan (owner approved 2026-11-09): line A P1 → P2 → P3b; line B P3a → decision-provider judgements (after
@@ -168,6 +169,20 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   PR3 design inputs: `tmp/tasks/PIROLE-PLAN/design-after-pr2.md`. Token cost from toktrack only after a rescan
   (`toktrack daily --json`) and full pagination. Next: P2, A0 on the pi flow (≤ 3 implementers).
   The r5-acc demo stage is merged (`1f20f01`).
+  PIROLE PR3 and R6A-A0 merged together (`ab76c25`, `743ec27`; reviews
+  `docs/reviews/2026-11-09-pirole-pr3-review-{1,2}.md`, `docs/reviews/2026-11-09-r6a-a0-review-{1,2,3}.md`). Merged-tree
+  gate: unit 4276/0 fail, mjs 708/0, hud-mcp 219/0, WP0 1176/1176, 12/12 PIROLE mutants, fixtures/format/diff clean.
+  PR3: worker-only pi extension, `call_sonic` for every non-sonic role (nested sonic in a split of the caller's pane,
+  borrowed reservation, unresolved child keeps the slot), implementer autoclose on unused grace, release-relative A1
+  inventory for the reaper, pi 1.5.0 lazy session file handled; nothing selects it until PR4. A0: one resolver
+  `src/hud-home.ts` (`$HUD_HOME`, default `~/.hud`; display state `$HUD_HOME/display/`), `hud import preview|apply`,
+  explicit Jev locations, decisions primary/fallback, Mistral/DeepSeek defaults; six WP0 entries replaced (q7).
+  **Owner item:** before running a build with A0, `hud import preview` then `apply` with `--from` the chosen
+  `hud-settings.json` and jev-ask TOML (report: `tmp/tasks/R6A-A0/report.md` §4); the old saved briefing key is not
+  carried over. Follow-ups: PR3 cost test `cold fake launch` ends `close_unresolved`/`process_unknown` under heavy
+  load (3/3 alone) — check process-identity probing under load in PR4/PR5; reviewer guard blocks `mkdir` in the temp
+  dir (pi-roles and product guard); known load flakes run-light-leader INT harness, managed-codex-adapter callbacks.
+  Next: P2 finishing; P3a and A3 launch on this head; PR4 after P2 (shared collectors).
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
