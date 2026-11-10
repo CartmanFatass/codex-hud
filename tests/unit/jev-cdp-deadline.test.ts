@@ -55,10 +55,12 @@ test('R3F truncated CDP response rejects instead of leaving the probe pending', 
   const root = mkdtempSync(join(tmpdir(), 'jev-r3f-truncated-'));
   const stateDir = join(root, 'state');
   mkdirSync(stateDir);
-  writeFileSync(join(root, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-deadline-key\n', { mode: 0o600 });
+  writeFileSync(join(root, 'credentials.env'), 'TYPESAFE_API_KEY=synthetic-deadline-key\n', { mode: 0o600 });
   const runtime = new JevRuntime({
     hudHome: root,
     stateDir,
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
     cdpUrl: url,
     graceMs: 60_000,
     providerFactory: () => fakeProvider(),

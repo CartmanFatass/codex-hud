@@ -180,10 +180,13 @@ function setup(t: TestContext, targetId: TargetId, h: Fixture): Env {
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const stateDir = join(home, 'state');
   mkdirSync(stateDir, { mode: 0o700 });
-  writeFileSync(join(home, 'jev.env'), `TYPESAFE_API_KEY=${SECRET}\n`, { mode: 0o600 });
+  writeFileSync(join(home, 'credentials.env'), `TYPESAFE_API_KEY=${SECRET}\n`, { mode: 0o600 });
   const jobs = join(home, 'jev-runtime', 'jobs');
   mkdirSync(jobs, { recursive: true, mode: 0o700 });
   const runtime = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
     hudHome: home,
     stateDir,
     fake: true,
@@ -411,11 +414,11 @@ test('T7/T8: runtime survives its client process-group exit, retains work and re
   const stateDir = join(home, 'state');
   mkdirSync(stateDir);
   mkdirSync(join(home, 'jev-runtime'));
-  writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-lifetime\n', { mode: 0o600 });
+  writeFileSync(join(home, 'credentials.env'), 'TYPESAFE_API_KEY=synthetic-lifetime\n', { mode: 0o600 });
   writeFileSync(join(home, 'jev-runtime', 'hold'), '1');
   const clientModule = new URL('../../src/jev/runtime/client.js', import.meta.url).href;
   const script = `import {connectJevExecutor} from ${JSON.stringify(clientModule)};
-    const h=await connectJevExecutor(${JSON.stringify(home)}, {fake:true,graceMs:50,stateDir:${JSON.stringify(stateDir)}});
+    const h=await connectJevExecutor(${JSON.stringify(home)}, {fake:true,graceMs:50,stateDir:${JSON.stringify(stateDir)},cdpUrl:'http://offline.invalid',chrome:'/synthetic/chrome',profile:'/synthetic/profile'});
     const j=await h.createJob({requestKey:'lifetime',session:{namespace:'synthetic',sessionId:'life'},input:{tag:'browse',goal:'Read synthetic page',url:'https://example.invalid/'}});
     console.log(JSON.stringify({pid:(await h.status()).pid,id:j.id}));setInterval(()=>{},1000);`;
   const client = spawn(process.execPath, ['--input-type=module', '-e', script], {
@@ -465,13 +468,27 @@ test('T7/T8: runtime survives its client process-group exit, retains work and re
   assert.ok(after.heartbeat > before.heartbeat, 'async CDP waits do not stall the lease heartbeat');
   // Even an unavailable socket does not let a second runtime take a live lease.
   // Taking that lease directly follows the same admission primitive as start().
-  const contender = new JevRuntime({ hudHome: home, stateDir, fake: true });
+  const contender = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    hudHome: home,
+    stateDir,
+    fake: true,
+  });
   await assert.rejects(contender.start(), (e: { code?: string }) => e.code === 'already_running');
   process.kill(started.pid, 'SIGKILL');
   const file = join(home, 'jev-runtime', 'jobs', `${started.id}.json`);
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).state, 'running', 'SIGKILL leaves an orphan receipt');
   assert.ok(existsSync(lock), 'SIGKILL leaves its fresh lease on disk');
-  const handle = await connectJevExecutor(home, { fake: true, graceMs: 60_000, stateDir });
+  const handle = await connectJevExecutor(home, {
+    fake: true,
+    graceMs: 60_000,
+    stateDir,
+    cdpUrl: 'http://offline.invalid',
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+  });
   const replacement = await handle.status();
   owned.add(replacement.pid);
   assert.notEqual(replacement.pid, started.pid);

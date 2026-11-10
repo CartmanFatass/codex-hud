@@ -727,12 +727,10 @@ function connectionLines(draft: HudSettings, file: string, width: number): strin
         : [
             t('Connection: edit {file}', { file }),
             // Neither the endpoint nor the key is shown, only whether each is set, as diagnostics treat them.
-            t('briefingApiBase: {base}', { base: t(draft.briefingApiBase ? 'set' : 'empty, uses OpenAI') }),
-            t('briefingApiKey: {key}', {
-              key: t(draft.briefingApiKey ? 'set' : 'empty, uses CODEX_HUD_BRIEF_API_KEY'),
-            }),
+            t('briefingApiBase: {base}', { base: t(draft.briefingApiBase ? 'set' : 'empty, uses Mistral') }),
             t('Models: briefingApiLiteModel, briefingApiLowModel, briefingApiMediumModel'),
-            t('Keys: $HUD_HOME/credentials.env (0600); OpenAI/Mistral origins only'),
+            t('Keys: environment or $HUD_HOME/credentials.env (0600); MISTRAL_API_KEY / OPENAI_API_KEY by host'),
+            t('Defaults: Mistral, deepseek-v4-1-flash-1017; efforts none / low / high'),
           ];
   return text.flatMap((line) => flowLines(line, width)).map((line) => colors.dim(line));
 }

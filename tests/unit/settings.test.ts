@@ -7,7 +7,8 @@ import { defaultCardVisibility } from '../../src/card-visibility.js';
 import { defaultSettings, loadSettings, saveSettings, settingsPath } from '../../src/settings.js';
 import type { HudSettings } from '../../src/settings.js';
 import { runtimeSettings } from '../../src/settings-runtime.js';
-import { getCodexHome, getHudHome } from '../../src/utils/codex-path.js';
+import { getCodexHome } from '../../src/utils/codex-path.js';
+import { getHudHome } from '../../src/hud-home.js';
 
 function withSettingsFile(run: (file: string, directory: string) => void): void {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-settings-test-'));
@@ -35,9 +36,9 @@ test('missing settings keep display defaults and hide optional tasks and activit
     assert.deepEqual(loadSettings(), {
       ...defaultCardVisibility(),
       density: 'balanced',
-      briefingApiLiteEffort: 'off',
-      briefingApiLowEffort: 'off',
-      briefingApiMediumEffort: 'off',
+      briefingApiLiteEffort: 'none',
+      briefingApiLowEffort: 'low',
+      briefingApiMediumEffort: 'high',
       theme: 'terminal',
       glyphs: 'both',
       motion: 'full',
@@ -66,13 +67,11 @@ test('missing settings keep display defaults and hide optional tasks and activit
       briefingMs: 300_000,
       briefingPaused: false,
       language: 'auto',
-      briefingApiBase: '',
+      briefingApiBase: 'https://api.mistral.ai/v1',
       briefingApiModel: '',
-      briefingApiKey: '',
-      briefingApiReasoning: false,
-      briefingApiLiteModel: 'gemini-3.5-flash-lite',
-      briefingApiLowModel: 'gemini-3.8-flash-low',
-      briefingApiMediumModel: 'gemini-3.8-flash-medium',
+      briefingApiLiteModel: 'deepseek-v4-1-flash-1017',
+      briefingApiLowModel: 'deepseek-v4-1-flash-1017',
+      briefingApiMediumModel: 'deepseek-v4-1-flash-1017',
       briefAgents: true,
       briefMain: false,
       agentProgress: true,
@@ -140,9 +139,9 @@ test('load validates known settings without importing unknown or invalid values'
     );
     assert.deepEqual(loadSettings(), {
       ...defaultCardVisibility(),
-      briefingApiLiteEffort: 'off',
-      briefingApiLowEffort: 'off',
-      briefingApiMediumEffort: 'off',
+      briefingApiLiteEffort: 'none',
+      briefingApiLowEffort: 'low',
+      briefingApiMediumEffort: 'high',
       density: 'focus',
       theme: 'latte',
       glyphs: 'text',
@@ -172,13 +171,11 @@ test('load validates known settings without importing unknown or invalid values'
       briefingMs: 300_000,
       briefingPaused: false,
       language: 'auto',
-      briefingApiBase: '',
+      briefingApiBase: 'https://api.mistral.ai/v1',
       briefingApiModel: '',
-      briefingApiKey: '',
-      briefingApiReasoning: false,
-      briefingApiLiteModel: 'gemini-3.5-flash-lite',
-      briefingApiLowModel: 'gemini-3.8-flash-low',
-      briefingApiMediumModel: 'gemini-3.8-flash-medium',
+      briefingApiLiteModel: 'deepseek-v4-1-flash-1017',
+      briefingApiLowModel: 'deepseek-v4-1-flash-1017',
+      briefingApiMediumModel: 'deepseek-v4-1-flash-1017',
       briefAgents: true,
       briefMain: false,
       agentProgress: true,
@@ -374,7 +371,7 @@ test('nonobject JSON cannot become settings and oversized files are rejected', (
 test('legacy OMP settings migrate to API deterministically and task models validate', () => {
   withSettingsFile((file) => {
     assert.equal(defaultSettings().briefing, 'off');
-    assert.equal(defaultSettings().briefingApiBase, '');
+    assert.equal(defaultSettings().briefingApiBase, 'https://api.mistral.ai/v1');
     fs.writeFileSync(
       file,
       JSON.stringify({ briefing: 'omp', briefingApiModel: 'legacy-override', briefingApiLiteModel: 'custom-lite' })
@@ -383,8 +380,8 @@ test('legacy OMP settings migrate to API deterministically and task models valid
     assert.equal(loaded.briefing, 'api');
     assert.equal(loaded.briefingApiModel, 'legacy-override');
     assert.equal(loaded.briefingApiLiteModel, 'custom-lite');
-    assert.equal(loaded.briefingApiLowModel, 'gemini-3.8-flash-low');
-    assert.equal(loaded.briefingApiMediumModel, 'gemini-3.8-flash-medium');
+    assert.equal(loaded.briefingApiLowModel, 'deepseek-v4-1-flash-1017');
+    assert.equal(loaded.briefingApiMediumModel, 'deepseek-v4-1-flash-1017');
     const saved = saveSettings({ briefingApiLowModel: 'custom-low', briefingApiMediumModel: 'custom-medium' });
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).briefing, 'api');
     assert.equal(saved.briefingApiLowModel, 'custom-low');
@@ -440,7 +437,7 @@ test('flat card visibility and progress defaults validate independently; legacy 
   });
 });
 
-test('saving display preferences retains synthetic API credentials and task routing', () => {
+test('removed API secret/reasoning keys are ignored and dropped while other saved settings survive', () => {
   withSettingsFile((file) => {
     const credentials = {
       briefingApiKey: 'synthetic-test-secret',
@@ -451,9 +448,14 @@ test('saving display preferences retains synthetic API credentials and task rout
       briefingApiMediumModel: 'synthetic-medium',
       briefingApiReasoning: true,
     };
-    saveSettings(credentials);
+    fs.writeFileSync(file, JSON.stringify({ ...credentials, theme: 'mocha' }));
+    assert.equal(loadSettings().theme, 'mocha');
     const saved = saveSettings({ cardLabel: false, cardSummary: false, briefAgents: false, agentProgress: true });
-    for (const [key, value] of Object.entries(credentials)) assert.equal(saved[key as keyof HudSettings], value, key);
+    for (const [key, value] of Object.entries(credentials)) {
+      if (key === 'briefingApiKey' || key === 'briefingApiReasoning') assert.equal(Object.hasOwn(saved, key), false);
+      else assert.equal(saved[key as keyof HudSettings], value, key);
+    }
+    assert.equal(saved.theme, 'mocha');
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), saved);
     assert.deepEqual(loadSettings(), saved);
   });
@@ -507,7 +509,7 @@ test('E2 empty selector uses the existing default; missing or malformed neutral 
     const originalA = JSON.stringify({ theme: 'mocha' });
     fs.writeFileSync(a, originalA, { mode: 0o600 });
     process.env.HUD_SETTINGS_PATH = '';
-    assert.equal(settingsPath(), path.join(getCodexHome(), 'hud-settings.json'));
+    assert.equal(settingsPath(), path.join(getHudHome(), 'hud-settings.json'));
     assert.deepEqual(loadSettings(), defaultSettings());
     saveSettings({ theme: 'latte' });
     assert.equal(loadSettings().theme, 'latte');

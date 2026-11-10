@@ -148,8 +148,9 @@ function parentIsAlive(pid) {
 }
 
 // Sidecars belong to one outer attach client. Never share an owner file across attaches.
-export function bridgeHealthPath(codexHome, session, pid = process.pid) {
-  return join(codexHome, 'hud', 'herdr', session.replace(/[^A-Za-z0-9._-]/g, '_'), `${pid}.json`);
+// They live under the HUD's display root, shared by every harness.
+export function bridgeHealthPath(hudHome, session, pid = process.pid) {
+  return join(hudHome, 'display', 'herdr', session.replace(/[^A-Za-z0-9._-]/g, '_'), `${pid}.json`);
 }
 
 export async function writeBridgeHealth(file, health) {
@@ -391,13 +392,13 @@ export function createBridge({
 }
 
 async function main() {
-  const [session, mainPaneId, parentPid, codexHome, mode = 'native'] = process.argv.slice(2);
+  const [session, mainPaneId, parentPid, hudHome, mode = 'native'] = process.argv.slice(2);
   const bridge = createBridge({
     session,
     mainPaneId,
     parentPid: Number(parentPid),
     mode,
-    healthFilePath: session && codexHome ? bridgeHealthPath(codexHome, session) : undefined,
+    healthFilePath: session && hudHome ? bridgeHealthPath(hudHome, session) : undefined,
   });
   if (!bridge.enabled) return;
   const signals = ['SIGTERM', 'SIGINT', 'SIGHUP'];

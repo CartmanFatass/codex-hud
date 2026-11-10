@@ -12,7 +12,8 @@ import type { HudDelegationData } from './core/link/view-model.js';
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getHudHome, getCodexHome } from './utils/codex-path.js';
+import { getCodexHome } from './utils/codex-path.js';
+import { getHudDisplayHome } from './hud-home.js';
 import { spawn } from 'child_process';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
@@ -175,7 +176,8 @@ async function collectData(): Promise<HudData & HudDelegationData> {
     // variable that was set still wins.
     notifier.configure(resolveNotifierOptions(process.env, settings));
     // The panel writes the session title beside the recap when the labels feature is on.
-    hudStatus.titleDir = settings.agentLabels && settings.briefing !== 'off' ? path.join(getHudHome(), 'recaps') : null;
+    hudStatus.titleDir =
+      settings.agentLabels && settings.briefing !== 'off' ? path.join(getHudDisplayHome(), 'recaps') : null;
   } catch {
     /* Keep last valid display settings. */
   }
@@ -406,7 +408,7 @@ async function main(): Promise<void> {
   startProfiling('bar');
   delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
   // Started again, the bar reads only what each rollout gained since it last saved its scan.
-  useTreeScanStore(new TreeScanStore(path.join(getHudHome(), 'scan')));
+  useTreeScanStore(new TreeScanStore(path.join(getHudDisplayHome(), 'scan')));
 
   // Handle stdin close (tmux pane closed)
   process.stdin.on('close', shutdown);

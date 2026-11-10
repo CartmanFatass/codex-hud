@@ -6,6 +6,27 @@ import { captureSource, parseSourceModelConfig } from '../../src/core/materials/
 import { buildMaterials, fingerprint } from '../../src/core/materials/index.js';
 import { digestFixture } from '../fixtures/delegated-digest.js';
 
+test('explicit source keyEnv reads only captured env or HUD credentials.env; file rotation invalidates', async () => {
+  const f = await digestFixture();
+  try {
+    delete f.env.SYNTHETIC_DIGEST_KEY;
+    fs.writeFileSync(join(f.home, 'jev.env'), 'SYNTHETIC_DIGEST_KEY=ignored-legacy\n', { mode: 0o600 });
+    assert.throws(() => captureSource(f.home, f.ref.sourceId, f.env, () => true), /credential_unavailable/);
+    fs.writeFileSync(
+      join(f.home, 'credentials.env'),
+      'SYNTHETIC_DIGEST_KEY=synthetic-file\nMISTRAL_API_KEY=must-not-cross\n',
+      { mode: 0o600 }
+    );
+    const source = captureSource(f.home, f.ref.sourceId, f.env, () => true);
+    assert.equal(source.api?.sourceCredential, 'synthetic-file');
+    assert.equal(source.current(), true);
+    fs.writeFileSync(join(f.home, 'credentials.env'), 'SYNTHETIC_DIGEST_KEY=synthetic-rotated\n');
+    assert.equal(source.current(), false);
+  } finally {
+    f.cleanup();
+  }
+});
+
 test('strict source schema rejects omission, wildcard, future field, duplicate scope and wrong full identity', async () => {
   const f = await digestFixture();
   try {
@@ -146,7 +167,7 @@ test('actual generic boundary exact permission matrix rejects before evaluating 
       assert.equal(reads, 0);
     }
     assert.equal(source.api?.model, 'synthetic-model');
-    assert.equal(source.api?.key, 'synthetic-key');
+    assert.equal(source.api?.sourceCredential, 'synthetic-key');
     f.env.SYNTHETIC_DIGEST_KEY = 'changed';
     assert.equal(source.current(), false);
     f.env.SYNTHETIC_DIGEST_KEY = 'synthetic-key';
@@ -212,7 +233,7 @@ test('same-source scope and outbound edits latch invalidation; explicit accountl
       connection: { ...f.config.connection, keyEnv: null, account: 'accountless' },
     });
     const accountless = captureSource(f.home, f.ref.sourceId, f.env, () => true);
-    assert.equal(accountless.api?.key, '');
+    assert.equal(accountless.api?.sourceCredential, null);
     assert.notEqual(accountless.recipient?.recipientId, f.recipient.recipientId);
     assert.equal(accountless.readiness(f.ref), 'outbound_denied');
   } finally {

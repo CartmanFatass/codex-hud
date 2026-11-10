@@ -2,9 +2,9 @@
 import { resolveHudEnv } from '../../utils/hud-env.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import { writePrivateFile } from '../../collectors/small-model.js';
 import { getCodexHome } from '../../utils/codex-path.js';
+import { getHudDisplayHome, getHudHome } from '../../hud-home.js';
 import { makeSourceId, sessionRefKey } from '../identity.js';
 import { parseOutboundPolicy } from '../export.js';
 import type { OutboundPurpose } from '../types/export.js';
@@ -75,15 +75,16 @@ export class LegacyCodexBridge {
   private capture(): typeof this.baseline {
     if (this.tried) return this.baseline;
     this.tried = true;
-    if (!this.dir || path.basename(this.dir) !== 'model-cache' || path.basename(path.dirname(this.dir)) !== 'hud')
+    if (!this.dir || path.basename(this.dir) !== 'model-cache' || path.basename(path.dirname(this.dir)) !== 'display')
       return undefined;
     try {
       const home = fs.realpathSync(this.env.CODEX_HOME || getCodexHome());
-      if (path.resolve(this.dir) !== path.join(home, 'hud', 'model-cache')) return undefined;
+      const displayHome = path.resolve(getHudDisplayHome(this.env));
+      if (path.resolve(this.dir) !== path.join(displayHome, 'model-cache')) return undefined;
       // An alternate sessions tree is not a grant for the original source.
       if (this.env.CODEX_SESSIONS_PATH && fs.realpathSync(this.env.CODEX_SESSIONS_PATH) !== path.join(home, 'sessions'))
         return undefined;
-      const file = resolveHudEnv(this.env, 'HUD_SETTINGS_PATH') || path.join(home, 'hud-settings.json');
+      const file = resolveHudEnv(this.env, 'HUD_SETTINGS_PATH') || path.join(getHudHome(this.env), 'hud-settings.json');
       const raw = readJson(file);
       const connection = this.connection();
       if (!raw || !['api', 'agy'].includes(String(raw.briefing)) || !connection.matches(raw)) return undefined;
@@ -125,14 +126,15 @@ export class LegacyCodexBridge {
   }
   private localContext?: { home: string; sourceId: string; environment: string };
   private identityContext(): { home: string; sourceId: string } | null {
-    if (!this.dir || path.basename(this.dir) !== 'model-cache' || path.basename(path.dirname(this.dir)) !== 'hud')
+    if (!this.dir || path.basename(this.dir) !== 'model-cache' || path.basename(path.dirname(this.dir)) !== 'display')
       return null;
     try {
       const home = fs.realpathSync(this.env.CODEX_HOME || getCodexHome());
+      const displayHome = path.resolve(getHudDisplayHome(this.env));
       const environment = JSON.stringify([this.env.CODEX_HOME, this.env.CODEX_SESSIONS_PATH]);
       if (this.localContext && (this.localContext.home !== home || this.localContext.environment !== environment))
         return null;
-      if (path.resolve(this.dir) !== path.join(home, 'hud', 'model-cache')) return null;
+      if (path.resolve(this.dir) !== path.join(displayHome, 'model-cache')) return null;
       if (this.env.CODEX_SESSIONS_PATH && fs.realpathSync(this.env.CODEX_SESSIONS_PATH) !== path.join(home, 'sessions'))
         return null;
       this.localContext ??= { home, sourceId: makeSourceId('codex', home), environment };
@@ -227,7 +229,7 @@ export class LegacyCodexBridge {
     if (!context || !this.dir || path.resolve(file) !== path.join(this.dir, 'labels.json')) return false;
     try {
       return (
-        fs.realpathSync(this.dir) === path.join(context.home, 'hud', 'model-cache') &&
+        fs.realpathSync(this.dir) === path.join(path.resolve(getHudDisplayHome(this.env)), 'model-cache') &&
         fs.realpathSync(file) === path.join(this.dir, 'labels.json')
       );
     } catch {
@@ -315,12 +317,7 @@ export class LegacyCodexBridge {
       }
     }
     const refs = new Set(subjects.map((subject) => sessionRefKey(subject.ref)));
-    const policyFile = path.join(
-      this.env.HUD_HOME || path.join(os.homedir(), '.hud'),
-      'sources',
-      baseline.sourceId,
-      'outbound.json'
-    );
+    const policyFile = path.join(getHudHome(this.env), 'sources', baseline.sourceId, 'outbound.json');
     const marker = path.join(this.dir!, 'materials-v1', `${baseline.sourceId}.policy-authoritative`);
     const authority: MaterialAuthority = {
       scope: (sourceId) =>

@@ -11,7 +11,8 @@ const START = FIXED_NOW.getTime();
 function setup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-activity-'));
   let now = START;
-  const create = () => new ActivityJournal({ codexHome: dir, rootId: 'synthetic-root', now: () => now });
+  const create = () =>
+    new ActivityJournal({ displayHome: path.join(dir, 'hud'), rootId: 'synthetic-root', now: () => now });
   return {
     dir,
     create,
@@ -399,7 +400,11 @@ test('an unresolved current condition survives retention and a delayed old panel
     s.tick(ACTIVITY_LIMITS.keepMs + 1);
     assert.equal(latest.inbox().filter((e) => e.kind === 'failed').length, 1);
     // Reopen with a clock from an older observation. A status replay must not roll the shared state back.
-    const delayed = new ActivityJournal({ codexHome: s.dir, rootId: 'synthetic-root', now: () => START });
+    const delayed = new ActivityJournal({
+      displayHome: path.join(s.dir, 'hud'),
+      rootId: 'synthetic-root',
+      now: () => START,
+    });
     delayed.observe({ tree: tree('running') });
     assert.equal(
       s

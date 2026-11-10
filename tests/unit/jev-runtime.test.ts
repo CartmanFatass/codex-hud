@@ -77,7 +77,7 @@ function home(t: TestContext): string {
 }
 
 function writeEnv(dir: string, body: string): void {
-  const file = join(dir, 'jev.env');
+  const file = join(dir, 'credentials.env');
   writeFileSync(file, body, { mode: 0o600 });
   chmodSync(file, 0o600);
 }
@@ -99,7 +99,16 @@ async function started(
 ): Promise<JevRuntime> {
   const stateDir = extra.stateDir ?? join(hudHome, 'jev-state');
   mkdirSync(stateDir, { recursive: true, mode: 0o700 });
-  const runtime = new JevRuntime({ graceMs: 60_000, fake: true, ...extra, hudHome, stateDir });
+  const runtime = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    graceMs: 60_000,
+    fake: true,
+    ...extra,
+    hudHome,
+    stateDir,
+  });
   await runtime.start();
   t.after(() => runtime.stop());
   return runtime;
@@ -163,8 +172,10 @@ test('provider selection records TypeSafe by default and never stores the key', 
   const runtime = await started(t, hudHome, {
     hudHome,
     providerFactory: (resolved) => {
-      model = resolved.model;
-      keyOk = resolved.apiKey === SENTINEL;
+      if (resolved.id === 'typesafe') {
+        model = resolved.model;
+        keyOk = resolved.apiKey === SENTINEL;
+      }
       return fakeProvider();
     },
   });
@@ -185,7 +196,15 @@ test('provider selection records TypeSafe by default and never stores the key', 
   const emptyState = join(hudHome, 'empty-state');
   mkdirSync(emptyHome, { mode: 0o700 });
   mkdirSync(emptyState, { mode: 0o700 });
-  const missing = new JevRuntime({ hudHome: emptyHome, stateDir: emptyState, graceMs: 60_000, fake: true });
+  const missing = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    hudHome: emptyHome,
+    stateDir: emptyState,
+    graceMs: 60_000,
+    fake: true,
+  });
   await missing.start();
   t.after(() => missing.stop());
   await assert.rejects(
@@ -203,10 +222,11 @@ test('an explicit OpenAI profile records gpt-6-luna', async (t) => {
   const hudHome = home(t);
   bothKeys(hudHome);
   const runtime = await started(t, hudHome);
-  const job = await runtime.createJob({
+  const created = await runtime.createJob({
     ...ask('ask-openai'),
     jevDecisions: { provider: 'openai', model: 'not-this' },
   });
+  const job = await until(() => runtime.readJob(created.id), 'completed');
   assert.equal(job.provider?.id, 'openai');
   assert.equal(job.provider?.model, 'gpt-6-luna');
   assert.equal(job.state, 'completed');
@@ -228,6 +248,9 @@ test('a pending target does not consume the send key', async (t) => {
   assert.equal(existsSync(operationPath(stateDir, key)), false);
   let clicks = 0;
   const sender = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
     hudHome: join(hudHome, 'sender'),
     stateDir,
     graceMs: 60_000,
@@ -361,7 +384,8 @@ test('close is idempotent and preserves a completed result', async (t) => {
   const hudHome = home(t);
   bothKeys(hudHome);
   const runtime = await started(t, hudHome);
-  const job = await runtime.createJob(ask('close-1'));
+  const created = await runtime.createJob(ask('close-1'));
+  const job = await until(() => runtime.readJob(created.id), 'completed');
   assert.equal(job.state, 'completed');
   const closed = await runtime.closeJob(job.id);
   const again = await runtime.closeJob(job.id);
@@ -562,7 +586,15 @@ test('restart marks a leftover job interrupted and does not replay it', async (t
 test('an in-process runtime leaves after grace once work is released', async (t) => {
   const hudHome = home(t);
   bothKeys(hudHome);
-  const runtime = new JevRuntime({ hudHome, stateDir: tempState(hudHome), graceMs: 200, fake: true });
+  const runtime = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    hudHome,
+    stateDir: tempState(hudHome),
+    graceMs: 200,
+    fake: true,
+  });
   await runtime.start();
   t.after(() => runtime.stop());
   const socketPath = join(hudHome, 'jev-runtime', 'runtime.sock');
@@ -598,8 +630,22 @@ test('one process serves a HUD home and exits after grace', async (t) => {
     }
   });
   const stateDir = tempState(hudHome);
-  const first = await connectJevExecutor(hudHome, { fake: true, graceMs: 4_000, stateDir });
-  const second = await connectJevExecutor(hudHome, { fake: true, graceMs: 4_000, stateDir });
+  const first = await connectJevExecutor(hudHome, {
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    fake: true,
+    graceMs: 4_000,
+    stateDir,
+  });
+  const second = await connectJevExecutor(hudHome, {
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    fake: true,
+    graceMs: 4_000,
+    stateDir,
+  });
   const status = await first.status();
   assert.equal((await second.status()).pid, status.pid);
   assert.equal(status.pid === process.pid, false);
@@ -626,7 +672,14 @@ test('one process serves a HUD home and exits after grace', async (t) => {
   });
   const idleHome = home(t);
   bothKeys(idleHome);
-  const idle = await connectJevExecutor(idleHome, { fake: true, graceMs: 150, stateDir: tempState(idleHome) });
+  const idle = await connectJevExecutor(idleHome, {
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    fake: true,
+    graceMs: 150,
+    stateDir: tempState(idleHome),
+  });
   const idlePid = (await idle.status()).pid;
   t.after(() => {
     if (alive(idlePid)) process.kill(idlePid, 'SIGTERM');
@@ -639,6 +692,9 @@ test('one process serves a HUD home and exits after grace', async (t) => {
   mkdirSync(join(heldHome, 'jev-runtime'), { recursive: true, mode: 0o700 });
   writeFileSync(hold, '1');
   const held = await connectJevExecutor(heldHome, {
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
     fake: true,
     graceMs: 1_500,
     stateDir: tempState(heldHome),
@@ -778,11 +834,12 @@ test('AI Studio stays pending and has no invented key', async (t) => {
       },
     },
   });
-  const job = await runtime.createJob({
+  const created = await runtime.createJob({
     requestKey: 'studio-1',
     session,
     input: { tag: 'ask', target: 'aistudio', label: 'note', prompt: 'hello synthetic' },
   });
+  const job = await until(() => runtime.readJob(created.id), 'completed');
   assert.equal(job.state, 'completed');
   assert.deepEqual(job.result, { status: 'target_pending', target: 'aistudio' });
   assert.equal(askRecordKey('aistudio', 'note', 'hello synthetic'), undefined);
@@ -827,7 +884,15 @@ test('a reserved statement name is rejected', async (t) => {
 test('a missing record directory is not created', async (t) => {
   const hudHome = home(t);
   const stateDir = join(hudHome, 'missing-state');
-  const runtime = new JevRuntime({ hudHome, stateDir, fake: true, graceMs: 60_000 });
+  const runtime = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    hudHome,
+    stateDir,
+    fake: true,
+    graceMs: 60_000,
+  });
   await assert.rejects(runtime.start(), (error: { code?: string }) => error.code === 'jev_state_dir_missing');
   assert.equal(existsSync(stateDir), false);
 });
@@ -842,7 +907,15 @@ test('a second runtime leaves a live socket and its jobs alone', async (t) => {
   const job = await runtime.createJob(browse('live-lock'));
   const running = await until(() => runtime.readJob(job.id), 'running');
   assert.equal(running.state, 'running');
-  const second = new JevRuntime({ hudHome, stateDir: runtime.stateDir, graceMs: 60_000, fake: true });
+  const second = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    hudHome,
+    stateDir: runtime.stateDir,
+    graceMs: 60_000,
+    fake: true,
+  });
   await assert.rejects(second.start(), (error: { code?: string }) => error.code === 'already_running');
   const stored = JSON.parse(readFileSync(join(hudHome, 'jev-runtime', 'jobs', `${job.id}.json`), 'utf8')) as {
     state: string;
@@ -880,7 +953,14 @@ test('a call times out when the socket closes without a reply', async (t) => {
 test('the same handle reads a completed job after the idle runtime exits', async (t) => {
   const hudHome = home(t);
   bothKeys(hudHome);
-  const handle = await connectJevExecutor(hudHome, { fake: true, graceMs: 200, stateDir: tempState(hudHome) });
+  const handle = await connectJevExecutor(hudHome, {
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    fake: true,
+    graceMs: 200,
+    stateDir: tempState(hudHome),
+  });
   const job = await handle.createJob(browse('regrace'));
   const done = await until(() => handle.readJob(job.id), 'completed');
   assert.equal(done.state, 'completed');
@@ -900,7 +980,14 @@ test('SIGTERM marks a running job interrupted', async (t) => {
   mkdirSync(join(hudHome, 'jev-runtime'), { recursive: true, mode: 0o700 });
   const hold = join(hudHome, 'jev-runtime', 'hold');
   writeFileSync(hold, '1');
-  const handle = await connectJevExecutor(hudHome, { fake: true, graceMs: 30_000, stateDir: tempState(hudHome) });
+  const handle = await connectJevExecutor(hudHome, {
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    fake: true,
+    graceMs: 30_000,
+    stateDir: tempState(hudHome),
+  });
   const pid = (await handle.status()).pid;
   t.after(() => {
     if (alive(pid)) process.kill(pid, 'SIGKILL');
@@ -976,7 +1063,14 @@ test('readJob waits longer than the default call deadline', async (t) => {
   mkdirSync(join(hudHome, 'jev-runtime'), { recursive: true, mode: 0o700 });
   const hold = join(hudHome, 'jev-runtime', 'hold');
   writeFileSync(hold, '1');
-  const handle = await connectJevExecutor(hudHome, { fake: true, graceMs: 60_000, stateDir: tempState(hudHome) });
+  const handle = await connectJevExecutor(hudHome, {
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    fake: true,
+    graceMs: 60_000,
+    stateDir: tempState(hudHome),
+  });
   const pid = (await handle.status()).pid;
   t.after(() => {
     if (alive(pid)) process.kill(pid, 'SIGKILL');
@@ -1016,7 +1110,13 @@ test('runtime flags come from connect options, not the parent environment', asyn
   const hudHome = home(t);
   bothKeys(hudHome);
   const stateDir = tempState(hudHome);
-  const handle = await connectJevExecutor(hudHome, { graceMs: 30_000, stateDir });
+  const handle = await connectJevExecutor(hudHome, {
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    graceMs: 30_000,
+    stateDir,
+  });
   const pid = (await handle.status()).pid;
   t.after(() => {
     if (alive(pid)) process.kill(pid, 'SIGKILL');
@@ -1030,10 +1130,7 @@ test('runtime flags come from connect options, not the parent environment', asyn
   assert.equal(rows.includes('JEV_RUNTIME_GRACE_MS=30000'), true);
   assert.equal(rows.includes('JEV_RUNTIME_STATE_DIR=/tmp/jev-parent-sentinel-state'), false);
   assert.equal(rows.includes(`JEV_RUNTIME_STATE_DIR=${stateDir}`), true);
-  assert.equal(
-    rows.some((row) => row.startsWith('JEV_RUNTIME_CDP_URL=')),
-    false
-  );
+  assert.equal(rows.includes('JEV_RUNTIME_CDP_URL=http://offline.invalid'), true);
   if (alive(pid)) process.kill(pid, 'SIGTERM');
   assert.equal(await waitDead(pid, 3_000), true);
 });
@@ -1051,6 +1148,9 @@ test('the env-proxy flag follows the injected detection', async (t) => {
     const hudHome = home(t);
     bothKeys(hudHome);
     const handle = await connectJevExecutor(hudHome, {
+      chrome: '/synthetic/chrome',
+      profile: '/synthetic/profile',
+      cdpUrl: 'http://offline.invalid',
       fake: true,
       graceMs: 30_000,
       stateDir: tempState(hudHome),
@@ -1098,7 +1198,13 @@ test('a missing state directory fails fast with the child code', async (t) => {
   const stateDir = join(hudHome, 'missing-state');
   const startedAt = Date.now();
   await assert.rejects(
-    connectJevExecutor(hudHome, { stateDir, graceMs: 60_000 }),
+    connectJevExecutor(hudHome, {
+      chrome: '/synthetic/chrome',
+      profile: '/synthetic/profile',
+      cdpUrl: 'http://offline.invalid',
+      stateDir,
+      graceMs: 60_000,
+    }),
     (error: { code?: string }) => error.code === 'jev_state_dir_missing'
   );
   const elapsed = Date.now() - startedAt;
@@ -1141,6 +1247,9 @@ test('SIGTERM exits when stop does not finish', async (t) => {
       TMPDIR: process.env.TMPDIR ?? '/tmp',
       JEV_RUNTIME_FAKE: '1',
       JEV_RUNTIME_STATE_DIR: stateDir,
+      JEV_RUNTIME_CDP_URL: 'http://offline.invalid',
+      JEV_RUNTIME_CHROME: '/synthetic/chrome',
+      JEV_RUNTIME_PROFILE: '/synthetic/profile',
       JEV_RUNTIME_GRACE_MS: '60000',
       JEV_RUNTIME_STOP_DEADLINE_MS: '400',
     },
@@ -1166,7 +1275,14 @@ test('SIGTERM exits when stop does not finish', async (t) => {
     }
   }
   assert.equal(up, true);
-  const handle = await connectJevExecutor(hudHome, { fake: true, graceMs: 60_000, stateDir });
+  const handle = await connectJevExecutor(hudHome, {
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    fake: true,
+    graceMs: 60_000,
+    stateDir,
+  });
   const job = await handle.createJob(browse('stop-deadline'));
   let latest = await handle.readJob(job.id);
   for (let i = 0; i < 50 && latest.state === 'queued'; i += 1) {

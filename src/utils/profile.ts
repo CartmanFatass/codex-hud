@@ -4,7 +4,7 @@
  * `CODEX_HUD_PROFILE=1` times the stages of both processes' ticks (session
  * find, rollout parse, tree build, status build, git, render, write) and every
  * ~10 s appends one line per stage that ran (count, average, p95, max) to
- * `<CODEX_HOME>/hud/profile.log`. Never to stdout, which is the display, nor to
+ * `$HUD_HOME/display/profile.log`. Never to stdout, which is the display, nor to
  * stderr, which lands in the same pane.
  *
  * Off, `time` and `timeAsync` are a null check and a call: no clock read, no
@@ -13,7 +13,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { getHudHome } from './codex-path.js';
+import { getHudDisplayHome } from '../hud-home.js';
 
 export const PROFILE_FLUSH_MS = 10_000;
 /** Samples kept per stage per window, for the p95; count, sum and max stay exact past it. */
@@ -106,7 +106,7 @@ let recorder: ProfileRecorder | null = null;
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 export function profileLogPath(): string {
-  return path.join(getHudHome(), 'profile.log');
+  return path.join(getHudDisplayHome(), 'profile.log');
 }
 
 function appendToLog(file: string, lines: string[]): void {

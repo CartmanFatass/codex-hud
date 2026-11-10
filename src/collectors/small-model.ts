@@ -69,7 +69,7 @@ export type ModelBackend = 'off' | 'agy' | 'api';
 /** minimal/medium are advanced typed-only compatibility values, never inferred. */
 export type ApiEffort = 'off' | 'none' | 'low' | 'high' | 'xhigh' | 'max' | 'minimal' | 'medium';
 export const REASONING_TOKEN_ALLOWANCE = 512;
-export const LEGACY_API_EFFORTS = { lite: 'none', low: 'low', medium: 'low' } as const;
+export const DEFAULT_API_EFFORTS = { lite: 'none', low: 'low', medium: 'high' } as const;
 /** Thinking levels; agy and `api` take the subset they know. */
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto';
 
@@ -79,9 +79,10 @@ export interface ModelApi {
   /** Nonempty is a global override, retained for existing configurations. */
   model: string;
   models?: Partial<Record<ApiModelTier, string>>;
-  key: string;
-  /** Legacy switch: missing efforts map to lite=none, low=low, medium=low. */
-  reasoning?: boolean;
+  /** Ignored legacy input. Credentials come only from the HUD credential reader. */
+  key?: string;
+  /** F4-only explicit source keyEnv binding. null means accountless; never populated by settings. */
+  sourceCredential?: string | null;
   efforts?: Partial<Record<ApiModelTier, ApiEffort>>;
 }
 
@@ -200,7 +201,7 @@ const AGY_MODEL_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high'];
 const AGY_EFFORTS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 /** A tier's explicit effort wins. The legacy switch never invents unsupported values. */
 export function apiEffort(api: ModelApi, tier: ApiModelTier): ApiEffort {
-  return api.efforts?.[tier] ?? (api.reasoning ? LEGACY_API_EFFORTS[tier] : 'off');
+  return api.efforts?.[tier] ?? DEFAULT_API_EFFORTS[tier];
 }
 
 const TIMEOUT_MS = 90_000;
@@ -212,12 +213,12 @@ const WAITING_FOR_PEER = Symbol('waiting-for-peer');
 export const DEFAULT_HOURLY_CAP = 60;
 /** Cached answers kept; the oldest go first. */
 const CACHE_LIMIT = 200;
-const OPENAI_BASE = 'https://api.openai.com/v1';
+const DEFAULT_API_BASE = 'https://api.mistral.ai/v1';
 export type ApiModelTier = 'lite' | 'low' | 'medium';
 export const DEFAULT_API_MODELS: Readonly<Record<ApiModelTier, string>> = {
-  lite: 'gemini-3.5-flash-lite',
-  low: 'gemini-3.8-flash-low',
-  medium: 'gemini-3.8-flash-medium',
+  lite: 'deepseek-v4-1-flash-1017',
+  low: 'deepseek-v4-1-flash-1017',
+  medium: 'deepseek-v4-1-flash-1017',
 };
 
 export function apiModelTier(feature: string): ApiModelTier {
@@ -261,10 +262,10 @@ export function modelCommand(
 
 /**
  * One chat completions request. The base may be given up to `/v1` or as the
- * full `/chat/completions` URL. Key precedence: settings, CODEX_HUD_BRIEF_API_KEY,
- * then the HUD credentials' origin-bound OpenAI/Mistral key (environment overrides
- * matching file names). Custom endpoints never receive general provider keys.
- * With none it goes without, for a local server. CODEX_HUD_BRIEF_MODEL overrides
+ * full `/chat/completions` URL. Keys come only from the HUD credentials' origin-bound
+ * OpenAI/Mistral key (environment overrides matching file names).
+ * Custom endpoints never receive general provider keys. Without a key the feature is off.
+ * CODEX_HUD_BRIEF_MODEL overrides
  * the model. Each tier explicitly controls its optional reasoning_effort.
  */
 export function modelHttpRequest(
@@ -272,7 +273,7 @@ export function modelHttpRequest(
   request: Pick<ModelRequest, 'feature' | 'system' | 'prompt' | 'thinking' | 'maxOutputTokens'>,
   env: NodeJS.ProcessEnv = process.env
 ): { url: string; headers: Record<string, string>; body: string; model: string } | { error: string } {
-  const base = (api.base.trim() || OPENAI_BASE).replace(/\/+$/, '');
+  const base = (api.base.trim() || DEFAULT_API_BASE).replace(/\/+$/, '');
   const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
   let origin: string;
   try {
@@ -287,16 +288,24 @@ export function modelHttpRequest(
   const model =
     env.CODEX_HUD_BRIEF_MODEL?.trim() || api.model.trim() || api.models?.[tier]?.trim() || DEFAULT_API_MODELS[tier];
   // General provider keys are bound to exact HTTPS origins, never a lookalike or custom port.
-  let key = api.key.trim() || env.CODEX_HUD_BRIEF_API_KEY?.trim() || '';
-  if (!key && (origin === 'https://api.openai.com' || origin === 'https://api.mistral.ai')) {
+  let key = api.sourceCredential?.trim() || '';
+  if (
+    api.sourceCredential === undefined &&
+    (origin === 'https://api.openai.com' || origin === 'https://api.mistral.ai')
+  ) {
     try {
-      const creds = readHudCredentials(env);
-      key = (origin === 'https://api.mistral.ai' ? creds.mistralApiKey : creds.openaiApiKey)?.trim() || '';
+      key = env[origin === 'https://api.mistral.ai' ? 'MISTRAL_API_KEY' : 'OPENAI_API_KEY']?.trim() || '';
+      if (!key) {
+        const creds = readHudCredentials(env);
+        key = (origin === 'https://api.mistral.ai' ? creds.mistralApiKey : creds.openaiApiKey)?.trim() || '';
+      }
     } catch {
       return { error: 'api: credential file must be a regular file with mode 0600' };
     }
   }
   const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (!key && api.sourceCredential === undefined)
+    return { error: 'api: off (missing provider key in environment or $HUD_HOME/credentials.env)' };
   if (key) headers.authorization = `Bearer ${key}`;
   const configuredEffort = apiEffort(api, tier);
   const effort = configuredEffort === 'off' ? undefined : configuredEffort;
@@ -543,7 +552,6 @@ export class SmallModel {
           const configured = {
             base: typeof raw.briefingApiBase === 'string' ? raw.briefingApiBase : '',
             model: typeof raw.briefingApiModel === 'string' ? raw.briefingApiModel : '',
-            key: typeof raw.briefingApiKey === 'string' ? raw.briefingApiKey : '',
           };
           const expected = modelHttpRequest(
             configured,

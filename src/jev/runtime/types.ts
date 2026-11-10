@@ -88,6 +88,7 @@ export interface JevJob {
   decisionProfile: string | null;
   /** Provider actually used. Never includes a credential. */
   provider: { id: JevDecisionId; model: string } | null;
+  decisionCalls?: import('../failover.js').DecisionCallRecord[];
   state: JevJobState;
   closed: boolean;
   seq: number;

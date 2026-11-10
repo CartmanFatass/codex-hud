@@ -84,12 +84,14 @@ export class TypeSafeDecisionProvider implements DecisionProvider {
   readonly #apiKey: string;
   readonly #fetcher?: typeof fetch;
   readonly #url?: string;
+  readonly #timeoutMs?: number;
 
-  constructor(options: { apiKey: string; model?: string; fetcher?: typeof fetch; url?: string }) {
+  constructor(options: { apiKey: string; model?: string; fetcher?: typeof fetch; url?: string; timeoutMs?: number }) {
     this.model = options.model || 'jev-latest';
     this.#apiKey = options.apiKey;
     this.#fetcher = options.fetcher;
     this.#url = options.url;
+    this.#timeoutMs = options.timeoutMs;
   }
 
   async decide(request: DecisionRequest, options: { signal?: AbortSignal; cacheKey: string }): Promise<DecisionResult> {
@@ -100,7 +102,9 @@ export class TypeSafeDecisionProvider implements DecisionProvider {
       this.#apiKey,
       body,
       options.signal,
-      this.#fetcher
+      this.#fetcher,
+      this.#timeoutMs,
+      1
     );
     const usage = (raw as { usage?: DecisionResult['usage'] } | null)?.usage ?? {};
     return { answers: parseTypeSafeAnswers(raw), usage, latencyMs: Math.round(performance.now() - started), raw };
@@ -113,7 +117,9 @@ export class TypeSafeDecisionProvider implements DecisionProvider {
       this.#apiKey,
       buildTypeSafeJudgmentBody(request, this.model),
       options.signal,
-      this.#fetcher
+      this.#fetcher,
+      this.#timeoutMs,
+      1
     );
     const usage = (raw as { usage?: DecisionResult['usage'] } | null)?.usage ?? {};
     return { answers: parseTypeSafeJudgment(raw), usage, latencyMs: Math.round(performance.now() - started), raw };

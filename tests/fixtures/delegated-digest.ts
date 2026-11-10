@@ -219,7 +219,7 @@ export async function digestFixture(harness: Harness = 'claude', threadId: strin
     materials: [{ ref, origin: 'delegated', purpose: 'digest', fields: ['result'] }],
   };
   const http = modelHttpRequest(
-    { base: 'https://synthetic.invalid/v1', model: 'synthetic-model', key: '' },
+    { base: 'https://synthetic.invalid/v1', model: 'synthetic-model', sourceCredential: null },
     { feature: 'digest', prompt: '', system: '' },
     {}
   );

@@ -18,7 +18,14 @@ import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Server } from 'node:net';
 import { Agent, type BrowserPort } from '../agent.js';
-import { DEFAULT_CDP_URL, loadJevConfig, readHudCredentials, type JevConfig } from '../ask/config.js';
+import {
+  assertJevLocations,
+  loadJevConfig,
+  readHudCredentials,
+  resolveDecisions,
+  type JevConfig,
+} from '../ask/config.js';
+import { FailoverDecisionProvider, type DecisionCallRecord } from '../failover.js';
 import { chromeStart, type ChromeVersion, type ChromeMode } from '../ask/chrome.js';
 import { loopbackJson } from '../cdp.js';
 import { JevFailure } from '../ask/error.js';
@@ -110,6 +117,7 @@ export class RuntimeChrome {
   ) {}
 
   async ensure(config: JevConfig, cdpUrl: string): Promise<void> {
+    assertJevLocations(config);
     let endpoint: string;
     let account: boolean;
     try {
@@ -175,14 +183,17 @@ export interface ResolvedDecision {
   apiKey: string;
   /** OpenAI only. Kept off the job file. */
   baseUrl?: string;
+  fallback?: ResolvedDecision;
 }
 
 export interface RuntimeOptions {
   hudHome: string;
   /** Tests pass a temporary directory. Production reads `stateDir` from the HUD config. */
   stateDir?: string;
-  /** Tests pass this with `stateDir`. Production reads `cdp_url` from the same config. */
+  /** Internal test/child plumbing: all four locations are explicit or all come from JSON. */
   cdpUrl?: string;
+  chrome?: string;
+  profile?: string;
   graceMs?: number;
   /** Child entry sets this. An in-process runtime must leave it false. */
   exitProcess?: boolean;
@@ -198,8 +209,8 @@ export interface RuntimeOptions {
   oracleNow?: () => number;
   oracleSleep?: (ms: number) => Promise<void>;
   studioConfigLoader?: () => StudioConfig;
-  /** Tests inject the config. Production resolves this runtime's HUD config and only explicitly selected TOML. */
-  configLoader?: () => { stateDir: string; cdpUrl: string };
+  /** Tests inject a complete config. Production resolves only this runtime's HUD JSON config. */
+  configLoader?: () => { stateDir: string; cdpUrl: string; chrome?: string; profile?: string };
 }
 
 interface StoredJob {
@@ -212,7 +223,10 @@ interface StoredJob {
   input: JevJobInput;
   decisionProfile: string | null;
   askStateDir?: string;
+  /** Original primary binding, private and immutable across per-call fallback. */
+  decisionBinding?: { provider: JevDecisionId; model: string };
   provider: { id: JevDecisionId; model: string } | null;
+  decisionCalls?: DecisionCallRecord[];
   state: JevJobState;
   closed: boolean;
   seq: number;
@@ -230,7 +244,7 @@ const pendingTarget = (id: 'chatgpt-pro' | 'aistudio'): AskTarget => ({ id, send
 export class JevRuntime implements JevExecutor {
   readonly hudHome: string;
   stateDir = '';
-  cdpUrl = DEFAULT_CDP_URL;
+  cdpUrl = '';
   readonly graceMs: number;
   private readonly jobsDir: string;
   private readonly socketPath: string;
@@ -359,10 +373,19 @@ export class JevRuntime implements JevExecutor {
   /** The shared record directory. Missing means a typed error, never a new folder. */
   private bindState(): void {
     // Explicit test state never reads production configuration. Normal starts use
-    // this HUD home's own `jev` section (TOML is opt-in only).
-    this.config = this.options.stateDir
+    // this HUD home's own `jev` section. Explicit test plumbing never mixes with JSON.
+    this.config = [this.options.stateDir, this.options.cdpUrl, this.options.chrome, this.options.profile].some(
+      (value) => value !== undefined
+    )
       ? loadJevConfig({
-          configJson: { jev: { stateDir: this.options.stateDir, cdpUrl: this.options.cdpUrl } },
+          configJson: {
+            jev: {
+              stateDir: this.options.stateDir,
+              cdpUrl: this.options.cdpUrl,
+              chrome: this.options.chrome,
+              profile: this.options.profile,
+            },
+          },
           capturedEnv: process.env,
         })
       : this.options.configLoader
@@ -371,7 +394,7 @@ export class JevRuntime implements JevExecutor {
     // R4 reads ask defaults (model, effortWord, cdpTimeoutMs, providerRoot) from the same config.
     this.askConfig = this.config;
     this.stateDir = this.config.stateDir;
-    this.cdpUrl = this.config.cdpUrl || DEFAULT_CDP_URL;
+    this.cdpUrl = this.config.cdpUrl;
     try {
       assertStateDir(this.stateDir);
     } catch (error) {
@@ -445,6 +468,7 @@ export class JevRuntime implements JevExecutor {
         input: parsed.input,
         decisionProfile: parsed.jevDecisions?.id ?? null,
         ...(askStateDir ? { askStateDir } : {}),
+        decisionBinding: { provider: resolved.id, model: resolved.model },
         provider: { id: resolved.id, model: resolved.model },
         state: 'queued',
         closed: false,
@@ -495,9 +519,26 @@ export class JevRuntime implements JevExecutor {
         !this.runs.has(jobId) &&
         (record?.send_attempted === true || record?.attempted_at)
       ) {
-        const resolved = this.resolveDecision(
-          current.provider ? { provider: current.provider.id, model: current.provider.model } : undefined
-        );
+        let binding = current.decisionBinding;
+        if (!binding) {
+          const fallbackAudit = current.decisionCalls?.some(
+            (call) => call.fallbackReason !== undefined || call.primary !== call.provider
+          );
+          if (fallbackAudit || !current.provider) {
+            throw new JevRuntimeError(
+              'decision_binding_missing',
+              `job ${current.id}: decision_binding_missing; a new ask is required`
+            );
+          }
+          // Pre-A0 receipts recorded their original primary in provider. Capture
+          // that binding before a newly resumed call can update actual responder.
+          binding = { provider: current.provider.id, model: current.provider.model };
+        }
+        const resolved = this.resolveDecision(binding);
+        if (!current.decisionBinding) {
+          current.decisionBinding = { provider: resolved.id, model: resolved.model };
+          this.save(current);
+        }
         const task = this.execute(current, resolved, true);
         this.runs.set(current.id, task);
       }
@@ -623,7 +664,7 @@ export class JevRuntime implements JevExecutor {
     this.aborts.set(job.id, abort);
     this.markRunning(job);
     try {
-      const provider = await this.providerFor(resolved);
+      const provider = await this.providerFor(resolved, job);
       if (job.closed || this.stopping || abort.signal.aborted) return;
       if (job.input.tag === 'ask') await this.runAsk(job, provider, abort.signal, resumeOnly);
       else if (job.input.tag === 'browse') await this.runBrowse(job, provider, abort.signal);
@@ -923,13 +964,26 @@ export class JevRuntime implements JevExecutor {
     await Promise.resolve(browser.close()).catch(() => undefined);
   }
 
-  private async providerFor(resolved: ResolvedDecision): Promise<DecisionProvider> {
-    if (this.options.providerFactory) return this.options.providerFactory(resolved);
-    if (this.options.fake) return fakeProvider();
-    if (resolved.id === 'openai') {
-      return new OpenAIDecisionProvider({ apiKey: resolved.apiKey, baseUrl: resolved.baseUrl });
-    }
-    return new TypeSafeDecisionProvider({ apiKey: resolved.apiKey, model: resolved.model });
+  private async providerFor(resolved: ResolvedDecision, job: StoredJob): Promise<DecisionProvider> {
+    const make = async (value: ResolvedDecision): Promise<DecisionProvider | undefined> => {
+      if (!value.apiKey) return undefined;
+      if (this.options.providerFactory) return this.options.providerFactory(value);
+      if (this.options.fake) return { ...fakeProvider(), id: value.id, model: value.model };
+      return value.id === 'openai'
+        ? new OpenAIDecisionProvider({ apiKey: value.apiKey, baseUrl: value.baseUrl })
+        : new TypeSafeDecisionProvider({ apiKey: value.apiKey, model: value.model });
+    };
+    return new FailoverDecisionProvider(
+      resolved.id,
+      await make(resolved),
+      resolved.fallback ? await make(resolved.fallback) : undefined,
+      (entry) => {
+        if (entry.outcome === 'answered') job.provider = { id: entry.provider, model: entry.model };
+        job.decisionCalls = [...(job.decisionCalls ?? []), entry].slice(-100);
+        job.seq += 1;
+        this.save(job);
+      }
+    );
   }
 
   private resolveDecision(profile: JevCreateRequest['jevDecisions']): ResolvedDecision {
@@ -938,25 +992,37 @@ export class JevRuntime implements JevExecutor {
       throw new JevRuntimeError('invalid_request', 'invalid_request');
     }
     const creds = readHudCredentials(process.env, this.hudHome);
-    const decision = decideProviderId(explicit, {
-      typesafe: Boolean(creds.typesafeApiKey),
-      openai: Boolean(creds.openaiApiKey),
-    });
-    if (!decision.ok)
-      throw new JevRuntimeError('jev_credentials_missing', 'jev_credentials_missing', decision.variable);
-    if (decision.provider === 'openai') {
-      return {
-        id: 'openai',
-        model: 'gpt-6-luna',
-        apiKey: creds.openaiApiKey ?? '',
-        baseUrl: creds.openaiBaseUrl,
-      };
+    const config = this.config?.decisions ?? resolveDecisions({});
+    const primary = explicit ?? config.primary;
+    const make = (id: DecisionProviderId, primaryModel?: string | null): ResolvedDecision =>
+      id === 'openai'
+        ? {
+            id,
+            model: 'gpt-6-luna',
+            apiKey: creds.openaiApiKey ?? '',
+            baseUrl: config.openai.baseUrl || creds.openaiBaseUrl,
+          }
+        : {
+            id,
+            model: primaryModel || config.typesafe.model || creds.typesafeModel || 'jev-latest',
+            apiKey: creds.typesafeApiKey ?? '',
+          };
+    // A profile/stored model binds only its primary. Never carry a model name
+    // across providers; fallback model/endpoint selection remains config-bound.
+    const resolved = make(primary, profile?.model);
+    if (config.fallback !== primary) {
+      const fallback = make(config.fallback);
+      if (fallback.apiKey) resolved.fallback = fallback;
     }
-    return {
-      id: 'typesafe',
-      model: profile?.model || creds.typesafeModel || 'jev-latest',
-      apiKey: creds.typesafeApiKey ?? '',
-    };
+    if (!resolved.apiKey && !resolved.fallback) {
+      const decision = decideProviderId(primary, { typesafe: !!creds.typesafeApiKey, openai: !!creds.openaiApiKey });
+      throw new JevRuntimeError(
+        'jev_credentials_missing',
+        'jev_credentials_missing',
+        !decision.ok ? decision.variable : undefined
+      );
+    }
+    return resolved;
   }
 
   private markRunning(job: StoredJob): void {
@@ -1192,6 +1258,7 @@ export class JevRuntime implements JevExecutor {
       tag: job.tag,
       decisionProfile: job.decisionProfile,
       provider: job.provider,
+      ...(job.decisionCalls ? { decisionCalls: job.decisionCalls } : {}),
       state: job.state,
       closed: job.closed,
       seq: job.seq,
@@ -1206,10 +1273,9 @@ export class JevRuntime implements JevExecutor {
   }
 }
 
-/** Explicit sources: HUD JSON overrides TOML; the loader itself never reads process.env. */
+/** HUD JSON only; legacy TOML and JEV_ASK_CONFIG are never consulted. */
 export function loadRuntimeConfig(hudHome: string): JevConfig {
   return loadJevConfig({
-    tomlPath: process.env.JEV_ASK_CONFIG,
     configJsonPath: join(hudHome, 'config.json'),
     capturedEnv: process.env,
     home: homedir(),

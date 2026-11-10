@@ -141,13 +141,13 @@ Codex writes to disk.
 | Size | 1 line (`HUD_PANE_HEIGHT`) | a column, usually 32–56 wide, 48 unless a width is asked for |
 | Loop | 1 s tick + chokidar watchers | `settings.refreshMs` collect (default 1 s), no watcher |
 | Renders with | `render/header.ts` → `layout/` engine | `render/monitor.ts` `renderMonitor` |
-| Writes | `hud/state/<session>.json` snapshot, notifications | the same snapshot and notifications, on its collect tick; scan cache, agent logs, model cache, recaps, settings |
+| Writes | `display/state/<session>.json` snapshot, notifications | the same snapshot and notifications, on its collect tick; scan cache, agent logs, model cache, recaps, settings |
 
 At any time **only one of the two is running**. The launcher starts with the compact bar. `CODEX_HUD_TREE=1` opens the
 panel instead and kills the bar pane. `codex-hud-toggle` (F12) swaps one for the
 other. The two processes never talk to each other directly. They share state
 through tmux user options (`@codex_hud_*`), the snapshot file whichever of them is running wrote, and files
-under `$CODEX_HOME/hud/`.
+under `$HUD_HOME/display/`.
 
 Data flows one way:
 
@@ -213,7 +213,7 @@ check that no test uses it.
 1. **Early flags.**
    - `--help`, `--self-check`, `--list`.
    - `--kill` kills every session for this directory.
-   - `--json` prints `$CODEX_HOME/hud/state/<session>.json`.
+   - `--json` prints `$HUD_HOME/display/state/<session>.json`.
    - `brief --dry-run` runs `dist/brief-dry-run.js`.
 2. **Session identity.**
    - The prefix is `codex-hud-<md5(PWD \0 realpath CODEX_HOME)[:8]>`.
@@ -387,7 +387,7 @@ Iterate with `eachThread`. Do not walk the tree by hand.
   It reads plaintext message headers and uses each `task_complete` answer as a
   stage result.
 - **Scan cache.** `tree-scan-store.ts` keeps per-rollout results in
-  `$CODEX_HOME/hud/scan/`, so a restart does not rescan everything. When
+  `$HUD_HOME/display/scan/`, so a restart does not rescan everything. When
   anything the scan reads changes, bump `SCAN_VERSION`. Otherwise stale cache
   entries survive the upgrade.
 
@@ -431,7 +431,7 @@ or Herdr startup and no writes. The bar import graph reaches none of the job col
 
 | Module | What it keeps |
 |---|---|
-| `agent-log.ts` (`AgentLog.observe`) | A per-agent history in `hud/agent-log/<rootId>.json`, capped at 30 entries per agent, 200 agents, 600 characters per entry, and 30 days. It has two families of kinds. **Observed:** `started`, `finished`, `failed` and `report` (the agent's own words, through `agent-report.ts`, final and commentary channels only). **Model-written:** `note`, `digest` and `cause` (`MODEL_LOG_KINDS`). |
+| `agent-log.ts` (`AgentLog.observe`) | A per-agent history in `display/agent-log/<rootId>.json`, capped at 30 entries per agent, 200 agents, 600 characters per entry, and 30 days. It has two families of kinds. **Observed:** `started`, `finished`, `failed` and `report` (the agent's own words, through `agent-report.ts`, final and commentary channels only). **Model-written:** `note`, `digest` and `cause` (`MODEL_LOG_KINDS`). |
 | `agent-context.ts` (`readAgentTokens`) | Each running agent's context fill and output rate (`AgentTokens {usage, rate}`). It reads incrementally from the rollout tail, at most every 3 s, and re-reads after a shrink or inode change. `task_started` resets the rate's baseline; tool-call/output pairs exclude the union of tool waits. It shares the wallclock proxy with the main parser. |
 | `workbench-events.ts` | The timeline's events, capped at 500. |
 | `git-changes.ts`, `worktrees.ts` | The Changes pane. Read only while a pane that shows them is open. Probes run round-robin. On failure the counts are null, never 0. |
@@ -453,10 +453,10 @@ Every request goes through `SmallModel.submit`, which provides:
   - `agy` runs as a CLI subprocess: no shell, cwd set to the system
     temp directory, 90 s timeout, output capped at 64 KB.
   - `api` sends an OpenAI-compatible `POST <base>/chat/completions`.
-    Labels, titles and approval descriptions use `gemini-3.5-flash-lite`;
-    progress summaries, agents briefs, digests and changes use
-    `gemini-3.8-flash-low`; recaps and failure causes use
-    `gemini-3.8-flash-medium`. The three tiers are configurable.
+    Labels, titles and approval descriptions use the lite tier; progress
+    summaries, agents briefs, digests and changes use low; recaps and failure
+    causes use medium. The default base is `https://api.mistral.ai/v1` and all
+    three tiers default to `deepseek-v4-1-flash-1017`; each is configurable.
   - `briefingApiModel`, when nonempty, overrides the API tiers.
     `CODEX_HUD_BRIEF_MODEL` overrides the model on either backend.
   - A queued request retains its submitted backend and model. Cache identity
@@ -465,7 +465,7 @@ Every request goes through `SmallModel.submit`, which provides:
   closes; cancellation holds the active slot until the fetch/subprocess settles.
   HTTP redirects are refused, and reflected credentials are removed from errors.
 - **Cache.** Only for callers that pass a `cacheKey`. Up to 200 entries in
-  `hud/model-cache/cache.json`.
+  `display/model-cache/cache.json`.
 - **Reply language.** A request that names its `language` (every feature
   but the connection probe) gets back only a reply in that language:
   `reply-language.ts` judges the words a person reads (a JSON reply's string
@@ -477,7 +477,7 @@ Every request goes through `SmallModel.submit`, which provides:
   is dropped and asked again. Han alone cannot tell Chinese from Japanese,
   which is why the stored `lang` stamp is not enough.
 - **Hourly cap.** `modelCallsPerHour`, default 60. The call log
-  `hud/model-cache/calls.json` is shared by every panel on the same `CODEX_HOME`.
+  `display/model-cache/calls.json` is shared by every panel on the same `$HUD_HOME`.
 - **Private files.** `writePrivateFile`: directories 0700, files 0600, written
   to a temp file and renamed into place. The panel's state files (scan cache,
   agent log, model cache, recaps) use it. `settings.ts` and `snapshot.ts` do
@@ -537,7 +537,7 @@ when it is in the current language.
 
 - each agent's note goes to the agent log as a `note`, stamped with its
   language (`lang`) and, when given, its `label` and `taskKind`;
-- the main part goes to `hud/recaps/<sessionId>.json`, with its fingerprints.
+- the main part goes to `display/recaps/<sessionId>.json`, with its fingerprints.
 
 Saving the fingerprints means reopening the panel does not start a new call.
 
@@ -884,14 +884,14 @@ against Codex 0.154 and 0.157.
   and picture/worktree assets survive. LLM/all reset disables generation and
   pauses models rather than silently granting default permissions. Both
   helpers only prepare drafts; Save is required.
-- They are stored in `$CODEX_HOME/hud-settings.json`, or at
-  `CODEX_HUD_SETTINGS_PATH`. The file is capped at 64 KiB and written
+- They are stored in `$HUD_HOME/hud-settings.json` (default `~/.hud`), or at
+  `HUD_SETTINGS_PATH`. The file is capped at 64 KiB and written
   atomically with mode 0600.
 - Once that file exists, the display environment variables
   (`CODEX_HUD_THEME`, `DENSITY`, `LOOK`, …) are ignored. Only `NO_COLOR` still
   wins (`settings-runtime.ts`).
 
-**Files under `$CODEX_HOME/hud/`:**
+**Files under `$HUD_HOME/display/`:**
 
 | Path | Writer | Contents |
 |---|---|---|
@@ -1021,7 +1021,7 @@ outside the repo.
 
 **Other tools:**
 
-- `CODEX_HUD_PROFILE=1` times each stage into `hud/profile.log`.
+- `CODEX_HUD_PROFILE=1` times each stage into `display/profile.log`.
 - `docs/reviews/ui-audit.mjs` and `render-ui-preview.py` support UI review.
 - `codex-hud brief --dry-run` shows what a brief would send.
 - `docs/issues/` holds 16 fixed bugs (in Chinese). Read the matching one
@@ -1120,7 +1120,7 @@ The credits field (commit `44ce0a7`) is a complete example.
 - **Stale code.** A running bar or panel keeps the code it started with. After
   a build, restart the pane before you judge a change.
 - **Panel replaces the bar.** While the right-side panel is open no bar process runs. The open
-  panel writes `hud/state/*.json` and sends notifications on its collect tick,
+  panel writes `display/state/*.json` and sends notifications on its collect tick,
   so `--json` still has a file to read. The panel's `bar.segments` is empty.
 - **Shared prefix table.** The prefix table belongs to the whole tmux server.
   Changing the prefix in one panel changes it in every session.

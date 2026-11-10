@@ -16,7 +16,7 @@ import {
   JevCredentialsMissing,
   choose,
   resolveDecision,
-  selectDecisionProvider,
+  selectDecisionProvider as selectProvider,
   type Answer,
 } from '../../src/jev/decide.js';
 import {
@@ -365,13 +365,13 @@ const hang: typeof fetch = (_url, init) =>
     signal.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')), { once: true });
   });
 
-test('a decision attempt times out as a network error', async () => {
+test('a decision attempt timeout is distinguished from a non-timeout network failure', async () => {
   const started = Date.now();
   await assert.rejects(
     () => postJson('https://example.test/decisions', 'fixture-key', {}, undefined, hang, 40),
     (error) => {
       assert.ok(error instanceof DecisionProviderError);
-      assert.equal(error.providerCause, 'network');
+      assert.equal(error.providerCause, 'timeout');
       return true;
     }
   );
@@ -404,7 +404,11 @@ test('a network failure does not execute and does not echo the cause text', asyn
   );
 });
 
-test('provider selection follows the explicit provider, else TypeSafe when its key is set', async () => {
+test('provider selection retains configured primary and offers the keyed fallback for missing primary credentials', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'decision-selection-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const selectDecisionProvider = (explicit: Parameters<typeof selectProvider>[0], env: NodeJS.ProcessEnv) =>
+    selectProvider(explicit, { ...env, HOME: home, HUD_HOME: home });
   const missing = async (
     explicit: 'openai' | 'typesafe' | undefined,
     env: NodeJS.ProcessEnv,
@@ -425,7 +429,7 @@ test('provider selection follows the explicit provider, else TypeSafe when its k
   await missing('openai', {}, 'openai', 'OPENAI_API_KEY');
   await missing('typesafe', {}, 'typesafe', 'TYPESAFE_API_KEY');
   await missing(undefined, {}, 'typesafe', 'TYPESAFE_API_KEY');
-  await missing('typesafe', { OPENAI_API_KEY: 'configured' }, 'typesafe', 'TYPESAFE_API_KEY');
+  assert.equal((await selectDecisionProvider('typesafe', { OPENAI_API_KEY: 'configured' })).id, 'typesafe');
   const openai = await selectDecisionProvider('openai', { OPENAI_API_KEY: 'configured' });
   const typesafe = await selectDecisionProvider('typesafe', {
     TYPESAFE_API_KEY: 'configured',
@@ -441,7 +445,11 @@ test('provider selection follows the explicit provider, else TypeSafe when its k
   assert.equal(typesafe.id, 'typesafe');
   assert.equal(both.id, 'typesafe');
   assert.equal(onlyTypeSafe.id, 'typesafe');
-  assert.equal(onlyOpenAI.id, 'openai');
+  assert.equal(
+    onlyOpenAI.id,
+    'typesafe',
+    'configured primary stays TypeSafe; the keyed OpenAI fallback answers per call'
+  );
   assert.equal(openai.model, OPENAI_DECISION_MODEL);
   assert.equal(typesafe.model, 'jev-latest');
 });
@@ -650,7 +658,7 @@ test(
         }
         return fetch(url, init);
       };
-      const provider = await selectDecisionProvider(which, env, fetcher);
+      const provider = await selectProvider(which, env, fetcher);
       const expected =
         which === 'openai'
           ? JSON.stringify(buildOpenAIBody(built.request, cacheKey))

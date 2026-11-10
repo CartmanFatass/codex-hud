@@ -30,6 +30,9 @@ export type Answer =
 export type DecisionProviderId = 'typesafe' | 'openai';
 
 export interface DecisionResult {
+  /** Actual responder, including per-call failover. */
+  provider?: DecisionProviderId;
+  model?: string;
   answers: Answer[];
   usage: Usage;
   latencyMs: number;
@@ -55,12 +58,12 @@ export function decideProviderId(
   explicit: DecisionProviderId | undefined,
   present: { typesafe: boolean; openai: boolean }
 ): { ok: true; provider: DecisionProviderId } | { ok: false; provider: DecisionProviderId; variable: string } {
-  if (explicit === 'typesafe' || (!explicit && present.typesafe)) {
+  if (explicit === 'typesafe' || !explicit) {
     return present.typesafe
       ? { ok: true, provider: 'typesafe' }
       : { ok: false, provider: 'typesafe', variable: 'TYPESAFE_API_KEY' };
   }
-  if (explicit === 'openai' || (!explicit && present.openai)) {
+  if (explicit === 'openai') {
     return present.openai
       ? { ok: true, provider: 'openai' }
       : { ok: false, provider: 'openai', variable: 'OPENAI_API_KEY' };
@@ -175,32 +178,50 @@ export async function choose(
 ): Promise<ResolvedDecision | RefusedDecision> {
   const built = buildDecisionRequest(state, goal, history, options.includeFill !== false);
   const result = await provider.decide(built.request, options);
-  const resolved = resolveDecision(built, result.answers, provider.id);
+  const resolved = resolveDecision(built, result.answers, result.provider ?? provider.id);
   if ('refused' in resolved) return resolved;
   const reported =
     result.raw && typeof result.raw === 'object' && typeof (result.raw as { model?: unknown }).model === 'string'
       ? (result.raw as { model: string }).model
-      : provider.model;
+      : (result.model ?? provider.model);
   return { ...resolved, model: reported, usage: result.usage, latency_ms: result.latencyMs };
 }
 
-/** Explicit provider wins. With none set, TypeSafe wins when its key is present, including when both keys are set. */
+/** HUD primary/fallback, with an optional per-call primary override. */
 export async function selectDecisionProvider(
   explicit?: DecisionProviderId,
   env: NodeJS.ProcessEnv = process.env,
   fetcher?: typeof fetch
 ): Promise<DecisionProvider> {
-  const { readHudCredentials } = await import('./ask/config.js');
-  const creds = readHudCredentials(env);
-  const decision = decideProviderId(explicit, {
-    typesafe: Boolean(creds.typesafeApiKey),
-    openai: Boolean(creds.openaiApiKey),
-  });
-  if (!decision.ok) throw new JevCredentialsMissing(decision.provider, decision.variable);
-  if (decision.provider === 'openai') {
-    const { OpenAIDecisionProvider } = await import('./providers/openai.js');
-    return new OpenAIDecisionProvider({ apiKey: creds.openaiApiKey ?? '', baseUrl: creds.openaiBaseUrl, fetcher });
-  }
+  const { readHudCredentials, readHudConfig, resolveDecisions } = await import('./ask/config.js');
+  const { getHudHome } = await import('../hud-home.js');
+  const { join } = await import('node:path');
+  const { FailoverDecisionProvider } = await import('./failover.js');
+  const { OpenAIDecisionProvider } = await import('./providers/openai.js');
   const { TypeSafeDecisionProvider } = await import('./providers/typesafe.js');
-  return new TypeSafeDecisionProvider({ apiKey: creds.typesafeApiKey ?? '', model: creds.typesafeModel, fetcher });
+  const creds = readHudCredentials(env);
+  const config = resolveDecisions(readHudConfig(join(getHudHome(env), 'config.json')));
+  const primary = explicit ?? config.primary;
+  const make = (id: DecisionProviderId): DecisionProvider | undefined => {
+    if (id === 'openai')
+      return creds.openaiApiKey
+        ? new OpenAIDecisionProvider({
+            apiKey: creds.openaiApiKey,
+            baseUrl: config.openai.baseUrl || creds.openaiBaseUrl,
+            fetcher,
+          })
+        : undefined;
+    return creds.typesafeApiKey
+      ? new TypeSafeDecisionProvider({
+          apiKey: creds.typesafeApiKey,
+          model: config.typesafe.model || creds.typesafeModel,
+          fetcher,
+        })
+      : undefined;
+  };
+  const first = make(primary);
+  const fallback = config.fallback !== primary ? make(config.fallback) : undefined;
+  if (!first && !fallback)
+    throw new JevCredentialsMissing(primary, primary === 'typesafe' ? 'TYPESAFE_API_KEY' : 'OPENAI_API_KEY');
+  return new FailoverDecisionProvider(primary, first, fallback);
 }

@@ -13,8 +13,7 @@ const settings = () => ({
   ...defaultSettings(),
   briefing: 'api' as const,
   briefingPaused: true,
-  briefingApiBase: 'http://synthetic.invalid/v1',
-  briefingApiKey: 'synthetic-only-key',
+  briefingApiBase: 'https://api.mistral.ai/v1',
   briefingApiLiteModel: 'fixture-none',
   briefingApiLowModel: 'fixture-low',
   briefingApiMediumModel: 'fixture-high',
@@ -23,7 +22,7 @@ const settings = () => ({
 test('explicit test uses three resolved routes and bounded synthetic prompts, without saving settings or secrets', async () => {
   const bodies: Array<Record<string, any>> = [];
   const probe = new ModelProbe({
-    env: {},
+    env: { HOME: '/tmp/synthetic-missing-home', MISTRAL_API_KEY: 'synthetic-only-key' },
     fetch: (async (_url, options) => {
       bodies.push(JSON.parse(String(options?.body)));
       return new Response(JSON.stringify({ choices: [{ message: { content: 'OK' } }] }), { status: 200 });
@@ -34,7 +33,11 @@ test('explicit test uses three resolved routes and bounded synthetic prompts, wi
     bodies.map((body) => body.model),
     ['fixture-none', 'fixture-low', 'fixture-high']
   );
-  assert.ok(bodies.every((body) => body.max_tokens === 256 && body.messages[1].content === 'Reply with OK.'));
+  assert.deepEqual(
+    bodies.map((body) => body.max_tokens),
+    [256, 768, 768]
+  );
+  assert.ok(bodies.every((body) => body.messages[1].content === 'Reply with OK.'));
   assert.ok(probe.current().rows.every((row) => row.status === 'ok'));
   assert.ok(!JSON.stringify(probe.current()).includes('synthetic-only-key'));
   await probe.run({ ...settings(), briefing: 'off' });
@@ -44,7 +47,7 @@ test('explicit test uses three resolved routes and bounded synthetic prompts, wi
 
 test('failed routes are classified and leave no reflected credentials in UI results', async () => {
   const probe = new ModelProbe({
-    env: {},
+    env: { HOME: '/tmp/synthetic-missing-home', MISTRAL_API_KEY: 'synthetic-only-key' },
     fetch: (async () =>
       new Response(JSON.stringify({ error: { message: 'synthetic-only-key' } }), { status: 401 })) as typeof fetch,
   });
@@ -59,7 +62,7 @@ test('editing connection configuration cancels active probes and rejects late re
     entered = resolve;
   });
   const probe = new ModelProbe({
-    env: {},
+    env: { HOME: '/tmp/synthetic-missing-home', MISTRAL_API_KEY: 'synthetic-only-key' },
     fetch: (async (_url, options) => {
       entered();
       await new Promise<void>((_resolve, reject) =>
@@ -70,7 +73,7 @@ test('editing connection configuration cancels active probes and rejects late re
   });
   const run = probe.run(settings());
   await started;
-  probe.invalidate({ ...settings(), briefingApiKey: 'new-synthetic-key' });
+  probe.invalidate({ ...settings(), briefingApiModel: 'new-synthetic-model' });
   await run;
   assert.deepEqual(probe.current(), { running: false, rows: [] });
 });
@@ -103,7 +106,7 @@ test('synthetic probes have their own shared telemetry category without changing
   const bodies: Array<Record<string, unknown>> = [];
   const probe = new ModelProbe({
     dir,
-    env: {},
+    env: { HOME: dir, MISTRAL_API_KEY: 'synthetic-only-key' },
     fetch: (async (_url, options) => {
       bodies.push(JSON.parse(String(options?.body)));
       return new Response(JSON.stringify({ choices: [{ message: { content: 'OK' } }] }));

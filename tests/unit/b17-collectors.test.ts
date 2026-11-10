@@ -18,7 +18,13 @@ import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
 import type { RolloutParseResult } from '../../src/collectors/rollout.js';
 
 const NOW = 1700000020000;
-const api = { base: 'https://synthetic.invalid/v1', model: 'synthetic-model', key: '' };
+// Historical request-byte checks pin the former effort explicitly; production defaults have separate coverage.
+const api = {
+  base: 'https://api.mistral.ai/v1',
+  model: 'synthetic-model',
+  key: '',
+  efforts: { lite: 'off', low: 'off', medium: 'off' } as const,
+};
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 async function until(done: () => boolean) {
   const deadline = Date.now() + 5000;
@@ -46,7 +52,7 @@ function fixture(authority?: MaterialAuthority) {
   };
   native('root');
   writePrivateFile(
-    path.join(root, 'hud-settings.json'),
+    path.join(root, 'universal', 'hud-settings.json'),
     JSON.stringify({
       briefing: 'api',
       briefingApiBase: api.base,
@@ -62,10 +68,10 @@ function fixture(authority?: MaterialAuthority) {
   let responseWait: Promise<void> | undefined;
   let response =
     '{"overall":"Synthetic progress","agents":[],"main":{"goal":"Synthetic goal","done":[],"now":"Checking","needs":""}}';
-  const dir = path.join(root, 'hud', 'model-cache');
+  const dir = path.join(root, 'universal', 'display', 'model-cache');
   const model = new SmallModel({
     dir,
-    env: { CODEX_HOME: root, HUD_HOME: path.join(root, 'universal') },
+    env: { HOME: root, CODEX_HOME: root, HUD_HOME: path.join(root, 'universal'), MISTRAL_API_KEY: 'synthetic-key' },
     materials: authority,
     fetch: (async (_url, init) => {
       bodies.push(String(init?.body));
@@ -342,7 +348,12 @@ test('round-two explicit null/throwing recipient resolvers cannot fall back to l
     let reads = 0;
     const model = new SmallModel({
       dir: f.dir,
-      env: { CODEX_HOME: f.root, HUD_HOME: path.join(f.root, 'universal') },
+      env: {
+        HOME: f.root,
+        CODEX_HOME: f.root,
+        HUD_HOME: path.join(f.root, 'universal'),
+        MISTRAL_API_KEY: 'synthetic-key',
+      },
       resolveRecipient: () => {
         if (throws) throw new Error('synthetic unresolved recipient');
         return null;
@@ -392,7 +403,12 @@ test('round-two legacy revalidation retains its explicit resolved identity and r
   };
   const model = new SmallModel({
     dir: f.dir,
-    env: { CODEX_HOME: f.root, HUD_HOME: path.join(f.root, 'universal') },
+    env: {
+      HOME: f.root,
+      CODEX_HOME: f.root,
+      HUD_HOME: path.join(f.root, 'universal'),
+      MISTRAL_API_KEY: 'synthetic-key',
+    },
     materials: authority,
     resolveRecipient: () => (allowed ? identity : null),
     fetch: (async () => {
@@ -549,8 +565,11 @@ test('review F3: general CLI material grants bind executable/PATH even with a su
 });
 
 test('known API credential changes cannot reuse a static account grant or read new material', async () => {
-  for (const change of ['environment', 'configured-key'] as const) {
-    const env = { CODEX_HUD_BRIEF_API_KEY: 'synthetic-account-a' };
+  for (const change of ['environment', 'credential-file'] as const) {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'b17-credential-'));
+    const env: NodeJS.ProcessEnv = { HOME: home, HUD_HOME: home };
+    if (change === 'environment') env.MISTRAL_API_KEY = 'synthetic-account-a';
+    else fs.writeFileSync(path.join(home, 'credentials.env'), 'MISTRAL_API_KEY=synthetic-account-a\n', { mode: 0o600 });
     const sourceId = fingerprint('synthetic-api-credential-source');
     const recipient = resolveRecipient(
       { backend: 'api', endpoint: api.base + '/chat/completions', model: api.model },
@@ -601,20 +620,21 @@ test('known API credential changes cannot reuse a static account grant or read n
       });
     try {
       assert.equal((await model.submit(request()).result).ok, true);
-      if (change === 'environment') env.CODEX_HUD_BRIEF_API_KEY = 'synthetic-account-b';
-      else model.configure({ api: { ...api, key: 'synthetic-account-b' } });
+      if (change === 'environment') env.MISTRAL_API_KEY = 'synthetic-account-b';
+      else fs.writeFileSync(path.join(home, 'credentials.env'), 'MISTRAL_API_KEY=synthetic-account-b\n');
       assert.equal((await model.submit(request()).result).ok, false, change);
       assert.equal(calls, 1);
       assert.equal(reads, 1);
     } finally {
       model.cancelAll();
       await model.flushTelemetry();
+      fs.rmSync(home, { recursive: true, force: true });
     }
   }
 });
 
 test('trusted API resolver may verify same-account rotation; queued credentials stay captured and require rebuilding', async () => {
-  const env = { CODEX_HUD_BRIEF_API_KEY: 'synthetic-key-a' };
+  const env = { MISTRAL_API_KEY: 'synthetic-key-a' };
   const sourceId = fingerprint('synthetic-resolved-api-source');
   const route = { backend: 'api' as const, endpoint: api.base + '/chat/completions', model: api.model };
   const identity = { recipientId: fingerprint('synthetic-verified-account'), model: api.model };
@@ -634,7 +654,7 @@ test('trusted API resolver may verify same-account rotation; queued credentials 
     env,
     materials: authority,
     resolveRecipient: (actual) =>
-      ['synthetic-key-a', 'synthetic-key-b'].includes(env.CODEX_HUD_BRIEF_API_KEY)
+      ['synthetic-key-a', 'synthetic-key-b'].includes(env.MISTRAL_API_KEY)
         ? { ...identity, model: actual.model! }
         : null,
     fetch: (async (_url, init) => {
@@ -671,7 +691,7 @@ test('trusted API resolver may verify same-account rotation; queued credentials 
     const active = model.submit(request('active'));
     await until(() => bodies.length === 1);
     const queued = model.submit(request('queued'));
-    env.CODEX_HUD_BRIEF_API_KEY = 'synthetic-key-b';
+    env.MISTRAL_API_KEY = 'synthetic-key-b';
     finish();
     assert.equal((await active.result).ok, false);
     assert.equal((await queued.result).ok, false);
@@ -683,7 +703,7 @@ test('trusted API resolver may verify same-account rotation; queued credentials 
     const cached = await model.submit(request('freshly verified same account')).result;
     assert.ok(cached.ok && cached.cached);
     assert.equal(bodies.length, 2);
-    env.CODEX_HUD_BRIEF_API_KEY = 'synthetic-unknown-account';
+    env.MISTRAL_API_KEY = 'synthetic-unknown-account';
     assert.equal((await model.submit(request('must deny')).result).ok, false);
     assert.equal(bodies.length, 2);
   } finally {

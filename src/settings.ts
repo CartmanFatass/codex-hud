@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { LOOKS, type HudDisplayConfig, type IconMode } from './render/hud-config.js';
-import { getCodexHome } from './utils/codex-path.js';
+import { getHudHome } from './hud-home.js';
 import { defaultCardVisibility, type CardVisibility } from './card-visibility.js';
 import { PREFIX_KEYS, type PrefixKey } from './utils/panel-command.js';
 
@@ -71,21 +71,13 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
   briefingPaused: boolean;
   /** The tree panel's and the brief's language; auto follows the locale. */
   language: 'auto' | 'en' | 'zh';
-  /** `api` brief: the endpoint's base URL, up to `/v1`; empty is OpenAI's. */
+  /** `api` brief: the endpoint's base URL, up to `/v1`; empty is Mistral's. */
   briefingApiBase: string;
   /** Nonempty overrides all API task routes (backwards compatibility). */
   briefingApiModel: string;
   briefingApiLiteModel: string;
   briefingApiLowModel: string;
   briefingApiMediumModel: string;
-  /**
-   * `api` brief: the key. Empty falls back to CODEX_HUD_BRIEF_API_KEY, then
-   * the HUD credentials file's origin-bound OPENAI_API_KEY or MISTRAL_API_KEY;
-   * custom endpoints never receive those general keys. A local server may need none. The file is written 0600.
-   */
-  briefingApiKey: string;
-  /** Legacy input, migrated to explicit tier efforts when loading older files. */
-  briefingApiReasoning: boolean;
   briefingApiLiteEffort: ApiEffort;
   briefingApiLowEffort: ApiEffort;
   briefingApiMediumEffort: ApiEffort;
@@ -207,16 +199,14 @@ export function defaultSettings(): HudSettings {
     briefingMs: 300_000,
     briefingPaused: false,
     language: 'auto',
-    briefingApiBase: '',
+    briefingApiBase: 'https://api.mistral.ai/v1',
     briefingApiModel: '',
-    briefingApiKey: '',
-    briefingApiReasoning: false,
-    briefingApiLiteEffort: 'off',
-    briefingApiLowEffort: 'off',
-    briefingApiMediumEffort: 'off',
-    briefingApiLiteModel: 'gemini-3.5-flash-lite',
-    briefingApiLowModel: 'gemini-3.8-flash-low',
-    briefingApiMediumModel: 'gemini-3.8-flash-medium',
+    briefingApiLiteEffort: 'none',
+    briefingApiLowEffort: 'low',
+    briefingApiMediumEffort: 'high',
+    briefingApiLiteModel: 'deepseek-v4-1-flash-1017',
+    briefingApiLowModel: 'deepseek-v4-1-flash-1017',
+    briefingApiMediumModel: 'deepseek-v4-1-flash-1017',
     briefAgents: true,
     briefMain: false,
     agentProgress: true,
@@ -291,8 +281,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   briefingApiLiteModel: isText(200),
   briefingApiLowModel: isText(200),
   briefingApiMediumModel: isText(200),
-  briefingApiKey: isText(4096),
-  briefingApiReasoning: isBoolean,
   briefingApiLiteEffort: oneOf('off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'),
   briefingApiLowEffort: oneOf('off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'),
   briefingApiMediumEffort: oneOf('off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'),
@@ -338,16 +326,6 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result = { ...base };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
   const values = { ...(raw as Record<string, unknown>) };
-  // Only missing tier values inherit the legacy switch; explicit tier values always win.
-  if (typeof values.briefingApiReasoning === 'boolean') {
-    for (const [key, effort] of Object.entries({
-      briefingApiLiteEffort: 'none',
-      briefingApiLowEffort: 'low',
-      briefingApiMediumEffort: 'low',
-    })) {
-      if (!Object.hasOwn(values, key)) values[key] = values.briefingApiReasoning ? effort : 'off';
-    }
-  }
   // OMP was removed: preserve opt-in intent by migrating to API, never AGY.
   if (values.briefing === 'omp') values.briefing = 'api';
   // A pane is open or closed; one saved folded, as earlier versions could, is closed.
@@ -362,8 +340,19 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   return result;
 }
 
+/** Known validated keys only; removed/unknown legacy fields never enter an import. */
+export function importableSettings(raw: unknown): Partial<HudSettings> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('invalid_settings');
+  const values = raw as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(validators)
+      .filter(([key, valid]) => Object.hasOwn(values, key) && valid(values[key]))
+      .map(([key]) => [key, values[key]])
+  );
+}
+
 export function settingsPath(): string {
-  return resolveHudEnv(process.env, 'HUD_SETTINGS_PATH') || path.join(getCodexHome(), 'hud-settings.json');
+  return resolveHudEnv(process.env, 'HUD_SETTINGS_PATH') || path.join(getHudHome(), 'hud-settings.json');
 }
 
 function readSettings(file: string): HudSettings {

@@ -6,7 +6,7 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { chromeProxyFlags, type JevConfig } from './config.js';
+import { assertJevLocations, chromeProxyFlags, type JevConfig } from './config.js';
 import { JevFailure } from './error.js';
 import { assertStateDir } from './names.js';
 
@@ -76,6 +76,7 @@ export function chromeLaunchArgs(config: JevConfig, mode: ChromeMode): string[] 
  * and left alone: this function does not kill it and does not spawn a second one.
  */
 export async function chromeStart(config: JevConfig, mode: ChromeMode, deps: ChromeDeps): Promise<ChromeStartResult> {
+  assertJevLocations(config);
   assertStateDir(config.stateDir);
   const now = deps.now ?? Date.now;
   const deadline = now() + CHROME_START_TIMEOUT_MS;
@@ -120,6 +121,7 @@ export async function chromeStatus(
   config: JevConfig,
   deps: ChromeDeps
 ): Promise<{ chrome: 'running'; mode: ChromeMode } | { chrome: 'not running'; mode: null }> {
+  assertJevLocations(config);
   const version = await loadVersion(config.cdpUrl, deps);
   if (!version) return { chrome: 'not running', mode: null };
   return { chrome: 'running', mode: runningMode(config.stateDir, version) };

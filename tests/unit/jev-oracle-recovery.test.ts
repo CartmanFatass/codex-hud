@@ -113,7 +113,7 @@ for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
         const stateDir = join(home, 'state');
         mkdirSync(stateDir, { mode: 0o700 });
         writeFileSync(
-          join(home, 'jev.env'),
+          join(home, 'credentials.env'),
           'TYPESAFE_API_KEY=synthetic-r4-key\nOPENAI_API_KEY=synthetic-r4-openai\n',
           { mode: 0o600 }
         );
@@ -202,6 +202,9 @@ for (const targetId of ['chatgpt-pro', 'aistudio'] as const) {
         }
         const h = fixture(targetId);
         const runtime = new JevRuntime({
+          chrome: '/synthetic/chrome',
+          profile: '/synthetic/profile',
+          cdpUrl: 'http://offline.invalid',
           hudHome: home,
           stateDir,
           fake: true,

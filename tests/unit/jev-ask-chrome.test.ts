@@ -42,7 +42,7 @@ function jevConfig(stateDir: string, patch: Partial<JevConfig> = {}): JevConfig 
     keepaliveSeconds: 15,
     cdpTimeoutMs: 60_000,
     proxy: { server: 'http://127.0.0.1:9', bypass: 'example.invalid, localhost' },
-    decisions: { openai: {}, typesafe: {} },
+    decisions: { primary: 'typesafe', fallback: 'openai', openai: {}, typesafe: {} },
     ask: {
       maxWaitMs: ASK_MAX_WAIT_MS,
       queueLimit: ASK_QUEUE_LIMIT,
@@ -178,7 +178,8 @@ test('missing chrome or port fails before spawn', async (t) => {
         fetchVersion: () => null,
         spawn: (argv) => spawned.push(argv),
       }),
-    (error: unknown) => error instanceof JevFailure && error.code === 'chrome'
+    (error: unknown) =>
+      error instanceof JevFailure && error.code === 'pre_send' && /jev.chrome.*hud import/.test(error.message)
   );
   await assert.rejects(
     () =>

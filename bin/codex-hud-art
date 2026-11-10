@@ -4,7 +4,7 @@
 #   codex-hud-art <image> [dots|color|ascii]   use this picture, in this style
 #   codex-hud-art off                          no decoration
 #
-# The image is copied next to the settings ($CODEX_HOME/hud-art.<ext>), so
+# The image is copied next to the settings ($HUD_HOME/hud-art.<ext>), so
 # moving or deleting the original later changes nothing. Any format ffmpeg
 # reads works; ffmpeg is what the panel decodes it with. An open panel picks
 # the change up the next time its settings are saved or it is reopened (F12).
@@ -12,10 +12,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HUD_DIR="$(dirname "$SCRIPT_DIR")"
-home="${CODEX_HOME:-$HOME/.codex}"
+home="${HUD_HOME:-$HOME/.hud}"
 
 save() {
-  CODEX_HOME="$home" node --input-type=module -e '
+  HUD_HOME="$home" node --input-type=module -e '
     const { pathToFileURL } = await import("node:url");
     const { saveSettings } = await import(pathToFileURL(process.argv[1]).href);
     const patch = process.argv[3] === undefined ? { art: process.argv[2] } : { art: process.argv[2], artImage: process.argv[3] };

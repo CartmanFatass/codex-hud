@@ -10,7 +10,7 @@ import { once } from 'node:events';
 import { modelHttpRequest, requestDigest, type ModelResult } from '../../src/collectors/small-model.js';
 
 const question = { feature: 'labels', system: 'Synthetic test instructions', prompt: 'Synthetic test input' };
-const api = { base: 'http://synthetic.invalid/v1', model: '', key: '' };
+const api = { base: 'http://synthetic.invalid/v1', model: '', sourceCredential: null };
 const reply = () => new Response(JSON.stringify({ choices: [{ message: { content: 'Synthetic answer' } }] }));
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'hud-model-runtime-'));

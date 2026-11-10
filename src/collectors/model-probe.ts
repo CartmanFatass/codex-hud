@@ -41,7 +41,6 @@ export function probeFingerprint(settings: HudSettings, env: NodeJS.ProcessEnv =
         settings.briefing,
         apiSettings(settings),
         env.CODEX_HUD_BRIEF_MODEL,
-        env.CODEX_HUD_BRIEF_API_KEY,
         (() => {
           const request = modelHttpRequest(apiSettings(settings), { ...question, feature: 'probe' }, env);
           return 'error' in request ? request.error : request.headers.authorization;
@@ -55,7 +54,6 @@ export function probeFingerprint(settings: HudSettings, env: NodeJS.ProcessEnv =
 export function apiSettings(settings: HudSettings) {
   return {
     base: settings.briefingApiBase,
-    key: settings.briefingApiKey,
     model: settings.briefingApiModel,
     efforts: {
       lite: settings.briefingApiLiteEffort,

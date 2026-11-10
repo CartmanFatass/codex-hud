@@ -22,7 +22,7 @@ import { SmallModel, writePrivateFile, type ModelRequest } from '../../src/colle
 
 const a = fingerprint('synthetic-codex');
 const b = fingerprint('synthetic-claude');
-const api = { base: 'https://synthetic.invalid/v1', model: 'synthetic-model', key: '' };
+const api = { base: 'https://synthetic.invalid/v1', model: 'synthetic-model', sourceCredential: null };
 const route = { backend: 'api' as const, endpoint: `${api.base}/chat/completions`, model: api.model };
 const target = resolveRecipient(route, 'synthetic-account')!;
 const ref = (sourceId = a, sessionId = 'synthetic-session') => ({

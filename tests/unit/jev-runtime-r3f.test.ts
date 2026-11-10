@@ -27,7 +27,7 @@ async function unusedCdpUrl(): Promise<string> {
   return url;
 }
 
-test('R3F production child discovers HUD JSON and explicit env TOML with HUD-home overrides', async (t) => {
+test('R3F production child uses explicit HUD JSON only and ignores JEV_ASK_CONFIG/TOML', async (t) => {
   const root = workspace(t);
   const saved = { HOME: process.env.HOME, JEV_ASK_CONFIG: process.env.JEV_ASK_CONFIG };
   t.after(() => {
@@ -54,11 +54,16 @@ test('R3F production child discovers HUD JSON and explicit env TOML with HUD-hom
     const hudHome = join(root, source);
     mkdirSync(hudHome);
     if (source === 'hud-json') {
-      writeFileSync(join(hudHome, 'config.json'), JSON.stringify({ jev: { stateDir: state } }));
+      writeFileSync(
+        join(hudHome, 'config.json'),
+        JSON.stringify({
+          jev: { stateDir: state, cdpUrl: 'http://offline.invalid', chrome: process.execPath, profile: state },
+        })
+      );
     } else {
       process.env.JEV_ASK_CONFIG = join(root, 'selected.toml');
       if (source === 'env') {
-        // Ignoring JEV_ASK_CONFIG now fails rather than falling back successfully.
+        // A valid legacy TOML does not authorize any runtime locations.
         writeFileSync(join(defaultDir, 'config.toml'), '[jev]\nstate_dir="/missing-synthetic-default"\n');
         writeFileSync(process.env.JEV_ASK_CONFIG, `[jev]\nstate_dir=${JSON.stringify(state)}\n`);
       } else {
@@ -70,10 +75,24 @@ test('R3F production child discovers HUD JSON and explicit env TOML with HUD-hom
         writeFileSync(
           join(hudHome, 'config.json'),
           JSON.stringify({
-            jev: { stateDir: state, proxy: { server: 'http://proxy.example.invalid:8080', bypass: 'example.invalid' } },
+            jev: {
+              stateDir: state,
+              cdpUrl: 'http://offline.invalid',
+              chrome: process.execPath,
+              profile: state,
+              proxy: { server: 'http://proxy.example.invalid:8080', bypass: 'example.invalid' },
+            },
           })
         );
       }
+    }
+    if (source === 'env') {
+      await assert.rejects(
+        connectJevExecutor(hudHome, { fake: true, graceMs: 60_000 }),
+        (error: any) =>
+          error.code === 'pre_send' && error.message.includes('jev.cdpUrl') && error.message.includes('hud import')
+      );
+      continue;
     }
     const handle = await connectJevExecutor(hudHome, { fake: true, graceMs: 60_000 });
     const pid = (await handle.status()).pid;
@@ -135,10 +154,12 @@ test('R3F no CDP and no configured Chrome produces public browser_unavailable', 
   const hudHome = workspace(t);
   const stateDir = join(hudHome, 'state');
   mkdirSync(stateDir);
-  writeFileSync(join(hudHome, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-r3f-key\n', { mode: 0o600 });
+  writeFileSync(join(hudHome, 'credentials.env'), 'TYPESAFE_API_KEY=synthetic-r3f-key\n', { mode: 0o600 });
   const runtime = new JevRuntime({
     hudHome,
     stateDir,
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
     cdpUrl: await unusedCdpUrl(),
     graceMs: 60_000,
     providerFactory: () => fakeProvider(),
@@ -182,6 +203,9 @@ test('R3F explicit stateDir skips the production config loader under an empty HO
   const runtime = new JevRuntime({
     hudHome: root,
     stateDir,
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
     fake: true,
     graceMs: 60_000,
     configLoader: () => {

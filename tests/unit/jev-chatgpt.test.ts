@@ -947,7 +947,7 @@ test('decision diagnostics: default runtime adapter logs refusal attempts and pu
   const home = mkdtempSync(join(tmpdir(), 'jev-decision-log-'));
   const stateDir = join(home, 'state');
   mkdirSync(stateDir);
-  writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-key\n', { mode: 0o600 });
+  writeFileSync(join(home, 'credentials.env'), 'TYPESAFE_API_KEY=synthetic-key\n', { mode: 0o600 });
   const stub = chatgptStub();
   const provider = providerOf(stub);
   const decide = provider.decide.bind(provider);
@@ -957,6 +957,9 @@ test('decision diagnostics: default runtime adapter logs refusal attempts and pu
       : decide(...args);
   const ticks = clock();
   const runtime = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
     hudHome: home,
     stateDir,
     graceMs: 60_000,

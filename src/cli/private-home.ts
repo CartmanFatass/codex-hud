@@ -1,7 +1,7 @@
 /** Lightweight CLI errors and private-home validation, without opening a ledger. */
 import { lstatSync, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute } from 'node:path';
+import { getHudHome } from '../hud-home.js';
 export class CliError extends Error {
   constructor(
     readonly reason: string,
@@ -12,7 +12,7 @@ export class CliError extends Error {
 }
 /** Validate before opening a store, loading configuration, or creating any files. */
 export function privateHome(env: NodeJS.ProcessEnv): string {
-  const requested = env.HUD_HOME ?? join(homedir(), '.hud');
+  const requested = getHudHome(env);
   if (!isAbsolute(requested) || requested.includes('\0')) throw new CliError('invalid_hud_home', 3);
   const home = requested.replace(/(?:\/\.?)+$/, '') || '/';
   try {

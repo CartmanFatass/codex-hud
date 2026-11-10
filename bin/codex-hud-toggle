@@ -85,6 +85,7 @@ hud_height=${hud_height:-1}
 hud_cmd=$(get_opt @codex_hud_hud_cmd)
 session_start=$(get_opt @codex_hud_session_start)
 codex_home=$(get_opt @codex_hud_codex_home)
+hud_home=$(get_opt @codex_hud_hud_home)
 # Missing option: older sessions still have the compact HUD.
 statusline=$(get_opt @codex_hud_statusline)
 statusline_enabled=1
@@ -107,8 +108,8 @@ resolve_click() {
   # session name, which is what the HUD pane was given in its environment.
   tmux_session=$(tmux display-message -p -t "$session_name" '#{session_name}' 2>/dev/null | tr -d '\r\n')
   [[ -n "$tmux_session" ]] || return 0
-  local home="${codex_home:-${CODEX_HOME:-$HOME/.codex}}"
-  state_file="$home/hud/state/$(printf '%s' "$tmux_session" | tr -c 'A-Za-z0-9._-' '_').json"
+  local home="${hud_home:-${HUD_HOME:-$HOME/.hud}}"
+  state_file="$home/display/state/$(printf '%s' "$tmux_session" | tr -c 'A-Za-z0-9._-' '_').json"
   [[ -r "$state_file" ]] || return 0
 
   # Paths and the column arrive as arguments, never as script text.
@@ -129,6 +130,7 @@ resolve_click
 
 cwd_q=$(printf '%q' "$cwd")
 codex_home_q=$(printf '%q' "$codex_home")
+hud_home_q=$(printf '%q' "${hud_home:-${HUD_HOME:-$HOME/.hud}}")
 toggle_q=$(printf '%q' "$SCRIPT_DIR/codex-hud-toggle")
 # Key bindings target a stable tmux id ($N), but snapshots and bridge health
 # are published under the launcher's session name. Keep that identity in the
@@ -154,7 +156,7 @@ pane_alive() {
 
 create_hud_pane() {
   if [[ -z "$hud_cmd" ]]; then
-    hud_cmd="cd ${cwd_q} && CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' node '$HUD_DIR/dist/index.js'"
+    hud_cmd="cd ${cwd_q} && CODEX_HOME=${codex_home_q} HUD_HOME=${hud_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' node '$HUD_DIR/dist/index.js'"
   fi
 
   if ! new_hud=$(tmux split-window -v -l "$hud_height" -t "$main_pane" -d -P -F '#{pane_id}' "$hud_cmd"); then
@@ -264,7 +266,7 @@ initial_command=""
 if [[ -n "$command" ]]; then
   initial_command=" CODEX_HUD_INITIAL_COMMAND='$command'"
 fi
-tree_cmd="env${initial_command} HUD_TREE_WIDTH='$requested_width' CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
+tree_cmd="env${initial_command} HUD_TREE_WIDTH='$requested_width' CODEX_HUD_TREE_WIDTH='$requested_width' CODEX_HOME=${codex_home_q} HUD_HOME=${hud_home_q} CODEX_HUD_CWD=${cwd_q} CODEX_HUD_MAIN_PANE='$main_pane' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION=${session_q} CODEX_HUD_TOGGLE_CMD=${toggle_q} node '$HUD_DIR/dist/tree-page.js'"
 if ! new_tree=$(tmux split-window -h -l "$panel_width" -t "$main_pane" -d -P -F '#{pane_id}' "$tree_cmd"); then
   tmux display-message -t "$session_name" "codex-hud: failed to open the tree panel"
   exit 1

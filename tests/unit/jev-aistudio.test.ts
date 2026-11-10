@@ -200,7 +200,7 @@ for (const heldPhase of ['prepare', 'confirm', 'wait', 'collect', 'cross_check']
     const home = workspace(t);
     const dir = join(home, 'state');
     mkdirSync(dir);
-    writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-t10\n', { mode: 0o600 });
+    writeFileSync(join(home, 'credentials.env'), 'TYPESAFE_API_KEY=synthetic-t10\n', { mode: 0o600 });
     const ticks = clock();
     const stub = studioStub();
     virtualStudioDom(stub);
@@ -228,6 +228,9 @@ for (const heldPhase of ['prepare', 'confirm', 'wait', 'collect', 'cross_check']
       },
     });
     const runtime = new JevRuntime({
+      chrome: '/synthetic/chrome',
+      profile: '/synthetic/profile',
+      cdpUrl: 'http://offline.invalid',
       hudHome: home,
       stateDir: dir,
       fake: true,
@@ -436,23 +439,18 @@ test('normalizeStudioPrompt matches the Python normalize_prompt', () => {
 
 // ---------------------------------------------------------------- config
 
-const TOML = (lines: string[]): string => lines.join('\n');
-
-test('loadStudioConfig reads the [aistudio] table from tomlText', (t) => {
-  const home = workspace(t);
-  const stateDir = join(home, 'studio-state');
+test('loadStudioConfig reads only HUD JSON and ignores even malformed TOML', (t) => {
+  const home = workspace(t),
+    stateDir = join(home, 'studio-state'),
+    configJsonPath = join(home, 'config.json');
   mkdirSync(stateDir);
-  const config = loadStudioConfig({
-    home,
-    tomlText: TOML([
-      '[aistudio]',
-      `state_dir = "${stateDir}"`,
-      'models = ["gemini-4-argon", "gemini-4-pro"]',
-      'default_model = "gemini-4-pro"',
-      'default_thinking = "Medium"',
-    ]),
-  });
-  assert.deepEqual(config, {
+  writeFileSync(
+    configJsonPath,
+    JSON.stringify({
+      aistudio: { stateDir, models: ['gemini-4-argon', 'gemini-4-pro'], model: 'gemini-4-pro', thinking: 'Medium' },
+    })
+  );
+  assert.deepEqual(loadStudioConfig({ home, configJsonPath, tomlText: 'not = toml = at all' }), {
     stateDir,
     models: ['gemini-4-argon', 'gemini-4-pro'],
     model: 'gemini-4-pro',
@@ -460,42 +458,38 @@ test('loadStudioConfig reads the [aistudio] table from tomlText', (t) => {
   });
 });
 
-test('loadStudioConfig expands ~ and defaults the state dir under the given home', (t) => {
-  const home = workspace(t);
+test('loadStudioConfig expands explicit ~, keeps non-location defaults, never supplies a state-dir default', (t) => {
+  const home = workspace(t),
+    configJsonPath = join(home, 'config.json');
   mkdirSync(join(home, 'studio'));
-  const tilde = loadStudioConfig({ home, tomlText: TOML(['[aistudio]', 'state_dir = "~/studio"']) });
-  assert.equal(tilde.stateDir, join(home, 'studio'));
-  assert.deepEqual(tilde.models, ['gemini-4-argon']);
-  assert.equal(tilde.model, 'gemini-4-argon');
-  assert.equal(tilde.thinking, 'High');
+  writeFileSync(configJsonPath, JSON.stringify({ aistudio: { stateDir: '~/studio' } }));
+  assert.deepEqual(loadStudioConfig({ home, configJsonPath }), {
+    stateDir: join(home, 'studio'),
+    models: ['gemini-4-argon'],
+    model: 'gemini-4-argon',
+    thinking: 'High',
+  });
   mkdirSync(join(home, '.local', 'state', 'jev-aistudio'), { recursive: true });
-  const fallback = loadStudioConfig({ home, tomlText: TOML(['[aistudio]', 'models = ["gemini-4-argon"]']) });
-  assert.equal(fallback.stateDir, join(home, '.local', 'state', 'jev-aistudio'));
+  writeFileSync(configJsonPath, '{}');
+  assert.throws(
+    () => loadStudioConfig({ home, configJsonPath, tomlText: '[aistudio]\nstate_dir="~/studio"' }),
+    failure('pre_send')
+  );
 });
 
-test('loadStudioConfig refuses a model outside the allowlist and an unknown thinking level', (t) => {
-  const home = workspace(t);
-  const stateDir = join(home, 'state');
+test('loadStudioConfig refuses invalid models/thinking, malformed JSON and a missing explicit state directory', (t) => {
+  const home = workspace(t),
+    stateDir = join(home, 'state'),
+    configJsonPath = join(home, 'config.json');
   mkdirSync(stateDir);
-  const table = (extra: string[]): string => TOML(['[aistudio]', `state_dir = "${stateDir}"`, ...extra]);
-  assert.throws(
-    () =>
-      loadStudioConfig({ home, tomlText: table(['models = ["gemini-4-argon"]', 'default_model = "gemini-4-pro"']) }),
-    failure('aistudio_config')
-  );
-  assert.throws(
-    () => loadStudioConfig({ home, tomlText: table(['default_thinking = "Ultra"']) }),
-    failure('aistudio_config')
-  );
-  assert.throws(() => loadStudioConfig({ home, tomlText: table(['models = []']) }), failure('aistudio_config'));
-  // The owner driver uses defaults when the [aistudio] table is absent.
-  assert.throws(
-    () => loadStudioConfig({ home, tomlText: TOML(['[other]', 'x = 1']) }),
-    failure('jev_state_dir_missing')
-  );
-  assert.throws(() => loadStudioConfig({ home, tomlText: 'not = toml = at all' }), failure('aistudio_config'));
-  // The default state dir must exist before a lock can be taken in it.
-  assert.throws(() => loadStudioConfig({ home, tomlText: TOML(['[aistudio]']) }), failure('jev_state_dir_missing'));
+  for (const patch of [{ models: ['gemini-4-argon'], model: 'gemini-4-pro' }, { thinking: 'Ultra' }, { models: [] }]) {
+    writeFileSync(configJsonPath, JSON.stringify({ aistudio: { stateDir, ...patch } }));
+    assert.throws(() => loadStudioConfig({ home, configJsonPath }), failure('aistudio_config'));
+  }
+  writeFileSync(configJsonPath, '{malformed');
+  assert.throws(() => loadStudioConfig({ home, configJsonPath }), failure('config'));
+  writeFileSync(configJsonPath, JSON.stringify({ aistudio: { stateDir: join(home, 'missing') } }));
+  assert.throws(() => loadStudioConfig({ home, configJsonPath }), failure('jev_state_dir_missing'));
 });
 
 // ---------------------------------------------------------------- lock
@@ -1154,7 +1148,7 @@ for (const scenario of ['idle', 'signal', 'hung_close'] as const) {
     const home = workspace(t);
     const stateDir = join(home, 'state');
     mkdirSync(stateDir);
-    writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-ownership\n', { mode: 0o600 });
+    writeFileSync(join(home, 'credentials.env'), 'TYPESAFE_API_KEY=synthetic-ownership\n', { mode: 0o600 });
     // Real Browser.open/CDP: create succeeds immediately, navigation won't
     // return until 8s. A close response is deliberately later than the answer.
     const cdp = await startFakeCdp({
@@ -1196,6 +1190,9 @@ for (const scenario of ['idle', 'signal', 'hung_close'] as const) {
       })
     );
     const runtime = new JevRuntime({
+      chrome: '/synthetic/chrome',
+      profile: '/synthetic/profile',
+      cdpUrl: 'http://offline.invalid',
       hudHome: home,
       stateDir,
       fake: true,
@@ -1295,7 +1292,7 @@ async function resumeStudio(t: TestContext, settlement: 'none' | 'before' | 'dur
   const jobs = join(home, 'jev-runtime', 'jobs');
   mkdirSync(stateDir);
   mkdirSync(jobs, { recursive: true });
-  writeFileSync(join(home, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-t5\n', { mode: 0o600 });
+  writeFileSync(join(home, 'credentials.env'), 'TYPESAFE_API_KEY=synthetic-t5\n', { mode: 0o600 });
   const ticks = clock();
   const stub = studioStub({ reply: { users: 1, model_turns: 1, final: true, text: '437', error: null } });
   const dom = virtualStudioDom(stub);
@@ -1356,6 +1353,9 @@ async function resumeStudio(t: TestContext, settlement: 'none' | 'before' | 'dur
     { mode: 0o600 }
   );
   const runtime = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
     hudHome: home,
     stateDir,
     fake: true,

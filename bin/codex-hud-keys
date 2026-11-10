@@ -15,8 +15,8 @@
 # table is rebuilt from nothing. The installed prefix is remembered in the
 # global option @codex_hud_prefix_key for exactly that.
 #
-# Without a prefix argument it is read from hud-settings.json (CODEX_HOME,
-# or CODEX_HUD_SETTINGS_PATH), the same way bin/codex-hud reads the others.
+# Without a prefix argument it is read from hud-settings.json (HUD_HOME,
+# or HUD_SETTINGS_PATH), the same way bin/codex-hud reads the others.
 
 set -u
 

@@ -6,6 +6,8 @@ import {
   SmallModel as ProductionModel,
   type ModelRequest,
   type SmallModelOptions,
+  type ModelApi,
+  type ModelBackend,
 } from '../../src/collectors/small-model.js';
 import { materialRequest, purposeFor } from '../../src/core/materials/request.js';
 import {
@@ -59,6 +61,13 @@ export class SyntheticModel extends ProductionModel {
         })),
       }),
     };
+  }
+  override configure(patch: { backend?: ModelBackend; api?: ModelApi; hourlyCap?: number }): void {
+    // Explicit synthetic source binding, not the panel/settings credential path.
+    super.configure({
+      ...patch,
+      ...(patch.api ? { api: { ...patch.api, sourceCredential: patch.api.key ?? null } } : {}),
+    });
   }
   override inspectLegacyMaterials(
     _subjects: unknown,

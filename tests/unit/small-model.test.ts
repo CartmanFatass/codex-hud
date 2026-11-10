@@ -15,7 +15,7 @@ import {
 } from '../../src/collectors/small-model.js';
 
 const now = Date.parse('2026-10-01T10:00:00Z');
-const api: ModelApi = { base: 'http://synthetic.invalid/v1', model: '', key: '' };
+const api: ModelApi = { base: 'http://synthetic.invalid/v1', model: '', sourceCredential: null };
 const question = { feature: 'labels', system: 's', prompt: 'p' };
 const reply = (text = 'answer') => new Response(JSON.stringify({ choices: [{ message: { content: text } }] }));
 function http(config: ModelApi = api, request = question, env: NodeJS.ProcessEnv = {}) {
@@ -74,44 +74,63 @@ test('API task routes, configurable tier models, and global overrides', () => {
       );
     }
   }
-  assert.equal(http({ ...api, base: '' }).url, 'https://api.openai.com/v1/chat/completions');
+  assert.equal(http({ ...api, base: '' }).url, 'https://api.mistral.ai/v1/chat/completions');
   assert.equal(
     http({ ...api, base: 'http://synthetic.invalid/v1/chat/completions/' }).url,
     api.base + '/chat/completions'
   );
 });
 
-test('custom endpoints never receive the general OpenAI key; deliberate HUD keys still work', () => {
-  const env = { OPENAI_API_KEY: 'synthetic-openai-key' };
+test('panel custom endpoints are off; removed explicit/HUD keys cannot bypass host binding', (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-model-key-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const accountless = { HOME: home, HUD_HOME: path.join(home, '.hud') };
+  const env = { ...accountless, OPENAI_API_KEY: 'synthetic-openai-key' };
   for (const base of [
     api.base,
     'https://api.openai.com.evil.invalid/v1',
     'http://api.openai.com/v1',
     'https://api.openai.com:8443/v1',
   ]) {
-    assert.equal(http({ ...api, base }, question, env).headers.authorization, undefined);
+    assert.ok(
+      'error' in
+        modelHttpRequest({ base, model: '', key: 'ignored-legacy' }, question, {
+          ...env,
+          CODEX_HUD_BRIEF_API_KEY: 'ignored',
+        })
+    );
+    assert.ok(
+      'error' in modelHttpRequest({ base, model: '', key: 'ignored-legacy' }, question, accountless),
+      'explicit ModelApi.key alone is refused'
+    );
+    assert.ok(
+      'error' in
+        modelHttpRequest({ base, model: '' }, question, { ...accountless, CODEX_HUD_BRIEF_API_KEY: 'ignored' }),
+      'CODEX_HUD_BRIEF_API_KEY alone is refused'
+    );
+    assert.ok(
+      'error' in modelHttpRequest({ base, model: '' }, question, env),
+      'OPENAI_API_KEY alone cannot authorize a custom host'
+    );
   }
-  assert.equal(http({ ...api, base: '' }, question, env).headers.authorization, 'Bearer synthetic-openai-key');
   assert.equal(
-    http(api, question, { ...env, CODEX_HUD_BRIEF_API_KEY: 'synthetic-hud-key' }).headers.authorization,
-    'Bearer synthetic-hud-key'
-  );
-  assert.equal(
-    http({ ...api, key: 'synthetic-explicit-key' }, question, env).headers.authorization,
-    'Bearer synthetic-explicit-key'
+    http({ base: 'https://api.openai.com/v1', model: '' }, question, env).headers.authorization,
+    'Bearer synthetic-openai-key'
   );
   assert.ok('error' in modelHttpRequest({ ...api, base: 'not a URL' }, question, env));
   assert.ok('error' in modelHttpRequest({ ...api, base: 'https://user:pass@api.openai.com/v1' }, question, env));
 });
 
-test('legacy reasoning opt-in maps by tier without inventing minimal or medium', () => {
-  const request = { ...question, thinking: 'high' as const };
-  const plain = modelHttpRequest(api, request, {});
-  const marked = modelHttpRequest({ ...api, reasoning: true }, request, {});
-  const unknown = modelHttpRequest({ ...api, reasoning: true }, { ...question, thinking: 'max' }, {});
-  assert.ok(!('error' in plain) && !('reasoning_effort' in JSON.parse(plain.body)));
-  assert.ok(!('error' in marked) && JSON.parse(marked.body).reasoning_effort === 'none');
-  assert.ok(!('error' in unknown) && JSON.parse(unknown.body).reasoning_effort === 'none');
+test('default efforts follow product tiers, not request thinking levels', () => {
+  for (const [feature, effort] of [
+    ['labels', 'none'],
+    ['progress', 'low'],
+    ['recap', 'high'],
+  ]) {
+    const request = modelHttpRequest(api, { ...question, feature, thinking: 'max' }, {});
+    assert.ok(!('error' in request));
+    assert.equal(JSON.parse(request.body).reasoning_effort, effort);
+  }
 });
 
 test('call counts: last hour and since midnight', () => {
@@ -268,7 +287,7 @@ test('cap, free cache, restart persistence, private files, and cache endpoint/mo
     for (const config of [
       { ...api, base: 'http://other.invalid/v1' },
       { ...api, model: 'another-model' },
-      { ...api, reasoning: true },
+      { ...api, efforts: { lite: 'off' as const } },
     ]) {
       restarted.configure({ api: config });
       assert.deepEqual(await restarted.submit(request).result, { ok: true, text: 'answer' });
