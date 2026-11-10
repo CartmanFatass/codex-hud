@@ -14,7 +14,8 @@ export function reserveHelper(
   kind: 'sonic' | 'reviewer',
   state: HelperState
 ): HelperState {
-  if (role !== 'implementer' || slot !== 'primary') refuse('helper_ineligible', kind);
+  if (role === 'sonic' || (kind === 'reviewer' && (role !== 'implementer' || slot !== 'primary')))
+    refuse('helper_ineligible', kind);
   if (state.active) refuse('helper_busy', kind);
   if (![state.sonicCalls, state.reviewRounds].every((n) => Number.isSafeInteger(n) && n >= 0))
     refuse('invalid_contract', 'helper_counts');

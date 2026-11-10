@@ -52,6 +52,15 @@ if (args[0] !== '--server') {
     }
     if (command === 'pane split') {
       j = journal('primary');
+      for (const slot of fs.readdirSync(join(directory, '.dispatch'))) {
+        if (/^sonic-\d+$/.test(slot)) {
+          const candidate = journal(slot);
+          if (candidate.nested_pane && candidate.steps.split?.state === 'sent') {
+            j = candidate;
+            break;
+          }
+        }
+      }
       step = Object.keys(j.steps).find(
         (k) => (k === 'split' || k.startsWith('helper_split_')) && j.steps[k].state === 'sent'
       );
@@ -71,7 +80,11 @@ if (args[0] !== '--server') {
       j = a && journal(a.slot);
       step = 'enter';
     }
-    const mutating = !!step || command === 'tab close' || (command === 'agent prompt' && argv[3] === '/quit');
+    const mutating =
+      !!step ||
+      command === 'pane close' ||
+      command === 'tab close' ||
+      (command === 'agent prompt' && argv[3] === '/quit');
     const transaction =
       ['receipt.json'].every((name) => fs.existsSync(join(directory, name))) &&
       fs.existsSync(join(root, 'home/assoc', 'j0123456789abcdef.json')) &&
@@ -87,6 +100,10 @@ if (args[0] !== '--server') {
     if (state.mode.delay) await pause(state.mode.delay);
     if (state.mode.fault === `${faultKey}:before`) return noReply();
     let reply;
+    if (command === 'test probe') {
+      workers.get(argv[2])?.send({ type: 'probe', ...JSON.parse(argv[3]) });
+      return json({ sent: true });
+    }
     if (command === 'integration status')
       return { stdout: `pi: ${state.mode.integration ?? 'current'} (v9) (${integration})\n`, exit: 0 };
     if (command === 'tab create') {
@@ -109,10 +126,15 @@ if (args[0] !== '--server') {
       const pane = state.panes.find((p) => p.pane_id === option('--pane'));
       if (!pane || state.agents.some((a) => a.pane_id === pane.pane_id)) return noReply();
       const child = fork(
-        join(dirname(fileURLToPath(import.meta.url)), 'pi-owned-worker.mjs'),
+        join(
+          dirname(fileURLToPath(import.meta.url)),
+          String(state.mode.startup ?? '').startsWith('real-') || state.mode.startup === 'loader-failure'
+            ? 'pi-owned-loader-worker.mjs'
+            : 'pi-owned-worker.mjs'
+        ),
         argv.slice(argv.indexOf('--') + 1).filter((_, n, a) => n >= a.indexOf('--hud-role-contract')),
         {
-          env: process.env,
+          env: { ...process.env, OWNED_STARTUP_MODE: state.mode.startup },
           stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
         }
       );
@@ -142,6 +164,12 @@ if (args[0] !== '--server') {
         fs.writeFileSync(file, JSON.stringify(owner), { mode: 0o600 });
       }
       child.on('message', (message) => {
+        if (message.type === 'orphan_fault') {
+          const s = load();
+          s.mode.unknown = 'agents';
+          save(s);
+          child.send({ type: 'orphan_fault_acked' });
+        }
         if (message.type === 'idle') {
           const s = load();
           const a = s.agents.find((a) => a.name === argv[2]);
@@ -167,7 +195,9 @@ if (args[0] !== '--server') {
         const text = command === 'agent prompt' ? argv[3] : state.editor;
         state.editor = text;
         const stalled = command === 'agent prompt' && state.mode.stall;
-        const persist = !stalled || state.mode.stall === 'persisted';
+        const persist =
+          (!stalled || state.mode.stall === 'persisted') &&
+          !(command === 'pane send-keys' && state.mode.noEnterPersist);
         agent.agent_status = stalled && state.mode.stall !== 'working' ? 'idle' : 'working';
         save(state);
         if (state.mode.stall === 'bad-session') fs.appendFileSync(agent.agent_session.value, '{unreadable\n');
@@ -182,7 +212,7 @@ if (args[0] !== '--server') {
         }
         reply = stalled
           ? { stdout: JSON.stringify({ error: { code: 'agent_prompt_stalled' } }), exit: 1 }
-          : json({ agent });
+          : json({ agent: state.mode.promptAgentMismatch ? { ...agent, name: 'foreign' } : agent });
       }
     } else if (command === 'pane get') {
       const pane = state.panes.find((p) => p.pane_id === argv[2]);
@@ -203,7 +233,13 @@ if (args[0] !== '--server') {
       reply = state.mode.unknown === 'panes' ? json({ panes: null }) : json({ panes: state.panes });
     else if (command === 'agent list')
       reply = state.mode.unknown === 'agents' ? json({ agents: null }) : json({ agents: state.agents });
-    else if (command === 'tab close') {
+    else if (command === 'pane close') {
+      if (state.mode.blockPaneClose) return noReply();
+      if (state.agents.some((a) => a.pane_id === argv[2])) return { exit: 1, stderr: 'pane_occupied' };
+      state.panes = state.panes.filter((p) => p.pane_id !== argv[2]);
+      save(state);
+      reply = json({ closed: true });
+    } else if (command === 'tab close') {
       if (state.agents.some((a) => a.tab_id === argv[2])) return { exit: 1, stderr: 'tab_occupied' };
       state.tabs = state.tabs.filter((t) => t.tab_id !== argv[2]);
       state.panes = state.panes.filter((p) => p.tab_id !== argv[2]);

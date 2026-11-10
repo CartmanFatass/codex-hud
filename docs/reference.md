@@ -65,6 +65,32 @@ Existing `credentials.env`, `config.json` and `routing.toml` keep their bytes an
 samples over them. Client adapters can supply declarative `private-dir`/`owned-file` steps. An existing client
 file needs its exact expected hash and explicit confirmation text; there is no generic overwrite permission.
 
+### Owned pi worker resources (PR3, before facade cutover)
+
+The staged release includes a separate `integrations/pi/worker.ts` and four fixed role texts. This worker loads no
+ordinary HUD tools, side panel or footer; it does not yet change the facade's new-job launch selection. Native pi
+authentication, base instructions, retry, compaction and transport remain pi's, not a new HUD authentication store.
+
+Non-sonic roles can call blocking `call_sonic`; only implementers get `call_reviewer`, and sonic gets no helper tools.
+Calls share one job, at most 10 sonic and 3 review reservations (failures count). A read-only caller's sonic is also
+read-only except its own report and inherited QA/scratch exceptions. Implementer helpers use the owned right pane;
+other sonic callers split down from their own pane, with a helper reviewer borrowing its outer reservation.
+A returning or crashed reviewer cleans its reserved sonic child before releasing that reservation. Unknown cleanup
+returns `helper_unresolved` with the child slot and blocks both helper kinds until explicit close/reap; it does not
+start another helper or claim cleanup succeeded.
+
+Successful implementers remain available for same-session continuation during fixed model cache-TTL grace (unknown
+TTL means zero). Unused successful grace expiry and successful one-shots may make one finite post-exit tab cleanup
+attempt. Quitting during grace, failure, a used continuation, or `HUD_KEEP_TAB=1` keeps the tab for inspection.
+Completion and confirmed resource closure remain separate; explicit close uses the same conservative reaper.
+
+QA waits up to 1200 seconds. A timeout instructs the proposed default, but is neither a human answer nor proof that
+it was followed. Implementers run focused tests while working and full checks twice, before first review and final
+report. Background suite logs live in the job's `checks/` and end in `exit=<code>`. Reviewers never rerun full
+suites: round 1 reports missing/failing/stale full-suite evidence as a finding; round 2+ notes expected stale
+full-suite logs after fixes. Reviewers rerun missing/failing/stale focused checks and run the round's focused tests
+and earlier-finding regressions. The full acceptance gate still belongs to the orchestrating session.
+
 ### Activation preview runbook
 
 Before approving apply, inspect: schema/transaction and plan IDs, exact runtime digest/version, canonical paths,

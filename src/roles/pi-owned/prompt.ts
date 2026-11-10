@@ -1,12 +1,38 @@
 /** Single submission and the sole permitted recovery: one journalled Enter. */
+import * as fs from 'node:fs';
 import { herdrResult } from '../herdr-run.js';
 import { readOwnedText, record, type SlotContract } from './contracts.js';
 import { ExecutionError, type Journal, type Owner, type Runtime } from './runtime.js';
 
 export function persistedPrompt(contract: SlotContract, owner: Owner, prompt: string): boolean {
+  try {
+    fs.lstatSync(owner.session_file);
+  } catch (error) {
+    if (
+      (error as NodeJS.ErrnoException).code === 'ENOENT' &&
+      owner.session_header?.id === contract.session_id &&
+      owner.session_header.cwd === contract.cwd &&
+      owner.session_header.type === 'session'
+    )
+      return false;
+    throw error;
+  }
   const lines = readOwnedText(owner.session_file, 1024 * 1024, contract.task_dir)
     .split('\n')
     .filter(Boolean);
+  let header: unknown;
+  try {
+    header = JSON.parse(lines[0]!);
+  } catch {
+    throw new ExecutionError('session_unknown');
+  }
+  if (
+    !record(header) ||
+    header.type !== owner.session_header.type ||
+    header.id !== owner.session_header.id ||
+    header.cwd !== owner.session_header.cwd
+  )
+    throw new ExecutionError('session_unknown');
   for (const line of lines) {
     let raw: unknown;
     try {
@@ -47,7 +73,7 @@ function errorCode(stdout: string): string | null {
 export async function submitPrompt(runtime: Runtime, contract: SlotContract, journal: Journal): Promise<void> {
   const prompt = `Read ${contract.brief_path} and do exactly what it asks.`;
   if (journal.steps.prompt?.state === 'acked') return;
-  let owner = await runtime.owner(contract, journal);
+  let owner = await runtime.owner(contract, journal, true);
   if (journal.steps.prompt?.state === 'sent') {
     if (persistedPrompt(contract, owner, prompt)) {
       journal.steps.prompt = { state: 'acked' };
@@ -68,6 +94,9 @@ export async function submitPrompt(runtime: Runtime, contract: SlotContract, jou
         30_000
       );
       if (out.ok && herdrResult(out.stdout)) {
+        if (!runtime.matches(herdrResult(out.stdout)!.agent, owner, journal))
+          throw new ExecutionError('prompt_owner_mismatch');
+        if (!persistedPrompt(contract, owner, prompt)) throw new ExecutionError('prompt_not_persisted');
         journal.steps.prompt = { state: 'acked' };
         runtime.writeJournal(journal);
         return;
@@ -78,7 +107,7 @@ export async function submitPrompt(runtime: Runtime, contract: SlotContract, jou
     });
     if (runtime.journal(contract.slot)?.steps.prompt?.state === 'acked') return;
   }
-  owner = await runtime.owner(contract, journal);
+  owner = await runtime.owner(contract, journal, true);
   if (persistedPrompt(contract, owner, prompt)) {
     journal.steps.prompt = { state: 'acked' };
     runtime.writeJournal(journal);
@@ -89,7 +118,7 @@ export async function submitPrompt(runtime: Runtime, contract: SlotContract, jou
     throw new ExecutionError('launch_unknown');
   await runtime.effect(journal, 'enter', ['pane', 'send-keys', journal.pane!, 'Enter'], 15_000, async () => {
     await runtime.tab(journal);
-    await runtime.owner(contract, journal);
+    await runtime.owner(contract, journal, true);
     const agent = (await runtime.query(['agent', 'get', journal.name])).agent;
     if (!record(agent) || agent.agent_status !== 'idle') throw new ExecutionError('launch_unknown');
     const screen = await runtime.call(['pane', 'read', journal.pane!, '--source', 'detection', '--lines', '200']);
@@ -101,7 +130,10 @@ export async function submitPrompt(runtime: Runtime, contract: SlotContract, jou
     waitMs
   );
   if (!out.ok) throw new ExecutionError('launch_unknown');
-  await runtime.owner(contract, journal);
+  owner = await runtime.owner(contract, journal);
+  if (!runtime.matches(herdrResult(out.stdout)?.agent, owner, journal))
+    throw new ExecutionError('prompt_owner_mismatch');
+  if (!persistedPrompt(contract, owner, prompt)) throw new ExecutionError('prompt_not_persisted');
   journal.steps.prompt = { state: 'acked' };
   runtime.writeJournal(journal);
 }

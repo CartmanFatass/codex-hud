@@ -9,7 +9,14 @@ import { processState, readProcess, sameStamp } from '../../core/run/process.js'
 import type { ProcessStamp } from '../../core/types/supervision.js';
 import { runHerdr, herdrResult, type HerdrOutcome } from '../herdr-run.js';
 import { writePrivate } from '../job-store.js';
-import { assertPath, readOwnedText, record, type ContractContext, type SlotContract } from './contracts.js';
+import {
+  assertPath,
+  canonicalPath,
+  readOwnedText,
+  record,
+  type ContractContext,
+  type SlotContract,
+} from './contracts.js';
 
 export interface Endpoint {
   socketPath: string;
@@ -22,6 +29,42 @@ export interface RuntimeOptions {
   signal?: AbortSignal;
   /** May shorten, never lengthen, the production operation ceiling. */
   budgetMs?: number;
+}
+export type RuntimeBinding = Pick<RuntimeOptions, 'endpoint' | 'callerTabId'>;
+export function readRuntimeBinding(directory: string): RuntimeBinding {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readOwnedText(join(directory, '.dispatch/runtime.json'), 8192, directory));
+  } catch {
+    throw new ExecutionError('runtime_binding_invalid');
+  }
+  if (
+    !record(raw) ||
+    Object.keys(raw).sort().join(',') !== 'callerTabId,endpoint' ||
+    typeof raw.callerTabId !== 'string' ||
+    !raw.callerTabId ||
+    raw.callerTabId.length > 256 ||
+    !record(raw.endpoint) ||
+    Object.keys(raw.endpoint).sort().join(',') !== 'server,socketPath' ||
+    !canonicalPath(raw.endpoint.socketPath) ||
+    !validStamp(raw.endpoint.server)
+  )
+    throw new ExecutionError('runtime_binding_invalid');
+  return {
+    endpoint: { socketPath: raw.endpoint.socketPath, server: raw.endpoint.server },
+    callerTabId: raw.callerTabId,
+  };
+}
+/** Called under resources admission before start; never rewrite a pinned endpoint. */
+export function pinRuntimeBinding(directory: string, options: RuntimeBinding): void {
+  const file = join(directory, '.dispatch/runtime.json');
+  if (fs.existsSync(file)) {
+    if (
+      JSON.stringify(readRuntimeBinding(directory)) !==
+      JSON.stringify({ endpoint: options.endpoint, callerTabId: options.callerTabId })
+    )
+      throw new ExecutionError('runtime_binding_changed');
+  } else save(file, { endpoint: options.endpoint, callerTabId: options.callerTabId }, directory);
 }
 export class ExecutionError extends Error {}
 export class Deadline {
@@ -73,7 +116,7 @@ export function selfStamp(): ProcessStamp {
 /** No age/heartbeat stealing. An unreadable token or invisible domain is not a dead owner. */
 export async function locked<T>(
   directory: string,
-  name: 'resources' | 'helper',
+  name: 'resources' | 'helper' | 'child-helper',
   deadline: Deadline,
   body: () => Promise<T>
 ): Promise<T> {
@@ -114,7 +157,7 @@ export async function locked<T>(
       if (readOwnedText(file, 4096, directory) === holder) fs.unlinkSync(file);
       continue;
     }
-    if (name === 'helper') throw new ExecutionError('helper_busy');
+    if (name !== 'resources') throw new ExecutionError('helper_busy');
     await deadline.pause(20);
   }
   try {
@@ -149,6 +192,8 @@ export interface Journal {
   right?: string;
   pane?: string;
   base?: string;
+  parent_slot?: string;
+  nested_pane?: boolean;
   terminals: Record<string, string>;
   steps: Record<string, Step>;
   error?: string;
@@ -167,6 +212,7 @@ export interface Owner {
   model: string;
   effort: string;
   ready: true;
+  session_header: { type: 'session'; id: string; cwd: string };
 }
 export class Runtime {
   readonly env: NodeJS.ProcessEnv;
@@ -291,7 +337,10 @@ export class Runtime {
     for (const pane of panes.filter((p) => p.tab_id === j.tab)) {
       const raw =
         typeof pane.terminal_id === 'string' ? pane : (await this.query(['pane', 'get', String(pane.pane_id)])).pane;
-      const terminals = { ...this.journal('primary')?.terminals, ...j.terminals };
+      const terminals: Record<string, string> = { ...this.journal('primary')?.terminals, ...j.terminals };
+      for (const slot of fs.readdirSync(join(this.context.jobDirectory, '.dispatch'))) {
+        if (/^(sonic-(?:[1-9]|10)|review-[1-3])$/.test(slot)) Object.assign(terminals, this.journal(slot)?.terminals);
+      }
       if (
         !record(raw) ||
         raw.pane_id !== pane.pane_id ||
@@ -303,7 +352,7 @@ export class Runtime {
     }
     return { panes: panes.filter((p) => p.tab_id === j.tab), agents: agents.filter((a) => a.tab_id === j.tab) };
   }
-  async owner(c: SlotContract, j: Journal): Promise<Owner> {
+  async owner(c: SlotContract, j: Journal, stalled = false): Promise<Owner> {
     const raw = optionalJson<Owner>(this.path(c.slot, 'owner.json'), c.task_dir);
     if (
       !raw ||
@@ -324,17 +373,42 @@ export class Runtime {
       !raw.session_file.endsWith(`_${c.session_id}.jsonl`)
     )
       throw new ExecutionError('startup_unknown');
-    const header = readOwnedText(raw.session_file, 1024 * 1024, c.task_dir).split('\n')[0]!;
     let session: unknown;
+    let missing = false;
     try {
-      session = JSON.parse(header);
-    } catch {
-      throw new ExecutionError('session_unknown');
+      fs.lstatSync(raw.session_file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') missing = true;
+      else throw error;
+    }
+    if (missing) {
+      const beforePrompt = !j.steps.prompt || j.steps.prompt.state === 'intent';
+      const stalledPrompt =
+        stalled && j.steps.prompt?.state === 'sent' && j.steps.prompt.result?.error_code === 'agent_prompt_stalled';
+      if (!beforePrompt && !stalledPrompt) throw new ExecutionError('session_unknown');
+      const args = fs.readFileSync(`/proc/${raw.process.pid}/cmdline`, 'utf8').split('\0');
+      if (
+        !args.some((v, n) => v === '--session-id' && args[n + 1] === c.session_id) ||
+        !args.some((v, n) => v === '--session-dir' && args[n + 1] === c.session_dir)
+      )
+        throw new ExecutionError('process_arguments_unknown');
+      session = raw.session_header;
+    } else {
+      const header = readOwnedText(raw.session_file, 1024 * 1024, c.task_dir).split('\n')[0]!;
+      try {
+        session = JSON.parse(header);
+      } catch {
+        throw new ExecutionError('session_unknown');
+      }
     }
     if (
       !record(session) ||
       session.type !== 'session' ||
       session.id !== c.session_id ||
+      session.cwd !== c.cwd ||
+      raw.session_header?.type !== 'session' ||
+      raw.session_header.id !== session.id ||
+      raw.session_header.cwd !== session.cwd ||
       processState(raw.process) !== 'alive'
     )
       throw new ExecutionError('ownership_unknown');
