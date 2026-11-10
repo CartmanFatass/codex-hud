@@ -68,6 +68,27 @@ outside rendering; they are not globally filesystem-free. All new-mode unknown
 or malformed facts omit their segment, and valid zeros remain facts. These source
 changes are not retroactively covered by the historical observer results above.
 
+## Panel-scoped role-work summary (R6A-A67)
+
+The product can append a separate `Work:` segment for the exact source-qualified
+Claude main-session root. It reads one private, at-most-16-KiB document under
+`$HUD_HOME/display/role-summary/<root-sha256>.json`. The panel publishes the same
+workboard's P2 work-state projection after collection, not during paint. Only
+non-zero needs-you, stalled, awaiting-acceptance and in-progress counts appear;
+done is stored but not displayed. Partial coverage is explicitly labelled; an
+incomplete snapshot with no workers is unavailable, not an empty total. A failed
+or unbound collection clears the producer's own document immediately. This is
+separate from, and never summed with, historical/native delegation summaries.
+
+The reader shares the existing 20 ms cooperative allowance with the legacy
+summary read. A missing, malformed, symlinked, wrong-root, future, dead-producer or
+60-second-old cache is unavailable, never zero, and adds no output bytes. It does
+no discovery, process launch or network work. With the panel off nothing starts
+a producer; finish removes only the panel's own published document. Pi's A5
+segment can call the same reader and pure width-bounded renderer. Synthetic
+codec, process/PTY, statusline and cost evidence is recorded by R6A-A67; this does
+not qualify live client activation, enabled-feature parity or WSL visuals.
+
 ## Not rendered or not implemented
 
 The official documentation exposes more fields than either renderer uses. These

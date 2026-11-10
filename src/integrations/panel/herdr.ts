@@ -7,7 +7,7 @@ import { CliHerdrTransport, object, type HerdrTransport } from '../herdr/transpo
 import { runCommand } from '../../roles/herdr-run.js';
 import { readProcess, sameStamp } from '../../core/run/process.js';
 import type { ProcessStamp } from '../../core/types/supervision.js';
-import { absolute, clean, type PaneIdentity, type PanelReceipt } from './receipt.js';
+import { absolute, clean, validStamp, type PaneIdentity, type PanelReceipt } from './receipt.js';
 
 export class PanelDeadline {
   private readonly controller = new AbortController();
@@ -175,8 +175,14 @@ export class CliPanelHerdr implements PanelHerdr {
     env: Record<string, string>,
     d: PanelDeadline
   ): Promise<string | Pick<PaneIdentity, 'pane' | 'workspace'>> {
+    if (!absolute(this.options.socket) || !validStamp(this.options.server)) throw new Error('panel_endpoint_invalid');
+    const launchEnv = {
+      ...env,
+      HUD_PANEL_SOCKET: this.options.socket,
+      HUD_PANEL_SERVER: JSON.stringify(this.options.server),
+    };
     const args = ['pane', 'split', r.origin.pane, '--direction', 'right', '--no-focus', '--cwd', r.target.source];
-    for (const [k, v] of Object.entries(env)) {
+    for (const [k, v] of Object.entries(launchEnv)) {
       if (!/^[A-Z_]+$/.test(k) || !clean(v)) throw new Error('panel_env_invalid');
       args.push('--env', `${k}=${v}`);
     }
