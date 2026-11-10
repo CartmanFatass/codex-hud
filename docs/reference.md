@@ -11,8 +11,8 @@ The details behind the [README](../README.md): the panel part by part, every key
 
 The opt-in Linux/WSL runtime requires Node **22.13+ within 22.x, or 24.x**. It does not install a harness,
 herdr, a browser or provider keys. Installation management is separate from `hud setup`; none of these commands
-calls a model, starts a job or opens a panel. Client activation templates are placeholders until the corresponding
-Claude/pi packages are delivered. Do not run the historical root `install.sh` for this workflow.
+calls a model, starts a job or opens a panel. The opt-in Claude package is described below; pi activation remains
+separately delivered. Do not run the historical root `install.sh` for this workflow.
 
 A release contains clean-built `dist/`, `packages/hud-mcp/{bin,dist}`, the canonical
 `integrations/skills/hud-delegate/`, ordinary-named integration templates, notices and the bootstrap scripts.
@@ -64,6 +64,47 @@ Layout:
 Existing `credentials.env`, `config.json` and `routing.toml` keep their bytes and mode; activation never creates
 samples over them. Client adapters can supply declarative `private-dir`/`owned-file` steps. An existing client
 file needs its exact expected hash and explicit confirmation text; there is no generic overwrite permission.
+Caller `private-dir` steps admit only `kind` and `path`. Caller `owned-file` steps admit `kind`, `path`, `content`,
+`mode`, `expectedOriginalHash` and `confirmation`. Unknown keys and planner/journal-internal fields are refused
+before any write; callers cannot mark their own files as generated or reused.
+
+### Claude plugin activation (R6A-A4)
+
+The `hud` plugin is generated from plain-named immutable templates with
+`node RELEASE/claude-plugin.mjs preview --prefix ABS --release DIGEST --node ABS` (optional
+`--hud-home`, `--shim-dir`, `--parity-inventory`). It lives under
+`$HUD_HOME/installation/integrations/<integrationId>/claude`; preview is read-only, apply requires the exact
+`--plan ID`, and `restore-preview|restore --receipt ABS [--plan ID]` reverses unchanged generated files.
+The generated plugin pins its Node/release/home, copies the canonical skill and starts exactly the six-role MCP
+surface in a child environment. A receipt-backed identical integration can be shared; the last active receipt
+owns unchanged-file cleanup. Nothing writes HUD state to a Codex home.
+
+`/hud:hud on|off|toggle|status|help` and `/hud:setup` use finite exact-command expansion hooks, not model recipes.
+Setup defaults to preview. Apply and restore need `--plan ABS` / `--backup ABS` and call the existing statusline
+settings commands. Bare `/hud` requires a separate collision-refusing alias activation and a passing temporary-home
+zero-provider proof for the exact plugin artifact. No ordinary-prompt hook is installed. Unknown HUD commands and
+catchable local failures stay blocked with a visible reason; prose and prefix lookalikes are untouched.
+Only command interception has a bounded startup/nonzero failure guard; lifecycle failure stays quiet. An externally
+imposed Claude hook timeout can still bypass interception, an explicitly measured platform limit in the runbook.
+
+Auto-open requires corroborated native registry/process/foreground TTY/complete ancestry and exact herdr pane
+proof. The registry has no affirmative topology field: this is conservative inference, never hook JSON authority.
+Worker/print/role sessions refuse explicit opens too; `off` is session-local. Persistent auto-open preference belongs
+in HUD-owned `integration-config.json`, not the renderer settings. Generation-fenced close never closes jobs.
+Real herdr split/focus and A7's panel registration remain separate acceptance gates.
+
+Follow the [Claude owner runbook](../integrations/claude/README.md) for §H rows 4–6, exact preview commands,
+backup/restore and the isolated native write-set rehearsal. Native plugin install remains a distinct owner-approved
+step; rehearsal records every settings/registry/cache write with before/after hashes. Claude keeps the plugin cache
+after uninstall; you can delete it by hand if wanted, using only the exact receipt-verified cache path
+(synthetic: `$CLAUDE_CONFIG_DIR/plugins/cache/hud-rehearsal/hud/0.0.0`). HUD never deletes or restores it.
+
+Statusline activation is **last**, after plugin/alias configuration. Draft a HUD-owned parity inventory with
+`node RELEASE/claude-parity.mjs preview --home ABS --config ABS`, review/save stdout, and pin its path through
+activation. Missing inventory, unsupported enabled fields, unknown keys, details-only fields or a tee/width/toktrack
+wrapper block an automatic switch. Preview prints the difference; no feature parity exception is implicit.
+All original settings/wrapper bytes stay in the existing statusline backup. Restore in reverse order: statusline
+first, then alias, then native plugin registration, then generated integration. Stale edits refuse.
 
 ### Owned pi worker resources (PR3, before facade cutover)
 

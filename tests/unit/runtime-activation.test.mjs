@@ -473,7 +473,14 @@ if (!process.env.R6A_ACTIVATION_MODULE)
     for (const [name, needle, replacement, pattern] of variants) {
       const dir = path.join(f.root, name);
       fs.mkdirSync(dir, { mode: 0o700 });
-      for (const file of ['safety.mjs', 'manifest.mjs', 'dependencies.mjs', 'installer.mjs', 'activation-lock.mjs'])
+      for (const file of [
+        'safety.mjs',
+        'manifest.mjs',
+        'dependencies.mjs',
+        'installer.mjs',
+        'activation-lock.mjs',
+        'claude.mjs',
+      ])
         fs.copyFileSync(new URL(`../../scripts/runtime-package/${file}`, import.meta.url), path.join(dir, file));
       const mutant = source.replaceAll(needle, replacement);
       assert.notEqual(mutant, source, name);

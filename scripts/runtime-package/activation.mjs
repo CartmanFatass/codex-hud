@@ -17,6 +17,7 @@ import {
   MAX_FILE,
 } from './safety.mjs';
 import { COMMANDS, verifyBundle } from './manifest.mjs';
+import { claudeSteps } from './claude.mjs';
 import { inspectPrefix, selectorValue, selectorBytes } from './installer.mjs';
 import { refuseActivationLock, recoverActivationLocks, withActivationLocks } from './activation-lock.mjs';
 
@@ -268,9 +269,11 @@ export function planActivation(options, ignoreLock = false) {
   const runtimeState = strictRuntime(prefix, release, ignoreLock);
   const releaseBundle = verifyBundle(path.join(prefix, 'releases', release));
   let releaseVersion;
+  let integration = null;
   try {
     releaseVersion =
       releaseBundle.manifest.releaseVersion ?? JSON.parse(releaseBundle.directory.read('package.json').data).version;
+    if (options.claude) integration = claudeSteps(releaseBundle, { ...options, prefix, hudHome });
   } finally {
     releaseBundle.directory.close();
   }
@@ -331,6 +334,12 @@ export function planActivation(options, ignoreLock = false) {
   }
   for (const input of options.steps ?? []) {
     if (!['private-dir', 'owned-file'].includes(input.kind)) throw new Error('unsupported_client_step_kind');
+    const callerFields =
+      input.kind === 'private-dir'
+        ? ['kind', 'path']
+        : ['kind', 'path', 'content', 'mode', 'expectedOriginalHash', 'confirmation'];
+    if (Reflect.ownKeys(input).some((key) => !callerFields.includes(key)))
+      throw new Error('reserved_client_step_field');
     absolute(input.path);
     if (
       [prefix, shimDir, metadata(hudHome)].some((root) => input.path === root || input.path.startsWith(root + '/')) ||
@@ -349,7 +358,47 @@ export function planActivation(options, ignoreLock = false) {
         continue;
       }
     }
-    steps.push({ ...input });
+    // Never carry caller-supplied journal/planner fields into internal actions.
+    steps.push(
+      input.kind === 'private-dir'
+        ? { kind: 'private-dir', path: input.path }
+        : {
+            kind: 'owned-file',
+            path: input.path,
+            content: input.content,
+            mode: input.mode,
+            ...(Object.hasOwn(input, 'expectedOriginalHash')
+              ? { expectedOriginalHash: input.expectedOriginalHash }
+              : {}),
+            ...(Object.hasOwn(input, 'confirmation') ? { confirmation: input.confirmation } : {}),
+          }
+    );
+  }
+  // Only the built-in generator can enter the reserved metadata subtree. Caller steps
+  // above still cannot. Reused exact bytes become journalled shared ownership, not overwrite.
+  if (integration) {
+    const parent = path.join(metadata(hudHome), 'integrations');
+    const state = observe(parent);
+    if (state.kind !== 'absent' && (state.kind !== 'directory' || state.identity.mode !== 0o700))
+      throw new Error('unsafe_integration_parent');
+    if (state.kind === 'absent') steps.push({ kind: 'private-dir', path: parent });
+    const root = path.join(parent, integration.integrationId);
+    for (const generated of integration.steps) {
+      if (!(generated.path === root || generated.path.startsWith(root + '/')))
+        throw new Error('reserved_activation_target');
+      const original = observe(generated.path);
+      const identical =
+        generated.kind === 'private-dir'
+          ? original.kind === 'directory' && original.identity.mode === 0o700
+          : original.kind === 'file' &&
+            original.identity.mode === generated.mode &&
+            original.sha256 === digest(generated.content);
+      if (original.kind !== 'absent' && !identical) throw new Error('generated_integration_conflict');
+      // Existing directories/files may only be reused when a prior receipt proves ownership.
+      if (identical && !integrationOwner(hudHome, integration.integrationId, generated.path, original))
+        throw new Error('generated_integration_foreign');
+      steps.push({ ...generated, generated: true, reused: identical });
+    }
   }
   const seen = new Set();
   for (const step of steps) {
@@ -394,6 +443,9 @@ export function planActivation(options, ignoreLock = false) {
     transaction,
     runtimeDigest: release,
     releaseVersion,
+    ...(integration
+      ? { integrationId: integration.integrationId, plugin: integration.plugin, skillHash: integration.skillHash }
+      : {}),
     history,
     prefix,
     hudHome,
@@ -454,6 +506,29 @@ function loadReceipt(file) {
   const { planId, ...body } = value.plan;
   if (digest(json(body)) !== planId) throw new Error('receipt_plan_integrity');
   return value;
+}
+function integrationOwner(home, id, target, state = null, excluding = null) {
+  if (observe(metadata(home)).kind === 'absent') return false;
+  for (const name of listNames(metadata(home), ACTIVATION_HISTORY_LIMIT + 32)) {
+    if (!/^[a-f0-9-]{36}\.json$/.test(name)) continue;
+    const file = path.join(metadata(home), name);
+    if (file === excluding) continue;
+    const other = loadReceipt(file);
+    if (other.status === 'deactivated' || other.plan.integrationId !== id) continue;
+    if (
+      other.journal.some((entry) => {
+        const step = other.plan.actions[entry.index];
+        return (
+          step.generated &&
+          step.path === target &&
+          !['restored', 'retained-shared'].includes(entry.phase) &&
+          (!state || (entry.after && same(bare(entry.after), bare(state))))
+        );
+      })
+    )
+      return true;
+  }
+  return false;
 }
 function bootstrapMetadata(plan) {
   // Metadata is the documented retention exception. No managed file is changed yet.
@@ -516,13 +591,21 @@ export function applyActivation(options, expected, hooks = {}) {
         if (step.path === plan.hudHome && step.kind === 'private-dir') continue;
         assertState(step.path, step.original);
         const backup = step.original.kind === 'file' ? bytes(step.path).toString('base64') : null;
-        const entry = { index: i, before: step.original, backup, phase: 'before', after: null };
+        const entry = {
+          index: i,
+          before: step.generated ? { kind: 'absent', parents: step.original.parents } : step.original,
+          backup,
+          phase: 'before',
+          after: null,
+        };
         receipt.journal.push(entry);
         saveReceipt(file, receipt);
         hooks.checkpoint?.('before', i, file);
         assertState(step.path, step.original);
-        if (step.kind === 'private-dir') mkdir(step.path);
-        else atomic(step.path, Buffer.from(step.content), step.mode, step.original);
+        if (!step.reused) {
+          if (step.kind === 'private-dir') mkdir(step.path);
+          else atomic(step.path, Buffer.from(step.content), step.mode, step.original);
+        }
         hooks.checkpoint?.('mutated', i, file);
         entry.after = observe(step.path);
         entry.phase = 'after';
@@ -575,8 +658,15 @@ export function planDeactivation(receiptFile) {
   const actions = [];
   const conflicts = [];
   for (const entry of [...receipt.journal].reverse()) {
-    if (entry.phase === 'restored') continue;
+    if (['restored', 'retained-shared'].includes(entry.phase)) continue;
     const step = receipt.plan.actions[entry.index];
+    if (
+      step.generated &&
+      integrationOwner(receipt.plan.hudHome, receipt.plan.integrationId, step.path, null, receiptFile)
+    ) {
+      actions.push({ index: entry.index, path: step.path, shared: true });
+      continue;
+    }
     let current;
     try {
       current = observe(step.path);
@@ -638,6 +728,11 @@ export function restoreActivation(receiptFile, expected, hooks = {}) {
     for (const action of plan.actions) {
       const entry = receipt.journal.find((j) => j.index === action.index);
       const step = receipt.plan.actions[action.index];
+      if (action.shared) {
+        entry.phase = 'retained-shared';
+        saveReceipt(receiptFile, receipt);
+        continue;
+      }
       assertState(step.path, action.original);
       if (!action.reconcile) {
         let data = null;
