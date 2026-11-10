@@ -295,13 +295,15 @@ behaviours have separate owners. Frozen owners are routing pointers, never edits
 | Q04 | Delegation projection/rows and selection interaction retain distinct latency budgets     | `b10b-s3-perf.test.ts` — compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms | `perf` |
 | Q05 | Ledger and MCP stress retain declared throughput, checkpoint and latency envelopes       | `ledger-perf.test.ts` — ledger benchmark: 1000 small writes and read-only snapshots with 10000 runs                                     | `perf` |
 
-## 4. Shared stand-ins and fixtures (proposed, not created here)
+## 4. Shared stand-ins and fixtures
 
 ### One fake herdr: `tests/fakes/herdr.mjs`
 
-Make the existing fake the single implementation, with named capability profiles rather
-than three divergent command parsers. Absorb `panel-herdr.mjs` and `pi-owned-herdr.mjs`;
-the existing role-facade profile keeps its current argv/protocol semantics. Union:
+`herdr-model.mjs` owns the single inventory state machine and exports `createHerdr` and
+`herdrState` for in-memory use. `herdr.mjs` supplies the CLI/socket front ends;
+`panel-herdr.mjs` and `pi-owned-herdr.mjs` are compatibility adapters. The owned profile's
+journal admission and real synthetic worker hooks live in `herdr-owned.mjs`, not in a
+second inventory parser. Existing role-facade argv/protocol semantics are retained. Union:
 
 - tab creation/list/get/rename/close and pane split/down/right/get/list/close, stable owned
   IDs, labels, workspace and origin, structured environment and args-json forwarding;
@@ -317,16 +319,22 @@ the existing role-facade profile keeps its current argv/protocol semantics. Unio
 
 Do not make the fake reproduce real herdr scheduling or infer absence from incomplete
 inventory. Each profile rejects unsupported commands; unknown state never becomes idle,
-closed or safe to mutate. Real herdr/tmux probes stay local and separate.
+closed or safe to mutate. The owned profile refuses run/rename commands rather than
+bypassing journal admission. Role CLI calls serialize their private state file and persist
+script consumption even for before-effect failures; a deadline-lost effect keeps its lock
+until it settles. A killed lock holder remains unresolved until fixture cleanup, never
+silently displaced. Real herdr/tmux probes stay local and separate.
 
-### One fake pi family: `tests/fakes/pi.mjs` (proposed)
+### One fake pi family: `tests/fakes/pi.mjs`
 
-One shared scenario/state model with launcher/dispatch/worker CLI profiles and a package
-SDK-host API adapter, not one executable pretending these boundaries are the same protocol.
-Absorb scenarios from `pi-role.mjs`, `pi-dispatch.mjs`, `pi-owned-worker.mjs` and the
-inline API/context stand-ins in `pi-package.test.mjs` / `fixtures/pi-package-host.mjs`.
-`tests/fakes/pi-package.mjs` is **not a fake protocol**: retain its real installed-package
-and loader discovery unchanged as a separate prerequisite; never fake package availability.
+The shared module exports launcher, dispatch, worker and package-host profiles, not one
+executable pretending these boundaries are the same protocol. `pi-role.mjs`,
+`pi-dispatch.mjs`, `pi-owned-worker.mjs` and `fixtures/pi-package-host.mjs` are thin
+compatibility adapters. Consumer-local API/context stand-ins migrate in their owning
+area slices; no consumer assertions are replaced here.
+`tests/fakes/pi-package.mjs` is **not a fake protocol**: it re-exports the unchanged real
+installed-package and loader discovery as a separate prerequisite; package availability
+is never fabricated.
 
 - exact model/effort/role arguments, request and helper contracts, launch acknowledgement,
   private session header and lazy SESSION creation, editor text and one Enter, logs;
@@ -344,16 +352,20 @@ interchangeable fake protocols. Keep their real loader code path. `pi-owned-rele
 and `pi-package-release.mjs` stage release fixtures; the latter builds when invoked, so
 reuse already-built bytes once per suite rather than silently building per scenario.
 
-### One temporary HUD home: `tests/fixtures/hud-home.ts` (proposed)
+### One temporary HUD home: `tests/fixtures/hud-home.ts`
 
-A fixture returns a private temporary root, HOME/HUD_HOME/CODEX_HOME/CLAUDE_CONFIG_DIR,
-source/session/task/job directories, routing and settings writers, and deterministic
-clock/ID helpers. It removes all HERDR_* and live/provider opt-in variables from child
-environments; it never copies a real home, secret or session. Cleanup is fixture-owned,
-registered before effects, and covers only its own stamped processes and paths. No
-shared mutable home between rows: share builders and immutable seed bytes, not authority.
+`hudHome({ env?, files?, after? })` returns a private temporary root, distinct
+HOME/HUD_HOME/CODEX_HOME/CLAUDE_CONFIG_DIR, source/session/task/job directories, a bounded
+relative-path seed writer and idempotent cleanup. `after` registers cleanup before seeded
+effects. Every HERDR_* variable, colour/settings override, live/provider opt-in and
+credential variable is removed from the copied child env; no real home, secret or session
+is copied. There is no mutable singleton. Domain routing/settings/clock/process builders
+remain in their owning slices and can build on this fixture. Cleanup removes only the
+fixture root; synthetic process owners must terminate their own children before cleanup.
+Share builders and immutable seed bytes, not authority.
 
-Union of current inline setups: permissions/umask, symlink and FIFO/oversize cases,
+Domain capabilities retained by current inline setups (not silently normalized by this builder):
+permissions/umask, symlink and FIFO/oversize cases,
 atomic replacement and inode pins, private SQLite/WAL, JSONL incremental cursors,
 request/receipt/STATUS/QA/report files, role/runtime package staging, fake executables on
 isolated PATH, bounded process groups, cancellation/teardown and restore of test mocks.
