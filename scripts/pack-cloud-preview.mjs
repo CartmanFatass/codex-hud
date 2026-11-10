@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Local inspection archive only. Never npm pack/publish/install or user configuration. */
 import assert from 'node:assert/strict';
+import { CLAUDE_TEMPLATES } from './runtime-package/claude.mjs';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,6 +90,12 @@ export const REQUIRED_OUTPUTS = {
   'src/jev/runtime/ipc.ts': 'dist/jev/runtime/ipc.js',
   'src/jev/runtime/oracle.ts': 'dist/jev/runtime/oracle.js',
   'src/jev/runtime/types.ts': 'dist/jev/runtime/types.js',
+  ...Object.fromEntries(
+    ['binding', 'mcp', 'native', 'setup', 'hook'].map((name) => [
+      `src/integrations/claude/${name}.ts`,
+      `dist/integrations/claude/${name}.js`,
+    ])
+  ),
 };
 /**
  * hud-mcp outputs the role entry imports. `src/cli/{roster,wait,setup}.ts` and
@@ -147,6 +154,7 @@ export const MCP_RUNTIME_OUTPUTS = [
 ];
 const EXTENSION_ENTRIES = ['extensions/pi/hud-footer.ts', 'extensions/pi/hud-delegate.ts'];
 export const EXTRA_FILES = [
+  ...CLAUDE_TEMPLATES,
   'README.md',
   'bin/hud-statusline-preview',
   ...EXTENSION_ENTRIES,
