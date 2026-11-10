@@ -230,9 +230,48 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   Gate on the merged tree: unit 4412/4386/0 fail, mjs 708/706, hud-mcp 219/218, visual 331/331, WP0 1176/1176;
   mutants, fixtures, format and diff clean. P3b is now unblocked.
 
-  FIX-RLL-HANG running. Root cause confirmed: INT/TERM arriving while a group-leader shell reads the protocol drops
-  partial bytes. The fix ignores INT/TERM only in the protocol readers, adds per-test timeouts, and cleans up the
-  test's own process groups.
+  FIX-RLL-HANG has two causes. First, INT/TERM arriving while a group-leader shell reads the protocol drops partial
+  bytes: the protocol readers now ignore INT/TERM. Second, the waiter's interrupted `wait` retry can yield `DONE -1`,
+  which the leader rejects and then waits for forever. Decided under q4: the waiter ignores INT/TERM only after the
+  workload fork, and waits exactly once. Per-test timeouts and the test's own process-group cleanup are added too.
+  Safety review accepted on round 2. Merge pending at the time of this entry.
+
+  2026-11-10 merges (`ed689cb`, `a854f59`, `fa5c5c3`, orchestrator test fix `29c29bf`):
+  - **R6A-A67** (reviews `docs/reviews/2026-11-10-r6a-a67-review-{1,2}.md`, accept on round 2):
+    - `hud panel` with any `HUD_PANEL_*` marker registers itself in the same process and installs its lifetime;
+    - the schema-1 role-summary cache under `$HUD_HOME/display/role-summary`;
+    - the Claude statusline `Work:` segment for the exact root.
+
+    Real herdr split/focus is NOT_RUN.
+  - **R6A-A4** (reviews `docs/reviews/2026-11-10-r6a-a4-review-{1,2,3}.md`, accept on round 3): the Claude `hud`
+    plugin, including:
+    - templates and materialization;
+    - hook and MCP adapters;
+    - `/hud:hud`, `/hud:setup`, and the optional bare `/hud` alias (proof-gated);
+    - statusline activation orchestration and the native write-set rehearsal.
+
+    The external hook timeout is NOT_VERIFIED as safe interception (q11). Nothing is activated live; owner rows §H 4–6
+    are in its report.
+  - **FIX-CLOCK-LEAK** (review `docs/reviews/2026-11-10-fix-clock-leak-review-1.md`, accept): `r5Fixture` wrote real
+    wall-clock mtimes while injecting 2026-11-09. Once the date passed, Home dropped the day's decisions, and
+    `workboard-fix4` / `workboard-visual-facts` failed. The fixture now stamps files with its own clock. Clock-shift
+    regressions run at +2 and +400 days. No production change.
+  - **Orchestrator fix at acceptance** (`29c29bf`): the claude-plugin "JSON alone" assertion probed the host process
+    tree, and under a real Claude ancestor gave `panel_origin_unverified`. It now injects the no-proof probe.
+
+  Gate on `fa5c5c3`, with reruns alone on a loaded host (load average 60, FIX-RLL's synthetic load):
+  - unit 4454/4426, with 2 failures: P2 render timing and `statusline-native-details`, whose summary line was missing
+    under load. Both pass alone at normal load (46/46).
+  - mjs 725/721, with 2 failures: runtime-activation mutants (pass alone), and claude-plugin, fixed in `29c29bf`
+    (16/16).
+  - hud-mcp 219/218, visual 331/331, WP0 1176/1176; fixtures, format and diff clean.
+
+  Watch item: A67's statusline `Work:` segment shares the read budget with the legacy summary. Under heavy load the
+  summary line can drop, so check it at R7 under normal load.
+
+  Running: R6A-A5 (pi package and segment; q1–q3 answered; a `parentSession` gets no auto panel, which is a follow-up
+  for a qualified `/fork`). Next: R5UX-P3B (brief ready), then A8 and PIROLE PR4/PR5. P2c (removing the no-sidecar
+  path: 41 test files) is deferred.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
