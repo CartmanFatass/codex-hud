@@ -14,12 +14,12 @@ import { runCommand } from '../../src/roles/herdr-run.js';
 import { launchOwned, type LaunchOptions } from '../../src/roles/pi-owned/launch.js';
 import { callHelper } from '../../src/roles/pi-owned/helpers.js';
 import { reapOwned } from '../../src/roles/pi-owned/reap.js';
-import { runPostExitReaper, spawnPostExitReaper } from '../../src/roles/pi-owned/reap-main.js';
 import { Deadline, Runtime, locked, type Journal, type Owner } from '../../src/roles/pi-owned/runtime.js';
 import { editorHasPrompt } from '../../src/roles/pi-owned/prompt.js';
 import {
   WORKER_ENTRY,
   HELPER_SKILL,
+  ROLE_TOOLS,
   roleResource,
   slotPaths,
   type ContractContext,
@@ -42,7 +42,7 @@ async function until(body: () => boolean, ms = 4000): Promise<void> {
     await pause(10);
   }
 }
-async function fixture(t: TestContext, role: DispatchRole = 'implementer') {
+async function fixture(t: TestContext, role: DispatchRole = 'implementer', staged = false) {
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hpo-')));
   const home = join(root, 'home');
   const directory = join(home, 'jobs', 'j0123456789abcdef');
@@ -61,11 +61,17 @@ async function fixture(t: TestContext, role: DispatchRole = 'implementer') {
     resources[path] = createHash('sha256').update(text).digest('hex');
   }
   const integration = join(root, 'herdr integration.ts');
-  put(integration, '// managed by herdr\n// HERDR_INTEGRATION_ID=pi\n// HERDR_INTEGRATION_VERSION=9\n');
+  put(
+    integration,
+    '// managed by herdr\n// HERDR_INTEGRATION_ID=pi\n// HERDR_INTEGRATION_VERSION=9\nexport default function reporter(pi) { pi.on("session_start", () => {}); }\n'
+  );
+  const artifact = staged
+    ? await (await import(pathToFileURL(join(REPO_ROOT, 'tests/fakes/pi-owned-release.mjs')).href)).stagedWorker(t)
+    : null;
   const context: ContractContext = {
     jobDirectory: directory,
     cwd,
-    release: { id: 'synthetic-release', root: releaseRoot, resources },
+    release: artifact?.release ?? { id: 'synthetic-release', root: releaseRoot, resources },
   };
   const paths = slotPaths(directory, 'primary');
   put(paths.brief, 'Synthetic task.\n');
@@ -81,8 +87,11 @@ async function fixture(t: TestContext, role: DispatchRole = 'implementer') {
     qa_dir: paths.qa,
     session_dir: paths.sessions,
     session_id: 'synthetic-primary',
-    release: { id: context.release.id, root: releaseRoot },
-    role_resource: { path: join(releaseRoot, roleResource(role)), sha256: resources[roleResource(role)]! },
+    release: { id: context.release.id, root: context.release.root },
+    role_resource: {
+      path: join(context.release.root, roleResource(role)),
+      sha256: context.release.resources[roleResource(role)]!,
+    },
     model: PI_ROLE_DEFAULTS[role].model,
     effort: PI_ROLE_DEFAULTS[role].effort,
     allowed_write_paths: [paths.output],
@@ -106,8 +115,14 @@ async function fixture(t: TestContext, role: DispatchRole = 'implementer') {
     ...process.env,
     HOME: home,
     HUD_HOME: home,
+    CODEX_HOME: join(home, 'codex'),
     PATH: `${bin}:${process.env.PATH}`,
     OWNED_PROCESS_MODULE: pathToFileURL(join(REPO_ROOT, 'dist-test/src/core/run/process.js')).href,
+    OWNED_HELPERS_MODULE: pathToFileURL(join(REPO_ROOT, 'dist-test/src/roles/pi-owned/helpers.js')).href,
+    OWNED_PI_PACKAGE: staged
+      ? (await (await import(pathToFileURL(join(REPO_ROOT, 'tests/fakes/pi-package.mjs')).href)).piPackage())?.root
+      : undefined,
+    JITI_FS_CACHE: '0',
   };
   delete env.NO_COLOR;
   delete env.FORCE_COLOR;
@@ -197,6 +212,7 @@ async function fixture(t: TestContext, role: DispatchRole = 'implementer') {
   const runtime = (budget = 5000, signal?: AbortSignal) => new Runtime(context, options, new Deadline(budget, signal));
   return {
     root,
+    artifact,
     home,
     directory,
     context,
@@ -218,8 +234,8 @@ async function fixture(t: TestContext, role: DispatchRole = 'implementer') {
   };
 }
 
-async function launched(t: TestContext, role: DispatchRole = 'implementer') {
-  const f = await fixture(t, role);
+async function launched(t: TestContext, role: DispatchRole = 'implementer', staged = false) {
+  const f = await fixture(t, role, staged);
   const result = await launchOwned(f.context, f.options);
   assert.equal(result.state, 'acked', result.reason);
   return f;
@@ -303,6 +319,12 @@ test('ownership: stale SESSION ignored; reused tab/label, foreign pane/session a
     const result = await reapOwned(f.context, { ...f.options, graceMs: 50 });
     assert.equal(result.state, 'close_unresolved', variant);
     assert.equal(f.state().counts.close ?? 0, 0, variant);
+    assert.equal(
+      f.logs().filter((c) => c.argv[0] === 'agent' && c.argv[1] === 'prompt' && c.argv[3] === '/quit').length,
+      0,
+      `${variant}: foreign ownership must not authorize quit`
+    );
+    assert.equal(processState(f.owner().process), 'alive', `${variant}: foreign ownership must not authorize a signal`);
   }
 });
 
@@ -452,7 +474,7 @@ test('one monotonic budget bounds metadata chain, partial cleanup and finite pos
   const cleanup = await reapOwned(g.context, { ...g.options, budgetMs: 240 });
   assert.equal(cleanup.state, 'close_unresolved');
   assert.ok(performance.now() - began < 1500);
-  const h = await launched(t, 'sonic');
+  const h = await launched(t, 'sonic', true);
   const status = {
     version: 1,
     task_dir: h.directory,
@@ -473,7 +495,7 @@ test('one monotonic budget bounds metadata chain, partial cleanup and finite pos
   };
   put(join(h.directory, 'STATUS.json'), status);
   const postStart = performance.now();
-  const post = await runPostExitReaper(
+  const post = await h.artifact.reaper.runPostExitReaper(
     {
       context: h.context,
       endpoint: h.options.endpoint,
@@ -715,7 +737,7 @@ test('helper own idle occupant may retire, but unchanged artifact and orphan res
 });
 
 test('finite reaper executable exits when primary never exits; autoclose and explicit close are one idempotent operation', async (t) => {
-  const f = await launched(t, 'sonic');
+  const f = await launched(t, 'sonic', true);
   const status = {
     version: 1,
     task_dir: f.directory,
@@ -743,7 +765,7 @@ test('finite reaper executable exits when primary never exits; autoclose and exp
     waitMs: 50,
     budgetMs: 4000,
   };
-  const executable = join(REPO_ROOT, 'dist-test/src/roles/pi-owned/reap-main.js');
+  const executable = join(f.context.release.root, 'dist/roles/pi-owned/reap-main.js');
   const finite = await runCommand(
     process.execPath,
     [executable, '--owned-reap', Buffer.from(JSON.stringify(request)).toString('base64url')],
@@ -752,13 +774,7 @@ test('finite reaper executable exits when primary never exits; autoclose and exp
   );
   assert.equal(finite.exitCode, 1, finite.stderr);
   assert.match(finite.stdout, /primary_not_exited/);
-  // Synthetic pinned entry tests spawn admission only; the real entry above tests finite reap.
-  const reaperResource = 'dist/roles/pi-owned/reap-main.js';
-  const reaperText = 'process.exit(0);\n';
-  put(join(f.context.release.root, reaperResource), reaperText);
-  (f.context.release.resources as Record<string, string>)[reaperResource] = createHash('sha256')
-    .update(reaperText)
-    .digest('hex');
+  const { spawnPostExitReaper, runPostExitReaper } = f.artifact.reaper;
   // Spawn intent is exclusive even if the pinned entry later fails; no second attempt.
   assert.equal(await spawnPostExitReaper(f.context, { ...f.options, keepTab: true }), false);
   assert.equal(await spawnPostExitReaper(f.context, f.options), true);
@@ -792,5 +808,399 @@ test('cost: cold fake launch n=20; launcher STATUS writes=0, unchanged journal r
   times.sort((a, b) => a - b);
   t.diagnostic(
     `host=${hostname()} n=20 warmup=0 cold fake launch p50=${times[9]!.toFixed(1)}ms p95=${times[18]!.toFixed(1)}ms STATUS writes=0; observed atomic journal replacements=${Math.min(...journalWrites)}..${Math.max(...journalWrites)}`
+  );
+});
+
+for (const role of ['reviewer', 'architect'] as const)
+  test(`nested sonic: primary ${role} splits down, read-only grant, shared numbering, closed pane`, async (t) => {
+    const f = await launched(t, role);
+    const brief = join(f.directory, 'source.md');
+    put(brief, 'small chore');
+    for (let n = 1; n <= 2; n++) {
+      const answer = await callHelper(f.context, f.helperOptions, { kind: 'sonic', brief_path: brief });
+      if (!answer.ok)
+        t.diagnostic(
+          JSON.stringify({ answer, calls: f.logs().slice(-12), state: f.state(), journal: f.journal(`sonic-${n}`) })
+        );
+      assert.equal(answer.ok, true, answer.reason);
+      assert.equal(answer.n, n);
+      const c = read<SlotContract>(slotPaths(f.directory, `sonic-${n}`).contract);
+      assert.equal(c.parent_slot, 'primary');
+      assert.equal(c.read_only, true);
+      assert.deepEqual(c.allowed_write_paths, [join(f.directory, `sonic-${n}.md`)]);
+    }
+    const splits = f.logs().filter((c) => c.argv[0] === 'pane' && c.argv[1] === 'split');
+    assert.equal(splits.length, 2);
+    for (const split of splits) {
+      assert.equal(split.argv[2], f.journal().pane);
+      assert.equal(split.argv[4], 'down');
+    }
+    assert.equal(f.state().panes.length, 1);
+    assert.equal(f.logs().filter((c) => c.argv[0] === 'pane' && c.argv[1] === 'close').length, 2);
+  });
+test('nested sonic: helper reviewer borrows child reservation without job mutex or right-pane claim', async (t) => {
+  const f = await fixture(t);
+  put(join(f.directory, 'sonic-source.md'), 'small chore');
+  f.mode({ helper: 'nested-sonic' });
+  const launched = await launchOwned(f.context, f.options);
+  assert.equal(launched.state, 'acked', launched.reason);
+  const file = join(f.directory, '.dispatch/primary/helper-outcome.json');
+  await until(() => fs.existsSync(file), 20000);
+  const answer = read(file);
+  if (!answer.ok)
+    t.diagnostic(
+      JSON.stringify({
+        answer,
+        calls: f.logs().slice(-20),
+        state: f.state(),
+        nested: fs.existsSync(join(f.directory, '.dispatch/review-1/helper-outcome.json'))
+          ? read(join(f.directory, '.dispatch/review-1/helper-outcome.json'))
+          : null,
+      })
+    );
+  assert.equal(answer.ok, true, answer.reason);
+  const nested = read(join(f.directory, '.dispatch/review-1/helper-outcome.json'));
+  assert.equal(nested.ok, true, nested.reason);
+  const split = f.logs().find((c) => c.argv[0] === 'pane' && c.argv[1] === 'split' && c.argv[4] === 'down');
+  assert.ok(split);
+  assert.equal(split.argv[2], f.journal('review-1').pane);
+  assert.notEqual(f.journal('sonic-1').pane, f.journal().right);
+  assert.equal(read<SlotContract>(slotPaths(f.directory, 'sonic-1').contract).parent_slot, 'review-1');
+  assert.equal(f.state().panes.length, 2);
+  assert.equal(f.state().counts.start, 3);
+  // The implementer resumes its original lane after the reviewer has returned;
+  // numbering and the ten-call cap are shared with the nested caller above.
+  f.mode({});
+  const next = await callHelper(f.context, f.helperOptions, {
+    kind: 'sonic',
+    brief_path: join(f.directory, 'sonic-source.md'),
+  });
+  assert.equal(next.ok, true, next.reason);
+  assert.equal(next.n, 2);
+  assert.equal(f.journal('sonic-2').pane, f.journal().right);
+  assert.equal(read<SlotContract>(slotPaths(f.directory, 'sonic-2').contract).parent_slot, 'primary');
+  for (let n = 3; n <= 10; n++) put(join(f.directory, `sonic_brief-${n}.md`), 'reserved failed synthetic call');
+  const calls = f.state().counts.start;
+  const capped = await callHelper(f.context, f.helperOptions, {
+    kind: 'sonic',
+    brief_path: join(f.directory, 'sonic-source.md'),
+  });
+  assert.equal(capped.ok, false);
+  assert.match(capped.reason ?? '', /helper_limit/);
+  assert.equal(f.state().counts.start, calls);
+});
+for (const outcome of ['closed', 'failed', 'crash'])
+  test(`borrowed sonic child is cleaned before ${outcome} reviewer release`, async (t) => {
+    const f = await fixture(t);
+    put(join(f.directory, 'sonic-source.md'), 'small chore');
+    f.mode({ helper: outcome === 'closed' ? 'orphan-child' : `orphan-child-${outcome}` });
+    assert.equal((await launchOwned(f.context, f.options)).state, 'acked');
+    const resultFile = join(f.directory, '.dispatch/primary/helper-outcome.json');
+    await until(() => fs.existsSync(resultFile), 25000);
+    const result = read(resultFile);
+    assert.equal(result.ok, outcome === 'closed', result.reason);
+    assert.equal(processState(read(join(f.directory, '.dispatch/sonic-1/owner.json')).process), 'dead');
+    assert.equal(
+      f.state().panes.some((p: { pane_id: string }) => p.pane_id === f.journal('sonic-1').pane),
+      false
+    );
+    assert.equal(read(join(f.directory, '.dispatch/review-1/current.json')).state, 'failed');
+    assert.equal(read(join(f.directory, '.dispatch/current.json')).state, outcome === 'closed' ? 'complete' : 'failed');
+    f.mode({});
+    const next = await callHelper(f.context, f.helperOptions, {
+      kind: 'sonic',
+      brief_path: join(f.directory, 'sonic-source.md'),
+    });
+    assert.equal(next.ok, true, next.reason);
+    assert.equal(next.n, 2);
+  });
+test('unknown borrowed child cleanup retains outer reservation; both helper kinds refuse until explicit reap', async (t) => {
+  const f = await fixture(t);
+  put(join(f.directory, 'sonic-source.md'), 'small chore');
+  f.mode({ helper: 'orphan-child-unknown' });
+  assert.equal((await launchOwned(f.context, f.options)).state, 'acked');
+  const resultFile = join(f.directory, '.dispatch/primary/helper-outcome.json');
+  await until(() => fs.existsSync(resultFile), 20000);
+  assert.equal(read(resultFile).ok, false);
+  assert.match(read(resultFile).reason, /helper_unresolved:sonic-1/);
+  const outer = read(join(f.directory, '.dispatch/current.json'));
+  assert.equal(outer.state, 'reserved');
+  assert.equal(outer.unresolved_child, 'sonic-1');
+  assert.equal(processState(read(join(f.directory, '.dispatch/sonic-1/owner.json')).process), 'alive');
+  const starts = f.state().counts.start;
+  for (const kind of ['sonic', 'reviewer'] as const) {
+    const next = await callHelper(f.context, f.helperOptions, {
+      kind,
+      brief_path: join(f.directory, 'sonic-source.md'),
+    });
+    assert.equal(next.ok, false);
+    assert.match(next.reason ?? '', /helper_unresolved:sonic-1/);
+  }
+  assert.equal(f.state().counts.start, starts);
+  const uncertain = await reapOwned(f.context, f.options);
+  assert.equal(uncertain.state, 'close_unresolved');
+  f.mode({});
+  const closed = await reapOwned(f.context, f.options);
+  assert.equal(closed.state, 'closed', closed.remaining.join(','));
+  assert.equal(f.state().panes.length, 0);
+  assert.equal(f.state().agents.length, 0);
+});
+test('reap covers an acknowledged leftover nested pane after helper close failure', async (t) => {
+  const f = await launched(t, 'architect');
+  const brief = join(f.directory, 'source.md');
+  put(brief, 'chore');
+  f.mode({ blockPaneClose: true });
+  const answer = await callHelper(f.context, f.helperOptions, { kind: 'sonic', brief_path: brief });
+  assert.equal(answer.ok, false);
+  assert.equal(f.state().panes.length, 2);
+  f.mode({});
+  const result = await reapOwned(f.context, f.options);
+  assert.equal(result.state, 'closed', result.remaining.join(','));
+  assert.equal(f.state().panes.length, 0);
+});
+test('nested sonic lost split reply leaves unresolved reservation, no second split, reap covers leftover', async (t) => {
+  const f = await launched(t, 'architect');
+  const brief = join(f.directory, 'source.md');
+  put(brief, 'chore');
+  f.mode({ fault: 'split:after' });
+  const first = await callHelper(f.context, f.helperOptions, { kind: 'sonic', brief_path: brief });
+  assert.equal(first.ok, false);
+  f.mode({});
+  const second = await callHelper(f.context, f.helperOptions, { kind: 'sonic', brief_path: brief });
+  assert.match(second.reason ?? '', /^helper_busy/);
+  assert.equal(f.state().counts.split, 1);
+  assert.equal(f.state().panes.length, 2);
+  const reap = await reapOwned(f.context, f.options);
+  assert.equal(reap.state, 'close_unresolved');
+  assert.match(reap.remaining.join(','), /terminal_changed|split_outcome_unknown/);
+});
+for (const mode of ['wrong-model', 'wrong-effort'])
+  test(`helper STATUS ${mode} fails contract validation`, async (t) => {
+    const f = await launched(t);
+    const brief = join(f.directory, 'source.md');
+    put(brief, 'chore');
+    f.mode({ helper: mode });
+    const answer = await callHelper(f.context, f.helperOptions, { kind: 'sonic', brief_path: brief });
+    assert.equal(answer.reason, 'helper_binding_mismatch');
+  });
+test('stall lazy session: missing first file requires full editor and after Enter persistence; foreign prompt result refused', async (t) => {
+  const f = await fixture(t);
+  f.mode({ stall: 'editor', noEnterPersist: true });
+  const answer = await launchOwned(f.context, f.options);
+  assert.equal(answer.state, 'launch_unknown');
+  assert.equal(f.state().counts.enter, 1);
+  assert.notEqual(f.journal().steps.prompt?.state, 'acked');
+  const g = await fixture(t);
+  g.mode({ promptAgentMismatch: true });
+  const mismatch = await launchOwned(g.context, g.options);
+  assert.equal(mismatch.reason, 'prompt_owner_mismatch');
+  assert.equal(g.state().counts.enter ?? 0, 0);
+});
+
+test('runtime binding is immutable and callerTabId is protection, never cleanup authority', async (t) => {
+  const f = await launched(t);
+  const file = join(f.directory, '.dispatch/runtime.json');
+  const binding = read(file);
+  assert.deepEqual(binding, { endpoint: f.options.endpoint, callerTabId: f.options.callerTabId });
+  const again = await launchOwned(f.context, { ...f.options, callerTabId: 'tampered' });
+  assert.equal(again.reason, 'runtime_binding_changed');
+  put(file, { ...binding, callerTabId: f.journal().tab });
+  const denied = await reapOwned(f.context, { ...f.options, callerTabId: f.journal().tab! });
+  assert.equal(denied.state, 'close_unresolved');
+  assert.equal(f.state().tabs.length, 1);
+  assert.equal(
+    f.logs().some((c) => c.argv[0] === 'tab' && c.argv[1] === 'close' && c.argv[2] === 'caller-tab'),
+    false
+  );
+});
+
+const installedPi = async () =>
+  (await import(pathToFileURL(join(REPO_ROOT, 'tests/fakes/pi-package.mjs')).href)).piPackage();
+for (const role of ['implementer', 'reviewer', 'architect', 'sonic'] as const)
+  test(`real pi loader worker ${role} startup and two-entry ownership`, async (t) => {
+    const pkg = await installedPi();
+    if (!pkg) {
+      t.skip('pi package loader unavailable on PATH and PI_PACKAGE_DIR');
+      return;
+    }
+    t.diagnostic(`pi ${pkg.version}; provider-free installed loader, real SessionManager, staged A1 worker`);
+    const f = await fixture(t, role, true);
+    f.mode({ startup: 'real-loader' });
+    const answer = await launchOwned(f.context, { ...f.options, budgetMs: 20000 });
+    assert.equal(answer.state, 'acked', answer.reason);
+    const proof = read(join(f.directory, '.dispatch/primary/loader-evidence.json'));
+    assert.deepEqual(proof.errors, []);
+    assert.equal(proof.extensions, 2);
+    assert.equal(proof.ownerWriters, 1);
+    assert.equal(proof.sessionPersisted, false);
+    assert.deepEqual(proof.active, ROLE_TOOLS[role].split(','));
+    assert.deepEqual(
+      proof.tools.sort(),
+      ROLE_TOOLS[role]
+        .split(',')
+        .filter((x) => x.startsWith('call_') || x === 'ask_orchestrator')
+        .sort()
+    );
+    assert.equal(f.owner().model, f.contract.model);
+    assert.equal(f.owner().effort, f.contract.effort);
+    const out = await f
+      .runtime()
+      .call([
+        'test',
+        'probe',
+        f.journal().name,
+        JSON.stringify({ event: 'tool_call', payload: { toolName: 'hud_create', input: {} } }),
+      ]);
+    assert.equal(out.ok, true);
+    const resultFile = join(f.directory, '.dispatch/primary/probe-result.json');
+    await until(() => fs.existsSync(resultFile));
+    assert.equal(read(resultFile).answer.block, true);
+    fs.unlinkSync(resultFile);
+    await f.runtime().call(['test', 'probe', f.journal().name, JSON.stringify({ builtinWrite: true })]);
+    await until(() => fs.existsSync(resultFile));
+    assert.equal(read(resultFile).answer.isError ?? false, false);
+    assert.equal(fs.readFileSync(f.paths.output, 'utf8'), 'native tool report\n');
+    for (const path of [f.paths.output, f.owner().session_file, join(f.directory, 'STATUS.json')])
+      assert.equal(fs.statSync(path).mode & 0o077, 0);
+    if (role === 'sonic') assert.equal(proof.tools.includes('call_sonic'), false);
+    if (role === 'implementer') {
+      fs.unlinkSync(resultFile);
+      await f.runtime().call(['test', 'probe', f.journal().name, JSON.stringify({ event: 'agent_end' })]);
+      await until(() => fs.existsSync(resultFile));
+      assert.equal(read(join(f.directory, 'STATUS.json')).state, 'working');
+    }
+  });
+for (const mode of ['real-model-mismatch', 'real-effort-mismatch', 'loader-failure'])
+  test(`real pi loader ${mode} fails before prompt`, async (t) => {
+    const pkg = await installedPi();
+    if (!pkg) {
+      t.skip('pi package loader unavailable');
+      return;
+    }
+    t.diagnostic(`pi ${pkg.version}`);
+    const f = await fixture(t, 'sonic', true);
+    if (mode === 'loader-failure') {
+      const invalid = join(f.root, 'invalid.ts');
+      put(invalid, 'this is not TypeScript }');
+      f.artifact.copy(WORKER_ENTRY, invalid);
+      put(join(f.context.release.root, 'RUNTIME-MANIFEST.json'), f.artifact.manifest);
+      f.context.release = await f.artifact.releaseModule.loadWorkerRelease();
+      f.contract.release = { id: f.context.release.id, root: f.context.release.root };
+      put(f.paths.contract, f.contract);
+    }
+    f.mode({ startup: mode });
+    const answer = await launchOwned(f.context, { ...f.options, budgetMs: 6000 });
+    assert.equal(answer.state, 'launch_unknown');
+    assert.equal(f.state().counts.prompt ?? 0, 0);
+    const proof = read(join(f.directory, '.dispatch/primary/loader-evidence.json'));
+    assert.equal(proof.shutdown || proof.errors.length > 0, true);
+    assert.equal(fs.existsSync(join(f.directory, '.dispatch/primary/owner.json')), false);
+  });
+
+test('implementer unused grace expiry spawns one real pinned reaper; quit/failure/used grace no attempt; explicit close race', async (t) => {
+  const f = await launched(t, 'implementer', true);
+  const status = {
+    version: 1,
+    task_dir: f.directory,
+    slot: 'primary',
+    role: 'implementer',
+    session_id: f.contract.session_id,
+    model: f.contract.model,
+    thinking: f.contract.effort,
+    output_path: f.paths.output,
+    output_written: true,
+    state: 'closed',
+    helper_pending: null,
+    settled_at: new Date().toISOString(),
+    idle_deadline_at: null,
+    ended_at: new Date().toISOString(),
+    exit_reason: 'idle_grace_expired',
+    error: null,
+  };
+  put(f.paths.output, 'settled output');
+  const marker = join(f.directory, '.dispatch/primary/autoclose.json');
+  for (const reason of ['shutdown_quit', 'shutdown_reload', 'idle_grace_expired_used']) {
+    put(join(f.directory, 'STATUS.json'), { ...status, exit_reason: reason });
+    assert.equal(await f.artifact.reaper.spawnPostExitReaper(f.context, f.options), false);
+    assert.equal(fs.existsSync(marker), false);
+  }
+  put(join(f.directory, 'STATUS.json'), { ...status, state: 'failed' });
+  assert.equal(await f.artifact.reaper.spawnPostExitReaper(f.context, f.options), false);
+  put(join(f.directory, 'STATUS.json'), status);
+  assert.equal(await f.artifact.reaper.spawnPostExitReaper(f.context, { ...f.options, keepTab: true }), false);
+  assert.equal(await f.artifact.reaper.spawnPostExitReaper(f.context, f.options), true);
+  assert.equal(await f.artifact.reaper.spawnPostExitReaper(f.context, f.options), false);
+  const primary = f.owner().process;
+  process.kill(primary.pid, 'SIGTERM');
+  await until(() => processState(primary) === 'dead' && f.state().agents.length === 0);
+  const request = {
+    context: f.context,
+    endpoint: f.options.endpoint,
+    callerTabId: 'tampered-unrelated-tab',
+    primary,
+    waitMs: 50,
+    budgetMs: 5000,
+  };
+  const [automatic, explicit] = await Promise.all([
+    f.artifact.reaper.runPostExitReaper(request, f.env),
+    reapOwned(f.context, f.options),
+  ]);
+  assert.equal(automatic.state, 'closed', automatic.remaining.join(','));
+  assert.equal(explicit.state, 'closed', explicit.remaining.join(','));
+  assert.equal(f.state().counts.close, 1);
+  assert.equal(f.state().tabs.length, 0);
+});
+test('trusted A1 inventory rejects replaced worker/reaper bytes, never composition-supplied hashes', async (t) => {
+  const f = await fixture(t, 'sonic', true);
+  const entry = join(f.context.release.root, 'dist/roles/pi-owned/reap-main.js');
+  fs.appendFileSync(entry, '\n// replaced\n');
+  await assert.rejects(f.artifact.releaseModule.loadWorkerRelease(), /bundle_integrity_mismatch/);
+  await assert.rejects(f.artifact.reaper.spawnPostExitReaper(f.context, f.options), /bundle_integrity_mismatch/);
+  assert.equal(f.state().counts.start ?? 0, 0);
+});
+test('lazy session first-write header mismatch refuses acknowledgment; missing runtime binding never falls back', async (t) => {
+  const f = await fixture(t);
+  f.mode({ helper: 'header-mismatch' });
+  const result = await launchOwned(f.context, f.options);
+  assert.equal(result.state, 'launch_unknown');
+  assert.match(result.reason ?? '', /session_unknown/);
+  assert.notEqual(f.journal().steps.prompt?.state, 'acked');
+  const g = await launched(t);
+  const brief = join(g.directory, 'source.md');
+  put(brief, 'chore');
+  fs.unlinkSync(join(g.directory, '.dispatch/runtime.json'));
+  const helper = await callHelper(g.context, g.helperOptions, { kind: 'sonic', brief_path: brief });
+  assert.match(helper.reason ?? '', /runtime_binding_invalid/);
+  assert.equal(g.state().counts.start, 1);
+  const replay = await launchOwned(g.context, g.options);
+  assert.equal(replay.reason, 'runtime_binding_missing');
+});
+test('cost: cold real pi loader worker start n=20 and semantic STATUS write count', async (t) => {
+  const pkg = await installedPi();
+  if (!pkg) {
+    t.skip('pi loader unavailable on PATH and PI_PACKAGE_DIR');
+    return;
+  }
+  const times: number[] = [];
+  const writes: number[] = [];
+  for (let n = 0; n < 20; n++) {
+    const f = await fixture(t, 'sonic', true);
+    f.mode({ startup: 'real-loader' });
+    const start = performance.now();
+    const outcome = await launchOwned(f.context, { ...f.options, budgetMs: 20000 });
+    times.push(performance.now() - start);
+    assert.equal(outcome.state, 'acked', outcome.reason);
+    await pause(10);
+    writes.push(f.writeCounts.status);
+    assert.equal(f.writeCounts.status, 1);
+    const inode = fs.statSync(join(f.directory, 'STATUS.json'), { bigint: true }).ino;
+    for (let i = 0; i < 10; i++) fs.readFileSync(join(f.directory, 'STATUS.json'));
+    assert.equal(fs.statSync(join(f.directory, 'STATUS.json'), { bigint: true }).ino, inode);
+    const closed = await reapOwned(f.context, { ...f.options, graceMs: 200 });
+    assert.equal(closed.state, 'closed', closed.remaining.join(','));
+  }
+  times.sort((a, b) => a - b);
+  t.diagnostic(
+    `host=${hostname()} pi=${pkg.version} n=20 warmup=0 cold fake-herdr real-loader worker startup p50=${times[9]!.toFixed(1)}ms p95=${times[18]!.toFixed(1)}ms startup STATUS writes=${Math.min(...writes)}..${Math.max(...writes)}; unchanged reads=0 writes`
   );
 });

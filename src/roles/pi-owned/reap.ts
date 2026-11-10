@@ -12,6 +12,7 @@ import {
   readProcess,
   sameStamp,
   save,
+  readRuntimeBinding,
   type Journal,
   type Owner,
   type RuntimeOptions,
@@ -52,7 +53,15 @@ function commandMatches(owner: Owner, contract: SlotContract): boolean {
 async function recordedOwner(runtime: Runtime, contract: SlotContract, journal: Journal): Promise<Owner> {
   const owner = optionalJson<Owner>(runtime.path(contract.slot, 'owner.json'), contract.task_dir);
   if (!owner) throw new ExecutionError('owner_unknown');
-  if (processState(owner.process) === 'alive') return runtime.owner(contract, journal);
+  if (processState(owner.process) === 'alive') {
+    try {
+      return await runtime.owner(contract, journal);
+    } catch (error) {
+      // Successful one-shots may detach between stamp inspection and agent get.
+      // Only a now-dead exact stamp can fall through to immutable exit validation.
+      if (processState(owner.process) !== 'dead') throw error;
+    }
+  }
   // A dead stamp is not permission to signal its PID. Validate immutable identity even on exit.
   if (
     owner.schema !== 1 ||
@@ -153,6 +162,17 @@ export async function cleanupHelper(runtime: Runtime, contract: SlotContract, jo
     );
     if ((await runtime.tab(journal)).agents.some((a) => a.pane_id === journal.pane))
       throw new ExecutionError('helper_still_attached');
+    if (journal.nested_pane) {
+      const inventory = await runtime.tab(journal);
+      if (inventory.agents.some((a) => a.pane_id === journal.pane)) throw new ExecutionError('foreign_occupant');
+      cleanup.steps.pane_close = 'sent';
+      save(file, cleanup, contract.task_dir);
+      const out = await runtime.call(['pane', 'close', journal.pane!]);
+      if (!out.ok) throw new ExecutionError('pane_close_unknown');
+      if ((await runtime.tab(journal)).panes.some((p) => p.pane_id === journal.pane))
+        throw new ExecutionError('pane_still_present');
+      cleanup.steps.pane_close = 'acked';
+    }
     cleanup.state = 'closed';
     save(file, cleanup, contract.task_dir);
   });
@@ -188,6 +208,12 @@ export async function reapOwned(context: ContractContext, options: ReapOptions):
   try {
     return await locked(context.jobDirectory, 'resources', runtime.deadline, async () => {
       try {
+        const binding = readRuntimeBinding(context.jobDirectory);
+        if (
+          JSON.stringify(binding.endpoint) !== JSON.stringify(options.endpoint) ||
+          binding.callerTabId !== options.callerTabId
+        )
+          throw new ExecutionError('runtime_binding_changed');
         const control = runtime.control();
         if (!control.closing)
           save(

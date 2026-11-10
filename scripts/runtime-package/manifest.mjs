@@ -96,7 +96,28 @@ export const ACTIVATION_PROCESS_FILES = [
   'dist/core/run/group-pipe.js',
   'dist/core/process-domain.js',
 ];
+export const PI_WORKER_FILES = [
+  'integrations/pi/worker.ts',
+  ...['implementer', 'reviewer', 'architect', 'sonic'].map((role) => `integrations/pi/roles/${role}.md`),
+  'integrations/pi/skills/helper-pane/SKILL.md',
+  'dist/harness/pi/role-extension.js',
+  ...[
+    'argv',
+    'contracts',
+    'guard',
+    'helpers',
+    'launch',
+    'lifecycle',
+    'prompt',
+    'qa',
+    'reap-main',
+    'reap',
+    'release',
+    'runtime',
+  ].map((name) => `dist/roles/pi-owned/${name}.js`),
+];
 export const REQUIRED = [
+  ...PI_WORKER_FILES,
   ...ACTIVATION_PROCESS_FILES,
   ...Object.values(COMMANDS),
   ...HELPERS,

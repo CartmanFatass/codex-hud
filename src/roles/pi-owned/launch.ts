@@ -12,7 +12,16 @@ import {
   type ContractContext,
   type SlotContract,
 } from './contracts.js';
-import { Deadline, ExecutionError, Runtime, save, selfStamp, type Journal, type RuntimeOptions } from './runtime.js';
+import {
+  Deadline,
+  ExecutionError,
+  Runtime,
+  save,
+  selfStamp,
+  pinRuntimeBinding,
+  type Journal,
+  type RuntimeOptions,
+} from './runtime.js';
 import { submitPrompt } from './prompt.js';
 import { writePrivate } from '../job-store.js';
 import { runCommand } from '../herdr-run.js';
@@ -110,6 +119,11 @@ export function projectSession(runtime: Runtime, journal: Journal): void {
 export async function newJournal(runtime: Runtime, contract: SlotContract, parent?: Journal): Promise<Journal> {
   return runtime.admitted(async () => {
     const previous = runtime.journal(contract.slot);
+    if (contract.slot === 'primary') {
+      if (previous && !fs.existsSync(join(contract.task_dir, '.dispatch/runtime.json')))
+        throw new ExecutionError('runtime_binding_missing');
+      pinRuntimeBinding(contract.task_dir, runtime.options);
+    }
     if (previous) {
       if (
         previous.schema !== 1 ||

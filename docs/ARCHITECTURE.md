@@ -68,6 +68,55 @@ the old renderer gets no new features; it is removed in P2.
 every Home → Work jump lands somewhere real. It is not the final P2 compact card and peek redesign. The snapshot
 publisher, the recap and brief backends, the main summary, the Timeline, Changes and the diagnostics are unchanged.
 
+## Owned pi workers (PIROLE PR3; not selected for new jobs until PR4)
+
+`integrations/pi/worker.ts` composes only `harness/pi/role-extension`. It does not load the ordinary HUD package,
+register the general facade tools, open a panel, or install a footer. Herdr's separately loaded reporter owns only
+Herdr state. Worker resources, helpers and the finite reaper are pinned to A1's manifest digest. The worker and
+reaper derive that inventory from their own release-relative modules and verify the staged bundle; source-checkout
+execution fails closed. Task-serialized hashes are never an inventory trust root.
+
+Private job layout (`J = $HUD_HOME/jobs/<id>`, directories 0700, files 0600):
+
+- `brief.md`, `report.md`, `impl-notes.md`, `checks/<name>.log`, `SESSION.txt`, `STATUS.json`, `sessions/`, `qa/qN{,.answer}.md`;
+- `.dispatch/runtime.json`: launcher-authored, write-once under resource admission before agent start; only the
+  endpoint/process stamp and caller-tab protection, never secrets or model arguments. Helpers and the reaper load
+  this same bounded binding and verify the endpoint; no environment fallback;
+- `.dispatch/<slot>/{contract,launch,owner}.json`, each helper's `STATUS.json`, and the single helper reservation
+  `.dispatch/current.json`; a helper reviewer's sonic has a child reservation under its review slot.
+
+The actual model, effort, session and role file must match before startup evidence permits a first prompt. Pi 1.5.0
+persists new sessions lazily: the worker records the native header's type/id/cwd without writing a native session.
+Before prompt submission only, an absent exact session file is accepted with that header, process argv and exact
+Herdr session reference. A specifically stalled first prompt may use the same header plus complete editor evidence
+for one journalled Enter; acknowledgment then requires that exact prompt in the exact persisted session. Unknown,
+unreadable or mismatched evidence never authorizes Enter or another start.
+
+Only `agent_settled`, deferred and generation/idle/queue/helper/QA/output guarded, completes a run. `agent_end`
+may precede a retry. STATUS v1 is single-writer and semantic-change-only. Successful implementers publish DONE in
+fixed cache-TTL grace (unknown TTL zero); continuation cancels the old timer, model TTL can shorten but never extend
+it, and warming never renews it. Clean one-shots and **unused successful implementer grace expiry** are eligible for
+one finite detached post-exit reaper attempt. Implementer expiry uses `idle_grace_expired`; quit/shutdown in grace,
+failure, a used continuation and `HUD_KEEP_TAB=1` keep the tab. Normal reap remains the only tab cleanup authority;
+automatic and explicit close are idempotent, and helpers never close the parent's tab.
+
+Every non-sonic role can call blocking sonic; only the implementer can call the fresh closing reviewer. Sonic has
+no helper tools. Calls share numbering and limits (10 sonic, 3 reviews, failed reservations count). Implementer
+helpers use the recorded right pane. Other callers split down from their own pane in the owned tab; split intent
+lives in the nested journal before dispatch, a lost reply remains unresolved, and cleanup/reap covers the pane.
+A helper reviewer's sonic borrows its held reservation with a child mutex, never the job mutex or right pane.
+When that reviewer ends, its reserved child is cleaned first using the same remaining cleanup budget. An unknown
+child outcome keeps the outer reservation held and returns `helper_unresolved` with the child slot; only explicit
+reap may resolve the remaining resources, and neither helper kind can allocate another slot.
+Read-only callers pass a report-only write grant, with inherited QA/scratch exceptions; the guard is not a sandbox.
+
+QA uses exclusive q1–q9999 allocation across slots, bounded answer reads, a 2-second abortable cadence only while
+outstanding, and the inherited 1200-second deadline. Timeout records “default instructed”, never “default acted on”.
+Check logs end in `exit=<code>`; reviewers never rerun full suites. Round 1 reports missing/failing/stale full-suite
+evidence as a finding; round 2+ notes expected stale full-suite logs after fixes without rerunning them. Reviewers
+rerun missing/failing/stale focused checks and run the round's focused tests (plus earlier-finding regressions on
+re-checks). The main session still owns the full acceptance gate and chaining.
+
 ## 1. The mental model in one screen
 
 codex-hud wraps the OpenAI Codex CLI in a tmux session. Codex runs unchanged in

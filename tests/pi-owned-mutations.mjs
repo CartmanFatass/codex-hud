@@ -23,7 +23,14 @@ const mutants = [
   {
     name: 'repeat-lost-enter',
     pattern: '^owned crash matrix: lost enter reply before',
+    // Remove all independent guards: explicit Enter state, effect journal and
+    // the newly required post-Enter native session persistence corroboration.
     edits: [
+      [
+        'runtime.js',
+        "const beforePrompt = !j.steps.prompt || j.steps.prompt.state === 'intent';",
+        'const beforePrompt = true;',
+      ],
       [
         'prompt.js',
         "    if (journal.steps.enter?.state === 'sent' || journal.steps.enter?.state === 'acked')\n        throw new ExecutionError('launch_unknown');",
@@ -48,6 +55,72 @@ const mutants = [
       ],
     ],
     witness: /session/,
+  },
+  {
+    name: 'agent-end-settlement',
+    suite: 'pi-owned-worker.test.js',
+    pattern: '^worker adapter subscribes settlement',
+    edits: [['../../harness/pi/role-extension.js', "pi.on('agent_settled',", "pi.on('agent_end',"]],
+    witness: /true !== false/,
+  },
+  {
+    name: 'accept-unchanged-output',
+    suite: 'pi-owned-worker.test.js',
+    pattern: '^worker settlement refuses unchanged',
+    edits: [['lifecycle.js', ' || facts.outputAfter === facts.outputBefore', '']],
+    witness: /closed.*failed|failed.*closed/s,
+  },
+  {
+    name: 'nested-sonic-job-mutex',
+    pattern: '^nested sonic: helper reviewer borrows',
+    edits: [['helpers.js', "borrowed ? 'child-helper' : 'helper'", "'helper'"]],
+    witness: /helper_busy|deadline/,
+  },
+  {
+    name: 'autoclose-quit-during-grace',
+    suite: 'pi-owned-worker.test.js',
+    pattern: '^implementer autoclose eligibility excludes quit',
+    edits: [['reap-main.js', "(c.role !== 'implementer' || status.exit_reason === 'idle_grace_expired')", 'true']],
+    witness: /true !== false/,
+  },
+  {
+    name: 'review-full-suite-reruns',
+    suite: 'pi-owned-worker.test.js',
+    pattern: '^review brief separates full-suite',
+    edits: [['helpers.js', 'do not rerun the full suites', 'rerun the full suites']],
+    witness: /do not rerun the full suites/,
+  },
+  {
+    name: 'round-two-stale-full-suite-rerun',
+    suite: 'pi-owned-worker.test.js',
+    pattern: '^review brief separates full-suite',
+    edits: [
+      [
+        'helpers.js',
+        'stale full-suite logs after fixes are expected; note them, never rerun full suites.',
+        'rerun stale full-suite logs after fixes yourself.',
+      ],
+    ],
+    witness: /stale full-suite logs after fixes are expected/,
+  },
+  {
+    name: 'sonic-helper-tools',
+    suite: 'pi-owned-worker.test.js',
+    pattern: '^every non-sonic slot can reserve sonic',
+    edits: [
+      [
+        'contracts.js',
+        "sonic: 'read,bash,edit,write,grep,find,ls,ask_orchestrator'",
+        "sonic: 'read,bash,edit,write,grep,find,ls,ask_orchestrator,call_sonic'",
+      ],
+    ],
+    witness: /call_sonic/,
+  },
+  {
+    name: 'release-outer-before-borrowed-child-cleanup',
+    pattern: '^borrowed sonic child is cleaned before closed reviewer release',
+    edits: [['helpers.js', 'await drainChild();\n', '']],
+    witness: /alive.*dead|dead.*alive/s,
   },
   {
     name: 'bypass-close-fence',
@@ -78,7 +151,7 @@ for (const mutant of mutants) {
     }
     const home = join(root, 'suite-home');
     fs.mkdirSync(home);
-    const env = { ...process.env, HOME: home, HUD_HOME: join(home, '.hud') };
+    const env = { ...process.env, HOME: home, HUD_HOME: join(home, '.hud'), CODEX_HOME: join(home, 'codex') };
     delete env.NO_COLOR;
     delete env.FORCE_COLOR;
     const result = spawnSync(
@@ -88,7 +161,7 @@ for (const mutant of mutants) {
         '--test-reporter=spec',
         '--test-name-pattern',
         mutant.pattern,
-        join(root, 'dist-test/tests/unit/pi-owned-orchestration.test.js'),
+        join(root, 'dist-test/tests/unit', mutant.suite ?? 'pi-owned-orchestration.test.js'),
       ],
       { env, encoding: 'utf8', timeout: 90_000, maxBuffer: 1024 * 1024 }
     );
@@ -101,4 +174,4 @@ for (const mutant of mutants) {
     fs.rmSync(root, { recursive: true, force: true });
   }
 }
-console.log('4/4 behavioral mutants killed; original source/build untouched.');
+console.log(`${mutants.length}/${mutants.length} behavioral mutants killed; original source/build untouched.`);

@@ -21,8 +21,8 @@ export const HELPER_SKILL = 'integrations/pi/skills/helper-pane/SKILL.md';
 export const ROLE_TOOLS = Object.freeze({
   implementer: 'read,bash,edit,write,grep,find,ls,ask_orchestrator,call_sonic,call_reviewer',
   sonic: 'read,bash,edit,write,grep,find,ls,ask_orchestrator',
-  reviewer: 'read,bash,write,grep,find,ls,ask_orchestrator',
-  architect: 'read,bash,write,grep,find,ls,ask_orchestrator',
+  reviewer: 'read,bash,write,grep,find,ls,ask_orchestrator,call_sonic',
+  architect: 'read,bash,write,grep,find,ls,ask_orchestrator,call_sonic',
 });
 export type OwnedErrorCode =
   | 'invalid_contract'
@@ -101,6 +101,8 @@ export interface SlotContract {
   effort: string;
   allowed_write_paths: string[];
   helpers?: PiHelperBindings;
+  parent_slot?: string;
+  read_only?: boolean;
   herdr_integration: { path: string; version: number };
 }
 export interface ContractContext {
@@ -188,6 +190,8 @@ export function validateSlotContract(raw: unknown, context: ContractContext): Sl
       'effort',
       'allowed_write_paths',
       'helpers',
+      'parent_slot',
+      'read_only',
       'herdr_integration',
     ],
     'contract'
@@ -213,6 +217,16 @@ export function validateSlotContract(raw: unknown, context: ContractContext): Sl
     !((role === 'sonic' && /^sonic-([1-9]|10)$/.test(slot)) || (role === 'reviewer' && /^review-[1-3]$/.test(slot)))
   )
     refuse('invalid_contract', 'slot');
+  if (raw.parent_slot !== undefined) {
+    if (
+      slot === 'primary' ||
+      typeof raw.parent_slot !== 'string' ||
+      !(raw.parent_slot === 'primary' || /^review-[1-3]$/.test(raw.parent_slot))
+    )
+      refuse('invalid_contract', 'parent_slot');
+  }
+  if (raw.read_only !== undefined && (typeof raw.read_only !== 'boolean' || role !== 'sonic' || slot === 'primary'))
+    refuse('invalid_contract', 'read_only');
   const paths = slotPaths(directory, slot);
   if (
     raw.brief_path !== paths.brief ||
@@ -290,7 +304,8 @@ export function validateSlotContract(raw: unknown, context: ContractContext): Sl
   )
     refuse('herdr_pi_integration_missing', 'herdr integration install pi');
   // Clone so the caller cannot change a validated input through an alias.
-  return JSON.parse(JSON.stringify(raw)) as SlotContract;
+  // SAFETY: every SlotContract field was validated above; the clone breaks caller aliases.
+  return structuredClone(raw) as unknown as SlotContract;
 }
 export function readSlotContract(file: string, context: ContractContext): SlotContract {
   const text = readOwnedText(file, CONTRACT_MAX_BYTES, context.jobDirectory);
