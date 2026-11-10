@@ -322,7 +322,9 @@ export function modelHttpRequest(
   api: ModelApi,
   request: Pick<ModelRequest, 'feature' | 'system' | 'prompt' | 'thinking' | 'maxOutputTokens'>,
   env: NodeJS.ProcessEnv = process.env
-): { url: string; headers: Record<string, string>; body: string; model: string } | { error: string } {
+):
+  | { url: string; headers: Record<string, string>; body: string; model: string; accountSelection?: string }
+  | { error: string; accountSelection?: string; url?: string; model?: string } {
   const base = (api.base.trim() || DEFAULT_API_BASE).replace(/\/+$/, '');
   const url = /\/chat\/completions$/.test(base) ? base : `${base}/chat/completions`;
   let origin: string;
@@ -339,23 +341,32 @@ export function modelHttpRequest(
     env.CODEX_HUD_BRIEF_MODEL?.trim() || api.model.trim() || api.models?.[tier]?.trim() || DEFAULT_API_MODELS[tier];
   // General provider keys are bound to exact HTTPS origins, never a lookalike or custom port.
   let key = api.sourceCredential?.trim() || '';
+  let keySource = key ? 'explicit-source' : 'accountless';
   if (
     api.sourceCredential === undefined &&
     (origin === 'https://api.openai.com' || origin === 'https://api.mistral.ai')
   ) {
     try {
-      key = env[origin === 'https://api.mistral.ai' ? 'MISTRAL_API_KEY' : 'OPENAI_API_KEY']?.trim() || '';
+      const name = origin === 'https://api.mistral.ai' ? 'MISTRAL_API_KEY' : 'OPENAI_API_KEY';
+      key = env[name]?.trim() || '';
+      if (key) keySource = `${name} from environment`;
       if (!key) {
         const creds = readHudCredentials(env);
         key = (origin === 'https://api.mistral.ai' ? creds.mistralApiKey : creds.openaiApiKey)?.trim() || '';
+        if (key) keySource = `${name} from credentials.env`;
       }
     } catch {
       return { error: 'api: credential file must be a regular file with mode 0600' };
     }
   }
+  const selection = request.feature === 'job_card' ? { accountSelection: `${origin} · ${keySource}` } : {};
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (!key && api.sourceCredential === undefined)
-    return { error: 'api: off (missing provider key in environment or $HUD_HOME/credentials.env)' };
+    return {
+      error: 'api: off (missing provider key in environment or $HUD_HOME/credentials.env)',
+      ...selection,
+      ...(request.feature === 'job_card' ? { url, model } : {}),
+    };
   if (key) headers.authorization = `Bearer ${key}`;
   const configuredEffort = apiEffort(api, tier);
   const effort = configuredEffort === 'off' ? undefined : configuredEffort;
@@ -372,7 +383,7 @@ export function modelHttpRequest(
       { role: 'user', content: request.prompt },
     ],
   });
-  return { url, headers, body, model };
+  return { url, headers, body, model, ...selection };
 }
 
 /** The reply text of a chat completion; some servers send content as parts. */
@@ -804,15 +815,15 @@ export class SmallModel {
     const command = this.backend === 'agy' ? modelCommand('agy', empty, env) : undefined;
     return {
       backend: this.backend,
-      endpoint: http && !('error' in http) ? http.url : '',
-      model: http && !('error' in http) ? http.model : command?.args[command.args.indexOf('--model') + 1],
+      endpoint: http?.url ?? '',
+      model: http?.model ?? command?.args[command.args.indexOf('--model') + 1],
       reasoning: this.backend === 'api' && apiEffort(this.api, apiModelTier(feature)) !== 'off',
       ...(this.backend === 'api' && apiEffort(this.api, apiModelTier(feature)) !== 'off'
         ? { effort: apiEffort(this.api, apiModelTier(feature)) }
         : {}),
     };
   }
-  private recipient(route: MaterialRoute): ResolvedRecipient | null {
+  private recipient(route: MaterialRoute, jobCard = false): ResolvedRecipient | null {
     const resolve = () => {
       try {
         return this.options.resolveRecipient!(route);
@@ -820,9 +831,13 @@ export class SmallModel {
         invalidateJobPaths();
       }
     };
+    const selected =
+      jobCard && !this.options.account && !this.options.resolveRecipient && route.backend === 'api'
+        ? modelHttpRequest(this.api, { feature: 'job_card', system: '', prompt: '' }, this.options.env ?? process.env)
+        : undefined;
     const resolved = this.options.resolveRecipient
       ? bindResolvedRecipient(route, resolve())
-      : resolveRecipient(route, this.options.account, this.options.trustedProfile);
+      : resolveRecipient(route, this.options.account ?? selected?.accountSelection, this.options.trustedProfile);
     if (route.backend === 'agy') return this.cliRecipient.bind(resolved, this.options.env ?? process.env);
     if (route.backend === 'api' && resolved && !this.options.resolveRecipient) {
       const http = modelHttpRequest(
@@ -830,8 +845,8 @@ export class SmallModel {
         { feature: 'brief', system: '', prompt: '' },
         this.options.env ?? process.env
       );
-      if ('error' in http) return null;
-      const credential = http.headers.authorization;
+      if ('error' in http && !selected?.accountSelection?.endsWith('accountless')) return null;
+      const credential = 'error' in http ? undefined : http.headers.authorization;
       if (this.apiCredentials.has(resolved.recipientId)) {
         if (this.apiCredentials.get(resolved.recipientId) !== credential) return null;
       } else this.apiCredentials.set(resolved.recipientId, credential);
@@ -1024,7 +1039,7 @@ export class SmallModel {
         ? resolveRecipient(route, 'explicit-synthetic-probe')
         : job.legacy && !this.hasExplicitRecipient()
           ? this.legacyBridge.recipient(route)
-          : this.recipient(route);
+          : this.recipient(route, job.request.feature === 'job_card');
       if (!job.envelope || !job.authority) return false;
       const validate = () => revalidateModelMaterials(job.envelope!, job.authority!, recipient);
       if (dispatch && jobEnvelope(job.envelope) && job.dispatchBudget) {
@@ -1151,6 +1166,28 @@ export class SmallModel {
     );
   }
 
+  /** Exact job-card recipient; collection/settings only, never a paint-time probe. */
+  jobCardRecipient(): ResolvedRecipient | null {
+    if (this.backend === 'off') return null;
+    try {
+      return this.recipient(this.route('job_card'), true);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Safe connection description composed with Settings, never credential bytes or IDs. */
+  jobCardRecipientLabel(): string | null {
+    const recipient = this.jobCardRecipient();
+    if (!recipient) return null;
+    const selected = modelHttpRequest(
+      this.api,
+      { feature: 'job_card', system: '', prompt: '' },
+      this.options.env ?? process.env
+    );
+    return selected.accountSelection ? `${selected.accountSelection} · ${recipient.model}` : recipient.model;
+  }
+
   /** Queue a request. It starts at once when nothing else is in flight. */
   submit(request: JobModelRequest): JobModelHandle;
   submit(request: ModelRequest): ModelHandle;
@@ -1179,7 +1216,7 @@ export class SmallModel {
       return pending();
     try {
       return withJobBudget(budget, () => {
-        const recipient = this.recipient(this.route('job_card'));
+        const recipient = this.recipient(this.route('job_card'), true);
         const decision = buildMaterials({
           kind: 'job',
           purpose: plan.purpose,
@@ -1310,7 +1347,7 @@ export class SmallModel {
     let authority: ModelAuthority | undefined = jobPlan?.authority ?? plan?.authority ?? this.options.materials;
     let recipient: ResolvedRecipient | null = null;
     try {
-      if (backend !== 'off') recipient = this.recipient(route);
+      if (backend !== 'off') recipient = this.recipient(route, request.feature === 'job_card');
     } catch {
       /* Unknown target denies. */
     }

@@ -6071,7 +6071,7 @@
         "Child role counts clearly names footer statistics and never toggles child lines or summaries": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
         "the virtual Cards preset is derived, edits draft content only and custom selection is a no-op": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
         "all preferences reset preserves model configuration and assets, never enabling privacy permissions": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
-        "every model feature sits in the LLM group, and the calls made today show under the list": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: add explicit lite/low/medium effort rows without dropping model permissions or assertions.",
+        "every model feature sits in the LLM group, and the calls made today show under the list": "R5UX-KEYS per-tier effort rows retained. R5UX-P3B q3: concept §15 2026-11-09 Agent cards show work progress (option B) and plan P3b: add only the explicit jobMaterialConsent action to the LLM inventory; no preference permission or other assertion changes.",
         "periodic briefs, main recap, progress generation and card display toggle independently": "R6A-A0 (orchestrator q7): A0 removes the secret setting/legacy key hint, changes the neutral settings path and the API default hint. Other toggle/card/Work settings are untouched.",
         "Backend selected says which file and keys hold the connection, never the key itself": "R6A-A0 (orchestrator q7): A0 removes the secret setting/legacy key hint, changes the neutral settings path and the API default hint. Other toggle/card/Work settings are untouched."
       },
@@ -6151,7 +6151,7 @@
         "every model feature sits in the LLM group, and the calls made today show under the list": [
           {
             "main": "52c38dcd12567d44ad4ca9ba7ab9767b2d650ee42951e47ee37cceddc72e63bb",
-            "branch": "8c3cbaa1637fe1790e195b5a45882583fc98e1d7b7c9e69b768df4969f60c339"
+            "branch": "757a802b8f2b35f9aa82ab527b218c4c0100e51ee248f70200a13c413c2f8471"
           }
         ],
         "periodic briefs, main recap, progress generation and card display toggle independently": [

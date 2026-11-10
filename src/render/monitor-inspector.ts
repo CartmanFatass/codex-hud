@@ -613,7 +613,9 @@ export function inspectorRows(
   }
   if (state.preview === 'agent') {
     const worker = input.workboard?.workers.find((worker) => worker.nodeId === state.tree.selectedId);
-    const work = worker?.work ? workInspectorRows(worker, state, width, now) : [];
+    const work = worker?.work
+      ? workInspectorRows(worker, state, width, now, true, input.jobProgress?.get(worker.id))
+      : [];
     if (delegation)
       return [...work, ...delegationInspectorRows(delegation, state.tree.selectedId, width, input, state, now)];
     const node = findNode(input.tree.nodes, state.tree.selectedId);

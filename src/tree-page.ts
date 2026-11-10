@@ -10,6 +10,7 @@ import { JobObservationCollector, type JobObserverOptions, type JobReadSlice } f
 import type { JobSnapshot } from './collectors/job-display-types.js';
 import { TaskObservationCollector } from './collectors/task-observations.js';
 import { buildWorkboard } from './collectors/workboard.js';
+import { jobInspectorTargets } from './render/work-visibility.js';
 import type { TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-types.js';
 import { composeJobTree, type JobTreeResult } from './collectors/job-tree.js';
 import { NativeCallCollector } from './collectors/native-calls.js';
@@ -102,6 +103,9 @@ import { fileSignature } from './utils/file-signature.js';
 import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
 import { SmallModel } from './collectors/small-model.js';
+import { JobProgress } from './collectors/job-progress.js';
+import { JobMaterialAuthority, jobReadBudget, type JobReadBudget } from './core/materials/job.js';
+import { DerivedMaterialStore } from './core/materials/derived.js';
 import { ModelProbe } from './collectors/model-probe.js';
 import { hudProblems, diagnosticLines } from './render/hud-diagnostics.js';
 import { ActivityJournal } from './collectors/activity-journal.js';
@@ -182,6 +186,8 @@ export class PanelJobPipeline {
   private snapshot: JobSnapshot | null = null;
   private generation = 0;
   private closed = false;
+  /** Collection-only bridge; presentation never invokes it. Consumes this slice's remainder. */
+  sentenceCollection?: (budget: JobReadBudget) => void;
   constructor(
     readonly home: string,
     private root: string | null,
@@ -260,9 +266,18 @@ export class PanelJobPipeline {
     });
     this.snapshot = snapshot;
     this.taskSnapshot = tasks;
+    const materialBudget: JobReadBudget = {
+      ...jobReadBudget(),
+      deadline: slice?.deadline,
+      files: snapshot.coverage.files + tasks.cost.files,
+      bytes: snapshot.coverage.bytes + tasks.cost.bytes,
+      entries: snapshot.coverage.entries + tasks.cost.entries,
+      probes: tasks.cost.probes,
+    };
+    this.sentenceCollection?.(materialBudget);
     charge?.(
-      snapshot.coverage.bytes + tasks.cost.bytes,
-      snapshot.coverage.entries + snapshot.coverage.files + tasks.cost.entries + tasks.cost.files + tasks.cost.probes,
+      materialBudget.bytes,
+      (materialBudget.entries ?? 0) + materialBudget.files + (materialBudget.probes ?? 0),
       performance.now() - start
     );
     return true;
@@ -657,6 +672,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let exportPreview: DiagnosticExportPreview | undefined;
   let telemetry: ModelTelemetrySummary | undefined;
   let settingsPage: SettingsPageState | null = null;
+  let displayedJobRecipientId: string | null = null;
   let settingsFrame: SettingsFrame | undefined;
   let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
   let confirmationFrame: SettingsConfirmationFrame | undefined;
@@ -762,7 +778,54 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const briefer = new Briefer(() => render(), { model, store: recaps, log: agentLog });
   // Visible summary subjects request public progress independently of the periodic brief.
   const progress = new ProgressSummarizer(model, agentLog, { onChange: () => render() });
+  const openJobProgress = () => {
+    try {
+      return new JobProgress(
+        model,
+        new JobMaterialAuthority(nativeCalls.home),
+        new DerivedMaterialStore(path.join(getHudDisplayHome(), 'model-cache', 'derived')),
+        () => render()
+      );
+    } catch {
+      return null;
+    }
+  };
+  let jobProgress = openJobProgress();
+  const composeJobConsent = (page: SettingsPageState) => {
+    displayedJobRecipientId = model.jobCardRecipient()?.recipientId ?? null;
+    page.jobConsent = jobProgress?.consentState() ?? 'unavailable';
+    page.jobRecipient = model.jobCardRecipientLabel() ?? undefined;
+  };
+  let sentenceTargets: ReadonlySet<string> = new Set();
+  let sentenceRetainTargets: ReadonlySet<string> = new Set();
+  jobPipeline.sentenceCollection = (budget) => {
+    jobProgress ??= openJobProgress();
+    jobProgress?.update({
+      board: jobPipeline.workboard(tree, panelDelegation),
+      targets: sentenceTargets,
+      retainTargets: sentenceRetainTargets,
+      on:
+        settings.briefing !== 'off' &&
+        settings.agentProgress &&
+        !settings.briefingPaused &&
+        state.cardVisibility?.cardSummary !== false &&
+        !settingsPage &&
+        !state.help &&
+        !activityHub &&
+        !observability,
+      language: resolveLanguage(settings.language),
+      now: Date.now(),
+      budget,
+    });
+  };
   const updateProgress = () => {
+    if (
+      settings.briefing === 'off' ||
+      settings.briefingPaused ||
+      !settings.agentProgress ||
+      state.cardVisibility?.cardSummary === false
+    )
+      jobProgress?.stop();
     const now = Date.now();
     const language = resolveLanguage(settings.language);
     progress.update({
@@ -1085,6 +1148,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         frame = renderMonitor({
           tree,
           workboard: jobPipeline.workboard(tree, panelDelegation),
+          jobProgress: jobProgress?.state(),
           state,
           git,
           worktrees,
@@ -1130,6 +1194,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         frameRoot = tree.rootId;
         frameEpoch = collectionEpoch;
         state = frame.state;
+        sentenceTargets = frame.workboard?.sentenceTargets ?? new Set();
+        sentenceRetainTargets = jobInspectorTargets(jobPipeline.workboard(tree, panelDelegation), state);
         lines = frame.lines;
       }
       return lines;
@@ -1453,6 +1519,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         // Cancel old-root writers before loading the next root's model log. A failed
         // subsequent tree read must never journal the previous session's summaries.
         progress.stop();
+        jobProgress?.stop();
         jobs.stop();
         briefer.stop();
         agentLog.attach(rootId);
@@ -1682,6 +1749,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     briefer.stop();
     jobs.stop();
     progress.stop();
+    jobProgress?.dispose();
     model.cancelAll();
     probe.cancel();
     agentLog.flush();
@@ -1766,11 +1834,13 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     try {
       const previousPrefix = settings.prefixKey;
       settings = saveSettings(page.draft);
+      jobProgress?.stop();
       settingsError = '';
       error = null;
       applyDisplaySettings(settings);
       setLanguage(resolveLanguage(settings.language));
       configureBriefer();
+      composeJobConsent(page);
       jobs.apply(tree, switches(), resolveLanguage(settings.language));
       if (!jobsOn()) jobs.stop();
       armCollect();
@@ -2024,7 +2094,30 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const result = handleSettingsInput(settingsPage, input, settingsFrame);
         settingsPage = result.state;
         probe.invalidate(settingsPage.draft);
-        if (result.action === 'back') requestSettingsLeave();
+        if (result.action === 'job-consent') {
+          try {
+            if (settingsDirty(settingsPage))
+              settingsPage.message = t('Save connection settings before granting job content');
+            else {
+              if (!jobProgress) {
+                fs.mkdirSync(nativeCalls.home, { recursive: true, mode: 0o700 });
+                jobProgress = openJobProgress();
+              }
+              const written = jobProgress?.consent(
+                settingsPage.jobConsent === 'granted' ? 'deny' : 'allow',
+                Date.now(),
+                displayedJobRecipientId
+              );
+              if (!written)
+                settingsPage.message = t(
+                  'Job recipient changed or unavailable; inspect the connection before granting'
+                );
+              composeJobConsent(settingsPage);
+            }
+          } catch {
+            settingsPage.message = t('Could not save job consent');
+          }
+        } else if (result.action === 'back') requestSettingsLeave();
         else if (result.action === 'reset') {
           const group = SETTING_ROWS[settingsPage.selected].group;
           settingsPage = {
@@ -2130,6 +2223,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           offset: 0,
           message: '',
         };
+        composeJobConsent(settingsPage);
       }
       if (result.action?.type === 'observability') {
         sampleTelemetry();

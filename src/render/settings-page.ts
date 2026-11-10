@@ -24,9 +24,9 @@ const PROBE_FAILURES: Record<string, string> = {
   'hourly-cap': 'Call cap reached',
   'runtime-unavailable': 'Budget store unavailable',
 };
-export type SettingKey = keyof HudSettings;
+export type SettingKey = keyof HudSettings | 'jobMaterialConsent';
 export type SettingGroup = 'Display' | 'Panel' | 'Agents' | 'Cards' | 'LLM' | 'Status bar' | 'Input';
-export type SettingsAction = 'back' | 'save' | 'reset' | 'reset-all' | 'test-api' | 'diagnostics';
+export type SettingsAction = 'back' | 'save' | 'reset' | 'reset-all' | 'test-api' | 'diagnostics' | 'job-consent';
 
 export interface SettingRow {
   /** A real field, or a virtual row whose get/set must read/write only real fields. */
@@ -323,6 +323,16 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Sends your prompts and public replies for the main recap',
   },
   {
+    key: 'jobMaterialConsent',
+    group: 'LLM',
+    label: 'Job content consent',
+    short: 'Job consent',
+    values: ['denied', 'granted'],
+    help: 'Sends facade job content only with consent; Enter grants/revokes the applied recipient',
+    get: () => 'denied',
+    set: () => ({}),
+  },
+  {
     key: 'agentProgress',
     group: 'LLM',
     label: 'Card progress',
@@ -466,7 +476,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
 
 /** A row's value in `settings`: the setting's own, or for a row over several, what they make together. */
 export function rowValue(row: SettingRow, settings: HudSettings): SettingValue {
-  return row.get ? row.get(settings) : (settings[row.key] as SettingValue);
+  return row.get ? row.get(settings) : (settings[row.key as keyof HudSettings] as SettingValue);
 }
 
 /** `settings` with the row set to `value`: the settings it stands for. */
@@ -496,6 +506,9 @@ export interface SettingsPageState {
   original?: HudSettings;
   /** The roles the session's subtasks have, the most used first: what Key roles offers. */
   roles?: readonly string[];
+  /** Composed outside paint using the applied connection, never serialized with preferences. */
+  jobConsent?: 'granted' | 'denied' | 'unavailable';
+  jobRecipient?: string;
 }
 
 /** The current section for routing group reset; accepts either a state or a row. */
@@ -603,7 +616,11 @@ export interface SettingsFrame {
   headerY: number;
   /** Main navigation hit targets, routed by the caller, not settings input. */
   navigationControls: MonitorControl[];
-  actions: Array<{ action: Exclude<SettingsAction, 'test-api' | 'diagnostics'>; x: number; width: number }>;
+  actions: Array<{
+    action: Exclude<SettingsAction, 'test-api' | 'diagnostics' | 'job-consent'>;
+    x: number;
+    width: number;
+  }>;
   probeAction?: { y: number; width: number };
 }
 
@@ -945,7 +962,7 @@ export function renderSettingsPage(
     const row = SETTING_ROWS[line.index];
     const drawn = rowLine(
       row,
-      rowValue(row, state.draft),
+      row.key === 'jobMaterialConsent' ? (state.jobConsent ?? 'unavailable') : rowValue(row, state.draft),
       line.index === selected,
       rowValue(row, original) !== rowValue(row, state.draft),
       settingInactiveReason(row, state.draft) !== null,
@@ -967,7 +984,13 @@ export function renderSettingsPage(
   lines.push(...reasonLines.map((line) => theme.warning(line)));
   if (footerCount > 0) {
     const row = SETTING_ROWS[selected];
-    lines.push(state.message ? theme.accent(state.message) : colors.dim(t(row.help)));
+    lines.push(
+      state.message
+        ? theme.accent(state.message)
+        : colors.dim(
+            row.key === 'jobMaterialConsent' && state.jobRecipient ? monitorText(state.jobRecipient) : t(row.help)
+          )
+    );
   }
   if (footerCount > 1) {
     // Save, Reset and Back are the buttons on the top row; only the moves are left to say.
@@ -1069,6 +1092,7 @@ export function handleSettingsInput(
   if (next.selected !== moved) next.message = '';
   if (key === 'enter' || key === 'left' || key === 'right') {
     const row = SETTING_ROWS[next.selected];
+    if (row.key === 'jobMaterialConsent') return { state: next, action: 'job-consent' };
     const values = rowValues(row, next);
     const current = rowValue(row, next.draft);
     let index = values.indexOf(current);

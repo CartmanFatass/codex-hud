@@ -259,6 +259,7 @@ test('every model feature sits in the LLM group, and the calls made today show u
     'briefingApiMediumEffort',
     'briefAgents',
     'briefMain',
+    'jobMaterialConsent',
     'agentProgress',
     'briefingMs',
     'modelCallsPerHour',

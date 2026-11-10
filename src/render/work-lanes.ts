@@ -42,23 +42,45 @@ export function laneRows(
       lane.identity.kind === 'native' && (state.cardVisibility?.cardLabel === false || state.labelAsName === false)
         ? input.tree.nodes.find((n) => n.id === worker.nodeId)?.name
         : undefined;
-    const card = projectWorkCard(nativeName ? { ...worker, task: nativeName } : worker, now, state.cardStallMinutes);
+    const note = state.cardVisibility?.cardSummary !== false ? input.jobProgress?.get(worker.id)?.note : undefined;
+    const card = projectWorkCard(
+      nativeName ? { ...worker, task: nativeName } : worker,
+      now,
+      state.cardStallMinutes,
+      note
+    );
     // Only an existing native subject can reuse its existing native grant; job/task text is never material.
     const nativeNode = worker.nodeId
       ? input.tree.nodes.find((n) => n.id === worker.nodeId && !facadeOnly(n))
       : undefined;
     const logs = nativeNode ? input.agentLog?.get(nativeNode.id) : undefined;
+    const jobStart = worker.startedAt;
+    const nativeStart = nativeNode?.turnStartedAt?.getTime();
     const raw =
-      state.cardVisibility?.cardSummary !== false
-        ? [...(logs ?? [])].reverse().find((e) => ['note', 'digest', 'cause'].includes(e.kind))?.text
+      !note && state.cardVisibility?.cardSummary !== false
+        ? [...(logs ?? [])]
+            .reverse()
+            .find((e) =>
+              lane.identity.kind === 'native'
+                ? ['note', 'digest', 'cause'].includes(e.kind)
+                : lane.identity.kind === 'invocation' &&
+                  e.kind === 'note' &&
+                  jobStart !== null &&
+                  Number.isFinite(jobStart) &&
+                  nativeStart !== undefined &&
+                  Number.isFinite(nativeStart) &&
+                  (e.coverageAt ?? e.at) >= Math.max(jobStart, nativeStart)
+            )?.text
         : undefined;
-    const sentence = raw ? cardSentence(raw) : '';
+    const sentence = note ? note.line : raw ? cardSentence(raw) : '';
+    const full = note?.line ?? raw;
     const expanded = state.boardExpanded?.has(key) === true;
     let rendered: readonly string[] | undefined;
-    const draw = () => (rendered ??= renderWorkCard(card, state, column, sentence, expanded, false, raw));
-    const count = workCardHeight(card, sentence, expanded, raw, column);
+    const draw = () => (rendered ??= renderWorkCard(card, state, column, sentence, expanded, false, full));
+    const count = workCardHeight(card, sentence, expanded, full, column);
     return Array.from({ length: count }, (_, i) => ({
       text: '',
+      sentenceWorkers: [worker.id],
       item: key,
       key,
       paint: () => {
@@ -97,6 +119,7 @@ export function laneRows(
       text: '',
       item: a?.item,
       key: a?.key,
+      sentenceWorkers: [...(a?.sentenceWorkers ?? []), ...(b?.sentenceWorkers ?? [])],
       paint: () =>
         fit(a?.paint?.() ?? a?.text ?? '', column) +
         theme.frame(` ${mark('│', '|')} `) +
