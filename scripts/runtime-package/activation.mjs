@@ -18,6 +18,7 @@ import {
 } from './safety.mjs';
 import { COMMANDS, verifyBundle } from './manifest.mjs';
 import { claudeSteps } from './claude.mjs';
+import { piSteps } from './pi.mjs';
 import { inspectPrefix, selectorValue, selectorBytes } from './installer.mjs';
 import { refuseActivationLock, recoverActivationLocks, withActivationLocks } from './activation-lock.mjs';
 
@@ -273,7 +274,9 @@ export function planActivation(options, ignoreLock = false) {
   try {
     releaseVersion =
       releaseBundle.manifest.releaseVersion ?? JSON.parse(releaseBundle.directory.read('package.json').data).version;
+    if (options.claude && options.pi) throw new Error('one_client_integration_per_preview');
     if (options.claude) integration = claudeSteps(releaseBundle, { ...options, prefix, hudHome });
+    if (options.pi) integration = piSteps(releaseBundle, { ...options, prefix, hudHome });
   } finally {
     releaseBundle.directory.close();
   }
@@ -444,7 +447,11 @@ export function planActivation(options, ignoreLock = false) {
     runtimeDigest: release,
     releaseVersion,
     ...(integration
-      ? { integrationId: integration.integrationId, plugin: integration.plugin, skillHash: integration.skillHash }
+      ? {
+          integrationId: integration.integrationId,
+          ...(integration.plugin ? { plugin: integration.plugin } : { piPackage: integration.piPackage }),
+          skillHash: integration.skillHash,
+        }
       : {}),
     history,
     prefix,

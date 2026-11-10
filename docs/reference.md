@@ -11,8 +11,8 @@ The details behind the [README](../README.md): the panel part by part, every key
 
 The opt-in Linux/WSL runtime requires Node **22.13+ within 22.x, or 24.x**. It does not install a harness,
 herdr, a browser or provider keys. Installation management is separate from `hud setup`; none of these commands
-calls a model, starts a job or opens a panel. The opt-in Claude package is described below; pi activation remains
-separately delivered. Do not run the historical root `install.sh` for this workflow.
+calls a model, starts a job or opens a panel. The opt-in Claude plugin and pi package are described below.
+Do not run the historical root `install.sh` for this workflow.
 
 A release contains clean-built `dist/`, `packages/hud-mcp/{bin,dist}`, the canonical
 `integrations/skills/hud-delegate/`, ordinary-named integration templates, notices and the bootstrap scripts.
@@ -105,6 +105,38 @@ activation. Missing inventory, unsupported enabled fields, unknown keys, details
 wrapper block an automatic switch. Preview prints the difference; no feature parity exception is implicit.
 All original settings/wrapper bytes stay in the existing statusline backup. Restore in reverse order: statusline
 first, then alias, then native plugin registration, then generated integration. Stale edits refuse.
+
+### Pi package activation (R6A-A5)
+
+The ordinary `hud` package is materialized by
+`node RELEASE/pi-package.mjs preview --prefix ABS --release DIGEST --node ABS` (then the same options with
+`apply --plan ID`). It pins the immutable release/digest and HUD home, and explicitly loads one entry and the
+hash-verified canonical delegation skill. It bundles no pi SDK and does not select the historical full-footer,
+managed delegation extension or worker-only entry.
+
+`/hud on|off|toggle|status|reconnect|help` runs locally through pi's command API, never as a model message.
+Six role-tool proxies use the private evidence-bearing MCP channel, not `mcp.json` or a duplicate generic MCP
+registration. Session changes synchronously fence the old epoch before cleanup. Canceled transitions remain
+unbound until explicit reconnect; shutdown closes only the old channel and recorded display generation, not jobs.
+
+The package contributes only `setStatus("hud-delegation", text)`, **never `setFooter`**. p10k remains the sole footer
+owner. Events and one 5-second single-flight TUI timer read the exact current root's bounded role-summary cache;
+no scans/process launches/herdr/network occur on this path. Expired/unavailable cache clears idle counts. The
+panel is the only producer, so panel-off unavailability is deliberate. Print/RPC modes have no segment, timer or
+panel operations, even if RPC reports hasUI; the role bridge remains available.
+
+Panel auto-open requires corroborated native session/header, full ancestry, foreground TTY and matching herdr
+origin/instance proof. Worker, nested or unknown contexts cannot open a side panel. Inherited pane variables alone
+are not proof; no tmux fallback is added. `/hud off` is session-local, while `panelAutoOpen` in HUD-owned
+`integration-config.json` controls the persistent default. No preference is written by loading the package.
+
+Owner row 7 is a **separate** `row-7-preview`/`row-7-apply --plan ID` with explicit `--settings ABS --package ABS`.
+Row 10 is separately previewed with `row-10-preview` and `--panel-auto-open true|false`. Both reuse A1 backups,
+stale-edit refusal and exact restoration; symlinked settings refuse instead of writing a private target. No MCP
+config is added and activation never reloads the client. Reverse newest receipts first with
+`restore-preview|restore --receipt ABS [--plan ID]`. See the [pi owner runbook](../integrations/pi/package/README.md)
+for complete preview options, write-set rehearsal and isolated real-CLI probes. The orchestrator reports p10k
+already consumes extension statuses, so row 8 requires no patch unless owner-machine observation contradicts it.
 
 ### Owned pi worker resources (PR3, before facade cutover)
 

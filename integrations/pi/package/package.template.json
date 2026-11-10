@@ -1,0 +1,17 @@
+{
+  "name": "hud",
+  "version": "0.0.0",
+  "description": "Universal HUD: local panel command, role tools and passive status segment",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions/hud.mjs"],
+    "skills": ["./skills/hud-delegate/SKILL.md"]
+  }
+}
