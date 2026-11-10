@@ -286,11 +286,21 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
     - Follow-ups: qualify an ordinary `/fork` for the panel; an A3 lifecycle-versus-manual close reason (covers
       reload); check the panel-control test's timeouts (it hung once under swap pressure, and passes alone).
 
+  - **R5UX-P3B** (`47e4406` / `ab957f6`; reviews tmp R5UX-P3B review-1 changes-required with two reproduced
+    defects, fixed; review-2 accept): option-B job sentences on Work cards, the 110-column peek and the Inspector,
+    behind a default-off consent action that writes the job-material policy for the displayed recipient.
+    - Collection is scheduled inside the remaining collector budget. Three extraction slots; the Inspector keeps its
+      sentence without making new requests; model attention is display only.
+    - Focused merged check on `ab957f6`: builds; 209/209 focused; visual 331/331; WP0 1176/1176; fixtures, format and
+      diff clean.
+    - Watch item for R7: collection p95 rises about 1 ms when quiet, and from 12 to 16 ms when scrolling 100 jobs.
+      Render is unchanged (an unchanged card is about 0.3 ms).
+
   2026-11-10 testing change (owner): tests are designed at project scope; see `docs/delegation.md` and
   `docs/reviews/2026-11-10-test-volume-audit.md`. TEST-SLIM (approved) comes before R6b. Stage 0 builds the project
   test map (`docs/testing.md`), the inventory and the consolidation proposal.
 
-  Running: R5UX-P3B (quiet benchmark window, then review); PIROLE-PR4 (review round 1 fixes; q5 ruled that a
+  Running: PIROLE-PR4 (review round 1 fixes; q5 ruled that a
   retained release is verified against its own manifest, not the current `REQUIRED` list, which fixes the A1 seam
   that A4, A5 and PR4 each tripped); TEST-SLIM-0. Next: PR5, A8, TEST-SLIM stages, then R6b and R7. P2c stays
   deferred and folds into TEST-SLIM.
