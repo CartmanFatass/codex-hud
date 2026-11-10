@@ -480,6 +480,7 @@ if (!process.env.R6A_ACTIVATION_MODULE)
         'installer.mjs',
         'activation-lock.mjs',
         'claude.mjs',
+        'pi.mjs',
       ])
         fs.copyFileSync(new URL(`../../scripts/runtime-package/${file}`, import.meta.url), path.join(dir, file));
       const mutant = source.replaceAll(needle, replacement);

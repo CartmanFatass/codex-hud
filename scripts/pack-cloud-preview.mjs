@@ -2,6 +2,7 @@
 /** Local inspection archive only. Never npm pack/publish/install or user configuration. */
 import assert from 'node:assert/strict';
 import { CLAUDE_TEMPLATES } from './runtime-package/claude.mjs';
+import { PI_TEMPLATES } from './runtime-package/pi.mjs';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +41,12 @@ export const REQUIRED_OUTPUTS = {
   'src/harness/pi/wake-extension.ts': 'dist/harness/pi/wake-extension.js',
   'src/managed/wake-message.ts': 'dist/managed/wake-message.js',
   'src/harness/pi/footer.ts': 'dist/harness/pi/footer.js',
+  ...Object.fromEntries(
+    ['segment', 'package-entry', 'package-native', 'package-context'].map((name) => [
+      `src/harness/pi/${name}.ts`,
+      `dist/harness/pi/${name}.js`,
+    ])
+  ),
   'src/harness/pi/delegation-bridge.ts': 'dist/harness/pi/delegation-bridge.js',
   'src/harness/pi/delegation-channel.ts': 'dist/harness/pi/delegation-channel.js',
   'src/harness/pi/delegation-context.ts': 'dist/harness/pi/delegation-context.js',
@@ -155,6 +162,7 @@ export const MCP_RUNTIME_OUTPUTS = [
 const EXTENSION_ENTRIES = ['extensions/pi/hud-footer.ts', 'extensions/pi/hud-delegate.ts'];
 export const EXTRA_FILES = [
   ...CLAUDE_TEMPLATES,
+  ...PI_TEMPLATES,
   'README.md',
   'bin/hud-statusline-preview',
   ...EXTENSION_ENTRIES,

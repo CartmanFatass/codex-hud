@@ -1,5 +1,6 @@
 import { DEPENDENCIES } from './dependencies.mjs';
 import { CLAUDE_TEMPLATES } from './claude.mjs';
+import { PI_TEMPLATES } from './pi.mjs';
 export { DEPENDENCIES } from './dependencies.mjs';
 
 // Keep in step with MCP_RUNTIME_OUTPUTS in scripts/pack-cloud-preview.mjs.
@@ -80,6 +81,8 @@ export const INSTALLER_FILES = [
   'activate-runtime.mjs',
   'claude-plugin.mjs',
   'claude-parity.mjs',
+  'pi-package.mjs',
+  'runtime-package/pi.mjs',
   'runtime-package/claude.mjs',
   'runtime-package/safety.mjs',
   'runtime-package/manifest.mjs',
@@ -124,6 +127,8 @@ export const PI_WORKER_FILES = [
 ];
 export const REQUIRED = [
   ...CLAUDE_TEMPLATES,
+  ...PI_TEMPLATES,
+  ...['segment', 'package-entry', 'package-native', 'package-context'].map((name) => `dist/harness/pi/${name}.js`),
   ...['binding', 'mcp', 'native', 'setup', 'hook'].map((name) => `dist/integrations/claude/${name}.js`),
   ...PI_WORKER_FILES,
   ...ACTIVATION_PROCESS_FILES,

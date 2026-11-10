@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "release": "MATERIALIZED_RELEASE",
+  "digest": "MATERIALIZED_DIGEST",
+  "releaseVersion": "MATERIALIZED_VERSION",
+  "node": "MATERIALIZED_NODE",
+  "hudHome": "MATERIALIZED_HUD_HOME"
+}
