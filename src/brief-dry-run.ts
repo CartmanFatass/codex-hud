@@ -7,14 +7,15 @@
 import * as fs from 'node:fs';
 import { dryRunText } from './collectors/brief-dry-run.js';
 import { runtimeSettings } from './settings-runtime.js';
-import { getCodexHome, getHudHome } from './utils/codex-path.js';
+import { getCodexHome } from './utils/codex-path.js';
+import { getHudDisplayHome } from './hud-home.js';
 
 const file = process.argv[2];
 const result = await dryRunText({
   cwd: process.env.CODEX_HUD_CWD || process.cwd(),
   settings: runtimeSettings(),
   codexHome: getCodexHome(),
-  hudHome: getHudHome(),
+  hudHome: getHudDisplayHome(),
 });
 if ('error' in result) {
   process.stderr.write(`codex-hud brief: ${result.error}\n`);

@@ -8,7 +8,7 @@
  * path, inode and thread, the file at least as long as the scan, and the
  * 4 KB before the scan's end unchanged (`print`). Anything else is read
  * again. One small JSON file per rollout, mode 0600, under
- * `$CODEX_HOME/hud/scan/`; one neither used nor written for a week goes.
+ * `$HUD_HOME/display/scan/`; one neither used nor written for a week goes.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';

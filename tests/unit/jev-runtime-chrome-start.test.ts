@@ -114,7 +114,7 @@ test('R3F runtime starts the configured Chrome headless against fake CDP', async
   mkdirSync(hudHome);
   mkdirSync(stateDir);
   mkdirSync(profile);
-  writeFileSync(join(hudHome, 'jev.env'), 'TYPESAFE_API_KEY=synthetic-r3f-chrome-key\n', { mode: 0o600 });
+  writeFileSync(join(hudHome, 'credentials.env'), 'TYPESAFE_API_KEY=synthetic-r3f-chrome-key\n', { mode: 0o600 });
 
   const port = await freePort();
   const chrome = writeChromeScript(root, argvFile, pidFile);

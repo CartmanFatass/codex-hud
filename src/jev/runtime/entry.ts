@@ -35,7 +35,10 @@ async function main(): Promise<void> {
   const parsed = Number(process.env.JEV_RUNTIME_GRACE_MS);
   const graceMs = Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_GRACE_MS;
   const stateDir = process.env.JEV_RUNTIME_STATE_DIR;
+  // Internal parent-to-child plumbing, never forwarded implicitly from the caller's environment.
   const cdpUrl = process.env.JEV_RUNTIME_CDP_URL;
+  const chrome = process.env.JEV_RUNTIME_CHROME;
+  const profile = process.env.JEV_RUNTIME_PROFILE;
   const runtime = new JevRuntime({
     hudHome,
     graceMs,
@@ -43,6 +46,8 @@ async function main(): Promise<void> {
     fake: process.env.JEV_RUNTIME_FAKE === '1',
     ...(stateDir ? { stateDir } : {}),
     ...(cdpUrl ? { cdpUrl } : {}),
+    ...(chrome ? { chrome } : {}),
+    ...(profile ? { profile } : {}),
   });
   let armed = false;
   const stop = (reason: string) => {

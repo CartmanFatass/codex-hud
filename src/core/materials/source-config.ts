@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { join, isAbsolute } from 'node:path';
 import { TextDecoder } from 'node:util';
+import { readHudCredentialName } from '../../jev/ask/config.js';
 import { modelHttpRequest, type ModelApi } from '../../collectors/small-model.js';
 import { outboundDecision, parseOutboundPolicy } from '../export.js';
 import { sessionRefKey, validateSessionRef } from '../identity.js';
@@ -85,6 +86,7 @@ export function parseSourceModelConfig(raw: unknown, sourceId: string): SourceMo
   for (const entry of raw.materials as unknown[]) {
     keys(entry, ['ref', 'origin', 'purpose', 'fields']);
     keys(entry.ref, ['harness', 'sourceId', 'sessionId', 'threadId']);
+    // SAFETY: exact ref keys were checked above; validateSessionRef and the field checks below validate every value.
     const ref = entry.ref as unknown as SessionRef;
     try {
       validateSessionRef(ref);
@@ -107,6 +109,7 @@ export function parseSourceModelConfig(raw: unknown, sourceId: string): SourceMo
     if (seen.has(key)) fail();
     seen.add(key);
   }
+  // SAFETY: the strict key, connection, digest, material and ref checks above cover the complete source schema.
   return raw as unknown as SourceModelConfig;
 }
 
@@ -128,7 +131,9 @@ export function privateIdentity(file: string, directory: boolean): string {
 function fileStamp(st: fs.Stats): string {
   return `${st.dev}:${st.ino}:${st.mode}:${st.uid}:${st.nlink}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
 }
-export function readPrivateJson(file: string): unknown {
+export type PrivateJsonValue =
+  null | boolean | number | string | PrivateJsonValue[] | { [key: string]: PrivateJsonValue };
+export function readPrivateJson(file: string): PrivateJsonValue {
   privateIdentity(file, false);
   const before = fs.lstatSync(file);
   if (before.size > 65536) fail();
@@ -151,7 +156,8 @@ export function readPrivateJson(file: string): unknown {
     )
       fail('source_changed');
     privateIdentity(file, false);
-    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, size)));
+    // SAFETY: JSON.parse without a reviver returns only JSON values; callers still validate their own domain schema.
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, size))) as PrivateJsonValue;
   } finally {
     fs.closeSync(fd);
   }
@@ -182,18 +188,34 @@ export function captureSource(
   const config = parseSourceModelConfig(readPrivateJson(join(dir, 'model.json')), sourceId);
   const modelMeaning = JSON.stringify(config);
   const c = config.connection;
-  const credential = c.backend === 'api' && c.keyEnv !== null ? env[c.keyEnv] : '';
+  const credential = c.backend === 'api' && c.keyEnv !== null ? readHudCredentialName(c.keyEnv, env, home) : '';
   if (c.backend === 'api' && c.keyEnv !== null && (typeof credential !== 'string' || !credential.trim()))
     fail('credential_unavailable');
   const api: ModelApi | null =
-    c.backend === 'api' ? { base: c.base, model: c.model, key: credential!, reasoning: c.reasoning } : null;
+    c.backend === 'api'
+      ? {
+          base: c.base,
+          model: c.model,
+          sourceCredential: c.keyEnv === null ? null : credential!,
+          efforts: c.reasoning
+            ? { lite: 'none', low: 'low', medium: 'low' }
+            : { lite: 'off', low: 'off', medium: 'off' },
+        }
+      : null;
   const http = api && modelHttpRequest(api, { feature: 'digest', system: '', prompt: '' }, {});
   const recipient =
     http && !('error' in http) && c.backend === 'api'
-      ? resolveRecipient({ backend: 'api', endpoint: http.url, model: JSON.parse(http.body).model }, c.account)
+      ? resolveRecipient({ backend: 'api', endpoint: http.url, model: http.model }, c.account)
       : null;
   if (api && !recipient) fail('recipient_unavailable');
-  const endpoint = http && !('error' in http) ? new URL(http.url).href : null;
+  let endpoint: string | null = null;
+  if (http && !('error' in http)) {
+    try {
+      endpoint = new URL(http.url).href;
+    } catch {
+      fail('recipient_unavailable');
+    }
+  }
   // Missing outbound policy is a readable plan refusal, never an implicit allow.
   let policy: OutboundPolicy | null = null;
   try {
@@ -237,7 +259,7 @@ export function captureSource(
       const next = parseSourceModelConfig(readPrivateJson(join(dir, 'model.json')), sourceId);
       if (
         JSON.stringify(next) !== modelMeaning ||
-        (c.backend === 'api' && c.keyEnv !== null && env[c.keyEnv] !== credential)
+        (c.backend === 'api' && c.keyEnv !== null && readHudCredentialName(c.keyEnv, env, home) !== credential)
       )
         throw new Error();
       const nextPolicy = parseOutboundPolicy(readPrivateJson(join(dir, 'outbound.json')));

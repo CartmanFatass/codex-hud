@@ -14,11 +14,13 @@ export class DecisionInvalid extends Error {
 export class DecisionProviderError extends Error {
   readonly code = 'decision_provider_error';
   constructor(
-    readonly providerCause: 'network' | 'http',
+    readonly providerCause: 'network' | 'http' | 'timeout',
     readonly status?: number
   ) {
     super(
-      providerCause === 'network' ? 'decision_provider_error:network' : `decision_provider_error:${status ?? 'unknown'}`
+      providerCause !== 'http'
+        ? `decision_provider_error:${providerCause}`
+        : `decision_provider_error:${status ?? 'unknown'}`
     );
     this.name = 'DecisionProviderError';
   }
@@ -200,9 +202,10 @@ export async function postJson(
   body: unknown,
   signal?: AbortSignal,
   fetcher: typeof fetch = fetch,
-  timeoutMs = DECISION_ATTEMPT_TIMEOUT_MS
+  timeoutMs = DECISION_ATTEMPT_TIMEOUT_MS,
+  maxAttempts = 3
 ): Promise<unknown> {
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const attemptSignal = signal
       ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
       : AbortSignal.timeout(timeoutMs);
@@ -216,14 +219,24 @@ export async function postJson(
       });
     } catch (error) {
       if (signal?.aborted) throw error;
-      throw new DecisionProviderError('network');
+      throw new DecisionProviderError(
+        attemptSignal.aborted && attemptSignal.reason?.name === 'TimeoutError' ? 'timeout' : 'network'
+      );
     }
-    if ((response.status === 429 || response.status === 503 || response.status === 529) && attempt < 2) {
+    if ((response.status === 429 || response.status === 503 || response.status === 529) && attempt < maxAttempts - 1) {
       await sleep(500 * 2 ** attempt, signal);
       continue;
     }
     if (!response.ok) throw new DecisionProviderError('http', response.status);
-    return response.json() as Promise<unknown>;
+    try {
+      return await response.json();
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      if (attemptSignal.aborted && attemptSignal.reason?.name === 'TimeoutError')
+        throw new DecisionProviderError('timeout');
+      // Malformed JSON and other body errors are not transport-timeout failover triggers.
+      throw error;
+    }
   }
   throw new DecisionProviderError('http', 529);
 }

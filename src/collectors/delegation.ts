@@ -4,7 +4,6 @@ import {
   validClaudeProgress,
   type PublicationDisplay,
 } from '../core/link/reader-display.js';
-import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { canonicalJson } from '../core/canonical.js';
 import { SessionPublisher } from '../core/link/publisher.js';
@@ -37,10 +36,11 @@ import type { LaunchProfile } from '../core/types/capabilities.js';
 import type { SessionRef } from '../core/types/identity.js';
 import type { CollectLease, ObservationView, ReaderCheckpoint } from '../core/types/observation.js';
 import type { DelegationViewModel } from '../core/link/view-model.js';
+import { getHudHome } from '../hud-home.js';
 
 /** Startup-only mirror of CLI privateHome; never creates the home or imports CLI/writer code. */
 function existingHudHome(env: Readonly<Record<string, string | undefined>>): string | null {
-  const requested = env.HUD_HOME ?? path.join(homedir(), '.hud');
+  const requested = getHudHome(env);
   if (!path.isAbsolute(requested) || requested.includes('\0')) return null;
   const home = requested.replace(/(?:\/\.?)+$/, '') || '/';
   try {
@@ -1470,7 +1470,9 @@ export class HudDelegationCollector {
         }
       });
       this.watcher.unref();
-    } catch {}
+    } catch {
+      // The optional watcher is unavailable; keep the current observation state.
+    }
     this.watchSources();
   }
   private watchSources(): void {
@@ -1488,7 +1490,9 @@ export class HudDelegationCollector {
         });
         watcher.unref();
         this.sourceWatchers.push(watcher);
-      } catch {}
+      } catch {
+        // Missing/unwatchable source directories do not prevent observing other sources.
+      }
   }
   /** Startup and identity-change preparation only; never called from tick. */
   async prepare(): Promise<void> {
@@ -1693,7 +1697,9 @@ export class HudDelegationCollector {
         let store: ObservationStore | null = null;
         try {
           store = await openObservationStore({ hudHome: home, sourceId, readOnly: !publishing });
-        } catch {}
+        } catch {
+          // An unavailable private store leaves this source explicitly non-writable.
+        }
         sources.set(sourceId, {
           adapter,
           root: fs.realpathSync(profile.source.root),
@@ -1708,7 +1714,9 @@ export class HudDelegationCollector {
           storeSignature: '',
           storeDirty: true,
         });
-      } catch {}
+      } catch {
+        // Invalid or unavailable profiles are excluded; never invent a replacement source.
+      }
     }
     const port = new SessionCollection(sources, options.publish === true, options.boundedWorker === true);
     const reader = await openLinkLedgerReader(path.join(home, 'ledger.sqlite'));

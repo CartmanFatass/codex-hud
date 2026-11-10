@@ -13,7 +13,13 @@ import { ModelProbe } from '../../src/collectors/model-probe.js';
 import { defaultSettings } from '../../src/settings.js';
 import { makeSourceId } from '../../src/core/identity.js';
 import { buildMaterials, fingerprint, isEnvelope } from '../../src/core/materials/index.js';
-const api = { base: 'https://synthetic.invalid/v1', model: 'synthetic-model', key: '' };
+// Historical cache and byte goldens pin the old effort; product defaults are tested independently.
+const api = {
+  base: 'https://api.mistral.ai/v1',
+  model: 'synthetic-model',
+  key: '',
+  efforts: { lite: 'off', low: 'off', medium: 'off' } as const,
+};
 const reply = (text = 'Synthetic reply') => new Response(JSON.stringify({ choices: [{ message: { content: text } }] }));
 function home(
   raw: Record<string, unknown> = { briefing: 'api', briefingApiBase: api.base, briefingApiModel: api.model }
@@ -24,16 +30,17 @@ function home(
     file,
     JSON.stringify({ type: 'session_meta', payload: { id: 'synthetic-root', source: 'cli' } }) + '\n'
   );
-  const settings = path.join(root, 'hud-settings.json');
+  const settings = path.join(root, 'universal', 'hud-settings.json');
   writePrivateFile(settings, JSON.stringify(raw));
   return {
     root,
     file,
     settings,
-    dir: path.join(root, 'hud', 'model-cache'),
+    dir: path.join(root, 'universal', 'display', 'model-cache'),
     env: {
       HOME: root,
       CODEX_HOME: root,
+      MISTRAL_API_KEY: 'synthetic-account-a',
       HUD_HOME: path.join(root, 'universal'),
       HUD_SETTINGS_PATH: undefined,
       CODEX_HUD_SETTINGS_PATH: undefined,
@@ -274,7 +281,7 @@ test('T-07-6/17 legacy old caches remain readable only in proven original scope 
 test('T-07-7 legacy recipient/credential changes and preflight cancellation do not send to a new recipient', async () => {
   const fixture = home();
   let calls = 0;
-  const env: NodeJS.ProcessEnv = { ...fixture.env, CODEX_HUD_BRIEF_API_KEY: 'synthetic-account-a' };
+  const env: NodeJS.ProcessEnv = { ...fixture.env, MISTRAL_API_KEY: 'synthetic-account-a' };
   const model = new SmallModel({
     dir: fixture.dir,
     env,
@@ -286,7 +293,7 @@ test('T-07-7 legacy recipient/credential changes and preflight cancellation do n
   model.configure({ backend: 'api', api });
   try {
     assert.ok((await model.submit(request('brief', 'first', fixture)).result).ok);
-    env.CODEX_HUD_BRIEF_API_KEY = 'synthetic-account-b';
+    env.MISTRAL_API_KEY = 'synthetic-account-b';
     assert.ok(!(await model.submit(request('brief', 'second', fixture)).result).ok);
     assert.equal(calls, 1);
     const queued = model.submit(request('brief', 'preflight', fixture));
@@ -383,7 +390,7 @@ test('T-07-6 unknown legacy provenance stays tainted and cannot be relabelled as
 test('T-07-9 explicit paused probe sends only fixed synthetic material; off sends zero calls', async () => {
   const captured: string[] = [];
   const probe = new ModelProbe({
-    env: {},
+    env: { MISTRAL_API_KEY: 'synthetic-probe' },
     fetch: (async (_url, init) => {
       captured.push(String(init?.body));
       return reply('OK');
@@ -535,7 +542,7 @@ test('T-07-6 narrow recap: unknown both-to-main ancestry and its coverage/overal
     ],
     lastUserMessageAt: new Date(at - 3000),
   };
-  const store = new RecapStore(path.join(fixture.root, 'hud', 'recaps'));
+  const store = new RecapStore(path.join(fixture.env.HUD_HOME, 'display', 'recaps'));
   const unknown = {
     sessionId: tree.rootId,
     language: 'en' as const,

@@ -7,6 +7,7 @@ export class BridgeHealthReader {
   private checkedAt = -Infinity;
   private cached: HudData['bridgeHealth'];
   private firstReadAt: number | undefined;
+  /** `home` is the HUD display root (`getHudDisplayHome()`), shared by every harness. */
   constructor(
     private readonly home: string,
     private readonly env: NodeJS.ProcessEnv = process.env
@@ -18,7 +19,7 @@ export class BridgeHealthReader {
     this.firstReadAt ??= now;
     const session = this.env.CODEX_HUD_TMUX_SESSION;
     if (!session) return undefined;
-    const dir = path.join(this.home, 'hud', 'herdr', session.replace(/[^A-Za-z0-9._-]/g, '_'));
+    const dir = path.join(this.home, 'herdr', session.replace(/[^A-Za-z0-9._-]/g, '_'));
     const reports: Array<{
       updatedAtMs: number;
       transport: { status: string; lastSuccessAtMs?: number };

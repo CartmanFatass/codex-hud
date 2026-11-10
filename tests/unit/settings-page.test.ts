@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultSettings, type HudSettings } from '../../src/settings.js';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { defaultSettings, loadSettings, saveSettings, type HudSettings } from '../../src/settings.js';
 import {
   renderSettingsPage,
   handleSettingsInput,
@@ -540,12 +543,26 @@ test('rows have unique keys and contiguous groups, with separate display and gen
   assert.equal(SETTING_ROWS[backend + 1].label, 'Pause models');
 });
 
-test('periodic briefs, main recap, progress generation and card display toggle independently', () => {
-  const original = {
-    ...defaultSettings(),
-    briefingApiKey: 'synthetic-only-key',
-    briefingApiBase: 'https://synthetic.invalid/v1',
-  };
+test('periodic briefs, main recap, progress generation and card display toggle independently', (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'hud-settings-page-a0-'));
+  const file = join(home, 'hud-settings.json');
+  const previousPath = process.env.HUD_SETTINGS_PATH;
+  process.env.HUD_SETTINGS_PATH = file;
+  t.after(() => {
+    if (previousPath === undefined) delete process.env.HUD_SETTINGS_PATH;
+    else process.env.HUD_SETTINGS_PATH = previousPath;
+    rmSync(home, { recursive: true, force: true });
+  });
+  writeFileSync(
+    file,
+    JSON.stringify({
+      ...defaultSettings(),
+      briefingApiKey: 'synthetic-only-key',
+      briefingApiBase: 'https://synthetic.invalid/v1',
+    }),
+    { mode: 0o600 }
+  );
+  const original = loadSettings();
   let state: SettingsPageState = { draft: { ...original }, original, selected: 0, offset: 0, message: '' };
   const toggle = (key: (typeof SETTING_ROWS)[number]['key']) => {
     state.selected = SETTING_ROWS.findIndex((row) => row.key === key);
@@ -569,7 +586,9 @@ test('periodic briefs, main recap, progress generation and card display toggle i
   toggle('cardSummary');
   assert.equal(state.draft.cardSummary, false);
   assert.equal(state.draft.briefMain, true);
-  assert.equal(state.draft.briefingApiKey, original.briefingApiKey);
+  assert.equal(Object.hasOwn(state.draft, 'briefingApiKey'), false);
+  saveSettings(state.draft);
+  assert.equal(Object.hasOwn(JSON.parse(readFileSync(file, 'utf8')), 'briefingApiKey'), false);
   assert.equal(state.draft.briefingApiBase, original.briefingApiBase);
   assert.deepEqual(state.original, original, 'original and credential fields survive draft edits');
   const frame = renderSettingsPage(state, 90, FULL_HEIGHT);
@@ -1021,12 +1040,10 @@ const syntheticConfigured = (): HudSettings => ({
   cardSubagentScope: 'all',
   briefing: 'api',
   briefingApiBase: 'https://synthetic.invalid/v1',
-  briefingApiKey: 'synthetic-secret',
   briefingApiModel: 'synthetic-model',
   briefingApiLiteModel: 'synthetic-lite',
   briefingApiLowModel: 'synthetic-low',
   briefingApiMediumModel: 'synthetic-medium',
-  briefingApiReasoning: true,
   modelCallsPerHour: 1,
   briefingPaused: false,
   briefAgents: false,
@@ -1055,12 +1072,10 @@ const syntheticConfigured = (): HudSettings => ({
 const connectionKeys = [
   'briefing',
   'briefingApiBase',
-  'briefingApiKey',
   'briefingApiModel',
   'briefingApiLiteModel',
   'briefingApiLowModel',
   'briefingApiMediumModel',
-  'briefingApiReasoning',
   'modelCallsPerHour',
 ] as const;
 const permissionKeys = [
@@ -1157,7 +1172,7 @@ test('dirty comparison sees hidden coupled fields but not the derived preset', (
     { recapFloorMs: 60_000 },
     { notifyDesktop: true },
     { agentLabels: false, labelAsName: false },
-    { briefingApiKey: 'synthetic-draft-secret' },
+    { briefingApiMediumEffort: 'off' as const },
     { cardClock: false },
   ]) {
     assert.equal(settingsDirty({ draft: { ...original, ...patch }, original }), true);
@@ -1228,7 +1243,7 @@ test('header resets have distinct labels and hit maps; narrow widths retain Back
 
 test('Backend selected says which file and keys hold the connection, never the key itself', () => {
   const selected = SETTING_ROWS.findIndex((row) => row.key === 'briefing');
-  const file = '~/.codex/hud-settings.json';
+  const file = '~/.hud/hud-settings.json';
   const page = (draft: HudSettings, width = 48, settingsFile: string | null = file) =>
     renderSettingsPage({ draft, selected, offset: 0, message: '' }, width, 24, {
       state: undefined,
@@ -1246,18 +1261,16 @@ test('Backend selected says which file and keys hold the connection, never the k
     for (const line of frame.lines) assert.equal(visualLength(line), width, `${width}: ${stripAnsi(line)}`);
     const all = text(frame);
     // A path wider than the page wraps inside itself.
-    assert.ok(all.replace(/ /g, '').includes('Connection:edit~/.codex/hud-settings.json'), `${width}: ${all}`);
+    assert.ok(all.replace(/ /g, '').includes('Connection:edit~/.hud/hud-settings.json'), `${width}: ${all}`);
     assert.match(all, /briefingApiBase: set/);
     assert.doesNotMatch(all, /127\.0\.0\.1/, 'nor the endpoint');
-    assert.match(all, /briefingApiKey: set/);
+    assert.doesNotMatch(all, /briefingApiKey/);
+    assert.ok(all.replace(/ /g, '').includes('$HUD_HOME/credentials.env'));
     assert.doesNotMatch(all, /SECRET/, 'the key is never shown');
     assert.match(all, /briefingApiLiteModel/);
   }
-  assert.match(
-    text(page({ ...api, briefingApiKey: '', briefingApiBase: '' })),
-    /briefingApiBase: empty, uses OpenAI .*briefingApiKey: empty, uses CODEX_HUD_BRIEF_API_KEY/
-  );
-  assert.match(text(page(defaultSettings())), /For api, set the connection in ~\/\.codex\/hud-settings\.json/);
+  assert.match(text(page({ ...api, briefingApiBase: '' })), /briefingApiBase: empty, uses Mistral/);
+  assert.match(text(page(defaultSettings())), /For api, set the connection in ~\/\.hud\/hud-settings\.json/);
   assert.doesNotMatch(text(page(defaultSettings())), /briefingApiKey/, 'off: one line, where');
   assert.match(text(page({ ...defaultSettings(), briefing: 'agy' })), /AGY runs the agy command/);
   // Another row selected, or no file given: none of it.
@@ -1277,7 +1290,7 @@ test('Backend selected says which file and keys hold the connection, never the k
   assert.ok(listed.includes(selected), 'Backend stays in view');
   setLanguage('zh');
   try {
-    assert.match(text(page(api, 48)), /连接配置：编辑 ~\/\.codex\/hud-settings\.json/);
+    assert.match(text(page(api, 48)), /连接配置：编辑 ~\/\.hud\/hud-settings\.json/);
   } finally {
     setLanguage('en');
   }

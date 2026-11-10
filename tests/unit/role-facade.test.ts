@@ -1242,11 +1242,19 @@ async function jevRuntime(t: TestContext, home: string, creds: boolean): Promise
   const stateDir = join(home, 'jev-state');
   mkdirSync(stateDir, { mode: 0o700 });
   if (creds) {
-    const file = join(home, 'jev.env');
+    const file = join(home, 'credentials.env');
     writeFileSync(file, 'TYPESAFE_API_KEY=synthetic-r23-typesafe\n', { mode: 0o600 });
     chmodSync(file, 0o600);
   }
-  const runtime = new JevRuntime({ hudHome: home, stateDir, fake: true, graceMs: 60_000 });
+  const runtime = new JevRuntime({
+    chrome: '/synthetic/chrome',
+    profile: '/synthetic/profile',
+    cdpUrl: 'http://offline.invalid',
+    hudHome: home,
+    stateDir,
+    fake: true,
+    graceMs: 60_000,
+  });
   await runtime.start();
   t.after(() => runtime.stop());
   return runtime;

@@ -92,6 +92,7 @@ const PUBLIC_CODES = new Set([
   'judge_unavailable',
   'decision_refused',
   'decision_invalid',
+  'decision_binding_missing',
   'decision_provider_error',
   'internal',
   'already_running',

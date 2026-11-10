@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CdpConnection } from './cdp.js';
+import { requiredJevLocation } from './ask/config.js';
 import { pythonJson, type ObservedAction, type PageState } from './model.js';
 
 export class StalePage extends Error {
@@ -213,7 +214,7 @@ export class Browser {
   ): Promise<Browser> {
     options.signal?.throwIfAborted();
     const timeoutMs = options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS;
-    const connection = await CdpConnection.connect(options.cdpUrl ?? 'http://127.0.0.1:9222', timeoutMs);
+    const connection = await CdpConnection.connect(requiredJevLocation(options.cdpUrl, 'jev.cdpUrl'), timeoutMs);
     let targetId: string | undefined;
     let closing: Promise<void> | undefined;
     const ownership: BrowserOwnership = {
@@ -280,7 +281,7 @@ export class Browser {
   ): Promise<Browser> {
     options.signal?.throwIfAborted();
     const timeoutMs = options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS;
-    const connection = await CdpConnection.connect(options.cdpUrl ?? 'http://127.0.0.1:9222', timeoutMs);
+    const connection = await CdpConnection.connect(requiredJevLocation(options.cdpUrl, 'jev.cdpUrl'), timeoutMs);
     try {
       // Recovery owns the connection, not permission to close the existing send tab.
       options.onAcquire?.({
@@ -304,7 +305,7 @@ export class Browser {
     options: { cdpUrl?: string; timeoutMs?: number } = {}
   ): Promise<Array<{ targetId: string; url: string }>> {
     const connection = await CdpConnection.connect(
-      options.cdpUrl ?? 'http://127.0.0.1:9222',
+      requiredJevLocation(options.cdpUrl, 'jev.cdpUrl'),
       options.timeoutMs ?? DEFAULT_CDP_TIMEOUT_MS
     );
     try {

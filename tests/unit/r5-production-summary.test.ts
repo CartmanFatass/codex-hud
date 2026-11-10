@@ -30,20 +30,20 @@ function fixture(t: TestContext) {
   fs.mkdirSync(join(codexHome, 'sessions'), { recursive: true });
   const source = makeSourceId('codex', fs.realpathSync(codexHome));
   const root = `${source}/main`;
-  const dir = join(codexHome, 'hud', 'model-cache');
+  const dir = join(f.home, 'display', 'model-cache');
   const settings = {
     ...defaultSettings(),
     language: 'en' as const,
     briefing: 'api' as const,
     briefingPaused: false,
-    briefingApiBase: 'http://synthetic.invalid/v1',
+    briefingApiBase: 'https://api.mistral.ai/v1',
     agentLabels: true,
     resultDigest: true,
     failureCause: true,
     briefAgents: true,
     agentProgress: true,
   };
-  f.put(join(codexHome, 'hud-settings.json'), settings);
+  f.put(join(f.home, 'hud-settings.json'), settings);
   const rollout = (id: string, parent?: string) => {
     const file = join(codexHome, 'sessions', `${id}.jsonl`);
     f.put(
@@ -92,7 +92,7 @@ function fixture(t: TestContext) {
   const model = () => {
     const m = new SmallModel({
       dir,
-      env: { HOME: f.home, CODEX_HOME: codexHome, HUD_HOME: f.home },
+      env: { HOME: f.home, CODEX_HOME: codexHome, HUD_HOME: f.home, MISTRAL_API_KEY: 'synthetic-key' },
       fetch: transport,
       clock: f.now,
     });
@@ -101,7 +101,7 @@ function fixture(t: TestContext) {
     return m;
   };
   const log = () => {
-    const l = new AgentLog(join(codexHome, 'hud', 'agent-log'));
+    const l = new AgentLog(join(f.home, 'display', 'agent-log'));
     l.observe(tree);
     return l;
   };
@@ -206,7 +206,8 @@ test('R5 material sentinels never enter production label/cause/brief/progress te
       .readdirSync(dir, { withFileTypes: true })
       .map((e) => (e.isDirectory() ? scan(join(dir, e.name)) : fs.readFileSync(join(dir, e.name), 'utf8')))
       .join('\n');
-  assert.ok(!scan(join(x.codexHome, 'hud')).includes(sentinel));
+  assert.ok(!scan(join(f.home, 'display')).includes(sentinel));
+  assert.equal(fs.existsSync(join(x.codexHome, 'hud')), false, 'no display cache is written into the transcript home');
 });
 
 test('R5 display-only legacy native-root wrapper never enters material planning; ambient native brief remains eligible', async (t) => {

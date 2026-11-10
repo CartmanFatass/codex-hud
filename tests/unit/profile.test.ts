@@ -126,8 +126,8 @@ test('time and timeAsync pass results and errors through, recording only when on
 
 test('profiling stays off unless CODEX_HUD_PROFILE is 1, and writes no file then', () => {
   const home = mkdtempSync(join(tmpdir(), 'hud-profile-'));
-  const previous = process.env.CODEX_HOME;
-  process.env.CODEX_HOME = home;
+  const previous = process.env.HUD_HOME;
+  process.env.HUD_HOME = home;
   try {
     assert.equal(startProfiling('bar', {}), false);
     assert.equal(startProfiling('bar', { CODEX_HUD_PROFILE: '0' }), false);
@@ -135,25 +135,25 @@ test('profiling stays off unless CODEX_HUD_PROFILE is 1, and writes no file then
       time('x', () => 1),
       1
     );
-    assert.equal(existsSync(join(home, 'hud')), false);
+    assert.equal(existsSync(join(home, 'display')), false);
   } finally {
-    if (previous === undefined) delete process.env.CODEX_HOME;
-    else process.env.CODEX_HOME = previous;
+    if (previous === undefined) delete process.env.HUD_HOME;
+    else process.env.HUD_HOME = previous;
     rmSync(home, { recursive: true, force: true });
   }
 });
 
-test('on, the samples land in the HUD folder of the Codex home, never on stdout', () => {
+test('on, the samples land under HUD_HOME/display, never on stdout', () => {
   const home = mkdtempSync(join(tmpdir(), 'hud-profile-'));
-  const previous = process.env.CODEX_HOME;
-  process.env.CODEX_HOME = home;
+  const previous = process.env.HUD_HOME;
+  process.env.HUD_HOME = home;
   try {
     assert.equal(startProfiling('bar', { CODEX_HUD_PROFILE: '1' }), true);
     time('tick', () => 1);
     time('tick', () => 2);
     stopProfiling();
     const file = profileLogPath();
-    assert.equal(file, join(home, 'hud', 'profile.log'));
+    assert.equal(file, join(home, 'display', 'profile.log'));
     const lines = readFileSync(file, 'utf8').trim().split('\n');
     assert.equal(lines.length, 1);
     assert.match(lines[0], /^\S+Z bar pid=\d+ tick n=2 avg=\S+ms p95=\S+ms max=\S+ms$/);
@@ -165,8 +165,8 @@ test('on, the samples land in the HUD folder of the Codex home, never on stdout'
     );
   } finally {
     stopProfiling();
-    if (previous === undefined) delete process.env.CODEX_HOME;
-    else process.env.CODEX_HOME = previous;
+    if (previous === undefined) delete process.env.HUD_HOME;
+    else process.env.HUD_HOME = previous;
     rmSync(home, { recursive: true, force: true });
   }
 });

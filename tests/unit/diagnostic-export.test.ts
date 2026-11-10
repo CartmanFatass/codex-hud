@@ -145,7 +145,7 @@ test('missing, unknown, future and conflicting evidence stay explicit without ex
 test('save failure returns a safe category without exposing the destination path', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-export-failure-'));
   try {
-    fs.writeFileSync(path.join(home, 'hud'), 'synthetic obstacle');
+    fs.writeFileSync(path.join(home, 'diagnostics'), 'synthetic obstacle');
     const result = saveDiagnosticExport(createDiagnosticExportPreview({ nowMs }), home);
     assert.deepEqual(result, { ok: false, reason: 'write-failed' });
     assert.ok(!JSON.stringify(result).includes(home));

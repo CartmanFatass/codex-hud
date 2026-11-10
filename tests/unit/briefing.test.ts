@@ -2,6 +2,9 @@ import { SyntheticModel as SmallModel } from './b17-fixture.test.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   Briefer,
   briefingCommand,
@@ -489,21 +492,40 @@ test("the Inspector's log leaves out the update shown above it", () => {
   );
 });
 
-test('an api brief is one chat completions call: base, model and key fall back sensibly', () => {
+test('an api brief uses host-bound HUD credentials and product defaults; no legacy key fallback', (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'hud-brief-key-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const env = { HOME: home, HUD_HOME: join(home, '.hud'), MISTRAL_API_KEY: 'synthetic-env' };
   const request = briefingRequest(
-    { base: 'http://localhost:8080/v1/', model: 'qwen', key: '' },
+    { base: 'https://api.mistral.ai/v1/', model: 'qwen' },
     '<agents>x</agents>',
-    { OPENAI_API_KEY: 'sk-env' },
+    env,
     'en'
   );
   assert.ok(!('error' in request));
   if ('error' in request) return;
-  assert.equal(request.url, 'http://localhost:8080/v1/chat/completions');
-  assert.equal(request.headers.authorization, undefined, 'custom endpoints must not inherit OPENAI_API_KEY');
-  const hudKey = briefingRequest({ base: 'http://localhost:8080/v1', model: 'qwen', key: '' }, 'p', {
-    CODEX_HUD_BRIEF_API_KEY: 'sk-hud',
+  assert.equal(request.url, 'https://api.mistral.ai/v1/chat/completions');
+  assert.equal(request.headers.authorization, 'Bearer synthetic-env');
+  const hudKey = briefingRequest({ base: 'http://localhost:8080/v1', model: 'qwen', key: 'ignored' }, 'p', {
+    ...env,
+    CODEX_HUD_BRIEF_API_KEY: 'ignored',
   });
-  assert.ok(!('error' in hudKey) && hudKey.headers.authorization === 'Bearer sk-hud');
+  assert.ok('error' in hudKey, 'custom endpoint is off, no provider or legacy key leaked');
+  const generalOnly = briefingRequest({ base: 'http://localhost:8080/v1', model: 'qwen' }, 'p', {
+    HOME: home,
+    HUD_HOME: join(home, '.hud'),
+    OPENAI_API_KEY: 'synthetic-openai-only',
+  });
+  assert.ok('error' in generalOnly, 'custom endpoint with OPENAI_API_KEY is off: no request or authorization');
+  mkdirSync(env.HUD_HOME, { mode: 0o700 });
+  for (const name of ['OPENAI_API_KEY', 'MISTRAL_API_KEY', 'TYPESAFE_API_KEY']) {
+    writeFileSync(join(env.HUD_HOME, 'credentials.env'), `${name}=synthetic-file-key\n`, { mode: 0o600 });
+    const fileKey = briefingRequest({ base: 'https://x.example/api/', model: 'x' }, 'p', {
+      HOME: home,
+      HUD_HOME: env.HUD_HOME,
+    });
+    assert.ok('error' in fileKey, 'custom host with a credentials-file key is off: no request or authorization');
+  }
   const body = JSON.parse(request.body);
   assert.equal(body.model, 'qwen');
   assert.equal(body.stream, false);
@@ -513,24 +535,11 @@ test('an api brief is one chat completions call: base, model and key fall back s
   );
   assert.equal(body.messages[0].content, briefSystemPrompt('en'));
   assert.equal(body.messages[1].content, '<agents>x</agents>');
-  const full = briefingRequest({ base: 'https://x.example/api/chat/completions', model: 'm', key: 'sk-file' }, 'p', {
-    OPENAI_API_KEY: 'sk-env',
-  });
-  assert.ok(
-    !('error' in full) &&
-      full.url === 'https://x.example/api/chat/completions' &&
-      full.headers.authorization === 'Bearer sk-file'
-  );
-  const openai = briefingRequest({ base: '', model: 'm', key: '' }, 'p', {});
-  assert.ok(
-    !('error' in openai) &&
-      openai.url === 'https://api.openai.com/v1/chat/completions' &&
-      !('authorization' in openai.headers),
-    'no key at all: no header, for a local server'
-  );
-  const defaults = briefingRequest({ base: '', model: '', key: '' }, 'p', {});
+  const openai = briefingRequest({ base: '', model: 'm' }, 'p', { HOME: home, HUD_HOME: join(home, '.hud') });
+  assert.ok('error' in openai && openai.error.includes('off'), 'no key: off, no request');
+  const defaults = briefingRequest({ base: '', model: '' }, 'p', env);
   assert.ok(!('error' in defaults));
-  if (!('error' in defaults)) assert.equal(JSON.parse(defaults.body).model, 'gemini-3.8-flash-low');
+  if (!('error' in defaults)) assert.equal(JSON.parse(defaults.body).model, 'deepseek-v4-1-flash-1017');
   assert.equal(
     completionText({
       choices: [

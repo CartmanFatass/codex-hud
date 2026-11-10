@@ -35,7 +35,9 @@ function deferred<T>(): Deferred<T> {
 
 /** A full synthetic config. Nothing on disk is read: no TOML path and no config.json path. */
 function config(): JevConfig {
-  return loadJevConfig({ configJson: { jev: { stateDir: STATE_DIR, profile: PROFILE } } });
+  return loadJevConfig({
+    configJson: { jev: { stateDir: STATE_DIR, profile: PROFILE, chrome: '/synthetic/chrome', cdpUrl: DEFAULT_CDP } },
+  });
 }
 
 interface StartCall {

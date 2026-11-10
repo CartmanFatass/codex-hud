@@ -166,11 +166,13 @@ export class OpenAIDecisionProvider implements DecisionProvider {
   readonly #apiKey: string;
   readonly #baseUrl?: string;
   readonly #fetcher?: typeof fetch;
+  readonly #timeoutMs?: number;
 
-  constructor(options: { apiKey: string; baseUrl?: string; fetcher?: typeof fetch }) {
+  constructor(options: { apiKey: string; baseUrl?: string; fetcher?: typeof fetch; timeoutMs?: number }) {
     this.#apiKey = options.apiKey;
     this.#baseUrl = options.baseUrl;
     this.#fetcher = options.fetcher;
+    this.#timeoutMs = options.timeoutMs;
   }
 
   async decide(request: DecisionRequest, options: { signal?: AbortSignal; cacheKey: string }): Promise<DecisionResult> {
@@ -180,7 +182,9 @@ export class OpenAIDecisionProvider implements DecisionProvider {
       this.#apiKey,
       buildOpenAIBody(request, options.cacheKey),
       options.signal,
-      this.#fetcher
+      this.#fetcher,
+      this.#timeoutMs,
+      1
     );
     const usage = (raw as { usage?: DecisionResult['usage'] } | null)?.usage ?? {};
     return { answers: parseOpenAIAnswers(raw), usage, latencyMs: Math.round(performance.now() - started), raw };
@@ -193,7 +197,9 @@ export class OpenAIDecisionProvider implements DecisionProvider {
       this.#apiKey,
       buildOpenAIJudgmentBody(request, options.cacheKey),
       options.signal,
-      this.#fetcher
+      this.#fetcher,
+      this.#timeoutMs,
+      1
     );
     const usage = (raw as { usage?: DecisionResult['usage'] } | null)?.usage ?? {};
     return { answers: parseOpenAIAnswers(raw), usage, latencyMs: Math.round(performance.now() - started), raw };

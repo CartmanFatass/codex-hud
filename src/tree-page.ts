@@ -149,7 +149,8 @@ import {
 } from './collectors/model-jobs.js';
 import { WorkbenchHistory } from './collectors/workbench-events.js';
 import type { WorkbenchEvent } from './render/workbench-state.js';
-import { getCodexHome, getHudHome } from './utils/codex-path.js';
+import { getCodexHome } from './utils/codex-path.js';
+import { getHudDisplayHome } from './hud-home.js';
 import { codexGoal } from './collectors/codex-goal.js';
 import { roleSet, subtaskRoles } from './render/directions.js';
 import { HudStatus } from './collectors/hud-status.js';
@@ -602,7 +603,7 @@ async function runLivePage(): Promise<void> {
   };
   let delegation: DelegationViewModel | null = null;
   // Opened again, the panel reads only what each rollout gained since it last saved its scan.
-  useTreeScanStore(new TreeScanStore(path.join(getHudHome(), 'scan')));
+  useTreeScanStore(new TreeScanStore(path.join(getHudDisplayHome(), 'scan')));
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
   const parser = new RolloutParser(40);
   const worktreeCollector = new WorktreeCollector();
@@ -739,14 +740,14 @@ async function runLivePage(): Promise<void> {
   // Every model call of the panel goes through one service: one queue, one
   // cache, one hourly cap. Its cache and call log live beside the HUD's state.
   let modelChanged = () => {};
-  const model = new SmallModel({ dir: path.join(getHudHome(), 'model-cache'), onChange: () => modelChanged() });
-  const probe = new ModelProbe({ dir: path.join(getHudHome(), 'model-cache') }, () => render());
+  const model = new SmallModel({ dir: path.join(getHudDisplayHome(), 'model-cache'), onChange: () => modelChanged() });
+  const probe = new ModelProbe({ dir: path.join(getHudDisplayHome(), 'model-cache') }, () => render());
   // Each subagent's log: observed changes and model notes, kept per session.
-  const agentLog = new AgentLog(path.join(getHudHome(), 'agent-log'));
+  const agentLog = new AgentLog(path.join(getHudDisplayHome(), 'agent-log'));
   // The Timeline pane's events: the rollout's and the agent log's, one list.
   const history = new WorkbenchHistory();
   let timeline: WorkbenchEvent[] = [];
-  const recaps = new RecapStore(path.join(getHudHome(), 'recaps'));
+  const recaps = new RecapStore(path.join(getHudDisplayHome(), 'recaps'));
   // Repaints when a brief starts, lands or fails; render() is defined below.
   const briefer = new Briefer(() => render(), { model, store: recaps, log: agentLog });
   // Visible summary subjects request public progress independently of the periodic brief.
@@ -791,7 +792,7 @@ async function runLivePage(): Promise<void> {
   const jobs = new ModelJobs({
     model,
     log: agentLog,
-    labelsFile: path.join(getHudHome(), 'model-cache', 'labels.json'),
+    labelsFile: path.join(getHudDisplayHome(), 'model-cache', 'labels.json'),
     titles: recaps,
     readHunks: readDiffHunks,
     onChange: () => {
@@ -845,7 +846,6 @@ async function runLivePage(): Promise<void> {
       api: {
         base: settings.briefingApiBase,
         model: settings.briefingApiModel,
-        key: settings.briefingApiKey,
         efforts: {
           lite: settings.briefingApiLiteEffort,
           low: settings.briefingApiLowEffort,
@@ -900,7 +900,7 @@ async function runLivePage(): Promise<void> {
     if (tree.rootId !== journalRoot) {
       journal.flush();
       journalRoot = tree.rootId;
-      journal = new ActivityJournal({ codexHome: getCodexHome(), rootId: journalRoot });
+      journal = new ActivityJournal({ displayHome: getHudDisplayHome(), rootId: journalRoot });
       activityHub = activityHub ? initialActivityHubState(activityHub.tab) : null;
       exportPreview = undefined;
     }
@@ -1910,7 +1910,7 @@ async function runLivePage(): Promise<void> {
             focusMain();
           } else if (result.action === 'preview') captureExport();
           else if (result.action === 'save' && exportPreview) {
-            const saved = saveDiagnosticExport(exportPreview, getCodexHome());
+            const saved = saveDiagnosticExport(exportPreview, getHudDisplayHome());
             observability.message = saved.ok
               ? t('Report saved: {path}', { path: saved.path })
               : t('Report could not be saved');

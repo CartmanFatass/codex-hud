@@ -7,7 +7,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hostProxyEnv, proxyForSpawn } from '../ask/config.js';
+import { hostProxyEnv, loadJevConfig, proxyForSpawn } from '../ask/config.js';
 import { JevFailure } from '../ask/error.js';
 import { probePid } from '../ask/lease.js';
 import { cappedReadWaitMs, JevRuntimeError, loadRuntimeConfig } from './executor.js';
@@ -22,8 +22,10 @@ export interface ConnectOptions {
   entry?: string;
   /** Tests pass a directory they created. The child does not invent one. */
   stateDir?: string;
-  /** With stateDir, tests pass the CDP endpoint. Production reads it from config. */
+  /** Internal test/child plumbing, not environment configuration: all four or JSON only. */
   cdpUrl?: string;
+  chrome?: string;
+  profile?: string;
   /** Tests inject proxy support. Production asks Node, then the version. */
   envProxy?: EnvProxySupport;
 }
@@ -42,7 +44,6 @@ export interface ConnectedJev extends JevExecutor {
 const EXACT_ENV = new Set([
   'PATH',
   'HOME',
-  'JEV_ASK_CONFIG',
   'TMPDIR',
   'LANG',
   'HTTP_PROXY',
@@ -143,6 +144,10 @@ export function retryableJevError(error: unknown, method: string): boolean {
 }
 
 async function ensureRunning(hudHome: string, socketPath: string, options: ConnectOptions): Promise<void> {
+  // Validate all locations before even reusing a runtime; preserve the named pre_send diagnostic.
+  if ([options.stateDir, options.cdpUrl, options.chrome, options.profile].some((value) => value !== undefined)) {
+    loadJevConfig({ configJson: { jev: options } });
+  } else loadRuntimeConfig(hudHome);
   if (await ping(socketPath)) return;
   const dir = dirname(socketPath);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -316,6 +321,8 @@ function childEnv(hudHome: string, options: ConnectOptions, support: EnvProxySup
   if (options.graceMs !== undefined) env.JEV_RUNTIME_GRACE_MS = String(options.graceMs);
   if (options.stateDir) env.JEV_RUNTIME_STATE_DIR = options.stateDir;
   if (options.cdpUrl) env.JEV_RUNTIME_CDP_URL = options.cdpUrl;
+  if (options.chrome) env.JEV_RUNTIME_CHROME = options.chrome;
+  if (options.profile) env.JEV_RUNTIME_PROFILE = options.profile;
   if (support.envVar) env.NODE_USE_ENV_PROXY = '1';
   else delete env.NODE_USE_ENV_PROXY;
   let proxy: Record<string, string>;

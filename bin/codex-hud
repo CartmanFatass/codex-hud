@@ -176,12 +176,15 @@ resolve_codex_home() {
 # Session identity is cwd + the effective Codex home so --attach/--kill
 # stay inside one account instead of mixing codex1/codex2 in the same directory.
 EFFECTIVE_CODEX_HOME=""
+EFFECTIVE_HUD_HOME=""
 SESSION_HASH=""
 SESSION_PREFIX=""
 SESSION_NAME=""
 
 init_session_identity() {
     EFFECTIVE_CODEX_HOME="$(resolve_codex_home)"
+    # The HUD's own home is independent of the Codex account.
+    EFFECTIVE_HUD_HOME="${HUD_HOME:-${HOME}/.hud}"
     SESSION_HASH="$(hash_identity "${PWD}"$'\0'"${EFFECTIVE_CODEX_HOME}")"
     SESSION_PREFIX="codex-hud-${SESSION_HASH}"
     SESSION_NAME="${SESSION_PREFIX}-$(date +%Y%m%d%H%M%S)-$$"
@@ -606,7 +609,7 @@ start_herdr_bridge() {
     # Relay only the stored main pane title, even while the tree pane has focus.
     tmux set-option -t "$SESSION_NAME" set-titles-string "#{P:#{?#{==:#{pane_id},$main_pane_id},#{pane_title},}}"
     tmux set-option -t "$SESSION_NAME" set-titles on
-    node "$SCRIPT_DIR/codex-hud-herdr.mjs" "$SESSION_NAME" "$main_pane_id" "$$" "$EFFECTIVE_CODEX_HOME" native \
+    node "$SCRIPT_DIR/codex-hud-herdr.mjs" "$SESSION_NAME" "$main_pane_id" "$$" "$EFFECTIVE_HUD_HOME" native \
         </dev/null >/dev/null 2>&1 &
     HERDR_BRIDGE_PID=$!
 }
@@ -716,7 +719,7 @@ install_session_input_policy() {
     local keys_cmd
     keys_cmd="$(cd "$(dirname "$toggle_cmd")" && pwd)/codex-hud-keys"
     chmod +x "$keys_cmd" "$(dirname "$keys_cmd")/codex-hud-command" 2>/dev/null || true
-    CODEX_HOME="${EFFECTIVE_CODEX_HOME:-${CODEX_HOME:-$HOME/.codex}}" bash "$keys_cmd" "$session_name" || true
+    HUD_HOME="${EFFECTIVE_HUD_HOME:-${HUD_HOME:-$HOME/.hud}}" bash "$keys_cmd" "$session_name" || true
 
     local paste_cmd
     paste_cmd="$(cd "$(dirname "$toggle_cmd")" && pwd)/codex-hud-paste"
@@ -901,7 +904,7 @@ EOF
     mouse_setting=$(parse_boolean_setting "CODEX_HUD_MOUSE" "${CODEX_HUD_MOUSE:-}" "1") || exit 1
     local saved_statusline="1"
     if [[ -z "${CODEX_HUD_STATUSLINE:-}" && -f "$HUD_DIR/dist/settings.js" ]]; then
-        saved_statusline=$(CODEX_HOME="$EFFECTIVE_CODEX_HOME" node --input-type=module -e '
+        saved_statusline=$(HUD_HOME="$EFFECTIVE_HUD_HOME" node --input-type=module -e '
             import { pathToFileURL } from "node:url";
             const { loadSettings } = await import(pathToFileURL(process.argv[1]).href);
             process.stdout.write(loadSettings().statusline ? "1" : "0");
@@ -940,12 +943,14 @@ EOF
         error "Failed to detect tmux pane for session: $SESSION_NAME"
     fi
 
-    local codex_home_escaped
+    local codex_home_escaped hud_home_escaped
     codex_home_escaped=$(printf "%q" "$EFFECTIVE_CODEX_HOME")
+    hud_home_escaped=$(printf "%q" "$EFFECTIVE_HUD_HOME")
     # Session-level only: never set-environment -g, or a later account would
     # overwrite every other HUD on this server.
     tmux set-environment -t "$SESSION_NAME" CODEX_HOME "$EFFECTIVE_CODEX_HOME"
     tmux set-option -t "$SESSION_NAME" @codex_hud_codex_home "$EFFECTIVE_CODEX_HOME"
+    tmux set-option -t "$SESSION_NAME" @codex_hud_hud_home "$EFFECTIVE_HUD_HOME"
 
     if [[ -z "$tmux_windows_bash" ]]; then
         main_cmd="cd ${cwd_escaped} && CODEX_HOME=${codex_home_escaped} $codex_cmd; tmux kill-session -t '$SESSION_NAME'"
@@ -960,7 +965,7 @@ EOF
     if [[ -n "$runtime_capture_file_windows" ]]; then
         hud_capture_file_env=" CODEX_HUD_PANE_CAPTURE_FILE=$(printf "%q" "$runtime_capture_file_windows")"
     fi
-    local hud_cmd="cd ${cwd_escaped} && LINES='$HUD_HEIGHT' COLUMNS='$term_width' CODEX_HOME=${codex_home_escaped} CODEX_HUD_CWD=${cwd_escaped} CODEX_HUD_MAIN_PANE='$main_pane_id' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION='$SESSION_NAME' CODEX_HUD_CLEAR_SCROLLBACK='${CODEX_HUD_CLEAR_SCROLLBACK:-}'${hud_capture_file_env} node '$HUD_DIR/dist/index.js'"
+    local hud_cmd="cd ${cwd_escaped} && LINES='$HUD_HEIGHT' COLUMNS='$term_width' CODEX_HOME=${codex_home_escaped} HUD_HOME=${hud_home_escaped} CODEX_HUD_CWD=${cwd_escaped} CODEX_HUD_MAIN_PANE='$main_pane_id' CODEX_HUD_SESSION_START='$session_start' CODEX_HUD_TMUX_SESSION='$SESSION_NAME' CODEX_HUD_CLEAR_SCROLLBACK='${CODEX_HUD_CLEAR_SCROLLBACK:-}'${hud_capture_file_env} node '$HUD_DIR/dist/index.js'"
     if [[ -n "$tmux_windows_bash" ]]; then
         hud_runner="$session_runtime_dir/hud.sh"
         cat > "$hud_runner" <<EOF
@@ -1307,15 +1312,16 @@ list_sessions() {
     tmux list-sessions 2>/dev/null | grep "^codex-hud-" || echo "  (none)"
 }
 
-# The HUD writes its state beside the sessions it belongs to. The name is the
-# tmux session name with anything a filename cannot hold replaced, which is the
-# same rule src/snapshot.ts applies when it writes the file.
+# The HUD writes its display state under its own home, shared by every
+# harness. The name is the tmux session name with anything a filename cannot
+# hold replaced, which is the same rule src/snapshot.ts applies when it writes
+# the file.
 snapshot_file_for_session() {
     local session_name="$1"
     local home
-    home=$(tmux show-option -t "$session_name" -qv @codex_hud_codex_home 2>/dev/null || true)
-    [[ -z "$home" ]] && home="${CODEX_HOME:-$HOME/.codex}"
-    printf '%s/hud/state/%s.json' "$home" "$(printf '%s' "$session_name" | tr -c 'A-Za-z0-9._-' '_')"
+    home=$(tmux show-option -t "$session_name" -qv @codex_hud_hud_home 2>/dev/null || true)
+    [[ -z "$home" ]] && home="${EFFECTIVE_HUD_HOME:-${HUD_HOME:-$HOME/.hud}}"
+    printf '%s/display/state/%s.json' "$home" "$(printf '%s' "$session_name" | tr -c 'A-Za-z0-9._-' '_')"
 }
 
 # Print the HUD state for this directory's session as JSON.

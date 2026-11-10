@@ -1738,7 +1738,7 @@
         "closing punctuation never starts a brief line",
         "the log follows the tree: what the tree hides it hides, a collapsed parent counts what is folded, the Inspector has it all",
         "the Inspector's log leaves out the update shown above it",
-        "an api brief is one chat completions call: base, model and key fall back sensibly",
+        "an api brief uses host-bound HUD credentials and product defaults; no legacy key fallback",
         "a Briefer on an api endpoint reads the reply and reports a safe classification when refused",
         "switching language drops the brief in the old one and asks again at once",
         "the brief writes in the panel's language whatever the material is in, and asked to, names what each agent is on",
@@ -1883,12 +1883,40 @@
         "closing punctuation never starts a brief line": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
         "the log follows the tree: what the tree hides it hides, a collapsed parent counts what is folded, the Inspector has it all": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
         "the Inspector's log leaves out the update shown above it": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
-        "an api brief is one chat completions call: base, model and key fall back sensibly": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
+        "an api brief uses host-bound HUD credentials and product defaults; no legacy key fallback": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. R6A-A0 (orchestrator q7): A0 removes explicit/legacy panel secrets and unkeyed/custom-endpoint requests; Mistral/DeepSeek defaults and exact-origin credentials replace that behavior. Message construction and reply parsing assertions are retained.",
         "a Briefer on an api endpoint reads the reply and reports a safe classification when refused": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
         "switching language drops the brief in the old one and asks again at once": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
         "the brief writes in the panel's language whatever the material is in, and asked to, names what each agent is on": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
         "a brief's names land on its notes in its language, and a note in the other language is not handed back as the previous brief": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
         "a run cancelled by a settings change is no failure: the last brief stays, the material is asked about again": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel."
+      },
+      "assertExceptions": {
+        "an api brief uses host-bound HUD credentials and product defaults; no legacy key fallback": [
+          {
+            "main": "85f5127358810c260d6e65961fef6b99634417e042498c8ec3d2b26f6fb96fe7",
+            "branch": "58f4c9e87682b60d5f9f8a5b1cbe0413db6d23f00a0f1c540e351f62fa4efffa"
+          },
+          {
+            "main": "e9c85e343e2cc4780bfa650a9c6890f1f74fde3fe9d67522e58b26250086d79a",
+            "branch": "c4525a43def805c633ed2d1fff9f7d26b27cbc1807b4b9786539f9958a19d369"
+          },
+          {
+            "main": "9de66eb918588290914e57c420a1b66ef0fc305004b7bfb8997eacdab5973043",
+            "branch": "57d891f65b455ba3d06d708f4b3f70f7df010df6f08e9dc37b68a794bcf66cd5"
+          },
+          {
+            "main": "c7e9f6715c5ab559a4e1d5165d30f4198e6d07e4788d808ed1569f885ee99a04",
+            "branch": "3a6d1ac356bc173c851f99efd9e5a9561c0fde1dc1743700e0560fde57688ab8"
+          },
+          {
+            "main": "bfa56ea9fb2d676c746a9b41b8df9a56e00c6afd4bc1c48adc27fb6252b8de6d",
+            "branch": "06cf5ebd7f99a7b944e1081eb31d0981ba1c827a1134babcb414e62298fe2611"
+          },
+          {
+            "main": "93b244c77a90ade00815d37418ccb2954e69fc88c5078967ad9df049ececb173",
+            "branch": "2d0b16f58945ea44f4f81c0f4bc75380e00c0069a82d45e12ac7343e4097a1bb"
+          }
+        ]
       }
     },
     "tests/unit/card-presets.test.ts": {
@@ -3548,7 +3576,22 @@
         "070583179b0813d2612401c2bf6d5ec893cddfc53a6d6d070b55e23a87292b8b",
         "adb373d73e36d45d6ea44f930a7f34f70c0154a52a0bbd2f932203572c3c6b13",
         "fd13a66e30194144144ab444f7f42cb24814c34b2ef9381a5d2b461c3a3bd537"
-      ]
+      ],
+      "assertExceptions": {
+        "explicit test uses three resolved routes and bounded synthetic prompts, without saving settings or secrets": [
+          {
+            "main": "6a5417a0c90db0b98adb18c8474b2f73a91cf29928f9462e9d98da491e756ba8",
+            "branch": "464f7b1704bb4e11e92bdfb2d2c9af56fdb499636624e5349a4bfa088428c9db"
+          },
+          {
+            "main": "6a5417a0c90db0b98adb18c8474b2f73a91cf29928f9462e9d98da491e756ba8",
+            "branch": "3bbe137a0c25912624d22a3fb15460de3d84dedd9bdab5469e2d58ccf7271cc9"
+          }
+        ]
+      },
+      "divergence": {
+        "explicit test uses three resolved routes and bounded synthetic prompts, without saving settings or secrets": "R6A-A0 (orchestrator q7): A0 default efforts none/low/high require route token limits 256/768/768. The synthetic prompt is still independently asserted verbatim; no network grant changes."
+      }
     },
     "tests/unit/model-runtime.test.ts": {
       "branch": ["tests/unit/model-runtime.test.ts"],
@@ -4523,7 +4566,7 @@
         "a sink that throws does not reach the caller",
         "time and timeAsync pass results and errors through, recording only when on",
         "profiling stays off unless CODEX_HUD_PROFILE is 1, and writes no file then",
-        "on, the samples land in the HUD folder of the Codex home, never on stdout"
+        "on, the samples land under HUD_HOME/display, never on stdout"
       ],
       "assertStatements": [
         "f8874ef510eda74f7b1245cc39eb25d8ae5e3a09f0b20f88bda91ecde26ad786",
@@ -4556,7 +4599,25 @@
         "7a04b33315e210bd2ec525097a0e97292e7f80b4ffd976010422f85a3ba08623",
         "164a1983a5a070dbc2e83ffbe5cadf3a11413f27b18867f1164eadb0a294e798",
         "6c732f49054c9bcb7ca7062c53a57349881e20f3a6f78807d95e2038cec9e912"
-      ]
+      ],
+      "assertExceptions": {
+        "profiling stays off unless CODEX_HUD_PROFILE is 1, and writes no file then": [
+          {
+            "main": "56889d06f679f676abada8c6343a2675ffc375864f796f5aca0010fa437579f0",
+            "branch": "0dd91d61ab763b316494ce53d2141ebd316664cbaef9aa0782031c2b337a3d32"
+          }
+        ],
+        "on, the samples land under HUD_HOME/display, never on stdout": [
+          {
+            "main": "97f57a98dfc020c67b74c924f4f9d9a4c490b3fdd93beedfc815e9c139f41c7c",
+            "branch": "fea39561b120dc24f96f72f819116d2117bd8cfad56c01396becab3a6ea6ae3d"
+          }
+        ]
+      },
+      "divergence": {
+        "profiling stays off unless CODEX_HUD_PROFILE is 1, and writes no file then": "R6A-A0 (orchestrator q7): A0 moves profiling from CODEX_HOME/hud to HUD_HOME/display. No-output-when-off, line format, private file modes and stdout safety remain asserted.",
+        "on, the samples land under HUD_HOME/display, never on stdout": "R6A-A0 (orchestrator q7): A0 moves profiling from CODEX_HOME/hud to HUD_HOME/display. No-output-when-off, line format, private file modes and stdout safety remain asserted."
+      }
     },
     "tests/unit/progress-summary.test.ts": {
       "branch": ["tests/unit/progress-summary.test.ts"],
@@ -5632,13 +5693,55 @@
         "66a82aeaf897ab0f1ba3fdb040450b35dc32dc7067223704599fa03ac2d5afa4"
       ],
       "divergence": {
-        "every model feature sits in the LLM group, and the calls made today show under the list": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: add explicit lite/low/medium effort rows without dropping model permissions or assertions."
+        "every model feature sits in the LLM group, and the calls made today show under the list": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: add explicit lite/low/medium effort rows without dropping model permissions or assertions.",
+        "periodic briefs, main recap, progress generation and card display toggle independently": "R6A-A0 (orchestrator q7): A0 removes the secret setting/legacy key hint, changes the neutral settings path and the API default hint. Other toggle/card/Work settings are untouched.",
+        "Backend selected says which file and keys hold the connection, never the key itself": "R6A-A0 (orchestrator q7): A0 removes the secret setting/legacy key hint, changes the neutral settings path and the API default hint. Other toggle/card/Work settings are untouched."
       },
       "assertExceptions": {
         "every model feature sits in the LLM group, and the calls made today show under the list": [
           {
             "main": "52c38dcd12567d44ad4ca9ba7ab9767b2d650ee42951e47ee37cceddc72e63bb",
             "branch": "8c3cbaa1637fe1790e195b5a45882583fc98e1d7b7c9e69b768df4969f60c339"
+          }
+        ],
+        "periodic briefs, main recap, progress generation and card display toggle independently": [
+          {
+            "main": "33665588e59dac264a8d4028c84e1f07c58db5f4ac953841da32fa7c5ee5377d",
+            "branch": "0d1d55e65ba836932c03a13d3c682642e2581f0129f5c43acbf08147e563b257"
+          },
+          {
+            "main": "33665588e59dac264a8d4028c84e1f07c58db5f4ac953841da32fa7c5ee5377d",
+            "branch": "fde5fc87e18b292b3884f2364af9ec964908bde831ae1170ba3a1dd5ca58e8f0"
+          }
+        ],
+        "Backend selected says which file and keys hold the connection, never the key itself": [
+          {
+            "main": "059c4925a83b17a923b2a70084e7df7dd4b386b24675c328dcfffb71230d3520",
+            "branch": "99f2a46fae8fc11168460c30f8a16769428b25bd21c94fac003939eeca2da484"
+          },
+          {
+            "main": "56ebaa1b94839070683d43bbfe55cb06aec07b2b61054eff8cd3f00ca765fe07",
+            "branch": "fbd3d3a18e647538dbb3374d29656d589c42532962d6816d1a384d266cbc065c"
+          },
+          {
+            "main": "56ebaa1b94839070683d43bbfe55cb06aec07b2b61054eff8cd3f00ca765fe07",
+            "branch": "1e22e8b9cf860748d74953eb8a846986e327ea9bf949199df45f6bde26be91ee"
+          },
+          {
+            "main": "7eed12805032d5202e274568426d55ac9ccd772e28907a5acf943c357009e08b",
+            "branch": "3dc921987b7727b28ad14577edfd8375e8301047ce44328090a5dda5bf886c99"
+          },
+          {
+            "main": "7eed12805032d5202e274568426d55ac9ccd772e28907a5acf943c357009e08b",
+            "branch": "fbd3d3a18e647538dbb3374d29656d589c42532962d6816d1a384d266cbc065c"
+          },
+          {
+            "main": "be26c0deb3c7314f19bd2a1419a2cd1709735de0283c5899423af67ee6e9d62b",
+            "branch": "360cbacba0f9c1bd631fe491ee048771db46ce8722f0da360a6ec96e750325f6"
+          },
+          {
+            "main": "66a82aeaf897ab0f1ba3fdb040450b35dc32dc7067223704599fa03ac2d5afa4",
+            "branch": "dd492db6c3912cbdec2fe154ecda215ebf9f395d04a32eb093d515df38bb3b03"
           }
         ]
       }
@@ -5659,7 +5762,7 @@
         "nonobject JSON cannot become settings and oversized files are rejected",
         "legacy OMP settings migrate to API deterministically and task models validate",
         "flat card visibility and progress defaults validate independently; legacy notes are ignored",
-        "saving display preferences retains synthetic API credentials and task routing",
+        "removed API secret/reasoning keys are ignored and dropped while other saved settings survive",
         "the prefix: Ctrl+\\ on a fresh install, Ctrl+] kept by a file saved without one, a saved choice kept either way"
       ],
       "assertStatements": [
@@ -5751,20 +5854,36 @@
         "37dd5d6aece84e23c95f4a501b691e915a4ffcfcd8ea0dcacf3234f7462bf69f"
       ],
       "divergence": {
-        "missing settings keep display defaults and hide optional tasks and activity": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; all prior defaults remain asserted.",
-        "load validates known settings without importing unknown or invalid values": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; validation and prior defaults remain asserted."
+        "missing settings keep display defaults and hide optional tasks and activity": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; all prior defaults remain asserted. R6A-A0 (orchestrator q7): A0 removes saved API secret/legacy reasoning keys, retains all unrelated preferences, and changes product defaults to Mistral/DeepSeek and none/low/high. Complete default/validation object assertions remain.",
+        "load validates known settings without importing unknown or invalid values": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; validation and prior defaults remain asserted. R6A-A0 (orchestrator q7): A0 removes saved API secret/legacy reasoning keys, retains all unrelated preferences, and changes product defaults to Mistral/DeepSeek and none/low/high. Complete default/validation object assertions remain.",
+        "legacy OMP settings migrate to API deterministically and task models validate": "R6A-A0 (orchestrator q7): A0 removes saved API secret/legacy reasoning keys, retains all unrelated preferences, and changes product defaults to Mistral/DeepSeek and none/low/high. Complete default/validation object assertions remain.",
+        "removed API secret/reasoning keys are ignored and dropped while other saved settings survive": "R6A-A0 (orchestrator q7): removed secret/reasoning keys must be dropped on load/save, while unrelated settings and routing remain asserted."
       },
       "assertExceptions": {
         "missing settings keep display defaults and hide optional tasks and activity": [
           {
             "main": "97cc9faf8c800057796515b8dfe0dacd83131f228ab20c9f4657ec6d40791090",
-            "branch": "241574055e0dff0cf24a91b4d1f0693b812cdd0d85374c084cdae933dd08d12e"
+            "branch": "9667af330a455533fc76bc910fca0b58e7fab2c377d3d23e4425943f6ff56a13"
           }
         ],
         "load validates known settings without importing unknown or invalid values": [
           {
             "main": "705a4c99a17c316a548159e181eb3da22cf85826d63572693500f24308a95350",
-            "branch": "c49d542e39deeafb157f28394bb467d4345e688bd5d09be6614897bc072bcb27"
+            "branch": "29b19eb296cd4aefb7e46ea25ce856b3959027f383f594542edb4970a19c6b1d"
+          }
+        ],
+        "legacy OMP settings migrate to API deterministically and task models validate": [
+          {
+            "main": "1e124a5e60de3d36d5dfb4cec8f7f16b3a18e598ebfd8939d2fcce256d02be05",
+            "branch": "a514f1169c198eb339326f619da9703f3ce3febe61507177577fbcc23cdd378e"
+          },
+          {
+            "main": "a551a04a3ba016954cff64dc5f9844d2175c4bd7d846210898734831e0cbb11b",
+            "branch": "91526575c2495b48f86d7591997e8ef2f8762fda1cd49b65cdbcc620c4120a3f"
+          },
+          {
+            "main": "0d4c0019ee53f11cd9b2442b54198cffbc0dd1f71bcccb4401cec5947736d360",
+            "branch": "b37dc077784645084511414a64d9aef4e2edfd83c413c3a7869c0f5c8decefa9"
           }
         ]
       }
@@ -5774,8 +5893,8 @@
       "assertions": [
         "AGY retains named effort models and explicit override flags without a shell",
         "API task routes, configurable tier models, and global overrides",
-        "custom endpoints never receive the general OpenAI key; deliberate HUD keys still work",
-        "legacy reasoning opt-in maps by tier without inventing minimal or medium",
+        "panel custom endpoints are off; removed explicit/HUD keys cannot bypass host binding",
+        "default efforts follow product tiers, not request thinking levels",
         "call counts: last hour and since midnight",
         "single flight, queued cancellation, active cancellation, and cancelAll",
         "cancelled active fetch holds its slot until stopping finishes, also across configure/cancelAll",
@@ -5876,9 +5995,9 @@
       ],
       "divergence": {
         "AGY retains named effort models and explicit override flags without a shell": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache.",
-        "API task routes, configurable tier models, and global overrides": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache.",
-        "custom endpoints never receive the general OpenAI key; deliberate HUD keys still work": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache.",
-        "legacy reasoning opt-in maps by tier without inventing minimal or medium": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3/q4: legacy true maps lite=none, low=low, medium=low, not arbitrary request thinking. Renamed from reasoning_effort is opt-in and unknown efforts are omitted. Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache.",
+        "API task routes, configurable tier models, and global overrides": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache. R6A-A0 (orchestrator q7): A0 forbids production custom-endpoint/explicit/HUD legacy key bypass and removes legacy reasoning semantics; exact-origin OpenAI auth and tier effort independence remain asserted. F4/test source-scoped keys are covered separately.",
+        "panel custom endpoints are off; removed explicit/HUD keys cannot bypass host binding": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache. R6A-A0 (orchestrator q7): A0 forbids production custom-endpoint/explicit/HUD legacy key bypass and removes legacy reasoning semantics; exact-origin OpenAI auth and tier effort independence remain asserted. F4/test source-scoped keys are covered separately.",
+        "default efforts follow product tiers, not request thinking levels": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3/q4: legacy true maps lite=none, low=low, medium=low, not arbitrary request thinking. Renamed from reasoning_effort is opt-in and unknown efforts are omitted. Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache. R6A-A0 (orchestrator q7): A0 forbids production custom-endpoint/explicit/HUD legacy key bypass and removes legacy reasoning semantics; exact-origin OpenAI auth and tier effort independence remain asserted. F4/test source-scoped keys are covered separately.",
         "call counts: last hour and since midnight": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache.",
         "single flight, queued cancellation, active cancellation, and cancelAll": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache.",
         "cancelled active fetch holds its slot until stopping finishes, also across configure/cancelAll": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache.",
@@ -5889,20 +6008,52 @@
         "public handle lifecycle notifies queued-to-running, holds cancellation slot, and retains cache generation time": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. syntheticRuntimeFile redirects only cache.json to materials-v1/replies/cache.json. calls.json and claims.json stay beside the directory. Cache mode, entry count, and write-failure checks now observe the replies cache."
       },
       "assertExceptions": {
-        "legacy reasoning opt-in maps by tier without inventing minimal or medium": [
+        "default efforts follow product tiers, not request thinking levels": [
           {
             "main": "550741e7fd488c7a970595f2738236007deb9c9026efcd9f459637d10ba2a08d",
-            "branch": "9a8762f5939bf060c9a63007f806e822b6db6cff2ead5436bb89ed1f17e1f23d"
+            "branch": "6fcaff497beaf0cbb7c6239ba2b50066005041768c03ac4d5226c3bda6aebd72"
           },
           {
             "main": "4b40e7f2c00737b3c5039290b87881e80935483b14d3331906d49f0bbc90516c",
-            "branch": "2fa94589a2a6451943b0b66c7e122992af60669a381474482cf926908ec8e198"
+            "branch": "6fcaff497beaf0cbb7c6239ba2b50066005041768c03ac4d5226c3bda6aebd72"
+          },
+          {
+            "main": "f425c5ec02dd0f5ae48146ee261aa2391186670f66cbe4777312e6e739d9e3a6",
+            "branch": "6fcaff497beaf0cbb7c6239ba2b50066005041768c03ac4d5226c3bda6aebd72"
           }
         ],
         "cap, free cache, restart persistence, private files, and cache endpoint/model/thinking/feature identity": [
           {
             "main": "2269a8063803042a40642f80afe9cfa59f21a3e800a9c437104dca5a5fe0095f",
             "branch": "1cc3a4175f6db79202fdb9576754256ea3a9c519fc9a1fa2481b1839aaa861ea"
+          }
+        ],
+        "API task routes, configurable tier models, and global overrides": [
+          {
+            "main": "2f6a90f0d40de96b7e4c18b79abea72b77c2d21a00caee6e436b060dc0eef4c1",
+            "branch": "d5a0576108496a60237e99590723f808b10b69a2f69493e0b008ed9ef5fdf8af"
+          }
+        ],
+        "panel custom endpoints are off; removed explicit/HUD keys cannot bypass host binding": [
+          {
+            "main": "190c40c13de7f0fefb19ef513530fece0f2a5e833b6aa4b283d25d1247fb4ae4",
+            "branch": "f0e686a4259551674a56753cd46471c38a25428e0449ae0aef783ed6a2b7184e"
+          },
+          {
+            "main": "190c40c13de7f0fefb19ef513530fece0f2a5e833b6aa4b283d25d1247fb4ae4",
+            "branch": "b1708cd752bf0058be5febef731d74e7d067466451b2dbfa019b060eadebb9ff"
+          },
+          {
+            "main": "b56a752cc62a4fe20d6cb5e9495515812ec1e3000fbefb5a36c965e4c31e9f3f",
+            "branch": "a2ec47203a821901c1777d18a1a25f25ea86e562be4fb01264f3ab8081102aeb"
+          },
+          {
+            "main": "eede418c1ab9386fff8ab237faf541d503406cd014a80e38d1e279b32d49794e",
+            "branch": "88ccadbf651f874810bc7a639b598b96ed6b82acde377d14a1700de5abce8609"
+          },
+          {
+            "main": "c28a5f2df8ad24f1895ff8cc34473a88211f19f5c0107661d7abff183a79e35d",
+            "branch": "69dad30a24f6548af7dac83bdd2c7d0d0b021df0a5e56252c45a7999b8221ce2"
           }
         ]
       }

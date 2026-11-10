@@ -5,9 +5,9 @@ import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import * as TOML from '@iarna/toml';
 import { JevFailure } from '../ask/error.js';
-import { defaultHudHome } from '../ask/config.js';
+import { readHudConfig, requiredJevLocation } from '../ask/config.js';
+import { getHudHome } from '../../hud-home.js';
 import { assertLeaseHeld, type HeldLease } from '../ask/lease.js';
 import { assertStateDir, fsyncDirectory } from '../ask/names.js';
 import {
@@ -50,7 +50,7 @@ export interface StudioConfig {
   thinking: string;
   cdpUrl?: string;
 }
-/** HUD JSON `aistudio` overlays an explicitly selected TOML table with the same field names. */
+/** HUD JSON only. Snake-case fields from earlier HUD configuration remain readable. */
 export function loadStudioConfig(
   options: {
     configJsonPath?: string;
@@ -62,33 +62,16 @@ export function loadStudioConfig(
 ): StudioConfig {
   const home = options.home ?? homedir();
   const env = options.capturedEnv ?? process.env;
-  const file = options.tomlPath ?? env.JEV_ASK_CONFIG;
-  const configJsonPath = options.configJsonPath ?? join(defaultHudHome(env, home), 'config.json');
-  let toml: unknown;
-  let json: unknown;
-  try {
-    if (options.tomlText !== undefined) toml = TOML.parse(options.tomlText);
-    else if (file) toml = TOML.parse(readFileSync(file, 'utf8'));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new JevFailure('aistudio_config', 'aistudio_config');
-  }
-  try {
-    json = JSON.parse(readFileSync(configJsonPath, 'utf8'));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new JevFailure('aistudio_config', 'aistudio_config');
-  }
-  if (toml === undefined && json === undefined) {
-    throw new JevFailure('aistudio_config', `configuration not found: ${configJsonPath}`);
-  }
-  const table = { ...studioTable(toml), ...studioTable(json) };
-  const raw = table.state_dir;
-  const stateDir =
-    typeof raw === 'string' && raw.trim()
-      ? raw.replace(/^~(?=\/|$)/, home)
-      : join(home, '.local', 'state', 'jev-aistudio');
+  const configJsonPath = options.configJsonPath ?? join(getHudHome(env, home), 'config.json');
+  const table = studioTable(readHudConfig(configJsonPath));
+  const raw = table.stateDir ?? table.state_dir;
+  const stateDir = requiredJevLocation(typeof raw === 'string' ? raw : undefined, 'aistudio.stateDir').replace(
+    /^~(?=\/|$)/,
+    home
+  );
   const models = table.models ?? ['gemini-4-argon'];
-  const model = table.default_model ?? (Array.isArray(models) ? models[0] : 'gemini-4-argon');
-  const thinking = table.default_thinking ?? 'High';
+  const model = table.model ?? table.default_model ?? (Array.isArray(models) ? models[0] : 'gemini-4-argon');
+  const thinking = table.thinking ?? table.default_thinking ?? 'High';
   if (
     !Array.isArray(models) ||
     !models.length ||
@@ -99,7 +82,8 @@ export function loadStudioConfig(
   )
     throw new JevFailure('aistudio_config', 'aistudio_config');
   assertStateDir(stateDir);
-  const cdpUrl = typeof table.cdp_url === 'string' && table.cdp_url ? table.cdp_url : undefined;
+  const endpoint = table.cdpUrl ?? table.cdp_url;
+  const cdpUrl = typeof endpoint === 'string' && endpoint ? endpoint : undefined;
   return { stateDir, models: models as string[], model, thinking: thinking as string, ...(cdpUrl ? { cdpUrl } : {}) };
 }
 function studioTable(value: unknown): Record<string, unknown> {

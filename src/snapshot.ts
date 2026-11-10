@@ -17,7 +17,7 @@ import * as path from 'node:path';
 import { collectAttention } from './render/attention.js';
 import { readQuotaWindows } from './render/quota.js';
 import { agentCounts, eachThread, type StatusCounts, type ThreadKind } from './collectors/subagent-tree.js';
-import { getCodexHome, getHudHome } from './utils/codex-path.js';
+import { getHudDisplayHome } from './hud-home.js';
 import type { BarSegment, VariantLevel } from './render/layout/engine.js';
 import type { HudData, SubagentTreeNode } from './types.js';
 
@@ -254,8 +254,8 @@ export function snapshotFileName(sessionName: string): string {
   return `${safe || 'unnamed'}.json`;
 }
 
-export function snapshotDirectory(codexHome: string = getCodexHome()): string {
-  return path.join(getHudHome(codexHome), 'state');
+export function snapshotDirectory(_codexHome?: string): string {
+  return path.join(getHudDisplayHome(), 'state');
 }
 
 export function snapshotPath(env: NodeJS.ProcessEnv = process.env, pid: number = process.pid): string {

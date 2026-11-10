@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { getHudDisplayHome } from '../hud-home.js';
 import { diagnosticEvidence, numericFact, type DiagnosticEvidenceInput } from './provenance.js';
 import { sanitizeRuntimeIdentity, type RuntimeIdentity } from './runtime-identity.js';
 import {
@@ -83,10 +84,13 @@ export function createDiagnosticExportPreview(input: DiagnosticExportInput): Dia
 export type DiagnosticExportResult =
   { ok: true; path: string } | { ok: false; reason: 'invalid-preview' | 'write-failed' };
 /** Writes exactly the bytes previewed; arbitrary objects/JSON cannot be saved. */
-export function saveDiagnosticExport(preview: DiagnosticExportPreview, codexHome: string): DiagnosticExportResult {
+export function saveDiagnosticExport(
+  preview: DiagnosticExportPreview,
+  displayHome: string = getHudDisplayHome()
+): DiagnosticExportResult {
   const json = previews.get(preview);
   if (json === undefined) return { ok: false, reason: 'invalid-preview' };
-  const dir = path.join(codexHome, 'hud', 'diagnostics');
+  const dir = path.join(displayHome, 'diagnostics');
   const file = path.join(dir, `diagnostic-${randomUUID()}.json`);
   try {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });

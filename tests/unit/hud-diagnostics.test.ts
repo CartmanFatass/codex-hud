@@ -50,7 +50,7 @@ test('rate details distinguish no evidence, current, stale and previous-turn mea
 
 test('native transport success does not hide a Codex state mismatch', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-native-health-'));
-  const dir = path.join(home, 'hud', 'herdr', 'session');
+  const dir = path.join(home, 'display', 'herdr', 'session');
   fs.mkdirSync(dir, { recursive: true });
   const previousLanguage = setLanguage('en');
   try {
@@ -67,7 +67,10 @@ test('native transport success does not hide a Codex state mismatch', () => {
       probe: { status: 'mismatch' },
     };
     fs.writeFileSync(path.join(dir, '1.json'), JSON.stringify(record));
-    const reader = new BridgeHealthReader(home, { CODEX_HUD_TMUX_SESSION: 'session', CODEX_HUD_MAIN_PANE: '%1' });
+    const reader = new BridgeHealthReader(path.join(home, 'display'), {
+      CODEX_HUD_TMUX_SESSION: 'session',
+      CODEX_HUD_MAIN_PANE: '%1',
+    });
     const health = reader.read(10_100)!;
     assert.equal(health.state, 'connected');
     assert.equal(health.stateMismatch, true);
@@ -138,7 +141,7 @@ test('diagnostics command opens scrollable main details and exports sampled evid
 
 test('bridge health follows reattach to a new Herdr pane and aggregates live writers; ignores stopped records', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-health-'));
-  const dir = path.join(home, 'hud', 'herdr', 'session');
+  const dir = path.join(home, 'display', 'herdr', 'session');
   fs.mkdirSync(dir, { recursive: true });
   const report = {
     schemaVersion: 1,
@@ -159,7 +162,10 @@ test('bridge health follows reattach to a new Herdr pane and aggregates live wri
     fs.writeFileSync(path.join(dir, '3.json'), '{bad');
     for (let i = 0; i < 65; i++)
       fs.writeFileSync(path.join(dir, `${100000 + i}.json`), JSON.stringify({ ...report, lifecycle: 'stopped' }));
-    const reader = new BridgeHealthReader(home, { CODEX_HUD_TMUX_SESSION: 'session', HERDR_PANE_ID: 'outer:one' });
+    const reader = new BridgeHealthReader(path.join(home, 'display'), {
+      CODEX_HUD_TMUX_SESSION: 'session',
+      HERDR_PANE_ID: 'outer:one',
+    });
     assert.equal(reader.read(10_200)?.state, 'connected');
     assert.equal(reader.read(10_200)?.notificationGap, true);
     fs.writeFileSync(path.join(dir, '1.json'), JSON.stringify({ ...report, lifecycle: 'stopped' }));

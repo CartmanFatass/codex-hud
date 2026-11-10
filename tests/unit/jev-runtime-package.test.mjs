@@ -126,17 +126,23 @@ test('derived hud-mcp Jev runtime closure is selected by every MCP packaging lis
     assert.ok(specifier.startsWith('node:') || declared.has(specifier), `unpackaged bare import: ${specifier}`);
 });
 
-test('closure stays inside the Jev package; entries outside jev/runtime are reported', (t) => {
+test('closure stays inside Jev plus the one neutral HUD-home resolver; other entries are rejected', (t) => {
   const root = importClosure(ROOT, ROOT_ENTRY);
   const mcp = importClosure(ROOT, MCP_ENTRY);
   assert.deepEqual(
     root.files.filter((file) => !file.startsWith('dist/jev/')),
-    []
+    ['dist/hud-home.js']
   );
   assert.deepEqual(
     mcp.files.filter((file) => !file.startsWith('packages/hud-mcp/dist/src/jev/')),
-    []
+    ['packages/hud-mcp/dist/src/hud-home.js']
   );
+  for (const home of ['dist/hud-home.js', 'packages/hud-mcp/dist/src/hud-home.js']) {
+    const neutral = importClosure(ROOT, home);
+    assert.deepEqual(neutral.files, [home]);
+    assert.deepEqual(neutral.missing, []);
+    assert.ok(neutral.bare.every((specifier) => specifier.startsWith('node:')));
+  }
   const nonRuntime = root.files.filter((file) => !file.startsWith('dist/jev/runtime/'));
   t.diagnostic(`non-Jev-runtime closure (${nonRuntime.length}): ${nonRuntime.join(', ')}`);
   assert.ok(nonRuntime.length > 0);
@@ -180,6 +186,7 @@ test('negative fixture: removing one dependency is detected as drift', (t) => {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-runtime-closure-'));
   t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
   fs.cpSync(path.join(ROOT, 'dist/jev'), path.join(temporary, 'dist/jev'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'dist/hud-home.js'), path.join(temporary, 'dist/hud-home.js'));
   fs.rmSync(path.join(temporary, removed));
   const broken = importClosure(temporary, ROOT_ENTRY);
   assert.equal(broken.files.includes(removed), false);

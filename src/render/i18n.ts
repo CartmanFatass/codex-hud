@@ -341,10 +341,12 @@ const ZH: Record<string, string> = {
   'Connection: edit {file}': '连接配置：编辑 {file}',
   'For api, set the connection in {file}': '选 api 后，在 {file} 中设置连接',
   'briefingApiBase: {base}': 'briefingApiBase：{base}',
-  'briefingApiKey: {key}': 'briefingApiKey：{key}',
-  'empty, uses OpenAI': '未设置，使用 OpenAI',
+  'empty, uses Mistral': '未设置，使用 Mistral',
   set: '已设置',
-  'empty, uses CODEX_HUD_BRIEF_API_KEY': '未设置，使用 CODEX_HUD_BRIEF_API_KEY',
+  'Keys: environment or $HUD_HOME/credentials.env (0600); MISTRAL_API_KEY / OPENAI_API_KEY by host':
+    '密钥：环境变量或 $HUD_HOME/credentials.env（0600）；按主机选择 MISTRAL_API_KEY / OPENAI_API_KEY',
+  'Defaults: Mistral, deepseek-v4-1-flash-1017; efforts none / low / high':
+    '默认：Mistral，deepseek-v4-1-flash-1017；力度 none / low / high',
   'Models: briefingApiLiteModel, briefingApiLowModel, briefingApiMediumModel':
     '模型：briefingApiLiteModel、briefingApiLowModel、briefingApiMediumModel',
   'No agents started in this session yet': '本会话还没有启动 agent',

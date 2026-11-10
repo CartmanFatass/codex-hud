@@ -8,6 +8,7 @@ import { MODEL_KINDS } from './agent-log.js';
 import type { GitChanges } from './git-changes.js';
 import { eachThread } from './subagent-tree.js';
 import { writePrivateFile } from './small-model.js';
+import { getHudDisplayHome } from '../hud-home.js';
 
 export const ACTIVITY_LIMITS = {
   events: 500,
@@ -613,12 +614,19 @@ export class ActivityJournal {
   private readonly now: () => number;
   private lastObservationFingerprint?: string;
   private lastRefreshAt = 0;
-  constructor(options: { codexHome?: string | null; rootId: string; now?: () => number }) {
+  constructor(options: {
+    /** Deprecated: only enables persistence. Never a path. */
+    codexHome?: string | null;
+    /** The HUD display root; defaults to `getHudDisplayHome()`. */
+    displayHome?: string | null;
+    rootId: string;
+    now?: () => number;
+  }) {
     this.state = empty(clean(options.rootId, 128));
     this.now = options.now ?? Date.now;
     this.file =
-      options.codexHome && this.state.rootId
-        ? path.join(options.codexHome, 'hud', 'activity', `${hash(this.state.rootId)}.json`)
+      (options.displayHome || options.codexHome) && this.state.rootId
+        ? path.join(options.displayHome ?? getHudDisplayHome(), 'activity', `${hash(this.state.rootId)}.json`)
         : null;
     this.state = this.read();
   }

@@ -4,13 +4,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test, { type TestContext } from 'node:test';
-import { readCredentialsEnv, readHudCredentials, loadJevConfig } from '../../src/jev/ask/config.js';
+import {
+  readCredentialsEnv,
+  readHudCredentials,
+  loadJevConfig,
+  readHudCredentialName,
+} from '../../src/jev/ask/config.js';
 import { JevFailure } from '../../src/jev/ask/error.js';
-import { selectDecisionProvider } from '../../src/jev/decide.js';
-import { JevRuntime, loadRuntimeConfig } from '../../src/jev/runtime/executor.js';
+import { loadRuntimeConfig } from '../../src/jev/runtime/executor.js';
 import { loadStudioConfig } from '../../src/jev/runtime/aistudio-state.js';
-import type { OracleTarget } from '../../src/jev/runtime/oracle.js';
-import { fakeProvider } from '../../src/jev/runtime/fake.js';
 import {
   modelHttpRequest,
   completionText,
@@ -22,10 +24,9 @@ import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.
 import { SETTING_ROWS, withRowValue, renderSettingsPage } from '../../src/render/settings-page.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { stripAnsi } from '../../src/render/colors.js';
-
 function workspace(t: TestContext) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-keys-'));
-  const hudHome = path.join(home, '.hud');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-keys-')),
+    hudHome = path.join(home, '.hud');
   fs.mkdirSync(hudHome);
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return { home, hudHome, env: { HOME: home, HUD_HOME: hudHome } };
@@ -53,16 +54,18 @@ const question = {
   prompt: 'synthetic prompt',
   maxOutputTokens: 256,
 };
-const api = { base: 'https://api.mistral.ai/v1', model: '', key: '' };
-function built(base: string, env: NodeJS.ProcessEnv, key = '') {
-  const request = modelHttpRequest({ ...api, base, key }, question, env);
+const api = { base: 'https://api.mistral.ai/v1', model: '' };
+function built(base: string, env: NodeJS.ProcessEnv) {
+  const request = modelHttpRequest({ ...api, base }, question, env);
   assert.ok(!('error' in request));
   return request;
 }
-
-test('credentials are private regular files; unsafe modes, symlinks and FIFO are refused', (t) => {
-  const { hudHome } = workspace(t);
-  const file = path.join(hudHome, 'credentials.env');
+function locations(stateDir: string) {
+  return { stateDir, cdpUrl: 'http://127.0.0.1:9333', chrome: '/synthetic/chrome', profile: '/synthetic/profile' };
+}
+test('credentials are private regular bounded files; unsafe modes, symlinks and FIFO are refused', (t) => {
+  const { hudHome } = workspace(t),
+    file = path.join(hudHome, 'credentials.env');
   privateFile(
     file,
     'MISTRAL_API_KEY="synthetic-mistral"\nMISTRAL_BASE_URL=https://example.invalid\nTEXT_MODEL_KEY=${LITERAL}\n'
@@ -76,57 +79,55 @@ test('credentials are private regular files; unsafe modes, symlinks and FIFO are
     fs.chmodSync(file, mode);
     assert.throws(
       () => readCredentialsEnv(file),
-      (error: unknown) => error instanceof JevFailure && error.code === 'jev_env_perms'
+      (e: unknown) => e instanceof JevFailure && e.code === 'jev_env_perms'
     );
   }
   fs.chmodSync(file, 0o600);
-  const link = path.join(hudHome, 'link.env');
-  fs.symlinkSync(file, link);
-  assert.throws(
-    () => readCredentialsEnv(link),
-    (error: unknown) => error instanceof JevFailure && error.code === 'jev_env_perms'
-  );
+  fs.symlinkSync(file, path.join(hudHome, 'link.env'));
+  assert.throws(() => readCredentialsEnv(path.join(hudHome, 'link.env')), /regular file/);
   const fifo = path.join(hudHome, 'fifo.env');
-  const made = spawnSync('mkfifo', [fifo]);
-  assert.equal(made.status, 0);
-  // Child deadline makes a blocking-open regression fail instead of hanging this suite.
+  assert.equal(spawnSync('mkfifo', [fifo]).status, 0);
   const module = new URL('../../src/jev/ask/config.js', import.meta.url).href;
-  const result = spawnSync(
+  const child = spawnSync(
     process.execPath,
     [
       '--input-type=module',
       '-e',
-      `import { readCredentialsEnv } from ${JSON.stringify(module)}; try { readCredentialsEnv(${JSON.stringify(fifo)}); process.exit(2); } catch (e) { process.exit(e.code === 'jev_env_perms' ? 0 : 3); }`,
+      `import {readCredentialsEnv} from ${JSON.stringify(module)};try{readCredentialsEnv(${JSON.stringify(fifo)});process.exit(2)}catch(e){process.exit(e.code==='jev_env_perms'?0:3)}`,
     ],
     { timeout: 5000 }
   );
-  assert.equal(result.error, undefined);
-  assert.equal(result.status, 0);
+  assert.equal(child.error, undefined);
+  assert.equal(child.status, 0);
+  privateFile(file, 'x'.repeat(65537));
+  assert.throws(() => readCredentialsEnv(file), /maximum 64 KiB/);
 });
-
-test('per-name precedence is environment > credentials.env > jev.env, with no missing-file keys', (t) => {
+test('per-name precedence is environment > credentials.env only, never jev.env; captured HOME is hermetic', (t) => {
   const { hudHome, env, home } = workspace(t);
   assert.deepEqual(readHudCredentials(env), { textModel: {} });
   privateFile(
     path.join(hudHome, 'jev.env'),
-    'OPENAI_API_KEY=synthetic-legacy-openai\nTYPESAFE_API_KEY=synthetic-legacy-typesafe\nTEXT_MODEL_A=legacy\nTEXT_MODEL_B=kept\n'
+    'OPENAI_API_KEY=synthetic-legacy\nTYPESAFE_API_KEY=synthetic-legacy-typesafe\nTEXT_MODEL_B=legacy\n'
   );
-  assert.equal(readHudCredentials(env).openaiApiKey, 'synthetic-legacy-openai');
+  assert.deepEqual(readHudCredentials(env), { textModel: {} });
   privateFile(
     path.join(hudHome, 'credentials.env'),
-    'OPENAI_API_KEY=synthetic-current\nMISTRAL_API_KEY=synthetic-mistral\nTEXT_MODEL_A=current\n'
+    'OPENAI_API_KEY=synthetic-current\nMISTRAL_API_KEY=synthetic-mistral\nTEXT_MODEL_A=current\nCUSTOM_SOURCE_KEY=synthetic-custom\n'
   );
   const current = readHudCredentials(env);
   assert.equal(current.openaiApiKey, 'synthetic-current');
-  assert.equal(current.typesafeApiKey, 'synthetic-legacy-typesafe');
-  assert.deepEqual(current.textModel, { TEXT_MODEL_A: 'current', TEXT_MODEL_B: 'kept' });
+  assert.equal(current.typesafeApiKey, undefined);
+  assert.deepEqual(current.textModel, { TEXT_MODEL_A: 'current' });
   assert.equal(readHudCredentials({ ...env, OPENAI_API_KEY: 'synthetic-env' }).openaiApiKey, 'synthetic-env');
   assert.equal(readHudCredentials({ HOME: home }).mistralApiKey, 'synthetic-mistral');
   assert.equal(readHudCredentials({ ...env, OPENAI_API_KEY: '' }).openaiApiKey, '');
-  assert.equal(readHudCredentials({ ...env, TEXT_MODEL_A: 'env' }).textModel.TEXT_MODEL_A, 'env');
+  assert.equal(readHudCredentialName('CUSTOM_SOURCE_KEY', env), 'synthetic-custom');
+  assert.equal(readHudCredentialName('CUSTOM_SOURCE_KEY', { ...env, CUSTOM_SOURCE_KEY: 'override' }), 'override');
+  const other = path.join(home, 'other');
+  fs.mkdirSync(other);
+  assert.deepEqual(readHudCredentials({ HOME: other }), { textModel: {} });
 });
-
-test('request builder binds file/provider environment keys to exact official HTTPS origins only', (t) => {
+test('panel key selection is exact HTTPS host from environment or own credentials only; custom/no-key path is off', async (t) => {
   const { hudHome, env } = workspace(t);
   privateFile(
     path.join(hudHome, 'credentials.env'),
@@ -148,95 +149,102 @@ test('request builder binds file/provider environment keys to exact official HTT
     'http://api.openai.com/v1',
     'https://api.openai.com:8443/v1',
   ]) {
-    assert.equal(
-      built(base, { ...env, MISTRAL_API_KEY: 'synthetic-env', OPENAI_API_KEY: 'synthetic-env-openai' }).headers
-        .authorization,
-      undefined,
+    assert.ok(
+      'error' in
+        modelHttpRequest({ ...api, base, key: 'ignored-explicit' }, question, {
+          ...env,
+          CODEX_HUD_BRIEF_API_KEY: 'ignored-legacy',
+        }),
       base
     );
-    assert.equal(
-      built(base, { ...env, CODEX_HUD_BRIEF_API_KEY: 'synthetic-hud' }).headers.authorization,
-      'Bearer synthetic-hud'
-    );
-    assert.equal(
-      built(base, { ...env, CODEX_HUD_BRIEF_API_KEY: 'synthetic-hud' }, 'synthetic-explicit').headers.authorization,
-      'Bearer synthetic-explicit'
-    );
   }
-  for (const base of ['https://user@api.mistral.ai/v1', 'https://api.mistral.ai@evil.invalid/v1']) {
+  for (const base of ['https://user@api.mistral.ai/v1', 'https://api.mistral.ai@evil.invalid/v1'])
     assert.ok('error' in modelHttpRequest({ ...api, base }, question, env));
-  }
+  assert.equal(
+    Object.hasOwn(apiSettings(defaultSettings()), 'sourceCredential'),
+    false,
+    'settings cannot populate the source-scoped seam'
+  );
+  let calls = 0;
+  const probe = new ModelProbe({
+    env,
+    fetch: (async () => {
+      calls++;
+      throw new Error('must not call');
+    }) as typeof fetch,
+  });
+  await probe.run({ ...defaultSettings(), briefing: 'api', briefingApiBase: 'https://custom.invalid/v1' });
+  assert.equal(calls, 0);
+  assert.ok(probe.current().rows.every((row) => row.status === 'failed'));
+  fs.unlinkSync(path.join(hudHome, 'credentials.env'));
+  await probe.run({ ...defaultSettings(), briefing: 'api' });
+  assert.equal(calls, 0);
+  assert.ok(probe.current().rows.every((row) => row.failure));
 });
-
-test('each tier sends only its configured effort; headroom is added only for actual reasoning', (t) => {
+test('each tier sends configured efforts and bounded headroom; multipart thinking is ignored', (t) => {
   const { env } = workspace(t);
   for (const [tier, feature] of [
     ['lite', 'labels'],
     ['low', 'progress'],
     ['medium', 'recap'],
-  ] as const) {
+  ] as const)
     for (const effort of ['off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'] as ApiEffort[]) {
       const request = modelHttpRequest(
         { ...api, efforts: { [tier]: effort } },
         { ...question, feature, thinking: 'medium' },
-        env
+        { ...env, MISTRAL_API_KEY: 'synthetic-key' }
       );
       assert.ok(!('error' in request));
       const body = JSON.parse(request.body);
       assert.equal(body.reasoning_effort, effort === 'off' ? undefined : effort);
       assert.equal(body.max_tokens, 256 + (effort === 'off' || effort === 'none' ? 0 : REASONING_TOKEN_ALLOWANCE));
     }
-  }
-  const content = [
-    { type: 'thinking', thinking: [{ type: 'text', text: 'private thought' }] },
-    { type: 'text', text: 'answer' },
-  ];
-  assert.equal(completionText({ choices: [{ message: { content } }] }), 'answer');
-});
-
-test('legacy true/false files migrate conservatively and explicit per-tier typed values persist', (t) => {
-  const { env, hudHome } = workspace(t);
-  const file = path.join(hudHome, 'settings.json');
-  scopedEnv(t, { ...env, HUD_SETTINGS_PATH: file });
-  for (const enabled of [false, true]) {
-    privateFile(file, JSON.stringify({ briefingApiReasoning: enabled }));
-    const resolved = apiSettings(loadSettings());
-    assert.deepEqual(
-      resolved.efforts,
-      enabled ? { lite: 'none', low: 'low', medium: 'low' } : { lite: 'off', low: 'off', medium: 'off' }
-    );
-    for (const feature of ['labels', 'progress', 'recap']) {
-      const request = modelHttpRequest(resolved, { ...question, feature, thinking: 'medium' }, env);
-      assert.ok(!('error' in request));
-      assert.ok(!['minimal', 'medium'].includes(JSON.parse(request.body).reasoning_effort));
-    }
-  }
-  privateFile(
-    file,
-    JSON.stringify({
-      briefingApiReasoning: true,
-      briefingApiLiteEffort: 'off',
-      briefingApiLowEffort: 'minimal',
-      briefingApiMediumEffort: 'medium',
-    })
+  assert.equal(
+    completionText({
+      choices: [
+        {
+          message: {
+            content: [
+              { type: 'thinking', thinking: [{ type: 'text', text: 'private thought' }] },
+              { type: 'text', text: 'answer' },
+            ],
+          },
+        },
+      ],
+    }),
+    'answer'
   );
-  assert.deepEqual(apiSettings(loadSettings()).efforts, { lite: 'off', low: 'minimal', medium: 'medium' });
-  saveSettings({ briefingApiLowEffort: 'max' });
-  assert.deepEqual(apiSettings(loadSettings()).efforts, { lite: 'off', low: 'max', medium: 'medium' });
 });
-
-test('real ModelProbe requests use credentials and configured tier efforts, parsing Mistral thinking parts', async (t) => {
-  const { env, hudHome } = workspace(t);
-  const file = path.join(hudHome, 'credentials.env');
+test('removed keys load without migration and are dropped on save, other settings survive', (t) => {
+  const { env, hudHome } = workspace(t),
+    file = path.join(hudHome, 'hud-settings.json');
+  scopedEnv(t, { ...env, HUD_SETTINGS_PATH: undefined, CODEX_HUD_SETTINGS_PATH: undefined });
+  for (const enabled of [false, true]) {
+    privateFile(
+      file,
+      JSON.stringify({
+        briefingApiKey: 'synthetic-removed',
+        briefingApiReasoning: enabled,
+        theme: 'mocha',
+        briefingApiLowEffort: 'max',
+      })
+    );
+    const loaded = loadSettings();
+    assert.deepEqual(apiSettings(loaded).efforts, { lite: 'none', low: 'max', medium: 'high' });
+    assert.equal(loaded.theme, 'mocha');
+    saveSettings({ language: 'en' });
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.theme, 'mocha');
+    assert.equal(saved.language, 'en');
+    assert.equal(Object.hasOwn(saved, 'briefingApiKey'), false);
+    assert.equal(Object.hasOwn(saved, 'briefingApiReasoning'), false);
+  }
+});
+test('real ModelProbe uses product defaults and file credentials; key rotation invalidates probe', async (t) => {
+  const { env, hudHome } = workspace(t),
+    file = path.join(hudHome, 'credentials.env');
   privateFile(file, 'MISTRAL_API_KEY=synthetic-mistral\n');
-  const settings = {
-    ...defaultSettings(),
-    briefing: 'api' as const,
-    briefingApiBase: api.base,
-    briefingApiLiteEffort: 'none' as const,
-    briefingApiLowEffort: 'low' as const,
-    briefingApiMediumEffort: 'high' as const,
-  };
+  const settings = { ...defaultSettings(), briefing: 'api' as const };
   const recorded: Array<{ auth: string | undefined; body: Record<string, any> }> = [];
   const probe = new ModelProbe({
     env,
@@ -252,7 +260,7 @@ test('real ModelProbe requests use credentials and configured tier efforts, pars
             {
               message: {
                 content: [
-                  { type: 'thinking', thinking: [{ type: 'text', text: 'not an answer' }] },
+                  { type: 'thinking', thinking: [{ type: 'text', text: 'not answer' }] },
                   { type: 'text', text: 'OK' },
                 ],
               },
@@ -264,221 +272,91 @@ test('real ModelProbe requests use credentials and configured tier efforts, pars
   });
   await probe.run(settings);
   assert.deepEqual(
-    recorded.map((row) => row.auth),
+    recorded.map((r) => r.auth),
     Array(3).fill('Bearer synthetic-mistral')
   );
   assert.deepEqual(
-    recorded.map((row) => row.body.reasoning_effort),
+    recorded.map((r) => r.body.model),
+    Array(3).fill('deepseek-v4-1-flash-1017')
+  );
+  assert.deepEqual(
+    recorded.map((r) => r.body.reasoning_effort),
     ['none', 'low', 'high']
   );
   assert.deepEqual(
-    recorded.map((row) => row.body.max_tokens),
+    recorded.map((r) => r.body.max_tokens),
     [256, 768, 768]
   );
-  assert.ok(probe.current().rows.every((row) => row.status === 'ok'));
+  assert.ok(probe.current().rows.every((r) => r.status === 'ok'));
   const old = probeFingerprint(settings, env);
   privateFile(file, 'MISTRAL_API_KEY=synthetic-rotated\n');
   assert.notEqual(probeFingerprint(settings, env), old);
 });
-
-test('Jev uses HUD config only; poisoned implicit TOML is never read, explicit TOML still works', (t) => {
-  const { env, hudHome, home } = workspace(t);
-  scopedEnv(t, { ...env, JEV_ASK_CONFIG: undefined });
-  const foreign = path.join(home, '.config', 'jev-ask', 'config.toml');
-  fs.mkdirSync(path.dirname(foreign), { recursive: true });
-  privateFile(foreign, 'POISON: invalid TOML MUST NOT BE READ');
-  const configFile = path.join(hudHome, 'config.json');
-  assert.throws(
-    () => loadRuntimeConfig(hudHome),
-    (error: unknown) => error instanceof JevFailure && error.message === `configuration not found: ${configFile}`
-  );
-  privateFile(
-    configFile,
-    JSON.stringify({ jev: { stateDir: path.join(home, 'shared-state'), model: 'synthetic-model' } })
-  );
-  assert.equal(loadRuntimeConfig(hudHome).model, 'synthetic-model');
-  assert.equal(loadJevConfig({ capturedEnv: env, home }).stateDir, path.join(home, 'shared-state'));
+test('runtime ignores JEV_ASK_CONFIG even when valid; locations come only from HUD JSON', (t) => {
+  const { env, hudHome, home } = workspace(t),
+    foreign = path.join(home, 'explicit.toml');
+  scopedEnv(t, { ...env, JEV_ASK_CONFIG: foreign });
   privateFile(
     foreign,
-    `[jev]\nstate_dir = ${JSON.stringify(path.join(home, 'legacy-state'))}\nmodel = "synthetic-toml"\n`
+    '[jev]\nstate_dir="/synthetic/state"\ncdp_url="http://127.0.0.1:9"\nchrome="/synthetic/chrome"\nprofile="/synthetic/profile"\n'
   );
-  fs.unlinkSync(configFile);
-  process.env.JEV_ASK_CONFIG = foreign;
-  assert.equal(loadRuntimeConfig(hudHome).model, 'synthetic-toml');
-});
-
-test('active AI Studio jobs use runtime HUD JSON, ignore foreign TOML, and preserve shared state', async (t) => {
-  const { env, hudHome, home } = workspace(t);
-  scopedEnv(t, { ...env, JEV_ASK_CONFIG: undefined, TYPESAFE_API_KEY: undefined, OPENAI_API_KEY: undefined });
-  const foreign = path.join(home, '.config', 'jev-ask', 'config.toml');
-  fs.mkdirSync(path.dirname(foreign), { recursive: true });
-  privateFile(foreign, 'POISON invalid TOML MUST NOT BE READ');
-  const sharedState = path.join(home, 'deliberately-shared-studio-state');
-  const jevState = path.join(home, 'deliberately-shared-jev-state');
-  fs.mkdirSync(sharedState);
-  fs.mkdirSync(jevState);
-  const configFile = path.join(hudHome, 'config.json');
+  assert.throws(() => loadRuntimeConfig(hudHome), /jev.cdpUrl.*hud import/);
+  const file = path.join(hudHome, 'config.json');
+  privateFile(file, JSON.stringify({ jev: locations(path.join(home, 'state')) }));
+  assert.equal(loadRuntimeConfig(hudHome).stateDir, path.join(home, 'state'));
+  assert.equal(loadJevConfig({ capturedEnv: env }).cdpUrl, 'http://127.0.0.1:9333');
   assert.throws(
-    () => loadStudioConfig({ configJsonPath: configFile }),
-    (error: unknown) => error instanceof JevFailure && error.message === `configuration not found: ${configFile}`
+    () => loadStudioConfig({ capturedEnv: env, tomlText: '[aistudio]\nstate_dir="/synthetic/studio"' }),
+    /aistudio.stateDir.*hud import/
   );
+  const state = path.join(home, 'studio');
+  fs.mkdirSync(state);
   privateFile(
-    configFile,
+    file,
     JSON.stringify({
-      jev: { stateDir: jevState },
+      jev: locations(path.join(home, 'state')),
       aistudio: {
-        state_dir: sharedState,
-        models: ['synthetic-studio-model'],
-        default_model: 'synthetic-studio-model',
-        default_thinking: 'Low',
-        cdp_url: 'http://127.0.0.1:9333',
+        stateDir: state,
+        models: ['synthetic-a', 'synthetic-b'],
+        model: 'synthetic-b',
+        thinking: 'Low',
+        cdpUrl: 'http://127.0.0.1:9444',
       },
     })
   );
-  privateFile(path.join(hudHome, 'credentials.env'), 'TYPESAFE_API_KEY=synthetic-studio-key\n');
-  assert.deepEqual(loadStudioConfig({ configJsonPath: configFile }), {
-    stateDir: sharedState,
-    models: ['synthetic-studio-model'],
-    model: 'synthetic-studio-model',
-    thinking: 'Low',
-    cdpUrl: 'http://127.0.0.1:9333',
-  });
-  // Runtime HUD home must win even if the process default HUD config is different.
-  process.env.HUD_HOME = path.join(home, 'wrong-hud-home');
-  let browserOpens = 0;
-  const noBrowser = async (): Promise<never> => {
-    browserOpens++;
-    throw new Error('synthetic_config_test_stops_before_browser');
-  };
-  const target: OracleTarget = {
-    provider: 'aistudio',
-    root: 'https://example.invalid/',
-    settled: (url): url is string => typeof url === 'string',
-    open: noBrowser,
-    attach: noBrowser,
-    targets: async () => [],
-    prepare: noBrowser,
-    click: noBrowser,
-    binding: () => ({ found: false, answer: '', final: false }),
-    matchesDraft: () => false,
-  };
-  const runtime = new JevRuntime({ hudHome, fake: true, graceMs: 60_000, oracleTargets: { aistudio: target } });
-  await runtime.start();
-  try {
-    const job = await runtime.createJob({
-      requestKey: 'studio-owned-config',
-      session: { namespace: 'hud', sessionId: 'synthetic-studio-session' },
-      input: { tag: 'ask', target: 'aistudio', label: 'synthetic-studio', prompt: 'synthetic prompt' },
-    });
-    const stored = JSON.parse(fs.readFileSync(path.join(hudHome, 'jev-runtime', 'jobs', `${job.id}.json`), 'utf8'));
-    assert.equal(stored.input.model, 'synthetic-studio-model');
-    assert.equal(stored.input.thinking, 'Low');
-    assert.equal(stored.askStateDir, sharedState);
-    assert.equal(runtime.stateDir, jevState);
-  } finally {
-    await runtime.stop();
-  }
-  assert.ok(browserOpens <= 1, 'no real browser access; synthetic target stops the execution');
-});
-
-test('AI Studio JSON overlays only explicit TOML field by field and validates its section', (t) => {
-  const { env, hudHome, home } = workspace(t);
-  const sharedState = path.join(home, 'shared-studio');
-  fs.mkdirSync(sharedState);
-  const configFile = path.join(hudHome, 'config.json');
-  const explicit = path.join(home, 'explicit.toml');
-  privateFile(
-    explicit,
-    `[aistudio]\nstate_dir=${JSON.stringify(sharedState)}\nmodels=["synthetic-a", "synthetic-b"]\ndefault_model="synthetic-a"\ndefault_thinking="High"\n`
-  );
-  privateFile(configFile, JSON.stringify({ aistudio: { default_model: 'synthetic-b', default_thinking: 'Low' } }));
-  assert.deepEqual(loadStudioConfig({ home, capturedEnv: { ...env, JEV_ASK_CONFIG: explicit } }), {
-    stateDir: sharedState,
+  assert.deepEqual(loadStudioConfig({ capturedEnv: env }), {
+    stateDir: state,
     models: ['synthetic-a', 'synthetic-b'],
     model: 'synthetic-b',
     thinking: 'Low',
+    cdpUrl: 'http://127.0.0.1:9444',
   });
-  fs.unlinkSync(configFile);
-  assert.equal(loadStudioConfig({ home, capturedEnv: { ...env, JEV_ASK_CONFIG: explicit } }).model, 'synthetic-a');
-  for (const invalid of [null, [], 'invalid', { models: [] }]) {
-    privateFile(configFile, JSON.stringify({ aistudio: invalid }));
+  for (const invalid of [null, [], 'invalid', { stateDir: state, models: [] }]) {
+    privateFile(file, JSON.stringify({ aistudio: invalid }));
     assert.throws(
-      () => loadStudioConfig({ home, capturedEnv: { ...env, JEV_ASK_CONFIG: explicit } }),
-      (error: unknown) => error instanceof JevFailure && error.code === 'aistudio_config'
+      () => loadStudioConfig({ capturedEnv: env }),
+      (e: unknown) => e instanceof JevFailure && e.code === 'aistudio_config'
     );
   }
 });
-
-test('Jev decision selection keeps the same rule using HUD credentials and environment overrides', async (t) => {
-  const { env, hudHome, home } = workspace(t);
-  scopedEnv(t, {
-    ...env,
-    TYPESAFE_API_KEY: undefined,
-    TYPESAFE_MODEL: undefined,
-    OPENAI_API_KEY: undefined,
-    OPENAI_BASE_URL: undefined,
-  });
-  privateFile(
-    path.join(hudHome, 'credentials.env'),
-    'TYPESAFE_API_KEY=synthetic-typesafe\nOPENAI_API_KEY=synthetic-openai\nTYPESAFE_MODEL=synthetic-model\n'
-  );
-  assert.equal((await selectDecisionProvider(undefined, env)).id, 'typesafe');
-  assert.equal((await selectDecisionProvider('openai', env)).id, 'openai');
-  assert.equal(
-    (await selectDecisionProvider('typesafe', { ...env, TYPESAFE_MODEL: 'synthetic-override' })).model,
-    'synthetic-override'
-  );
-  const stateDir = path.join(home, 'shared-state');
-  fs.mkdirSync(stateDir);
-  const resolved: Array<{ id: string; apiKey: string }> = [];
-  const runtime = new JevRuntime({
-    hudHome,
-    stateDir,
-    fake: true,
-    graceMs: 60_000,
-    providerFactory: (choice) => {
-      resolved.push(choice);
-      return fakeProvider();
-    },
-  });
-  await runtime.start();
-  try {
-    for (const [index, provider] of [undefined, 'openai'].entries()) {
-      await runtime.createJob({
-        requestKey: `keys-${index}`,
-        session: { namespace: 'hud', sessionId: 'synthetic-session' },
-        input: { tag: 'browse', goal: 'read fixture', url: 'https://example.invalid' },
-        ...(provider ? { jevDecisions: { provider: provider as 'openai' } } : {}),
-      });
-    }
-    assert.deepEqual(
-      resolved.map((value) => [value.id, value.apiKey]),
-      [
-        ['typesafe', 'synthetic-typesafe'],
-        ['openai', 'synthetic-openai'],
-      ]
-    );
-  } finally {
-    await runtime.stop();
-  }
-});
-
-test('settings exposes EN/ZH tier effort rows without offering typed-only unsupported levels', (t) => {
+test('settings exposes EN/ZH tier efforts without offering endpoint-unsupported levels', () => {
   for (const lang of ['en', 'zh'] as const) {
-    const previous = setLanguage(lang);
-    t.after(() => setLanguage(previous));
-    for (const key of ['briefingApiLiteEffort', 'briefingApiLowEffort', 'briefingApiMediumEffort'] as const) {
-      const index = SETTING_ROWS.findIndex((row) => row.key === key);
-      assert.ok(index >= 0);
-      const row = SETTING_ROWS[index];
-      assert.deepEqual(row.values, ['off', 'none', 'low', 'high', 'xhigh', 'max']);
-      const draft = withRowValue(defaultSettings(), row, 'high');
-      assert.equal(draft[key], 'high');
-      const rendered = renderSettingsPage({ draft, selected: index, offset: 0, message: '' }, 60, 28)
-        .lines.map(stripAnsi)
-        .join('\n');
-      assert.match(rendered, lang === 'zh' ? /推理/ : /effort/);
+    const old = setLanguage(lang);
+    try {
+      for (const key of ['briefingApiLiteEffort', 'briefingApiLowEffort', 'briefingApiMediumEffort'] as const) {
+        const index = SETTING_ROWS.findIndex((r) => r.key === key);
+        assert.ok(index >= 0);
+        const row = SETTING_ROWS[index];
+        assert.deepEqual(row.values, ['off', 'none', 'low', 'high', 'xhigh', 'max']);
+        const draft = withRowValue(defaultSettings(), row, 'high');
+        assert.equal(draft[key], 'high');
+        const text = renderSettingsPage({ draft, selected: index, offset: 0, message: '' }, 60, 28)
+          .lines.map(stripAnsi)
+          .join('\n');
+        assert.match(text, lang === 'zh' ? /推理/ : /effort/);
+      }
+    } finally {
+      setLanguage(old);
     }
-    setLanguage(previous);
   }
 });

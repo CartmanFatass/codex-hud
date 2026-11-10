@@ -700,48 +700,52 @@ test('input keys and panel control metadata are unchanged between equivalent ali
   }
 });
 
-test('same-directory homes and stored v2 JSON selection retain exact old behavior', { timeout: 30000 }, async () => {
-  const f = fixture('home identity and v2 JSON');
-  try {
-    const a = await f.run();
-    pass(a);
-    const nameA = valueAfter(calls(a, 'new-session')[0], '-s');
-    const homeB = join(f.dir, 'codex-B');
-    mkdirSync(homeB, { mode: 0o700 });
-    const b = await f.run('codex-hud', { CODEX_HOME: homeB });
-    pass(b);
-    const nameB = valueAfter(calls(b, 'new-session')[0], '-s');
-    const prefixA = nameA.split('-').slice(0, 3).join('-');
-    const prefixB = nameB.split('-').slice(0, 3).join('-');
-    assert.notEqual(prefixA, prefixB);
-    const latestA = `${prefixA}-20261106140000-100`;
-    const latestB = `${prefixB}-20261106150000-200`;
-    writeFileSync(join(f.dir, 'sessions'), `${latestB}\n${latestA}\n${nameA}\n`, { mode: 0o600 });
-    const attached = await f.run('codex-hud', { HUD_AUTO_ATTACH: '1' });
-    pass(attached);
-    assert.equal(calls(attached, 'new-session').length, 0);
-    assert.equal(valueAfter(calls(attached, 'attach-session')[0], '-t'), latestA);
-    // Stored session home is authoritative for the v2 snapshot, not the
-    // caller's fallback home or the newest other-home session in this cwd.
-    f.putOptions({ '@codex_hud_codex_home': homeB });
-    mkdirSync(join(homeB, 'hud/state'), { recursive: true, mode: 0o700 });
-    const snapshot = '{"version":2,"updatedAt":"2026-11-06T12:00:00Z","agents":{"nodes":[]}}\n';
-    writeFileSync(join(homeB, 'hud/state', `${latestA}.json`), snapshot, { mode: 0o600 });
-    const json = await f.run('codex-hud', {}, ['--json']);
-    pass(json);
-    assert.equal(json.stdout, snapshot);
-    assert.ok(json.calls.every((args) => args[0] === 'tmux' && ['list-sessions', 'show-option'].includes(args[1])));
-    rmSync(join(homeB, 'hud/state', `${latestA}.json`));
-    const missing = await f.run('codex-hud', {}, ['--json']);
-    assert.equal(missing.status, 1);
-    assert.equal(missing.stdout, '');
-    assert.equal(missing.stderr, `codex-hud: no state recorded yet for session ${latestA}\n`);
-    writeFileSync(join(f.dir, 'sessions'), `${latestB}\n`, { mode: 0o600 });
-    const noSession = await f.run('codex-hud', {}, ['--json']);
-    assert.equal(noSession.status, 1);
-    assert.equal(noSession.stdout, '');
-    assert.equal(noSession.stderr, 'codex-hud: no session for this directory\n');
-  } finally {
-    f.close();
+test(
+  'Codex session identity stays account-specific while v2 JSON comes only from the stored HUD home',
+  { timeout: 30000 },
+  async () => {
+    const f = fixture('home identity and v2 JSON');
+    try {
+      const a = await f.run();
+      pass(a);
+      const nameA = valueAfter(calls(a, 'new-session')[0], '-s');
+      const homeB = join(f.dir, 'codex-B');
+      mkdirSync(homeB, { mode: 0o700 });
+      const b = await f.run('codex-hud', { CODEX_HOME: homeB });
+      pass(b);
+      const nameB = valueAfter(calls(b, 'new-session')[0], '-s');
+      const prefixA = nameA.split('-').slice(0, 3).join('-');
+      const prefixB = nameB.split('-').slice(0, 3).join('-');
+      assert.notEqual(prefixA, prefixB);
+      const latestA = `${prefixA}-20261106140000-100`;
+      const latestB = `${prefixB}-20261106150000-200`;
+      writeFileSync(join(f.dir, 'sessions'), `${latestB}\n${latestA}\n${nameA}\n`, { mode: 0o600 });
+      const attached = await f.run('codex-hud', { HUD_AUTO_ATTACH: '1' });
+      pass(attached);
+      assert.equal(calls(attached, 'new-session').length, 0);
+      assert.equal(valueAfter(calls(attached, 'attach-session')[0], '-t'), latestA);
+      // The stored HUD home is authoritative, independently of the transcript home.
+      const hudB = join(f.dir, 'independent-hud');
+      f.putOptions({ '@codex_hud_codex_home': homeB, '@codex_hud_hud_home': hudB });
+      mkdirSync(join(hudB, 'display/state'), { recursive: true, mode: 0o700 });
+      const snapshot = '{"version":2,"updatedAt":"2026-11-06T12:00:00Z","agents":{"nodes":[]}}\n';
+      writeFileSync(join(hudB, 'display/state', `${latestA}.json`), snapshot, { mode: 0o600 });
+      const json = await f.run('codex-hud', {}, ['--json']);
+      pass(json);
+      assert.equal(json.stdout, snapshot);
+      assert.ok(json.calls.every((args) => args[0] === 'tmux' && ['list-sessions', 'show-option'].includes(args[1])));
+      rmSync(join(hudB, 'display/state', `${latestA}.json`));
+      const missing = await f.run('codex-hud', {}, ['--json']);
+      assert.equal(missing.status, 1);
+      assert.equal(missing.stdout, '');
+      assert.equal(missing.stderr, `codex-hud: no state recorded yet for session ${latestA}\n`);
+      writeFileSync(join(f.dir, 'sessions'), `${latestB}\n`, { mode: 0o600 });
+      const noSession = await f.run('codex-hud', {}, ['--json']);
+      assert.equal(noSession.status, 1);
+      assert.equal(noSession.stdout, '');
+      assert.equal(noSession.stderr, 'codex-hud: no session for this directory\n');
+    } finally {
+      f.close();
+    }
   }
-});
+);
