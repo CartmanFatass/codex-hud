@@ -183,6 +183,18 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   load (3/3 alone) — check process-identity probing under load in PR4/PR5; reviewer guard blocks `mkdir` in the temp
   dir (pi-roles and product guard); known load flakes run-light-leader INT harness, managed-codex-adapter callbacks.
   Next: P2 finishing; P3a and A3 launch on this head; PR4 after P2 (shared collectors).
+  R6A-A3 merged (`ef7e8d9`; reviews `docs/reviews/2026-11-09-r6a-a3-review-{1,2,3}.md`): herdr panel control for the
+  main session in `src/integrations/panel/` (display-only receipts under `$HUD_HOME/display/panels`, intent before
+  split, launch tokens, generation fences, `isCurrent()` epoch seam for A4/A5, single-flight lifetime monitor, internal
+  `hud panel open|close|toggle|status`). A lost split reply stays `uncertain` with an orphan-pane hint (explicit reopen
+  only); absence needs a failed `pane.get` plus the recorded workspace's list. Orchestrator fix at acceptance: the panel
+  env keeps the caller's settings path (neutral name, then the `CODEX_HUD_` alias). Gate on `ef7e8d9`'s tree: unit
+  4298 with one failure = `run-light-leader.test.js` hung for ~2 h under load (stopped; 53/53 alone), mjs 708/706,
+  hud-mcp 219/218, WP0 1176/1176, mutants 12/12 + 7/7 panel. Real right-split/focus acceptance stays NOT_RUN (needs an
+  isolated herdr). Follow-ups: `run-light-leader` H05 can hang a whole unit run (no per-test timeout; seen twice);
+  load flakes also include `claude-regressions` evicted-duplicate (20 ms reader slice) and RUNZ1 census.
+  Review policy (owner, 2026-11-09): `Review tier: display` ≤ 2 rounds, `safety` ≤ 3; re-check rounds block only on
+  realistic or safety defects (`docs/delegation.md`; pi-roles `5748105`).
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
