@@ -2,13 +2,15 @@
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { homeCalls } from '../collectors/workboard.js';
 import type { DecisionRecord } from '../collectors/workboard-types.js';
-import type { MonitorRow, MonitorState } from './monitor.js';
+import type { MonitorRow, MonitorState, MonitorData } from './monitor.js';
+import { laneRows } from './work-lanes.js';
 import { targetKey } from '../collectors/workboard-types.js';
 import { t } from './i18n.js';
 import { theme, visualLength } from './colors.js';
 import { fit, monitorText, pair, flowLines } from './monitor-text.js';
 import {
   boardRow,
+  boardCursor,
   decisionRows,
   laneRow,
   mark,
@@ -18,7 +20,13 @@ import {
   workerColumns,
   callCount,
 } from './workboard-rows.js';
-export function homeRows(board: WorkboardSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
+export function homeRows(
+  board: WorkboardSnapshot,
+  state: MonitorState,
+  width: number,
+  now: number,
+  input?: MonitorData
+): MonitorRow[] {
   const inbox: MonitorRow[] = [],
     progress: MonitorRow[] = [];
   const wide = width >= 100,
@@ -94,23 +102,38 @@ export function homeRows(board: WorkboardSnapshot, state: MonitorState, width: n
   progress.push(section(t('work · observed start order'), rightWidth));
   for (const lane of board.lanes) progress.push(laneRow(lane, rightWidth, now, true));
   if (!board.lanes.length) progress.push(boardRow(theme.dim(t('No observed work'))));
+  if (wide && input) {
+    const lane = board.lanes.find((l) => l.id === selected?.laneId) ?? board.lanes[0];
+    if (lane) {
+      progress.push(section(t('Work peek'), rightWidth));
+      progress.push(...laneRows(input, lane, { ...state, mainTab: 'work', workTarget: undefined }, rightWidth, now));
+    }
+  }
+  let rightCursor = false;
   const rows: MonitorRow[] = wide
     ? Array.from({ length: Math.max(inbox.length, progress.length) }, (_, i) => {
         // Both columns retain their own keyboard destinations through targets carried by the physical rows.
         const a = inbox[i],
           b = progress[i];
         const rightSelected =
+          !rightCursor &&
           !!b?.item &&
           !state.boardAnchor &&
           (selected
-            ? targetKey(selected) === b.item
+            ? !inbox.some((row) => row.item === targetKey(selected)) && targetKey(selected) === b.item
             : !inbox.some((row) => row.item) &&
               b.item === targetKey({ kind: 'lane', laneId: board.lanes[0]?.id ?? '' }));
-        const right = rightSelected
-          ? theme.board.selected((b?.text ?? '').replace(/^[│|]/u, mark('›', '>')))
-          : (b?.text ?? '');
+        if (rightSelected) rightCursor = true;
+        const renderRight = () => {
+          const text = b?.paint?.() ?? b?.text ?? '';
+          return rightSelected ? boardCursor(text) : text;
+        };
         return {
-          text: fit(a?.text ?? '', leftWidth) + theme.frame(` ${mark('│', '|')} `) + fit(right, rightWidth),
+          text: '',
+          paint: () =>
+            fit(a?.paint?.() ?? a?.text ?? '', leftWidth) +
+            theme.frame(` ${mark('│', '|')} `) +
+            fit(renderRight(), rightWidth),
           item: a?.item,
           key: a?.key,
           controls: [

@@ -177,6 +177,7 @@ export interface MonitorState {
   importantRoles?: ReadonlySet<string>;
   /** The cards' corners. The panel sets it from settings. */
   cardCorners?: 'square' | 'round';
+  cardStallMinutes?: number;
   /**
    * The last render drew the delegation view, so `tree.selectedId` is one of its row keys. A reconcile that has no view
    * model to check it against (`reconcileMonitor` without one) leaves the selection alone instead of resetting it
@@ -199,6 +200,8 @@ export interface RowControl {
  */
 export interface MonitorRow {
   text: string;
+  /** Retained layout rows format a card only when its cells enter the viewport. */
+  paint?: () => string;
   item?: string;
   key?: string;
   controls?: RowControl[];
@@ -411,6 +414,7 @@ export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
     timelineHours: settings.timelineHours,
     importantRoles: roleSet(settings.importantRoles),
     cardCorners: settings.cardCorners,
+    cardStallMinutes: settings.cardStallMinutes,
     cardVisibility,
   };
 }
@@ -817,8 +821,9 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     frame.lines = frame.lines.slice(0, height).map((line) => truncateAnsi(line, width));
     return frame;
   }
-  // P1 sidecar seam (q2): live callers always provide this. The no-sidecar path below is
-  // retained only for legacy/secondary callers and fixtures; P2 migrates/removes it.
+  // P2 sidecar seam (q4): production always supplies the workboard sidecar, so the live panel
+  // never reaches the no-sidecar path below. It is retained only for legacy/secondary callers
+  // and fixtures, draws the same compact work card, and its removal is scheduled after P2.
   if (input.workboard && (state.focus === 'agents' || (state.focus === 'details' && state.boardInspect))) {
     return renderWorkboardFrame(input, state, input.workboard, now);
   }

@@ -7,14 +7,16 @@ import {
   monitorSettings,
   type MonitorState,
 } from '../../src/render/monitor.js';
-import { directions, roleSet } from '../../src/render/directions.js';
+import { roleSet } from '../../src/render/directions.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { setDisplayConfig } from '../../src/render/hud-config.js';
-import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
+import { stripAnsi, visualLength, theme } from '../../src/render/colors.js';
 import { cardSummaryTargets, cardSentence, agentCard } from '../../src/render/cards.js';
 import { defaultCardVisibility } from '../../src/card-visibility.js';
 import { defaultSettings } from '../../src/settings.js';
 import { SETTING_ROWS } from '../../src/render/settings-page.js';
+import { nativeWorker, projectWorkCard } from '../../src/collectors/work-card.js';
+import { renderWorkCard } from '../../src/render/work-card.js';
 import type { AgentLogEntry } from '../../src/collectors/agent-log.js';
 import type { AgentStage, SubagentStatus, SubagentTree, SubagentTreeNode } from '../../src/types.js';
 
@@ -86,177 +88,85 @@ const rich = (extra: Partial<MonitorState> = {}): MonitorState => ({
 const draw = (state = rich(), width = 44, tree = session(), agentLog?: Map<string, AgentLogEntry[]>) =>
   renderMonitor({ tree, state, width, height: 60, nowMs: NOW, agentLog });
 const plain = (lines: string[]) => lines.map((line) => stripAnsi(line).trimEnd());
+const summary = (lines: string[]) => lines.find((line) => /^ ▦ /.test(line)) ?? '';
 /** A card's lines, its top rule to its bottom one. */
 const card = (lines: string[], name: string) => {
   const top = lines.findIndex((line) => /^[┌╭›] /.test(line) && line.includes(` ${name} `));
-  const end = lines.findIndex((line, i) => i > top && /^[└╰]/.test(line));
-  return lines.slice(top, end + 1);
+  const end = lines.findIndex((line, i) => i > top && !/^[│└╰]/.test(line));
+  return top < 0 ? [] : lines.slice(top, end < 0 ? undefined : end);
 };
 
 test('only the L1 agents have cards; the summary counts them, at work while a subtask is, and their subtasks as one figure', () => {
+  // §15 2026-11-09: descendants fold into owners, but existing aggregate counts remain.
   const lines = plain(draw().lines);
-  // The title gives up its name before the counts' words.
-  const summary = (lines: string[]) => lines.find((line) => /^ ▦ (Agents )? \S/.test(line))!;
   assert.match(summary(lines), /▸2 run .*· 6 subtasks, 1 failed$/, 'the subtasks as one figure, with their failures');
-  for (const name of ['impl_a', 'general_a', 'plain_a']) assert.ok(!lines.some((line) => line.includes(name)), name);
-  assert.ok(
-    lines.some((line) => line.includes('impl_b')),
-    'a live subtask stays on the closed card'
-  );
-  assert.ok(
-    lines.some((line) => /^┌ ✓ docs_writer ─+/.test(line)),
-    'an old finished L1 is still a card'
-  );
-  // A finished lead with a subtask still at work keeps its card, and counts as at work.
+  for (const name of ['impl_a', 'impl_b', 'scout_a', 'general_a', 'plain_a'])
+    assert.ok(!lines.some((line) => line.includes(name)), name);
+  assert.equal(card(lines, 'parser_lead').length, 2); // stalled reason, not a child list
+  assert.match(card(lines, 'docs_writer')[0], /to accept/);
   const tree = session();
   tree.nodes[0] = { ...tree.nodes[0], status: 'completed', statusAt: ago(30), stages: [], action: undefined };
   const kept = plain(draw(rich(), 44, tree).lines);
-  assert.ok(
-    kept.some((line) => /^[┌›] ✓ parser_lead/.test(line)),
-    kept.join('\n')
-  );
+  assert.match(card(kept, 'parser_lead')[0], /to accept/);
   assert.match(summary(kept), /▸2 run/);
 });
 
 test("a card: its name in its direction's colour, whom it works with, what it is doing, the subtasks that matter, the rest by role; not its own words cut to a line", () => {
   const tree = session();
-  const frame = draw(rich(), 44, tree);
-  const lines = plain(frame.lines);
-  const lead = card(lines, 'parser_lead');
-  assert.deepEqual(lead.slice(1, 3), ['│ ⇄ critic', '│ ▸ npm run bench'], lead.join('\n'));
-  assert.ok(
-    lead.some((line) => /^│ ▸ impl_b +◷3m00s$/.test(line)),
-    lead.join('\n')
-  );
-  assert.ok(
-    lead.some((line) => /scout_a/.test(line)) && lead.some((line) => /implementer/.test(line)),
-    'important failure and role counts default on'
-  );
-  assert.ok(!lead.some((line) => /review_a/.test(line)), 'ordinary completed child hidden');
-  const paint = directions(tree).paint('lead');
-  assert.ok(
-    frame.lines.some((line) => line.includes(theme.bold(paint(colors.underline('parser_lead'))))),
-    "bold, in its direction's colour, underlined to click"
-  );
-  // Agent colours on the marks alone: the name in the text colour; off: no colour at all.
-  for (const agentColors of ['mark', 'off'] as const) {
-    const previous = setDisplayConfig({ agentColors });
-    try {
-      const lines = draw(rich(), 44, tree).lines;
-      assert.ok(
-        lines.some((line) => line.includes(theme.bold(colors.underline('parser_lead')))) &&
-          !lines.some((line) => line.includes(paint('parser_lead'))),
-        agentColors
-      );
-    } finally {
-      setDisplayConfig(previous);
-    }
+  tree.nodes[0].role = 'imp';
+  const previous = setDisplayConfig({ theme: 'titanium' });
+  try {
+    const frame = draw(rich(), 56, tree),
+      lead = card(plain(frame.lines), 'parser_lead');
+    assert.match(lead[0], /imp parser_lead/);
+    assert.ok(frame.lines.some((line) => line.includes(theme.board.roleInk.imp('imp'))));
+    assert.ok(lead.length <= 3);
+    assert.ok(!/critic|npm run|impl_b|scout_a|implementer|⇄|→/.test(lead.join('\n')));
+    assert.ok(!lead.some((line) => line.includes('wire the streaming')));
+    assert.match(card(plain(frame.lines), 'critic')[0], /agent critic/);
+  } finally {
+    setDisplayConfig(previous);
   }
-  const openedLead = card(plain(draw(rich(), 44, tree).lines), 'parser_lead');
-  assert.ok(
-    openedLead.some((line) => /^│ ! scout_a +20m$/.test(line)),
-    openedLead.join('\n')
-  );
-  assert.ok(
-    draw(rich(), 44, tree).lines.some((line) => line.includes(theme.info('2'))),
-    'a role with an agent running: its count in the running colour'
-  );
-  // The helper's card names the lead it works for, in the lead's colour.
-  const critic = card(lines, 'critic');
-  assert.equal(critic[1], '│ → parser_lead');
-  assert.ok(frame.lines.some((line) => line.includes(paint('parser_lead')) && stripAnsi(line).includes('→')));
-  // Wider, every role fits; the shared "team-" is left out, Codex's default and a missing role are "general".
-  const wide = card(plain(draw(rich(), 60, tree).lines), 'parser_lead');
-  assert.equal(wide.at(-2), '│ 2 general · 2 implementer · 1 reviewer · 1 scout', 'the most first, a tie by name');
 });
 
 test('the subtasks that matter: failed, a named role (or its end), or flagged; three closed, all opened; a click selects one', () => {
   const tree = session();
-  const named = rich({ importantRoles: roleSet('reviewer') });
-  const openedState = named;
-  const lines = plain(draw(openedState, 52, tree).lines);
+  const state = rich({ importantRoles: roleSet('reviewer') });
+  const log = new Map<string, AgentLogEntry[]>([['s1', [{ at: NOW, kind: 'cause', text: 'Helper failure prose' }]]]);
+  const frame = draw(state, 52, tree, log),
+    lines = plain(frame.lines);
   const lead = card(lines, 'parser_lead');
-  assert.ok(
-    lead.some((line) => /^│ ✓ review_a +30m$/.test(line)),
-    "its own answer is the Inspector's: " + lead.join('\n')
-  );
-  // The model's digest of it is the model's words, on the opened card.
-  const digested = session();
-  digested.nodes[0].children = digested.nodes[0].children.map((kid) =>
-    kid.id === 'r1' ? { ...kid, digest: 'ship it' } : kid
-  );
-  assert.ok(
-    card(plain(draw(openedState, 52, digested).lines), 'parser_lead').some((line) =>
-      /^│ ✓ review_a ship it +30m$/.test(line)
-    )
-  );
-  // Closed, only the live subtask. Opened, every one that matters.
-  const log = new Map<string, AgentLogEntry[]>(
-    ['i1', 'i2', 'g1', 'n1'].map((id) => [id, [{ at: NOW - 60_000, kind: 'note', text: 'look', attention: true }]])
-  );
-  const closed = card(plain(draw(named, 52, tree, log).lines), 'parser_lead');
-  const kids = (lines: string[]) =>
-    lines.filter((line) => /^│ [!✓▸] (impl|review|scout|general|plain)_/.test(line)).length;
-  assert.equal(kids(closed), 6, closed.join('\n'));
-  assert.ok(closed.some((line) => line.includes('impl_b')));
-  assert.ok(closed.some((line) => line.includes('review_a')) && closed.some((line) => line.includes('scout_a')));
-  const opened = card(plain(draw(named, 52, tree, log).lines), 'parser_lead');
-  assert.equal(kids(opened), 6, opened.join('\n'));
-  assert.match(opened.find((line) => /scout_a/.test(line)) ?? '', /! scout_a/, 'failures first');
-  // A click on a subtask's line selects it, for the Inspector; the line marks it.
-  const frame = draw(openedState, 52, tree);
-  const y = frame.lines.findIndex((line) => stripAnsi(line).includes('scout_a'));
+  assert.ok(lead.length <= 3);
+  assert.ok(!/impl_|review_a|scout_a|Helper failure prose/.test(lead.join('\n')));
+  assert.ok(!frame.controls.some((c) => c.kind === 'log' && c.item === 's1'));
+  const name = frame.controls.find((c) => c.kind === 'switch' && c.item === 'lead')!;
+  assert.ok(name);
   const picked = handleMonitorInput(
     frame.state,
-    { type: 'mouse', button: 'left', x: 4, y },
+    { type: 'mouse', button: 'left', x: name.x - 1, y: name.y },
     { tree, frame, nowMs: NOW }
-  ).state;
-  assert.equal(picked.tree.selectedId, 's1');
-  assert.ok(plain(draw(picked, 52, tree).lines).some((line) => line.startsWith('│ ›! scout_a')));
+  );
+  assert.equal(picked.state.tree.selectedId, 'lead');
+  assert.equal(picked.action, undefined);
+  assert.equal(picked.state.modes.details, 'closed');
 });
 
 test("a subtask's digest or cause wraps under its name, whole; with too little room beside the name it starts on the next line", () => {
   const cause = 'The harness timed out on the large corpus after the cache warmed up';
-  const tree = session();
-  tree.nodes[0].children = tree.nodes[0].children.map((kid) =>
-    kid.id === 's1' ? { ...kid, name: 'scout_streams_long_name' } : kid
-  );
-  const log = new Map<string, AgentLogEntry[]>([['s1', [{ at: NOW - 60_000, kind: 'cause', text: cause }]]]);
-  const said = (width: number) => {
-    const frame = draw(rich(), width, tree, log);
-    const lead = card(plain(frame.lines), 'parser_lead');
-    const at = lead.findIndex((line) => line.includes('scout_streams'));
-    const lines = [
-      lead[at],
-      ...lead.slice(at + 1).filter((line, i, all) => all.slice(0, i + 1).every((l) => /^│ {3}\S/.test(l))),
-    ];
-    return { frame, lines };
-  };
+  const owner = node('lead', 'lead', 'error', { lastEventAt: ago(0) });
   for (const width of [32, 44, 56]) {
-    const { lines } = said(width);
-    assert.ok(!lines.some((line) => line.includes('…')), lines.join('\n'));
-    assert.match(lines[0], /20m$/, 'its time stays at the right of its first line');
-    const words = lines
-      .map((line) =>
-        line
-          .replace(/^│ (! scout_\S*)?/, '')
-          .replace(/20m$/, '')
-          .trim()
-      )
-      .join(' ')
-      .trim();
-    assert.equal(words, cause, `${width}: ${lines.join('\n')}`);
+    const projected = projectWorkCard(nativeWorker(owner), NOW);
+    const compact = renderWorkCard(projected, rich(), width, cardSentence(cause));
+    assert.ok(compact.length <= 3);
+    const lines = renderWorkCard(projected, rich(), width, cardSentence(cause), true, false, cause);
+    const full = lines
+      .slice(compact.length)
+      .map((line) => stripAnsi(line).slice(2).trim())
+      .join(' ');
+    assert.ok(full.includes(cause), full);
+    assert.ok(lines.every((line) => visualLength(line) === width));
+    assert.ok(!lines.some((line) => stripAnsi(line).includes('scout_streams')));
   }
-  // Narrow, the name leaves no room beside it: the words start under it.
-  assert.match(said(32).lines[0], /^│ ! scout_streams_long_name +20m$/);
-  // A click on a wrapped line selects the subtask too.
-  const { frame } = said(44);
-  const y = frame.lines.findIndex((line) => stripAnsi(line).startsWith('│   ') && stripAnsi(line).includes('corpus'));
-  assert.equal(
-    handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 6, y }, { tree, frame, nowMs: NOW }).state.tree
-      .selectedId,
-    's1'
-  );
 });
 
 test('the role counts can be left out, and the corners can be round', () => {
@@ -270,8 +180,8 @@ test('the role counts can be left out, and the corners can be round', () => {
     ).lines
   );
   const lead = card(lines, 'parser_lead');
-  assert.match(lead[0], /^╭ ▸ parser_lead/);
-  assert.match(lead.at(-1)!, /^╰ ◷12m00s/);
+  assert.match(lead[0], /^╭ ◷ agent parser_lead/);
+  assert.match(lead.at(-1)!, /^╰ No new activity 12m/);
   assert.ok(!lead.some((line) => /implementer/.test(line)));
   const settings = monitorSettings({ ...defaultSettings(), cardCorners: 'round', cardRoleCounts: false });
   assert.deepEqual([settings.cardCorners, settings.cardVisibility?.cardRoleCounts], ['round', false]);
@@ -281,10 +191,7 @@ test('the role counts can be left out, and the corners can be round', () => {
       row.group,
       row.values,
     ]),
-    [
-      ['Cards', ['square', 'round']],
-      ['Cards', [true, false]],
-    ]
+    [['Cards', ['square', 'round']]]
   );
 });
 
@@ -335,12 +242,9 @@ test('a card counts as every view does: its subtasks at any depth, and its revie
   };
   const lines = draw(rich(), 44, tree).lines;
   const row = lines.find((line) => stripAnsi(line).includes('docs_writer'))!;
-  assert.match(stripAnsi(row).trimEnd(), /^┌ ✓ docs_writer .*◈1$/);
-  assert.ok(
-    plain(lines).some((line) => line.includes('w1_probe')),
-    'failure at depth three is named'
-  );
-  assert.ok(row.includes(theme.error('◈1')), 'the ◈ in red: a review failed');
+  assert.match(stripAnsi(row).trimEnd(), /^┌ ✓ agent docs_writer .*to accept/);
+  assert.ok(!plain(lines).some((line) => line.includes('w1_probe')), 'descendant failure stays folded into its owner');
+  assert.ok(!row.includes('◈'), 'no guardian chip on the compact card');
   assert.match(
     plain(lines).find((line) => /^ ▦ /.test(line))!,
     /· 8 subtasks, 2 failed$/,
@@ -362,15 +266,8 @@ test('a card counts as every view does: its subtasks at any depth, and its revie
     ],
   };
   const drawn = card(plain(draw(rich(), 44, deep).lines), 'parser_lead');
-  assert.match(drawn[0], / ◈1( |$)/, drawn.join('\n'));
-  assert.ok(
-    drawn.some((line) => line.includes('deep_probe')),
-    drawn.join('\n')
-  );
-  assert.ok(
-    drawn.some((line) => /! guardian/.test(line)),
-    drawn.join('\n')
-  );
+  assert.ok(drawn.length <= 3);
+  assert.ok(!/◈|deep_probe|guardian/.test(drawn.join('\n')));
 });
 
 test("a finished L1's row counts its subtasks by state, and cards keep to the width in both languages", () => {
@@ -382,9 +279,9 @@ test("a finished L1's row counts its subtasks by state, and cards keep to the wi
   const lines = plain(draw(rich(), 44, tree).lines);
   assert.match(
     lines.find((line) => line.includes('docs_writer'))!,
-    /^┌ ✓ docs_writer ─+$/
+    /^┌ ✓ agent docs_writer .*to accept/
   );
-  assert.ok(lines.some((line) => /^│ ! w2/.test(line)));
+  assert.ok(!lines.some((line) => /w2/.test(line)));
   for (const language of ['en', 'zh'] as const) {
     const previous = setLanguage(language);
     try {
@@ -402,52 +299,48 @@ test("a finished L1's row counts its subtasks by state, and cards keep to the wi
 });
 
 test('newest model note stays whole opened; live kid progress beats stale digest, request state preserves both notes', () => {
-  const previous = setLanguage('en');
-  try {
-    const leadNote = 'Latest model note describes the streaming parser recovery work and ends with LEAD_END';
-    const kidNote = 'Active child progress is validating long cache recovery scenarios and ends with CHILD_END';
-    const child = kid('child', 'child', undefined, 'running', undefined, { digest: 'STALE_DIGEST' });
-    const lead = node('lead', 'lead', 'running', { children: [child], task: 'RAW_TASK' });
-    const tree: SubagentTree = { rootId: 'root', nodes: [lead], totalCount: 2, updatedAt: new Date(NOW) };
-    const log = new Map<string, AgentLogEntry[]>([
+  const leadNote = 'Latest model note describes the streaming parser recovery work and ends with LEAD_END';
+  const child = kid('child', 'child', undefined, 'running', undefined, { digest: 'STALE_DIGEST' });
+  const lead = node('lead', 'lead', 'running', { children: [child], task: 'RAW_TASK', lastEventAt: ago(0) });
+  const tree: SubagentTree = { rootId: 'root', nodes: [lead], totalCount: 2, updatedAt: new Date(NOW) };
+  const log = new Map<string, AgentLogEntry[]>([
+    [
+      'lead',
       [
-        'lead',
-        [
-          { at: NOW - 2000, kind: 'note', text: 'OLD_HISTORY' },
-          { at: NOW - 1000, kind: 'report', text: 'RAW_REPORT' },
-          { at: NOW, kind: 'note', text: leadNote },
-        ],
+        { at: NOW - 2000, kind: 'note', text: 'OLD_HISTORY' },
+        { at: NOW - 1000, kind: 'report', text: 'RAW_REPORT' },
+        { at: NOW, kind: 'note', text: leadNote },
       ],
-      ['child', [{ at: NOW, kind: 'note', text: kidNote }]],
-    ]);
-    for (const width of [32, 40, 48, 56]) {
-      const render = (open: boolean, progress?: Map<string, { running: boolean; error?: string }>) =>
-        renderMonitor({ tree, state: rich(), width, height: 80, nowMs: NOW, agentLog: log, progress });
-      const closed = plain(render(false).lines);
-      assert.equal(closed.filter((line) => line.startsWith('│ Latest')).length, 1);
-      assert.ok(
-        closed.some((line) => line.includes('LEAD_END')),
-        'the L1 summary always wraps whole'
-      );
-      for (const request of [undefined, { running: true }, { running: false, error: 'synthetic timeout' }]) {
-        const progress = request
+    ],
+    ['child', [{ at: NOW, kind: 'note', text: 'CHILD_END' }]],
+  ]);
+  for (const width of [32, 40, 48, 56])
+    for (const request of [undefined, { running: true }, { running: false, error: 'synthetic timeout' }]) {
+      const frame = renderMonitor({
+        tree,
+        state: rich(),
+        width,
+        height: 80,
+        nowMs: NOW,
+        agentLog: log,
+        progress: request
           ? new Map([
               ['lead', request],
               ['child', request],
             ])
-          : undefined;
-        const frame = render(true, progress);
-        const text = plain(frame.lines).join('\n');
-        assert.ok(text.includes('LEAD_END') && text.includes('CHILD_END'), text);
-        assert.ok(!/STALE_DIGEST|RAW_TASK|RAW_REPORT|OLD_HISTORY/.test(text));
-        if (request) assert.ok(text.includes(request.running ? 'Writing progress' : 'Progress summary'), text);
-        for (const line of frame.lines) assert.equal(visualLength(line), width);
-        for (const control of frame.controls) assert.ok(control.x >= 0 && control.x + control.width <= width);
-      }
+          : undefined,
+      });
+      const text = plain(frame.lines).join('\n');
+      assert.ok(!/STALE_DIGEST|RAW_TASK|RAW_REPORT|OLD_HISTORY/.test(text));
+      assert.ok(!/STALE_DIGEST|RAW_TASK|RAW_REPORT|OLD_HISTORY|CHILD_END|Writing progress|Progress summary/.test(text));
+      const projected = projectWorkCard(nativeWorker(lead), NOW),
+        compact = renderWorkCard(projected, rich(), width, cardSentence(leadNote));
+      assert.ok(compact.length <= 3);
+      const expanded = renderWorkCard(projected, rich(), width, cardSentence(leadNote), true, false, leadNote);
+      assert.ok(expanded.map(stripAnsi).join('\n').includes('LEAD_END'));
+      for (const line of frame.lines) assert.equal(visualLength(line), width);
+      for (const control of frame.controls) assert.ok(control.x >= 0 && control.x + control.width <= width);
     }
-  } finally {
-    setLanguage(previous);
-  }
 });
 
 const cardInput = (tree: SubagentTree, state: MonitorState, agentLog?: Map<string, AgentLogEntry[]>) => ({
@@ -529,10 +422,10 @@ function visibilityScene() {
 }
 
 test('every card flag composes independently, with identity/status retained even when all optional fields are off', () => {
-  const { lead, tree, log } = visibilityScene();
-  const v = defaultCardVisibility();
+  const { lead, tree, log } = visibilityScene(),
+    v = defaultCardVisibility();
   const drawCard = (flags: Partial<typeof v>, width = 56) => {
-    const state = rich({ labelAsName: true, importantRoles: roleSet('reviewer'), cardVisibility: flags });
+    const state = rich({ labelAsName: true, cardVisibility: flags });
     return agentCard(
       { node: lead, depth: 0, prefix: '', hasChildren: true, collapsed: false, context: false, parentId: null },
       cardInput(tree, state, log),
@@ -541,63 +434,45 @@ test('every card flag composes independently, with identity/status retained even
       NOW
     );
   };
-  const words = (flags: Partial<typeof v>) => plain(drawCard(flags).map((row) => row.text)).join('\n');
-  const full = words({ cardOriginalName: true });
-  for (const token of [
-    'SmartLead',
-    'name original_lead',
-    'LEAD_END',
-    'Another lead sentence',
-    'relation_helper',
-    'synthetic-command',
-    'smart_live',
-    'Cause wins',
-    '6.1sol',
-    '◈4',
-    '◷1m00s',
-    '~42 tok/s',
-    '67%',
-    'worker',
-  ])
-    assert.ok(full.includes(token), token + '\n' + full);
-  const tests: Array<[keyof typeof v, string]> = [
-    ['cardLabel', 'SmartLead'],
-    ['cardOriginalName', 'name original_lead'],
-    ['cardSummary', 'LEAD_END'],
-    ['cardRelations', 'relation_helper'],
-    ['cardAction', 'synthetic-command'],
-    ['cardSubagents', 'smart_live'],
-    ['cardSubagentSummary', 'Cause wins'],
-    ['cardRoleCounts', 'worker'],
-    ['cardModel', '6.1sol'],
-    ['cardReviews', '◈4'],
-    ['cardClock', '◷1m00s'],
-    ['cardRate', '~42 tok/s'],
-    ['cardContext', '67%'],
-  ];
-  for (const [flag, token] of tests) {
-    const text = words({ cardOriginalName: true, [flag]: false });
-    assert.ok(!text.includes(token), `${flag}: ${text}`);
+  const words = (flags: Partial<typeof v>) => plain(drawCard(flags).map((r) => r.text)).join('\n');
+  const full = words({});
+  assert.match(full, /SmartLead/);
+  assert.match(full, /The newest lead summary/);
+  assert.match(full, /working 1m/);
+  assert.ok(
+    !/relation_helper|synthetic-command|smart_live|Cause wins|6.1sol|◈|tok\/s|67%|worker|Another lead sentence/.test(
+      full
+    )
+  );
+  for (const flag of Object.keys(v) as Array<keyof typeof v>) {
+    if (flag === 'cardSubagentScope') continue;
+    const text = words({ [flag]: false });
     assert.ok(text.includes(flag === 'cardLabel' ? 'original_lead' : 'SmartLead'));
     assert.ok(!/RAW_TASK|RAW_REPORT|OLD_HISTORY|STALE_RESULT|SECOND_SENTENCE|SECOND_CAUSE/.test(text));
-    if (flag === 'cardSubagentSummary') assert.ok(text.includes('smart_live') && text.includes('failed_child'));
-    if (flag === 'cardReviews')
-      assert.ok(text.includes('review_live'), 'review chip visibility is independent from descendant list');
-    if (flag === 'cardSubagents') assert.ok(text.includes('worker'), 'role count is independent from child list');
+    if (['cardLabel', 'cardSummary', 'cardClock'].includes(flag)) continue;
+    assert.equal(words({ [flag]: false }), full, `${flag} is retired for compact work cards`);
   }
+  assert.match(words({ cardLabel: false }), /original_lead/);
+  assert.ok(!words({ cardSummary: false }).includes('The newest lead summary'));
+  assert.ok(!words({ cardClock: false }).includes('1m'));
   const off = Object.fromEntries(
     Object.keys(v)
-      .filter((key) => key !== 'cardSubagentScope')
-      .map((key) => [key, false])
+      .filter((k) => k !== 'cardSubagentScope')
+      .map((k) => [k, false])
   ) as Partial<typeof v>;
   for (const width of [16, 24, 32, 40, 48, 56]) {
     const rows = drawCard(off, width);
-    assert.equal(rows.length, 2);
-    assert.match(stripAnsi(rows[0].text), /^┌ ▸ /);
-    assert.ok(stripAnsi(rows[0].text).includes(width < 24 ? 'origin…ead' : 'original_lead'));
-    assert.match(stripAnsi(rows[1].text), /^└ ─+$/);
+    assert.equal(rows.length, 1);
+    assert.match(stripAnsi(rows[0].text), /working/);
     assert.ok(rows.every((row) => visualLength(row.text) <= width));
     assert.ok(rows.flatMap((row) => row.controls ?? []).every((c) => c.kind === 'log' || c.kind === 'switch'));
+    assert.ok(rows.every((row) => visualLength(row.text) === width));
+    assert.ok(rows.flatMap((r) => r.controls ?? []).every((c) => c.kind === 'switch'));
+    assert.ok(
+      !/RAW_TASK|RAW_REPORT|OLD_HISTORY|STALE_RESULT|SECOND_SENTENCE|SECOND_CAUSE/.test(
+        rows.map((r) => r.text).join('\n')
+      )
+    );
   }
 });
 
@@ -614,12 +489,10 @@ test('clock, rate and context are separate footer fields in all eight combinatio
           56,
           NOW
         );
-        const foot = stripAnsi(rows.at(-1)!.text);
-        assert.equal(foot.includes('◷1m00s'), cardClock, foot);
-        assert.equal(foot.includes('~42 tok/s'), cardRate, foot);
-        assert.equal(foot.includes('67%'), cardContext, foot);
-        const failed = rows.find((row) => stripAnsi(row.text).includes('failed_child'))!;
-        assert.equal(stripAnsi(failed.text).includes('2m'), cardClock);
+        const head = stripAnsi(rows[0].text);
+        assert.equal(head.includes('1m'), cardClock, head);
+        assert.ok(!rows.some((row) => /tok\/s|67%|failed_child/.test(stripAnsi(row.text))));
+        assert.ok(rows.length <= 3);
       }
 });
 
@@ -648,11 +521,21 @@ test('child scope and summary toggles use identical subjects for rendering and p
             ].sort()
           );
           const shown = new Set(frame.controls.filter((c) => c.kind === 'log').map((c) => c.item));
-          for (const id of expected.all)
-            assert.equal(shown.has(id), cardSubagents && (expected[cardSubagentScope] as string[]).includes(id), id);
-          const text = plain(frame.lines).join('\n');
-          assert.equal(text.includes('Live progress wins.'), cardSubagents && cardSubagentSummary);
+          for (const id of expected.all) assert.equal(shown.has(id), false, id);
+          const raw = log.get('lead')!.at(-1)!.text;
+          const expanded = renderWorkCard(
+            projectWorkCard(nativeWorker(tree.nodes[0]), NOW),
+            state,
+            56,
+            raw,
+            true,
+            false,
+            raw
+          );
+          const text = plain(frame.lines).join('\n') + '\n' + expanded.map(stripAnsi).join('\n');
+          assert.equal(text.includes('Live progress wins.'), false);
           assert.equal(text.includes('LEAD_END'), cardSummary);
+          assert.equal(text.includes('The newest lead summary'), cardSummary);
           assert.ok(!/SECOND_SENTENCE|SECOND_CAUSE|STALE_RESULT|STALE_FAILURE/.test(text));
         }
 });
@@ -666,7 +549,13 @@ test('hidden summaries have no pending/error rows or targets; linger/filter, tab
     for (const cardSubagentSummary of [false, true]) {
       const state = rich({ cardVisibility: { cardSummary, cardSubagentSummary } });
       const text = plain(renderMonitor({ ...cardInput(tree, state, log), height: 120, progress }).lines).join('\n');
-      assert.equal(text.includes('Progress summary failed'), cardSummary || cardSubagentSummary);
+      assert.equal(text.includes('Progress summary failed'), false);
+      if (!cardSummary) {
+        assert.ok(!/The newest lead summary|queued|Writing progress|synthetic error/.test(text));
+        const lead = projectWorkCard(nativeWorker(tree.nodes[0]), NOW);
+        const expanded = renderWorkCard(lead, state, 56, 'Secret hidden summary', true, false, 'Secret hidden detail');
+        assert.ok(!/Secret hidden|queued|Writing progress|synthetic error/.test(expanded.map(stripAnsi).join('\n')));
+      }
       if (!cardSummary && !cardSubagentSummary)
         assert.equal(cardSummaryTargets({ tree, agentLog: log }, state, NOW).size, 0);
     }
@@ -742,19 +631,26 @@ test('child sentences wrap whole at every panel width, sanitize once, and never 
       for (const width of [16, 24, 32, 40, 48, 56]) {
         const state = rich({ cardVisibility: { cardClock: false, cardSubagentScope: 'all', cardRoleCounts: false } });
         const frame = renderMonitor({ tree, state, agentLog, width, height: 100, nowMs: NOW });
-        const childRows = (id: string) =>
-          frame.panes[0].rows
-            .filter((row) => row.controls?.some((c) => c.kind === 'log' && c.item === id))
-            .map((row) => stripAnsi(row.text).slice(2).trim());
-        const childWords = childRows('child').slice(1).join('').replace(/\s/g, '');
-        // The long name leaves no beside room at narrow widths; wider, take the sentence after the name.
-        const all = childRows('child').join('').replace(/\s/g, '');
-        assert.ok(all.includes('模型正在核对缓存恢复并准备提交完整的测试结果给协调者。'), all);
         const full = plain(frame.lines).join('\n');
         assert.ok(!/忽略第二句话|STALE_DIGEST|STALE_FAILURE|RAW_TASK|Basis|Caveats|Ignore later/.test(full), full);
-        const doneText = childRows('done').join(' ');
-        assert.ok(doneText.includes('Digest result') || doneText.includes('Digest'), doneText);
-        assert.ok(childRows('failed').join(' ').includes('Fallback note'), full);
+        assert.ok(
+          !/child_with|Digest result|Fallback note|忽略第二句话|STALE_DIGEST|STALE_FAILURE|RAW_TASK|Basis|Caveats|Ignore later/.test(
+            full
+          ),
+          full
+        );
+        const sentence = cardSentence(text),
+          projected = projectWorkCard(nativeWorker(lead), NOW);
+        const compact = renderWorkCard(projected, state, width, sentence);
+        assert.ok(compact.length <= 3);
+        const expanded = renderWorkCard(projected, state, width, sentence, true, false, sentence);
+        const all = expanded
+          .slice(compact.length)
+          .map((line) => stripAnsi(line).slice(2).trim())
+          .join('')
+          .replace(/\s/g, '');
+        assert.ok(all.includes('模型正在核对缓存恢复并准备提交完整的测试结果给协调者。'), all);
+        for (const line of expanded) assert.equal(visualLength(line), width);
         for (const line of frame.lines) assert.equal(visualLength(line), width);
         for (const control of frame.controls) assert.ok(control.x >= 0 && control.x + control.width <= width);
       }

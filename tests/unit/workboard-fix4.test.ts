@@ -177,7 +177,23 @@ test('fix4: clicking the painted Home activation hint uses Enter handoff at its 
           height: 40,
           nowMs: f.now(),
         });
-        assert.ok(work.workboard!.rows.some((row) => row.item === targetKey(target)));
+        if (width < 100) assert.ok(work.workboard!.rows.some((row) => row.item === targetKey(target)));
+        else {
+          // §15 2026-11-09 + P2 q5: the right call column has its own painted-cell target.
+          const picks = work.controls.filter((c) => c.kind === 'board-pick' && c.item === targetKey(target));
+          assert.ok(picks.length > 0);
+          const pick = picks.find((c) => stripAnsi(work.lines[c.y]).includes('SYN B'))!;
+          assert.ok(pick && pick.y >= work.panes[0].y && pick.y < work.panes[0].y + work.panes[0].height);
+          assert.ok(pick.x > width / 2 && pick.x + pick.width <= width);
+          let x = 0,
+            right = '';
+          for (const c of stripAnsi(work.lines[pick.y])) {
+            if (x >= pick.x && x < pick.x + pick.width) right += c;
+            x += visualLength(c);
+          }
+          assert.match(right, /SYN B/);
+          assert.ok(visualLength(right) <= pick.width);
+        }
       }
   } finally {
     pipeline.dispose();

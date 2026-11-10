@@ -34,6 +34,7 @@ export interface DecisionRecord {
   readonly evidence: readonly EvidenceRef[];
 }
 export interface OwnerWorker {
+  readonly work?: import('./work-card.js').WorkFacts;
   readonly id: string;
   readonly laneId: string;
   /** Only real tree nodes have an Inspector/native navigation mapping. */

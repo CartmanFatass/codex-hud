@@ -2,13 +2,13 @@
  ✓ nothing needs you                                             │ work · observed start order ───────────────
                                                                  │ › Synthetic browser finished wait          
                                                                  │ │ DONE phase unknown                       
+                                                                 │ Work peek ─────────────────────────────────
+                                                                 │ │ Synthetic browser finished done          
+                                                                 │ ┌ ✓ jev Synthetic browser finished done <1m
+                                                                 │ │ wait → done                              
+                                                                 │ └ Facade closed                            
  workers ─────────────────────────────────────────────────────────────────────────────────────────────────────
  ✓        jev      Synthetic browser finished                                               synthetic-web  10m
-                                                                                                              
-                                                                                                              
-                                                                                                              
-                                                                                                              
-                                                                                                              
                                                                                                               
                                                                                                               
                                                                                                               

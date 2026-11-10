@@ -3,7 +3,7 @@
  * disk reads, clocks or model calls: even request/progress state is a literal.
  * Renderers receive one pinned time; all ambient display knobs are restored.
  */
-import { applyCardPreset, type CardPreset } from '../../src/card-presets.js';
+import { applyCardPreset, type CardPreset } from './legacy-card-presets.js';
 import type { AgentLogEntry } from '../../src/collectors/agent-log.js';
 import type { ProgressContext, ProgressState } from '../../src/collectors/progress-summary.js';
 import type { SubagentTreeNode } from '../../src/types.js';
@@ -287,10 +287,10 @@ export function renderVisualPanel(scene: VisualCase, state = visualState(visualS
 
 export function renderVisualMenu(scene: VisualCase, state?: SettingsPageState) {
   const draft = visualSettings(scene);
-  // The selected child-role row captures Cards, its dependency/help, and the
-  // value column; the saved-width variant captures Width and its new right edge.
+  // Cards now captures the display-only stall threshold/help and value column;
+  // the saved-width variant still captures Width and its new right edge.
   const selected = SETTING_ROWS.findIndex(
-    (row) => row.key === (scene.kind === 'saved-width' ? 'treeWidth' : 'cardRoleCounts')
+    (row) => row.key === (scene.kind === 'saved-width' ? 'treeWidth' : 'cardStallMinutes')
   );
   const page = state ?? { draft, original: { ...draft }, selected, offset: 0, message: '' };
   const nav = controlBar(

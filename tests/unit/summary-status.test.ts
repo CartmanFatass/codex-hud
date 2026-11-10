@@ -214,7 +214,7 @@ test('cards show only concise enabled queue/writing/error/cap states, wrapping C
             width,
             now
           );
-          assert.ok(rows.length <= 4, `${lang} ${width} status rows capped`);
+          assert.ok(rows.length <= 3, `${lang} ${width} compact rows capped`);
           for (const row of rows) assert.ok(visualLength(row.text) <= width);
           assert.doesNotMatch(rows.map((row) => stripAnsi(row.text)).join('\n'), /PRIVATE/);
           const hidden = agentCard(
@@ -224,8 +224,15 @@ test('cards show only concise enabled queue/writing/error/cap states, wrapping C
             width,
             now
           );
-          assert.equal(hidden.length, 2);
-          if (width === 56) assert.ok(rows.some((row) => stripAnsi(row.text).includes(t(key))));
+          assert.equal(hidden.length, 1);
+          assert.ok(
+            !rows.some((row) => stripAnsi(row.text).includes(t(key))),
+            'model diagnostics belong in Inspector, not compact cards'
+          );
+          assert.doesNotMatch(
+            hidden.map((row) => stripAnsi(row.text)).join('\n'),
+            /queued|Writing|PRIVATE|summary failed/
+          );
         }
       }
     }
@@ -236,9 +243,9 @@ test('cards show only concise enabled queue/writing/error/cap states, wrapping C
     const writing = richRows(input({ phase: 'running', running: true }), state, 56, now, false)
       .map((row) => stripAnsi(row.text))
       .join('\n');
-    assert.match(queued, /queued/);
-    assert.match(writing, /Writing/);
-    assert.notEqual(queued, writing);
+    assert.doesNotMatch(queued, /queued/);
+    assert.doesNotMatch(writing, /Writing/);
+    assert.equal(queued, writing, 'model queue changes cannot become work progress or add footer rows');
   } finally {
     setLanguage(old);
   }

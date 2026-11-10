@@ -702,7 +702,7 @@ const ZH: Record<string, string> = {
   'Requires rich card layout': '需要卡片布局',
   'Requires child agent lines': '需要开启子 agent 各行',
   'Requires task label and names replacing Codex names': '需要任务标签，且 agent 名称替换 Codex 原名',
-  'Requires agent names enabled': '需要开启 agent 名称',
+  'Requires agent names enabled': '需要开启代理名称',
   'Requires periodic agent brief, main recap or change summary': '需要定期 agent 简报、主会话总结或改动总结',
   'Model backend is off; nothing is sent': '模型后端已关闭；不发送任何内容',
   'Model generation is paused; stored text remains': '模型生成已暂停；已保存文字仍保留',

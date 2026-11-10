@@ -10,6 +10,7 @@ import { renderModelEffortToken, classifyModelFamily } from './model-glyphs.js';
 import { displayConfig } from './hud-config.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { t } from './i18n.js';
+import { workInspectorRows } from './work-inspector.js';
 import { diagnosticLines, tokenRateDetails } from './hud-diagnostics.js';
 import { shownName, labelled } from './agent-title.js';
 import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
@@ -611,10 +612,13 @@ export function inspectorRows(
     ];
   }
   if (state.preview === 'agent') {
-    if (delegation) return delegationInspectorRows(delegation, state.tree.selectedId, width, input, state, now);
+    const worker = input.workboard?.workers.find((worker) => worker.nodeId === state.tree.selectedId);
+    const work = worker?.work ? workInspectorRows(worker, state, width, now) : [];
+    if (delegation)
+      return [...work, ...delegationInspectorRows(delegation, state.tree.selectedId, width, input, state, now)];
     const node = findNode(input.tree.nodes, state.tree.selectedId);
-    if (!node) lines = [];
-    else return agentInspectorRows(input, state, node, width, now);
+    if (!node) return work;
+    else return [...work, ...agentInspectorRows(input, state, node, width, now)];
   } else if (state.preview === 'worktree') {
     const entry = input.worktrees?.entries.find((e) => e.path === state.selectedWorktree);
     if (!entry) lines = [];

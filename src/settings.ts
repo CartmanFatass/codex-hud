@@ -108,6 +108,8 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
   agentLog: boolean;
   /** The cards' corners: square (`┌ └`) or round (`╭ ╰`). */
   cardCorners: 'square' | 'round';
+  /** Display-only inactivity threshold, never an execution deadline. */
+  cardStallMinutes: number;
   /**
    * How much the status card at the foot of the panel shows: `min`, its top
    * edge alone, the session's state on it; `status`, the bar's fields;
@@ -225,6 +227,7 @@ export function defaultSettings(): HudSettings {
     modelCallsPerHour: 60,
     agentLog: false,
     cardCorners: 'square',
+    cardStallMinutes: 10,
     notify: false,
     notifyDesktop: false,
     resultDigest: false,
@@ -303,6 +306,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusCard: oneOf('min', 'status', 'full'),
   agentLog: isBoolean,
   cardCorners: oneOf('square', 'round'),
+  cardStallMinutes: (value) => isIntegerBetween(value, 1, 120),
   cardRoleCounts: isBoolean,
   cardLabel: isBoolean,
   cardOriginalName: isBoolean,

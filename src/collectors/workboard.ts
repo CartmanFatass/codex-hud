@@ -1,5 +1,6 @@
 /** Pure projection. Names/cwd never join a task directory to an invocation. */
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
+import { nativeWorker, type WorkFacts } from './work-card.js';
 import type { DelegationViewModel } from '../core/link/view-model.js';
 import type { JobSnapshot } from './job-display-types.js';
 import type { DecisionRecord, OwnerWorker, TaskSnapshot, WorkboardSnapshot, WorkLane } from './workboard-types.js';
@@ -52,7 +53,40 @@ export function buildWorkboard(
       observed = tasks.lanes.find((l) => l.id === id),
       node = nodeByJob.get(job.id);
     const w = job.work;
+    const observedOwner = observed?.workers[0];
+    const observedWork =
+      !w?.continuationUnconfirmed &&
+      observedOwner?.work?.episode === job.dispatchSession &&
+      (w?.continuationFloor == null ||
+        (observedOwner.startedAt !== null && observedOwner.startedAt > w.continuationFloor)) &&
+      (w?.turnStartedAt == null || observedOwner.startedAt === w.turnStartedAt)
+        ? observedOwner.work
+        : undefined;
     const awaitingAcceptance = w?.facadeClosed === false && job.status === 'completed';
+    const recordedPhase = job.runtimePhase ?? job.phase ?? observed?.phase ?? null;
+    const dispatch = job.dispatchSession !== null || w?.continuationUnconfirmed !== undefined;
+    // JobRequest.current is an execution-protocol hint, not helper episode proof.
+    // Same-episode Task facts (including negative QA evidence) are authoritative
+    // for Work. Without them, dispatch only trusts the primary's own current wait.
+    const rootRequest =
+      !w?.continuationUnconfirmed &&
+      job.lifecycle === 'waiting_orchestrator' &&
+      !(job.requests?.length && job.requests.every((r) => r.state === 'written_consumption_unconfirmed'));
+    const currentRequest =
+      !dispatch || rootRequest
+        ? job.requests?.find((r) => r.current && r.respondable && r.state === 'unanswered')
+        : undefined;
+    const request = observedWork?.request ?? (rootRequest || !!currentRequest);
+    const answeredAt = observedWork?.answeredRequestAt;
+    // Execution's unknown status also represents a known orchestrator pause.
+    // Only a proved, answered current request with current live corroboration
+    // gets this display exception; arbitrary unknown/stale statuses never do.
+    const answeredWait =
+      answeredAt !== undefined &&
+      observedOwner?.state === 'waiting_orchestrator' &&
+      observedOwner.stale === false &&
+      job.lifecycle === 'waiting_orchestrator' &&
+      job.freshness.state === 'current';
     const worker: OwnerWorker = {
       id: job.id,
       laneId: id,
@@ -63,13 +97,70 @@ export function buildWorkboard(
       model: job.observedModel ?? job.backend?.model ?? null,
       effort: job.observedEffort ?? job.backend?.effort ?? null,
       state: awaitingAcceptance ? 'awaiting-acceptance' : job.lifecycle,
-      startedAt: job.createdAt,
+      startedAt:
+        w?.continuationUnconfirmed !== undefined || w?.turnStartedAt !== undefined
+          ? (w?.turnStartedAt ?? null)
+          : job.createdAt,
       settledAt: w?.settledAt ?? null,
-      phase: awaitingAcceptance ? 'awaiting-acceptance' : (job.runtimePhase ?? job.phase ?? observed?.phase ?? null),
+      phase: awaitingAcceptance ? 'awaiting-acceptance' : recordedPhase,
       homeNeedsHuman: w?.runtimeTerminal === true && w.homeNeedsHuman === true,
       humanEndedAt: w?.endedAt ?? null,
-      stale: job.freshness.state !== 'current',
+      stale: job.freshness.state !== 'current' || (job.status === 'unknown' && !answeredWait),
       evidence: observed?.evidence ?? [],
+      work: {
+        ...(observedWork ?? {
+          episode: job.dispatchSession ?? job.id,
+          signature: '',
+          activityAt:
+            w?.continuationUnconfirmed !== undefined
+              ? (w.turnStartedAt ?? null)
+              : w?.activityAt !== undefined
+                ? w.activityAt
+                : job.createdAt,
+          activityBasis: 'producer',
+          phases:
+            w?.continuationFloor != null && w.turnStartedAt == null
+              ? []
+              : recordedPhase
+                ? [recordedPhase]
+                : job.backend?.executor === 'jev'
+                  ? []
+                  : job.role === 'imp'
+                    ? ['build']
+                    : job.role === 'oracle'
+                      ? ['design']
+                      : job.role === 'reviewer'
+                        ? ['review']
+                        : job.role === 'sonic'
+                          ? ['chores']
+                          : [],
+          request: false,
+          failed: false,
+          result: false,
+        }),
+        ...(answeredWait && answeredAt !== undefined
+          ? { activityAt: answeredAt, activityBasis: 'producer' as const }
+          : {}),
+        request,
+        requestId: observedWork ? observedWork.requestId : currentRequest?.id,
+        requestInfo: observedWork?.requestInfo,
+        failed:
+          observedWork?.failed === true ||
+          job.status === 'error' ||
+          job.judgments?.some((j) => j.verdict !== 'pass') === true ||
+          (!!job.outcome && !['completed', 'answered', 'done'].includes(job.outcome)) ||
+          (!w?.continuationUnconfirmed &&
+            (w?.facadeClosed === true || ['closed', 'idle_grace'].includes(job.lifecycle)) &&
+            (w?.outputWritten === false || w?.outputCurrent === false)),
+        result:
+          observedWork?.result !== false &&
+          job.status === 'completed' &&
+          w?.outputWritten !== false &&
+          w?.outputCurrent !== false &&
+          !w?.continuationUnconfirmed,
+        facadeClosed: w?.facadeClosed,
+        facadeClosedAt: w?.facadeClosedAt ?? (w?.facadeClosed ? job.closedAt : null),
+      } satisfies WorkFacts,
     };
     lanes.push({
       id,
@@ -92,6 +183,7 @@ export function buildWorkboard(
     }
     const id = `native:${node.id}`;
     const worker: OwnerWorker = {
+      ...nativeWorker(node, id),
       id: node.id,
       nodeId: node.id,
       laneId: id,

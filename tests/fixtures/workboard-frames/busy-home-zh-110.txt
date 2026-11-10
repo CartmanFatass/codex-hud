@@ -5,12 +5,12 @@
  ! DESIGN 建议（非采纳记录）: Keep one explicit source       2分 │ │ UI-1     ━━━▸────── 实现           决定 6
           boundary.                                              │ │ Synthetic browser handoff wait           
    不可逆 · 建议（非采纳记录）                                   │ │ MOCKUP 阶段未知                          
-   备选： Infer a name-based join                                │                                            
-   原因： Never guess task ownership.                            │                                            
- ≠ UI-1 q1 Should compatibility s… → B: drop the shim        2分 │                                            
-   答复                                                          │                                            
-   备选： A                                                      │                                            
-   原因： The explicit source is sufficient.                     │                                            
+   备选： Infer a name-based join                                │ 工作速览 ──────────────────────────────────
+   原因： Never guess task ownership.                            │ │ CHECK    ━━━━━▸──── 评审           决定 1
+ ≠ UI-1 q1 Should compatibility s… → B: drop the shim        2分 │ ┌ ◷ reviewer Review the syntheti… 停滞 30分
+   答复                                                          │ │ 评审                                     
+   备选： A                                                      │ └ 无新进展 30分                            
+   原因： The explicit source is sufficient.                     │  < CHECK 退回修改 r2                    2分
    提问上下文： Should compatibility stay? — Synthetic public f… │                                            
  代你决定 6 ──────────────────────────────────────────────────── │                                            
  < CHECK 退回修改 r2                                         2分 │                                            

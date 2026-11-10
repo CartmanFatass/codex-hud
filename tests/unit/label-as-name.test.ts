@@ -100,33 +100,33 @@ test('the title: with the setting on a label is the name, the task goes under it
 test("cards and rows show the label in the name's place; closed, no task line under it", () => {
   const on = draw(state(true));
   assert.ok(
-    on.some((line) => /^› ▸ 缓存清理复核 ─+/.test(line)),
+    on.some((line) => /^› ▸ agent 缓存清理复核.*working/.test(line)),
     on.join('\n')
   );
   assert.ok(
-    on.some((line) => /^[┌›] ✓ 会话重启恢复 /.test(line)),
+    on.some((line) => /^[┌›] ✓ agent 会话重启恢复.*to accept/.test(line)),
     'a finished row too'
   );
   assert.ok(
-    on.some((line) => /^┌ ▸ db_index_service ─+/.test(line)),
+    on.some((line) => /^┌ ▸ agent db_index_service.*working/.test(line)),
     'no label yet: the name'
   );
   const at = on.findIndex((line) => line.includes('缓存清理复核'));
-  assert.match(on[at + 1], /^└ /, 'closed, under the label no task cut to a line, and not the label again');
+  assert.equal(on[at + 1].trim(), '', 'no empty sentence row inside the compact card');
   assert.ok(
     !on.some((line) => line.includes('cache_cleanup_reviewer')),
     'closed, the name Codex prints is not repeated'
   );
   const off = draw(state(false));
-  assert.ok(off.some((line) => /^› ▸ cache_cleanup_reviewer ─+/.test(line)));
-  assert.equal(off[off.findIndex((line) => line.includes('cache_cleanup_reviewer')) + 1].trimEnd(), '│ 缓存清理复核');
+  assert.ok(off.some((line) => /^› ▸ agent cache_cleanup_reviewer.*working/.test(line)));
+  assert.ok(!off.some((line) => line.includes('缓存清理复核')), 'off means the Codex name, not a duplicated label');
 });
 
 test('an opened card and the Inspector keep the name Codex prints', () => {
   const opened = draw(state(true, { cardVisibility: { cardOriginalName: true } }));
   assert.ok(
-    opened.some((line) => line.trimEnd() === '│ name cache_cleanup_reviewer'),
-    opened.join('\n')
+    !opened.some((line) => line.includes('name cache_cleanup_reviewer')),
+    'retired card-name prose is Inspector-only'
   );
   const inspector = draw(state(true, { modes: { ...initialMonitorState().modes, details: 'open' }, preview: 'agent' }));
   const heading = inspector.findIndex((line) => line.includes('│ 缓存清理复核'));
@@ -196,7 +196,7 @@ test("a finished row's brief line, under its label", () => {
   ]);
   const lines = draw(state(true), { agentLog: log });
   const at = lines.findIndex((line) => line.includes('会话重启恢复'));
-  assert.equal(lines[at + 1].trimEnd(), '│ socket 检查改为 stat()');
+  assert.match(lines[at + 1], /^└ socket 检查改为 stat\(\).*$/);
 });
 
 test('card label visibility is local: Codex names for L1 and child, smart names remain in other views', () => {
@@ -211,7 +211,10 @@ test('card label visibility is local: Codex names for L1 and child, smart names 
     nowMs: now,
   });
   const text = frame.lines.map(stripAnsi).join('\n');
-  assert.ok(text.includes('cache_cleanup_reviewer') && text.includes('original_child'));
+  assert.ok(
+    text.includes('cache_cleanup_reviewer') && !text.includes('original_child'),
+    'the owner identity remains; helpers do not become card bodies'
+  );
   assert.ok(!/缓存清理复核|smart_child|name cache_cleanup/.test(text), text);
   assert.equal(agentTitle(lead, true).name, '缓存清理复核');
   const compact = renderMonitor({

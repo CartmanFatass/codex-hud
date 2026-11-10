@@ -5,12 +5,12 @@
  ! DESIGN recommendation: Keep one explicit source boundary.  2m │ │ UI-1     ━━━▸────── build         6 calls
    one-way · recommendation                                      │ │ Synthetic browser handoff wait           
    instead: Infer a name-based join                              │ │ MOCKUP phase unknown                     
-   why: Never guess task ownership.                              │                                            
- ≠ UI-1 q1 Should compatibility s… → B: drop the shim         2m │                                            
-   answer                                                        │                                            
-   instead: A                                                    │                                            
-   why: The explicit source is sufficient.                       │                                            
-   source context: Should compatibility stay? — Synthetic publi… │                                            
+   why: Never guess task ownership.                              │ Work peek ─────────────────────────────────
+ ≠ UI-1 q1 Should compatibility s… → B: drop the shim         2m │ │ CHECK    ━━━━━▸──── review         1 call
+   answer                                                        │ ┌ ◷ reviewer Review the synthe… stalled 30m
+   instead: A                                                    │ │ review                                   
+   why: The explicit source is sufficient.                       │ └ No new activity 30m                      
+   source context: Should compatibility stay? — Synthetic publi… │  < CHECK Sent back r2                    2m
  decided for you 6 ───────────────────────────────────────────── │                                            
  < CHECK Sent back r2                                         2m │                                            
  · UI-1 q2 Should IDs stay opaque? → A: Retain UUID identifi… 2m │                                            

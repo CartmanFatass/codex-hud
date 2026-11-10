@@ -39,6 +39,13 @@ export interface JobDisplay {
     readonly homeNeedsHuman: boolean;
     readonly endedAt: number | null;
     readonly outputWritten: boolean | null;
+    /** Display proof only: expected nonempty output belongs to the observed turn. */
+    readonly outputCurrent?: boolean;
+    readonly continuationFloor?: number | null;
+    readonly activityAt?: number | null;
+    readonly activitySignature?: string;
+    readonly continuationUnconfirmed?: boolean;
+    readonly turnStartedAt?: number | null;
   };
   readonly lifecycle: string;
   readonly runtimePhase: string | null;

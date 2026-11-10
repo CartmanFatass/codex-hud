@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { defaultSettings } from '../../src/settings.js';
-import { applyCardPreset, identifyCardPreset, CARD_PRESET_KEYS, CARD_PRESETS } from '../../src/card-presets.js';
+import {
+  applyCardPreset,
+  identifyCardPreset,
+  CARD_PRESET_KEYS,
+  CARD_PRESETS,
+} from '../fixtures/legacy-card-presets.js';
 
 test('presets own thirteen booleans, retain identity and add progress then monitoring', () => {
   const base = defaultSettings();

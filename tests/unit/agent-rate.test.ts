@@ -167,31 +167,32 @@ test("a card at work: a live subtask on one line, its rate beside the clock; the
     }).lines.join('\n')
   ).split('\n');
   const top = lines.findIndex((line) => line.includes(' worker '));
-  const body = lines.slice(
-    top + 1,
-    lines.findIndex((line, i) => i > top && line.startsWith('└'))
-  );
-  assert.ok(
-    body.some((line) => /▸ helper/.test(line)),
-    body.join('\n')
-  );
+  const body = lines.slice(top + 1, lines.findIndex((line, i) => i > top && line.startsWith('└')) + 1);
+  assert.ok(top >= 0 && body.length <= 2, lines.join('\n'));
+  assert.ok(!body.some((line) => /helper|tok\/s|34%/.test(line)), body.join('\n'));
   assert.ok(
     body.some((line) => line.includes(note.slice(0, 4))),
     'closed: the newest note, one line'
   );
   assert.equal(body.filter((line) => line.includes(note.slice(0, 4))).length, 1);
   assert.ok(!lines.some((line) => line.includes('taking over')), "not the agent's own words");
-  assert.match(lines[top + 1 + body.length], /^└ ◷3m01s · ~42 tok\/s ─+34%─+$/);
+  assert.match(lines[top], /worker.*working 3m/);
   assert.match(
     lines.find((line) => line.includes('▸2 run'))!,
     /· ~186 tok\/s/,
     'the two agents and the subtask under one, together'
   );
-  // Narrow, the rate gives way before the meter does.
+  // Compact cards omit both telemetry strips, including at narrow widths.
   const narrow = stripAnsi(
     renderMonitor({ tree: tree([worker]), state: rich(), width: 24, height: 40, nowMs: now }).lines.join('\n')
   );
-  assert.ok(!/tok\/s ─/.test(narrow) && /◷3m01s ─+34%/.test(narrow), narrow);
+  assert.doesNotMatch(
+    narrow
+      .split('\n')
+      .filter((line) => !/▸1 run/.test(line))
+      .join('\n'),
+    /tok\/s|34%|\d+m\d\ds/
+  );
 });
 
 test('the Inspector has what the card leaves out: the rate, and the stand-in for a sealed task, whole', () => {
@@ -297,7 +298,7 @@ test('a working card keeps only its newest model note; the tool line stays', () 
       '\n'
     )
   );
-  assert.ok(tool.includes('npm test'), tool);
+  assert.doesNotMatch(tool, /npm test/, 'tool telemetry is Inspector-only; newest allowed sentence remains');
   assert.equal(tool.split('\n').filter((line) => /note \d/.test(line)).length, 1);
   assert.equal(monitorSettings({ ...defaultSettings(), cardSummary: false }).cardVisibility?.cardSummary, false);
   assert.equal(defaultSettings().cardSummary, true);

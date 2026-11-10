@@ -60,13 +60,17 @@ invented when the files do not state it; unknown phase or order is shown as unkn
 **Facade closure.** The additive facade closure is separate from the Pi dispatcher closure. Helpers are not owners:
 a helper's records never become a task's or a job's authority.
 
-**The retained legacy renderer.** `renderMonitor` keeps its no-sidecar path to the old stacked Agents renderer for
-legacy, secondary and fixture callers only (owner ruling q2). The live Home and Work path cannot use that seam, and
-the old renderer gets no new features; it is removed in P2.
+**The retained secondary renderer.** `renderMonitor` keeps its no-sidecar path to the stacked secondary layout for
+legacy, secondary and fixture callers only (owner ruling q4). Production always supplies the workboard sidecar, so
+the live panel never reaches this path. It keeps its secondary chrome, footer and keys, and its cards are the same
+compact work card the live pages draw — no old rich-card body, no second card renderer and no flag that brings the
+old content back. It gets no new features; its removal is scheduled after P2.
 
-**Scope of P1.** Work is transitional in this package: lane headers, decision rows and the existing cards, so that
-every Home → Work jump lands somewhere real. It is not the final P2 compact card and peek redesign. The snapshot
-publisher, the recap and brief backends, the main summary, the Timeline, Changes and the diagnostics are unchanged.
+**Scope of P2.** Work is the approved lanes and compact work cards, and Home's 110-column peek draws the selected
+lane through the same lane/card renderer. The four active card states, their precedence, the stall threshold and the
+facade-close rule are presentation only: execution status, wait semantics, acceptance and sources are unchanged. The
+snapshot publisher, the recap and brief backends, the main summary, the Timeline, Changes and the diagnostics are
+unchanged.
 
 ## 1. The mental model in one screen
 
