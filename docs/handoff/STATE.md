@@ -195,6 +195,29 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   load flakes also include `claude-regressions` evicted-duplicate (20 ms reader slice) and RUNZ1 census.
   Review policy (owner, 2026-11-09): `Review tier: display` ≤ 2 rounds, `safety` ≤ 3; re-check rounds block only on
   realistic or safety defects (`docs/delegation.md`; pi-roles `5748105`).
+  R5UX-P2 merged (`30d855d`, integration merge `699da79` onto the A0/A3 head; reviews
+  `docs/reviews/2026-11-09-r5ux-p2-review-{1..4}.md`, accept on round 4, the one extra round approved under q24).
+  Work is now compact shared cards (`src/collectors/work-card.ts`: needs-you / in-progress / awaiting-acceptance /
+  stalled / done; `src/render/work-{card,lanes,visibility,inspector}.ts`) with current-episode QA and helper proof, a
+  110-column Home peek and `cardStallMinutes` (1–120, default 10); retired rich-card presets moved to a test fixture.
+  Merge resolution:
+  - reference docs keep P2 text with `$HUD_HOME/display` paths;
+  - settings and `main-features.json` keep both A0 and P2 divergences, with recomputed replacement hashes;
+  - two P2 tests adapted to the removed `briefingApiKey`.
+
+  Gate on `699da79`:
+  - unit 4366/4336, with 4 load-timing failures (B19 drainer 50 ms, managed-codex-adapter callbacks, P2 render
+    timing), all green alone;
+  - hud-mcp 219/217, with `managed-target` partial coverage green alone;
+  - mjs 708/706/0, visual 331/331, WP0 1176/1176;
+  - mutants, fixtures, format and diff clean.
+
+  New load flake: the P2 render-timing test. Known limits:
+  - Work QA is stricter than the shared `JobRequest.current`;
+  - an unknown-start primary has no report-mtime ≤ settle upper bound (q23).
+
+  Next: A6+A7 merged into one package (R6A-A67: panel self-registration and lifetime plus the role-summary cache);
+  then A5; P2c, PR4 and P3b (after P3a).
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
