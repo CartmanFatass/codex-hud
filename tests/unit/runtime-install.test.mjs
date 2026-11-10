@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fixture } from '../../scripts/runtime-package/test-fixture.mjs';
-import { planInstall, executeInstall } from '../../scripts/runtime-package/installer.mjs';
+import { pathToFileURL } from 'node:url';
+import { fixture, priorInventoryFixture, rewriteManifest } from '../../scripts/runtime-package/test-fixture.mjs';
+import { planInstall, executeInstall, inspectPrefix } from '../../scripts/runtime-package/installer.mjs';
+import { planActivation } from '../../scripts/runtime-package/activation.mjs';
 import { verifyBundle } from '../../scripts/runtime-package/manifest.mjs';
 import { Directory } from '../../scripts/runtime-package/safety.mjs';
 const preview = (f, receipt) => planInstall(f.bundle, f.prefix, receipt);
@@ -27,6 +29,58 @@ function prefixSnapshot(root) {
   visit(root);
   return result;
 }
+
+test('retained prior inventory survives current inspection, upgrade, selection and rollback', async (t) => {
+  const prior = priorInventoryFixture(t);
+  const publisher = await import(pathToFileURL(path.join(prior.bundle, 'runtime-package/installer.mjs')).href);
+  const initial = publisher.planInstall(prior.bundle, prior.prefix);
+  const installed = publisher.executeInstall(prior.bundle, prior.prefix, initial.planDigest);
+  const oldRoot = path.join(prior.prefix, 'releases', installed.manifestDigest);
+  assert.ok(prior.omitted.includes('dist/roles/pi-owned/facade-context.js'));
+  for (const name of ['segment', 'package-entry', 'package-native', 'package-context'])
+    assert.equal(fs.existsSync(path.join(oldRoot, `dist/harness/pi/${name}.js`)), false);
+  for (const name of prior.omitted) assert.equal(fs.existsSync(path.join(oldRoot, name)), false);
+  const directory = new Directory(prior.prefix, true);
+  try {
+    assert.deepEqual(inspectPrefix(directory).releases, [installed.manifestDigest]);
+  } finally {
+    directory.close();
+  }
+  const next = fixture(t, 'next');
+  next.prefix = prior.prefix;
+  const upgrade = apply(next);
+  assert.equal(run(prior, 'hud').stdout.trim(), 'next');
+  assert.equal(fs.readdirSync(path.join(prior.prefix, 'releases')).length, 2);
+  const restored = apply(next, upgrade.receipt);
+  assert.equal(restored.manifestDigest, installed.manifestDigest);
+  assert.equal(run(prior, 'hud').stdout.trim(), 'prior');
+  assert.ok(
+    planActivation({
+      prefix: prior.prefix,
+      release: installed.manifestDigest,
+      hudHome: path.join(prior.home, 'hud'),
+      shimDir: path.join(prior.root, 'public-bin'),
+      path: '',
+    }).planId
+  );
+  assert.throws(
+    () => planInstall(prior.bundle, prior.prefix),
+    /missing_required_entry/,
+    'an old inventory is not admissible as a new incoming candidate'
+  );
+});
+
+test('incoming bundle missing a current required entry is refused before any installation publication', (t) => {
+  const f = fixture(t);
+  const missing = 'dist/roles/pi-owned/facade-context.js';
+  fs.unlinkSync(path.join(f.bundle, missing));
+  rewriteManifest(f, (manifest) => {
+    manifest.entries = manifest.entries.filter((entry) => entry.path !== missing);
+  });
+  assert.throws(() => planInstall(f.bundle, f.prefix), /missing_required_entry/);
+  assert.throws(() => executeInstall(f.bundle, f.prefix, '0'.repeat(64)), /missing_required_entry/);
+  assert.deepEqual(fs.readdirSync(f.prefix), []);
+});
 
 test('fix3 A-B-A refuses the old receipt even when selector identities are reused', (t) => {
   const a = fixture(t, 'A');

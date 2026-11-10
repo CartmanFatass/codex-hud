@@ -10,7 +10,7 @@ import {
   EXTERNAL_ID,
   type ExternalAssociation,
 } from '../roles/external-association.js';
-import { parseDispatchStatus, type DispatchStatus } from '../roles/pi-dispatch-status.js';
+import { activeDispatchQuestion, parseDispatchStatus, type DispatchStatus } from '../roles/pi-dispatch-status.js';
 import { validDispatch, type PiDispatch } from '../roles/pi-dispatch.js';
 import {
   HerdrListSampler,
@@ -89,7 +89,7 @@ interface ReceiptView {
   decision: { id: string; model: string | null } | null;
 }
 
-function receiptView(raw: unknown, a: JobAssociation): ReceiptView | null {
+function receiptView(raw: unknown, a: JobAssociation, directory: string): ReceiptView | null {
   if (
     !object(raw) ||
     raw.schema !== 1 ||
@@ -111,7 +111,11 @@ function receiptView(raw: unknown, a: JobAssociation): ReceiptView | null {
     for (const key of ['tab_id', 'pane_id', 'agent', 'workspace_id'] as const)
       if (raw.executor[key] !== a.herdr[key]) return null;
   }
-  if (raw.pi_dispatch !== undefined && !validDispatch(raw.pi_dispatch, a.role)) return null;
+  if (
+    raw.pi_dispatch !== undefined &&
+    (!validDispatch(raw.pi_dispatch, a.role, directory) || a.backend.harness !== 'pi' || raw.executor.kind !== 'herdr')
+  )
+    return null;
   const decision =
     object(raw.jev_decisions) && typeof raw.jev_decisions.provider === 'string'
       ? {
@@ -506,7 +510,7 @@ export class JobObservationCollector {
     }
     const directory = join(this.home, 'jobs', a.job);
     const read = yield* this.read(join(directory, 'receipt.json'), 64 * 1024);
-    const r = receiptView(json(read.text), a);
+    const r = receiptView(json(read.text), a, directory);
     if (!r) {
       if (read.reason === 'missing' && !work.view) work.view = this.base(a, file.mtime);
       else this.stale(work, 'receipt_mismatch_or_unreadable');
@@ -680,6 +684,7 @@ export class JobObservationCollector {
       if (!unconfirmed && primary.state === 'closed' && previous?.outcome === 'failed')
         view = { ...view, outcome: 'failed', status: 'error' };
       const helpers: JobDisplay[] = [];
+      const helperStatuses = new Map<string, DispatchStatus>();
       const helperDir = join(directory, '.dispatch');
       for (let n = 0; n < JOB_BOUNDS.helperEntries && helpers.length < JOB_BOUNDS.helpers; n++) {
         const e = yield { kind: 'entry', path: helperDir };
@@ -706,6 +711,7 @@ export class JobObservationCollector {
             });
           continue;
         }
+        helperStatuses.set(h.slot, h);
         let child = this.dispatchView(view, h, false);
         if (h.state === 'closed' && old?.outcome === 'failed') child = { ...child, outcome: 'failed', status: 'error' };
         helpers.push({
@@ -729,7 +735,9 @@ export class JobObservationCollector {
             freshness: { ...old.freshness, state: 'stale', reason: 'helper_status_unreadable' },
           });
       }
-      const requests = yield* this.questions(directory, primary, helpers);
+      const activeQuestion =
+        r.dispatch.contract_version === 2 ? activeDispatchQuestion(directory, primary, helperStatuses) : null;
+      const requests = yield* this.questions(directory, primary, helpers, activeQuestion?.slot);
       const report = (yield {
         kind: 'file',
         path: join(directory, 'report.md'),
@@ -770,6 +778,7 @@ export class JobObservationCollector {
         report.text === null &&
         (previous?.report?.available === true || previous?.diagnostics.includes('report_unreadable'));
       const diagnostics = [
+        ...(activeQuestion?.unknown ? ['active_helper_unknown'] : []),
         ...(requests === null ? ['qa_unreadable'] : []),
         ...(reportLost ? ['report_unreadable'] : []),
       ];
@@ -928,7 +937,8 @@ export class JobObservationCollector {
   private *questions(
     directory: string,
     primary: DispatchStatus | null,
-    helpers: readonly JobDisplay[]
+    helpers: readonly JobDisplay[],
+    askingSlot?: string | null
   ): Generator<Op, readonly JobRequest[] | null, Value> {
     const result: JobRequest[] = [];
     const path = join(directory, 'qa');
@@ -959,17 +969,27 @@ export class JobObservationCollector {
           id: entry.name.slice(0, -3),
           path: file,
           state: eligible ? 'written_consumption_unconfirmed' : 'unanswered',
-          current: primary
-            ? primary.state === 'waiting_orchestrator' ||
-              (!!primary.helper_pending?.n &&
-                helpers.some(
-                  (h) =>
-                    h.id.endsWith(`:dispatch:${primary.helper_pending!.kind}-${primary.helper_pending!.n}`) &&
-                    h.lifecycle === 'waiting_orchestrator' &&
-                    h.freshness.reason !== 'helper_status_unreadable' &&
-                    !!this.live.match(h.location, this.nowMs)
-                ))
-            : true,
+          current:
+            askingSlot !== undefined
+              ? askingSlot === 'primary' ||
+                (!!askingSlot &&
+                  helpers.some(
+                    (h) =>
+                      h.id.endsWith(`:dispatch:${askingSlot}`) &&
+                      h.freshness.reason !== 'helper_status_unreadable' &&
+                      !!this.live.match(h.location, this.nowMs)
+                  ))
+              : primary
+                ? primary.state === 'waiting_orchestrator' ||
+                  (!!primary.helper_pending?.n &&
+                    helpers.some(
+                      (h) =>
+                        h.id.endsWith(`:dispatch:${primary.helper_pending!.kind}-${primary.helper_pending!.n}`) &&
+                        h.lifecycle === 'waiting_orchestrator' &&
+                        h.freshness.reason !== 'helper_status_unreadable' &&
+                        !!this.live.match(h.location, this.nowMs)
+                    ))
+                : true,
           respondable: !eligible,
           observedAt: this.nowMs,
         });

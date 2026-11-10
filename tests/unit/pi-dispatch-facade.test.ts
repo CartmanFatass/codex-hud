@@ -1,595 +1,697 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { performance } from 'node:perf_hooks';
-import test, { type TestContext } from 'node:test';
-import {
-  hudCreate,
-  hudRead,
-  hudSend,
-  hudRespond,
-  hudClose,
-  waitForJob,
-  type FacadeContext,
-} from '../../src/roles/facade.js';
-import { discoverDispatch, readDispatchSession, dispatchEnv } from '../../src/roles/pi-dispatch.js';
-import { runCommand, type HerdrOutcome } from '../../src/roles/herdr-run.js';
+import { fork } from 'node:child_process';
+import { once } from 'node:events';
+import { tmpdir, hostname } from 'node:os';
+import { join, dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { setTimeout as pause } from 'node:timers/promises';
+import test, { before, type TestContext } from 'node:test';
+import { hudCreate, hudRead, hudSend, hudRespond, hudClose, type FacadeContext } from '../../src/roles/facade.js';
+import { waitForJob } from '../../src/roles/job-wait.js';
+import { observeDispatch } from '../../src/roles/pi-dispatch-status.js';
+import { readDispatchSession, launchDispatch, reapDispatch } from '../../src/roles/pi-dispatch.js';
+import { facadeRelease, captureFacadeRuntime } from '../../src/roles/pi-owned/facade-context.js';
+import { readProcess } from '../../src/core/run/process.js';
+import { CliHerdrTransport } from '../../src/integrations/herdr/transport.js';
+import { JobObservationCollector } from '../../src/collectors/job-observations.js';
 import { parseRosterRoot } from '../../src/roles/selection.js';
-import { withLock } from '../../src/roles/job-store.js';
-import { setTimeout as delay } from 'node:timers/promises';
+import { runHerdr } from '../../src/roles/herdr-run.js';
+import type { CallerProbe } from '../../src/roles/caller.js';
+import type { PanelHerdr } from '../../src/integrations/panel/herdr.js';
 import { REPO_ROOT } from '../fixtures/paths.js';
 
-const ROUTING = `schema = 1
-default_preset = "daily"
+const ROUTING = `schema=1
+default_preset="daily"
 [backends.pi]
-executor = "herdr"
-harness = "pi"
-model = "synthetic/model"
-effort = "high"
-recipe = "pi-role"
+executor="herdr"
+harness="pi"
+model="synthetic/model"
+effort="high"
+recipe="pi-role"
 [backends.browser]
-executor = "jev"
-target = "browser"
+executor="jev"
+target="browser"
 [jev_decisions.local]
-provider = "typesafe"
+provider="typesafe"
 [presets.daily]
-description = "Synthetic preset"
-jev_decisions = "local"
+description="Synthetic preset"
+jev_decisions="local"
 [presets.daily.roles]
-"oracle.propose" = "pi"
-"oracle.converge" = "pi"
-imp = "pi"
-sonic = "pi"
-reviewer = "pi"
-jev = "browser"
+"oracle.propose"="pi"
+"oracle.converge"="pi"
+imp="pi"
+sonic="pi"
+reviewer="pi"
+jev="browser"
 `;
-const OK: HerdrOutcome = {
-  ok: true,
-  reason: 'ok',
-  stdout: '{"result":{"agent":{"agent_status":"idle"}}}',
-  stderr: '',
-  exitCode: 0,
-};
-function quote(value: string) {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
+function put(file: string, value: unknown) {
+  fs.mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value), { mode: 0o600 });
 }
-function fixture(t: TestContext) {
-  const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-dispatch-')));
-  const work = join(home, 'work ; $(data) space');
-  const bin = join(home, 'bin');
-  fs.mkdirSync(work);
-  fs.mkdirSync(bin);
-  fs.chmodSync(home, 0o700);
-  fs.writeFileSync(join(home, 'routing.toml'), ROUTING, { mode: 0o600 });
-  const fake = join(REPO_ROOT, 'tests/fakes/pi-dispatch.mjs');
-  for (const name of ['pi-dispatch', 'pi-role-reap']) {
-    fs.writeFileSync(join(bin, name), `#!/bin/bash\nexec ${quote(process.execPath)} ${quote(fake)} "$@"\n`, {
-      mode: 0o755,
-    });
+function json(file: string): any {
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+async function until(body: () => boolean, ms = 10000) {
+  const end = performance.now() + ms;
+  while (!body()) {
+    if (performance.now() >= end) throw new Error('fixture condition timed out');
+    await pause(10);
   }
+}
+let artifact: any;
+let releaseRoot: string;
+let piPackage: string;
+before(async (t) => {
+  artifact = await (
+    await import(pathToFileURL(join(REPO_ROOT, 'tests/fakes/pi-owned-release.mjs')).href)
+  ).stagedWorker(t);
+  const installer = await import(pathToFileURL(join(REPO_ROOT, 'scripts/runtime-package/installer.mjs')).href);
+  const { PI_WORKER_FILES } = await import(pathToFileURL(join(REPO_ROOT, 'scripts/runtime-package/manifest.mjs')).href);
+  assert.ok(
+    PI_WORKER_FILES.includes('dist/roles/pi-owned/facade-context.js'),
+    'owned acquisition module must be required inventory'
+  );
+  const plan = installer.planInstall(artifact.bundle, artifact.prefix);
+  installer.executeInstall(artifact.bundle, artifact.prefix, plan.planDigest);
+  releaseRoot = join(artifact.prefix, 'releases', artifact.release.id);
+  piPackage = (await (await import(pathToFileURL(join(REPO_ROOT, 'tests/fakes/pi-package.mjs')).href)).piPackage())
+    ?.root;
+  assert.ok(piPackage, 'provider-free installed pi loader required');
+});
+async function fixture(t: TestContext) {
+  const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-pr4-')));
+  const home = join(root, 'home');
+  const work = join(root, "work space ' ; $() Ω");
+  const bin = join(root, 'bin');
+  for (const dir of [home, work, bin]) fs.mkdirSync(dir, { mode: 0o700 });
+  put(join(home, 'routing.toml'), ROUTING);
+  fs.symlinkSync(join(REPO_ROOT, 'tests/fakes/pi-owned-herdr.mjs'), join(bin, 'herdr'));
+  put(join(bin, 'pi'), '#!/bin/sh\nexit 99\n');
+  fs.chmodSync(join(bin, 'pi'), 0o700);
+  const hostile = join(root, 'hostile.log');
+  for (const name of ['pi-dispatch', 'pi-role', 'pi-role-reap']) {
+    put(join(bin, name), `#!/bin/sh\necho ${name} >> '${hostile}'\nexit 91\n`);
+    fs.chmodSync(join(bin, name), 0o700);
+  }
+  const integration = join(root, 'integration.ts');
+  put(
+    integration,
+    '// HERDR_INTEGRATION_ID=pi\n// HERDR_INTEGRATION_VERSION=9\nexport default function(pi) { pi.on("session_start", () => {}); }\n'
+  );
+  const statePath = join(root, 'herdr-state.json');
+  put(statePath, { n: 0, tabs: [], panes: [], agents: [], mode: { startup: 'real-loader' }, counts: {} });
   const env: NodeJS.ProcessEnv = {
-    PATH: bin,
+    ...process.env,
+    PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`,
     HOME: home,
     HUD_HOME: home,
-    PI_CODING_AGENT_DIR: join(home, 'pi'),
-    PI_ROLES_LEDGER: join(home, 'ledger/runs.jsonl'),
-    PI_DISPATCH_LOG: join(home, 'dispatch.log'),
-    HERDR_PANE_ID: 'caller-pane',
-    PI_ORCHESTRATOR_PANE: 'other-caller',
-    PI_ROLE_NOTIFY: 'do-not-call',
-    HERDR_WORKSPACE_ID: 'inherited-workspace',
+    CODEX_HOME: join(root, 'codex'),
+    CLAUDE_CONFIG_DIR: join(root, 'claude'),
+    OWNED_PI_PACKAGE: piPackage,
+    JITI_FS_CACHE: '0',
+    HUD_KEEP_TAB: '1',
+    OWNED_FAKE_TTL: '600',
   };
-  const calls: string[][] = [];
+  for (const key of [
+    'NO_COLOR',
+    'FORCE_COLOR',
+    'HUD_SETTINGS_PATH',
+    'CODEX_HUD_SETTINGS_PATH',
+    'HERDR_SOCKET',
+    'HERDR_SOCKET_PATH',
+    'HERDR_PANE_ID',
+    'HERDR_ENV',
+  ])
+    delete env[key];
+  const socketPath = join(root, 'socket');
+  const server = fork(
+    join(REPO_ROOT, 'tests/fakes/pi-owned-herdr.mjs'),
+    ['--server', socketPath, root, '-', integration],
+    { env, stdio: ['ignore', 'ignore', 'pipe', 'ipc'] }
+  );
+  let errors = '';
+  server.stderr!.on('data', (b) => (errors += b));
+  await once(server, 'message');
+  const runtime = { endpoint: { socketPath, server: readProcess(server.pid!)!.stamp }, callerTabId: 'caller-tab' };
+  env.HERDR_SOCKET_PATH = socketPath;
   const ctx: FacadeContext = {
     home,
     env,
     root: parseRosterRoot('synthetic/main'),
-    run: async (argv) => {
-      calls.push([...argv]);
-      return OK;
-    },
+    piOwned: { releaseRoot, runtime },
+    herdrBudgetMs: 15000,
   };
-  const log = () =>
-    fs.existsSync(env.PI_DISPATCH_LOG!)
+  const directory = (job: unknown) => join(home, 'jobs', String(job));
+  const receipt = (job: unknown) => json(join(directory(job), 'receipt.json'));
+  const state = () => json(statePath);
+  const logs = () =>
+    fs.existsSync(join(root, 'herdr-calls.jsonl'))
       ? fs
-          .readFileSync(env.PI_DISPATCH_LOG!, 'utf8')
+          .readFileSync(join(root, 'herdr-calls.jsonl'), 'utf8')
           .trim()
           .split('\n')
-          .map((line) => JSON.parse(line))
+          .filter(Boolean)
+          .map((s) => JSON.parse(s))
       : [];
   const create = (key = 'task', extra = {}) =>
-    hudCreate(ctx, { role: 'imp', request_key: key, cwd: work, task: 'Synthetic task.\nPreserve scope.', ...extra });
-  const dir = (job: unknown) => join(home, 'jobs', String(job));
-  const receipt = (job: unknown) => JSON.parse(fs.readFileSync(join(dir(job), 'receipt.json'), 'utf8'));
-  const status = (job: unknown, patch: Record<string, unknown>) => {
-    const file = join(dir(job), 'STATUS.json');
-    const prior = JSON.parse(fs.readFileSync(file, 'utf8'));
-    fs.writeFileSync(file, JSON.stringify({ ...prior, ...patch }), { mode: 0o600 });
+    hudCreate(ctx, { role: 'imp', cwd: work, task: 'Synthetic task. Preserve scope.', request_key: key, ...extra });
+  const probeSlot = async (job: unknown, slot: string, value: object, wait = true) => {
+    const r = receipt(job);
+    const j = json(join(directory(job), `.dispatch/${slot}/launch.json`));
+    const result = join(directory(job), `.dispatch/${slot}/probe-result.json`);
+    if (fs.existsSync(result)) fs.unlinkSync(result);
+    assert.equal(
+      (await runHerdr(['test', 'probe', j.name, JSON.stringify(value)], { ...env, HERDR_SOCKET_PATH: socketPath })).ok,
+      true
+    );
+    if (wait) await until(() => fs.existsSync(result));
+    return r;
   };
-  const settle = (job: unknown) => {
-    fs.writeFileSync(join(dir(job), 'report.md'), 'Verdict: accept\nSynthetic report.\n');
-    status(job, {
-      state: 'idle_grace',
-      output_written: true,
-      settled_at: '2026-01-01T00:00:00Z',
-      idle_deadline_at: '2099-01-01T00:00:00Z',
-    });
+  const probe = (job: unknown, value: object, wait = true) => probeSlot(job, 'primary', value, wait);
+  const settle = async (job: unknown) => {
+    await probe(job, { event: 'before_agent_start' });
+    put(join(directory(job), 'report.md'), 'Synthetic completed report.\n');
+    await probe(job, { event: 'agent_settled' });
+    assert.equal(json(join(directory(job), 'STATUS.json')).state, 'idle_grace');
   };
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  return { home, work, bin, env, ctx, calls, log, create, dir, receipt, status, settle };
+  t.after(async () => {
+    if (server.exitCode === null) {
+      const exit = once(server, 'exit');
+      server.kill('SIGTERM');
+      await exit;
+    }
+    assert.equal(errors, '');
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  return {
+    root,
+    home,
+    bin,
+    env,
+    ctx,
+    runtime,
+    work,
+    directory,
+    receipt,
+    state,
+    logs,
+    create,
+    hostile,
+    probe,
+    probeSlot,
+    settle,
+  };
 }
 
+test('PR4 cutover: hostile PATH tools are never invoked; installed release pin; removing tools changes nothing', async (t) => {
+  const f = await fixture(t);
+  const start = performance.now();
+  const a = await f.create();
+  assert.equal(a.ok, true, JSON.stringify(a));
+  t.diagnostic(
+    `host=${hostname()} cold facade create-to-ready=${(performance.now() - start).toFixed(1)}ms; startup STATUS writes=1 (extension publisher)`
+  );
+  const r = f.receipt(a.job);
+  assert.equal(json(join(f.directory(a.job), '.dispatch/primary/status-writes.json')).statusWrites, 1);
+  await hudRead(f.ctx, { job: a.job });
+  await hudRead(f.ctx, { job: a.job });
+  assert.equal(
+    json(join(f.directory(a.job), '.dispatch/primary/status-writes.json')).statusWrites,
+    1,
+    'ordinary reads add zero STATUS writes'
+  );
+  assert.equal(r.pi_dispatch.contract_version, 2);
+  assert.equal(r.pi_dispatch.transport, 'hud-owned');
+  assert.deepEqual(r.pi_dispatch.release, { id: artifact.release.id, root: releaseRoot });
+  assert.equal(readDispatchSession(f.directory(a.job))?.ORCH, '');
+  assert.equal(fs.existsSync(f.hostile), false);
+  for (const name of ['pi-dispatch', 'pi-role', 'pi-role-reap']) fs.unlinkSync(join(f.bin, name));
+  const b = await f.create('without-path');
+  assert.equal(b.ok, true, JSON.stringify(b));
+  assert.equal(f.state().counts.tab, 2);
+  assert.equal(f.state().counts.start, 2);
+  for (const l of f.logs().filter((l) => l.step)) {
+    assert.equal(l.intent, true);
+    assert.equal(l.transaction, true);
+  }
+});
+
 for (const [role, phase, mapped] of [
-  ['imp', undefined, 'implementer'],
-  ['sonic', undefined, 'sonic'],
-  ['reviewer', undefined, 'reviewer'],
+  ['imp', null, 'implementer'],
+  ['sonic', null, 'sonic'],
+  ['reviewer', null, 'reviewer'],
   ['oracle', 'propose', 'architect'],
   ['oracle', 'converge', 'architect'],
 ]) {
-  test(`dispatch facade maps ${role}.${phase ?? ''} with frozen task contract`, async (t) => {
-    const f = fixture(t);
-    const made = await f.create('role', { role, ...(phase ? { phase } : {}) });
-    assert.equal(made.ok, true, JSON.stringify(made));
-    const [launch] = f.log();
-    assert.equal(launch.argv[0], mapped);
-    assert.equal(launch.argv.includes('--split'), role === 'imp');
-    assert.equal(launch.work, f.work);
-    assert.equal(launch.task, f.dir(made.job));
-    assert.equal(launch.output, join(f.dir(made.job), 'report.md'));
-    assert.deepEqual(launch.checks, { receipt: true, index: true, association: true, brief: true });
-    const association = JSON.parse(fs.readFileSync(join(f.home, 'assoc', `${made.job}.json`), 'utf8'));
-    assert.ok(Number.isFinite(Date.parse(association.created_at)));
-    assert.equal(association.native, undefined, 'STATUS session_id alone cannot establish a source');
-    assert.equal(launch.notify + launch.herdrPane + launch.orchestrator, '');
-    assert.equal(launch.argv[launch.argv.indexOf('--model') + 1], 'synthetic/model');
-    assert.equal(launch.argv[launch.argv.indexOf('--thinking') + 1], 'high');
-    assert.equal(f.calls.length, 0, 'no direct herdr launch or first prompt');
-    assert.equal(f.receipt(made.job).pi_dispatch.launch, 'acked');
-    assert.equal(f.receipt(made.job).pi_dispatch.contract_version, 1, 'PR1 retains the external transport');
-    assert.equal(made.prompted, true);
-    assert.deepEqual(made.executor, {
-      kind: 'herdr',
-      tab_id: 'tab1',
-      pane_id: 'pane1',
-      agent: `${made.job}-primary`,
-      workspace_id: null,
-    });
-    assert.equal(f.receipt(made.job).label, `${made.job}-fake`);
-    const brief = fs.readFileSync(join(f.dir(made.job), 'brief.md'), 'utf8');
-    assert.match(brief, /Write the final artifact/);
-    assert.match(brief, new RegExp(`# ${role}`));
-    for (const name of ['brief.md', 'receipt.json'])
-      assert.equal(fs.statSync(join(f.dir(made.job), name)).mode & 0o777, 0o600);
-    assert.equal(made.acceptance, null);
+  test(`PR4 role ${role}.${phase}: frozen contract and owned argv`, async (t) => {
+    const f = await fixture(t);
+    const a = await f.create('mapping', { role, ...(phase ? { phase } : {}) });
+    assert.equal(a.ok, true, JSON.stringify(a));
+    const c = json(f.receipt(a.job).pi_dispatch.contract_path);
+    assert.equal(c.role, mapped);
+    assert.equal(c.cwd, f.work);
+    assert.equal(c.output_path, join(f.directory(a.job), 'report.md'));
+    assert.deepEqual(c.allowed_write_paths, [c.output_path]);
+    assert.equal(c.model, 'synthetic/model');
+    assert.equal(c.effort, 'high');
+    assert.equal(f.state().counts.split ?? 0, role === 'imp' ? 1 : 0);
+    const args = f.logs().find((l) => l.step === 'start').argv;
+    assert.equal(args.includes('--no-approve'), true);
+    assert.equal(args.includes('--no-mcp'), true);
+    const assoc = json(join(f.home, 'assoc', `${a.job}.json`));
+    assert.equal(assoc.native, undefined);
+    assert.equal(fs.existsSync(join(f.directory(a.job), 'materials')), false);
   });
 }
 
-test('same-key concurrent creates launch once; changed input conflicts; brief and adapter survive routing removal', async (t) => {
-  const f = fixture(t);
+for (const fault of ['tab:after', 'split:after', 'start:after', 'prompt:after']) {
+  test(`PR4 ambiguous ${fault} never replays through facade restart`, async (t) => {
+    const f = await fixture(t);
+    const s = f.state();
+    s.mode.fault = fault;
+    put(join(f.root, 'herdr-state.json'), s);
+    const a = await f.create();
+    assert.equal(a.code, 'launch_unknown', JSON.stringify(a));
+    const before = f.state().counts;
+    assert.equal((await f.create()).code, 'launch_unknown');
+    assert.deepEqual(f.state().counts, before, 'no repeated side effects after sent intent');
+    const r = f.receipt(a.job);
+    r.pi_dispatch.contract_version = 99;
+    put(join(f.directory(a.job), 'receipt.json'), r);
+    assert.equal((await f.create()).code, 'receipt_unreadable');
+    assert.equal((await hudSend(f.ctx, { job: a.job, message_key: 'x', text: 'x' })).code, 'not_found');
+    assert.deepEqual(f.state().counts, before);
+  });
+}
+
+test('PR4 same-key, conflicts, isolation, routing changes and restart preserve ownership', async (t) => {
+  const f = await fixture(t);
   const [a, b] = await Promise.all([f.create(), f.create()]);
-  assert.equal(a.ok, true);
-  assert.equal(b.ok, true);
-  assert.equal(a.job, b.job);
-  assert.equal(f.log().length, 1);
-  assert.equal((await f.create('task', { task: 'different' })).code, 'conflict');
-  const brief = fs.readFileSync(join(f.dir(a.job), 'brief.md'), 'utf8');
-  fs.unlinkSync(join(f.home, 'routing.toml'));
-  fs.unlinkSync(join(f.bin, 'pi-dispatch'));
-  const again = await f.create();
-  assert.equal(again.ok, true);
-  assert.equal(again.job, a.job);
-  assert.equal(f.log().length, 1);
-  assert.equal(fs.readFileSync(join(f.dir(a.job), 'brief.md'), 'utf8'), brief);
-});
-
-for (const mode of ['lost', 'missing-session', 'bad-session']) {
-  test(`ambiguous ${mode} dispatch never replays; no false prompt or cleanup claim`, async (t) => {
-    const f = fixture(t);
-    f.env.PI_DISPATCH_MODE = mode;
-    const a = await f.create();
-    assert.equal(a.ok, false);
-    assert.equal(a.code, 'launch_unknown');
-    assert.equal(a.prompted, false);
-    assert.equal(f.receipt(a.job).pi_dispatch.launch, 'sent');
-    const again = await f.create();
-    assert.equal(again.code, 'launch_unknown');
-    assert.equal(f.log().length, 1);
-    if (mode === 'lost') {
-      f.settle(a.job);
-      const done = await f.create();
-      assert.equal(done.ok, true);
-      assert.equal(done.state, 'done');
-      assert.equal(done.prompted, false);
-      assert.equal((await hudClose(f.ctx, { job: a.job })).ok, true);
-    } else {
-      const closed = await hudClose(f.ctx, { job: a.job });
-      assert.equal(closed.code, 'close_unresolved');
-      assert.notEqual(f.receipt(a.job).state, 'closed');
-    }
-    assert.equal(f.calls.length, 0);
-  });
-}
-
-test('unreadable and unknown-version discriminators never enter the direct path', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  const r = f.receipt(a.job);
-  r.pi_dispatch.contract_version = 2;
-  fs.writeFileSync(join(f.dir(a.job), 'receipt.json'), JSON.stringify(r));
-  assert.equal((await f.create()).code, 'receipt_unreadable');
-  assert.equal((await hudRead(f.ctx, { job: a.job })).code, 'not_found');
-  assert.equal(f.calls.length, 0);
-  assert.equal(f.log().length, 1);
-});
-
-test('list and same-key presentation project live STATUS; unknown snapshots never become DONE', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  f.settle(a.job);
-  const list = await hudRead(f.ctx, {});
-  assert.equal((list.jobs as { state: string }[])[0]!.state, 'done');
-  assert.equal((await f.create()).state, 'done');
-  assert.equal((await hudRead(f.ctx, { job: a.job })).report, join(f.dir(a.job), 'report.md'));
-  f.status(a.job, { version: 99 });
-  assert.equal((await hudRead(f.ctx, { job: a.job })).status, 'unreadable');
-  assert.equal((await hudRead(f.ctx, { job: a.job })).report, null);
-});
-
-test('dispatch answers primary and helper questions idempotently with stale/empty eligibility and ownership', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  const qa = join(f.dir(a.job), 'qa');
-  fs.writeFileSync(join(qa, 'q1.md'), 'Primary question');
-  fs.writeFileSync(join(qa, 'q2.md'), 'Helper question');
-  fs.writeFileSync(join(qa, 'q1.answer.md'), '');
-  f.status(a.job, { state: 'waiting_orchestrator' });
-  const read = await hudRead(f.ctx, { job: a.job });
-  assert.equal(read.event, 'QUESTION');
-  assert.equal((read.pending as unknown[]).length, 2);
-  const args = { job: a.job, request_id: 'q1', answer: 'Synthetic answer' };
-  assert.equal((await hudRespond(f.ctx, args)).consumed, false);
-  assert.equal((await hudRespond(f.ctx, args)).idempotent, true);
-  assert.equal((await hudRespond(f.ctx, { ...args, answer: 'Changed answer' })).code, 'conflict');
-  const old = new Date('2000-01-01');
-  fs.writeFileSync(join(qa, 'q2.answer.md'), 'stale');
-  fs.utimesSync(join(qa, 'q2.answer.md'), old, old);
-  assert.equal((await hudRespond(f.ctx, { ...args, request_id: 'q2' })).ok, true);
-  assert.deepEqual((await hudRead(f.ctx, { job: a.job })).pending, []);
-  f.status(a.job, { state: 'working' });
-  assert.equal((await hudRead(f.ctx, { job: a.job })).event, undefined);
+  assert.equal(a.ok, true, JSON.stringify(a));
+  assert.equal(b.job, a.job);
+  assert.equal(f.state().counts.start, 1);
+  assert.equal((await f.create('task', { task: 'Changed request' })).code, 'conflict');
   const other = { ...f.ctx, root: parseRosterRoot('synthetic/other') };
-  assert.equal((await hudRespond(other, args)).code, 'not_found');
-  assert.equal((await hudRespond(f.ctx, { ...args, answer: '  ' })).code, 'invalid_arguments');
-});
-
-test('maximum-size normalized answers stay eligible, idempotent and conflict-protected', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  const qa = join(f.dir(a.job), 'qa');
-  fs.writeFileSync(join(qa, 'q1.md'), 'Synthetic boundary question');
-  const args = { job: a.job, request_id: 'q1', answer: 'a'.repeat(16 * 1024) };
-  assert.equal((await hudRespond(f.ctx, args)).ok, true);
-  assert.equal(fs.statSync(join(qa, 'q1.answer.md')).size, 16 * 1024 + 1);
-  assert.deepEqual((await hudRead(f.ctx, { job: a.job })).pending, []);
-  assert.equal((await hudRespond(f.ctx, args)).idempotent, true);
-  assert.equal((await hudRespond(f.ctx, { ...args, answer: 'different' })).code, 'conflict');
-  fs.writeFileSync(join(qa, 'q1.answer.md'), 'b'.repeat(20 * 1024));
-  assert.equal(
-    (await hudRespond(f.ctx, { ...args, answer: 'must not overwrite unreadable evidence' })).code,
-    'conflict'
-  );
-  assert.equal(fs.statSync(join(qa, 'q1.answer.md')).size, 20 * 1024);
-});
-
-test('historical QA files do not end a wait for a later helper', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  fs.writeFileSync(join(f.dir(a.job), 'qa', 'q1.md'), 'Expired question');
-  f.status(a.job, { state: 'waiting_helper', helper_pending: { kind: 'sonic', n: 2, status_file: null } });
-  const statusFile = join(f.dir(a.job), '.dispatch', 'sonic-2', 'STATUS.json');
-  fs.mkdirSync(join(statusFile, '..'), { recursive: true });
-  const primary = JSON.parse(fs.readFileSync(join(f.dir(a.job), 'STATUS.json'), 'utf8'));
-  fs.writeFileSync(
-    statusFile,
-    JSON.stringify({
-      ...primary,
-      role: 'sonic',
-      slot: 'sonic-2',
-      state: 'working',
-      output_path: join(f.dir(a.job), 'sonic-2.md'),
-      helper_pending: null,
-    })
-  );
-  const result = await hudRead(f.ctx, { job: a.job, wait_ms: 30 });
-  assert.equal(result.event, 'timeout');
-  assert.equal((result.pending as unknown[]).length, 1);
-  assert.equal((await waitForJob(f.home, f.env, String(a.job), 0)).event, 'TIMEOUT');
-  fs.writeFileSync(
-    statusFile,
-    JSON.stringify({
-      ...primary,
-      role: 'sonic',
-      slot: 'sonic-2',
-      state: 'waiting_orchestrator',
-      output_path: join(f.dir(a.job), 'sonic-2.md'),
-      helper_pending: null,
-    })
-  );
-  assert.equal((await hudRead(f.ctx, { job: a.job, wait_ms: 30 })).event, 'QUESTION');
-});
-
-test('fix round sends SESSION.PRIMARY once and suppresses old settlement across restart until a fresh timestamp', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  f.settle(a.job);
-  const args = { job: a.job, message_key: 'fix-1', text: 'Fix synthetic finding.' };
-  const [sent, duplicate] = await Promise.all([hudSend(f.ctx, args), hudSend(f.ctx, args)]);
-  assert.equal(sent.ok, true);
-  assert.equal(duplicate.idempotent, true);
-  assert.equal(f.calls.length, 1);
-  assert.deepEqual(f.calls[0], ['agent', 'prompt', `${a.job}-primary`, args.text]);
-  assert.equal((await hudSend(f.ctx, { ...args, text: 'changed' })).code, 'conflict');
-  const restarted = { ...f.ctx };
-  const view = await hudRead(restarted, { job: a.job });
-  assert.equal(view.state, 'open');
-  assert.equal(view.report, null);
-  assert.equal(view.event, undefined);
-  assert.equal(view.continuation, 'unconfirmed');
-  assert.equal((await hudRead(restarted, { job: a.job, wait_ms: 20 })).event, 'timeout');
-  f.status(a.job, { settled_at: '2026-01-01T00:00:01Z' });
-  const fresh = await hudRead(restarted, { job: a.job });
-  assert.equal(fresh.event, 'DONE');
-  assert.equal(fresh.state, 'done');
-  assert.equal(fresh.acceptance, null);
-});
-
-test('same-key recovery reloads after the job lock, preserving a concurrent continuation intent', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  f.settle(a.job);
-  let replay: ReturnType<typeof f.create> | undefined;
-  await withLock(f.home, `job-${a.job}`, async () => {
-    replay = f.create();
-    await delay(30); // Recovery has read under the key lock and is queued for this job lock.
-    const receipt = f.receipt(a.job);
-    receipt.pi_dispatch.continuation = {
-      message_key: 'concurrent-fix',
-      previous_session_id: 'synthetic-session-1',
-      previous_settled_at: '2026-01-01T00:00:00Z',
-    };
-    fs.writeFileSync(join(f.dir(a.job), 'receipt.json'), JSON.stringify(receipt));
-  });
-  assert.equal((await replay!).continuation, 'unconfirmed');
-  assert.equal(f.receipt(a.job).pi_dispatch.continuation.message_key, 'concurrent-fix');
-});
-
-test('unknown fix send never replays; expiry race and one-shot continuation refuse a new DONE', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  f.settle(a.job);
-  let sends = 0;
-  const ctx = {
-    ...f.ctx,
-    run: async () => {
-      sends++;
-      return { ...OK, ok: false, reason: 'timeout' as const };
-    },
-  };
-  const args = { job: a.job, message_key: 'fix', text: 'Repair.' };
-  assert.equal((await hudSend(ctx, args)).code, 'send_unknown');
-  assert.equal((await hudSend(ctx, args)).code, 'send_unknown');
-  assert.equal(sends, 1);
-  f.status(a.job, { state: 'closed', ended_at: '2026-01-01T00:01:00Z' });
-  const view = await hudRead(f.ctx, { job: a.job });
-  assert.equal(view.event, 'BLOCKED');
-  assert.equal(view.continuation, 'unavailable');
-  assert.equal(view.report, null);
-  assert.equal((await hudSend(f.ctx, { ...args, message_key: 'another' })).code, 'continuation_unavailable');
-  const shot = await f.create('shot', { role: 'sonic' });
-  f.status(shot.job, { state: 'closed', output_written: true, settled_at: '2026-01-01T00:00:00Z' });
-  assert.equal((await hudSend(f.ctx, { ...args, job: shot.job })).code, 'continuation_unavailable');
-});
-
-test('wait ignores immediate herdr idle and artifact presence; bounded timeout is observation only', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  f.status(a.job, { state: 'waiting_helper', helper_pending: { kind: 'review', n: null, status_file: null } });
-  fs.writeFileSync(join(f.dir(a.job), 'report.md'), 'Not settled');
-  const started = performance.now();
-  const timed = await hudRead(f.ctx, { job: a.job, wait_ms: 40 });
-  assert.equal(timed.event, 'timeout');
-  assert.ok(performance.now() - started >= 30);
-  assert.ok(f.calls.length <= 2);
-  assert.equal(f.log().length, 1);
-  assert.equal(f.receipt(a.job).state, 'open');
-  f.settle(a.job);
-  const [one, two] = await Promise.all([
-    hudRead(f.ctx, { job: a.job, wait_ms: 50 }),
-    hudRead(f.ctx, { job: a.job, wait_ms: 50 }),
-  ]);
-  assert.equal(one.event, 'DONE');
-  assert.equal(two.event, 'DONE');
-  assert.equal((await waitForJob(f.home, f.env, String(a.job), 30)).event, 'DONE');
-});
-
-test('facade and CLI share event wake; zero CLI timeout is an observation timeout', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  assert.equal((await waitForJob(f.home, f.env, String(a.job), 0)).event, 'TIMEOUT');
-  const started = performance.now();
-  const waiting = hudRead(f.ctx, { job: a.job, wait_ms: 2000 });
-  const timer = setTimeout(() => f.settle(a.job), 40);
-  t.after(() => clearTimeout(timer));
-  assert.equal((await waiting).event, 'DONE');
-  assert.ok(performance.now() - started < 800);
-  assert.equal(f.calls.length, 1);
-});
-
-for (const event of ['FAILED', 'QUESTION', 'BLOCKED']) {
-  test(`wait returns actionable ${event}`, async (t) => {
-    const f = fixture(t);
-    const a = await f.create();
-    if (event === 'FAILED') f.status(a.job, { state: 'failed', error: 'synthetic failure' });
-    if (event === 'QUESTION') f.status(a.job, { state: 'waiting_orchestrator' });
-    const ctx =
-      event === 'BLOCKED'
-        ? { ...f.ctx, run: async () => ({ ...OK, stdout: '{"result":{"agent_status":"blocked"}}' }) }
-        : f.ctx;
-    assert.equal((await hudRead(ctx, { job: a.job, wait_ms: 40 })).event, event);
-  });
-}
-
-for (const settled of [false, true]) {
-  test(`explicit reap ${settled ? 'after' : 'before'} settlement preserves artifact and closes once`, async (t) => {
-    const f = fixture(t);
-    const a = await f.create();
-    if (settled) f.settle(a.job);
-    const first = await hudClose(f.ctx, { job: a.job });
-    const next = await hudClose(f.ctx, { job: a.job });
-    assert.equal(first.ok, true);
-    assert.equal(first.observation, 'reaped');
-    assert.equal(next.idempotent, true);
-    assert.equal(f.log().filter((row) => row.bin === 'pi-role-reap').length, 1);
-    assert.equal(f.calls.length, 0);
-    assert.equal(f.receipt(a.job).state, 'closed');
-    assert.equal(JSON.parse(fs.readFileSync(join(f.home, 'assoc', `${a.job}.json`), 'utf8')).closed, true);
-    if (settled) assert.equal((await hudRead(f.ctx, { job: a.job })).report, join(f.dir(a.job), 'report.md'));
-    assert.equal(
-      (await hudSend(f.ctx, { job: a.job, message_key: 'late', text: 'No.' })).code,
-      'continuation_unavailable'
-    );
-  });
-}
-
-test('nonzero, missing, and timed-out reapers preserve unresolved cleanup for another explicit attempt', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  f.env.PI_REAP_MODE = 'failed';
-  assert.equal((await hudClose(f.ctx, { job: a.job })).code, 'close_unresolved');
-  delete f.env.PI_REAP_MODE;
-  const reaper = join(f.bin, 'pi-role-reap');
-  const saved = fs.readFileSync(reaper, 'utf8');
-  fs.unlinkSync(reaper);
-  assert.equal((await hudClose(f.ctx, { job: a.job })).code, 'close_unresolved');
-  fs.writeFileSync(reaper, '#!/bin/bash\nwhile :; do :; done\n', { mode: 0o755 });
-  assert.equal((await hudClose({ ...f.ctx, herdrBudgetMs: 30 }, { job: a.job })).code, 'close_unresolved');
-  assert.notEqual(f.receipt(a.job).state, 'closed');
-  fs.writeFileSync(reaper, saved, { mode: 0o755 });
-  assert.equal((await hudClose(f.ctx, { job: a.job })).ok, true);
-});
-
-test('send-close serialize on the job lock and close-first cannot prompt', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  f.settle(a.job);
-  const [closed, sent] = await Promise.all([
-    hudClose(f.ctx, { job: a.job }),
-    hudSend(f.ctx, { job: a.job, message_key: 'fix', text: 'Fix.' }),
-  ]);
-  assert.equal(closed.ok, true);
-  // Whichever call wins the lock is legal; nothing can be sent after the reaper.
-  if (sent.ok) assert.equal(f.calls.length, 1);
-  else assert.equal(f.calls.length, 0);
-  assert.equal(
-    (await hudSend(f.ctx, { job: a.job, message_key: 'later', text: 'Fix later.' })).code,
-    'continuation_unavailable'
-  );
-});
-
-test('discovery absent versus broken pair, symlink pinning, and env refusal before launch receipt', async (t) => {
-  const f = fixture(t);
-  fs.unlinkSync(join(f.bin, 'pi-dispatch'));
-  assert.equal(discoverDispatch(f.env, 'imp'), null);
-  fs.symlinkSync(join(f.bin, 'missing'), join(f.bin, 'pi-dispatch'));
-  assert.throws(() => discoverDispatch(f.env, 'imp'), /dispatch_unavailable/);
-  fs.unlinkSync(join(f.bin, 'pi-dispatch'));
-  const target = join(f.bin, 'real-dispatch');
-  fs.writeFileSync(target, '#!/bin/bash\nexit 0\n', { mode: 0o755 });
-  fs.symlinkSync(target, join(f.bin, 'pi-dispatch'));
-  assert.equal(discoverDispatch(f.env, 'imp')!.executable, target);
-  fs.unlinkSync(join(f.bin, 'pi-role-reap'));
-  assert.equal((await f.create()).code, 'dispatch_reaper_missing');
-  fs.writeFileSync(join(f.bin, 'pi-role-reap'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
-  fs.writeFileSync(
+  assert.equal((await hudRead(other, { job: a.job })).code, 'not_found');
+  assert.equal((await hudSend(other, { job: a.job, message_key: 'x', text: 'x' })).code, 'not_found');
+  assert.equal((await hudClose(other, { job: a.job })).code, 'not_found');
+  put(
     join(f.home, 'routing.toml'),
-    ROUTING.replace('recipe = "pi-role"', 'recipe = "pi-role"\nenv_profile = "account"') +
-      '\n[env_profiles.account]\nCODEX_HOME = "/tmp/synthetic-account"\n'
+    ROUTING.replace('synthetic/model', 'synthetic/changed') +
+      '\n[pi_helpers.sonic]\nmodel="synthetic/new-helper"\neffort="low"\n'
   );
-  assert.equal((await f.create()).code, 'dispatch_env_unsupported');
-  assert.equal(fs.readdirSync(join(f.home, 'jobs')).filter((name) => /^j[a-f0-9]{16}$/.test(name)).length, 0);
-  assert.equal(f.log().length, 0);
-  assert.equal(f.calls.length, 0);
+  const next = await f.create('next');
+  assert.equal(next.ok, true, JSON.stringify(next));
+  assert.equal(json(f.receipt(next.job).pi_dispatch.contract_path).helpers.sonic.model, 'synthetic/new-helper');
+  assert.notEqual(json(f.receipt(a.job).pi_dispatch.contract_path).helpers.sonic.model, 'synthetic/new-helper');
+  fs.unlinkSync(join(f.home, 'routing.toml'));
+  const retry = await hudCreate(
+    { ...f.ctx },
+    { role: 'imp', cwd: f.work, task: 'Synthetic task. Preserve scope.', request_key: 'task' }
+  );
+  assert.equal(retry.job, a.job);
+  assert.equal(retry.ok, true);
+  assert.equal(f.state().counts.start, 2);
 });
 
-test('mixed old/new receipts do not change adapters when dispatch is installed', async (t) => {
-  const f = fixture(t);
+test('PR4 real extension artifacts: QA consumed:false, independent waiters, helper remains within one job, collector read-only', async (t) => {
+  const f = await fixture(t);
   const a = await f.create();
-  const r = f.receipt(a.job);
-  delete r.pi_dispatch;
-  fs.writeFileSync(join(f.dir(a.job), 'receipt.json'), JSON.stringify(r));
-  const old = await f.create();
-  assert.equal(old.ok, true);
-  assert.equal(old.dispatch, undefined);
-  assert.equal(f.log().length, 1);
-  assert.equal(f.receipt(a.job).pi_dispatch, undefined);
-  const fresh = await f.create('new');
-  assert.equal(fresh.ok, true);
-  assert.ok(f.receipt(fresh.job).pi_dispatch);
-  assert.equal(fs.existsSync(f.env.PI_ROLES_LEDGER!), false);
-  assert.equal(fs.existsSync(join(f.dir(fresh.job), 'STATUS.json.ledger-recorded')), false);
-});
-
-test('SESSION is bounded data with first-equals splitting; malformed newlines are refused', async (t) => {
-  const f = fixture(t);
-  const a = await f.create();
-  const file = join(f.dir(a.job), 'SESSION.txt');
-  const original = fs.readFileSync(file, 'utf8');
-  fs.writeFileSync(file, original.replace('BASE=HEAD', 'BASE=value=still-data'));
-  assert.equal(readDispatchSession(f.dir(a.job))!.BASE, 'value=still-data');
-  fs.writeFileSync(file, original + 'RIGHT=pane3\nRIGHT_SPLIT=1\n');
-  assert.equal(readDispatchSession(f.dir(a.job))!.RIGHT, 'pane3', 'upstream helper pane replacement appends RIGHT');
-  for (const text of [
-    original + 'not key-value\n',
-    original + 'TAB=duplicate\n',
-    original.replace('TAB=tab1', 'TAB=tab1\rjunk'),
-    'x'.repeat(20000),
-  ]) {
-    fs.writeFileSync(file, text);
-    assert.equal(readDispatchSession(f.dir(a.job)), null);
+  assert.equal(a.ok, true, JSON.stringify(a));
+  await f.probe(
+    a.job,
+    {
+      tool: 'ask_orchestrator',
+      params: { question: 'Synthetic decision?', options: ['A', 'B'], default: 'A', context: 'Synthetic only' },
+    },
+    false
+  );
+  await until(() => fs.existsSync(join(f.directory(a.job), 'qa/q1.md')));
+  assert.equal((await hudRead(f.ctx, { job: a.job })).event, 'QUESTION');
+  const answer = { job: a.job, request_id: 'q1', answer: 'B' };
+  assert.equal((await hudRespond(f.ctx, answer)).consumed, false);
+  assert.equal((await hudRespond(f.ctx, answer)).idempotent, true);
+  assert.equal((await hudRespond(f.ctx, { ...answer, answer: 'A' })).code, 'conflict');
+  await until(() => fs.existsSync(join(f.directory(a.job), '.dispatch/primary/probe-result.json')));
+  const request = join(f.work, 'sonic-request.md');
+  put(request, 'Fully specified synthetic helper work. Write only the fixed artifact.');
+  await f.probe(a.job, { tool: 'call_sonic', params: { brief_path: request } }, false);
+  await until(() => f.state().agents.some((agent: any) => agent.slot === 'sonic-1'));
+  const helper = f.state().agents.find((agent: any) => agent.slot === 'sonic-1');
+  const helperProbe = async (value: object) => {
+    const result = join(f.directory(a.job), '.dispatch/sonic-1/probe-result.json');
+    if (fs.existsSync(result)) fs.unlinkSync(result);
+    assert.equal((await runHerdr(['test', 'probe', helper.name, JSON.stringify(value)], f.env)).ok, true);
+    await until(() => fs.existsSync(result));
+  };
+  await helperProbe({ event: 'before_agent_start' });
+  await helperProbe({ builtinWrite: true });
+  await helperProbe({ event: 'agent_settled' });
+  await until(() => fs.existsSync(join(f.directory(a.job), '.dispatch/primary/probe-result.json')));
+  assert.equal(observeDispatch(f.directory(a.job), f.receipt(a.job).pi_dispatch).helpers[0]?.slot, 'sonic-1');
+  const [one, two] = [waitForJob(f.home, f.env, String(a.job), 15000), waitForJob(f.home, f.env, String(a.job), 15000)];
+  await f.settle(a.job);
+  assert.equal((await one).event, 'DONE');
+  assert.equal((await two).event, 'DONE');
+  const status = json(join(f.directory(a.job), 'STATUS.json'));
+  assert.equal(status.output_written, true);
+  const view = observeDispatch(f.directory(a.job), f.receipt(a.job).pi_dispatch);
+  assert.equal(view.event, 'DONE');
+  assert.deepEqual(view.pending, []);
+  const collector = new JobObservationCollector(f.home, { root: 'synthetic/main', live: false });
+  t.after(() => collector.dispose());
+  let snapshot: any;
+  for (let i = 0; i < 30; i++) {
+    snapshot = await collector.refresh({ maxFiles: 200, maxEntries: 1000, maxBytes: 4 * 1024 * 1024 });
+    if (snapshot.jobs?.length) break;
   }
-  const clean = dispatchEnv(f.env);
-  assert.equal(clean.HERDR_ENV, '1');
-  assert.equal(clean.HERDR_WORKSPACE_ID, 'inherited-workspace');
-  assert.equal(clean.HERDR_PANE_ID, undefined);
-  assert.equal(f.env.HERDR_PANE_ID, 'caller-pane');
+  assert.equal(snapshot.jobs.length, 1, JSON.stringify(snapshot));
+  assert.equal(snapshot.jobs[0].native, null);
+  assert.equal(snapshot.jobs[0].helpers.length, 1);
+  assert.equal(fs.existsSync(f.hostile), false);
 });
 
-test('launch intent survives command timeout and runner returns even when a descendant holds a pipe', async (t) => {
-  const f = fixture(t);
-  fs.writeFileSync(
-    join(f.bin, 'pi-dispatch'),
-    `#!${process.execPath}\nimport {spawn} from 'node:child_process';\nspawn(${JSON.stringify(process.execPath)}, ['-e','setTimeout(()=>{},2000)'], {stdio:['ignore',1,2]}).unref();\nsetTimeout(()=>{},2000);\n`,
-    { mode: 0o755 }
+test('PR4 nested sonic QA follows only bounded active parent-linked extension artifacts', async (t) => {
+  const f = await fixture(t);
+  const a = await f.create();
+  assert.equal(a.ok, true, JSON.stringify(a));
+  const directory = f.directory(a.job);
+  await f.probe(a.job, { tool: 'call_reviewer' }, false);
+  await until(() => f.state().agents.some((agent: any) => agent.slot === 'review-1'));
+  await until(() => json(join(directory, '.dispatch/review-1/launch.json')).steps.prompt?.state === 'acked');
+  const request = join(f.work, 'nested-request.md');
+  put(request, 'Synthetic read-only task; use only your report grant.');
+  await f.probeSlot(a.job, 'review-1', { tool: 'call_sonic', params: { brief_path: request } }, false);
+  await until(() => f.state().agents.some((agent: any) => agent.slot === 'sonic-1'));
+  await f.probeSlot(
+    a.job,
+    'sonic-1',
+    { tool: 'ask_orchestrator', params: { question: 'Nested decision?', default: 'A' } },
+    false
   );
-  const started = performance.now();
-  const result = await hudCreate(
-    { ...f.ctx, herdrBudgetMs: 40 },
-    { role: 'imp', request_key: 'timeout', task: 'Synthetic timeout.', cwd: f.work }
+  await until(() => fs.existsSync(join(directory, 'qa/q1.md')));
+  const nestedFile = join(directory, '.dispatch/sonic-1/STATUS.json');
+  const nestedQuestion = json(nestedFile);
+  const observed = observeDispatch(directory, f.receipt(a.job).pi_dispatch);
+  assert.equal(observed.event, 'QUESTION');
+  assert.equal(observed.asking_slot, 'sonic-1');
+  assert.equal((await waitForJob(f.home, f.env, String(a.job), 1000)).asking_slot, 'sonic-1');
+  const collector = new JobObservationCollector(f.home, {
+    root: 'synthetic/main',
+    herdr: async () => JSON.stringify({ result: { agents: f.state().agents } }),
+  });
+  t.after(() => collector.dispose());
+  let snapshot: any;
+  for (let i = 0; i < 30; i++) {
+    snapshot = await collector.refresh({ maxFiles: 200, maxEntries: 1000, maxBytes: 4 * 1024 * 1024 });
+    await collector.live.settled();
+    if (snapshot.jobs[0]?.requests?.some((q: any) => q.current)) break;
+  }
+  assert.equal(snapshot.jobs.length, 1);
+  assert.equal(snapshot.jobs[0].requests[0].current, true);
+  assert.equal(snapshot.jobs[0].helpers.find((h: any) => h.role === 'sonic').lifecycle, 'waiting_orchestrator');
+  // Corrupt copies of real producer bytes: never chase a third edge, a cycle, a foreign path or a wrong parent.
+  for (const patch of [
+    {
+      helper_pending: { kind: 'review', n: 1, status_file: join(directory, '.dispatch/review-1/STATUS.json') },
+      state: 'waiting_helper',
+    },
+    { parent: 'primary' },
+  ]) {
+    put(nestedFile, { ...nestedQuestion, ...patch });
+    const bad = observeDispatch(directory, f.receipt(a.job).pi_dispatch);
+    assert.equal(bad.event, undefined);
+    assert.ok(bad.diagnostics.some((d) => d.reason === 'active_helper_unknown'));
+  }
+  put(nestedFile, nestedQuestion);
+  const primaryFile = join(directory, 'STATUS.json');
+  const primary = json(primaryFile);
+  put(primaryFile, { ...primary, helper_pending: { ...primary.helper_pending, status_file: '/outside/STATUS.json' } });
+  assert.equal(observeDispatch(directory, f.receipt(a.job).pi_dispatch).event, undefined);
+  put(primaryFile, primary);
+  assert.equal((await hudRespond(f.ctx, { job: a.job, request_id: 'q1', answer: 'A' })).consumed, false);
+  await until(() => fs.existsSync(join(directory, '.dispatch/sonic-1/probe-result.json')));
+  assert.equal(json(nestedFile).state, 'working');
+  for (let i = 0; i < 30; i++) {
+    snapshot = await collector.refresh({ maxFiles: 200, maxEntries: 1000, maxBytes: 4 * 1024 * 1024 });
+    if (snapshot.jobs[0]?.requests?.[0]?.current === false) break;
+  }
+  assert.equal(snapshot.jobs[0].requests[0].current, false);
+  await f.probeSlot(a.job, 'sonic-1', { event: 'before_agent_start' });
+  await f.probeSlot(a.job, 'sonic-1', { builtinWrite: true });
+  await f.probeSlot(a.job, 'sonic-1', { event: 'agent_settled' });
+  await until(() => fs.existsSync(join(directory, '.dispatch/review-1/probe-result.json')));
+  await f.probeSlot(a.job, 'review-1', { event: 'before_agent_start' });
+  put(join(directory, 'review-1.md'), 'Verdict: accept\nSynthetic independent review.\n');
+  await f.probeSlot(a.job, 'review-1', { event: 'agent_settled' });
+  await until(() => fs.existsSync(join(directory, '.dispatch/primary/probe-result.json')));
+  assert.equal(json(primaryFile).state, 'working');
+  put(nestedFile, nestedQuestion); // A historical waiting snapshot is not an active request.
+  assert.equal(observeDispatch(directory, f.receipt(a.job).pi_dispatch).event, undefined);
+});
+
+test('PR4 continuation suppresses old DONE; no replacement; explicit close is idempotent', async (t) => {
+  const f = await fixture(t);
+  const a = await f.create();
+  assert.equal(a.ok, true, JSON.stringify(a));
+  await f.settle(a.job);
+  const args = { job: a.job, message_key: 'repair', text: 'Repair the synthetic issue.' };
+  assert.equal((await hudSend(f.ctx, args)).ok, true);
+  assert.equal((await hudSend(f.ctx, args)).idempotent, true);
+  assert.equal((await hudSend(f.ctx, { ...args, text: 'Different' })).code, 'conflict');
+  assert.equal((await hudRead(f.ctx, { job: a.job })).continuation, 'unconfirmed');
+  assert.equal((await waitForJob(f.home, f.env, String(a.job), 20)).event, 'TIMEOUT');
+  await f.probe(a.job, { event: 'before_agent_start' });
+  put(join(f.directory(a.job), 'report.md'), 'Changed report after repair.\n');
+  await f.probe(a.job, { event: 'agent_settled' });
+  assert.equal((await waitForJob(f.home, f.env, String(a.job), 20)).event, 'DONE');
+  assert.equal((await hudClose(f.ctx, { job: a.job })).ok, true);
+  assert.equal((await hudClose(f.ctx, { job: a.job })).idempotent, true);
+  assert.equal(f.state().counts.start, 1);
+  assert.equal(f.state().tabs.length, 0);
+  assert.equal(fs.existsSync(f.hostile), false);
+});
+
+test('PR4 QA response rechecks the owner under the mutation lock', async (t) => {
+  const f = await fixture(t);
+  const a = await f.create();
+  assert.equal(a.ok, true, JSON.stringify(a));
+  await f.probe(a.job, { tool: 'ask_orchestrator', params: { question: 'Synthetic decision?', default: 'A' } }, false);
+  await until(() => fs.existsSync(join(f.directory(a.job), 'qa/q1.md')));
+  const response = hudRespond(f.ctx, { job: a.job, request_id: 'q1', answer: 'A' });
+  // Synchronously replace the receipt after admission, before the lock body resumes.
+  const r = f.receipt(a.job);
+  r.pi_dispatch = {
+    contract_version: 1,
+    role: 'implementer',
+    executable: '/legacy/pi-dispatch',
+    reaper: '/legacy/pi-role-reap',
+    launch: 'acked',
+  };
+  put(join(f.directory(a.job), 'receipt.json'), r);
+  assert.equal((await response).code, 'legacy_owner_required');
+  assert.equal(fs.existsSync(join(f.directory(a.job), 'qa/q1.answer.md')), false);
+});
+
+test('PR4 wrapped brief boundary is checked before any job, key or association publication', async (t) => {
+  const f = await fixture(t);
+  const small = await f.create('brief-size-probe', { task: 'x' });
+  assert.equal(small.ok, true, JSON.stringify(small));
+  const overhead = fs.statSync(join(f.directory(small.job), 'brief.md')).size - 1;
+  const task = 'x'.repeat(64 * 1024 - overhead);
+  const largest = await f.create('largest-brief', { task });
+  assert.equal(largest.ok, true, JSON.stringify(largest));
+  assert.equal(fs.statSync(join(f.directory(largest.job), 'brief.md')).size, 64 * 1024);
+  const index = join(f.home, 'jobs/index', fs.readdirSync(join(f.home, 'jobs/index'))[0]!);
+  const before = {
+    jobs: fs.readdirSync(join(f.home, 'jobs')).sort(),
+    keys: fs.readdirSync(index).sort(),
+    associations: fs.readdirSync(join(f.home, 'assoc')).sort(),
+    counts: f.state().counts,
+  };
+  for (const oversized of [task + 'x', 'x'.repeat(64 * 1024)]) {
+    const refused = await f.create('oversized-brief', { task: oversized });
+    assert.equal(refused.code, 'invalid_arguments');
+    assert.equal(refused.field, 'task');
+    assert.equal(refused.reason, 'too_large');
+    assert.deepEqual(
+      {
+        jobs: fs.readdirSync(join(f.home, 'jobs')).sort(),
+        keys: fs.readdirSync(index).sort(),
+        associations: fs.readdirSync(join(f.home, 'assoc')).sort(),
+        counts: f.state().counts,
+      },
+      before
+    );
+  }
+});
+
+test('PR4 retained prior inventory permits acquisition, upgrade and existing owned-job mutation', async (t) => {
+  const f = await fixture(t);
+  const a = await f.create();
+  assert.equal(a.ok, true, JSON.stringify(a));
+  const { priorInventoryFixture } = await import(
+    pathToFileURL(join(REPO_ROOT, 'scripts/runtime-package/test-fixture.mjs')).href
   );
-  assert.equal(result.code, 'launch_unknown');
-  assert.equal(f.receipt(result.job).pi_dispatch.launch, 'sent');
-  // Direct runner seam tests the retained-pipe timeout without starting any harness.
-  const outcome = await runCommand(
-    process.execPath,
-    [
-      '--input-type=module',
-      '-e',
-      `import {spawn} from 'node:child_process'; spawn(process.execPath,['-e','setTimeout(()=>{},500)'],{stdio:['ignore',1,2]}).unref(); setTimeout(()=>{},1000)`,
-    ],
-    f.env,
-    { budgetMs: 60 }
+  const prior = priorInventoryFixture(t);
+  const publisher = await import(pathToFileURL(join(prior.bundle, 'runtime-package/installer.mjs')).href);
+  const oldPlan = publisher.planInstall(prior.bundle, artifact.prefix);
+  const old = publisher.executeInstall(prior.bundle, artifact.prefix, oldPlan.planDigest);
+  assert.equal((await facadeRelease(releaseRoot)).id, artifact.release.id);
+  const installer = await import(pathToFileURL(join(REPO_ROOT, 'scripts/runtime-package/installer.mjs')).href);
+  const upgrade = installer.planInstall(artifact.bundle, artifact.prefix);
+  assert.equal(installer.executeInstall(artifact.bundle, artifact.prefix, upgrade.planDigest).status, 'SELECTED');
+  assert.equal((await facadeRelease(releaseRoot)).id, artifact.release.id);
+  await assert.rejects(
+    facadeRelease(join(artifact.prefix, 'releases', old.manifestDigest)),
+    /pi_owned_release_unverified/
   );
-  assert.equal(outcome.reason, 'timeout');
-  assert.ok(performance.now() - started < 1500);
+  assert.equal(
+    (await hudSend(f.ctx, { job: a.job, message_key: 'after-upgrade', text: 'Synthetic follow-up.' })).ok,
+    true
+  );
+  assert.equal((await hudClose(f.ctx, { job: a.job })).ok, true);
+  assert.equal(f.state().counts.start, 1, 'retention/upgrade never replaces the job');
+});
+
+test('PR4 cold launch samples and semantic STATUS write count', async (t) => {
+  const f = await fixture(t);
+  const samples: number[] = [];
+  for (let n = 0; n < 3; n++) {
+    const start = performance.now();
+    const a = await f.create(`cold-${n}`);
+    assert.equal(a.ok, true, JSON.stringify(a));
+    samples.push(performance.now() - start);
+    assert.equal(json(join(f.directory(a.job), '.dispatch/primary/status-writes.json')).statusWrites, 1);
+  }
+  t.diagnostic(
+    `host=${hostname()} warmup=0 n=3 cold-create-to-ready-ms=${samples.map((n) => n.toFixed(1)).join(',')} startup-STATUS-writes=1/slot`
+  );
+});
+
+test('PR4 missing pinned release never falls back to the current checkout or activated release', async (t) => {
+  const f = await fixture(t);
+  const a = await f.create();
+  assert.equal(a.ok, true, JSON.stringify(a));
+  const r = f.receipt(a.job);
+  r.pi_dispatch.release = { id: 'f'.repeat(64), root: join(artifact.prefix, 'releases', 'f'.repeat(64)) };
+  put(join(f.directory(a.job), 'receipt.json'), r);
+  assert.equal((await f.create()).code, 'pi_owned_owner_unavailable');
+  assert.equal((await hudSend(f.ctx, { job: a.job, message_key: 'x', text: 'x' })).code, 'pi_owned_owner_unavailable');
+  assert.equal((await hudClose(f.ctx, { job: a.job })).code, 'pi_owned_owner_unavailable');
+  assert.equal(f.state().counts.start, 1);
+});
+
+test('PR4 legacy receipts drain read-only; every mutation and relaunch is refused before writes', async (t) => {
+  const f = await fixture(t);
+  const a = await f.create();
+  assert.equal(a.ok, true, JSON.stringify(a));
+  await f.settle(a.job);
+  const r = f.receipt(a.job);
+  r.pi_dispatch = {
+    contract_version: 1,
+    role: 'implementer',
+    executable: join(f.bin, 'pi-dispatch'),
+    reaper: join(f.bin, 'pi-role-reap'),
+    launch: 'acked',
+  };
+  put(join(f.directory(a.job), 'receipt.json'), r);
+  const before = fs.readFileSync(join(f.directory(a.job), 'receipt.json'), 'utf8');
+  assert.equal((await hudRead(f.ctx, { job: a.job })).event, 'DONE');
+  assert.equal((await waitForJob(f.home, f.env, String(a.job), 20)).event, 'DONE');
+  for (const op of [
+    () => f.create(),
+    () => hudSend(f.ctx, { job: a.job, message_key: 'x', text: 'x' }),
+    () => hudRespond(f.ctx, { job: a.job, request_id: 'q1', answer: 'x' }),
+    () => hudClose(f.ctx, { job: a.job }),
+  ])
+    assert.equal((await op()).code, 'legacy_owner_required');
+  assert.equal(
+    fs.readFileSync(join(f.directory(a.job), 'receipt.json'), 'utf8'),
+    before,
+    'legacy receipt must remain byte-identical'
+  );
+  assert.equal(fs.existsSync(join(f.directory(a.job), 'qa/q1.answer.md')), false);
+  assert.equal(fs.existsSync(f.hostile), false);
+  assert.throws(
+    () => launchDispatch(r.pi_dispatch, f.directory(a.job), f.work, null, null, f.env),
+    /legacy_owner_required/
+  );
+  assert.throws(() => reapDispatch(r.pi_dispatch, f.directory(a.job), f.env), /legacy_owner_required/);
+  delete r.pi_dispatch;
+  r.state = 'launch_unknown';
+  put(join(f.directory(a.job), 'receipt.json'), r);
+  assert.equal((await f.create()).code, 'legacy_owner_required');
+  assert.equal((await hudClose(f.ctx, { job: a.job })).code, 'legacy_owner_required');
+});
+
+test('PR4 production acquisition: checkout and missing installed owner refuse', async () => {
+  await assert.rejects(facadeRelease(REPO_ROOT), /pi_owned_release_unverified/);
+  await assert.rejects(
+    facadeRelease(releaseRoot, { id: 'f'.repeat(64), root: join(artifact.prefix, 'releases', 'f'.repeat(64)) }),
+    /pi_owned_owner_unavailable/
+  );
+  assert.equal((await facadeRelease(releaseRoot)).id, artifact.release.id);
+});
+
+test('PR4 production acquisition: env-only endpoint, wrong instance and foreign pane refuse; corroborated ancestry succeeds', async (t) => {
+  const f = await fixture(t);
+  const main = readProcess(process.pid)!;
+  const server = readProcess(f.runtime.endpoint.server.pid)!;
+  let parent = server.stamp.pid;
+  const probe = {
+    ppid: main.stamp.pid,
+    env: {},
+    read: (pid: number) =>
+      pid === main.stamp.pid ? { pid, ppid: parent, procStart: main.stamp.proc_start, argv: ['pi'], env: {} } : null,
+  } as unknown as CallerProbe;
+  const info = ((pid: number) =>
+    pid === main.stamp.pid
+      ? { ...main, ppid: parent }
+      : pid === server.stamp.pid
+        ? server
+        : null) as typeof readProcess;
+  const launch = (pid: number) => ({ argv: [pid === server.stamp.pid ? 'herdr' : 'pi'], env: {} });
+  const raw = new CliHerdrTransport(f.runtime.endpoint.socketPath, f.env, 'herdr', 1500, server.stamp);
+  let foreign = false;
+  let instance = true;
+  const herdr = {
+    instance: () => (instance ? raw.instance() : Promise.resolve(null)),
+    observe: async () => ({
+      pane: 'caller-pane',
+      tab: 'caller-tab',
+      terminal: 'caller-terminal',
+      workspace: 'w0',
+      process: foreign ? server.stamp : main.stamp,
+      shell: main.stamp,
+      atPrompt: false,
+    }),
+  } as unknown as PanelHerdr;
+  const env = { ...f.env, HERDR_PANE_ID: 'caller-pane' };
+  const deps = { probe, processInfo: info, launch, herdr };
+  assert.deepEqual(await captureFacadeRuntime(env, deps), f.runtime);
+  const other = await fixture(t);
+  await assert.rejects(
+    captureFacadeRuntime(
+      { ...env, HERDR_SOCKET_PATH: other.runtime.endpoint.socketPath },
+      { ...deps, herdr: undefined }
+    ),
+    /herdr_unavailable/
+  );
+  foreign = true;
+  await assert.rejects(captureFacadeRuntime(env, deps), /caller_pane_unverified/);
+  foreign = false;
+  instance = false;
+  await assert.rejects(captureFacadeRuntime(env, deps), /herdr_unavailable/);
+  instance = true;
+  parent = 1;
+  await assert.rejects(captureFacadeRuntime(env, deps), /herdr_unavailable/);
+  parent = server.stamp.pid;
+  await assert.rejects(captureFacadeRuntime({ ...env, HERDR_SOCKET_PATH: 'relative' }, deps), /herdr_unavailable/);
+  await assert.rejects(captureFacadeRuntime({ ...env, HERDR_PANE_ID: undefined }, deps), /caller_pane_unverified/);
+  await assert.rejects(
+    captureFacadeRuntime(env, { ...deps, probe: { ...probe, read: () => null } }),
+    /caller_pane_unverified/
+  );
 });

@@ -1,7 +1,7 @@
-/** Receipt-pinned pi-roles CLI transport. No helper execution policy lives here. */
+/** Lightweight receipt/SESSION codecs. Legacy ownership is observation-only. */
 import * as fs from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
-import { isRecord, runCommand, type HerdrOutcome } from './herdr-run.js';
+import { isRecord, type HerdrOutcome } from './herdr-run.js';
 
 export type DispatchRole = 'implementer' | 'sonic' | 'reviewer' | 'architect';
 export interface LegacyDispatchV1 {
@@ -97,36 +97,6 @@ export function validDispatch(value: unknown, role: string, directory?: string):
   return true;
 }
 
-/** Only absent dispatch permits the legacy recipe. An inaccessible installation is an error. */
-function executable(name: string, env: NodeJS.ProcessEnv): string | null {
-  for (const directory of (env.PATH ?? '').split(':')) {
-    const file = resolve(directory || '.', name);
-    try {
-      fs.lstatSync(file);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw new Error('dispatch_unavailable');
-    }
-    try {
-      const real = fs.realpathSync(file);
-      if (!fs.statSync(real).isFile()) throw new Error('not_regular');
-      fs.accessSync(real, fs.constants.X_OK);
-      return real;
-    } catch {
-      throw new Error('dispatch_unavailable');
-    }
-  }
-  return null;
-}
-
-export function discoverDispatch(env: NodeJS.ProcessEnv, role: string): LegacyDispatchV1 | null {
-  const bin = executable('pi-dispatch', env);
-  if (!bin) return null;
-  const reaper = executable('pi-role-reap', env);
-  if (!reaper) throw new Error('dispatch_reaper_missing');
-  return { contract_version: 1, role: dispatchRole(role), executable: bin, reaper, launch: 'unsent' };
-}
-
 /** No ORCH/notify channel competes with the caller-armed HUD waiter. */
 export function dispatchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const next: NodeJS.ProcessEnv = { ...env, HERDR_ENV: '1' };
@@ -200,12 +170,8 @@ export function launchDispatch(
   env: NodeJS.ProcessEnv,
   budgetMs = DISPATCH_LAUNCH_MS
 ): Promise<HerdrOutcome> {
-  if (dispatch.contract_version !== 1) throw new Error('owned_dispatch_unavailable');
-  const argv = [dispatch.role, '--task-dir', directory, '--workdir', cwd, '--output', join(directory, 'report.md')];
-  if (dispatch.role === 'implementer') argv.push('--split');
-  if (model) argv.push('--model', model);
-  if (thinking) argv.push('--thinking', thinking);
-  return runCommand(dispatch.executable, argv, dispatchEnv(env), { budgetMs });
+  void [directory, cwd, model, thinking, env, budgetMs];
+  throw new Error(dispatch.contract_version === 1 ? 'legacy_owner_required' : 'owned_dispatch_unavailable');
 }
 
 export function reapDispatch(
@@ -214,6 +180,6 @@ export function reapDispatch(
   env: NodeJS.ProcessEnv,
   budgetMs = DISPATCH_REAP_MS
 ): Promise<HerdrOutcome> {
-  if (dispatch.contract_version !== 1) throw new Error('owned_dispatch_unavailable');
-  return runCommand(dispatch.reaper, [directory], dispatchEnv(env), { budgetMs });
+  void [directory, env, budgetMs];
+  throw new Error(dispatch.contract_version === 1 ? 'legacy_owner_required' : 'owned_dispatch_unavailable');
 }

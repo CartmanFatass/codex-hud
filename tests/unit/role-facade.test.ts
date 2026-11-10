@@ -176,7 +176,13 @@ function stage(t: TestContext, mode = 'ok', delayMs = 0): Stage {
   chmodSync(home, 0o700);
   const work = join(home, 'work');
   mkdirSync(work, { mode: 0o700 });
-  writeFileSync(join(home, 'routing.toml'), ROUTING, { mode: 0o600 });
+  // Generic transaction tests retain the unchanged Claude transport. Pi's
+  // execution/QA lifecycle now runs through the real owned fixture in pi-dispatch-facade.
+  writeFileSync(
+    join(home, 'routing.toml'),
+    ROUTING.replaceAll('harness = "pi"', 'harness = "claude"').replaceAll('recipe = "pi-role"', 'recipe = "claude"'),
+    { mode: 0o600 }
+  );
   const bin = join(home, 'bin');
   mkdirSync(bin, { mode: 0o700 });
   const wrapper = join(bin, 'herdr');
@@ -368,7 +374,7 @@ test('create read send respond close against the fake herdr', async (t) => {
   );
   assert.equal(receipt.binding.id, 'pi-a');
   assert.equal(receipt.binding.model, 'synthetic-flash');
-  assert.equal(receipt.binding.harness, 'pi');
+  assert.equal(receipt.binding.harness, 'claude');
   assert.equal(receipt.binding.env_profile, null);
   assert.equal(receipt.cwd, s.work);
   assert.equal(receipt.state, 'open');
@@ -405,23 +411,26 @@ test('create read send respond close against the fake herdr', async (t) => {
     ['tab create', 'agent start', 'agent prompt']
   );
   const pi = s.log().filter((entry) => entry.bin === 'pi-role');
-  assert.equal(pi.length, 1);
-  assert.deepEqual(pi[0]!.argv.slice(0, 2), ['--args-json', 'implementer']);
-  assert.ok(pi[0]!.argv.includes(join(directory, 'qa')));
+  assert.equal(pi.length, 0);
   const createArgs = launched[0]!.argv;
   assert.ok(createArgs.includes('--no-focus'));
   assert.ok(createArgs.includes('--label'));
   assert.match(createArgs[createArgs.indexOf('--label') + 1]!, /^imp:[a-f0-9]{8}$/);
   assert.equal(createArgs.includes('--workspace'), false);
   const start = launched[1]!.argv;
-  assert.deepEqual(start.slice(0, 8), ['agent', 'start', `hud-${job}`, '--kind', 'pi', '--pane', 'pane1', '--timeout']);
+  assert.deepEqual(start.slice(0, 8), [
+    'agent',
+    'start',
+    `hud-${job}`,
+    '--kind',
+    'claude',
+    '--pane',
+    'pane1',
+    '--timeout',
+  ]);
   assert.ok(start.includes('--'));
-  assert.ok(start.includes('--role') && start.includes('implementer'));
   assert.ok(start.includes('--model') && start.includes('synthetic-flash'));
-  assert.ok(start.includes('--thinking') && start.includes('max'));
-  assert.ok(start.includes('--tui-mode') && start.includes('regular'));
-  assert.ok(start.includes(join(directory, 'qa')));
-  assert.ok(start.includes(join(directory, 'sessions')));
+  assert.ok(start.includes('--effort') && start.includes('max'));
   const brief = readFileSync(join(directory, 'brief.md'), 'utf8');
   assert.match(brief, /Implement the synthetic task\.\nKeep the change local\./);
   assert.equal(launched[2]!.argv[3], `Read ${join(directory, 'brief.md')} and do exactly what it asks.`);
@@ -429,7 +438,7 @@ test('create read send respond close against the fake herdr', async (t) => {
 
   const early = await hudRespond(s.ctx(), { job, request_id: 'q1', answer: 'not yet' });
   assert.equal(early.ok, false);
-  assert.equal(early.code, 'request_missing');
+  assert.equal(early.code, 'handoff');
   writeFileSync(join(directory, 'qa', 'q1.md'), 'Which file?\n', { mode: 0o600 });
   const reading = await hudRead(s.ctx(), { job, wait_ms: 50 });
   assert.equal(reading.ok, true);
@@ -442,22 +451,15 @@ test('create read send respond close against the fake herdr', async (t) => {
   );
 
   const answered = await hudRespond(s.ctx(), { job, request_id: 'q1', answer: 'Use the synthetic file.' });
-  assert.deepEqual(answered, {
-    ok: true,
-    job,
-    request_id: 'q1',
-    idempotent: false,
-    consumed: false,
-  });
-  assert.equal(readFileSync(join(directory, 'qa', 'q1.answer.md'), 'utf8'), 'Use the synthetic file.\n');
+  assert.equal(answered.code, 'handoff');
+  assert.equal(existsSync(join(directory, 'qa', 'q1.answer.md')), false);
   const again = await hudRespond(s.ctx(), { job, request_id: 'q1', answer: 'Use the synthetic file.' });
-  assert.equal(again.ok, true);
-  assert.equal(again.idempotent, true);
+  assert.equal(again.code, 'handoff');
   const clash = await hudRespond(s.ctx(), { job, request_id: 'q1', answer: 'A different answer.' });
   assert.equal(clash.ok, false);
-  assert.equal(clash.code, 'conflict');
+  assert.equal(clash.code, 'handoff');
   const after = await hudRead(s.ctx(), { job });
-  assert.deepEqual(after.pending, []);
+  assert.deepEqual(after.pending, [{ id: 'q1', path: join(directory, 'qa/q1.md') }]);
   assert.equal(after.acceptance, null);
 
   const sent = await hudSend(s.ctx(), { job, message_key: 'note-1', text: 'Look at the synthetic diff.' });
@@ -484,7 +486,7 @@ test('create read send respond close against the fake herdr', async (t) => {
   assert.equal(existsSync(join(directory, 'brief.md')), true);
   assert.equal(existsSync(join(directory, 'receipt.json')), true);
   assert.equal(existsSync(join(directory, 'report.md')), true);
-  assert.equal(existsSync(join(directory, 'qa', 'q1.answer.md')), true);
+  assert.equal(existsSync(join(directory, 'qa', 'q1.answer.md')), false);
   const afterClose = JSON.parse(readFileSync(join(s.home, 'assoc', `${job}.json`), 'utf8')) as { closed: boolean };
   assert.equal(afterClose.closed, true);
   const closedMetadata = JSON.parse(readFileSync(join(s.home, 'assoc', `${job}.json`), 'utf8'));
@@ -935,8 +937,9 @@ test('grok and claude adapters pass the flags from each CLI help', async (t) => 
   assert.ok(claudeStart.includes('--effort') && claudeStart.includes('high'));
 });
 
-test('an oracle on the pi adapter is not launched', async (t) => {
+test('an oracle on the pi adapter refuses an uninstalled checkout', async (t) => {
   const s = stage(t);
+  writeFileSync(join(s.home, 'routing.toml'), ROUTING);
   const created = await hudCreate(s.ctx(), {
     role: 'oracle',
     phase: 'converge',
@@ -945,7 +948,7 @@ test('an oracle on the pi adapter is not launched', async (t) => {
     cwd: s.work,
   });
   assert.equal(created.ok, false);
-  assert.equal(created.code, 'role_unmapped');
+  assert.equal(created.code, 'pi_owned_release_unverified');
   assert.equal(s.log().length, 0);
 });
 
@@ -1189,7 +1192,10 @@ test('a retried launch uses the binding stored on the receipt', async (t) => {
   writeFileSync(file, JSON.stringify(stored));
   writeFileSync(
     join(s.home, 'routing.toml'),
-    ROUTING.replace('model = "synthetic-flash"', 'model = "synthetic-from-routing"')
+    readFileSync(join(s.home, 'routing.toml'), 'utf8').replace(
+      'model = "synthetic-flash"',
+      'model = "synthetic-from-routing"'
+    )
   );
   const again = await hudCreate(s.ctx(), imp(s.work, 'resume-binding'));
   assert.equal(again.ok, true);
@@ -1197,25 +1203,18 @@ test('a retried launch uses the binding stored on the receipt', async (t) => {
   const last = starts[starts.length - 1]!.argv;
   assert.ok(last.includes('synthetic-from-receipt'));
   assert.equal(last.includes('synthetic-from-routing'), false);
-  assert.equal(last[last.indexOf('--kind') + 1], 'pi');
+  assert.equal(last[last.indexOf('--kind') + 1], 'claude');
 });
 
-test('pi-role uses args-json and does not inherit notify env', async (t) => {
+test('pi-role PATH no longer supplies argv from a checkout', async (t) => {
   const s = stage(t);
   s.env.PI_ROLE_NOTIFY = 'herdr agent prompt w0:p1';
   s.env.PI_ORCHESTRATOR_PANE = 'w0:p9';
   s.env.HERDR_ENV = '0';
+  writeFileSync(join(s.home, 'routing.toml'), ROUTING);
   const created = await hudCreate(s.ctx(), imp(s.work, 'scrubbed-pi'));
-  assert.equal(created.ok, true);
-  const pi = s.log().filter((entry) => entry.bin === 'pi-role');
-  assert.equal(pi.length, 1);
-  assert.equal(pi[0]!.argv[0], '--args-json');
-  assert.equal(pi[0]!.notify, '');
-  assert.equal(pi[0]!.herdrEnv, '1');
-  const start = calls(s.log(), 'agent start')[0]!.argv.join(' ');
-  assert.equal(start.includes('herdr agent prompt'), false);
-  assert.equal(start.includes('w0:p9'), false);
-  assert.ok(start.includes('herdr-agent-state'));
+  assert.equal(created.code, 'pi_owned_release_unverified');
+  assert.deepEqual(s.log(), []);
 });
 
 test('codex rename waits three seconds, matching the recipe', () => {

@@ -579,9 +579,15 @@ test('all shipped role/skill resources stay public-safe and use only owned capab
   assert.match(fs.readFileSync(join(REPO_ROOT, roleResource('reviewer')), 'utf8'), /Verdict: changes-required/);
 });
 
-test('PR1 has no production selection: launch code has no owned module import, legacy transport refuses v2', async (t) => {
+test('PR4 selects owned execution only in facade; file-only codecs and legacy transport never execute it', async (t) => {
   const f = fixture(t);
-  for (const relative of ['src/roles/facade.ts', 'src/roles/pi-dispatch.ts', 'src/roles/job-receipt.ts'])
+  assert.match(fs.readFileSync(join(REPO_ROOT, 'src/roles/facade.ts'), 'utf8'), /await launchOwned\(context,/);
+  for (const relative of [
+    'src/roles/pi-dispatch.ts',
+    'src/roles/job-receipt.ts',
+    'src/roles/job-wait.ts',
+    'src/roles/pi-dispatch-status.ts',
+  ])
     assert.doesNotMatch(
       fs.readFileSync(join(REPO_ROOT, relative), 'utf8'),
       /(?:from\s*|import\s*\()['"][^'"]*pi-owned\//

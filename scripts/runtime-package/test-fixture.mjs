@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { REQUIRED, INSTALLER_FILES, DEPENDENCIES, COMMANDS, ACTIVATION_PROCESS_FILES } from './manifest.mjs';
 import { digest, json } from './safety.mjs';
+import { CLAUDE_TEMPLATES } from './claude.mjs';
 const scripts = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 export function fixture(t, label = 'A') {
   const root = fs.mkdtempSync(path.join(tmpdir(), 'hud-runtime-test-'));
@@ -68,6 +69,50 @@ export function fixture(t, label = 'A') {
 export function rewriteManifest(f, change) {
   change(f.manifest);
   fs.writeFileSync(path.join(f.bundle, 'RUNTIME-MANIFEST.json'), json(f.manifest));
+}
+/** Synthetic prior publisher: its installer requires only that release's inventory.
+ * The incoming/current installer under test is never patched or bypassed.
+ */
+export function priorInventoryFixture(t, label = 'prior') {
+  const f = fixture(t, label);
+  // A5 names are explicit so the same regression covers the merged inventory,
+  // without removing PR1–PR3's worker extension or older ordinary-pi outputs.
+  const piOutputs = ['segment', 'package-entry', 'package-native', 'package-context'].map(
+    (name) => `dist/harness/pi/${name}.js`
+  );
+  const omitted = REQUIRED.filter(
+    (name) =>
+      name === 'dist/roles/pi-owned/facade-context.js' ||
+      piOutputs.includes(name) ||
+      (name.startsWith('integrations/pi/package/') && !name.endsWith('/README.md')) ||
+      name.startsWith('dist/integrations/claude/') ||
+      CLAUDE_TEMPLATES.includes(name)
+  );
+  const file = 'runtime-package/manifest.mjs';
+  const source = fs.readFileSync(path.join(f.bundle, file), 'utf8');
+  replaceFixtureFile(
+    f,
+    file,
+    source
+      .replace('export const REQUIRED = [', 'const PRIOR_REQUIRED = [')
+      .replace(
+        'const ROOT_FIELDS = [',
+        `export const REQUIRED = PRIOR_REQUIRED.filter((name) => !${JSON.stringify(omitted)}.includes(name));\nconst ROOT_FIELDS = [`
+      )
+  );
+  for (const name of omitted) {
+    fs.unlinkSync(path.join(f.bundle, name));
+    for (
+      let dir = path.dirname(path.join(f.bundle, name));
+      dir !== f.bundle && !fs.readdirSync(dir).length;
+      dir = path.dirname(dir)
+    )
+      fs.rmdirSync(dir);
+  }
+  rewriteManifest(f, (manifest) => {
+    manifest.entries = manifest.entries.filter((entry) => !omitted.includes(entry.path));
+  });
+  return { ...f, omitted };
 }
 // A bounded Linux subreaper harness owns and reaps both the runner and any orphan
 // produced by an interrupted pre-fix runner. No broad PID/process-name cleanup.

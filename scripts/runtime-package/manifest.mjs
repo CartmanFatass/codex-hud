@@ -120,6 +120,7 @@ export const PI_WORKER_FILES = [
     'reap',
     'release',
     'runtime',
+    'facade-context',
   ].map((name) => `dist/roles/pi-owned/${name}.js`),
 ];
 export const REQUIRED = [
@@ -255,7 +256,8 @@ function annotation(value, limit) {
   if (length > limit) throw new Error('manifest_annotation_limit');
   return length;
 }
-export function parseManifest(bytes) {
+/** Incoming candidates require today's capabilities; retained releases keep their own inventory. */
+export function parseManifest(bytes, { required = true } = {}) {
   if (!(bytes instanceof Uint8Array) || bytes.length > MAX_FILE) throw new Error('manifest_byte_limit');
   let value;
   try {
@@ -339,17 +341,18 @@ export function parseManifest(bytes) {
     total += entry.bytes;
   }
   if (total > MAX_TOTAL) throw new Error('bundle_size_limit');
-  for (const name of REQUIRED) if (!names.has(name)) throw new Error(`missing_required_entry: ${name}`);
+  if (required !== false)
+    for (const name of REQUIRED) if (!names.has(name)) throw new Error(`missing_required_entry: ${name}`);
   return value;
 }
-export function verifyBundle(root) {
+export function verifyBundle(root, { required = true } = {}) {
   const directory = new Directory(root, true);
   try {
     const manifestFile = directory.read('RUNTIME-MANIFEST.json');
     if (manifestFile.mode !== 0o600 || manifestFile.identity.uid !== process.getuid())
       throw new Error('unsafe_manifest_mode');
     const raw = manifestFile.data;
-    const manifest = parseManifest(raw);
+    const manifest = parseManifest(raw, { required });
     const listed = [...manifest.entries.map((entry) => entry.path), 'RUNTIME-MANIFEST.json'].sort();
     if (JSON.stringify(inventory(directory, listed)) !== JSON.stringify(listed))
       throw new Error('unlisted_or_missing_bundle_entry');

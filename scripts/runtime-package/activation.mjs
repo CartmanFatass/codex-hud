@@ -267,7 +267,7 @@ export function planActivation(options, ignoreLock = false) {
     throw new Error('overlapping_activation_roots');
   if (!ignoreLock) refuseActivationLock(prefix, hudHome);
   const runtimeState = strictRuntime(prefix, release, ignoreLock);
-  const releaseBundle = verifyBundle(path.join(prefix, 'releases', release));
+  const releaseBundle = verifyBundle(path.join(prefix, 'releases', release), { required: false });
   let releaseVersion;
   let integration = null;
   try {

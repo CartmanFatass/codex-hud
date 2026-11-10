@@ -13,7 +13,9 @@
  * was sent is not sent again.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import type { FacadeOwnedContext } from './pi-owned/facade-context.js';
+import type { ContractContext, SlotContract } from './pi-owned/contracts.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { installationRoot } from '../cli/compat.js';
@@ -40,7 +42,6 @@ import {
   listedPanes,
   listedTabs,
   promptArgs,
-  runCommand,
   runHerdr,
   tabCreateArgs,
   tabIds,
@@ -49,14 +50,7 @@ import {
   type ListedAgent,
 } from './herdr-run.js';
 import { LockBusy, readPrivateJson, withLock, writePrivate } from './job-store.js';
-import {
-  discoverDispatch,
-  dispatchText,
-  launchDispatch,
-  readDispatchSession,
-  reapDispatch,
-  type PiDispatch,
-} from './pi-dispatch.js';
+import { dispatchRole, dispatchText, readDispatchSession, type PiDispatch } from './pi-dispatch.js';
 import { ADAPTER_HARNESS, isLaunchAdapter } from './adapters.js';
 import {
   connectRoleRuntime,
@@ -69,20 +63,7 @@ import {
   runtimeRequestKey,
   type JevRuntimeHandle,
 } from './jev-adapter.js';
-import {
-  adapterOf,
-  appendPiOverrides,
-  claudeArgs,
-  codexShell,
-  grokArgs,
-  LaunchError,
-  orchestratorPane,
-  parsePiRoleArgs,
-  piRoleArgv,
-  piRoleName,
-  qaDir,
-  RENAME_BACKOFF_MS,
-} from './launch.js';
+import { adapterOf, claudeArgs, codexShell, grokArgs, LaunchError, piRoleName, RENAME_BACKOFF_MS } from './launch.js';
 import {
   assertRoutingId,
   backendJson,
@@ -91,6 +72,7 @@ import {
   loadRouting,
   readRouting,
   RoutingError,
+  PI_ROLE_DEFAULTS,
   type BackendProfile,
 } from './routing.js';
 import { ORACLE_PHASES, ROLES, type OraclePhase, type RoleName, type Slot } from './roles.js';
@@ -105,6 +87,8 @@ import {
 
 export interface FacadeContext {
   readonly home: string;
+  /** Trusted in-process assembly/testing only; never tool input or job content. */
+  readonly piOwned?: FacadeOwnedContext;
   readonly root: RosterRoot | null;
   readonly env: NodeJS.ProcessEnv;
   readonly run?: (argv: readonly string[], env: NodeJS.ProcessEnv) => Promise<HerdrOutcome>;
@@ -187,23 +171,6 @@ function sha256(text: string): string {
 function runner(ctx: FacadeContext): (argv: readonly string[]) => Promise<HerdrOutcome> {
   const budget = ctx.herdrBudgetMs === undefined ? undefined : { budgetMs: ctx.herdrBudgetMs };
   return (argv) => (ctx.run ? ctx.run(argv, ctx.env) : runHerdr(argv, ctx.env, budget));
-}
-
-/**
- * pi-role prints argv. Drop inherited notify and pane overrides, and set
- * `HERDR_ENV=1` on purpose so the printed argv can include the pane-state hook.
- */
-function piRoleEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const next: NodeJS.ProcessEnv = { ...env };
-  delete next.PI_ROLE_NOTIFY;
-  delete next.PI_ORCHESTRATOR_PANE;
-  next.HERDR_ENV = '1';
-  return next;
-}
-
-function runPiRole(ctx: FacadeContext, argv: readonly string[]): Promise<HerdrOutcome> {
-  const budget = ctx.herdrBudgetMs === undefined ? undefined : { budgetMs: ctx.herdrBudgetMs };
-  return runCommand('pi-role', argv, piRoleEnv(ctx.env), budget);
 }
 
 function keyLock(parent: string, requestKey: string): string {
@@ -436,13 +403,10 @@ function forgetJob(home: string, root: RosterRoot, requestKey: string, job: stri
   }
 }
 
-function writeBrief(home: string, receipt: JobReceipt, task: string): string {
+function briefBody(home: string, receipt: Pick<JobReceipt, 'job' | 'role' | 'phase'>, task: string): string {
   const directory = jobDirectory(home, receipt.job);
-  fs.mkdirSync(join(directory, 'qa'), { recursive: true, mode: 0o700 });
-  fs.mkdirSync(join(directory, 'sessions'), { recursive: true, mode: 0o700 });
-  const brief = join(directory, 'brief.md');
   const report = join(directory, 'report.md');
-  const body = [
+  return [
     `# ${receipt.role}${receipt.phase ? ` ${receipt.phase}` : ''}`,
     '',
     task,
@@ -452,7 +416,14 @@ function writeBrief(home: string, receipt: JobReceipt, task: string): string {
     `Question directory: ${join(directory, 'qa')}`,
     '',
   ].join('\n');
-  writePrivate(brief, body);
+}
+
+function writeBrief(home: string, receipt: JobReceipt, task: string): string {
+  const directory = jobDirectory(home, receipt.job);
+  fs.mkdirSync(join(directory, 'qa'), { recursive: true, mode: 0o700 });
+  fs.mkdirSync(join(directory, 'sessions'), { recursive: true, mode: 0o700 });
+  const brief = join(directory, 'brief.md');
+  writePrivate(brief, briefBody(home, receipt, task));
   return brief;
 }
 
@@ -721,25 +692,7 @@ async function ensureLaunch(
   }
   const pane = receipt.executor.pane_id;
   if (!pane || !profile.harness) return failLaunch(ctx.home, run, receipt, 'launch_failed');
-  if (recipe === 'pi-role') {
-    const outcome = await runPiRole(
-      ctx,
-      piRoleArgv(receipt.role, qaDir(jobDirectory(ctx.home, receipt.job)), orchestratorPane(ctx.env))
-    );
-    if (outcome.reason === 'timeout') return herdrTimeout(receipt);
-    if (!outcome.ok) {
-      const reason = outcome.reason === 'unavailable' ? 'pi_role_missing' : 'pi_role_failed';
-      return failLaunch(ctx.home, run, receipt, 'launch_failed', { reason });
-    }
-    const args = appendPiOverrides(
-      parsePiRoleArgs(outcome.stdout),
-      profile,
-      join(jobDirectory(ctx.home, receipt.job), 'sessions')
-    );
-    receipt.steps.launch = 'sent';
-    remember(ctx.home, receipt);
-    return finishStart(ctx, run, receipt, await run(agentStartArgs(receipt.executor.agent, 'pi', pane, args)));
-  }
+  if (recipe === 'pi-role') return fail('legacy_owner_required', { job: receipt.job });
   if (recipe === 'codex-zsh') {
     const command = codexShell(profile);
     receipt.steps.launch = 'sent';
@@ -818,38 +771,124 @@ async function openJob(
   return ensurePrompt(ctx, run, receipt);
 }
 
+/** Task JSON supplies a pin, never an executable or trusted inventory. */
+async function ownedDispatchContext(ctx: FacadeContext, receipt: JobReceipt): Promise<ContractContext> {
+  const dispatch = receipt.pi_dispatch;
+  if (dispatch?.contract_version !== 2) throw new Error('legacy_owner_required');
+  const { facadeRelease } = await import('./pi-owned/facade-context.js');
+  const release = await facadeRelease(ctx.piOwned?.releaseRoot, dispatch.release);
+  const context = { jobDirectory: jobDirectory(ctx.home, receipt.job), cwd: receipt.cwd, release };
+  const { validateOwnedDispatch } = await import('./pi-owned/contracts.js');
+  validateOwnedDispatch(dispatch, context);
+  return context;
+}
+
+async function prepareOwnedDispatch(
+  ctx: FacadeContext,
+  job: string,
+  role: RoleName,
+  cwd: string,
+  profile: BackendProfile,
+  helpers: import('./routing.js').PiHelperBindings
+) {
+  const deadlineEnd = performance.now() + Math.min(ctx.herdrBudgetMs ?? 300_000, 300_000);
+  const { facadeRelease, captureFacadeRuntime, discoverFacadeIntegration } =
+    await import('./pi-owned/facade-context.js');
+  const release = await facadeRelease(ctx.piOwned?.releaseRoot);
+  const runtime = ctx.piOwned?.runtime ?? (await captureFacadeRuntime(ctx.env));
+  // Establish the pinned endpoint before even querying dependency metadata.
+  const { CliHerdrTransport } = await import('../integrations/herdr/transport.js');
+  if (
+    !(await new CliHerdrTransport(
+      runtime.endpoint.socketPath,
+      ctx.env,
+      'herdr',
+      1500,
+      runtime.endpoint.server
+    ).instance())
+  )
+    throw new Error('herdr_unavailable');
+  const remaining = deadlineEnd - performance.now();
+  if (remaining <= 0) throw new Error('herdr_timeout');
+  const integration = await discoverFacadeIntegration(ctx.env, runtime, remaining);
+  const { roleResource, slotPaths } = await import('./pi-owned/contracts.js');
+  const mapped = dispatchRole(role);
+  const directory = jobDirectory(ctx.home, job);
+  const paths = slotPaths(directory, 'primary');
+  const context = { jobDirectory: directory, cwd, release };
+  const contract: SlotContract = {
+    schema: 1,
+    job,
+    slot: 'primary',
+    role: mapped,
+    task_dir: directory,
+    cwd,
+    brief_path: paths.brief,
+    output_path: paths.output,
+    qa_dir: paths.qa,
+    session_dir: paths.sessions,
+    session_id: randomUUID(),
+    release: { id: release.id, root: release.root },
+    role_resource: { path: join(release.root, roleResource(mapped)), sha256: release.resources[roleResource(mapped)]! },
+    model: profile.model!,
+    effort: profile.effort ?? PI_ROLE_DEFAULTS[mapped].effort,
+    allowed_write_paths: [paths.output],
+    helpers: structuredClone(helpers),
+    herdr_integration: integration,
+  };
+  const dispatch: PiDispatch = {
+    contract_version: 2,
+    transport: 'hud-owned',
+    role: mapped,
+    launch: 'unsent',
+    release: contract.release,
+    contract_path: paths.contract,
+  };
+  return { context, runtime, contract, dispatch, deadlineEnd };
+}
+
 async function openDispatch(
   ctx: FacadeContext,
   receipt: JobReceipt,
   task: string,
-  idempotent: boolean
+  idempotent: boolean,
+  deadlineEnd = performance.now() + Math.min(ctx.herdrBudgetMs ?? 300_000, 300_000)
 ): Promise<Result> {
   const metadata = receipt.pi_dispatch!;
+  if (metadata.contract_version !== 2) return fail('legacy_owner_required', { job: receipt.job });
   const directory = jobDirectory(ctx.home, receipt.job);
+  let context: ContractContext;
+  try {
+    context = await ownedDispatchContext(ctx, receipt);
+  } catch (error) {
+    return fail((error as Error).message, { job: receipt.job });
+  }
   if (metadata.launch === 'unsent' && receipt.state !== 'closed') {
     // The key lock and the per-job mutation lock are held, in that order.
     const brief = join(directory, 'brief.md');
     if (!fs.existsSync(brief)) writeBrief(ctx.home, receipt, task);
     if (!dispatchText(brief, 128 * 1024)?.trim()) return fail('receipt_unreadable', { job: receipt.job });
+    const remaining = deadlineEnd - performance.now();
+    if (remaining <= 0) return fail('herdr_timeout', { job: receipt.job });
     metadata.launch = 'sent';
     receipt.state = 'launch_unknown';
     remember(ctx.home, receipt);
-    const outcome = await launchDispatch(
-      metadata,
-      fs.realpathSync(directory),
-      receipt.cwd,
-      receipt.binding.model,
-      receipt.binding.effort,
-      ctx.env,
-      ctx.herdrBudgetMs
-    );
+    const { launchOwned } = await import('./pi-owned/launch.js');
+    const { readRuntimeBinding } = await import('./pi-owned/runtime.js');
+    const outcome = await launchOwned(context, {
+      ...readRuntimeBinding(directory),
+      env: ctx.env,
+      budgetMs: remaining,
+      indexPath: indexPath(ctx.home, ctx.root!, receipt.request_key),
+      associationPath: join(ctx.home, 'assoc', `${receipt.job}.json`),
+    });
     const session = readDispatchSession(directory);
-    if (outcome.ok && session) {
+    if (outcome.state === 'acked' && session) {
       metadata.launch = 'acked';
       receipt.state = 'open';
       receipt.prompted = true;
       receipt.launch_error = null;
-    } else receipt.launch_error = 'launch_unknown';
+    } else receipt.launch_error = outcome.reason ?? 'launch_unknown';
   }
   const session = readDispatchSession(directory);
   if (session && receipt.executor.kind === 'herdr') {
@@ -881,6 +920,13 @@ async function sendDispatch(
       async () => {
         const current = loadReceipt(ctx.home, receipt.job);
         if (!current?.pi_dispatch || !owned(ctx, current)) return fail('receipt_unreadable');
+        if (current.pi_dispatch.contract_version !== 2) return fail('legacy_owner_required', { job: current.job });
+        let context: ContractContext;
+        try {
+          context = await ownedDispatchContext(ctx, current);
+        } catch (error) {
+          return fail((error as Error).message, { job: current.job });
+        }
         const path = messagePath(ctx.home, receipt.job, messageKey);
         const prior = readPrivateJson(path, 8192);
         if (isRecord(prior) && prior.schema === 1) {
@@ -910,21 +956,55 @@ async function sendDispatch(
           if (!native.settled_at || !native.idle_deadline_at || Date.parse(native.idle_deadline_at) <= Date.now()) {
             return fail('continuation_unavailable', { job: current.job, ...view });
           }
-          current.pi_dispatch.continuation = {
-            message_key: messageKey,
-            previous_session_id: native.session_id,
-            previous_settled_at: native.settled_at,
-          };
-          remember(ctx.home, current);
         }
-        const record: SentMessage = { schema: 1, message_key: messageKey, text, state: 'sending' };
-        writePrivate(path, JSON.stringify(record) + '\n');
-        const outcome = await runner(ctx)(promptArgs(session.PRIMARY, text, false));
-        record.state = outcome.ok ? 'sent' : 'send_unknown';
-        writePrivate(path, JSON.stringify(record) + '\n');
-        return outcome.ok
-          ? { ok: true, job: current.job, message_key: messageKey, idempotent: false }
-          : fail('send_unknown', { job: current.job, message_key: messageKey });
+        const { Runtime, Deadline, readRuntimeBinding } = await import('./pi-owned/runtime.js');
+        const { validateOwnedDispatch } = await import('./pi-owned/contracts.js');
+        const runtime = new Runtime(
+          context,
+          { ...readRuntimeBinding(directory), env: ctx.env },
+          new Deadline(Math.min(ctx.herdrBudgetMs ?? 30000, 30000))
+        );
+        try {
+          return await runtime.admitted(async () => {
+            const contract = validateOwnedDispatch(
+              current.pi_dispatch as Extract<PiDispatch, { contract_version: 2 }>,
+              context
+            );
+            const journal = runtime.journal('primary');
+            if (!journal) return fail('continuation_unavailable', { job: current.job });
+            await runtime.owner(contract, journal);
+            const fresh = dispatchView(ctx.home, current).dispatch;
+            if (
+              !fresh ||
+              fresh.session_id !== native.session_id ||
+              ['closed', 'failed'].includes(fresh.state) ||
+              (fresh.state === 'idle_grace' &&
+                (current.pi_dispatch!.role !== 'implementer' ||
+                  !fresh.idle_deadline_at ||
+                  Date.parse(fresh.idle_deadline_at) <= Date.now()))
+            )
+              return fail('continuation_unavailable', { job: current.job });
+            if (fresh.state === 'idle_grace') {
+              if (!fresh.settled_at) return fail('continuation_unavailable', { job: current.job });
+              current.pi_dispatch!.continuation = {
+                message_key: messageKey,
+                previous_session_id: fresh.session_id,
+                previous_settled_at: fresh.settled_at,
+              };
+              remember(ctx.home, current);
+            }
+            const record: SentMessage = { schema: 1, message_key: messageKey, text, state: 'sending' };
+            writePrivate(path, JSON.stringify(record) + '\n');
+            const outcome = await runtime.call(promptArgs(journal.name, text, false), 30000);
+            record.state = outcome.ok ? 'sent' : 'send_unknown';
+            writePrivate(path, JSON.stringify(record) + '\n');
+            return outcome.ok
+              ? { ok: true, job: current.job, message_key: messageKey, idempotent: false }
+              : fail('send_unknown', { job: current.job, message_key: messageKey });
+          });
+        } catch (error) {
+          return fail('continuation_unavailable', { job: current.job, reason: (error as Error).message });
+        }
       },
       ctx.lockWaitMs
     );
@@ -948,14 +1028,24 @@ async function closeDispatch(ctx: FacadeContext, receipt: JobReceipt): Promise<R
             if (!current?.pi_dispatch || !owned(ctx, current)) return fail('receipt_unreadable');
             if (current.state === 'closed') return { ok: true, job: current.job, closed: true, idempotent: true };
             const directory = jobDirectory(ctx.home, current.job);
-            const session = readDispatchSession(directory);
-            const outcome = await reapDispatch(current.pi_dispatch, directory, ctx.env, ctx.herdrBudgetMs);
-            // An empty reaper inventory without recorded ownership cannot disprove
-            // the tab-created-before-SESSION crash window. Preserve uncertainty.
-            if (!outcome.ok || !session)
+            if (current.pi_dispatch.contract_version !== 2) return fail('legacy_owner_required', { job: current.job });
+            let context: ContractContext;
+            try {
+              context = await ownedDispatchContext(ctx, current);
+            } catch (error) {
+              return fail((error as Error).message, { job: current.job });
+            }
+            const { reapOwned } = await import('./pi-owned/reap.js');
+            const { readRuntimeBinding } = await import('./pi-owned/runtime.js');
+            const outcome = await reapOwned(context, {
+              ...readRuntimeBinding(directory),
+              env: ctx.env,
+              budgetMs: ctx.herdrBudgetMs,
+            });
+            if (outcome.state !== 'closed')
               return fail('close_unresolved', {
                 job: current.job,
-                reason: outcome.reason,
+                reason: outcome.remaining,
                 session_path: join(directory, 'SESSION.txt'),
                 ...dispatchView(ctx.home, current),
               });
@@ -1071,6 +1161,12 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
     const indexed = readPrivateJson(indexPath(ctx.home, root, requestKey), 4096);
     if (isRecord(indexed) && typeof indexed.job === 'string') {
       const pinned = loadReceipt(ctx.home, indexed.job);
+      if (pinned?.binding.harness === 'pi' && !pinned.pi_dispatch) {
+        if (!owned(ctx, pinned) || pinned.request_key !== requestKey) return fail('receipt_unreadable');
+        return pinned.fingerprint !== fingerprint || indexed.fingerprint !== fingerprint
+          ? fail('conflict', { job: pinned.job })
+          : fail('legacy_owner_required', { job: pinned.job });
+      }
       if (pinned?.pi_dispatch)
         return await withLock(
           ctx.home,
@@ -1152,6 +1248,7 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
               },
               ctx.lockWaitMs
             );
+          if (receipt.binding.harness === 'pi') return fail('legacy_owner_required', { job: receipt.job });
           if (receipt.state === 'open' || receipt.state === 'closed') return present(ctx.home, receipt, true);
           if (receipt.state === 'failed') return fail(receipt.launch_error ?? 'launch_failed', { job: receipt.job });
           const stored = profileFromReceipt(receipt);
@@ -1165,16 +1262,21 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
         const envVars = envProfileVars(routing, profile.envProfile);
         if (!envVars) return fail('env_profile_unresolved', { env_profile: profile.envProfile });
         let dispatch: PiDispatch | null = null;
+        const job = `j${randomBytes(8).toString('hex')}`;
+        let preparation: Awaited<ReturnType<typeof prepareOwnedDispatch>> | undefined;
         if (profile.harness === 'pi') {
+          if (Object.keys(envVars).length > 0 || profile.envProfile) return fail('unsupported_env_profile');
+          if (/[\r\n]/.test(ctx.home + cwd)) return fail('invalid_arguments', { field: 'cwd' });
+          const { CONTRACT_MAX_BYTES } = await import('./pi-owned/contracts.js');
+          if (Buffer.byteLength(briefBody(ctx.home, { job, role, phase }, task!)) > CONTRACT_MAX_BYTES)
+            return fail('invalid_arguments', { field: 'task', reason: 'too_large' });
           try {
-            dispatch = discoverDispatch(ctx.env, role);
+            preparation = await prepareOwnedDispatch(ctx, job, role, cwd!, profile, routing.piHelpers);
+            dispatch = preparation.dispatch;
           } catch (error) {
             return fail((error as Error).message);
           }
-          if (dispatch && Object.keys(envVars).length > 0) return fail('dispatch_env_unsupported');
-          if (dispatch && /[\r\n]/.test(ctx.home + cwd)) return fail('invalid_arguments', { field: 'cwd' });
         }
-        const job = `j${randomBytes(8).toString('hex')}`;
         const receipt: LaunchPlan = {
           schema: 1,
           job,
@@ -1186,7 +1288,7 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
           routing_revision: revision,
           preset: resolved.preset,
           jev_decisions: resolved.jev_decisions,
-          binding: bound.backend,
+          binding: preparation ? { ...bound.backend, effort: preparation.contract.effort } : bound.backend,
           cwd: cwd!,
           task_label: taskLabel(task!),
           label: `${role}:${job.slice(1, 9)}`,
@@ -1212,9 +1314,21 @@ export async function hudCreate(ctx: FacadeContext, args: Record<string, unknown
           JSON.stringify({ schema: 1, job, fingerprint, parent: receipt.parent } satisfies KeyIndex) + '\n'
         );
         writeAssociation(ctx.home, associationOf(ctx.home, receipt, false));
+        if (preparation) {
+          writeBrief(ctx.home, receipt, task!);
+          const { persistContract } = await import('./pi-owned/launch.js');
+          const { pinRuntimeBinding } = await import('./pi-owned/runtime.js');
+          persistContract(preparation.contract, preparation.context);
+          pinRuntimeBinding(preparation.context.jobDirectory, preparation.runtime);
+        }
         const run = runner(ctx);
         const outcome = dispatch
-          ? await withLock(ctx.home, `job-${job}`, () => openDispatch(ctx, receipt, task!, false), ctx.lockWaitMs)
+          ? await withLock(
+              ctx.home,
+              `job-${job}`,
+              () => openDispatch(ctx, receipt, task!, false, preparation?.deadlineEnd),
+              ctx.lockWaitMs
+            )
           : await openJob(ctx, run, receipt, profile, task!);
         if (!outcome.ok && outcome.code === 'rollback') {
           forgetJob(ctx.home, root, requestKey, job);
@@ -1382,6 +1496,8 @@ export async function hudSend(ctx: FacadeContext, args: Record<string, unknown>)
   const receipt = loadReceipt(ctx.home, args.job);
   if (!receipt || !owned(ctx, receipt)) return fail('not_found', { field: 'job' });
   if (receipt.executor.kind === 'jev') return sendJev(ctx, receipt, messageKey, text);
+  if (receipt.binding.harness === 'pi' && receipt.pi_dispatch?.contract_version !== 2)
+    return fail('legacy_owner_required', { job: receipt.job });
   if (receipt.pi_dispatch) return sendDispatch(ctx, receipt, messageKey, text);
   if (receipt.state === 'launch_unknown' || receipt.state === 'launching')
     return fail('launch_unknown', { job: receipt.job });
@@ -1485,6 +1601,7 @@ export async function hudRespond(ctx: FacadeContext, args: Record<string, unknow
       reason: 'unsupported_channel',
     });
   }
+  if (receipt.pi_dispatch?.contract_version !== 2) return fail('legacy_owner_required', { job: receipt.job });
   const qa = join(jobDirectory(ctx.home, receipt.job), 'qa');
   if (receipt.pi_dispatch) {
     if (!answer.trim()) return fail('invalid_arguments', { field: 'answer' });
@@ -1504,6 +1621,14 @@ export async function hudRespond(ctx: FacadeContext, args: Record<string, unknow
   const target = join(qa, `${args.request_id}.answer.md`);
   const body = answer.endsWith('\n') ? answer : `${answer}\n`;
   return withLock(ctx.home, `job-${receipt.job}`, async () => {
+    const currentReceipt = loadReceipt(ctx.home, receipt.job);
+    if (!currentReceipt || !owned(ctx, currentReceipt)) return fail('receipt_unreadable');
+    if (currentReceipt.pi_dispatch?.contract_version !== 2) return fail('legacy_owner_required', { job: receipt.job });
+    try {
+      await ownedDispatchContext(ctx, currentReceipt);
+    } catch (error) {
+      return fail((error as Error).message, { job: receipt.job });
+    }
     try {
       const info = fs.lstatSync(target);
       if (info.isSymbolicLink() || !info.isFile()) return fail('request_missing', { request_id: args.request_id });
@@ -1539,6 +1664,8 @@ export async function hudClose(ctx: FacadeContext, args: Record<string, unknown>
     return { ok: true, job: receipt.job, closed: true, idempotent: true, observation: receipt.closed_observation };
   }
   if (receipt.executor.kind === 'jev') return closeJev(ctx, receipt);
+  if (receipt.binding.harness === 'pi' && receipt.pi_dispatch?.contract_version !== 2)
+    return fail('legacy_owner_required', { job: receipt.job });
   if (receipt.pi_dispatch) return closeDispatch(ctx, receipt);
   try {
     return await withLock(

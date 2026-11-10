@@ -9,6 +9,8 @@ export interface DispatchStatus {
   state: DispatchState;
   session_id: string;
   slot: string;
+  /** Owned producer parent slot; legacy producers may omit it. */
+  parent?: string | null;
   /** Optional producer event; invalid metadata does not alter the dispatch protocol. */
   started_at?: string | null;
   model: string | null;
@@ -32,6 +34,7 @@ export interface DispatchObservation {
   report_path: string;
   acceptance: null;
   continuation: 'unconfirmed' | 'unavailable' | null;
+  asking_slot?: string;
   event?: 'DONE' | 'FAILED' | 'QUESTION' | 'BLOCKED' | 'timeout';
 }
 const STATES = ['working', 'waiting_helper', 'waiting_orchestrator', 'idle_grace', 'closed', 'failed'];
@@ -98,6 +101,7 @@ export function parseDispatchStatus(
     state: raw.state as DispatchState,
     session_id: raw.session_id,
     slot,
+    ...(raw.parent === null || typeof raw.parent === 'string' ? { parent: raw.parent } : {}),
     started_at: timestamp(raw.started_at) ? (raw.started_at as string | null) : null,
     model: raw.model as string | null,
     thinking: raw.thinking as string | null,
@@ -155,6 +159,34 @@ export function dispatchQuestions(
     return result;
   } catch {
     return [];
+  }
+}
+
+/** Follow only recorded active slots, never producer-selected paths. PR3 permits at most two edges. */
+export function activeDispatchQuestion(
+  directory: string,
+  primary: DispatchStatus,
+  helpers: ReadonlyMap<string, DispatchStatus>
+): { slot: string | null; unknown: boolean } {
+  let current = primary;
+  const seen = new Set(['primary']);
+  if (primary.parent !== null) return { slot: null, unknown: true };
+  for (let depth = 0; ; depth++) {
+    const pending = current.helper_pending;
+    if (!pending) return { slot: current.state === 'waiting_orchestrator' ? current.slot : null, unknown: false };
+    if (depth >= 2 || current.state !== 'waiting_helper' || !pending.n) return { slot: null, unknown: true };
+    const slot = `${pending.kind}-${pending.n}`;
+    if (
+      !/^(?:sonic-(?:[1-9]|10)|review-[1-3])$/.test(slot) ||
+      seen.has(slot) ||
+      pending.status_file !== join(directory, '.dispatch', slot, 'STATUS.json') ||
+      (depth === 1 && (!current.slot.startsWith('review-') || !slot.startsWith('sonic-')))
+    )
+      return { slot: null, unknown: true };
+    const next = helpers.get(slot);
+    if (!next || next.parent !== current.slot) return { slot: null, unknown: true };
+    seen.add(slot);
+    current = next;
   }
 }
 
@@ -221,12 +253,21 @@ export function observeDispatch(directory: string, metadata: PiDispatch, closed 
   const active = primary?.helper_pending;
   const activeHelper = active?.n ? helperStatuses.get(`${active.kind}-${active.n}`) : undefined;
   const pending = dispatchQuestions(directory, diagnostics);
+  const question =
+    metadata.contract_version === 2 && primary ? activeDispatchQuestion(directory, primary, helperStatuses) : null;
+  if (question?.unknown) diagnostics.push({ path: primaryFile, reason: 'active_helper_unknown' });
+  const askingSlot = question
+    ? question.slot
+    : primary?.state === 'waiting_orchestrator'
+      ? 'primary'
+      : activeHelper?.state === 'waiting_orchestrator'
+        ? activeHelper.slot
+        : null;
   if (!continuation && primary?.state === 'failed') event = 'FAILED';
   else if (!continuation && settled) event = 'DONE';
   // Historical unanswered files can survive the legacy QA timeout. They are
   // pointers, not evidence that the current primary/helper is still asking.
-  else if (primary?.state === 'waiting_orchestrator' || activeHelper?.state === 'waiting_orchestrator')
-    event = 'QUESTION';
+  else if (askingSlot) event = 'QUESTION';
   else if (closed || continuation === 'unavailable') event = 'BLOCKED';
   return {
     state,
@@ -239,6 +280,7 @@ export function observeDispatch(directory: string, metadata: PiDispatch, closed 
     report_path: report,
     acceptance: null,
     continuation,
+    ...(askingSlot ? { asking_slot: askingSlot } : {}),
     ...(event ? { event } : {}),
   };
 }

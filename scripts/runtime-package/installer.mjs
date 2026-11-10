@@ -259,7 +259,7 @@ export function inspectPrefix(directory, ignoreLock = false, preparing = false) 
     for (const name of listNames(`${directory.base}/releases`, 64)) {
       if (!HASH.test(name)) throw new Error('partial_or_foreign_release');
       ownedDirectory(directory, `releases/${name}`);
-      const installed = verifyBundle(`${directory.root}/releases/${name}`);
+      const installed = verifyBundle(`${directory.root}/releases/${name}`, { required: false });
       try {
         if (installed.digest !== name) throw new Error('release_digest_mismatch');
       } finally {
@@ -448,7 +448,7 @@ export function executeInstall(bundleRoot, prefix, expected, restoreReceipt, hoo
       finalSource.directory.close();
     }
     if (plan.target) {
-      const finalPayload = verifyBundle(`${prefix}/releases/${plan.target}`);
+      const finalPayload = verifyBundle(`${prefix}/releases/${plan.target}`, { required: false });
       try {
         if (finalPayload.digest !== plan.target) throw new Error('payload_changed_before_switch');
       } finally {

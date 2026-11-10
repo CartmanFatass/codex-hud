@@ -194,7 +194,11 @@ test('wait module transitive import graph excludes facade, Jev, routing, MCP and
   const visit = (file: string) => {
     if (seen.has(file)) return;
     seen.add(file);
-    assert.doesNotMatch(file, /\/(?:facade|routing|jev-adapter)\.js$|\/(?:jev|ledger|hud-mcp)\//);
+    assert.doesNotMatch(
+      file,
+      /\/(?:facade|routing|jev-adapter|launch)\.js$|\/(?:jev|ledger|hud-mcp|pi-owned|harness\/pi)\//,
+      'waiter imports an execution module'
+    );
     const source = ts.createSourceFile(
       file,
       fs.readFileSync(file, 'utf8'),
@@ -229,6 +233,30 @@ test('wait module transitive import graph excludes facade, Jev, routing, MCP and
   assert.ok([...seen].some((file) => file.endsWith('/pi-dispatch-status.js')));
 });
 
+test('file-only waiter cold RSS remains narrow and observation writes nothing', (t) => {
+  const f = fixture(t, true);
+  const file = join(f.directory, 'STATUS.json');
+  const before = fs.statSync(file).mtimeMs;
+  const child = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `
+    import { waitForJob } from ${JSON.stringify(pathToFileURL(join(REPO_ROOT, 'dist/roles/job-wait.js')).href)};
+    await waitForJob(process.env.HUD_HOME, process.env, ${JSON.stringify(JOB)}, 0);
+    console.log(process.memoryUsage().rss);
+  `,
+    ],
+    { env: f.env, encoding: 'utf8', timeout: 10000 }
+  );
+  assert.equal(child.status, 0, child.stderr);
+  const rss = Number(child.stdout.trim());
+  assert.ok(rss > 0 && rss < 80 * 1024 * 1024, `file-only RSS=${rss}`);
+  assert.equal(fs.statSync(file).mtimeMs, before);
+  t.diagnostic(`cold file-only waiter RSS=${rss} bytes; STATUS writes=0`);
+});
+
 test('real bin/hud wait dynamically bypasses the ordinary CLI and forbidden runtime graphs', (t) => {
   const f = fixture(t, true);
   const loader = join(f.home, 'guard.mjs');
@@ -236,7 +264,7 @@ test('real bin/hud wait dynamically bypasses the ordinary CLI and forbidden runt
     loader,
     `export async function resolve(name, context, next) {
     const result = await next(name, context);
-    if (/\\/(?:hud-main|facade|routing|jev-adapter)\\.js$|\\/(?:jev|ledger|hud-mcp)\\//.test(result.url)) throw new Error('heavy wait import: '+result.url);
+    if (/\\/(?:hud-main|facade|routing|jev-adapter|launch)\\.js$|\\/(?:jev|ledger|hud-mcp|pi-owned|harness\\/pi)\\//.test(result.url)) throw new Error('heavy wait import: '+result.url);
     return result;
   }`
   );
