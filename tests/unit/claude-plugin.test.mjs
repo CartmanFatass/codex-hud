@@ -408,10 +408,15 @@ test('native eligibility positive proof and each disqualifier; JSON alone never 
     captureNative(f.binding, f.env, nativeDeps(f, { probe: { ...deps.probe, read: () => null } })),
     /identity_unverified/
   );
+  // Hook JSON carrying a captured proof is ignored: the hook re-derives native evidence. Inject the
+  // no-proof probe so the result never depends on the host process tree running the test.
   const result = await handleHook(
     { hook_event_name: 'SessionStart', session_id: 'session-a', native: yes.native },
     f.binding,
-    f.env
+    f.env,
+    {
+      capture: () => captureNative(f.binding, f.env, nativeDeps(f, { probe: { ...deps.probe, read: () => null } })),
+    }
   );
   assert.match(result.systemMessage, /identity_unverified/);
   assert.equal(f.counts().splits, 0);
