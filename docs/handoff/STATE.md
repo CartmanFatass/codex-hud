@@ -296,13 +296,23 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
     - Watch item for R7: collection p95 rises about 1 ms when quiet, and from 12 to 16 ms when scrolling 100 jobs.
       Render is unchanged (an unchanged card is about 0.3 ms).
 
+  - **PIROLE PR4** (`f0825c0` / `a5343ce`; reviews tmp PIROLE-PR4 review-1 changes-required, review-2 accept): the
+    facade cuts over to owned pi execution.
+    - New pi jobs freeze owned contracts and launch through the owned runtime. Send, QA and close use the pinned
+      release plus the runtime binding. Legacy v1 receipts drain read-only.
+    - Acquisition verifies the installed A1 release, the herdr instance and the caller pane from process ancestry,
+      with no source or PATH fallback.
+    - Nested helper QA is decoded with bounds.
+    - A1 seam fix (q5): a retained release is verified against its own manifest; incoming bundles stay strict.
+  - **Batched full gate on `a5343ce`** (A5 + P3B + PR4), with no failures and no reruns:
+    - unit 4519/4493/0 fail, mjs 764/762/0, hud-mcp 219/218/0, visual 331/331, WP0 1176/1176;
+    - pi-owned mutants 18/18; builds, fixtures, format and diff clean.
+
   2026-11-10 testing change (owner): tests are designed at project scope; see `docs/delegation.md` and
   `docs/reviews/2026-11-10-test-volume-audit.md`. TEST-SLIM (approved) comes before R6b. Stage 0 builds the project
   test map (`docs/testing.md`), the inventory and the consolidation proposal.
 
-  Running: PIROLE-PR4 (review round 1 fixes; q5 ruled that a
-  retained release is verified against its own manifest, not the current `REQUIRED` list, which fixes the A1 seam
-  that A4, A5 and PR4 each tripped); TEST-SLIM-0. Next: PR5, A8, TEST-SLIM stages, then R6b and R7. P2c stays
+  Running: TEST-SLIM-0 (map, inventory and proposal in review; coverage baseline 801 s, about 1.2 GB peak). Next: PR5, A8, TEST-SLIM stages, then R6b and R7. P2c stays
   deferred and folds into TEST-SLIM.
 
 | Package | Deliverable | Acceptance |
