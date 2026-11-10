@@ -312,8 +312,14 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   `docs/reviews/2026-11-10-test-volume-audit.md`. TEST-SLIM (approved) comes before R6b. Stage 0 builds the project
   test map (`docs/testing.md`), the inventory and the consolidation proposal.
 
-  Running: TEST-SLIM-0 (map, inventory and proposal in review; coverage baseline 801 s, about 1.2 GB peak). Next: PR5, A8, TEST-SLIM stages, then R6b and R7. P2c stays
-  deferred and folds into TEST-SLIM.
+  TEST-SLIM-0 (`80736fa`): the project test map draft `docs/testing.md`, plus the proposal and reviews in
+  `docs/reviews/2026-11-10-test-slim-0-*`. The proposal kept every unique assertion and so estimated only about 2%;
+  the owner chose to cut by behaviour (see `docs/reviews/2026-11-10-test-volume-audit.md`).
+
+  Running: TEST-SLIM-1A (opt-in perf suite) and TEST-SLIM-1B (one fake herdr, one fake pi, one temporary HUD home).
+  Next, two at a time: the area slices (materials; roles and roster; owned execution; panel and Work; release and
+  package; Jev, ledger and MCP; the rest). Then PR5 + A8 (one artifact rehearsal package, test plan written against
+  the map), R6b and R7. P2c folds into the panel and Work slice.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
