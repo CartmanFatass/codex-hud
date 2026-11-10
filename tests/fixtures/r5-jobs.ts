@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
-import { writeAssociation, type JobAssociation } from '../../src/roles/association.js';
+import { associationPath, writeAssociation, type JobAssociation } from '../../src/roles/association.js';
 import { writePrivate } from '../../src/roles/job-store.js';
 import { JobObservationCollector } from '../../src/collectors/job-observations.js';
 import { composeJobTree } from '../../src/collectors/job-tree.js';
@@ -52,8 +52,13 @@ export function r5Fixture(t: TestContext) {
     for (const c of observers) c.dispose();
     fs.rmSync(home, { recursive: true, force: true });
   });
-  const put = (file: string, value: unknown) =>
+  // These producers use file mtimes as evidence dates. Keep disk evidence on the
+  // same clock as the observer, including replacements after advance().
+  const stamp = (file: string) => fs.utimesSync(file, new Date(now), new Date(now));
+  const put = (file: string, value: unknown) => {
     writePrivate(file, typeof value === 'string' ? value : JSON.stringify(value) + '\n');
+    stamp(file);
+  };
   const association = (n: number, patch: Partial<JobAssociation> = {}): JobAssociation => {
     const a: JobAssociation = {
       schema: 1,
@@ -79,6 +84,7 @@ export function r5Fixture(t: TestContext) {
       ...patch,
     };
     writeAssociation(home, a);
+    stamp(associationPath(home, a.job));
     return a;
   };
   const receipt = (a: JobAssociation, patch: Partial<JobReceipt> = {}): JobReceipt => {

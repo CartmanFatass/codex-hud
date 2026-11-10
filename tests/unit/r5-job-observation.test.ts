@@ -131,7 +131,7 @@ test('R5 all pi states, historical questions, answer eligibility and continuatio
   fs.utimesSync(answer, new Date(1), new Date(1));
   result = await f.collect(c);
   assert.equal(result.snapshot.jobs[0]!.requests![0]!.state, 'unanswered');
-  fs.utimesSync(answer, new Date(), new Date());
+  fs.utimesSync(answer, new Date(f.now()), new Date(f.now()));
   result = await f.collect(c);
   assert.equal(result.snapshot.jobs[0]!.requests![0]!.state, 'written_consumption_unconfirmed');
   f.receipt(a, {
@@ -373,6 +373,7 @@ test('R5 snapshots are reduced/immutable, dispatch session changes advance evide
   f.status(a, 'working', { session_id: 'first-session' });
   result = await f.collect(c);
   const first = result.snapshot.jobs[0]!.freshness.evidenceAt;
+  f.advance(1); // A distinct evidence date is explicit, not elapsed filesystem wall time.
   f.status(a, 'working', { session_id: 'second-session' });
   result = await f.collect(c);
   assert.equal(result.snapshot.jobs[0]!.dispatchSession, 'second-session');

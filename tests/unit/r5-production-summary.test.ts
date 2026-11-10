@@ -101,7 +101,7 @@ function fixture(t: TestContext) {
     return m;
   };
   const log = () => {
-    const l = new AgentLog(join(f.home, 'display', 'agent-log'));
+    const l = new AgentLog(join(f.home, 'display', 'agent-log'), f.now);
     l.observe(tree);
     return l;
   };
