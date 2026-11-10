@@ -1,7 +1,21 @@
 /** Request plans keep material authorization ahead of feature formatting and cache-key hashing. */
-import type { ModelRequest } from '../../collectors/small-model.js';
+import type { ModelRequest, JobModelRequest } from '../../collectors/small-model.js';
 import type { MaterialAuthority, MaterialEnvelope, MaterialSubject, OutboundPurpose } from './index.js';
 import type { SessionRef } from '../types/identity.js';
+import type { JobMaterialAuthority, JobMaterialEnvelope, JobMaterialSubject, JobReadBudget } from './job.js';
+
+/** Disjoint request variant: never mixes native subjects with a facade job. */
+export interface JobMaterialPlan {
+  kind: 'job';
+  purpose: 'job_card';
+  subject: JobMaterialSubject;
+  authority: JobMaterialAuthority;
+  budget?: JobReadBudget;
+  compose: (envelope: JobMaterialEnvelope) => ModelRequest;
+}
+export function jobMaterialRequest(plan: JobMaterialPlan): JobModelRequest {
+  return { feature: 'job_card', system: '', prompt: '', jobMaterials: plan };
+}
 
 export interface LegacySubject {
   sessionId: string;
