@@ -1,6 +1,8 @@
 /** Fixed program: the session leader alone signals kill(0). Two in-group shells
  * merge control/EOF and child completion through an already-unlinked FIFO. No
  * shell-specific CHLD delivery during read, eval, polling or extra authority.
+ * Readers ignore INT/TERM: a caught signal can discard a partially read record.
+ * The waiter ignores them only after workload fork and performs one child wait.
  */
 export const GROUP_LEADER_SCRIPT = `
 interrupted=0
@@ -11,7 +13,7 @@ printf 'READY\\n' >&4
 IFS= read -r submit <&3 || exit 0
 [ "$submit" = RUN ] || { printf 'REFUSED\\n' >&4; exit 1; }
 (
- trap 'interrupted=1' INT TERM
+ trap '' INT TERM
  exec 0<&- 4>&- 5<&- 6<&-
  while :; do
   interrupted=0
@@ -34,20 +36,22 @@ reader=$!
  exec 3<&- 6<&-
  "$@" <&5 4>&- 5<&- 7>&- &
  command=$!
+ # The workload already forked with the caught dispositions. Only the waiter
+ # now ignores group signals, so wait cannot lose its result to trap/retry races.
+ trap '' INT TERM
  exec 5<&-
  printf 'STARTED %s\\n' "$command" >&4 2>/dev/null || :
  exec 4>&-
- while :; do
-  interrupted=0
-  wait "$command" 2>/dev/null
-  status=$?
-  [ "$interrupted" = 0 ] && break
- done
+ wait "$command" 2>/dev/null
+ status=$?
  printf '%s\\n' "DONE $status" >&7
 ) &
 waiter=$!
 printf 'WAITER %s\\n' "$waiter" >&4 2>/dev/null || :
 exec 0<&- 3<&- 5<&- 7>&-
+# Only this reader ignores signals here, AFTER the waiter fork. Its siblings
+# choose their own dispositions; the workload cannot inherit this point.
+trap '' INT TERM
 sealed=0
 while :; do
  interrupted=0
