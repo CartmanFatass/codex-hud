@@ -1319,3 +1319,51 @@ public v3 type draft: the `universal` slots reuse core identities, metrics,
 workspace, status, lifecycle and observation stamps. Any future v3 outlet must be
 selected explicitly and use a separate path. `snapshot.ts`, its version 2 writer
 and the existing `--json` path retain their fields, units and output bytes.
+
+## Job sentences (R5UX-P3B)
+
+`collectors/job-progress.ts` is the only owner of job-sentence I/O; renderers receive immutable
+display DTOs. `JobProgress.update` runs from the panel's existing collection slice
+(`jobPipeline.sentenceCollection`, wired in `src/tree-page.ts`), never from a paint, resize, fold or
+clock path. Its gates run before any identity, body, hash or cache lookup: the SmallModel backend,
+`briefing`, `agentProgress`, pause, card visibility, the active page, and an applied recipient from
+`SmallModel.jobCardRecipient()`.
+
+**Authority.** `JobMaterialAuthority` (`core/materials/job.ts`) reads the private
+`$HUD_HOME/job-materials-v1/policy.json` (mode-checked, ≤64 KiB, symlink- and chain-checked) and
+`authorize` requires `scope.facade`, a matching `job_card` grant for the concrete `recipientId`, and a
+current facade source. Discovered `tmp/tasks` roots are not facade sources, so they are denied without
+a grant. `setConsent` is the explicit Settings action only (`SettingsAction 'job-consent'`); ordinary
+save/reset never writes a grant. Material is built by `JobPublicOutputAdapter` and `buildMaterials`
+from the allowlisted fields (`JOB_FIELDS`: goal, test heading, owned path, public output, review,
+question, report) under 16 KiB / 32 fragments, and `JobBudgetPending` propagates as a typed `pending`
+rather than a refusal.
+
+**Scheduling.** `JOB_PROGRESS_LIMITS` holds 3 outstanding requests, 200 scheduling records, a 60 s
+per-job interval, a 600 s retry floor and an 8192 cumulative probe admission cap. A request is made
+only when the envelope fingerprint differs from the last attempt, and `SmallModel.submitJob` reuses
+the ordinary queue, transport, hourly cap and cache. A target past the probe cap is marked declined
+with an Inspector reason and is not retried. Budget deferral consumes only the remaining shared
+collection slice (32 files, 1 MiB, 128 entries) after the deterministic collectors, so a cold job
+completes over several ticks. Three persistent extraction/in-flight slots match the adapter's
+three-entry reduction cache; a batch finishes before another is admitted. Completed notes revalidate
+round-robin. Waiting notes retain prose but lose attention conservatively until a new assessment.
+`jobInspectorTargets` supplies a separate collection-only retention set: the inspected existing DTO
+is revalidated without permitting a new Inspector-only model request. Policy/recipient changes still
+clear all views, and episode/question/root changes immediately invalidate retained DTOs.
+
+**Recipient identity.** `resolveRecipient`/`bindResolvedRecipient` fingerprint the canonical origin
+and the selected account selection (`origin · key source`, environment vs `credentials.env`); the key
+value never enters identity or display, and `jobCardRecipientLabel` shows only origin, model and
+source description. A source/name/origin change therefore needs fresh consent, while an in-process
+key rotation under the same selection denies and a cross-restart rotation under the same selection
+is the same account. Credential selection, the A0 panel rule and F4 are untouched.
+
+**Display and fences.** `projectWorkCard` keeps `deterministicState` and adds `modelAttention`; the
+state becomes `needs-you` for display only, and Home's badge still comes from `homeNeedsHuman`.
+`parseJobProgress` rejects malformed, oversized, off-language or out-of-request replies (basis IDs
+must be admitted evidence, at most 4, a line needs basis, attention needs a line). Scope, language,
+policy and recipient changes cancel or fence handles; a same-episode append may finish its snapshot
+but `sameBasis` drops attention whose evidence changed, and revocation cancels queued, in-flight and
+cached notes. `DerivedMaterialStore` persists only notes that re-validate against the current
+envelope, recipient and policy, and output is never re-admitted as material.

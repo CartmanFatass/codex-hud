@@ -1009,3 +1009,51 @@ delegatedDigest and full-ref delegated/result/digest scope; independent
 old Codex/native/resultDigest permission does not apply. Source F4 budget/cache
 is separate from legacy state. Summaries do not prove correctness or run termination.
 See [configuration, refusals and local validation](cloud/f4-digest-cli.md).
+
+## Job sentences (R5UX-P3B)
+
+Job sentences are the optional "doing now" line on a job card, read by the small model from the
+job's own bounded output. They are default-deny and display only.
+
+**Where it shows.** The sentence appears on Work cards and in the 110-column Home peek, and nowhere
+else. The Inspector shows the full sentence, the model assessment, the bounded local basis with
+coverage gaps, and the deterministic state beside it. A sentence never changes `job.status`, waits,
+acceptance, permissions or cleanup, and nothing is ever sent to an agent. Home's needs-you badge stays
+terminal needs-human only; a model `attention` renders as "Model assessment" on the card and never
+replaces the deterministic state.
+
+**Consent.** Settings > LLM > Job content consent grants or revokes `job_card` for the currently
+applied concrete recipient, with an explicit Enter/click. Save connection preferences first; an
+ordinary save or reset never grants, and backend, Card progress, card summary and pause still gate.
+With no grant, cards are the deterministic render.
+
+**What may be sent.** Facade jobs with a grant only. Auto-discovered `tmp/tasks` directories get no
+grant and no sentence. Admitted material is the bounded brief goal, headings and explicitly owned
+paths; verified primary public assistant text; review verdicts and finding titles; the current
+question (not its answers); and the report. Home answers and design notes, tool/reasoning/user text,
+raw browser output and runtime payloads are never material. A request carries at most 16 KiB in
+32 fragments; local detail being visible is not permission to send it.
+
+**When it runs.** Only when eligible content changed, through the existing SmallModel transport,
+queue and hourly cap: at most 3 outstanding requests and one per job per minute. Redraws, resizes,
+fold changes and the clock request nothing. The selected Inspector retains and revalidates its
+existing sentence/basis or diagnostic without becoming a request target. Three persistent extraction/
+in-flight slots finish a batch before admitting another, so thin collection slices do not evict
+unfinished material. Completed notes are revalidated round-robin; while waiting, their model-attention
+overlay is cleared conservatively but their prose and deterministic state remain. Collection shares the panel's existing per-tick budget
+after the deterministic collectors (32 files, 1 MiB, 128 entries), so a cold job can take several
+ticks through a typed `pending` state. A job that cannot finish within the cumulative 8192-probe
+admission cap is declined with an Inspector reason and is not retried blindly; that cap is a
+configured admission limit, not a measured performance claim.
+
+**Which recipient.** The applied recipient is labelled by canonical origin plus the selected key
+source name and whether it came from the environment or `credentials.env` — never the key value and
+never a fingerprint. A key value changing in-process under the same source denies; a source, name or
+origin change needs fresh consent; a rotated key across a restart under the same selection is the
+same account. Credential selection, the A0 panel rule and the F4 path are unchanged, and Settings
+shows only the safe origin/model/source description.
+
+**Changes and failures.** A language, policy, recipient, root, episode or question change cancels or
+fences obsolete work; a same-episode append lets an in-flight snapshot finish, but a stale basis
+cannot keep attention. An empty valid reply shows no sentence, and an invalid or failed reply leaves
+the deterministic card. Model output never becomes material for a later request.

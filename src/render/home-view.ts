@@ -136,6 +136,7 @@ export function homeRows(
             fit(renderRight(), rightWidth),
           item: a?.item,
           key: a?.key,
+          sentenceWorkers: [...(a?.sentenceWorkers ?? []), ...(b?.sentenceWorkers ?? [])],
           controls: [
             ...(a?.controls ?? []),
             ...(b?.item ? [{ kind: 'board-pick' as const, item: b.item, x: leftWidth + 3, width: rightWidth }] : []),

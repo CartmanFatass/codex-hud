@@ -202,6 +202,8 @@ export interface MonitorRow {
   text: string;
   /** Retained layout rows format a card only when its cells enter the viewport. */
   paint?: () => string;
+  /** Owner cards occupying this physical row; shared Work/peek scheduling projection. */
+  sentenceWorkers?: readonly string[];
   item?: string;
   key?: string;
   controls?: RowControl[];
@@ -272,6 +274,7 @@ export interface MonitorControl {
 export interface MonitorFrame {
   workboard?: {
     snapshot: WorkboardSnapshot;
+    sentenceTargets?: ReadonlySet<string>;
     targets: ReadonlyMap<string, WorkTarget>;
     selected?: WorkTarget;
     rows: MonitorRow[];
@@ -291,6 +294,7 @@ export interface MonitorData {
   hud?: HudData & HudDelegationData;
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
+  jobProgress?: import('../collectors/job-progress.js').JobProgressView;
   /** The tmux prefix as the help writes it ("Ctrl+\"). */
   prefix?: string;
   state: MonitorState;

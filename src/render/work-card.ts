@@ -62,6 +62,8 @@ export function workRequestDetail(card: WorkCard, full = false): string {
   return [action, request.question, ...request.options, fallback].filter(Boolean).map(monitorText).join('\n');
 }
 export function workCardDetail(card: WorkCard, sentence = ''): string {
+  if (card.modelAttention && sentence) return `${t('Model assessment')}: ${monitorText(sentence)}`;
+  if (card.state === 'stalled' && sentence) return monitorText(sentence);
   if (card.reason === 'Decision requested; inspect the job' && card.worker.work?.requestInfo)
     return workRequestDetail(card);
   if (card.reason === 'Decision requested; inspect the job' && card.worker.work?.requestId)
@@ -154,6 +156,7 @@ export function renderWorkCard(
     card.title,
     card.role,
     card.state,
+    card.modelAttention,
     card.phases,
     card.reason,
     card.worker.work?.reported,

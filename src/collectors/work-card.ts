@@ -46,10 +46,17 @@ export interface WorkCard {
   readonly elapsedMinutes: number | null;
   readonly inactivityMinutes: number | null;
   readonly worker: OwnerWorker;
+  readonly deterministicState?: WorkState;
+  readonly modelAttention?: boolean;
 }
 export const workMinute = (at: number | null | undefined, now: number): number | null =>
   typeof at === 'number' && Number.isFinite(at) ? Math.max(0, Math.floor((now - at) / 60000)) : null;
-export function projectWorkCard(worker: OwnerWorker, now: number, stallMinutes = 10): WorkCard {
+export function projectWorkCard(
+  worker: OwnerWorker,
+  now: number,
+  stallMinutes = 10,
+  note?: import('./job-progress.js').JobProgressNote
+): WorkCard {
   const w = worker.work;
   const result = w?.result ?? ['completed', 'idle_grace', 'awaiting-acceptance', 'done'].includes(worker.state);
   const failed = w?.failed ?? ['failed', 'error'].includes(worker.state);
@@ -73,7 +80,9 @@ export function projectWorkCard(worker: OwnerWorker, now: number, stallMinutes =
       ? workMinute(w?.facadeClosedAt, now)
       : workMinute(worker.startedAt, result && worker.settledAt !== null ? worker.settledAt : now);
   return {
-    state,
+    state: note?.attention && state !== 'needs-you' ? 'needs-you' : state,
+    deterministicState: state,
+    modelAttention: note?.attention === true && state !== 'needs-you',
     role: worker.role === 'implementer' ? 'imp' : worker.role === 'architect' ? 'oracle' : worker.role || 'agent',
     title: worker.task,
     phases: [...(w?.phases ?? []), ...(state === 'done' ? ['done'] : [])],

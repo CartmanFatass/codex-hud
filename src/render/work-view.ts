@@ -118,7 +118,17 @@ export function boardInspectorRows(
     const worker = lane.workers.find((w) => w.id === target.workerId);
     if (!worker) return [{ text: t('Source no longer available') }];
     rows.push(workerRow(worker, width, input.nowMs ?? 0));
-    rows.push(...workInspectorRows(worker, state, width, input.nowMs ?? 0, false));
+    rows.push(
+      ...workInspectorRows(
+        worker,
+        state,
+        width,
+        input.nowMs ?? 0,
+        false,
+        input.jobProgress?.get(worker.id) ??
+          (lane.identity.kind === 'invocation' ? { reason: 'Job consent denied' } : undefined)
+      )
+    );
     if (worker.model) add('Model', worker.model);
     if (worker.effort) add('Effort', worker.effort);
     rows.push({ text: theme.dim(t('Display only; no native session action')) });
@@ -204,7 +214,14 @@ export function renderWorkboardFrame(
   frame.lines[0] = pair(inline ? nav + second : nav, theme.dim(hint), width);
   if (!inline && height > 1) frame.lines[1] = fit(second, width);
   if (!home && !inspector && headerRows < height - 1) {
-    const cards = board.workers.map((w) => projectWorkCard(w, now, state.cardStallMinutes));
+    const cards = board.workers.map((w) =>
+      projectWorkCard(
+        w,
+        now,
+        state.cardStallMinutes,
+        state.cardVisibility?.cardSummary !== false ? input.jobProgress?.get(w.id)?.note : undefined
+      )
+    );
     const summary = ['needs-you', 'in-progress', 'awaiting-acceptance', 'stalled', 'done'].flatMap((s) => {
       const matching = cards.filter((c) => c.state === s);
       return matching.length ? [`${workStateGlyph(matching[0])} ${matching.length} ${workStateWord(matching[0])}`] : [];
@@ -226,6 +243,7 @@ export function renderWorkboardFrame(
     input.publicationNotice,
     input.error,
     state.cardStallMinutes,
+    [...(input.jobProgress ?? [])],
     state.cardVisibility,
     state.cardCorners,
     state.labelAsName,
@@ -321,9 +339,12 @@ export function renderWorkboardFrame(
   if (inspector) state.scroll.details = offset;
   else if (home) state.homeScroll = offset;
   else state.workScroll = offset;
+  const sentenceTargets = new Set<string>();
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
     if (!row) continue;
+    if (!inspector && state.cardVisibility?.cardSummary !== false)
+      for (const id of row.sentenceWorkers ?? []) sentenceTargets.add(id);
     const highlighted = !inspector && row.item === key && offset + i === cursorAt;
     const text = row.paint?.() ?? row.text;
     row.text = text;
@@ -359,6 +380,6 @@ export function renderWorkboardFrame(
     edge: 0,
     visible: room,
   });
-  frame.workboard = { snapshot: board, targets, selected, rows };
+  frame.workboard = { snapshot: board, targets, selected, rows, sentenceTargets };
   return frame;
 }

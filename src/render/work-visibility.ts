@@ -11,6 +11,19 @@ import type { MonitorData, MonitorState } from './monitor.js';
 import { isExpired } from './panel-state.js';
 import { effectiveStatus, jobSettledAt } from './job-details.js';
 
+/** Retain only the currently inspected worker; this is never a model request target. */
+export function jobInspectorTargets(board: WorkboardSnapshot, state: MonitorState): ReadonlySet<string> {
+  if (state.focus !== 'details' || state.boardInspect === 'summary') return new Set();
+  const target = state.boardInspect;
+  const worker =
+    target && target.kind === 'worker'
+      ? board.workers.find((w) => w.id === target.workerId && w.laneId === target.laneId)
+      : !target && state.preview === 'agent'
+        ? board.workers.find((w) => w.nodeId === state.tree.selectedId)
+        : undefined;
+  return new Set(worker ? [worker.id] : []);
+}
+
 const cache = new WeakMap<
   WorkboardSnapshot,
   {
