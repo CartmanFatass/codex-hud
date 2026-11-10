@@ -276,9 +276,24 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   Watch item: A67's statusline `Work:` segment shares the read budget with the legacy summary. Under heavy load the
   summary line can drop, so check it at R7 under normal load.
 
-  Running: R6A-A5 (pi package and segment; q1–q3 answered; a `parentSession` gets no auto panel, which is a follow-up
-  for a qualified `/fork`). Next: R5UX-P3B (brief ready), then A8 and PIROLE PR4/PR5. P2c (removing the no-sidecar
-  path: 41 test files) is deferred.
+  - **R6A-A5** (`715ad1d` / `f1d086e`; reviews `tmp` R6A-A5 review-1 changes-required, review-2 accept): the pi
+    `hud` package (one `/hud` command, six private-channel role proxies, lifecycle fencing, A3 panel through
+    native/herdr corroboration) and the bounded `hud-delegation` status segment; p10k stays the footer owner. Row 7
+    and row 10 select the package through A1 preview/apply/restore. Live herdr split, owner footer visibility and
+    real activation are owner gates for R7.
+    - Focused merged check on `f1d086e`: builds; A5, activation, Claude-plugin and panel-control tests; 9/9 mutants;
+      fixtures, format and diff: all pass. The full gate runs once, after P3B and PR4 merge.
+    - Follow-ups: qualify an ordinary `/fork` for the panel; an A3 lifecycle-versus-manual close reason (covers
+      reload); check the panel-control test's timeouts (it hung once under swap pressure, and passes alone).
+
+  2026-11-10 testing change (owner): tests are designed at project scope; see `docs/delegation.md` and
+  `docs/reviews/2026-11-10-test-volume-audit.md`. TEST-SLIM (approved) comes before R6b. Stage 0 builds the project
+  test map (`docs/testing.md`), the inventory and the consolidation proposal.
+
+  Running: R5UX-P3B (quiet benchmark window, then review); PIROLE-PR4 (review round 1 fixes; q5 ruled that a
+  retained release is verified against its own manifest, not the current `REQUIRED` list, which fixes the A1 seam
+  that A4, A5 and PR4 each tripped); TEST-SLIM-0. Next: PR5, A8, TEST-SLIM stages, then R6b and R7. P2c stays
+  deferred and folds into TEST-SLIM.
 
 | Package | Deliverable | Acceptance |
 | --- | --- | --- |
