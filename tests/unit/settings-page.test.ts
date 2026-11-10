@@ -18,7 +18,7 @@ import {
   resetAllPreferences,
   type SettingsPageState,
 } from '../../src/render/settings-page.js';
-import { applyCardPreset, identifyCardPreset, CARD_PRESET_KEYS } from '../../src/card-presets.js';
+import { applyCardPreset } from '../fixtures/legacy-card-presets.js';
 import { setLanguage, t } from '../../src/render/i18n.js';
 import { panelWidth } from '../../src/utils/pane-width.js';
 import { stripAnsi, visualLength, theme, colors } from '../../src/render/colors.js';
@@ -148,7 +148,8 @@ test('settings read in sections, values aligned on the right and written for peo
   const cardText = cards.lines.map((line) => stripAnsi(line).trimEnd());
   const ends = cards.rows.flatMap((row, y) => (row === null || row === rowOf('cardLabel') ? [] : [cardText[y].length]));
   const folded = (cards.groups ?? []).flatMap((first, y) => (first === null ? [] : [cardText[y].length]));
-  assert.ok(ends.length > 5 && folded.length === 6);
+  assert.equal(ends.length, 4);
+  assert.equal(folded.length, 6);
   assert.equal(new Set([...ends, ...folded]).size, 1);
   for (const width of [16, 20, 24, 30, 45, 70]) {
     const any = renderSettingsPage({ draft, selected: SETTING_ROWS.length - 1, offset: 0, message: '' }, width, 14);
@@ -166,11 +167,11 @@ test('folded sections: a click opens one at its first row without changing a val
   const text = () => frame.lines.map((line) => stripAnsi(line));
   const y = text().findIndex((line) => /▸ Cards/.test(line));
   assert.ok(y > 0);
-  assert.equal(frame.groups?.[y], rowOf('cardPreset'));
+  assert.equal(frame.groups?.[y], rowOf('cardCorners'));
   assert.equal(frame.rows[y], null, 'a folded line is not a setting');
-  assert.match(text()[y], /monitor · live \+ important *$/, 'its summary');
+  assert.match(text()[y], /Clock on · 10m *$/, 'its summary');
   const opened = handleSettingsInput(state, { type: 'mouse', button: 'left', x: 6, y }, frame).state;
-  assert.equal(opened.selected, rowOf('cardPreset'));
+  assert.equal(opened.selected, rowOf('cardCorners'));
   assert.deepEqual(opened.draft, state.draft, 'opening changes nothing');
   frame = renderSettingsPage(opened, 48, 24);
   assert.ok(text().some((line) => /── ▾ Cards/.test(line)));
@@ -186,8 +187,8 @@ test('folded sections: a click opens one at its first row without changing a val
   state = { ...state, selected: rowOf('theme') };
   assert.equal(key('page-down').key, 'language');
   assert.equal(key('page-down').group, 'Agents');
-  state = { ...state, selected: rowOf('cardRelations') };
-  assert.equal(key('page-up').key, 'cardPreset');
+  state = { ...state, selected: rowOf('cardSummary') };
+  assert.equal(key('page-up').key, 'cardCorners');
   assert.equal(key('page-up').group, 'Agents');
   state = { ...state, selected: rowOf('refreshMs') };
   assert.equal(key('page-down').key, 'refreshMs', 'the last section stays');
@@ -534,8 +535,8 @@ test('rows have unique keys and contiguous groups, with separate display and gen
   );
   assert.equal(
     SETTING_ROWS.filter((row) => row.group === 'Cards').length,
-    16,
-    'virtual preset, corners, thirteen switches, child scope'
+    5,
+    'corners, label, summary, minute clock, display-only stall threshold'
   );
   assert.ok(!SETTING_ROWS.some((row) => row.label === 'Brief covers' || String(row.key) === 'cardNotes'));
   const backend = SETTING_ROWS.findIndex((row) => row.key === 'briefing');
@@ -616,12 +617,10 @@ test('inactive reasons follow card dependencies without hiding stored summaries'
   const reason = (key: (typeof SETTING_ROWS)[number]['key'], patch: Partial<typeof base> = {}) =>
     settingInactiveReason(key, { ...base, ...patch });
   for (const row of SETTING_ROWS.filter((row) => row.group === 'Cards')) {
-    assert.equal(settingInactiveReason(row, { ...base, panelStyle: 'compact' }), 'Requires rich card layout', row.key);
+    assert.equal(settingInactiveReason(row, { ...base, panelStyle: 'compact' }), null, row.key);
   }
-  for (const key of ['cardSubagentSummary', 'cardSubagentScope'] as const)
-    assert.equal(reason(key, { cardSubagents: false }), 'Requires child agent lines');
-  for (const patch of [{ cardLabel: false }, { agentLabels: false }, { labelAsName: false }])
-    assert.equal(reason('cardOriginalName', patch), 'Requires task label and names replacing Codex names');
+  for (const key of ['cardSubagentSummary', 'cardSubagentScope', 'cardOriginalName'])
+    assert.ok(!SETTING_ROWS.some((row) => row.key === key), 'obsolete rich dependency has no setting control');
   assert.equal(reason('cardLabel', { agentLabels: false }), 'Requires agent names enabled');
   for (const key of ['cardSummary', 'cardSubagentSummary'] as const) {
     assert.equal(reason(key, { briefing: 'off' }), null, key);
@@ -683,10 +682,11 @@ test('selected inactive reasons stay readable and translated at narrow CJK width
   const previous = setLanguage('zh');
   try {
     for (const width of [16, 20, 24, 32, 48]) {
-      for (const key of ['cardSummary', 'cardSubagentScope', 'agentProgress', 'briefingPaused', 'agentLog'] as const) {
+      for (const key of ['cardLabel', 'agentProgress', 'briefingPaused', 'agentLog'] as const) {
         const draft = {
           ...defaultSettings(),
           panelStyle: 'compact' as const,
+          agentLabels: false,
           briefing: key === 'agentLog' ? ('api' as const) : ('off' as const),
         };
         const selected = SETTING_ROWS.findIndex((row) => row.key === key);
@@ -914,27 +914,29 @@ test('navigation clips safely at tiny heights and fits ANSI/CJK rows to exact te
 test('Child role counts clearly names footer statistics and never toggles child lines or summaries', () => {
   const previous = setLanguage('en');
   try {
-    const selected = SETTING_ROWS.findIndex((row) => row.key === 'cardRoleCounts');
+    const selected = SETTING_ROWS.findIndex((row) => row.key === 'cardStallMinutes');
     const row = SETTING_ROWS[selected];
-    assert.equal(row.label, 'Child role counts');
+    assert.equal(
+      SETTING_ROWS.some((r) => r.key === 'cardRoleCounts'),
+      false
+    );
+    assert.equal(row.label, 'Stall threshold');
     assert.equal(defaultSettings().cardRoleCounts, true);
-    assert.match(row.help, /2 scout \/ 1 implementer/);
-    assert.match(row.help, /off keeps child lines and summaries/);
+    assert.match(row.help, /presentation only/);
     const state: SettingsPageState = { draft: defaultSettings(), selected, offset: 0, message: '' };
     const frame = renderSettingsPage(state, 56, 18);
-    assert.match(stripAnsi(frame.lines[frame.rows.indexOf(selected)]), /Child role counts +‹ on ›/);
+    assert.match(stripAnsi(frame.lines[frame.rows.indexOf(selected)]), /Stall threshold +‹ 10m ›/);
     const changed = handleSettingsInput(frame.state, { type: 'key', key: 'right' }, frame).state;
-    assert.equal(changed.draft.cardRoleCounts, false);
+    assert.equal(changed.draft.cardStallMinutes, 15);
     assert.equal(changed.draft.cardSubagents, state.draft.cardSubagents);
     assert.equal(changed.draft.cardSubagentSummary, state.draft.cardSubagentSummary);
     assert.equal(changed.draft.cardSummary, state.draft.cardSummary);
     setLanguage('zh');
-    assert.equal(t(row.label), '子 agent 数量统计');
-    assert.match(t(row.help), /2 scout \/ 1 implementer/);
-    assert.match(t(row.help), /关闭保留子 agent 行和总结/);
+    assert.equal(t(row.label), '停滞阈值');
+    assert.match(t(row.help), /仅影响显示/);
     assert.match(
       stripAnsi(renderSettingsPage(state, 56, 18).lines[16]),
-      /关闭保留子 agent 行和总结/,
+      /仅影响显示/,
       'the meaning stays visible before examples are clipped'
     );
     for (const width of [16, 24, 40, 56, 80]) {
@@ -942,7 +944,7 @@ test('Child role counts clearly names footer statistics and never toggles child 
       assert.ok(zh.lines.every((line) => visualLength(line) === width));
       assert.notEqual(zh.rows.indexOf(selected), -1);
       if (width >= 40) {
-        assert.ok(stripAnsi(zh.lines[zh.rows.indexOf(selected)]).includes('子 agent 数量统计'));
+        assert.ok(stripAnsi(zh.lines[zh.rows.indexOf(selected)]).includes('停滞阈值'));
         assert.ok(zh.back);
         const line = stripAnsi(zh.lines[zh.back.y]);
         assert.equal(
@@ -952,8 +954,8 @@ test('Child role counts clearly names footer statistics and never toggles child 
         );
         assert.equal(
           handleSettingsInput(zh.state, { type: 'mouse', button: 'left', x: zh.back.x, y: zh.back.y }, zh).state.draft
-            .cardRoleCounts,
-          false
+            .cardStallMinutes,
+          5
         );
       }
     }
@@ -963,57 +965,25 @@ test('Child role counts clearly names footer statistics and never toggles child 
 });
 
 test('the virtual Cards preset is derived, edits draft content only and custom selection is a no-op', () => {
-  const row = SETTING_ROWS.find((entry) => entry.key === 'cardPreset')!;
+  // Superseded by §15 2026-11-09: no virtual preset remains; edits are display-only.
+  const row = SETTING_ROWS.find((entry) => entry.key === 'cardStallMinutes')!;
   const original = {
     ...defaultSettings(),
     briefing: 'api' as const,
     briefingApiKey: 'synthetic-key',
-    briefAgents: false,
     agentProgress: false,
-    cardCorners: 'round' as const,
-    cardSubagentScope: 'all' as const,
-    sort: 'created' as const,
-    treeWidth: 56,
   };
-  let state: SettingsPageState = {
-    draft: { ...original },
-    original,
-    selected: SETTING_ROWS.indexOf(row),
-    offset: 0,
-    message: '',
-  };
-  assert.equal(rowValue(row, state.draft), 'monitor');
-  assert.equal(settingGroup(state), 'Cards');
+  const draft = withRowValue(original, row, 15);
+  assert.equal(draft.cardStallMinutes, 15);
+  assert.equal(original.cardStallMinutes, 10);
+  assert.equal(draft.briefing, original.briefing);
+  assert.equal(draft.agentProgress, false);
   assert.equal(settingGroup(row), 'Cards');
-  assert.equal(settingsDirty(state), false);
-  const frame = renderSettingsPage(state, 48, 18);
-  state = handleSettingsInput(frame.state, { type: 'key', key: 'left' }, frame).state;
-  assert.equal(rowValue(row, state.draft), 'progress');
-  assert.equal(settingsDirty(state), true);
-  assert.deepEqual(state.draft, applyCardPreset(original, 'progress'));
-  assert.deepEqual(state.original, original);
-  assert.ok(!Object.hasOwn(state.draft, 'cardPreset'), 'only existing fields will be saved');
-  state.draft = withRowValue(state.draft, row, 'minimal');
-  assert.equal(identifyCardPreset(state.draft), 'minimal');
-  state.draft = withRowValue(
-    state.draft,
-    SETTING_ROWS.find((entry) => entry.key === 'cardClock')!,
-    true
+  assert.equal(settingsDirty({ draft, original }), true);
+  assert.equal(
+    SETTING_ROWS.some((entry) => String(entry.key) === 'cardPreset'),
+    false
   );
-  assert.equal(rowValue(row, state.draft), 'custom', 'a manual tweak immediately changes the derived value');
-  assert.equal(withRowValue(state.draft, row, 'custom'), state.draft);
-  // Named presets cycle without getting trapped in custom's no-op.
-  state.draft = applyCardPreset(original, 'monitor');
-  for (const preset of ['minimal', 'progress', 'monitor', 'minimal'] as const) {
-    state = handleSettingsInput(state, { type: 'key', key: 'right' }, frame).state;
-    assert.equal(rowValue(row, state.draft), preset);
-  }
-  state = handleSettingsInput(state, { type: 'key', key: 'left' }, frame).state;
-  assert.equal(rowValue(row, state.draft), 'monitor');
-  state.draft = { ...state.draft, cardOriginalName: true };
-  assert.equal(rowValue(row, state.draft), 'custom');
-  assert.equal(rowValue(row, handleSettingsInput(state, { type: 'key', key: 'right' }, frame).state.draft), 'minimal');
-  assert.equal(rowValue(row, handleSettingsInput(state, { type: 'key', key: 'left' }, frame).state.draft), 'monitor');
 });
 
 const syntheticConfigured = (): HudSettings => ({
@@ -1096,7 +1066,7 @@ test('each group reset owns explicit fields, including composite hidden fields, 
     Display: ['theme', 'look', 'icons', 'glyphs', 'motion'],
     Panel: ['language', 'panelStyle', 'paneLayout', 'statusCard', 'timelineStyle', 'timelineHours', 'treeWidth', 'art'],
     Agents: ['sort', 'finishedLingerMs', 'importantRoles', 'agentLog'],
-    Cards: [...CARD_PRESET_KEYS, 'cardCorners', 'cardSubagentScope'],
+    Cards: ['cardCorners', 'cardLabel', 'cardSummary', 'cardClock', 'cardStallMinutes'],
     LLM: [
       'briefingPaused',
       'briefAgents',
@@ -1150,7 +1120,7 @@ test('all preferences reset preserves model configuration and assets, never enab
   assert.equal(result.theme, defaultSettings().theme);
   assert.equal(result.treeWidth, defaultSettings().treeWidth);
   assert.equal(result.notifyDesktop, false);
-  assert.equal(result.cardSubagentScope, defaultSettings().cardSubagentScope);
+  assert.equal(result.cardSubagentScope, draft.cardSubagentScope, 'retired rich preference is inert and preserved');
   for (const briefing of ['off', 'agy', 'api'] as const) {
     for (const briefingPaused of [false, true]) {
       const privateDraft = { ...draft, briefing, briefingPaused };
@@ -1197,7 +1167,7 @@ test('header resets have distinct labels and hit maps; narrow widths retain Back
   try {
     const state: SettingsPageState = {
       draft: syntheticConfigured(),
-      selected: SETTING_ROWS.findIndex((row) => row.key === 'cardPreset'),
+      selected: SETTING_ROWS.findIndex((row) => row.key === 'cardClock'),
       offset: 0,
       message: '',
     };

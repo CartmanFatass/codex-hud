@@ -1,4 +1,5 @@
-import type { CardVisibility } from './card-visibility.js';
+/** Legacy visual/compatibility fixture only. P2 has no production preset surface. */
+import type { CardVisibility } from '../../src/card-visibility.js';
 
 /** Presets own only these thirteen content switches, never scope, corners or generation permissions. */
 export const CARD_PRESET_KEYS = [

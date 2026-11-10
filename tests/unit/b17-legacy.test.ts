@@ -614,7 +614,7 @@ test('T-07-6 narrow recap: unknown both-to-main ancestry and its coverage/overal
 });
 
 test('T-07-9 actual Cards preset changes display only and cannot revive a disabled generator', async () => {
-  const { applyCardPreset } = await import('../../src/card-presets.js');
+  const { applyCardPreset } = await import('../fixtures/legacy-card-presets.js');
   const settings = {
     ...defaultSettings(),
     briefing: 'api' as const,

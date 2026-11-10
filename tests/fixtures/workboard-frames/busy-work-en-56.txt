@@ -1,36 +1,36 @@
  Home ?1  [Work]  v  ,  ?                Ctrl+\ then key
-›│ CHECK review                                   1 call
- ▸ pi     reviewer Revie… gpt-synthetic-review·high  30m
-   working                                              
- < CHECK Sent back r2                                 2m
- │ DESIGN awaiting-acceptance                     1 call
- ✓ pi     oracle   Sourc… gpt-synthetic·high          5m
-   idle_grace                                           
- ! DESIGN recommendation: Keep one explicit source    2m
-          boundary.                                     
-   one-way · recommendation                             
-   instead: Infer a name-based join                     
-   why: Never guess task ownership.                     
- │ UI-1 build                                    6 calls
- ▸ pi     imp      首页…  gpt-synthetic·high         30m
-   working                                              
- ≠ UI-1 B                                             2m
-   answer                                               
-   instead: A                                           
-   why: The explicit source is sufficient.              
-   source context: Should compatibility stay? — Synthet…
- · UI-1 A                                             2m
- · UI-1 A                                             2m
- · UI-1 A                                             2m
- · UI-1 A                                             2m
- · UI-1 A                                             2m
+? 1 needs you  ▸ 1 working  ✓ 1 to accept  ◷ 1 stalled  
+›│ CHECK    ━━━━━▸──── review                     1 call
+ ┌ ◷ reviewer Review the synthetic path      stalled 30m
+ │ review                                               
+ └ No new activity 30m                                  
+  < CHECK Sent back r2                                2m
+ │ DESIGN   ━━━━━━▸─── await accept               1 call
+ ┌ ✓ oracle Source boundaries 来源边界     to accept 25m
+ │ design                                               
+ └ Result ready                                         
+  ! DESIGN recommendation: Keep one explicit source   2m
+           boundary.                                    
+    one-way · recommendation                            
+    instead: Infer a name-based join                    
+    why: Never guess task ownership.                    
+ │ UI-1     ━━━▸────── build                     6 calls
+ ┌ ▸ imp 首页与被动工作记录 Home and passiv… working 30m
+ └ build                                                
+  ≠ UI-1 B                                            2m
+    answer                                              
+    instead: A                                          
+    why: The explicit source is sufficient.             
+  · UI-1 A                                            2m
+  · UI-1 A                                            2m
+  · UI-1 A                                            2m
+  · UI-1 A                                            2m
+  · UI-1 A                                            2m
  │ Synthetic browser handoff wait                       
- ┌ ? Synthetic browser handoff ─────── jev synthetic-web
- └ ─────────────────────────────────────────────────────
+ ┌ ? jev Synthetic browser handoff         needs you 60m
+ │ wait                                                 
+ └ Work failed; inspect the job                         
  │ MOCKUP phase unknown                                 
-                                                        
-                                                        
-                                                        
                                                         
                                                         
                                                         

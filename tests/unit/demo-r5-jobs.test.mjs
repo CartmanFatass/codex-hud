@@ -135,9 +135,17 @@ test('R5 stage: real frames show all names in EN/ZH at 110/44; narrow rows fit a
     const lines = body.trimEnd().split('\n');
     for (const line of lines) assert.ok(visualLength(line) <= Number(width), `${language} ${width}: ${line}`);
     const stale = lines.find((line) => line.includes('Old migration'));
-    assert.match(stale, /\?/);
-    assert.doesNotMatch(stale, /▸|◷|⏱/);
-    assert.match(body, /! (?:answer|回答) q1/);
+    assert.match(stale, language === 'EN' ? /^┌ ◷ .*stalled \d+m/ : /^┌ ◷ .*停滞 \d+分/);
+    assert.ok(
+      !/▸|⏱|working|工作中|\d+m\d+s|\d+分\d+秒/.test(stale) &&
+        lines.filter((line) => /stalled|停滞/.test(line)).every((line) => line === stale),
+      'only the fixture-stale owner is stalled, never shown working or with a running clock'
+    );
+    assert.ok(
+      lines.some((line) => line.includes('Schema question') && /needs you|需要你/.test(line)) &&
+        (language === 'EN' ? /answer q1/.test(body) : /答复 q1/.test(body)),
+      'the answer-waiting card names current q1 at both widths and languages'
+    );
   }
 });
 

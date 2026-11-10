@@ -84,6 +84,7 @@ export function isExpired(node: SubagentTreeNode, state: PanelState, nowMs: numb
   // A job waiting on the person is news until it is answered. One still open with no outcome on record is not
   // known to have finished, however long its source has been silent; an external task stays until it is removed.
   if (needsInput(node) || (node.job && status === 'unknown' && !jobClosed(node.job))) return false;
+  if (node.job?.work?.facadeClosed === false && status === 'completed') return false;
   // The status is the job's, so is the time: an older native event must not date a job that settled since.
   const native = status === 'completed' ? (node.statusAt ?? node.lastEventAt) : (node.lastEventAt ?? node.statusAt);
   const settled = (node.job ? jobSettledAt(node) : undefined) ?? native;

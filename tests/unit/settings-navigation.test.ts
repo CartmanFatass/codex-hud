@@ -96,12 +96,12 @@ test('the footer role-count switch hides counts only, keeping children, their se
         hidden = draw(false);
       const visible = shown.lines.map(stripAnsi).join('\n');
       const removed = hidden.lines.map(stripAnsi).join('\n');
-      assert.match(visible, /2 scout/, `counts shown at ${width}`);
+      assert.doesNotMatch(visible, /2 scout|1 implementer/, `retired counts stay absent at ${width}`);
       assert.doesNotMatch(removed, /2 scout|1 implementer/, `counts hidden at ${width}`);
       for (const name of ['Helper A', 'Helper B', 'Helper C'])
-        assert.ok(removed.includes(name), `${name} stays at ${width}`);
-      assert.match(removed, /Checks synthetic/);
-      assert.match(removed, /evidence\./);
+        assert.ok(!removed.includes(name), `${name} is folded into the owner at ${width}`);
+      assert.doesNotMatch(removed, /Checks synthetic|evidence\./);
+      assert.equal(removed, visible, 'retired card-role flag cannot change compact cards');
       assert.deepEqual(
         cardSummaryTargets({ tree, agentLog: log }, shown.state, NOW),
         cardSummaryTargets({ tree, agentLog: log }, hidden.state, NOW)

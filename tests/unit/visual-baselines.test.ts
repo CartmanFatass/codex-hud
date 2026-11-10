@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT } from '../fixtures/paths.js';
-import { applyCardPreset, identifyCardPreset } from '../../src/card-presets.js';
+import { applyCardPreset, identifyCardPreset } from '../fixtures/legacy-card-presets.js';
 import { cardSummaryTargets } from '../../src/render/cards.js';
 import { stripAnsi, visualLength } from '../../src/render/colors.js';
 import { controlBar } from '../../src/render/control-bar.js';
@@ -139,13 +139,16 @@ test('visual semantics: child role counts off removes only footer counts, not ch
           .rows.map((row) => stripAnsi(row.text))
           .filter((line) => !counts.test(line));
       assert.ok(
-        on.lines.some((line) => counts.test(stripAnsi(line))),
-        `${scene.name}: fixture actually exercises footer counts`
+        !on.lines.some((line) => counts.test(stripAnsi(line))),
+        `${scene.name}: compact work cards have no role-count footer`
       );
       assert.ok(!off.lines.some((line) => counts.test(stripAnsi(line))), `${scene.name}: counts removed`);
       assert.deepEqual(content(on), content(off), `${scene.name}: all other card rows identical`);
       for (const name of ['running_子', 'failed_子'])
-        assert.ok(stripAnsi(off.lines.join('\n')).includes(name), `${scene.name}: child ${name} remains`);
+        assert.ok(
+          !stripAnsi(off.lines.join('\n')).includes(name),
+          `${scene.name}: child ${name} is folded into its owner`
+        );
       const material = visualMaterial(language);
       const targets = (state: typeof before) => cardSummaryTargets(material, state, VISUAL_NOW);
       assert.deepEqual(targets(before), targets(after), `${scene.name}: role counts never affect progress generation`);

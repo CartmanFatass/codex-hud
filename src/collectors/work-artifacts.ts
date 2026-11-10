@@ -46,18 +46,17 @@ export function questionFields(text: string): QuestionFields {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const optionStart = lines.findIndex((l) => /^Options:\s*$/.test(l));
   const label = (name: string) => text.match(new RegExp(`^${name}:\\s*(.*)$`, 'm'))?.[1]?.trim() ?? '';
+  const options: string[] = [];
+  // Same grammar, one pass: readable unanswered QA also uses this bounded-file parser.
+  if (optionStart >= 0)
+    for (const raw of lines.slice(optionStart + 1)) {
+      const line = raw.replace(/^\s*[-*]\s+/, '');
+      if (/^Default if unanswered:|^Context:|^Answer:/.test(line)) break;
+      if (line.trim()) options.push(line);
+    }
   return {
     question: clip(prose((optionStart < 0 ? text : lines.slice(0, optionStart).join('\n')).replace(/^#.*\n/, ''))),
-    options:
-      optionStart < 0
-        ? []
-        : lines
-            .slice(optionStart + 1)
-            .map((l) => l.replace(/^\s*[-*]\s+/, ''))
-            .filter(
-              (l, i, a) => l.trim() && a.slice(0, i).every((x) => !/^Default if unanswered:|^Context:|^Answer:/.test(x))
-            )
-            .filter((l) => !/^Default if unanswered:|^Context:|^Answer:/.test(l)),
+    options,
     suggested: label('Default if unanswered'),
     ...(label('Context') ? { context: clip(label('Context')) } : {}),
   };
@@ -113,6 +112,28 @@ export function answerRecord(
 export function reviewVerdict(text: string): 'accept' | 'changes-required' | null {
   const line = text.split('\n', 1)[0].replace(/\r$/, '');
   return line === 'Verdict: accept' ? 'accept' : line === 'Verdict: changes-required' ? 'changes-required' : null;
+}
+/** Explicit reported facts only; no rerun aggregation or inferred pass count. */
+export function reportedWorkFacts(text: string): {
+  tests: number | null;
+  passed: number | null;
+  failed: number | null;
+  files: number | null;
+} {
+  const taps = [
+    ...text.matchAll(/(?:^|\n)# tests (\d+)\r?\n# suites \d+\r?\n# pass (\d+)\r?\n# fail (\d+)(?=\r?\n|$)/g),
+  ];
+  const tap = taps.length === 1 && taps[0].slice(1).every((n) => Number.isSafeInteger(Number(n))) ? taps[0] : null;
+  const section = text.match(/(?:^|\n)#{1,6} (?:Files changed|Changed files)\s*\r?\n([\s\S]*?)(?=\n#{1,6} |$)/i)?.[1];
+  const paths = section
+    ?.split(/\r?\n/)
+    .flatMap((line) => /^[-*] [`]?([^`\s]+)[`]?(?:\s|$)/.exec(line)?.slice(1, 2) ?? []);
+  return {
+    tests: tap ? Number(tap[1]) : null,
+    passed: tap ? Number(tap[2]) : null,
+    failed: tap ? Number(tap[3]) : null,
+    files: paths?.length && !/\btruncat|\.\.\.|…/.test(section!) ? new Set(paths).size : null,
+  };
 }
 export function reviewRecord(
   laneId: string,

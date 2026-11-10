@@ -1,10 +1,10 @@
  Home  [Work]  v  ,  ?       Ctrl+\ then key
-›│ Synthetic browser finished wait          
- ┌ ✓ Synthetic browser finished ──────── jev
- └ ─────────────────────────────────────────
+✓ 1 done                                    
+›│ Synthetic browser finished done          
+ ┌ ✓ jev Synthetic browser finished done <1m
+ │ wait → done                              
+ └ Facade closed                            
  │ DONE phase unknown                       
-                                            
-                                            
                                             
                                             
                                             

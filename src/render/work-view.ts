@@ -1,24 +1,16 @@
-/** P1 transitional landing: stable lane/decision targets around today's existing cards.
- * P2 replaces this body; this is not the final compact-card/110-column peek design.
- */
+/** Passive Work viewport, shared compact lanes/cards and retained source Inspector. */
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
-import type { SubagentTreeNode } from '../types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
-import { agentCard, briefFields } from './cards.js';
+import { briefFields } from './cards.js';
+import { laneRows } from './work-lanes.js';
+import { projectWorkCard } from '../collectors/work-card.js';
+import { workStateGlyph, workStateWord } from './work-card.js';
+import { workInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
-import {
-  boardRow,
-  decisionRows,
-  laneRow,
-  mark,
-  minuteAge,
-  section,
-  workerRow,
-  workerColumns,
-  decisionTitle,
-} from './workboard-rows.js';
-import { theme, visualLength } from './colors.js';
+import { visibleWorkboard } from './work-visibility.js';
+import { boardRow, mark, section, workerRow, decisionTitle, workAxisRow } from './workboard-rows.js';
+import { theme, visualLength, stripAnsi } from './colors.js';
 import { fit, monitorText, flowLines, pair } from './monitor-text.js';
 import { t, language } from './i18n.js';
 import { displayConfig } from './hud-config.js';
@@ -45,7 +37,7 @@ const ascii = (text: string) =>
             '…': '.',
           })[c]!
       );
-// Snapshot-local row projection: scroll-only and quiet same-minute paints reuse the rows.
+// Snapshot-local rows expire at the next producer-relative minute edge, not only a wall-clock minute.
 // Weak ownership drops removed board snapshots; renderer cache never grows with workflow history.
 const targetCache = new WeakMap<WorkboardSnapshot, Map<string, WorkTarget>>();
 const rowCache = new WeakMap<
@@ -58,16 +50,18 @@ const rowCache = new WeakMap<
     folded: MonitorState['boardFolded'];
     expanded: MonitorState['boardExpanded'];
     rows: MonitorRow[];
+    at: number;
+    until: number;
   }
 >();
-const nodeAt = (nodes: readonly SubagentTreeNode[], id: string): SubagentTreeNode | undefined => {
-  for (const node of nodes) {
-    if (node.id === id) return node;
-    const child = nodeAt(node.children, id);
-    if (child) return child;
-  }
-  return undefined;
-};
+function nextWorkMinute(board: WorkboardSnapshot, now: number): number {
+  let next = (Math.floor(now / 60000) + 1) * 60000;
+  for (const worker of board.workers)
+    for (const origin of [worker.startedAt, worker.work?.activityAt])
+      if (origin !== null && origin !== undefined && Number.isFinite(origin))
+        next = Math.min(next, origin + (Math.floor((now - origin) / 60000) + 1) * 60000);
+  return next;
+}
 export function workRows(
   input: MonitorData,
   board: WorkboardSnapshot,
@@ -75,51 +69,10 @@ export function workRows(
   width: number,
   now: number
 ): MonitorRow[] {
-  const rows: MonitorRow[] = [];
-  const columns = workerColumns(board.workers, width, now);
-  for (const lane of board.lanes) {
-    rows.push(laneRow(lane, width, now));
-    if (state.boardFolded?.has(lane.id)) continue;
-    for (const worker of lane.workers) {
-      const target: WorkTarget = { kind: 'worker', laneId: lane.id, workerId: worker.id },
-        key = targetKey(target);
-      const node = worker.nodeId ? nodeAt(input.tree.nodes, worker.nodeId) : undefined;
-      if (node) {
-        const cardState = {
-          ...state,
-          tree: {
-            ...state.tree,
-            // The outer workflow viewport owns the one cursor; retained cards do not add another.
-            selectedId: null,
-          },
-          cardVisibility: { ...state.cardVisibility, cardClock: false },
-        };
-        const card = agentCard(
-          {
-            node,
-            depth: 0,
-            prefix: '',
-            hasChildren: !!node.children.length,
-            collapsed: false,
-            context: false,
-            parentId: null,
-          },
-          input,
-          cardState,
-          width,
-          now
-        );
-        // P1 retains card facts, but clocks on Home/Work are minute-valued.
-        if (card[0]) card[0].text = pair(card[0].text, minuteAge(worker.startedAt, now), width);
-        rows.push(...card.map((row) => ({ text: row.text, item: key, key })));
-      } else {
-        rows.push(workerRow(worker, width, now, columns));
-        rows.push(boardRow(`  ${theme.dim(t(worker.state))}`, target));
-      }
-    }
-    for (const record of lane.decisions) rows.push(...decisionRows(record, lane, state, width, now));
-  }
+  const rows = board.lanes.flatMap((lane) => laneRows(input, lane, state, width, now));
   if (!rows.length) rows.push(boardRow(theme.dim(t('No observed work'))));
+  else if (width >= 100) rows.unshift(workAxisRow(width));
+  if (board.coverage.incomplete) rows.unshift(boardRow(theme.warning(t('Needs-you coverage incomplete'))));
   return rows;
 }
 export function boardInspectorRows(
@@ -165,8 +118,9 @@ export function boardInspectorRows(
     const worker = lane.workers.find((w) => w.id === target.workerId);
     if (!worker) return [{ text: t('Source no longer available') }];
     rows.push(workerRow(worker, width, input.nowMs ?? 0));
-    add('State', worker.state);
-    if (worker.phase) add('Observed phase', worker.phase);
+    rows.push(...workInspectorRows(worker, state, width, input.nowMs ?? 0, false));
+    if (worker.model) add('Model', worker.model);
+    if (worker.effort) add('Effort', worker.effort);
     rows.push({ text: theme.dim(t('Display only; no native session action')) });
   }
   for (const diagnostic of board.coverage.diagnostics) add('Coverage', diagnostic);
@@ -187,6 +141,7 @@ export function renderWorkboardHelp(
     'Display only · Enter opens Work; v inspects',
     '↑↓ move · → expand · Enter: Work · v inspect · ? help',
     'Esc: back · v: inspect · summary in Inspector',
+    'a: reveal/hide finished agents · display only',
   ];
   frame.lines = frame.lines.map((_, i) => fit(ascii(t(words[i] ?? '')), width));
   frame.controls = [];
@@ -209,6 +164,7 @@ export function renderWorkboardFrame(
   if (!width || !height) return frame;
   const home = state.mainTab !== 'work',
     inspector = state.focus === 'details';
+  if (!inspector || state.boardInspect === 'summary') board = visibleWorkboard(input, board, state, now);
   const needs = board.workers.filter((w) => w.homeNeedsHuman).length;
   const labels = [t('Home') + (needs ? ` ?${needs}` : ''), t('Work')];
   let x = 0;
@@ -234,7 +190,7 @@ export function renderWorkboardFrame(
   const buttons = secondary.map((s) => ` ${compact ? s.compact : s.text} `);
   if (visualLength(nav + buttons.join('')) + 1 + visualLength(hint) > width) hint = 'Ctrl+\\';
   const inline = visualLength(nav + buttons.join('')) + 1 + visualLength(hint) <= width;
-  const headerRows = inline ? 1 : 2;
+  let headerRows = inline ? 1 : 2;
   let sx = inline ? visualLength(nav) : 0,
     second = '';
   for (let n = 0; n < secondary.length; n++) {
@@ -247,6 +203,14 @@ export function renderWorkboardFrame(
   }
   frame.lines[0] = pair(inline ? nav + second : nav, theme.dim(hint), width);
   if (!inline && height > 1) frame.lines[1] = fit(second, width);
+  if (!home && !inspector && headerRows < height - 1) {
+    const cards = board.workers.map((w) => projectWorkCard(w, now, state.cardStallMinutes));
+    const summary = ['needs-you', 'in-progress', 'awaiting-acceptance', 'stalled', 'done'].flatMap((s) => {
+      const matching = cards.filter((c) => c.state === s);
+      return matching.length ? [`${workStateGlyph(matching[0])} ${matching.length} ${workStateWord(matching[0])}`] : [];
+    });
+    frame.lines[headerRows++] = fit(summary.join('  '), width);
+  }
   const bodyWidth = Math.max(0, width - 1);
   const cacheKey = JSON.stringify([
     bodyWidth,
@@ -261,12 +225,23 @@ export function renderWorkboardFrame(
     displayConfig(),
     input.publicationNotice,
     input.error,
+    state.cardStallMinutes,
+    state.cardVisibility,
+    state.cardCorners,
+    state.labelAsName,
+    board.workers.map((w) => (w.nodeId ? input.agentLog?.get(w.nodeId)?.map((e) => [e.kind, e.text]) : undefined)),
+    board.workers.map((w) => {
+      const c = projectWorkCard(w, now, state.cardStallMinutes);
+      return [c.state, c.elapsedMinutes, c.inactivityMinutes];
+    }),
   ]);
   const cached = rowCache.get(board);
   let rows: MonitorRow[];
   if (
     cached &&
     cached.key === cacheKey &&
+    cached.at <= now &&
+    now < cached.until &&
     cached.tree === input.tree &&
     cached.brief === input.brief &&
     cached.notes === input.notes &&
@@ -278,7 +253,7 @@ export function renderWorkboardFrame(
     rows = inspector
       ? boardInspectorRows(input, board, state, bodyWidth)
       : home
-        ? homeRows(board, state, bodyWidth, now)
+        ? homeRows(board, state, bodyWidth, now, input)
         : workRows(input, board, state, bodyWidth, now);
     if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
     if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
@@ -290,6 +265,8 @@ export function renderWorkboardFrame(
       folded: state.boardFolded,
       expanded: state.boardExpanded,
       rows,
+      at: now,
+      until: nextWorkMinute(board, now),
     });
   }
   let targets = targetCache.get(board);
@@ -348,8 +325,14 @@ export function renderWorkboardFrame(
     const row = rows[offset + i];
     if (!row) continue;
     const highlighted = !inspector && row.item === key && offset + i === cursorAt;
+    const text = row.paint?.() ?? row.text;
+    row.text = text;
     frame.lines[i + headerRows] = fit(
-      ascii(highlighted ? theme.board.selected(`${mark('›', '>')}${row.text}`) : ` ${row.text}`),
+      ascii(
+        highlighted
+          ? theme.board.selected(`${stripAnsi(text).startsWith(mark('›', '>')) ? ' ' : mark('›', '>')}${text}`)
+          : ` ${text}`
+      ),
       width
     );
     for (const control of row.controls ?? []) frame.controls.push({ ...control, x: control.x + 1, y: i + headerRows });

@@ -620,6 +620,7 @@ export class JobObservationCollector {
           runtimeTerminal: ['completed', 'failed', 'closed', 'interrupted'].includes(String(raw.state)),
           endedAt: time(object(raw.run) ? raw.run.endedAt : null),
           settledAt: time(object(raw.run) ? raw.run.endedAt : null),
+          turnStartedAt: time(object(raw.run) ? raw.run.startedAt : null),
           homeNeedsHuman:
             ['completed', 'failed', 'closed', 'interrupted'].includes(String(raw.state)) &&
             (outcome === 'needs_human' || judgments?.some((s) => s.verdict === 'needs_human') === true),
@@ -674,7 +675,8 @@ export class JobObservationCollector {
         !!continuation &&
         (primary.session_id !== continuation.previous_session_id ||
           primary.settled_at === continuation.previous_settled_at);
-      view = this.dispatchView(view, primary, unconfirmed);
+      const continuationFloor = time(continuation?.previous_settled_at);
+      view = this.dispatchView(view, primary, unconfirmed, continuationFloor);
       if (!unconfirmed && primary.state === 'closed' && previous?.outcome === 'failed')
         view = { ...view, outcome: 'failed', status: 'error' };
       const helpers: JobDisplay[] = [];
@@ -738,6 +740,18 @@ export class JobObservationCollector {
       view = {
         ...view,
         requests,
+        work: {
+          ...view.work!,
+          outputCurrent:
+            !unconfirmed &&
+            primary.output_written &&
+            !!report.text?.trim() &&
+            (time(primary.started_at) === null ||
+              ((report.mtime ?? 0) >= time(primary.started_at)! &&
+                (time(primary.settled_at) ?? 0) >= time(primary.started_at)!)) &&
+            (continuationFloor === null ||
+              ((report.mtime ?? 0) >= continuationFloor && (time(primary.settled_at) ?? 0) > continuationFloor)),
+        },
         report: {
           path: join(directory, 'report.md'),
           available: report.text !== null ? !!report.text.trim() : report.reason === 'missing' ? false : null,
@@ -817,10 +831,33 @@ export class JobObservationCollector {
       );
       view = { ...view, requests: a.backend.harness === 'pi' ? yield* this.questions(directory, null, []) : null };
     }
+    if (!r.dispatch) {
+      const signature = JSON.stringify([
+        view.work?.turnStartedAt,
+        view.lifecycle,
+        view.status,
+        view.outcome,
+        view.runtimePhase,
+        view.judgments,
+      ]);
+      const start = view.work?.turnStartedAt === undefined ? view.createdAt : view.work.turnStartedAt;
+      const activityAt =
+        previous?.work?.activitySignature === signature
+          ? (previous.work.activityAt ?? null)
+          : previous && previous.work?.turnStartedAt === view.work?.turnStartedAt && view.freshness.state === 'current'
+            ? (view.freshness.evidenceAt ?? start)
+            : start;
+      view = { ...view, work: { ...view.work!, activityAt, activitySignature: signature } };
+    }
     work.view = view;
     this.trimHelpers();
   }
-  private dispatchView(view: JobDisplay, s: DispatchStatus, continuation: boolean): JobDisplay {
+  private dispatchView(
+    view: JobDisplay,
+    s: DispatchStatus,
+    continuation: boolean,
+    continuationFloor: number | null = null
+  ): JobDisplay {
     const outcome = continuation
       ? null
       : s.state === 'failed'
@@ -834,6 +871,12 @@ export class JobObservationCollector {
         ...view.work!,
         settledAt: continuation ? null : time(s.settled_at),
         outputWritten: !continuation && s.output_written,
+        continuationUnconfirmed: continuation,
+        continuationFloor,
+        turnStartedAt:
+          !continuation && (continuationFloor === null || (time(s.started_at) ?? 0) > continuationFloor)
+            ? time(s.started_at)
+            : null,
       },
       lifecycle: view.lifecycle === 'closed' ? 'closed' : s.state,
       outcome,

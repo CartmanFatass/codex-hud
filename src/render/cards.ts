@@ -1,70 +1,35 @@
-/** Pure rich-card rendering: every listed L1 uses the same layout, at work or at rest.
- * Cards hold model-written summaries, never raw tasks, reports or history.
- */
-import type { SubagentTree, SubagentTreeNode } from '../types.js';
+import type { SubagentTreeNode } from '../types.js';
+import { buildWorkboard } from '../collectors/workboard.js';
+import { nativeWorker, projectWorkCard } from '../collectors/work-card.js';
+import { renderWorkCard, workCardName } from './work-card.js';
+import { boardCursor } from './workboard-rows.js';
 import { defaultCardVisibility, type CardVisibility } from '../card-visibility.js';
 import { summarySentence } from '../utils/summary-sentence.js';
 import type { Brief } from '../collectors/briefing.js';
-import { progressReason } from '../collectors/progress-summary.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
-import { isGuardian, type PanelRow } from './panel-state.js';
-import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
-import { fitModelEffortToken } from './model-glyphs.js';
-import { displayConfig, iconSet } from './hud-config.js';
-import { t, language } from './i18n.js';
-import { palette } from './palette.js';
-import { agentTitle, type AgentTitle } from './agent-title.js';
+import type { PanelRow } from './panel-state.js';
+import { theme, colors, visualLength, stripAnsi } from './colors.js';
+import { t } from './i18n.js';
+import type { AgentTitle } from './agent-title.js';
 import {
   type MonitorData,
   type MonitorState,
   type MonitorRow,
-  type RowControl,
   monitorText,
   plainText,
   flowLines,
-  pair,
-  age,
-  agoText,
-  nodeStatus,
   iconic,
   briefSaid,
   isLive,
-  isQuiet,
-  turnClock,
-  squeeze,
   finishedAt,
   summaryRow,
   emptyAgentsRows,
-  guardianChip,
-  meterRow,
   listedAgents,
   paneShown,
-  type EdgeMeter,
   MODEL_LOG_KINDS,
-  FRESH_FINISH_MS,
-  agentRate,
-  rateText,
 } from './monitor.js';
-import { helpLines } from './monitor-text.js';
-import { directions, subtasks, reviewsUnder, talk, isImportant, rolePrefix, TALK_MIN } from './directions.js';
-import {
-  effectiveStatus,
-  jobUncertain,
-  jobFlagged,
-  jobParts,
-  fitParts,
-  shownNode,
-  badgeOf,
-  needsInput,
-  waitingIds,
-  jobSeenAt,
-  facadeOnly,
-} from './job-details.js';
-
-/** The fewest columns a subtask's digest or cause starts with beside its name; less, it starts on the next line. */
-const KID_SAID_BESIDE = 8;
-/** Narrower than this, a card gives up its model badge; narrower still, its meter. */
-const BADGE_MIN = 24;
+import { facadeOnly, effectiveStatus, jobFlagged } from './job-details.js';
+import { subtasks, reviewsUnder, isImportant } from './directions.js';
 
 type Paint = (s: string) => string;
 const plain: Paint = (s) => s;
@@ -279,43 +244,6 @@ export function clockText(ms: number): string {
   return `${Math.floor(seconds / 3600)}h${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}m`;
 }
 
-/**
- * The time a card's bottom rule carries: while the turn runs, the tree's
- * clock face and the turn's length (in the warning colour when quiet); once
- * finished or failed, how long ago. Nothing when nothing says. A turn not
- * started yet is its clock glyph and the word.
- */
-function cardTime(node: SubagentTreeNode, now: number): string {
-  if (isLive(node)) {
-    const start = (node.turnStartedAt ?? node.startedAt)?.getTime();
-    if (start === undefined || !Number.isFinite(start))
-      // A job with no recorded start has no clock; "starting" would claim a launch the record does not show.
-      return node.job ? '' : `${iconic() ? theme.info('◌') + ' ' : ''}${colors.dim(t('starting'))}`;
-    const quiet = isQuiet(node, now);
-    // The clock face is the time's scale, in the tick colour; quiet, it is the warning.
-    const face = stripAnsi(turnClock(node, now));
-    return `${quiet ? theme.warning(face) : theme.tick(face)}${(quiet ? theme.warning : theme.info)(clockText(now - start))}`;
-  }
-  const at = settledAt(node);
-  return at ? colors.dim(agoText(at, now)) : '';
-}
-/**
- * When a card's agent last settled: finished, failed, or last heard from. A
- * job whose source is not corroborated was last heard from when it last
- * answered; one whose outcome is on record, when that evidence was written.
- */
-function settledAt(node: SubagentTreeNode): Date | undefined {
-  const unknown = effectiveStatus(node) === 'unknown';
-  const at = node.job
-    ? unknown && jobUncertain(node)
-      ? jobSeenAt(node)
-      : finishedAt(node)
-    : unknown
-      ? node.lastEventAt
-      : finishedAt(node);
-  return at && Number.isFinite(at.getTime()) ? at : undefined;
-}
-
 /** The model's notes about an agent (its notes, result digests and failure causes), newest first. */
 export function modelNotes(log: readonly AgentLogEntry[]): AgentLogEntry[] {
   return log.filter((entry) => MODEL_LOG_KINDS.has(entry.kind) && entry.text.trim()).reverse();
@@ -331,76 +259,9 @@ export function briefLine(log: readonly AgentLogEntry[]): string {
   return note ? monitorText(plainText(note.text).replace(/\s+/g, ' ').trim()) : '';
 }
 
-/**
- * The card's colour, by state alone: live info, quiet warning, failed
- * error, just finished success, old news (and an ancestor kept only for its
- * descendants) dim. The selection is the "›" and the name, not the colour.
- */
-function cardPaint(node: SubagentTreeNode, old: boolean, context: boolean, now: number): Paint {
-  const status = effectiveStatus(node);
-  return status === 'error'
-    ? theme.error
-    : isQuiet(node, now)
-      ? theme.warning
-      : isLive(node)
-        ? theme.info
-        : status === 'completed' && !old && !context
-          ? theme.success
-          : colors.dim;
-}
-
-/**
- * A finished agent recedes once the news of it finishing is a minute old, as
- * its tree row does; one with a subtask still at work is not news yet.
- */
-function isOld(node: SubagentTreeNode, now: number): boolean {
-  return (
-    effectiveStatus(node) === 'completed' &&
-    now - (finishedAt(node)?.getTime() ?? 0) > FRESH_FINISH_MS &&
-    !subtasks(node).some(isLive)
-  );
-}
-
-/**
- * The agent's context as a meter. It keeps its zone colour once the card is
- * old news: a grey meter on a grey row could not be told from its track,
- * and the name dimming says the news is old.
- */
-function contextMeter(node: SubagentTreeNode): EdgeMeter | undefined {
-  const ctx = node.contextUsage;
-  return ctx ? { percent: ctx.percent } : undefined;
-}
-
-/** The selected header's own surface. */
-function banded(text: string, width: number): string {
-  return theme.selectedBand(text + ' '.repeat(Math.max(0, width - visualLength(text))));
-}
-
 /** Defaults remain useful to callers constructing state without settings. */
 function visibility(state: MonitorState): CardVisibility {
   return { ...defaultCardVisibility(), ...state.cardVisibility };
-}
-
-/** Request state is collected elsewhere; keep the previous words visible while it changes. */
-function progressLines(node: SubagentTreeNode, input: MonitorData, width: number): string[] {
-  const request = input.progress?.get(node.id);
-  if (!request || (input.progressContext && progressReason(node, input.progressContext))) return [];
-  const text =
-    request.reason === 'hourly-cap'
-      ? t('Progress summary hourly cap')
-      : request.reason === 'concurrency-cap'
-        ? t('Progress summary concurrency cap')
-        : request.phase === 'queued'
-          ? t('Progress summary queued…')
-          : request.running
-            ? t('Writing progress summary…')
-            : request.error
-              ? t('Progress summary failed')
-              : '';
-  const warning = request.error || request.reason === 'hourly-cap' || request.reason === 'concurrency-cap';
-  return text
-    ? clipLines(flowLines(text, width), 2, width).lines.map((line) => (warning ? theme.warning : colors.dim)(line))
-    : [];
 }
 
 const flat = (text: string) => monitorText(plainText(text).replace(/\s+/g, ' ').trim());
@@ -414,63 +275,7 @@ export function newestIntent(node: SubagentTreeNode): string | undefined {
   return intent ? flat(intent) : undefined;
 }
 
-/**
- * Who an L1 works with, by the messages they exchanged, three or more: a
- * helper, the leads it worked for, the most messages first ("→ a · b"), each
- * in its direction's colour; a lead, the helpers that worked for it
- * ("⇄ x · y"). Two named, the rest counted.
- */
-function relationLine(node: SubagentTreeNode, input: MonitorData, state: MonitorState, width: number): string {
-  const dirs = directions(input.tree);
-  const name = (other: SubagentTreeNode) =>
-    agentTitle(shownNode(other), visibility(state).cardLabel && state.labelAsName).name;
-  const leads = (other: SubagentTreeNode) => subtasks(other).length > 0;
-  const ranked = (pick: (other: SubagentTreeNode) => boolean) =>
-    input.tree.nodes
-      .filter((other) => other.id !== node.id && !isGuardian(other) && pick(other))
-      .map((other) => [other, talk(node, other)] as const)
-      .filter(([, count]) => count >= TALK_MIN)
-      .sort((a, b) => b[1] - a[1])
-      .map(([other]) => other);
-  const list = (items: SubagentTreeNode[], lead: string, paint: (other: SubagentTreeNode) => string) => {
-    for (let shown = Math.min(2, items.length); shown >= 1; shown--) {
-      const more = items.length - shown;
-      const text =
-        colors.dim(lead) +
-        items.slice(0, shown).map(paint).join(colors.dim(' · ')) +
-        (more ? colors.dim(` +${more}`) : '');
-      if (visualLength(text) <= width || shown === 1) return truncateAnsi(text, width);
-    }
-    return '';
-  };
-  return leads(node)
-    ? list(
-        ranked((other) => !leads(other)),
-        '⇄ ',
-        (other) => colors.dim(name(other))
-      )
-    : list(ranked(leads), '→ ', (other) => dirs.name(other.id)(name(other)));
-}
-
-/** What a running agent is doing this moment, its open tool call, labelled as the brief labels "now". */
-function actionLine(node: SubagentTreeNode, width: number): string {
-  if (!isLive(node) || !node.action?.text.trim()) return '';
-  const column = labelColumn(['now']);
-  return `${fieldLabel('now', column)} ${truncateAnsi(monitorText(node.action.text.replace(/\s+/g, ' ').trim()), Math.max(1, width - column - 1))}`;
-}
-
-/**
- * A job waiting on the person, in the brief's own "needs" vocabulary: the
- * warning-coloured label, then the ids of the requests it waits on. Only a
- * request marked current counts; a historical pointer is the Inspector's.
- */
-function needsLine(node: SubagentTreeNode, width: number): string {
-  if (!needsInput(node)) return '';
-  const column = labelColumn(['needs']);
-  return `${fieldLabel('needs', column)} ${theme.warning(truncateAnsi(t('answer {ids}', { ids: waitingIds(node) }), Math.max(1, width - column - 1)))}`;
-}
-
-/** The same descendant selection drives both rendering and progress requests. */
+/** Native summary eligibility only: persisted privacy/target gates survive removal of child rendering. */
 function shownKids(
   node: SubagentTreeNode,
   input: Pick<MonitorData, 'agentLog'>,
@@ -485,7 +290,6 @@ function shownKids(
       (kid) =>
         v.cardSubagentScope === 'all' ||
         isLive(kid) ||
-        // A helper waiting on the person, or not known to have settled, matters as much as a failed one.
         (v.cardSubagentScope === 'important' &&
           (jobFlagged(kid) || isImportant(kid, input.agentLog?.get(kid.id), roles)))
     )
@@ -537,103 +341,6 @@ export function cardSentence(text: string): string {
   );
 }
 
-/** Child identity/status always stay; its one model sentence wraps beside/under the name. */
-function kidLines(
-  kid: SubagentTreeNode,
-  input: MonitorData,
-  state: MonitorState,
-  width: number,
-  now: number
-): string[] {
-  const v = visibility(state);
-  const st = nodeStatus(kid, now);
-  const live = isLive(kid);
-  const start = (kid.turnStartedAt ?? kid.startedAt)?.getTime();
-  const at = settledAt(kid);
-  const clock = live
-    ? start !== undefined && Number.isFinite(start)
-      ? `${stripAnsi(turnClock(kid, now))}${clockText(now - start)}`
-      : ''
-    : at
-      ? age(at, now)
-      : '';
-  const when = v.cardClock ? clock : '';
-  const right = when ? (live ? theme.info(when) : colors.dim(when)) : '';
-  const head = `${kid.id === state.tree.selectedId ? theme.accent('›') : ''}${st.paint(st.icon)} `;
-  const log = input.agentLog?.get(kid.id) ?? [];
-  const newest = (kind: AgentLogEntry['kind']) =>
-    [...log].reverse().find((entry) => entry.kind === kind && entry.text.trim())?.text;
-  // Active work must never fall back to a stale digest or failure cause.
-  const raw = live
-    ? newest('note')
-    : effectiveStatus(kid) === 'error'
-      ? (newest('cause') ?? newest('note'))
-      : (kid.digest ?? newest('digest') ?? newest('note'));
-  const said = v.cardSubagentSummary && raw ? cardSentence(raw) : '';
-  const room = Math.max(1, width - visualLength(head) - (when ? visualLength(when) + 1 : 0));
-  const kidName = agentTitle(shownNode(kid), v.cardLabel && state.labelAsName).name;
-  // A job's role, a source that is not corroborated and a request it waits on follow its name; the name keeps eight columns first.
-  const words = fitParts(jobParts(kid), room - 1 - Math.min(8, visualLength(kidName)));
-  const aside = words.length ? ` ${words.join(' ')}` : '';
-  const name = squeeze(kidName, Math.max(1, room - visualLength(aside)));
-  const named = directions(input.tree).name(kid.id)(name);
-  const indent = visualLength(head);
-  const beside = room - visualLength(name) - visualLength(aside) - 1;
-  const rest = Math.max(1, width - indent);
-  const wrapped = !said
-    ? []
-    : beside >= KID_SAID_BESIDE
-      ? hangLines(said, beside, rest)
-      : ['', ...flowLines(said, rest)];
-  const one = wrapped[0] ? ` ${colors.dim(wrapped[0])}` : '';
-  return [
-    pair(`${head}${named}${aside}${one}`, right, width),
-    ...wrapped.slice(1).map((line) => ' '.repeat(indent) + colors.dim(line)),
-    ...(v.cardSubagentSummary ? progressLines(kid, input, rest).map((line) => ' '.repeat(indent) + line) : []),
-  ];
-}
-
-/**
- * An L1's subtasks, at any depth, counted by role, the most first: "5
- * implementer · 3 reviewer · 1 general" (Codex's default agent is
- * "general"). A count is in the running colour while one of its subtasks
- * runs. As many roles as fit, then "+N" for the subtasks of the rest.
- */
-function roleLine(node: SubagentTreeNode, tree: SubagentTree, width: number): string {
-  const kids = subtasks(node);
-  if (!kids.length) return '';
-  const prefix = rolePrefix(tree);
-  const roles = new Map<string, { count: number; live: boolean }>();
-  for (const kid of kids) {
-    const role =
-      !kid.role || kid.role === 'default'
-        ? t('general')
-        : monitorText(
-            prefix && kid.role.startsWith(prefix) && kid.role.length > prefix.length
-              ? kid.role.slice(prefix.length)
-              : kid.role
-          );
-    const known = roles.get(role) ?? { count: 0, live: false };
-    roles.set(role, { count: known.count + 1, live: known.live || isLive(kid) });
-  }
-  const ranked = [...roles].sort((a, b) => b[1].count - a[1].count || a[0].localeCompare(b[0]));
-  const parts = ranked.map(
-    ([role, { count, live }]) => `${(live ? theme.info : colors.dim)(String(count))} ${colors.dim(role)}`
-  );
-  for (let shown = parts.length; shown >= 1; shown--) {
-    const left = ranked.slice(shown).reduce((sum, [, role]) => sum + role.count, 0);
-    const text = parts.slice(0, shown).join(colors.dim(' · ')) + (left ? colors.dim(` +${left}`) : '');
-    if (visualLength(text) <= width || shown === 1) return truncateAnsi(text, width);
-  }
-  return '';
-}
-
-/** A line inside a card, and the agent a click on it selects, where that is not the card's. */
-interface BodyLine {
-  text: string;
-  pick?: string;
-}
-
 /** Every L1 uses this layout, with independently composable contents. */
 export function agentCard(
   row: PanelRow,
@@ -642,254 +349,54 @@ export function agentCard(
   width: number,
   now: number
 ): MonitorRow[] {
-  const node = row.node;
-  const v = visibility(state);
-  const w = width;
-  const selected = node.id === state.tree.selectedId;
-  const old = isOld(node, now);
-  const paint = cardPaint(node, old, Boolean(row.context), now);
-  const st = nodeStatus(node, now);
-  const title = agentTitle(shownNode(node), v.cardLabel && state.labelAsName);
-  const key = `card:${node.id}`;
-  const rows: MonitorRow[] = [];
-  const control: RowControl = { kind: 'log', item: node.id, x: 0, width: w };
-  const [topCorner, bottomCorner] = state.cardCorners === 'round' ? ['╭', '╰'] : ['┌', '└'];
-
-  const corner = selected ? theme.accent('›') : paint(topCorner);
-  // The widest whole form that fits a quarter of the card; never a cut one.
-  const bound = badgeOf(node);
-  const badge =
-    !v.cardModel || w < BADGE_MIN
-      ? ''
-      : fitModelEffortToken(
-          bound.model ? monitorText(bound.model) : undefined,
-          bound.effort ? monitorText(bound.effort) : undefined,
-          Math.max(2, Math.floor(w / 4)),
-          w < 40 && displayConfig().glyphs === 'both' ? 'glyph' : displayConfig().glyphs
-        );
-  // With agent colours on the marks alone, the work kind's glyph carries the direction's colour the name gave up.
-  const kindPaint = displayConfig().agentColors === 'mark' ? directions(input.tree).paint(node.id) : colors.dim;
-  const head = `${corner} ${st.paint(st.icon)} ${v.cardLabel && title.icon ? kindPaint(title.icon) + ' ' : ''}`;
-  const chip = v.cardReviews ? guardianChip(reviewsUnder(node)) : '';
-  // Identity survives: optional fields give way before squeezing the name.
-  let tails = [chip, badge].filter(Boolean);
-  while (
-    tails.length &&
-    w - visualLength(head) - visualLength(tails.join(' ')) - 3 < Math.min(8, visualLength(title.name))
-  )
-    tails.pop();
-  if (node.job) {
-    // A job's words by priority: role and phase, a source that is not corroborated, model and effort, then the attention mark.
-    const room =
-      w - visualLength(head) - 3 - Math.min(8, visualLength(title.name)) - (chip ? visualLength(chip) + 1 : 0);
-    tails = [chip, ...fitParts(jobParts(node, badge), room)].filter(Boolean);
-  }
-  const tail = tails.map((part) => ' ' + part).join('');
-  const room = Math.max(1, w - visualLength(head) - visualLength(tail) - 2);
-  const name = squeeze(title.name, room);
-  const dashes = Math.max(0, w - visualLength(head) - visualLength(name) - 1 - visualLength(tail));
-  // The name is a link to its Codex session; a job only the facade knows has none to switch to.
-  const link = input.linkNames !== false && !facadeOnly(node);
-  const shownName = link ? colors.underline(name) : name;
-  const named =
-    (old || row.context) && !selected
-      ? colors.dim(shownName)
-      : theme.bold(directions(input.tree).name(node.id)(shownName));
-  const top = truncateAnsi(`${head}${named} ${paint('─'.repeat(dashes))}${tail}`, w);
-  const nameAt = Math.min(w, visualLength(head));
-  const nameControl: RowControl[] = link
-    ? [{ kind: 'switch', item: node.id, x: nameAt, width: Math.max(0, Math.min(visualLength(name), w - nameAt)) }]
-    : [];
-  rows.push({ text: selected ? banded(top, w) : top, item: node.id, key, controls: [...nameControl, control] });
-
-  const inner = Math.max(1, w - 2);
-  const body: BodyLine[] = [];
-  const push = (text: string, pick?: string) => {
-    body.push(pick ? { text, pick } : { text });
-  };
-  if (v.cardLabel && title.renamed && title.task)
-    for (const line of flowLines(title.task, inner)) push(theme.strong(line));
-  if (v.cardOriginalName && title.original)
-    for (const line of flowLines(t('name {name}', { name: title.original }), inner)) push(colors.dim(line));
-  if (v.cardRelations) {
-    const relation = relationLine(node, input, state, inner);
-    if (relation) push(relation);
-  }
-  if (v.cardSummary) {
-    const line = briefLine(input.agentLog?.get(node.id) ?? []);
-    if (line) for (const text of flowLines(line, inner)) push(colors.dim(text));
-    for (const text of progressLines(node, input, inner)) push(text);
-  }
-  if (v.cardAction) {
-    const action = actionLine(node, inner);
-    if (action) push(action);
-    const needs = needsLine(node, inner);
-    if (needs) push(needs);
-  }
-  for (const kid of shownKids(node, input, state))
-    for (const line of kidLines(kid, input, state, inner, now)) push(line, kid.id);
-  if (v.cardRoleCounts) {
-    const roles = roleLine(node, input.tree, inner);
-    if (roles) push(roles);
-  }
-  for (const line of body) {
-    const text = old ? colors.dim(stripAnsi(line.text)) : line.text;
-    const controls: RowControl[] = [{ kind: 'log', item: line.pick ?? node.id, x: 0, width: w }];
-    rows.push({ text: text ? `${paint('│')} ${truncateAnsi(text, inner)}` : paint('│'), item: node.id, key, controls });
-  }
-
-  const left = v.cardClock ? cardTime(node, now) : '';
-  const meter = v.cardContext ? contextMeter(node) : undefined;
-  const rate = v.cardRate ? agentRate(node, now) : undefined;
-  const speed = rate === undefined ? '' : colors.dim(`${left ? '· ' : ''}${rateText(rate)}`);
-  const footerPaint = !v.cardClock && !v.cardRate && !v.cardContext ? colors.dim : paint;
-  const footOf = (extra: string) => `${footerPaint(bottomCorner)} ${left ? left + ' ' : ''}${extra ? extra + ' ' : ''}`;
-  const foot = speed && visualLength(footOf(speed)) + (meter ? RATE_BAR : 0) <= w ? footOf(speed) : footOf('');
-  const rule = truncateAnsi(foot, w) + footerPaint('─'.repeat(Math.max(0, w - visualLength(foot))));
-  const bottom = meter ? (meterRow(w, foot, '', meter) ?? rule) : rule;
-  rows.push({ text: truncateAnsi(bottom, w), item: node.id, key, controls: [control] });
-  return rows;
+  const worker = row.node.job
+    ? buildWorkboard(
+        '',
+        {
+          revision: 0,
+          lanes: [],
+          coverage: { incomplete: false, diagnostics: [], workspace: null },
+          cost: { entries: 0, files: 0, bytes: 0, probes: 0, enumerations: 0, parses: 0, elapsedMs: 0 },
+        },
+        {
+          generation: 0,
+          root: null,
+          jobs: [row.node.job],
+          coverage: { entries: 0, files: 0, bytes: 0, incomplete: false, omitted: 0, diagnostics: [] },
+        },
+        { ...input.tree, nodes: [row.node] }
+      ).workers[0]
+    : nativeWorker(row.node);
+  const card = projectWorkCard(
+    (state.cardVisibility?.cardLabel === false || state.labelAsName === false) && !row.node.job
+      ? { ...worker, task: row.node.name }
+      : worker,
+    now,
+    state.cardStallMinutes
+  );
+  const sentence =
+    !facadeOnly(row.node) && visibility(state).cardSummary ? briefLine(input.agentLog?.get(row.node.id) ?? []) : '';
+  const link = input.linkNames !== false && !facadeOnly(row.node);
+  const rows = renderWorkCard(card, state, width, sentence, false, link);
+  const name = workCardName(card, state, width);
+  return rows.map((text, i) => ({
+    text: i === 0 && state.tree.selectedId === row.node.id ? boardCursor(text) : text,
+    item: row.node.id,
+    key: `card:${row.node.id}`,
+    controls:
+      i === 0 && link && name.text
+        ? [{ kind: 'switch', item: row.node.id, x: name.x, width: visualLength(name.text) }]
+        : [],
+  }));
 }
 
-/** Columns of meter the bottom rule keeps before the rate beside the clock gives way. */
-const RATE_BAR = 12;
-
 /**
- * Rich: the agents view, a list of cards and nothing else, one for each L1
- * agent: an L1's subtasks, at any depth, are its card's to count and, the
- * ones that matter, to name. The summary line heads it and stays put; under it
+ * Fixture-only stacked control layout: one shared compact card per L1.
+ * Descendant totals remain in the aggregate heading, not a second rich body. The summary line heads it and stays put; under it
  * scroll the cards, in the tree's order, under its filter and linger window.
  * The main session's brief is the status card's, at the foot. `spaced` puts
  * a blank line between cards.
  */
-/** A second under a minute, else the coarser bucket `age()` prints. Live text includes the wall second. */
-function textBucket(at: number | undefined, now: number): string | null {
-  if (at === undefined || !Number.isFinite(at)) return null;
-  const seconds = Math.max(0, Math.floor((now - at) / 1000));
-  if (seconds < 60) return `s${Math.floor(now / 1000)}`;
-  if (seconds < 3600) return `m${Math.floor(seconds / 60)}`;
-  if (seconds < 2 * 86_400) return `h${Math.floor(seconds / 3600)}`;
-  return `d${Math.floor(seconds / 86_400)}`;
-}
-
-/**
- * The card's own share of `now`: the whole second while its clock counts
- * seconds (the running clock's digits, a rate crossing its freshness window,
- * quiet turning yellow), else nothing — a resting card's ages step at the
- * buckets `textBucket` already keeps, so its cache entry survives the second.
- */
-function cardNow(node: SubagentTreeNode, state: MonitorState, now: number): number | null {
-  if (!visibility(state).cardClock) return null;
-  // Any live thread under the card, itself or a child, keeps a clock counting.
-  const live = (current: SubagentTreeNode): boolean => isLive(current) || current.children.some(live);
-  return live(node) ? Math.floor(now / 1000) : null;
-}
-
-/** What a card says of a job: its status, source freshness, role, waiting requests and the times it prints. */
-function jobStamp(node: SubagentTreeNode, now: number): unknown {
-  const job = node.job;
-  if (!job) return null;
-  return [
-    job.name,
-    job.kind,
-    job.role,
-    job.phase,
-    job.status,
-    job.freshness.state,
-    job.requests?.filter((request) => request.current).map((request) => request.id) ?? null,
-    job.backend?.model ?? null,
-    job.backend?.effort ?? null,
-    textBucket(job.freshness.lastSuccessfulReadAt ?? undefined, now),
-    textBucket(job.freshness.evidenceAt ?? undefined, now),
-    textBucket(job.closedAt ?? undefined, now),
-  ];
-}
-
-/** What a card says, without the wall second of a clock that is not on it. */
-function nodeStamp(node: SubagentTreeNode, now: number): unknown {
-  return [
-    node.id,
-    node.status,
-    node.name,
-    node.nickname,
-    node.agentPath,
-    node.role,
-    node.kind,
-    node.model,
-    node.effort,
-    node.label,
-    node.taskKind,
-    node.digest,
-    node.task,
-    node.charge ?? null,
-    node.action?.text ?? null,
-    node.contextUsage ?? null,
-    node.outputRate ?? null,
-    agentRate(node, now) ?? null,
-    node.peers ?? null,
-    node.stageCount ?? null,
-    node.lastReport ?? null,
-    textBucket(node.startedAt?.getTime(), now),
-    textBucket(node.turnStartedAt?.getTime(), now),
-    textBucket(node.statusAt?.getTime(), now),
-    textBucket(node.lastEventAt?.getTime(), now),
-    jobStamp(node, now),
-    node.children.map((child) => nodeStamp(child, now)),
-  ];
-}
-
-/** Names, colours and who talks to whom. Absolute times: a ticking clock does not change them. */
-function treeIdentity(nodes: readonly SubagentTreeNode[]): unknown {
-  const walk = (node: SubagentTreeNode): unknown => [
-    node.id,
-    effectiveStatus(node),
-    node.job?.name ?? null,
-    node.name,
-    node.label,
-    node.nickname,
-    node.agentPath,
-    node.role,
-    node.kind,
-    node.startedAt?.getTime() ?? null,
-    finishedAt(node)?.getTime() ?? null,
-    node.peers ?? null,
-    node.children.map(walk),
-  ];
-  return nodes.map(walk);
-}
-
-/** A log as the card reads it: the lead's own, and each subtask's flag and cause. */
-function logStamp(id: string, input: MonitorData, now: number): unknown {
-  return (input.agentLog?.get(id) ?? []).map((entry) => [
-    entry.kind,
-    entry.text,
-    entry.attention ?? false,
-    entry.lang ?? '',
-    entry.label ?? '',
-    entry.taskKind ?? '',
-    textBucket(entry.at, now),
-  ]);
-}
-
-function subtreeLogs(node: SubagentTreeNode, input: MonitorData, now: number): unknown {
-  return [
-    logStamp(node.id, input, now),
-    input.progress?.get(node.id) ?? null,
-    node.children.map((child) => subtreeLogs(child, input, now)),
-  ];
-}
-
-/** This card, or a subtask named on it. Another card's selection leaves the key alone. */
-function selectedHere(node: SubagentTreeNode, selectedId: string | null | undefined): string | null {
-  if (!selectedId) return null;
-  const holds = (current: SubagentTreeNode): boolean => current.id === selectedId || current.children.some(holds);
-  return holds(node) ? selectedId : null;
-}
-
-const CARD_CACHE_LIMIT = 500;
-const cardCache = new Map<string, { rows: MonitorRow[] }>();
-let cardCacheContext: string | undefined;
-
 export function richRows(
   input: MonitorData,
   state: MonitorState,
@@ -897,70 +404,11 @@ export function richRows(
   now: number,
   spaced: boolean
 ): MonitorRow[] {
-  const { row: head } = summaryRow(input, now);
-  const rows: MonitorRow[] = [head];
-  const shown = listedAgents(input.tree.nodes, state, now);
-  const shared = JSON.stringify([
-    language(),
-    palette().name,
-    iconSet(),
-    displayConfig(),
-    input.linkNames !== false,
-    treeIdentity(input.tree.nodes),
-    width,
-    spaced,
-    input.progressContext
-      ? [
-          input.progressContext.backendOn,
-          input.progressContext.paused,
-          input.progressContext.enabled,
-          [...input.progressContext.targets].sort(),
-        ]
-      : null,
-    visibility(state),
-    state.cardCorners ?? null,
-    state.labelAsName ?? null,
-    state.importantRoles ? [...state.importantRoles].sort() : [],
-  ]);
-  // Keep session-wide identity outside every per-card map key. Prefixing
-  // hundreds of keys with the same large tree description makes V8's string
-  // map operations dominate rendering (and duplicates that text in memory).
-  // All previous shared inputs still invalidate the cache as one context.
-  if (shared !== cardCacheContext) {
-    cardCache.clear();
-    cardCacheContext = shared;
+  const rows: MonitorRow[] = [summaryRow(input, now).row];
+  for (const row of listedAgents(input.tree.nodes, state, now)) {
+    if (spaced && input.height >= 20 && rows.length > 1) rows.push({ text: '' });
+    rows.push(...agentCard(row, input, state, width, now));
   }
-  for (const row of shown) {
-    if (spaced && rows.at(-1)?.text !== '') rows.push({ text: '' });
-    const node = row.node;
-    const key = JSON.stringify([
-      nodeStamp(node, now),
-      cardNow(node, state, now),
-      Boolean(row.context),
-      selectedHere(node, state.tree.selectedId),
-      subtreeLogs(node, input, now),
-    ]);
-    let drawn = cardCache.get(key);
-    if (!drawn) {
-      drawn = { rows: agentCard(row, input, state, width, now) };
-      if (cardCache.size >= CARD_CACHE_LIMIT) cardCache.delete(cardCache.keys().next().value!);
-      cardCache.set(key, drawn);
-    }
-    rows.push(...drawn.rows);
-  }
-  // Agents put away or filtered out: no line saying so. The counts above,
-  // the bar's +N and the status card already do. None at all: one line.
   rows.push(...emptyAgentsRows(input, width));
-  // Summaries on the cards need a backend. With none, no summary is written
-  // (stored ones stay), so a closing line says why, once, after the last
-  // card: it takes no row a card could use.
-  if (shown.length && visibility(state).cardSummary && input.progressContext?.backendOn === false) {
-    if (spaced) rows.push({ text: '' });
-    rows.push(
-      ...helpLines(t('~ No model backend, so no new summaries: Settings → LLM'), Math.max(1, width - 1)).map(
-        (line) => ({ text: ` ${colors.dim(line)}` })
-      )
-    );
-  }
   return rows;
 }

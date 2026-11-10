@@ -10,6 +10,10 @@ import { t } from './i18n.js';
 import type { WorkRole } from './palette.js';
 export const asciiBoard = () => displayConfig().icons === 'text';
 export const mark = (unicode: string, ascii: string) => (asciiBoard() ? ascii : unicode);
+/** Replace the leading one-cell lane/card/call mark without moving its painted hitbox. */
+export function boardCursor(text: string): string {
+  return theme.board.selected(text.replace(/^((?:\x1b\[[0-9;]*m)*)./u, `$1${mark('›', '>')}`));
+}
 export function minuteAge(at: number | null, now: number): string {
   if (at === null || !Number.isFinite(at)) return '';
   const minutes = Math.max(0, Math.floor((now - at) / 60000));
@@ -51,14 +55,52 @@ export function phaseBar(phase: string | null): string {
     theme.board.frame(mark('─', '-').repeat(9 - index))
   );
 }
-export function laneRow(lane: WorkLane, width: number, now: number, withBar = false): MonitorRow {
+const wideIdentityWidth = (width: number) => Math.max(0, width - 43);
+/** Shared ordinal axis for wide Work lanes; not a percentage or a workflow inference. */
+export function workAxisRow(width: number): MonitorRow {
+  return boardRow(
+    fit(
+      ' '.repeat(3 + wideIdentityWidth(width)) +
+        ['design', 'build', 'review', 'accept'].map((word) => fit(theme.board.muted(t(word)), 6)).join(' '),
+      width
+    )
+  );
+}
+export function laneRow(lane: WorkLane, width: number, now: number, withBar = false, phaseText?: string): MonitorRow {
   const calls = lane.decisions.filter((d) => isLocalDay(callTime(d), now));
   const count = calls.length ? callCount(calls.length) : '';
   const ink = calls.some((d) => d.oneWay) ? theme.board.danger : theme.board.muted;
-  const phase = lane.phase
-    ? t(withBar && lane.phase === 'awaiting-acceptance' ? 'await accept' : lane.phase)
-    : t('phase unknown');
-  const label = width >= 100 ? `${monitorText(lane.label)}  ${monitorText(lane.title)}` : monitorText(lane.label);
+  const phase =
+    phaseText ??
+    (lane.phase
+      ? t(withBar && lane.phase === 'awaiting-acceptance' ? 'await accept' : lane.phase)
+      : t('phase unknown'));
+  const label =
+    width >= 100 && lane.title ? `${monitorText(lane.label)}  ${monitorText(lane.title)}` : monitorText(lane.label);
+  if (withBar && width >= 100) {
+    const stage =
+      lane.phase === 'design'
+        ? 0
+        : ['build', 'fixing'].includes(lane.phase ?? '')
+          ? 7
+          : /^review(?: r[1-9][0-9]*(?: accept| changes-required)?)?$/.test(lane.phase ?? '')
+            ? 14
+            : ['awaiting-acceptance', 'accept', 'done'].includes(lane.phase ?? '')
+              ? 21
+              : null;
+    const token = stage === 21 ? '' : stage === 14 ? phase.replace(new RegExp('^' + t('review') + ' '), '') : phase;
+    const axis =
+      stage === null
+        ? theme.board.muted(phase)
+        : ' '.repeat(stage) +
+          theme.board.active(
+            mark(lane.phase === 'done' ? '✓' : '▸', lane.phase === 'done' ? '+' : '>') + (token ? ' ' + token : '')
+          );
+    return boardRow(
+      `${mark('│', '|')} ${fit(theme.bold(label), wideIdentityWidth(width))} ${fit(axis, 27)} ${pair('', ink(count), 12)}`,
+      { kind: 'lane', laneId: lane.id }
+    );
+  }
   const bar = withBar ? phaseBar(lane.phase) : '';
   const identity = withBar && bar ? fit(theme.bold(label), 8) : theme.bold(label);
   return boardRow(

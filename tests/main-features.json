@@ -218,7 +218,9 @@
         "ccf35e9d736c7b68e652f42a1732d560890c68de6ddac8a9f59fae13bf0280fd",
         "6167c99021c98c0a14dde63707d8e807d44482a249f0e7f254c6adc2f2bf27a5"
       ],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-card-controls-real-tmux.sh": {
       "branch": ["tests/integration/test-card-controls-real-tmux.sh"],
@@ -230,7 +232,9 @@
         "Card controls refresh: PASS (no expand, Space inspects, root keys preserved)"
       ],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-diagnostics-probe-real-tmux.py": {
       "branch": ["tests/integration/test-diagnostics-probe-real-tmux.py"],
@@ -263,7 +267,9 @@
       "branch": ["tests/integration/test-diagnostics-probe-real-tmux.sh"],
       "assertions": ["runs tests/integration/test-diagnostics-probe-real-tmux.py"],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-herdr-completion-notification.py": {
       "branch": ["tests/integration/test-herdr-completion-notification.py"],
@@ -296,7 +302,9 @@
       "branch": ["tests/integration/test-herdr-completion-notification.sh"],
       "assertions": ["runs tests/integration/test-herdr-completion-notification.py"],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server and a PTY for the Herdr notification flow" }
+      "integration": {
+        "manual": "needs a real tmux server and a PTY for the Herdr notification flow"
+      }
     },
     "tests/integration/test-herdr-health-toggle.py": {
       "branch": ["tests/integration/test-herdr-health-toggle.py"],
@@ -311,7 +319,9 @@
       "branch": ["tests/integration/test-herdr-health-toggle.sh"],
       "assertions": ["runs tests/integration/test-herdr-health-toggle.py"],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-hud-resize.sh": {
       "branch": ["tests/integration/test-hud-resize.sh"],
@@ -366,7 +376,9 @@
       "branch": ["tests/integration/test-input-events-real-tmux.sh"],
       "assertions": ["runs tests/integration/test-input-events-real-tmux.py"],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-input-passthrough-real-tmux.sh": {
       "branch": ["tests/integration/test-input-passthrough-real-tmux.sh"],
@@ -382,7 +394,9 @@
         "compact HUD returns focus to Codex after a keypress"
       ],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-install-dependency-guidance.sh": {
       "branch": ["tests/integration/test-install-dependency-guidance.sh"],
@@ -499,7 +513,9 @@
       "branch": ["tests/integration/test-narrow-panel-real-tmux.sh"],
       "assertions": ["runs tests/integration/test-narrow-panel-real-tmux.py"],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-native-windows-no-pipe-pane.sh": {
       "branch": ["tests/integration/test-native-windows-no-pipe-pane.sh"],
@@ -556,7 +572,9 @@
       "branch": ["tests/integration/test-observability-real-tmux.sh"],
       "assertions": ["runs tests/integration/test-observability-real-tmux.py"],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-observability-viewport.py": {
       "branch": ["tests/integration/test-observability-viewport.py"],
@@ -588,7 +606,9 @@
       "branch": ["tests/integration/test-observability-viewport.sh"],
       "assertions": ["runs tests/integration/test-observability-viewport.py"],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-self-check-no-tmux-server.sh": {
       "branch": ["tests/integration/test-self-check-no-tmux-server.sh"],
@@ -634,7 +654,9 @@
         "5ba8f69c26d0958074865cd4c2f68d2b95d6b793ee8766a364ac83c3420e9d4a",
         "f8cb0973b51274ee2c1b25d11a5afa96ca633a194fc180804631d49b896f7bc6"
       ],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-settings-safety-real-tmux.sh": {
       "branch": ["tests/integration/test-settings-safety-real-tmux.sh"],
@@ -655,7 +677,9 @@
         "74219c3676c75fb1f2c2dd1a0cea8de5a37b482d2637b86560ddb0fd5a1da521",
         "017df00c5fec16ffeac4fcd3a1630381f46b64c3d10b86c6348859596c39af0a"
       ],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-settings-width-real-tmux.sh": {
       "branch": ["tests/integration/test-settings-width-real-tmux.sh"],
@@ -668,7 +692,9 @@
         "Settings save and reopen width: PASS"
       ],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-toggle-real-tmux.sh": {
       "branch": ["tests/integration/test-toggle-real-tmux.sh"],
@@ -756,7 +782,9 @@
         "1c433975c6217924518c672704043ccda1ef90925bafd922ba4994c0ee133717",
         "61d80f48ee633c86724ddb2c40400817ac22eb171826b0ea1f31779ee486187c"
       ],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-wrapper-base-index-smoke.sh": {
       "branch": ["tests/integration/test-wrapper-base-index-smoke.sh"],
@@ -766,7 +794,9 @@
         "Expected non-zero exit in non-interactive shell"
       ],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-wrapper-codex-home.sh": {
       "branch": ["tests/integration/test-wrapper-codex-home.sh"],
@@ -815,7 +845,9 @@
       "branch": ["tests/integration/test-wrapper-herdr-bridge.sh"],
       "assertions": ["runs tests/integration/test-wrapper-herdr-bridge.py"],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server and a PTY" }
+      "integration": {
+        "manual": "needs a real tmux server and a PTY"
+      }
     },
     "tests/integration/test-wrapper-herdr-context.py": {
       "branch": ["tests/integration/test-wrapper-herdr-context.py"],
@@ -845,7 +877,9 @@
       "branch": ["tests/integration/test-wrapper-herdr-context.sh"],
       "assertions": ["runs tests/integration/test-wrapper-herdr-context.py"],
       "assertStatements": [],
-      "integration": { "manual": "needs a real tmux server" }
+      "integration": {
+        "manual": "needs a real tmux server"
+      }
     },
     "tests/integration/test-wrapper-main-pane-env.sh": {
       "branch": ["tests/integration/test-wrapper-main-pane-env.sh"],
@@ -1319,6 +1353,26 @@
       ]
     },
     "tests/unit/agent-rate.test.ts": {
+      "divergence": {
+        "a card at work: a live subtask on one line, its rate beside the clock; the summary adds every running agent's": "§15 2026-11-09 work-progress cards; P2 q9: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "a working card keeps only its newest model note; the tool line stays": "§15 2026-11-09 work-progress cards; P2 q9: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained."
+      },
+      "assertExceptions": {
+        "a card at work: a live subtask on one line, its rate beside the clock; the summary adds every running agent's": [
+          {
+            "main": "561769953968e62ab82d2da9fe0e48c622a0f397e29c13a347414c430e62700a",
+            "branch": "6b7bb83589ca8924881f3d2eef39c0b029ce0bf2c7767a0ed8362524011cb894"
+          },
+          "27bb23e5d0c278a066a20966646b288a53ee73e6b408babe2e22f7032645857f",
+          "75d174132b4010925e695eeec344894dade4ee92ddb94b825f4857c8105aaaa6"
+        ],
+        "a working card keeps only its newest model note; the tool line stays": [
+          {
+            "main": "235ee780833ffa754c8f2282333b240466b3e4ddff791e38df59b63b709d4545",
+            "branch": "4494b0366de320c6595e5da17a9b249099a82e9868e731bcf71088721454749a"
+          }
+        ]
+      },
       "branch": ["tests/unit/agent-rate.test.ts"],
       "assertions": [
         "an agent's rollout gives its rate as the main session's is taken, reading only what was appended",
@@ -1945,6 +1999,149 @@
       ]
     },
     "tests/unit/cards-l1.test.ts": {
+      "divergence": {
+        "only the L1 agents have cards; the summary counts them, at work while a subtask is, and their subtasks as one figure": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "a card: its name in its direction's colour, whom it works with, what it is doing, the subtasks that matter, the rest by role; not its own words cut to a line": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "the subtasks that matter: failed, a named role (or its end), or flagged; three closed, all opened; a click selects one": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "a subtask's digest or cause wraps under its name, whole; with too little room beside the name it starts on the next line": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "the role counts can be left out, and the corners can be round": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "a card counts as every view does: its subtasks at any depth, and its reviews apart, on its ◈, red when one failed": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "a finished L1's row counts its subtasks by state, and cards keep to the width in both languages": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "newest model note stays whole opened; live kid progress beats stale digest, request state preserves both notes": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "every card flag composes independently, with identity/status retained even when all optional fields are off": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "clock, rate and context are separate footer fields in all eight combinations, and child clocks follow clock": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "child scope and summary toggles use identical subjects for rendering and progress eligibility, including reviews": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "hidden summaries have no pending/error rows or targets; linger/filter, tabs, zoom and help gate UI eligibility": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "child sentences wrap whole at every panel width, sanitize once, and never use active stale digests": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained."
+      },
+      "assertExceptions": {
+        "only the L1 agents have cards; the summary counts them, at work while a subtask is, and their subtasks as one figure": [
+          {
+            "main": "3f9647cfff25855a909b1d6626c3e61d1ff39aef87b60b3af0b27002f1c5126a",
+            "branch": "eec24ed0ed8b6f11f54197511fb4c6042f8d9c828eaaa543aada65cd13801b3d"
+          },
+          "a562bfef631e4f24ce3b4af11b1a3e63cc17148e90df890793ef5fa49d02f535",
+          "8063ca7de3dc51e4b00878ecac5732a663b5da7b1ea4f8d2b9549790d131e288"
+        ],
+        "a card: its name in its direction's colour, whom it works with, what it is doing, the subtasks that matter, the rest by role; not its own words cut to a line": [
+          {
+            "main": "1eed44172eee300fab7064912478f180b7e94f3a4c84b428aff6227d05c61f10",
+            "branch": "1483ea7d9db37ad4ef4684e46cacd293ed393ed5a819dd0999a58b5aa3f1624b"
+          },
+          "4d4b1102911ca9cb82618ae9ae95774bdd5f8510bc1936e7a2765a664753bf7d",
+          "d104eb081c27a9b8f402edcc8dc01030d87883ebdea215080a0782b23a1f72d1",
+          "cb2ceda8c27f00ba5433c0034b12a3f03e5f78f128921745dcd97badb20a000c",
+          "c38ca2d24ab46ffd980d0582d36c393e10e1ccb1185d5c50414fd2144e510068",
+          "11bdd0589367395d3a45f2166a23d04fce129b5a26b9cd4f2bc045fd37741fe6",
+          "f79c7c24c4170ab25d0ffcaad0a0c910e8d5738e9a3f9d71ad1cffb3bc34ebd5",
+          "4b286dae9deafee2fe19ab8a4bbb2e5e828ac5ddf4d70496dd2cdd4bbebcc3c5",
+          "fb5ef22bb1ae3b0b9f583fd80403cf2f87e481cb1dd3e8b81b14d8ad14dacea7",
+          "d146d24a16e31b27a8e5e0b4ffcb7c1fc853f3c61633d361e3ec25a5380f1680",
+          "19e8074bd01a73f2228785c9c03620b8db148c189f576c873238fb8c2d807994"
+        ],
+        "the subtasks that matter: failed, a named role (or its end), or flagged; three closed, all opened; a click selects one": [
+          {
+            "main": "1be5543ecd62d38fd97778b919ab8cec71006fee2508014bcc8feadcea298eb1",
+            "branch": "870348a9984c6e03b2e911cbef87615d89009b3c718cb604524180248f968703"
+          },
+          "4e246cb2f4551dd46653dc688b113856af01040d6bd17c95b5503f57b9afb07d",
+          "5ea950e2b45ca191b59901fd3a859f9d6f86ccd82cd3567c2778a76c319645ce",
+          "17c9a11f8f4f0072f1bf31d2cf0c49afd5b4e3b35b66d7205dd41f74af8ffae2",
+          "18c3ab18afb3bf460b668a502cbf296259426029e576db0ad7fa8bc26a9efe17",
+          "09ddfe49e52dfc1a2b763afa06a556f88f8ac691c83816dd5fbb54421de83ea3",
+          "8de1b697e259be48c9e87b94e9df674a6e8bc39ffee205855985e727edeccefd",
+          "d30f5a23f73864efc636c9aeb95c8cbf4bd4cb137a57219795e4a3ce03b2907f",
+          "bebff25e0de0fd431d95d2b2ea9367631748b9bf9e8b5e8368028f26e0f7b9f1"
+        ],
+        "a subtask's digest or cause wraps under its name, whole; with too little room beside the name it starts on the next line": [
+          {
+            "main": "f5d0f08fac324f2786ecb5a4d1e17be952410b13d99786bed8fd9328c58211a9",
+            "branch": "2b11c51b2f6f6f7b2fe53fc5fec36889a482fe7910ae98f7fed40034de1aec00"
+          },
+          "e616f52a9801d22bdaeef630f457ee3f9cf0d6f1b61e555b817c536fe8af69df",
+          "2f72c900065c2e906846271190e9239ae2877d1fd9a243cf4ad34a7bf6e896ee",
+          "ef1c82bf640665593fbeb489e03cd005ecaac1e65a688a18405d07e0c7adaf81",
+          "8f10603aadac0889facf7541435764d9e61bcd6942c4a87b4fc8a0c37b83ef87"
+        ],
+        "the role counts can be left out, and the corners can be round": [
+          {
+            "main": "f564c977dba415c3a67e9941b7cb50eb4f4fbb54a4556cf0a189f85aa85f2b49",
+            "branch": "b30ce732122f4558facdca3f0e5adc81c03251e3ba46b4e76cf1ad685da37bb0"
+          },
+          "5be5f9cf13698e5ca9f5ca101703ed0e02eec84dae55f854625499b22ccda0a1",
+          "97320b52046beb4f7274c3182512c837e53699fa9620482f1698bfdb1c7be186"
+        ],
+        "a card counts as every view does: its subtasks at any depth, and its reviews apart, on its ◈, red when one failed": [
+          {
+            "main": "ab372356fc10c5007061a99f1d32d374a35993426787e870be70642bf7a92b53",
+            "branch": "1c6574c4a45e4d2dd444e3142f593f048df04ada7d140c606db2de3cd3499772"
+          },
+          "5326b9b0b3a14e5aaf157c156c2dd37f918027fb1e69801722280dae95d18b4e",
+          "5d8fde313c4166580a4cdece04573767c99adc9d48d8d10029fab318f2518375",
+          "c5ccc9dab8519bba26c69ac3ec7b4a24dea695eaaf8c27ad878c930e47e60330",
+          "3abcd437440729b080b052ee6b20a41bf9ff5be2a358fd31a67a57c9ab48963b",
+          "4a85541fbcc8ef6909adaab7e55b6c733e7c85583432932bf5d7e827d92b1f92"
+        ],
+        "a finished L1's row counts its subtasks by state, and cards keep to the width in both languages": [
+          {
+            "main": "c11b9047bf28b79a2c605f9d6cc49e3399c5ed3edb8cf5914dd563fd729b19b1",
+            "branch": "ccfcfdecb72ac195429bbcbab93482ef2cdb07efb9a10cf71a862daace902b5c"
+          },
+          "1e481daf67a21aab0485e87a3fe6822584b33a9baeb463cd6eb7e15523250219"
+        ],
+        "newest model note stays whole opened; live kid progress beats stale digest, request state preserves both notes": [
+          {
+            "main": "c216d62891810d0e655dfb71bbc20a2dde4d0c22331ef62256e4c1d7e8f09c3b",
+            "branch": "5b208d77cdce38b641e59eea1c9f1cdb7ad3bd8bb62206d0a587eaa5daf55697"
+          },
+          "59bd7ba6d408b390602f23a1cc7cf547af618a4382c6bce4442284426fb6779e",
+          "92fc45a559c8b799584f268e5132a64fff02125bf275617b723fd07524745f22",
+          "9071f5cfca2908448c9b0124d1225ae89ffe14a31c2837e2f6f25242743f5a0b"
+        ],
+        "every card flag composes independently, with identity/status retained even when all optional fields are off": [
+          {
+            "main": "6c5d8a9cf24f1573095f9eabdb9d52d43b009f054748d9ae24d16e19199102c3",
+            "branch": "77ccb2ac32e6132ee4bf9991f6f21cc55e2c6104e7927f2cee7e90805530c43c"
+          },
+          "ab938e106185d47e13c9f79e1c6226f092950e1f31a80ef5d3b226fdddc5456f",
+          "b0ddb7439976dbc546fb1cad3a88e7770be835d768b983060209567c1855ee9b",
+          "95f9ebc660b1bf38bfb56f427848ad7396d0af4dac8fc9b35b023ae42d22a5a9",
+          "78241ee954fab8b04cf990394a685e5092ea89cad7449db89b6245f66041b437",
+          "a65129f72b09d6b24aa5703bfdcafb5308ee66bdab0d3716247d2134fa114fc7",
+          "dd4e3f5169c02b62615fa723174ab8e6446f9cdf3752d667e70f20cc4ae433b1",
+          "da287c4a19dee5ab923d4defce15ad77b85ff4750ac965ac8c57860c7cbf9407",
+          "0ee75e23b86724eda65965910590d7f112ca0e93e98dc7feda5a3c0c9c76d942"
+        ],
+        "clock, rate and context are separate footer fields in all eight combinations, and child clocks follow clock": [
+          {
+            "main": "d74ba3b44f81def51591e82615868cae853644e92cc36ed50c6fdbe9b5dc851f",
+            "branch": "8bd81035332276ceb09e12fc7df82cbdd70dff1ebf86dcb544f3a49f381188c8"
+          },
+          "102ac3db0cdcd3f7c361adf0165fe633e44a8759e627fa78188d267d01b317ef",
+          "161a3d5a7ff015197c6f4a66cf18ba875e957fc796258a0a06f5d280d847c0f0",
+          "795dd7fc5b2e8691436d285c2864339df1eb0bde52040765132edcaf04c021e0"
+        ],
+        "child scope and summary toggles use identical subjects for rendering and progress eligibility, including reviews": [
+          {
+            "main": "b8f60f3d75fe4f9775f75f88db81d020f44d7f004b187af28d327312a6339abe",
+            "branch": "2438fdf96f0b1c0a964c97ebaa11746ac6a3ce783d0d253d401258603cae5d57"
+          },
+          "c44ff3e33e809b4702d027bc9f4dfd35ff32c8f97b991f75485bfced7db2e590"
+        ],
+        "hidden summaries have no pending/error rows or targets; linger/filter, tabs, zoom and help gate UI eligibility": [
+          {
+            "main": "86e3594327a6c1a0d583dc480f23e8ea2a60784c4c3ad602c31762d9ff87ea98",
+            "branch": "66b77df9ac18343259379fe43893d4a965ce6b1f1405cbfbf3fc6692c7e42d5d"
+          }
+        ],
+        "child sentences wrap whole at every panel width, sanitize once, and never use active stale digests": [
+          {
+            "main": "f90f693e0b41a1d7e8dbc855342ad314a3b5a620865ddfc4b4531d780013a56f",
+            "branch": "5e1a6036de02dc94633589f9eaa671c801730f7f61be40da12d4a2e2a99920ba"
+          },
+          "1a331503aa1fdb47eaf8b4c98c8546316fe733d5dd7081c19978e603575dc437"
+        ]
+      },
       "branch": ["tests/unit/cards-l1.test.ts"],
       "assertions": [
         "only the L1 agents have cards; the summary counts them, at work while a subtask is, and their subtasks as one figure",
@@ -2074,6 +2271,118 @@
       ]
     },
     "tests/unit/cards.test.ts": {
+      "divergence": {
+        "a card always names/statuses the L1, keeps model text inside, and clock/context below": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "cards never run past the panel, in either language, and give up badge and meter when narrow": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "card clicks select; only its name arms the double-click switch, Enter inspects": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "a click on a subtask line selects it and leaves the Inspector closed": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "the agents view scrolls: its band says which rows are in view, the wheel and pages move it, the selection pulls it": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "finished agents keep the same card layout, dim old news, navigate without a height jump": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "finished card names stay whole when they fit; each footer retains its own context and age": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "guardian reviews fold into a ◈N chip on their parent, and the summary counts every one; a failed one still shows": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "finished cards wrap only the newest model entry, retain meter colors, and never show task/report text": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "a running card's clock ticks on cached renders; a resting card keeps its cache entry": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "a cached card drops an expired output rate even with its clock hidden": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained."
+      },
+      "assertExceptions": {
+        "a card always names/statuses the L1, keeps model text inside, and clock/context below": [
+          {
+            "main": "a56efe183122ee80aed445cde4161a0614c77fff2c3d080bbd1333e53dab33fc",
+            "branch": "5550a8d6d3c73d6aca87e9bb9ce5f415f1fb7f6b8d1b92f2d7db3a6b801eb308"
+          },
+          "84625240241fa72ad85c58669cf4509f125f4e73a61731cbdaa6265c3fdecd26",
+          "b403919e221b29d7539df25e6a84234e7f3c6d3fffd2921bc0a35d0208de0da7",
+          "7a90172845994ce7cbbbfa9cb5bdedae07987cd9e0bc1a10443069504f140d97",
+          "5c9a5ca21e1e494457c7a8fa01f16a09685f971064f26dd627e743cc1c963c34",
+          "934b9e4909e74c244620cca5e46aa35d482819e15be21427693ce597c1b08494",
+          "a3fe016ac28d0daa9c4177e63d6643e15f266168830e4bc592fed7c24b9a4488",
+          "7b87d9dd891c4a54b979e8dc550c2fb92faecad43eec4d32023493e0670f5a57",
+          "dee8ed3cf1fbbf78fd37c89080bd8dc9d207be5eb0f850f4fead7da0c0da4354",
+          "c804d67fee1d7127225cc378ac6fb4f05a50d85681e77c1f791e6cab42bd9f78"
+        ],
+        "cards never run past the panel, in either language, and give up badge and meter when narrow": [
+          {
+            "main": "22558edac2d0338244ed10bbe3de2e93f6ba706b1c9bac9c841065bdd388bb8e",
+            "branch": "28f6ec1fe45758c04694725cf94883eaa2f53518484dfcf301abb6e679e1da89"
+          },
+          "981799c708b53816777bc2168bcaf3c743a639f4ebf935ae202437be1030139d",
+          "83ccea46ac0f0fd17c090e3e3f866592d69c5815e2cb42a385862a36ef29f60a",
+          "ac863c3a5084b0a3b3449eeef0bf549fde1ce77d86bc6884aefedf627463a6fe",
+          "c2b25fe502d05ea5f63d1f130a0bb71d6796a02e6859054952f0bf880265f220"
+        ],
+        "card clicks select; only its name arms the double-click switch, Enter inspects": [
+          {
+            "main": "64e8428728363b1296449c974e19cfd564096848bc850b3688986027a9196472",
+            "branch": "d15c1ad04ba6fd204e41b5bf7c117c9ee96d9514bb819fa9753185a9ac46f717"
+          },
+          "b06692520854aa979c1eb7ba4bda4cdb3b0ac5dfb847bc1dcc7d9a3721c91906",
+          "bc7bace0546240995f3c23986199bcaf4dda363f60160eb2a0fdddaf35c885af"
+        ],
+        "a click on a subtask line selects it and leaves the Inspector closed": [
+          {
+            "main": "aca8b174af0c229d9df0a3ba5ce0960876304d5c716fcf36e6d82b5546d08420",
+            "branch": "340b1860de11ec7713a90a62b0d8e746a9064d49ab756c51dc211d5b067e9ef0"
+          },
+          "8ccabac8cbbe47faa3cb743402ec11077b7a17c8cddaed77614aea4bc048dd7b"
+        ],
+        "the agents view scrolls: its band says which rows are in view, the wheel and pages move it, the selection pulls it": [
+          {
+            "main": "ac495b4a4959b49b98bbbdf03c9284d0a5fdd0dc1ee5328004cf784f3d6f1f0d",
+            "branch": "54ec381a80de9a2a4bc8e07340b61c9b493bbada7b29c4916cce985879d5f998"
+          }
+        ],
+        "finished agents keep the same card layout, dim old news, navigate without a height jump": [
+          {
+            "main": "a79eb76e300648c0f1bf139bcc5ab57a2fb9dc8c258c7b88893c78c31e3c4445",
+            "branch": "8b7d5f97f7ad0df1bfbff9be8e30a3cf5d6e33ab0e765d9db68bca4abdc0a391"
+          },
+          "833fd7a7c07f948075b0f242d6584b4ee34d0b38896a022f908aeef2fb4ecd65",
+          "7d69804400b97bbd59d53bb5c3fd8818f6b3b6e9cb913f3de66a17baf76e0ed3",
+          "9dd591d7c7b667bdd188430f59f15efcb736b442bfe2324039979d9a36b7f730"
+        ],
+        "finished card names stay whole when they fit; each footer retains its own context and age": [
+          {
+            "main": "3f6b1bfa468f9172287290c3fd9cd12e3d8e8b33abc27615a38581c089d62060",
+            "branch": "102425e45c5e9631dde7f2da989c6fd3aa1cc27faf4558a91c594ea17744b333"
+          },
+          "12fa3cd3dbd1d18479fde23a370f53c0813f210658deca0f034a72e6fa0ce214",
+          "e6748b939fb072241cc015f557458f596426b71f0624e34d84f43aaf53cfe648",
+          "c4b3fe5f2e3aaf62967dafdaad94bdb55125ad4014c63642dba0492abe23ae2f"
+        ],
+        "guardian reviews fold into a ◈N chip on their parent, and the summary counts every one; a failed one still shows": [
+          {
+            "main": "0dc7a86a72aaf1fce38f8925089b152f6559d995a60ba69d82616aec0d93bd29",
+            "branch": "ceebd9d9109d76119f1c545007c4779729c3555342357fd98f0ea1365f6d101a"
+          },
+          "e903e3f2f9d351b4a4d472aed65e9ec595ffcf7484eaec6df83d52472008c66b",
+          "971d8331ccb23799ba5c548175c186114b2d3f5190fbd7287379db6a8aff7ede",
+          "c338016e315df00d6ebc6e533c2c91faf14b77fb5bdeeeebb47f2f245ba0eecf",
+          "22b8dc9bede2c8aa0188c12a34b96e973f669cd3e1bd718a27a8307d916ef518"
+        ],
+        "finished cards wrap only the newest model entry, retain meter colors, and never show task/report text": [
+          {
+            "main": "e7da216bcb0373b16b1cd11d585f7a9518ef94a4ce601224178b9f7f3e8af834",
+            "branch": "4b3a60979bc0819cd480975d3553b06268b15816acf26d3d6a32a7c6df429293"
+          },
+          "e671732aa8bcb73569e711bff3226a3a6a8af5d43b89872a02e8bc09f0a673c5",
+          "dc21c467e923a075a3547d18d54171719b658c2482402e93766e3629264e8e22"
+        ],
+        "a running card's clock ticks on cached renders; a resting card keeps its cache entry": [
+          {
+            "main": "c957eee9554f0314739741a4531731cc52d6c2814f1dd1e54ba01922a9422b55",
+            "branch": "f1e02f73cac86b0befdb6739d2db202ab533ec907c2275e61ca438e58714b874"
+          },
+          "84975f5e92ed45d7057187de7a6d37bb024760e431351cb0b59affb85e8828fe",
+          "14dff5b441307af43af860357f892f40e42d99d29ecfcd5ca72cc19f542f9ae0"
+        ],
+        "a cached card drops an expired output rate even with its clock hidden": [
+          {
+            "main": "6f3f3f4dd1d8ce052dfacec9457befb4a24fdb6907454d2cc8c80192e44d0a9f",
+            "branch": "c4262c5da7e06ec167fc99faa236c416bebb57ea9f9451119955dce6df5faca5"
+          },
+          "a51a9622bd59add9edd152033dd2eb04ee9deeb32dcb7078df91a69af6a15bbf"
+        ]
+      },
       "branch": ["tests/unit/cards.test.ts"],
       "assertions": [
         "the kind of work is a fixed one-column glyph the HUD picks; other and unknown have none",
@@ -3254,6 +3563,43 @@
       ]
     },
     "tests/unit/label-as-name.test.ts": {
+      "divergence": {
+        "cards and rows show the label in the name's place; closed, no task line under it": "§15 2026-11-09 work-progress cards; P2 q9: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "an opened card and the Inspector keep the name Codex prints": "§15 2026-11-09 work-progress cards; P2 q9: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "a finished row's brief line, under its label": "§15 2026-11-09 work-progress cards; P2 q9: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
+        "card label visibility is local: Codex names for L1 and child, smart names remain in other views": "§15 2026-11-09 work-progress cards; P2 q9: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained."
+      },
+      "assertExceptions": {
+        "cards and rows show the label in the name's place; closed, no task line under it": [
+          {
+            "main": "36686633b769d697b839e4bbee0d9f9a46118205473d2d0ebbe483ead2e1615c",
+            "branch": "145098600c74a259a7483ebd069792dcf9e4c03717eaa2855b914a9347002f7a"
+          },
+          "f206d3a4e900bfd355293f9f31e1211a34f4bb08baf38ebb4dfbd73baf9ca843",
+          "a68befe0d7be10200609530158778e7f7c1c69d6514bdc1485c6d066b891ec21",
+          "3a195418504fcfd804db41a16b9d276328bcc7a11604611f82144dcc75cc3567",
+          "fb12ae4889680f913bd7f2306c7cc7e27a5a0efb09fcbdb11f3f8e12a33a13d9",
+          "d72051052221d4f6a722278309b72e70b5c119b583d58863679e4797eff1922a"
+        ],
+        "an opened card and the Inspector keep the name Codex prints": [
+          {
+            "main": "a3fb29499eb954a77f3d2f7497a9707f921fec0cf372099a8c4cbc7912cd2a48",
+            "branch": "aeee1a8b99dec2fd72628a3f84973fe6e98f4f7065a9117324ff3e3ec74bf4d0"
+          }
+        ],
+        "a finished row's brief line, under its label": [
+          {
+            "main": "04621c9faeb32917366205c0b6f2e0f78b4fce73f6f6aae05b86fdd731ef314f",
+            "branch": "212d66d325f92450d0eb40d5a29900412008445742216487ee7ac7c0654c2022"
+          }
+        ],
+        "card label visibility is local: Codex names for L1 and child, smart names remain in other views": [
+          {
+            "main": "d2dd09ed04fbcb8aad57b83a0f452a75e54432dff09b858379b90a3bef8064b9",
+            "branch": "8ee3ddddbca99fb70d3efaa52b25247d37fd8808b95528112f99ca8658b2627a"
+          }
+        ]
+      },
       "branch": ["tests/unit/label-as-name.test.ts"],
       "assertions": [
         "agent names is one row among the model features, over labels and label as name, both on by default",
@@ -3843,6 +4189,17 @@
       }
     },
     "tests/unit/monitor.test.ts": {
+      "divergence": {
+        "with no model backend, one closing line after the cards says no new summaries are written": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained."
+      },
+      "assertExceptions": {
+        "with no model backend, one closing line after the cards says no new summaries are written": [
+          {
+            "main": "99d56971335b6ad1a7404fecd9cc6a51eadbb2e91e0c6e112ed5c7e18ec6e474",
+            "branch": "1ba942ffb6e3141cd2bed61bcf934b3e1dc1ca59e234f420f376c71c0d79c099"
+          }
+        ]
+      },
       "branch": ["tests/unit/monitor.test.ts"],
       "assertions": [
         "the default monitor is Agents alone, one row per agent, and no narratives",
@@ -5327,6 +5684,20 @@
       ]
     },
     "tests/unit/settings-navigation.test.ts": {
+      "divergence": {
+        "the footer role-count switch hides counts only, keeping children, their sentences and progress eligibility": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold."
+      },
+      "assertExceptions": {
+        "the footer role-count switch hides counts only, keeping children, their sentences and progress eligibility": [
+          {
+            "main": "85046ef130dc6cc80fd5bc4954e4bf0add2c380a60ef09869432158c62b24acc",
+            "branch": "224b9079c538620c57a81f28080cd3ee43c845d195e46201815ab87ffa488cf4"
+          },
+          "46d00f3a7b1e1e048bc08ec9d6a59c1173950efe618321ea60b9c1cc4ad4a634",
+          "fd286e9990a2cbf272e343110cb10671dd219828f355414a3cd955a6011da236",
+          "54fb9b62630b6593223eb6e5ca07ac550ec0a90d01b7e8c8401c47b425e1ab20"
+        ]
+      },
       "branch": ["tests/unit/settings-navigation.test.ts"],
       "assertions": [
         "leaving Settings via a tab opens/selects the pane, never toggles an already open pane shut",
@@ -5693,11 +6064,90 @@
         "66a82aeaf897ab0f1ba3fdb040450b35dc32dc7067223704599fa03ac2d5afa4"
       ],
       "divergence": {
+        "settings read in sections, values aligned on the right and written for people": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
+        "folded sections: a click opens one at its first row without changing a value; PgUp/PgDn step by section; values summarise it": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
+        "rows have unique keys and contiguous groups, with separate display and generation switches": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
+        "inactive reasons follow card dependencies without hiding stored summaries": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
+        "Child role counts clearly names footer statistics and never toggles child lines or summaries": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
+        "the virtual Cards preset is derived, edits draft content only and custom selection is a no-op": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
+        "all preferences reset preserves model configuration and assets, never enabling privacy permissions": "§15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold.",
         "every model feature sits in the LLM group, and the calls made today show under the list": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: add explicit lite/low/medium effort rows without dropping model permissions or assertions.",
         "periodic briefs, main recap, progress generation and card display toggle independently": "R6A-A0 (orchestrator q7): A0 removes the secret setting/legacy key hint, changes the neutral settings path and the API default hint. Other toggle/card/Work settings are untouched.",
         "Backend selected says which file and keys hold the connection, never the key itself": "R6A-A0 (orchestrator q7): A0 removes the secret setting/legacy key hint, changes the neutral settings path and the API default hint. Other toggle/card/Work settings are untouched."
       },
       "assertExceptions": {
+        "settings read in sections, values aligned on the right and written for people": [
+          {
+            "main": "59fd0d053ab410bdf33ef060507ea69c6900de495728b5b64e9a6082e5461352",
+            "branch": "b2e869bb577fd341b2a7f008fa6abeee8191863234e95e2ceaf3d07f9a210bb3"
+          }
+        ],
+        "folded sections: a click opens one at its first row without changing a value; PgUp/PgDn step by section; values summarise it": [
+          {
+            "main": "0272f3d8a891d124807bb8c75ea0e3c31a45fbfc28628a881ad2279c3097a0c1",
+            "branch": "8b8813f69d5119e7a8c5f6ea3c1c758886b798068eb2345bd71b47230d4f5707"
+          },
+          "b78321016847ab6eb98df34efc9d940316b227879676e1a6f11d2f91b3ab8feb",
+          "44424f2bdd9e0a4e28e3e88216943b5e1457d58b504371487313690d41ad475f",
+          "21540baf05b74a9e0d3513c93ea9fa6d7c345c41a57704fc974cac5f2cbf6a59"
+        ],
+        "rows have unique keys and contiguous groups, with separate display and generation switches": [
+          {
+            "main": "4cae375cd1a052bfc6edc8f90fe00a4b1bbaa13099a61ef015e9da879681b114",
+            "branch": "b3ff1eb8c0fb7d3c492f6bdb2826e1bd480816425b98ea2e2d6698ba1d685c25"
+          }
+        ],
+        "inactive reasons follow card dependencies without hiding stored summaries": [
+          {
+            "main": "7e90b53438230b0f9cfc45ed0e54210635e19384d767c51799715a0d9ed4fb59",
+            "branch": "fd077c067eab4e8285cbb4c34b6cdcfdc8e81d586d77b7a057c9c67d2f6af598"
+          },
+          "4c6fc90553e3b2fef5bbd7c06f4bab16bbe3e122cc0a5eb08b09380e0e2da231",
+          "97bc64f5654f41090a201a572e4ce3503f659795ffbf1c10070b6543da04d637"
+        ],
+        "Child role counts clearly names footer statistics and never toggles child lines or summaries": [
+          {
+            "main": "4424822e5fb8ccadd8890f5d7fa4930952ee4e1b168c4bf77f0df483d1f3adec",
+            "branch": "3d56fabed519078c63d469d7c66379b6c670ad6ebf7110860c7d0971ad5e7289"
+          },
+          "3745a0529cb9f72453c5da66480036e4c18ed71f8fa6acfa16729fca21ee8865",
+          "318530177682fcd188eedebae3bc5bbe3ff1ba20dac7e0c9fd3d59942cf5fd15",
+          "3cc794f2988d5c4a241165a21c64064e301883eba6591f9791e1bc6803264f70",
+          "5c9ccc52e8b3c3b9da9b4cfd44888b4a108d8dc565bac3b474a30fc8e886fe3f",
+          "09c1cd3339ae9a4ac63dc7bb3e38df08f9c3892da357e3978b54f3332deb0006",
+          "0eedef222583d63d9a5b7b278c1174b77c30760b236c58b59ee549e93a30fb5e",
+          "ca22c66b4de0292d617d1875bf09c41b35194578b5611a637d28020e9d90bf3f",
+          "97843e489f584ee591bd133ba6258fad4eec5ccadc22adf31f51d6221f835cec",
+          "e2899e4056f0c425073ccfa9178aefc809d35dc21c07fbd495db93f5f63b3885",
+          "48fb7c18534b2c29213030de35fd0a50d7373ab6b08dc73618cb43d8fef4ed9d"
+        ],
+        "the virtual Cards preset is derived, edits draft content only and custom selection is a no-op": [
+          {
+            "main": "8f17f48df0b6a3fcb45165b5122c4ba85d0f579617230f935623a455d6a37db0",
+            "branch": "3a0ed206eed73d2b8d36d5c603c1cf2fe45abdad4d23c46eb3e5d382ee397854"
+          },
+          "2bdabfcaa4d6d5b5f6fbdee563c3eb9b72083e47e109c8028b8271fce57d06ab",
+          "a4d9b857617eedb24c4acd03ba87155542060cfe190fce027e4e97f8238f5d04",
+          "dbcced6eb36ad1a778792d59c4a7cecd77b564d70963ff80a438a04ed8d68d8a",
+          "7cf2cc822cdb337f076860ab55aff08caf954e63520b3e223f0fac6b353e1e47",
+          "6f6496d36b59b3e064b5c7b9a6b187731a2cc84fcc76deac09ab2fbd2b3f47e0",
+          "c728d207875b427cc1e31f8e23ead408a142495fc25128c1370bda34fd1d5741",
+          "1168f1cf5b1f51a9262326e116c0fafe63fd5b2f545ca93d8fe5d66f4d6e914f",
+          "8c83f092ecd73d3909d9890b6f88f0a37f859ade8ad48f5b0dfb2fe3df54e0e4",
+          "9893f01499e83891f1adcd2c7db311ff6fbf55bac6496dc15f3cd3e22382c0f9",
+          "28cfdf0723f16f0dd8a5de7743da7d4d9fee1216e39c177ed3c469520283cc89",
+          "f8e7b0e8251dbc54d4a948af21082aad5d4ccc0530526cd909132fcb670a0810",
+          "8f17f48df0b6a3fcb45165b5122c4ba85d0f579617230f935623a455d6a37db0",
+          "002ff0a929135d270947bf49d2a0ac726f90b11e3d4ac819c7933a698fca6fb9",
+          "8be5733b4d3d43b895d4c8ca29b2706558dec7577c11789b0a419718d8b3ecf0",
+          "8c01df761ae781478a1e62c320559b026557b59ad52a4451c0a425165788a229"
+        ],
+        "all preferences reset preserves model configuration and assets, never enabling privacy permissions": [
+          {
+            "main": "feb16f7f46934c4b02e93e388b647ba6091a870a0067ac80980e35a8b2cf9d6a",
+            "branch": "d7ac5788e52678767d1e944a4f5f6ede8266ecb85f7cae85fd7a09c901780d90"
+          }
+        ],
         "every model feature sits in the LLM group, and the calls made today show under the list": [
           {
             "main": "52c38dcd12567d44ad4ca9ba7ab9767b2d650ee42951e47ee37cceddc72e63bb",
@@ -5854,8 +6304,8 @@
         "37dd5d6aece84e23c95f4a501b691e915a4ffcfcd8ea0dcacf3234f7462bf69f"
       ],
       "divergence": {
-        "missing settings keep display defaults and hide optional tasks and activity": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; all prior defaults remain asserted. R6A-A0 (orchestrator q7): A0 removes saved API secret/legacy reasoning keys, retains all unrelated preferences, and changes product defaults to Mistral/DeepSeek and none/low/high. Complete default/validation object assertions remain.",
-        "load validates known settings without importing unknown or invalid values": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; validation and prior defaults remain asserted. R6A-A0 (orchestrator q7): A0 removes saved API secret/legacy reasoning keys, retains all unrelated preferences, and changes product defaults to Mistral/DeepSeek and none/low/high. Complete default/validation object assertions remain.",
+        "missing settings keep display defaults and hide optional tasks and activity": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; all prior defaults remain asserted. §15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold. / R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; all prior defaults remain asserted. R6A-A0 (orchestrator q7): A0 removes saved API secret/legacy reasoning keys, retains all unrelated preferences, and changes product defaults to Mistral/DeepSeek and none/low/high. Complete default/validation object assertions remain.",
+        "load validates known settings without importing unknown or invalid values": "R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; validation and prior defaults remain asserted. §15 2026-11-09 work-progress cards; P2 q1/q8: retire preset/obsolete Cards controls; display-only stall threshold. / R5UX-KEYS: concept §15, 2026-11-09 Panel model roles (per-tier effort; self-contained credentials), orchestrator q1/q3: three new explicit efforts default to off; validation and prior defaults remain asserted. R6A-A0 (orchestrator q7): A0 removes saved API secret/legacy reasoning keys, retains all unrelated preferences, and changes product defaults to Mistral/DeepSeek and none/low/high. Complete default/validation object assertions remain.",
         "legacy OMP settings migrate to API deterministically and task models validate": "R6A-A0 (orchestrator q7): A0 removes saved API secret/legacy reasoning keys, retains all unrelated preferences, and changes product defaults to Mistral/DeepSeek and none/low/high. Complete default/validation object assertions remain.",
         "removed API secret/reasoning keys are ignored and dropped while other saved settings survive": "R6A-A0 (orchestrator q7): removed secret/reasoning keys must be dropped on load/save, while unrelated settings and routing remain asserted."
       },
@@ -5863,13 +6313,13 @@
         "missing settings keep display defaults and hide optional tasks and activity": [
           {
             "main": "97cc9faf8c800057796515b8dfe0dacd83131f228ab20c9f4657ec6d40791090",
-            "branch": "9667af330a455533fc76bc910fca0b58e7fab2c377d3d23e4425943f6ff56a13"
+            "branch": "8f6944b8f4583955593d9459b9a0c602612d1c4daa176ed9135f478dbe62c849"
           }
         ],
         "load validates known settings without importing unknown or invalid values": [
           {
             "main": "705a4c99a17c316a548159e181eb3da22cf85826d63572693500f24308a95350",
-            "branch": "29b19eb296cd4aefb7e46ea25ce856b3959027f383f594542edb4970a19c6b1d"
+            "branch": "fc09b212a1486f8b54d4759fc676431ccb8484a9c58a1067d0b83f5c61364286"
           }
         ],
         "legacy OMP settings migrate to API deterministically and task models validate": [
@@ -6502,6 +6952,19 @@
       ]
     },
     "tests/unit/summary-status.test.ts": {
+      "assertExceptions": {
+        "cards show only concise enabled queue/writing/error/cap states, wrapping CJK in at most two rows": [
+          {
+            "main": "f671f330c58be5c67c2574e6435bd302a6d49018cdc4edfc80911c867a3f1679",
+            "branch": "db7e5828031192dc95a5e5d9b3d91cb6fffa6b39cdc4b48eb4805bbc94bbd012"
+          },
+          "aa8d377e4ad58e269675e9c903cdbb758a1e51634dba063daeb1f7842df669ca",
+          "a5051cd4feb1351453e05d4b04f2d924f5fee00ca308696c5d54522ab1150ed3",
+          "07581399df03635201ee311f2ae2048e3712624bd644cb0fba40fcdee3dc9f2d",
+          "751d320cf4701e4ff4a942f25621fb5590fa5141f8c940ff518107acc72904d1",
+          "8ed27e7e0a27a5dfd134be80258067fdb42801bbe5624f4ee925800646af4ed7"
+        ]
+      },
       "branch": ["tests/unit/summary-status.test.ts"],
       "assertions": [
         "collector reports queue waiting, writing notifications and distinct coverage/generation times with no extra calls",
@@ -6568,7 +7031,7 @@
         "matching a legacy note never promotes its recording time to coverage": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
         "hourly cap is explicit, safe, and clears failure on retry without raising the budget": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
         "inspector gate diagnoses supersede stale work and stored notes remain with backend off": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
-        "cards show only concise enabled queue/writing/error/cap states, wrapping CJK in at most two rows": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel.",
+        "cards show only concise enabled queue/writing/error/cap states, wrapping CJK in at most two rows": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel. §15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained.",
         "note metadata persists compatibly; legacy and malformed generatedAt remain unknown": "Kept only through the B17 test double (7f07c5a). native-hud-v2 §4.1 fact 1: model material passes a Codex-only bridge. §4.2(1) replaces core/materials/{request,legacy}.ts, which the double imports. WP1 returns this carrier to the production SmallModel with main's expectations. The owner ruled that the cache returns to main's <dir>/cache.json. SyntheticModel is imported as SmallModel."
       }
     },
@@ -7506,6 +7969,18 @@
       ]
     },
     "tests/unit/visual-baselines.test.ts": {
+      "divergence": {
+        "visual semantics: child role counts off removes only footer counts, not children, summaries or targets": "§15 2026-11-09 work-progress cards; P2 q1/q8: compact owner replaces rich-card/helper/footer geometry; native actions and gates retained."
+      },
+      "assertExceptions": {
+        "visual semantics: child role counts off removes only footer counts, not children, summaries or targets": [
+          {
+            "main": "f204b0ba8c7ac5e617a3dc36a37bde1152bddf8c3af90b1bc290b7cb29b9acf9",
+            "branch": "0c2d08da50095db5e112621b3ae05d41804a79325eb195f06737604a05335bfa"
+          },
+          "f31ceb0c4248bf43e8c307c6bfca4853309f2cab425e1716c13a83dc6ec54aec"
+        ]
+      },
       "branch": ["tests/unit/visual-baselines.test.ts"],
       "assertions": [
         "visual semantics: all presets retain identity and exact frame dimensions",
@@ -8142,341 +8617,1071 @@
     }
   },
   "scenes": {
-    "panel/en/tab/minimal/32x32": { "kept": "f868274afa95c530bd82793eafd8c68cf36e25a1aedacc1343712ae50deb8556" },
-    "panel/en/tab/progress/32x32": { "kept": "c9d7c18e33bd05b74afd82aece706cdaeb5623f53c620ff39604c7000fb78dae" },
-    "panel/en/tab/monitor/32x32": { "kept": "547fa74b9e14672dd130f7b2cf616796a407de76396cc5d383da004b8058d81d" },
+    "panel/en/tab/minimal/32x32": {
+      "kept": "2ebcfc555e6b1b560d26dfb2dd5b67f93366bac182c682e0f486cccbbb1db6f6",
+      "baseline": "f868274afa95c530bd82793eafd8c68cf36e25a1aedacc1343712ae50deb8556",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/progress/32x32": {
+      "kept": "2ebcfc555e6b1b560d26dfb2dd5b67f93366bac182c682e0f486cccbbb1db6f6",
+      "baseline": "c9d7c18e33bd05b74afd82aece706cdaeb5623f53c620ff39604c7000fb78dae",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/monitor/32x32": {
+      "kept": "433030a8a54dafa139cc62320f2d6dfb337258494dd0498f223ca15896aa43f0",
+      "baseline": "547fa74b9e14672dd130f7b2cf616796a407de76396cc5d383da004b8058d81d",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tab/active-settings/32x24": {
-      "kept": "ae744827c2112315db7e49a3511e03001fb1352160290abb44b008244fc575f8"
+      "kept": "244b9b1920bbaa7898668a16a1292586034dd230b141d7cdaaf097794b367ce4",
+      "baseline": "ae744827c2112315db7e49a3511e03001fb1352160290abb44b008244fc575f8",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/tab/minimal/40x32": { "kept": "a94671ffe227ad4b83886c030cd8343857fd6a6d54f59c3fb99293417f199bc7" },
-    "panel/en/tab/progress/40x32": { "kept": "2743a2800b36b7aa6d9e8ac4775a1d341641accfeccd44122774fc70c3db0c9e" },
-    "panel/en/tab/monitor/40x32": { "kept": "66a7bcfd73e216e2b1e7ae80a060c323fa1fa060ed8b87e3347a6a16074f9b99" },
+    "panel/en/tab/minimal/40x32": {
+      "kept": "180b4d06dd5dc010245db173426e104faa0c716e4dfec351ba60af4bec2c85ee",
+      "baseline": "a94671ffe227ad4b83886c030cd8343857fd6a6d54f59c3fb99293417f199bc7",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/progress/40x32": {
+      "kept": "180b4d06dd5dc010245db173426e104faa0c716e4dfec351ba60af4bec2c85ee",
+      "baseline": "2743a2800b36b7aa6d9e8ac4775a1d341641accfeccd44122774fc70c3db0c9e",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/monitor/40x32": {
+      "kept": "73a4e50cfba95f8ddde9eca2191e9c7141bbc1c3ad2344c748d2377c70a4fef1",
+      "baseline": "66a7bcfd73e216e2b1e7ae80a060c323fa1fa060ed8b87e3347a6a16074f9b99",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tab/active-settings/40x24": {
-      "kept": "ff46af8c2edb4458101f94636700a07a4b7a90b6b0093812b90ad160fbc04c92"
+      "kept": "6117c3becb802580850cacb823a40e3f0129bf65bb3f1b12e457bb99a579c028",
+      "baseline": "ff46af8c2edb4458101f94636700a07a4b7a90b6b0093812b90ad160fbc04c92",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/tab/minimal/48x32": { "kept": "050492663ba6a3026a683a4ec4a1a602db596c8f648b25ea0b6a823c774fdd09" },
-    "panel/en/tab/progress/48x32": { "kept": "34ab53c7b98ec1ca70f0d7a6b612aaa6983d7d2564beb83b7df994c702a6fca9" },
-    "panel/en/tab/monitor/48x32": { "kept": "3350b798bdc4f27a7892a6d78a94f5c51354bc808a1b0b1e1ec0611aedc37374" },
+    "panel/en/tab/minimal/48x32": {
+      "kept": "979b08c3acf79d1ab13e1f40e5f86b51f6405ca04167b5bb0bb11188532c71d9",
+      "baseline": "050492663ba6a3026a683a4ec4a1a602db596c8f648b25ea0b6a823c774fdd09",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/progress/48x32": {
+      "kept": "979b08c3acf79d1ab13e1f40e5f86b51f6405ca04167b5bb0bb11188532c71d9",
+      "baseline": "34ab53c7b98ec1ca70f0d7a6b612aaa6983d7d2564beb83b7df994c702a6fca9",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/monitor/48x32": {
+      "kept": "d8912b5478d35b114a720b83b98385d1d01e07d268e205825557f483063528c4",
+      "baseline": "3350b798bdc4f27a7892a6d78a94f5c51354bc808a1b0b1e1ec0611aedc37374",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tab/active-settings/48x24": {
-      "kept": "9b2a5db1d561ee1d9c87b56e1ead27fe51b0c9dbfcbf0661fde3e782130177e7"
+      "kept": "d1064400832fb06bb2fdbe212dd8cc07644a517fae8652effee4eea9727939d7",
+      "baseline": "9b2a5db1d561ee1d9c87b56e1ead27fe51b0c9dbfcbf0661fde3e782130177e7",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/tab/minimal/56x32": { "kept": "3e010b34680fe48171b4c8e57165e2c558d50f8156e354aec6c8aa7008dd8fe7" },
-    "panel/en/tab/progress/56x32": { "kept": "301ab1d81267491f727ea254ce8fe1a8d4586c13d9304c1e9a89df0b828935c6" },
-    "panel/en/tab/monitor/56x32": { "kept": "1fa417171c6d436574fc4d3bd292d9931f0879a4f4de90b1092ef9267cffb073" },
+    "panel/en/tab/minimal/56x32": {
+      "kept": "ae108b1fd86fa05362dbe5b9917f44af8cab5b771a6d46b23e7e7ce4e12240e9",
+      "baseline": "3e010b34680fe48171b4c8e57165e2c558d50f8156e354aec6c8aa7008dd8fe7",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/progress/56x32": {
+      "kept": "ae108b1fd86fa05362dbe5b9917f44af8cab5b771a6d46b23e7e7ce4e12240e9",
+      "baseline": "301ab1d81267491f727ea254ce8fe1a8d4586c13d9304c1e9a89df0b828935c6",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/monitor/56x32": {
+      "kept": "b11088396f8b4fbf4369bfbe7c1a7b188c02875cd7e6e43df17233a2e2d00eed",
+      "baseline": "1fa417171c6d436574fc4d3bd292d9931f0879a4f4de90b1092ef9267cffb073",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tab/active-settings/56x24": {
-      "kept": "7057b8f472e0e1a8ebe56797d963172decc6ffd7be8ab0fc95c2b9b49947bda9"
+      "kept": "037f94f58da29d9988c65f639e792565cb66ff7dec834c73882ab7922fb18248",
+      "baseline": "7057b8f472e0e1a8ebe56797d963172decc6ffd7be8ab0fc95c2b9b49947bda9",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/tab/minimal/80x32": { "kept": "f59ae109ec495a5c16b5bf7134aafca979180680dc2cf8e3f268a42f3d31016c" },
-    "panel/en/tab/progress/80x32": { "kept": "41efd20ba3348e83cfb50f889acc7493e5901c7fb970fe20ce6312ad73a64edd" },
-    "panel/en/tab/monitor/80x32": { "kept": "3bf68c52b48d3a842037fe13bf12d3a6b97143b57f9d23cc8d7eceb1e4cd39f2" },
+    "panel/en/tab/minimal/80x32": {
+      "kept": "9033355d9ee38d2f63284a24a9053e2f0aa6fa88d56753b9f5fb7367b4fb1da9",
+      "baseline": "f59ae109ec495a5c16b5bf7134aafca979180680dc2cf8e3f268a42f3d31016c",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/progress/80x32": {
+      "kept": "9033355d9ee38d2f63284a24a9053e2f0aa6fa88d56753b9f5fb7367b4fb1da9",
+      "baseline": "41efd20ba3348e83cfb50f889acc7493e5901c7fb970fe20ce6312ad73a64edd",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tab/monitor/80x32": {
+      "kept": "bfc95424cfa76b7b9871279d2ae1d1e3671673ace6a28cf502c9656f792f2ba7",
+      "baseline": "3bf68c52b48d3a842037fe13bf12d3a6b97143b57f9d23cc8d7eceb1e4cd39f2",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tab/active-settings/80x24": {
-      "kept": "a572967adb4c325011da8e00203d92d2c9cc9c7eafdd7c6e28fb8e470aed6008"
+      "kept": "2e9eed17bf8f83f472f731a21eb5949b83d742f6c465c87df0bc1c39010b67c3",
+      "baseline": "a572967adb4c325011da8e00203d92d2c9cc9c7eafdd7c6e28fb8e470aed6008",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/band/minimal/32x32": { "kept": "e6df0689d33f6970439f9269c49072e093df088e1d5ddeca9036062c13632b5d" },
-    "panel/en/band/progress/32x32": { "kept": "fc79f675a4405b8436c7e4b276ae2081f266933de2b7e0c8eb372ee6107c3162" },
-    "panel/en/band/monitor/32x32": { "kept": "fcd1290ff628066790b983dab7f61f324515412d3b2c59eb018d7328fa3a1d5a" },
+    "panel/en/band/minimal/32x32": {
+      "kept": "63579af8613dcbf720ce5231a22c3e0a1db32a2640409b350448521e4e357695",
+      "baseline": "e6df0689d33f6970439f9269c49072e093df088e1d5ddeca9036062c13632b5d",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/progress/32x32": {
+      "kept": "63579af8613dcbf720ce5231a22c3e0a1db32a2640409b350448521e4e357695",
+      "baseline": "fc79f675a4405b8436c7e4b276ae2081f266933de2b7e0c8eb372ee6107c3162",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/monitor/32x32": {
+      "kept": "0a68651c3f41c969b64d1b3236389871e0b170a02b4eb8586b6b3bd7df06f6fc",
+      "baseline": "fcd1290ff628066790b983dab7f61f324515412d3b2c59eb018d7328fa3a1d5a",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/band/active-settings/32x24": {
-      "kept": "e30f184f1c48e687c4bfd8eb18a1b0ff7bf542109f8aedb7195eacb840df9730"
+      "kept": "66b4f72209e4aa2a5860a7b21819489a3fc5dbbeed7c37caa2e0576f821bdfbf",
+      "baseline": "e30f184f1c48e687c4bfd8eb18a1b0ff7bf542109f8aedb7195eacb840df9730",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/band/minimal/40x32": { "kept": "539eb320bc2aca72116813b2761d8c99bd94d99d42414ece7ab17387560101f2" },
-    "panel/en/band/progress/40x32": { "kept": "1348ea13e4445e9eeda560b446e197ae3aca65ceecf7324d6fa1ffe4e96e3a90" },
-    "panel/en/band/monitor/40x32": { "kept": "a5d32d17449b3f06e99d64d28bea531249b911b7c77f63949ed7de3e11d9ace1" },
+    "panel/en/band/minimal/40x32": {
+      "kept": "a5114e01988147d87a7dde7ed20e8ac2d526cc31c06fb53d87e70824c3fa6ecc",
+      "baseline": "539eb320bc2aca72116813b2761d8c99bd94d99d42414ece7ab17387560101f2",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/progress/40x32": {
+      "kept": "a5114e01988147d87a7dde7ed20e8ac2d526cc31c06fb53d87e70824c3fa6ecc",
+      "baseline": "1348ea13e4445e9eeda560b446e197ae3aca65ceecf7324d6fa1ffe4e96e3a90",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/monitor/40x32": {
+      "kept": "007218ad578dc9eaac37747aeb0764036197a162223707e6e5fee44099470d64",
+      "baseline": "a5d32d17449b3f06e99d64d28bea531249b911b7c77f63949ed7de3e11d9ace1",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/band/active-settings/40x24": {
-      "kept": "47d7fcf98ee719a552222156c40ad1dcadffbb64a7e726bb7126aafda8fed034"
+      "kept": "f4531c871c48a35c940bef8285869b1d2ceb767557ea291cc29bfb93dd98d804",
+      "baseline": "47d7fcf98ee719a552222156c40ad1dcadffbb64a7e726bb7126aafda8fed034",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/band/minimal/48x32": { "kept": "25805b03c0d79ec651d3973f2c20a75f1e29bba349b44e99ea8d99ee95c6de88" },
-    "panel/en/band/progress/48x32": { "kept": "150b585a73ead12cf55ca5fb29f02b35250619df7d7d048fe7cca2ecc893dd43" },
-    "panel/en/band/monitor/48x32": { "kept": "5d666f2dd844b82d2f8094a9ddd84719c9a8cc5b890d0d092b23f0daadb1009e" },
+    "panel/en/band/minimal/48x32": {
+      "kept": "86cc78a8cb92b5714fd4b67b09adfbc13096ee60e3455582528237a3ca4c18f1",
+      "baseline": "25805b03c0d79ec651d3973f2c20a75f1e29bba349b44e99ea8d99ee95c6de88",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/progress/48x32": {
+      "kept": "86cc78a8cb92b5714fd4b67b09adfbc13096ee60e3455582528237a3ca4c18f1",
+      "baseline": "150b585a73ead12cf55ca5fb29f02b35250619df7d7d048fe7cca2ecc893dd43",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/monitor/48x32": {
+      "kept": "a944297658423a24f649bd4ea02701b37f65b0a3bf0eacb9b77c40543fe4ab58",
+      "baseline": "5d666f2dd844b82d2f8094a9ddd84719c9a8cc5b890d0d092b23f0daadb1009e",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/band/active-settings/48x24": {
-      "kept": "7ffb94e80c332b75f4677fdfdd2741b598ec7381c758e42698065f626cb31baf"
+      "kept": "d165d174a9351d080bdfb11ad238518422b017b6588e1962e86c5356811c5043",
+      "baseline": "7ffb94e80c332b75f4677fdfdd2741b598ec7381c758e42698065f626cb31baf",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/band/minimal/56x32": { "kept": "f152c4f205295e135b1b9852e4da59bdbafbbcff47250e47b25594cd88a9d999" },
-    "panel/en/band/progress/56x32": { "kept": "1509ad9e2d96a0e902f3532ff953177ac831d51a4be8ca26c641b186950551fa" },
-    "panel/en/band/monitor/56x32": { "kept": "f8b61c29d0eec6c3c6e89c432f71da510099ed0b94bc6094f63dec4e09758a76" },
+    "panel/en/band/minimal/56x32": {
+      "kept": "34a4ef6eaa149ffb5e2115ccae502ab7e16dcffd9749ed9c0512f9b9746e2930",
+      "baseline": "f152c4f205295e135b1b9852e4da59bdbafbbcff47250e47b25594cd88a9d999",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/progress/56x32": {
+      "kept": "34a4ef6eaa149ffb5e2115ccae502ab7e16dcffd9749ed9c0512f9b9746e2930",
+      "baseline": "1509ad9e2d96a0e902f3532ff953177ac831d51a4be8ca26c641b186950551fa",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/monitor/56x32": {
+      "kept": "be6ca37afbab2f297d7a083cad17b46279f291121b193fdb5545502c3bcad88f",
+      "baseline": "f8b61c29d0eec6c3c6e89c432f71da510099ed0b94bc6094f63dec4e09758a76",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/band/active-settings/56x24": {
-      "kept": "6b8eeb5614f6c8b07f934b9df52b7c601674936d1873bb3ee87efc13ec2b6f9d"
+      "kept": "ed27f258509cd4f53b5dcc310c1e8c4b3369ad21eb754ef870738fd1f67c8b52",
+      "baseline": "6b8eeb5614f6c8b07f934b9df52b7c601674936d1873bb3ee87efc13ec2b6f9d",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/band/minimal/80x32": { "kept": "072de54fd913c8c2190bdb4bc1762aab4d619c5cb637759ed64eb4fc367cd447" },
-    "panel/en/band/progress/80x32": { "kept": "a2bdab8329ee34f5cf8403646f4e0d4133be817aea6209e56b64947526512b9b" },
-    "panel/en/band/monitor/80x32": { "kept": "d7dd4d555cbcd9fe203768572109e24b848eb4b73a5c409a1b45d71049b32b7b" },
+    "panel/en/band/minimal/80x32": {
+      "kept": "c76b3cd1816b0c92145d4fa6da5f00106a8ee3a24c4733073a5f801f5473fb77",
+      "baseline": "072de54fd913c8c2190bdb4bc1762aab4d619c5cb637759ed64eb4fc367cd447",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/progress/80x32": {
+      "kept": "c76b3cd1816b0c92145d4fa6da5f00106a8ee3a24c4733073a5f801f5473fb77",
+      "baseline": "a2bdab8329ee34f5cf8403646f4e0d4133be817aea6209e56b64947526512b9b",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/band/monitor/80x32": {
+      "kept": "30e55d35d6c1d697d644953ebb75d51da964369ce05587be769eaace6667bf1b",
+      "baseline": "d7dd4d555cbcd9fe203768572109e24b848eb4b73a5c409a1b45d71049b32b7b",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/band/active-settings/80x24": {
-      "kept": "c1c2e54436516bb7d8185047e2c23e6905e371dce8dbbb6eaac9e4450be09638"
+      "kept": "cc0486d642addd5b4c849985c9ac3c56f1a4e5980592861997b831e922ee7da0",
+      "baseline": "c1c2e54436516bb7d8185047e2c23e6905e371dce8dbbb6eaac9e4450be09638",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/tile/minimal/32x32": { "kept": "380141bc2f514bb9c88661c610eb066c123828a149c88b1537c61290f6b64f79" },
-    "panel/en/tile/progress/32x32": { "kept": "4b9aa54f1b2a9869fc61d3679bddde8969542dc3db31451b57076900c3fd09ef" },
-    "panel/en/tile/monitor/32x32": { "kept": "b95ee3df8b65a9a6dfd82ca0dce1f23a6dc01b846e78a94755a6111c25adeb4b" },
+    "panel/en/tile/minimal/32x32": {
+      "kept": "38ba11414ddd090ad4e56dab977780fff894edd25bc7f786435238f68b377c07",
+      "baseline": "380141bc2f514bb9c88661c610eb066c123828a149c88b1537c61290f6b64f79",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/progress/32x32": {
+      "kept": "38ba11414ddd090ad4e56dab977780fff894edd25bc7f786435238f68b377c07",
+      "baseline": "4b9aa54f1b2a9869fc61d3679bddde8969542dc3db31451b57076900c3fd09ef",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/monitor/32x32": {
+      "kept": "0466962f9c6c84b2200d0628a6336840d1cd67ee1d1fb4e026113f3ecc3a5a7a",
+      "baseline": "b95ee3df8b65a9a6dfd82ca0dce1f23a6dc01b846e78a94755a6111c25adeb4b",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tile/active-settings/32x24": {
-      "kept": "c56194b4e2fca93442148ce8c4c1bfa61c801ee8863e983a4e4d006bc851d907"
+      "kept": "434d19a9d2d325bce86324b32bd757a10064e59e1859787de8cd06b962a410d1",
+      "baseline": "c56194b4e2fca93442148ce8c4c1bfa61c801ee8863e983a4e4d006bc851d907",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/tile/minimal/40x32": { "kept": "0957153d700fa20b56797d9453e7a03ef4e6a757a0b89faab05ec847fe70bbf4" },
-    "panel/en/tile/progress/40x32": { "kept": "69ac12d17c7eef3eccbf68125fe2ed1579aa9321a3c966c05a4167cc0a5004ab" },
-    "panel/en/tile/monitor/40x32": { "kept": "4b84aa10fc4d4dc7e6a7a39b5afb25ebd8216f87ebdc4da4b2e5b5f3671da88e" },
+    "panel/en/tile/minimal/40x32": {
+      "kept": "2125ef95f9dbfcc84657f2e403e301d76ca9b23cf6a04cf12519f2fd6025e5f9",
+      "baseline": "0957153d700fa20b56797d9453e7a03ef4e6a757a0b89faab05ec847fe70bbf4",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/progress/40x32": {
+      "kept": "2125ef95f9dbfcc84657f2e403e301d76ca9b23cf6a04cf12519f2fd6025e5f9",
+      "baseline": "69ac12d17c7eef3eccbf68125fe2ed1579aa9321a3c966c05a4167cc0a5004ab",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/monitor/40x32": {
+      "kept": "cd62fc5ff4980e557afd54a6b5d648c44d19018886b06d15820b697019dc70ce",
+      "baseline": "4b84aa10fc4d4dc7e6a7a39b5afb25ebd8216f87ebdc4da4b2e5b5f3671da88e",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tile/active-settings/40x24": {
-      "kept": "03f7cd209804fb170872fe654ae90926842d2e7a8c4309740ff5a611797d3576"
+      "kept": "e3505be373e53b4882aee31043b83c5f18d8c100c2eb33638ba99fd311b1063c",
+      "baseline": "03f7cd209804fb170872fe654ae90926842d2e7a8c4309740ff5a611797d3576",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/tile/minimal/48x32": { "kept": "294f698d941f74b3f8a5f2950e481ebda6478243ea94ef8fa7f1768b6128c0ff" },
-    "panel/en/tile/progress/48x32": { "kept": "68ee552244fdb405544adaa26b7f6a78308ddc11134478f77f1590c95e916008" },
-    "panel/en/tile/monitor/48x32": { "kept": "6ddef4d8c0b649c58040ac483c37b06a54848a0dfdf5e62d8dc5e616cf1318ba" },
+    "panel/en/tile/minimal/48x32": {
+      "kept": "bf53ef2b2c53d7ea1ee611a6649132d1c62065fdfe69d1d7043f338323b38d85",
+      "baseline": "294f698d941f74b3f8a5f2950e481ebda6478243ea94ef8fa7f1768b6128c0ff",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/progress/48x32": {
+      "kept": "bf53ef2b2c53d7ea1ee611a6649132d1c62065fdfe69d1d7043f338323b38d85",
+      "baseline": "68ee552244fdb405544adaa26b7f6a78308ddc11134478f77f1590c95e916008",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/monitor/48x32": {
+      "kept": "2eda57187b1594924cb81444b55c23b75f7c20b63a3eae1322abccae9bf1dca4",
+      "baseline": "6ddef4d8c0b649c58040ac483c37b06a54848a0dfdf5e62d8dc5e616cf1318ba",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tile/active-settings/48x24": {
-      "kept": "c914235fe389e2afce2bcce80504f4795b6a71b3ae37a3358999364982f966a9"
+      "kept": "a2d73127f916537b3415bfb4f899e21c9044df2c4c36a0f365eadadfd3457ec7",
+      "baseline": "c914235fe389e2afce2bcce80504f4795b6a71b3ae37a3358999364982f966a9",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/tile/minimal/56x32": { "kept": "86a074212b67bd25120270a084951445e845c7b17719927b9209784deee9ac1a" },
-    "panel/en/tile/progress/56x32": { "kept": "b2231dadd69d7942738c8df6d18e58c84d1ab5334bb78f99d66503c0914c906a" },
-    "panel/en/tile/monitor/56x32": { "kept": "5f7a9d3f3ed2d09710ce306b0ab437a941c9116d7c5788083f76d218338fbfdd" },
+    "panel/en/tile/minimal/56x32": {
+      "kept": "4d6e2f2bc72768e1a557def2337a04d1085999f16468b93d3f6d426906874a97",
+      "baseline": "86a074212b67bd25120270a084951445e845c7b17719927b9209784deee9ac1a",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/progress/56x32": {
+      "kept": "4d6e2f2bc72768e1a557def2337a04d1085999f16468b93d3f6d426906874a97",
+      "baseline": "b2231dadd69d7942738c8df6d18e58c84d1ab5334bb78f99d66503c0914c906a",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/monitor/56x32": {
+      "kept": "a17aa8eff5f4732ebcc1a4af0f6799262688594d22c49c600a38fd63317d8449",
+      "baseline": "5f7a9d3f3ed2d09710ce306b0ab437a941c9116d7c5788083f76d218338fbfdd",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tile/active-settings/56x24": {
-      "kept": "bc79ec3f847815627c9d66f6251a752d7fc8f25f2f0b4c78d9a2beb85fd8fd21"
+      "kept": "79ef14e57966831fdd56aba56573cd17fa0b9ebc86cc30037801adac2b88a72d",
+      "baseline": "bc79ec3f847815627c9d66f6251a752d7fc8f25f2f0b4c78d9a2beb85fd8fd21",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/tile/minimal/80x32": { "kept": "eb20b1152103ca30cd45d073dce187d9b165627108f1cac02e14c3dcba260ece" },
-    "panel/en/tile/progress/80x32": { "kept": "503b33ab65b15a81b60cf9efb2b1d72f01939619ae74fbcf9be69a12c0b7815e" },
-    "panel/en/tile/monitor/80x32": { "kept": "75ab4975238b5a80e67c288f2956020b2360e8f5e2e57070829d9f6d6c616c9c" },
+    "panel/en/tile/minimal/80x32": {
+      "kept": "b1e600a465a2748014e9727eff5d2549fb010b76cd698e822171a25a8c8d9789",
+      "baseline": "eb20b1152103ca30cd45d073dce187d9b165627108f1cac02e14c3dcba260ece",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/progress/80x32": {
+      "kept": "b1e600a465a2748014e9727eff5d2549fb010b76cd698e822171a25a8c8d9789",
+      "baseline": "503b33ab65b15a81b60cf9efb2b1d72f01939619ae74fbcf9be69a12c0b7815e",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/tile/monitor/80x32": {
+      "kept": "317977f41681689d8c81339767689e43baf04fb69ac046a5b9261be5c929121a",
+      "baseline": "75ab4975238b5a80e67c288f2956020b2360e8f5e2e57070829d9f6d6c616c9c",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/tile/active-settings/80x24": {
-      "kept": "b729eee4c1f743badd9188a2407951db1d37da0abdb8e1076e143748709b75aa"
+      "kept": "0dff1751adf0b7fa4222f3f22fb1289f606df128c82583809618203a93ecf145",
+      "baseline": "b729eee4c1f743badd9188a2407951db1d37da0abdb8e1076e143748709b75aa",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/frame/minimal/32x32": { "kept": "eed50a8ce710b5209e12b84d596815d2c37e874cc6b2ed18ac30b08d8bfb0e39" },
-    "panel/en/frame/progress/32x32": { "kept": "72bd80759305b4f0edaae96d511a0009614452deef9951bdc5587a192722fc44" },
-    "panel/en/frame/monitor/32x32": { "kept": "00e933a3a79e0d1664bd6171282c33ba2f39c830671363e18e6f6a67611c75fc" },
+    "panel/en/frame/minimal/32x32": {
+      "kept": "35bf74751eea5649c99a5b0316e177f415000557f4256f946a6373816326418f",
+      "baseline": "eed50a8ce710b5209e12b84d596815d2c37e874cc6b2ed18ac30b08d8bfb0e39",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/progress/32x32": {
+      "kept": "35bf74751eea5649c99a5b0316e177f415000557f4256f946a6373816326418f",
+      "baseline": "72bd80759305b4f0edaae96d511a0009614452deef9951bdc5587a192722fc44",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/monitor/32x32": {
+      "kept": "64bd9272a720d911ca97cc9a3c7b89db7e3f20ee19e2a973058e501bb6531ff5",
+      "baseline": "00e933a3a79e0d1664bd6171282c33ba2f39c830671363e18e6f6a67611c75fc",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/frame/active-settings/32x24": {
-      "kept": "d670e5a7da3d856e1d067b6481538eb1496a862599e39097b303dacd9d046caa"
+      "kept": "8fafb6c975c0376f48ce913d62c00b0ccdc30fc27d7d7acd411729dd62c70e66",
+      "baseline": "d670e5a7da3d856e1d067b6481538eb1496a862599e39097b303dacd9d046caa",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/frame/minimal/40x32": { "kept": "ace70eca340fedabdbe8c9a604c896e32c0e3e6a96c369d9c6de8f6c53b2a354" },
-    "panel/en/frame/progress/40x32": { "kept": "b6c82249fc83891608632046d36ac3832c58c423e70343d3a795b2e96daf4a70" },
-    "panel/en/frame/monitor/40x32": { "kept": "06d82211a82ffe499f65dbc6fc3ea94580ed46b5129075497fdd7c556d28bace" },
+    "panel/en/frame/minimal/40x32": {
+      "kept": "325d1bfe432bb3f78a953a7c6af47f00ff81a70fb5a2555d7790d9c34c279b80",
+      "baseline": "ace70eca340fedabdbe8c9a604c896e32c0e3e6a96c369d9c6de8f6c53b2a354",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/progress/40x32": {
+      "kept": "325d1bfe432bb3f78a953a7c6af47f00ff81a70fb5a2555d7790d9c34c279b80",
+      "baseline": "b6c82249fc83891608632046d36ac3832c58c423e70343d3a795b2e96daf4a70",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/monitor/40x32": {
+      "kept": "43cebe0bdc2145a4fdf6ec6954a5535c53ce09f0d611d33577e5d45d63abc0ef",
+      "baseline": "06d82211a82ffe499f65dbc6fc3ea94580ed46b5129075497fdd7c556d28bace",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/frame/active-settings/40x24": {
-      "kept": "a86af08a815f5f8fc4b8466523fce93fcba44d85c36309e86f02e588cc4ec3a8"
+      "kept": "3431a7e85fc37f7068294829a4514ee379421c0e3c80a1f0d93556812bc224fc",
+      "baseline": "a86af08a815f5f8fc4b8466523fce93fcba44d85c36309e86f02e588cc4ec3a8",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/frame/minimal/48x32": { "kept": "66581dc1e2da613c8624536a2279392b732dde931352d0fc3ae523695948043b" },
-    "panel/en/frame/progress/48x32": { "kept": "89d6f75709d71945b14f4e8e65a90dd2df357b42a8160c39d7d2fcec4ab65de5" },
-    "panel/en/frame/monitor/48x32": { "kept": "5c369f011a82fff0a8657423a361ed3bdab9c07e458fad34f4f1eabebdd2c5d5" },
+    "panel/en/frame/minimal/48x32": {
+      "kept": "9e0133eeb88503b52742c6a81242d7f8329751a36351113bc4d26153d0704c8a",
+      "baseline": "66581dc1e2da613c8624536a2279392b732dde931352d0fc3ae523695948043b",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/progress/48x32": {
+      "kept": "9e0133eeb88503b52742c6a81242d7f8329751a36351113bc4d26153d0704c8a",
+      "baseline": "89d6f75709d71945b14f4e8e65a90dd2df357b42a8160c39d7d2fcec4ab65de5",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/monitor/48x32": {
+      "kept": "fe23ae892c179744e756b4299ae6cf13ee6ad967f7cbe0438c9347c59245bbd4",
+      "baseline": "5c369f011a82fff0a8657423a361ed3bdab9c07e458fad34f4f1eabebdd2c5d5",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/frame/active-settings/48x24": {
-      "kept": "e15ad82db2b17922466c4ba7d8ed9ea7a86fbcf16c4ce4f7e01232289b88752c"
+      "kept": "eeaa2031fde74e8a6ae1105481af46a6cbd3413ab9cde6d79de9413b541719ec",
+      "baseline": "e15ad82db2b17922466c4ba7d8ed9ea7a86fbcf16c4ce4f7e01232289b88752c",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/frame/minimal/56x32": { "kept": "5f987bd73261954fee51498ea8906c83017f860ed404320d4f4c4361650fccd6" },
-    "panel/en/frame/progress/56x32": { "kept": "a7f1a7920e8595542ecfc712dd7fa0bb90a7941722e336ddfe2774f45c8f4452" },
-    "panel/en/frame/monitor/56x32": { "kept": "7d2723c6bdbd610f86f69f44ab637e5ec537ca45dc608fd69117868aae7421e4" },
+    "panel/en/frame/minimal/56x32": {
+      "kept": "e6f55080dc2b715c4856486b2aa1a695fdfe2b85e3ee5a969e0a2ae8c04562c6",
+      "baseline": "5f987bd73261954fee51498ea8906c83017f860ed404320d4f4c4361650fccd6",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/progress/56x32": {
+      "kept": "e6f55080dc2b715c4856486b2aa1a695fdfe2b85e3ee5a969e0a2ae8c04562c6",
+      "baseline": "a7f1a7920e8595542ecfc712dd7fa0bb90a7941722e336ddfe2774f45c8f4452",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/monitor/56x32": {
+      "kept": "df18720a4ea53dd016be0e2ad7e630804d664b62e9c0d14bc69d96184f2019fe",
+      "baseline": "7d2723c6bdbd610f86f69f44ab637e5ec537ca45dc608fd69117868aae7421e4",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/frame/active-settings/56x24": {
-      "kept": "9b78bd4f316ef86f59f6919f2980b38c36daed0e963a70c10b3860cc7f89f583"
+      "kept": "79b6648db42dae0cfaecce6dae51f313670fd86080a124b0d0ddd26cb905715d",
+      "baseline": "9b78bd4f316ef86f59f6919f2980b38c36daed0e963a70c10b3860cc7f89f583",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/frame/minimal/80x32": { "kept": "d719edb8ce5795862ea10ef514f24e0abf359ea71dababa94b6770dde1ff10ca" },
-    "panel/en/frame/progress/80x32": { "kept": "a14092fc3b9c1542e02aa67798380a4370f08135d4a77df7a579f7321df92975" },
-    "panel/en/frame/monitor/80x32": { "kept": "a80859bb93aea3f46b87ac8b1f6bbaedb56a5912e48961939b988fbdeb12d510" },
+    "panel/en/frame/minimal/80x32": {
+      "kept": "5d87bd74730efb99f0faf2deffeab5333dfdc27a74a3d8e3655b3b61e1aaaa75",
+      "baseline": "d719edb8ce5795862ea10ef514f24e0abf359ea71dababa94b6770dde1ff10ca",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/progress/80x32": {
+      "kept": "5d87bd74730efb99f0faf2deffeab5333dfdc27a74a3d8e3655b3b61e1aaaa75",
+      "baseline": "a14092fc3b9c1542e02aa67798380a4370f08135d4a77df7a579f7321df92975",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/frame/monitor/80x32": {
+      "kept": "5ec50bdf7714c81a63583792ec58d71e63de443b7a7eb94b2f7eeaddb511b368",
+      "baseline": "a80859bb93aea3f46b87ac8b1f6bbaedb56a5912e48961939b988fbdeb12d510",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/frame/active-settings/80x24": {
-      "kept": "3afd11030140a6cb05de00c49ca1fddae7d7fc288c679c8431430349d5408b55"
+      "kept": "9cb94d0ee6e4d38378dd4aa26d649c86df65f45eeeadba8c4ff985f2a8713254",
+      "baseline": "3afd11030140a6cb05de00c49ca1fddae7d7fc288c679c8431430349d5408b55",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/pill/minimal/32x32": { "kept": "0d35eac812b36b153d54c76e298309d2e9d2aaa21f123119c047f1fbfea93dd7" },
-    "panel/en/pill/progress/32x32": { "kept": "fdd1404c2832e3bc6d426b347a83407a87b4abc725ae0f7b0d821d50ceebc70c" },
-    "panel/en/pill/monitor/32x32": { "kept": "9270fab26b8e3b0a7d3b8ac3e686ae9f0bf27eab8d085e564a126be132db1ce6" },
+    "panel/en/pill/minimal/32x32": {
+      "kept": "e6374f7cdf9769ff16bc12d70b1d6850e05e544e332a660239b98889349a95d4",
+      "baseline": "0d35eac812b36b153d54c76e298309d2e9d2aaa21f123119c047f1fbfea93dd7",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/progress/32x32": {
+      "kept": "e6374f7cdf9769ff16bc12d70b1d6850e05e544e332a660239b98889349a95d4",
+      "baseline": "fdd1404c2832e3bc6d426b347a83407a87b4abc725ae0f7b0d821d50ceebc70c",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/monitor/32x32": {
+      "kept": "7a6da930ed37746de82a3bb0c4f555bec9e6f89b8d10dfbd36c9ad7031d9d7e9",
+      "baseline": "9270fab26b8e3b0a7d3b8ac3e686ae9f0bf27eab8d085e564a126be132db1ce6",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/pill/active-settings/32x24": {
-      "kept": "992a6f902328ef77f5b7032a7e0d498d7991e70b36d49c11523c49b8d7d6cfb1"
+      "kept": "44d342d0dddf51b59388aaf360ad9788112a32695cfa859905d312f453e2a374",
+      "baseline": "992a6f902328ef77f5b7032a7e0d498d7991e70b36d49c11523c49b8d7d6cfb1",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/pill/minimal/40x32": { "kept": "3e439c7a0ee99c140222210d3cc2a5f0bcdda2357ff7d3d81ac94819a7a9c8d8" },
-    "panel/en/pill/progress/40x32": { "kept": "5ca20587558a41cbd4741ee6edeeea1178de004f6d0b58d2043e6ccd9b0c8fe9" },
-    "panel/en/pill/monitor/40x32": { "kept": "df6840fb72d22765b8b378f1a228dbb8c4dcc3f3539e05340ce82f50b54a2780" },
+    "panel/en/pill/minimal/40x32": {
+      "kept": "c36712b2d39c23f5b22918b04abdf3163e233305799b8d3bec8369058abb9458",
+      "baseline": "3e439c7a0ee99c140222210d3cc2a5f0bcdda2357ff7d3d81ac94819a7a9c8d8",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/progress/40x32": {
+      "kept": "c36712b2d39c23f5b22918b04abdf3163e233305799b8d3bec8369058abb9458",
+      "baseline": "5ca20587558a41cbd4741ee6edeeea1178de004f6d0b58d2043e6ccd9b0c8fe9",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/monitor/40x32": {
+      "kept": "759be3e79ef6dfb1ca068f2ca65fa263827620e075bb08e205ae26c9d4f2cdd7",
+      "baseline": "df6840fb72d22765b8b378f1a228dbb8c4dcc3f3539e05340ce82f50b54a2780",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/pill/active-settings/40x24": {
-      "kept": "ee642a75d08ac31329375fa3ed2bc64559265f90cd558f0d0c7841ff64060383"
+      "kept": "017bcdbde3611440ed5cc9fbb30b6ba09363b1cd862507b249e524b0b7703fe8",
+      "baseline": "ee642a75d08ac31329375fa3ed2bc64559265f90cd558f0d0c7841ff64060383",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/pill/minimal/48x32": { "kept": "0c670ddf0bc41106fbb242922bc1a7dc52c1ab6a4cf271a5912658af62b3342a" },
-    "panel/en/pill/progress/48x32": { "kept": "2ce9b86efa0839f15a5fff8174900dbe10f1b569119c424346f84bda858998d4" },
-    "panel/en/pill/monitor/48x32": { "kept": "0a97e1319037195ab5e2f438e0e85953c6e62597b47595998fdd06e7f6ec0a73" },
+    "panel/en/pill/minimal/48x32": {
+      "kept": "2beb20766407890c347410f98430c95ae1316dd123e142fca59910d59e59ffa1",
+      "baseline": "0c670ddf0bc41106fbb242922bc1a7dc52c1ab6a4cf271a5912658af62b3342a",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/progress/48x32": {
+      "kept": "2beb20766407890c347410f98430c95ae1316dd123e142fca59910d59e59ffa1",
+      "baseline": "2ce9b86efa0839f15a5fff8174900dbe10f1b569119c424346f84bda858998d4",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/monitor/48x32": {
+      "kept": "8bc202d6dffe025de1e394cfce93947915e4d890b2035702866645efe73bff8e",
+      "baseline": "0a97e1319037195ab5e2f438e0e85953c6e62597b47595998fdd06e7f6ec0a73",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/pill/active-settings/48x24": {
-      "kept": "3607a52718ead120e2803e377d720be30192c11fb671072959547c8adb622e38"
+      "kept": "5936b3aa642e70610900e77a1ba0289fa9aebdb1878e22324e146b0b3b2ab615",
+      "baseline": "3607a52718ead120e2803e377d720be30192c11fb671072959547c8adb622e38",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/pill/minimal/56x32": { "kept": "6aaf7ba0159ed637dad35b19241b79eaacb823403f6824f302f275693dfa5a9a" },
-    "panel/en/pill/progress/56x32": { "kept": "402cbe6cb42d2fdf54955e3ada980b82db97f8d093d4794cc177437c38102514" },
-    "panel/en/pill/monitor/56x32": { "kept": "8f406756f77e9336c33bdfe2c49c2f117840cb8f74587fbaa13e821c99d5ff51" },
+    "panel/en/pill/minimal/56x32": {
+      "kept": "67917cfbe1ae6653c62ed9d08ba80644f09ab54caab14b069659671bde9404d5",
+      "baseline": "6aaf7ba0159ed637dad35b19241b79eaacb823403f6824f302f275693dfa5a9a",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/progress/56x32": {
+      "kept": "67917cfbe1ae6653c62ed9d08ba80644f09ab54caab14b069659671bde9404d5",
+      "baseline": "402cbe6cb42d2fdf54955e3ada980b82db97f8d093d4794cc177437c38102514",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/monitor/56x32": {
+      "kept": "a09a8b21694f23f62abe68f57ad8e2ea3f34195ef75d41ae205dfabc782c278e",
+      "baseline": "8f406756f77e9336c33bdfe2c49c2f117840cb8f74587fbaa13e821c99d5ff51",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/pill/active-settings/56x24": {
-      "kept": "feadde5b0e9f740bdd77f10d683fc229dd7044590c76ca903894bb8d81ad4982"
+      "kept": "d9fc07fc63e05e21561f37eba1d946c1e023322dbbbffd213305219cd1a55c79",
+      "baseline": "feadde5b0e9f740bdd77f10d683fc229dd7044590c76ca903894bb8d81ad4982",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/en/pill/minimal/80x32": { "kept": "3808814827677ebb0e58e50070ad9d5eb6e062a00b7079e1ffe4f9936aedb471" },
-    "panel/en/pill/progress/80x32": { "kept": "586330261c199b0b92c78181d4253fb6d6273decb65262a419c7739f2b61fc29" },
-    "panel/en/pill/monitor/80x32": { "kept": "b486b7b3318b8af1894213cb37557b7f06099a324bab67f7cfe17f489c372229" },
+    "panel/en/pill/minimal/80x32": {
+      "kept": "c5da57453c05358a67543edd57a5e1e2fb5be7df21c37fb003b0a641ecab0fcb",
+      "baseline": "3808814827677ebb0e58e50070ad9d5eb6e062a00b7079e1ffe4f9936aedb471",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/progress/80x32": {
+      "kept": "c5da57453c05358a67543edd57a5e1e2fb5be7df21c37fb003b0a641ecab0fcb",
+      "baseline": "586330261c199b0b92c78181d4253fb6d6273decb65262a419c7739f2b61fc29",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/en/pill/monitor/80x32": {
+      "kept": "8c7cc089666da6345eb1346d51e323078d50e777f16b797f4e0ff96425698170",
+      "baseline": "b486b7b3318b8af1894213cb37557b7f06099a324bab67f7cfe17f489c372229",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/en/pill/active-settings/80x24": {
-      "kept": "87545539198ce550ebd07df9352c73026b55dcbf5fd9af4601a183693498db1b"
+      "kept": "895a7ddda83c350125c8d8247c7e7470d784d5f1497ab5e5c1504e2d80040d6a",
+      "baseline": "87545539198ce550ebd07df9352c73026b55dcbf5fd9af4601a183693498db1b",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tab/minimal/32x32": { "kept": "0821bbee47e31f2ed7e5301b569c54a0095b42814e01ce7890b3ce483866cd57" },
-    "panel/zh/tab/progress/32x32": { "kept": "c25707ab84556956e405843827714d52bc029481b9d7ba8e5f41f495a052750c" },
-    "panel/zh/tab/monitor/32x32": { "kept": "6d9bc6cf0942f1756ae95d7bf998f7a08c1e8f5862a4ee6d7bea4a4eea7812b2" },
+    "panel/zh/tab/minimal/32x32": {
+      "kept": "84d0fb3d902d16f937f7e9daa672a21132f3fb5292b9827025187281766bceca",
+      "baseline": "0821bbee47e31f2ed7e5301b569c54a0095b42814e01ce7890b3ce483866cd57",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/progress/32x32": {
+      "kept": "84d0fb3d902d16f937f7e9daa672a21132f3fb5292b9827025187281766bceca",
+      "baseline": "c25707ab84556956e405843827714d52bc029481b9d7ba8e5f41f495a052750c",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/monitor/32x32": {
+      "kept": "512fecaadf898a110422a4e2b50dd53bdf208eaa966940669c088cedb26811d0",
+      "baseline": "6d9bc6cf0942f1756ae95d7bf998f7a08c1e8f5862a4ee6d7bea4a4eea7812b2",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tab/active-settings/32x24": {
-      "kept": "889fde370eecaeec26f2d941ba5513379dfa7c35eadac1231e4abb53695205e8"
+      "kept": "ebc7f45c15da4658c94a23430703e16844701e60a742fd90ec340b4b1bd4bcc6",
+      "baseline": "889fde370eecaeec26f2d941ba5513379dfa7c35eadac1231e4abb53695205e8",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tab/minimal/40x32": { "kept": "8fa6ea13699b5b2fd6b4295c93e75519a2e8968878d3559b996c1085be87f2b1" },
-    "panel/zh/tab/progress/40x32": { "kept": "e815e10b6f1aae2f258154c45eaa7d441c2b0508facf14e95afbace1969b9bca" },
-    "panel/zh/tab/monitor/40x32": { "kept": "33efd81a426645a54ec94fcf1df43f799755e2287dfe3a0bb8e90ad0bbe722ad" },
+    "panel/zh/tab/minimal/40x32": {
+      "kept": "5a85a0038753b2041ef6778fb6222195fac220c49b900522ce5bdd8c43b88912",
+      "baseline": "8fa6ea13699b5b2fd6b4295c93e75519a2e8968878d3559b996c1085be87f2b1",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/progress/40x32": {
+      "kept": "5a85a0038753b2041ef6778fb6222195fac220c49b900522ce5bdd8c43b88912",
+      "baseline": "e815e10b6f1aae2f258154c45eaa7d441c2b0508facf14e95afbace1969b9bca",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/monitor/40x32": {
+      "kept": "d5ba41e35441f87d12e74b45cafd49dec28ba3135b7d7b8453f4549ddbb33a0a",
+      "baseline": "33efd81a426645a54ec94fcf1df43f799755e2287dfe3a0bb8e90ad0bbe722ad",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tab/active-settings/40x24": {
-      "kept": "0066337df67600970d662dfffb4b1b54d6691172ef7eb59af292b4e8044a8f77"
+      "kept": "2d2c856137791d3b91d241d16badd2419c9baeee9cb2aa5521c869adc3e359e1",
+      "baseline": "0066337df67600970d662dfffb4b1b54d6691172ef7eb59af292b4e8044a8f77",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tab/minimal/48x32": { "kept": "e7962c32d739515395393d76e190ce2f923cf1f5eb468e5112ffba225d4e4636" },
-    "panel/zh/tab/progress/48x32": { "kept": "7722ff7b8ca3a135a330132ffd71a428cd29aba167499442d1eb7ab14a644114" },
-    "panel/zh/tab/monitor/48x32": { "kept": "7724a0de96461b55acd98afc13af171d01c48370e5dabcf067c3c64dbed954c3" },
+    "panel/zh/tab/minimal/48x32": {
+      "kept": "c4c48a777f4fe2288a340270ebbabf747462ae1fb8bb8ae17c39d21ed574d880",
+      "baseline": "e7962c32d739515395393d76e190ce2f923cf1f5eb468e5112ffba225d4e4636",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/progress/48x32": {
+      "kept": "c4c48a777f4fe2288a340270ebbabf747462ae1fb8bb8ae17c39d21ed574d880",
+      "baseline": "7722ff7b8ca3a135a330132ffd71a428cd29aba167499442d1eb7ab14a644114",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/monitor/48x32": {
+      "kept": "2e4ed2a7f129a9d5f79f2b1eb1f863600d74ea73fe6d17ea79d6bac50beb0ad8",
+      "baseline": "7724a0de96461b55acd98afc13af171d01c48370e5dabcf067c3c64dbed954c3",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tab/active-settings/48x24": {
-      "kept": "ee5cf317bf4a69cfc0e2551663035195f9491b1e3db3076475c2c85bbcf4b892"
+      "kept": "e41a15e3c11d977129bbb51a5f0e626e5f478becc5df41e0066f22d5add56f17",
+      "baseline": "ee5cf317bf4a69cfc0e2551663035195f9491b1e3db3076475c2c85bbcf4b892",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tab/minimal/56x32": { "kept": "53433a2d3addff92f1fe0c381052776b92e5792e91b021bc148d02a5cb0c54af" },
-    "panel/zh/tab/progress/56x32": { "kept": "398d184e152321d79b0a540ae7ac4d16d8f9bd2237c4484fc0f4b69b623e1cdd" },
-    "panel/zh/tab/monitor/56x32": { "kept": "d9c4b615f8dfa15ecff488abb967d9aa7102fd46af655c25755906834afec4a5" },
+    "panel/zh/tab/minimal/56x32": {
+      "kept": "c6eaf73612d5ad577d4bda8eb3bea01ce1ab0bd7464e49208aee7e2f58cb85ee",
+      "baseline": "53433a2d3addff92f1fe0c381052776b92e5792e91b021bc148d02a5cb0c54af",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/progress/56x32": {
+      "kept": "c6eaf73612d5ad577d4bda8eb3bea01ce1ab0bd7464e49208aee7e2f58cb85ee",
+      "baseline": "398d184e152321d79b0a540ae7ac4d16d8f9bd2237c4484fc0f4b69b623e1cdd",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/monitor/56x32": {
+      "kept": "60d12a772a5bca0f55441341b9fcdbeee926d1d99a7b1ad344f62e0f83819df3",
+      "baseline": "d9c4b615f8dfa15ecff488abb967d9aa7102fd46af655c25755906834afec4a5",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tab/active-settings/56x24": {
-      "kept": "a81334ada65a9e435f0bdd91730c11b8ecbb043c80d0f72fd00a54572b9231c7"
+      "kept": "69de69134a1568b556b198d215f44c769c029cc1a6c3addf369722c09dd2b1e0",
+      "baseline": "a81334ada65a9e435f0bdd91730c11b8ecbb043c80d0f72fd00a54572b9231c7",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tab/minimal/80x32": { "kept": "3c88b5ed7dfa4b949b98c060854cc071bbe1ff5d07c6ac6ec26f0fef6d2aabb1" },
-    "panel/zh/tab/progress/80x32": { "kept": "6f333f7bb87d7abe35ef58a7fd3a8c84428439a0a72b1bdf007e38057b96581f" },
-    "panel/zh/tab/monitor/80x32": { "kept": "47eee0ebc3fa2efb3ed773442fd5e17109f1a4ea982649f5c9c3fec99d4507ae" },
+    "panel/zh/tab/minimal/80x32": {
+      "kept": "a373ef5d183d97dac0fc0d833b8fff21161a5973fdcb7bfc4bacee33d86a1ca9",
+      "baseline": "3c88b5ed7dfa4b949b98c060854cc071bbe1ff5d07c6ac6ec26f0fef6d2aabb1",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/progress/80x32": {
+      "kept": "a373ef5d183d97dac0fc0d833b8fff21161a5973fdcb7bfc4bacee33d86a1ca9",
+      "baseline": "6f333f7bb87d7abe35ef58a7fd3a8c84428439a0a72b1bdf007e38057b96581f",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tab/monitor/80x32": {
+      "kept": "d380c1e077c31a28a5706081a1d3de359c4130178766342af2167c4fc11d19d2",
+      "baseline": "47eee0ebc3fa2efb3ed773442fd5e17109f1a4ea982649f5c9c3fec99d4507ae",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tab/active-settings/80x24": {
-      "kept": "f88ecdd35efeb8b2b9b6584e505e893581e4d239aecd170ed6e98c9d147766fc"
+      "kept": "f616571635dc7d485e212e4927fad21ce89ce125211e08810ebc0e2284ee61c5",
+      "baseline": "f88ecdd35efeb8b2b9b6584e505e893581e4d239aecd170ed6e98c9d147766fc",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/band/minimal/32x32": { "kept": "3059594b8676f34e2b02a7e40f603ff0bc24afa3d70eed664d78918a21a555e9" },
-    "panel/zh/band/progress/32x32": { "kept": "0a934736d31786d602339b7f3771ae8c020e4e43c7ac3c53c148b80b1db0fe6f" },
-    "panel/zh/band/monitor/32x32": { "kept": "93c5677b6671142bc86ab71cd1aa9b8f444043b941572b00d2164a6586049eb4" },
+    "panel/zh/band/minimal/32x32": {
+      "kept": "c5f6ff5d7a4698b0d29591a45e74005da92a0ef669bd48897a463d60065a8484",
+      "baseline": "3059594b8676f34e2b02a7e40f603ff0bc24afa3d70eed664d78918a21a555e9",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/progress/32x32": {
+      "kept": "c5f6ff5d7a4698b0d29591a45e74005da92a0ef669bd48897a463d60065a8484",
+      "baseline": "0a934736d31786d602339b7f3771ae8c020e4e43c7ac3c53c148b80b1db0fe6f",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/monitor/32x32": {
+      "kept": "1bbc6b8239efc984faf424d02fca1b1ad6ba8d2ab8403e32deacc73e3f4c3d66",
+      "baseline": "93c5677b6671142bc86ab71cd1aa9b8f444043b941572b00d2164a6586049eb4",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/band/active-settings/32x24": {
-      "kept": "71a1564502b3f22b8504f763c81e4f79f0c826cc63b21cd865517e40117b9db5"
+      "kept": "585121aec77ed68a7ee3abe40e6326ffafe3b6a0e53d1f13339f697c733e14c3",
+      "baseline": "71a1564502b3f22b8504f763c81e4f79f0c826cc63b21cd865517e40117b9db5",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/band/minimal/40x32": { "kept": "20d20eb4db9213499ea576cee3a4ed786b35411fd9269c900d675263daf51432" },
-    "panel/zh/band/progress/40x32": { "kept": "76dec308223cecb7fb8b1ce39c136869a1628f7ccc46ecbe272457379e244ea1" },
-    "panel/zh/band/monitor/40x32": { "kept": "738ae5562c0d9dce3541a96ee8984e39323b7f64c9b3e5167ec7ea28258d0e97" },
+    "panel/zh/band/minimal/40x32": {
+      "kept": "4dc5b5e0de8c36a85ebcdac8436979c0e05defd50f7c491d734f114c5e122d1e",
+      "baseline": "20d20eb4db9213499ea576cee3a4ed786b35411fd9269c900d675263daf51432",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/progress/40x32": {
+      "kept": "4dc5b5e0de8c36a85ebcdac8436979c0e05defd50f7c491d734f114c5e122d1e",
+      "baseline": "76dec308223cecb7fb8b1ce39c136869a1628f7ccc46ecbe272457379e244ea1",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/monitor/40x32": {
+      "kept": "09371b1c7f27964e28da0996ffd2e117d7b89fd3f5b1b01b7a629ae8db7b094e",
+      "baseline": "738ae5562c0d9dce3541a96ee8984e39323b7f64c9b3e5167ec7ea28258d0e97",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/band/active-settings/40x24": {
-      "kept": "b3918d47e60e20e8e8677fdab765ff0f205dba7698bf9f55edc387ec6f52de81"
+      "kept": "131bae1f47c3ddf0120487b0f594112219dac56839dfd9dc49cf71b9765bc440",
+      "baseline": "b3918d47e60e20e8e8677fdab765ff0f205dba7698bf9f55edc387ec6f52de81",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/band/minimal/48x32": { "kept": "1ac475480faff8606c8bde15d589fbfc46160a77fb92e4072833a7e52f2796f1" },
-    "panel/zh/band/progress/48x32": { "kept": "7830e6ce52cc35e57a850af9e3dd7d109e63d23aa01939a0093fa0bb0d681229" },
-    "panel/zh/band/monitor/48x32": { "kept": "b090246760377297d881f503166aca052a9db9298adef13d76fe02af60f7c451" },
+    "panel/zh/band/minimal/48x32": {
+      "kept": "0deeb9f88b6a3c7754c2b34b505979607b59a9bd123fef75b58b2ae469310119",
+      "baseline": "1ac475480faff8606c8bde15d589fbfc46160a77fb92e4072833a7e52f2796f1",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/progress/48x32": {
+      "kept": "0deeb9f88b6a3c7754c2b34b505979607b59a9bd123fef75b58b2ae469310119",
+      "baseline": "7830e6ce52cc35e57a850af9e3dd7d109e63d23aa01939a0093fa0bb0d681229",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/monitor/48x32": {
+      "kept": "9131c01a373f4546e89c855a4843889c37355d023bc536f67ee9fc48d73ba41a",
+      "baseline": "b090246760377297d881f503166aca052a9db9298adef13d76fe02af60f7c451",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/band/active-settings/48x24": {
-      "kept": "7466268a2a67f93d0fe13bc724b4ce6fa8fb0c2fdb4b15527317e2d70dfa2faa"
+      "kept": "91472a8518c40846733b176882bda52e7c7145136a1b4acba50e2cf57265bf8f",
+      "baseline": "7466268a2a67f93d0fe13bc724b4ce6fa8fb0c2fdb4b15527317e2d70dfa2faa",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/band/minimal/56x32": { "kept": "395d4dbe5841b37b6958bb84f655c9c5e848796d35c4e9b49e6a52f979659942" },
-    "panel/zh/band/progress/56x32": { "kept": "218f7c62339f234789efd2310036babfcb278cf966e69cb701fd5a34abc5c024" },
-    "panel/zh/band/monitor/56x32": { "kept": "be21b5b6f615e36e71856643b511c553aad1a2657cb7f9fc8e09f02965128f0a" },
+    "panel/zh/band/minimal/56x32": {
+      "kept": "cec16a376579c35077bc9f1800b7b047eed5d608eb8fb9de7c2dcca981935a71",
+      "baseline": "395d4dbe5841b37b6958bb84f655c9c5e848796d35c4e9b49e6a52f979659942",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/progress/56x32": {
+      "kept": "cec16a376579c35077bc9f1800b7b047eed5d608eb8fb9de7c2dcca981935a71",
+      "baseline": "218f7c62339f234789efd2310036babfcb278cf966e69cb701fd5a34abc5c024",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/monitor/56x32": {
+      "kept": "a0b746a85a98756a6a80daaf9f3fc8ea434d8d2ec3e6ed99d8688b77eac1bc50",
+      "baseline": "be21b5b6f615e36e71856643b511c553aad1a2657cb7f9fc8e09f02965128f0a",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/band/active-settings/56x24": {
-      "kept": "a4603cab2d3f57412b21bfe6aaf85f685e9e9f0d18b67c0f65b2597442df9700"
+      "kept": "9486b8733ffbe3889895c22b57c24a422cf5f5bba73d5da5e81b1ffcc342aaf8",
+      "baseline": "a4603cab2d3f57412b21bfe6aaf85f685e9e9f0d18b67c0f65b2597442df9700",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/band/minimal/80x32": { "kept": "6de97596d1febb1342dea667efb717454e3f25408a5bde141980cb018d5075c4" },
-    "panel/zh/band/progress/80x32": { "kept": "8dc1ad97f9e3bd1cc5d10676b3210325b0ceac7facc337d3087e845684e409a1" },
-    "panel/zh/band/monitor/80x32": { "kept": "52baa13362c00f1d52a09d4500ab23c091b59a6d88e3a36ce4778046a5e37a10" },
+    "panel/zh/band/minimal/80x32": {
+      "kept": "0ae8d25504019d188501e1d3faacaeb53b1ddf7ede59e63f96c43dc428c83c31",
+      "baseline": "6de97596d1febb1342dea667efb717454e3f25408a5bde141980cb018d5075c4",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/progress/80x32": {
+      "kept": "0ae8d25504019d188501e1d3faacaeb53b1ddf7ede59e63f96c43dc428c83c31",
+      "baseline": "8dc1ad97f9e3bd1cc5d10676b3210325b0ceac7facc337d3087e845684e409a1",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/band/monitor/80x32": {
+      "kept": "543bde0c04dbe58829da4714cbd75a84ded6685b71f02a98d65696f135b45480",
+      "baseline": "52baa13362c00f1d52a09d4500ab23c091b59a6d88e3a36ce4778046a5e37a10",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/band/active-settings/80x24": {
-      "kept": "2dddd06bca859f977c0636f29e8b873ffaf5e383a44c8f24c4aa291583924517"
+      "kept": "8669ff91a2041121dc7ff5446a816e98f212ab3902dad407c7321122abd3a930",
+      "baseline": "2dddd06bca859f977c0636f29e8b873ffaf5e383a44c8f24c4aa291583924517",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tile/minimal/32x32": { "kept": "367886739fd2031652a0da2c1f15c6e6d68c3e3f095f08601bd155bf187677ee" },
-    "panel/zh/tile/progress/32x32": { "kept": "696361cc3e34e66273e809c8bf3f858b0becf41e0db3711f4afd2dc66223c7c7" },
-    "panel/zh/tile/monitor/32x32": { "kept": "75cd38bfeb19599c34f38ed232bec47ac076373d61949968e267812b9b10e4f5" },
+    "panel/zh/tile/minimal/32x32": {
+      "kept": "2bfe77c93a27cc4e59e14f31f0ae4ff95db2e5bc866003867919c811a3028558",
+      "baseline": "367886739fd2031652a0da2c1f15c6e6d68c3e3f095f08601bd155bf187677ee",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/progress/32x32": {
+      "kept": "2bfe77c93a27cc4e59e14f31f0ae4ff95db2e5bc866003867919c811a3028558",
+      "baseline": "696361cc3e34e66273e809c8bf3f858b0becf41e0db3711f4afd2dc66223c7c7",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/monitor/32x32": {
+      "kept": "756f8b5334bf0c7a7b26d5c141dc60c8ce58cc368dd824b960ceaa33336dd6f0",
+      "baseline": "75cd38bfeb19599c34f38ed232bec47ac076373d61949968e267812b9b10e4f5",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tile/active-settings/32x24": {
-      "kept": "331a68f8872843644f029b9dbef09dd77fba998e067d0f0b91b936197f8a1c01"
+      "kept": "08670958feecb67dfbc4ea6b6c3357e6d645bf4aba5d4e9d89904b2445cc4847",
+      "baseline": "331a68f8872843644f029b9dbef09dd77fba998e067d0f0b91b936197f8a1c01",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tile/minimal/40x32": { "kept": "c631d219d79326f4f34f44d88c4bda08aa8a20beed128fddedc4c13c6e9b8828" },
-    "panel/zh/tile/progress/40x32": { "kept": "99e68a1fc9e0ff423497067a588284c4874310ae67209d9dff1e14f481230522" },
-    "panel/zh/tile/monitor/40x32": { "kept": "ad0945ed55bf69289c471dd02d3b890fff66d79833a972e13cc1ad820d8a5117" },
+    "panel/zh/tile/minimal/40x32": {
+      "kept": "f6ad397daf319db4d872b7a08a882f68354bc205b0366eab9412e031df7e4214",
+      "baseline": "c631d219d79326f4f34f44d88c4bda08aa8a20beed128fddedc4c13c6e9b8828",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/progress/40x32": {
+      "kept": "f6ad397daf319db4d872b7a08a882f68354bc205b0366eab9412e031df7e4214",
+      "baseline": "99e68a1fc9e0ff423497067a588284c4874310ae67209d9dff1e14f481230522",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/monitor/40x32": {
+      "kept": "cd0e93f4fa6d5d6e2df565628df8babe5e86535192bf7ff1c87c6fb410831061",
+      "baseline": "ad0945ed55bf69289c471dd02d3b890fff66d79833a972e13cc1ad820d8a5117",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tile/active-settings/40x24": {
-      "kept": "6052d6dd174da1ae4112aaa4f38ab983a94760569bffcc05dfc7ad61d7d12f48"
+      "kept": "a7a99e7f97cfd793e8938fa7222a07057e1d29548ca35e3194907f893f111c06",
+      "baseline": "6052d6dd174da1ae4112aaa4f38ab983a94760569bffcc05dfc7ad61d7d12f48",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tile/minimal/48x32": { "kept": "d2db0607854f0505e17c593fd350d455ce0c62772a66532f2bf0ac96c7aeee16" },
-    "panel/zh/tile/progress/48x32": { "kept": "a844702eeb124de3ecf64c759257c2077c06668982e8c43bb8f84177294497c7" },
-    "panel/zh/tile/monitor/48x32": { "kept": "9b33bc4818294c61b3f9e0b16dfe522f008186199230aeb37998277ad533f98f" },
+    "panel/zh/tile/minimal/48x32": {
+      "kept": "b071895518d71f2b9b885fe2e03deaec925106fe9099c81ef645ca43041ba66b",
+      "baseline": "d2db0607854f0505e17c593fd350d455ce0c62772a66532f2bf0ac96c7aeee16",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/progress/48x32": {
+      "kept": "b071895518d71f2b9b885fe2e03deaec925106fe9099c81ef645ca43041ba66b",
+      "baseline": "a844702eeb124de3ecf64c759257c2077c06668982e8c43bb8f84177294497c7",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/monitor/48x32": {
+      "kept": "d643c82d18e65b6ac3dfab8abc4755bde7288203fa6cf75a9e883bb3388a33a5",
+      "baseline": "9b33bc4818294c61b3f9e0b16dfe522f008186199230aeb37998277ad533f98f",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tile/active-settings/48x24": {
-      "kept": "b4983028ccc8b2cda0b93706ee517edb88caab5e40fdf509c1a6dc4fa48cdb61"
+      "kept": "bb778f1d331c6755ad80d67b8bcdcc7b2a0cb9121efc627de48fff9350dedb70",
+      "baseline": "b4983028ccc8b2cda0b93706ee517edb88caab5e40fdf509c1a6dc4fa48cdb61",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tile/minimal/56x32": { "kept": "82beeaeb246ce9c2efea126b9828a338fa8896bacfb421e3b9d5f6a15a9d2f94" },
-    "panel/zh/tile/progress/56x32": { "kept": "7c67a8917846aa67f3af5a2762719051b037d6729064d8b4427cbfd79a37265b" },
-    "panel/zh/tile/monitor/56x32": { "kept": "9db790e2d88b5bf3fed7aa014066b0247f291ccd872b73f2babd19989d5bc5be" },
+    "panel/zh/tile/minimal/56x32": {
+      "kept": "a72d1af9e53332dff5ac79acf7c06588712527fcfc41dc1ae87d9d2794b73fea",
+      "baseline": "82beeaeb246ce9c2efea126b9828a338fa8896bacfb421e3b9d5f6a15a9d2f94",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/progress/56x32": {
+      "kept": "a72d1af9e53332dff5ac79acf7c06588712527fcfc41dc1ae87d9d2794b73fea",
+      "baseline": "7c67a8917846aa67f3af5a2762719051b037d6729064d8b4427cbfd79a37265b",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/monitor/56x32": {
+      "kept": "66e5a6db70cf16f822fe160a27fa5b547077808a93304a554c97784ba30b2f3c",
+      "baseline": "9db790e2d88b5bf3fed7aa014066b0247f291ccd872b73f2babd19989d5bc5be",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tile/active-settings/56x24": {
-      "kept": "f66fc0ad514cfe5218d41c75f710256447d20f27cca845af82fee2b495e2ec77"
+      "kept": "6eac6019cddce64d9be103f82cb3fd01d725811e5785d9752a3e00a3f4cc2e9e",
+      "baseline": "f66fc0ad514cfe5218d41c75f710256447d20f27cca845af82fee2b495e2ec77",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/tile/minimal/80x32": { "kept": "c62238a05ba50ee4b0066f45b060720bfae11013a40a085594a10fdba8646f63" },
-    "panel/zh/tile/progress/80x32": { "kept": "78df8cf0fc893f282a7a18e0d27253b1b1f38cbdafaeb19adf4ce3bd0467b8e9" },
-    "panel/zh/tile/monitor/80x32": { "kept": "1e7bfdd5b822c4d974a24ab633f2b2ed0f24b62144bba7d517229327348e46f9" },
+    "panel/zh/tile/minimal/80x32": {
+      "kept": "565ad04f4e1ebe9721faddffc4d5c1bc781b463fa1098dabbb893592af8449e1",
+      "baseline": "c62238a05ba50ee4b0066f45b060720bfae11013a40a085594a10fdba8646f63",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/progress/80x32": {
+      "kept": "565ad04f4e1ebe9721faddffc4d5c1bc781b463fa1098dabbb893592af8449e1",
+      "baseline": "78df8cf0fc893f282a7a18e0d27253b1b1f38cbdafaeb19adf4ce3bd0467b8e9",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/tile/monitor/80x32": {
+      "kept": "355613b874fef992d3c65a5dc4821bbba01bc70d65c6d8c65c46b917447dcaac",
+      "baseline": "1e7bfdd5b822c4d974a24ab633f2b2ed0f24b62144bba7d517229327348e46f9",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/tile/active-settings/80x24": {
-      "kept": "2cbd24e5adb5267561992b95a8c4f4ae2f4c66fc6f8596e7ed26a98d24585995"
+      "kept": "02bef56193f89ac568c7198cabe61ad6025f1fbd69e88a68926df13cc404a804",
+      "baseline": "2cbd24e5adb5267561992b95a8c4f4ae2f4c66fc6f8596e7ed26a98d24585995",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/frame/minimal/32x32": { "kept": "dd7e40874e105fcc0e8f5094203ea1fc73d5ea9412ce48cd8b9bb1ce74e68922" },
-    "panel/zh/frame/progress/32x32": { "kept": "9b42809050dedfc3ed47c4c653d72d93199424f862b28ce2a2fdfb5b0d6e7de9" },
-    "panel/zh/frame/monitor/32x32": { "kept": "33bbd2ef379e3c7ef91752726f462261b1dbb0f736464806d49b14ba43534d81" },
+    "panel/zh/frame/minimal/32x32": {
+      "kept": "037e80c004461f5e18681fa528181234b546cfa0a377ffb7fd92ef655ae8b0c5",
+      "baseline": "dd7e40874e105fcc0e8f5094203ea1fc73d5ea9412ce48cd8b9bb1ce74e68922",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/progress/32x32": {
+      "kept": "037e80c004461f5e18681fa528181234b546cfa0a377ffb7fd92ef655ae8b0c5",
+      "baseline": "9b42809050dedfc3ed47c4c653d72d93199424f862b28ce2a2fdfb5b0d6e7de9",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/monitor/32x32": {
+      "kept": "3e67ca8b2925088f5a9d7538d8b8ab54aaf420aa6e8fb86e3d50840f218fa512",
+      "baseline": "33bbd2ef379e3c7ef91752726f462261b1dbb0f736464806d49b14ba43534d81",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/frame/active-settings/32x24": {
-      "kept": "14405ef1a5142e497e0a956df9ce8a38eebccfe66918d053bdd7f0fb508c250b"
+      "kept": "fc56a2abd9b6d44e662a44aaef1a36e525ec87a369060630c3ece46759d2cc2d",
+      "baseline": "14405ef1a5142e497e0a956df9ce8a38eebccfe66918d053bdd7f0fb508c250b",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/frame/minimal/40x32": { "kept": "b39bff6acca291fc5c6151df44d7959103cfa8f8326cbfdf1d2fa7e7651cc6a7" },
-    "panel/zh/frame/progress/40x32": { "kept": "3e62ea361a2b2d6266eca094534736698bc0318a3be1b3781e3e52015693e7be" },
-    "panel/zh/frame/monitor/40x32": { "kept": "459ecbf9494dd44fbf9e851f01cc3dcf39c965f4be46e9c991c7d33969529379" },
+    "panel/zh/frame/minimal/40x32": {
+      "kept": "d11caa554b1adf1078261956abd3a05a9130d22d67485dd979f3033f3ecf4d98",
+      "baseline": "b39bff6acca291fc5c6151df44d7959103cfa8f8326cbfdf1d2fa7e7651cc6a7",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/progress/40x32": {
+      "kept": "d11caa554b1adf1078261956abd3a05a9130d22d67485dd979f3033f3ecf4d98",
+      "baseline": "3e62ea361a2b2d6266eca094534736698bc0318a3be1b3781e3e52015693e7be",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/monitor/40x32": {
+      "kept": "7986ca4d41e04089f00a34711ba77f8815db52498e5fa897c17182c3e9660665",
+      "baseline": "459ecbf9494dd44fbf9e851f01cc3dcf39c965f4be46e9c991c7d33969529379",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/frame/active-settings/40x24": {
-      "kept": "e8f70b5c75ae0573c0bb07be97fc77d6956aa6010dad76f2ac3b799ea1276226"
+      "kept": "d0152091f70b02972cd693fe08a213b860c69cdd6482a9e386e5355eeaa86e8d",
+      "baseline": "e8f70b5c75ae0573c0bb07be97fc77d6956aa6010dad76f2ac3b799ea1276226",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/frame/minimal/48x32": { "kept": "177d26d887211bed874e851cebd8b9862d0f55ff344d993b9838261ac28d5bcb" },
-    "panel/zh/frame/progress/48x32": { "kept": "5747418843a2e2ebf2f970be414aefb9389af60e5bcd1bb67fd945102a1abbda" },
-    "panel/zh/frame/monitor/48x32": { "kept": "ef3fade4f4b55819a3ffbe2566117e14f101f27dfeb07a03668ee0d14946fd98" },
+    "panel/zh/frame/minimal/48x32": {
+      "kept": "2df96856ee6cc72be27baaa9ed155b22df743cdb4d25d5d40cdd45cc36ede001",
+      "baseline": "177d26d887211bed874e851cebd8b9862d0f55ff344d993b9838261ac28d5bcb",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/progress/48x32": {
+      "kept": "2df96856ee6cc72be27baaa9ed155b22df743cdb4d25d5d40cdd45cc36ede001",
+      "baseline": "5747418843a2e2ebf2f970be414aefb9389af60e5bcd1bb67fd945102a1abbda",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/monitor/48x32": {
+      "kept": "89239f54acea78c52da9054f6cbc1e53c719c1aa522014d05fcc6e2e0894ed82",
+      "baseline": "ef3fade4f4b55819a3ffbe2566117e14f101f27dfeb07a03668ee0d14946fd98",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/frame/active-settings/48x24": {
-      "kept": "3062f3387b426fb800f2cfdac50fcb97126d99f14564c7761e4d4425f71b7d61"
+      "kept": "c8e0da3ff459f5010053148be90df48d79f82ae6ac60c268a5e421ed7d8d33d4",
+      "baseline": "3062f3387b426fb800f2cfdac50fcb97126d99f14564c7761e4d4425f71b7d61",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/frame/minimal/56x32": { "kept": "3bcbe85819ab212cf8424adf453c0ebb2a265096335469d50578fd1e7132b770" },
-    "panel/zh/frame/progress/56x32": { "kept": "06fb37bca6bf66adbcc47e3414f39517c356ca45d0fe1ce9ec9ec6c891ebab7f" },
-    "panel/zh/frame/monitor/56x32": { "kept": "8439663197f5eeb51187d431b6b068536652bad01916aea9ddb84d2252a74b11" },
+    "panel/zh/frame/minimal/56x32": {
+      "kept": "a5167a4c465a3994aa17cad4a7622b306b0453bf75455620a29cfdfafbb3ce04",
+      "baseline": "3bcbe85819ab212cf8424adf453c0ebb2a265096335469d50578fd1e7132b770",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/progress/56x32": {
+      "kept": "a5167a4c465a3994aa17cad4a7622b306b0453bf75455620a29cfdfafbb3ce04",
+      "baseline": "06fb37bca6bf66adbcc47e3414f39517c356ca45d0fe1ce9ec9ec6c891ebab7f",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/monitor/56x32": {
+      "kept": "63699657f5c63717b1011d466775d4d3069fa990a8b8eebd80ed14f29ef97546",
+      "baseline": "8439663197f5eeb51187d431b6b068536652bad01916aea9ddb84d2252a74b11",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/frame/active-settings/56x24": {
-      "kept": "602710feaf63646f3c1a9615c97bb0baa443f388209d480178b226b06427f1c5"
+      "kept": "2aa38b11ca176bc50c2ccfad48625c9ad8e04e50c0dd6c74bf721efbfbda388f",
+      "baseline": "602710feaf63646f3c1a9615c97bb0baa443f388209d480178b226b06427f1c5",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/frame/minimal/80x32": { "kept": "026c621e794d09a033867195af33f4cd3e73a4ecaf0ddc35d020d022ddd45949" },
-    "panel/zh/frame/progress/80x32": { "kept": "11d4fd7742d41e13562dfe4963948b58ce2856b2c591486f03e70ecaaf4d3b30" },
-    "panel/zh/frame/monitor/80x32": { "kept": "e78e688b4d70827feda0f6ad2e5785833aa392a1b5dc6a2bc6d0da6540aa24f8" },
+    "panel/zh/frame/minimal/80x32": {
+      "kept": "9b6cc67e844930120a08a2811b54f0fa02dc8e1ed7543923dadd3ca72fbc49d3",
+      "baseline": "026c621e794d09a033867195af33f4cd3e73a4ecaf0ddc35d020d022ddd45949",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/progress/80x32": {
+      "kept": "9b6cc67e844930120a08a2811b54f0fa02dc8e1ed7543923dadd3ca72fbc49d3",
+      "baseline": "11d4fd7742d41e13562dfe4963948b58ce2856b2c591486f03e70ecaaf4d3b30",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/frame/monitor/80x32": {
+      "kept": "71f7a1f4f530001087cc37a920688769368daa751ef1dcbab4fe3e5cc16c26ba",
+      "baseline": "e78e688b4d70827feda0f6ad2e5785833aa392a1b5dc6a2bc6d0da6540aa24f8",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/frame/active-settings/80x24": {
-      "kept": "070a82fc057d46f4740763f6bd6c45459eeb68be14c2c7092910668230bd6c72"
+      "kept": "3f3289781b4337c2cb201571b3067644aab1a764f328c558eff890544c0909bb",
+      "baseline": "070a82fc057d46f4740763f6bd6c45459eeb68be14c2c7092910668230bd6c72",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/pill/minimal/32x32": { "kept": "5ba2f7bf9b2a09b39aabe94d87504fac0e0d6e920f481ea150119417d744cb2e" },
-    "panel/zh/pill/progress/32x32": { "kept": "c326f587ed715eecfe468388e6295f27b555e213e58869166d6471835dacd142" },
-    "panel/zh/pill/monitor/32x32": { "kept": "4ae11886532551329206e05b1ae49209c4e463f999bac6bcda493f19a4a269ae" },
+    "panel/zh/pill/minimal/32x32": {
+      "kept": "a785eeab6936951bfeb569a18e0f7384f6520173e8fe1a9164de294feb4cee69",
+      "baseline": "5ba2f7bf9b2a09b39aabe94d87504fac0e0d6e920f481ea150119417d744cb2e",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/progress/32x32": {
+      "kept": "a785eeab6936951bfeb569a18e0f7384f6520173e8fe1a9164de294feb4cee69",
+      "baseline": "c326f587ed715eecfe468388e6295f27b555e213e58869166d6471835dacd142",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/monitor/32x32": {
+      "kept": "989944a81723f3be08afc67f09635d15ab805dac95d788ea06cb0871c7774abb",
+      "baseline": "4ae11886532551329206e05b1ae49209c4e463f999bac6bcda493f19a4a269ae",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/pill/active-settings/32x24": {
-      "kept": "a6a9b123c5b3365e1b84ac22d8b28eb8f354cc3df7dc38b08e088e3dbd076b7c"
+      "kept": "05ef1106cf6704d85592c8741f30223df9a87e8cde12b848b089ec04045658ac",
+      "baseline": "a6a9b123c5b3365e1b84ac22d8b28eb8f354cc3df7dc38b08e088e3dbd076b7c",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/pill/minimal/40x32": { "kept": "3a20d4503b120af2ae5b954927239b1e8da247c2fefc93c7768a9449f2dc29e1" },
-    "panel/zh/pill/progress/40x32": { "kept": "88376188ddd42896a5a0ff6a7ee58f1fdc1dba0adf16562d98f61868bff8be83" },
-    "panel/zh/pill/monitor/40x32": { "kept": "754e8ec78e5d3b2e896c583c0298688e791a0c75dffa36749ed324b615194bc2" },
+    "panel/zh/pill/minimal/40x32": {
+      "kept": "406e361e0e8a8694938800fefa4cf6af7df537180d499ab9c30f27f05852ba09",
+      "baseline": "3a20d4503b120af2ae5b954927239b1e8da247c2fefc93c7768a9449f2dc29e1",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/progress/40x32": {
+      "kept": "406e361e0e8a8694938800fefa4cf6af7df537180d499ab9c30f27f05852ba09",
+      "baseline": "88376188ddd42896a5a0ff6a7ee58f1fdc1dba0adf16562d98f61868bff8be83",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/monitor/40x32": {
+      "kept": "b40b0ffaba854fe63077d30db2db9dbf9f10c9b06273b5ba288d4ae10bcdea8f",
+      "baseline": "754e8ec78e5d3b2e896c583c0298688e791a0c75dffa36749ed324b615194bc2",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/pill/active-settings/40x24": {
-      "kept": "1c356c48c2903893356b83cfc9daaebbcf182d082e688979db212a73a7afaf69"
+      "kept": "1631c1bb0d7e08ac5e75e3a984334ccae6de6afab29cbf251ab00740d1f36199",
+      "baseline": "1c356c48c2903893356b83cfc9daaebbcf182d082e688979db212a73a7afaf69",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/pill/minimal/48x32": { "kept": "a6ebb8ec5019b89bb62de2afd15ef2baf24f7452ff9a02e6505823ce0509e5a3" },
-    "panel/zh/pill/progress/48x32": { "kept": "8381d1b429086177612dd76cb1d7ac6e433c0f94769cd92c4ba9c3382cedf31e" },
-    "panel/zh/pill/monitor/48x32": { "kept": "eea86d8379debce7fc94074e95ccf1e94ba71b97ff3703dac897c6b456cfc1c7" },
+    "panel/zh/pill/minimal/48x32": {
+      "kept": "cabd17baf44f8d4717153b069ef440b9543a13083bb2a8fe47282e7d4574e345",
+      "baseline": "a6ebb8ec5019b89bb62de2afd15ef2baf24f7452ff9a02e6505823ce0509e5a3",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/progress/48x32": {
+      "kept": "cabd17baf44f8d4717153b069ef440b9543a13083bb2a8fe47282e7d4574e345",
+      "baseline": "8381d1b429086177612dd76cb1d7ac6e433c0f94769cd92c4ba9c3382cedf31e",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/monitor/48x32": {
+      "kept": "e96a7816c688ac6f1e936dbd4e32597d5cf7e2ff40d9dff08984bf4485acba99",
+      "baseline": "eea86d8379debce7fc94074e95ccf1e94ba71b97ff3703dac897c6b456cfc1c7",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/pill/active-settings/48x24": {
-      "kept": "be112aeb5b32d85ced96d8e707a67aa60ac0d3da1a8ccde7f061d632a2907501"
+      "kept": "ec3336ada0d39be4a0818c6586bca60af3dfec159d51044b367cda0141f507cb",
+      "baseline": "be112aeb5b32d85ced96d8e707a67aa60ac0d3da1a8ccde7f061d632a2907501",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/pill/minimal/56x32": { "kept": "7a9afcec27e9036a968dd5d90c9d654ee4aeb4f8fb7f5fc1d7bf8b87ef821405" },
-    "panel/zh/pill/progress/56x32": { "kept": "e164912706f6f67666686678d93d917f8797fed48ba5060479352a959adad674" },
-    "panel/zh/pill/monitor/56x32": { "kept": "ed4c1cb37575f1149250f5b4381ffa9c183a714b79b13fd98289d7f438210e3e" },
+    "panel/zh/pill/minimal/56x32": {
+      "kept": "2951a6347fe476046252bc2cae467c2c46ccc76d0a72185c9aefbf5672daf5e4",
+      "baseline": "7a9afcec27e9036a968dd5d90c9d654ee4aeb4f8fb7f5fc1d7bf8b87ef821405",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/progress/56x32": {
+      "kept": "2951a6347fe476046252bc2cae467c2c46ccc76d0a72185c9aefbf5672daf5e4",
+      "baseline": "e164912706f6f67666686678d93d917f8797fed48ba5060479352a959adad674",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/monitor/56x32": {
+      "kept": "f09057cacb9e5e10e25cf9c89ba0e3517774bca1b407a204ed9822048b5ca49d",
+      "baseline": "ed4c1cb37575f1149250f5b4381ffa9c183a714b79b13fd98289d7f438210e3e",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/pill/active-settings/56x24": {
-      "kept": "1545f7cb7d937ea943d169587bbfcde298bab8f121b2751c5e0336c32fe028f5"
+      "kept": "254610b1962239df6d92719a7202dd8b3a05888129a119397a912aebd10bdcfc",
+      "baseline": "1545f7cb7d937ea943d169587bbfcde298bab8f121b2751c5e0336c32fe028f5",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "panel/zh/pill/minimal/80x32": { "kept": "ed1acaa9c713cc89e49b2fb1ac3cde89adbff94a4f1c9d96261b06d5459ef9d8" },
-    "panel/zh/pill/progress/80x32": { "kept": "cde0cae04ffda08699999a174f64d65fdb5e78dc8d88399fa05b44d4ead60b7a" },
-    "panel/zh/pill/monitor/80x32": { "kept": "7da351c8eb91ef7d0b3873bf691b9fe103c99aca8db59ba7eaa2eeda94adaf3a" },
+    "panel/zh/pill/minimal/80x32": {
+      "kept": "5aa1b2a3c04bf4aa1677f5134d85c0cfae29e6627e1e1cce7ca8569c2f786fa8",
+      "baseline": "ed1acaa9c713cc89e49b2fb1ac3cde89adbff94a4f1c9d96261b06d5459ef9d8",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/progress/80x32": {
+      "kept": "5aa1b2a3c04bf4aa1677f5134d85c0cfae29e6627e1e1cce7ca8569c2f786fa8",
+      "baseline": "cde0cae04ffda08699999a174f64d65fdb5e78dc8d88399fa05b44d4ead60b7a",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
+    "panel/zh/pill/monitor/80x32": {
+      "kept": "8c34f4833073eec374887a745782defa028a1c93ffab755b247ba505a7070254",
+      "baseline": "7da351c8eb91ef7d0b3873bf691b9fe103c99aca8db59ba7eaa2eeda94adaf3a",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
+    },
     "settings/zh/pill/active-settings/80x24": {
-      "kept": "63eabd40b53acd8c2ea138850d28e46e65d613d482618f28f60c46e028cc031b"
+      "kept": "51d8f73843a6b6cd4041c5f9ff87f4c92b41ec0718bff438fcb59e9ba0cabe7f",
+      "baseline": "63eabd40b53acd8c2ea138850d28e46e65d613d482618f28f60c46e028cc031b",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/en/tab/saved-width-40-to-56/56x24": {
-      "kept": "3d6b80bc5d9ae4201bfd66ea13ecd43f278736d41961383c11240af8a9ecdeb9"
+      "kept": "969493b2a138ade5385ac0e3428b833303ca7ccac6a48be651e5200009528348",
+      "baseline": "3d6b80bc5d9ae4201bfd66ea13ecd43f278736d41961383c11240af8a9ecdeb9",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/en/band/saved-width-40-to-56/56x24": {
-      "kept": "277168662e4c1e2ecb7a53e7155b9ec0502367439bc24c51468d9d9f4df9cf13"
+      "kept": "b5eb8c6754012bdd7394671ca28a627a660312c520f0cfa5e631c169b8d77edb",
+      "baseline": "277168662e4c1e2ecb7a53e7155b9ec0502367439bc24c51468d9d9f4df9cf13",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/en/tile/saved-width-40-to-56/56x24": {
-      "kept": "4ae420a0a3ae6b20b277fe9ecce736715d4ebe3ed5bfa9e4df8d71d0c68f0235"
+      "kept": "8c3fe125305e4486231d4784efdfd74ff55ed9ff83cb375d3295719f4cb0e5ec",
+      "baseline": "4ae420a0a3ae6b20b277fe9ecce736715d4ebe3ed5bfa9e4df8d71d0c68f0235",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/en/frame/saved-width-40-to-56/56x24": {
-      "kept": "5a1f8cb02074865095732d0e6528259f62018c23ec0090a5a1835f0d40166e8f"
+      "kept": "1be43ef61e5b28fb4f6c088c3484b376d6fb7fc94c2d3083bf3dcee2a9738ea9",
+      "baseline": "5a1f8cb02074865095732d0e6528259f62018c23ec0090a5a1835f0d40166e8f",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/en/pill/saved-width-40-to-56/56x24": {
-      "kept": "b63a51cf2c853fede17043fe14e0dfdc85bff907c459e4ebb7227bd8e5f48bb6"
+      "kept": "1ee21b2b5671eef8a12ca44188668f314d9d643a279cb5bb1b0e13d2cc856c18",
+      "baseline": "b63a51cf2c853fede17043fe14e0dfdc85bff907c459e4ebb7227bd8e5f48bb6",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/zh/tab/saved-width-40-to-56/56x24": {
-      "kept": "28bb7a8021437de76fe75c0b5e7d1cf086326421c99eaf256fae2f0113e95c73"
+      "kept": "72d6012ca5bd0eaa1ca58fe164d3c9dc6b4b7ed0cb36d68a6cc256dc23fdebce",
+      "baseline": "28bb7a8021437de76fe75c0b5e7d1cf086326421c99eaf256fae2f0113e95c73",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/zh/band/saved-width-40-to-56/56x24": {
-      "kept": "caf6a55a42408177b5a8aff7bab563c57aa6c7106ad3cb4c1eb2474a924b1f74"
+      "kept": "b8ac708f7a9c6586ae13f6c6fb6fdd449e7ab343c074dfee74bc3d3d890cebf3",
+      "baseline": "caf6a55a42408177b5a8aff7bab563c57aa6c7106ad3cb4c1eb2474a924b1f74",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/zh/tile/saved-width-40-to-56/56x24": {
-      "kept": "f9edd4a847680c44b3ec69415244c95999a75a54d92e5d433de5c2bc71c741ba"
+      "kept": "7304d90bcfd7d7d8d2b58647f6a78f67b1bbfc4b07b9bca38a366523364fd9c9",
+      "baseline": "f9edd4a847680c44b3ec69415244c95999a75a54d92e5d433de5c2bc71c741ba",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/zh/frame/saved-width-40-to-56/56x24": {
-      "kept": "aedcaba9b45afb41e33c07901a010f6d758009698c3d5004c1f3ae988afd5cfc"
+      "kept": "b1eab8b9d9e8048facbcd9125bdf3a797582d9583d04401b52a614e297fdd77a",
+      "baseline": "aedcaba9b45afb41e33c07901a010f6d758009698c3d5004c1f3ae988afd5cfc",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
     "settings/zh/pill/saved-width-40-to-56/56x24": {
-      "kept": "e89dc032652b25d7806286c46e6774ad26caea11efd0e8b92db99e890db21a85"
+      "kept": "b4ab33f2c9f44423ab61fb8f6e88c9e5ed98376cef4993bf733e6d197449859d",
+      "baseline": "e89dc032652b25d7806286c46e6774ad26caea11efd0e8b92db99e890db21a85",
+      "divergence": "§15 2026-11-09 cards/work; P2 q1 same-key replacement; R5UX-P2 q16 encoding correction"
     },
-    "confirmation/en/cancel/16x24": { "kept": "c1f5113c41d793e42ec4a2d164d0b770e8f1b3a7f9a98a5856e715a69b4c0770" },
-    "confirmation/en/cancel/24x24": { "kept": "b261e2b138ead7d881357fe0ba33c896b40f6954f1ff55c1b3ffeb1e44e37917" },
-    "confirmation/en/cancel/40x24": { "kept": "6af787cdff7b2f0fbb50353798d540721b7422176a09490c86c5ea4c227d761c" },
-    "confirmation/en/cancel/56x24": { "kept": "2182588016f1d69b5c86968f087ffec53838de39748b7818f31aa34d89da7930" },
-    "confirmation/en/save-error/48x24": { "kept": "3160f142af0095e978186a439873f88b57da7e0f3ae606960c42d762dc162f7e" },
+    "confirmation/en/cancel/16x24": {
+      "kept": "c1f5113c41d793e42ec4a2d164d0b770e8f1b3a7f9a98a5856e715a69b4c0770"
+    },
+    "confirmation/en/cancel/24x24": {
+      "kept": "b261e2b138ead7d881357fe0ba33c896b40f6954f1ff55c1b3ffeb1e44e37917"
+    },
+    "confirmation/en/cancel/40x24": {
+      "kept": "6af787cdff7b2f0fbb50353798d540721b7422176a09490c86c5ea4c227d761c"
+    },
+    "confirmation/en/cancel/56x24": {
+      "kept": "2182588016f1d69b5c86968f087ffec53838de39748b7818f31aa34d89da7930"
+    },
+    "confirmation/en/save-error/48x24": {
+      "kept": "3160f142af0095e978186a439873f88b57da7e0f3ae606960c42d762dc162f7e"
+    },
     "inspector/en/queued-explicit-coverage/32x32": {
       "kept": "ae5d4d7489ee21bb0f5c0ffb45314de1114ebdbb39bbd036520f75dc1f9f81af"
     },
@@ -8507,11 +9712,21 @@
     "inspector/en/paused-explicit-coverage/48x32": {
       "kept": "eca20b036514b5e26ef1ee2f0b9084ba3b5f5968cbc9904cb1a8fe93ac64a7d3"
     },
-    "confirmation/zh/cancel/16x24": { "kept": "cf4c6f8e14246de4b047b851e00ae81d928663c12dcfef8d137ca0efbeae4285" },
-    "confirmation/zh/cancel/24x24": { "kept": "643f0d412e6bd287e0f642e7ff1eb2f7364439cec58a888125cf24f6301f3bdd" },
-    "confirmation/zh/cancel/40x24": { "kept": "57c9717b59ed608deb6d7d7d1951791aa5550902b038754986a46a9a84dfda0e" },
-    "confirmation/zh/cancel/56x24": { "kept": "1db6734413f7efb609669a7c064613b8aad15e1b53d2f51bc8e2aad744c20ff8" },
-    "confirmation/zh/save-error/48x24": { "kept": "8921bd086b21647a5208cb269b93fce23a5bf81ef00e0624ddd62acfadc0849e" },
+    "confirmation/zh/cancel/16x24": {
+      "kept": "cf4c6f8e14246de4b047b851e00ae81d928663c12dcfef8d137ca0efbeae4285"
+    },
+    "confirmation/zh/cancel/24x24": {
+      "kept": "643f0d412e6bd287e0f642e7ff1eb2f7364439cec58a888125cf24f6301f3bdd"
+    },
+    "confirmation/zh/cancel/40x24": {
+      "kept": "57c9717b59ed608deb6d7d7d1951791aa5550902b038754986a46a9a84dfda0e"
+    },
+    "confirmation/zh/cancel/56x24": {
+      "kept": "1db6734413f7efb609669a7c064613b8aad15e1b53d2f51bc8e2aad744c20ff8"
+    },
+    "confirmation/zh/save-error/48x24": {
+      "kept": "8921bd086b21647a5208cb269b93fce23a5bf81ef00e0624ddd62acfadc0849e"
+    },
     "inspector/zh/queued-explicit-coverage/32x32": {
       "kept": "c268b462d4e532739fa60510e5ed0b7e9d20f21cdb87839ebe8a2ea920d5eda0"
     },

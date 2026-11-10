@@ -13,6 +13,9 @@ import { resolveDisplayConfig, setDisplayConfig } from '../../src/render/hud-con
 import { stripAnsi, visualLength } from '../../src/render/colors.js';
 import type { DelegationView } from '../../src/render/delegation/panel.js';
 import { composeJobTree } from '../../src/collectors/job-tree.js';
+import { buildWorkboard } from '../../src/collectors/workboard.js';
+import { TaskObservationCollector } from '../../src/collectors/task-observations.js';
+import { targetKey } from '../../src/collectors/workboard-types.js';
 import { observedEntries, type AgentLogEntry } from '../../src/collectors/agent-log.js';
 import { WorkbenchHistory } from '../../src/collectors/workbench-events.js';
 import type { JobDisplay } from '../../src/collectors/job-display-types.js';
@@ -194,7 +197,14 @@ test('role and phase read whole or as the role alone, never cut', () => {
     for (const width of WIDTHS) {
       const text = draw([node], { width, style }).text.join('\n');
       assert.doesNotMatch(text, /oracle·p(?!ropose)/, `${style}/${width}: the phase is not cut`);
-      if (width === 56) assert.match(text, /oracle·propose/, `${style}/${width}: role and phase when there is room`);
+      if (width === 56) {
+        if (style === 'compact')
+          assert.match(text, /oracle·propose/, `${style}/${width}: role and phase when there is room`);
+        else {
+          assert.match(text, /oracle.*Compare/);
+          assert.match(text, /design/, 'observed oracle work is a separate phase, not an inline badge');
+        }
+      }
     }
 });
 
@@ -218,12 +228,14 @@ test('helpers are the job’s children, in the tree and on its card', () => {
   assert.ok(parent >= 0);
   assert.match(compact[parent + 1], /├─.*Review pass 1/, 'the first helper hangs under the job');
   assert.match(compact[parent + 2], /└─.*Review pass 2/, 'the last helper closes the branch');
-  const rich = draw([node], { width: 48, style: 'rich' }).text;
-  const top = rich.findIndex((line) => line.includes('Port the recovery path'));
-  const helper = rich.findIndex((line) => line.includes('Review pass 1'));
-  const bottom = rich.findIndex((line, i) => i > top && line.startsWith('└'));
-  assert.ok(top >= 0 && helper > top && helper < bottom, 'the running helper is a line inside its parent’s card');
-  assert.match(rich[helper], /reviewer/, 'its role follows its name');
+  const rich = draw([node], { width: 48, style: 'rich' });
+  const top = rich.text.findIndex((line) => line.includes('Port the recovery path'));
+  const bottom = rich.text.findIndex((line, i) => i > top && line.startsWith('└'));
+  const card = top >= 0 && bottom > top ? rich.text.slice(top, bottom + 1) : [];
+  assert.ok(card.length > 0 && card.length <= 3, 'one compact owner, no child-card body');
+  assert.match(rich.text.join('\n'), /imp.*Port the recovery/);
+  assert.doesNotMatch(rich.text.join('\n'), /Review pass [12]|reviewer/);
+  assert.match(draw([node], { width: 48, inspect: true }).text.join('\n'), /Review pass 1/);
 });
 
 test('the card presets keep a job’s name, status and words; a lighter preset sheds only what it hides', () => {
@@ -232,8 +244,9 @@ test('the card presets keep a job’s name, status and words; a lighter preset s
     const d = draw([node], { width: 48, style: 'rich', preset });
     assertWellFormed(d, 48, preset);
     const text = d.text.join('\n');
-    assert.match(text, /▸ Fix parser recovery/, preset);
-    assert.match(text, /! imp/, `${preset}: the header carries the role and the attention mark`);
+    assert.match(text, /\? imp Fix parser recovery/, preset);
+    assert.match(text, /needs you/, `${preset}: the compact state keeps attention, not obsolete preset telemetry`);
+    assert.doesNotMatch(text, /tok\/s|\d+%|\d+m\d\ds|sonic|reviewer/);
   }
 });
 
@@ -267,9 +280,12 @@ test('a running job whose source is stale or unavailable is never drawn as runni
           const d = draw([node], { width, style, language });
           const text = d.text.join('\n');
           assert.doesNotMatch(text, /▸/, `${label}: no running glyph anywhere, the title's count included`);
-          assert.doesNotMatch(text, CLOCK_FACES, `${label}: no clock`);
+          if (style === 'compact') assert.doesNotMatch(text, CLOCK_FACES, `${label}: no clock`);
+          else assert.match(text, language === 'zh' ? /停滞/ : /stalled/, `${label}: no live-work claim`);
           assert.doesNotMatch(text, /\d+m\d\ds/, `${label}: no counting timer`);
-          assert.match(text, /\? Fix parser recovery|\? 修|\? Fix/, `${label}: the unknown glyph`);
+          if (style === 'compact')
+            assert.match(text, /\? Fix parser recovery|\? 修|\? Fix/, `${label}: the unknown glyph`);
+          else assert.match(text, /◷ imp Fix/, `${label}: stalled state, not running`);
           const word =
             freshness.state === 'stale'
               ? language === 'zh'
@@ -278,15 +294,23 @@ test('a running job whose source is stale or unavailable is never drawn as runni
               : language === 'zh'
                 ? '不可用'
                 : 'unavailable';
-          if (width >= 40) assert.ok(text.includes(word), `${label}: marked "${word}"`);
+          if (width >= 40) {
+            if (style === 'compact') assert.ok(text.includes(word), `${label}: marked "${word}"`);
+            else assert.match(text, language === 'zh' ? /进展证据不可用/ : /Observation unavailable/);
+          }
         }
 });
 
 test('a job source that is current keeps its running glyph and clock', () => {
   for (const style of STYLES) {
     const text = draw([jobNode(cliJob())], { width: 48, style }).text.join('\n');
-    assert.match(text, /▸ Fix parser recovery/);
-    assert.match(text, CLOCK_FACES);
+    if (style === 'compact') {
+      assert.match(text, /▸ Fix parser recovery/);
+      assert.match(text, CLOCK_FACES);
+    } else {
+      assert.match(text, /▸ imp Fix parser recovery.*working 5m/);
+      assert.doesNotMatch(text, /stalled|\d+m\d\ds/);
+    }
   }
 });
 
@@ -295,7 +319,8 @@ test('status unknown is never drawn as completed or failed', () => {
   for (const style of STYLES)
     for (const width of WIDTHS) {
       const text = draw([node], { width, style }).text.join('\n');
-      assert.match(text, /\? Fix/, `${style}/${width}`);
+      if (style === 'compact') assert.match(text, /\? Fix/, `${style}/${width}`);
+      else assert.match(text, /◷ imp Fix.*stalled/, `${style}/${width}`);
       assert.doesNotMatch(text, /✓|!/, `${style}/${width}: neither done nor failed`);
     }
 });
@@ -305,11 +330,18 @@ test('a settled outcome survives a stale source as history, still marked stale',
   const failed = jobNode(cliJob({ status: 'error', outcome: 'failed', freshness: stale(), id: 'role-job:f1' }));
   for (const style of STYLES) {
     const d = draw([done], { width: 56, style }).text.join('\n');
-    assert.match(d, /✓ Fix parser recovery/);
-    assert.match(d, /stale/);
     const f = draw([failed], { width: 56, style }).text.join('\n');
-    assert.match(f, /! Fix parser recovery/);
-    assert.match(f, /stale/);
+    if (style === 'compact') {
+      assert.match(d, /✓ Fix parser recovery/);
+      assert.match(d, /stale/);
+      assert.match(f, /! Fix parser recovery/);
+      assert.match(f, /stale/);
+    } else {
+      assert.match(d, /✓ imp Fix parser recovery.*to accept/);
+      assert.match(f, /\? imp Fix parser recovery.*needs you/);
+      assert.match(draw([done], { width: 56, inspect: true }).text.join('\n'), /stale/);
+      assert.match(draw([failed], { width: 56, inspect: true }).text.join('\n'), /stale/);
+    }
   }
 });
 
@@ -318,8 +350,9 @@ test('a card is redrawn when only the job’s freshness changed', () => {
   const gone = jobNode(cliJob({ freshness: stale() }), { status: 'running' });
   const first = draw([live], { width: 48, style: 'rich' }).text.join('\n');
   const second = draw([gone], { width: 48, style: 'rich' }).text.join('\n');
-  assert.match(first, CLOCK_FACES);
-  assert.doesNotMatch(second, CLOCK_FACES, 'the cached live card is not served for a stale job');
+  assert.match(first, /working 5m/);
+  assert.match(second, /stalled 5m/, 'the cached live card is not served for a stale job');
+  assert.doesNotMatch(second, /working/);
 });
 
 test('stale and unknown jobs are counted as unknown, in the title and the filter', () => {
@@ -351,17 +384,27 @@ test('a request the job waits on marks its row; historical pointers do not', () 
   for (const style of STYLES)
     for (const width of [40, 48, 56]) {
       const label = `${style}/${width}`;
-      assert.match(draw([waiting], { width, style }).text.join('\n'), /! imp|! 6\.1|! stale/, `${label}: marked`);
+      if (style === 'compact')
+        assert.match(draw([waiting], { width, style }).text.join('\n'), /! imp|! 6\.1|! stale/, `${label}: marked`);
+      else
+        assert.match(draw([waiting], { width, style }).text.join('\n'), /needs you/, `${label}: current unanswered QA`);
       const quiet = draw([history], { width, style }).text.join('\n');
       assert.doesNotMatch(quiet, /!/, `${label}: only historical requests leave no mark`);
-      assert.match(
-        draw([answered], { width, style }).text.join('\n'),
-        /!/,
-        `${label}: current is current, however it stands`
-      );
+      if (style === 'compact')
+        assert.match(
+          draw([answered], { width, style }).text.join('\n'),
+          /!/,
+          `${label}: current is current, however it stands`
+        );
+      else
+        assert.doesNotMatch(
+          draw([answered], { width, style }).text.join('\n'),
+          /needs you/,
+          'written answer does not ask for another answer'
+        );
     }
   // A card also says what it waits on, in the brief's own "needs" words.
-  assert.match(draw([waiting], { width: 48, style: 'rich' }).text.join('\n'), /! answer q2/);
+  assert.match(draw([waiting], { width: 48, style: 'rich' }).text.join('\n'), /answer q2/);
   assert.doesNotMatch(draw([history], { width: 48, style: 'rich' }).text.join('\n'), /answer/);
 });
 
@@ -449,6 +492,43 @@ test('hostile text in a name or any other field is escaped, width-correct, and n
           const d = draw([node], { width, style, language, theme });
           assertWellFormed(d, width, `${language}/${theme}/${style}/${width}`);
           assert.ok(d.text.join('\n').includes('Évil'), 'the name is there, escaped');
+        }
+        const previousLanguage = setLanguage(language),
+          previousDisplay = setDisplayConfig({ ...resolveDisplayConfig({}), theme, glyphs: 'text', icons: 'unicode' });
+        try {
+          const tree = jobTree([node]);
+          const board = buildWorkboard(
+            ROOT,
+            new TaskObservationCollector(null).refresh(),
+            {
+              generation: 1,
+              root: ROOT,
+              jobs: [hostile],
+              coverage: { entries: 1, files: 1, bytes: 0, incomplete: false, omitted: 0, diagnostics: [] },
+            },
+            tree
+          );
+          const state = {
+            ...initialMonitorState(),
+            ...monitorSettings(visualSettings({ language, look: 'tab', preset: 'monitor', width })),
+            mainTab: 'work' as const,
+            boardExpanded: new Set([
+              targetKey({ kind: 'worker', laneId: board.workers[0].laneId, workerId: board.workers[0].id }),
+            ]),
+          };
+          const frame = renderMonitor({ tree, workboard: board, state, width, height: 40, nowMs: R5R_NOW });
+          assertWellFormed(
+            { frame, raw: frame.lines, text: frame.lines.map(stripAnsi), height: 40 },
+            width,
+            `expanded/${language}/${theme}/${width}`
+          );
+          assert.ok(
+            frame.lines.map(stripAnsi).join('\n').includes('Évil'),
+            'the same hostile identity is visible in expanded Work'
+          );
+        } finally {
+          setLanguage(previousLanguage);
+          setDisplayConfig(previousDisplay);
         }
         const inspector = draw([node], { width, inspect: true, language, theme });
         assertWellFormed(inspector, width, `inspector/${language}/${theme}/${width}`);
@@ -763,8 +843,13 @@ test('composeJobTree’s own nodes render: helpers as children, a stale job as u
     assertWellFormed(d, 48, style);
     const text = d.text.join('\n');
     assert.match(text, /Port the recovery path/);
-    assert.match(text, /Review pass 1/);
-    assert.match(text, /\? Silent job/);
+    if (style === 'compact') {
+      assert.match(text, /Review pass 1/);
+      assert.match(text, /\? Silent job/);
+    } else {
+      assert.doesNotMatch(text, /Review pass [12]/);
+      assert.match(text, /◷ imp Silent job.*stalled/);
+    }
   }
 });
 
@@ -942,14 +1027,22 @@ test('a job’s badge is its binding alone: a missing field stays absent and the
       const bare = draw([none], { width, style }).text.join('\n');
       assert.doesNotMatch(bare, /6\.1sol|sol|max/, `${label}: no binding, no badge from the native row’s model`);
       const some = draw([partial], { width, style }).text.join('\n');
-      assert.match(some, /6\.1sol/, `${label}: the model the binding has`);
+      if (style === 'compact') assert.match(some, /6\.1sol/, `${label}: the model the binding has`);
+      else assert.doesNotMatch(some, /6\.1sol/, `${label}: P2 removes model/effort badges from cards (brief §3)`);
       assert.doesNotMatch(some, /max/, `${label}: the effort it does not have is not borrowed`);
       // A full binding shows the model, and the effort too where the row has room for it.
-      assert.match(
-        draw([full], { width, style }).text.join('\n'),
-        width >= 48 ? /6\.1sol·high/ : /6\.1sol/,
-        `${label}: a full binding shows`
-      );
+      if (style === 'compact')
+        assert.match(
+          draw([full], { width, style }).text.join('\n'),
+          width >= 48 ? /6\.1sol·high/ : /6\.1sol/,
+          `${label}: a full binding shows`
+        );
+      else
+        assert.doesNotMatch(
+          draw([full], { width, style }).text.join('\n'),
+          /6\.1sol|·high/,
+          'P2 telemetry removal does not borrow a native badge'
+        );
     }
   // The Inspector: no binding in the heading; what the session was seen to run, under Observed.
   const heading = draw([none], { width: 56, inspect: true }).text;

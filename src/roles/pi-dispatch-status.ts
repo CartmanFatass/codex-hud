@@ -9,6 +9,8 @@ export interface DispatchStatus {
   state: DispatchState;
   session_id: string;
   slot: string;
+  /** Optional producer event; invalid metadata does not alter the dispatch protocol. */
+  started_at?: string | null;
   model: string | null;
   thinking: string | null;
   output_written: boolean;
@@ -96,6 +98,7 @@ export function parseDispatchStatus(
     state: raw.state as DispatchState,
     session_id: raw.session_id,
     slot,
+    started_at: timestamp(raw.started_at) ? (raw.started_at as string | null) : null,
     model: raw.model as string | null,
     thinking: raw.thinking as string | null,
     output_written: raw.output_written,

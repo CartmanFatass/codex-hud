@@ -1,11 +1,11 @@
  Home  [Work]  Inspect  Settings  Help                                                         Ctrl+\ then key
-›│ Synthetic browser finished  Synthetic browser finished wait                                                
- ┌ ✓ Synthetic browser finished ──────────────────────────────────────────────────────────── jev synthetic-web
- └ ───────────────────────────────────────────────────────────────────────────────────────────────────────────
- │ DONE  Synthetic completed work phase unknown                                                               
-                                                                                                              
-                                                                                                              
-                                                                                                              
+✓ 1 done                                                                                                      
+                                                                      design build  review accept             
+›│ Synthetic browser finished                                                              ✓                  
+ ┌ ✓ jev Synthetic browser finished           done <1m │                                                      
+ │ wait → done                                         │                                                      
+ └ Facade closed                                       │                                                      
+ │ DONE  Synthetic completed work                                     phase unknown                           
                                                                                                               
                                                                                                               
                                                                                                               

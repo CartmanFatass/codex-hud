@@ -1,10 +1,10 @@
  首页  [工作]  v  ,  ?         Ctrl+\ 再按键
-›│ Synthetic browser finished wait          
- ┌ ✓ Synthetic browser finished ──────── jev
- └ ─────────────────────────────────────────
+✓ 1 完成                                    
+›│ Synthetic browser finished 完成          
+ ┌ ✓ jev Synthetic browser finish… 完成 <1分
+ │ wait → 完成                              
+ └ 门面已关闭                               
  │ DONE 阶段未知                            
-                                            
-                                            
                                             
                                             
                                             

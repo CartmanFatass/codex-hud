@@ -3,7 +3,15 @@ import * as fs from 'node:fs';
 import { basename, dirname, join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { parseDispatchStatus, type DispatchStatus } from '../roles/pi-dispatch-status.js';
-import { answerRecord, designRecords, reviewRecord, revisionOf } from './work-artifacts.js';
+import {
+  answerRecord,
+  designRecords,
+  reviewRecord,
+  revisionOf,
+  reportedWorkFacts,
+  questionFields,
+} from './work-artifacts.js';
+import { dispatchWorkFacts, type ReviewFact } from './work-card.js';
 import type { JobDisplay } from './job-display-types.js';
 import type {
   DecisionRecord,
@@ -23,6 +31,8 @@ interface FileFact {
   signature: string;
   revision: string;
   at: number;
+  /** Physical write time at STATUS ISO millisecond precision; proof only, never activity. */
+  writtenAt: number;
   text: string;
   stale: boolean;
 }
@@ -38,6 +48,7 @@ interface Directory {
 interface QaPair {
   questionSignature: string;
   answerSignature: string;
+  coherentAnswer: boolean;
   record: DecisionRecord | null;
 }
 interface Source {
@@ -45,6 +56,8 @@ interface Source {
   directory: string;
   identity: LaneIdentity;
   files: Map<string, FileFact>;
+  qaScope: string | null;
+  qaAnchors: Map<string, { revision: string; at: number }>;
   names: string[];
   cursor: number;
   lane?: WorkLane;
@@ -72,6 +85,14 @@ const emptyCost = (): ObservationCost => ({
 });
 const timestamp = (value: unknown): number | null =>
   typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : null;
+/** Current-episode display facts require positive producer-time proof, not slot reuse. */
+function helperInEpisode(status: DispatchStatus | null, primaryStart: number | null, fileAt: number): boolean {
+  const start = timestamp(status?.started_at);
+  if (!status || start === null || primaryStart === null || start < primaryStart || start > fileAt) return false;
+  return [status.settled_at, status.ended_at].every(
+    (value) => value === null || value === undefined || (timestamp(value)! >= start && timestamp(value)! <= fileAt)
+  );
+}
 export class TaskObservationCollector {
   private workspace: string | null;
   private disposed = false;
@@ -224,6 +245,8 @@ export class TaskObservationCollector {
       directory,
       identity,
       files: new Map(),
+      qaScope: null,
+      qaAnchors: new Map(),
       names: [],
       cursor: 0,
       dirty: true,
@@ -275,13 +298,14 @@ export class TaskObservationCollector {
         throw new Error('changed_during_read');
       source.issues.delete(name);
       const text = buffer.toString('utf8'),
-        revision = revisionOf(text);
+        revision = revisionOf(text),
+        writtenAt = s.mtime.getTime();
       if (previous?.revision === revision) {
-        source.files.set(name, { ...previous, signature, stale: false });
-        if (previous.stale) source.dirty = true;
+        source.files.set(name, { ...previous, signature, writtenAt, stale: false });
+        if (previous.stale || previous.writtenAt !== writtenAt) source.dirty = true;
         return;
       }
-      source.files.set(name, { signature, revision, text, at: s.mtimeMs, stale: false });
+      source.files.set(name, { signature, revision, text, at: s.mtimeMs, writtenAt, stale: false });
       source.dirty = true;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -354,6 +378,17 @@ export class TaskObservationCollector {
         source.pairs.set(name, {
           questionSignature: q.signature,
           answerSignature: a.signature,
+          // Reuse the same parser and safe paired snapshot; current proof uses
+          // physical dates, while recorded-call semantics retain content dates.
+          coherentAnswer:
+            answerRecord(
+              source.id,
+              name,
+              q.text,
+              a.text,
+              { ...evidence(name, q), at: q.writtenAt },
+              { ...evidence(answerName, a), at: a.writtenAt }
+            ) !== null,
           record: answerRecord(source.id, name, q.text, a.text, evidence(name, q), evidence(answerName, a)),
         });
         pending.delete(name);
@@ -470,6 +505,211 @@ export class TaskObservationCollector {
     // Legal review facts support a review phase, never a merge or inferred acceptance.
     if (!phase && decisions.some((d) => d.kind === 'review' && !d.stale)) phase = 'review';
     if (!phase && decisions.some((d) => d.kind === 'recommendation' && !d.stale)) phase = 'design';
+    const phaseEvidence: EvidenceRef[] = [];
+    const reviews: ReviewFact[] = decisions
+      .filter((d) => d.kind === 'review' && !d.stale && d.verdict && d.round)
+      .flatMap((d) => {
+        const helper = get(`.dispatch/review-${d.round}/STATUS.json`);
+        if (!helper || !status) return [];
+        try {
+          const parsed = parseDispatchStatus(
+            JSON.parse(helper.text),
+            source.directory,
+            `review-${d.round}`,
+            'reviewer',
+            join(source.directory, `review-${d.round}.md`)
+          );
+          const reviewFile = get(`review-${d.round}.md`);
+          if (
+            !helperInEpisode(parsed, startedAt, helper.at) ||
+            !parsed ||
+            helper.stale ||
+            !parsed.output_written ||
+            !parsed.settled_at ||
+            !['idle_grace', 'closed'].includes(parsed.state) ||
+            !reviewFile ||
+            reviewFile.writtenAt < (timestamp(parsed.started_at) ?? Infinity) ||
+            reviewFile.writtenAt < (startedAt ?? Infinity) ||
+            reviewFile.writtenAt > (timestamp(parsed.settled_at) ?? -Infinity)
+          )
+            return [];
+          phaseEvidence.push(evidence(`.dispatch/review-${d.round}/STATUS.json`), ...d.evidence);
+          return [{ round: d.round!, verdict: d.verdict!, at: timestamp(parsed.settled_at) }];
+        } catch {
+          return [];
+        }
+      });
+    const previousWork = source.lane?.workers[0]?.work;
+    const pending = status?.helper_pending;
+    let helperFailed = false;
+    let helperSignature: string | null = null;
+    let helperActivityAt: number | null = null;
+    let activeHelper: DispatchStatus | null = null;
+    if (pending?.n) {
+      try {
+        const helper = get(`.dispatch/${pending.kind}-${pending.n}/STATUS.json`);
+        activeHelper =
+          helper && !helper.stale
+            ? parseDispatchStatus(
+                JSON.parse(helper.text),
+                source.directory,
+                `${pending.kind}-${pending.n}`,
+                pending.kind === 'review' ? 'reviewer' : pending.kind,
+                join(source.directory, `${pending.kind}-${pending.n}.md`)
+              )
+            : null;
+        if (!helperInEpisode(activeHelper, startedAt, helper?.at ?? -Infinity)) activeHelper = null;
+        helperFailed = activeHelper?.state === 'failed';
+        if (activeHelper && helper) {
+          phaseEvidence.push(evidence(`.dispatch/${pending.kind}-${pending.n}/STATUS.json`));
+          helperSignature = JSON.stringify([
+            activeHelper.session_id,
+            activeHelper.state,
+            activeHelper.output_written,
+            activeHelper.settled_at,
+            activeHelper.started_at,
+            activeHelper.ended_at,
+          ]);
+          const helperStart = timestamp(activeHelper.started_at);
+          const helperEnd = timestamp(activeHelper.settled_at ?? activeHelper.ended_at);
+          // First admission uses producer time, not a fresh heartbeat's mtime. Later
+          // observed semantic transitions can use the file's content-change time.
+          if (startedAt !== null && (helperStart === null || (helperStart >= startedAt && helperStart <= helper.at))) {
+            helperActivityAt =
+              Math.max(
+                helperStart ?? 0,
+                helperEnd !== null && helperEnd >= Math.max(startedAt, helperStart ?? 0) && helperEnd <= helper.at
+                  ? helperEnd
+                  : 0,
+                previousWork?.episode === status?.session_id &&
+                  source.lane?.workers[0]?.startedAt === startedAt &&
+                  previousWork?.helperSignature &&
+                  previousWork.helperSignature !== helperSignature
+                  ? helper.at
+                  : 0
+              ) || null;
+          }
+        }
+      } catch {
+        /* No failure without admitted evidence. */
+      }
+    }
+    // A pending helper's QA is not the primary's QA: slot/location/lifecycle alone
+    // cannot establish a current request (q17/q19). Answers also need a current
+    // question; historical helper QA cannot become owner activity via its merge.
+    const qaStart = status?.state === 'waiting_helper' && pending?.n ? timestamp(activeHelper?.started_at) : startedAt;
+    // Physical dates prove membership; per-primary-episode anchors date content
+    // activity. Keep anchors through missing helper/QA proof, never reseeding on
+    // an identical touch. A replacement session/start gets its own current facts.
+    if (status && startedAt !== null) {
+      const scope = JSON.stringify([status.session_id, startedAt]);
+      if (source.qaScope !== scope) {
+        source.qaScope = scope;
+        source.qaAnchors.clear();
+      }
+      for (const [name, file] of source.files) {
+        if (file.stale || !/^qa\/q[1-9][0-9]*(?:\.answer)?\.md$/.test(name) || file.writtenAt < startedAt) continue;
+        const previous = source.qaAnchors.get(name);
+        if (previous?.revision === file.revision) continue;
+        if (!previous && source.qaAnchors.size >= 512) {
+          const oldest = source.qaAnchors.keys().next().value;
+          if (oldest !== undefined) source.qaAnchors.delete(oldest);
+        }
+        source.qaAnchors.set(name, { revision: file.revision, at: previous ? file.at : file.writtenAt });
+      }
+    }
+    const currentQuestions = [...source.files].filter(
+      ([name, file]) => !file.stale && /^qa\/q[1-9][0-9]*\.md$/.test(name) && file.writtenAt >= (qaStart ?? Infinity)
+    );
+    const currentAnswers = new Map<string, FileFact>();
+    for (const [name, question] of currentQuestions) {
+      const answer = get(name.replace('.md', '.answer.md')),
+        pair = source.pairs.get(name);
+      if (
+        answer &&
+        !answer.stale &&
+        pair?.coherentAnswer &&
+        pair.questionSignature === question.signature &&
+        pair.answerSignature === answer.signature
+      )
+        currentAnswers.set(name, answer);
+    }
+    const anchored = (name: string, file: FileFact): FileFact => ({
+      ...file,
+      at: source.qaAnchors.get(name)?.at ?? file.at,
+    });
+    const activityFiles: Array<[string, FileFact]> = [
+      ...[...source.files].filter(
+        ([name, file]) => name === source.primaryOutput && !file.stale && file.at >= (startedAt ?? Infinity)
+      ),
+      ...currentQuestions.map(([name, file]): [string, FileFact] => [name, anchored(name, file)]),
+      ...[...currentAnswers].map(([question, file]): [string, FileFact] => {
+        const name = question.replace('.md', '.answer.md');
+        return [name, anchored(name, file)];
+      }),
+    ];
+    const waitingQuestion = currentQuestions.find(([name]) => !currentAnswers.has(name));
+    const unanswered = !!waitingQuestion;
+    const answerDates = currentQuestions.map(([name]) => {
+      const answer = currentAnswers.get(name);
+      return answer ? anchored(name.replace('.md', '.answer.md'), answer).at : null;
+    });
+    const answeredRequestAt =
+      currentQuestions.length > 0 && !unanswered && answerDates.every((value): value is number => value !== null)
+        ? Math.max(...answerDates)
+        : undefined;
+    const parsedRequest = waitingQuestion ? questionFields(waitingQuestion[1].text) : undefined;
+    const requestInfo =
+      waitingQuestion && parsedRequest
+        ? {
+            id: basename(waitingQuestion[0], '.md'),
+            question: parsedRequest.question,
+            suggested: parsedRequest.suggested.slice(0, 1200),
+            options: parsedRequest.options.slice(0, 64).map((option) => option.slice(0, 1200)),
+            evidence: { ...evidence(waitingQuestion[0]), at: waitingQuestion[1].writtenAt },
+          }
+        : undefined;
+    const outputFile = source.primaryOutput ? get(source.primaryOutput) : undefined;
+    const outputCurrent =
+      !!outputFile &&
+      !outputFile.stale &&
+      !!outputFile.text.trim() &&
+      (startedAt === null || (outputFile.writtenAt >= startedAt && (timestamp(status?.settled_at) ?? 0) >= startedAt));
+    const facts = status
+      ? dispatchWorkFacts(
+          status,
+          reviews,
+          revisionOf(JSON.stringify([activityFiles.map(([n, f]) => [n, f.revision]), helperSignature])),
+          previousWork,
+          startedAt ?? 0,
+          Math.max(
+            startedAt ?? 0,
+            helperActivityAt ?? 0,
+            ...reviews.map((r) => r.at ?? 0),
+            ...activityFiles.map(([, f]) => f.at)
+          ) || null,
+          (status.state === 'waiting_orchestrator' && !currentQuestions.length) || unanswered,
+          helperFailed,
+          role,
+          startedAt,
+          outputCurrent,
+          statusFile?.at ?? null
+        )
+      : undefined;
+    const work = facts
+      ? {
+          ...facts,
+          helperSignature,
+          phaseEvidence,
+          requestInfo,
+          answeredRequestAt,
+          // The primary declares the pending helper, but unproved helper state stays unknown.
+          phases:
+            pending?.n && !activeHelper
+              ? facts.phases.map((phase, index) => (index === facts.phases.length - 1 ? phase + ' unknown' : phase))
+              : facts.phases,
+        }
+      : undefined;
     const workers = status
       ? [
           {
@@ -484,6 +724,13 @@ export class TaskObservationCollector {
             startedAt,
             settledAt: timestamp(status.settled_at),
             phase,
+            work: work
+              ? {
+                  ...work,
+                  requestId: requestInfo?.id,
+                  reported: reportedWorkFacts(activityFiles.find(([n]) => n === source.primaryOutput)?.[1].text ?? ''),
+                }
+              : undefined,
             homeNeedsHuman: false,
             humanEndedAt: null,
             stale: false,

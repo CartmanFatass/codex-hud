@@ -21,6 +21,10 @@ function withSettingsFile(run: (file: string, directory: string) => void): void 
   process.env.HUD_HOME = path.join(directory, 'ledger');
   process.env.CODEX_HOME = path.join(directory, 'codex');
   try {
+    assert.ok(
+      settingsPath().startsWith(directory + path.sep),
+      'settings writes remain inside the private test directory'
+    );
     run(file, directory);
   } finally {
     for (const [name, value] of previous) {
@@ -35,6 +39,7 @@ test('missing settings keep display defaults and hide optional tasks and activit
   withSettingsFile((file) => {
     assert.deepEqual(loadSettings(), {
       ...defaultCardVisibility(),
+      cardStallMinutes: 10,
       density: 'balanced',
       briefingApiLiteEffort: 'none',
       briefingApiLowEffort: 'low',
@@ -142,6 +147,7 @@ test('load validates known settings without importing unknown or invalid values'
       briefingApiLiteEffort: 'none',
       briefingApiLowEffort: 'low',
       briefingApiMediumEffort: 'high',
+      cardStallMinutes: 10,
       density: 'focus',
       theme: 'latte',
       glyphs: 'text',

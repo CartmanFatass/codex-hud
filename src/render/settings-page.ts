@@ -1,11 +1,4 @@
 import { defaultSettings, type HudSettings } from '../settings.js';
-import {
-  applyCardPreset,
-  identifyCardPreset,
-  CARD_PRESETS,
-  CARD_PRESET_KEYS,
-  type CardPreset,
-} from '../card-presets.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { HudHealthState } from '../types.js';
 import { truncateAnsi, colors, theme, visualLength } from './colors.js';
@@ -31,7 +24,7 @@ const PROBE_FAILURES: Record<string, string> = {
   'hourly-cap': 'Call cap reached',
   'runtime-unavailable': 'Budget store unavailable',
 };
-export type SettingKey = keyof HudSettings | 'cardPreset';
+export type SettingKey = keyof HudSettings;
 export type SettingGroup = 'Display' | 'Panel' | 'Agents' | 'Cards' | 'LLM' | 'Status bar' | 'Input';
 export type SettingsAction = 'back' | 'save' | 'reset' | 'reset-all' | 'test-api' | 'diagnostics';
 
@@ -244,16 +237,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Observed log in compact view and Inspector with no backend',
   },
   {
-    key: 'cardPreset',
-    group: 'Cards',
-    label: 'Card preset',
-    short: 'Preset',
-    values: CARD_PRESETS,
-    help: 'Card contents only; keeps child scope, corners and model permissions',
-    get: identifyCardPreset,
-    set: (value, settings) => applyCardPreset(settings, value as CardPreset),
-  },
-  {
     key: 'cardCorners',
     group: 'Cards',
     label: 'Card corners',
@@ -270,76 +253,12 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Show the model-written task label; no generation',
   },
   {
-    key: 'cardOriginalName',
-    group: 'Cards',
-    label: 'Original name',
-    short: 'Orig name',
-    values: [true, false],
-    help: 'Show Codex name when a label replaces it',
-  },
-  {
     key: 'cardSummary',
     group: 'Cards',
     label: 'Agent summary',
     short: 'Summary',
     values: [true, false],
     help: 'Show the newest stored model summary, even when paused',
-  },
-  {
-    key: 'cardRelations',
-    group: 'Cards',
-    label: 'Relations',
-    short: 'Relations',
-    values: [true, false],
-    help: 'Show who the agent works with',
-  },
-  {
-    key: 'cardAction',
-    group: 'Cards',
-    label: 'Current action',
-    short: 'Action',
-    values: [true, false],
-    help: 'Show the current tool or action',
-  },
-  {
-    key: 'cardSubagents',
-    group: 'Cards',
-    label: 'Child agents',
-    short: 'Children',
-    values: [true, false],
-    help: 'Show child agent lines',
-  },
-  {
-    key: 'cardSubagentSummary',
-    group: 'Cards',
-    label: 'Child sentence',
-    short: 'Child sum',
-    values: [true, false],
-    help: 'Show one stored model sentence beside child agents',
-  },
-  {
-    key: 'cardRoleCounts',
-    group: 'Cards',
-    label: 'Child role counts',
-    short: 'Child counts',
-    values: [true, false],
-    help: 'Footer counts; off keeps child lines and summaries (2 scout / 1 implementer)',
-  },
-  {
-    key: 'cardModel',
-    group: 'Cards',
-    label: 'Agent model',
-    short: 'Model',
-    values: [true, false],
-    help: 'Show the agent model badge',
-  },
-  {
-    key: 'cardReviews',
-    group: 'Cards',
-    label: 'Review count',
-    short: 'Reviews',
-    values: [true, false],
-    help: 'Show guardian review counts',
   },
   {
     key: 'cardClock',
@@ -350,29 +269,13 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Show the current turn clock',
   },
   {
-    key: 'cardRate',
+    key: 'cardStallMinutes',
     group: 'Cards',
-    label: 'Output rate',
-    short: 'Rate',
-    values: [true, false],
-    help: 'Show output tokens per second',
-  },
-  {
-    key: 'cardContext',
-    group: 'Cards',
-    label: 'Context meter',
-    short: 'Context',
-    values: [true, false],
-    help: 'Show the agent context meter',
-  },
-  {
-    key: 'cardSubagentScope',
-    group: 'Cards',
-    label: 'Child scope',
-    short: 'Scope',
-    values: ['live', 'important', 'all'],
-    help: 'Child agents: live only, live plus important, or all',
-    format: (value) => (value === 'important' ? 'live + important' : String(value)),
+    label: 'Stall threshold',
+    short: 'Stall',
+    values: [5, 10, 15, 30, 60],
+    help: 'Minutes without new evidence; presentation only',
+    format: (value) => `${value}m`,
   },
   // Everything that sends material to a model, in one place, each with its
   // own switch and a help line saying what it sends.
@@ -563,16 +466,11 @@ export const SETTING_ROWS: readonly SettingRow[] = [
 
 /** A row's value in `settings`: the setting's own, or for a row over several, what they make together. */
 export function rowValue(row: SettingRow, settings: HudSettings): SettingValue {
-  return row.get
-    ? row.get(settings)
-    : row.key === 'cardPreset'
-      ? identifyCardPreset(settings)
-      : (settings[row.key] as SettingValue);
+  return row.get ? row.get(settings) : (settings[row.key] as SettingValue);
 }
 
 /** `settings` with the row set to `value`: the settings it stands for. */
 export function withRowValue(settings: HudSettings, row: SettingRow, value: SettingValue): HudSettings {
-  if (row.key === 'cardPreset') return applyCardPreset(settings, value as CardPreset);
   return { ...settings, ...(row.set ? row.set(value, settings) : { [row.key]: value }) };
 }
 
@@ -607,7 +505,7 @@ export function settingGroup(stateOrRow: Pick<SettingsPageState, 'selected'> | S
     : SETTING_ROWS[Math.min(SETTING_ROWS.length - 1, Math.max(0, stateOrRow.selected))].group;
 }
 
-/** Compare real fields, including coupled fields whose row currently hides them; virtual presets never count twice. */
+/** Compare real fields, including coupled fields whose row currently hides them. */
 export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original'>): boolean {
   return (
     !!state.original &&
@@ -623,7 +521,7 @@ const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'look', 'icons', 'glyphs', 'agentColors', 'motion'],
   Panel: ['language', 'panelStyle', 'paneLayout', 'statusCard', 'timelineStyle', 'timelineHours', 'treeWidth', 'art'],
   Agents: ['sort', 'finishedLingerMs', 'importantRoles', 'agentLog'],
-  Cards: [...CARD_PRESET_KEYS, 'cardCorners', 'cardSubagentScope'],
+  Cards: ['cardLabel', 'cardSummary', 'cardClock', 'cardCorners', 'cardStallMinutes'],
   LLM: [
     'briefingPaused',
     'briefAgents',
@@ -686,8 +584,6 @@ export function rowValues(
   row: SettingRow,
   state: Pick<SettingsPageState, 'draft' | 'original' | 'roles'>
 ): readonly SettingValue[] {
-  // Custom describes the current switches, not a selectable configuration: skip it so a no-op cannot trap cycling.
-  if (row.key === 'cardPreset') return CARD_PRESETS.filter((preset) => preset !== 'custom');
   if (row.key !== 'importantRoles') return row.values;
   return [...new Set(['', ...(state.roles ?? []), state.original?.importantRoles ?? '', state.draft.importantRoles])];
 }
@@ -740,11 +636,6 @@ export function settingInactiveReason(rowOrKey: SettingRow | SettingKey, draft: 
   const key = typeof rowOrKey === 'string' ? rowOrKey : rowOrKey.key;
   const row = typeof rowOrKey === 'string' ? SETTING_ROWS.find((entry) => entry.key === key) : rowOrKey;
   if (row?.group === 'Cards') {
-    if (draft.panelStyle !== 'rich') return t('Requires rich card layout');
-    if ((key === 'cardSubagentSummary' || key === 'cardSubagentScope') && !draft.cardSubagents)
-      return t('Requires child agent lines');
-    if (key === 'cardOriginalName' && (!draft.cardLabel || !draft.agentLabels || !draft.labelAsName))
-      return t('Requires task label and names replacing Codex names');
     if (key === 'cardLabel' && !draft.agentLabels) return t('Requires agent names enabled');
   }
   // The pace configures periodic work only, not on-demand card progress.
@@ -790,7 +681,7 @@ const SECTION_SUMMARY: Record<SettingGroup, readonly SettingKey[]> = {
   Display: ['theme', 'look', 'icons'],
   Panel: ['language', 'panelStyle', 'treeWidth'],
   Agents: ['sort', 'finishedLingerMs'],
-  Cards: ['cardPreset', 'cardSubagentScope'],
+  Cards: ['cardClock', 'cardStallMinutes'],
   LLM: ['briefing'],
   'Status bar': ['statusline', 'density'],
   Input: ['prefixKey', 'refreshMs'],
@@ -1182,7 +1073,7 @@ export function handleSettingsInput(
     const current = rowValue(row, next.draft);
     let index = values.indexOf(current);
     if (index < 0 && typeof current === 'number') {
-      // A number between the steps (an odd width, a dragged border, the old presets): step from where it falls.
+      // A number between the steps (an odd width, a dragged border): step from where it falls.
       const descending = Number(values[0]) > Number(values[1]);
       const beyond = values.findIndex((value) => (descending ? Number(value) < current : Number(value) > current));
       index = key === 'left' ? (beyond < 0 ? values.length : beyond) : beyond < 0 ? values.length - 1 : beyond - 1;

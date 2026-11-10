@@ -3,6 +3,8 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
 import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
 import { monitorRowAt } from './monitor-input.js';
+import { laneTargets } from './work-lanes.js';
+import { projectWorkCard } from '../collectors/work-card.js';
 export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
   const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
@@ -146,13 +148,17 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (main) activate();
     return result();
   }
+  // Existing reveal is display-only and must apply to both main tabs (P2 q18).
+  if (key === 'show-all' && main) {
+    next.tree.showAll = !next.tree.showAll;
+    return result();
+  }
   // Removed controls cannot act through hidden legacy shortcuts either.
   if (
     [
       'resume-reconcile',
       'reset',
       'brief-toggle',
-      'show-all',
       'filter',
       'sort',
       'open-session',
@@ -166,14 +172,17 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   if (key === 'next-trouble' || key === 'previous-trouble') {
     const workers = boardFrame.snapshot.workers;
     const targets = [
-      ...workers.filter((w) => w.homeNeedsHuman),
-      ...workers.filter((w) => !w.homeNeedsHuman && w.stale),
+      ...workers.filter((w) => projectWorkCard(w, ctx.nowMs ?? 0, next.cardStallMinutes).state === 'needs-you'),
+      ...workers.filter((w) => projectWorkCard(w, ctx.nowMs ?? 0, next.cardStallMinutes).state === 'stalled'),
     ].map((w) => ({ kind: 'worker' as const, laneId: w.laneId, workerId: w.id }));
     if (targets.length) {
       const at = targets.findIndex((t) => selected() && targetKey(t) === targetKey(selected()!));
       next.mainTab = 'work';
       next.workTarget =
         targets[(at + (key === 'previous-trouble' ? targets.length - 1 : 1) + targets.length) % targets.length];
+      const folded = new Set(next.boardFolded);
+      folded.delete(next.workTarget.laneId);
+      next.boardFolded = folded;
       next.boardRevealed = undefined;
     }
     return result();
@@ -195,8 +204,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   if (main && ['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
     const rows = boardFrame.rows,
-      items: string[] = [];
-    for (const row of rows) {
+      items: string[] = next.mainTab === 'work' ? laneTargets(boardFrame.snapshot, next) : [];
+    for (const row of next.mainTab === 'work' ? [] : rows) {
       if (row.item && !items.includes(row.item)) items.push(row.item);
       for (const c of row.controls ?? []) if (c.item && !items.includes(c.item)) items.push(c.item);
     }

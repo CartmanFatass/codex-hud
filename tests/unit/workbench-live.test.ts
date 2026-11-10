@@ -7,6 +7,10 @@ import { execFile, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 const exec = promisify(execFile);
 import { fileURLToPath } from 'node:url';
+import { buildSubagentTree } from '../../src/collectors/subagent-tree.js';
+import { PanelJobPipeline } from '../../src/tree-page.js';
+import { initialMonitorState, renderMonitor } from '../../src/render/monitor.js';
+import { settingsPath } from '../../src/settings.js';
 
 const hasPython = process.platform !== 'win32' && spawnSync('python3', ['--version']).status === 0;
 test('live PTY: navigation, diff, zoom, resize, wheel and terminal cleanup', { skip: !hasPython }, async () => {
@@ -53,6 +57,32 @@ test('live PTY: navigation, diff, zoom, resize, wheel and terminal cleanup', { s
         line('event_msg', { type: 'agent_message', message: `FOUND_THE_CAUSE_${i}` }, 50) +
         line('turn_context', { model: 'gpt-test', effort: 'high' })
     );
+  // q12: prove overflow using these real rollout files and the production Work renderer, not assumed card heights.
+  const listed = fs.readdirSync(day).map((name) => {
+    const full = path.join(day, name),
+      stat = fs.statSync(full),
+      meta = JSON.parse(fs.readFileSync(full, 'utf8').split('\n')[0]);
+    return { path: full, sessionId: String(meta.payload.id), timestamp: now, size: stat.size, modifiedAt: stat.mtime };
+  });
+  const native = buildSubagentTree('root', [], 3, now.getTime(), listed);
+  assert.equal(native.nodes.length, 14);
+  const pipeline = new PanelJobPipeline(dir, 'synthetic/pty-overflow', { live: false, now: () => now.getTime() }, repo);
+  try {
+    await pipeline.refresh();
+    const composition = pipeline.compose(native, null, now.getTime());
+    const frame = renderMonitor({
+      tree: composition.tree,
+      workboard: pipeline.workboard(composition.tree),
+      state: { ...initialMonitorState(), mainTab: 'work' },
+      width: 30,
+      height: 20,
+      nowMs: now.getTime(),
+    });
+    const pane = frame.panes.find((p) => p.id === 'agents')!;
+    assert.ok(pane.contentLength > pane.height, `q12 requires real overflow: ${pane.contentLength}>${pane.height}`);
+  } finally {
+    pipeline.dispose();
+  }
   const script = String.raw`
 import os, pty, subprocess, fcntl, termios, struct, select, time, signal, re, sys
 master, slave = pty.openpty()
@@ -102,11 +132,18 @@ try:
  assert b'\\x1b[' not in inspect, 'Inspector must not print escaped colour codes'
  send(b'\x1b')
  wait_for('[Work]')
+ # q12: compact native lanes fit the old 34-row window; use an explicitly overflowing window for this case only.
+ fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',20,30,0,0))
+ os.kill(proc.pid,signal.SIGWINCH)
+ wait_for('[Work]')
  send(b'G')
  wait_for('agent-13')
  # Wheel changes the real Work viewport (SGR coordinates are one-based).
  send(b'\x1b[<64;3;3M')
  wait_for('agent-12')
+ fcntl.ioctl(master,termios.TIOCSWINSZ,struct.pack('HHHH',34,30,0,0))
+ os.kill(proc.pid,signal.SIGWINCH)
+ wait_for('[Work]')
  # Changes remains a secondary view; its worktree/file and zoom paths are unchanged.
  send(b'3')
  wait_for('1 mod')
@@ -172,6 +209,18 @@ finally:
 `;
   try {
     const entry = fileURLToPath(new URL('../../src/tree-page.js', import.meta.url));
+    const privateSettings = path.join(dir, 'hud-settings.json'),
+      oldSettings = process.env.HUD_SETTINGS_PATH;
+    process.env.HUD_SETTINGS_PATH = privateSettings;
+    try {
+      assert.ok(
+        settingsPath().startsWith(dir + path.sep),
+        'PTY settings must resolve inside its private directory before saving'
+      );
+    } finally {
+      if (oldSettings === undefined) delete process.env.HUD_SETTINGS_PATH;
+      else process.env.HUD_SETTINGS_PATH = oldSettings;
+    }
     const result = await exec('python3', ['-c', script, process.execPath, entry], {
       env: {
         ...process.env,
@@ -181,7 +230,8 @@ finally:
         CODEX_HUD_CWD: repo,
         CODEX_SESSIONS_PATH: sessions,
         CODEX_HOME: dir,
-        CODEX_HUD_SETTINGS_PATH: path.join(dir, 'hud-settings.json'),
+        HUD_SETTINGS_PATH: privateSettings,
+        CODEX_HUD_SETTINGS_PATH: privateSettings,
         CODEX_HUD_MAIN_PANE: '',
         CODEX_HUD_SESSION_START: '',
         CODEX_HUD_TOGGLE_CMD: '',

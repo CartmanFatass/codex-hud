@@ -19,11 +19,13 @@ import { directions } from '../../src/render/directions.js';
 import { stripAnsi, visualLength, theme, colors, truncateAnsi } from '../../src/render/colors.js';
 import { setLanguage } from '../../src/render/i18n.js';
 import { displayConfig, setDisplayConfig } from '../../src/render/hud-config.js';
-import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.js';
+import { defaultSettings, loadSettings, saveSettings, settingsPath } from '../../src/settings.js';
 import { SETTING_ROWS } from '../../src/render/settings-page.js';
 import type { AgentLogEntry } from '../../src/collectors/agent-log.js';
 import type { SubagentTree, SubagentTreeNode } from '../../src/types.js';
 import { useDisplayFixture } from '../fixtures/display.js';
+import { nativeWorker, projectWorkCard } from '../../src/collectors/work-card.js';
+import { renderWorkCard } from '../../src/render/work-card.js';
 
 useDisplayFixture();
 
@@ -123,27 +125,22 @@ test('the kind of work is a fixed one-column glyph the HUD picks; other and unkn
 test('a card always names/statuses the L1, keeps model text inside, and clock/context below', () => {
   const frame = renderMonitor({
     tree: tree([named, bare]),
-    state: rich(),
-    width: 32,
+    state: rich({ cardVisibility: { cardLabel: false } }),
+    width: 56,
     height: 40,
     nowMs: now,
     agentLog: log,
   });
   const lines = plain(frame);
   const top = lines.findIndex((line) => line.includes('ablation_no_reranker'));
-  assert.match(lines[top], /^› ▸ ⌕ ablation_no_reranker ─+ \S/);
+  assert.match(lines[top], /^› ▸ agent ablation_no_reranker .*working 4m/);
   assert.ok(frame.lines[top].includes(colors.underline('ablation_no_reranker')));
-  assert.equal(lines[top + 1].trimEnd(), '│ 去重排消融召回对比');
-  assert.ok(frame.lines[top + 1].includes(theme.strong('去重排消融召回对比')));
-  assert.equal(lines[top + 2].trimEnd(), '│ 召回下降，结果待核对');
+  assert.equal(lines[top + 1].trimEnd(), '└ 召回下降，结果待核对');
   assert.ok(!lines.some((line) => line.includes('recall@10')));
-  assert.match(lines[top + 3], /^└ ◷4m07s ─*56%─+$/);
-  assert.ok(frame.lines[top + 3].includes(theme.tick('◷')));
-  assert.ok(frame.lines[top + 1].startsWith(theme.info('│')));
-  assert.ok(frame.lines[top].includes(theme.accent('›')));
+  assert.ok(!lines.some((line) => /tok\/s|56%|6astra/.test(line)));
   const second = lines.findIndex((line) => line.includes('small_index_ablation'));
-  assert.match(lines[second], /^┌ ! small_index_ablation ─+$/);
-  assert.match(lines[second + 1], /^└ 2m ─+$/);
+  assert.match(lines[second], /^┌ \? agent small_index_ablation .*needs you/);
+  assert.match(lines[second + 1], /^└ Work failed; inspect the job/);
   assert.equal(lines[second - 1].trim(), '');
   assert.ok(!frame.controls.some((c) => (c.kind as string) === 'expand'));
   assert.ok(!lines.some((line) => /[▾▴]/.test(line)));
@@ -208,29 +205,20 @@ test('cards never run past the panel, in either language, and give up badge and 
   }
   const narrow = plain(renderMonitor({ tree: tree([named]), state: rich(), width: 22, height: 30, nowMs: now }));
   assert.ok(
-    narrow.some((line) => /^› ▸ ⌕ ablation…anker ─+ *$/.test(line)),
-    `under 24 columns the badge goes first\n${narrow.join('\n')}`
+    narrow.some((line) => /working 4m/.test(line)),
+    narrow.join('\n')
   );
+  assert.ok(!narrow.some((line) => /gpt-|tok\/s|56%/.test(line)));
   const tiny = plain(renderMonitor({ tree: tree([named]), state: rich(), width: 19, height: 30, nowMs: now }));
   assert.ok(
-    tiny.some((line) => /^└ .*56%─*$/.test(line) && !line.includes('━')),
-    'then the meter, the percent kept'
+    tiny.every((line) => !line.includes('56%')),
+    'compact cards have no context meter even at sub-44 widths'
   );
-  // A subtask gets no card of its own. Closed, a live one is one line and the role count waits until the card is open.
+  // A subtask gets no card, prose row or role-count footer of its own.
   const nested = plain(renderMonitor({ tree: tree([parent]), state: rich(), width: 40, height: 40, nowMs: now }));
-  assert.ok(
-    nested.some((line) => line.includes('b05_result')),
-    nested.join('\n')
-  );
-  assert.ok(
-    nested.some((line) => /1 general/.test(line)),
-    'role counts are independent of child scope'
-  );
+  assert.ok(!nested.some((line) => /b05_result|1 general/.test(line)), nested.join('\n'));
   const openedNested = plain(renderMonitor({ tree: tree([parent]), state: rich(), width: 40, height: 40, nowMs: now }));
-  assert.ok(
-    openedNested.some((line) => line.trimEnd() === '│ 1 general'),
-    'Codex\'s default agent, or one with no role, is "general"'
-  );
+  assert.ok(!openedNested.some((line) => /1 general|b05_result/.test(line)));
   assert.ok(!nested.some((line) => /folded/.test(line)));
 });
 
@@ -268,11 +256,13 @@ test('card clicks select; only its name arms the double-click switch, Enter insp
   const frame = renderMonitor({ tree: agents, state: rich(), width: 32, height: 40, nowMs: now, agentLog: notes });
   const lines = plain(frame);
   const ctx = { tree: agents, frame, nowMs: now };
-  const top = lines.findIndex((line) => line.includes('small_index_ablation'));
   const name = frame.controls.find((c) => c.kind === 'switch' && c.item === bare.id)!;
-  assert.equal(name.y, top);
-  assert.equal(name.x, lines[top].indexOf('small_index_ablation'));
-  assert.equal(name.width, visualLength('small_index_ablation'));
+  const top = name.y;
+  assert.ok(lines[top].slice(name.x, name.x + name.width).startsWith('small_'));
+  assert.ok(name.width < visualLength('small_index_ablation'), 'clipped task name still has a name-only fence');
+  assert.equal(name.x, lines[top].indexOf('small_'), 'switch starts at the painted name, not the role or state');
+  assert.match(lines[top].slice(0, name.x), /^[┌›] ▸ \? $/, 'sub-44 unknown-role shorthand is outside the switch');
+  assert.match(lines[top].slice(name.x + name.width), /working.*4m/);
   const go = handleMonitorInput(frame.state, click(name.x, top), ctx);
   assert.deepEqual(go.action, { type: 'pick', id: bare.id });
   assert.equal(go.state.tree.selectedId, bare.id);
@@ -281,8 +271,11 @@ test('card clicks select; only its name arms the double-click switch, Enter insp
   assert.deepEqual(second.action, { type: 'pick', id: bare.id }, 'page times the second click and switches');
   const bottom = lines.findIndex((line, i) => i > top && line.startsWith('└'));
   for (const [x, y] of [
+    [2, top], // state glyph is never a native switch
+    [name.x - 2, top], // role is never a native switch
     [name.x - 1, top],
     [name.x + name.width, top],
+    [31, top], // minute/status column is never a native switch
     [4, top + 1],
     [3, bottom],
   ]) {
@@ -326,18 +319,19 @@ test('a click on a subtask line selects it and leaves the Inspector closed', () 
   const kid = agent(9, 'scout', 'error', { depth: 2, statusAt: new Date(now - 10_000) });
   const lead = agent(8, 'lead', 'running', { children: [kid] });
   const agents = tree([lead]);
-  // A finished subtask is on the opened card. A closed card keeps only a live one.
+  // §15: helpers have no rows; the compact owner remains the selectable subject.
   const frame = renderMonitor({ tree: agents, state: rich(), width: 48, height: 40, nowMs: now });
-  const line = plain(frame).findIndex((row) => row.includes('scout'));
+  assert.ok(!plain(frame).some((row) => row.includes('scout')));
+  const line = frame.controls.find((c) => c.kind === 'switch' && c.item === lead.id)!.y;
   assert.ok(line > 0, plain(frame).join('\n'));
-  const out = handleMonitorInput(frame.state, click(4, line), { tree: agents, frame, nowMs: now });
+  const out = handleMonitorInput(frame.state, click(2, line), { tree: agents, frame, nowMs: now });
   assert.equal(out.action, undefined);
-  assert.equal(out.state.tree.selectedId, kid.id);
+  assert.equal(out.state.tree.selectedId, lead.id);
   assert.equal(out.state.modes.details, 'closed');
   assert.ok(!frame.controls.some((c) => (c.kind as string) === 'expand'));
   const details = handleMonitorInput(out.state, key('enter'), { tree: agents, frame, nowMs: now }).state;
   assert.equal(details.modes.details, 'open');
-  assert.equal(details.tree.selectedId, kid.id);
+  assert.equal(details.tree.selectedId, lead.id);
 });
 
 test('the agents view scrolls: its band says which rows are in view, the wheel and pages move it, the selection pulls it', () => {
@@ -413,7 +407,12 @@ test('the agents view scrolls: its band says which rows are in view, the wheel a
   const short = plain(
     renderMonitor({ tree: tree(nodes.slice(0, 5)), state: rich(), width: 32, height: 12, nowMs: now })
   );
-  assert.ok(!short.slice(2, 10).some((line) => line.trim() === ''), short.join('\n'));
+  assert.ok(!short.slice(2, 7).some((line) => line.trim() === ''), short.join('\n'));
+  assert.equal(
+    short.slice(2, 7).filter((line) => /^[┌›] /.test(line)).length,
+    5,
+    'all five one-row compact cards fit without spacers'
+  );
   const tall = plain(
     renderMonitor({ tree: tree(nodes.slice(0, 3)), state: rich(), width: 32, height: 30, nowMs: now })
   );
@@ -507,9 +506,11 @@ test('panelStyle: rich by default, an older settings file loads, a bad value fal
   assert.equal(defaultSettings().panelStyle, 'rich');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-style-'));
   const file = path.join(dir, 'hud-settings.json');
-  const previous = process.env.CODEX_HUD_SETTINGS_PATH;
-  process.env.CODEX_HUD_SETTINGS_PATH = file;
+  const isolated = { HUD_SETTINGS_PATH: file, HOME: dir, HUD_HOME: dir, CODEX_HOME: dir };
+  const previous = new Map(Object.keys(isolated).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, isolated);
   try {
+    assert.ok(settingsPath().startsWith(dir + path.sep), 'settings writes remain inside the private test directory');
     fs.writeFileSync(file, JSON.stringify({ sort: 'created' }));
     assert.equal(loadSettings().panelStyle, 'rich');
     saveSettings({ panelStyle: 'compact' });
@@ -517,8 +518,10 @@ test('panelStyle: rich by default, an older settings file loads, a bad value fal
     fs.writeFileSync(file, JSON.stringify({ panelStyle: 'fancy' }));
     assert.equal(loadSettings().panelStyle, 'rich');
   } finally {
-    if (previous === undefined) delete process.env.CODEX_HUD_SETTINGS_PATH;
-    else process.env.CODEX_HUD_SETTINGS_PATH = previous;
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     fs.rmSync(dir, { recursive: true, force: true });
   }
   const row = SETTING_ROWS.find((r) => r.key === 'panelStyle')!;
@@ -577,8 +580,9 @@ test('finished agents keep the same card layout, dim old news, navigate without 
   const lines = plain(frame);
   assert.equal(lines.filter((line) => /^[┌›] ✓ /.test(line)).length, 3);
   assert.equal(lines.filter((line) => /^└ /.test(line)).length, 3);
-  assert.ok(lines.some((line) => /^└ 12d .*57%/.test(line)));
-  assert.ok(lines.some((line) => /^└ 12d .*29%/.test(line)));
+  assert.equal(lines.filter((line) => /to accept/.test(line)).length, 3);
+  assert.equal(lines.filter((line) => /^└ Result ready/.test(line)).length, 3);
+  assert.ok(!lines.some((line) => /57%|29%|tok\/s/.test(line)));
   assert.ok(!lines.some((line) => /Audit the code paths|All done/.test(line)));
   const ctx = { tree: agents, frame, nowMs: now };
   const moved = handleMonitorInput(frame.state, key('down'), ctx).state;
@@ -592,12 +596,12 @@ test('finished agents keep the same card layout, dim old news, navigate without 
   const words = withGlyphs('text', () =>
     plain(renderMonitor({ tree: agents, state, width: 90, height: 40, nowMs: now }))
   );
-  assert.ok(words.some((line) => /^└ 12d ago /.test(line)));
+  assert.ok(words.some((line) => /^\[ \+ agent .*to accept/.test(line)));
   const previous = setLanguage('zh');
   try {
     assert.ok(
       withGlyphs('text', () => plain(renderMonitor({ tree: agents, state, width: 90, height: 40, nowMs: now }))).some(
-        (line) => /^└ 12d前 /.test(line)
+        (line) => /^\[ \+ 代理 .*待验收/.test(line)
       )
     );
   } finally {
@@ -612,18 +616,22 @@ test('finished card names stay whole when they fit; each footer retains its own 
   for (const width of [32, 40, 48, 56]) {
     const frame = renderMonitor({ tree: tree(nodes), state, width, height: 60, nowMs: now });
     const lines = plain(frame);
-    assert.ok(
-      names.every((name) => lines.some((line) => line.includes(name))),
-      lines.join('\n')
-    );
-    assert.equal(lines.filter((line) => /^└ 12d /.test(line)).length, 3, 'each card owns its age');
-    assert.ok(lines.some((line) => /^└ 3h /.test(line)));
-    assert.equal(lines.filter((line) => line.includes('57%')).length, 4);
+    if (width >= 48)
+      assert.ok(
+        names.every((name) => lines.some((line) => line.includes(name))),
+        lines.join('\n')
+      );
+    else {
+      const role = width < 36 ? '\\?' : 'agent';
+      assert.ok(lines.filter((line) => new RegExp('^[┌›] ✓ ' + role).test(line) && line.includes('…')).length >= 3);
+    }
+    assert.equal(lines.filter((line) => /to accept <1m/.test(line)).length, 4, 'each card owns its minute age');
+    assert.equal(lines.filter((line) => line.includes('57%')).length, 0);
     assert.ok(frame.lines.every((line) => visualLength(line) === width));
   }
   const long = finished(44, 'refactor_the_session_store_layer_with_extra_suffix', 60);
   const lines = plain(renderMonitor({ tree: tree([long]), state, width: 32, height: 40, nowMs: now }));
-  assert.ok(lines.some((line) => /^› ✓ /.test(line) && line.includes('…')));
+  assert.ok(lines.some((line) => /^[┌›] ✓ \? /.test(line) && line.includes('…')));
 });
 
 test('an opened card leaves the last report to the Inspector, its markdown taken out there; an old card steps its words back', () => {
@@ -696,25 +704,15 @@ test('guardian reviews fold into a ◈N chip on their parent, and the summary co
     "one failed: the summary's chip in the error colour"
   );
   const top = lines.find((line) => line.includes('bench_corpus'))!;
-  assert.match(top, /◈2/);
-  assert.ok(
-    frame.lines.some((line) => line.includes(theme.info('◈2'))),
-    'a running review: the chip in the info colour'
-  );
+  assert.doesNotMatch(top, /◈/, 'compact cards have phases only when observed, not native guardian chips');
   assert.ok(!lines.some((line) => /The following is the Codex/.test(line)), 'never the review prompt');
-  assert.ok(
-    lines.some((line) => /^│ ▸ guardian/.test(line)),
-    'a live review is one line on its parent'
-  );
+  assert.ok(!lines.some((line) => /^│ ▸ guardian/.test(line)), 'helpers fold into their owner');
   assert.ok(!lines.some((line) => /^[┌╭›]/.test(line) && line.includes('guardian')), 'a review is no card of its own');
   const other = frame.lines.find((line) => stripAnsi(line).includes('other'))!;
   assert.doesNotMatch(stripAnsi(other), /✗/, "a failed review is not one of its lead's failed subtasks");
-  assert.ok(other.includes(theme.error('◈1')), "it is its lead's chip, in the error colour");
+  assert.ok(!stripAnsi(other).includes('◈1'), 'aggregate summary retains the review count, not the compact card');
   const opened = plain(renderMonitor({ tree: tree(nodes), state, width: 60, height: 50, nowMs: now }));
-  assert.ok(
-    opened.some((line) => /^│ ! guardian +\d+h$/.test(line.trimEnd())),
-    "and has a line on its lead's card"
-  );
+  assert.ok(!opened.some((line) => /^│ ! guardian/.test(line.trimEnd())));
   // j/k never lands on a folded review.
   let s = frame.state;
   const seen = new Set<string>();
@@ -758,22 +756,22 @@ test('finished cards wrap only the newest model entry, retain meter colors, and 
     const state = rich({ tree: { ...rich().tree, showAll: true, selectedId: nodes[1].id } });
     const frame = renderMonitor({ tree: tree(nodes), state, width, height: 60, nowMs: now, agentLog });
     const lines = plain(frame);
-    const at = lines.findIndex((line) => line.includes('done_50'));
-    const end = lines.findIndex((line, i) => i > at && line.startsWith('└'));
-    assert.equal(
-      lines
-        .slice(at + 1, end)
-        .map((line) => line.slice(2).trim())
-        .join(' '),
-      'Handoff published, awaiting review'
+    const sentence = 'Handoff published, awaiting review';
+    const projected = projectWorkCard(nativeWorker(nodes[0]), now);
+    const compactCard = renderWorkCard(projected, state, width, sentence);
+    assert.ok(compactCard.length <= 3);
+    const expanded = renderWorkCard(projected, state, width, sentence, true, false, sentence);
+    assert.ok(
+      expanded
+        .slice(compactCard.length)
+        .map((line) => stripAnsi(line).slice(2).trim())
+        .join(' ')
+        .includes(sentence)
     );
     assert.ok(!lines.some((line) => /Pushed|Task of/.test(line)));
-    assert.equal(lines.filter((line) => line.includes('41%')).length, 4);
+    assert.equal(lines.filter((line) => line.includes('41%')).length, 0);
     assert.ok(frame.lines.every((line) => visualLength(line) === width));
-    assert.ok(
-      frame.lines.some((line) => line.includes(theme.info('X').split('X')[0]) && line.includes('41%')),
-      'meter keeps zone color'
-    );
+    assert.ok(expanded.every((line) => visualLength(line) === width));
   }
   const compact = plain(
     renderMonitor({
@@ -798,16 +796,18 @@ test("a running card's clock ticks on cached renders; a resting card keeps its c
   const footOf = (frame: MonitorFrame, name: string) => {
     const lines = plain(frame);
     const top = lines.findIndex((line) => line.includes(name));
-    return lines.slice(top).find((line, i) => i > 0 && /^└/.test(line)) ?? '';
+    return lines[top] ?? '';
   };
   const first = renderMonitor({ tree: agents, state: rich(), width: 48, height: 40, nowMs: now });
-  // The running turn is 12m00s old; a second later the same render loop must say 12m01s.
+  // Compact clocks are minute-bucketed; a second later remains 12m, the next minute changes.
   const next = renderMonitor({ tree: agents, state: first.state, width: 48, height: 40, nowMs: now + 1000 });
-  assert.match(footOf(first, 'working_agent'), /◷12m00s/);
-  assert.match(footOf(next, 'working_agent'), /◷12m01s/);
+  assert.match(footOf(first, 'working_agent'), /working 12m/);
+  assert.match(footOf(next, 'working_agent'), /working 12m/);
+  const minute = renderMonitor({ tree: agents, state: first.state, width: 48, height: 40, nowMs: now + 60000 });
+  assert.match(footOf(minute, 'working_agent'), /working 13m/);
   // A resting card's text is the same either way; its cache entry survives the second.
   assert.equal(footOf(next, 'resting_agent'), footOf(first, 'resting_agent'));
-  assert.match(footOf(next, 'resting_agent'), /└ 12d /, footOf(next, 'resting_agent'));
+  assert.match(footOf(next, 'resting_agent'), /to accept <1m/, footOf(next, 'resting_agent'));
 });
 
 test('a cached card drops an expired output rate even with its clock hidden', () => {
@@ -824,7 +824,21 @@ test('a cached card drops an expired output rate even with its clock hidden', ()
     height: 30,
     nowMs: now,
   });
-  const next = renderMonitor({ tree: agents, state: first.state, width: 56, height: 30, nowMs: now + 1000 });
-  assert.match(plain(first).find((line) => line.startsWith('└')) ?? '', /~42 tok\/s/);
-  assert.doesNotMatch(plain(next).find((line) => line.startsWith('└')) ?? '', /tok\/s/);
+  const next = renderMonitor({ tree: agents, state: first.state, width: 56, height: 30, nowMs: now + 419000 });
+  assert.match(plain(first).join('\n'), /working/);
+  assert.match(plain(next).join('\n'), /stalled/);
+  assert.doesNotMatch(
+    first.panes[0].rows
+      .filter((row) => row.item === working.id)
+      .map((row) => stripAnsi(row.text))
+      .join('\n'),
+    /tok\/s/
+  );
+  assert.doesNotMatch(
+    next.panes[0].rows
+      .filter((row) => row.item === working.id)
+      .map((row) => stripAnsi(row.text))
+      .join('\n'),
+    /tok\/s/
+  );
 });

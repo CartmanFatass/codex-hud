@@ -428,7 +428,7 @@ test('with no model backend, one closing line after the cards says no new summar
       .lines.map(stripAnsi)
       .join(' ')
       .replace(/\s+/g, ' ');
-  assert.match(draw2(false), /~ No model backend, so no new summaries: Settings → LLM/);
+  assert.doesNotMatch(draw2(false), /No model backend|Settings → LLM/, 'compact cards have no backend-status footer');
   assert.doesNotMatch(draw2(true), /No model backend/);
   assert.doesNotMatch(draw2(false, false), /No model backend/, 'summary hidden: nothing to explain');
 });

@@ -2,13 +2,13 @@
  ✓ 目前无需你处理                                                │ 进度 · 按观察到的开始时间 ─────────────────
                                                                  │ › Synthetic browser finished wait          
                                                                  │ │ DONE 阶段未知                            
+                                                                 │ 工作速览 ──────────────────────────────────
+                                                                 │ │ Synthetic browser finished 完成          
+                                                                 │ ┌ ✓ jev Synthetic browser finish… 完成 <1分
+                                                                 │ │ wait → 完成                              
+                                                                 │ └ 门面已关闭                               
  代理 ────────────────────────────────────────────────────────────────────────────────────────────────────────
  ✓        jev      Synthetic browser finished                                               synthetic-web 10分
-                                                                                                              
-                                                                                                              
-                                                                                                              
-                                                                                                              
-                                                                                                              
                                                                                                               
                                                                                                               
                                                                                                               

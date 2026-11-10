@@ -1,0 +1,2 @@
+# Fixed-width frame fixtures compare their trailing cells byte for byte.
+tests/fixtures/workboard-frames/*.txt whitespace=-blank-at-eol
