@@ -44,7 +44,54 @@ import {
   type MaterialEnvelope,
   type ResolvedRecipient,
 } from '../core/materials/index.js';
-import { legacyRequest, type LegacySubject, type MaterialPlan } from '../core/materials/request.js';
+import {
+  legacyRequest,
+  type LegacySubject,
+  type MaterialPlan,
+  type JobMaterialPlan,
+} from '../core/materials/request.js';
+import {
+  revalidateJobMaterials,
+  JobMaterialAuthority,
+  withJobBudget,
+  hasJobBudget,
+  JobBudgetPending,
+  invalidateJobPaths,
+  jobDispatchBudget,
+  withJobDispatchBudget,
+  jobFileMetrics,
+  type JobReadBudget,
+  type JobMaterialEnvelope,
+  type JobPending,
+} from '../core/materials/job.js';
+export interface JobModelRequest extends ModelRequest {
+  feature: 'job_card';
+  jobMaterials: JobMaterialPlan;
+}
+type JobPendingResult = JobPending & { ok: false };
+type InternalModelResult = ModelResult | JobPendingResult;
+class JobScopeChanged extends Error {}
+export type JobModelHandle = Omit<ModelHandle, 'result' | 'status'> & {
+  readonly status: ModelStatus | 'pending';
+  result: Promise<ModelResult | (JobPending & { ok: false })>;
+};
+const preparedJobs = new WeakMap<
+  JobMaterialPlan,
+  ReturnType<typeof import('../core/materials/job.js').buildJobMaterials>
+>();
+type ModelEnvelope = MaterialEnvelope | JobMaterialEnvelope;
+type ModelAuthority = MaterialAuthority | JobMaterialAuthority;
+const jobEnvelope = (envelope: ModelEnvelope): envelope is JobMaterialEnvelope =>
+  'kind' in envelope && envelope.kind === 'job';
+function revalidateModelMaterials(
+  envelope: ModelEnvelope,
+  authority: ModelAuthority,
+  recipient: ResolvedRecipient | null
+): boolean {
+  return jobEnvelope(envelope)
+    ? authority instanceof JobMaterialAuthority && revalidateJobMaterials(envelope, authority, recipient)
+    : !(authority instanceof JobMaterialAuthority) && revalidateMaterials(envelope, authority, recipient);
+}
 import { MaterialCache } from '../core/materials/cache.js';
 import {
   resolveRecipient,
@@ -89,6 +136,8 @@ export interface ModelApi {
 export interface ModelRequest {
   /** Public observations are selected before any prompt or cache identity is constructed. */
   materials?: MaterialPlan;
+  /** Explicit disjoint job variant. Supplying both variants denies. */
+  jobMaterials?: JobMaterialPlan;
   /** Only the authorized legacy feature-cache adapter may supply this local reply. */
   legacyCachedText?: string;
   /** An authorized scope check found no new material; no transport or cache mutation. */
@@ -168,6 +217,7 @@ export interface ModelHandle {
   readonly status: ModelStatus;
   readonly generatedAt?: number;
   readonly materials?: MaterialEnvelope;
+  readonly jobMaterials?: JobMaterialEnvelope;
   isAuthorized?(): boolean;
   subscribe(listener: () => void): () => void;
   result: Promise<ModelResult>;
@@ -175,8 +225,8 @@ export interface ModelHandle {
   cancel(): void;
 }
 
-function privateMaterialHandle(handle: ModelHandle): ModelHandle {
-  for (const key of ['materials', 'isAuthorized']) {
+function privateMaterialHandle<T extends ModelHandle | JobModelHandle>(handle: T): T {
+  for (const key of ['materials', 'jobMaterials', 'isAuthorized']) {
     const descriptor = Object.getOwnPropertyDescriptor(handle, key);
     if (descriptor) Object.defineProperty(handle, key, { ...descriptor, enumerable: false });
   }
@@ -381,6 +431,8 @@ function validFormat(request: ModelRequest, text: string): boolean {
     return request.validateResponse ? request.validateResponse(text) === true : true;
   } catch {
     return false;
+  } finally {
+    if (request.validateResponse) invalidateJobPaths();
   }
 }
 
@@ -454,8 +506,8 @@ function httpClassification(status: number, json: unknown): ModelFailureClassifi
 
 interface Job {
   request: ModelRequest;
-  envelope?: MaterialEnvelope;
-  authority?: MaterialAuthority;
+  envelope?: ModelEnvelope;
+  authority?: ModelAuthority;
   recipient?: ResolvedRecipient;
   legacy?: boolean;
   probe?: boolean;
@@ -465,8 +517,16 @@ interface Job {
   command?: ReturnType<typeof modelCommand>;
   http?: ReturnType<typeof modelHttpRequest>;
   digest: string | null;
-  resolve: (result: ModelResult) => void;
+  resolve: (result: InternalModelResult) => void;
+  dispatchBudget?: JobReadBudget;
+  telemetryAdmitted?: boolean;
+  pending?: boolean;
+  reserved?: boolean;
+  pendingSettlement?: Promise<JobPendingResult>;
   settled: boolean;
+  settling?: boolean;
+  finished?: boolean;
+  settlementOverride?: InternalModelResult;
   status: ModelStatus;
   generatedAt?: number;
   queuedAt: number;
@@ -502,6 +562,7 @@ export class SmallModel {
   private cap = DEFAULT_HOURLY_CAP;
   private readonly queue: Job[] = [];
   private readonly preflights = new Set<ModelHandle>();
+  private readonly settlingJobs = new Set<Job>();
   private active: Job | null = null;
   private cache = new Map<string, { text: string; at: number }>();
   private calls: number[] = [];
@@ -529,7 +590,7 @@ export class SmallModel {
 
   constructor(private readonly options: SmallModelOptions = {}) {
     this.dir = options.dir ?? null;
-    this.clock = options.clock ?? Date.now;
+    this.clock = options.clock ? () => this.callback(() => options.clock!()) : Date.now;
     this.materialCache = new MaterialCache(this.dir);
     this.recapScopes = new LegacyRecapScopes(this.dir ? path.join(this.dir, 'materials-v1', 'recap-scopes') : null);
     this.legacyBridge = new LegacyCodexBridge(
@@ -662,8 +723,9 @@ export class SmallModel {
     } while (this.telemetrySaving);
   }
 
-  private recordTelemetry(job: Job, result?: ModelResult): void {
-    const now = this.clock();
+  private recordTelemetry(job: Job, result?: ModelResult, capturedNow?: number): void {
+    if (job.envelope && jobEnvelope(job.envelope) && !job.telemetryAdmitted) return;
+    const now = capturedNow ?? this.clock();
     const outcome = !result
       ? 'pending'
       : result.ok
@@ -701,7 +763,7 @@ export class SmallModel {
               const records = [...this.telemetryDirty.values()];
               this.telemetryDirty.clear();
               try {
-                await this.telemetryStore!.recordTelemetryBatch(records, this.clock());
+                await this.telemetryStore!.recordTelemetryBatch(records, capturedNow ?? this.clock());
               } catch {
                 this.telemetryUnavailable = true;
               }
@@ -714,11 +776,22 @@ export class SmallModel {
     }
   }
 
-  private changed(): void {
+  private callback<T>(fn: () => T, job = this.active): T {
     try {
-      this.options.onChange?.();
+      if (job?.envelope && jobEnvelope(job.envelope) && job.dispatchBudget)
+        return withJobDispatchBudget(job.dispatchedAt === undefined ? job.dispatchBudget : jobDispatchBudget(), fn);
+      return fn();
+    } finally {
+      invalidateJobPaths();
+    }
+  }
+  private changed(job = this.active): void {
+    try {
+      if (this.options.onChange) this.callback(() => this.options.onChange!(), job);
     } catch {
       /* Observers cannot strand work. */
+    } finally {
+      invalidateJobPaths();
     }
   }
 
@@ -740,8 +813,15 @@ export class SmallModel {
     };
   }
   private recipient(route: MaterialRoute): ResolvedRecipient | null {
+    const resolve = () => {
+      try {
+        return this.options.resolveRecipient!(route);
+      } finally {
+        invalidateJobPaths();
+      }
+    };
     const resolved = this.options.resolveRecipient
-      ? bindResolvedRecipient(route, this.options.resolveRecipient(route))
+      ? bindResolvedRecipient(route, resolve())
       : resolveRecipient(route, this.options.account, this.options.trustedProfile);
     if (route.backend === 'agy') return this.cliRecipient.bind(resolved, this.options.env ?? process.env);
     if (route.backend === 'api' && resolved && !this.options.resolveRecipient) {
@@ -917,7 +997,19 @@ export class SmallModel {
   private authorizationFailure(): ModelResult {
     return { ok: false, error: 'requires_authorization', refused: true, cancelled: true };
   }
-  private authorized(job: Job): boolean {
+  /** Public checks never borrow the worker's budget or release unproven material. */
+  private publicAuthorized(job: Job): boolean {
+    if (!job.envelope || !jobEnvelope(job.envelope)) return this.authorized(job);
+    try {
+      return hasJobBudget()
+        ? this.authorized(job, false)
+        : withJobDispatchBudget(jobDispatchBudget(), () => this.authorized(job, false));
+    } catch (error) {
+      if (error instanceof JobBudgetPending) return false;
+      throw error;
+    }
+  }
+  private authorized(job: Job, dispatch = true): boolean {
     try {
       if (job.backend === 'api' && job.http && !('error' in job.http)) {
         const current = modelHttpRequest(
@@ -933,13 +1025,27 @@ export class SmallModel {
         : job.legacy && !this.hasExplicitRecipient()
           ? this.legacyBridge.recipient(route)
           : this.recipient(route);
-      return !!job.envelope && !!job.authority && revalidateMaterials(job.envelope, job.authority, recipient);
-    } catch {
+      if (!job.envelope || !job.authority) return false;
+      const validate = () => revalidateModelMaterials(job.envelope!, job.authority!, recipient);
+      if (dispatch && jobEnvelope(job.envelope) && job.dispatchBudget) {
+        // Reply/publication fences are separate fresh opportunities after transport.
+        return withJobDispatchBudget(
+          job.dispatchedAt === undefined ? job.dispatchBudget : jobDispatchBudget(),
+          validate
+        );
+      }
+      return validate();
+    } catch (error) {
+      if (error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope)) throw error;
       return false;
     }
   }
   private cacheAllowed(job: Job, text: string, at: number): boolean {
-    return !!job.envelope && (job.legacy === true || this.materialCache.has(job.digest!, job.envelope, text, at));
+    try {
+      return !!job.envelope && (job.legacy === true || this.materialCache.has(job.digest!, job.envelope, text, at));
+    } finally {
+      if (job.envelope && jobEnvelope(job.envelope)) invalidateJobPaths();
+    }
   }
 
   /** Off-tick permission check for local asynchronous extraction; transport still rechecks the captured subjects. */
@@ -1046,7 +1152,58 @@ export class SmallModel {
   }
 
   /** Queue a request. It starts at once when nothing else is in flight. */
-  submit(request: ModelRequest): ModelHandle {
+  submit(request: JobModelRequest): JobModelHandle;
+  submit(request: ModelRequest): ModelHandle;
+  submit(request: ModelRequest): ModelHandle | JobModelHandle {
+    if (request.feature === 'job_card' && request.jobMaterials && !request.materials)
+      return this.submitJob(request.jobMaterials);
+    return this.submitOrdinary(request);
+  }
+  /** Job-only pending outcome; never enters queue, telemetry, cache, or cap accounting. */
+  submitJob(plan: JobMaterialPlan): JobModelHandle {
+    const pending = (): JobModelHandle => ({
+      status: 'pending',
+      result: Promise.resolve({ ok: false, pending: true, reason: 'budget' }),
+      subscribe: () => () => {},
+      cancel: () => {},
+      isAuthorized: () => false,
+    });
+    if (this.backend === 'off')
+      return this.submitNow({ feature: 'job_card', system: '', prompt: '', jobMaterials: plan });
+    const budget = plan.budget ?? plan.subject.budget;
+    if (
+      budget &&
+      ((budget.probes ?? 0) >= (budget.maxProbes ?? 2048) ||
+        (budget.deadline !== undefined && performance.now() >= budget.deadline))
+    )
+      return pending();
+    try {
+      return withJobBudget(budget, () => {
+        const recipient = this.recipient(this.route('job_card'));
+        const decision = buildMaterials({
+          kind: 'job',
+          purpose: plan.purpose,
+          subject: plan.subject,
+          authority: plan.authority,
+          resolvedRecipient: recipient,
+          limits: { maxBytes: 16384, maxFragments: 32 },
+          budget,
+        });
+        if ('pending' in decision) return pending();
+        const preparedPlan = { ...plan };
+        preparedJobs.set(preparedPlan, decision);
+        try {
+          return this.submitNow({ feature: 'job_card', system: '', prompt: '', jobMaterials: preparedPlan });
+        } finally {
+          preparedJobs.delete(preparedPlan);
+        }
+      });
+    } catch (error) {
+      if (error instanceof JobBudgetPending) return pending();
+      throw error;
+    }
+  }
+  private submitOrdinary(request: ModelRequest): ModelHandle {
     if (!request.materials?.legacy || this.backend === 'off') return this.submitNow(request);
     // Legacy proof touches the original home. Schedule it outside the collection/paint turn.
     let inner: ModelHandle | undefined;
@@ -1140,14 +1297,17 @@ export class SmallModel {
     return privateMaterialHandle(handle);
   }
 
-  private submitNow(request: ModelRequest): ModelHandle {
+  private submitNow(request: JobModelRequest): JobModelHandle;
+  private submitNow(request: ModelRequest): ModelHandle;
+  private submitNow(request: ModelRequest): ModelHandle | JobModelHandle {
     // Resolve the route with EMPTY material. Authorization precedes all formatting and hashing.
     const backend = this.backend;
     const env = { ...(this.options.env ?? process.env) };
     let route = this.route(request.feature, env);
     const plan = request.materials;
-    let envelope: MaterialEnvelope | undefined;
-    let authority = plan?.authority ?? this.options.materials;
+    const jobPlan = request.jobMaterials;
+    let envelope: ModelEnvelope | undefined;
+    let authority: ModelAuthority | undefined = jobPlan?.authority ?? plan?.authority ?? this.options.materials;
     let recipient: ResolvedRecipient | null = null;
     try {
       if (backend !== 'off') recipient = this.recipient(route);
@@ -1166,11 +1326,55 @@ export class SmallModel {
     else {
       let prepared: ReturnType<SmallModel['prepare']> = null;
       try {
-        prepared = this.prepare(plan, route, authority, recipient, request.feature);
+        if (!jobPlan)
+          prepared = this.prepare(plan, route, authority as MaterialAuthority | undefined, recipient, request.feature);
       } catch {
         /* Invalid adapters deny. */
       }
-      if (prepared) {
+      if (
+        jobPlan &&
+        !plan &&
+        jobPlan.kind === 'job' &&
+        jobPlan.purpose === 'job_card' &&
+        request.feature === 'job_card'
+      ) {
+        try {
+          const decision =
+            preparedJobs.get(jobPlan) ??
+            buildMaterials({
+              kind: 'job',
+              purpose: jobPlan.purpose,
+              subject: jobPlan.subject,
+              authority: jobPlan.authority,
+              resolvedRecipient: recipient,
+              limits: { maxBytes: 16384, maxFragments: 32 },
+            });
+          if (
+            !('denied' in decision) &&
+            !('pending' in decision) &&
+            revalidateJobMaterials(decision, jobPlan.authority, recipient)
+          ) {
+            envelope = decision;
+            authority = jobPlan.authority;
+            let composed: ModelRequest;
+            try {
+              composed = jobPlan.compose(decision);
+            } finally {
+              invalidateJobPaths();
+            }
+            request = {
+              ...composed,
+              feature: 'job_card',
+              materials: undefined,
+              jobMaterials: undefined,
+            };
+            if (!revalidateJobMaterials(decision, jobPlan.authority, recipient)) refusal = this.authorizationFailure();
+          } else refusal = { ok: false, error: 'requires_authorization', refused: true };
+        } catch (error) {
+          if (error instanceof JobBudgetPending) throw error;
+          refusal = { ok: false, error: 'requires_authorization', refused: true };
+        }
+      } else if (prepared) {
         envelope = prepared.envelope;
         authority = prepared.authority;
         recipient = prepared.recipient;
@@ -1198,7 +1402,7 @@ export class SmallModel {
           )
         : null;
     let job!: Job;
-    const result = new Promise<ModelResult>((resolve) => {
+    const result = new Promise<InternalModelResult>((resolve) => {
       job = {
         request,
         envelope,
@@ -1219,9 +1423,28 @@ export class SmallModel {
         status: 'queued',
         listeners: new Set(),
         resolve: (value) => {
+          if (job.envelope && jobEnvelope(job.envelope)) {
+            if (job.settled) return;
+            if (job.settling) {
+              if (!value.ok && (!job.settlementOverride || 'pending' in job.settlementOverride))
+                job.settlementOverride = value;
+              return;
+            }
+            job.settling = true;
+            this.settlingJobs.add(job);
+            void this.settleJob(job, value, resolve);
+            return;
+          }
           if (!job.settled) {
             job.settled = true;
-            this.recordTelemetry(job, value);
+            if ('pending' in value) {
+              job.pending = true;
+              if (job.dispatchedAt === undefined)
+                this.telemetryRecords = this.telemetryRecords.filter((record) => record.id !== job.id);
+            } else {
+              job.telemetryAdmitted = true;
+              this.recordTelemetry(job, value);
+            }
             this.setStatus(job, 'settled');
             resolve(value);
           }
@@ -1229,13 +1452,39 @@ export class SmallModel {
       };
     });
     this.recordTelemetry(job);
-    if (!refusal) this.reloadCache(legacy);
-    let hit = digest ? this.cache.get(digest) : undefined;
-    if (hit && (!this.authorized(job) || !this.cacheAllowed(job, hit.text, hit.at))) hit = undefined;
-    // An answer cached in the wrong language is no answer: dropped, and asked again.
-    if (hit && !acceptable(request, hit.text)) {
-      this.cache.delete(digest!);
-      hit = undefined;
+    if (!refusal && jobPlan && envelope) {
+      const unsubscribe = jobPlan.authority.subscribe(() => {
+        if (job.settled) return;
+        try {
+          if (this.authorized(job)) return;
+        } catch (error) {
+          if (!(error instanceof JobBudgetPending)) throw error;
+          const at = this.queue.indexOf(job);
+          if (at >= 0) this.queue.splice(at, 1);
+          job.stop?.();
+          void this.pendingDispatch(job).then(job.resolve);
+          this.pump();
+          return;
+        }
+        const at = this.queue.indexOf(job);
+        if (at >= 0) this.queue.splice(at, 1);
+        job.stop?.();
+        job.resolve(this.authorizationFailure());
+        this.pump();
+      });
+      void result.then(unsubscribe);
+    }
+    let hit: { text: string; at: number } | undefined;
+    // Job cache consumption belongs to the fresh, bounded microtask worker (q11).
+    // Preserve the synchronous path exactly for native/legacy/non-job requests.
+    if (!envelope || !jobEnvelope(envelope)) {
+      if (!refusal) this.reloadCache(legacy);
+      hit = digest ? this.cache.get(digest) : undefined;
+      if (hit && (!this.authorized(job) || !this.cacheAllowed(job, hit.text, hit.at))) hit = undefined;
+      if (hit && !acceptable(request, hit.text)) {
+        this.cache.delete(digest!);
+        hit = undefined;
+      }
     }
     if (refusal) {
       job.resolve(refusal);
@@ -1253,20 +1502,27 @@ export class SmallModel {
     } else {
       this.queue.push(job);
       this.changed();
-      this.pump();
+      if (envelope && jobEnvelope(envelope)) queueMicrotask(() => this.pump());
+      else this.pump();
     }
+    const thisModel = this;
     return privateMaterialHandle({
       result,
       get status() {
-        return job.status;
+        return job.pending ? ('pending' as const) : job.status;
       },
       get generatedAt() {
         return job.generatedAt;
       },
       get materials() {
-        return job.envelope;
+        return job.envelope && !jobEnvelope(job.envelope) ? job.envelope : undefined;
       },
-      isAuthorized: () => this.authorized(job),
+      get jobMaterials() {
+        return !job.pending && job.envelope && jobEnvelope(job.envelope) && thisModel.publicAuthorized(job)
+          ? job.envelope
+          : undefined;
+      },
+      isAuthorized: () => !job.pending && this.publicAuthorized(job),
       subscribe: (listener) => {
         job.listeners.add(listener);
         return () => {
@@ -1286,11 +1542,81 @@ export class SmallModel {
     });
   }
 
+  /** All job callbacks precede the last fresh fence and inline Promise commit. */
+  private async settleJob(
+    job: Job,
+    value: InternalModelResult,
+    deliver: (value: InternalModelResult) => void
+  ): Promise<void> {
+    let result = value,
+      now = Date.now();
+    const unavailable = (): ModelResult => ({
+      ok: false,
+      error: 'model shared state unavailable',
+      refused: true,
+      reason: 'runtime-unavailable',
+    });
+    const pending = async (): Promise<InternalModelResult> => {
+      try {
+        return await this.pendingDispatch(job);
+      } catch {
+        return unavailable();
+      }
+    };
+    if (!('pending' in value)) {
+      try {
+        now = this.options.clock ? this.callback(() => this.options.clock!(), job) : Date.now();
+      } catch (error) {
+        if (value.ok) result = error instanceof JobBudgetPending ? await pending() : unavailable();
+      }
+    }
+    job.pending = 'pending' in result;
+    this.setStatus(job, 'settled');
+    if (job.finished && this.active === job) {
+      this.active = null;
+      this.changed(job); // Queue-release observers are pre-publication callbacks too.
+    }
+    result = job.settlementOverride ?? result;
+    if (result.ok) {
+      try {
+        if (!this.authorized(job)) result = this.authorizationFailure();
+      } catch (error) {
+        result = error instanceof JobBudgetPending ? await pending() : unavailable();
+      }
+    }
+    result = job.settlementOverride ?? result;
+    if (
+      job.envelope &&
+      jobEnvelope(job.envelope) &&
+      job.authority instanceof JobMaterialAuthority &&
+      job.authority.knownInvalid(job.envelope)
+    )
+      result = this.authorizationFailure();
+    job.pending = 'pending' in result;
+    if ('pending' in result) {
+      if (job.dispatchedAt === undefined)
+        this.telemetryRecords = this.telemetryRecords.filter((record) => record.id !== job.id);
+    } else {
+      job.telemetryAdmitted = true;
+      // Captured time means neither recording nor its asynchronous batch invokes a clock callback after the fence.
+      try {
+        this.recordTelemetry(job, result, now);
+      } catch {
+        this.telemetryUnavailable = true;
+      }
+    }
+    job.settled = true;
+    job.settling = false;
+    this.settlingJobs.delete(job);
+    deliver(result);
+    this.pump();
+  }
+
   /** Cancel everything, waiting and running: the panel is closing. */
   cancelAll(): void {
     for (const handle of this.preflights) handle.cancel();
     this.preflights.clear();
-    for (const job of [...this.queue, ...(this.active ? [this.active] : [])]) {
+    for (const job of [...this.queue, ...(this.active ? [this.active] : []), ...this.settlingJobs]) {
       job.stop?.();
       job.resolve({ ok: false, error: 'cancelled', cancelled: true });
     }
@@ -1304,12 +1630,14 @@ export class SmallModel {
   private setStatus(job: Job, status: ModelStatus): void {
     if (job.status === status) return;
     job.status = status;
-    this.changed();
+    this.changed(job);
     for (const listener of job.listeners) {
       try {
-        listener();
+        this.callback(listener, job);
       } catch {
         /* Observers must not strand a queue slot or its result. */
+      } finally {
+        invalidateJobPaths();
       }
     }
   }
@@ -1344,17 +1672,22 @@ export class SmallModel {
     this.priorityBurst = index === oldest.index ? 0 : this.priorityBurst + 1;
     const job = this.queue.splice(index, 1)[0];
     this.active = job;
+    if (job.envelope && jobEnvelope(job.envelope)) job.dispatchBudget = jobDispatchBudget();
     // Disk coordination can wait for another panel. It becomes running only
     // once this process has a reservation and is about to send.
     if (!this.store) this.markRunning(job);
     void this.run(job)
-      .catch((): ModelResult => ({
-        ok: false,
-        error: 'model shared state unavailable',
-        refused: true,
-        reason: 'runtime-unavailable',
-      }))
-      .then((outcome) => {
+      .catch((error): InternalModelResult =>
+        error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope)
+          ? { ok: false, pending: true, reason: 'budget' }
+          : {
+              ok: false,
+              error: 'model shared state unavailable',
+              refused: true,
+              reason: 'runtime-unavailable',
+            }
+      )
+      .then(async (outcome) => {
         if (outcome === WAITING_FOR_PEER) {
           if (!job.settled) {
             job.retryAt = performance.now() + 35;
@@ -1365,7 +1698,25 @@ export class SmallModel {
           this.pump();
           return;
         }
-        if (outcome.ok && !this.authorized(job)) outcome = this.authorizationFailure();
+        job.finished = true;
+        if (outcome.ok) {
+          try {
+            if (!this.authorized(job)) outcome = this.authorizationFailure();
+          } catch (error) {
+            if (error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope))
+              outcome = await this.pendingDispatch(job);
+            else throw error;
+          }
+        }
+        if ('pending' in outcome) {
+          job.resolve(outcome);
+          if (this.active === job) {
+            this.active = null;
+            this.changed();
+            this.pump();
+          }
+          return;
+        }
         if (outcome.ok && job.generatedAt === undefined) job.generatedAt = this.clock();
         if (!job.settled) {
           if (outcome.ok) {
@@ -1405,7 +1756,28 @@ export class SmallModel {
     };
   }
 
-  private async run(job: Job): Promise<ModelResult | typeof WAITING_FOR_PEER> {
+  private pendingDispatch(job: Job): Promise<JobPendingResult> {
+    return (job.pendingSettlement ??= (async () => {
+      if (job.reserved) {
+        jobFileMetrics.dispatch.pendingAfterReserve++;
+        if (job.store && job.digest) await job.store.finish(job.digest, job.id);
+      } else jobFileMetrics.dispatch.pendingBeforeReserve++;
+      return { ok: false, pending: true, reason: 'budget' };
+    })());
+  }
+  private async run(job: Job): Promise<InternalModelResult | typeof WAITING_FOR_PEER> {
+    try {
+      return await this.runCurrent(job);
+    } catch (error) {
+      if (error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope))
+        return this.pendingDispatch(job);
+      if (job.envelope && jobEnvelope(job.envelope) && job.reserved && job.store && job.digest)
+        await job.store.finish(job.digest, job.id);
+      if (error instanceof JobScopeChanged) return this.authorizationFailure();
+      throw error;
+    }
+  }
+  private async runCurrent(job: Job): Promise<ModelResult | typeof WAITING_FOR_PEER> {
     if (job.settled) return { ok: false, error: 'cancelled', cancelled: true };
     if (!this.authorized(job)) return this.authorizationFailure();
     const backend = job.backend;
@@ -1420,8 +1792,13 @@ export class SmallModel {
         this.cap,
         this.clock,
         () => job.settled || !this.authorized(job),
-        (text) => acceptable(job.request, text)
+        (text) => {
+          const accepted = acceptable(job.request, text);
+          if (job.envelope && jobEnvelope(job.envelope) && !this.authorized(job)) throw new JobScopeChanged();
+          return accepted;
+        }
       );
+      if (reservation.kind === 'reserved') job.reserved = true;
       if (job.settled) {
         if (reservation.kind === 'reserved' && job.digest) await store.finish(job.digest, job.id);
         return { ok: false, error: 'cancelled', cancelled: true };
@@ -1457,6 +1834,7 @@ export class SmallModel {
       }
       if (callsWithin(this.calls, now, HOUR_MS) >= this.cap) return this.capResult();
       this.calls.push(now);
+      job.reserved = true;
     }
     // Includes queue wait, peer coordination and synchronous lifecycle callbacks.
     if (!this.authorized(job)) {
@@ -1464,7 +1842,16 @@ export class SmallModel {
       return this.authorizationFailure();
     }
     let outcome: ModelResult;
-    job.dispatchedAt = this.clock();
+    const dispatchAt = this.clock();
+    if (job.envelope && jobEnvelope(job.envelope)) {
+      job.telemetryAdmitted = true;
+      this.recordTelemetry(job);
+      if (job.settled || !this.authorized(job)) {
+        if (store && job.digest) await store.finish(job.digest, job.id);
+        return this.authorizationFailure();
+      }
+    }
+    job.dispatchedAt = dispatchAt;
     try {
       outcome = await (backend === 'api'
         ? this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>)
@@ -1478,7 +1865,8 @@ export class SmallModel {
         };
       if (outcome.ok && !this.authorized(job)) outcome = this.authorizationFailure();
       if (outcome.ok) job.generatedAt = this.clock();
-    } catch {
+    } catch (error) {
+      if (error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope)) throw error;
       outcome = { ok: false, error: 'model request failed', classification: 'network' };
     } finally {
       job.stop = undefined;

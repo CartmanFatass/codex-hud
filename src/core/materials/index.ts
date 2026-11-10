@@ -7,6 +7,15 @@ import { sessionRefKey, validateSessionRef } from '../identity.js';
 import type { MaterialEnvelope, MaterialProvenance, OutboundPurpose } from '../types/export.js';
 import type { Coverage } from '../types/observation.js';
 import type { SessionRef } from '../types/identity.js';
+import {
+  buildJobMaterials,
+  revalidateJobMaterials,
+  JobMaterialAuthority,
+  type JobBuildInput,
+  type JobPending,
+  type JobMaterialEnvelope,
+} from './job.js';
+export type AnyMaterialEnvelope = MaterialEnvelope | JobMaterialEnvelope;
 
 export type { MaterialEnvelope, MaterialProvenance, OutboundPurpose } from '../types/export.js';
 export const fingerprint = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -138,7 +147,18 @@ function provenance(
 }
 
 /** Fixed order: identity/public allowlist → read/material scope → recipient grants → text/hash. */
-export function buildMaterials(input: BuildMaterialsInput): MaterialDecision {
+export function buildMaterials(input: BuildMaterialsInput): MaterialDecision;
+export function buildMaterials(
+  input: JobBuildInput
+): JobMaterialEnvelope | JobPending | { denied: true; reason: 'requires_authorization' | 'no_material' };
+export function buildMaterials(
+  input: BuildMaterialsInput | JobBuildInput
+): MaterialDecision | JobMaterialEnvelope | JobPending {
+  return 'kind' in input && input.kind === 'job'
+    ? buildJobMaterials(input)
+    : buildNativeMaterials(input as BuildMaterialsInput);
+}
+function buildNativeMaterials(input: BuildMaterialsInput): MaterialDecision {
   const recipient = input.resolvedRecipient;
   if (
     !recipient?.recipientId ||
@@ -274,6 +294,26 @@ export function buildMaterials(input: BuildMaterialsInput): MaterialDecision {
 
 /** No text is reread and no cache is consulted during the send/write-back check. */
 export function revalidateMaterials(
+  envelope: MaterialEnvelope,
+  authority: MaterialAuthority,
+  recipient: ResolvedRecipient | null
+): boolean;
+export function revalidateMaterials(
+  envelope: JobMaterialEnvelope,
+  authority: JobMaterialAuthority,
+  recipient: ResolvedRecipient | null
+): boolean;
+export function revalidateMaterials(
+  envelope: AnyMaterialEnvelope,
+  authority: MaterialAuthority | JobMaterialAuthority,
+  recipient: ResolvedRecipient | null
+): boolean {
+  if ('kind' in envelope && envelope.kind === 'job')
+    return authority instanceof JobMaterialAuthority && revalidateJobMaterials(envelope, authority, recipient);
+  if (authority instanceof JobMaterialAuthority) return false;
+  return revalidateNativeMaterials(envelope as MaterialEnvelope, authority, recipient);
+}
+function revalidateNativeMaterials(
   envelope: MaterialEnvelope,
   authority: MaterialAuthority,
   recipient: ResolvedRecipient | null

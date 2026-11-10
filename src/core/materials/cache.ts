@@ -1,7 +1,9 @@
 /** Provenance is kept beside, rather than inside, the pre-existing reply cache format. */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { fingerprint, type MaterialEnvelope } from './index.js';
+import { fingerprint, type MaterialEnvelope as NativeMaterialEnvelope } from './index.js';
+import type { JobMaterialEnvelope } from './job.js';
+type MaterialEnvelope = NativeMaterialEnvelope | JobMaterialEnvelope;
 import { writePrivateFile } from '../../collectors/small-model.js';
 
 export class MaterialCache {
