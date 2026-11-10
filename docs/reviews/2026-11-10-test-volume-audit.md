@@ -44,50 +44,46 @@ child processes.
 
 ## Causes
 
-The cause is how the tests are specified, not how many features there are. Each feature is small; the test weight
-per feature has grown.
+Each feature is small. The test weight comes from how the tests were planned, not from the number of features.
 
-1. **The orchestrator's test plans had a floor and no ceiling.** "The implementer may add tests, never drop one."
-   Plans grew from about 10 items to about 40.
-2. **The 2026-11-02 core-brief rule.** It asks for real-process tests of every failure scenario that reviewers use:
-   crashes around commits, races, PID/PGID reuse, leftover processes, duplicate or out-of-order events, and p95 under
-   concurrency. Briefs applied it far beyond process-owning code.
-3. **Review rounds.** Every finding added a regression test, including edge cases built on purpose. R5UX-P2 ran
-   five rounds on display-only work.
-4. **Performance and cost tests run in the default suite.** They make up half of its time, and under load they become
-   the flakes that later need reruns.
-5. **Mutation checks and byte-identical protected tests on display work.** These make each case long.
+1. **Every test plan started from one package's narrow scope.** Each brief had the package prove its own slice from
+   scratch, with its own fixtures, instead of extending tests that already cover the behaviour. The same behaviour
+   is therefore tested again by each package that touches it, and each package builds its own stand-ins:
+   - three fake herdrs: `tests/fakes/herdr.mjs` (R2 role facade), `panel-herdr.mjs` (A3) and `pi-owned-herdr.mjs` (PR2);
+   - four fake pis: `pi-role.mjs`, `pi-dispatch.mjs`, `pi-owned-worker.mjs` and `pi-package.mjs`;
+   - 193 of the 370 unit files build their own temporary home with `mkdtemp`.
+   This is the owner's diagnosis (2026-11-10), and the data supports it.
+2. **The test plans had a floor and no ceiling** ("may add, never drop"). They grew from about 10 items to about 40.
+3. **The 2026-11-02 core-brief rule.** It asks for real-process tests of every failure scenario that reviewers use,
+   and briefs applied it far beyond process-owning code.
+4. **Review rounds.** Every finding added its own regression test, often in a new place.
+5. **Performance and cost tests run in the default suite.** They make up half of its time, and under load they
+   become the flakes that later need reruns.
 
-## Rule adopted (orchestrator, 2026-11-10)
+## Rule adopted (2026-11-10)
 
-The rule is recorded in `docs/delegation.md` under "测试规范" (testing rules). It applies to every brief written from
-today. Packages that are already running keep their plans.
+The rule is recorded in `docs/delegation.md`, "测试按项目范围设计" (design tests at project scope).
 
-**Plan size**
-- A display test plan has at most 8 items.
-- A safety test plan has at most 15 items.
-- Each item maps to one done criterion.
-- A larger plan needs a written reason in the brief.
+- **One project test map.** It lists the product behaviours, which test at which layer owns each one, and the shared
+  stand-ins and fixtures. The layers are:
+  - pure-logic unit tests;
+  - contract tests at module boundaries;
+  - a few real-process tests, only for process, signal and lifecycle code;
+  - a few end-to-end product scenarios;
+  - visual baselines;
+  - WP0.
+- **A brief's test plan extends the map.** It names the existing tests the package extends or updates. A new test
+  exists only for a behaviour that has no owner yet, and it is entered in the map at the same time.
+- **One shared set of stand-ins and fixtures.** When one lacks a capability, it is extended, not copied.
+- **Review findings** add their regression test to the test that already owns the behaviour.
+- **Numbers are signals, not caps.** Plan size, test lines per source line, slow tests and suite time are checked at
+  acceptance for their cause.
 
-**Real processes and mutation checks**
-- Real-process tests are only for the core process, signal or lifecycle invariants of process-owning code: at most 3
-  per package.
-- Everything else uses pure functions or in-memory fakes.
-- Mutation checks are only for safety work, and only for 1–2 key guards.
+## TEST-SLIM (approved by the owner, 2026-11-10)
 
-**Writing and adding tests**
-- Variants of one behaviour go in one table-driven test, not in copied setups.
-- Review findings get a regression test only for a defect on a realistic path or a safety path. A minor finding gets
-  no test.
-- A bug fix gets one reproduction test.
-- The implementer may add tests within the same limits. A duplicate test may be removed with the orchestrator's
-  approval.
-
-**Size and time targets**
-- New test lines should be at most 1.5× the changed source lines. The report explains anything over 2×.
-- The default unit suite targets at most 3 minutes of wall time. A new test over 1 s needs a reason.
-
-## Not yet done (needs a package)
+The owner's assessment: the current tests are so redundant that they have lost their value. TEST-SLIM builds the
+project test map, consolidates the stand-ins and fixtures, folds duplicated tests into their owning tests, and
+moves the slow cost, performance and scale tests into an opt-in suite.
 
 - Move cost, performance and scale tests (over 5 s, p95, cold n = 20, 200-node, 5000-row) into an opt-in `perf`
   suite. That suite runs only for packages that touch those paths, and in a quiet window, not in every full run or
