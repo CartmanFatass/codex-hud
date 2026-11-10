@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fixture, rewriteManifest } from '../../scripts/runtime-package/test-fixture.mjs';
+import {
+  fixture,
+  rewriteManifest,
+  priorInventoryFixture,
+  replaceFixtureFile,
+} from '../../scripts/runtime-package/test-fixture.mjs';
 import {
   verifyBundle,
   parseManifest,
@@ -27,6 +32,31 @@ test('manifest validates complete bounded payload and exact locked production id
   assert.throws(() => validateLock(lock), /closure/);
   assert.ok(HELPERS.includes('bin/codex-with-herdr-context'));
 });
+test('retained inventory option never weakens candidate requirements or byte/mode/dependency integrity', (t) => {
+  const prior = priorInventoryFixture(t);
+  assert.throws(() => parseManifest(json(prior.manifest)), /missing_required_entry/);
+  assert.throws(() => parseManifest(json(prior.manifest), { required: undefined }), /missing_required_entry/);
+  assert.throws(() => verifyBundle(prior.bundle), /missing_required_entry/);
+  assert.equal(parseManifest(json(prior.manifest), { required: false }).schemaVersion, 1);
+  const retained = verifyBundle(prior.bundle, { required: false });
+  retained.directory.close();
+  const file = path.join(prior.bundle, 'bin/hud');
+  const original = fs.readFileSync(file);
+  fs.appendFileSync(file, 'tampered');
+  assert.throws(() => verifyBundle(prior.bundle, { required: false }), /integrity/);
+  fs.writeFileSync(file, original);
+  fs.chmodSync(file, 0o600);
+  assert.throws(() => verifyBundle(prior.bundle, { required: false }), /integrity/);
+  fs.chmodSync(file, 0o700);
+  const foreign = path.join(prior.bundle, 'unlisted');
+  fs.writeFileSync(foreign, 'synthetic', { mode: 0o600 });
+  assert.throws(() => verifyBundle(prior.bundle, { required: false }), /unlisted/);
+  fs.unlinkSync(foreign);
+  const name = Object.keys(DEPENDENCIES)[0];
+  replaceFixtureFile(prior, `node_modules/${name}/package.json`, JSON.stringify({ name, version: '0.0.0' }));
+  assert.throws(() => verifyBundle(prior.bundle, { required: false }), /dependency_identity_mismatch/);
+});
+
 test('Jev Python asset is explicitly selected for preview and runtime bundles', () => {
   assert.ok(EXTRA_FILES.includes('src/managed/jev-bridge.py'));
   assert.ok(REQUIRED.includes('src/managed/jev-bridge.py'));

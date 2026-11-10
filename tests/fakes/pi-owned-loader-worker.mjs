@@ -1,10 +1,23 @@
 /** Provider-free host probe: real installed loader and SessionManager, fake event/context. */
 import * as fs from 'node:fs';
+import fsDefault from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { join, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 const option = (flag) => process.argv[process.argv.indexOf(flag) + 1];
 const file = option('--hud-role-contract');
 const c = JSON.parse(fs.readFileSync(file, 'utf8'));
+// Count actual atomic STATUS replacements made by the real extension in this process.
+const nativeRename = fsDefault.renameSync;
+let statusWrites = 0;
+fsDefault.renameSync = (from, to) => {
+  nativeRename(from, to);
+  if (String(to) === (c.slot === 'primary' ? join(c.task_dir, 'STATUS.json') : join(dirname(file), 'STATUS.json'))) {
+    statusWrites++;
+    fs.writeFileSync(join(dirname(file), 'status-writes.json'), JSON.stringify({ statusWrites }), { mode: 0o600 });
+  }
+};
+syncBuiltinESMExports();
 const root = process.env.OWNED_PI_PACKAGE;
 const { loadExtensions, createExtensionRuntime } = await import(
   pathToFileURL(join(root, 'dist/core/extensions/loader.js')).href
@@ -26,7 +39,11 @@ let shutdown = false;
 let aborted = false;
 const ctx = {
   cwd: c.cwd,
-  model: { provider: c.model.split('/')[0], id: c.model.slice(c.model.indexOf('/') + 1) },
+  model: {
+    provider: c.model.split('/')[0],
+    id: c.model.slice(c.model.indexOf('/') + 1),
+    ...(process.env.OWNED_FAKE_TTL ? { promptCache: { short: Number(process.env.OWNED_FAKE_TTL) } } : {}),
+  },
   thinkingLevel: c.effort,
   sessionManager: manager,
   isIdle: () => true,

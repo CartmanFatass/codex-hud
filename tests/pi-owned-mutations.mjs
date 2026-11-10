@@ -9,6 +9,93 @@ import assert from 'node:assert/strict';
 const repo = resolve(import.meta.dirname, '..');
 const mutants = [
   {
+    name: 'retained-release-strict-again',
+    suite: 'runtime-install.test.mjs',
+    sourceSuite: true,
+    copyScripts: true,
+    copyDist: true,
+    pattern: '^retained prior inventory survives',
+    edits: [
+      [
+        '../../../../scripts/runtime-package/installer.mjs',
+        'const installed = verifyBundle(`${directory.root}/releases/${name}`, { required: false });',
+        'const installed = verifyBundle(`${directory.root}/releases/${name}`);',
+      ],
+    ],
+    witness: /missing_required_entry/,
+  },
+  {
+    name: 'facade-path-dispatch-restored',
+    suite: 'pi-dispatch-facade.test.js',
+    pattern: '^PR4 cutover:',
+    edits: [
+      [
+        '../facade.js',
+        'const outcome = await launchOwned(context, {',
+        "const outcome = await (async () => { await (await import('./herdr-run.js')).runCommand('pi-dispatch', [], ctx.env); return launchOwned(context, {",
+      ],
+      [
+        '../facade.js',
+        "associationPath: join(ctx.home, 'assoc', `${receipt.job}.json`),\n        });",
+        "associationPath: join(ctx.home, 'assoc', `${receipt.job}.json`),\n        }); })();",
+      ],
+    ],
+    witness: /true !== false/,
+  },
+  {
+    name: 'mutate-legacy-receipt',
+    suite: 'pi-dispatch-facade.test.js',
+    pattern: '^PR4 legacy receipts',
+    edits: [
+      [
+        '../facade.js',
+        "if (metadata.contract_version !== 2)\n        return fail('legacy_owner_required', { job: receipt.job });",
+        "if (metadata.contract_version !== 2) { metadata.launch = 'sent'; remember(ctx.home, receipt); return fail('legacy_owner_required', { job: receipt.job }); }",
+      ],
+    ],
+    witness: /legacy receipt must remain byte-identical/,
+  },
+  {
+    name: 'missing-owner-current-fallback',
+    suite: 'pi-dispatch-facade.test.js',
+    pattern: '^PR4 missing pinned release',
+    edits: [
+      [
+        '../facade.js',
+        'const release = await facadeRelease(ctx.piOwned?.releaseRoot, dispatch.release);',
+        'const release = await facadeRelease(ctx.piOwned?.releaseRoot); dispatch.release = {id:release.id,root:release.root};',
+      ],
+    ],
+    witness: /pi_owned_owner_unavailable/,
+  },
+  {
+    name: 'waiter-execution-import',
+    suite: 'role-wait.test.js',
+    pattern: '^wait module transitive import graph',
+    copyDist: true,
+    edits: [
+      [
+        '../../../../dist/roles/job-wait.js',
+        "import * as fs from 'node:fs';",
+        "import * as fs from 'node:fs';\nimport './pi-owned/launch.js';",
+      ],
+    ],
+    witness: /waiter imports an execution module/,
+  },
+  {
+    name: 'env-only-endpoint',
+    suite: 'pi-dispatch-facade.test.js',
+    pattern: '^PR4 production acquisition: env-only endpoint',
+    edits: [
+      [
+        'facade-context.js',
+        "if (!server || !socket || !socket.startsWith('/') || /[\\0\\r\\n]/.test(socket))",
+        "if (!socket || !socket.startsWith('/') || /[\\0\\r\\n]/.test(socket))",
+      ],
+    ],
+    witness: /Missing expected rejection/,
+  },
+  {
     name: 'intent-after-effect',
     pattern: '^owned launch: intent',
     edits: [
@@ -139,8 +226,17 @@ for (const mutant of mutants) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-pi-mutant-'));
   try {
     fs.cpSync(join(repo, 'dist-test'), join(root, 'dist-test'), { recursive: true });
+    if (mutant.copyDist) fs.cpSync(join(repo, 'dist'), join(root, 'dist'), { recursive: true });
     fs.mkdirSync(join(root, 'tests'));
     fs.symlinkSync(join(repo, 'tests/fakes'), join(root, 'tests/fakes'));
+    if (mutant.copyScripts) fs.cpSync(join(repo, 'scripts'), join(root, 'scripts'), { recursive: true });
+    else fs.symlinkSync(join(repo, 'scripts'), join(root, 'scripts'));
+    if (mutant.sourceSuite) {
+      fs.mkdirSync(join(root, 'tests/unit'));
+      fs.copyFileSync(join(repo, 'tests/unit', mutant.suite), join(root, 'tests/unit', mutant.suite));
+      fs.mkdirSync(join(root, 'packages/hud-mcp/bin'), { recursive: true });
+      fs.copyFileSync(join(repo, 'packages/hud-mcp/bin/surface.mjs'), join(root, 'packages/hud-mcp/bin/surface.mjs'));
+    }
     fs.writeFileSync(join(root, 'package.json'), '{"type":"module"}');
     fs.symlinkSync(join(repo, 'node_modules'), join(root, 'node_modules'));
     for (const [file, before, after] of mutant.edits) {
@@ -151,9 +247,24 @@ for (const mutant of mutants) {
     }
     const home = join(root, 'suite-home');
     fs.mkdirSync(home);
-    const env = { ...process.env, HOME: home, HUD_HOME: join(home, '.hud'), CODEX_HOME: join(home, 'codex') };
-    delete env.NO_COLOR;
-    delete env.FORCE_COLOR;
+    const env = {
+      ...process.env,
+      HOME: home,
+      HUD_HOME: join(home, '.hud'),
+      CODEX_HOME: join(home, 'codex'),
+      CLAUDE_CONFIG_DIR: join(home, 'claude'),
+    };
+    for (const key of [
+      'NO_COLOR',
+      'FORCE_COLOR',
+      'HUD_SETTINGS_PATH',
+      'CODEX_HUD_SETTINGS_PATH',
+      'HERDR_SOCKET',
+      'HERDR_SOCKET_PATH',
+      'HERDR_PANE_ID',
+      'HERDR_ENV',
+    ])
+      delete env[key];
     const result = spawnSync(
       process.execPath,
       [
@@ -161,7 +272,11 @@ for (const mutant of mutants) {
         '--test-reporter=spec',
         '--test-name-pattern',
         mutant.pattern,
-        join(root, 'dist-test/tests/unit', mutant.suite ?? 'pi-owned-orchestration.test.js'),
+        join(
+          root,
+          mutant.sourceSuite ? 'tests/unit' : 'dist-test/tests/unit',
+          mutant.suite ?? 'pi-owned-orchestration.test.js'
+        ),
       ],
       { env, encoding: 'utf8', timeout: 90_000, maxBuffer: 1024 * 1024 }
     );

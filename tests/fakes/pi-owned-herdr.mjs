@@ -27,7 +27,9 @@ if (args[0] !== '--server') {
     socket.destroy();
   });
 } else {
-  const [, socketPath, root, directory, integration] = args;
+  const [, socketPath, root, initialDirectory, integration] = args;
+  let directory = initialDirectory;
+  const facade = initialDirectory === '-';
   const statePath = join(root, 'herdr-state.json');
   const logPath = join(root, 'herdr-calls.jsonl');
   const workers = new Map();
@@ -44,6 +46,16 @@ if (args[0] !== '--server') {
     let state = load();
     const command = argv.slice(0, 2).join(' ');
     const option = (flag) => argv[argv.indexOf(flag) + 1];
+    if (facade) {
+      const label =
+        command === 'tab create'
+          ? option('--label')
+          : command === 'agent start' || command === 'agent prompt'
+            ? argv[2]
+            : state.tabs.find((t) => t.tab_id === state.panes.find((p) => p.pane_id === argv[2])?.tab_id)?.label;
+      const job = /j[a-f0-9]{16}/.exec(label ?? '')?.[0];
+      if (job) directory = join(root, 'home/jobs', job);
+    }
     let step;
     let j;
     if (command === 'tab create') {
@@ -73,7 +85,7 @@ if (args[0] !== '--server') {
     if (command === 'agent prompt' && argv[3] !== '/quit') {
       const a = state.agents.find((a) => a.name === argv[2]);
       j = a && journal(a.slot);
-      step = 'prompt';
+      step = facade && j?.steps.prompt?.state === 'acked' ? 'send' : 'prompt';
     }
     if (command === 'pane send-keys') {
       const a = state.agents.find((a) => a.pane_id === argv[2]);
@@ -87,9 +99,29 @@ if (args[0] !== '--server') {
       (command === 'agent prompt' && argv[3] === '/quit');
     const transaction =
       ['receipt.json'].every((name) => fs.existsSync(join(directory, name))) &&
-      fs.existsSync(join(root, 'home/assoc', 'j0123456789abcdef.json')) &&
-      fs.existsSync(join(root, 'home/jobs/index/key.json'));
-    const intent = step ? j?.steps[step]?.state === 'sent' : true;
+      fs.existsSync(
+        join(root, 'home/assoc', facade ? directory.split('/').at(-1) + '.json' : 'j0123456789abcdef.json')
+      ) &&
+      (facade
+        ? fs
+            .readdirSync(join(root, 'home/jobs/index'), { recursive: true })
+            .some(
+              (p) =>
+                String(p).endsWith('.json') &&
+                JSON.parse(fs.readFileSync(join(root, 'home/jobs/index', p), 'utf8')).job ===
+                  directory.split('/').at(-1)
+            )
+        : fs.existsSync(join(root, 'home/jobs/index/key.json')));
+    const intent =
+      step === 'send'
+        ? fs.existsSync(join(directory, 'messages')) &&
+          fs.readdirSync(join(directory, 'messages')).some((name) => {
+            const m = JSON.parse(fs.readFileSync(join(directory, 'messages', name), 'utf8'));
+            return m.text === argv[3] && m.state === 'sending';
+          })
+        : step
+          ? j?.steps[step]?.state === 'sent'
+          : true;
     fs.appendFileSync(logPath, JSON.stringify({ argv, step, intent, transaction, transport_pid: cliPid }) + '\n', {
       mode: 0o600,
     });
