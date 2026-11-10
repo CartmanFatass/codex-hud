@@ -1,4 +1,6 @@
 import { truncateAnsi } from '../render/colors.js';
+import { readRoleSummary } from '../roles/role-summary.js';
+import { renderRoleSummary } from '../render/role-summary.js';
 import { NativeCallCollector } from '../collectors/native-calls.js';
 import { nativeCallLabel, jevCallLabel } from '../core/link/view-model.js';
 import { statuslineRef } from '../core/statusline-summary.js';
@@ -103,7 +105,25 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
     render: async (value, width) => {
       const first = renderStatuslineSession(value, width, options);
       const nowMs = Date.now();
-      const summary = await readStatuslineSummary(value, io.env, sourceRoot, { nowMs });
+      const readStarted = performance.now();
+      let role = '';
+      try {
+        const selected = statuslineRef(value, sourceRoot ?? io.env.CLAUDE_CONFIG_DIR);
+        if (selected && selected.ref.threadId === null)
+          role = renderRoleSummary(
+            readRoleSummary(io.env, `${selected.ref.sourceId}/${selected.ref.sessionId}`, {
+              nowMs,
+              budgetMs: Math.max(0, 20 - (performance.now() - readStarted)),
+            }),
+            width
+          );
+      } catch {
+        /* Missing identity/cache is unavailable, never an empty work total. */
+      }
+      const summary = await readStatuslineSummary(value, io.env, sourceRoot, {
+        nowMs,
+        budgetMs: Math.max(0, 20 - (performance.now() - readStarted)),
+      });
       const second = renderStatuslineSummary(summary, width, nowMs);
       let direct = '';
       try {
@@ -124,7 +144,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
       } catch {
         /* Keep the original native line and legacy summary on unavailable sources. */
       }
-      return [first, second, direct].filter(Boolean).join('\n');
+      return [first, second, direct, role].filter(Boolean).join('\n');
     },
   });
 }

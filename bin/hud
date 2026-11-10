@@ -8,10 +8,13 @@ if (!((major === 22 && minor >= 13) || major >= 24) &&
   process.exit(5);
 }
 const compatibility = ['codex', 'codex-hud'].includes(process.argv[2]);
-import(compatibility ? '../dist/cli/compat.js' : '../dist/cli/hud.js').then(async (module) => {
-  process.exitCode = compatibility
-    ? await module.codexCommand(process.argv.slice(3), { env: process.env })
-    : await module.main(undefined, undefined, received);
+const registeredPanel = process.argv[2] === 'panel' && Object.keys(process.env).some(k => k.startsWith('HUD_PANEL_'));
+import(registeredPanel ? '../dist/cli/panel-entry.js' : compatibility ? '../dist/cli/compat.js' : '../dist/cli/hud.js').then(async (module) => {
+  process.exitCode = registeredPanel
+    ? await module.registeredPanelMain()
+    : compatibility
+      ? await module.codexCommand(process.argv.slice(3), { env: process.env })
+      : await module.main(undefined, undefined, received);
 }).catch(() => {
   process.stderr.write('internal_or_output_failure\n');
   process.exitCode = 1;

@@ -1,4 +1,6 @@
 import { nativeCallsOnly } from './core/link/view-model.js';
+import { readProcess } from './core/run/process.js';
+import { RoleSummaryPublisher, roleSummaryGeneration } from './roles/role-summary.js';
 import { pathToFileURL } from 'node:url';
 import { makeSourceId } from './core/identity.js';
 import { externalRootHash } from './roles/external-association.js';
@@ -569,7 +571,7 @@ function requestEnsureSingle(): void {
   }
 }
 
-async function runLivePage(): Promise<void> {
+export async function runLivePage(options: { installCleanup?: (end: () => void) => () => void } = {}): Promise<void> {
   startProfiling('panel');
   if (STANDALONE_PANEL)
     for (const key of [
@@ -588,6 +590,14 @@ async function runLivePage(): Promise<void> {
   const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
   const nativeCalls = NativeCallCollector.fromEnv();
   const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot, {}, allDelegations ? null : HUD_CWD_REAL);
+  const producer = readProcess(process.pid)?.stamp;
+  const roleSummary = producer
+    ? new RoleSummaryPublisher(process.env, {
+        generation: process.env.HUD_PANEL_GENERATION || roleSummaryGeneration(),
+        process: producer,
+      })
+    : null;
+  let disposeLifetime: (() => void) | undefined;
   let nativeTree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
   let boundJobRoot = '';
   let jobComposition: JobTreeResult | null = null;
@@ -1523,6 +1533,17 @@ async function runLivePage(): Promise<void> {
     }
     observeActivity();
     if (observability) sampleTelemetry();
+    // Collection owns publication. Paint only consumes the same cached workboard.
+    syncPanelView();
+    const summaryRoot = allDelegations ? null : (selectedRoot ?? (boundJobRoot || null));
+    if (stale || !summaryRoot) roleSummary?.invalidate();
+    else if (!closed)
+      roleSummary?.publish(
+        summaryRoot,
+        jobPipeline.workboard(tree, panelDelegation),
+        Date.now(),
+        state.cardStallMinutes ?? 10
+      );
     render();
     try {
       const publicationToken = delegationCollector?.publicationToken();
@@ -1530,6 +1551,14 @@ async function runLivePage(): Promise<void> {
         (committed) => {
           if (closed) return;
           applyJobComposition(committed, true);
+          syncPanelView();
+          if (!stale && summaryRoot)
+            roleSummary?.publish(
+              summaryRoot,
+              jobPipeline.workboard(tree, panelDelegation),
+              Date.now(),
+              state.cardStallMinutes ?? 10
+            );
           jobs.apply(tree, switches(), resolveLanguage(settings.language));
           if (built) Object.assign(built, { delegation });
           render();
@@ -1640,6 +1669,8 @@ async function runLivePage(): Promise<void> {
   const finish = (user = false) => {
     if (closed) return;
     closed = true;
+    disposeLifetime?.();
+    roleSummary?.dispose();
     runLogs.close();
     panelHost.close();
     const clipboardClosing = clipboard.close();
@@ -1662,6 +1693,11 @@ async function runLivePage(): Promise<void> {
     stopProfiling();
     if (escapeTimer) clearTimeout(escapeTimer);
     if (resizeTimer) clearTimeout(resizeTimer);
+    process.off('SIGINT', onFinish);
+    process.off('SIGTERM', onFinish);
+    process.off('SIGHUP', onFinish);
+    process.stdin.off('end', onFinish);
+    process.stdout.off('resize', onResize);
     process.stdin.off('data', onData);
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.stdin.pause();
@@ -2255,24 +2291,27 @@ async function runLivePage(): Promise<void> {
       publicationError = 'observation_worker_unavailable';
     }
   }
+  const onFinish = () => finish();
+  const onResize = () => {
+    lastPaint = null;
+    render();
+    readMainCols();
+    void refreshInspection();
+    // A client attaching at another size shares the change with this pane;
+    // wait for the burst of resizes to settle, then take back the policy width.
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      void widthKeeper?.follow().catch(() => {});
+    }, 150);
+  };
   await new Promise<void>((resolve) => {
     resolveDone = resolve;
-    process.once('SIGINT', () => finish());
-    process.once('SIGTERM', () => finish());
-    process.once('SIGHUP', () => finish());
-    process.stdin.once('end', () => finish());
-    process.stdout.on('resize', () => {
-      lastPaint = null;
-      render();
-      readMainCols();
-      void refreshInspection();
-      // A client attaching at another size shares the change with this pane;
-      // wait for the burst of resizes to settle, then take back the policy width.
-      if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        void widthKeeper?.follow().catch(() => {});
-      }, 150);
-    });
+    disposeLifetime = options.installCleanup?.(onFinish);
+    process.once('SIGINT', onFinish);
+    process.once('SIGTERM', onFinish);
+    process.once('SIGHUP', onFinish);
+    process.stdin.once('end', onFinish);
+    process.stdout.on('resize', onResize);
     if (process.stdin.isTTY) process.stdin.setRawMode(true);
     process.stdout.write(settings.mouse ? ENTER : '\x1b[?1049h\x1b[?25l\x1b[?2004h');
     void widthKeeper?.apply().catch(() => {});
