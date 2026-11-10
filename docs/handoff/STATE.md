@@ -234,7 +234,14 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   bytes: the protocol readers now ignore INT/TERM. Second, the waiter's interrupted `wait` retry can yield `DONE -1`,
   which the leader rejects and then waits for forever. Decided under q4: the waiter ignores INT/TERM only after the
   workload fork, and waits exactly once. Per-test timeouts and the test's own process-group cleanup are added too.
-  Safety review accepted on round 2. Merge pending at the time of this entry.
+  Safety review accepted on round 2 (`docs/reviews/2026-11-10-fix-rll-hang-review-{1,2}.md`). Merged `78a3f74`.
+  Evidence: file alone 92/92; 20/20 loaded whole files with zero hangs; 500 uninstrumented topology attempts with zero
+  hangs (the old code hung at attempts 290, 201 and 33). Gate on `78a3f74`:
+  - unit 4493/4466, with 1 failure: P2 render timing, which passes alone. `run-light-leader` completed inside the
+    full suite.
+  - mjs 725/723/0, hud-mcp 219/218, visual 331/331, WP0 1176/1176; fixtures, format and diff clean.
+
+  The "run-light-leader INT harness" load flake is retired.
 
   2026-11-10 merges (`ed689cb`, `a854f59`, `fa5c5c3`, orchestrator test fix `29c29bf`):
   - **R6A-A67** (reviews `docs/reviews/2026-11-10-r6a-a67-review-{1,2}.md`, accept on round 2):
