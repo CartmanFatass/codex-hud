@@ -90,3 +90,34 @@ moves the slow cost, performance and scale tests into an opt-in suite.
   merge gate.
 - Remove duplicated cases and turn copied setups into tables in the largest files: `work-card-p2`, `job-materials`,
   `monitor`, `role-facade` and `run-light-leader`.
+
+## TEST-SLIM-0 result and the owner's decision (2026-11-10)
+
+**What stage 0 delivered.** The project test map `docs/testing.md` (draft, 190 behaviours), a 400-file inventory and
+a consolidation proposal (`docs/reviews/2026-11-10-test-slim-0-proposal.md`). The review ended after two rounds; the
+routing corrections made after round 2 were not re-reviewed, so the map is a draft that each slice corrects.
+
+**Baseline.** Default suites 801 s wall, about 1.2 GB peak RSS, with 1 known timing failure.
+
+**Why the proposal is so small.** It estimates only about 2% fewer lines. The brief forbade removing any assertion or
+coverage line that only one test held, and almost every narrow test pins some internal detail.
+
+**Owner decision: cut by behaviour.**
+- **Keep:**
+  - each behaviour's owning test (named in the map);
+  - module-boundary contract tests;
+  - one test per critical guard: authorization, consent, process/lifecycle and data integrity.
+- **Delete:**
+  - tests that only pin internal details;
+  - tests that re-prove what an owning test proves;
+  - per-variant copies, which become table rows;
+  - review-round display edge cases.
+- **Coverage.** Losing direct coverage of some branches is acceptable. Lost lines in critical modules are listed and
+  justified per slice.
+- **Unchanged.** WP0 and the visual baselines stay frozen.
+- **Process.** Area by area, each slice reviewed. Target roughly 30–50% fewer lines per area.
+
+**Order.**
+1. TS1a: opt-in perf suite. TS1b: shared stand-ins and the HUD home fixture. These two run in parallel.
+2. Area slices, two at a time: materials; roles and roster; owned execution; panel and Work; release and package;
+   Jev, ledger and MCP; the rest.
