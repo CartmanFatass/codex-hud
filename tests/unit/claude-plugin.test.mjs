@@ -731,7 +731,7 @@ test('actual bootstrap restores with missing/unreadable inventory; command guard
     assert.equal(out.stdout.trim().split('\n').length, 1);
     return JSON.parse(out.stdout);
   };
-  const preview = JSON.parse(run('preview').reason.slice(5));
+  const preview = JSON.parse(run('preview --shim-dir ' + JSON.stringify(f.options.shimDir)).reason.slice(5));
   assert.equal(preview.comparison.status, 'PASS');
   assert.equal(fs.readFileSync(settings, 'utf8'), original);
   const plan = path.join(f.home, 'saved plan.json');

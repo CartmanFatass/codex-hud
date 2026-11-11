@@ -65,6 +65,15 @@ behaviours have separate owners. Frozen owners are routing pointers, never edits
 | B13 | Quota display selects its actual tightest window without inventing a reset                    | `resources.test.ts` — the quota field is one reading, the tightest window, and never invents a reset                               | `pure`     |
 | B14 | Agent counts agree across title, status card, bar, notifications and snapshot                 | `agent-counts.test.ts` — the title row, the status card, the bar, notifications and the snapshot say the same of one session       | `contract` |
 
+B16 is the opt-in owner-config parity boundary, not an expansion of B02's frozen-default
+contract. It also owns transcript append/reset/malformed handling and the real repository
+command-safety row. Import/forward/public-shim cases extend `statusline-settings.test.ts`;
+scale and process comparisons belong only to `tests/perf/statusline-parity.test.ts`.
+
+| ID | User/contract behaviour | One owning test | Layer |
+| --- | --- | --- | --- |
+| B16 | Opt-in Claude 0.8.0 owner-config compact parity and bounded transcript/config/git evidence | `statusline-parity.test.ts` — B16 statusline parity: installed goldens and bounded real collectors | `contract` |
+
 ### Panel
 
 | ID  | User/contract behaviour                                                                                       | One owning test                                                                                                                                                             | Layer      |

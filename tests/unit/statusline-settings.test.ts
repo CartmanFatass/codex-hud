@@ -7,6 +7,11 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { previewStatusline, applyStatusline, restoreStatusline } from '../../src/statusline-settings.js';
+import { importStatusline } from '../../src/statusline-parity/settings.js';
+import { draftInventory, parity } from '../../src/integrations/claude/setup.js';
+import type { ClaudeBinding } from '../../src/integrations/claude/binding.js';
+import { OWNER_CONFIG } from '../fixtures/claude-hud-parity/fixture.js';
+import { setTimeout as sleep } from 'node:timers/promises';
 function fixture(
   t: test.TestContext,
   original: string | null = '{"theme":"synthetic","statusLine":{"type":"command","command":"old"}}\n'
@@ -170,6 +175,165 @@ test('directory substitution cannot redirect apply mutations to another director
     }
   }
 });
+test('parity import previews without writes; apply preserves only HUD section and rejects lossy settings', (t) => {
+  const f = fixture(t),
+    hud = join(f.home, 'hud'),
+    source = join(f.home, 'claude-hud.json');
+  fs.mkdirSync(hud, { mode: 0o700 });
+  const config = join(hud, 'config.json');
+  fs.writeFileSync(config, '{"other":{"keep":true}}', { mode: 0o600 });
+  fs.writeFileSync(source, JSON.stringify(OWNER_CONFIG));
+  const env = { HOME: f.home, HUD_HOME: hud };
+  const before = fs.readFileSync(config);
+  importStatusline(['--from', source], env);
+  assert.deepEqual(fs.readFileSync(config), before);
+  assert.deepEqual(fs.readdirSync(hud), ['config.json']);
+  importStatusline(['--from', source, '--apply'], env);
+  const result = JSON.parse(fs.readFileSync(config, 'utf8'));
+  assert.deepEqual(result.other, { keep: true });
+  assert.deepEqual(result.statusline.display, OWNER_CONFIG.display);
+  assert.equal(fs.readFileSync(f.file, 'utf8'), f.original);
+  for (const invalid of [
+    { ...OWNER_CONFIG, pathLevels: 2 },
+    { ...OWNER_CONFIG, display: { showTools: true } },
+  ]) {
+    fs.writeFileSync(source, JSON.stringify(invalid));
+    assert.throws(() => importStatusline(['--from', source, '--apply'], env), /unsupported/);
+  }
+  fs.writeFileSync(source, JSON.stringify({ ...OWNER_CONFIG, pathLevels: 1 }));
+  assert.match(JSON.stringify(importStatusline(['--from', source], env)), /defaultsOutsideSubset/);
+  const missing = join(f.home, 'absent-hud');
+  importStatusline(['--from', source], { ...env, HUD_HOME: missing });
+  assert.equal(fs.existsSync(missing), false);
+});
+
+test('explicit known wrapper import migrates absolute forwarding and width; unknown shell jobs still block activation', (t) => {
+  const f = fixture(t),
+    hud = join(f.home, 'hud'),
+    config = join(f.home, 'owner-config.json');
+  const wrapper = fs.readFileSync(resolve('tests/fixtures/claude-hud-parity/wrapper.txt'), 'utf8').trim();
+  fs.writeFileSync(f.file, JSON.stringify({ statusLine: { type: 'command', command: wrapper } }));
+  fs.writeFileSync(config, JSON.stringify(OWNER_CONFIG));
+  const env = { HOME: f.home, HUD_HOME: hud };
+  importStatusline(['--from', config, '--settings', f.file, '--apply'], env);
+  const saved = JSON.parse(fs.readFileSync(join(hud, 'config.json'), 'utf8')).statusline;
+  assert.deepEqual(saved.forward, [join(f.home, '.cargo/bin/toktrack'), 'quota', 'record-claude']);
+  assert.equal(saved.widthMargin, 4);
+  const inventory = join(hud, 'parity.json');
+  const binding = { hudHome: hud, parityInventory: inventory } as ClaudeBinding;
+  fs.writeFileSync(inventory, JSON.stringify(draftInventory(f.home, config)));
+  assert.equal(parity(binding, f.home).status, 'PASS');
+  fs.writeFileSync(f.file, JSON.stringify({ statusLine: { command: wrapper + '; echo extra-job' } }));
+  assert.throws(
+    () => importStatusline(['--from', config, '--settings', f.file], env),
+    /unsupported_statusline_wrapper/
+  );
+  fs.writeFileSync(inventory, JSON.stringify(draftInventory(f.home, config)));
+  assert.deepEqual(parity(binding, f.home).gaps, ['statusline_wrapper']);
+});
+
+test('public shim preview is plain, reports absence, and apply refuses until publication', (t) => {
+  const f = fixture(t),
+    dir = join(f.home, 'custom bin');
+  const plan = previewStatusline(f.home, process.execPath, resolve('bin/hud-statusline'), dir);
+  assert.equal(plan.shimExists, false);
+  assert.equal(plan.command, "'" + join(dir, 'hud-statusline') + "'");
+  assert.throws(() => applyStatusline(f.home, plan), /public_shim/);
+  fs.mkdirSync(dir, { mode: 0o700 });
+  fs.writeFileSync(join(dir, 'hud-statusline'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  applyStatusline(f.home, previewStatusline(f.home, process.execPath, resolve('bin/hud-statusline'), dir));
+  assert.equal(JSON.parse(fs.readFileSync(f.file, 'utf8')).statusLine.command, plan.command);
+  const hud = join(f.home, 'hud');
+  fs.mkdirSync(hud, { mode: 0o700 });
+  fs.writeFileSync(join(hud, 'config.json'), JSON.stringify({ statusline: OWNER_CONFIG }));
+  const automatic = previewStatusline(f.home, process.execPath, resolve('bin/hud-statusline'), undefined, {
+    HOME: f.home,
+    HUD_HOME: hud,
+  });
+  assert.equal(automatic.shimPath, join(f.home, '.local/bin/hud-statusline'));
+  assert.equal(automatic.shimExists, false);
+  assert.throws(() => applyStatusline(f.home, automatic), /public_shim/);
+});
+
+test('forward receives exact stdin bytes; a hanging argv never delays or changes statusline output', async (t) => {
+  const f = fixture(t),
+    hud = join(f.home, 'hud'),
+    script = join(f.home, 'forward.mjs'),
+    received = join(f.home, 'received');
+  fs.mkdirSync(hud, { mode: 0o700 });
+  fs.writeFileSync(
+    script,
+    "import fs from 'node:fs';const chunks=[];for await(const b of process.stdin) chunks.push(b);fs.writeFileSync(process.argv[2],Buffer.concat(chunks));"
+  );
+  const config = join(hud, 'config.json');
+  const env = {
+    HOME: f.home,
+    HUD_HOME: hud,
+    CODEX_HOME: join(f.home, 'codex'),
+    CLAUDE_CONFIG_DIR: join(f.home, '.claude'),
+  };
+  const run = () =>
+    spawnSync(process.execPath, [resolve('bin/hud-statusline')], {
+      env,
+      input: bytes,
+      encoding: 'utf8',
+      timeout: 1000,
+    });
+  const bytes = Buffer.from(' \r\n{ "model": {"display_name":"Synthetic 中文"} }\n\t');
+  fs.writeFileSync(
+    config,
+    JSON.stringify({ statusline: { ...OWNER_CONFIG, forward: [process.execPath, script, received] } })
+  );
+  const result = run();
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  for (let i = 0; i < 100 && !fs.existsSync(received); i++) await sleep(25);
+  assert.deepEqual(fs.readFileSync(received), bytes);
+  fs.writeFileSync(
+    script,
+    "import fs from 'node:fs';fs.writeFileSync(process.argv[2],String(process.pid));setInterval(()=>{},1000);"
+  );
+  const pidfile = join(f.home, 'forward-pid');
+  fs.writeFileSync(
+    config,
+    JSON.stringify({ statusline: { ...OWNER_CONFIG, forward: [process.execPath, script, pidfile] } })
+  );
+  const hanging = run();
+  assert.ifError(hanging.error);
+  assert.equal(hanging.status, 0, hanging.stderr);
+  assert.equal(hanging.stdout, result.stdout);
+  for (let i = 0; i < 100 && !fs.existsSync(pidfile); i++) await sleep(25);
+  const pid = Number(fs.readFileSync(pidfile, 'utf8'));
+  t.after(() => {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      /* worker already reaped it */
+    }
+  });
+  let alive = true;
+  for (let i = 0; i < 160; i++) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      alive = false;
+      break;
+    }
+    // Linux may retain the killed child as a zombie until its subreaper's next pass.
+    try {
+      if (/^State:\s+Z/m.test(fs.readFileSync(`/proc/${pid}/status`, 'utf8'))) {
+        alive = false;
+        break;
+      }
+    } catch {
+      alive = false;
+      break;
+    }
+    await sleep(25);
+  }
+  assert.equal(alive, false, 'detached worker kills its owned process group at the deadline');
+});
+
 test('group/world-writable settings, plan and backup are rejected', (t) => {
   const f = fixture(t);
   fs.chmodSync(f.file, 0o666);

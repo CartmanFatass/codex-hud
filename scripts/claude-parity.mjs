@@ -1,5 +1,8 @@
 #!/usr/bin/env node
-/** Explicit read-only owner inventory draft. Never discovers or edits a client config. */
+/** Explicit read-only owner inventory draft, including supported 0.8.0 fields and audited width/tee jobs.
+ * Never discovers plugins or edits either client's configuration. Capability is not activation:
+ * setup still verifies the explicitly imported HUD section and wrapper argv before allowing apply.
+ */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -13,7 +16,7 @@ if (
   process.argv.length !== 7
 ) {
   console.error(
-    'Usage: node RELEASE/claude-parity.mjs preview --home ABS --config ABS\nRead-only draft to stdout. Review and save it under HUD_HOME; pass its path as --parity-inventory during activation.'
+    'Usage: node RELEASE/claude-parity.mjs preview --home ABS --config ABS\nRead-only draft to stdout. Review and save it under HUD_HOME; pass its path as --parity-inventory during activation.\nMigrate explicitly first: hud statusline import --from ABS [--settings ABS] (preview), then --apply. Unknown wrapper jobs remain blocked.'
   );
   process.exitCode = 2;
 } else {

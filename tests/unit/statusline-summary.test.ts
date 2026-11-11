@@ -371,7 +371,7 @@ test('real-clock slow summary read degrades both product bins to stdin-only outp
      const lstat = fs.lstatSync;
      let delayed = false;
      fs.lstatSync = function(file, ...args) {
-       if (!delayed && String(file).startsWith(process.env.HUD_HOME)) {
+       if (!delayed && String(file).startsWith(process.env.HUD_HOME + '/delegation-summaries-v1')) {
          delayed = true;
          const start = performance.now();
          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 40);
