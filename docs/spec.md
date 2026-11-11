@@ -16,11 +16,10 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    `pi-role-reap`); the MCP opens each job's herdr tab itself; jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles
    is not bundled (owner, 2026-11-10). The main session never manages workers: `hud_create` starts them, the job
    watcher closes them; `hud_close` only closes one early (owner, 2026-11-11).
-2. **Show what is happening.** A side panel (Home, Work, Project) shows the main session's jobs and their state. Claude's
-   statusline is always on (workers never run Claude). For pi and Codex the HUD display is opt-in per launch: `piH`
-   and `codexH` start a client with it, the plain commands start it without, and workers run plain (owner,
-   2026-11-11). The panel opens only with `/hud` (in Codex with F12, as before). The delegation tools stay registered either way (owner,
-   2026-11-11). Each client keeps one status line (pi and Codex when started with their H command): Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
+2. **Show what is happening.** A side panel (Home, Work, Project) shows the main session's jobs and their state. The bottom
+   status lines are always on (Claude's statusline, pi's footer); only the side panel is opt-in: it opens only with
+   `/hud` (in Codex with F12, as before) (owner, 2026-11-11). The delegation tools stay registered either way (owner,
+   2026-11-11). Each client keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
    (taking in p10k-footer), Codex's existing tmux bar. The panel and status lines can use external models with the
    owner's own keys (`$HUD_HOME/credentials.env`, through the Decisions API) for job summaries, recaps and sentences.
    These features only read job files and write display text; they never prompt, brief or steer a worker. No consent
