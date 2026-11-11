@@ -17,6 +17,11 @@ Changes (owner, 2026-11-10):
   Claude statusline at claude-hud parity, pi footer replacing p10k-footer. Old execution stack deleted right after M1
   (M2). Milestones in `docs/spec.md` §5.
 
+Dispatch core (owner, 2026-11-10): the six tools are rewritten as a thin layer over `pi-dispatch` / STATUS /
+`pi-role-reap`, and M1 depends on the installed pi-roles. The existing facade conflicts with the spec (release
+verification, caller identity proofs) and goes with M2. Record, with the proposed workflow corrections and the
+role/workflow split still waiting for the owner: `docs/reviews/2026-11-10-workflow-discussion.md`.
+
 Status: STATUSLINE-PARITY merged (`4e3ba42`; old-workflow brief, heavy, prune at the M1 review). PI-FOOTER-PORT still
 running. R6A-A8 stopped by the owner's call, WIP kept on branch `r6a-a8` (`0b02400`). INSTALLER-ARCH reaped; its
 answer is superseded by the spec's simple installer. Next: owner approves the M1 slice list, then build.
