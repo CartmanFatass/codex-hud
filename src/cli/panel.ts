@@ -9,12 +9,14 @@ import { foreground, installationRoot } from './compat.js';
 import type { HudIO } from './link-export.js';
 import { parseRosterRoot, formatRosterRoot } from '../roles/selection.js';
 import { CliError } from './runtime.js';
+import { openPanelPane } from './panel-pane.js';
 
-export const PANEL_HELP = `Usage: hud panel [--root <namespace/session-id>]
+export const PANEL_HELP = `Usage: hud panel [--here] [--root <namespace/session-id>]
        hud panel --harness claude|pi|codex --session ID [--source ABS]
        hud panel open|close|toggle|status   # internal, bounded JSON stdin
 
-Open the interactive HUD panel in the current terminal.
+Open the interactive HUD panel beside the caller in herdr, otherwise here.
+--here renders in the current terminal without splitting.
 --root selects observations only, never execution/control identity.
 Without --root the existing all-delegations view is unchanged.
 When a local ledger is available, the panel owns a bounded observation worker.
@@ -82,7 +84,18 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
     const { panelControlMain } = await import('../integrations/panel/cli.js');
     return panelControlMain([...args], io.env);
   }
-  const { root, target } = panelSelection(args, io.env);
+  const here = args[0] === '--here';
+  const selection = here ? args.slice(1) : args;
+  const { root, target } = panelSelection(selection, io.env);
+  if (!here && io.env.HERDR_PANE_ID) {
+    const pane = await openPanelPane(
+      [process.execPath, join(installationRoot(), 'bin/hud'), 'panel', '--here', ...selection],
+      process.cwd(),
+      io.env
+    );
+    await io.stdout(pane + '\n');
+    return 0;
+  }
   return foreground(
     { argv: [process.execPath, join(installationRoot(), 'dist/tree-page.js')] },
     {

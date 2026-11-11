@@ -4,10 +4,9 @@ import { createPiSegment, isPiTui } from './segment.js';
 import type { PiPackageBinding, PiPackageContext } from './package-context.js';
 export type { PiPackageBinding, PiPackageContext } from './package-context.js';
 import { displayTarget } from '../../integrations/panel/receipt.js';
-import { controlPanel, type PanelControlOptions, type PanelOperation } from '../../integrations/panel/control.js';
+import { closePanelPane, panelPaneExists } from '../../cli/panel-pane.js';
 import { autoOpenEnabled } from '../../integrations/panel/eligibility.js';
-import { PanelDeadline, samePane } from '../../integrations/panel/herdr.js';
-import { capturePiPanel } from './package-native.js';
+import { openPiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
 import type { FooterAPI, FooterHost } from './footer-host.js';
 /** Structural host projection. SDK compatibility is checked against the installed declarations. */
@@ -33,16 +32,13 @@ export interface PiPackageAPI extends FooterAPI {
 }
 const reason = (error: unknown) =>
   error instanceof Error && /^[a-z_]{1,120}$/.test(error.message) ? error.message : 'local_operation_failed';
-type Capture = Awaited<ReturnType<typeof capturePiPanel>>;
+type PanelOperation = 'open' | 'close' | 'toggle' | 'status';
 export function installPiPackage(
   pi: PiPackageAPI,
   binding: PiPackageBinding,
   deps: {
     env?: NodeJS.ProcessEnv;
     footerHost?: () => Promise<FooterHost>;
-    capture?: typeof capturePiPanel;
-    panel?: typeof controlPanel;
-    panelProbes?: Pick<PanelControlOptions, 'processInfo' | 'processLaunch' | 'registered'>;
     segment?: Partial<Pick<Parameters<typeof createPiSegment>[0], 'now' | 'schedule'>>;
   } = {}
 ) {
@@ -54,8 +50,7 @@ export function installPiPackage(
     id: string;
     source: string;
     client: PiRoleClient;
-    capture?: Capture;
-    generation?: string;
+    pane?: string;
     panelWork: Promise<void>;
     diagnostic: string;
     footerOn: boolean;
@@ -63,7 +58,6 @@ export function installPiPackage(
   let active: State | null = null;
   // Binding epochs are disposable; the user's same-session footer choice is not.
   let footerChoice: { id: string; source: string; on: boolean } | undefined;
-  let tree: { state: State; ticket: number; generation: string; confirmed: boolean } | undefined;
   let epoch = 0;
   let cleanup: Promise<void> = Promise.resolve();
   const removers: (() => void)[] = [];
@@ -78,140 +72,33 @@ export function installPiPackage(
       return false;
     }
   };
-  async function panel(s: State, operation: PanelOperation, automatic = false) {
-    if (!isPiTui(s.ctx)) {
-      s.diagnostic = 'panel_noninteractive';
-      return;
-    }
-    // Serialize operations, including a close queued behind an opening intent.
+  async function panel(s: State, operation: PanelOperation) {
+    // Keep an off/shutdown queued behind an in-flight open.
     const work = s.panelWork.then(async () => {
       if (operation !== 'close' && !current(s)) throw Error('stale_context');
-      const captured =
-        operation === 'close'
-          ? s.capture
-          : await (deps.capture ?? capturePiPanel)(binding, s.ctx, env, () => current(s));
-      if (!captured || (operation === 'close' && !s.generation)) return;
-      if (operation !== 'close') s.capture = captured;
-      const opening = operation === 'open' || operation === 'toggle';
-      let issuedGeneration: string | undefined;
-      const herdr: typeof captured.herdr = opening
-        ? {
-            preflight: (...args) => captured.herdr.preflight(...args),
-            instance: (...args) => captured.herdr.instance(...args),
-            observe: (...args) => captured.herdr.observe(...args),
-            start: (...args) => captured.herdr.start(...args),
-            close: (...args) => captured.herdr.close(...args),
-            split: (receipt, childEnv, deadline) => {
-              // Observe A3's own intent before its first mutation; never infer ownership
-              // from a receipt returned by a stale status/close operation.
-              issuedGeneration = receipt.generation;
-              return captured.herdr.split(receipt, childEnv, deadline);
-            },
-          }
-        : captured.herdr;
-      const result = await (deps.panel ?? controlPanel)(operation, captured.context, {
-        ...deps.panelProbes,
-        env,
-        herdr,
-        native: captured.native,
-        isCurrent: () => current(s) && captured.isCurrent(),
-        generation: s.generation,
-        automatic,
-      });
-      const receipt = result.receipt;
-      if (
-        opening &&
-        receipt &&
-        receipt.target.root === captured.context.target.root &&
-        receipt.target.harness === captured.context.target.harness &&
-        receipt.target.ref.sourceId === captured.context.target.ref.sourceId &&
-        receipt.target.ref.sessionId === captured.context.target.ref.sessionId &&
-        (receipt.generation === issuedGeneration || (current(s) && result.diagnostic === 'open'))
-      ) {
-        // A fenced opening still owns its issued intent and must clean it up.
-        // Observing/refusing another generation never transfers it to this state.
-        s.generation = receipt.generation;
+      if (s.pane && !(await panelPaneExists(s.pane, env))) s.pane = undefined;
+      if (operation === 'close' || (operation === 'toggle' && s.pane)) {
+        if (s.pane) await closePanelPane(s.pane, env);
+        s.pane = undefined;
+      } else if (operation !== 'status' && !s.pane) {
+        s.pane = await openPiPanel(binding, s.ctx, env);
       }
-      s.diagnostic = result.diagnostic;
+      s.diagnostic = s.pane ? `open (${s.pane})` : 'closed';
     });
     s.panelWork = work.catch((error) => {
       s.diagnostic = reason(error);
     });
     await s.panelWork;
   }
-  async function treeContinuity(s: State, ticket: number) {
-    if (!s.capture || !s.generation || !isPiTui(s.ctx)) return;
-    const marker = { state: s, ticket, generation: s.generation, confirmed: false };
-    tree = marker;
-    const captured = s.capture;
-    const stillCurrent = () => {
-      try {
-        return (
-          tree === marker &&
-          epoch === ticket &&
-          active === null &&
-          s.generation === marker.generation &&
-          s.ctx.sessionManager.getSessionId() === s.id &&
-          s.ctx.sessionManager.getSessionDir() === s.source
-        );
-      } catch {
-        return false;
-      }
-    };
-    const deadline = new PanelDeadline(150);
-    try {
-      await deadline.run(() => s.panelWork);
-      if (!stillCurrent()) return;
-      const result = await deadline.run(() =>
-        (deps.panel ?? controlPanel)('status', captured.context, {
-          env,
-          herdr: captured.herdr,
-          native: captured.native,
-          isCurrent: stillCurrent,
-          budgetMs: 150,
-        })
-      );
-      const r = result.receipt;
-      if (
-        !stillCurrent() ||
-        r?.phase !== 'open' ||
-        r.generation !== marker.generation ||
-        !r.panel ||
-        r.target.root !== captured.context.target.root ||
-        r.target.harness !== captured.context.target.harness ||
-        r.target.ref.sourceId !== captured.context.target.ref.sourceId ||
-        r.target.ref.sessionId !== captured.context.target.ref.sessionId ||
-        r.instance !== captured.context.instance
-      )
-        return;
-      const instance = await deadline.run(() => captured.herdr.instance(deadline));
-      if (instance !== r.instance || !stillCurrent()) return;
-      const observed = await deadline.run(() => captured.herdr.observe(r.panel!.pane, deadline, r.panel!.workspace));
-      deadline.remaining();
-      if (stillCurrent() && observed && samePane(observed, r.panel)) marker.confirmed = true;
-    } catch {
-      // Bounded read-only observation is optional; uncertainty never grants continuation.
-      s.diagnostic = 'panel_tree_continuity_unverified';
-      if (stillCurrent()) s.ctx.ui.notify('HUD: panel_tree_continuity_unverified', 'info');
-    } finally {
-      deadline.dispose();
-    }
-  }
-  function fence(forTree = false) {
-    const ticket = ++epoch;
-    tree = undefined;
+  function fence() {
+    ++epoch;
     const old = active;
     active = null;
     segment.stop();
     footer?.stop();
     // Stop tool calls before asynchronous panel cleanup or live observation.
     const stopped = old?.client.stop();
-    const closing = old
-      ? (async () => {
-          if (forTree) await treeContinuity(old, ticket);
-          await panel(old, 'close');
-        })()
-      : undefined;
+    const closing = old ? panel(old, 'close') : undefined;
     cleanup = Promise.all([cleanup, stopped, closing]).then(() => {});
     return cleanup;
   }
@@ -244,7 +131,7 @@ export function installPiPackage(
     segment.start(ctx, displayTarget('pi', id, source).root, () => current(s));
     if (isPiTui(ctx)) {
       try {
-        if (!automatic || autoOpenEnabled(env)) await panel(s, 'open', automatic);
+        if (!automatic || autoOpenEnabled(env)) await panel(s, 'open');
         else s.diagnostic = 'panel_auto_open_disabled';
       } catch (error) {
         s.diagnostic = reason(error);
@@ -252,28 +139,15 @@ export function installPiPackage(
     }
   }
   function on(event: string, handler: (event: unknown, ctx: PiPackageContext) => void | Promise<void>) {
-    const remove = pi.on(event, (value, ctx) => {
-      if (event !== 'session_tree' && event !== 'session_before_tree') tree = undefined;
-      return handler(value, ctx);
-    });
+    const remove = pi.on(event, handler);
     if (remove) removers.push(remove);
   }
   on('session_start', async (_event, ctx) => {
     await start(ctx, true);
   });
-  for (const event of ['session_before_switch', 'session_before_fork']) on(event, () => fence());
-  on('session_before_tree', () => fence(true));
+  for (const event of ['session_before_switch', 'session_before_fork', 'session_before_tree']) on(event, () => fence());
   on('session_tree', async (_event, ctx) => {
-    const marker = tree;
-    tree = undefined; // one use, even if opening fails or another navigation races it
-    const continuation =
-      marker?.confirmed === true &&
-      marker.ticket === epoch &&
-      marker.state.generation === marker.generation &&
-      isPiTui(ctx) &&
-      !ctx.sessionManager.getHeader()?.parentSession &&
-      autoOpenEnabled(env);
-    await start(ctx, !continuation);
+    await start(ctx, true);
   });
   on('session_shutdown', () => {
     const result = fence();
@@ -305,7 +179,6 @@ export function installPiPackage(
   pi.registerCommand('hud', {
     description: 'Local HUD panel: on|off|toggle|status|reconnect|help; footer on|off or footer <segment options>',
     async handler(args, ctx) {
-      tree = undefined;
       if (/^footer(?:\s|$)/.test(args.trim())) {
         const options = args.trim().slice('footer'.length).trim();
         if (options === 'on' || options === 'off') {
