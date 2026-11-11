@@ -26,8 +26,11 @@ const original = install ? {} : JSON.parse(fs.readFileSync(backup, 'utf8'));
 if (install ? !entries.includes(filter) : entries.includes(filter) && !original.extensions?.includes(filter)) {
   settings.extensions = install ? [...entries, filter] : entries.filter(entry => entry !== filter);
   fs.mkdirSync(agent, { recursive: true });
-  fs.writeFileSync(file + '.hud-tmp', JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 });
-  fs.renameSync(file + '.hud-tmp', file);
+  // Write through a symlink (e.g. into a dotfiles repo); keep the target's mode.
+  const target = fs.existsSync(file) ? fs.realpathSync(file) : file;
+  const mode = fs.existsSync(target) ? fs.statSync(target).mode & 0o777 : 0o600;
+  fs.writeFileSync(target + '.hud-tmp', JSON.stringify(settings, null, 2) + '\n', { mode });
+  fs.renameSync(target + '.hud-tmp', target);
 }
 if (!install) fs.rmSync(backup, { force: true });
 NODE
