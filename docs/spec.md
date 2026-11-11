@@ -10,7 +10,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 ## 2. What it must do
 
 1. **Delegate through one MCP.** From any of the three main sessions, start and use roles with six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`,
-   `hud_close`. CLI roles run through herdr and pi-roles; browser jobs run through Jev. Roles are defined by files; the HUD ships defaults. The MCP knows no particular role and no workflow. The main session decides every next step; the HUD never chains roles itself. Workers are neutral: each does only its own job and never
+   `hud_close`. CLI roles run through herdr and pi-roles; browser jobs run through Jev. Roles are defined by files; the HUD ships defaults. `hud_create` may override a role's model and thinking for one job (owner, 2026-11-11). The MCP knows no particular role and no workflow. The main session decides every next step; the HUD never chains roles itself. Workers are neutral: each does only its own job and never
    starts another role unless the brief asks. The HUD ships a short default dispatch convention; a project's or the owner's own file replaces it whole. `hud_roster` returns the roles and the convention in effect. The six
    tools are a thin layer over the locally installed pi-roles (its pi package, `STATUS.json`, `qN.answer.md`,
    `pi-role-reap`); the MCP opens each job's herdr tab itself; jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles
