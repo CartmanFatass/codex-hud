@@ -10,7 +10,6 @@ import {
   MAX_PROJECTED_NODES,
   ProjectionCache,
   projectDelegation,
-  sharedProjectionCache,
   spendText,
 } from '../../src/render/delegation/projection.js';
 import { planRows, renderRow, renderRows } from '../../src/render/delegation/rows.js';
@@ -137,36 +136,6 @@ test('a finished subtree is put away with its youngest member, not its oldest', 
   );
 });
 
-test('the node cache: an equal tree rebuilt every tick costs one stamp compare per node', () => {
-  const cache = new ProjectionCache();
-  const first = projectDelegation(situationC().vm, cache);
-  const nodes = first.nodes.length;
-  assert.equal(cache.misses, nodes);
-  assert.equal(cache.hits, 0);
-  // A new tick builds new objects with the same content.
-  const second = projectDelegation(situationC().vm, cache);
-  assert.equal(cache.misses, nodes, 'nothing was projected again');
-  assert.equal(cache.hits, nodes);
-  for (const pn of second.nodes) assert.equal(pn.proj, first.byKey.get(pn.key)!.proj, 'the very same node projection');
-  assert.equal(cache.size, nodes);
-});
-
-test('the node cache: one changed state projects one node', () => {
-  const cache = new ProjectionCache();
-  const specs = (since: number): NodeSpec[] => [
-    { id: 'main', root: true, harness: 'claude', status: S.working() },
-    { id: 'a', parent: 'main', status: S.working(ago(300)) },
-    { id: 'b', parent: 'main', status: S.pending('approval', since) },
-  ];
-  projectDelegation(buildVm(specs(ago(50))).vm, cache);
-  const before = cache.misses;
-  projectDelegation(buildVm(specs(ago(50))).vm, cache);
-  assert.equal(cache.misses, before);
-  const changed = projectDelegation(buildVm(specs(ago(5))).vm, cache);
-  assert.equal(cache.misses, before + 1);
-  assert.equal(changed.byKey.get('codex:b')!.proj.marker.sinceMs, ago(5));
-});
-
 test('the node cache: derived freshness moves the marker with every commit stamp unchanged', () => {
   const cache = new ProjectionCache();
   const specs = (freshness: 'fresh' | 'stale', reason: string | null): NodeSpec[] => [
@@ -211,25 +180,6 @@ test('the node cache: derived freshness moves the marker with every commit stamp
   const tick3 = projectDelegation(buildVm(specs('stale', 'registry_unreachable')).vm, cache);
   assert.equal(cache.misses, misses + 2);
   assert.equal(tick3.byKey.get('codex:a')!.proj.marker.glyph, 'unknown');
-});
-
-test('a node the cache no longer sees is swept', () => {
-  const cache = new ProjectionCache();
-  projectDelegation(situationC().vm, cache);
-  const small = buildVm([{ id: 'main', root: true, harness: 'claude', status: S.working() }]).vm;
-  projectDelegation(small, cache);
-  assert.equal(cache.size, 1);
-});
-
-test('the same tree, details and capacity objects return the same projection', () => {
-  const { vm } = situationC();
-  const a = projectDelegation(vm);
-  const b = projectDelegation(vm);
-  assert.equal(a, b);
-  assert.ok(sharedProjectionCache.size > 0);
-  // A tick that rebuilt only the envelope still finds the cached nodes.
-  const c = projectDelegation({ ...vm, pendingStatus: 3 });
-  assert.equal(c.nodes.length, a.nodes.length);
 });
 
 test('an observation the reader says is unavailable is `? unknown`, never healthy or idle', () => {

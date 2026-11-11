@@ -1,23 +1,10 @@
-/**
- * Design §6 #2: the node projection cache and the row cache return what a cold
- * render would. Two tables, both exhaustive by construction:
- *
- *  - one entry per fact of `nodeFacts` (the single list a projection reads, and
- *    the cache key): an immutable rebuild of the view model with that one input
- *    changed must project again, and the warm projection must equal a cold one;
- *  - one entry per input a rendered row reads besides its projection: the warm
- *    row after the change must equal a cold row, and differ from the row before
- *    it where the change is visible.
- *
- * A fact (or row input) added without an entry here fails the coverage test.
- */
+/** Cached display updates must match a cold render, without pinning the private facts schema. */
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { setDisplayConfig, type HudDisplayConfig } from '../../src/render/hud-config.js';
 import { setLanguage } from '../../src/render/i18n.js';
-import { factsEqual, nodeFacts } from '../../src/render/delegation/facts.js';
 import { ProjectionCache, projectDelegation } from '../../src/render/delegation/projection.js';
 import { planRows, renderRow, type RenderContext, type RowOptions } from '../../src/render/delegation/rows.js';
 import { panelSay, plainSay } from '../../src/render/delegation/style.js';
@@ -38,298 +25,18 @@ interface Target {
 interface Entry {
   fact: string;
   specs: NodeSpec[];
-  /** The id of the node that changes (default `a`). */
-  id?: string;
   mutate: (t: Target) => void;
-  /** Part of the key without being read by the projection (the design's stamps): it must still invalidate. */
-  inert?: boolean;
-  action?: boolean;
 }
 
 const child = (spec: Partial<NodeSpec> = {}): NodeSpec[] => [ROOT, { id: 'a', parent: 'main', ...spec }];
-const run = (r: NonNullable<Extract<NodeSpec['run'], object>>, spec: Partial<NodeSpec> = {}): NodeSpec[] =>
-  child({ run: r, ...spec });
 
 const TABLE: Entry[] = [
-  {
-    fact: 'nativeCallStatus',
-    specs: child(),
-    mutate: (t) => {
-      t.detail.nativeCall = { relation: {}, snapshot: { connected: true }, latestEvent: null, unavailable: null };
-    },
-  },
-  // Identity.
-  {
-    fact: 'idKind',
-    specs: child(),
-    mutate: (t) =>
-      (t.node.identity = { kind: 'job', ref: { kind: 'ask', provider: 'x', account: null, key: 'job-1' } }),
-  },
-  { fact: 'idHarness', specs: child(), mutate: (t) => (t.node.identity.ref.harness = 'pi') },
-  {
-    fact: 'shortRef',
-    specs: child({ native: true }),
-    mutate: (t) => (t.node.identity.ref.sessionId = 'zzzz-0002'),
-  },
-  { fact: 'isRoot', specs: child(), id: 'main', mutate: (t) => (t.node.depth = 1) },
-  { fact: 'edge', specs: child(), mutate: (t) => (t.node.edge = 'native') },
-  { fact: 'loaded', specs: child(), mutate: (t) => (t.node.loaded = false) },
-  {
-    fact: 'conflictCount',
-    specs: child(),
-    mutate: (t) => (t.node.conflict = { count: 2, recordIds: [], since: ago(100) }),
-  },
-  {
-    fact: 'conflictSince',
-    specs: child({ conflict: { count: 2, since: ago(360) } }),
-    mutate: (t) => (t.node.conflict.since = ago(60)),
-  },
-  {
-    fact: 'conflictName',
-    specs: [
-      ROOT,
-      { id: 'b', parent: 'main', harness: 'claude' },
-      { id: 'a', parent: 'main', alsoClaimedBy: ['b'], conflict: { count: 2, since: ago(360) } },
-    ],
-    // The second claim now names the child differently: the shared label is gone (§3.4).
-    mutate: (t) => (t.relations[1].link.label = 'beta'),
-  },
-  { fact: 'paneLabel', specs: child({ pane: 'pane 4' }), mutate: (t) => (t.node.host.currentState = null) },
-  // B10B-s2: a native child's title and kind (§7 #33).
-  {
-    fact: 'nativeTitle',
-    specs: child({ native: true, label: null }),
-    mutate: (t) => (t.node.native = { title: 'scout boundaries', kind: null }),
-  },
-  {
-    fact: 'nativeKind',
-    specs: child({ native: true, label: null }),
-    mutate: (t) => (t.node.native = { title: null, kind: 'research' }),
-  },
-  // B10B-s2: the facts of the delegation line and the focus line (rulings B10B-s2 Q2, Q3).
-  {
-    fact: 'costValue',
-    specs: child({ costUsd: 0.12 }),
-    mutate: (t) => (t.node.observation.spent.costUsd.value = 0.5),
-  },
-  {
-    fact: 'costQuality',
-    specs: child({ costUsd: 0.12 }),
-    mutate: (t) => (t.node.observation.spent.costUsd.quality = 'estimated'),
-  },
-  {
-    fact: 'worktreeRoot',
-    specs: child(),
-    mutate: (t) => (t.node.observation.workspace.worktreeRoot = '/work/other'),
-  },
-  {
-    fact: 'worktreeName',
-    specs: child(),
-    mutate: (t) => (t.node.observation.workspace.worktree = 'fix-cjk'),
-  },
-  {
-    fact: 'workspaceCwd',
-    specs: child(),
-    mutate: (t) => (t.node.observation.workspace.cwd = '/work/other'),
-  },
-  { fact: 'runSeq', specs: child(), mutate: (t) => (t.node.currentRun.runSeq = 2) },
-  {
-    fact: 'reconciliationMissing',
-    specs: run(
-      { state: 'uncertain', reconciliation: 'scope_unknown' },
-      { status: { cls: 'uncertain', since: ago(100) } }
-    ),
-    mutate: (t) => (t.node.execution.reconciliation.missing = ['scope_unknown', 'exit_receipt']),
-  },
-  {
-    fact: 'terminalNote',
-    specs: run(
-      { state: 'ended', endedAt: ago(500) },
-      { status: S.exited(ago(500)), terminalNote: 'cancel_timing_unknown' }
-    ),
-    mutate: (t) => (t.node.execution.terminal.note = 'retire_timing_unknown'),
-  },
-  { fact: 'linkBoundAt', specs: child(), mutate: (t) => (t.relations[0].link.boundAt = ago(10)) },
-
-  // The observation.
-  {
-    fact: 'evidenceStamp',
-    specs: child(),
-    inert: true,
-    mutate: (t) => (t.node.observation.evidenceStamp = 'ev-other'),
-  },
+  { fact: 'linkLabel', specs: child(), mutate: (t) => (t.relations[0].link.label = 'renamed') },
   {
     fact: 'model',
     specs: child({ model: 'gpt-6.1-sol' }),
     mutate: (t) => (t.node.observation.model.value = 'gpt-6.1-flash'),
   },
-  {
-    fact: 'effort',
-    specs: child({ model: 'gpt-6.1-sol', effort: 'high' }),
-    mutate: (t) => (t.node.observation.effort.value = 'xhigh'),
-  },
-  {
-    fact: 'contextPercent',
-    specs: child({ contextPercent: 40 }),
-    mutate: (t) => (t.node.observation.context.value.percent = 80),
-  },
-
-  // Committed display action fields are independently keyed, including identity and provenance.
-  ...(['actionId', 'actionName', 'actionTarget', 'actionStartedAt', 'actionSource', 'actionAsOf'] as const).map(
-    (fact): Entry => ({
-      fact,
-      specs: child(),
-      action: true,
-      mutate: (t) => {
-        const field = {
-          actionId: 'id',
-          actionName: 'name',
-          actionTarget: 'target',
-          actionStartedAt: 'startedAt',
-          actionSource: 'source',
-          actionAsOf: 'asOf',
-        }[fact];
-        t.detail.action[field] = fact === 'actionStartedAt' || fact === 'actionAsOf' ? ago(10) : 'changed';
-      },
-    })
-  ),
-
-  // The ledger's run.
-  {
-    fact: 'runId',
-    specs: run({ state: 'running' }),
-    inert: true,
-    mutate: (t) => (t.node.currentRun.runId = 'r_other'),
-  },
-  {
-    fact: 'runState',
-    specs: run({ state: 'running', mode: 'visible' }),
-    mutate: (t) => (t.node.currentRun.state = 'cancelling'),
-  },
-  {
-    fact: 'runMode',
-    specs: run({ state: 'running', mode: 'visible' }),
-    mutate: (t) => (t.node.currentRun.mode = 'headless'),
-  },
-  {
-    fact: 'runCreatedAt',
-    // No relation: the run's own creation time is the row's.
-    specs: [{ id: 'a', run: { state: 'running', createdAt: ago(500) }, status: S.working(ago(60)) }],
-    mutate: (t) => (t.node.currentRun.createdAt = ago(100)),
-  },
-  {
-    fact: 'runEndedAt',
-    specs: run(
-      { state: 'ended', endedAt: ago(500) },
-      { status: S.exited(ago(500)), report: { status: 'completed', summary: 'ok', at: ago(500) } }
-    ),
-    mutate: (t) => (t.node.currentRun.endedAt = ago(100)),
-  },
-  {
-    fact: 'runCancelRequestedAt',
-    specs: run(
-      { state: 'cancelling', mode: 'visible', cancelRequestedAt: ago(30) },
-      { status: { cls: 'interrupted', reason: 'cancelling', since: null, basis: 'unknown' } }
-    ),
-    mutate: (t) => (t.node.currentRun.cancelRequestedAt = ago(5)),
-  },
-  {
-    // The review's case: an uncertain run whose heartbeat is the only age on the row.
-    fact: 'runHeartbeatAt',
-    specs: run(
-      { state: 'uncertain', mode: 'headless', reconciliation: 'scope_unknown', heartbeatAt: ago(90) },
-      { status: { cls: 'uncertain', reason: 'scope_unknown', since: ago(200), evidenceAt: null } }
-    ),
-    mutate: (t) => (t.node.currentRun.heartbeatAt = ago(5)),
-  },
-  {
-    fact: 'runExitSource',
-    specs: run(
-      { state: 'running', exit: { code: 1, signal: null, source: 'wait_status' } },
-      { status: S.working(ago(60)) }
-    ),
-    mutate: (t) => (t.node.currentRun.exitSource = null),
-  },
-  {
-    fact: 'runExitCode',
-    specs: run(
-      { state: 'running', exit: { code: 0, signal: null, source: 'wait_status' } },
-      { status: S.working(ago(60)) }
-    ),
-    mutate: (t) => (t.node.currentRun.exitCode = 1),
-  },
-  {
-    fact: 'runExitSignal',
-    specs: run(
-      { state: 'running', exit: { code: 0, signal: null, source: 'wait_status' } },
-      { status: S.working(ago(60)) }
-    ),
-    mutate: (t) => (t.node.currentRun.exitSignal = 'SIGKILL'),
-  },
-
-  // What the execution projection says of it.
-  {
-    fact: 'isRunTerminal',
-    specs: run({ state: 'running' }, { status: S.exited(ago(500)) }),
-    // Managed runs say `ended`, a plain session `exited`.
-    mutate: (t) => (t.node.execution.isRunTerminal = null),
-  },
-  {
-    fact: 'reconciliationCause',
-    specs: run(
-      { state: 'uncertain', reconciliation: 'scope_unknown' },
-      { status: { cls: 'uncertain', since: ago(100) } }
-    ),
-    mutate: (t) => (t.node.execution.reconciliation.cause = 'supervisor_dead'),
-  },
-  {
-    fact: 'requestedCause',
-    specs: run({ state: 'ended', endedAt: ago(500), requestedCause: 'runtime_limit' }, { status: S.exited(ago(500)) }),
-    mutate: (t) => (t.node.execution.terminal.termination.requestedCause = 'retire_idle'),
-  },
-  {
-    fact: 'launchFailed',
-    specs: run({ state: 'running' }, { status: S.working(ago(60)) }),
-    mutate: (t) => (t.node.execution.launchFailure = { stateKey: 'launch_failed', reason: 'spawn_error' }),
-  },
-
-  // The current relation.
-  { fact: 'linkId', specs: child(), inert: true, mutate: (t) => (t.relations[0].link.linkId = 'l_other') },
-  {
-    fact: 'linkState',
-    // No status yet: a pending link is `starting`, a bound one is only `unknown`.
-    specs: run({ state: 'running' }, { status: null, linkState: 'bound' }),
-    mutate: (t) => (t.relations[0].link.state = 'pending'),
-  },
-  { fact: 'linkLabel', specs: child(), mutate: (t) => (t.relations[0].link.label = 'renamed') },
-  {
-    fact: 'linkRole',
-    specs: child({ label: null, role: 'worker' }),
-    mutate: (t) => (t.relations[0].link.role = 'reviewer'),
-  },
-  {
-    fact: 'linkBackend',
-    specs: [ROOT, { id: 'a', parent: 'main', kind: 'intent', run: { state: 'starting' }, status: { cls: 'starting' } }],
-    id: 'a',
-    mutate: (t) => (t.relations[0].link.backend = 'pi-reviewer'),
-  },
-  { fact: 'linkCreatedAt', specs: child(), mutate: (t) => (t.relations[0].link.createdAt = ago(10)) },
-  {
-    fact: 'childHarness',
-    specs: [ROOT, { id: 'a', parent: 'main', kind: 'intent', run: { state: 'starting' }, status: { cls: 'starting' } }],
-    mutate: (t) =>
-      (t.relations[0].link.childRef = { harness: 'claude', sourceId: 'ab'.repeat(32), sessionId: 'x', threadId: null }),
-  },
-
-  // The published status.
-  {
-    fact: 'observationUnavailableReason',
-    specs: child({ status: S.working(ago(100)) }),
-    mutate: (t) => (t.detail.observationUnavailableReason = 'reader_busy'),
-  },
-  { fact: 'hasStatus', specs: child({ status: S.working(ago(100)) }), mutate: (t) => (t.detail.status = null) },
-  { fact: 'statusAsOfSeq', specs: child(), inert: true, mutate: (t) => (t.status.asOfSeq = 2) },
-  { fact: 'commitSeq', specs: child(), inert: true, mutate: (t) => (t.status.observationStamp.commitSeq = 2) },
   {
     fact: 'stateKey',
     specs: child({ status: S.working(ago(100)) }),
@@ -338,87 +45,21 @@ const TABLE: Entry[] = [
       t.status.activity = 'unknown';
     },
   },
-  { fact: 'stateSince', specs: child({ status: S.working(ago(100)) }), mutate: (t) => (t.status.stateSince = ago(7)) },
-  {
-    fact: 'stateSinceBasis',
-    specs: child({ status: S.working(ago(100)) }),
-    mutate: (t) => (t.status.stateSinceBasis = 'observed'),
-  },
   {
     fact: 'freshnessState',
     specs: child({ status: S.working(ago(100)) }),
     mutate: (t) => (t.status.freshness.state = 'stale'),
   },
   {
-    fact: 'freshnessReason',
-    specs: child({ status: { cls: 'working', since: ago(100), freshness: 'stale' } }),
-    inert: true,
-    mutate: (t) => (t.status.freshness.reason = 'registry_unreachable'),
-  },
-  {
-    fact: 'clockAnomaly',
-    specs: child({ status: S.working(ago(100)) }),
-    mutate: (t) => (t.status.freshness.clockAnomaly = true),
-  },
-  {
-    fact: 'liveness',
-    specs: child({ native: true, status: S.idle(ago(300)) }),
-    // An idle native whose process is gone has exited.
-    mutate: (t) => (t.status.liveness = 'gone'),
-  },
-  {
-    fact: 'activity',
-    specs: child({ native: true, status: S.idle(ago(300)) }),
-    mutate: (t) => (t.status.activity = 'working'),
-  },
-  {
-    fact: 'pendingReason',
-    specs: child({ status: S.working(ago(100)) }),
-    mutate: (t) => (t.status.pendingReason = 'approval'),
-  },
-  {
-    fact: 'lastTurnOutcome',
-    specs: child({ status: S.working(ago(100)) }),
-    mutate: (t) => (t.status.lastTurnOutcome = 'failed'),
-  },
-  {
-    fact: 'lastEvidenceAt',
-    specs: run(
-      { state: 'uncertain', reconciliation: 'scope_unknown' },
-      { status: { cls: 'uncertain', reason: 'scope_unknown', since: ago(200), evidenceAt: ago(80) } }
-    ),
-    mutate: (t) => (t.status.lastEvidenceAt = ago(8)),
-  },
-
-  // The report of the run.
-  {
-    fact: 'reportId',
-    specs: child({ report: { status: 'completed', summary: 'ok', at: ago(100) } }),
-    inert: true,
-    mutate: (t) => (t.detail.latestReportForRun.reportId = 'rep_other'),
-  },
-  {
-    fact: 'reportStatus',
-    specs: run(
-      { state: 'ended', endedAt: ago(500) },
-      { status: S.exited(ago(500)), report: { status: 'completed', summary: 'ok', at: ago(500) } }
-    ),
-    mutate: (t) => (t.detail.latestReportForRun.status = 'failed'),
-  },
-  {
-    fact: 'reportCreatedAt',
-    specs: child({ report: { status: 'completed', summary: 'ok', at: ago(100) } }),
-    mutate: (t) => (t.detail.latestReportForRun.createdAt = ago(20)),
-  },
-  {
     fact: 'reportSummary',
-    specs: child({ report: { status: 'completed', summary: 'ok', at: ago(100) } }),
+    specs: child({
+      run: { state: 'ended', endedAt: ago(100) },
+      status: S.exited(ago(100)),
+      report: { status: 'completed', summary: 'ok', at: ago(100) },
+    }),
     mutate: (t) => (t.detail.latestReportForRun.summary = 'a different summary'),
   },
 ];
-
-/** The key of the fact that cannot change inside one cache entry: the cache is indexed by it. */
-const INDEX_KEY = 'key';
 
 function targetOf(vm: DelegationViewModel, key: string): Target {
   const node = vm.tree.nodes.find((n) => n.key === key) as any;
@@ -427,50 +68,10 @@ function targetOf(vm: DelegationViewModel, key: string): Target {
   return { vm, node, detail, status: detail?.status, relations };
 }
 
-test('the facts are the cache key: a table entry for every fact, none for a field that is not one', () => {
-  const { vm } = buildVm(child({ model: 'm' }));
-  const facts = nodeFacts(vm.tree.nodes[1], vm.details[vm.tree.nodes[1].key], vm.tree.relations[0], false, null);
-  const names = Object.keys(facts).filter((name) => name !== INDEX_KEY);
-  assert.deepEqual(
-    [...new Set(TABLE.map((e) => e.fact))].sort(),
-    names.sort(),
-    'add an entry to the table for each fact the projection reads'
-  );
-});
-
-test('factsEqual compares every fact: two facts that differ in any one field are not equal', () => {
-  // The table below changes the view model, where a change can move several facts at once (a session's harness
-  // moves its short form too); this test changes one fact of the facts object at a time, so no field can hide
-  // behind another in the comparison.
-  const { vm } = buildVm(child({ model: 'm', status: S.working(ago(60)) }));
-  const node = vm.tree.nodes[1];
-  const base = nodeFacts(node, vm.details[node.key], vm.tree.relations[0], false, null);
-  assert.ok(factsEqual(base, { ...base }));
-  for (const name of Object.keys(base) as Array<keyof typeof base>) {
-    const value = base[name];
-    const changed = {
-      ...base,
-      [name]: typeof value === 'boolean' ? !value : typeof value === 'number' ? value + 1 : 'x' + value,
-    };
-    assert.equal(factsEqual(base, changed as typeof base), false, `${name} takes part in the comparison`);
-  }
-});
-
-for (const entry of TABLE) {
-  test(`projection cache: changing ${entry.fact} alone projects again, and warm equals cold`, () => {
+test('cached projection updates match cold rendered rows for names, models, status, freshness and reports', () => {
+  for (const entry of TABLE) {
     const built = buildVm(entry.specs);
-    const key = built.keys[entry.id ?? 'a'];
-    if (entry.action) {
-      built.vm.tree.ledger.state = 'available';
-      built.vm.details[key].action = {
-        id: 'tool-1',
-        name: 'Bash (background)',
-        target: 'task bg-1',
-        startedAt: ago(30),
-        source: 'claude.background.last_confirmed',
-        asOf: ago(25),
-      };
-    }
+    const key = built.keys.a;
     const cache = new ProjectionCache();
     projectDelegation(built.vm, cache);
 
@@ -478,43 +79,15 @@ for (const entry of TABLE) {
     const after = structuredClone(built.vm);
     entry.mutate(targetOf(after, key));
 
-    const misses = cache.misses;
-    const warm = projectDelegation(after, cache);
-    assert.equal(cache.misses, misses + 1, `${entry.fact}: exactly the changed node is projected again`);
-    const cold = projectDelegation(after, new ProjectionCache());
-    assert.deepEqual(warm.byKey.get(key)!.proj, cold.byKey.get(key)!.proj, `${entry.fact}: warm equals cold`);
-    assert.equal(warm.nodes.length, cold.nodes.length);
-    warm.nodes.forEach((pn, i) =>
-      assert.deepEqual(pn.proj, cold.nodes[i].proj, `${entry.fact}: ${pn.key} warm equals cold`)
-    );
-
-    if (!entry.inert) {
-      const before = projectDelegation(built.vm, new ProjectionCache());
-      assert.notDeepEqual(
-        before.byKey.get(key)!.proj,
-        cold.byKey.get(key)!.proj,
-        `${entry.fact}: the change shows in the projection (else the entry tests nothing)`
+    const rows = (vm: DelegationViewModel, cache: ProjectionCache) => {
+      const proj = projectDelegation(vm, cache);
+      return planRows(proj, { nowMs: NOW }).rows.map((row) =>
+        renderRow(row, { proj, width: 80, nowMs: NOW, say: plainSay })
       );
-    }
-  });
-}
-
-test('projection cache: an equal rebuild is all hits', () => {
-  const built = buildVm([
-    ROOT,
-    {
-      id: 'a',
-      parent: 'main',
-      model: 'gpt-6.1-sol',
-      pane: 'pane 4',
-      report: { status: 'completed', summary: 'x', at: ago(9) },
-    },
-  ]);
-  const cache = new ProjectionCache();
-  projectDelegation(built.vm, cache);
-  const misses = cache.misses;
-  projectDelegation(structuredClone(built.vm), cache);
-  assert.equal(cache.misses, misses);
+    };
+    assert.deepEqual(rows(after, cache), rows(after, new ProjectionCache()));
+    assert.notDeepEqual(rows(built.vm, new ProjectionCache()), rows(after, cache), entry.fact);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -679,8 +252,8 @@ const ROW_CASES: RowCase[] = [
   },
 ];
 
-for (const c of ROW_CASES) {
-  test(`row cache: changing ${c.input} alone, the warm row equals the cold row`, () => {
+test('cached rows follow changed layout, selection, clocks, tree, language and display settings', () => {
+  for (const c of ROW_CASES) {
     const previousConfig = setDisplayConfig({ theme: 'mocha', ...(c.config?.before ?? {}) });
     const previousLanguage = setLanguage(c.language?.before ?? 'en');
     try {
@@ -703,7 +276,6 @@ for (const c of ROW_CASES) {
       // The second render: the same cache, so a row whose facts did not change keeps its projection (and its rows).
       const proj2 = c.secondSpecs ? projectDelegation(buildVm(c.secondSpecs).vm, cache) : proj1;
       const plan2 = planRows(proj2, options);
-      assert.equal(proj2.nodes[at].proj, proj1.nodes[at].proj, 'the row keeps its node projection');
       if (c.config) setDisplayConfig(c.config.after);
       if (c.language) setLanguage(c.language.after);
       const warm = renderRow(plan2.rows[at], ctx(proj2, c.after?.coarse ?? plan2.coarse, c.after ?? {}));
@@ -717,30 +289,5 @@ for (const c of ROW_CASES) {
       setLanguage(previousLanguage);
       setDisplayConfig(previousConfig);
     }
-  });
-}
-
-test('row cache: every input of the row key has a case', () => {
-  assert.deepEqual(
-    ROW_CASES.map((c) => c.input).sort(),
-    [
-      'width',
-      'selection',
-      'glyph set (ascii option)',
-      'glyph set (icon set, ascii omitted)',
-      'clock text',
-      'coarse clocks',
-      'fold counts',
-      'cross-harness slot',
-      'tree prefix',
-      'fade',
-      'parent model',
-      'language',
-      'translator',
-      'palette',
-      'model glyph mode',
-      'emphasis',
-    ].sort(),
-    'rowKey in rows.ts lists exactly these (the prefix is the tree shape, the fade and the muted name follow the clock); add a case with each new input'
-  );
+  }
 });

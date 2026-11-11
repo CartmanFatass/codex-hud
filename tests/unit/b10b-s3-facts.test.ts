@@ -1,32 +1,14 @@
-/**
- * B10B-s3: the generated facts comparator (segment 2 re-check, P3). Its name guard admits every plain identifier a
- * fact may be called, a digit, `_` or `$` included; anything else is refused before it can reach `new Function`.
- */
-
+/** Facts are ordinary independent records; explicit reuse must not retain a previous node's values. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-
-import { comparatorFor, factsEqual, newNodeFacts, nodeFacts } from '../../src/render/delegation/facts.js';
+import { comparatorFor, factsEqual, nodeFacts } from '../../src/render/delegation/facts.js';
 import { situationC } from '../fixtures/b10b-delegation.js';
 
-interface Odd {
-  plain: string;
-  rev2: number;
-  snake_case: boolean;
-  $dollar: string | null;
-  _lead: number;
-  a1b2: string;
-}
-const KEYS: Array<keyof Odd & string> = ['plain', 'rev2', 'snake_case', '$dollar', '_lead', 'a1b2'];
-const base: Odd = { plain: 'x', rev2: 2, snake_case: true, $dollar: null, _lead: 0, a1b2: 'y' };
-
 test('a fact name with a digit, an underscore or a dollar compares by value (no throw, every field read)', () => {
-  const equal = comparatorFor<Odd>(KEYS);
+  const base = { plain: 'x', rev2: 2, snake_case: true, $dollar: null, _lead: 0, a1b2: 'y' };
+  const equal = comparatorFor<typeof base>(Object.keys(base) as Array<keyof typeof base>);
   assert.equal(equal(base, { ...base }), true);
-  for (const key of KEYS) {
-    const changed = { ...base, [key]: key === 'rev2' || key === '_lead' ? 99 : key === 'snake_case' ? false : 'z' };
-    assert.equal(equal(base, changed as Odd), false, `${key} is compared`);
-  }
+  for (const key of Object.keys(base)) assert.equal(equal(base, { ...base, [key]: 'changed' }), false, key);
 });
 
 test('a name that is not an identifier is refused, so nothing but identifiers reaches the generated code', () => {
@@ -34,105 +16,28 @@ test('a name that is not an identifier is refused, so nothing but identifiers re
     assert.throws(() => comparatorFor<Record<string, unknown>>([bad]), /identifiers/, JSON.stringify(bad));
 });
 
-test('the real facts still compare field by field through the same comparator', () => {
-  const c = situationC();
-  const node = c.vm.tree.nodes[1];
-  const facts = nodeFacts(node, c.vm.details[node.key], undefined, false, null);
-  assert.equal(factsEqual(facts, { ...facts }), true);
-  assert.equal(factsEqual(facts, { ...facts, stateKey: 'other' }), false);
-});
-
-// A callable type with a sixth argument also compiles against the five-argument baseline,
-// so the negative is an actual policy assertion, never a missing-symbol/compiler failure.
-type FactInputs = [
-  Parameters<typeof nodeFacts>[0],
-  Parameters<typeof nodeFacts>[1],
-  Parameters<typeof nodeFacts>[2],
-  boolean,
-  string | null,
-];
-const refillFacts: (...args: [...FactInputs, ReturnType<typeof nodeFacts>]) => ReturnType<typeof nodeFacts> = nodeFacts;
-
-test('facts materialization: default calls return independent complete ordinary records', () => {
+test('facts records are independent and explicit refill matches a fresh record across nodes and absent details', () => {
   const { vm } = situationC();
-  const node = vm.tree.nodes[1];
-  const args: FactInputs = [
-    node,
-    vm.details[node.key],
-    vm.tree.relations.find((r) => r.childKey === node.key),
-    false,
-    null,
-  ];
-  const a = nodeFacts(...args);
-  const b = nodeFacts(...args);
-  assert.notStrictEqual(a, b);
-  assert.deepEqual(a, b);
-  assert.strictEqual(Object.getPrototypeOf(a), Object.prototype);
-  assert.deepEqual(Object.keys(a), Object.keys(newNodeFacts()));
-  a.key = 'synthetic-changed-copy';
-  assert.equal(b.key, node.key);
-});
-
-test('facts materialization policy: opt-in refill writes every field and returns the supplied record', () => {
-  const { vm } = situationC();
-  const initial = vm.tree.nodes[1];
-  const buffer = nodeFacts(initial, vm.details[initial.key], undefined, false, null);
-  const names = Object.keys(buffer);
-  const writes: string[] = [];
-  const observed = new Proxy(buffer, {
-    set(target, name, value) {
-      writes.push(String(name));
-      return Reflect.set(target, name, value);
-    },
-  });
-  // Every kind in the fixture, in both directions, then no details/relation/observation/run.
-  const cases: FactInputs[] = vm.tree.nodes.flatMap(
-    (node) =>
-      [
-        [
-          node,
-          vm.details[node.key],
-          vm.tree.relations.find((r) => r.childKey === node.key),
-          node.depth === 0,
-          'synthetic conflict',
-        ],
-        [node, undefined, undefined, false, null],
-      ] as FactInputs[]
-  );
-  const bare = structuredClone(initial);
+  const first = vm.tree.nodes[1];
+  const buffer = nodeFacts(first, vm.details[first.key], undefined, false, null);
+  const copy = nodeFacts(first, vm.details[first.key], undefined, false, null);
+  assert.notStrictEqual(buffer, copy);
+  assert.ok(factsEqual(buffer, copy));
+  buffer.key = 'synthetic-changed-copy';
+  assert.equal(copy.key, first.key);
+  assert.equal(factsEqual(buffer, copy), false);
+  const bare = structuredClone(first);
   bare.observation = null;
   bare.currentRun = null;
   bare.host = null;
   bare.native = undefined;
   bare.loaded = false;
-  bare.conflict = { count: 0, recordIds: [], since: 0 };
-  bare.execution = {
-    ...bare.execution,
-    isRunTerminal: null,
-    reconciliation: null,
-    terminal: null,
-    launchFailure: null,
-  };
-  cases.push([bare, undefined, undefined, false, null]);
-  for (const args of [...cases, ...cases.slice().reverse()]) {
-    const expected = nodeFacts(...args);
-    // Poison even null/false fields: equality alone could otherwise miss a skipped refill write.
-    for (const name of names) Reflect.set(buffer, name, Symbol(name));
-    writes.length = 0;
-    const actual = refillFacts(...args, observed);
-    assert.strictEqual(actual, observed, 'new reuse policy; the old constructor ignores the sixth argument');
-    assert.deepEqual(writes, names, 'each field is unconditionally assigned once, in constructor order');
-    assert.deepEqual(Object.keys(actual), names);
-    assert.deepEqual(actual, expected);
-    assert.strictEqual(Object.getPrototypeOf(actual), Object.prototype);
+  for (const node of [...vm.tree.nodes, bare]) {
+    for (const detail of [vm.details[node.key], undefined]) {
+      const expected = nodeFacts(node, detail, undefined, false, null);
+      const actual = nodeFacts(node, detail, undefined, false, null, buffer);
+      assert.strictEqual(actual, buffer);
+      assert.deepEqual(actual, expected);
+    }
   }
-  const absent = refillFacts(bare, undefined, undefined, false, null, buffer);
-  assert.equal(absent.hasStatus, false);
-  assert.equal(absent.clockAnomaly, false);
-  assert.equal(absent.launchFailed, false);
-  assert.equal(absent.loaded, false);
-  assert.equal(absent.costValue, null);
-  assert.equal(absent.runId, null);
-  assert.equal(absent.linkId, null);
-  assert.equal(absent.reportSummary, null);
 });

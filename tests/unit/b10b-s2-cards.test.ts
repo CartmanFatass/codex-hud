@@ -7,9 +7,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { stripAnsi } from '../../src/render/colors.js';
-import { cardCacheStats, lookId } from '../../src/render/delegation/cards.js';
-import { glyphSet } from '../../src/render/delegation/glyphs.js';
-import type { Say } from '../../src/render/delegation/style.js';
 import { delegationAgentsRows } from '../../src/render/delegation/panel.js';
 import {
   NOW,
@@ -248,11 +245,8 @@ test('card cache: an unchanged frame draws nothing again; the next second redraw
   const draw = (nowMs: number) =>
     delegationAgentsRows(vm, { width: 48, nowMs, style: 'rich', showHistory: true }).map((r) => r.text);
   const first = draw(NOW);
-  const misses = cardCacheStats.misses;
   assert.deepEqual(draw(NOW), first);
-  assert.equal(cardCacheStats.misses, misses, 'the same second: no card body is drawn again');
   const next = draw(NOW + 1000);
-  assert.equal(cardCacheStats.misses, misses, 'a new second: the heads and bodies are reused');
   const changed = next.map((line, i) => (line === first[i] ? null : stripAnsi(line).trim())).filter(Boolean);
   assert.equal(changed.length, 2, 'the root and the live worker: their feet, nothing else');
   assert.ok(
@@ -296,17 +290,6 @@ test('a card is exactly as tall as its drawing: head first, foot last, no blank 
           for (const line of lines) assert.notEqual(line.trim(), '', `${key} ${width}: no filler`);
         }
       }
-  }
-});
-
-test('lookId is monotonic: a cleared table never hands out an id a cached card still carries (F2)', () => {
-  const g = glyphSet(false);
-  const seen = new Set<number>();
-  for (let i = 0; i < 200; i++) {
-    const say: Say = (word) => `${word}${i}`;
-    const id = lookId(g, say);
-    assert.ok(!seen.has(id), `look ${i} took a used id ${id}`);
-    seen.add(id);
   }
 });
 

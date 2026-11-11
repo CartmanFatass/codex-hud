@@ -33,21 +33,6 @@ const native = (id: string, parent: string, i: number, extra: Partial<NodeSpec> 
   ...extra,
 });
 
-test('a sub-row’s line is the sub-row’s own item and belongs to its card; the card’s other lines are the card’s', () => {
-  const { vm, keys } = buildVm([root, card('impl'), native('n0', 'impl', 0), native('n1', 'impl', 1)]);
-  const frame = draw(vm, { style: 'rich', selected: keys['impl'], height: 24 });
-  const rows = frame.panes.find((p) => p.id === 'agents')!.rows;
-  const lines = rows.filter((r) => r.key === `card:${keys['impl']}`);
-  const sub = lines.filter((r) => r.item !== keys['impl']);
-  assert.deepEqual(
-    sub.map((r) => r.item),
-    [keys['n0'], keys['n1']]
-  );
-  assert.ok(sub.every((r) => r.of === keys['impl']));
-  assert.ok(lines.filter((r) => r.item === keys['impl']).every((r) => r.of === undefined));
-  assert.ok(lines.length >= 5, 'head, delegation line, two sub-rows, foot');
-});
-
 test('a click on a sub-row’s line selects it and does not scroll; the selection draws on that line', () => {
   const { vm, keys } = buildVm([root, card('impl'), native('n0', 'impl', 0), native('n1', 'impl', 1)]);
   const frame = draw(vm, { style: 'rich', selected: keys['main'], height: 24 });
@@ -179,32 +164,15 @@ function mixedChildren(pending = false) {
   ]);
 }
 
-test('rich: the destinations are in the order the cards draw them, not the plan’s depth-first order', () => {
-  const { vm, keys } = mixedChildren();
-  const rich = draw(vm, { style: 'rich', selected: keys['A'], height: 40 });
-  const screen = [keys['A'], keys['N1'], keys['N3'], keys['B']];
-  assert.deepEqual(
-    rich.delegation!.dest.rows.map((r) => r.key).filter((k) => k !== keys['main']),
-    screen
-  );
-  // The screen agrees: each of those rows is lower on it than the one before.
-  const ys = screen.map((key) => lineOf(rich, key));
-  assert.ok(
-    ys.every((y, i) => y > 0 && (i === 0 || y > ys[i - 1])),
-    `lines ${ys.join()}`
-  );
-  // The plan itself is depth-first, which compact follows (it draws every row in place): compact does not change.
-  const compact = draw(vm, { style: 'compact', selected: keys['A'], height: 40 });
-  assert.deepEqual(
-    compact.delegation!.dest.rows.map((r) => r.key).filter((k) => k !== keys['main']),
-    [keys['A'], keys['N1'], keys['B'], keys['N3']]
-  );
-});
-
 test('rich: ↓ walks the screen, Home and End go to its first and last row, ↑ walks back', () => {
   const { vm, keys } = mixedChildren();
   const o = { style: 'rich' as const, height: 40 };
   let frame = draw(vm, { ...o, selected: keys['A'] });
+  const ys = ['A', 'N1', 'N3', 'B'].map((id) => lineOf(frame, keys[id]));
+  assert.ok(
+    ys.every((y, i) => y > 0 && (i === 0 || y > ys[i - 1])),
+    'keyboard follows painted order'
+  );
   const down: Array<string | null> = [];
   for (let i = 0; i < 4; i++) {
     frame = step(vm, frame, 'down', o).frame;

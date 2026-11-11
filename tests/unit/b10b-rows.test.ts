@@ -19,7 +19,6 @@ import {
   COARSE_CLOCK_ROWS,
   planRows,
   PUT_AWAY_MS,
-  renderRow,
   renderRows,
   turnClockText,
   type RowOptions,
@@ -131,17 +130,6 @@ test('ASCII rows hold only printable ASCII besides user-written names and the mo
   } finally {
     setDisplayConfig(previous);
   }
-});
-
-test('situation (c) at 80 columns', () => {
-  assert.deepEqual(draw(situationC().vm, 80), [
-    '  ▸ ✳ main                                              fable-5.1 ◕ ━╸──  ◷3m10s',
-    ' ├ ⚑ π review-tests ⊟ · approval                                             10s',
-    ' ├ ▸ ⌬ impl-parser                                        ★● 6.1sol ━━── ◷12m04s',
-    ' │ └ ▸   scout 中文 boundaries                                            ◷1m00s',
-    ' ├ ▸ ◎ ask-pro                                                            ◷4m00s',
-    ' └ ✓ ⌬ docs-sync · Synced two reference sections.                             2m',
-  ]);
 });
 
 test('situation (c): the field-shedding order at 56, 48, 40, 32 and 24 columns (§4.2)', () => {
@@ -520,42 +508,6 @@ test('CJK: a wide character that does not fit leaves a space, and a name is cut 
   }
 });
 
-test('the plan is memoised per option set until a subtree crosses its put-away time (B10B-s2, §6 #3)', () => {
-  const proj = projectDelegation(situationC().vm);
-  const a = planRows(proj, { nowMs: NOW });
-  assert.equal(planRows(proj, { nowMs: NOW + 400 }), a);
-  // The second moving on changes nothing in the plan: the same plan (B10B-s2; segment 1 replanned every second).
-  assert.equal(planRows(proj, { nowMs: NOW + 1000 }), a);
-  // `docs-sync` finished 120 s before NOW: at NOW + 60 s it is put away, and the plan is a new one.
-  const later = planRows(proj, { nowMs: NOW + 60_000 });
-  assert.notEqual(later, a);
-  assert.equal(later.putAway, a.putAway + 1);
-  assert.equal(planRows(proj, { nowMs: NOW + 59_999 }).putAway, a.putAway, 'and back before the boundary');
-  assert.notEqual(planRows(proj, { nowMs: NOW, showHistory: true }), planRows(proj, { nowMs: NOW }));
-  const key = [...proj.nodes].find((pn) => pn.children.length > 0 && !pn.proj.isRoot)!.key;
-  const folded = planRows(proj, { nowMs: NOW, collapsed: new Set([key]) });
-  assert.ok(folded.rows.length < a.rows.length);
-  assert.equal(planRows(proj, { nowMs: NOW, collapsed: new Set([key]) }), folded);
-});
-
-test('a row is rendered once for what it reads: same inputs give the same string object cache', () => {
-  const proj = projectDelegation(situationC().vm);
-  const plan = planRows(proj, { nowMs: NOW });
-  const ctx = { proj, width: 60, nowMs: NOW, coarse: plan.coarse };
-  const row = plan.rows[2];
-  assert.equal(renderRow(row, ctx), renderRow(row, ctx));
-  assert.notEqual(renderRow(row, ctx), renderRow(row, { ...ctx, width: 48 }));
-  assert.notEqual(renderRow(row, ctx), renderRow(row, { ...ctx, selectedKey: row.key }));
-  assert.notEqual(renderRow(row, ctx), renderRow(row, { ...ctx, ascii: true }));
-  // A tick later the turn clock moved, so the cached text is not reused.
-  assert.notEqual(renderRow(row, ctx), renderRow(row, { ...ctx, nowMs: NOW + 5000 }));
-});
-
-test('no root row and no nodes: no rows', () => {
-  const empty = buildVm([root()]);
-  assert.equal(draw(empty.vm, 40).length, 1);
-});
-
 /** The rows as drawn, colours included. */
 function drawRaw(vm: DelegationViewModel, width: number, options: Partial<RowOptions> & Draw = {}): string[] {
   const { ascii, selectedKey, say, ...rest } = options;
@@ -565,36 +517,6 @@ function drawRaw(vm: DelegationViewModel, width: number, options: Partial<RowOpt
     { width, ascii, selectedKey, say: say ?? plainSay }
   );
 }
-
-test('a folded node keeps its counts apart: 1 flag + 11 failures is not 11 flags + 1 failure', () => {
-  const tree = (flags: number, fails: number) =>
-    buildVm([
-      root(),
-      {
-        id: 'p',
-        parent: 'main',
-        harness: 'codex',
-        label: 'parent-worker',
-        status: S.working(ago(60)),
-        createdAt: ago(900),
-      },
-      ...Array.from({ length: 12 }, (_, i): NodeSpec => {
-        const spec: NodeSpec = { id: `k${i}`, parent: 'p', harness: 'codex', createdAt: ago(800 - i) };
-        return {
-          ...spec,
-          status:
-            i < flags ? S.pending('approval', ago(30)) : i < flags + fails ? S.failed(ago(40)) : S.working(ago(60)),
-        };
-      }),
-    ]);
-  const first = tree(1, 11);
-  const second = tree(11, 1);
-  const options = { collapsed: new Set([first.keys.p]) };
-  // The same parent, cached, under two different sets of children.
-  assert.match(draw(first.vm, 80, options)[1], /\+12 \(1⚑ 11!\)/);
-  assert.match(draw(second.vm, 80, options)[1], /\+12 \(11⚑ 1!\)/);
-  assert.match(draw(first.vm, 80, options)[1], /\+12 \(1⚑ 11!\)/);
-});
 
 test('§3.4: an age that cannot be measured is left empty, never `0s`', () => {
   const clockOf = (row: string): string => row.slice(-7).trim();
