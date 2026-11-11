@@ -82,6 +82,8 @@ export const INSTALLER_FILES = [
   'claude-plugin.mjs',
   'claude-parity.mjs',
   'pi-package.mjs',
+  'codex-activation.mjs',
+  'runtime-package/codex.mjs',
   'runtime-package/pi.mjs',
   'runtime-package/claude.mjs',
   'runtime-package/safety.mjs',

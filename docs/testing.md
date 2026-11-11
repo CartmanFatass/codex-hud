@@ -237,6 +237,12 @@ behaviours have separate owners. Frozen owners are routing pointers, never edits
 | R16 | Statusline preview is read-only; explicit installation preserves unrelated settings and exact restore bytes/mode                        | `statusline-settings.test.ts` — preview read-only; explicit apply preserves other settings and restore returns exact bytes/mode                            | `contract` |
 | R17 | Product root help discovers statusline without a ledger and both render aliases agree                                                   | `product-cli-routing.test.ts` — root help discovers statusline without opening a ledger; render aliases agree                                              | `contract` |
 
+Codex row R18 is additive activation coverage; legacy `cx`, `hud codex`, tmux and visual/WP0 carriers remain frozen.
+
+| ID | User/contract behaviour | One owning test | Layer |
+| --- | --- | --- | --- |
+| R18 | Selected Codex registration preserves TOML bytes/profiles and skill peers, refuses duplicate/foreign/colliding targets and stale restore | `runtime-activation.test.mjs` — Codex activation table: lossless registration, collisions and stale restore | `contract` |
+
 ### Ledger
 
 | ID  | User/contract behaviour                                                                       | One owning test                                                                                                                                              | Layer      |
@@ -284,6 +290,14 @@ behaviours have separate owners. Frozen owners are routing pointers, never edits
 | E01 | Synthetic fixed-role job traverses create/read/send/respond/close through the real facade | `role-facade.test.ts` — create read send respond close against the fake herdr                                                                              | `e2e` |
 | E02 | Production panel collection paints the same work snapshot without paint-time publication  | `role-summary.test.ts` — role summary actual collection ${scenario} publishes outside paint and finish disposes handlers                                   | `e2e` |
 | E03 | Built pi package loads, reloads and shuts down without owning another extension's UI      | `pi-package.test.mjs` — REAL package entry start -> reload -> shutdown preserves synthetic p10k fields; exactly six proxies and no footer or message calls | `e2e` |
+
+The release scenarios below are explicitly opt-in (`node tests/integration/r6a-release-rehearsal.mjs --run --out NEW_ABS`). They run clean staged artifacts, not working `dist/`, and are not added to `npm test`.
+
+| ID | User/contract behaviour | One owning test | Layer |
+| --- | --- | --- | --- |
+| E04 | Fresh install → three clients → upgrade → rollback → uninstall preserves prior configuration bytes/modes and a partial-failure restore route | `tests/integration/r6a-release-rehearsal.mjs` — E04 fresh install -> clients -> upgrade -> rollback -> uninstall | `e2e` |
+| E05 | Relocated artifact with spaces remains standalone after deletion of the actual disposable build checkout | `tests/integration/r6a-release-rehearsal.mjs` — E05 relocation and deleted actual build checkout | `process` |
+| E06 | A live old primary launches helpers from its retained release after activation selects a new release | `tests/integration/r6a-release-rehearsal.mjs` — E06 activation change while live N primary launches N reviewer and nested sonic | `process` |
 
 ### Performance
 
@@ -386,7 +400,7 @@ at this snapshot; that is a temporary-root indicator, not proof all 192 override
 5. Add a map row only when no existing behaviour owns the new invariant.
 6. Choose the cheapest layer that runs the real code and boundary under assertion.
 7. Extend the shared stand-in; never copy it or start a fresh per-package fake.
-8. Keep only E01–E03 for product composition; signals/lifecycle need their real-process owner.
+8. Keep E01–E03 for ordinary product composition; E04–E06 are the separately approved opt-in artifact/release rehearsal. Signals/lifecycle need their real-process owner.
 9. Put scale/cost/latency distributions in opt-in perf, with a small correctness row left here.
 10. Name affected owners, unique-coverage evidence and frozen overlaps in the brief and review.
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assessResidue } from '../integration/r6a-claude-probe.mjs';
-test('fixed native version: exact orphan cache receipt only; no changed, added, missing, linked or registered residue', () => {
+test('observed native write set: exact orphan cache receipt only; no changed, added, missing, linked or registered residue', () => {
   const prefix = '.claude/plugins/cache/hud-rehearsal/hud/0.1.0';
   const installed = {
     [prefix]: { mode: 0o755, hash: 'directory' },
@@ -29,7 +29,11 @@ test('fixed native version: exact orphan cache receipt only; no changed, added, 
     assert.equal(inspect(changed).pass, false);
   assert.equal(inspect(after, { ...settings, enabledPlugins: { hud: true } }).pass, false);
   assert.equal(inspect(after, settings, { version: 2, plugins: { hud: [] } }).pass, false);
-  assert.equal(inspect(after, settings, { version: 2, plugins: {} }, '2.1.320 (Claude Code)').pass, false);
+  for (const version of ['2.1.319 (Claude Code)', '2.1.322 (Claude Code)', 'synthetic-future (Claude Code)']) {
+    const observed = inspect(after, settings, { version: 2, plugins: {} }, version);
+    assert.equal(observed.pass, true);
+    assert.equal(observed.cliVersion, version);
+  }
   assert.equal(
     inspect(after, settings, { version: 2, plugins: {} }, '2.1.319 (Claude Code)', ['outside-allowance']).pass,
     false

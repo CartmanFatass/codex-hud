@@ -7,7 +7,8 @@ import { pathToFileURL } from 'node:url';
 import { fixture, replaceFixtureFile } from '../../scripts/runtime-package/test-fixture.mjs';
 import { planInstall, executeInstall } from '../../scripts/runtime-package/installer.mjs';
 import { digest } from '../../scripts/runtime-package/safety.mjs';
-import { ACTIVATION_PROCESS_FILES } from '../../scripts/runtime-package/manifest.mjs';
+import { ACTIVATION_PROCESS_FILES, verifyBundle } from '../../scripts/runtime-package/manifest.mjs';
+import { codexSteps } from '../../scripts/runtime-package/codex.mjs';
 const activation = await import(process.env.R6A_ACTIVATION_MODULE ?? '../../scripts/runtime-package/activation.mjs');
 const { planActivation, applyActivation, restoreActivation, planDeactivation } = activation;
 function setup(t, label = 'A', prepare) {
@@ -47,6 +48,104 @@ function apply(f, hooks) {
   const p = planActivation(f.options);
   return applyActivation(f.options, p.planId, hooks);
 }
+
+test('Codex activation table: lossless registration, collisions and stale restore', async (t) => {
+  for (const row of [
+    'round-trip',
+    'absent',
+    'duplicate',
+    'foreign',
+    'profile',
+    'skill-collision',
+    'home-overlap',
+    'stale-edit',
+  ]) {
+    await t.test(row, (t) => {
+      const f = setup(t, `codex-${row}`);
+      const codexHome = path.join(f.home, 'selected codex');
+      const skillDirectory = path.join(f.home, '.agents/skills');
+      fs.mkdirSync(codexHome, { mode: 0o700 });
+      fs.mkdirSync(skillDirectory, { recursive: true, mode: 0o700 });
+      fs.writeFileSync(path.join(skillDirectory, 'existing.txt'), 'other skill stays', { mode: 0o600 });
+      const file = path.join(codexHome, 'config.toml');
+      const original =
+        '# comments and formatting stay\r\nmodel = "synthetic"\r\n\r\n[mcp_servers.other]\r\ncommand="other" # same bytes\r\n[profiles.spare]\r\nmodel = "other"';
+      const extra =
+        {
+          duplicate: '\n[mcp_servers.hud-mcp]\ncommand="a"\n[mcp_servers.hud-mcp]\ncommand="b"\n',
+          foreign: '\n[mcp_servers."hud-mcp"]\ncommand="foreign"\n',
+          profile: '\n[profiles.spare.mcp_servers.hud-mcp]\ncommand="foreign"\n',
+        }[row] ?? '';
+      if (row !== 'absent') fs.writeFileSync(file, original + extra, { mode: 0o640 });
+      if (row === 'skill-collision') fs.mkdirSync(path.join(skillDirectory, 'hud-delegate'), { mode: 0o700 });
+      const executable = fs.realpathSync(process.execPath);
+      f.options.codex = {
+        codexHome,
+        skillDirectory,
+        node: executable,
+        executable,
+        proof: {
+          schema: 1,
+          status: 'PASS',
+          executable,
+          executableHash: digest(fs.readFileSync(executable)),
+          codexHome,
+          skillDirectory,
+          scope: 'user',
+          nativeDiscovery: true,
+          version: 'synthetic unit evidence',
+        },
+      };
+      const bundle = verifyBundle(path.join(f.prefix, 'releases', f.options.release), { required: false });
+      const before = tree(f.home);
+      try {
+        if (row === 'home-overlap') {
+          for (const hudHome of [codexHome, path.join(codexHome, 'hud state'), f.home, path.parse(f.home).root]) {
+            f.options.hudHome = hudHome;
+            assert.throws(() => codexSteps(bundle, f.options, activation.observe), /hud_codex_home_overlap_refused/);
+            assert.deepEqual(tree(f.home), before);
+          }
+          // A shared textual prefix is not an overlapping directory.
+          f.options.hudHome = codexHome + ' sibling';
+          assert.ok(codexSteps(bundle, f.options, activation.observe).steps.length > 0);
+          assert.deepEqual(tree(f.home), before);
+          return;
+        }
+        if (['duplicate', 'foreign', 'profile', 'skill-collision'].includes(row)) {
+          assert.throws(() => codexSteps(bundle, f.options, activation.observe), /duplicate|collision/);
+          assert.deepEqual(tree(f.home), before);
+          return;
+        }
+        f.options.steps = codexSteps(bundle, f.options, activation.observe).steps;
+      } finally {
+        bundle.directory.close();
+      }
+      const preview = planActivation(f.options);
+      assert.deepEqual(tree(f.home), before);
+      const r = applyActivation(f.options, preview.planId);
+      const installed = fs.readFileSync(file, 'utf8');
+      assert.ok(installed.startsWith(row === 'absent' ? '' : original));
+      assert.equal(installed.match(/\[mcp_servers.hud-mcp\]/g).length, 1);
+      assert.match(installed, /HUD_MCP_SURFACE = "roles"/);
+      assert.ok(installed.includes(JSON.stringify(f.options.hudHome)));
+      assert.ok(installed.includes(path.join(f.prefix, 'releases', f.options.release)));
+      if (row === 'stale-edit') {
+        fs.appendFileSync(file, '# later owner edit\n');
+        assert.equal(restoreActivation(r.receipt).status, 'CONFLICT');
+        assert.match(fs.readFileSync(file, 'utf8'), /later owner edit/);
+        return;
+      }
+      assert.equal(restoreActivation(r.receipt).status, 'deactivated; release retained');
+      assert.equal(fs.existsSync(file), row !== 'absent');
+      if (row !== 'absent') {
+        assert.equal(fs.readFileSync(file, 'utf8'), original);
+        assert.equal(fs.statSync(file).mode & 0o777, 0o640);
+      }
+      assert.deepEqual(fs.readdirSync(skillDirectory), ['existing.txt']);
+      assert.equal(fs.readFileSync(path.join(skillDirectory, 'existing.txt'), 'utf8'), 'other skill stays');
+    });
+  }
+});
 
 test('activation preview is read-only and deterministic; wrong/stale plan and changed target refused', (t) => {
   const f = setup(t);
@@ -451,6 +550,7 @@ if (!process.env.R6A_ACTIVATION_MODULE)
       fs.copyFileSync(path.resolve(file), path.join(f.root, file));
     }
     const variants = [
+      ['codex-stale-restore', '      !intactBlock &&', '      false && !intactBlock &&', 'Codex activation table'],
       [
         'skip-recheck',
         /assertState\((?:step\.path, step\.original|file, expected)\);/g,
@@ -497,11 +597,13 @@ if (!process.env.R6A_ACTIVATION_MODULE)
         {
           env: { ...f.env, R6A_ACTIVATION_MODULE: pathToFileURL(path.join(dir, 'activation.mjs')).href },
           encoding: 'utf8',
-          timeout: 30000,
+          // This variant runs the whole multi-roundtrip Codex table, not one small test.
+          timeout: name === 'codex-stale-restore' ? 90000 : 30000,
         }
       );
-      assert.equal(result.status, 1, `${name} survived: ${result.stdout}\n${result.stderr}`);
-      assert.match(result.stdout, /# fail 1/);
+      assert.equal(result.error, undefined, `${name} subprocess failed: ${result.error?.message}`);
+      assert.equal(result.status, 1, `${name} survived (signal=${result.signal}): ${result.stdout}\n${result.stderr}`);
+      assert.match(result.stdout, name === 'codex-stale-restore' ? /# fail 2/ : /# fail 1/);
       assert.match(result.stdout, new RegExp('not ok.*' + pattern));
     }
   });

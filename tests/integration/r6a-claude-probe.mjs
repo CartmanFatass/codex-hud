@@ -55,12 +55,8 @@ export function assessResidue(
     Object.keys(registry.plugins ?? {}).length === 0 &&
     Object.keys(marketplaces).length === 0;
   return {
-    pass:
-      cliVersion === '2.1.319 (Claude Code)' &&
-      noRegistration &&
-      !cacheChanged &&
-      unexpected.length === 0 &&
-      links.length === 0,
+    pass: noRegistration && !cacheChanged && unexpected.length === 0 && links.length === 0,
+    cliVersion, // Evidence only: qualify observed behavior, never a vendor-version allowlist.
     unexpected,
     cacheChanged,
     links,
@@ -68,7 +64,7 @@ export function assessResidue(
     cachePolicy: `Claude keeps the plugin cache after uninstall; you can delete it by hand if wanted: ${cache}. HUD never deletes or restores it.`,
   };
 }
-export async function probeClaude(plugin, claude, mode = 'smoke', failure = null) {
+export async function probeClaude(plugin, claude, mode = 'smoke', failure = null, options = {}) {
   const root = fs.mkdtempSync(path.join(tmpdir(), 'hud-claude-probe-'));
   fs.chmodSync(root, 0o700);
   const home = path.join(root, 'home');
@@ -219,6 +215,73 @@ export async function probeClaude(plugin, claude, mode = 'smoke', failure = null
           plugins: [{ name: 'hud', source: './plugins/hud', version: binding.releaseVersion }],
         })
       );
+      const manual = options.manualBackup ? { files: [], commands: [], restored: false } : null;
+      const manualRoot = path.join(root, 'manual-backup');
+      // This optional rehearsal can touch only this function's fresh synthetic home.
+      // It never enables restoration in an owner home; the CLI version is evidence only.
+      function manualState(file) {
+        let info;
+        try {
+          info = fs.lstatSync(file, { bigint: true });
+        } catch (error) {
+          if (error.code === 'ENOENT') return null;
+          throw error;
+        }
+        if (!info.isFile() || info.nlink !== 1n || info.uid !== BigInt(process.getuid()))
+          throw new Error('manual_restore_unsafe_file');
+        return {
+          hash: sha(fs.readFileSync(file)),
+          mode: Number(info.mode & 0o777n),
+          device: String(info.dev),
+          inode: String(info.ino),
+          ctime: String(info.ctimeNs),
+          mtime: String(info.mtimeNs),
+        };
+      }
+      if (manual) {
+        fs.mkdirSync(manualRoot, { mode: 0o700 });
+        for (const rel of [
+          '.claude/settings.json',
+          '.claude/.claude.json',
+          '.claude/plugins/installed_plugins.json',
+          '.claude/plugins/known_marketplaces.json',
+        ]) {
+          const file = path.join(home, rel),
+            backup = path.join(manualRoot, path.basename(rel));
+          const original = manualState(file);
+          let backupState = null;
+          if (original) {
+            const result = await runManual('/bin/cp', ['-p', file, backup]);
+            backupState = manualState(backup);
+            if (
+              result.code !== 0 ||
+              JSON.stringify(manualState(file)) !== JSON.stringify(original) ||
+              backupState?.hash !== original.hash ||
+              backupState.mode !== original.mode
+            )
+              throw Error('manual_backup_failed');
+          }
+          manual.files.push({
+            path: file,
+            backup: original ? backup : null,
+            absence: !original,
+            original,
+            backupState,
+          });
+        }
+      }
+      async function runManual(executable, args) {
+        const child = spawn(executable, args, { env, cwd: root, stdio: ['ignore', 'ignore', 'pipe'] });
+        let stderr = '';
+        child.stderr.on('data', (b) => (stderr += b));
+        const code = await new Promise((resolve, reject) => {
+          child.once('error', reject);
+          child.once('close', resolve);
+        });
+        const result = { command: [executable, ...args], code, stderr };
+        manual.commands.push(result);
+        return result;
+      }
       let before = snapshot();
       let outsideBefore = snapshot(true);
       let installed = {};
@@ -264,6 +327,54 @@ export async function probeClaude(plugin, claude, mode = 'smoke', failure = null
         report.results.length === 4 && report.results.every((r) => r.code === 0) && report.uninstallVerified
           ? 'PASS'
           : 'NOT_VERIFIED';
+      if (manual) {
+        // Owner-authorized synthetic copy-back only: all observed writes and residue
+        // must match the observed shape, with the CLI version recorded only as evidence.
+        const shape = report.residueCheck;
+        const syntheticSafe =
+          report.results.length === 4 &&
+          report.results.every((r) => r.code === 0 && !r.timedOut && r.outsideWriteSet.length === 0) &&
+          report.incidentalOutsideWriteSet.length === 0 &&
+          shape.noRegistration &&
+          !shape.cacheChanged &&
+          shape.unexpected.length === 0 &&
+          shape.links.length === 0;
+        manual.scope = 'fresh synthetic probe home only; CLI version is evidence, not a gate';
+        manual.nativeQualified = report.uninstallVerified;
+        manual.status = syntheticSafe ? 'PASS' : 'NOT_RUN';
+        manual.reason = syntheticSafe
+          ? 'synthetic_copy_back_only; observed_write_set=' + report.status
+          : 'manual_restore_write_set_NOT_VERIFIED; preserve native residue for owner review';
+        for (const entry of syntheticSafe ? manual.files : []) {
+          entry.postUninstall = manualState(entry.path);
+          const expected = report.residue[path.relative(home, entry.path)];
+          if (
+            (entry.postUninstall?.hash ?? null) !== (expected?.hash ?? null) ||
+            (entry.postUninstall?.mode ?? null) !== (expected?.mode ?? null)
+          )
+            throw new Error('manual_post_uninstall_changed');
+        }
+        for (const entry of syntheticSafe ? manual.files : []) {
+          if (
+            JSON.stringify(manualState(entry.path)) !== JSON.stringify(entry.postUninstall) ||
+            (entry.backup && JSON.stringify(manualState(entry.backup)) !== JSON.stringify(entry.backupState))
+          )
+            throw new Error('manual_restore_changed');
+          if (entry.absence) {
+            if (fs.existsSync(entry.path)) fs.unlinkSync(entry.path);
+            if (fs.existsSync(entry.path)) throw Error('manual_absence_restore_failed');
+          } else {
+            if (
+              (await runManual('/bin/cp', ['-p', entry.backup, entry.path])).code !== 0 ||
+              (await runManual('/usr/bin/cmp', [entry.backup, entry.path])).code !== 0 ||
+              (fs.statSync(entry.backup).mode & 0o777) !== (fs.statSync(entry.path).mode & 0o777)
+            )
+              throw Error('manual_exact_restore_failed');
+          }
+        }
+        manual.restored = syntheticSafe;
+        report.manualBackup = manual;
+      }
     } else {
       fs.mkdirSync(path.join(home, '.claude/commands'), { mode: 0o700 });
       fs.copyFileSync(path.join(copied, 'commands/hud.md'), path.join(home, '.claude/commands/hud.md'));
