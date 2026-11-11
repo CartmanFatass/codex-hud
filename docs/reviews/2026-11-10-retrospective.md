@@ -152,51 +152,20 @@ First results, same day, same models:
 Caveats: the new slices are smaller by design, and the milestone review and the owner's own trial have not happened
 yet. The real test is whether the owner can install M1 and use it.
 
-## 7. Open design questions for discussion
+## 7. What the owner settled after reading this (2026-11-10)
 
-1. **Where does scope authority live, and how is it enforced?** Today: a one-page spec only the owner edits, cited in
-   every brief, read by the orchestrator after every compaction. Is that enough, or does the orchestrator need a
-   mechanical check (for example every brief must quote the spec line it serves, and the milestone reviewer checks
-   the diff against §3 "does not do")?
-2. **Long-lived orchestrator or fresh per milestone?** A long session drifts. Alternative: a fresh orchestrator per
-   milestone that reads spec + state + the slice list and nothing else; the owner holds continuity.
-3. **Review placement.** Now: one two-axis review per milestone plus targeted review for risky changes (owner configs,
-   deleting data, killing processes, installers). Is milestone granularity right, or should review sit at "before the
-   owner installs"? Should the reviewer be a different model family from the implementer?
-4. **Test policy.** Main-path tests only, a number in the brief, no performance tests in the default suite. How to
-   stop test growth without losing the few tests that matter (installer round trip, MCP tools, renderers)?
-5. **Question routing.** The orchestrator answers with the simplest option; anything beyond the spec goes to the
-   owner. Should agents be allowed to ask at all inside a slice, or should a blocked slice just stop and report?
-6. **Worker neutrality in the HUD product.** Workers do only their own job; the skill carries a light default workflow
-   that projects override. Is a default needed at all, or should the HUD ship none?
-7. **What to do with the over-protection already in the tree.** Delete it in the milestone review's simplicity pass,
-   in a dedicated pruning milestone, or leave it until it hurts?
-8. **Progress measure.** "The owner can install and use it" is the acceptance. Should there be a hard cadence (for
-   example the owner tries something every two or three days, or work stops)?
+A review by another model added what this page missed: the five M1 slices above never touched the dispatch core, and
+the core itself contradicts the spec (pi roles start only from a hash-named release directory, and every tool call
+must prove the caller's identity). The product is a dispatch tool that was never used to dispatch its own work. It
+also pointed out that §7 and §8 of the first draft answered a process failure with more process.
 
-## 8. For the owner: engineering management and multi-agent collaboration
-
-The owner asked how to strengthen their own engineering-management and multi-agent collaboration skills. From this
-project, the levers that would have changed the outcome most:
-
-1. **Write the boundary before the first task, and keep it to one page.** Must do, does not do, threat model, what
-   "done" looks like. Agents read it; nobody but you edits it. An agent's proposal that crosses it is a question to
-   you, never a decision.
-2. **Give every piece of work a budget and a stop rule.** "About 100 lines, one test; if it will not fit, stop and
-   tell me." Agents never stop on their own; a budget makes "this is getting big" visible early.
-3. **Use the product, often.** Insist on something installable early (a walking skeleton) and try it every few days.
-   Your own use is the review that agents cannot do: it checks direction, not details.
-4. **Review direction, not just diffs.** Ask at each milestone: what did we build that the spec did not ask for, and
-   what can be deleted? Treat a deletion as a good outcome.
-5. **Keep the orchestrator honest.** Ask it periodically: which spec line does the current work serve, what is the
-   size so far versus the budget, and when could I try it? If it cannot answer crisply, it has drifted.
-6. **Watch the leading indicators.** Questions per task, review rounds per task, test lines per source line, days since
-   you last used the product. In this project all four went up for a week before anyone acted.
-7. **Prefer fewer, larger checkpoints with you over many agent-to-agent checkpoints.** Agents reviewing agents
-   converge on local quality. Only you can say "this is not what I wanted".
-8. **Small and clear tasks are still where multi-agent work shines.** For a large effort, the job is to turn it into a
-   sequence of small, clear, owner-checkable slices first; that slicing is the management work, and it is yours or
-   the orchestrator's, never the implementers'.
-
-Patterns worth reading: Matt Pocock's skills repository (grill-me, to-spec, to-tickets, a single code-review per spec);
-the general "walking skeleton" / tracer-bullet approach; trunk-based development with small vertical slices.
+Decisions:
+- The dispatch core is rewritten as a thin layer over the locally installed pi-roles (about 500 lines); the old
+  facade with its identity and release checks is deleted in M2. M1 depends on the local pi-roles.
+- Only three things carry the workflow: the one-page spec, a budget and a stop rule per slice, and the owner using
+  each milestone once (a milestone lasts at most about two days).
+- No questions inside a slice: a blocked implementer stops and reports.
+- One review before the owner installs, by a model from a different family than the implementer.
+- One main-path test per capability the owner can see.
+- A fresh orchestrator per milestone, working from the spec and a short STATE.
+- Once the thin layer works, the orchestrator dispatches its own work through the HUD's tools.
