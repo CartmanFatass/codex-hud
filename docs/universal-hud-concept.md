@@ -959,6 +959,16 @@ level deep for now: a delegated worker gets no general role surface. A sonic run
 called it and shows under it. A read-only caller (reviewer, architect) gets a read-only sonic that writes only its own
 report. The caller answers for sonic's output; sonic still never writes tests, hunts bugs or makes design decisions.
 
+### 2026-11-10 R6b full retirement approved (Jacob)
+
+R6b retires the pre-convergence execution stack in full (inventory: `docs/reviews/2026-11-10-r6b-architect.md`,
+slice L): the `hud run` command, the detached native host, bridge, supervisor and ledger writer graph, and the Claude
+Agent SDK dependency closure. The v1 codec and the passive history readers stay, so old records still display. WP0
+gets one exception: the `hud run` cancel/resume/wait cases in `b11-cli.test.ts` go with the command; the rest of that
+file stays frozen. Order: after A8 merges, the owner installs the release, and `scripts/audit-r6b-drain.mjs --slice
+runtime` passes on the owner's machine. Slices P, T and W (prototype residue, transport experiments, workbench lab)
+go first and do not wait for that gate.
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。

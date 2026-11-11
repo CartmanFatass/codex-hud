@@ -321,11 +321,15 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   Running:
   - **R6A-A8 + PIROLE PR5**, one package: Codex activation, the release rehearsal from a staged artifact, real-client
     smoke, the cost table and the owner runbook `docs/release-runbook.md`;
-  - **R6b architect consult**: removal inventory, drain preconditions and slices;
-  - **TEST-SLIM-1A/1B**, finishing.
+  - **R6B-1** (slices P, T, W and `scripts/audit-r6b-drain.mjs`), from the architect inventory
+    `docs/reviews/2026-11-10-r6b-architect.md`;
+  - **TEST-SLIM-1A** (opt-in perf suite), finishing. TEST-SLIM-1B merged at `f0a555c`.
+
+  2026-11-10: the owner approved R6b slice L (full retirement, concept §15 "R6b full retirement approved"), including
+  the WP0 exception for the `hud run` cases in `b11-cli.test.ts`.
 
   Next:
-  - R6b removal slices, after A8 and the owner's activation and drain;
+  - R6b slice L, after A8 merges, the owner installs, and the drain audit passes (`--slice runtime`);
   - R7 acceptance, whose plan is drafted alongside;
   - the TEST-SLIM area slices, only when a slot is free.
 
