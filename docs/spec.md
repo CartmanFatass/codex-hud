@@ -9,12 +9,9 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 
 ## 2. What it must do
 
-1. **Delegate through one MCP.** From any of the three main sessions, start and use the fixed roles (imp, reviewer,
-   sonic, oracle, jev) with six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`,
-   `hud_close`. CLI roles run through herdr and pi-roles; browser jobs run through Jev. The main session decides
-   every next step; the HUD never chains roles itself. Workers are neutral: each does only its own job and never
-   starts another role unless the brief asks. The skill ships a short default workflow (brief with scope, budget and
-   stop rule; review at milestones or risky changes, not per change) that a project's own docs override. The six
+1. **Delegate through one MCP.** From any of the three main sessions, start and use roles with six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`,
+   `hud_close`. CLI roles run through herdr and pi-roles; browser jobs run through Jev. Roles are defined by files; the HUD ships defaults. The MCP knows no particular role and no workflow. The main session decides every next step; the HUD never chains roles itself. Workers are neutral: each does only its own job and never
+   starts another role unless the brief asks. The HUD ships a short default dispatch convention; a project's or the owner's own file replaces it whole. `hud_roster` returns the roles and the convention in effect. The six
    tools are a thin layer over the locally installed pi-roles (`pi-dispatch`, `STATUS.json`, `qN.answer.md`,
    `pi-role-reap`); jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles is not bundled (owner, 2026-11-10).
 2. **Show what is happening.** A side panel (Home, Work) shows the main session's jobs and their state. Each client
@@ -52,8 +49,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   `hud uninstall`; MCP and skill registered in all three clients; `hud panel`; the six tools work for imp, reviewer
   and sonic through herdr; Claude statusline at claude-hud parity; pi footer replacing p10k-footer. The owner
   installs and uses it.
-- **M2, clean** (right after M1): delete the retired execution stack (R6b slice L), the old role facade and its
-  identity/release checks (replaced by the thin layer), and their tests.
+- **M2, clean** (right after M1): delete the retired execution stack (R6b slice L), the old role facade and its identity/release checks (replaced by the thin layer), the old hud-mcp surfaces (the default managed surface and role-main), and their tests.
 - **M3, extend:** Jev and oracle jobs.
 
 ## 6. How work is done
