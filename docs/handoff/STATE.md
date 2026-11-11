@@ -1,5 +1,23 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
+## Now (2026-11-10): spec first, new workflow
+
+The owner judged the effort over-engineered and slow: in ten days no usable build, tests twice the source, 127
+review rounds and 322 questions across 200 task directories, and a first week spent on an execution platform the
+2026-11-07 scope convergence made obsolete (and an installer runtime package that entry had already ruled out). Cause:
+no stated requirement or complexity bound, an implementer/reviewer pair on every task optimising locally, and the
+orchestrator approving each expansion instead of holding the scope.
+
+Changes (owner, 2026-11-10):
+- `docs/spec.md` is the product boundary, short and owner-owned. It wins over the concept log and this file.
+- `docs/delegation.md` is rewritten: grill, vertical slices, one implementer per slice without review, one two-axis
+  review (spec incl. scope creep; simplicity) per milestone, the owner tries it. Role texts in pi-roles changed to
+  match (Fishpref `81e1859`).
+- Next: grill the owner on M1 (usable: install, MCP in three clients, panel), then slice it.
+
+In flight from before: STATUSLINE-PARITY and PI-FOOTER-PORT (M2 work, finishing their review); R6A-A8 (installer
+rehearsal; out of spec, pending the owner's call); INSTALLER-ARCH (done; superseded by the spec's simple installer).
+
 ## Current queue (2026-11-07): R0–R7
 
 Authoritative scope: `docs/universal-hud-concept.md` §15, "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev". This is the current queue. Sections below are

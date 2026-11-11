@@ -16,10 +16,12 @@ Read `docs/ARCHITECTURE.md` before changing code: the two processes (bar `src/in
 
 # Universal HUD effort (branch `universal-hud`)
 
-This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi. The product scope is concept §15, "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev": a fixed-role MCP facade, herdr for CLI execution, an owned Jev runtime for browser jobs, and main-session chaining. The active queue is R0–R7 in `docs/handoff/STATE.md`. Development is local again since 2026-11-07; remote sessions (Claude Code cloud, dots), when used, follow `AGENTS.md` and `docs/handoff/STATE.md`, not the local routing below. On the owner's machine, before doing anything on this branch read, in order:
+This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi. On the owner's machine, before doing anything on this branch read, in order:
 
-1. `docs/delegation.md`: who does which kind of task, who decides ("决策权": the orchestrator; architect, Argon and Pro only advise), and the dispatch flow ("调度流程"). Macro: Argon gives insight, Pro reviews and optimises. Work packages: the orchestrator decides the design (architect, astra high, advises), the implementer (sol high) builds, may hand simple pieces to sonic, and closes with the reviewer (sol xhigh), all on pi via the `herdr-delegate` skill. Sonic (DeepSeek V4.1 Flash) is a helper that takes small chores off each level; the implementer fully owns its own sonic use. The orchestrator writes each brief's test plan and the implementer implements it; bug hunting is the implementer's; sonic never writes tests, hunts bugs or makes design calls. Rendering: `frontend-implementer`; human-interaction tests: Hermes. Codex delegation is a legacy backup.
-2. `docs/handoff/STATE.md`: the active queue is R0–R7. `docs/universal-hud-engineering-plan.md` remains the historical phase plan.
-3. `docs/universal-hud-concept.md`: what is being built and why; §15 is the decision log. The current scope entry is "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev". Update §15 when a decision changes.
+1. `docs/spec.md`: the product boundary (what it must do, what it does not do, threat model, milestones). Only the owner changes it; nothing it rules out is built.
+2. `docs/delegation.md`: the workflow since 2026-11-10: grill the owner, slice into vertical slices, one implementer per slice without per-slice review, one two-axis review per milestone, the owner tries it.
+3. `docs/handoff/STATE.md`: where the work stands.
+
+`docs/universal-hud-concept.md` (§15 decision log) and `docs/universal-hud-engineering-plan.md` are history; `docs/spec.md` wins on any conflict.
 
 Reviews live in `docs/reviews/`. Task scratch lives in `tmp/tasks/<WP>/` (git-ignored). Fixtures and docs use synthetic data only: the repo is public.
