@@ -15,7 +15,7 @@ The user names a role and a task in plain words; you do the rest. Never ask them
 5. Wait for the `[role@job] DONE` or `FAILED` line in your pane; do not poll. `hud_read` with `wait_ms` is the backup.
 6. Read the report (`hud_read`), check it (for code: the diff and the named checks), then decide: accept, repair, review
    or stop. DONE means settled, not accepted.
-7. `hud_close` once you accept or give up. Inspect a failed job before closing it.
+7. Do not close jobs after reading them: the on-demand watcher reaps finished jobs (failed jobs stay for two hours). Use `hud_close` only to stop a job early.
 
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role when a job finishes. A review verdict is information for you, not permission to continue.
 
@@ -51,7 +51,7 @@ Use `hud_send` with `job`, a stable `message_key` and `text` to continue the sam
 
 ### Close
 
-`hud_close` runs the local `pi-role-reap` for the job's task directory and returns its exit code and last line. Repeated close is fine. Close when resources are no longer needed; cleanup is not acceptance.
+`hud_close` runs the local `pi-role-reap` for the job's task directory and returns its exit code and last line. Repeated close is fine; use it only to stop a job early, not after reading its report.
 
 Keep request keys stable; never blindly re-create an uncertain launch.
 
