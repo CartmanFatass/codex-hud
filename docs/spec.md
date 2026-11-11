@@ -24,8 +24,11 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    A third panel tab, Project, shows the project at a glance: the control plane (roles in effect with their models,
    the convention and its source, which keys and the Jev browser are available), the working tree (branch, changes,
    which job is editing it, last commit), docs (spec milestone, STATE's items waiting for the owner, the newest
-   review) and the tickets from Matt's `to-tickets` (status, blocked-by, linked to the package lanes). Enter opens the
-   item's file in `$EDITOR` (default `vim`) in a herdr pane beside the panel.
+   review) and the tickets from Matt's `to-tickets` (status, blocked-by, linked to the package lanes). The control
+   plane lists its files: HUD role files, pi-roles role definitions (model, thinking), the clients' native custom
+   agents (`~/.claude/agents`, a project's `.claude/agents`, `~/.codex/agents`), the convention in effect and the
+   instruction files (CLAUDE.md, AGENTS.md). Enter opens the item's file in `$EDITOR` (default `vim`) in a herdr pane
+   beside the panel.
 3. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, Jev,
    herdr); `hud uninstall` removes them. Registration uses each client's official commands where they exist.
 
