@@ -109,8 +109,8 @@ function scan() {
     const tab = session?.match(/^TAB=(.+)$/m)?.[1]?.trim();
     if (tab && closedTabs.has(tab) && !['closed', 'failed'].includes(status?.state)) {
       status = { ...status, state: 'failed', exit_reason: 'tab closed', ended_at: new Date().toISOString() };
-      fs.writeFileSync(`${statusFile}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
-      fs.renameSync(`${statusFile}.tmp`, statusFile);
+      fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
+      fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
     }
     // A persisted launch without STATUS is still open until dispatch returns.
     if (!status) {

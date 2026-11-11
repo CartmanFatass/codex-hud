@@ -41,6 +41,8 @@ if (command === 'pi-dispatch') {
   const dir = args[args.indexOf('--task-dir') + 1];
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', exit_reason: null }));
   fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
+} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && fs.existsSync(join(process.env.HOME, 'fail-prompt'))) {
+  console.error('synthetic prompt timeout'); process.exit(1);
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'split') {
   if (fs.existsSync(join(process.env.HOME, 'fail-split'))) { console.error('synthetic split failed'); process.exit(1); }
   console.log(JSON.stringify({result: {pane: {pane_id: 'synthetic-right'}}}));
@@ -150,6 +152,20 @@ async function until(check, timeout = 2000) {
     await new Promise((done) => setTimeout(done, 20));
   }
 }
+
+test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }, async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'fail-prompt'), '');
+  const job = await f.call('hud_create', { role: 'imp', request_key: 'prompt-timeout', task: 'Synthetic task.' });
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+  assert.equal(receipt.dispatch_exit_code, 1);
+  assert.match(receipt.stderr_tail, /synthetic prompt timeout/);
+  assert.equal(
+    fs.readFileSync(join(job.task_dir, 'STATUS.json'), 'utf8'),
+    JSON.stringify({ state: 'working', exit_reason: null })
+  );
+  assert.equal((await f.call('hud_read', { job: job.job })).state, 'working');
+});
 
 test('dispatch failure writes a reason for the panel and is reaped', { timeout: 7000 }, async (t) => {
   const f = await fixture(t);

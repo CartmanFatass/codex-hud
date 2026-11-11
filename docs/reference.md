@@ -912,7 +912,7 @@ command = ["node", "server.js"]
 enabled = true
 ```
 
-New sessions start with the compact bottom bar (`CODEX_HUD_TREE=0`); `F12` opens the panel. The main session rate keeps space ahead of optional model/age fields at ordinary panel widths. A sample older than ten seconds, from a previous turn, or shown while idle is labelled `last`, rather than disappearing or implying a live measurement.
+New sessions start with the compact bottom bar; `F12` or `/hud` opens the panel. The main session rate keeps space ahead of optional model/age fields at ordinary panel widths. A sample older than ten seconds, from a previous turn, or shown while idle is labelled `last`, rather than disappearing or implying a live measurement.
 
 ### Diagnostics and connection checks
 

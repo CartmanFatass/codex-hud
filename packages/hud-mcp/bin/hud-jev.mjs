@@ -38,9 +38,9 @@ function status(state, reason = null) {
     exit_reason: reason,
     error: state === 'failed' ? reason : null,
   };
-  const file = join(dir, 'STATUS.json');
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
-  fs.renameSync(`${file}.tmp`, file);
+  const statusFile = join(dir, 'STATUS.json');
+  fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
 }
 let active,
   stopped = false;

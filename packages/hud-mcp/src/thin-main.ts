@@ -495,18 +495,26 @@ async function call(name: string, args: Args): Promise<unknown> {
     }
     job.dispatch_exit_code = result.exit_code;
     job.stderr_tail = result.stderr;
-    if (result.exit_code !== 0) {
-      const statusFile = join(dir, 'STATUS.json');
+    const statusFile = join(dir, 'STATUS.json');
+    if (result.exit_code !== 0 && !fs.existsSync(statusFile)) {
       fs.writeFileSync(
-        `${statusFile}.tmp`,
+        `${statusFile}.${process.pid}.tmp`,
         JSON.stringify({
           state: 'failed',
-          exit_reason: result.stderr || result.stdout || `launch exited ${result.exit_code}`,
+          harness: definition.harness,
+          ...(definition.harness === 'jev'
+            ? { provider: definition.provider === 'chatgpt' ? 'openai' : 'gemini' }
+            : {}),
+          exit_reason: (
+            result.stderr.trim() ||
+            result.stdout.trim().split(/\r?\n/, 1)[0] ||
+            `launch exited ${result.exit_code}`
+          ).slice(0, 500),
           ended_at: new Date().toISOString(),
         }) + '\n',
         { mode: 0o600 }
       );
-      fs.renameSync(`${statusFile}.tmp`, statusFile);
+      fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
     }
     save(job);
     return created(job);

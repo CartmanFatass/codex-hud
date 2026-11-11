@@ -216,7 +216,7 @@ CODEX_HUD_DENSITY=focus codex
 
 ## Development workbench
 
-New launches use the compact bottom bar. `F12` opens the right panel without taking focus from Codex; `Shift+F12` opens and focuses it; `CODEX_HUD_TREE=1` opens it at launch.
+New launches use the compact bottom bar. `F12` opens the right panel without taking focus from Codex; `Shift+F12` opens and focuses it. The panel can also be opened with `/hud`; it never opens at launch.
 
 **Outside modal pages, the panel forwards ordinary input to Codex.** Every panel command is the **prefix key, `Ctrl+\`, then one key**: `Ctrl+\` `,` opens settings, `Ctrl+\` `?` the help, `Ctrl+\` `b` pauses the brief (the full list is in [the reference](./docs/reference.md#keys), and the help's Shortcuts section). The prefix works wherever the cursor is, in Codex's pane or in the panel; `Ctrl+\` `j` `j` `j` moves three rows, since the moves repeat for half a second without the prefix. A command that needs the panel opens it first. Anything typed without the prefix goes to Codex: with the cursor in the panel (after `Shift+F12`, or a click), keys and pastes are passed to Codex's pane exactly as typed, a paste stays one bracketed paste, and the cursor moves back to Codex with them. Settings, help, activity and evidence pages capture their own navigation keys; Find also captures query text. Close the page with `Esc` or its Back button to resume normal forwarding. The mouse works as before.
 

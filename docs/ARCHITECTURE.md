@@ -162,9 +162,8 @@ Codex writes to disk.
 | Renders with | `render/header.ts` → `layout/` engine | `render/monitor.ts` `renderMonitor` |
 | Writes | `display/state/<session>.json` snapshot, notifications | the same snapshot and notifications, on its collect tick; scan cache, agent logs, model cache, recaps, settings |
 
-At any time **only one of the two is running**. The launcher starts with the compact bar. `CODEX_HUD_TREE=1` opens the
-panel instead and kills the bar pane. `codex-hud-toggle` (F12) swaps one for the
-other. The two processes never talk to each other directly. They share state
+At any time **only one of the two is running**. The launcher starts with the compact bar, never the panel.
+`codex-hud-toggle` (F12) swaps one for the other; `/hud` also opens the panel. The two processes never talk to each other directly. They share state
 through tmux user options (`@codex_hud_*`), the snapshot file whichever of them is running wrote, and files
 under `$HUD_HOME/display/`.
 
@@ -254,8 +253,7 @@ check that no test uses it.
    - Saves the bar's full command line in `@codex_hud_hud_cmd`, so the toggle
      can recreate the bar later.
    - Installs the input policy (§7).
-   - Keeps the compact bar by default. With `CODEX_HUD_TREE=1`, opens the
-     panel (`open_default_tree_pane`) and kills the bar pane.
+   - Starts with the compact bar; the panel opens explicitly with F12 or `/hud`.
 6. **Attach and cleanup.** An `EXIT` trap kills the session only if this run created it.
    In Herdr, `attach_session` marks only the outer foreground attach process
    with `HERDR_AGENT=codex` and relays the designated main pane's OSC title
