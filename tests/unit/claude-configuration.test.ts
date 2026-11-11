@@ -50,41 +50,46 @@ function fixture() {
 }
 const json = (path: string, value: unknown) => writeFileSync(path, JSON.stringify(value));
 
-test('Claude default local inputs bind user/project/local, scoped MCP and managed files with explicit missing states', () => {
-  const f = fixture();
-  try {
-    mkdirSync(join(f.request.cwd, '.claude'));
-    json(join(f.request.sourceRoot, 'settings.json'), { hooks: { Stop: [] } });
-    json(join(f.request.cwd, '.claude/settings.json'), { permissions: { deny: ['Bash(synthetic)'] } });
-    json(join(f.request.cwd, '.claude/settings.local.json'), { enableAllProjectMcpServers: true });
-    json(join(f.request.sourceRoot, '.claude.json'), {
-      mcpServers: { user: { command: '/synthetic/server' } },
-      projects: {
-        [f.request.cwd]: { mcpServers: { local: { command: '/synthetic/local' } } },
-        [f.second]: { mcpServers: { unrelated: { command: '/synthetic/other' } } },
-      },
-    });
-    json(join(f.request.cwd, '.mcp.json'), { mcpServers: { project: { command: '/synthetic/project' } } });
-    json(join(f.managedRoot, 'managed-settings.json'), { permissions: { deny: ['Bash(other)'] } });
-    mkdirSync(join(f.managedRoot, 'managed-settings.d'));
-    json(join(f.managedRoot, 'managed-settings.d/10-synthetic.json'), { allowManagedHooksOnly: true });
-    const before = f.observe();
-    assert.equal(before.reason, null);
-    assert.ok(before.observation);
-    assert.equal(before.observation.description.layers.find((layer) => layer.role === 'managed-mcp')!.state, 'missing');
-    assert.equal(
-      before.observation.description.layers.find((layer) => layer.role === 'managed-dropin:10-synthetic.json')!.state,
-      'file'
-    );
-    assert.equal(sameClaudeConfiguration(before.observation, f.observe().observation), true);
-    json(join(f.request.cwd, '.mcp.json'), { mcpServers: { project: { command: '/synthetic/changed' } } });
-    const after = f.observe().observation!;
-    assert.notDeepEqual(before.observation.description, after.description);
-    assert.equal(sameClaudeConfiguration(before.observation, after), false);
-  } finally {
-    f.close();
-  }
-});
+for (const version of ['2.1.305', '2.1.322'])
+  test(`Claude ${version} default local inputs bind user/project/local, scoped MCP and managed files with explicit missing states`, () => {
+    const f = fixture();
+    try {
+      f.request.version = version;
+      mkdirSync(join(f.request.cwd, '.claude'));
+      json(join(f.request.sourceRoot, 'settings.json'), { hooks: { Stop: [] } });
+      json(join(f.request.cwd, '.claude/settings.json'), { permissions: { deny: ['Bash(synthetic)'] } });
+      json(join(f.request.cwd, '.claude/settings.local.json'), { enableAllProjectMcpServers: true });
+      json(join(f.request.sourceRoot, '.claude.json'), {
+        mcpServers: { user: { command: '/synthetic/server' } },
+        projects: {
+          [f.request.cwd]: { mcpServers: { local: { command: '/synthetic/local' } } },
+          [f.second]: { mcpServers: { unrelated: { command: '/synthetic/other' } } },
+        },
+      });
+      json(join(f.request.cwd, '.mcp.json'), { mcpServers: { project: { command: '/synthetic/project' } } });
+      json(join(f.managedRoot, 'managed-settings.json'), { permissions: { deny: ['Bash(other)'] } });
+      mkdirSync(join(f.managedRoot, 'managed-settings.d'));
+      json(join(f.managedRoot, 'managed-settings.d/10-synthetic.json'), { allowManagedHooksOnly: true });
+      const before = f.observe();
+      assert.equal(before.reason, null);
+      assert.ok(before.observation);
+      assert.equal(
+        before.observation.description.layers.find((layer) => layer.role === 'managed-mcp')!.state,
+        'missing'
+      );
+      assert.equal(
+        before.observation.description.layers.find((layer) => layer.role === 'managed-dropin:10-synthetic.json')!.state,
+        'file'
+      );
+      assert.equal(sameClaudeConfiguration(before.observation, f.observe().observation), true);
+      json(join(f.request.cwd, '.mcp.json'), { mcpServers: { project: { command: '/synthetic/changed' } } });
+      const after = f.observe().observation!;
+      assert.notDeepEqual(before.observation.description, after.description);
+      assert.equal(sameClaudeConfiguration(before.observation, after), false);
+    } finally {
+      f.close();
+    }
+  });
 
 test('Claude global/local capability projection ignores only known statistics while receipts retain the complete file', () => {
   const f = fixture();
@@ -203,7 +208,6 @@ test('Claude configuration fails closed for remote/WSL, uncovered selectors, ext
   for (const scenario of [
     'remote',
     'wsl',
-    'version',
     'selector',
     'worktree',
     'plugin',
@@ -216,7 +220,6 @@ test('Claude configuration fails closed for remote/WSL, uncovered selectors, ext
     try {
       if (scenario === 'remote') delete f.request.env.CLAUDE_CODE_USE_BEDROCK;
       if (scenario === 'wsl') f.request.kernel = 'microsoft-standard-WSL2';
-      if (scenario === 'version') f.request.version = '2.1.306';
       if (scenario === 'selector') f.request.argv = [process.execPath, '--setting-sources', 'user'];
       if (scenario === 'worktree') {
         rmSync(join(f.request.cwd, '.git'), { recursive: true, force: true });
@@ -399,7 +402,7 @@ test('Claude production rechecks actual automatic config and frozen environment 
           manifest: () => manifest,
           // Node is a synthetic stand-in; these are filesystem observer tests, not
           // native Claude/version or product evidence.
-          configuration: (request) => f.observe({ ...request, version: '2.1.305' }),
+          configuration: (request) => f.observe(request),
           observe: async () => {
             if (++calls === 2) {
               const path = join(f.request.sourceRoot, 'settings.json');
@@ -478,7 +481,7 @@ test('Claude production bare launch refuses before manifest or foreground dispat
             observe: async () => structuredClone(runtime),
             configuration: (request) => {
               observations++;
-              const result = f.observe({ ...request, version: '2.1.305' });
+              const result = f.observe(request);
               assert.equal(result.reason, 'configuration_cli_selector_uncovered');
               return result;
             },

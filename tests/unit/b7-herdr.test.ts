@@ -16,6 +16,7 @@ class Transport implements HerdrTransport {
   commands: string[][] = [];
   methods: string[] = [];
   version = 'herdr 0.9.5';
+  ping = { version: '0.9.5', protocol: 22 };
   schema = structuredClone(schema);
   server: string | null = 'synthetic-server-instance';
   failed = false;
@@ -43,7 +44,7 @@ class Transport implements HerdrTransport {
   async request(method: string) {
     this.methods.push(method);
     if (this.failed) throw new Error('server gone');
-    if (method === 'ping') return { version: '0.9.5', protocol: 22 };
+    if (method === 'ping') return this.ping;
     if (method === 'pane.get') return { pane: this.pane };
     if (method === 'pane.process_info')
       return { process_info: { pane_id: 'w1:p2', shell_pid: 100, foreground_process_group_id: 100 } };
@@ -91,16 +92,34 @@ const options = {
   managed: { runId: 'synthetic-run', bindingGeneration: 9 },
 };
 
-test('B7 schema mismatch, missing CLI, disabled integration degrade without mutations', async () => {
-  for (const mode of ['schema', 'version', 'missing', 'server'] as const) {
+test('B7 compatible versions pass; schema mismatch, missing CLI, disabled integration degrade without mutations', async () => {
+  for (const mode of [
+    'schema',
+    'schema-version',
+    'ping-protocol',
+    'compatible-version',
+    'missing',
+    'server',
+  ] as const) {
     const f = setup();
     if (mode === 'schema') f.transport.schema.protocol++;
-    if (mode === 'version') f.transport.version = 'herdr 0.9.6';
+    if (mode === 'schema-version') f.transport.schema.schema_version++;
+    if (mode === 'ping-protocol') f.transport.ping.protocol++;
+    if (mode === 'compatible-version') {
+      f.transport.version = 'herdr 0.9.6';
+      f.transport.ping.version = '0.9.6';
+    }
     if (mode === 'missing') f.transport.failed = true;
     if (mode === 'server') f.transport.server = null;
     const result = await f.client.preflight();
-    assert.equal(result.ready, false);
-    assert.equal(result.fallbackAllowed, true);
+    const ready = mode === 'compatible-version';
+    assert.equal(result.ready, ready, mode);
+    assert.equal(result.fallbackAllowed, !ready, mode);
+    if (ready) {
+      assert.equal(result.server, f.transport.server);
+      assert.deepEqual(f.diagnostics, []);
+      continue;
+    }
     assert.ok(f.diagnostics.length);
     await assert.rejects(f.host.openSurface('tab', options), (error: any) => error.fallbackAllowed === true);
     assert.deepEqual(await f.registry.list(), []);

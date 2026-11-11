@@ -190,8 +190,9 @@ function supportedMcp(value: unknown) {
   }
 }
 
-// This is a finite projection for the already-supported 2.1.305 file-backed
-// lane. Do not infer that an arbitrary new field is statistics from its name.
+// This is a finite projection for the recognised file-backed lane, independent
+// of the vendor version. Do not infer that an arbitrary new field is statistics
+// from its name.
 const globalSelectionKeys = new Set(['mcpServers']);
 const projectSelectionKeys = new Set([
   'mcpServers',
@@ -247,8 +248,8 @@ function trustedGitExecutable(): string {
 /** Read default local settings/MCP layers only. This does not disable any source.
  * The finite complete lane requires an already-selected Bedrock provider (no
  * remote policy/connectors), Linux without WSL policy, and no extra discovery.
- * Every other lane returns an explicit unknown result, including native versions
- * other than the currently targeted 2.1.305.
+ * Every unrecognised configuration lane returns an explicit unknown result;
+ * the native version alone does not determine coverage.
  */
 export function observeClaudeConfiguration(
   request: ClaudeConfigurationRequest,
@@ -256,7 +257,6 @@ export function observeClaudeConfiguration(
   trusted: { managedRoot?: string; gitExecutable?: () => string } = {}
 ): ClaudeConfigurationResult {
   try {
-    if (request.version !== '2.1.305') throw new Error('configuration_version_uncovered');
     if (/microsoft|wsl/i.test(request.kernel)) throw new Error('configuration_windows_policy_unobserved');
     if (
       request.env.CLAUDE_CODE_USE_BEDROCK !== '1' ||
