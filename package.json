@@ -20,7 +20,8 @@
     "test": "npm run build && npm run build:test && npm run build:hud-mcp && npm run test:unit && npm run test:mjs",
     "test:core": "bash tests/run-core.sh",
     "test:herdr": "bash tests/herdr/run.sh",
-    "test:unit": "node --test dist-test/tests/unit/*.test.js",
+    "test:unit": "node tests/run-default.mjs",
+    "test:perf": "npm run build && npm run build:test && npm run build:hud-mcp && node tests/run-perf.mjs",
     "test:mjs": "node --test tests/unit/*.mjs",
     "test:integration": "bash tests/run-integration.sh",
     "test:visual": "npm run build:test && node --test dist-test/tests/unit/visual-baselines.test.js",
@@ -30,7 +31,7 @@
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write src tests",
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check src tests",
     "build:hud-mcp": "node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
-    "test:hud-mcp": "npm run build:hud-mcp && node --test packages/hud-mcp/dist/tests/hud-mcp/*.test.js"
+    "test:hud-mcp": "npm run build:hud-mcp && node tests/run-default.mjs hud-mcp"
   },
   "keywords": [
     "codex",

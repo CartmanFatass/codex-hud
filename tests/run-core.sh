@@ -33,11 +33,13 @@ while IFS= read -r file; do
   [[ -n "$file" ]] && test_files+=("$file")
 done < <(
   {
-    printf '%s\n' dist-test/tests/unit/contracts.test.js
-    compgen -G 'dist-test/tests/unit/core-*.test.js' || true
-    compgen -G 'dist-test/tests/unit/ledger-*.test.js' || true
-    compgen -G 'dist-test/tests/unit/codex-facade.test.js' || true
-  } | sort -u
+    printf '%s\n' tests/unit/contracts.test.ts
+    compgen -G 'tests/unit/core-*.test.ts' || true
+    compgen -G 'tests/unit/ledger-*.test.ts' || true
+    compgen -G 'tests/unit/codex-facade.test.ts' || true
+  } | sort -u | while IFS= read -r source; do
+    printf '%s\n' "dist-test/${source%.ts}.js"
+  done
 )
 
 if (( ${#test_files[@]} == 0 )); then

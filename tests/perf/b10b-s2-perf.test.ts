@@ -16,7 +16,7 @@
  * n = 1000 samples after 200 warm-up, nearest-rank percentiles. Strict bounds when `B10B_PERF=1`; otherwise five
  * times wider so a loaded host does not flake. Numbers are printed either way:
  *
- *   B10B_PERF=1 node --test dist-test/tests/unit/b10b-s2-perf.test.js
+ *   B10B_PERF=1 node --test dist-test/tests/perf/b10b-s2-perf.test.js
  */
 
 import test from 'node:test';

@@ -13,7 +13,7 @@ import type { PreparedIntent } from '../../src/ledger/types.js';
 const skip = !ledgerReadRuntimeSupported()
   ? `Ledger requires Node 22.x >=22.13 or >=24 (23 unsupported); found ${process.versions.node}`
   : process.env.HUD_LEDGER_BENCHMARK !== '1'
-    ? 'Run HUD_LEDGER_BENCHMARK=1 node --test dist-test/tests/unit/ledger-perf.test.js for the isolated 10000-run benchmark'
+    ? 'Run HUD_LEDGER_BENCHMARK=1 node --test dist-test/tests/perf/ledger-perf.test.js for the isolated 10000-run benchmark'
     : false;
 function distribution(samples: number[]): object {
   const sorted = [...samples].sort((a, b) => a - b);

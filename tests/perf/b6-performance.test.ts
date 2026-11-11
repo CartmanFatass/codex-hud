@@ -8,7 +8,7 @@ test(
     skip: !ledgerRuntimeSupported()
       ? 'B6 requires Node 22.x >=22.13 or >=24'
       : process.env.B6_PERF !== '1'
-        ? 'Run B6_PERF=1 node --test dist-test/tests/unit/b6-performance.test.js for isolated acceptance measurement'
+        ? 'Run B6_PERF=1 node --test dist-test/tests/perf/b6-performance.test.js for isolated acceptance measurement'
         : false,
   },
   async () => {

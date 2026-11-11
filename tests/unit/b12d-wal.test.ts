@@ -1,124 +1,13 @@
 import { ProcessClient } from '../int/process-client.js';
 import test from 'node:test';
-import { performance } from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { openObservationStore } from '../../src/core/observation-store.js';
-import { checkpointBoundary, checkpointFormat, witnessPreparedObservationBoundary } from '../../src/core/checkpoint.js';
-import { initialParserState, projectFreshness } from '../../src/core/observation.js';
+import { checkpointBoundary, checkpointFormat } from '../../src/core/checkpoint.js';
 import type { SessionRef } from '../../src/core/types/identity.js';
-import type { ObservationCommit } from '../../src/core/types/observation.js';
-import type { PreparedCheckpoint, ObservationRecovery } from '../../src/core/types/checkpoint.js';
-const [major, minor] = process.versions.node.split('.').map(Number);
-const supported = (major === 22 && minor >= 13) || major >= 24;
-const skip = supported ? false : 'observation SQLite requires Node 22.x >=22.13 or >=24';
-const NOW = 1_700_000_000_000;
-const REF: SessionRef = { harness: 'codex', sourceId: 'e'.repeat(64), sessionId: 'synthetic-session', threadId: null };
+import type { ObservationRecovery } from '../../src/core/types/checkpoint.js';
 
-function commit(seq = 1, generation = 1): ObservationCommit {
-  const stamp = {
-    ref: REF,
-    sourceGeneration: 1,
-    seqDomain: 'synthetic-observation',
-    commitSeq: seq,
-    inputLedgerSeq: null,
-  };
-  return {
-    ref: REF,
-    sourceGeneration: 1,
-    leaseGeneration: generation,
-    seqDomain: stamp.seqDomain,
-    commitSeq: seq,
-    observationStamp: stamp,
-    checkpoint: {
-      schemaVersion: 1,
-      readerVersion: 'synthetic-reader-1',
-      ref: REF,
-      fileId: { dev: 1, inode: 2 },
-      offset: seq * 10,
-      sourceGeneration: 1,
-      parserState: initialParserState(),
-    },
-    summary: {
-      nodeIdentity: { kind: 'session', ref: REF },
-      statusProjection: {
-        activity: 'working',
-        pendingReason: 'none',
-        lastTurnOutcome: 'none',
-        liveness: 'alive',
-        freshness: projectFreshness([], [], NOW),
-        stateKey: 'working',
-        stateSince: NOW,
-        stateSinceBasis: 'event',
-        isRunTerminal: null,
-        asOfSeq: null,
-        observationStamp: stamp,
-        asOf: NOW,
-        observedAt: NOW,
-        lastEvidenceAt: NOW,
-      },
-      conflict: null,
-      spent: {
-        tokens: { value: { input: seq, output: 0 }, quality: 'reported', source: 'synthetic', asOf: NOW },
-        costUsd: { value: null, quality: 'unknown', source: 'synthetic', asOf: NOW },
-      },
-      workspace: null,
-      coverage: { state: 'complete', skipped: {}, gaps: [], loaded: true },
-      loaded: true,
-      depth: 0,
-      evidenceStamp: `synthetic-${seq}`,
-    },
-    continuity: {
-      nodeIdentity: { kind: 'session', ref: REF },
-      ruleVersion: 'synthetic-rule-1',
-      sourceGeneration: 1,
-      episodeAnchor: 'synthetic-turn',
-      stateKey: 'working',
-      stateSince: NOW,
-      stateSinceBasis: 'event',
-    },
-    notices: [
-      { seq, seqDomain: stamp.seqDomain, created_at: NOW, ref: REF, kind: 'pending', inputStamp: `synthetic-${seq}` },
-    ],
-  };
-}
 const BUDGET = { maxBytes: 256 * 1024, maxRecords: 2000, budgetMs: 20 };
-function preparedCandidate(c: ObservationCommit, checkpoint: PreparedCheckpoint) {
-  const { checkpoint: _checkpoint, ...projection } = c;
-  return {
-    commit: projection,
-    checkpoint,
-    previousCommitSeq: c.commitSeq - 1,
-    boundary: witnessPreparedObservationBoundary(checkpoint, c.summary, checkpointBoundary(c.checkpoint)),
-  };
-}
-
-async function fixture(t: import('node:test').TestContext) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'b12d-wal-'));
-  assert.notEqual(fs.statfsSync(root).type, 0x01021994, 'native disk required');
-  const stores: Awaited<ReturnType<typeof openObservationStore>>[] = [];
-  let now = NOW;
-  const open = async (readOnly = false) => {
-    const store = await openObservationStore({ hudHome: root, sourceId: REF.sourceId, readOnly, now: () => now });
-    stores.push(store);
-    return store;
-  };
-  t.after(() => {
-    for (const store of stores) store.close();
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-  return { root, open, advance: (value: number) => (now = value) };
-}
-function prepare(store: Awaited<ReturnType<typeof openObservationStore>>, c: ObservationCommit) {
-  return store.prepareCheckpoint({
-    checkpoint: c.checkpoint,
-    boundary: checkpointBoundary(c.checkpoint),
-    format: checkpointFormat(c.checkpoint),
-    recoveryReferences: [],
-  });
-}
 
 test(
   'B12D WAL FULL opens once, keeps busy limit and private db/wal/shm; read-only projection does not write',
@@ -218,77 +107,6 @@ test(
     const final = commit(3, newLease.generation);
     takeover.publishPrepared(preparedCandidate(final, prepare(takeover, final)), newLease);
     assert.equal(reader.readProjection(REF)!.commitSeq, 3);
-  }
-);
-
-test(
-  'B12D automatic checkpoint bounds declared short-reader load, long snapshot pins WAL, release permits reclamation',
-  { skip, timeout: 120_000 },
-  async (t) => {
-    const f = await fixture(t);
-    const store = await f.open();
-    const lease = store.acquire(REF, 'writer');
-    const c = commit();
-    const token = prepare(store, c);
-    store.publishPrepared(preparedCandidate(c, token), lease);
-    const { DatabaseSync } = await import('node:sqlite');
-    const reader = new DatabaseSync(store.databasePath, { readOnly: true });
-    const bytes = () => fs.statSync(store.databasePath + '-wal').size;
-    let seq = 1;
-    let maxShort = bytes();
-    const publish = () => {
-      const next = commit(++seq);
-      next.checkpoint = c.checkpoint;
-      return store.publishPrepared(preparedCandidate(next, token), lease);
-    };
-    try {
-      for (let n = 0; n < 1200; n++) {
-        publish();
-        reader.prepare('SELECT commit_seq FROM observation_current').get();
-        maxShort = Math.max(maxShort, bytes());
-      }
-      assert.ok(maxShort < 8 * 1024 * 1024, `short reader WAL ${maxShort}`);
-      reader.exec('BEGIN');
-      const pinned = reader.prepare('SELECT commit_seq FROM observation_current').get()!.commit_seq;
-      const startBytes = bytes();
-      const start = performance.now();
-      for (let n = 0; n < 1200; n++) publish();
-      const pinnedBytes = bytes();
-      assert.ok(pinnedBytes > startBytes);
-      assert.equal(reader.prepare('SELECT commit_seq FROM observation_current').get()!.commit_seq, pinned);
-      const maintenance = new DatabaseSync(store.databasePath);
-      maintenance.exec('PRAGMA busy_timeout=10; PRAGMA synchronous=FULL');
-      try {
-        let before = performance.now();
-        const blocked = maintenance.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()!;
-        const blockedMs = performance.now() - before;
-        assert.equal(blocked.busy, 1);
-        assert.ok(Number(blocked.log) > Number(blocked.checkpointed));
-        assert.equal(bytes(), pinnedBytes);
-        reader.exec('COMMIT');
-        before = performance.now();
-        const reclaimed = maintenance.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()!;
-        const reclaimMs = performance.now() - before;
-        assert.equal(reclaimed.busy, 0);
-        assert.equal(bytes(), 0);
-        t.diagnostic(
-          JSON.stringify({
-            shortPublishes: 1200,
-            maxShortWalBytes: maxShort,
-            longSnapshotPublishes: 1200,
-            longSnapshotMs: performance.now() - start,
-            pinnedWalBytes: pinnedBytes,
-            blockedCheckpointMs: blockedMs,
-            reclaimMs,
-            finalWalBytes: bytes(),
-          })
-        );
-      } finally {
-        maintenance.close();
-      }
-    } finally {
-      reader.close();
-    }
   }
 );
 
@@ -733,6 +551,49 @@ test(
           /observation_rebuild_required/
         );
       }
+    }
+  }
+);
+import { skip, NOW, REF, commit, preparedCandidate, fixture, prepare } from '../fixtures/b12d-wal-perf.js';
+
+test(
+  'semantic residue: automatic checkpoint reuses WAL; a short pinned snapshot blocks reclamation until release',
+  { skip },
+  async (t) => {
+    const f = await fixture(t),
+      store = await f.open();
+    const lease = store.acquire(REF, 'writer');
+    const c = commit(),
+      token = prepare(store, c);
+    let seq = 0;
+    const publish = () => {
+      const next = commit(++seq);
+      next.checkpoint = c.checkpoint;
+      // Few commits cross the real 1000-page automatic checkpoint boundary.
+      next.summary.evidenceStamp = `synthetic-${seq}`.repeat(32768);
+      store.publishPrepared(preparedCandidate(next, token), lease);
+    };
+    for (let n = 0; n < 24; n++) publish();
+    const { DatabaseSync } = await import('node:sqlite');
+    const reader = new DatabaseSync(store.databasePath, { readOnly: true });
+    const maintenance = new DatabaseSync(store.databasePath);
+    const bytes = () => fs.statSync(store.databasePath + '-wal').size;
+    try {
+      assert.ok(bytes() < 8 * 1024 * 1024, 'automatic checkpoint bounds the short-reader WAL');
+      reader.exec('BEGIN');
+      const pinned = reader.prepare('SELECT commit_seq FROM observation_current').get()!.commit_seq;
+      publish();
+      publish();
+      assert.equal(reader.prepare('SELECT commit_seq FROM observation_current').get()!.commit_seq, pinned);
+      maintenance.exec('PRAGMA busy_timeout=10');
+      assert.equal(maintenance.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()!.busy, 1);
+      assert.ok(bytes() > 0);
+      reader.exec('COMMIT');
+      assert.equal(maintenance.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get()!.busy, 0);
+      assert.equal(bytes(), 0);
+    } finally {
+      reader.close();
+      maintenance.close();
     }
   }
 );

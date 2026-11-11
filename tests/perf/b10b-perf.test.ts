@@ -8,7 +8,7 @@
  * times wider, so a loaded CI host does not flake while a real regression
  * (an order of magnitude) still fails. Numbers are printed either way:
  *
- *   B10B_PERF=1 node --test dist-test/tests/unit/b10b-perf.test.js
+ *   B10B_PERF=1 node --test dist-test/tests/perf/b10b-perf.test.js
  */
 
 import test from 'node:test';

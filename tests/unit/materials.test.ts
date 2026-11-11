@@ -2,35 +2,19 @@ import { DerivedMaterialStore } from '../../src/core/materials/derived.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { performance } from 'node:perf_hooks';
 import {
-  buildMaterials,
   fileAuthority,
   fingerprint,
   isEnvelope,
   revalidateMaterials,
   type MaterialAuthority,
-  type MaterialEnvelope,
   type MaterialSubject,
   type OutboundPurpose,
 } from '../../src/core/materials/index.js';
-import { materialRequest, legacyRequest, purposeFor } from '../../src/core/materials/request.js';
+import { materialRequest } from '../../src/core/materials/request.js';
 import { resolveRecipient } from '../../src/core/materials/recipient.js';
 import { SmallModel, writePrivateFile, type ModelRequest } from '../../src/collectors/small-model.js';
-
-const a = fingerprint('synthetic-codex');
-const b = fingerprint('synthetic-claude');
-const api = { base: 'https://synthetic.invalid/v1', model: 'synthetic-model', sourceCredential: null };
-const route = { backend: 'api' as const, endpoint: `${api.base}/chat/completions`, model: api.model };
-const target = resolveRecipient(route, 'synthetic-account')!;
-const ref = (sourceId = a, sessionId = 'synthetic-session') => ({
-  harness: sourceId === b ? ('claude' as const) : ('codex' as const),
-  sourceId,
-  sessionId,
-  threadId: null,
-});
 const reply = (text = 'Synthetic answer') =>
   new Response(JSON.stringify({ choices: [{ message: { content: text } }] }));
 const tick = () => new Promise<void>((done) => setImmediate(done));
@@ -48,93 +32,6 @@ const purposes: OutboundPurpose[] = [
   'routing',
   'jev_task',
 ];
-const field: Record<OutboundPurpose, string> = {
-  brief: 'report',
-  recap: 'message',
-  progress: 'report',
-  digest: 'result',
-  label: 'task',
-  title: 'message',
-  cause: 'error',
-  changes: 'diff',
-  approval: 'command',
-  probe: 'probe',
-  routing: 'signal',
-  jev_task: 'message',
-};
-function subject(
-  sourceId = a,
-  text = 'Authorized public observation',
-  purpose: OutboundPurpose = 'brief'
-): MaterialSubject {
-  return {
-    ref: ref(sourceId),
-    origin: 'native',
-    field: field[purpose],
-    kind: 'public_text',
-    read: () => text,
-    recordFingerprint: fingerprint(['synthetic-record', sourceId, purpose]),
-  };
-}
-function setup() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'b17-materials-'));
-  let allowedOrigins = new Set(['native']);
-  const scopes = new Map([
-    [a, 1],
-    [b, 1],
-  ]);
-  const authority = fileAuthority(home, (sourceId) =>
-    scopes.has(sourceId)
-      ? {
-          revision: scopes.get(sourceId)!,
-          local: true,
-          allows: (p) => p.ref.sourceId === sourceId && allowedOrigins.has(p.origin),
-        }
-      : null
-  );
-  const grant = (
-    sourceId = a,
-    purpose: OutboundPurpose = 'brief',
-    decision = 'allow',
-    revision = 1,
-    recipientId = target.recipientId
-  ) => {
-    writePrivateFile(
-      path.join(home, 'sources', sourceId, 'outbound.json'),
-      JSON.stringify({
-        schemaVersion: 1,
-        sourceId,
-        revision,
-        grants: [{ purpose, recipientId, decision, grantedAt: 0 }],
-      })
-    );
-  };
-  return {
-    home,
-    authority,
-    grant,
-    scopes,
-    origins: (origins: string[]) => {
-      allowedOrigins = new Set(origins);
-    },
-    close: () => fs.rmSync(home, { recursive: true, force: true }),
-  };
-}
-function build(
-  authority: MaterialAuthority,
-  subjects: MaterialSubject[],
-  purpose: OutboundPurpose = 'brief',
-  allowPartial = false
-) {
-  return buildMaterials({
-    subjects,
-    purpose,
-    authority,
-    resolvedRecipient: target,
-    limits: { maxBytes: 65536 },
-    allowPartial,
-  });
-}
 function plan(
   authority: MaterialAuthority,
   subjects: MaterialSubject[],
@@ -592,26 +489,6 @@ test('T-07-7 scope revision and source changes invalidate a previously built env
   }
 });
 
-test('material building cost: pure bounded public fragments, no collection or paint hook', () => {
-  const fixture = setup();
-  fixture.grant();
-  try {
-    const inputs = Array.from({ length: 20 }, () => subject());
-    const measurements: number[] = [];
-    for (let i = 0; i < 100; i++) {
-      const start = performance.now();
-      assert.ok(isEnvelope(build(fixture.authority, inputs)));
-      measurements.push(performance.now() - start);
-    }
-    measurements.sort((x, y) => x - y);
-    console.log(
-      `B17 material file-authority n=100 fragments=20 p50=${measurements[50].toFixed(3)}ms p95=${measurements[95].toFixed(3)}ms p99=${measurements[99].toFixed(3)}ms max=${measurements.at(-1)!.toFixed(3)}ms; new HUD-tick I/O=0`
-    );
-  } finally {
-    fixture.close();
-  }
-});
-
 test('T-07-6 persistent notes: source union survives restart, translation and revocation without entering legacy stores', () => {
   const fixture = setup();
   fixture.grant();
@@ -675,3 +552,4 @@ test('T-07-17 preservation: more than 200 general entries never prune or rewrite
     fixture.close();
   }
 });
+import { a, b, api, route, target, ref, field, subject, setup, build } from '../fixtures/materials-perf.js';

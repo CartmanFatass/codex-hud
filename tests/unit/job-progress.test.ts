@@ -1,12 +1,9 @@
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { r5Fixture, ROOT_R5 } from '../fixtures/r5-jobs.js';
 import { useDisplayFixture } from '../fixtures/display.js';
 import { p2Fixture, p2Native } from '../fixtures/work-card-p2.js';
-import { PanelJobPipeline } from '../../src/tree-page.js';
-import { SmallModel } from '../../src/collectors/small-model.js';
 import { JobProgress, parseJobProgress, JOB_PROGRESS_LIMITS } from '../../src/collectors/job-progress.js';
 import {
   JobMaterialAuthority,
@@ -26,153 +23,6 @@ import { setLanguage } from '../../src/render/i18n.js';
 import { SETTING_ROWS, renderSettingsPage, handleSettingsInput } from '../../src/render/settings-page.js';
 import { defaultSettings, saveSettings } from '../../src/settings.js';
 useDisplayFixture();
-const tick = () => new Promise<void>((r) => setImmediate(r));
-const response = (text: string) => new Response(JSON.stringify({ choices: [{ message: { content: text } }] }));
-const defaultReply = JSON.stringify({ line: 'Repairing the public parser boundary.', attention: false, basis: ['e1'] });
-async function fixture(t: TestContext, count = 1, production = false) {
-  const f = r5Fixture(t);
-  const jobs = Array.from({ length: count }, (_, n) => {
-    const a = f.association(n + 1, { created_at: '2026-11-09T00:00:00Z' });
-    const directory = path.join(f.home, 'jobs', a.job);
-    const session = path.join(directory, 'sessions', 'primary.jsonl');
-    f.dispatch(a, 'working', { session_file: session });
-    f.put(
-      session,
-      JSON.stringify({ type: 'session', version: 3, id: 'synthetic-primary', cwd: '/synthetic/work' }) +
-        '\n' +
-        JSON.stringify({
-          type: 'message',
-          id: 'm1',
-          parentId: null,
-          message: {
-            role: 'assistant',
-            content: [
-              { type: 'text', text: 'Public parser boundary.' },
-              { type: 'thinking', thinking: 'PRIVATE_THINKING' },
-              { type: 'toolCall', arguments: 'PRIVATE_TOOL' },
-            ],
-          },
-        }) +
-        '\n'
-    );
-    f.put(
-      path.join(directory, 'brief.md'),
-      '# Synthetic\n\n## Goal\nRepair the public parser.\n\n## Owned files\n- `src/parser.ts`\n\n## Test plan\n### Parser boundary\n'
-    );
-    f.put(path.join(directory, 'design.md'), 'PRIVATE_DESIGN');
-    f.put(path.join(directory, 'qa', 'q1.answer.md'), 'PRIVATE_ANSWER');
-    return { a, directory, session };
-  });
-  const pipeline = new PanelJobPipeline(f.home, ROOT_R5, { live: false, now: f.now });
-  t.after(() => pipeline.dispose());
-  for (let n = 0; n < 15; n++) await pipeline.refresh();
-  let tree = pipeline.compose(f.emptyTree(), null, f.now()).tree;
-  let board = pipeline.workboard(tree);
-  assert.equal(board.workers.length, count);
-  const state = { ...initialMonitorState(), mainTab: 'work' as const };
-  const draw = (width = 56, height = 100, notes = progress.state()) =>
-    renderMonitor({ tree, workboard: board, jobProgress: notes, state, width, height, nowMs: f.now() });
-  let calls = 0;
-  let payloads: string[] = [];
-  let reply = defaultReply;
-  let blocked = false;
-  const releases: (() => void)[] = [];
-  const env = { HOME: process.env.HOME, HUD_HOME: f.home, MISTRAL_API_KEY: 'synthetic-key-never-persist' };
-  const modelDir = path.join(f.home, 'model');
-  const makeModel = () => {
-    const m = new SmallModel({
-      dir: modelDir,
-      ...(production ? {} : { account: 'synthetic-account' }),
-      env,
-      fetch: async (_url, init) => {
-        calls++;
-        payloads.push(String(init?.body));
-        if (blocked) await new Promise<void>((resolve) => releases.push(resolve));
-        return response(reply);
-      },
-    });
-    m.configure({ backend: 'api', api: { base: 'https://api.mistral.ai/v1', model: 'synthetic-model' } });
-    return m;
-  };
-  let model = makeModel();
-  let authority = new JobMaterialAuthority(f.home);
-  const store = new DerivedMaterialStore(path.join(f.home, 'derived'));
-  let progress = new JobProgress(model, authority, store);
-  t.after(() => {
-    progress.dispose();
-    model.cancelAll();
-    for (const release of releases) release();
-  });
-  const grant = () => assert.equal(progress.consent('allow', f.now()), true);
-  const poll = (
-    budget: JobReadBudget = jobReadBudget(),
-    language: 'en' | 'zh' = 'en',
-    on = true,
-    targets = new Set(board.workers.map((w) => w.id)),
-    retainTargets?: ReadonlySet<string>
-  ) => progress.update({ board, targets, retainTargets, budget, language, now: f.now(), on });
-  const settle = async () => {
-    for (let i = 0; i < 40; i++) {
-      await tick();
-      if (!progress.outstanding) return;
-    }
-    assert.fail('requests did not settle');
-  };
-  const refresh = async () => {
-    for (let i = 0; i < 12; i++) await pipeline.refresh();
-    tree = pipeline.compose(f.emptyTree(), null, f.now()).tree;
-    board = pipeline.workboard(tree);
-  };
-  return {
-    f,
-    jobs,
-    pipeline,
-    state,
-    draw,
-    poll,
-    settle,
-    grant,
-    refresh,
-    env,
-    payloads,
-    modelDir,
-    get board() {
-      return board;
-    },
-    get tree() {
-      return tree;
-    },
-    get progress() {
-      return progress;
-    },
-    get model() {
-      return model;
-    },
-    get authority() {
-      return authority;
-    },
-    get calls() {
-      return calls;
-    },
-    reply: (text: string) => {
-      reply = text;
-    },
-    block: () => {
-      blocked = true;
-    },
-    release: () => {
-      blocked = false;
-      for (const release of releases.splice(0)) release();
-    },
-    restart: () => {
-      progress.dispose();
-      model.cancelAll();
-      model = makeModel();
-      authority = new JobMaterialAuthority(f.home);
-      progress = new JobProgress(model, authority, store);
-    },
-  };
-}
 
 test('P3b production-shaped end to end: real collection, allowlisted material, model, persisted provenance, Work and Inspector', async (t) => {
   const f = await fixture(t, 1, true);
@@ -833,8 +683,9 @@ test('P3b authorized job annotation, including empty, wins over a current exact-
     if (line) assert.ok(text.includes(line));
   }
 });
+import { tick, fixture } from '../fixtures/job-progress-perf.js';
 
-test('P3b unchanged render performance: 3 runs, exact widths and default <=3 rows', async (t) => {
+test('semantic residue: annotated job cards keep exact EN/ZH cells and at most three rows', async (t) => {
   const f = await fixture(t);
   f.grant();
   f.poll();
@@ -842,26 +693,10 @@ test('P3b unchanged render performance: 3 runs, exact widths and default <=3 row
   for (const lang of ['en', 'zh'] as const) {
     setLanguage(lang);
     for (const width of [44, 56, 110]) {
-      const frame = f.draw(width);
-      for (const line of frame.lines) assert.equal(visualLength(line), width);
+      for (const line of f.draw(width).lines) assert.equal(visualLength(line), width);
       const worker = f.board.workers[0];
       const note = f.progress.state().get(worker.id)?.note;
       assert.ok(renderWorkCard(projectWorkCard(worker, f.f.now()), f.state, width, note?.line).length <= 3);
     }
-  }
-  for (let run = 0; run < 3; run++) {
-    for (let i = 0; i < 100; i++) f.draw(110, 30);
-    const samples: number[] = [];
-    for (let i = 0; i < 300; i++) {
-      const start = performance.now();
-      f.draw(110, 30);
-      samples.push(performance.now() - start);
-    }
-    samples.sort((a, b) => a - b);
-    console.log(
-      'P3B unchanged render',
-      JSON.stringify({ run, p50: samples[149], p95: samples[284], p99: samples[296], max: samples[299] })
-    );
-    assert.ok(samples[284] <= 2, `unchanged p95 ${samples[284]}ms`);
   }
 });
