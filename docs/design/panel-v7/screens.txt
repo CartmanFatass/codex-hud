@@ -1,0 +1,725 @@
+==== home-busy-en ====
+ Home 1  Work 7  Project 4                              
+                                                        
+? imp · PANEL-THIN                            asking 4m 
+┃ Where should the model chip go on a card whose phase  
+┃ strip is long?                                        
+┃ blocked the card layout cannot be finished until the  
+┃ model chip has a place at 56 columns                  
+┃ a on its own line, one row more per card              
+┃ b beside the strip; its oldest steps drop             
+┃ default b, beside the strip                           
+┃ qa/q4.md                           a b answer  ⏎ read 
+                                                        
+PANEL-THIN  review r1 · fixing         ●━━━━●━━◉─○────○ 
+? imp  thin job cards in the panel            asking 4m 
+◷ glm-reviewer  review card renderer        stalled 14m 
+┃ no output for 14m; last: comparing card widths        
+● frontend-implementer  width flag                   6m 
+┃ adding --width to hud panel and its test, then        
+┃ reading the default from the settings file            
+● Explore  find users of workCard                    2m 
+┃ 4 callers found; reading the Home peek                
+                                                        
+TEST-CUT  review r1 · testing          ●━━━━●━━━◉○────○ 
+✗ sonic  list the slowest tests               failed 9m 
+┃ The provider returned HTTP 429 (rate limit) on the    
+┃ second request. The worker stopped without retrying   
+┃ and no report was written.                            
+✓ glm-reviewer  check the cut list     report ready 12m 
+┃ accepts the cuts; 61 tests pass, 5 minor items left   
+● glm-imp  cut redundant test files                 38m 
+┃ removed 14 of 31 files; running the remaining test    
+┃ suites                                                
+                                                        
+Decided for you ───────────────────────────────────── 5 
+◆ PANEL-THIN · imp q3                 worth a look · 6m 
+┃ Add the optional settings key as well                 
+┃ asked Should the default panel width live only in a   
+┃ --width flag, or also in the settings file?           
+┃ instead of a --width flag only, no settings key       
+◆ TEST-CUT · glm-imp q2              worth a look · 14m 
+┃ Keep tests/fakes/clock.ts for now; three suites still 
+┃ use it                                                
+┃ asked Delete clock.ts with the other fakes, or wait   
+┃ until three suites stop importing it?                 
+┃ instead of delete it now with the other fakes and     
+┃ rewrite the three suites in the same change           
+                                                        
+◇ PANEL-THIN · imp q2                               58m 
+┃ Read the width from --width, default 56               
+┃ asked Where does hud panel read its width when no     
+┃ flag is given, and what is the fallback?              
+◇ TEST-CUT · glm-imp q1                           1h12m 
+┃ Cut the live-herdr tests; keep one smoke test         
+┃ asked Cut the tests that need a live herdr, or keep   
+┃ them for a nightly run outside the default suite?     
+◇ PANEL-THIN · imp q1                             1h38m 
+┃ Name the shared renderer lanes.ts                     
+┃ asked What should the renderer shared by Home and     
+┃ Work be called, given that work-lanes.ts exists?      
+                                                        
+                                                        
+                                                        
+                                                        
+ ✓ 4 done today                 ←→ tab  ↑↓ move  ⏎ open 
+
+==== home-busy-zh ====
+ 首页 1  作业 7  项目 4                                 
+                                                        
+? imp · PANEL-THIN                         提问中 4分钟 
+┃ 阶段条较长时，模型标记放在哪里？                      
+┃ 受阻 56 列下模型标记没有位置，卡片布局无法完成        
+┃ a 单独一行，每张卡片多占一行                          
+┃ b 放在阶段条旁，最早的步骤会被丢掉                    
+┃ 默认 b，放在阶段条旁                                  
+┃ qa/q4.md                             a b 作答  ⏎ 阅读 
+                                                        
+PANEL-THIN  评审 r1 · 修复中           ●━━━━●━━◉─○────○ 
+? imp  thin job cards in the panel         提问中 4分钟 
+◷ glm-reviewer  review card renderer        停滞 14分钟 
+┃ 14 分钟无输出；上次：比较卡片宽度                     
+● frontend-implementer  width flag                6分钟 
+┃ 给 hud panel 加上 --width 及其测试，然后读取默认值    
+┃ （来自设置文件）                                      
+● Explore  find users of workCard                 2分钟 
+┃ 找到 4 处调用，正在读 Home 预览                       
+                                                        
+TEST-CUT  评审 r1 · 测试中             ●━━━━●━━━◉○────○ 
+✗ sonic  list the slowest tests              失败 9分钟 
+┃ 服务商在第二次请求时返回 HTTP 429（限流）。作业未重试 
+┃ 即停止，也没有写出报告。                              
+✓ glm-reviewer  check the cut list      报告待阅 12分钟 
+┃ 通过删减；61 个测试通过，还剩 5 处小问题              
+● glm-imp  cut redundant test files              38分钟 
+┃ 已删除 31 个文件中的 14 个，正在运行其余测试套件      
+                                                        
+已替你决定 ────────────────────────────────────────── 5 
+◆ PANEL-THIN · imp q3                  值得一看 · 6分钟 
+┃ 同时加上可选的设置项                                  
+┃ 问 默认面板宽度放在哪里：只用 --width 参数，还是同时  
+┃ 放进设置文件？                                        
+┃ 而非 只用 --width 参数，不加设置项                    
+◆ TEST-CUT · glm-imp q2               值得一看 · 14分钟 
+┃ 暂留 tests/fakes/clock.ts，三个测试套件仍在引用它     
+┃ 问 clock.ts 是否随其他替身一起删除，还是等三个套件不  
+┃ 再引用它之后？                                        
+┃ 而非 现在就删除，并在同一次改动里改写三个套件         
+                                                        
+◇ PANEL-THIN · imp q2                            58分钟 
+┃ 宽度取自 --width，默认 56                             
+┃ 问 没有参数时 hud panel 从哪里读取宽度，回退值是多    
+┃ 少？                                                  
+◇ TEST-CUT · glm-imp q1                       1小时12分 
+┃ 删掉依赖真实 herdr 的测试，保留一个冒烟测试           
+┃ 问 依赖真实 herdr 的测试是删掉，还是留到默认套件之外  
+┃ 的夜间运行？                                          
+◇ PANEL-THIN · imp q1                         1小时38分 
+┃ 共用渲染器命名为 lanes.ts                             
+┃ 问 已存在 work-lanes.ts，Home 与 Work 共用的渲染器该  
+┃ 叫什么？                                              
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+ ✓ 4 今日完成                  ←→ 切页  ↑↓ 移动  ⏎ 打开 
+
+==== home-calm-en ====
+ Home    Work 1  Project 4                              
+                                                        
+✓ Nothing needs you                           1 running 
+                                                        
+PANEL-THIN  build · batch 3 of 8       ●━━━◉○────○────○ 
+● imp  package lanes on Home                        25m 
+┃ batch 3 of 8, tests green                             
+                                                        
+Decided for you ───────────────────────────────────── 1 
+◇ PANEL-THIN · imp q5                                9m 
+┃ Keep the card at three lines                          
+┃ asked Add a fourth line to the card for the model     
+┃ chip, or keep it at three lines?                      
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+ ✓ 6 done today                 ←→ tab  ↑↓ move  ⏎ open 
+
+==== home-calm-zh ====
+ 首页    作业 1  项目 4                                 
+                                                        
+✓ 没有需要你处理的事                           1 运行中 
+                                                        
+PANEL-THIN  实现 · 第 3/8 批           ●━━━◉○────○────○ 
+● imp  package lanes on Home                     25分钟 
+┃ 第 3/8 批，测试通过                                   
+                                                        
+已替你决定 ────────────────────────────────────────── 1 
+◇ PANEL-THIN · imp q5                             9分钟 
+┃ 卡片保持三行                                          
+┃ 问 是否为模型标记给卡片加第四行，还是保持三行？       
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+ ✓ 6 今日完成                  ←→ 切页  ↑↓ 移动  ⏎ 打开 
+
+==== decision-en ====
+ Home 1  Work 7  Project 4                              
+                                                        
+‹ Home ───────────────────────────────────────────── #3 
+◆ M2-DELETE · imp q4                 worth a look · 38m 
+┃ Leave the facade wording for a later slice            
+┃ asked Approve a later slice for the facade-closure    
+┃ texts in projectWorkCard, or drop them now and        
+┃ regenerate the snapshots?                             
+┃ instead of delete now and regenerate the snapshots    
+                                                        
+qa/q4.md ───────────────────────────────────── question 
+┃ M2 amendment-2 status: the deletion-only slice is     
+┃ done for the old registration paths, the worker       
+┃ extension and the implicit panel identity. The diff   
+┃ against the base is +91 lines, mostly moved types and 
+┃ import fixes. Removing the two facade card reasons    
+┃ can fall through to the existing reason strings, but  
+┃ the golden frames for dozens of retained snapshots    
+┃ change, which pushes the slice past its +100 line     
+┃ allowance. Should I do those small production         
+┃ deletions and regenerate the snapshots, or list the   
+┃ wording cleanup as approved-later under the original  
+┃ line-budget stop?                                     
+                                                        
+qa/q4.answer.md ──────────────────────────────── answer 
+┃ Leave the facade wording cleanup for a later slice    
+┃ (the panel cards are rewritten for thin jobs anyway). 
+┃ List it in the report as approved-later. Finish the   
+┃ slice now: checks, then the report.                   
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+  qa/q4.md                            esc back  ⏎ open 
+
+==== decision-zh ====
+ 首页 1  作业 7  项目 4                                 
+                                                        
+‹ 首页 ───────────────────────────────────────────── #3 
+◆ M2-DELETE · imp q4                  值得一看 · 38分钟 
+┃ 门面文案留到后续切片处理                              
+┃ 问 是批准后续切片，还是现在删掉门面文案、重新生成快   
+┃ 照，并同步修改 projectWorkCard 里的对应分支，再更新相 
+┃ 关测试？                                              
+┃ 而非 现在删除文案并重新生成快照                       
+                                                        
+qa/q4.md ───────────────────────────────────────── 问题 
+┃ M2 amendment-2 status: the deletion-only slice is     
+┃ done for the old registration paths, the worker       
+┃ extension and the implicit panel identity. The diff   
+┃ against the base is +91 lines, mostly moved types and 
+┃ import fixes. Removing the two facade card reasons    
+┃ can fall through to the existing reason strings, but  
+┃ the golden frames for dozens of retained snapshots    
+┃ change, which pushes the slice past its +100 line     
+┃ allowance. Should I do those small production         
+┃ deletions and regenerate the snapshots, or list the   
+┃ wording cleanup as approved-later under the original  
+┃ line-budget stop?                                     
+                                                        
+qa/q4.answer.md ────────────────────────────────── 回答 
+┃ Leave the facade wording cleanup for a later slice    
+┃ (the panel cards are rewritten for thin jobs anyway). 
+┃ List it in the report as approved-later. Finish the   
+┃ slice now: checks, then the report.                   
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+  qa/q4.md                            esc 返回  ⏎ 打开 
+
+==== decision-nomodel-en ====
+ Home 1  Work 7  Project 4                              
+                                                        
+‹ Home ───────────────────────────────────────────── #3 
+◆ M2-DELETE · imp q4                 worth a look · 38m 
+┃ Leave the facade-closure text cleanup for a later     
+┃ slice (the panel cards are rewritten anyway).         
+┃ asked Should I do the small deletions in              
+┃ projectWorkCard and regenerate                        
+┃ tests/fixtures/work-card-frames.json, or list the     
+┃ cleanup as approved-later?                            
+┃ instead of Do the deletions now and regenerate the    
+┃ snapshots with --update.                              
+                                                        
+qa/q4.md ───────────────────────────────────── question 
+┃ M2 amendment-2 status: the deletion-only slice is     
+┃ done for the old registration paths, the worker       
+┃ extension and the implicit panel identity. The diff   
+┃ against the base is +91 lines, mostly moved types and 
+┃ import fixes. Removing the two facade card reasons    
+┃ can fall through to the existing reason strings, but  
+┃ the golden frames for dozens of retained snapshots    
+┃ change, which pushes the slice past its +100 line     
+┃ allowance. Should I do those small production         
+┃ deletions and regenerate the snapshots, or list the   
+┃ wording cleanup as approved-later under the original  
+┃ line-budget stop?                                     
+                                                        
+qa/q4.answer.md ──────────────────────────────── answer 
+┃ Leave the facade wording cleanup for a later slice    
+┃ (the panel cards are rewritten for thin jobs anyway). 
+┃ List it in the report as approved-later. Finish the   
+┃ slice now: checks, then the report.                   
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+  qa/q4.md                            esc back  ⏎ open 
+
+==== work-busy-en ====
+ Home 1  Work 7  Project 4                              
+                                                        
+PANEL-THIN  review r1 · fixing                          
+  build            review            accept        done 
+  ●━━━━━━━━━━━━━━━━●━━━━━━━━━━◉──────○────────────────○ 
+                                                        
+? imp  thin job cards in the panel            asking 4m 
+┃ ◎ gpt-6.1-sol  high  pi                               
+┃ build ✓ › review r1 2 major › fixing ✓ › ▸asking      
+┃ Where should the model chip go on a card whose phase  
+┃ strip is long?                                        
+                                                        
+◷ glm-reviewer  review card renderer        stalled 14m 
+┃ ℤ glm-5.3  max  pi                                    
+┃ read diff ✓ › ▸checking ◷ › verdict                   
+┃ no output for 14m; last: comparing card widths        
+                                                        
+● frontend-implementer  width flag                   6m 
+┃ ✻ sonnet  xhigh  claude  native                       
+┃ read ✓ › ▸editing                                     
+┃ adding --width to hud panel and its test, then        
+┃ reading the default from the settings file            
+                                                        
+● Explore  find users of workCard                    2m 
+┃ ✻ haiku  low  claude  native                          
+┃ search ✓ › ▸reading                                   
+┃ 4 callers found; reading the Home peek                
+                                                        
+TEST-CUT  review r1 · testing                           
+  build            review            accept        done 
+  ●━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━◉───○────────────────○ 
+                                                        
+✗ sonic  list the slowest tests               failed 9m 
+┃ ≋ deepseek-v4.1-flash  low  pi                        
+┃ read ✓ › ▸run ✗                                       
+┃ The provider returned HTTP 429 (rate limit) on the    
+┃ second request. The worker stopped without retrying   
+┃ and no report was written.                            
+                                                        
+✓ glm-reviewer  check the cut list     report ready 12m 
+┃ ℤ glm-5.3  max  pi                                    
+┃ read diff ✓ › checked ✓ › verdict accept              
+┃ accepts the cuts; 61 tests pass, 5 minor items left   
+                                                        
+● glm-imp  cut redundant test files                 38m 
+┃ ℤ glm-5.3  max  pi                                    
+┃ build ✓ › chores ✓ › review r1 1 minor › ▸testing     
+┃ removed 14 of 31 files; running the remaining test    
+┃ suites                                                
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+ ✓ 4 done today                 ←→ tab  ↑↓ move  ⏎ open 
+
+==== work-busy-zh ====
+ 首页 1  作业 7  项目 4                                 
+                                                        
+PANEL-THIN  评审 r1 · 修复中                            
+  实现             评审              验收          完成 
+  ●━━━━━━━━━━━━━━━━●━━━━━━━━━━◉──────○────────────────○ 
+                                                        
+? imp  thin job cards in the panel         提问中 4分钟 
+┃ ◎ gpt-6.1-sol  high  pi                               
+┃ 实现 ✓ › 评审 r1 2 个重要 › 修复 ✓ › ▸提问中          
+┃ 阶段条较长时，模型标记放在哪里？                      
+                                                        
+◷ glm-reviewer  review card renderer        停滞 14分钟 
+┃ ℤ glm-5.3  max  pi                                    
+┃ 读 diff ✓ › ▸检查中 ◷ › 结论                          
+┃ 14 分钟无输出；上次：比较卡片宽度                     
+                                                        
+● frontend-implementer  width flag                6分钟 
+┃ ✻ sonnet  xhigh  claude  原生                         
+┃ 读取 ✓ › ▸编辑中                                      
+┃ 给 hud panel 加上 --width 及其测试，然后读取默认值    
+┃ （来自设置文件）                                      
+                                                        
+● Explore  find users of workCard                 2分钟 
+┃ ✻ haiku  low  claude  原生                            
+┃ 搜索 ✓ › ▸阅读中                                      
+┃ 找到 4 处调用，正在读 Home 预览                       
+                                                        
+TEST-CUT  评审 r1 · 测试中                              
+  实现             评审              验收          完成 
+  ●━━━━━━━━━━━━━━━━●━━━━━━━━━━━━━◉───○────────────────○ 
+                                                        
+✗ sonic  list the slowest tests              失败 9分钟 
+┃ ≋ deepseek-v4.1-flash  low  pi                        
+┃ 读取 ✓ › ▸运行 ✗                                      
+┃ 服务商在第二次请求时返回 HTTP 429（限流）。作业未重试 
+┃ 即停止，也没有写出报告。                              
+                                                        
+✓ glm-reviewer  check the cut list      报告待阅 12分钟 
+┃ ℤ glm-5.3  max  pi                                    
+┃ 读 diff ✓ › 已检查 ✓ › 结论 通过                      
+┃ 通过删减；61 个测试通过，还剩 5 处小问题              
+                                                        
+● glm-imp  cut redundant test files              38分钟 
+┃ ℤ glm-5.3  max  pi                                    
+┃ 实现 ✓ › 杂务 ✓ › 评审 r1 1 个次要 › ▸测试中          
+┃ 已删除 31 个文件中的 14 个，正在运行其余测试套件      
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+                                                        
+ ✓ 4 今日完成                  ←→ 切页  ↑↓ 移动  ⏎ 打开 
+
+==== project-en ====
+ Home 1  Work 7  Project 4                              
+Waiting for you ───────────────────────────────────── 4 
+⚑ 2 items in STATE.md wait for you                     
+┃ Try ./install on a second machine, and pick the key   
+┃ the job sentences use.                                
+⚑ Ticket t8 is blocked                                 
+┃ captcha handoff waits for t11 (jev login flow), which 
+┃ nobody has started.                                   
+⚑ The Mistral key is missing                            
+┃ Jobs on mistral models cannot start. Add the key to   
+┃ credentials.env.                                      
+⚑ The Jev browser is down                               
+┃ Oracle and other Jev jobs cannot start. Start the     
+┃ shared Chrome.                                        
+                                                        
+Roles in effect ─────────────────────────────────────── 
+▾ hud roles  ~/.hud/roles/*.json                        
+┃ imp                  pi     ◎ gpt-6.1-sol        high 
+┃ reviewer             pi     ◎ gpt-6.1-sol       xhigh 
+┃ sonic                pi     ≋ deepseek-v4.1-flash low 
+┃ architect            pi     ◎ gpt-6-astra        high 
+┃ oracle               jev    ◎ gpt-6-pro           max 
+▾ pi-roles  ~/pi-roles/roles/*.md                       
+┃ glm-imp              pi     ℤ glm-5.3             max 
+┃ glm-reviewer         pi     ℤ glm-5.3             max 
+▾ claude agents  ~/.claude/agents/*.md                  
+┃ frontend-implementer claude ✻ sonnet            xhigh 
+▾ project agents  .claude/agents/*.md                   
+┃ panel-tester         claude ✻ sonnet             high 
+▾ codex agents  ~/.codex/agents/*.toml                  
+┃ triage               codex  ◎ gpt-6.1-sol      medium 
+┃ docs-scribe          codex  ◎ gpt-6.1-sol         low 
+                                                        
+ Setup                                                 
+┃ workflow docs/delegation.md  project file             
+┃ read     CLAUDE.md  AGENTS.md                         
+┃ keys     TypeSafe ✓  OpenAI ✓  Mistral ✗  Jev ✗       
+                                                        
+ Working tree                        panel-thin  ↑2 ↓0 
+┃ 4 changed  1 untracked                                
+┃ imp is editing PANEL-THIN                         47m 
+┃ 3f9a1c2 feat(panel): lane header                2h08m 
+┃ b71e90c test(panel): width flag                 3h10m 
+┃ e02d4a8 chore(m2): delete old MCP               4h11m 
+                                                        
+ Docs                                        2 waiting 
+┃ M3  panel on thin jobs                                
+┃ M2 deletion review                             accept 
+┃ docs/reviews/2026-11-11-m2-deletion.md                
+┃ M1 install review                               fix 3 
+┃ docs/reviews/2026-11-09-m1-install.md                 
+                                                        
+ Tickets               3 doing 1 blocked 2 todo 1 done 
+┃ ✗ t8  captcha handoff  needs t11             JEV-THIN 
+┃ ◐ t6  thin job cards                       PANEL-THIN 
+┃ ◐ t7  panel width flag                     PANEL-THIN 
+┃ ◐ t5  cut redundant tests                    TEST-CUT 
+┃ ○ t11 jev login flow                         JEV-THIN 
+┃ ○ t9  job sentences                           AI-THIN 
+┃ ✓ t3  delete old stack                      M2-DELETE 
+                                                        
+                                                        
+                                                        
+  ~/pi-roles/roles/glm-imp.md                   ⏎ open 
+
+==== project-zh ====
+ 首页 1  作业 7  项目 4                                 
+在等你 ────────────────────────────────────────────── 4 
+⚑ STATE.md 中有 2 项在等你                             
+┃ 在第二台机器上试 ./install，并选定生成作业摘要所用的  
+┃ 密钥。                                                
+⚑ 工单 t8 受阻                                         
+┃ captcha handoff 在等 t11（Jev 登录流程），而 t11 还没 
+┃ 有人开始做。                                          
+⚑ 缺少 Mistral 密钥                                     
+┃ 使用 mistral 模型的作业无法启动。请把密钥加入         
+┃ credentials.env。                                     
+⚑ Jev 浏览器没有运行                                    
+┃ oracle 等 Jev 作业无法启动。请启动共享的 Chrome。     
+                                                        
+当前生效的角色 ──────────────────────────────────────── 
+▾ HUD 角色  ~/.hud/roles/*.json                         
+┃ imp                  pi     ◎ gpt-6.1-sol        high 
+┃ reviewer             pi     ◎ gpt-6.1-sol       xhigh 
+┃ sonic                pi     ≋ deepseek-v4.1-flash low 
+┃ architect            pi     ◎ gpt-6-astra        high 
+┃ oracle               jev    ◎ gpt-6-pro           max 
+▾ pi-roles  ~/pi-roles/roles/*.md                       
+┃ glm-imp              pi     ℤ glm-5.3             max 
+┃ glm-reviewer         pi     ℤ glm-5.3             max 
+▾ Claude 代理  ~/.claude/agents/*.md                    
+┃ frontend-implementer claude ✻ sonnet            xhigh 
+▾ 项目代理  .claude/agents/*.md                         
+┃ panel-tester         claude ✻ sonnet             high 
+▾ Codex 代理  ~/.codex/agents/*.toml                    
+┃ triage               codex  ◎ gpt-6.1-sol      medium 
+┃ docs-scribe          codex  ◎ gpt-6.1-sol         low 
+                                                        
+ 环境                                                  
+┃ 流程     docs/delegation.md  项目文件                 
+┃ 读取     CLAUDE.md  AGENTS.md                         
+┃ 密钥     TypeSafe ✓  OpenAI ✓  Mistral ✗  Jev ✗       
+                                                        
+ 工作区                              panel-thin  ↑2 ↓0 
+┃ 4 已改  1 未跟踪                                      
+┃ imp 正在编辑 PANEL-THIN                        47分钟 
+┃ 3f9a1c2 feat(panel): lane header            2小时08分 
+┃ b71e90c test(panel): width flag             3小时10分 
+┃ e02d4a8 chore(m2): delete old MCP           4小时11分 
+                                                        
+ 文档                                       2 项在等你 
+┃ M3  精简作业面板                                      
+┃ M2 deletion review                               通过 
+┃ docs/reviews/2026-11-11-m2-deletion.md                
+┃ M1 install review                             修 3 项 
+┃ docs/reviews/2026-11-09-m1-install.md                 
+                                                        
+ 工单                    3 进行中 1 受阻 2 待办 1 完成 
+┃ ✗ t8  captcha handoff  等 t11                JEV-THIN 
+┃ ◐ t6  thin job cards                       PANEL-THIN 
+┃ ◐ t7  panel width flag                     PANEL-THIN 
+┃ ◐ t5  cut redundant tests                    TEST-CUT 
+┃ ○ t11 jev login flow                         JEV-THIN 
+┃ ○ t9  job sentences                           AI-THIN 
+┃ ✓ t3  delete old stack                      M2-DELETE 
+                                                        
+                                                        
+                                                        
+                                                        
+  ~/pi-roles/roles/glm-imp.md                   ⏎ 打开 
