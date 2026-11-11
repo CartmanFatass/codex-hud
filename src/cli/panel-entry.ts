@@ -46,6 +46,7 @@ export async function registeredPanelMain(env: NodeJS.ProcessEnv = process.env):
       HUD_PANEL_HARNESS: receipt.target.harness,
       HUD_PANEL_SOURCE: receipt.target.source,
       HUD_PANEL_SESSION: receipt.target.ref.sessionId,
+      HUD_PANEL_MAIN_PANE: receipt.origin.pane,
       CODEX_HUD_PANEL_ROOT: receipt.target.root,
       CODEX_HUD_PANEL_ALL_DELEGATIONS: '0',
       CODEX_HUD_STANDALONE_PANEL: '1',

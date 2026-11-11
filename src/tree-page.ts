@@ -10,6 +10,7 @@ import { JobObservationCollector, type JobObserverOptions, type JobReadSlice } f
 import type { JobSnapshot } from './collectors/job-display-types.js';
 import { TaskObservationCollector } from './collectors/task-observations.js';
 import { buildWorkboard } from './collectors/workboard.js';
+import { readThinJobs, type ThinJobScope } from './collectors/thin-jobs.js';
 import { jobInspectorTargets } from './render/work-visibility.js';
 import type { TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-types.js';
 import { composeJobTree, type JobTreeResult } from './collectors/job-tree.js';
@@ -183,6 +184,7 @@ export class PanelJobPipeline {
     tasks: TaskSnapshot | null;
     board: WorkboardSnapshot;
   };
+  private thinJobs: ReturnType<typeof readThinJobs> = [];
   private snapshot: JobSnapshot | null = null;
   private generation = 0;
   private closed = false;
@@ -192,7 +194,8 @@ export class PanelJobPipeline {
     readonly home: string,
     private root: string | null,
     private readonly options: JobObserverOptions = {},
-    private readonly workspace: string | null = null
+    private readonly workspace: string | null = null,
+    private readonly thinScope: ThinJobScope = { project: workspace, pane: null }
   ) {
     this.observer = new JobObservationCollector(home, { ...options, root });
     this.artifacts = new TaskObservationCollector(workspace);
@@ -243,7 +246,12 @@ export class PanelJobPipeline {
       coverage: { incomplete: true, workspace: this.workspace, diagnostics: [] },
       cost: { entries: 0, files: 0, bytes: 0, probes: 0, enumerations: 0, parses: 0, elapsedMs: 0 },
     };
-    const board = buildWorkboard(this.observer.home, tasks, jobs, tree, legacy);
+    const base = buildWorkboard(this.observer.home, tasks, jobs, tree, legacy);
+    const board = {
+      ...base,
+      lanes: [...this.thinJobs, ...base.lanes],
+      workers: [...this.thinJobs.flatMap((lane) => lane.workers), ...base.workers],
+    };
     this.boardCache = { tree, legacy, jobs: this.snapshot, tasks: this.taskSnapshot, board };
     return board;
   }
@@ -264,6 +272,7 @@ export class PanelJobPipeline {
       maxEntries: 128 - snapshot.coverage.entries,
       maxBytes: Math.max(0, Math.min(1024 * 1024, slice?.maxBytes ?? 1024 * 1024) - snapshot.coverage.bytes),
     });
+    this.thinJobs = readThinJobs(this.home, this.thinScope);
     this.snapshot = snapshot;
     this.taskSnapshot = tasks;
     const materialBudget: JobReadBudget = {
@@ -604,7 +613,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const allDelegations = !selectedRoot && process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
   const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
   const nativeCalls = NativeCallCollector.fromEnv();
-  const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot, {}, allDelegations ? null : HUD_CWD_REAL);
+  const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot, {}, allDelegations ? null : HUD_CWD_REAL, {
+    project: HUD_CWD_REAL,
+    pane: process.env.HUD_PANEL_MAIN_PANE || null,
+  });
   const producer = readProcess(process.pid)?.stamp;
   const roleSummary = producer
     ? new RoleSummaryPublisher(process.env, {
