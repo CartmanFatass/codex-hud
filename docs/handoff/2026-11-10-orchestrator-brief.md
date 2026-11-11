@@ -1,0 +1,181 @@
+# Brief for the orchestrator: MCP and workflow changes after the retrospective
+
+Written 2026-11-10 from a discussion with the owner, who asked for this page so the running orchestrator can carry
+it out. Background and reasons are in `docs/reviews/2026-11-10-retrospective.md` and
+`docs/reviews/2026-11-10-workflow-discussion.md`. Where this page differs from the "proposed" items in the discussion
+record, this page is the later one.
+
+Finish what you are doing first. Nothing here interrupts M1.
+
+## What the owner settled in the discussion
+
+- The old workflow failed because management itself was delegated: agents managed and reviewed agents, and nobody
+  held "what do I want, and when is it enough". Mechanisms alone do not fix that; the owner being in the loop does.
+- The owner wants the important technical decisions, with an explanation. The owner is a STEM graduate student, not a
+  professional developer, and wants to learn from the project. In the old workflow the orchestrator answered 322
+  questions on the owner's behalf; that is the thing to stop.
+- Roles and workflow are separate. A role can be defined for any harness; the workflow (dispatch pattern) is prose
+  that can be swapped. The HUD binds neither.
+- No workflow that is always loaded. Matt Pocock's skills (local copy `~/projects/mattpocock-skills`) are the
+  reference: their stages load only when the owner types them, and they do not chain by themselves. The toktrack set
+  under `~/projects/TokWatch/toktrack/.claude/` is the counter-example: a chain in `CLAUDE.md` enforced by hooks on
+  every task.
+- The owner talks only to the orchestrator. The orchestrator uses imp, sonic, arch and reviewer; workers ask through
+  pi's `ask_orchestrator`. That stays.
+
+## Order of work
+
+1. M1 reaches the owner: the owner installs it and uses it. This comes before everything below.
+2. Spec wording (section A), confirmed by the owner.
+3. Slice ROLE-FILES (section B).
+4. M2 deletion, then a code walkthrough for the owner (section C).
+5. Workflow files (section D). D4 touches only docs and can be done at any quiet moment.
+6. The next milestone runs the whole new flow once as its trial (section F).
+
+## A. Spec wording: ask the owner, then apply
+
+`docs/spec.md` is the owner's. Show the owner these two changes and apply them only on a yes.
+
+- §2.1, replacing "the fixed roles (imp, reviewer, sonic, oracle, jev)": "Roles are defined by files; the HUD ships
+  defaults. The MCP knows no particular role and no workflow."
+- §5 M2: the deletion covers the old role facade and the old `hud-mcp` surface as well as the retired execution
+  stack.
+
+## B. Slice ROLE-FILES: the thin layer reads roles from files
+
+Serves spec §2.1 as reworded in A. Do not start before A is confirmed.
+
+- **Now:** `packages/hud-mcp/src/thin-main.ts` (337 lines) has `roleMap = { imp, reviewer, sonic }` and two checks on
+  the name `imp` (split pane; `hud_send` only for imp).
+- **Wanted:** a role is one small file: name, harness (`pi` only for now), the pi-roles role it maps to, and the two
+  properties that are name checks today (split pane, can continue). The HUD ships defaults for imp, reviewer, sonic
+  and architect; files under `$HUD_HOME/roles/` add or override. `hud_roster` lists what the files say. The tool
+  schema takes any role name and `hud_create` refuses an unknown one. No role name remains in the code.
+- **Out of scope:** other harnesses, oracle and Jev (M3), enforcing which helpers a role may call, any workflow field.
+- **Budget:** about 60 source lines net, one more case in `tests/unit/thin-mcp.test.mjs`. If it does not fit, stop and
+  report.
+- **Demo:** drop a role file for a new name into `$HUD_HOME/roles/`; `hud_roster` shows it; `hud_create` with that
+  role opens the mapped pi role in herdr. `architect` works through the HUD the same way.
+
+## C. M2 deletion, then a walkthrough
+
+- **Scope:** everything the owner-facing paths do not reach. Start from what the installer, the thin MCP, the pi
+  package, the panel, the Claude statusline and the pi footer import, and delete the rest with its tests. That
+  includes `src/roles/facade.ts`, `src/roles/pi-owned/`, the old `hud-mcp` surface and the execution stack of slice L
+  (the owner approved slice L on 2026-11-10; the facade is covered once A is confirmed).
+- **Rule:** deletion only. If removing something needs new code beyond fixing imports, stop and report.
+- **Review:** this is a risky change, so one targeted review with one question: after the deletion, does everything in
+  spec §2 still work (install, uninstall, six tools, panel, statusline, footer)?
+- **Report to the owner:** source and test line counts before and after, and the demo of spec §2 run for real.
+- **Walkthrough:** after M2, take the owner through `thin-main.ts` and the path from a job file to the panel: how the
+  data flows and why it is split that way. This is the owner's first learning session; the code is now small enough
+  to read whole.
+
+## D. Workflow files
+
+### D1. Matt Pocock's skills, unchanged
+
+- Update the local clone first (it is at `49dd158`, 2026-10-09).
+- Install at user level, not into this repository (it is public). The owner's `~/.claude` and `~/.pi` are managed
+  through `~/Fishpref`; tell the owner what will be installed and wait for a yes.
+- For the orchestrator (Claude Code): `grill-with-docs`, `to-spec`, `to-tickets`, `prototype`, `code-review`,
+  `wait-what`, `wayfinder`, plus the skills these call (each skill names them; at least `grilling`,
+  `domain-modeling`, `research`) and `setup-matt-pocock-skills`. Not `triage`, not `pr`, nothing from `misc/`.
+- For pi workers: `tdd`.
+- `setup-matt-pocock-skills` is typed by the owner, once, in this repo. Tracker: local files.
+- Do not edit these skills. Personal adjustments go into D2 and D4.
+
+### D2. One bridge skill, new
+
+A user-invoked skill of 30–40 lines, kept with the owner's own skills (Fishpref), not shipped by the HUD. Suggested
+name `hud-implement-spec`. It is `implement-spec` with HUD roles in place of subagents, and it points at
+`hud-delegate` for how the six tools work instead of repeating it.
+
+1. Read the spec and the tickets; find the tickets that can start.
+2. One `hud_create` per ready ticket: role `imp`, the ticket id as `request_key`, `task` holding the paths of the
+   ticket and the spec plus the size budget and stop rule, `cwd` the ticket's worktree. Exploration and chores go to
+   `sonic`.
+3. Keep your own context small: track which tickets are ready, running and merged; communicate by pointers; do not
+   read every report in full.
+4. Worker questions (D3).
+5. When a ticket settles: read the report, `hud_close`, merge, start the tickets it unblocked.
+6. When all tickets are in: one `hud_create` with role `reviewer`, the brief holding the diff command, the spec path
+   and the two axes of `code-review` (spec including scope creep; standards including what can be deleted). A risky
+   change (owner configs, deleting data, killing processes, the installer) also gets one concrete question.
+7. One imp job fixes what real use would hit. The rest is noted in one line each.
+8. Acceptance: run the spec's scenarios for real and show the owner the evidence; then the owner tries it.
+
+Project conventions the tickets follow, stated in two lines in D4's `docs/delegation.md`: every ticket carries a size
+budget and a stop rule; the threat model is `docs/spec.md` §4.
+
+### D3. Questions, decisions and the architect
+
+How the orchestrator handles an `ask_orchestrator` question:
+
+| Kind | Handling |
+| --- | --- |
+| Local (naming, error handling inside a function) | Answer with the simplest option |
+| Already settled in the spec, a ticket or a decision record | Answer by quoting it |
+| Structural and not yet settled (where state lives, process split, interfaces between parts, where to test) | Do not answer. Collect these into one round for the owner |
+| Beyond the spec | The worker stops and reports |
+
+- A round for the owner follows `grilling`: each question numbered, with the recommended answer, the reason, what it
+  costs and what the other option buys. The test for "structural" is whether the decision would appear in a one-page
+  description of the architecture.
+- Each settled structural decision gets a short decision record: what was chosen, why, what was given up.
+- Workers set the `default` of every question to the simplest option, so a question that times out does no harm.
+- A ticket that produces many questions was under-specified: fix the ticket.
+- The architect is consulted before the spec is written: it returns options with their costs, including the smallest
+  one, and the owner decides. It is not called in the middle of implementation.
+- Check the pi-roles role texts (Fishpref) against the above and change only what is missing; `81e1859` already
+  covers part of it.
+
+### D4. Less that is always loaded
+
+- `CLAUDE.md`: pointers only. Keep the project guide lines; replace the three-document reading order with
+  `docs/spec.md` and the state file. No workflow text.
+- `docs/handoff/STATE.md`: rewrite to one screen (done, next, decisions waiting for the owner). It is 670 lines and
+  its title still names the 2026-11-03 handoff; the history is in git. From now on it is rewritten, not appended to.
+- `docs/delegation.md`: the role and model table, the conventions, the two lines from D2, and a pointer to the
+  skills. The loop description goes; the skills carry it.
+- The memory index for this project: remove entries that only describe superseded process rules. Keep environment
+  facts and pointers.
+
+### D5. Three ways of working
+
+The owner chooses by what they type; nothing forces the full flow.
+
+| Way | For | What happens |
+| --- | --- | --- |
+| Direct | A small change (one file, obvious approach) | The orchestrator does it or hands it to sonic; no brief, no review |
+| One slice | One clear feature | One imp job with a budget; the orchestrator reads the diff |
+| Full flow | A milestone | grill, spec, tickets, `hud-implement-spec` |
+
+## E. Standing rules (short on purpose)
+
+- From M1 on, dispatch through the HUD's six tools, not `herdr-delegate`. The architect follows once B is merged.
+- A new process rule, guard or test needs a failure that actually happened. A hypothetical one does not qualify.
+- A worker or the orchestrator may decide alone to do less. Anything that adds beyond the budget goes back up; growth
+  beyond the spec goes to the owner.
+- Tests sit at the outermost seam, one per behaviour the owner would notice. Deleted code takes its tests with it.
+
+## F. Trial and what to report
+
+The next milestone after M2 runs the full flow once. Change the flow only where something actually went wrong, and
+tell the owner what that was.
+
+At each milestone give the owner three things: the demo, the size (lines added and removed against what the owner can
+newly do), and a ten-sentence description of how the system works now. A noun in that description that is not in the
+spec or the glossary is something the owner has not agreed to; say why it exists.
+
+## When the owner is needed
+
+- A: yes or no on the two spec sentences.
+- D1: yes on the installs; typing `/setup-matt-pocock-skills` once.
+- D3: answering rounds of structural questions.
+- C: the walkthrough. Every milestone: looking at the demo and trying the build, about one to two hours in total.
+
+## Not to build
+
+No workflow engine, no hooks that enforce a flow, no workflow stages in the panel, no adapter for another harness
+until the owner wants a role on one, no further process rules beyond this page.
