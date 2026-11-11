@@ -12,7 +12,9 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 1. **Delegate through one MCP.** From any of the three main sessions, start and use the fixed roles (imp, reviewer,
    sonic, oracle, jev) with six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`,
    `hud_close`. CLI roles run through herdr and pi-roles; browser jobs run through Jev. The main session decides
-   every next step; the HUD never chains roles itself.
+   every next step; the HUD never chains roles itself. Workers are neutral: each does only its own job and never
+   starts another role unless the brief asks. The skill ships a short default workflow (brief with scope, budget and
+   stop rule; review at milestones or risky changes, not per change) that a project's own docs override.
 2. **Show what is happening.** A side panel (Home, Work) shows the main session's jobs and their state. Each client
    keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
    (taking in p10k-footer), Codex's existing tmux bar.
