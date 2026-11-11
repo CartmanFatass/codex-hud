@@ -1,0 +1,7 @@
+{
+  "role": "imp",
+  "harness": "pi",
+  "pi_role": "implementer",
+  "split": true,
+  "can_continue": true
+}

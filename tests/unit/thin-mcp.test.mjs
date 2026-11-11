@@ -203,6 +203,53 @@ fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args:
   }
 );
 
+test('thin roles load a custom role file and dispatch its mapped pi role', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const role = { role: 'synthetic-writer', harness: 'pi', pi_role: 'implementer', split: false, can_continue: true };
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'));
+  fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'writer.json'), JSON.stringify(role));
+  const roster = await f.call('hud_roster');
+  assert.deepEqual(
+    roster.roles.find((entry) => entry.role === role.role),
+    { ...role, available: true }
+  );
+  assert.deepEqual(
+    roster.roles.find((entry) => entry.role === 'architect'),
+    {
+      role: 'architect',
+      harness: 'pi',
+      pi_role: 'architect',
+      split: false,
+      can_continue: false,
+      available: true,
+    }
+  );
+  assert.deepEqual(await f.call('hud_create', { role: 'unknown', request_key: 'unknown', task: 'Synthetic task.' }), {
+    ok: false,
+    code: 'role_unavailable',
+  });
+  const job = await f.call('hud_create', { role: role.role, request_key: 'custom-role', task: 'Synthetic task.' });
+  assert.deepEqual(f.commands(), [
+    {
+      command: 'pi-dispatch',
+      args: [
+        'implementer',
+        '--task-dir',
+        job.task_dir,
+        '--workdir',
+        f.root,
+        '--output',
+        join(job.task_dir, 'report.md'),
+      ],
+    },
+  ]);
+  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+  assert.equal(
+    (await f.call('hud_send', { job: job.job, message_key: 'custom-send', text: 'Synthetic follow-up.' })).sent,
+    true
+  );
+});
+
 test('thin create requires herdr without dispatching', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, false);
   assert.deepEqual(

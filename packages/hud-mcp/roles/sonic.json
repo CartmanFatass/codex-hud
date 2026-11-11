@@ -1,0 +1,7 @@
+{
+  "role": "sonic",
+  "harness": "pi",
+  "pi_role": "sonic",
+  "split": false,
+  "can_continue": false
+}

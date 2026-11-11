@@ -6,9 +6,39 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 
-const jobsRoot = join(resolve(process.env.HUD_HOME || join(homedir(), '.hud')), 'jobs');
-const roleMap: Record<string, string> = { imp: 'implementer', reviewer: 'reviewer', sonic: 'sonic' };
+const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
+const jobsRoot = join(hudHome, 'jobs');
+interface Role {
+  role: string;
+  harness: 'pi';
+  pi_role: string;
+  split: boolean;
+  can_continue: boolean;
+}
+function roles(): Map<string, Role> {
+  const result = new Map<string, Role>();
+  // The compiled server lives at dist/packages/hud-mcp/src/ within this package.
+  for (const root of [fileURLToPath(new URL('../../../../roles/', import.meta.url)), join(hudHome, 'roles')]) {
+    for (const file of entries(root).filter((file) => file.endsWith('.json'))) {
+      const role = json<Partial<Role>>(join(root, file));
+      if (
+        !role ||
+        typeof role.role !== 'string' ||
+        !role.role.trim() ||
+        role.harness !== 'pi' ||
+        typeof role.pi_role !== 'string' ||
+        !role.pi_role.trim() ||
+        typeof role.split !== 'boolean' ||
+        typeof role.can_continue !== 'boolean'
+      )
+        throw new Error(`invalid_role: ${join(root, file)}`);
+      result.set(role.role, role as Role);
+    }
+  }
+  return result;
+}
 interface Job {
   job: string;
   role: string;
@@ -42,7 +72,7 @@ const tools = [
   }),
   tool(
     'hud_send',
-    'Continue an implementer during idle_grace; message_key deduplicates sends.',
+    'Continue an eligible role during idle_grace; message_key deduplicates sends.',
     { job: text, message_key: text, text },
     ['job', 'message_key', 'text']
   ),
@@ -158,14 +188,12 @@ function observation(job: Job) {
 async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_roster')
     return {
-      roles: [
-        ...Object.entries(roleMap).map(([role, pi_role]) => ({ role, pi_role, available: true })),
-        ...['oracle', 'jev'].map((role) => ({ role, available: false, reason: 'not available until M3' })),
-      ],
+      roles: [...roles().values()].map((role) => ({ ...role, available: true })),
     };
   if (name === 'hud_create') {
     const role = required(args, 'role');
-    if (!Object.hasOwn(roleMap, role)) return { ok: false, code: 'role_unavailable' };
+    const definition = roles().get(role);
+    if (!definition) return { ok: false, code: 'role_unavailable' };
     const request_key = required(args, 'request_key');
     const existing = jobs().find((job) => job.request_key === request_key);
     if (existing) return created(existing);
@@ -190,8 +218,8 @@ async function call(name: string, args: Args): Promise<unknown> {
     fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
     // Persist before dispatch: an interrupted launch must not dispatch again on retry.
     save(job);
-    const argv = [roleMap[role]!, '--task-dir', dir, '--workdir', cwd, '--output', join(dir, 'report.md')];
-    if (role === 'imp') argv.push('--split');
+    const argv = [definition.pi_role, '--task-dir', dir, '--workdir', cwd, '--output', join(dir, 'report.md')];
+    if (definition.split) argv.push('--split');
     const result = await run('pi-dispatch', argv);
     job.dispatch_exit_code = result.exit_code;
     job.stderr_tail = result.stderr;
@@ -235,7 +263,7 @@ async function call(name: string, args: Args): Promise<unknown> {
         : { ok: false, sent: false, code: 'send_failed', ...outcome };
     }
     const agent = primary(dir);
-    if (job.role !== 'imp' || observation(job).state !== 'idle_grace' || !agent)
+    if (!roles().get(job.role)?.can_continue || observation(job).state !== 'idle_grace' || !agent)
       return { ok: false, code: 'not_continuable' };
     // Record the attempt first, so a lost reply cannot cause a duplicate prompt.
     job.message_keys.push(key);

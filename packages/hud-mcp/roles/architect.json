@@ -1,0 +1,7 @@
+{
+  "role": "architect",
+  "harness": "pi",
+  "pi_role": "architect",
+  "split": false,
+  "can_continue": false
+}

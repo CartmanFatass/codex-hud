@@ -1,0 +1,7 @@
+{
+  "role": "reviewer",
+  "harness": "pi",
+  "pi_role": "reviewer",
+  "split": false,
+  "can_continue": false
+}
