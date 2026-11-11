@@ -14,7 +14,9 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    `hud_close`. CLI roles run through herdr and pi-roles; browser jobs run through Jev. The main session decides
    every next step; the HUD never chains roles itself. Workers are neutral: each does only its own job and never
    starts another role unless the brief asks. The skill ships a short default workflow (brief with scope, budget and
-   stop rule; review at milestones or risky changes, not per change) that a project's own docs override.
+   stop rule; review at milestones or risky changes, not per change) that a project's own docs override. The six
+   tools are a thin layer over the locally installed pi-roles (`pi-dispatch`, `STATUS.json`, `qN.answer.md`,
+   `pi-role-reap`); jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles is not bundled (owner, 2026-11-10).
 2. **Show what is happening.** A side panel (Home, Work) shows the main session's jobs and their state. Each client
    keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
    (taking in p10k-footer), Codex's existing tmux bar.
@@ -50,7 +52,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   `hud uninstall`; MCP and skill registered in all three clients; `hud panel`; the six tools work for imp, reviewer
   and sonic through herdr; Claude statusline at claude-hud parity; pi footer replacing p10k-footer. The owner
   installs and uses it.
-- **M2, clean** (right after M1): delete the retired execution stack (R6b slice L) and its tests.
+- **M2, clean** (right after M1): delete the retired execution stack (R6b slice L), the old role facade and its
+  identity/release checks (replaced by the thin layer), and their tests.
 - **M3, extend:** Jev and oracle jobs.
 
 ## 6. How work is done
