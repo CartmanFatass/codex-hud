@@ -192,28 +192,8 @@ function summary(f, root, now = Date.now()) {
   return dto;
 }
 function ports(f, _h, c) {
-  let time = Date.now(),
-    starts = 0,
-    stops = 0,
-    live = false,
-    executions = 0;
+  let time = Date.now();
   const timers = new Set();
-  const bridge = {
-    async start() {
-      starts++;
-      live = true;
-    },
-    stop() {
-      stops++;
-      live = false;
-      return Promise.resolve();
-    },
-    async execute() {
-      assert.ok(live);
-      executions++;
-      return { content: [{ type: 'text', text: 'synthetic' }] };
-    },
-  };
   const stamp = { pid: 400, proc_start: '10', boot_id: 'boot', pid_domain: 'domain' };
   const origin = { pane: 'main', tab: 'tab', terminal: 'tty', workspace: 'w', process: stamp };
   const panels = new Map([['main', origin]]);
@@ -265,7 +245,6 @@ function ports(f, _h, c) {
   const options = {
     env: f.env,
     footerHost: async () => footerHost,
-    bridge: () => bridge,
     capture: async (_b, _c, _e, isCurrent) => ({ context: panelContext, native, herdr, isCurrent }),
     panelProbes: { processInfo, processLaunch: launch, registered: () => true },
     segment: {
@@ -288,14 +267,13 @@ function ports(f, _h, c) {
     native,
     timers,
     generations,
-    bridge,
     advance(ms) {
       time += ms;
       const todo = [...timers];
       timers.clear();
       for (const x of todo) x.cb();
     },
-    counts: () => ({ starts, stops, executions, splits, closes }),
+    counts: () => ({ splits, closes }),
     now: () => time,
   };
 }
@@ -322,6 +300,29 @@ test('real package entry loads directly from the checkout with only release, hud
     ['hud_roster', 'hud_create', 'hud_read', 'hud_send', 'hud_respond', 'hud_close']
   );
   assert.equal(h.calls.footer, 0, 'loading alone starts no UI or runtime resources');
+});
+test('package hud_roster proxy reaches the real thin server without session identity evidence', async (t) => {
+  const f = setup(t),
+    h = host(),
+    c = context(f, h, 'unpersisted', 'print'),
+    p = ports(f, h, c);
+  // The tools need neither a persisted native session nor the retired fd3 channel.
+  fs.unlinkSync(c.ctx.sessionManager.getSessionFile());
+  c.setFile(undefined);
+  await load(f, h, p);
+  t.after(() => h.emit('session_shutdown', c.ctx));
+  await h.emit('session_start', c.ctx);
+  assert.deepEqual(h.tools.get('hud_roster').parameters.required, []);
+  assert.deepEqual(h.tools.get('hud_create').parameters.required, ['role', 'request_key', 'task']);
+  const result = await h.tools.get('hud_roster').execute('roster', {}, undefined, undefined, c.ctx);
+  assert.deepEqual(result.details, JSON.parse(result.content[0].text));
+  assert.deepEqual(result.details.roles, [
+    { role: 'imp', pi_role: 'implementer', available: true },
+    { role: 'reviewer', pi_role: 'reviewer', available: true },
+    { role: 'sonic', pi_role: 'sonic', available: true },
+    { role: 'oracle', available: false, reason: 'not available until M3' },
+    { role: 'jev', available: false, reason: 'not available until M3' },
+  ]);
 });
 test('REAL package entry start -> reload -> shutdown owns footer, restores defaults, keeps other statuses and exactly six proxies', async (t) => {
   const f = setup(t),
@@ -359,7 +360,6 @@ test('REAL package entry start -> reload -> shutdown owns footer, restores defau
   await h.commands.get('hud').handler('footer off path', c.ctx);
   assert.ok(!h.footer().includes(c.ctx.cwd), 'segment forms still use the original parser');
   await h.commands.get('hud').handler('footer on path', c.ctx);
-  assert.equal(p.counts().starts, 1);
   assert.equal(p.timers.size, 1);
   await h.tools.get('hud_read').execute('host-call', {}, undefined, undefined, c.ctx);
   for (const cmd of ['status', 'on', 'off', 'toggle', 'help', 'reconnect', 'unknown', 'on extra'])
@@ -544,7 +544,7 @@ test('exact-root refresh expires while idle, changed text only; no discovery, la
   }
 });
 for (const mode of ['print', 'rpc', 'json'])
-  test(`${mode}: no status, timer or panel, bridge still starts`, async (t) => {
+  test(`${mode}: no status, timer or panel, tools remain available`, async (t) => {
     const f = setup(t),
       h = host(),
       c = context(f, h, 'session-a', mode),
@@ -552,7 +552,7 @@ for (const mode of ['print', 'rpc', 'json'])
     summary(f, c.root, p.now());
     await load(f, h, p);
     await h.emit('session_start', c.ctx);
-    assert.equal(p.counts().starts, 1);
+    assert.equal(h.tools.size, 6);
     assert.equal(p.counts().splits, 0);
     assert.equal(p.timers.size, 0);
     assert.equal(h.calls.status.length, 0);
@@ -581,7 +581,6 @@ for (const transition of ['session_before_switch', 'session_before_fork', 'sessi
     assert.match(h.calls.notices.at(-1), /session_unbound/);
     await h.commands.get('hud').handler('reconnect', c.ctx);
     await h.tools.get('hud_read').execute('new', {}, undefined, undefined, c.ctx);
-    assert.equal(p.counts().starts, 2);
     assert.equal(p.counts().closes, 1);
     await h.emit('session_shutdown', c.ctx);
   });

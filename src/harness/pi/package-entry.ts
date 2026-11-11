@@ -1,6 +1,5 @@
-/** Ordinary pi package: local controls, six private-channel proxies and the owned pi footer. */
-import { join } from 'node:path';
-import { PiDelegationBridge } from './delegation-bridge.js';
+/** Ordinary pi package: local controls, six thin-server proxies and the owned pi footer. */
+import { PiRoleClient, PI_ROLE_TOOLS } from './role-client.js';
 import { createPiSegment, isPiTui } from './segment.js';
 import type { PiPackageBinding, PiPackageContext } from './package-context.js';
 export type { PiPackageBinding, PiPackageContext } from './package-context.js';
@@ -8,7 +7,6 @@ import { displayTarget } from '../../integrations/panel/receipt.js';
 import { controlPanel, type PanelControlOptions, type PanelOperation } from '../../integrations/panel/control.js';
 import { autoOpenEnabled } from '../../integrations/panel/eligibility.js';
 import { PanelDeadline, samePane } from '../../integrations/panel/herdr.js';
-import { ROLE_TOOLS } from '../../roles/role-tools.js';
 import { capturePiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
 import type { FooterAPI, FooterHost } from './footer-host.js';
@@ -42,7 +40,6 @@ export function installPiPackage(
   deps: {
     env?: NodeJS.ProcessEnv;
     footerHost?: () => Promise<FooterHost>;
-    bridge?: (source: string, cwd: string) => Pick<PiDelegationBridge, 'start' | 'stop' | 'execute'>;
     capture?: typeof capturePiPanel;
     panel?: typeof controlPanel;
     panelProbes?: Pick<PanelControlOptions, 'processInfo' | 'processLaunch' | 'registered'>;
@@ -56,7 +53,7 @@ export function installPiPackage(
     ctx: PiPackageContext;
     id: string;
     source: string;
-    bridge: Pick<PiDelegationBridge, 'start' | 'stop' | 'execute'>;
+    client: PiRoleClient;
     capture?: Capture;
     generation?: string;
     panelWork: Promise<void>;
@@ -69,7 +66,6 @@ export function installPiPackage(
   let tree: { state: State; ticket: number; generation: string; confirmed: boolean } | undefined;
   let epoch = 0;
   let cleanup: Promise<void> = Promise.resolve();
-  let retained: { source: string; bridge: State['bridge'] } | undefined;
   const removers: (() => void)[] = [];
   const current = (s: State) => {
     try {
@@ -208,8 +204,8 @@ export function installPiPackage(
     active = null;
     segment.stop();
     footer?.stop();
-    // stop() invalidates the bridge before any asynchronous cleanup or live observation.
-    const stopped = old?.bridge.stop();
+    // Stop tool calls before asynchronous panel cleanup or live observation.
+    const stopped = old?.client.stop();
     const closing = old
       ? (async () => {
           if (forTree) await treeContinuity(old, ticket);
@@ -226,33 +222,18 @@ export function installPiPackage(
     if (ticket !== epoch) return;
     const source = ctx.sessionManager.getSessionDir(),
       id = ctx.sessionManager.getSessionId();
-    // Retain only admission history; every start creates a new guarded epoch/channel.
-    if (!retained || retained.source !== source)
-      retained = {
-        source,
-        bridge:
-          deps.bridge?.(source, ctx.cwd) ??
-          new PiDelegationBridge({
-            sourceRoot: source,
-            cwd: ctx.cwd,
-            env,
-            surface: 'roles',
-            entry: join(binding.release, 'packages/hud-mcp/bin/hud-mcp.mjs'),
-          }),
-      };
     if (!footerChoice || footerChoice.id !== id || footerChoice.source !== source)
       footerChoice = { id, source, on: true };
     const s: State = {
       ctx,
       id,
       source,
-      bridge: retained.bridge,
+      client: new PiRoleClient(binding, env, ctx.cwd),
       panelWork: Promise.resolve(),
       diagnostic: 'panel_not_open',
       footerOn: footerChoice.on,
     };
     active = s;
-    await s.bridge.start();
     if (!current(s) || ticket !== epoch) return;
     if (isPiTui(ctx) && deps.footerHost) {
       const host = footer ? undefined : await deps.footerHost();
@@ -370,22 +351,22 @@ export function installPiPackage(
       ctx.ui.notify('HUD: ' + message, 'info');
     },
   });
-  for (const tool of ROLE_TOOLS)
+  for (const tool of PI_ROLE_TOOLS)
     pi.registerTool({
       name: tool.name,
       label: tool.name,
       description: tool.description,
       parameters: tool.inputSchema,
-      async execute(callId, args, signal, _onUpdate, ctx) {
+      async execute(_callId, args, signal, _onUpdate, ctx) {
         const s = active;
         if (!s || !current(s) || ctx.sessionManager !== s.ctx.sessionManager) throw Error('pi_session_inactive');
-        const result = await s.bridge.execute(tool.name, callId, args, signal, ctx);
-        return {
-          content: result.content,
-          details: result.structuredContent,
-          structuredContent: result.structuredContent,
-          isError: result.isError,
-        };
+        signal?.throwIfAborted();
+        const result = await s.client.call(tool.name, args);
+        try {
+          return { ...result, details: JSON.parse(result.content[0].text) };
+        } catch {
+          throw Error('invalid_mcp_response');
+        }
       },
     });
 }
