@@ -277,7 +277,7 @@ test('B13 skill inline codes match the appropriate shipped API or documented nat
   }
 });
 
-test('R1 delegation skill states the fixed roles, the recipes, and roster lookup', () => {
+test('R1 delegation skill states the fixed roles, the default workflow, and roster lookup', () => {
   const text = read(PARENT);
   for (const role of ['oracle', 'imp', 'reviewer', 'sonic', 'jev']) assert.match(text, new RegExp(`\\b${role}\\b`));
   assert.match(text, /oracle\.propose/);
@@ -293,10 +293,10 @@ test('R1 delegation skill states the fixed roles, the recipes, and roster lookup
   assert.match(text, /never blindly re-create an uncertain launch/);
   assert.match(text, /source: default \(no session identity\)/);
   assert.doesNotMatch(text, /\bR\d\b/);
-  assert.match(text, /Design\./);
-  assert.match(text, /Build\./);
-  assert.match(text, /Small task\./);
-  assert.match(text, /Browser task\./);
+  assert.match(text, /## Default workflow/);
+  assert.match(text, /scope, out of scope, completion criteria, a size budget and a stop rule/);
+  assert.match(text, /Review at milestones or for risky changes/);
+  assert.match(text, /A project's own docs override it/);
   assert.doesNotMatch(text, /```json/);
   assert.doesNotMatch(text, /\b(?:managed|delegate|jev)_[A-Za-z0-9_]+\b/);
   assert.doesNotMatch(text, /gpt-|grok-|claude-|opus|workflow_plan|workflow_start|selector/i);
