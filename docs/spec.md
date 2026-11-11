@@ -23,7 +23,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    title); the panel groups jobs by it into lanes. The label is display only: the MCP does not interpret it.
    The panel also shows the main session's native subagents (Claude Code's Agent subagents incl. custom ones, Codex
    subagents, pi's), read from the client's own transcripts, each with an external-model summary of what it is doing.
-   A third panel tab, Project, shows the project at a glance: the control plane (roles in effect with their models,
+   Home also shows the project at a glance, in the space below the jobs (it shrinks to one line per part when busy): the control plane (roles in effect with their models,
    the convention and its source, which keys and the Jev browser are available), the working tree (branch, changes,
    which job is editing it, last commit), docs (spec milestone, STATE's items waiting for the owner, the newest
    review) and the tickets from Matt's `to-tickets` (status, blocked-by, linked to the package lanes). The control
@@ -65,7 +65,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   installs and uses it.
 - **M2, clean** (right after M1): delete the retired execution stack (R6b slice L), the old role facade and its identity/release checks (replaced by the thin layer), the old hud-mcp surfaces (the default managed surface and role-main), and their tests.
 - **M3, extend:** Jev and oracle jobs.
-- **M4, project view:** the Project tab, after Matt's skills are installed (tickets) and the package label works.
+- **M4, project view:** the project section on Home, after Matt's skills are installed (tickets) and the package label works.
 
 ## 6. How work is done
 
