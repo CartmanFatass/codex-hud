@@ -10,7 +10,7 @@ import test, { before, type TestContext } from 'node:test';
 import { hudCreate, hudRead, hudSend, hudRespond, hudClose, type FacadeContext } from '../../src/roles/facade.js';
 import { waitForJob } from '../../src/roles/job-wait.js';
 import { observeDispatch } from '../../src/roles/pi-dispatch-status.js';
-import { readDispatchSession, launchDispatch, reapDispatch } from '../../src/roles/pi-dispatch.js';
+import { readDispatchSession } from '../../src/roles/pi-dispatch.js';
 import { facadeRelease, captureFacadeRuntime } from '../../src/roles/pi-owned/facade-context.js';
 import { readProcess } from '../../src/core/run/process.js';
 import { CliHerdrTransport } from '../../src/integrations/herdr/transport.js';
@@ -614,11 +614,6 @@ test('PR4 legacy receipts drain read-only; every mutation and relaunch is refuse
   );
   assert.equal(fs.existsSync(join(f.directory(a.job), 'qa/q1.answer.md')), false);
   assert.equal(fs.existsSync(f.hostile), false);
-  assert.throws(
-    () => launchDispatch(r.pi_dispatch, f.directory(a.job), f.work, null, null, f.env),
-    /legacy_owner_required/
-  );
-  assert.throws(() => reapDispatch(r.pi_dispatch, f.directory(a.job), f.env), /legacy_owner_required/);
   delete r.pi_dispatch;
   r.state = 'launch_unknown';
   put(join(f.directory(a.job), 'receipt.json'), r);

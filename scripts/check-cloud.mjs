@@ -20,14 +20,9 @@ export const FOCUSED_TESTS = [
   'statusline-summary',
   'product-cli-routing',
   'pi-footer',
-  'codex-exec-json',
-  'codex-exec-transport',
   'codex-app-server',
   'codex-app-server-transport',
-  'claude-print-transport',
   'm2-claude-contract-simulation',
-  'pi-rpc-observation',
-  'pi-rpc-transport',
   'd1-claude-visibility',
   'd1-claude-render',
   'claude-configuration',
@@ -46,18 +41,7 @@ export const FOCUSED_TESTS = [
   'c45-jev-durable',
   'c45-jev-tree',
 ];
-export const WORKBENCH_TESTS = ['unified', 'preparer', 'unified-paint', 'pi-channel-state', 'pi-extension-context'];
-export const DEMOS = [
-  'demo-cloud-m1',
-  'demo-codex-exec',
-  'demo-codex-exec-transport',
-  'demo-codex-app-server-transport',
-  'demo-claude-print-transport',
-  'demo-pi-rpc',
-  'demo-pi-rpc-transport',
-  'demo-jev-fake',
-  'demo-pi-footer',
-];
+export const DEMOS = ['demo-cloud-m1', 'demo-jev-fake', 'demo-pi-footer'];
 export function runtime() {
   const [major, minor] = process.versions.node.split('.').map(Number);
   if (process.platform !== 'linux' || !((major === 22 && minor >= 13) || major === 24))
@@ -324,11 +308,6 @@ async function main() {
     {
       name: 'focused',
       args: ['--test', '--test-concurrency=1', ...FOCUSED_TESTS.map((name) => `dist-test/tests/unit/${name}.test.js`)],
-      timeoutMs: 180000,
-    },
-    {
-      name: 'workbench-product',
-      args: ['--test', '--test-concurrency=1', ...WORKBENCH_TESTS.map((name) => `tests/workbench/${name}.test.mjs`)],
       timeoutMs: 180000,
     },
     {

@@ -33,13 +33,7 @@ import {
 } from '../../src/roles/pi-owned/lifecycle.js';
 import { nextQuestionId, qaDecision, questionMarkdown } from '../../src/roles/pi-owned/qa.js';
 import { loadReceipt } from '../../src/roles/job-receipt.js';
-import {
-  validDispatch,
-  launchDispatch,
-  reapDispatch,
-  type DispatchRole,
-  type OwnedDispatchV2,
-} from '../../src/roles/pi-dispatch.js';
+import { validDispatch, type DispatchRole, type OwnedDispatchV2 } from '../../src/roles/pi-dispatch.js';
 import { parseDispatchStatus } from '../../src/roles/pi-dispatch-status.js';
 import { parseRouting, snapshotPiHelpers, PI_ROLE_DEFAULTS, RoutingError } from '../../src/roles/routing.js';
 import { REPO_ROOT } from '../fixtures/paths.js';
@@ -579,8 +573,7 @@ test('all shipped role/skill resources stay public-safe and use only owned capab
   assert.match(fs.readFileSync(join(REPO_ROOT, roleResource('reviewer')), 'utf8'), /Verdict: changes-required/);
 });
 
-test('PR4 selects owned execution only in facade; file-only codecs and legacy transport never execute it', async (t) => {
-  const f = fixture(t);
+test('PR4 selects owned execution only in facade; file-only codecs never import it', () => {
   assert.match(fs.readFileSync(join(REPO_ROOT, 'src/roles/facade.ts'), 'utf8'), /await launchOwned\(context,/);
   for (const relative of [
     'src/roles/pi-dispatch.ts',
@@ -592,9 +585,4 @@ test('PR4 selects owned execution only in facade; file-only codecs and legacy tr
       fs.readFileSync(join(REPO_ROOT, relative), 'utf8'),
       /(?:from\s*|import\s*\()['"][^'"]*pi-owned\//
     );
-  assert.throws(
-    () => launchDispatch(f.dispatch, f.directory, f.context.cwd, null, null, {}),
-    /owned_dispatch_unavailable/
-  );
-  assert.throws(() => reapDispatch(f.dispatch, f.directory, {}), /owned_dispatch_unavailable/);
 });

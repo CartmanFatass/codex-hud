@@ -1,7 +1,7 @@
 /** Lightweight receipt/SESSION codecs. Legacy ownership is observation-only. */
 import * as fs from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
-import { isRecord, type HerdrOutcome } from './herdr-run.js';
+import { isRecord } from './herdr-run.js';
 
 export type DispatchRole = 'implementer' | 'sonic' | 'reviewer' | 'architect';
 export interface LegacyDispatchV1 {
@@ -23,8 +23,6 @@ export interface OwnedDispatchV2 {
   continuation?: LegacyDispatchV1['continuation'];
 }
 export type PiDispatch = LegacyDispatchV1 | OwnedDispatchV2;
-export const DISPATCH_LAUNCH_MS = 300_000;
-export const DISPATCH_REAP_MS = 180_000;
 
 export function dispatchRole(role: string): DispatchRole {
   if (role === 'imp') return 'implementer';
@@ -97,15 +95,6 @@ export function validDispatch(value: unknown, role: string, directory?: string):
   return true;
 }
 
-/** No ORCH/notify channel competes with the caller-armed HUD waiter. */
-export function dispatchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const next: NodeJS.ProcessEnv = { ...env, HERDR_ENV: '1' };
-  delete next.HERDR_PANE_ID;
-  delete next.PI_ORCHESTRATOR_PANE;
-  delete next.PI_ROLE_NOTIFY;
-  return next;
-}
-
 /** Bounded regular file, refusing links (including replaced ancestor directories). */
 export function dispatchText(file: string, maxBytes: number): string | null {
   try {
@@ -159,27 +148,4 @@ export function readDispatchSession(directory: string): DispatchSession | null {
   if (!data.TAB_NAME || !data.BASE || /[\u0000-\u001f]/.test(data.TAB_NAME + data.BASE)) return null;
   // SAFETY: all eight required keys and their value constraints were checked above.
   return data as unknown as DispatchSession;
-}
-
-export function launchDispatch(
-  dispatch: PiDispatch,
-  directory: string,
-  cwd: string,
-  model: string | null,
-  thinking: string | null,
-  env: NodeJS.ProcessEnv,
-  budgetMs = DISPATCH_LAUNCH_MS
-): Promise<HerdrOutcome> {
-  void [directory, cwd, model, thinking, env, budgetMs];
-  throw new Error(dispatch.contract_version === 1 ? 'legacy_owner_required' : 'owned_dispatch_unavailable');
-}
-
-export function reapDispatch(
-  dispatch: PiDispatch,
-  directory: string,
-  env: NodeJS.ProcessEnv,
-  budgetMs = DISPATCH_REAP_MS
-): Promise<HerdrOutcome> {
-  void [directory, env, budgetMs];
-  throw new Error(dispatch.contract_version === 1 ? 'legacy_owner_required' : 'owned_dispatch_unavailable');
 }
