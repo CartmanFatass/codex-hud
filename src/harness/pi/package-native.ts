@@ -103,7 +103,12 @@ export async function capturePiPanel(
         main: main.stamp,
         instance,
         origin,
-        runtime: { node: binding.node, entry: join(binding.release, 'bin/hud'), digest: binding.digest },
+        // Legacy panel identity field: checkout location, not a release/content pin.
+        runtime: {
+          node: binding.node,
+          entry: join(binding.release, 'bin/hud'),
+          digest: createHash('sha256').update(binding.release).digest('hex'),
+        },
       },
       native: {
         identity: { harness: 'pi' as const, root: parseRosterRoot(target.root) },

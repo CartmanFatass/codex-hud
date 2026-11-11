@@ -3,10 +3,7 @@ import type { PiContext } from './delegation-context.js';
 import type { SegmentContext } from './segment.js';
 import type { FooterContext } from './footer-host.js';
 export interface PiPackageBinding {
-  version: 1;
   release: string;
-  digest: string;
-  releaseVersion: string;
   node: string;
   hudHome: string;
 }

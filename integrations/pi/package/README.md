@@ -1,10 +1,11 @@
-# Pi package `hud` (R6A-A5)
+# Pi package `hud`
 
-This is an **opt-in template**, not a live installation. Activation materializes
-`package.json`, `binding.json`, `binding.mjs`, `extensions/hud.mjs`, this README and
-the hash-verified canonical `skills/hud-delegate/SKILL.md` under
-`$HUD_HOME/installation/integrations/<integrationId>/pi/`. The manifest explicitly
-selects that one extension and one skill. It never discovers `hud-footer.ts`,
+`./install --with pi` materializes `package.json`, `binding.json`, `binding.mjs`,
+`extensions/hud.mjs` and a symlink to the canonical `skills/hud-delegate` under
+`$HUD_HOME/pi-package/`, then registers it with `pi install`. The binding names
+this repo checkout, HUD home and Node executable directly; there is no release
+manifest, digest or version pin. Build the checkout before loading the package.
+The manifest selects only that extension and skill, never `hud-footer.ts`,
 managed `hud-delegate.ts` or the worker-only `integrations/pi/worker.ts`.
 Host pi libraries are peers, never bundled dependencies. No dotfile is shipped.
 
@@ -93,70 +94,35 @@ scan, herdr call, process launch or network. The panel is the producer. With it 
 counts honestly expire (60 seconds); no hidden producer is started for cosmetics.
 Status strings are bounded to 160 columns; the port's original width/drop priorities control final layout.
 
-## Owner steps (plan §H rows 7, 8 and 10)
-
-Stage/verify an immutable release first. Commands below are **previews**, with
-synthetic variables/paths; do not run against a real client without approving the
-exact displayed actions. No install command runs a model, client or panel.
+## Install and uninstall
 
 ```sh
-# Generate package under HUD_HOME. Apply requires the exact same options + --plan ID.
-node "$RELEASE/pi-package.mjs" preview --prefix "$PREFIX" --release "$DIGEST" \
-  --node "$NODE" --hud-home "$HUD_HOME" --shim-dir "$SHIM_DIR"
-# After approved apply, the returned piPackage path is PACKAGE.
-
-# H7: separate settings-only owner diff, not implicit in package materialization.
-node "$RELEASE/pi-package.mjs" row-7-preview --prefix "$PREFIX" --release "$DIGEST" \
-  --hud-home "$HUD_HOME" --shim-dir "$SHIM_DIR" \
-  --settings "$PI_AGENT_DIR/settings.json" --package "$PACKAGE"
-# row-7-apply with the same options and --plan ID applies A1's journaled step.
-
-# H10: optional, separate persistent preference diff (default is already true).
-node "$RELEASE/pi-package.mjs" row-10-preview --prefix "$PREFIX" --release "$DIGEST" \
-  --hud-home "$HUD_HOME" --shim-dir "$SHIM_DIR" --panel-auto-open false
-# row-10-apply with the same options and --plan ID; affects panel preference only.
-
-# Reverse newest receipts first; review conflicts, then use the fresh restore ID.
-node "$RELEASE/pi-package.mjs" restore-preview --receipt "$RECEIPT"
-node "$RELEASE/pi-package.mjs" restore --receipt "$RECEIPT" --plan "$RESTORE_ID"
+./install --with pi
+./install --uninstall --with pi
 ```
 
-Rows 7/10 use A1 declarative steps and its backup of bytes/mode/absence, exact
-post-hash conflict refusal, symlink refusal and reverse restore. Other settings
-are preserved. Recovery journals/immutable releases remain. Public shims/selector
-are still part of the A1 preview; inspect every action even when unchanged.
-A symlinked personal settings file is **refused**, never followed into Fishpref.
-Known conflicting historical HUD opt-ins are refused for a separate owner-approved
-resource-selection change, never silently disabled. No `mcp.json` is written.
-After approval, the owner chooses a restart/reload boundary; activation never
-reloads a running client. On upgrade, do not select old and new HUD entries at once.
+The installer backs up `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/settings.json`
+once to `settings.json.hud-backup` before changing it or running pi registration.
+It adds `-extensions/p10k-footer.ts` to the top-level `extensions` array, preserving
+all other entries and keys. Nothing under the agent's `extensions` directory is
+moved, deleted or edited, including symlinks into Fishpref. If `p10k-footer.json`
+exists in that agent directory, `hud import apply --pi-footer --from ABS` imports
+its options into HUD configuration. If pi is not on PATH, registration warns and
+is skipped; the package and footer settings are still prepared.
 
-**H8 / footer replacement (owner step before enabling this package):** remove the
-old p10k-footer extension from pi's auto-discovery path. There is deliberately no
-coexistence detector: two `setFooter`/editor owners would fight. Review this backup
-command, then run it yourself at the chosen install boundary (the HUD never does):
-
-```sh
-mkdir -p "$PI_AGENT_DIR/backups"
-mv "$PI_AGENT_DIR/extensions/p10k-footer.ts" \
-  "$PI_AGENT_DIR/backups/p10k-footer.ts.$(date +%Y%m%d-%H%M%S).bak"
-```
-
-`PI_AGENT_DIR` is the owner's explicit absolute pi agent directory (normally
-`~/.pi/agent`). If this is a symlink, `mv` backs up the symlink, not its Fishpref
-target. Also deselect any explicitly configured p10k entry and historical
-`hud-footer.ts` opt-in; do not load either alongside the ordinary package. Do not
-remove the source in Fishpref. Restart/reload only after the backup and resource
-selection review. Verify the band, spinner, other statuses, `/hud footer off` restoration
-and narrow widths on the owner's terminal before calling live activation accepted.
-Rollback: deselect the HUD package, restore the backed-up extension to its exact
-original path (only if that path is absent), then restart/reload.
+Uninstall calls `pi remove`, removes only the exclusion entry, deletes the backup
+and removes `$HUD_HOME/pi-package`. It does not restore the whole settings backup
+over later edits or remove imported HUD configuration. Neither operation reloads
+a running client. Restart/reload at the chosen boundary; verify the band, spinner,
+other statuses, `/hud footer off` and narrow widths on the owner's terminal.
 
 ## Isolated validation
 
-- `node --test tests/unit/pi-package{,-role}.test.mjs` loads the real generated
+- `node --test tests/unit/install-pi.test.mjs tests/unit/pi-package.test.mjs`
+  runs install/uninstall with a fake pi command, then loads the real checkout
   entry with a recording synthetic API, actual A3 control and synthetic native
-  transport/process ports; separately exercises real MCP/fd3/facade calls.
+  transport/process ports. `pi-package-role.test.mjs` separately exercises real
+  MCP/fd3/facade calls.
 - `node tests/pi-package-mutants.mjs` kills nine disposable emitted-module mutants
   (the six ownership/identity controls, live tree proof, auto-open preference and
   stale-result generation adoption).
