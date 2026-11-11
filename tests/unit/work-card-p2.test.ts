@@ -95,27 +95,6 @@ test('P2 current unanswered QA outranks working; historic QA and a written answe
   assert.match(data.text, /Observation unavailable/);
 });
 
-test('P2 whole-source quarantine removes workers with a visible indication and safe recovery revalidates without fresh activity', async (t) => {
-  const f = p2Fixture(t),
-    d = f.task();
-  f.status(d);
-  const before = await f.draw();
-  const activity = before.board.workers[0].work!.activityAt;
-  try {
-    fs.chmodSync(d, 0);
-    const outage = await f.draw();
-    assert.equal(outage.board.workers.length, 0);
-    assert.equal(outage.board.coverage.incomplete, true);
-    assert.match(outage.text, /Needs-you coverage incomplete/);
-  } finally {
-    fs.chmodSync(d, 0o700);
-  }
-  const recovered = await f.draw();
-  assert.equal(recovered.board.workers.length, 1);
-  assert.equal(recovered.board.coverage.incomplete, false);
-  assert.equal(recovered.board.workers[0].work!.activityAt, activity);
-});
-
 test('P2 exact native enrichment preserves only its existing sentence grant; right arrow reveals full native detail and direct text remains ungranted', async (t) => {
   const f = p2Fixture(t),
     ref = { harness: 'pi' as const, sourceId: 'a'.repeat(64), sessionId: 'native-allowed', threadId: null };

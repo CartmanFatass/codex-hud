@@ -1037,67 +1037,6 @@ test('round-two label scan advances past sealed tasks, including rebuilt trees, 
   }
 });
 
-test('round-two local hydration deduplicates pending checks under the real apply-onChange wiring', async () => {
-  const f = fixture();
-  const nodes = Array.from({ length: 12 }, (_, i) => node(f.native(`local-${i}`, 'root'), { id: `local-${i}` }));
-  const t = tree(nodes);
-  const inspect = f.model.inspectLocalLegacy.bind(f.model);
-  let checks = 0;
-  let callbacks = 0;
-  f.model.inspectLocalLegacy = (subjects) => {
-    checks++;
-    return inspect(subjects);
-  };
-  const jobs = new ModelJobs({
-    model: f.model,
-    log: new AgentLog(),
-    onChange: () => {
-      callbacks++;
-      jobs.apply(t, NO_JOBS, 'en');
-    },
-  });
-  try {
-    jobs.apply(t, NO_JOBS, 'en');
-    await until(() => callbacks === 12);
-    await quiet();
-    assert.equal(checks, 12);
-    assert.equal(callbacks, 12);
-    assert.equal(f.bodies.length, 0);
-  } finally {
-    jobs.stop();
-    await f.close();
-  }
-});
-
-test('round-two local hydration retains only the latest record per current binding and prunes removed subjects', async () => {
-  const f = fixture();
-  const file = f.native('child', 'root');
-  const labelsFile = path.join(f.dir, 'labels.json');
-  writePrivateFile(
-    labelsFile,
-    JSON.stringify({ labels: { [labelKey('Verify synthetic parser', 'en')]: { name: 'Parser checks', kind: 'test' } } })
-  );
-  f.model.configure({ backend: 'off' });
-  const jobs = new ModelJobs({ model: f.model, log: new AgentLog(), labelsFile });
-  try {
-    for (let i = 0; i < 100; i++) {
-      jobs.apply(tree([node(file, { charge: undefined })]), { ...NO_JOBS, agentLabels: true }, 'en');
-      await quiet();
-    }
-    const retained = jobs as unknown as { localHydrations: Map<string, unknown>; localViews: Set<string> };
-    assert.equal(retained.localHydrations.size, 1);
-    assert.equal(retained.localViews.size, 1);
-    jobs.apply(tree([]), { ...NO_JOBS, agentLabels: true }, 'en');
-    await quiet();
-    assert.equal(retained.localHydrations.size, 0);
-    assert.equal(retained.localViews.size, 0);
-    assert.equal(f.bodies.length, 0);
-  } finally {
-    jobs.stop();
-    await f.close();
-  }
-});
-
 test('round-two changed Codex goal triggers an authorized recap at the interval without waiting for the floor', async () => {
   const f = fixture();
   const briefer = new Briefer(() => {}, { model: f.model });

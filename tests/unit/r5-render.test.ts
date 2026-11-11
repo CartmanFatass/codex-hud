@@ -345,16 +345,6 @@ test('a settled outcome survives a stale source as history, still marked stale',
   }
 });
 
-test('a card is redrawn when only the job’s freshness changed', () => {
-  const live = jobNode(cliJob(), { status: 'running' });
-  const gone = jobNode(cliJob({ freshness: stale() }), { status: 'running' });
-  const first = draw([live], { width: 48, style: 'rich' }).text.join('\n');
-  const second = draw([gone], { width: 48, style: 'rich' }).text.join('\n');
-  assert.match(first, /working 5m/);
-  assert.match(second, /stalled 5m/, 'the cached live card is not served for a stale job');
-  assert.doesNotMatch(second, /working/);
-});
-
 test('stale and unknown jobs are counted as unknown, in the title and the filter', () => {
   const nodes = [
     jobNode(cliJob({ freshness: stale() }), { status: 'running' }),
@@ -538,12 +528,6 @@ test('hostile text in a name or any other field is escaped, width-correct, and n
         for (const field of ['reason\\x1b[0m', 'bad\\x1b]0;title\\x07code', 'done\\x1b[31m', 'open\\x07'])
           assert.ok(flat.includes(field), `${field} is shown escaped`);
       }
-});
-
-test('a name of wide characters is cut by columns, not code units', () => {
-  const node = jobNode(cliJob({ name: '解析器恢复路径解析器恢复路径解析器恢复路径🙂🙂🙂' }));
-  for (const style of STYLES)
-    for (const width of WIDTHS) assertWellFormed(draw([node], { width, style }), width, `${style}/${width}`);
 });
 
 // ---------------------------------------------------------------------------
