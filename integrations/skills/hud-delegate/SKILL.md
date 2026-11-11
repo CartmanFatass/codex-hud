@@ -1,13 +1,25 @@
 ---
 name: hud-delegate
-description: Choose a fixed HUD role and hand work off one step at a time. The main session owns every handoff. Use when delegating design, implementation, review, a small task, or browser work.
+description: Hand work to a local HUD role in its own herdr tab - imp (implementer), reviewer, sonic (small chores), and any other role hud_roster lists. Use whenever the user delegates in plain words ("交给 imp", "让 implementer 做", "派个 sonic", "让 sonic 查一下", "review 一下", "起个 reviewer", "问 architect", "delegate this", "dispatch a sonic") or a project's docs route work to a role. The main session writes the brief, dispatches with hud_create, waits for the DONE line, reads the report and decides the next step.
 ---
 
 # Delegate through HUD
 
+The user names a role and a task in plain words; you do the rest. Never ask them to name a tool.
+
+1. Call `hud_roster` once per session: the roles and the dispatch convention in effect.
+2. Write the brief: the goal, scope and out of scope, completion criteria, a size budget and a stop rule. For a small
+   ask the user's own sentence plus those limits is enough. Do not name a report file; HUD adds it.
+3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`.
+4. Tell the user in one line: role, job id. The worker runs in its own tab.
+5. Wait for the `[role@job] DONE` or `FAILED` line in your pane; do not poll. `hud_read` with `wait_ms` is the backup.
+6. Read the report (`hud_read`), check it (for code: the diff and the named checks), then decide: accept, repair, review
+   or stop. DONE means settled, not accepted.
+7. `hud_close` once you accept or give up. Inspect a failed job before closing it.
+
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role when a job finishes. A review verdict is information for you, not permission to continue.
 
-Use `hud_roster` to see the available local pi-roles. Dispatch requires a herdr pane; there is no preset selection.
+Dispatch requires a herdr pane.
 
 ## Roles
 
@@ -31,13 +43,7 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Read each result and decide whether to integrate, request a repair, review or stop. Workers do only their own job.
 The main session owns every handoff and decides every next step. HUD does not chain these steps.
 
-## Jobs
-
-Call `hud_create` with `role`, a stable `request_key`, the brief as `task`, and optionally `cwd`. Available roles are `imp` (pi-roles implementer), `reviewer` and `sonic`. The returned `task_dir` contains the brief, status, questions and report.
-
-### Wait
-
-Use `hud_read` with `job` and `wait_ms` (up to 120000), or wait for the DONE line pi-dispatch pushes to the caller's pane. Reads poll until `idle_grace`, `closed`, `failed`, an open question, or the timeout. Read again after a timeout, answer or repair. DONE means settled, not accepted: read the report yourself. Reports are capped at 64 KiB with a truncation flag; omit `job` to list the 20 newest jobs.
+## Details
 
 ### Questions
 
