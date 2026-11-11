@@ -3,8 +3,7 @@
 # or API-key-like strings. Synthetic data only: the repo is public.
 #
 # Scanned directories default to the repo's fixture/doc trees and can be
-# overridden with CHECK_FIXTURES_DIRS (space-separated, relative to the repo
-# root or absolute). tests/check-fixtures.selftest.sh uses this.
+# overridden with CHECK_FIXTURES_DIRS (space-separated, relative to the repo root or absolute).
 #
 # Exit codes: 0 clean, 1 hits found, 2 scan error (grep could not finish).
 set -uo pipefail
