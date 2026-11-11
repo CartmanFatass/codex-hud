@@ -339,6 +339,10 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   2026-11-10: the owner approved R6b slice L (full retirement, concept §15 "R6b full retirement approved"), including
   the WP0 exception for the `hud run` cases in `b11-cli.test.ts`.
 
+  2026-11-10 (owner): the HUD replaces claude-hud and p10k-footer at parity (concept §15). Two packages:
+  **STATUSLINE-PARITY** (Claude) and **PI-FOOTER-PORT** (pi). The A8 release installs first; the parity release
+  switches the Claude statusline and the pi footer.
+
   Next:
   - R6b slice L, after A8 merges, the owner installs, and the drain audit passes (`--slice runtime`);
   - R7 acceptance, whose plan is drafted alongside;

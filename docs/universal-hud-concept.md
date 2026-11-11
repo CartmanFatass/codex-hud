@@ -969,6 +969,25 @@ file stays frozen. Order: after A8 merges, the owner installs the release, and `
 runtime` passes on the owner's machine. Slices P, T and W (prototype residue, transport experiments, workbench lab)
 go first and do not wait for that gate.
 
+### 2026-11-10 The HUD replaces claude-hud and p10k-footer at parity (Jacob)
+
+Amends the 2026-11-08 install decisions. The HUD is the one status surface in each client, so it must first do what
+the tools it replaces do for the owner today.
+
+- **Claude Code.** `hud-statusline` reaches parity with the owner's installed claude-hud (0.8.0, MIT, reference
+  source at its `v0.8.0` tag) under the owner's own claude-hud configuration: model and provider, project path, git
+  branch with dirty and ahead/behind, context bar, usage limits, effort, session duration, config counts, skills,
+  and the agents and todos lines, which need incremental transcript reading. It also takes over the owner's wrapper:
+  width handling and an optional stdin forward (for `toktrack quota record-claude`) configured in HUD config. The
+  earlier "no transcript, no git" limit of the statusline is lifted for these fields; reads stay bounded and cached.
+  The HUD's own delegation and work lines stay. Options the owner does not use are not ported.
+- **pi.** The HUD pi package owns the footer: it takes in the owner's p10k-footer (the band in the editor's top
+  border and the identity row), settings imported explicitly from `p10k-footer.json` into HUD config, and adds the
+  HUD delegation segment. This replaces the A5 rule "never `setFooter`; p10k remains the sole footer owner".
+  p10k-footer is retired from the owner's pi config at install.
+- **Order.** The A8 release installs first; its statusline switch stays blocked by the parity check as designed. The
+  parity release switches the Claude statusline and the pi footer.
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。
