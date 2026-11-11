@@ -18,7 +18,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    watcher closes them; `hud_close` only closes one early (owner, 2026-11-11).
 2. **Show what is happening.** A side panel (Home, Work, Project) shows the main session's jobs and their state. The HUD display
    is opt-in per launch: `claudeH`, `piH` and `codexH` start a client with it, the plain commands start it without, and
-   workers run plain; the panel opens only with `/hud`. The delegation tools stay registered either way (owner,
+   workers run plain; the panel opens only with `/hud` (in Codex with F12, as before). The delegation tools stay registered either way (owner,
    2026-11-11). Started with its H command, each client keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
    (taking in p10k-footer), Codex's existing tmux bar. The panel and status lines can use external models with the
    owner's own keys (`$HUD_HOME/credentials.env`, through the Decisions API) for job summaries, recaps and sentences.
