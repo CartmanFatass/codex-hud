@@ -7,6 +7,9 @@ record, this page is the later one.
 
 Finish what you are doing first. Nothing here interrupts M1.
 
+Updated 2026-11-11: the owner agreed that the dispatch convention is one editable file handed out by `hud_roster`
+(section G). D2 changed with it: the bridge is that file, not a skill.
+
 ## What the owner settled in the discussion
 
 - The old workflow failed because management itself was delegated: agents managed and reviewed agents, and nobody
@@ -28,18 +31,22 @@ Finish what you are doing first. Nothing here interrupts M1.
 1. M1 reaches the owner: the owner installs it and uses it. This comes before everything below.
 2. Spec wording (section A), confirmed by the owner.
 3. Slice ROLE-FILES (section B).
-4. M2 deletion, then a code walkthrough for the owner (section C).
-5. Workflow files (section D). D4 touches only docs and can be done at any quiet moment.
-6. The next milestone runs the whole new flow once as its trial (section F).
+4. Slice CONVENTION (section G), right after ROLE-FILES: it reads files on the same path.
+5. M2 deletion, then a code walkthrough for the owner (section C).
+6. Workflow files (section D). D4 touches only docs and can be done at any quiet moment.
+7. The next milestone runs the whole new flow once as its trial (section F).
 
 ## A. Spec wording: ask the owner, then apply
 
-`docs/spec.md` is the owner's. Show the owner these two changes and apply them only on a yes.
+`docs/spec.md` is the owner's. Show the owner the wording and apply it only on a yes.
 
 - §2.1, replacing "the fixed roles (imp, reviewer, sonic, oracle, jev)": "Roles are defined by files; the HUD ships
   defaults. The MCP knows no particular role and no workflow."
+- §2.1, replacing "The skill ships a short default workflow (…) that a project's own docs override": "The HUD ships a
+  short default dispatch convention; a project's or the owner's own file replaces it whole. `hud_roster` returns the
+  roles and the convention in effect." The owner agreed to this change on 2026-11-11; confirm only the wording.
 - §5 M2: the deletion covers the old role facade and the old `hud-mcp` surface as well as the retired execution
-  stack.
+  stack. Commit `3d47211` already put the facade into the spec; check that nothing is left to add.
 
 ## B. Slice ROLE-FILES: the thin layer reads roles from files
 
@@ -85,28 +92,16 @@ Serves spec §2.1 as reworded in A. Do not start before A is confirmed.
 - `setup-matt-pocock-skills` is typed by the owner, once, in this repo. Tracker: local files.
 - Do not edit these skills. Personal adjustments go into D2 and D4.
 
-### D2. One bridge skill, new
+### D2. The bridge is the owner's convention file
 
-A user-invoked skill of 30–40 lines, kept with the owner's own skills (Fishpref), not shipped by the HUD. Suggested
-name `hud-implement-spec`. It is `implement-spec` with HUD roles in place of subagents, and it points at
-`hud-delegate` for how the six tools work instead of repeating it.
+The text that connects Matt's tickets to the HUD's roles is not a skill. It is the owner's dispatch convention, the
+file section G serves. A draft is at `~/vibecoding/drafts/convention.md`: `implement-spec` with HUD roles in place of
+subagents, plus the tiers, the question rules of D3, the review and the acceptance. Do not install it; the owner
+edits it and copies it into place when satisfied.
 
-1. Read the spec and the tickets; find the tickets that can start.
-2. One `hud_create` per ready ticket: role `imp`, the ticket id as `request_key`, `task` holding the paths of the
-   ticket and the spec plus the size budget and stop rule, `cwd` the ticket's worktree. Exploration and chores go to
-   `sonic`.
-3. Keep your own context small: track which tickets are ready, running and merged; communicate by pointers; do not
-   read every report in full.
-4. Worker questions (D3).
-5. When a ticket settles: read the report, `hud_close`, merge, start the tickets it unblocked.
-6. When all tickets are in: one `hud_create` with role `reviewer`, the brief holding the diff command, the spec path
-   and the two axes of `code-review` (spec including scope creep; standards including what can be deleted). A risky
-   change (owner configs, deleting data, killing processes, the installer) also gets one concrete question.
-7. One imp job fixes what real use would hit. The rest is noted in one line each.
-8. Acceptance: run the spec's scenarios for real and show the owner the evidence; then the owner tries it.
-
-Project conventions the tickets follow, stated in two lines in D4's `docs/delegation.md`: every ticket carries a size
-budget and a stop rule; the threat model is `docs/spec.md` §4.
+The seam between the two halves is the ticket. `to-tickets` writes ticket files; the convention says what a ticket
+must carry (title, what to build, acceptance criteria, blocked by, size budget, stop rule) and where tickets live.
+Replacing Matt's front half later changes only that paragraph.
 
 ### D3. Questions, decisions and the architect
 
@@ -136,8 +131,8 @@ How the orchestrator handles an `ask_orchestrator` question:
   `docs/spec.md` and the state file. No workflow text.
 - `docs/handoff/STATE.md`: rewrite to one screen (done, next, decisions waiting for the owner). It is 670 lines and
   its title still names the 2026-11-03 handoff; the history is in git. From now on it is rewritten, not appended to.
-- `docs/delegation.md`: the role and model table, the conventions, the two lines from D2, and a pointer to the
-  skills. The loop description goes; the skills carry it.
+- `docs/delegation.md`: the role and model table, the repo conventions, and pointers to the skills and to the
+  dispatch convention. The loop description goes; the skills carry it.
 - The memory index for this project: remove entries that only describe superseded process rules. Keep environment
   facts and pointers.
 
@@ -168,14 +163,45 @@ At each milestone give the owner three things: the demo, the size (lines added a
 newly do), and a ten-sentence description of how the system works now. A noun in that description that is not in the
 spec or the glossary is something the owner has not agreed to; say why it exists.
 
+## G. Slice CONVENTION: `hud_roster` hands out the dispatch convention
+
+Serves spec §2.1 as reworded in A. Runs right after ROLE-FILES.
+
+Two things were mixed under "dispatch rules". The **tool contract** (how the six tools wait, answer and close) belongs
+to the MCP, is not editable, and stays in the tool descriptions and in `hud-delegate`. The **dispatch convention**
+(when to use which role, how to write a brief, when to review) is prose the owner edits. This slice is about the
+second.
+
+- **Wanted:** the convention is one plain file. Lookup order: a file in the project, then one under `$HUD_HOME`, then
+  the default the HUD ships. The first one found is used whole; there is no merging. `hud_roster` returns it together
+  with the path it came from, next to the role list. No new tool: a session calls `hud_roster` when it starts to
+  delegate, so the convention enters the context at that moment and not before.
+- **Default:** the eight lines under "Default workflow" in `integrations/skills/hud-delegate/SKILL.md` move into the
+  shipped default file. `hud-delegate` keeps the tool manual and says in one line that `hud_roster` returns the
+  convention.
+- **Guard rails:** the MCP does not parse the file; the file has no fields for stages or conditions; it has a size
+  cap. Past any of these it becomes the workflow engine that spec §3 rules out.
+- **Not for workers:** only the main session receives the convention. A worker still gets its role text and the
+  brief, which keeps roles neutral.
+- **The owner's file:** it exists only once the owner copies the default or the draft into `$HUD_HOME`. Installing or
+  upgrading the HUD never writes or changes it.
+- **Out of scope:** validation or a schema, a tool that sets the convention, one convention per role, template
+  variables, choosing between several conventions (a project file is the switch).
+- **Budget:** about 30 source lines, one more case in `tests/unit/thin-mcp.test.mjs`. If it does not fit, stop and
+  report. File names and the project location are the implementer's choice; take the simplest and say which.
+- **Demo:** `hud_roster` shows the default convention and its path; put a file under `$HUD_HOME` and it shows that
+  one; put a file in a project and a session started there shows the project's.
+
 ## When the owner is needed
 
 - A: yes or no on the two spec sentences.
 - D1: yes on the installs; typing `/setup-matt-pocock-skills` once.
+- D2 and G: editing the convention draft and putting it in place.
 - D3: answering rounds of structural questions.
 - C: the walkthrough. Every milestone: looking at the demo and trying the build, about one to two hours in total.
 
 ## Not to build
 
 No workflow engine, no hooks that enforce a flow, no workflow stages in the panel, no adapter for another harness
-until the owner wants a role on one, no further process rules beyond this page.
+until the owner wants a role on one, no further process rules beyond this page. For the convention: no parsing, no
+validation, no merging of files, no tool that writes it.
