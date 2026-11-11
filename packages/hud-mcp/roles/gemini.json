@@ -1,0 +1,6 @@
+{
+  "role": "gemini",
+  "harness": "jev",
+  "tool": "jev-ask",
+  "provider": "gemini"
+}

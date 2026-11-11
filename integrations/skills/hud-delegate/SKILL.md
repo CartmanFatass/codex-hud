@@ -29,7 +29,11 @@ The shipped defaults; `hud_roster` lists what is actually defined (files in `$HU
 - `reviewer` independently assesses a specified change and reports findings. You decide whether to accept the change or request repairs.
 - `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design.
 - `architect` returns design options with their costs, including the smallest; you decide.
-- Oracle and Jev browser jobs are not available until M3.
+- `oracle` asks ChatGPT Pro through `jev-ask`.
+- `gemini` asks Gemini web through `jev-ask`.
+- `argon` asks Gemini Argon in AI Studio through `jev-aistudio`.
+- `flow` generates images through `jev-flow`.
+- `flow-video` generates video through `jev-flow`; state `cost: N credits` in the brief to confirm that cost.
 
 ## Details
 
@@ -51,4 +55,4 @@ Use `hud_send` with `job`, a stable `message_key` and `text` to continue the sam
 
 Keep request keys stable; never blindly re-create an uncertain launch.
 
-HUD uses the locally installed pi-roles; it does not chain, retry or choose another backend on its own. Oracle and Jev jobs wait until M3.
+HUD uses the locally installed pi-roles and Jev CLIs; it does not chain, retry or choose another backend on its own. Jev roles cannot continue with `hud_send`.

@@ -15,6 +15,7 @@ async function fixture(t, inHerdr = true) {
   const log = join(root, 'commands.jsonl');
   const fake = `#!${process.execPath}
 import * as fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { basename, join } from 'node:path';
 const command = basename(process.argv[1]), args = process.argv.slice(2);
 fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args }) + '\\n');
@@ -23,14 +24,29 @@ if (command === 'pi-dispatch') {
   fs.writeFileSync(join(dir, 'SESSION.txt'), 'PRIMARY=synthetic-primary\\n');
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'running', exit_reason: null }));
   fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
+} else if (command === 'herdr' && args[0] === 'tab' && args[1] === 'create') {
+  console.log(JSON.stringify({result: {tab: {tab_id: 'synthetic-tab'}, root_pane: {pane_id: 'synthetic-worker'}}}));
+} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'run') {
+  process.exit(spawnSync('/bin/sh', ['-c', args[3]], {stdio: 'inherit'}).status);
+} else if (command === 'jev-ask' && args[0] === 'key') {
+  console.log(JSON.stringify({key: 'synthetic-key'}));
+} else if (command === 'jev-ask' && args[0] === 'wait') {
+  fs.writeFileSync(args[args.indexOf('--answer-file') + 1], 'Synthetic Jev answer.');
+} else if (command === 'jev-aistudio') {
+  fs.writeFileSync(args[args.indexOf('--out') + 1], 'Synthetic Argon answer.');
+} else if (command === 'jev-flow') {
+  if (args[args.indexOf('--kind') + 1] === 'video' && !args.includes('--confirm-credits')) process.exit(17);
+  fs.writeFileSync(join(args[args.indexOf('--out-dir') + 1], 'synthetic-media.mp4'), 'synthetic media');
 } else if (command === 'pi-role-reap') {
   console.log('Reaping synthetic job');
   console.log('Synthetic reap complete');
 }
 `;
-  for (const command of ['pi-dispatch', 'pi-role-reap', 'herdr']) {
+  for (const command of ['pi-role', 'pi-dispatch', 'pi-role-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
     fs.writeFileSync(join(bin, command), fake, { mode: 0o700 });
   }
+  fs.mkdirSync(join(root, 'roles'));
+  fs.writeFileSync(join(root, 'roles', 'implementer.md'), '---\nmodel: synthetic/default\nthinking: low\n---\n');
   const env = { ...process.env, HUD_MCP_SURFACE: 'roles', PATH: `${bin}:${process.env.PATH}`, FAKE_LOG: log };
   for (const name of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR']) {
     env[name] = join(root, name.toLowerCase());
@@ -135,7 +151,12 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     listed.result.tools.map((tool) => tool.name),
     ['hud_roster', 'hud_create', 'hud_read', 'hud_send', 'hud_respond', 'hud_close']
   );
-  const args = { role: 'imp', request_key: 'synthetic-request', task: 'Implement the synthetic change.' };
+  const args = {
+    role: 'imp',
+    request_key: 'synthetic-request',
+    task: 'Implement the synthetic change.',
+    package: 'Synthetic lane',
+  };
   const job = await f.call('hud_create', args);
   assert.match(job.job, /^j[0-9a-f]{16}$/);
   assert.equal(job.task_dir, join(f.env.HUD_HOME, 'jobs', job.job));
@@ -167,6 +188,9 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   assert.equal(receipt.stderr_tail, '');
   assert.equal(receipt.cwd, f.root);
   assert.equal(receipt.request_key, args.request_key);
+  assert.equal(receipt.package, args.package);
+  await f.call('hud_read', { job: job.job });
+  assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at, undefined);
   const waiting = f.call('hud_read', { job: job.job, wait_ms: 2000 });
   const settle = setTimeout(
     () =>
@@ -183,6 +207,10 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   assert.equal(read.report_exists, true);
   assert.equal(read.report, 'Synthetic implementation report.');
   assert.equal(read.report_truncated, false);
+  const stamp = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at;
+  assert.equal(new Date(stamp).toISOString(), stamp);
+  await f.call('hud_read', { job: job.job });
+  assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at, stamp);
   const answer = { job: job.job, request_id: 'q1', answer: 'Synthetic answer.' };
   assert.deepEqual(await f.call('hud_respond', answer), { ok: true, written: true });
   assert.deepEqual(await f.call('hud_respond', { ...answer, answer: 'Do not overwrite.' }), {
@@ -240,18 +268,44 @@ fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args:
 
 test('thin roles load a custom role file and dispatch its mapped pi role', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
-  const role = { role: 'synthetic-writer', harness: 'pi', pi_role: 'implementer', split: false, can_continue: true };
+  const role = {
+    role: 'synthetic-writer',
+    harness: 'pi',
+    pi_role: 'implementer',
+    split: false,
+    can_continue: true,
+    model: 'synthetic/override',
+    thinking: 'high',
+  };
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'));
   fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'writer.json'), JSON.stringify(role));
   const roster = await f.call('hud_roster');
   assert.deepEqual(
     roster.roles.find((entry) => entry.role === role.role),
-    { ...role, available: true }
+    {
+      ...role,
+      available: true,
+      source_file: join(f.env.HUD_HOME, 'roles', 'writer.json'),
+      model_source: join(f.env.HUD_HOME, 'roles', 'writer.json'),
+      thinking_source: join(f.env.HUD_HOME, 'roles', 'writer.json'),
+      pi_role_file: join(f.root, 'roles', 'implementer.md'),
+    }
   );
+  const imp = roster.roles.find((entry) => entry.role === 'imp');
+  assert.equal(imp.model, 'synthetic/default');
+  assert.equal(imp.thinking, 'low');
+  assert.equal(imp.model_source, join(f.root, 'roles', 'implementer.md'));
+  assert.equal(imp.thinking_source, imp.model_source);
   assert.deepEqual(
     roster.roles.find((entry) => entry.role === 'architect'),
     {
       role: 'architect',
+      source_file: resolve('packages/hud-mcp/roles/architect.json'),
+      model: null,
+      thinking: null,
+      model_source: null,
+      thinking_source: null,
+      pi_role_file: null,
       harness: 'pi',
       pi_role: 'architect',
       split: false,
@@ -275,14 +329,85 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
         f.root,
         '--output',
         join(job.task_dir, 'report.md'),
+        '--model',
+        'synthetic/override',
+        '--thinking',
+        'high',
       ],
     },
   ]);
+  assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))), 'package'), false);
   fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   assert.equal(
     (await f.call('hud_send', { job: job.job, message_key: 'custom-send', text: 'Synthetic follow-up.' })).sent,
     true
   );
+});
+
+test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate sends', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  const args = { role: 'oracle', request_key: 'oracle-once', task: 'Synthetic question.' };
+  const job = await f.call('hud_create', args);
+  assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'), `${args.task}\n`);
+  assert.deepEqual(await f.call('hud_create', args), job);
+  const asks = f.commands().filter(({ command }) => command === 'jev-ask');
+  assert.deepEqual(
+    asks.map(({ args }) => args[0]),
+    ['key', 'send', 'wait']
+  );
+  assert.equal(asks[1].args[asks[1].args.indexOf('--effort') + 1], '6 Pro');
+  assert.equal(asks[2].args[asks[2].args.indexOf('--answer-file') + 1], join(job.task_dir, 'report.md'));
+  assert.equal(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), 'Synthetic Jev answer.');
+  assert.ok(f.commands().find(({ args }) => args[0] === 'tab' && args.includes('--no-focus')));
+  assert.ok(
+    f
+      .commands()
+      .find(
+        ({ command, args }) =>
+          command === 'herdr' &&
+          args[0] === 'agent' &&
+          args[2] === 'synthetic-pane' &&
+          args[3] === `[oracle@${job.job}] DONE ${job.task_dir}/report.md`
+      )
+  );
+  const state = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
+  assert.equal(state.state, 'closed');
+  assert.equal(state.output_written, true);
+  assert.equal(state.exit_reason, 'settled');
+  assert.equal((await f.call('hud_read', { job: job.job })).report, 'Synthetic Jev answer.');
+  assert.equal(
+    (await f.call('hud_send', { job: job.job, message_key: 'no-send', text: 'Synthetic follow-up.' })).code,
+    'not_continuable'
+  );
+  assert.equal((await f.call('hud_roster')).roles.find(({ role }) => role === 'oracle').can_continue, false);
+  assert.equal((await f.call('hud_close', { job: job.job })).exit_code, 0);
+  assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
+  for (const role of ['gemini', 'argon', 'flow']) {
+    const other = await f.call('hud_create', { role, request_key: role, task: 'Synthetic request.' });
+    assert.equal((await f.call('hud_read', { job: other.job })).state, 'closed');
+  }
+});
+
+test('thin Flow video confirms only a stated credit cost', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  for (const [key, task, confirmed] of [
+    ['no-cost', 'Synthetic video.', false],
+    ['cost', 'Synthetic video; cost: 20 credits', true],
+  ]) {
+    const job = await f.call('hud_create', { role: 'flow-video', request_key: key, task });
+    const args = f
+      .commands()
+      .filter(({ command }) => command === 'jev-flow')
+      .at(-1).args;
+    assert.equal(args.includes('--confirm-credits'), confirmed);
+    const read = await f.call('hud_read', { job: job.job });
+    assert.equal(read.state, confirmed ? 'closed' : 'failed');
+    if (confirmed) {
+      assert.equal(args[args.indexOf('--confirm-credits') + 1], '20');
+      assert.match(read.report, /synthetic-media.mp4/);
+      assert.equal(fs.existsSync(join(job.task_dir, 'media', 'synthetic-media.mp4')), true);
+    } else assert.equal(read.report_exists, false);
+  }
 });
 
 test('thin create requires herdr without dispatching', { timeout: 10000 }, async (t) => {

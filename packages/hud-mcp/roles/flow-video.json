@@ -1,0 +1,6 @@
+{
+  "role": "flow-video",
+  "harness": "jev",
+  "tool": "jev-flow",
+  "kind": "video"
+}

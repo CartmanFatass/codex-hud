@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -12,10 +12,17 @@ const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobsRoot = join(hudHome, 'jobs');
 interface Role {
   role: string;
-  harness: 'pi';
-  pi_role: string;
-  split: boolean;
-  can_continue: boolean;
+  harness: 'pi' | 'jev';
+  pi_role?: string;
+  split?: boolean;
+  can_continue?: boolean;
+  model?: string;
+  thinking?: string;
+  tool?: 'jev-ask' | 'jev-aistudio' | 'jev-flow';
+  provider?: 'chatgpt' | 'gemini';
+  effort?: string;
+  kind?: 'image' | 'video';
+  source_file: string;
 }
 function roles(): Map<string, Role> {
   const result = new Map<string, Role>();
@@ -27,17 +34,71 @@ function roles(): Map<string, Role> {
         !role ||
         typeof role.role !== 'string' ||
         !role.role.trim() ||
-        role.harness !== 'pi' ||
-        typeof role.pi_role !== 'string' ||
-        !role.pi_role.trim() ||
-        typeof role.split !== 'boolean' ||
-        typeof role.can_continue !== 'boolean'
+        (role.harness !== 'pi' && role.harness !== 'jev') ||
+        (role.harness === 'pi' &&
+          (typeof role.pi_role !== 'string' ||
+            !role.pi_role.trim() ||
+            typeof role.split !== 'boolean' ||
+            typeof role.can_continue !== 'boolean')) ||
+        (role.harness === 'jev' &&
+          (!['jev-ask', 'jev-aistudio', 'jev-flow'].includes(role.tool ?? '') ||
+            (role.tool === 'jev-ask' && !['chatgpt', 'gemini'].includes(role.provider ?? '')) ||
+            (role.tool === 'jev-flow' && !['image', 'video'].includes(role.kind ?? '')))) ||
+        ['model', 'thinking', 'effort'].some(
+          (key) => role[key as keyof Role] !== undefined && typeof role[key as keyof Role] !== 'string'
+        )
       )
         throw new Error(`invalid_role: ${join(root, file)}`);
-      result.set(role.role, role as Role);
+      result.set(role.role, {
+        ...role,
+        source_file: join(root, file),
+        ...(role.harness === 'jev' ? { can_continue: false } : {}),
+      } as Role);
     }
   }
   return result;
+}
+function executable(command: string): string | null {
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    const path = resolve(dir, command);
+    try {
+      fs.accessSync(path, fs.constants.X_OK);
+      return fs.realpathSync(path);
+    } catch {
+      /* Try the next PATH entry. */
+    }
+  }
+  return null;
+}
+function assignment(role: Role) {
+  let pi_role_file: string | null = null;
+  if (role.harness === 'pi') {
+    for (const command of ['pi-role', 'pi-dispatch']) {
+      const bin = executable(command);
+      const path = bin && join(dirname(dirname(bin)), 'roles', `${role.pi_role}.md`);
+      if (path && fs.existsSync(path)) {
+        pi_role_file = path;
+        break;
+      }
+    }
+  }
+  const frontmatter = pi_role_file && slice(pi_role_file, 16384)?.text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
+  const effective = (key: 'model' | 'thinking') => {
+    if (role[key] !== undefined) return { value: role[key], source: role.source_file };
+    const value = frontmatter && frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim();
+    return { value: value ? value.replace(/^(['"])(.*)\1$/, '$2') : null, source: value ? pi_role_file : null };
+  };
+  const model = effective('model'),
+    thinking = effective('thinking');
+  return {
+    ...role,
+    model: model.value,
+    thinking: thinking.value,
+    model_source: model.source,
+    thinking_source: thinking.source,
+    pi_role_file,
+    available: true,
+  };
 }
 function convention() {
   for (const path of [
@@ -57,6 +118,9 @@ interface Job {
   cwd: string;
   herdr_pane: string;
   created_at: string;
+  package?: string;
+  read_at?: string;
+  jev?: Role;
   dispatch_exit_code: number | null;
   stderr_tail: string;
   message_keys: string[];
@@ -73,8 +137,8 @@ const tools = [
   tool('hud_roster', 'List local roles, their availability, and the dispatch convention in effect.', {}),
   tool(
     'hud_create',
-    'Dispatch a local pi role; request_key deduplicates jobs.',
-    { role: text, request_key: text, task: text, cwd: text },
+    'Dispatch a local role; request_key deduplicates jobs and optional package is a display-only label.',
+    { role: text, request_key: text, task: text, cwd: text, package: text },
     ['role', 'request_key', 'task']
   ),
   tool('hud_read', 'Read a job, optionally waiting for settlement or a question; omit job for the 20 newest.', {
@@ -136,6 +200,9 @@ function directory(job: string): string {
 }
 function save(job: Job): void {
   const file = join(directory(job.job), 'job.json');
+  // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
+  const read_at = json<Job>(file)?.read_at;
+  if (read_at) job.read_at = read_at;
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(job, null, 2) + '\n', { mode: 0o600 });
   fs.renameSync(`${file}.tmp`, file);
 }
@@ -173,6 +240,27 @@ function run(command: string, argv: string[]): Promise<{ exit_code: number; stdo
     child.on('close', (code) => done({ exit_code: code ?? -1, stdout, stderr }));
   });
 }
+const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+async function dispatchJev(job: Job) {
+  const dir = directory(job.job),
+    tabName = `${job.job}-${Date.now().toString(36)}`;
+  const result = await run('herdr', ['tab', 'create', '--cwd', job.cwd, '--label', tabName, '--no-focus']);
+  if (result.exit_code !== 0) return result;
+  let created;
+  try {
+    created = JSON.parse(result.stdout).result;
+  } catch (error) {
+    return { ...result, exit_code: 1, stderr: `herdr tab create: ${String(error)}` };
+  }
+  const { tab, root_pane } = created;
+  fs.writeFileSync(
+    join(dir, 'SESSION.txt'),
+    `TASK=${job.job}\nTAB=${tab.tab_id}\nTAB_NAME=${tabName}\nLEFT=${root_pane.pane_id}\nORCH=${job.herdr_pane}\n`,
+    { mode: 0o600 }
+  );
+  const script = fileURLToPath(new URL('../../../../bin/hud-jev.mjs', import.meta.url));
+  return run('herdr', ['pane', 'run', root_pane.pane_id, [process.execPath, script, dir].map(quote).join(' ')]);
+}
 function observation(job: Job) {
   const dir = directory(job.job);
   const status = json<{ state?: string; exit_reason?: string | null }>(join(dir, 'STATUS.json'));
@@ -199,7 +287,7 @@ function observation(job: Job) {
 async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_roster')
     return {
-      roles: [...roles().values()].map((role) => ({ ...role, available: true })),
+      roles: [...roles().values()].map(assignment),
       convention: convention(),
     };
   if (name === 'hud_create') {
@@ -211,6 +299,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (existing) return created(existing);
     if (!process.env.HERDR_PANE_ID) return { ok: false, code: 'herdr_required' };
     const task = required(args, 'task');
+    if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
     const cwd = resolve(args.cwd === undefined ? process.cwd() : required(args, 'cwd'));
     const job: Job = {
       job: 'j' + randomBytes(8).toString('hex'),
@@ -219,20 +308,32 @@ async function call(name: string, args: Args): Promise<unknown> {
       cwd,
       herdr_pane: process.env.HERDR_PANE_ID,
       created_at: new Date().toISOString(),
+      ...(args.package === undefined ? {} : { package: args.package as string }),
+      ...(definition.harness === 'jev' ? { jev: definition } : {}),
       dispatch_exit_code: null,
       stderr_tail: '',
       message_keys: [],
     };
     const dir = directory(job.job);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    // Workers end without writing a file unless told where; pi-dispatch fails a job whose report is missing.
-    const brief = `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
+    // Pi writes the report itself; the Jev CLI saves the browser's answer locally.
+    const brief =
+      definition.harness === 'jev'
+        ? `${task}\n`
+        : `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
     fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
     // Persist before dispatch: an interrupted launch must not dispatch again on retry.
     save(job);
-    const argv = [definition.pi_role, '--task-dir', dir, '--workdir', cwd, '--output', join(dir, 'report.md')];
-    if (definition.split) argv.push('--split');
-    const result = await run('pi-dispatch', argv);
+    let result;
+    if (definition.harness === 'jev') result = await dispatchJev(job);
+    else {
+      const argv = [definition.pi_role!, '--task-dir', dir, '--workdir', cwd, '--output', join(dir, 'report.md')];
+      if (definition.split) argv.push('--split');
+      for (const key of ['model', 'thinking'] as const) {
+        if (definition[key] !== undefined) argv.push(`--${key}`, definition[key]);
+      }
+      result = await run('pi-dispatch', argv);
+    }
     job.dispatch_exit_code = result.exit_code;
     job.stderr_tail = result.stderr;
     save(job);
@@ -260,8 +361,16 @@ async function call(name: string, args: Args): Promise<unknown> {
         ['idle_grace', 'closed', 'failed'].includes(result.state ?? '') ||
         result.questions.length ||
         Date.now() >= end
-      )
+      ) {
+        if (result.report_exists && ['idle_grace', 'closed', 'failed'].includes(result.state ?? '')) {
+          const latest = json<Job>(join(dir, 'job.json'))!;
+          if (!latest.read_at) {
+            latest.read_at = new Date().toISOString();
+            save(latest);
+          }
+        }
         return result;
+      }
       await sleep(Math.min(500, end - Date.now()));
     }
   }
@@ -275,7 +384,7 @@ async function call(name: string, args: Args): Promise<unknown> {
         : { ok: false, sent: false, code: 'send_failed', ...outcome };
     }
     const agent = primary(dir);
-    if (!roles().get(job.role)?.can_continue || observation(job).state !== 'idle_grace' || !agent)
+    if (job.jev || !roles().get(job.role)?.can_continue || observation(job).state !== 'idle_grace' || !agent)
       return { ok: false, code: 'not_continuable' };
     // Record the attempt first, so a lost reply cannot cause a duplicate prompt.
     job.message_keys.push(key);

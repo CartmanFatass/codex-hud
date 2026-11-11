@@ -1,0 +1,6 @@
+{
+  "role": "flow",
+  "harness": "jev",
+  "tool": "jev-flow",
+  "kind": "image"
+}

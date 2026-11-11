@@ -1,0 +1,8 @@
+{
+  "role": "oracle",
+  "harness": "jev",
+  "tool": "jev-ask",
+  "provider": "chatgpt",
+  "model": "6 Pro",
+  "effort": "6 Pro"
+}

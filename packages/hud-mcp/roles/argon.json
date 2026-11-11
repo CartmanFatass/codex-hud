@@ -1,0 +1,6 @@
+{
+  "role": "argon",
+  "harness": "jev",
+  "tool": "jev-aistudio",
+  "model": "gemini-4-argon"
+}
