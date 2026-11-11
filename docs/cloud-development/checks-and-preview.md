@@ -109,10 +109,10 @@ It never recursively packs the working directory or copies arbitrary existing
 - Fresh `.js` outputs corresponding to Git-tracked non-declaration `.ts` under
   `src/` and `packages/hud-mcp/src/`, at their existing runtime output paths.
 - Explicitly required `dist/cli/statusline.js` and `dist/harness/pi/footer.js`
-  outputs from their matching tracked sources. The exact
-  `extensions/pi/hud-footer.ts` and `extensions/pi/hud-delegate.ts` entries are the
-  only source-TS exceptions. Pi loads them explicitly and they import their
-  packaged runtime modules. The bridge/context/channel outputs are required
+  outputs from their matching tracked sources. The historical standalone
+  `extensions/pi/hud-footer.ts` is retired; the ordinary pi package selects the
+  owned p10k footer runtime. `extensions/pi/hud-delegate.ts` remains an explicit
+  source-TS entry importing its packaged runtime modules. The bridge/context/channel outputs are required
   explicitly. Other extension files are not selected recursively. Loading it still requires
   a separately installed compatible Pi host; the preview never loads it itself.
 - The explicit runtime `src/core/launch/codex-cells.json`, copied to both builds'

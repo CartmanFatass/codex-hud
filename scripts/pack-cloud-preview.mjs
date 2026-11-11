@@ -42,10 +42,15 @@ export const REQUIRED_OUTPUTS = {
   'src/managed/wake-message.ts': 'dist/managed/wake-message.js',
   'src/harness/pi/footer.ts': 'dist/harness/pi/footer.js',
   ...Object.fromEntries(
-    ['segment', 'package-entry', 'package-native', 'package-context'].map((name) => [
-      `src/harness/pi/${name}.ts`,
-      `dist/harness/pi/${name}.js`,
-    ])
+    [
+      'segment',
+      'package-entry',
+      'package-native',
+      'package-context',
+      'p10k-footer',
+      'footer-host',
+      'footer-settings',
+    ].map((name) => [`src/harness/pi/${name}.ts`, `dist/harness/pi/${name}.js`])
   ),
   'src/harness/pi/delegation-bridge.ts': 'dist/harness/pi/delegation-bridge.js',
   'src/harness/pi/delegation-channel.ts': 'dist/harness/pi/delegation-channel.js',
@@ -159,7 +164,7 @@ export const MCP_RUNTIME_OUTPUTS = [
   'packages/hud-mcp/dist/src/jev/runtime/oracle.js',
   'packages/hud-mcp/dist/src/jev/runtime/types.js',
 ];
-const EXTENSION_ENTRIES = ['extensions/pi/hud-footer.ts', 'extensions/pi/hud-delegate.ts'];
+const EXTENSION_ENTRIES = ['extensions/pi/hud-delegate.ts'];
 export const EXTRA_FILES = [
   ...CLAUDE_TEMPLATES,
   ...PI_TEMPLATES,
@@ -250,7 +255,7 @@ async function selfTest() {
   }
   for (const output of MCP_RUNTIME_OUTPUTS)
     assert.ok(fs.lstatSync(path.join(ROOT, output)).isFile(), `missing MCP build output: ${output}`);
-  assert.equal(EXTRA_FILES.filter((file) => file.startsWith('extensions/')).length, 2);
+  assert.equal(EXTRA_FILES.filter((file) => file.startsWith('extensions/')).length, 1);
   for (const entry of EXTENSION_ENTRIES) assert.equal(EXTRA_FILES.includes(entry), true);
   assert.equal(EXTRA_FILES.includes('src/managed/jev-bridge.py'), true);
   assert.equal(EXTRA_FILES.includes('src/jev/snapshot.js'), true);

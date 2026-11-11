@@ -1,4 +1,4 @@
-/** Ordinary pi package: one local command, six private-channel proxies, one status key. */
+/** Ordinary pi package: local controls, six private-channel proxies and the owned pi footer. */
 import { join } from 'node:path';
 import { PiDelegationBridge } from './delegation-bridge.js';
 import { createPiSegment, isPiTui } from './segment.js';
@@ -10,8 +10,10 @@ import { autoOpenEnabled } from '../../integrations/panel/eligibility.js';
 import { PanelDeadline, samePane } from '../../integrations/panel/herdr.js';
 import { ROLE_TOOLS } from '../../roles/role-tools.js';
 import { capturePiPanel } from './package-native.js';
+import { createP10kFooter } from './p10k-footer.js';
+import type { FooterAPI, FooterHost } from './footer-host.js';
 /** Structural host projection. SDK compatibility is checked against the installed declarations. */
-export interface PiPackageAPI {
+export interface PiPackageAPI extends FooterAPI {
   on(event: string, handler: (event: unknown, ctx: PiPackageContext) => void | Promise<void>): (() => void) | void;
   registerCommand(
     name: string,
@@ -39,6 +41,7 @@ export function installPiPackage(
   binding: PiPackageBinding,
   deps: {
     env?: NodeJS.ProcessEnv;
+    footerHost?: () => Promise<FooterHost>;
     bridge?: (source: string, cwd: string) => Pick<PiDelegationBridge, 'start' | 'stop' | 'execute'>;
     capture?: typeof capturePiPanel;
     panel?: typeof controlPanel;
@@ -48,6 +51,7 @@ export function installPiPackage(
 ) {
   const env = { ...(deps.env ?? process.env), HUD_HOME: binding.hudHome };
   const segment = createPiSegment({ env, ...deps.segment });
+  let footer: ReturnType<typeof createP10kFooter> | undefined;
   type State = {
     ctx: PiPackageContext;
     id: string;
@@ -57,8 +61,11 @@ export function installPiPackage(
     generation?: string;
     panelWork: Promise<void>;
     diagnostic: string;
+    footerOn: boolean;
   };
   let active: State | null = null;
+  // Binding epochs are disposable; the user's same-session footer choice is not.
+  let footerChoice: { id: string; source: string; on: boolean } | undefined;
   let tree: { state: State; ticket: number; generation: string; confirmed: boolean } | undefined;
   let epoch = 0;
   let cleanup: Promise<void> = Promise.resolve();
@@ -200,6 +207,7 @@ export function installPiPackage(
     const old = active;
     active = null;
     segment.stop();
+    footer?.stop();
     // stop() invalidates the bridge before any asynchronous cleanup or live observation.
     const stopped = old?.bridge.stop();
     const closing = old
@@ -232,6 +240,8 @@ export function installPiPackage(
             entry: join(binding.release, 'packages/hud-mcp/bin/hud-mcp.mjs'),
           }),
       };
+    if (!footerChoice || footerChoice.id !== id || footerChoice.source !== source)
+      footerChoice = { id, source, on: true };
     const s: State = {
       ctx,
       id,
@@ -239,10 +249,17 @@ export function installPiPackage(
       bridge: retained.bridge,
       panelWork: Promise.resolve(),
       diagnostic: 'panel_not_open',
+      footerOn: footerChoice.on,
     };
     active = s;
     await s.bridge.start();
     if (!current(s) || ticket !== epoch) return;
+    if (isPiTui(ctx) && deps.footerHost) {
+      const host = footer ? undefined : await deps.footerHost();
+      if (!current(s) || ticket !== epoch) return;
+      if (!footer && host) footer = createP10kFooter(pi, host, env);
+      if (s.footerOn) footer?.start(ctx);
+    }
     segment.start(ctx, displayTarget('pi', id, source).root, () => current(s));
     if (isPiTui(ctx)) {
       try {
@@ -279,6 +296,8 @@ export function installPiPackage(
   });
   on('session_shutdown', () => {
     const result = fence();
+    footer?.dispose();
+    footer = undefined;
     for (const remove of removers.splice(0)) remove();
     return result;
   });
@@ -289,15 +308,42 @@ export function installPiPackage(
     'agent_end',
     'agent_settled',
     'message_end',
+    // message_end runs before native persistence. context runs after persistence,
+    // before every provider request, so the working band includes the new prompt.
+    'context',
     'session_compact',
     'session_compact_failed',
     'session_info_changed',
   ])
-    on(event, () => segment.refresh());
+    on(event, () => {
+      segment.refresh();
+      footer?.update();
+    });
+  on('turn_start', (event) => footer?.turnStart((event as { timestamp?: number }).timestamp));
+  on('turn_end', () => footer?.turnEnd());
   pi.registerCommand('hud', {
-    description: 'Local HUD: on|off|toggle|status|reconnect|help (off is session-local)',
+    description: 'Local HUD panel: on|off|toggle|status|reconnect|help; footer on|off or footer <segment options>',
     async handler(args, ctx) {
       tree = undefined;
+      if (/^footer(?:\s|$)/.test(args.trim())) {
+        const options = args.trim().slice('footer'.length).trim();
+        if (options === 'on' || options === 'off') {
+          const s = active;
+          if (!s || !current(s)) ctx.ui.notify('HUD: session_unbound; use /hud reconnect', 'info');
+          else if (!isPiTui(ctx)) ctx.ui.notify('HUD: footer_noninteractive', 'info');
+          else {
+            const show = options === 'on';
+            if (show !== s.footerOn) {
+              s.footerOn = show;
+              footerChoice = { id: s.id, source: s.source, on: show };
+              if (show) footer?.start(ctx);
+              else footer?.stop();
+            }
+            ctx.ui.notify('HUD: footer_' + options, 'info');
+          }
+        } else await footer?.command(options, ctx);
+        return;
+      }
       let message: string;
       const command = args.trim() || 'status';
       try {
@@ -305,7 +351,7 @@ export function installPiPackage(
           message = 'unknown_subcommand; use on|off|toggle|status|reconnect|help';
         else if (command === 'help')
           message =
-            'on|off|toggle|status|reconnect|help. off is session-local; reconnect rebinds a canceled transition.';
+            'Panel: on|off|toggle|status|reconnect|help. Footer: footer on|off restores/hides the HUD frame independently; footer <segment options>. off is session-local; reconnect rebinds a canceled transition.';
         else if (command === 'reconnect') {
           await start(ctx, false);
           message = active ? 'reconnected; ' + active.diagnostic : 'session_unbound';

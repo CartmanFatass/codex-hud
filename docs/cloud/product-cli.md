@@ -34,21 +34,14 @@ No install or restore is run implicitly by help, render, build or packaging.
 
 ## Pi footer and panel
 
-The existing foreground launcher already passes native arguments unchanged:
-
-```sh
-node bin/hud pi launch --executable /absolute/path/to/pi -- -e /absolute/path/to/codex-hud/extensions/pi/hud-footer.ts
-```
-
-This explicitly loads the [version-pinned Pi TUI footer](pi-footer.md); it is not
-managed delegation or a claim of live-provider verification. `/hud-footer off`
-restores the native footer in that session. The shipped footer can read the
-shared committed summary when explicit `HUD_HOME` and `HUD_PI_SOURCE_ROOT` match
-the current native Pi identity/location and an existing matching cache is
-available. Missing or invalid evidence leaves native footer facts intact; shared
-HUD facts remain partial direct-child observations. See the [footer's shared-cache
-requirements](pi-footer.md#shared-committed-hud-summary). No settings or persistent
-extension registration is performed by HUD.
+The historical standalone `hud-footer.ts` entry is retired. Use the explicitly
+activated [ordinary pi package](../reference.md#pi-package-activation-r6a-a5),
+which now owns the p10k-style composer/footer and includes the passive delegation
+segment. `/hud footer off` restores pi's default editor/footer in the current session;
+`/hud on|off|toggle` control only the panel.
+Back up/deselect p10k-footer before activation, as described in the package
+runbook. No footer setting import, extension discovery change or persistent
+registration happens implicitly. This is not a claim of live-provider validation.
 
 `node bin/hud panel` remains the existing delegation panel. A separately developed
 unified workbench is not silently substituted or claimed available through this

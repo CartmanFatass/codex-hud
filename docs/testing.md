@@ -231,7 +231,7 @@ scale and process comparisons belong only to `tests/perf/statusline-parity.test.
 | R01 | A fresh apply selects a verified standalone release; explicit restore to absence removes its selector and retains the release directory | `runtime-install.test.mjs` — fresh apply and explicit initially-absent restore stay standalone with punctuation in prefix                                  | `contract` |
 | R02 | Private immutable runtime closure refuses links, drift, unsafe metadata and unlisted payload                                            | `runtime-package.test.mjs` — manifest validates complete bounded payload and exact locked production identities                                            | `contract` |
 | R03 | Owned shims preserve PID/PPID, argv, stdin, fd3, signals and native exit                                                                | `runtime-install.test.mjs` — fix1 ${command} runs in original PID with direct parent, argv, stdin, fd3 and exit code                                       | `process`  |
-| R04 | Pi package preserves other UI, exposes six proxies and never routes /hud through a model                                                | `pi-package.test.mjs` — REAL package entry start -> reload -> shutdown preserves synthetic p10k fields; exactly six proxies and no footer or message calls | `contract` |
+| R04 | Pi package owns/restores the p10k footer with independent panel controls, preserves statuses and six proxies                                                | `pi-package.test.mjs` — REAL package entry start -> reload -> shutdown owns footer, restores defaults, keeps other statuses and exactly six proxies | `contract` |
 | R05 | Pi tree/reload transitions require exact live generation proof and one-use fencing                                                      | `pi-package.test.mjs` — tree continuity ${variant}: live exact-generation proof, preference and one-use fencing                                            | `contract` |
 | R06 | Claude hook accepts exact commands, not prose, prefixes or unsupported operations                                                       | `claude-plugin.test.mjs` — exact command grammar; prose and prefixes pass, unknowns and operation failures stay blocked                                    | `contract` |
 | R07 | Jev closure and snapshot assets are packaged in every supported runtime                                                                 | `jev-runtime-package.test.mjs` — derived root Jev runtime closure is selected by every root packaging list                                                 | `contract` |
@@ -329,7 +329,12 @@ activation/resource checks remain an owner gate, separate from this source-only 
 | --- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
 | E01 | Synthetic fixed-role job traverses create/read/send/respond/close through the real facade | `role-facade.test.ts` — create read send respond close against the fake herdr                                                                              | `e2e` |
 | E02 | Production panel collection paints the same work snapshot without paint-time publication  | `role-summary.test.ts` — role summary actual collection ${scenario} publishes outside paint and finish disposes handlers                                   | `e2e` |
-| E03 | Built pi package loads, reloads and shuts down without owning another extension's UI      | `pi-package.test.mjs` — REAL package entry start -> reload -> shutdown preserves synthetic p10k fields; exactly six proxies and no footer or message calls | `e2e` |
+| E03 | Built pi package owns/restores footer across startup/footer-off/reload/shutdown; panel controls stay independent      | `pi-package.test.mjs` — REAL package entry start -> reload -> shutdown owns footer, restores defaults, keeps other statuses and exactly six proxies | `e2e` |
+
+Footer parity owner: `pi-footer.test.ts` — the `p10k parity: ${row.name}` table compares exact original ANSI
+captures (idle, spinner, every fitting/drop step, ASCII, Nord, defaults and switches off), plus the real delegation
+segment's complete/partial/unavailable rows. `plugin-independence.test.mjs` owns the `piFooter settings import`
+table (preview read-only, apply section-only, unknown/wrong-zone/nonboolean refusal).
 
 ### Performance
 
@@ -340,6 +345,9 @@ activation/resource checks remain an owner gate, separate from this source-only 
 | Q03 | Cold owned launches report distribution and semantic write counts on a named host        | `tests/perf/pi-owned-orchestration.test.ts` — cold fake/real-loader n=20; `tests/perf/pi-dispatch-facade.test.ts` — PR4 cold launch samples; `tests/perf/role-wait.test.ts` — cold RSS              | `perf` |
 | Q04 | Delegation projection/rows and selection interaction retain distinct latency budgets     | `tests/perf/{b10b-perf,b10b-s2-perf,b10b-s3-perf}.test.ts` — projection, rows, selection and frame-diff latency; `tests/perf/status-merge.test.ts` — pure merge microbenchmark | `perf` |
 | Q05 | Ledger and MCP stress retain declared throughput, checkpoint and latency envelopes       | `tests/perf/{ledger-perf,b12-store,b12d-wal,b6-performance,b18-budgets,b19-drainer,handshake-benchmark}.test.ts` and `tests/perf/b21-process.test.mjs` — ledger, export, WAL and MCP stress; `tests/perf/materials.test.ts` — material build cost                                     | `perf` |
+
+Opt-in footer render cost: `tests/perf/pi-footer.test.ts` — three host-labelled resize/repaint runs, nearest-rank
+p50/p95/p99/max, retained history/resource/git read counts; no repaint history traversal or launch.
 
 ## 4. Shared stand-ins and fixtures
 
