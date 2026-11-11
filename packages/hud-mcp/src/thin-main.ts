@@ -210,11 +210,12 @@ function slice(file: string, limit: number): { text: string; truncated: boolean 
 function directory(job: string): string {
   return join(jobsRoot, job);
 }
-function save(job: Job): void {
+function save(job: Job, clearRead = false): void {
   const file = join(directory(job.job), 'job.json');
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
   const read_at = json<Job>(file)?.read_at;
-  if (read_at) job.read_at = read_at;
+  if (clearRead) delete job.read_at;
+  else if (read_at) job.read_at = read_at;
   const reaped_at = json<Job>(file)?.reaped_at;
   if (reaped_at) job.reaped_at = reaped_at;
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(job, null, 2) + '\n', { mode: 0o600 });
@@ -475,7 +476,6 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (!process.env.HERDR_PANE_ID) return { ok: false, code: 'herdr_required' };
     const task = required(args, 'task');
     if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
-    const overridden = args.model !== undefined || args.thinking !== undefined;
     for (const key of ['model', 'thinking'] as const) {
       if (args[key] === undefined) continue;
       if (definition.harness !== 'pi') return { ok: false, code: 'invalid_arguments' };
@@ -496,7 +496,7 @@ async function call(name: string, args: Args): Promise<unknown> {
         ? {
             model: effective.model,
             thinking: effective.thinking,
-            model_source: overridden ? 'hud_create' : effective.model_source,
+            model_source: args.model !== undefined ? 'hud_create' : effective.model_source,
           }
         : {}),
       dispatch_exit_code: null,
@@ -603,7 +603,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     const result = await run('herdr', ['agent', 'prompt', agent, message]);
     outcome.exit_code = result.exit_code;
     outcome.stderr_tail = result.stderr;
-    save(job);
+    save(job, result.exit_code === 0);
     return {
       ...(result.exit_code === 0 ? {} : { code: 'send_failed' }),
       ok: result.exit_code === 0,

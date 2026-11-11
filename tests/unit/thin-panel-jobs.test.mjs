@@ -8,7 +8,7 @@ import { PanelJobPipeline } from '../../dist/tree-page.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
-import { stripAnsi, visualLength } from '../../dist/render/colors.js';
+import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
 import { Notifier } from '../../dist/notify.js';
 const now = new Date().setHours(12, 0, 0, 0);
 const question =
@@ -69,7 +69,7 @@ function fixture(t) {
       join(dir, 'STATUS.json'),
       {
         state,
-        model: n === 1 ? 'gpt-6.1-sol' : 'glm-5.3',
+        model: n === 1 ? 'openai/gpt-6.1-sol' : 'zhipu/glm-5.3',
         thinking: n === 1 ? 'high' : 'max',
         provider: 'gateway',
         started_at: ago(40).toISOString(),
@@ -110,7 +110,7 @@ function fixture(t) {
     const state = { ...initialMonitorState(), mainTab: tab };
     return renderMonitor({ tree, workboard: board, state, width: 56, height, nowMs: now });
   };
-  return { env, pipeline, tree, render, put, askDir };
+  return { env, pipeline, tree, render, put, askDir, ready };
 }
 const plain = (frame) => frame.lines.map(stripAnsi);
 const joined = (frame) =>
@@ -175,6 +175,7 @@ test('v7 Work: file-derived phase chain and vendor/model/full effort chips', asy
   const text = joined(frame);
   assert.match(text, /build ✓ › review r1 2 major › ▸asking/);
   assert.match(text, /◎ gpt-6\.1-sol high/);
+  assert.doesNotMatch(text, /openai\/|zhipu\//);
   assert.match(text, /ℤ glm-5\.3 max/);
   assert.match(text, /glm-5\.3 max codex/);
   assert.doesNotMatch(text, /high pi|max pi/);
@@ -184,6 +185,17 @@ test('v7 Work: file-derived phase chain and vendor/model/full effort chips', asy
   const ascii = joined(f.render(board, 'work'));
   assert.match(ascii, /OAI gpt-6\.1-sol high/);
   assert.match(ascii, /GLM glm-5\.3 max/);
+  f.put(join(f.ready, 'review-1.md'), 'Verdict: changes-required\n2 major', 5);
+  f.put(join(f.ready, 'review-2.md'), 'Verdict: accept', 1);
+  await f.pipeline.refresh();
+  setDisplayConfig({ theme: 'terminal', icons: 'unicode', glyphs: 'glyph' });
+  const painted = f.render(f.pipeline.workboard(f.tree), 'work');
+  assert.match(joined(painted), /build ✓ › review r1 2 major › review r2 accept › accept/);
+  assert.ok(painted.lines.some((line) => line.includes(theme.board.success('accept'))));
+  for (const line of plain(painted)) {
+    assert.equal(visualLength(line), 56);
+    assert.doesNotMatch(line, /\x1b|\[38;2;/);
+  }
 });
 test('statusline Work count reads job folders with no role-summary cache', (t) => {
   const f = fixture(t);

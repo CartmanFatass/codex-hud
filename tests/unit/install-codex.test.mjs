@@ -52,19 +52,25 @@ if (process.argv[3] === 'remove') {
     const remove = ['mcp', 'remove', 'hud'];
     const prompt = path.join(codexHome, 'prompts/hud.md');
     const promptLine = 'Run `hud panel` with Bash and report the pane id it prints.\n';
-    for (let i = 0; i < 2; i++) {
+    for (const content of [null, promptLine, 'Owner prompt.\n']) {
+      if (content !== null) {
+        fs.mkdirSync(path.dirname(prompt), { recursive: true });
+        fs.writeFileSync(prompt, content);
+      }
       run('--skip-build', '--with', 'codex');
       assert.equal(fs.readlinkSync(skill), target);
-      assert.equal(fs.readFileSync(prompt, 'utf8'), promptLine);
+      if (content === 'Owner prompt.\n') assert.equal(fs.readFileSync(prompt, 'utf8'), content);
+      else assert.equal(fs.existsSync(prompt), false);
     }
     run('--uninstall', '--with', 'codex');
     assert.throws(() => fs.lstatSync(skill), { code: 'ENOENT' });
+    assert.equal(fs.readFileSync(prompt, 'utf8'), 'Owner prompt.\n');
+    fs.writeFileSync(prompt, promptLine);
+    run('--uninstall', '--with', 'codex');
     assert.throws(() => fs.lstatSync(prompt), { code: 'ENOENT' });
     assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse), [
+      ...Array(3).fill([remove, add]).flat(),
       remove,
-      add,
-      remove,
-      add,
       remove,
     ]);
   } finally {

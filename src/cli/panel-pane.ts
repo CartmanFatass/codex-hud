@@ -36,6 +36,13 @@ export async function openPanelPane(
   columns = process.stdout.isTTY ? process.stdout.columns : Number(env.COLUMNS)
 ): Promise<string> {
   if (!env.HERDR_PANE_ID) throw Error('panel_requires_herdr');
+  if (!Number.isFinite(columns) || columns <= 0) {
+    const layout = await command(['pane', 'layout', '--pane', env.HERDR_PANE_ID], env).catch(() => null);
+    const panes = isRecord(layout?.layout) ? layout.layout.panes : null;
+    const caller = Array.isArray(panes) ? panes.find((p) => p.pane_id === env.HERDR_PANE_ID) : null;
+    columns = isRecord(caller?.rect) ? Number(caller.rect.width) : NaN;
+    if (!Number.isFinite(columns) || columns <= 0) columns = 120;
+  }
   const result = await command(
     [
       'pane',
@@ -44,7 +51,7 @@ export async function openPanelPane(
       '--direction',
       'right',
       '--ratio',
-      String(Number.isFinite(columns) && columns > 0 ? Math.max(0.1, Math.min(0.9, 1 - width / columns)) : 0.7),
+      String(Math.max(0.1, Math.min(0.9, 1 - width / columns))),
       '--no-focus',
       '--cwd',
       cwd,

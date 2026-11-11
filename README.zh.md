@@ -42,10 +42,10 @@
 ```bash
 git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
-./bin/codex-hud-install
+./install --with claude,pi,codex
 
-# 刷新 shell，然后直接输入：
-codex
+# 将安装程序打印的 H 函数加入 shell，然后启动：
+codexH
 ```
 
 <details>

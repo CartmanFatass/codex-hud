@@ -949,125 +949,20 @@ coordination requires local filesystem atomic rename and coherent directory read
 
 ### Universal CLI
 
-Build with `npm run build && npm run build:hud-mcp`. Ledger commands require
-Node 22.x ≥22.13 or Node ≥24 (23 is unsupported). `hud codex ...` and
-`hud codex-hud ...` invoke the existing `codex-hud` launcher with the same arguments,
-environment and default bar behavior. The existing `codex-hud` entry is unchanged.
+Build with `npm run build && npm run build:hud-mcp` (Node 22.x ≥22.13 or Node ≥24;
+23 is unsupported), or install with `./install --with claude,pi,codex`.
+`hud codex ...` and `hud codex-hud ...` invoke the existing tmux-bar launcher.
 
-`hud panel` opens the existing interactive panel in the current terminal. Its
-delegation view covers the ledger instead of selecting a Codex session as its root.
-When a local ledger is available, the panel owns a bounded observation worker;
-if it cannot run, the panel continues with read-only observations. Closing the
-panel stops its worker and attempts to release its collection leases.
-Use `hud panel --help` for its syntax.
+`hud panel [--width N]` opens the interactive panel beside the caller in herdr;
+`--here` renders in the current terminal. The default width is 56 columns.
+It reads jobs from `$HUD_HOME/jobs` and the clients' transcripts, not a ledger.
+Claude and pi open it with `/hud`; Codex uses F12. See `hud panel --help` for syntax.
 
-`hud claude --profile NAME` selects a Claude profile from `HUD_HOME/delegate.json`.
-`--resume SESSION` selects its separate native resume template. Explicit
-`--profile NAME -- EXECUTABLE ARG ...` supplies complete literal argv;
-`--profile NAME --shell TEXT` selects shell text, run with the profile's shellPath
-or an explicit absolute `$SHELL`, using `-ic`. These forms cannot be combined or
-replace a resume template. Profile placeholders are substituted per argv element,
-or quoted at declared shell argument boundaries. Explicit overrides are literal.
-`--settings FILE` preserves that object's existing hooks while adding the
-synchronous HUD hook for `claude_pre_tool_use_v1` through a private per-launch
-settings file. User settings files are never rewritten. An argv-embedded
-`--settings VALUE` or `--settings=VALUE` source is snapshotted and merged too;
-multiple sources are refused. The injected flag precedes an argv option
-terminator, preserving subsequent literal prompt bytes. Hook-bearing shell forms
-currently refuse with `shell_hook_target_unverified`: their actual Claude
-executable cannot be inferred from shellPath. Adding settings to shell text is
-also refused when its injection boundary cannot be established.
-
-Launch and resume require matching reviewed product capability evidence. The
-shipped manifest contains no verified cells, so otherwise prepared operations
-return `capability_unverified`; earlier input/target refusals retain their own
-reason codes. Executable discovery or a configuration flag does not
-grant a capability. Standalone Claude launch creates no managed run or parent
-context. Panel/host integration, delegated Claude resume and `hud pi` follow in
-later packages. `hud cache show [--json]` is read-only: it prints the
-`HUD_HOME/cache.json` v2 snapshot that hud-mcp loads once at startup, with its
-validation result. A missing file is a valid empty snapshot (exit 0); an invalid
-file prints its detail code (exit 2) while hud-mcp still starts and reports empty
-advice. `hud cache --help` needs no HUD_HOME. `hud cache report` follows in v1.1.
-
-Management uses an existing absolute, canonical, private `HUD_HOME` owned by the
-current uid (default `~/.hud`); symlinks, unsafe permissions and missing stores are
-refused. It never initializes a ledger. Commands are:
-
-```text
-hud run status RUN [--json]
-hud run cancel RUN [--grace MS] [--json]
-hud run reconcile RUN [--json]
-hud run resume LINK --request-key KEY --expected-run RUN --mode headless|visible [--prompt TEXT] [--json]
-hud cache show [--json]
-```
-
-Status opens SQLite read-only. Cancel and reconcile use the existing trusted-local
-manager and original writers, including runs whose parent or child is not yet
-bound. Visible cancel accepts intent and returns
-`visible_scope_control_unavailable` / `unconfirmed`; stop that run in its pane.
-Accepted cancellation stays accepted if its optional status refresh fails.
-Resume calls B4's `resumeLocal` with all supplied parameters and derives the real
-local-user actor. It checks owner, task, target, capability and slot again. A stale
-expected run or an active run is refused. An accepted request key replays its
-original result; do not automatically replace the key or target after a mismatch
-or unknown response. No parent MCP context is manufactured.
-
-```text
-hud run wait (RUN | --link LINK) [--after-seq N]
-  [--until report,run_terminal,uncertain] [--owner-generation N]
-  [--timeout-ms MS] [--notify | --json]
-```
-
-Wait is read-only and fixes the run at entry, including across later resume
-rounds. Its total deadline defaults to two hours; a background skill that knows
-its parent is noninteractive can explicitly request 1500000 ms. An independent unreferenced two-second timer
-checks the original parent pid and complete process stamp without reading the
-ledger. Ledger/watch recovery retains its separate 29-second slice.
-Reparenting, parent replacement, or a supplied owner generation becoming stale
-ends the waiter. SIGINT/SIGTERM release its watcher and SQLite connection; they
-do not cancel the run. Lost hints recover at the next bounded read. No database
-transaction stays open while blocked.
-
-Notify is the default and emits one line of at most 512 bytes on a match or
-deadline. It contains identifiers, event classes and a cursor hint, with no report
-body, summary or path. Background-command completion is a hint: the parent must
-call `delegate_wait` with its **own** run/cursor and drain while `hasMore=true`.
-JSON returns one page with cursor/match/deadline fields, minimal current-run
-metadata and `watchUnavailable`; arbitrary event payloads, report bodies, paths
-and credentials are omitted. Continue with the returned `runId` and `nextSeq`,
-rather than re-resolving a link. A deadline is not cancellation.
-
-MCP's wait budget remains separate: without a matching trusted parent/client
-runtime attestation in the shipped G04 manifest, B6 retains its conservative short
-wait and unverified-timeout diagnostic. Numeric settings, a child launch cell,
-and duplicate same-source profiles cannot enable long MCP waits. Release/B14
-must supply actual client-version/deadline evidence and settle the local-initiation
-topology convention before promoting production capabilities.
-
-Management exits 0 on success, 1 on internal or missing-build failure, 2 on invalid
-arguments, 3 on unsafe HUD_HOME, 4 on refusal/missing target or orphan/stale waiter,
-5 on unsupported runtime/schema, 130 on SIGINT and 143 on SIGTERM. Failures print a
-stable reason code without internal paths. See `hud run --help` and
-`hud claude --help` for the current syntax.
-
-`hud link export --json --schema-version 1` retains B18's independent read-only
-metadata export. `--paths local` opts in to local paths; `--link ID` is repeatable.
-Its export-specific exit codes are listed by `hud link export --help`.
-
-
-## Explicit delegated report digest (test candidate)
-
-`hud digest --help` discovers `plan --run RUN --report REPORT --json` and
-`run --run RUN --report REPORT --expected-ledger LEDGER_ID --expected-recipient RECIPIENT_ID --json`.
-Plan reads only metadata. Run sends only one authenticated completed report’s
-public summary (≤32 KiB UTF-8, ≤8000 code points), never reportPath, transcripts,
-stdout, tasks or parent text. Private source `model.json` must explicitly enable
-delegatedDigest and full-ref delegated/result/digest scope; independent
-`outbound.json` must allow the concrete digest recipient. Missing settings deny;
-old Codex/native/resultDigest permission does not apply. Source F4 budget/cache
-is separate from legacy state. Summaries do not prove correctness or run termination.
-See [configuration, refusals and local validation](cloud/f4-digest-cli.md).
+The MCP exposes six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`,
+`hud_respond` and `hud_close`. Roles and the dispatch convention come from files;
+job records and reports are plain files under `$HUD_HOME/jobs`.
+`hud_read` reads a report and marks it read for the panel. A successful new
+`hud_send` continuation makes the next report unread again.
 
 ## Job sentences (R5UX-P3B)
 

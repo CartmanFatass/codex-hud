@@ -95,11 +95,19 @@ const tool = (name: string, description: string, properties: Record<string, unkn
   inputSchema: { type: 'object', properties, required, additionalProperties: false },
 });
 export const PI_ROLE_TOOLS = [
-  tool('hud_roster', 'List local roles and their availability.', {}),
+  tool('hud_roster', 'List local roles, their availability, and the dispatch convention in effect.', {}),
   tool(
     'hud_create',
-    'Dispatch a local pi role; request_key deduplicates jobs.',
-    { role: text, request_key: text, task: text, cwd: text },
+    'Dispatch a local role; request_key deduplicates jobs and optional package is a display-only label.',
+    {
+      role: text,
+      request_key: text,
+      task: text,
+      cwd: text,
+      package: { ...text, description: 'Display-only package label.' },
+      model: { ...text, description: 'Override the pi role model for this job only.' },
+      thinking: { ...text, description: 'Override the pi role thinking for this job only.' },
+    },
     ['role', 'request_key', 'task']
   ),
   tool('hud_read', 'Read a job, optionally waiting for settlement or a question; omit job for the 20 newest.', {
@@ -108,7 +116,7 @@ export const PI_ROLE_TOOLS = [
   }),
   tool(
     'hud_send',
-    'Continue an implementer during idle_grace; message_key deduplicates sends.',
+    'Continue an eligible role during idle_grace; message_key deduplicates sends.',
     { job: text, message_key: text, text },
     ['job', 'message_key', 'text']
   ),

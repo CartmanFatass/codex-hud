@@ -42,7 +42,7 @@ The shipped defaults; `hud_roster` lists what is actually defined (files in `$HU
 
 ### Helpers
 
-An implementer runs with a split pane and may use pi-roles' helpers when the brief asks. Do not duplicate helper work; read the report. Sonic handles only fully specified chores, never tests, diagnosis, measurement or design. The main session owns every next step.
+An implementer may use pi-roles' helpers when the brief asks; they open in a pane beside it only when called. Do not duplicate helper work; read the report. Sonic handles only fully specified chores, never tests, diagnosis, measurement or design. The main session owns every next step.
 
 ### Repairs
 

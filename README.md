@@ -42,10 +42,10 @@ No. Codex HUD auto-activates tmux for you. Just type `codex` and the HUD appears
 ```bash
 git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
-./bin/codex-hud-install
+./install --with claude,pi,codex
 
-# Refresh your shell, then just type:
-codex
+# Add the H functions printed by the installer to your shell, then launch:
+codexH
 ```
 
 <details>

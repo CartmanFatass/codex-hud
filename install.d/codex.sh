@@ -4,11 +4,9 @@ hud_codex_prompt_line='Run `hud panel` with Bash and report the pane id it print
 
 hud_ext_install() {
   local prompt="${CODEX_HOME:-$HOME/.codex}/prompts/hud.md"
-  mkdir -p -- "$(dirname -- "$prompt")"
-  if [[ -f "$prompt" && "$(cat -- "$prompt")" != "$hud_codex_prompt_line" ]]; then
-    printf 'Warning: keeping existing prompt file: %s\n' "$prompt" >&2
-  else
-    printf '%s\n' "$hud_codex_prompt_line" > "$prompt"
+  # Codex opens the panel with F12; remove only the legacy prompt we wrote.
+  if [[ -f "$prompt" && "$(cat -- "$prompt")" == "$hud_codex_prompt_line" ]]; then
+    rm -- "$prompt"
   fi
   if command -v codex >/dev/null 2>&1; then
     codex mcp remove hud 2>/dev/null || true

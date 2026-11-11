@@ -12,6 +12,8 @@ import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { renderWorkCard } from '../../dist/render/work-card.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi } from '../../dist/render/colors.js';
+import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
+import { retainedWorker } from '../../dist/render/work-lanes.js';
 const workerFor = (f, id) =>
   readThinJobs(f.env.HUD_HOME, { project: null, pane: 'synthetic-pane' })
     .flatMap((lane) => lane.workers)
@@ -38,6 +40,7 @@ if (command === 'pi-dispatch') {
 } else if (command === 'pi-role') {
   console.log(JSON.stringify(args.slice(2)));
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
+  if (fs.existsSync(join(process.env.HOME, 'fail-start'))) { console.error('synthetic start failed'); process.exit(1); }
   const dir = args[args.indexOf('--task-dir') + 1];
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', exit_reason: null }));
   fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
@@ -153,6 +156,11 @@ async function until(check, timeout = 2000) {
   }
 }
 
+test('pi role tools match the real MCP tools/list', async (t) => {
+  const f = await fixture(t);
+  assert.deepEqual(PI_ROLE_TOOLS, (await f.rpc('tools/list')).result.tools);
+});
+
 test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'fail-prompt'), '');
@@ -169,13 +177,13 @@ test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }
 
 test('dispatch failure writes a reason for the panel and is reaped', { timeout: 7000 }, async (t) => {
   const f = await fixture(t);
-  fs.writeFileSync(join(f.env.HOME, 'fail-split'), '');
+  fs.writeFileSync(join(f.env.HOME, 'fail-start'), '');
   const job = await f.call('hud_create', { role: 'imp', request_key: 'failed-launch', task: 'Synthetic task.' });
   const status = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
   assert.equal(status.state, 'failed');
-  assert.match(status.exit_reason, /synthetic split failed/);
+  assert.match(status.exit_reason, /synthetic start failed/);
   assert.ok(Number.isFinite(Date.parse(status.ended_at)));
-  assert.match(cardText(workerFor(f, job.job)), /synthetic split failed/);
+  assert.match(cardText(workerFor(f, job.job)), /synthetic start failed/);
   await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
   assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
   await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
@@ -373,6 +381,12 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     listed.result.tools.map((tool) => tool.name),
     ['hud_roster', 'hud_create', 'hud_read', 'hud_send', 'hud_respond', 'hud_close']
   );
+  // The shipped imp splits on demand; an owner role file can still ask for the helper pane up front.
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
+  fs.writeFileSync(
+    join(f.env.HUD_HOME, 'roles', 'imp.json'),
+    JSON.stringify({ role: 'imp', harness: 'pi', pi_role: 'implementer', split: true, can_continue: true })
+  );
   const args = {
     role: 'imp',
     request_key: 'synthetic-request',
@@ -523,6 +537,10 @@ test(
     const job = await f.call('hud_create', { role: 'imp', request_key: 'send-outcomes', task: 'Synthetic task.' });
     const before = f.commands().filter((c) => c.command === 'herdr').length;
     fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+    await f.call('hud_read', { job: job.job });
+    const receiptFile = join(job.task_dir, 'job.json');
+    const stamp = JSON.parse(fs.readFileSync(receiptFile)).read_at;
+    assert.ok(stamp);
     const herdr = join(f.root, 'bin', 'herdr');
     const fake = `#!${process.execPath}
 import fs from 'node:fs';
@@ -535,6 +553,7 @@ fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args:
     assert.equal(failed.code, 'send_failed');
     assert.equal(failed.exit_code, 9);
     assert.match(failed.stderr_tail, /Synthetic prompt failure/);
+    assert.equal(JSON.parse(fs.readFileSync(receiptFile)).read_at, stamp);
     // The transport is now healthy, but retrying the failed key must not claim delivery or resend.
     fs.writeFileSync(herdr, fake);
     const retry = await f.call('hud_send', args);
@@ -547,7 +566,22 @@ fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args:
     const success = await f.call('hud_send', { ...args, message_key: 'successful-send' });
     assert.equal(success.ok, true);
     assert.equal(success.sent, true);
+    assert.equal(JSON.parse(fs.readFileSync(receiptFile)).read_at, undefined);
+    fs.writeFileSync(join(job.task_dir, 'report.md'), 'Second report after repairs.');
+    const settled = Date.now();
+    fs.writeFileSync(
+      join(job.task_dir, 'STATUS.json'),
+      JSON.stringify({ state: 'idle_grace', settled_at: new Date(settled).toISOString() })
+    );
+    const unread = workerFor(f, job.job);
+    assert.equal(projectWorkCard(unread, settled).state, 'awaiting-acceptance');
+    assert.match(cardText(unread), /report ready/);
+    assert.equal(retainedWorker(unread, settled + 11 * 60000), true);
+    assert.equal((await f.call('hud_read', { job: job.job })).report, 'Second report after repairs.');
+    const secondStamp = JSON.parse(fs.readFileSync(receiptFile)).read_at;
+    assert.ok(secondStamp);
     assert.deepEqual(await f.call('hud_send', { ...args, message_key: 'successful-send' }), { ok: true, sent: false });
+    assert.equal(JSON.parse(fs.readFileSync(receiptFile)).read_at, secondStamp);
     assert.equal(f.commands().filter((command) => command.command === 'herdr').length, before + 2);
     const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
     assert.deepEqual(
@@ -665,6 +699,20 @@ test(
     assert.equal(original.model, 'synthetic/default');
     assert.equal(original.thinking, 'low');
     assert.equal(launches(), 2);
+    const thinkingOnly = await f.call('hud_create', {
+      role: 'imp',
+      request_key: 'thinking-only',
+      task: 'Synthetic task.',
+      thinking: 'max',
+    });
+    for (const value of [
+      JSON.parse(fs.readFileSync(join(thinkingOnly.task_dir, 'job.json'))),
+      await f.call('hud_read', { job: thinkingOnly.job }),
+    ]) {
+      assert.equal(value.model, 'synthetic/default');
+      assert.equal(value.thinking, 'max');
+      assert.equal(value.model_source, join(f.root, 'roles', 'implementer.md'));
+    }
   }
 );
 

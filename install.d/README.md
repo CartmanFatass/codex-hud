@@ -34,9 +34,9 @@ codexH() { hud codex "$@"; }
   footer, the Work segment and `/hud`); plain `pi` loads only the delegation package.
 - `codexH` starts Codex through the existing `hud codex` tmux-bar launcher.
 
-The panel itself never opens by itself: only `/hud` opens it. Claude and Codex get a
-`/hud` command/prompt file (one line: run `hud panel` with Bash and report the pane id);
-pi gets the `/hud` command from the display package.
+The panel never opens by itself: Claude and pi use `/hud`; Codex uses F12.
+Claude gets a `/hud` command file (one line: run `hud panel` with Bash and report the pane id);
+pi gets the `/hud` command from the display package. Codex installs no prompt file.
 
 ## What each extension changes
 
@@ -55,5 +55,6 @@ pi gets the `/hud` command from the display package.
   plain (`pi-role -ne`) and load neither package's display. Uninstall removes both
   package directories and the filter.
 - **codex**: registers the six-role MCP (`codex mcp add hud`), links the
-  `hud-delegate` skill and writes `$CODEX_HOME/prompts/hud.md`. Nothing global changes;
-  `hud codex` is the HUD launch (tmux bar).
+  `hud-delegate` skill and removes the legacy `$CODEX_HOME/prompts/hud.md` only if it
+  still contains the HUD-owned line (uninstall also removes an old owned copy).
+  `hud codex` is the HUD launch (tmux bar); F12 opens the panel.

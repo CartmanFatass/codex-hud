@@ -73,14 +73,7 @@ export function phaseChain(card: WorkCard): string {
   return card.phases
     .map((p, i) => {
       const text = workPhaseText(p);
-      const ink = /major/.test(p)
-        ? theme.board.attention
-        : /minor/.test(p)
-          ? theme.board.muted
-          : /accept/.test(p)
-            ? theme.board.success
-            : theme.value;
-      return ink((i === card.phases.length - 1 && !/✓|accept|done/.test(p) ? mark('▸', '>') : '') + text);
+      return (i === card.phases.length - 1 && !/✓|accept|done/.test(p) ? mark('▸', '>') : '') + text;
     })
     .join(mark(' › ', ' > '));
 }
@@ -108,14 +101,41 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
       { id: model, provider: w.provider },
       displayConfig().icons === 'text' || displayConfig().glyphs === 'text'
     );
-    const chip = [vendor?.glyph, model, w.effort, w.harness !== 'pi' ? w.harness : '', w.nodeId ? t('native') : '']
+    const chip = [
+      vendor?.glyph,
+      model.replace(/^[^/]+\//, ''),
+      w.effort,
+      w.harness !== 'pi' ? w.harness : '',
+      w.nodeId ? t('native') : '',
+    ]
       .filter(Boolean)
       .join(' ');
     if (chip) rows.push(...stemLines(chip, width, ink));
     if (card.phases.length) {
-      // Wrap history rather than lose the latest result. Phase inks are restored after each stem.
-      for (const line of flowLines(phaseChain(card), Math.max(1, width - 3)))
-        rows.push(fit(`${ink(mark('┃', '|'))} ${line}`, width));
+      // Wrap plain history, then paint each phase (including its continuation lines).
+      const inks = card.phases.map((p) =>
+        /major/.test(p)
+          ? theme.board.attention
+          : /minor/.test(p)
+            ? theme.board.muted
+            : /accept/.test(p)
+              ? theme.board.success
+              : theme.value
+      );
+      let phase = 0;
+      for (const line of flowLines(phaseChain(card), Math.max(1, width - 3))) {
+        const painted = line
+          .split(/(›|(?<!\S)>(?!\S))/u)
+          .map((part) => {
+            if (part === mark('›', '>')) {
+              phase++;
+              return part;
+            }
+            return inks[phase](part);
+          })
+          .join('');
+        rows.push(fit(`${ink(mark('┃', '|'))} ${painted}`, width));
+      }
     }
   }
   const detail = workCardDetail(card, sentence);
