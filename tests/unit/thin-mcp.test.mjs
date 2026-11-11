@@ -20,10 +20,17 @@ import { basename, join } from 'node:path';
 const command = basename(process.argv[1]), args = process.argv.slice(2);
 fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args }) + '\\n');
 if (command === 'pi-dispatch') {
+  process.exit(99); // The MCP must never use this legacy launcher.
+} else if (command === 'pi-role') {
+  console.log(JSON.stringify(args.slice(2)));
+} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
   const dir = args[args.indexOf('--task-dir') + 1];
-  fs.writeFileSync(join(dir, 'SESSION.txt'), 'PRIMARY=synthetic-primary\\n');
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'running', exit_reason: null }));
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', exit_reason: null }));
   fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
+} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'split') {
+  console.log(JSON.stringify({result: {pane: {pane_id: 'synthetic-right'}}}));
+} else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') {
+  console.log(JSON.stringify({result: {pane: {workspace_id: 'synthetic-workspace'}}}));
 } else if (command === 'herdr' && args[0] === 'tab' && args[1] === 'create') {
   console.log(JSON.stringify({result: {tab: {tab_id: 'synthetic-tab'}, root_pane: {pane_id: 'synthetic-worker'}}}));
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'run') {
@@ -47,7 +54,13 @@ if (command === 'pi-dispatch') {
   }
   fs.mkdirSync(join(root, 'roles'));
   fs.writeFileSync(join(root, 'roles', 'implementer.md'), '---\nmodel: synthetic/default\nthinking: low\n---\n');
-  const env = { ...process.env, HUD_MCP_SURFACE: 'roles', PATH: `${bin}:${process.env.PATH}`, FAKE_LOG: log };
+  const env = {
+    ...process.env,
+    HUD_MCP_SURFACE: 'roles',
+    HUD_WATCH_FAILED_RETENTION_MS: '1000',
+    PATH: `${bin}:${process.env.PATH}`,
+    FAKE_LOG: log,
+  };
   for (const name of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR']) {
     env[name] = join(root, name.toLowerCase());
     fs.mkdirSync(env[name]);
@@ -73,6 +86,13 @@ if (command === 'pi-dispatch') {
   t.after(async () => {
     child.stdin.end();
     await exited;
+    const watchLog = join(env.HUD_HOME, 'watch.log');
+    if (fs.existsSync(watchLog))
+      for (const match of fs.readFileSync(watchLog, 'utf8').matchAll(/start pid=(\d+)/g)) {
+        try {
+          process.kill(Number(match[1]), 'SIGTERM');
+        } catch {}
+      }
     fs.rmSync(root, { recursive: true, force: true });
     assert.equal(stderr, '');
   });
@@ -106,6 +126,94 @@ if (command === 'pi-dispatch') {
         : [],
   };
 }
+
+async function until(check, timeout = 2000) {
+  const end = Date.now() + timeout;
+  while (!check()) {
+    assert.ok(Date.now() < end, 'condition did not settle');
+    await new Promise((done) => setTimeout(done, 20));
+  }
+}
+
+test('thin watcher catches up without a new file event and exits', { timeout: 5000 }, async (t) => {
+  const f = await fixture(t),
+    dir = join(f.env.HUD_HOME, 'jobs', 'j0000000000000000');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: 'j0000000000000000' }));
+  fs.writeFileSync(join(dir, 'SESSION.txt'), 'TAB=synthetic-catchup\n');
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
+    env: f.env,
+    stdio: 'ignore',
+  });
+  const exited = once(child, 'exit');
+  t.after(() => {
+    if (child.exitCode === null) child.kill();
+  });
+  await until(() => f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === dir));
+  await exited;
+  assert.equal(child.exitCode, 0);
+});
+
+test(
+  'thin watcher starts once, catches up, respects grace and failed deadline, then exits',
+  { timeout: 15000 },
+  async (t) => {
+    const f = await fixture(t);
+    const jobs = join(f.env.HUD_HOME, 'jobs');
+    const caught = join(jobs, 'j0000000000000000');
+    fs.mkdirSync(caught, { recursive: true });
+    fs.writeFileSync(join(caught, 'job.json'), JSON.stringify({ job: 'j0000000000000000' }));
+    fs.writeFileSync(join(caught, 'SESSION.txt'), 'TAB=synthetic-catchup\n');
+    fs.writeFileSync(join(caught, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+    const first = await f.call('hud_create', { role: 'imp', request_key: 'watch-one', task: 'Synthetic task.' });
+    const reaped = (dir) => f.commands().filter((c) => c.command === 'pi-role-reap' && c.args[0] === dir).length;
+    await until(() => reaped(caught) === 1);
+    const pidFile = join(f.env.HUD_HOME, 'watch.pid');
+    const pid = fs.readFileSync(pidFile, 'utf8');
+    process.kill(Number(pid), 0);
+    assert.ok(fs.readFileSync(`/proc/${pid.trim()}/cmdline`, 'utf8').includes('hud-watch.mjs'));
+    const second = await f.call('hud_create', { role: 'imp', request_key: 'watch-two', task: 'Synthetic task.' });
+    assert.equal(fs.readFileSync(pidFile, 'utf8'), pid);
+    const watchLog = () => fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8');
+    assert.equal(
+      watchLog()
+        .split('\n')
+        .filter((l) => l.includes('start pid=')).length,
+      1
+    );
+    fs.writeFileSync(join(first.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+    fs.writeFileSync(join(second.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+    await new Promise((done) => setTimeout(done, 200));
+    assert.equal(reaped(first.task_dir), 0);
+    assert.equal(fs.existsSync(pidFile), true, 'grace jobs must keep the watcher alive');
+    fs.writeFileSync(join(second.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+    fs.writeFileSync(join(first.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+    await until(() => reaped(first.task_dir) === 1);
+    const ended = Date.now();
+    fs.writeFileSync(
+      join(second.task_dir, 'STATUS.json'),
+      JSON.stringify({ state: 'failed', ended_at: new Date(ended).toISOString() })
+    );
+    await new Promise((done) => setTimeout(done, 300));
+    assert.equal(reaped(second.task_dir), 0);
+    assert.equal(fs.existsSync(pidFile), true);
+    await until(() => reaped(second.task_dir) === 1);
+    assert.ok(Date.now() >= ended + 1000);
+    await until(() => !fs.existsSync(pidFile));
+    await until(() => {
+      try {
+        process.kill(Number(pid), 0);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    assert.match(watchLog(), /no open jobs or failed deadlines/);
+    assert.equal(JSON.parse(fs.readFileSync(join(second.task_dir, 'job.json'))).reaped_at !== undefined, true);
+    console.log('Synthetic watch.log:\n' + watchLog());
+  }
+);
 
 // Breaks if roster omits the shipped convention/path, merges overrides, or reverses project/home/default precedence.
 test('thin roster returns the convention and its path with whole-file overrides', { timeout: 10000 }, async (t) => {
@@ -160,29 +268,100 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const job = await f.call('hud_create', args);
   assert.match(job.job, /^j[0-9a-f]{16}$/);
   assert.equal(job.task_dir, join(f.env.HUD_HOME, 'jobs', job.job));
-  assert.equal(job.agent, 'synthetic-primary');
+  assert.equal(job.agent, `${job.job}-primary`);
   // Breaks if hud_create stops naming the report path: workers then answer in the pane and the job fails.
   assert.equal(
     fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
     `${args.task}\n\nWrite your final answer to ${join(job.task_dir, 'report.md')}; the job fails without that file.\n`
   );
-  assert.deepEqual(f.commands(), [
-    {
-      command: 'pi-dispatch',
-      args: [
-        'implementer',
-        '--task-dir',
-        job.task_dir,
-        '--workdir',
-        f.root,
-        '--output',
-        join(job.task_dir, 'report.md'),
-        '--split',
-      ],
-    },
+  assert.deepEqual(f.commands()[1].args, ['pane', 'get', 'synthetic-pane']);
+  const commands = f.commands().filter((c) => c.args[1] !== 'get');
+  assert.deepEqual(
+    commands.map((c) => [c.command, ...c.args.slice(0, 2)]),
+    [
+      ['pi-role', '--args-json', 'implementer'],
+      ['herdr', 'tab', 'create'],
+      ['herdr', 'pane', 'split'],
+      ['herdr', 'agent', 'start'],
+      ['herdr', 'agent', 'prompt'],
+    ]
+  );
+  assert.deepEqual(commands[0].args, [
+    '--args-json',
+    'implementer',
+    '--task-dir',
+    job.task_dir,
+    '--role-output',
+    join(job.task_dir, 'report.md'),
+    '--dispatch-slot',
+    'primary',
+    '--dispatch-label',
+    'imp',
+    '--allow-write',
+    join(job.task_dir, 'report.md'),
+    '--qa-dir',
+    join(job.task_dir, 'qa'),
+    '--orchestrator',
+    'synthetic-pane',
+    '--',
+    '--session-dir',
+    join(job.task_dir, 'sessions'),
+    '--tui-mode',
+    'regular',
+  ]);
+  const session = Object.fromEntries(
+    fs
+      .readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((l) => l.split('='))
+  );
+  assert.deepEqual(session, {
+    TASK: job.job,
+    TAB: 'synthetic-tab',
+    TAB_NAME: session.TAB_NAME,
+    LEFT: 'synthetic-worker',
+    RIGHT: 'synthetic-right',
+    ORCH: 'synthetic-pane',
+    BASE: 'HEAD',
+    PRIMARY: job.agent,
+  });
+  assert.ok(commands[1].args.includes('--no-focus'));
+  assert.equal(commands[1].args[commands[1].args.indexOf('--workspace') + 1], 'synthetic-workspace');
+  assert.deepEqual(commands[2].args.slice(2), [
+    'synthetic-worker',
+    '--direction',
+    'right',
+    '--ratio',
+    '0.5',
+    '--cwd',
+    f.root,
+    '--no-focus',
+  ]);
+  assert.deepEqual(commands[3].args, [
+    'agent',
+    'start',
+    job.agent,
+    '--kind',
+    'pi',
+    '--pane',
+    'synthetic-worker',
+    '--',
+    ...commands[0].args.slice(2),
+  ]);
+  assert.deepEqual(commands[4].args, [
+    'agent',
+    'prompt',
+    job.agent,
+    `Read ${job.task_dir}/brief.md and do exactly what it asks.`,
+    '--wait',
+    '--until',
+    'working',
+    '--timeout',
+    '30000',
   ]);
   assert.deepEqual(await f.call('hud_create', args), job);
-  assert.equal(f.commands().length, 1);
+  assert.equal(f.commands().length, commands.length + 1);
   const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
   assert.equal(receipt.dispatch_exit_code, 0);
   assert.equal(receipt.stderr_tail, '');
@@ -228,6 +407,7 @@ test(
   async (t) => {
     const f = await fixture(t);
     const job = await f.call('hud_create', { role: 'imp', request_key: 'send-outcomes', task: 'Synthetic task.' });
+    const before = f.commands().filter((c) => c.command === 'herdr').length;
     fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
     const herdr = join(f.root, 'bin', 'herdr');
     const fake = `#!${process.execPath}
@@ -249,12 +429,12 @@ fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args:
     assert.equal(retry.code, 'send_failed');
     assert.equal(retry.exit_code, failed.exit_code);
     assert.equal(retry.stderr_tail, failed.stderr_tail);
-    assert.equal(f.commands().filter((command) => command.command === 'herdr').length, 1);
+    assert.equal(f.commands().filter((command) => command.command === 'herdr').length, before + 1);
     const success = await f.call('hud_send', { ...args, message_key: 'successful-send' });
     assert.equal(success.ok, true);
     assert.equal(success.sent, true);
     assert.deepEqual(await f.call('hud_send', { ...args, message_key: 'successful-send' }), { ok: true, sent: false });
-    assert.equal(f.commands().filter((command) => command.command === 'herdr').length, 2);
+    assert.equal(f.commands().filter((command) => command.command === 'herdr').length, before + 2);
     const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
     assert.deepEqual(
       receipt.send_outcomes.map(({ key, exit_code }) => ({ key, exit_code })),
@@ -318,24 +498,14 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
     code: 'role_unavailable',
   });
   const job = await f.call('hud_create', { role: role.role, request_key: 'custom-role', task: 'Synthetic task.' });
-  assert.deepEqual(f.commands(), [
-    {
-      command: 'pi-dispatch',
-      args: [
-        'implementer',
-        '--task-dir',
-        job.task_dir,
-        '--workdir',
-        f.root,
-        '--output',
-        join(job.task_dir, 'report.md'),
-        '--model',
-        'synthetic/override',
-        '--thinking',
-        'high',
-      ],
-    },
-  ]);
+  const argv = f.commands()[0].args;
+  assert.ok(argv.includes('--dispatch-effort-source'));
+  assert.equal(argv[argv.indexOf('--dispatch-label') + 1], role.role);
+  assert.deepEqual(argv.slice(-4), ['--model', 'synthetic/override', '--thinking', 'high']);
+  assert.equal(
+    f.commands().some((c) => c.command === 'pi-dispatch' || c.args[1] === 'split'),
+    false
+  );
   assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))), 'package'), false);
   fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   assert.equal(
@@ -358,7 +528,16 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   assert.equal(asks[1].args[asks[1].args.indexOf('--effort') + 1], '6 Pro');
   assert.equal(asks[2].args[asks[2].args.indexOf('--answer-file') + 1], join(job.task_dir, 'report.md'));
   assert.equal(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), 'Synthetic Jev answer.');
-  assert.ok(f.commands().find(({ args }) => args[0] === 'tab' && args.includes('--no-focus')));
+  assert.ok(
+    f
+      .commands()
+      .find(
+        ({ args }) =>
+          args[0] === 'tab' &&
+          args.includes('--no-focus') &&
+          args[args.indexOf('--workspace') + 1] === 'synthetic-workspace'
+      )
+  );
   assert.ok(
     f
       .commands()

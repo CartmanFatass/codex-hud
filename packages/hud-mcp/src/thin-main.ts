@@ -120,6 +120,7 @@ interface Job {
   created_at: string;
   package?: string;
   read_at?: string;
+  reaped_at?: string;
   jev?: Role;
   dispatch_exit_code: number | null;
   stderr_tail: string;
@@ -203,6 +204,8 @@ function save(job: Job): void {
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
   const read_at = json<Job>(file)?.read_at;
   if (read_at) job.read_at = read_at;
+  const reaped_at = json<Job>(file)?.reaped_at;
+  if (reaped_at) job.reaped_at = reaped_at;
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(job, null, 2) + '\n', { mode: 0o600 });
   fs.renameSync(`${file}.tmp`, file);
 }
@@ -223,13 +226,17 @@ function created(job: Job) {
   const task_dir = directory(job.job);
   return { job: job.job, task_dir, agent: primary(task_dir) };
 }
-function run(command: string, argv: string[]): Promise<{ exit_code: number; stdout: string; stderr: string }> {
+function run(
+  command: string,
+  argv: string[],
+  cwd?: string
+): Promise<{ exit_code: number; stdout: string; stderr: string }> {
   return new Promise((done) => {
-    const child = spawn(command, argv, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, argv, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '',
       stderr = '';
     child.stdout.setEncoding('utf8').on('data', (data: string) => {
-      stdout = (stdout + data).slice(-4096);
+      stdout = (stdout + data).slice(-65536);
     });
     child.stderr.setEncoding('utf8').on('data', (data: string) => {
       stderr = (stderr + data).slice(-4096);
@@ -240,11 +247,162 @@ function run(command: string, argv: string[]): Promise<{ exit_code: number; stdo
     child.on('close', (code) => done({ exit_code: code ?? -1, stdout, stderr }));
   });
 }
+async function workspaceArgs(job: Job): Promise<string[]> {
+  const result = await run('herdr', ['pane', 'get', job.herdr_pane]);
+  if (result.exit_code !== 0) return [];
+  try {
+    const workspace = JSON.parse(result.stdout).result.pane.workspace_id;
+    return workspace ? ['--workspace', workspace] : [];
+  } catch {
+    return [];
+  } // An unavailable caller lookup keeps herdr's default workspace.
+}
+function ensureWatcher(): void {
+  fs.mkdirSync(jobsRoot, { recursive: true, mode: 0o700 });
+  const script = fileURLToPath(new URL('../../../../bin/hud-watch.mjs', import.meta.url));
+  try {
+    const pid = Number(fs.readFileSync(join(hudHome, 'watch.pid'), 'utf8').trim());
+    process.kill(pid, 0);
+    if (fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').includes(script)) return;
+  } catch {
+    /* No live watcher; races may safely start two. */
+  }
+  const child = spawn(process.execPath, [script], { detached: true, stdio: 'ignore' });
+  child.on('error', (error) => console.error(`hud-watch: ${error.message}`));
+  fs.writeFileSync(join(hudHome, 'watch.pid'), `${child.pid}\n`, { mode: 0o600 });
+  child.unref();
+}
+async function dispatchPi(job: Job, role: Role) {
+  try {
+    const launcher = executable('pi-role');
+    if (!launcher) throw new Error('pi-role not found on PATH');
+    const dir = directory(job.job),
+      output = join(dir, 'report.md');
+    const argv = [
+      '--args-json',
+      role.pi_role!,
+      '--task-dir',
+      dir,
+      '--role-output',
+      output,
+      '--dispatch-slot',
+      'primary',
+      '--dispatch-label',
+      job.role,
+      '--allow-write',
+      output,
+      '--qa-dir',
+      join(dir, 'qa'),
+    ];
+    if (job.herdr_pane) argv.push('--orchestrator', job.herdr_pane);
+    if (role.thinking !== undefined) argv.push('--dispatch-effort-source', 'orchestrator');
+    argv.push('--', '--session-dir', join(dir, 'sessions'), '--tui-mode', 'regular');
+    for (const key of ['model', 'thinking'] as const) if (role[key] !== undefined) argv.push(`--${key}`, role[key]);
+    const built = await run(launcher, argv, job.cwd);
+    if (built.exit_code !== 0) return built;
+    const piArgs: string[] = JSON.parse(built.stdout);
+    fs.mkdirSync(join(dir, 'sessions'), { recursive: true });
+    fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+    const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
+    const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
+    const tabName = `${job.job}-${Date.now().toString(36)}`,
+      name = `${job.job}-primary`;
+    const result = await run('herdr', [
+      'tab',
+      'create',
+      ...(await workspaceArgs(job)),
+      '--cwd',
+      job.cwd,
+      '--label',
+      tabName,
+      '--no-focus',
+    ]);
+    if (result.exit_code !== 0) return result;
+    const { tab, root_pane } = JSON.parse(result.stdout).result;
+    const left = root_pane.pane_id;
+    if (!tab.tab_id || !left) throw new Error('tab create did not return tab/root pane ids');
+    let right = '';
+    const record = () => {
+      const fields = {
+        TASK: job.job,
+        TAB: tab.tab_id,
+        TAB_NAME: tabName,
+        LEFT: left,
+        RIGHT: right,
+        ORCH: job.herdr_pane,
+        BASE: base,
+        PRIMARY: name,
+      };
+      if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
+      fs.writeFileSync(
+        join(dir, 'SESSION.txt'),
+        Object.entries(fields)
+          .map(([k, v]) => `${k}=${v}\n`)
+          .join(''),
+        { mode: 0o600 }
+      );
+    };
+    record();
+    if (role.split) {
+      const split = await run('herdr', [
+        'pane',
+        'split',
+        left,
+        '--direction',
+        'right',
+        '--ratio',
+        '0.5',
+        '--cwd',
+        job.cwd,
+        '--no-focus',
+      ]);
+      if (split.exit_code !== 0) return split;
+      right = JSON.parse(split.stdout).result.pane.pane_id;
+      record();
+    }
+    const started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
+    if (started.exit_code !== 0) return started;
+    const prompt = `Read ${join(dir, 'brief.md')} and do exactly what it asks.`;
+    const submitted = await run('herdr', [
+      'agent',
+      'prompt',
+      name,
+      prompt,
+      '--wait',
+      '--until',
+      'working',
+      '--timeout',
+      '30000',
+    ]);
+    const status = json<{ task_dir?: string; slot?: string; state?: string; output_written?: boolean }>(
+      join(dir, 'STATUS.json')
+    );
+    if (
+      submitted.exit_code !== 0 &&
+      !(status?.task_dir === dir && status.slot === 'primary' && status.state === 'closed' && status.output_written)
+    ) {
+      if (!(submitted.stderr + submitted.stdout).includes('agent_prompt_stalled')) return submitted;
+      return run(process.execPath, [join(dirname(launcher), 'prompt-stall.mjs'), dir, name, left, prompt, '120000']);
+    }
+    return { ...submitted, exit_code: 0 };
+  } catch (error) {
+    return { exit_code: 1, stdout: '', stderr: String(error) };
+  }
+}
 const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 async function dispatchJev(job: Job) {
   const dir = directory(job.job),
     tabName = `${job.job}-${Date.now().toString(36)}`;
-  const result = await run('herdr', ['tab', 'create', '--cwd', job.cwd, '--label', tabName, '--no-focus']);
+  const result = await run('herdr', [
+    'tab',
+    'create',
+    ...(await workspaceArgs(job)),
+    '--cwd',
+    job.cwd,
+    '--label',
+    tabName,
+    '--no-focus',
+  ]);
   if (result.exit_code !== 0) return result;
   let created;
   try {
@@ -296,7 +454,10 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (!definition) return { ok: false, code: 'role_unavailable' };
     const request_key = required(args, 'request_key');
     const existing = jobs().find((job) => job.request_key === request_key);
-    if (existing) return created(existing);
+    if (existing) {
+      ensureWatcher();
+      return created(existing);
+    }
     if (!process.env.HERDR_PANE_ID) return { ok: false, code: 'herdr_required' };
     const task = required(args, 'task');
     if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
@@ -324,16 +485,10 @@ async function call(name: string, args: Args): Promise<unknown> {
     fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
     // Persist before dispatch: an interrupted launch must not dispatch again on retry.
     save(job);
+    ensureWatcher();
     let result;
     if (definition.harness === 'jev') result = await dispatchJev(job);
-    else {
-      const argv = [definition.pi_role!, '--task-dir', dir, '--workdir', cwd, '--output', join(dir, 'report.md')];
-      if (definition.split) argv.push('--split');
-      for (const key of ['model', 'thinking'] as const) {
-        if (definition[key] !== undefined) argv.push(`--${key}`, definition[key]);
-      }
-      result = await run('pi-dispatch', argv);
-    }
+    else result = await dispatchPi(job, definition);
     job.dispatch_exit_code = result.exit_code;
     job.stderr_tail = result.stderr;
     save(job);
