@@ -75,7 +75,9 @@ export async function main(args: readonly string[], io: HudIO, received?: number
       (args.length === 2 && args[0] === 'link' && args[1] === '--help') ||
       (args.length === 3 && args[0] === 'link' && args[1] === 'export' && args[2] === '--help')
     ) {
-      await io.stdout(EXPORT_HELP);
+      await io.stdout(
+        EXPORT_HELP + '\n  hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n'
+      );
       return 0;
     }
     if (args[0] !== 'link' || args[1] !== 'export') {
