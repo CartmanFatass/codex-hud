@@ -1,6 +1,22 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
-## Now (2026-11-10): spec first, new workflow
+## Now (2026-11-11): M3 installed on the owner's machine; open items
+
+Installed from `6a251fda` (INSTALL-ON) and the owner tries it himself. Waiting on concept drafts before any code:
+the bottom bars (Claude/pi in the Codex bar's design; owner: "the Codex bottom design can be used directly") and four
+panel fixes (Enter on a Work card opens its report, key hints never cut a word, lane map shows only real stages,
+readable worker tab labels). Field inventory: `tmp/tasks/BAR-UNIFY/fields.md`.
+
+Open defects and requirements:
+- **An orchestrator-stopped job reports nothing** (owner, 2026-11-11): stopping a job on purpose must not push
+  `[role@job] FAILED agent aborted` to the main session; it ends as stopped, not failed.
+- `hud_close` cannot stop a working pi job: pi ignores quit mid-turn and pi-role-reap's SIGTERM guard looks for the
+  task dir in argv, but pi retitles itself `pi`. Fix in pi-roles (match the PID recorded in the job's STATUS.json).
+- `codex mcp add/remove` drops comments from config.toml; the installer now backs up and warns, no re-insertion.
+- Later: notification burst when the panel opens, the job scan reading all history, then AI-THIN, NATIVE-TREE,
+  panel self-close with its caller, M4 Project tab, retiring the legacy skills (list visible features first).
+
+## 2026-11-10: spec first, new workflow
 
 The owner judged the effort over-engineered and slow: in ten days no usable build, tests twice the source, 127
 review rounds and 322 questions across 200 task directories, and a first week spent on an execution platform the
