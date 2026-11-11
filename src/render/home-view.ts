@@ -1,6 +1,7 @@
 /** Home is a passive triage page. QA and ordinary errors are not owner intervention. */
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
-import { homeCalls } from '../collectors/workboard.js';
+import { homeCalls, isLocalDay } from '../collectors/workboard.js';
+import { isThinLane } from '../collectors/thin-jobs.js';
 import type { DecisionRecord } from '../collectors/workboard-types.js';
 import type { MonitorRow, MonitorState, MonitorData } from './monitor.js';
 import { laneRows } from './work-lanes.js';
@@ -15,11 +16,14 @@ import {
   laneRow,
   mark,
   minuteAge,
+  roleWord,
   section,
   workerRow,
   workerColumns,
   callCount,
 } from './workboard-rows.js';
+/** A thin job that has settled leaves the workers list after this long; the day's count keeps it. */
+const FINISHED_LINGER_MS = 10 * 60000;
 export function homeRows(
   board: WorkboardSnapshot,
   state: MonitorState,
@@ -29,7 +33,9 @@ export function homeRows(
 ): MonitorRow[] {
   const inbox: MonitorRow[] = [],
     progress: MonitorRow[] = [];
-  const wide = width >= 100,
+  // Thin jobs have no packages or phases: without a package lane the work pane has nothing to draw.
+  const packages = board.lanes.filter((l) => !isThinLane(l.id));
+  const wide = width >= 100 && (packages.length > 0 || board.lanes.length === 0),
     leftWidth = wide ? Math.floor(width * 0.58) : width,
     rightWidth = wide ? width - leftWidth - 3 : width;
   const needs = board.workers.filter((w) => w.homeNeedsHuman);
@@ -38,13 +44,17 @@ export function homeRows(
     for (const worker of needs) {
       const target = { kind: 'worker' as const, laneId: worker.laneId, workerId: worker.id };
       const prefix = `${theme.board.attention(mark('┃', '|') + '?')} `;
-      const text = `${monitorText(worker.task)}: ${t('Ended needing a human')}`;
+      // An open question names its role and says what is asked; an ended job says that it ended.
+      const label = worker.ask ? roleWord(worker.role) + ' ' : '';
+      const text = worker.ask ? monitorText(worker.ask) : `${monitorText(worker.task)}: ${t('Ended needing a human')}`;
       const age = minuteAge(worker.humanEndedAt, now);
-      const lines = flowLines(text, Math.max(1, leftWidth - 4 - visualLength(age)));
+      const lines = flowLines(text, Math.max(1, leftWidth - 4 - visualLength(age) - visualLength(label)));
       for (let i = 0; i < lines.length; i++)
         inbox.push(
           boardRow(
-            i ? `  ${lines[i]}` : pair(prefix + theme.bold(lines[i]), theme.board.attention(age), leftWidth),
+            i
+              ? `  ${' '.repeat(visualLength(label))}${lines[i]}`
+              : pair(prefix + label + theme.bold(lines[i]), theme.board.attention(age), leftWidth),
             target
           )
         );
@@ -99,11 +109,13 @@ export function homeRows(
       });
     }
   }
-  progress.push(section(t('work · observed start order'), rightWidth));
-  for (const lane of board.lanes) progress.push(laneRow(lane, rightWidth, now, true));
-  if (!board.lanes.length) progress.push(boardRow(theme.dim(t('No observed work'))));
+  if (packages.length || !board.lanes.length) {
+    progress.push(section(t('work · observed start order'), rightWidth));
+    for (const lane of packages) progress.push(laneRow(lane, rightWidth, now, true));
+    if (!board.lanes.length) progress.push(boardRow(theme.dim(t('No observed work'))));
+  }
   if (wide && input) {
-    const lane = board.lanes.find((l) => l.id === selected?.laneId) ?? board.lanes[0];
+    const lane = packages.find((l) => l.id === selected?.laneId) ?? packages[0];
     if (lane) {
       progress.push(section(t('Work peek'), rightWidth));
       progress.push(...laneRows(input, lane, { ...state, mainTab: 'work', workTarget: undefined }, rightWidth, now));
@@ -121,8 +133,7 @@ export function homeRows(
           !state.boardAnchor &&
           (selected
             ? !inbox.some((row) => row.item === targetKey(selected)) && targetKey(selected) === b.item
-            : !inbox.some((row) => row.item) &&
-              b.item === targetKey({ kind: 'lane', laneId: board.lanes[0]?.id ?? '' }));
+            : !inbox.some((row) => row.item) && b.item === targetKey({ kind: 'lane', laneId: packages[0]?.id ?? '' }));
         if (rightSelected) rightCursor = true;
         const renderRight = () => {
           const text = b?.paint?.() ?? b?.text ?? '';
@@ -145,12 +156,32 @@ export function homeRows(
       })
     : [...inbox, ...progress];
   rows.push(section(t('workers'), width));
-  const columns = workerColumns(board.workers, width, now);
-  for (const worker of board.workers) rows.push(workerRow(worker, width, now, columns));
-  if (width >= 56 && calls.today)
+  // Model and thinking belong to the wide worker band; below it the task keeps the room.
+  const shown = board.workers
+    .filter(
+      (w) =>
+        !isThinLane(w.laneId) || w.settledAt === null || state.tree.showAll || now - w.settledAt <= FINISHED_LINGER_MS
+    )
+    .map((w) => (isThinLane(w.laneId) && width < 100 ? { ...w, model: null, effort: null } : w));
+  const columns = workerColumns(shown, width, now);
+  for (const worker of shown) rows.push(workerRow(worker, width, now, columns));
+  const finished = board.workers.filter((w) => isThinLane(w.laneId) && isLocalDay(w.settledAt, now));
+  const failed = finished.filter((w) => w.state === 'failed').length,
+    done = finished.length - failed;
+  // `width` is the frame minus its margin column, so 55 is the 56-column panel.
+  if (width >= 55 && (calls.today || finished.length))
     rows.push(
       boardRow(
-        theme.dim(`${t('today')} ${callCount(calls.today)}${board.coverage.incomplete ? ` · ${t('partial')}` : ''}`)
+        theme.dim(
+          `${t('today')} ${[
+            calls.today ? callCount(calls.today) : '',
+            done ? t('{n} done', { n: done }) : '',
+            failed ? t('{n} failed', { n: failed }) : '',
+            calls.today && board.coverage.incomplete ? t('partial') : '',
+          ]
+            .filter(Boolean)
+            .join(' · ')}`
+        )
       )
     );
   return rows;

@@ -49,7 +49,10 @@ export interface OwnerWorker {
   readonly settledAt: number | null;
   readonly phase: string | null;
   readonly homeNeedsHuman: boolean;
+  /** When the human was needed: the end of the job, or for an open question the time it was asked. */
   readonly humanEndedAt: number | null;
+  /** First line of the question waiting for the owner; set only on thin jobs with an unanswered qa/qN.md. */
+  readonly ask?: string;
   readonly stale: boolean;
   readonly evidence: readonly EvidenceRef[];
 }

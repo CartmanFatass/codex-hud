@@ -28,7 +28,7 @@
  ✓ pi     oracle   Sourc… gpt-synthetic·high          5m
  ▸ pi     imp      首页…  gpt-synthetic·high         30m
  ?        jev      Synth… synthetic-web              10m
-                                                        
+ today 8 calls                                          
                                                         
                                                         
                                                         

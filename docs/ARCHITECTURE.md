@@ -57,6 +57,21 @@ Switching the root or disposing the pipeline resets the cached state.
 observed files, the producer's own stamp where a producer wrote one. No deadline, queue position or merge fact is
 invented when the files do not state it; unknown phase or order is shown as unknown.
 
+**Thin jobs on Home.** `collectors/thin-jobs.ts` (`readThinJobs`, newest 20 in scope) gives each job directory
+under `$HUD_HOME/jobs` one lane with one worker and its answered questions as decisions; `PanelJobPipeline.workboard`
+prepends them to the lanes, workers and decisions. Only files the thin layer and pi-roles write are read: `job.json`
+(role, cwd, `created_at`), `brief.md` (task = its first heading, else its first line), `STATUS.json` (state, model,
+`thinking`, `started_at`, `settled_at`/`ended_at`), `qa/qN.md` and `qN.answer.md` (through `answerRecord`, so `≠` and
+`instead:` appear only when the answer is a different option from the worker's `Default if unanswered`). Unchanged
+files cost one `lstat` per refresh. States are shown as the owner's words: `working` (also `waiting_*` and no STATUS),
+`idle` (`idle_grace`), `done` (`closed`) and `failed` (also a non-zero `dispatch_exit_code` with no STATUS). A job
+that is working and has an unanswered question is **need you** (the question's first line, minutes since it was
+asked); a question left on a finished job was settled by its default and is not shown. Thin jobs have no packages or
+phases, so Home draws no work section for them (and at 100+ columns no right pane) unless a package lane exists.
+A job that has settled (`ended_at`, else `settled_at`, else the file's mtime) leaves Home's workers list after 10
+minutes (`FINISHED_LINGER_MS` in `home-view.ts`; the `a` reveal shows it again) and stays in the `today` line as
+`N done · M failed`; Work keeps all retained jobs. Model and thinking show only at 100+ columns.
+
 **Facade closure.** The additive facade closure is separate from the Pi dispatcher closure. Helpers are not owners:
 a helper's records never become a task's or a job's authority.
 

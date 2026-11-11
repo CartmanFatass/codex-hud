@@ -28,7 +28,7 @@
  ✓ pi     oracle   Sourc… gpt-synthetic·high         5分
  ▸ pi     imp      首页…  gpt-synthetic·high        30分
  ?        jev      Synth… synthetic-web             10分
-                                                        
+ today 决定 8                                           
                                                         
                                                         
                                                         

@@ -249,6 +249,7 @@ export function renderWorkboardFrame(
     input.publicationNotice,
     input.error,
     state.cardStallMinutes,
+    state.tree.showAll,
     [...(input.jobProgress ?? [])],
     state.cardVisibility,
     state.cardCorners,

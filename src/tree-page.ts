@@ -251,6 +251,7 @@ export class PanelJobPipeline {
       ...base,
       lanes: [...this.thinJobs, ...base.lanes],
       workers: [...this.thinJobs.flatMap((lane) => lane.workers), ...base.workers],
+      decisions: [...this.thinJobs.flatMap((lane) => lane.decisions), ...base.decisions],
     };
     this.boardCache = { tree, legacy, jobs: this.snapshot, tasks: this.taskSnapshot, board };
     return board;

@@ -2,6 +2,7 @@
 import type { DecisionRecord, OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
 import { callTime, isLocalDay } from '../collectors/workboard.js';
+import { isThinLane } from '../collectors/thin-jobs.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { displayConfig } from './hud-config.js';
@@ -120,12 +121,15 @@ export function workerGlyph(worker: OwnerWorker): string {
   )
     return '?';
   if (worker.stale || worker.state === 'unknown') return mark('◷', '~');
-  if (['closed', 'idle_grace', 'completed', 'done', 'awaiting-acceptance'].includes(worker.state))
+  if (['closed', 'idle_grace', 'idle', 'completed', 'done', 'awaiting-acceptance'].includes(worker.state))
     return mark('✓', '+');
   return mark('▸', '>');
 }
-const workerAge = (worker: OwnerWorker, now: number) =>
-  minuteAge(worker.homeNeedsHuman ? worker.humanEndedAt : (worker.settledAt ?? worker.startedAt), now);
+const workerAge = (worker: OwnerWorker, now: number) => {
+  const age = minuteAge(worker.homeNeedsHuman ? worker.humanEndedAt : (worker.settledAt ?? worker.startedAt), now);
+  // Thin jobs carry the owner's state word (working, idle, done, failed) next to the age.
+  return isThinLane(worker.laneId) ? `${t(worker.state)} ${age}` : age;
+};
 const modelEffort = (worker: OwnerWorker) =>
   [monitorText(worker.model ?? ''), monitorText(worker.effort ?? '')].filter(Boolean).join(mark('·', '.'));
 export function workerColumns(workers: readonly OwnerWorker[], width: number, now: number) {
