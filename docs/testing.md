@@ -153,10 +153,10 @@ behaviours have separate owners. Frozen owners are routing pointers, never edits
 | F02 | Routing is override then session then default, frozen for an existing job               | `roster.test.ts` — resolution order is override, then session, then default, and a prior result stays put                                | `contract` |
 | F03 | Create keys replay once; changed input conflicts and ambiguous launch never relaunches  | `role-facade.test.ts` — same key replays one job and a changed request conflicts                                                         | `contract` |
 | F04 | Send intent survives crashes without automatic resend                                   | `role-facade.test.ts` — a crash between send intent and the prompt is not resent                                                         | `contract` |
-| F05 | Read and wait report current observations; timeout is not completion                    | `pi-dispatch-facade.test.ts` — wait ignores immediate herdr idle and artifact presence; bounded timeout is observation only              | `contract` |
-| F06 | Question replies are eligible, bounded, idempotent and job-owner scoped                 | `pi-dispatch-facade.test.ts` — dispatch answers primary and helper questions idempotently with stale/empty eligibility and ownership     | `contract` |
-| F07 | Close/reap acts only on conclusively owned resources and preserves unresolved cleanup   | `pi-dispatch-facade.test.ts` — nonzero, missing, and timed-out reapers preserve unresolved cleanup for another explicit attempt          | `contract` |
-| F08 | Continuation suppresses old settlement across restart and sends the primary once        | `pi-dispatch-facade.test.ts` — fix round sends SESSION.PRIMARY once and suppresses old settlement across restart until a fresh timestamp | `contract` |
+| F05 | Read and wait report current observations; timeout is not completion                    | `pi-dispatch-facade.test.ts` — PR4 real extension artifacts: QA consumed:false, independent waiters, helper remains within one job, collector read-only | `contract` |
+| F06 | Question replies are eligible, bounded, idempotent and job-owner scoped                 | `pi-dispatch-facade.test.ts` — PR4 QA response rechecks the owner under the mutation lock | `contract` |
+| F07 | Close/reap acts only on conclusively owned resources and preserves unresolved cleanup   | `pi-dispatch-facade.test.ts` — PR4 missing pinned release never falls back to the current checkout or activated release | `contract` |
+| F08 | Continuation suppresses old settlement across restart and sends the primary once        | `pi-dispatch-facade.test.ts` — PR4 continuation suppresses old DONE; no replacement; explicit close is idempotent | `contract` |
 | F09 | STATUS requires matching role, output_written and a regular nonempty artifact           | `pi-dispatch-status.test.ts` — success needs output_written and a nonempty regular artifact                                              | `contract` |
 | F10 | Dispatch questions and helpers never become primary success or hidden permissions       | `pi-dispatch-status.test.ts` — a helper failure does not fail the primary                                                                | `contract` |
 | F11 | Lightweight wait CLI preserves native wait errors separately from observation deadlines | `role-wait.test.ts` — native herdr ${mode} is distinguished from an observation timeout                                                  | `contract` |
@@ -236,6 +236,43 @@ behaviours have separate owners. Frozen owners are routing pointers, never edits
 | R15 | Migration previews exactly, copies only allowlisted presentation settings and restores original bytes                                   | `migration.test.ts` — preview is exact/read-only and only allowlisted presentation changes are copied                                                      | `contract` |
 | R16 | Statusline preview is read-only; explicit installation preserves unrelated settings and exact restore bytes/mode                        | `statusline-settings.test.ts` — preview read-only; explicit apply preserves other settings and restore returns exact bytes/mode                            | `contract` |
 | R17 | Product root help discovers statusline without a ledger and both render aliases agree                                                   | `product-cli-routing.test.ts` — root help discovers statusline without opening a ledger; render aliases agree                                              | `contract` |
+
+### R6b retirement audit (P/T/W)
+
+| ID | User/contract behaviour | One owning test | Layer |
+| --- | --- | --- | --- |
+| R18 | Drain inspection is read-only; live stamps block and incomplete/unreadable evidence is UNKNOWN, never permission to clean up | `r6b-drain.test.mjs` — audit checks real live, dead and reused process stamps without signals or writes; audit inventory malformed, truncated, unreadable and missing is UNKNOWN and nonzero | `process` |
+| F14 | Historical v1/direct Pi receipts remain readable, but mutation and same-key relaunch refuse before writes | `pi-dispatch-facade.test.ts` — PR4 legacy receipts drain read-only; every mutation and relaunch is refused before writes | `contract` |
+
+R6B-1 dead-code exception: external Pi prototype conformance and its fake launcher/dispatcher,
+the six disconnected transport experiments with their five tests/demos/four fixtures, and
+`scripts/workbench/*` / `tests/workbench/*` retire with their code (architect §2 P/T/W).
+They are not current product guarantees. The historical `check-cloud.mjs` runner drops those
+selections and the app-server demo selection; default-suite legacy app-server tests remain
+until slice L. Product UI `workbench*.test.ts`, WP0 and visual baselines are unchanged.
+The mixed role-facade delegate_status compatibility case retires; its Jev schema assertions
+remain under “role create accepts judge statements and rejects extra statement fields”.
+
+Owner drain runbook (not run against owner data by this package):
+
+```sh
+node scripts/audit-r6b-drain.mjs --slice pi --home "$HUD_HOME"
+node scripts/audit-r6b-drain.mjs --slice transports --home "$HUD_HOME"
+node scripts/audit-r6b-drain.mjs --slice workbench --home "$HUD_HOME"
+node scripts/audit-r6b-drain.mjs --slice runtime --home "$HUD_HOME" --prefix "$HUD_PREFIX" --clients "$R6B_CLIENT_PATHS"
+```
+
+Use explicit canonical paths. `--clients` is a comma-separated list of complete client
+config paths (a path containing a comma is unprovable here); optional `--inventory` takes
+the small process-stamp JSON described in the script header. A stamp is evidence about
+that process only, not a complete inventory or proof of pane/tab/browser closure. Confirm
+all relevant homes/workspaces and cached clients with the owning release. Every FAIL or
+UNKNOWN is nonzero and blocks automated drain approval: resolve it through that release's
+inspection, never by asserting `closed`, replaying a stored executable, killing by name,
+or deleting old releases. The script deliberately cannot attest complete client scope,
+herdr resources, copied fixture children, ledger scopes or browser handles, even when the
+readable process/config checks pass. Retain rollback and job-pinned releases. Slice L's
+activation/resource checks remain an owner gate, separate from this source-only removal.
 
 ### Ledger
 
@@ -327,10 +364,12 @@ silently displaced. Real herdr/tmux probes stay local and separate.
 
 ### One fake pi family: `tests/fakes/pi.mjs`
 
-The shared module exports launcher, dispatch, worker and package-host profiles, not one
-executable pretending these boundaries are the same protocol. `pi-role.mjs`,
-`pi-dispatch.mjs`, `pi-owned-worker.mjs` and `fixtures/pi-package-host.mjs` are thin
-compatibility adapters. Consumer-local API/context stand-ins migrate in their owning
+The shared module exports owned-worker and package-host profiles, not one executable
+pretending these boundaries are the same protocol. `pi-owned-worker.mjs` and
+`fixtures/pi-package-host.mjs` are thin compatibility adapters. R6B-1 removed the dead
+external `pi-role.mjs` / `pi-dispatch.mjs` adapters and their shared launcher/dispatch profiles,
+including their two protocol-only cases and two prerequisite-refusal rows in the mixed
+`test-stand-ins.test.ts`; owned-worker/package-host and all herdr cases remain. Consumer-local API/context stand-ins migrate in their owning
 area slices; no consumer assertions are replaced here.
 `tests/fakes/pi-package.mjs` is **not a fake protocol**: it re-exports the unchanged real
 installed-package and loader discovery as a separate prerequisite; package availability

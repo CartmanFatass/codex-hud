@@ -179,49 +179,6 @@ test(
     assert.equal(new Set(inventory.tabs.map((tab: { tab_id: string }) => tab.tab_id)).size, 4);
   }
 );
-test('shared pi launcher preserves exact argument data without a model', (t) => {
-  const home = hudHome({ after: (fn) => t.after(fn) });
-  const out = spawnSync(
-    process.execPath,
-    [fake('pi-role.mjs'), '--args-json', 'implementer', '--qa-dir', 'a;$(literal)'],
-    { env: home.env, encoding: 'utf8' }
-  );
-  assert.equal(out.status, 0);
-  assert.deepEqual(JSON.parse(out.stdout), ['-ne', '-ns', '--role', 'implementer', '--qa-dir', 'a;$(literal)']);
-});
-test('shared pi dispatch checks intent then publishes SESSION and working STATUS', (t) => {
-  const home = hudHome({ after: (fn) => t.after(fn) });
-  const job = 'jsynthetic',
-    task = join(home.jobs, job);
-  home.write(`hud/jobs/${job}/brief.md`, 'Synthetic brief');
-  home.write(`hud/jobs/${job}/receipt.json`, JSON.stringify({ pi_dispatch: { launch: 'sent' } }));
-  home.write('hud/jobs/index/key.json', JSON.stringify({ job }));
-  home.write(`hud/assoc/${job}.json`, '{}');
-  const out = spawnSync(
-    process.execPath,
-    [
-      fake('pi-dispatch.mjs'),
-      'implementer',
-      '--task-dir',
-      task,
-      '--workdir',
-      home.source,
-      '--output',
-      join(task, 'report.md'),
-      '--model',
-      'synthetic/model',
-      '--thinking',
-      'high',
-    ],
-    { env: home.env, encoding: 'utf8' }
-  );
-  assert.equal(out.status, 0, out.stderr);
-  assert.match(fs.readFileSync(join(task, 'SESSION.txt'), 'utf8'), /PRIMARY=jsynthetic-primary/);
-  const status = JSON.parse(fs.readFileSync(join(task, 'STATUS.json'), 'utf8'));
-  assert.equal(status.state, 'working');
-  assert.equal(status.output_written, false);
-  assert.equal(status.model, 'synthetic/model');
-});
 test(
   'shared pi worker owns a real synthetic process, lazy session and settled artifact',
   { timeout: 5000 },
@@ -292,8 +249,6 @@ test('shared pi package-host uses the real package entry and rejects unknown act
 test('shared pi profiles fail without prerequisites; discovery never invents a package', (t) => {
   const home = hudHome({ after: (fn) => t.after(fn) });
   for (const [entry, args, extra] of [
-    ['pi-role.mjs', ['--start'], {}],
-    ['pi-dispatch.mjs', ['implementer', '--task-dir', home.tasks], {}],
     ['pi-owned-worker.mjs', ['--hud-role-contract', join(home.root, 'missing')], {}],
     ['../fixtures/pi-package-host.mjs', [], { HUD_TEST_REPO: join(home.root, 'missing') }],
   ] as const) {

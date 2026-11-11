@@ -3,9 +3,8 @@
  * array. The Codex adapter is the one shell string, and every token in it is
  * single-quoted after a charset check.
  *
- * pi-role is asked for `--args-json`. Each string in that array must match the
- * same charset. The wrapper function, not an env-profile home, selects the
- * Codex account.
+ * Pi execution is owned by pi-owned; pi-role remains a routing recipe ID.
+ * The wrapper function, not an env-profile home, selects the Codex account.
  */
 
 import { join } from 'node:path';
@@ -21,7 +20,6 @@ import type { RoleName } from './roles.js';
 export const RENAME_BACKOFF_MS = [3000, 3000, 3000] as const;
 
 const BARE = /^[A-Za-z0-9_.,:=/@+-]+$/;
-const PANE = /^[A-Za-z0-9][A-Za-z0-9:_./-]{0,80}$/;
 
 const PI_ROLE: Partial<Record<RoleName, string>> = {
   imp: 'implementer',
@@ -32,9 +30,7 @@ const PI_ROLE: Partial<Record<RoleName, string>> = {
 export class LaunchError extends Error {
   readonly name = 'LaunchError';
 
-  constructor(
-    readonly code: 'unsafe_launch' | 'role_unmapped' | 'pi_role_missing' | 'pi_role_failed' | 'binding_incomplete'
-  ) {
+  constructor(readonly code: 'unsafe_launch' | 'role_unmapped' | 'binding_incomplete') {
     super(code);
   }
 }
@@ -53,53 +49,10 @@ export function piRoleName(role: RoleName): string {
   return name;
 }
 
-/** Parent pane for `pi-role --orchestrator`, or null when the id is missing or unsafe. */
-export function orchestratorPane(env: NodeJS.ProcessEnv): string | null {
-  const value = env.HERDR_PANE_ID;
-  return value && PANE.test(value) ? value : null;
-}
-
-export function piRoleArgv(role: RoleName, qaDirectory: string, orchestrator: string | null): string[] {
-  const name = piRoleName(role);
-  const argv = ['--args-json', name];
-  if (orchestrator) argv.push('--orchestrator', orchestrator);
-  argv.push('--qa-dir', qaDirectory);
-  assertTokens(argv.filter((token) => !token.startsWith('--')));
-  assertTokens(argv.filter((token) => token.startsWith('--')));
-  return argv;
-}
-
-/** JSON array from `pi-role --args-json`. Every string must match the charset. */
-export function parsePiRoleArgs(stdout: string): string[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stdout);
-  } catch {
-    throw new LaunchError('unsafe_launch');
-  }
-  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.some((item) => typeof item !== 'string')) {
-    throw new LaunchError('unsafe_launch');
-  }
-  const words = parsed as string[];
-  assertTokens(words);
-  return words;
-}
-
 function assertTokens(tokens: readonly string[]): void {
   for (const token of tokens) {
     if (!BARE.test(token)) throw new LaunchError('unsafe_launch');
   }
-}
-
-/** Parsed pi-role words plus the job session directory and the binding's model. */
-export function appendPiOverrides(parsed: readonly string[], profile: BackendProfile, sessionDir: string): string[] {
-  const out = [...parsed];
-  if (!out.includes('--session-dir')) out.push('--session-dir', sessionDir);
-  if (!out.includes('--tui-mode')) out.push('--tui-mode', 'regular');
-  if (profile.model && !out.includes('--model')) out.push('--model', profile.model);
-  if (profile.effort && !out.includes('--thinking')) out.push('--thinking', profile.effort);
-  assertTokens(out);
-  return out;
 }
 
 /**

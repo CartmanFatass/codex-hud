@@ -38,7 +38,7 @@ import { JevRuntime } from '../../src/jev/runtime/executor.js';
 import type { JevCreateRequest, JevJob } from '../../src/jev/runtime/types.js';
 import { listedAgents } from '../../src/roles/herdr-run.js';
 import { LOCK_WAIT_MS, withLock } from '../../src/roles/job-store.js';
-import { codexShell, parsePiRoleArgs, RENAME_BACKOFF_MS } from '../../src/roles/launch.js';
+import { codexShell, RENAME_BACKOFF_MS } from '../../src/roles/launch.js';
 import { envProfileVars, parseRouting, RoutingError } from '../../src/roles/routing.js';
 import { formatRosterRoot } from '../../src/roles/selection.js';
 import { ROLES } from '../../src/roles/roles.js';
@@ -48,11 +48,10 @@ import { MANAGED_TOOLS } from '../../packages/hud-mcp/src/managed-tools.js';
 import { RoleFacadeTools } from '../../packages/hud-mcp/src/role-extension.js';
 import { selectMcpEntry } from '../../packages/hud-mcp/src/surface.js';
 import { ROLE_TOOLS } from '../../src/roles/role-tools.js';
-import { TOOLS, validateToolArguments, type ToolDefinition } from '../../packages/hud-mcp/src/tools.js';
+import { validateToolArguments, type ToolDefinition } from '../../packages/hud-mcp/src/tools.js';
 import { REPO_ROOT } from '../fixtures/paths.js';
 
 const FAKE = join(REPO_ROOT, 'tests/fakes/herdr.mjs');
-const FAKE_PI = join(REPO_ROOT, 'tests/fakes/pi-role.mjs');
 
 const ROUTING = `schema = 1
 default_preset = "daily"
@@ -188,9 +187,6 @@ function stage(t: TestContext, mode = 'ok', delayMs = 0): Stage {
   const wrapper = join(bin, 'herdr');
   writeFileSync(wrapper, `#!/bin/bash\nexec ${quote(process.execPath)} ${quote(FAKE)} "$@"\n`);
   chmodSync(wrapper, 0o755);
-  const piRole = join(bin, 'pi-role');
-  writeFileSync(piRole, `#!/bin/bash\nexec ${quote(process.execPath)} ${quote(FAKE_PI)} "$@"\n`);
-  chmodSync(piRole, 0o755);
   const env: NodeJS.ProcessEnv = {
     PATH: bin,
     HOME: home,
@@ -795,7 +791,7 @@ test('hud wait prints one herdr wait and does not accept the job', async (t) => 
   assert.equal(bad, 2);
 });
 
-test('unnamed agents are skipped and unsafe pi-role words are rejected', () => {
+test('unnamed agents are skipped and the Codex recipe retains its checked shell arguments', () => {
   const agents = listedAgents(
     JSON.stringify({
       id: 'cli:agent:list',
@@ -811,9 +807,6 @@ test('unnamed agents are skipped and unsafe pi-role words are rejected', () => {
   assert.equal(agents?.length, 1);
   assert.equal(agents?.[0]?.name, 'hud-j0123456789abcdef');
   assert.equal(listedAgents('{"result":{"agents":[null]}}'), null);
-  assert.deepEqual(parsePiRoleArgs('["-ne","--role","implementer"]'), ['-ne', '--role', 'implementer']);
-  assert.throws(() => parsePiRoleArgs('["ok $(whoami)"]'));
-  assert.throws(() => parsePiRoleArgs("'a'b"));
   const shell = codexShell(parseRouting(ROUTING).backends['codex-a']!);
   assert.match(shell, /^'codex2'/);
   assert.match(shell, /danger-full-access/);
@@ -1508,15 +1501,7 @@ test('a runtime that cannot start returns its typed code', async (t) => {
   assert.equal(tooMany.field, 'input');
 });
 
-test('delegate_status still accepts one run id', () => {
-  const status = TOOLS.find((tool) => tool.name === 'delegate_status');
-  const wait = TOOLS.find((tool) => tool.name === 'delegate_wait');
-  assert.ok(status && wait);
-  assert.equal(validateToolArguments(status, { runId: 'r1' }), true);
-  assert.equal(validateToolArguments(status, { linkId: 'x' }), true);
-  assert.equal(validateToolArguments(status, { runId: 'r1', linkId: 'x' }), false);
-  assert.equal(validateToolArguments(status, {}), false);
-  assert.equal(validateToolArguments(wait, { runId: 'r1' }), true);
+test('role create accepts judge statements and rejects extra statement fields', () => {
   const create = ROLE_TOOLS.find((tool) => tool.name === 'hud_create') as ToolDefinition;
   assert.equal(
     validateToolArguments(create, {
