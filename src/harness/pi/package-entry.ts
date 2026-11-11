@@ -146,7 +146,9 @@ export function installPiPackage(
   on('session_start', async (_event, ctx) => {
     await start(ctx);
   });
-  for (const event of ['session_before_switch', 'session_before_fork', 'session_before_tree']) on(event, () => fence());
+  // Delegation stays bound if navigation is canceled; current() rejects an actual session change.
+  for (const event of ['session_before_switch', 'session_before_fork', 'session_before_tree'])
+    onDisplay(event, () => fence());
   on('session_tree', async (_event, ctx) => {
     await start(ctx);
   });

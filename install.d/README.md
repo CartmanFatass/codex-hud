@@ -10,6 +10,10 @@ a failing hook stops the installer.
 `--with name,...` limits it to those extensions. Core uninstall keeps HUD data.
 
 Run `CODEX_HOME=... ./install --with codex` once per Codex home (default `~/.codex`).
+Before the full uninstall, remove each extra Codex home's registration with
+`CODEX_HOME=<home> ./install --uninstall --with codex`, then run the full uninstall
+for the remaining home. The first uninstall removes the shared commands, so use the
+repository's `./install` (not `hud uninstall`) for subsequent homes and the full uninstall.
 
 ## The HUD display is opt-in per launch
 

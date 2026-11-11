@@ -284,6 +284,28 @@ test('pi on/off/toggle/status uses the caller pane without native ancestry and r
   await h.emit('session_shutdown', c.ctx);
 });
 
+test('combined pi packages retain delegation after canceled navigation and display reconnect', async (t) => {
+  const f = setup(t),
+    h = host(),
+    c = context(f, h),
+    p = ports(f);
+  await load(f, h, p);
+  await load(f, h, p, 'hud-display.mjs');
+  t.after(() => h.emit('session_shutdown', c.ctx));
+  await h.emit('session_start', c.ctx);
+  const roster = () => h.tools.get('hud_roster').execute('synthetic', {}, undefined, undefined, c.ctx);
+  assert.ok((await roster()).details.roles.length);
+  for (const event of ['session_before_switch', 'session_before_fork', 'session_before_tree']) {
+    await h.emit(event, c.ctx); // No successful transition follows: navigation was canceled.
+    await h.commands.get('hud').handler('reconnect', c.ctx);
+    assert.equal(h.calls.notices.at(-1), 'HUD: reconnected; panel_not_open');
+    assert.ok((await roster()).details.roles.length);
+  }
+  assert.equal(h.tools.size, 6);
+  assert.equal(h.commands.size, 1);
+  assert.equal(p.counts().splits, 0);
+});
+
 test('the delegation-only package registers the tools but no footer, no /hud and no panel', async (t) => {
   const f = setup(t),
     h = host(),

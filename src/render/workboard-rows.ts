@@ -23,7 +23,6 @@ export function boardRow(text: string, target?: WorkTarget): MonitorRow {
 export function section(text: string, width: number, _heavy = false): MonitorRow {
   return boardRow(`${text} ${theme.board.frame(mark('─', '-').repeat(Math.max(0, width - visualLength(text) - 1)))}`);
 }
-export const callCount = (n: number) => t(n === 1 ? '{n} call' : '{n} calls', { n });
 export function workerRow(worker: OwnerWorker, width: number, now: number): MonitorRow {
   return boardRow(
     pair(

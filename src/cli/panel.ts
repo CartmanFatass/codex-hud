@@ -26,13 +26,7 @@ settings retain priority; NO_COLOR still disables color.
 `;
 
 /** Display selection only. Explicit source is a transcript root, never job authority. */
-export function panelSelection(
-  args: readonly string[],
-  _env: NodeJS.ProcessEnv = process.env
-): {
-  root: string | null;
-  target?: ReturnType<typeof displayTarget>;
-} {
+export function panelSelection(args: readonly string[]): { root: string | null } {
   if (!args.length) return { root: null };
   if (args[0] === '--root') {
     if (args.length !== 2) throw new CliError('invalid_arguments');
@@ -57,8 +51,7 @@ export function panelSelection(
   if (!source) throw new CliError('invalid_arguments');
   try {
     if (realpathSync(source) !== source || !statSync(source).isDirectory()) throw new Error('noncanonical');
-    const target = displayTarget(harness, session, source);
-    return { root: target.root, target };
+    return { root: displayTarget(harness, session, source).root };
   } catch {
     throw new CliError('invalid_arguments');
   }
@@ -81,7 +74,7 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
   }
   const here = rest[0] === '--here';
   const selection = here ? rest.slice(1) : rest;
-  const { root } = panelSelection(selection, io.env);
+  const { root } = panelSelection(selection);
   if (!here && io.env.HERDR_PANE_ID) {
     const pane = await openPanelPane(
       [process.execPath, join(installationRoot(), 'bin/hud'), 'panel', '--here', ...selection],

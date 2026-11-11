@@ -23,6 +23,8 @@ function status(state, reason = null) {
     task_dir: dir,
     slot: 'primary',
     role: job.role,
+    harness: 'jev',
+    provider: role.provider === 'chatgpt' ? 'openai' : 'gemini',
     pid: process.pid,
     model: role.model ?? null,
     thinking: role.thinking ?? null,

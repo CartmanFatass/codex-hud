@@ -3,6 +3,8 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
+import { createConnection } from 'node:net';
+import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
 
 const home = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
@@ -35,11 +37,56 @@ const log = (message) => fs.appendFileSync(logFile, `${new Date().toISOString()}
 fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
 log(`start pid=${process.pid}`);
 let timer,
+  socket,
+  subscribed = false,
   queued = false,
   stopped = false;
+const closedTabs = new Set();
+function subscribe() {
+  if (subscribed) return;
+  subscribed = true;
+  let warned = false;
+  const unavailable = (message) => {
+    if (!warned && !stopped) log(`herdr events unavailable: ${message}; using file events only`);
+    warned = true;
+    socket?.destroy();
+  };
+  if (!process.env.HERDR_SOCKET_PATH) return unavailable('HERDR_SOCKET_PATH unset');
+  socket = createConnection(process.env.HERDR_SOCKET_PATH);
+  socket.on('connect', () => {
+    socket.write(
+      JSON.stringify({
+        id: 'hud-watch',
+        method: 'events.subscribe',
+        params: { subscriptions: [{ type: 'tab.closed' }] },
+      }) + '\n'
+    );
+  });
+  const lines = createInterface({ input: socket });
+  lines.on('line', (line) => {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      return unavailable('invalid JSON');
+    }
+    if (event.error) return unavailable(event.error.message);
+    if (event.event === 'tab_closed') {
+      closedTabs.add(event.data.tab_id);
+      schedule();
+    }
+  });
+  lines.on('error', (error) => unavailable(error.message));
+  socket.on('error', (error) => unavailable(error.message));
+  socket.on('close', () => {
+    lines.close();
+    unavailable('socket closed');
+  });
+}
 function stop() {
   stopped = true;
   watcher.close();
+  socket?.destroy();
   clearTimeout(timer);
   if (read(pidFile)?.trim() === String(process.pid)) fs.unlinkSync(pidFile);
   log(`exit pid=${process.pid}: no open jobs or failed deadlines`);
@@ -56,7 +103,15 @@ function scan() {
     const jobFile = join(dir, 'job.json'),
       job = json(jobFile);
     if (job?.reaped_at) continue;
-    const status = json(join(dir, 'STATUS.json'));
+    const statusFile = join(dir, 'STATUS.json');
+    let status = json(statusFile);
+    const session = read(join(dir, 'SESSION.txt'));
+    const tab = session?.match(/^TAB=(.+)$/m)?.[1]?.trim();
+    if (tab && closedTabs.has(tab) && !['closed', 'failed'].includes(status?.state)) {
+      status = { ...status, state: 'failed', exit_reason: 'tab closed', ended_at: new Date().toISOString() };
+      fs.writeFileSync(`${statusFile}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
+      fs.renameSync(`${statusFile}.tmp`, statusFile);
+    }
     // A persisted launch without STATUS is still open until dispatch returns.
     if (!status) {
       if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) open = true;
@@ -71,11 +126,10 @@ function scan() {
       continue;
     }
     if (!['closed', 'failed'].includes(status.state)) continue;
-    const session = read(join(dir, 'SESSION.txt'));
-    if (!session?.match(/^TAB=.+$/m)) continue;
+    if (!tab) continue;
     if (status.state === 'failed') {
-      const deadline = Date.parse(status.ended_at) + retention;
-      if (!Number.isFinite(deadline)) continue;
+      const ended = Date.parse(status.ended_at);
+      const deadline = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + retention;
       if (deadline > Date.now()) {
         nearest = Math.min(nearest, deadline);
         continue;
@@ -95,6 +149,7 @@ function scan() {
       }
     }
   }
+  if (open) subscribe();
   if (nearest !== Infinity) timer = setTimeout(scan, Math.max(1, Math.ceil(nearest - Date.now())));
   else if (!open) stop();
 }
@@ -113,6 +168,7 @@ watcher.on('error', (error) => {
   log(`watch error: ${error.message}`);
   process.exitCode = 1;
   watcher.close();
+  socket?.destroy();
   clearTimeout(timer);
 });
 scan();

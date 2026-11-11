@@ -95,15 +95,7 @@ export function workCardName(card: WorkCard, _state: MonitorState, width: number
     role,
   };
 }
-export function renderWorkCard(
-  card: WorkCard,
-  state: MonitorState,
-  width: number,
-  sentence = '',
-  _expanded = false,
-  _linkName = false,
-  _fullDetail = sentence
-): readonly string[] {
+export function renderWorkCard(card: WorkCard, state: MonitorState, width: number, sentence = ''): readonly string[] {
   const ink = workStateInk(card),
     name = workCardName(card, state, width);
   const rows = [

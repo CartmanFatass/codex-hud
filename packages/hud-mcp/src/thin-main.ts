@@ -487,10 +487,27 @@ async function call(name: string, args: Args): Promise<unknown> {
     save(job);
     ensureWatcher();
     let result;
-    if (definition.harness === 'jev') result = await dispatchJev(job);
-    else result = await dispatchPi(job, definition);
+    try {
+      if (definition.harness === 'jev') result = await dispatchJev(job);
+      else result = await dispatchPi(job, definition);
+    } catch (error) {
+      result = { exit_code: 1, stdout: '', stderr: String(error) };
+    }
     job.dispatch_exit_code = result.exit_code;
     job.stderr_tail = result.stderr;
+    if (result.exit_code !== 0) {
+      const statusFile = join(dir, 'STATUS.json');
+      fs.writeFileSync(
+        `${statusFile}.tmp`,
+        JSON.stringify({
+          state: 'failed',
+          exit_reason: result.stderr || result.stdout || `launch exited ${result.exit_code}`,
+          ended_at: new Date().toISOString(),
+        }) + '\n',
+        { mode: 0o600 }
+      );
+      fs.renameSync(`${statusFile}.tmp`, statusFile);
+    }
     save(job);
     return created(job);
   }

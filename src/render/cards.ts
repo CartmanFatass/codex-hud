@@ -377,7 +377,7 @@ export function agentCard(
   const sentence =
     !facadeOnly(row.node) && visibility(state).cardSummary ? briefLine(input.agentLog?.get(row.node.id) ?? []) : '';
   const link = input.linkNames !== false && !facadeOnly(row.node);
-  const rows = renderWorkCard(card, state, width, sentence, false, link);
+  const rows = renderWorkCard(card, state, width, sentence);
   const name = workCardName(card, state, width);
   return rows.map((text, i) => ({
     text: i === 0 && state.tree.selectedId === row.node.id ? boardCursor(text) : text,

@@ -6,6 +6,20 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
+import { createServer } from 'node:net';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { projectWorkCard } from '../../dist/collectors/work-card.js';
+import { renderWorkCard } from '../../dist/render/work-card.js';
+import { initialMonitorState } from '../../dist/render/monitor.js';
+import { stripAnsi } from '../../dist/render/colors.js';
+const workerFor = (f, id) =>
+  readThinJobs(f.env.HUD_HOME, { project: null, pane: 'synthetic-pane' })
+    .flatMap((lane) => lane.workers)
+    .find((worker) => worker.id === 'thin-job:' + id);
+const cardText = (worker) =>
+  renderWorkCard(projectWorkCard(worker, Date.now()), { ...initialMonitorState(), mainTab: 'work' }, 56)
+    .map(stripAnsi)
+    .join('\n');
 
 const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
 async function fixture(t, inHerdr = true) {
@@ -28,6 +42,7 @@ if (command === 'pi-dispatch') {
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', exit_reason: null }));
   fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'split') {
+  if (fs.existsSync(join(process.env.HOME, 'fail-split'))) { console.error('synthetic split failed'); process.exit(1); }
   console.log(JSON.stringify({result: {pane: {pane_id: 'synthetic-right'}}}));
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') {
   console.log(JSON.stringify({result: {pane: {workspace_id: 'synthetic-workspace'}}}));
@@ -60,6 +75,7 @@ if (command === 'pi-dispatch') {
     HUD_WATCH_FAILED_RETENTION_MS: '1000',
     PATH: `${bin}:${process.env.PATH}`,
     FAKE_LOG: log,
+    HERDR_SOCKET_PATH: join(root, 'events.sock'),
   };
   for (const name of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR']) {
     env[name] = join(root, name.toLowerCase());
@@ -135,6 +151,87 @@ async function until(check, timeout = 2000) {
   }
 }
 
+test('dispatch failure writes a reason for the panel and is reaped', { timeout: 7000 }, async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'fail-split'), '');
+  const job = await f.call('hud_create', { role: 'imp', request_key: 'failed-launch', task: 'Synthetic task.' });
+  const status = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
+  assert.equal(status.state, 'failed');
+  assert.match(status.exit_reason, /synthetic split failed/);
+  assert.ok(Number.isFinite(Date.parse(status.ended_at)));
+  assert.match(cardText(workerFor(f, job.job)), /synthetic split failed/);
+  await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
+  assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
+  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+});
+
+test('failed STATUS uses its mtime when ended_at is absent or invalid', { timeout: 7000 }, async (t) => {
+  const f = await fixture(t);
+  for (const ended_at of [undefined, 'not-a-date']) {
+    const job = await f.call('hud_create', { role: 'imp', request_key: String(ended_at), task: 'Synthetic task.' });
+    const file = join(job.task_dir, 'STATUS.json');
+    fs.writeFileSync(file, JSON.stringify({ state: 'failed', ended_at }));
+    const mtime = fs.statSync(file).mtimeMs;
+    await new Promise((done) => setTimeout(done, 200));
+    assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, undefined);
+    assert.ok(fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+    await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
+    assert.ok(Date.parse(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at) >= mtime + 999);
+  }
+});
+
+test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes', { timeout: 7000 }, async (t) => {
+  const f = await fixture(t);
+  let socket, request;
+  const server = createServer((client) => {
+    socket = client;
+    createInterface({ input: client }).on('line', (line) => {
+      request = JSON.parse(line);
+      client.write(JSON.stringify({ id: request.id, result: {} }) + '\n');
+    });
+  });
+  t.after(() => {
+    socket?.destroy();
+    server.close();
+  });
+  server.listen(f.env.HERDR_SOCKET_PATH);
+  await once(server, 'listening');
+  const job = await f.call('hud_create', { role: 'imp', request_key: 'tab-close', task: 'Synthetic task.' });
+  await until(() => request);
+  assert.equal(request.method, 'events.subscribe');
+  assert.deepEqual(request.params, { subscriptions: [{ type: 'tab.closed' }] });
+  const statusFile = join(job.task_dir, 'STATUS.json');
+  const emit = (tab_id) =>
+    socket.write(
+      JSON.stringify({
+        event: 'tab_closed',
+        data: {
+          type: 'tab_closed',
+          tab_id,
+          workspace_id: 'synthetic-workspace',
+        },
+      }) + '\n'
+    );
+  emit('foreign-tab');
+  await new Promise((done) => setTimeout(done, 100));
+  assert.equal(JSON.parse(fs.readFileSync(statusFile)).state, 'working');
+  const finalDir = join(f.env.HUD_HOME, 'jobs', 'j0000000000000000');
+  fs.mkdirSync(finalDir);
+  fs.writeFileSync(join(finalDir, 'SESSION.txt'), 'TAB=synthetic-tab\n');
+  fs.writeFileSync(
+    join(finalDir, 'STATUS.json'),
+    JSON.stringify({ state: 'failed', exit_reason: 'original', ended_at: new Date().toISOString() })
+  );
+  emit('synthetic-tab');
+  await until(() => JSON.parse(fs.readFileSync(statusFile)).state === 'failed');
+  assert.equal(JSON.parse(fs.readFileSync(statusFile)).exit_reason, 'tab closed');
+  assert.equal(JSON.parse(fs.readFileSync(join(finalDir, 'STATUS.json'))).exit_reason, 'original');
+  await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
+  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+  assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
+  assert.ok(!f.commands().some((c) => c.command === 'herdr' && c.args[1] === 'get' && c.args[2] !== 'synthetic-pane'));
+});
+
 test('thin watcher catches up without a new file event and exits', { timeout: 5000 }, async (t) => {
   const f = await fixture(t),
     dir = join(f.env.HUD_HOME, 'jobs', 'j0000000000000000');
@@ -187,6 +284,7 @@ test(
     await new Promise((done) => setTimeout(done, 200));
     assert.equal(reaped(first.task_dir), 0);
     assert.equal(fs.existsSync(pidFile), true, 'grace jobs must keep the watcher alive');
+    assert.equal(watchLog().match(/herdr events unavailable/g)?.length, 1);
     fs.writeFileSync(join(second.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
     fs.writeFileSync(join(first.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
     await until(() => reaped(first.task_dir) === 1);
@@ -551,6 +649,10 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   );
   const state = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
   assert.equal(state.state, 'closed');
+  assert.equal(state.harness, 'jev');
+  assert.equal(state.provider, 'openai');
+  assert.equal(workerFor(f, job.job).harness, 'jev');
+  assert.match(cardText(workerFor(f, job.job)), /◎.*jev/);
   assert.equal(state.output_written, true);
   assert.equal(state.exit_reason, 'settled');
   assert.equal((await f.call('hud_read', { job: job.job })).report, 'Synthetic Jev answer.');
