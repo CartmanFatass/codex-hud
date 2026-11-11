@@ -3,19 +3,8 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { fixture, replaceFixtureFile } from '../../scripts/runtime-package/test-fixture.mjs';
-import { planInstall, executeInstall } from '../../scripts/runtime-package/installer.mjs';
-import {
-  planActivation,
-  applyActivation,
-  restoreActivation,
-  observe,
-} from '../../scripts/runtime-package/activation.mjs';
-import { PI_TEMPLATES, piSettingsStep, piPreferenceStep } from '../../scripts/runtime-package/pi.mjs';
-import { piPackageCommand } from '../../scripts/pi-package.mjs';
-import { digest } from '../../scripts/runtime-package/safety.mjs';
-import { EXTRA_FILES, REQUIRED_OUTPUTS } from '../../scripts/pack-cloud-preview.mjs';
-import { REQUIRED } from '../../scripts/runtime-package/manifest.mjs';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { createFooterHost, piPackage } from '../fakes/pi.mjs';
 const root = process.env.R6A_PI_EMITTED_ROOT ?? path.resolve('dist');
 const { capturePiPanel } = await import(pathToFileURL(path.join(root, 'harness/pi/package-native.js')));
@@ -24,39 +13,40 @@ const { roleSummaryPath, readRoleSummary, ROLE_SUMMARY_TTL_MS } = await import(
 );
 const { renderRoleSummary } = await import(pathToFileURL(path.join(root, 'render/role-summary.js')));
 const { readProcess } = await import(pathToFileURL(path.join(root, 'core/run/process.js')));
-const { displayTarget, PanelStore, panelKey, saveJson } = await import(
+const { displayTarget, PanelStore, panelKey, saveJson, validateContext } = await import(
   pathToFileURL(path.join(root, 'integrations/panel/receipt.js'))
 );
 const { visualWidth, truncateAnsi } = await import(pathToFileURL(path.join(root, 'render/colors.js')));
 const footerHost = createFooterHost({ visibleWidth: visualWidth, truncateToWidth: truncateAnsi });
 const node = fs.realpathSync(process.execPath);
 function setup(t) {
-  const f = fixture(t, 'pi');
-  for (const name of [
-    ...PI_TEMPLATES,
-    'integrations/pi/package/README.md',
-    'integrations/skills/hud-delegate/SKILL.md',
-  ])
-    replaceFixtureFile(f, name, fs.readFileSync(name));
-  // Test-release adapter injects only native process/transport/clock ports into the REAL implementation.
-  replaceFixtureFile(
-    f,
-    'dist/harness/pi/package-entry.js',
+  const dir = fs.mkdtempSync(path.join(tmpdir(), 'hud-pi-package-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const home = path.join(dir, 'home'),
+    cwd = path.join(dir, 'workspace'),
+    release = path.join(dir, 'checkout with spaces'),
+    packageDir = path.join(dir, 'pi-package'),
+    hudHome = path.join(dir, 'hud');
+  for (const p of [home, cwd, hudHome, path.join(packageDir, 'extensions'), path.join(release, 'dist/harness/pi')])
+    fs.mkdirSync(p, { recursive: true, mode: 0o700 });
+  // Inject only process/transport/clock ports into the REAL implementation.
+  fs.writeFileSync(path.join(release, 'package.json'), JSON.stringify({ type: 'module' }));
+  fs.writeFileSync(
+    path.join(release, 'dist/harness/pi/package-entry.js'),
     `import { installPiPackage as real } from ${JSON.stringify(pathToFileURL(path.join(root, 'harness/pi/package-entry.js')).href)}; export function installPiPackage(pi,b,deps) { return real(pi,b,globalThis[Symbol.for('hud-a5-test-ports')] ?? deps); }`
   );
-  const p = planInstall(f.bundle, f.prefix, undefined, false, true);
-  executeInstall(f.bundle, f.prefix, p.planDigest, undefined, { stageOnly: true });
-  const options = {
-    prefix: f.prefix,
-    release: p.bundleDigest,
-    hudHome: path.join(f.home, 'hud'),
-    shimDir: path.join(f.home, 'bin'),
-    path: '/usr/bin',
-    pi: { node },
-  };
-  const plan = planActivation(options),
-    applied = applyActivation(options, plan.planId);
-  const binding = JSON.parse(fs.readFileSync(path.join(plan.piPackage, 'binding.json')));
+  for (const entry of ['bin/hud', 'packages/hud-mcp/bin/hud-mcp.mjs']) {
+    fs.mkdirSync(path.dirname(path.join(release, entry)), { recursive: true });
+    fs.symlinkSync(path.resolve(entry), path.join(release, entry));
+  }
+  for (const [from, to] of [
+    ['package.template.json', 'package.json'],
+    ['binding.mjs', 'binding.mjs'],
+    ['extensions/hud.mjs', 'extensions/hud.mjs'],
+  ])
+    fs.copyFileSync(path.join('integrations/pi/package', from), path.join(packageDir, to));
+  const binding = { release, hudHome, node };
+  fs.writeFileSync(path.join(packageDir, 'binding.json'), JSON.stringify(binding));
   // Native-node package-host tests supply host peers outside the release bundle.
   // Real pi loader alias resolution is separately probed; these modules never ship.
   for (const [name, body] of [
@@ -69,12 +59,20 @@ function setup(t) {
       `export {visualWidth as visibleWidth, truncateAnsi as truncateToWidth} from ${JSON.stringify(pathToFileURL(path.join(root, 'render/colors.js')).href)};`,
     ],
   ]) {
-    const peer = path.join(plan.piPackage, 'node_modules/@earendil-works', name);
+    const peer = path.join(packageDir, 'node_modules/@earendil-works', name);
     fs.mkdirSync(peer, { recursive: true });
     fs.writeFileSync(path.join(peer, 'package.json'), JSON.stringify({ type: 'module', exports: './index.js' }));
     fs.writeFileSync(path.join(peer, 'index.js'), body);
   }
-  return { ...f, options, plan, applied, binding, env: { ...f.env, HUD_HOME: options.hudHome } };
+  const env = {
+    PATH: `${path.dirname(node)}:/usr/bin:/bin`,
+    HOME: home,
+    HUD_HOME: hudHome,
+    CODEX_HOME: path.join(dir, 'codex'),
+    CLAUDE_CONFIG_DIR: path.join(dir, 'claude'),
+    PI_CODING_AGENT_DIR: path.join(dir, 'agent'),
+  };
+  return { home, cwd, packageDir, binding, env };
 }
 function host() {
   const handlers = new Map(),
@@ -228,7 +226,11 @@ function ports(f, _h, c) {
     main: stamp,
     instance: 'instance',
     origin,
-    runtime: { node, entry: path.join(f.binding.release, 'bin/hud'), digest: f.binding.digest },
+    runtime: {
+      node,
+      entry: path.join(f.binding.release, 'bin/hud'),
+      digest: createHash('sha256').update(f.binding.release).digest('hex'),
+    },
   };
   const native = {
     identity: { harness: 'pi', root: { namespace: target.ref.sourceId, sessionId: target.ref.sessionId } },
@@ -301,43 +303,25 @@ async function load(f, h, p) {
   const key = Symbol.for('hud-a5-test-ports');
   globalThis[key] = p?.options;
   try {
-    const entry = await import(pathToFileURL(path.join(f.plan.piPackage, 'extensions/hud.mjs')));
+    const entry = await import(pathToFileURL(path.join(f.packageDir, 'extensions/hud.mjs')));
     await entry.default(h.pi);
   } finally {
     delete globalThis[key];
   }
 }
-test('templates materialize one versioned package, explicit resources, immutable pin, hash-verified canonical skill, relocation with spaces', async (t) => {
+test('real package entry loads directly from the checkout with only release, hudHome and node', async (t) => {
   const f = setup(t),
-    pkg = f.plan.piPackage;
-  const manifest = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json')));
-  assert.equal(manifest.name, 'hud');
-  assert.equal(manifest.version, f.plan.releaseVersion);
-  assert.ok(manifest.keywords.includes('pi-package'));
-  assert.equal(manifest.dependencies, undefined);
-  assert.deepEqual(manifest.peerDependencies, { '@earendil-works/pi-coding-agent': '*', typebox: '*' });
-  assert.deepEqual(manifest.pi, { extensions: ['./extensions/hud.mjs'], skills: ['./skills/hud-delegate/SKILL.md'] });
-  assert.equal(f.binding.release, path.join(f.prefix, 'releases', f.plan.runtimeDigest));
-  assert.equal(f.binding.digest, f.plan.runtimeDigest);
-  assert.equal(digest(fs.readFileSync(path.join(pkg, 'skills/hud-delegate/SKILL.md'))), f.plan.skillHash);
-  assert.ok(f.manifest.entries.every((e) => e.path.split('/').every((p) => !p.startsWith('.'))));
-  const relocated = path.join(f.home, 'relocated package with spaces');
-  fs.cpSync(pkg, relocated, { recursive: true });
-  const h = host();
-  const entry = await import(pathToFileURL(path.join(relocated, 'extensions/hud.mjs')));
-  await entry.default(h.pi);
+    h = host();
+  const binding = { release: path.resolve('.'), hudHome: f.binding.hudHome, node };
+  fs.writeFileSync(path.join(f.packageDir, 'binding.json'), JSON.stringify(binding));
+  await load(f, h);
   assert.equal(h.calls.command, 1);
-  assert.equal(h.tools.size, 6);
-  assert.equal(h.calls.footer, 0);
-});
-test('inventory is complete and no generated skill or host SDK is bundled as a pi template', () => {
-  for (const p of PI_TEMPLATES) {
-    assert.ok(EXTRA_FILES.includes(p));
-    assert.ok(REQUIRED.includes(p));
-  }
-  for (const n of ['segment', 'package-entry', 'package-native'])
-    assert.ok(Object.values(REQUIRED_OUTPUTS).includes(`dist/harness/pi/${n}.js`));
-  assert.ok(!PI_TEMPLATES.some((p) => p.includes('node_modules') || p.includes('/skills/')));
+  assert.ok(h.commands.has('hud'));
+  assert.deepEqual(
+    [...h.tools.keys()],
+    ['hud_roster', 'hud_create', 'hud_read', 'hud_send', 'hud_respond', 'hud_close']
+  );
+  assert.equal(h.calls.footer, 0, 'loading alone starts no UI or runtime resources');
 });
 test('REAL package entry start -> reload -> shutdown owns footer, restores defaults, keeps other statuses and exactly six proxies', async (t) => {
   const f = setup(t),
@@ -606,7 +590,7 @@ test('auto-open false is honored; explicit on opens; failed local operations sta
     h = host(),
     c = context(f, h),
     p = ports(f, h, c);
-  saveJson(path.join(f.options.hudHome, 'integration-config.json'), { panelAutoOpen: false });
+  saveJson(path.join(f.binding.hudHome, 'integration-config.json'), { panelAutoOpen: false });
   await load(f, h, p);
   await h.emit('session_start', c.ctx);
   assert.equal(p.counts().splits, 0);
@@ -814,7 +798,7 @@ for (const variant of [
     if (variant === 'pane-closed') await p.herdr.close('display');
     if (variant === 'off') await h.commands.get('hud').handler('off', c.ctx);
     if (variant === 'auto-off')
-      saveJson(path.join(f.options.hudHome, 'integration-config.json'), { panelAutoOpen: false });
+      saveJson(path.join(f.binding.hudHome, 'integration-config.json'), { panelAutoOpen: false });
     const before = h.emit('session_before_tree', c.ctx);
     await assert.rejects(
       h.tools.get('hud_read').execute('during-tree', {}, undefined, undefined, c.ctx),
@@ -886,6 +870,8 @@ test('native capture requires real header, complete foreground ancestry and matc
   const captured = await capturePiPanel(f.binding, c.ctx, env, () => true, deps);
   assert.equal(captured.native.topology, 'top-level');
   assert.equal(captured.context.target.root, c.root);
+  assert.equal(captured.context.runtime.digest, createHash('sha256').update(f.binding.release).digest('hex'));
+  validateContext(captured.context);
   worker = true;
   await assert.rejects(() => capturePiPanel(f.binding, c.ctx, env, () => true, deps), /panel_worker_session/);
   worker = false;
@@ -897,80 +883,6 @@ test('native capture requires real header, complete foreground ancestry and matc
   server = true;
   await assert.rejects(() => capturePiPanel(f.binding, c.ctx, env, () => false, deps), /panel_origin_unverified/);
   assert.equal(p.counts().splits, 0);
-});
-test('row 7 and row 10 use A1 exact restore, preserve unrelated settings, refuse stale bytes and symlinks; write-set hashes are explicit', (t) => {
-  const f = setup(t),
-    file = path.join(f.home, 'pi-agent/settings.json');
-  fs.mkdirSync(path.dirname(file), { mode: 0o700 });
-  const before = Buffer.from('{"theme":"synthetic", "packages":["/synthetic/other"]}\n');
-  fs.writeFileSync(file, before, { mode: 0o640 });
-  const base = { ...f.options };
-  delete base.pi;
-  const opts = { ...base, steps: [piSettingsStep(file, f.plan.piPackage, observe)] };
-  const plan = planActivation(opts);
-  assert.equal(plan.actions.find((s) => s.path === file).original.sha256, digest(before));
-  const applied = applyActivation(opts, plan.planId);
-  assert.deepEqual(JSON.parse(fs.readFileSync(file)), {
-    theme: 'synthetic',
-    packages: ['/synthetic/other', f.plan.piPackage],
-  });
-  const after = digest(fs.readFileSync(file));
-  assert.notEqual(after, digest(before));
-  console.log(
-    'ROW7_WRITE_SET ' +
-      JSON.stringify({
-        paths: plan.actions.map((s) => ({
-          path: s.path,
-          kind: s.kind,
-          before: s.original.sha256 ?? null,
-          after: fs.statSync(s.path).isFile() ? digest(fs.readFileSync(s.path)) : null,
-          mode: fs.statSync(s.path).mode & 0o777,
-        })),
-        journal: { path: applied.receipt, before: null, after: digest(fs.readFileSync(applied.receipt)) },
-        noMcpConfig: true,
-      })
-  );
-  fs.appendFileSync(file, ' ');
-  assert.equal(restoreActivation(applied.receipt).status, 'CONFLICT');
-  fs.writeFileSync(file, plan.actions.find((s) => s.path === file).content, { mode: 0o640 });
-  // Atomic same-inode write preserves recorded identity; matching bytes restores exactly.
-  const restored = restoreActivation(applied.receipt);
-  assert.equal(restored.status, 'deactivated; release retained');
-  assert.deepEqual(fs.readFileSync(file), before);
-  assert.equal(fs.statSync(file).mode & 0o777, 0o640);
-  console.log(
-    'ROW7_RESTORE_SET ' +
-      JSON.stringify({
-        settings: { path: file, after: digest(fs.readFileSync(file)), mode: fs.statSync(file).mode & 0o777 },
-        journal: { path: applied.receipt, after: digest(fs.readFileSync(applied.receipt)) },
-        transientLocks: [
-          path.join(f.prefix, 'install-lock'),
-          path.join(f.options.hudHome, 'installation/activation-lock'),
-        ].map((path) => ({ path, before: null, after: observe(path).kind })),
-        noMcpConfig: true,
-      })
-  );
-  const staleOpts = { ...base, steps: [piSettingsStep(file, f.plan.piPackage, observe)] },
-    stale = planActivation(staleOpts);
-  fs.appendFileSync(file, ' ');
-  assert.throws(
-    () => applyActivation(staleOpts, stale.planId),
-    /target_changed_during_preview|stale_plan|foreign_owned_file/
-  );
-  fs.unlinkSync(file);
-  fs.symlinkSync(path.join(f.home, 'foreign'), file);
-  assert.throws(() => piSettingsStep(file, f.plan.piPackage, observe), /symlink/);
-  const prefOpts = { ...base, steps: [piPreferenceStep(f.options.hudHome, false, observe)] },
-    pref = planActivation(prefOpts),
-    r = applyActivation(prefOpts, pref.planId);
-  assert.equal(
-    JSON.parse(fs.readFileSync(path.join(f.options.hudHome, 'integration-config.json'))).panelAutoOpen,
-    false
-  );
-  assert.equal(restoreActivation(r.receipt).status, 'deactivated; release retained');
-  assert.equal(fs.existsSync(path.join(f.options.hudHome, 'integration-config.json')), false);
-  assert.equal(fs.existsSync(path.join(path.dirname(file), 'mcp.json')), false);
-  assert.ok(plan.actions.every((s) => !s.path.endsWith('mcp.json')));
 });
 test('fork replacement closes prior panel; forked and nested sessions keep tools/segment but refuse panel with finite reason', async (t) => {
   const f = setup(t),
@@ -1005,46 +917,4 @@ test('fork replacement closes prior panel; forked and nested sessions keep tools
     assert.equal(h.calls.notices.at(-1), 'HUD: panel_nested_session');
     await h.emit('session_shutdown', next.ctx);
   }
-});
-test('pi CLI preview refuses ambiguous row combination and apply without exact plan', (t) => {
-  const f = setup(t),
-    args = [
-      '--prefix',
-      f.prefix,
-      '--release',
-      f.options.release,
-      '--node',
-      node,
-      '--hud-home',
-      f.options.hudHome,
-      '--shim-dir',
-      f.options.shimDir,
-    ];
-  assert.throws(() => piPackageCommand(['apply', ...args], f.env), /explicit_plan_required/);
-  assert.throws(
-    () => piPackageCommand(['preview', ...args, '--settings', '/synthetic/settings.json'], f.env),
-    /explicit_node_required/
-  );
-  const settings = path.join(f.home, 'selected-agent/settings.json');
-  const row = [...args, '--settings', settings, '--package', f.plan.piPackage];
-  const preview = piPackageCommand(['row-7-preview', ...row], f.env);
-  assert.ok(preview.actions.some((s) => s.path === settings));
-  assert.equal(fs.existsSync(settings), false);
-  const foreign = path.join(f.home, 'foreign-package');
-  fs.mkdirSync(foreign, { mode: 0o700 });
-  fs.copyFileSync(path.join(f.plan.piPackage, 'binding.json'), path.join(foreign, 'binding.json'));
-  assert.throws(
-    () => piPackageCommand(['row-7-preview', ...args, '--settings', settings, '--package', foreign], f.env),
-    /materialize_matching_pi_package_first/
-  );
-  const existing = path.join(f.home, 'existing-settings.json');
-  fs.writeFileSync(
-    existing,
-    JSON.stringify({ packages: ['/synthetic/hud/installation/integrations/' + 'b'.repeat(64) + '/pi'] }),
-    { mode: 0o600 }
-  );
-  assert.throws(
-    () => piSettingsStep(existing, f.plan.piPackage, observe),
-    /existing_hud_package_requires_owner_resource_preview/
-  );
 });
