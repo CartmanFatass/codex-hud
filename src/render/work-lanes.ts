@@ -1,13 +1,63 @@
-/** The one lane/card layout used by Work and the 110-column Home peek. */
-import type { WorkboardSnapshot, WorkLane } from '../collectors/workboard-types.js';
+/** Shared package lanes on Home and Work. */
+import type { WorkboardSnapshot, WorkLane, OwnerWorker } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { renderWorkCard, workCardHeight, cardSentence, workPhaseText } from './work-card.js';
-import { laneRow, decisionRows, mark, boardCursor } from './workboard-rows.js';
-import { fit } from './monitor-text.js';
+import { renderWorkCard, workPhaseText } from './work-card.js';
+import { boardRow, mark } from './workboard-rows.js';
+import { fit, pair, monitorText } from './monitor-text.js';
 import { theme } from './colors.js';
-import { facadeOnly } from './job-details.js';
+import { t, language } from './i18n.js';
+export const FINISHED_LINGER_MS = 10 * 60000;
+export function retainedWorker(w: OwnerWorker, now: number, showAll = false): boolean {
+  return (
+    showAll ||
+    !w.id.startsWith('thin-job:') ||
+    w.settledAt === null ||
+    w.work?.facadeClosed === false ||
+    now - Math.max(w.settledAt, w.work?.facadeClosedAt ?? 0) <= FINISHED_LINGER_MS
+  );
+}
+export function workerPriority(w: OwnerWorker, now: number): number {
+  const card = projectWorkCard(w, now);
+  return w.homeNeedsHuman
+    ? 0
+    : card.state === 'stalled'
+      ? 1
+      : w.work?.failed
+        ? 2
+        : card.state === 'awaiting-acceptance'
+          ? 3
+          : card.state === 'in-progress'
+            ? 4
+            : 5;
+}
+export function orderedLanes(board: WorkboardSnapshot, now: number): WorkLane[] {
+  return [...board.lanes].sort(
+    (a, b) =>
+      Math.min(...a.workers.map((w) => workerPriority(w, now))) -
+      Math.min(...b.workers.map((w) => workerPriority(w, now)))
+  );
+}
+export function lineMap(lane: WorkLane, width: number): string {
+  const stages = ['build', 'review', 'accept', 'done'];
+  // Fixing is the observed substage between review and acceptance, not a percentage.
+  const stage = lane.phase?.includes('fixing')
+    ? 1.6
+    : Math.max(0, stages.indexOf(lane.phase?.startsWith('review') ? 'review' : (lane.phase ?? 'build')));
+  const at = Math.round((stage * (width - 1)) / 3);
+  return Array.from({ length: width }, (_, i) =>
+    i === at
+      ? theme.value(mark('◉', '@'))
+      : stages.some((_, n) => Math.round((n * (width - 1)) / 3) === i)
+        ? i < at
+          ? theme.board.active(mark('●', 'o'))
+          : theme.board.frame(mark('○', 'o'))
+        : i < at
+          ? theme.board.active(mark('━', '='))
+          : theme.board.frame(mark('─', '-'))
+  ).join('');
+}
 export function laneRows(
   input: MonitorData,
   lane: WorkLane,
@@ -15,131 +65,63 @@ export function laneRows(
   width: number,
   now: number
 ): MonitorRow[] {
-  const phases = new Set(
-    lane.workers.map((worker) => {
-      const card = projectWorkCard(worker, now, state.cardStallMinutes);
-      return card.state === 'done'
-        ? 'done'
-        : card.state === 'awaiting-acceptance'
-          ? 'awaiting-acceptance'
-          : (card.phases.at(-1) ?? null);
-    })
-  );
-  const phase = phases.size > 1 ? 'mixed' : phases.size ? [...phases][0] : lane.phase;
-  const header = laneRow(
-    { ...lane, title: lane.title === lane.label ? '' : lane.title, phase },
-    width,
-    now,
-    true,
-    phase && phase !== 'awaiting-acceptance' ? workPhaseText(phase) : undefined
-  );
-  if (state.boardFolded?.has(lane.id)) return [header];
-  const wide = width >= 100;
-  const column = wide ? Math.floor((width - 3) / 2) : width;
-  const cards: MonitorRow[][] = lane.workers.map((worker) => {
-    const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: worker.id });
-    const nativeName =
-      lane.identity.kind === 'native' && (state.cardVisibility?.cardLabel === false || state.labelAsName === false)
-        ? input.tree.nodes.find((n) => n.id === worker.nodeId)?.name
-        : undefined;
-    const note = state.cardVisibility?.cardSummary !== false ? input.jobProgress?.get(worker.id)?.note : undefined;
-    const card = projectWorkCard(
-      nativeName ? { ...worker, task: nativeName } : worker,
-      now,
-      state.cardStallMinutes,
-      note
-    );
-    // Only an existing native subject can reuse its existing native grant; job/task text is never material.
-    const nativeNode = worker.nodeId
-      ? input.tree.nodes.find((n) => n.id === worker.nodeId && !facadeOnly(n))
-      : undefined;
-    const logs = nativeNode ? input.agentLog?.get(nativeNode.id) : undefined;
-    const jobStart = worker.startedAt;
-    const nativeStart = nativeNode?.turnStartedAt?.getTime();
-    const raw =
-      !note && state.cardVisibility?.cardSummary !== false
-        ? [...(logs ?? [])]
-            .reverse()
-            .find((e) =>
-              lane.identity.kind === 'native'
-                ? ['note', 'digest', 'cause'].includes(e.kind)
-                : lane.identity.kind === 'invocation' &&
-                  e.kind === 'note' &&
-                  jobStart !== null &&
-                  Number.isFinite(jobStart) &&
-                  nativeStart !== undefined &&
-                  Number.isFinite(nativeStart) &&
-                  (e.coverageAt ?? e.at) >= Math.max(jobStart, nativeStart)
-            )?.text
-        : undefined;
-    const sentence = note ? note.line : raw ? cardSentence(raw) : '';
-    const full = note?.line ?? raw;
-    const expanded = state.boardExpanded?.has(key) === true;
-    let rendered: readonly string[] | undefined;
-    const draw = () => (rendered ??= renderWorkCard(card, state, column, sentence, expanded, false, full));
-    const count = workCardHeight(card, sentence, expanded, full, column);
-    return Array.from({ length: count }, (_, i) => ({
-      text: '',
-      sentenceWorkers: [worker.id],
-      item: key,
-      key,
-      paint: () => {
-        const text = draw()[i] ?? fit('', column);
-        return i === 0 && state.workTarget && targetKey(state.workTarget) === key ? boardCursor(text) : text;
-      },
-    }));
-  });
-  // Reserve the right-column cursor cell without replacing a decision's semantic ! / · marker.
-  const calls = lane.decisions
-    .flatMap((d) => decisionRows(d, lane, state, Math.max(1, column - 1), now))
-    .map((row) => ({ ...row, text: ' ' + row.text }));
-  if (!wide) return [header, ...cards.flat(), ...calls];
-  const left: MonitorRow[] = [],
-    right: MonitorRow[] = [];
-  if (calls.length) {
-    left.push(...cards.flat());
-    right.push(...calls);
-  } else
-    cards.forEach((rows, i) => {
-      (i % 2 ? right : left).push(...rows);
-    });
-  const result = [header];
-  let rightCursor = false;
-  const selected = state.workTarget ? targetKey(state.workTarget) : '';
-  for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    const a = left[i],
-      b = right[i];
-    const selectedRight = !rightCursor && !!b?.item && b.item === selected;
-    if (selectedRight) rightCursor = true;
-    const paintRight = () => {
-      const text = b?.paint?.() ?? b?.text ?? '';
-      return selectedRight ? boardCursor(text) : text;
-    };
-    result.push({
-      text: '',
-      item: a?.item,
-      key: a?.key,
-      sentenceWorkers: [...(a?.sentenceWorkers ?? []), ...(b?.sentenceWorkers ?? [])],
-      paint: () =>
-        fit(a?.paint?.() ?? a?.text ?? '', column) +
-        theme.frame(` ${mark('│', '|')} `) +
-        fit(paintRight(), width - column - 3),
-      controls: [
-        ...(a?.item ? [{ kind: 'board-pick' as const, item: a.item, x: 0, width: column }] : []),
-        ...(b?.item ? [{ kind: 'board-pick' as const, item: b.item, x: column + 3, width: width - column - 3 }] : []),
-      ],
-    });
+  const work = state.mainTab === 'work',
+    target = { kind: 'lane' as const, laneId: lane.id };
+  if (lane.id.startsWith('thin-job:')) {
+    const active = [...lane.workers]
+      .filter((w) => w.settledAt === null)
+      .sort((a, b) => workerPriority(a, now) - workerPriority(b, now))[0];
+    const review = active?.work?.phases.filter((p) => p.startsWith('review')).at(-1);
+    const phase = active
+      ? review
+        ? review.includes('accept')
+          ? review
+          : `${review.match(/^review r\d+/)?.[0]} · fixing`
+        : 'build'
+      : lane.workers.some((w) => projectWorkCard(w, now).state === 'awaiting-acceptance')
+        ? 'accept'
+        : 'done';
+    lane = { ...lane, phase };
   }
-  return result;
-}
-export function laneTargets(board: WorkboardSnapshot, state: MonitorState): string[] {
-  return board.lanes.flatMap((lane) => [
-    targetKey({ kind: 'lane', laneId: lane.id }),
-    ...(state.boardFolded?.has(lane.id)
-      ? []
-      : [
-          ...lane.workers.map((w) => targetKey({ kind: 'worker', laneId: lane.id, workerId: w.id })),
-          ...lane.decisions.map((d) => targetKey({ kind: 'decision', laneId: lane.id, decisionId: d.id })),
-        ]),
-  ]);
+  const label = `${monitorText(lane.label)}${lane.phase ? '  ' + workPhaseText(lane.phase) : ''}`;
+  const rows = [boardRow(work ? fit(label, width) : pair(label, lineMap(lane, 16), width), target)];
+  if (work) {
+    const names = [t('build'), t('review'), language() === 'zh' ? t('acceptance') : t('accept'), t('done')];
+    const step = Math.floor((width - 3) / 3);
+    rows.push(
+      boardRow(
+        fit(
+          '  ' +
+            fit(names[0], step) +
+            fit(names[1], step) +
+            pair(names[2], names[3], Math.max(0, width - 3 - 2 * step)),
+          width
+        )
+      )
+    );
+    rows.push(boardRow('  ' + lineMap(lane, Math.max(1, width - 3))), boardRow(''));
+  }
+  if (state.boardFolded?.has(lane.id)) return rows;
+  const workers = [...lane.workers]
+    .filter((w) => retainedWorker(w, now, state.tree.showAll))
+    .sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
+  for (const worker of workers) {
+    const card = projectWorkCard(worker, now, state.cardStallMinutes);
+    const logs = worker.nodeId ? input.agentLog?.get(worker.nodeId) : undefined;
+    const sentence = worker.id.startsWith('thin-job:')
+      ? (card.reason ?? '')
+      : (input.jobProgress?.get(worker.id)?.note?.line ??
+        [...(logs ?? [])].reverse().find((e) => ['note', 'digest', 'cause'].includes(e.kind))?.text ??
+        '');
+    const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: worker.id });
+    // Home's asking card is a title-only pointer back to the complete slab.
+    const lines =
+      !work && worker.homeNeedsHuman
+        ? renderWorkCard(card, state, width, '').slice(0, 1)
+        : renderWorkCard(card, state, width, sentence);
+    rows.push(...lines.map((text) => ({ text, item: key, key, sentenceWorkers: [worker.id] })));
+    if (work) rows.push(boardRow(''));
+  }
+  if (!work) rows.push(boardRow(''));
+  return rows;
 }

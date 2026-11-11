@@ -1,6 +1,7 @@
 /** Exact-root passive status. Never owns a footer or starts a summary producer. */
-import { readRoleSummary } from '../../roles/role-summary.js';
-import { renderRoleSummary } from '../../render/role-summary.js';
+import { readThinJobs } from '../../collectors/thin-jobs.js';
+import { getHudHome } from '../../hud-home.js';
+import { renderWorkSummary } from '../../render/work-summary.js';
 export const HUD_STATUS_KEY = 'hud-delegation';
 export interface SegmentContext {
   mode: string;
@@ -32,12 +33,10 @@ export function createPiSegment(options: {
       return;
     }
     const next =
-      renderRoleSummary(
-        readRoleSummary(options.env, state.root, {
-          budgetMs: 20,
-          nowMs: (options.now ?? Date.now)(),
-        }),
-        160
+      renderWorkSummary(
+        readThinJobs(getHudHome(options.env), { project: null, pane: options.env.HERDR_PANE_ID ?? null }),
+        160,
+        (options.now ?? Date.now)()
       ) || undefined;
     if (current === state && (!published || next !== text)) {
       published = true;

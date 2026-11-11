@@ -13,6 +13,7 @@ import { spawn } from 'child_process';
 import { collectAttention, alertParts, type AttentionItem } from './render/attention.js';
 import { agentCounts } from './collectors/subagent-tree.js';
 import type { HudData } from './types.js';
+import type { WorkboardSnapshot } from './collectors/workboard-types.js';
 
 export interface NotifyEvent {
   kind: string;
@@ -144,8 +145,20 @@ export class Notifier {
    * Decide what to announce for this snapshot and deliver it. Returns the
    * events that were actually sent, which is what the tests assert on.
    */
-  update(data: HudData, nowMs: number = Date.now()): NotifyEvent[] {
-    const candidates = [...this.approvalEvents(data), ...this.attentionEvents(data, nowMs), ...this.agentEvents(data)];
+  update(data: HudData, nowMs: number = Date.now(), board?: WorkboardSnapshot): NotifyEvent[] {
+    const thin = (board?.workers ?? [])
+      .filter((w) => w.id.startsWith('thin-job:') && (w.homeNeedsHuman || w.settledAt !== null))
+      .map((w) => ({
+        kind: `job:${w.id}`,
+        fingerprint: `${w.state}:${w.humanEndedAt}:${w.settledAt}`,
+        message: `${w.role}: ${w.ask || w.work?.reason || w.task}`,
+      }));
+    const candidates = [
+      ...this.approvalEvents(data),
+      ...this.attentionEvents(data, nowMs),
+      ...this.agentEvents(data),
+      ...thin,
+    ];
     if (!this.options.enabled) {
       // Still advance the agent baseline, so enabling mid-session does not
       // immediately replay everything that already happened.

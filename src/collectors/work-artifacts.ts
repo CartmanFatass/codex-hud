@@ -2,10 +2,7 @@
 import { createHash } from 'node:crypto';
 import type { DecisionRecord, EvidenceRef } from './workboard-types.js';
 export const revisionOf = (text: string): string => createHash('sha256').update(text).digest('hex');
-const clip = (text: string, n = 1200): string => {
-  const points = [...text.trim().replace(/\s+/g, ' ')];
-  return points.length > n ? points.slice(0, n - 1).join('') + '…' : points.join('');
-};
+const clip = (text: string): string => text.trim().replace(/\s+/g, ' ');
 const prose = (text: string): string =>
   text
     .split(/\r?\n\s*\r?\n/)

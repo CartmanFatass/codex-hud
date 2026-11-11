@@ -10,11 +10,12 @@ import { parseRosterRoot, formatRosterRoot } from '../roles/selection.js';
 import { CliError } from './private-home.js';
 import { openPanelPane } from './panel-pane.js';
 
-export const PANEL_HELP = `Usage: hud panel [--here] [--root <namespace/session-id>]
+export const PANEL_HELP = `Usage: hud panel [--width N] [--here] [--root <namespace/session-id>]
        hud panel --harness claude|pi|codex --session ID --source ABS
 
 Open the interactive HUD panel beside the caller in herdr, otherwise here.
 --here renders in the current terminal without splitting.
+--width sets the new panel width in columns (default 56).
 --root selects observations only, never execution/control identity.
 Without --root the existing all-delegations view is unchanged.
 Presentation aliases: HUD_THEME, HUD_DENSITY, HUD_GLYPHS, HUD_ICONS, HUD_LOOK,
@@ -70,14 +71,23 @@ export function panelRoot(args: readonly string[]): string | null {
 
 /** Use the installed panel entry, with inherited terminal and normal signal handling. */
 export async function panelCommand(io: HudIO, args: readonly string[] = []): Promise<number> {
-  const here = args[0] === '--here';
-  const selection = here ? args.slice(1) : args;
-  const { root, target } = panelSelection(selection, io.env);
+  const rest = [...args];
+  const at = rest.indexOf('--width');
+  let width = 56;
+  if (at >= 0) {
+    if (!/^[1-9]\d*$/.test(rest[at + 1] ?? '')) throw new CliError('invalid_arguments');
+    width = Number(rest[at + 1]);
+    rest.splice(at, 2);
+  }
+  const here = rest[0] === '--here';
+  const selection = here ? rest.slice(1) : rest;
+  const { root } = panelSelection(selection, io.env);
   if (!here && io.env.HERDR_PANE_ID) {
     const pane = await openPanelPane(
       [process.execPath, join(installationRoot(), 'bin/hud'), 'panel', '--here', ...selection],
       process.cwd(),
-      io.env
+      io.env,
+      width
     );
     await io.stdout(pane + '\n');
     return 0;
@@ -87,13 +97,7 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
     {
       ...io.env,
       HUD_SETTINGS_PATH: resolveHudEnv(io.env, 'HUD_SETTINGS_PATH') || join(getHudHome(io.env), 'hud-settings.json'),
-      ...(target
-        ? {
-            HUD_PANEL_HARNESS: target.harness,
-            HUD_PANEL_SOURCE: target.source,
-            HUD_PANEL_SESSION: target.ref.sessionId,
-          }
-        : {}),
+
       CODEX_HUD_PANEL_ALL_DELEGATIONS: root ? '0' : '1',
       ...(root ? { CODEX_HUD_PANEL_ROOT: root } : {}),
       CODEX_HUD_STANDALONE_PANEL: '1',

@@ -1,7 +1,6 @@
-import { existsSync } from 'node:fs';
-import { isAbsolute, join } from 'node:path';
 import { getHudHome } from '../hud-home.js';
-import { record } from '../statusline-parity/storage.js';
+import { readThinJobs } from '../collectors/thin-jobs.js';
+import { renderWorkSummary } from '../render/work-summary.js';
 import { fileURLToPath } from 'node:url';
 import { statuslinePreview } from '../statusline-preview.js';
 import { statuslineSettings } from '../statusline-settings.js';
@@ -19,8 +18,7 @@ export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--sourc
        hud statusline settings restore --backup ABSOLUTE_FILE
        hud-statusline [same arguments]
 
-Render stdin Claude facts, with the cached role summary when available.
-Summary source: --source or explicit CLAUDE_CONFIG_DIR; no guessed source/home.
+Render stdin Claude facts, with Work counts from this pane's job folders.
 No transcript reading, collection, network access or installation by default.
 An explicit HUD config.json statusline section enables claude-hud 0.8.0 compact parity.
 Import previews that section without writes; --apply writes HUD configuration only.
@@ -134,40 +132,15 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
         parity && !options.details
           ? collectAndRenderParity(value, width, parity, io.env)
           : renderStatuslineSession(value, width, options);
-      // Ordinary sessions with no role summary must not load the cache reader.
-      const source = sourceRoot ?? io.env.CLAUDE_CONFIG_DIR;
-      const native = record(value),
-        home = getHudHome(io.env);
-      if (
-        !source ||
-        !isAbsolute(source) ||
-        typeof native.session_id !== 'string' ||
-        !native.session_id ||
-        !existsSync(join(home, 'display/role-summary'))
-      )
-        return first;
-      const [{ readRoleSummary }, { renderRoleSummary }, { statuslineRef }] = await Promise.all([
-        import('../roles/role-summary.js'),
-        import('../render/role-summary.js'),
-        import('../core/statusline-summary.js'),
-      ]);
-      const nowMs = Date.now();
-      const readStarted = performance.now();
-      let role = '';
-      try {
-        const selected = statuslineRef(value, sourceRoot ?? io.env.CLAUDE_CONFIG_DIR);
-        if (selected && selected.ref.threadId === null)
-          role = renderRoleSummary(
-            readRoleSummary(io.env, `${selected.ref.sourceId}/${selected.ref.sessionId}`, {
-              nowMs,
-              budgetMs: Math.max(0, 20 - (performance.now() - readStarted)),
-            }),
-            width
-          );
-      } catch {
-        /* Missing identity/cache is unavailable, never an empty work total. */
-      }
-      return [first, role].filter(Boolean).join('\n');
+      const work = renderWorkSummary(
+        readThinJobs(getHudHome(io.env), {
+          project: null,
+          pane: io.env.HERDR_PANE_ID ?? null,
+        }),
+        width,
+        Date.now()
+      );
+      return [first, work].filter(Boolean).join('\n');
     },
   });
 }

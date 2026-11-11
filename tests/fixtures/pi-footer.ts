@@ -7,8 +7,6 @@ import { visualWidth, truncateAnsi } from '../../src/render/colors.js';
 import { createP10kFooter } from '../../src/harness/pi/p10k-footer.js';
 import type { FooterContext, FooterHost, FooterComponent, FooterEditor } from '../../src/harness/pi/footer-host.js';
 import { createPiSegment } from '../../src/harness/pi/segment.js';
-import { roleSummaryPath } from '../../src/roles/role-summary.js';
-import { readProcess } from '../../src/core/run/process.js';
 const { createFooterHost } = await import(pathToFileURL(join(process.cwd(), 'tests/fakes/pi.mjs')).href);
 // Native pi-tui closes even plain truncated fragments with SGR resets. All fixture
 // fragments are plain text; ANSI is added later by the real port's painters.
@@ -34,7 +32,7 @@ export interface ParityRow {
 }
 export function parityFixture(row: Omit<ParityRow, 'lines'>, owner: unknown, host = parityHost) {
   const home = mkdtempSync(join(tmpdir(), 'hud-footer-'));
-  const env = { HOME: '/synthetic/home', HUD_HOME: home, ...row.env };
+  const env = { HOME: home, HUD_HOME: home, HERDR_PANE_ID: 'synthetic-main', ...row.env };
   writeFileSync(join(home, 'config.json'), JSON.stringify({ piFooter: row.settings ?? owner }), { mode: 0o600 });
   const statuses = new Map([['other', 'other status']]);
   const bus = new Map<string, (data: unknown) => void>();
@@ -75,7 +73,7 @@ export function parityFixture(row: Omit<ParityRow, 'lines'>, owner: unknown, hos
           branches++;
           return entries;
         },
-        getCwd: () => '/synthetic/home/projects/example',
+        getCwd: () => join(home, 'projects/example'),
         getSessionName: () => 'Synthetic session title',
       },
       getContextUsage: () => ({ contextWindow: 200000, percent: 42 }),
@@ -124,21 +122,24 @@ export function parityFixture(row: Omit<ParityRow, 'lines'>, owner: unknown, hos
   const segment = createPiSegment({ env, now: () => FOOTER_NOW, schedule: () => () => {} });
   const root = 'pi-synthetic/synthetic-session';
   function publish(coverage: 'complete' | 'partial' | 'unavailable') {
-    const file = roleSummaryPath(env, root);
-    mkdirSync(join(file, '..'), { recursive: true, mode: 0o700 });
-    writeFileSync(
-      file,
-      JSON.stringify({
-        schema: 1,
-        root,
-        producer: { generation: 'synthetic', process: readProcess(process.pid)!.stamp },
-        observedAt: FOOTER_NOW,
-        coverage,
-        counts: { 'needs-you': 2, 'in-progress': 3, 'awaiting-acceptance': 0, stalled: 0, done: 0 },
-        sources: [],
-      }),
-      { mode: 0o600 }
-    );
+    const jobs = join(home, 'jobs');
+    rmSync(jobs, { recursive: true, force: true });
+    if (coverage !== 'unavailable')
+      for (let i = 1; i <= 5; i++) {
+        const id = `j${String(i).padStart(16, '0')}`,
+          dir = join(jobs, id);
+        mkdirSync(join(dir, 'qa'), { recursive: true });
+        writeFileSync(
+          join(dir, 'job.json'),
+          JSON.stringify({
+            job: id,
+            role: 'imp',
+            herdr_pane: env.HERDR_PANE_ID,
+            created_at: new Date(FOOTER_NOW).toISOString(),
+          })
+        );
+        if (i <= 2) writeFileSync(join(dir, 'qa/q1.md'), '# Question\n\nContinue?');
+      }
     segment.refresh();
   }
   if (row.delegation) publish(row.delegation);

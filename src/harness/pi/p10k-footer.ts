@@ -1,3 +1,4 @@
+import { providerMark } from '../../render/providers.js';
 /**
  * p10k-band — a Powerlevel10k-style status band embedded in the input box.
  *
@@ -82,51 +83,6 @@ export function createP10kFooter(
   const RULE = '\u2500'; // box-drawing horizontal: the rest of the top border
   /** Narrowest band worth drawing: cap, one block, fading arrow. */
   const MIN_BAND = 6;
-
-  /**
-   * A provider's mark: a Nerd Font glyph in the vendor's own colour, the way
-   * toktrack marks a subscription (`◎ Pro 5x`, `✻ Max 5x`). Vendors Nerd Fonts
-   * ships a logo for use it (`cod-openai`, `cod-claude`, `cod-copilot`); the rest
-   * get a mark that says what they are, in their brand colour.
-   */
-  interface ProviderMark {
-    glyph: string;
-    /** 256-colour foreground index. */
-    color: number;
-  }
-
-  const PROVIDERS: Record<string, ProviderMark> = {
-    // Plain marks first: they live in every font. `cod-openai` (U+EC81) and
-    // `cod-claude` (U+EC82) only arrived in Nerd Fonts 3.3, so a terminal on an
-    // older icon font drew them as `?` — these are toktrack's own marks.
-    openai: { glyph: '\u25ce', color: 79 }, // ◎ toktrack's OpenAI mark, teal
-    anthropic: { glyph: '\u273b', color: 173 }, // ✻ toktrack's Anthropic mark, terracotta
-    copilot: { glyph: '\uec1e', color: 110 }, // cod-copilot (Nerd Fonts 3.0)
-    // No logo in Nerd Fonts: a mark that fits the name, in the brand colour.
-    mistral: { glyph: '\u{1f431}', color: 208 }, // the M of Mistral's logo reads as a cat
-    deepseek: { glyph: '\u{1f40b}', color: 69 }, // the whale of DeepSeek's logo
-    'huawei-maas': { glyph: '\u2740', color: 160 }, // white florette, drawn in Huawei red
-    xai: { glyph: '\u2298', color: 245 }, // toktrack's ⊘ for Grok
-    'google-vertex': { glyph: '\u25b2', color: 111 }, // toktrack's ▲ for Antigravity
-    gemini: { glyph: '\u25b2', color: 111 },
-    // A local gateway in front of everything else.
-    litellm: { glyph: '\ueb2d', color: 141 }, // cod-plug
-  };
-
-  /**
-   * A local gateway proxies other vendors' models, so it gets the gateway mark.
-   * `PI_HUD_MARKS=ascii` trades every mark for the provider's initial, for a
-   * terminal whose font has no icon glyphs at all.
-   */
-  function providerMark(model: { provider?: string; baseUrl?: string } | undefined): ProviderMark | null {
-    if (!model) return null;
-    const id = (model.provider ?? '').toLowerCase();
-    const mark =
-      PROVIDERS[id] ??
-      (/localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/.test(model.baseUrl ?? '') ? PROVIDERS.litellm : undefined);
-    if (!mark) return null;
-    return env.PI_HUD_MARKS === 'ascii' ? { glyph: id.slice(0, 1).toUpperCase(), color: mark.color } : mark;
-  }
 
   const ICON = {
     model: '\uec19',
@@ -965,7 +921,7 @@ export function createP10kFooter(
     // parenthetical is dropped and the name is truncated last.
     const model = ctx.model;
     if (model) {
-      const mark = providerMark(model);
+      const mark = providerMark(model, env.PI_HUD_MARKS === 'ascii');
       const name = compactModelName(model.name || model.id);
       // The mark keeps a space of its own, so an emoji mark does not touch the name.
       add('model', PAINT.model, mark ? `${mark.glyph} ` : icon(ICON.model), 8, [], {

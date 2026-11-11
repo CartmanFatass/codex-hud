@@ -369,6 +369,7 @@ export interface MonitorOutcome {
   close: boolean;
   action?:
     | { type: 'settings' }
+    | { type: 'job-files'; files: string[] }
     | { type: 'switch'; id: string }
     | { type: 'pick'; id: string }
     | { type: 'brief-toggle' }

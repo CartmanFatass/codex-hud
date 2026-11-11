@@ -1,7 +1,7 @@
-/** Read-only thin-server jobs: one lane per job directory, built only from the files the thin layer and pi-roles write. */
+/** Read-only thin jobs. Package labels are display grouping, never execution identity. */
 import * as fs from 'node:fs';
-import { join, relative, resolve, isAbsolute } from 'node:path';
-import { answerRecord } from './work-artifacts.js';
+import { join } from 'node:path';
+import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
 import type { DecisionRecord, EvidenceRef, OwnerWorker, WorkLane } from './workboard-types.js';
 
 function entries(path: string): string[] {
@@ -16,9 +16,8 @@ interface Snap {
   at: number;
   whole: boolean;
 }
-// The panel re-reads the same few job directories on every refresh: an unchanged file costs one lstat.
 const cache = new Map<string, { stamp: string; snap: Snap }>();
-function read(path: string, max = 16384): Snap | null {
+function read(path: string, max = 65536): Snap | null {
   let fd: number | undefined;
   try {
     const st = fs.lstatSync(path);
@@ -30,7 +29,7 @@ function read(path: string, max = 16384): Snap | null {
     const buffer = Buffer.alloc(max + 1);
     const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
     const snap = { text: buffer.subarray(0, Math.min(size, max)).toString('utf8'), at: st.mtimeMs, whole: size <= max };
-    if (cache.size > 400) cache.clear();
+    if (cache.size > 800) cache.clear();
     cache.set(path, { stamp, snap });
     return snap;
   } catch {
@@ -54,32 +53,20 @@ const when = (v: unknown): number | null => {
   return Number.isFinite(at) ? at : null;
 };
 const word = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
-const clip = (text: string, n = 160): string => (text.length > n ? text.slice(0, n - 1) + '…' : text);
-const lines = (text: string): string[] =>
+const first = (text: string) =>
   text
     .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
-/** The brief's first heading, else its first line. */
-const taskOf = (brief: string): string => {
-  const all = lines(brief);
-  return clip((all.find((l) => /^#{1,6}\s/.test(l)) ?? all[0] ?? '').replace(/^#{1,6}\s+/, ''));
-};
-/** A question file opens with its own "# Question qN from ..." heading; the ask is the first line after it. */
-const askOf = (question: string): string => {
-  const all = lines(question);
-  return clip((all.find((l) => !l.startsWith('#')) ?? all[0] ?? 'question').replace(/^#+\s*/, ''));
-};
-const number = (name: string): number => Number.parseInt(name.slice(1), 10);
-
-export const isThinLane = (id: string): boolean => id.startsWith('thin-job:');
+    .find((l) => l.trim())
+    ?.replace(/^#{1,6}\s+/, '')
+    .trim() ?? '';
+const number = (name: string) => Number.parseInt(name.match(/\d+/)?.[0] ?? '0', 10);
 export interface ThinJobScope {
   project: string | null;
   pane: string | null;
 }
 export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
   const root = join(home, 'jobs');
-  return entries(root)
+  const jobs = entries(root)
     .filter((id) => /^j[0-9a-f]{16}$/.test(id))
     .flatMap((id) => {
       const file = json(join(root, id, 'job.json')),
@@ -89,95 +76,160 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
         !job ||
         job.job !== id ||
         typeof job.role !== 'string' ||
-        typeof job.cwd !== 'string' ||
-        typeof job.created_at !== 'string'
+        !scope.pane ||
+        job.herdr_pane !== scope.pane
       )
         return [];
-      const created = Date.parse(job.created_at);
-      if (!Number.isFinite(created)) return [];
-      const path = scope.project ? relative(resolve(scope.project), resolve(job.cwd)) : '..';
-      if (scope.pane ? job.herdr_pane !== scope.pane : path === '..' || path.startsWith('../') || isAbsolute(path))
-        return [];
-      const launchFailed = typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0;
-      return [{ id, role: job.role, created, jobAt: file.at, launchFailed }];
+      const created = when(job.created_at);
+      return created === null ? [] : [{ id, job, created, jobAt: file.at }];
     })
     .sort((a, b) => b.created - a.created || a.id.localeCompare(b.id))
-    .slice(0, 20)
-    .map(({ id, role, created, jobAt, launchFailed }) => {
-      const directory = join(root, id);
-      const status = json(join(directory, 'STATUS.json')),
-        s = status?.v ?? {};
-      // The owner's words, not pi-roles' states: idle_grace is finished and still open, closed is finished.
-      const state: OwnerWorker['state'] =
-        s.state === 'failed' || (!status && launchFailed)
-          ? 'failed'
-          : s.state === 'closed'
-            ? 'done'
-            : s.state === 'idle_grace'
-              ? 'idle'
-              : 'working';
-      const at = status?.at ?? jobAt;
-      const settledAt =
-        state === 'working'
-          ? null
-          : state === 'idle'
-            ? (when(s.settled_at) ?? at)
-            : (when(s.ended_at) ?? when(s.settled_at) ?? at);
-      const laneId = `thin-job:${id}`;
-      const task = taskOf(read(join(directory, 'brief.md'), 2048)?.text ?? '') || id.slice(-6);
-      const qa = join(directory, 'qa'),
-        names = new Set(entries(qa));
-      const decisions: DecisionRecord[] = [];
-      let pending: { ask: string; at: number } | undefined;
-      const questions = [...names].filter((n) => /^q\d+\.md$/.test(n)).sort((a, b) => number(a) - number(b));
-      for (const name of questions.slice(-8)) {
-        const answerName = name.replace('.md', '.answer.md');
-        const q = read(join(qa, name), 2048),
-          a = names.has(answerName) ? read(join(qa, answerName), 2048) : null;
-        if (!q) continue;
-        const ref = (file: string, snap: Snap): EvidenceRef => ({
-          sourceId: id,
-          relativePath: `qa/${file}`,
-          revision: String(snap.at),
-          at: snap.at,
-          timeBasis: 'file-mtime',
-        });
-        if (!a) pending ??= { ask: askOf(q.text), at: q.at };
-        else {
-          const record = answerRecord(laneId, `qa/${name}`, q.text, a.text, ref(name, q), ref(answerName, a));
-          if (record) decisions.push(record);
-        }
-      }
-      // A question left on a job that has finished was settled by its default; nobody can still answer it.
-      const waiting = state === 'working' ? pending : undefined;
-      const worker: OwnerWorker = {
-        id: laneId,
-        laneId,
-        role,
-        harness: 'pi',
-        task,
-        state,
-        startedAt: when(s.started_at) ?? created,
-        settledAt,
-        phase: null,
-        model: word(s.model),
-        effort: word(s.thinking),
-        homeNeedsHuman: !!waiting,
-        humanEndedAt: waiting?.at ?? null,
-        ...(waiting ? { ask: waiting.ask } : {}),
-        stale: false,
-        evidence: [],
-      };
-      return {
-        id: laneId,
-        identity: { kind: 'invocation', home, root: scope.pane ?? scope.project ?? '', jobId: id },
-        label: role,
-        title: task,
-        startedAt: created,
-        phase: null,
-        workers: [worker],
-        decisions,
-        evidence: [],
-      };
+    .slice(0, 200);
+  const lanes = new Map<string, WorkLane>();
+  for (const { id, job, created, jobAt } of jobs) {
+    const directory = join(root, id),
+      status = json(join(directory, 'STATUS.json')),
+      s = status?.v ?? {};
+    const state =
+      s.state === 'failed' || (!status && typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0)
+        ? 'failed'
+        : ['closed', 'idle_grace', 'done'].includes(String(s.state))
+          ? 'done'
+          : 'working';
+    const at = status?.at ?? jobAt;
+    const settledAt = state === 'working' ? null : (when(s.ended_at) ?? when(s.settled_at) ?? at);
+    const brief = read(join(directory, 'brief.md'))?.text ?? '';
+    const title =
+      first(brief.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? brief) || word(job.title) || id.slice(-6);
+    const label = word(job.package) ?? (title.includes(':') ? title.split(':', 1)[0] : title);
+    const laneId = `thin-job:package:${label}`,
+      workerId = `thin-job:${id}`;
+    const ref = (file: string, snap: Snap): EvidenceRef => ({
+      sourceId: id,
+      relativePath: file,
+      revision: String(snap.at),
+      at: snap.at,
+      timeBasis: 'file-mtime',
     });
+    const decisions: DecisionRecord[] = [];
+    let pending: { fields: ReturnType<typeof questionFields>; evidence: EvidenceRef; id: string } | undefined;
+    const qa = join(directory, 'qa'),
+      names = new Set(entries(qa));
+    for (const name of [...names].filter((n) => /^q\d+\.md$/.test(n)).sort((a, b) => number(a) - number(b))) {
+      const answerName = name.replace('.md', '.answer.md');
+      const q = read(join(qa, name)),
+        a = names.has(answerName) ? read(join(qa, answerName)) : null;
+      if (!q) continue;
+      if (!a) pending ??= { fields: questionFields(q.text), evidence: ref(`qa/${name}`, q), id: name.slice(0, -3) };
+      else {
+        const record = answerRecord(
+          laneId,
+          `${id}/qa/${name}`,
+          q.text,
+          a.text,
+          ref(`qa/${name}`, q),
+          ref(`qa/${answerName}`, a)
+        );
+        if (record) decisions.push(record);
+      }
+    }
+    const waiting = state === 'working' ? pending : undefined;
+    const report = read(join(directory, 'report.md'));
+    const reviews = entries(directory)
+      .filter((n) => /^review-\d+\.md$/.test(n))
+      .sort((a, b) => number(a) - number(b));
+    const phases: string[] = [];
+    if (report || reviews.length) phases.push('build ✓');
+    let phaseAt = 0,
+      lastResult = '';
+    for (const name of reviews) {
+      const review = read(join(directory, name));
+      if (!review) continue;
+      const verdict = reviewVerdict(review.text);
+      const major = review.text.match(/\b(\d+)\s+(?:major|important)\b/i)?.[1];
+      const minor = review.text.match(/\b(\d+)\s+minor\b/i)?.[1];
+      const result =
+        verdict === 'accept'
+          ? 'accept'
+          : [major ? `${major} major` : '', minor ? `${minor} minor` : ''].filter(Boolean).join(' ') || (verdict ?? '');
+      phases.push(`review r${number(name)}${result ? ' ' + result : ''}`);
+      phaseAt = review.at;
+      lastResult = first(review.text);
+    }
+    const phase = waiting
+      ? 'asking'
+      : state === 'failed'
+        ? 'failed'
+        : settledAt !== null
+          ? job.read_at || !report
+            ? 'done'
+            : 'accept'
+          : reviews.length
+            ? 'fixing'
+            : 'build';
+    phases.push(phase);
+    const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt);
+    const sentence =
+      waiting?.fields.question ||
+      (state === 'failed' ? (word(s.exit_reason) ?? word(s.reason)) : null) ||
+      (report && report.at >= phaseAt ? first(report.text) : lastResult) ||
+      '';
+    const worker: OwnerWorker = {
+      id: workerId,
+      laneId,
+      role: String(job.role),
+      harness: word(s.harness) ?? word(job.harness) ?? 'pi',
+      task: title,
+      state,
+      startedAt: when(s.started_at) ?? created,
+      settledAt,
+      phase,
+      model: word(s.model) ?? word(job.model),
+      provider: word(s.provider) ?? word(job.provider),
+      effort: word(s.thinking) ?? word(job.thinking),
+      homeNeedsHuman: !!waiting,
+      humanEndedAt: waiting?.evidence.at ?? null,
+      ...(waiting ? { ask: waiting.fields.question } : {}),
+      stale: false,
+      evidence: [ref('job.json', { text: '', at: jobAt, whole: true })],
+      work: {
+        episode: id,
+        signature: String(at),
+        activityAt,
+        activityBasis: 'observed',
+        phases,
+        request: !!waiting,
+        failed: state === 'failed',
+        result: settledAt !== null,
+        facadeClosed: !!job.read_at || !report,
+        facadeClosedAt: when(job.read_at) ?? settledAt,
+        reason: sentence,
+        ...(waiting
+          ? {
+              requestInfo: {
+                id: waiting.id,
+                question: waiting.fields.question,
+                suggested: waiting.fields.suggested,
+                options: waiting.fields.options,
+                context: waiting.fields.context,
+                evidence: waiting.evidence,
+              },
+            }
+          : {}),
+      },
+    };
+    const lane = lanes.get(laneId);
+    lanes.set(laneId, {
+      id: laneId,
+      identity: { kind: 'invocation', home, root: scope.pane!, jobId: id },
+      label,
+      title: label,
+      startedAt: lane?.startedAt ?? created,
+      phase,
+      workers: [...(lane?.workers ?? []), worker],
+      decisions: [...(lane?.decisions ?? []), ...decisions],
+      evidence: [],
+    });
+  }
+  return [...lanes.values()];
 }

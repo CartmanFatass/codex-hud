@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "release": "IMMUTABLE_RELEASE",
-  "digest": "MANIFEST_DIGEST",
-  "releaseVersion": "RELEASE_VERSION",
-  "node": "APPROVED_NODE",
-  "hudHome": "CANONICAL_HUD_HOME",
-  "parityInventory": null
-}

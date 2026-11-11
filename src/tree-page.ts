@@ -1,6 +1,5 @@
 import { nativeCallsOnly } from './core/link/view-model.js';
-import { readProcess } from './core/run/process.js';
-import { RoleSummaryPublisher, roleSummaryGeneration } from './roles/role-summary.js';
+import { openEditorPane } from './cli/panel-pane.js';
 import { pathToFileURL } from 'node:url';
 import { makeSourceId } from './core/identity.js';
 import { externalRootHash } from './roles/external-association.js';
@@ -264,6 +263,7 @@ export class PanelJobPipeline {
       maxBytes: Math.max(0, Math.min(1024 * 1024, slice?.maxBytes ?? 1024 * 1024) - snapshot.coverage.bytes),
     });
     this.thinJobs = readThinJobs(this.home, this.thinScope);
+    this.boardCache = undefined;
     this.snapshot = snapshot;
     this.taskSnapshot = tasks;
     const materialBudget: JobReadBudget = {
@@ -605,15 +605,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const nativeCalls = NativeCallCollector.fromEnv();
   const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot, {}, allDelegations ? null : HUD_CWD_REAL, {
     project: HUD_CWD_REAL,
-    pane: process.env.HUD_PANEL_MAIN_PANE || null,
+    pane: process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null,
   });
-  const producer = readProcess(process.pid)?.stamp;
-  const roleSummary = producer
-    ? new RoleSummaryPublisher(process.env, {
-        generation: process.env.HUD_PANEL_GENERATION || roleSummaryGeneration(),
-        process: producer,
-      })
-    : null;
   let disposeLifetime: (() => void) | undefined;
   let nativeTree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
   let boundJobRoot = '';
@@ -1487,7 +1480,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       hudStatus.health.fail('status', err); /* The foot keeps its last good rows. */
     }
     if (built && !stale) {
-      notifier.update(built);
+      notifier.update(built, Date.now(), jobPipeline.workboard(tree, panelDelegation));
       try {
         snapshotWriter.write(buildSnapshot(built, { width: 0, segments: [] }));
       } catch {
@@ -1498,15 +1491,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     if (observability) sampleTelemetry();
     // Collection owns publication. Paint only consumes the same cached workboard.
     syncPanelView();
-    const summaryRoot = allDelegations ? null : (selectedRoot ?? (boundJobRoot || null));
-    if (stale || !summaryRoot) roleSummary?.invalidate();
-    else if (!closed)
-      roleSummary?.publish(
-        summaryRoot,
-        jobPipeline.workboard(tree, panelDelegation),
-        Date.now(),
-        state.cardStallMinutes ?? 10
-      );
     render();
     readMainCols();
     void refreshInspection();
@@ -1603,7 +1587,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     if (closed) return;
     closed = true;
     disposeLifetime?.();
-    roleSummary?.dispose();
     const clipboardClosing = clipboard.close();
     jobPipeline.dispose();
     briefer.stop();
@@ -2045,6 +2028,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           settingsError = t('Panel preferences could not be saved: {reason}', { reason: String(err) });
           error = settingsError;
         }
+      }
+      if (result.action?.type === 'job-files') {
+        void openEditorPane(result.action.files, process.env).catch((err) => {
+          error = String(err);
+          render();
+        });
       }
       if (result.action?.type === 'brief-toggle' && settings.briefing !== 'off') {
         try {

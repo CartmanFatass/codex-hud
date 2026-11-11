@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "hud-mcp": {
-      "type": "stdio",
-      "command": "APPROVED_NODE",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/mcp.mjs"]
-    }
-  }
-}

@@ -1,6 +1,0 @@
-{
-  "name": "hud",
-  "version": "RELEASE_VERSION",
-  "description": "Local HUD panel controls and fixed-role delegation",
-  "license": "MIT"
-}

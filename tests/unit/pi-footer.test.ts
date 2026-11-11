@@ -23,7 +23,7 @@ for (const row of parity.cases) {
     for (const width of [row.width, 80, 160, 32]) f.render(width);
     assert.deepEqual(f.counts(), captured, 'repaint/resize neither traverses history nor launches git');
     if (row.delegation === 'complete' || row.delegation === 'partial') {
-      assert.match(f.render().join('\n'), row.delegation === 'partial' ? /Work \(partial\)/ : /Work:/);
+      assert.match(f.render().join('\n'), /Work: 2 needs you · 3 running/);
       f.publish('unavailable');
       assert.ok(!f.render().join('\n').includes('Work'), 'no retained counts on unavailable refresh');
       assert.ok(!f.statuses.has('hud-delegation'));

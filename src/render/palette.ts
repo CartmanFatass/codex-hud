@@ -402,10 +402,16 @@ const boardFrom = (p: Palette) => ({
   muted: p.muted,
   frame: p.frame,
   selected: p.selected,
+  title: p.band,
+  body: p.bar,
+  failedBody: p.bar,
+  slab: p.bar,
+  askTitle: p.chip,
+  stalled: p.warning,
+  identifier: p.model,
   roleInk: p.roleInk,
 });
 const BOARD_NONE = boardFrom(NONE),
-  BOARD_TERMINAL = { ...boardFrom(TERMINAL), attention: ansi256(179) },
   BOARD_LIGHT = boardFrom(LATTE);
 const BOARD_DARK = {
   ...boardFrom(TITANIUM),
@@ -415,14 +421,21 @@ const BOARD_DARK = {
   active: rgb('#6fa8ff'),
   muted: rgb('#6c7789'),
   frame: rgb('#363f4d'),
-  selected: surface('#1c2433'),
+  selected: surface('#303a4b'),
+  title: surface('#1e2531'),
+  body: surface('#141b26'),
+  failedBody: surface('#2c1821'),
+  slab: surface('#2d2411'),
+  askTitle: (text: string) => `\x1b[48;2;255;193;58m\x1b[38;2;25;21;13m${text}\x1b[0m`,
+  stalled: rgb('#f29958'),
+  identifier: rgb('#b4a6df'),
 };
 export function workboardPalette(): typeof BOARD_DARK {
   const theme = displayConfig().theme;
   return theme === 'none'
     ? BOARD_NONE
     : theme === 'terminal'
-      ? BOARD_TERMINAL
+      ? BOARD_DARK
       : theme === 'latte'
         ? BOARD_LIGHT
         : BOARD_DARK;

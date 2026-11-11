@@ -3,8 +3,8 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
 import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
 import { monitorRowAt } from './monitor-input.js';
-import { laneTargets } from './work-lanes.js';
 import { projectWorkCard } from '../collectors/work-card.js';
+import { join } from 'node:path';
 export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
   const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
@@ -73,6 +73,22 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     else set.add(item);
     next.boardExpanded = set;
   };
+  const jobFiles = (): MonitorOutcome['action'] => {
+    const target = selected();
+    if (!target || !target.laneId.startsWith('thin-job:')) return;
+    const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
+    if (lane?.identity.kind !== 'invocation') return;
+    const evidence =
+      target.kind === 'decision'
+        ? lane.decisions.find((d) => d.id === target.decisionId)?.evidence[0]
+        : target.kind === 'worker'
+          ? lane.workers.find((w) => w.id === target.workerId)?.work?.requestInfo?.evidence
+          : undefined;
+    if (!evidence || !/^j[0-9a-f]{16}$/.test(evidence.sourceId) || !/^qa\/q\d+\.md$/.test(evidence.relativePath))
+      return;
+    const q = join(lane.identity.home, 'jobs', evidence.sourceId, evidence.relativePath);
+    return { type: 'job-files', files: [q, q.replace(/\.md$/, '.answer.md')] };
+  };
   const activate = () => {
     if (next.boardAnchor) {
       toggle(next.boardAnchor);
@@ -107,7 +123,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         setTarget(target);
         activate();
       }
-      return result();
+      return result(jobFiles());
     }
     if (control?.kind === 'board-summary') {
       next.boardInspect = 'summary';
@@ -145,8 +161,9 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (key === 'enter' || key === 'activate') {
-    if (main) activate();
-    return result();
+    const action = main ? jobFiles() : undefined;
+    if (main && !action) activate();
+    return result(action);
   }
   // Existing reveal is display-only and must apply to both main tabs (P2 q18).
   if (key === 'show-all' && main) {
@@ -194,6 +211,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     const target = selected();
     if (!target) return result();
+    if (target.kind !== 'lane') {
+      tab(next.mainTab === 'work');
+      return result();
+    }
     if (next.mainTab === 'work' && target.kind === 'lane') {
       const folded = new Set(next.boardFolded);
       if (key === 'left') folded.add(target.laneId);
@@ -204,8 +225,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   if (main && ['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
     const rows = boardFrame.rows,
-      items: string[] = next.mainTab === 'work' ? laneTargets(boardFrame.snapshot, next) : [];
-    for (const row of next.mainTab === 'work' ? [] : rows) {
+      items: string[] = [];
+    for (const row of rows) {
       if (row.item && !items.includes(row.item)) items.push(row.item);
       for (const c of row.controls ?? []) if (c.item && !items.includes(c.item)) items.push(c.item);
     }

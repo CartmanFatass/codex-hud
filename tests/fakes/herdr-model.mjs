@@ -29,6 +29,7 @@ const commands = new Set([
   'pane split',
   'pane list',
   'pane get',
+  'pane rename',
   'pane run',
   'pane read',
   'pane close',
@@ -128,6 +129,11 @@ export function createHerdr({
       return reply({ agents: mode.unknown === 'agents' ? null : state.agents, type: 'agent_list' });
     if (command === 'tab get') return tab ? reply({ tab, type: 'tab_info' }) : refused();
     if (command === 'pane get') return pane ? reply({ pane }) : refused();
+    if (command === 'pane rename') {
+      if (!pane) return refused();
+      pane.label = argv[3];
+      return finish({ pane });
+    }
     if (command === 'tab rename') {
       if (!tab) return refused();
       tab.label = argv[3];

@@ -23,6 +23,7 @@ export interface WorkFacts {
     readonly question: string;
     readonly suggested: string;
     readonly options: readonly string[];
+    readonly context?: string;
     readonly evidence?: EvidenceRef;
   };
   readonly failed: boolean;
@@ -58,6 +59,37 @@ export function projectWorkCard(
   note?: import('./job-progress.js').JobProgressNote
 ): WorkCard {
   const w = worker.work;
+  if (worker.id.startsWith('thin-job:')) {
+    const result = worker.settledAt !== null;
+    const inactive = workMinute(w?.activityAt, now);
+    const state: WorkState =
+      worker.homeNeedsHuman || w?.failed
+        ? 'needs-you'
+        : result
+          ? w?.facadeClosed
+            ? 'done'
+            : 'awaiting-acceptance'
+          : inactive !== null && inactive >= stallMinutes
+            ? 'stalled'
+            : 'in-progress';
+    return {
+      state,
+      role: worker.role || 'agent',
+      title: worker.task,
+      phases: w?.phases ?? [],
+      reason: w?.reason ?? null,
+      elapsedMinutes: workMinute(
+        worker.homeNeedsHuman
+          ? worker.humanEndedAt
+          : state === 'stalled'
+            ? w?.activityAt
+            : (worker.settledAt ?? worker.startedAt),
+        now
+      ),
+      inactivityMinutes: inactive,
+      worker,
+    };
+  }
   const result = w?.result ?? ['completed', 'idle_grace', 'awaiting-acceptance', 'done'].includes(worker.state);
   const failed = w?.failed ?? ['failed', 'error'].includes(worker.state);
   const request = w?.request ?? worker.state === 'waiting_orchestrator';
@@ -99,15 +131,11 @@ export function projectWorkCard(
               ? 'Observation unavailable'
               : 'No new activity'
             : (w?.reason ??
-              (state === 'done'
-                ? 'Facade closed'
-                : result
-                  ? w?.phases.some((p) => /^review r[1-9][0-9]* accept$/.test(p)) && w.facadeClosed === false
-                    ? 'Review accepted; awaiting facade closure'
-                    : w?.phases.includes('build') && !w.phases.some((p) => p.startsWith('review'))
-                      ? 'Build complete; review not observed'
-                      : 'Result ready'
-                  : null)),
+              (result
+                ? w?.phases.includes('build') && !w.phases.some((p) => p.startsWith('review'))
+                  ? 'Build complete; review not observed'
+                  : 'Result ready'
+                : null)),
     worker,
   };
 }

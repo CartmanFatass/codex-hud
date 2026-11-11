@@ -1,220 +1,132 @@
-/** Compact cards shared by Work and Home's peek. Pure; no execution or model scheduling. */
+/** Stems and tracks: one title band, a two-cell state gutter, whole factual sentences. */
 import type { WorkCard } from '../collectors/work-card.js';
-import { summarySentence } from '../utils/summary-sentence.js';
-import { fit, flowLines, monitorText, pair, plainText } from './monitor-text.js';
-import { colors, theme, truncateAnsi, visualLength } from './colors.js';
-import { displayConfig } from './hud-config.js';
-import { language, t } from './i18n.js';
 import type { MonitorState } from './monitor.js';
-import type { WorkRole } from './palette.js';
+import { theme, visualLength, truncateAnsi } from './colors.js';
+import { fit, pair, monitorText, flowLines } from './monitor-text.js';
+import { t } from './i18n.js';
+import { displayConfig } from './hud-config.js';
+import { providerMark } from './providers.js';
 import { mark } from './workboard-rows.js';
-export function cardSentence(text: string): string {
-  const lines = plainText(text)
-    .split(/\r?\n/)
-    .map((line) => line.trim().replace(/^[-*•]\s+|^\d+[.)]\s+/, ''));
-  const line = lines.find(
-    (line) => line && !/^(?:basis|caveats?|evidence|依据|根据|注意事项|局限|限制)(?:\s*[:：]|$)/i.test(line)
-  );
-  if (!line) return '';
-  const meaningful = line.replace(/^(?:summary|digest|result|摘要|总结|结果)\s*[:：]\s*/i, '');
-  return monitorText(
-    summarySentence(
-      meaningful.split(/\s+·\s+(?=(?:basis|caveats?|evidence|依据|根据|注意事项|局限|限制)\s*[:：])/i)[0].trim() ||
-        meaningful
-    )
-  );
-}
+export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
+const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
 export const workStateWord = (card: WorkCard) =>
   t(
-    card.state === 'needs-you'
-      ? 'needs you'
-      : card.state === 'in-progress'
-        ? 'working'
-        : card.state === 'awaiting-acceptance'
-          ? 'to accept'
-          : card.state
+    failed(card)
+      ? 'failed'
+      : card.state === 'needs-you'
+        ? 'asking'
+        : card.state === 'in-progress'
+          ? ''
+          : card.state === 'awaiting-acceptance'
+            ? 'report ready'
+            : card.state
   );
 export const workStateGlyph = (card: WorkCard) =>
-  card.state === 'needs-you'
-    ? '?'
-    : card.state === 'stalled'
-      ? mark('◷', '~')
-      : card.state === 'in-progress'
-        ? mark('▸', '>')
-        : mark('✓', '+');
+  failed(card)
+    ? mark('✗', 'x')
+    : card.state === 'needs-you'
+      ? '?'
+      : card.state === 'stalled'
+        ? mark('◷', '~')
+        : card.state === 'in-progress'
+          ? mark('●', '*')
+          : mark('✓', '+');
 export const workStateInk = (card: WorkCard) =>
-  card.state === 'needs-you'
-    ? theme.board.attention
-    : card.state === 'stalled'
-      ? theme.board.muted
-      : card.state === 'in-progress'
-        ? theme.board.active
-        : card.state === 'done'
-          ? theme.board.success
-          : theme.value;
-const minutes = (n: number) => t(n < 1 ? '<1m' : '{n}m', { n });
-export function workRequestDetail(card: WorkCard, full = false): string {
-  const request = card.worker.work?.requestInfo;
-  if (!request) return '';
-  const action = `${t('answer')} ${monitorText(request.id)}`;
-  const fallback = request.suggested ? t('default {value}', { value: monitorText(request.suggested) }) : '';
-  if (!full) return [action, fallback, monitorText(request.question)].filter(Boolean).join(mark(' · ', ' . '));
-  return [action, request.question, ...request.options, fallback].filter(Boolean).map(monitorText).join('\n');
+  failed(card)
+    ? theme.board.danger
+    : card.state === 'needs-you'
+      ? theme.board.attention
+      : card.state === 'stalled'
+        ? theme.board.stalled
+        : card.state === 'in-progress'
+          ? theme.board.active
+          : theme.board.success;
+export function ageText(minutes: number): string {
+  return minutes < 60 ? t('{n}m', { n: minutes }) : t('{h}h{m}m', { h: Math.floor(minutes / 60), m: minutes % 60 });
 }
-export function workCardDetail(card: WorkCard, sentence = ''): string {
-  if (card.modelAttention && sentence) return `${t('Model assessment')}: ${monitorText(sentence)}`;
-  if (card.state === 'stalled' && sentence) return monitorText(sentence);
-  if (card.reason === 'Decision requested; inspect the job' && card.worker.work?.requestInfo)
-    return workRequestDetail(card);
-  if (card.reason === 'Decision requested; inspect the job' && card.worker.work?.requestId)
-    return t('answer {id}; inspect the job', { id: monitorText(card.worker.work.requestId) });
-  if (card.reason === 'No new activity') return `${t(card.reason)} ${minutes(card.inactivityMinutes ?? 0)}`;
-  if (card.reason && ['needs-you', 'stalled'].includes(card.state)) return t(card.reason);
-  const facts = card.worker.work?.reported;
-  const reported = facts
-    ? [
-        facts.tests !== null ? t('reported {n} tests', { n: facts.tests }) : '',
-        facts.failed !== null ? t('{n} failed', { n: facts.failed }) : '',
-        facts.files !== null ? t('{n} files', { n: facts.files }) : '',
-      ]
-        .filter(Boolean)
-        .join(mark(' · ', ' . '))
-    : '';
-  return [reported, sentence || (!reported && card.reason ? t(card.reason) : '')]
-    .filter(Boolean)
-    .join(mark(' · ', ' . '));
-}
-function expandedDetail(card: WorkCard, sentence: string, fullDetail: string) {
-  return [
-    card.worker.work?.requestInfo && card.reason === 'Decision requested; inspect the job'
-      ? workRequestDetail(card, true)
-      : workCardDetail(card),
-    (fullDetail || sentence)
-      .split(/\r?\n/)
-      .map((line) => monitorText(plainText(line)))
-      .join('\n'),
-    ...card.phases.map(workPhaseText),
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
-export function workCardHeight(
-  card: WorkCard,
-  sentence = '',
-  expanded = false,
-  fullDetail = sentence,
-  width = 56
-): number {
-  const base = 1 + Number(card.phases.length > 0) + Number(!!workCardDetail(card, sentence));
-  return (
-    base +
-    (expanded
-      ? expandedDetail(card, sentence, fullDetail)
-          .split('\n')
-          .filter(Boolean)
-          .reduce((n, p) => n + flowLines(p, Math.max(1, width - 2)).length, 0)
-      : 0)
+/** Only syntactic identifiers get emphasis until AI-THIN. */
+export function identifiers(text: string): string {
+  return monitorText(text).replace(/`[^`]+`|(?:\.?\.?\/|~\/)[^\s,;]+|\b[\w.-]+\/[\w/.-]+|--[\w-]+/g, (s) =>
+    theme.board.identifier(s)
   );
 }
-export function workCardName(card: WorkCard, state: MonitorState, width: number) {
-  const age =
-    state.cardVisibility?.cardClock !== false && card.elapsedMinutes !== null ? minutes(card.elapsedMinutes) : '';
-  const right = [workStateWord(card), age].filter(Boolean).join(' ');
-  const fullRole = monitorText(card.role === 'agent' ? t('agent') : card.role);
-  // Below the 44-column layout, abbreviate an unspecified role rather than erasing the subject's identity.
-  const role =
-    card.role === 'agent' && width < 36
-      ? '?'
-      : Object.hasOwn(theme.board.roleInk, card.role.toLowerCase())
-        ? fullRole
-        : truncateAnsi(fullRole, 7);
-  const room = Math.max(0, width - 4 - visualLength(right) - visualLength(role) - 2);
-  return { text: truncateAnsi(monitorText(card.title), room), x: 4 + visualLength(role) + 1, right, role };
+export function stemLines(text: string, width: number, ink = theme.board.muted): string[] {
+  return flowLines(monitorText(text), Math.max(1, width - 3)).map((line) =>
+    fit(`${ink(mark('┃', '|'))} ${identifiers(line)}`, width)
+  );
+}
+export function workRequestDetail(card: WorkCard, full = false): string {
+  const r = card.worker.work?.requestInfo;
+  return r
+    ? [r.question, ...(full ? r.options : []), r.suggested ? `${t('default')} ${r.suggested}` : '']
+        .filter(Boolean)
+        .join('\n')
+    : '';
+}
+export function workCardDetail(card: WorkCard, sentence = ''): string {
+  return sentence || card.worker.ask || card.worker.work?.reason || (card.reason ? t(card.reason) : '');
 }
 export function workPhaseText(phase: string): string {
-  if (phase.endsWith(' unknown')) return `${workPhaseText(phase.slice(0, -8))} ${t('unknown')}`;
-  const review = /^review r([1-9][0-9]*)(?: (accept|changes-required))?$/.exec(phase);
-  return review ? `${t('review')} r${review[1]}${review[2] ? ' ' + t(review[2]) : ''}` : monitorText(t(phase));
+  return monitorText(phase).replace(/build|review|accept|done|fixing|asking|failed|major|minor/g, (word) => t(word));
 }
-const cache = new Map<string, readonly string[]>();
-/** Explicit costs let production-path tests prove cards outside the viewport are not formatted. */
-export const workCardCost = { formatted: 0, hits: 0 };
+export function phaseChain(card: WorkCard): string {
+  return card.phases
+    .map((p, i) => {
+      const text = workPhaseText(p);
+      const ink = /major/.test(p)
+        ? theme.board.attention
+        : /minor/.test(p)
+          ? theme.board.muted
+          : /accept/.test(p)
+            ? theme.board.success
+            : theme.value;
+      return ink((i === card.phases.length - 1 && !/✓|accept|done/.test(p) ? mark('▸', '>') : '') + text);
+    })
+    .join(mark(' › ', ' > '));
+}
+export function workCardName(card: WorkCard, _state: MonitorState, width: number) {
+  const right = [workStateWord(card), ageText(card.elapsedMinutes ?? 0)].filter(Boolean).join(' ');
+  const role = monitorText(card.role),
+    x = 2 + visualLength(role) + 2;
+  return {
+    text: truncateAnsi(monitorText(card.title), Math.max(0, width - x - visualLength(right) - 2)),
+    x,
+    right,
+    role,
+  };
+}
 export function renderWorkCard(
   card: WorkCard,
   state: MonitorState,
   width: number,
   sentence = '',
-  expanded = false,
-  linkName = false,
-  fullDetail = sentence
+  _expanded = false,
+  _linkName = false,
+  _fullDetail = sentence
 ): readonly string[] {
-  if (state.cardVisibility?.cardSummary === false) {
-    sentence = '';
-    fullDetail = '';
-  }
-  const key = JSON.stringify([
-    card.title,
-    card.role,
-    card.state,
-    card.modelAttention,
-    card.phases,
-    card.reason,
-    card.worker.work?.reported,
-    card.worker.work?.requestId,
-    card.worker.work?.requestInfo,
-    card.elapsedMinutes,
-    card.inactivityMinutes,
-    state.cardVisibility?.cardClock !== false,
-    state.cardVisibility?.cardSummary !== false,
-    state.cardCorners,
-    width,
-    sentence,
-    expanded,
-    linkName,
-    fullDetail,
-    language(),
-    displayConfig(),
-  ]);
-  const cached = cache.get(key);
-  if (cached) {
-    workCardCost.hits++;
-    return cached;
-  }
-  workCardCost.formatted++;
-  const ink = workStateInk(card);
-  const roleKey = card.role.toLowerCase() as WorkRole;
-  const roleInk = Object.hasOwn(theme.board.roleInk, roleKey) ? theme.board.roleInk[roleKey] : theme.value;
-  const corner =
-    displayConfig().icons === 'text'
-      ? ['[', '|', ']']
-      : state.cardCorners === 'round'
-        ? ['╭', '│', '╰']
-        : ['┌', '│', '└'];
-  const name = workCardName(card, state, width);
-  const title = linkName ? colors.underline(name.text) : name.text;
-  const lines = [
-    pair(
-      `${roleInk(corner[0])} ${ink(workStateGlyph(card))} ${roleInk(name.role)} ${theme.bold(roleInk(title))}`,
-      ink(name.right),
-      width
-    ),
+  const ink = workStateInk(card),
+    name = workCardName(card, state, width);
+  const rows = [
+    theme.board.title(pair(`${ink(workStateGlyph(card))} ${name.role}  ${name.text}`, ink(name.right), width)),
   ];
-  const detail = workCardDetail(card, state.cardVisibility?.cardSummary !== false ? sentence : '');
-  if (card.phases.length) {
-    const tokens = card.phases.map(workPhaseText);
-    // Shed old completed tokens, never the current phase or latest result in favour of old history.
-    while (tokens.length > 1 && visualLength(tokens.join(' -> ')) > width - 4) tokens.shift();
-    const text = tokens.join(mark(' → ', ' > '));
-    lines.push(`${roleInk(corner[detail ? 1 : 2])} ${truncateAnsi(text, Math.max(0, width - 2))}`);
+  if (state.mainTab === 'work') {
+    const w = card.worker,
+      model = w.model ?? '';
+    const vendor = providerMark(
+      { id: model, provider: w.provider },
+      displayConfig().icons === 'text' || displayConfig().glyphs === 'text'
+    );
+    const chip = [vendor?.glyph, model, w.effort, w.harness !== 'pi' ? w.harness : '', w.nodeId ? t('native') : '']
+      .filter(Boolean)
+      .join(' ');
+    if (chip) rows.push(...stemLines(chip, width, ink));
+    if (card.phases.length) {
+      // Wrap history rather than lose the latest result. Phase inks are restored after each stem.
+      for (const line of flowLines(phaseChain(card), Math.max(1, width - 3)))
+        rows.push(fit(`${ink(mark('┃', '|'))} ${line}`, width));
+    }
   }
-  if (detail) lines.push(`${roleInk(corner[2])} ${truncateAnsi(detail, Math.max(0, width - 2))}`);
-  if (expanded) {
-    const full = expandedDetail(card, sentence, fullDetail);
-    for (const paragraph of full.split('\n').filter(Boolean))
-      for (const line of flowLines(paragraph, Math.max(1, width - 2))) lines.push(`${roleInk(corner[1])} ${line}`);
-  }
-  const result = lines.map((line) => fit(line, width));
-  cache.set(key, result);
-  if (cache.size > 500) cache.delete(cache.keys().next().value!);
-  return result;
+  const detail = workCardDetail(card, sentence);
+  if (detail) rows.push(...stemLines(detail, width, ink));
+  return rows.map((line, i) => (i ? (failed(card) ? theme.board.failedBody : theme.board.body)(line) : line));
 }

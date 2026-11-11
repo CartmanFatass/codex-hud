@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-test('hud panel splits beside the caller and runs --here with the same selection', (t) => {
+test('hud panel --width 40 sizes its split and names the pane hud panel', (t) => {
   const dir = fs.mkdtempSync(join(tmpdir(), 'hud-panel-beside-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const home = join(dir, 'home');
@@ -20,26 +20,36 @@ test('hud panel splits beside the caller and runs --here with the same selection
     { mode: 0o700 }
   );
   const log = join(dir, 'herdr.jsonl');
-  const result = spawnSync(process.execPath, [resolve('bin/hud'), 'panel', '--root', 'synthetic/session'], {
-    cwd,
-    env: {
-      HOME: home,
-      HUD_HOME: hudHome,
-      CODEX_HOME: join(dir, 'codex'),
-      CLAUDE_CONFIG_DIR: join(dir, 'claude'),
-      PATH: `${bin}:${dirname(process.execPath)}`,
-      HERDR_PANE_ID: 'main',
-      PANEL_FAKE_LOG: log,
-    },
-    encoding: 'utf8',
-    timeout: 10000,
-  });
+  const result = spawnSync(
+    process.execPath,
+    [resolve('bin/hud'), 'panel', '--width', '40', '--root', 'synthetic/session'],
+    {
+      cwd,
+      env: {
+        HOME: home,
+        HUD_HOME: hudHome,
+        CODEX_HOME: join(dir, 'codex'),
+        CLAUDE_CONFIG_DIR: join(dir, 'claude'),
+        PI_CODING_AGENT_DIR: join(dir, 'pi'),
+        COLUMNS: '160',
+        PATH: `${bin}:${dirname(process.execPath)}`,
+        HERDR_PANE_ID: 'main',
+        PANEL_FAKE_LOG: log,
+      },
+      encoding: 'utf8',
+      timeout: 10000,
+    }
+  );
   assert.equal(result.status, 0, result.stderr);
   const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(calls[0], ['pane', 'split', 'main', '--direction', 'right', '--no-focus', '--cwd', cwd]);
-  assert.equal(calls.length, 2, 'one split and one run, no topology/receipt probes');
+  assert.equal(
+    calls[0].join('|'),
+    `pane|split|main|--direction|right|--ratio|0.75|--no-focus|--cwd|${cwd}|--env|HUD_PANEL_CALLER_PANE=main`
+  );
+  assert.equal(calls.length, 3, 'one split, rename and run, no topology/receipt probes');
   const pane = result.stdout.trim();
   assert.ok(pane);
-  assert.deepEqual(calls[1].slice(0, 3), ['pane', 'run', pane]);
-  assert.ok(calls[1][3].includes(`'${resolve('bin/hud')}' 'panel' '--here' '--root' 'synthetic/session'`));
+  assert.deepEqual(calls[1], ['pane', 'rename', pane, 'hud panel']);
+  assert.deepEqual(calls[2].slice(0, 3), ['pane', 'run', pane]);
+  assert.ok(calls[2][3].includes(`'${resolve('bin/hud')}' 'panel' '--here' '--root' 'synthetic/session'`));
 });

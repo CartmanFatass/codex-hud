@@ -43,6 +43,7 @@ export interface OwnerWorker {
   readonly role: string | null;
   readonly task: string;
   readonly model: string | null;
+  readonly provider?: string | null;
   readonly effort: string | null;
   readonly state: string;
   readonly startedAt: number | null;
