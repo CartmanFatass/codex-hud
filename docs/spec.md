@@ -16,7 +16,10 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    `pi-role-reap`); jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles is not bundled (owner, 2026-11-10).
 2. **Show what is happening.** A side panel (Home, Work) shows the main session's jobs and their state. Each client
    keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
-   (taking in p10k-footer), Codex's existing tmux bar.
+   (taking in p10k-footer), Codex's existing tmux bar. The panel and status lines can use external models with the
+   owner's own keys (`$HUD_HOME/credentials.env`, through the Decisions API) for job summaries, recaps and sentences.
+   These features only read job files and write display text; they never prompt, brief or steer a worker. No consent
+   or authority layer.
 3. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, Jev,
    herdr); `hud uninstall` removes them. Registration uses each client's official commands where they exist.
 

@@ -13,7 +13,35 @@ import {
   type JevReadOptions,
 } from '../jev/runtime/types.js';
 import type { JevExecutor as RuntimeHandle } from '../jev/runtime/types.js';
-import type { JevLaunchRequest } from './facade.js';
+import type { RosterRoot } from './selection.js';
+import type { RoleName, OraclePhase } from './roles.js';
+import type { backendJson } from './routing.js';
+
+export interface JevStatement {
+  readonly name: string;
+  readonly statement: string;
+}
+export interface JevInput {
+  readonly kind: 'ask' | 'browse' | 'judge';
+  readonly text: string | null;
+  readonly url: string | null;
+  readonly statements: readonly JevStatement[];
+}
+export interface JevLaunchRequest {
+  readonly root: RosterRoot;
+  readonly role: RoleName;
+  readonly phase: OraclePhase | null;
+  readonly requestKey: string;
+  readonly fingerprint: string;
+  readonly preset: string;
+  readonly routingRevision: string;
+  readonly binding: ReturnType<typeof backendJson>;
+  readonly input: JevInput | null;
+  /** Oracle prompt. Null for a `jev` role; that prompt is `input.text`. */
+  readonly task: string | null;
+  readonly cwd: string | null;
+  readonly jevDecisions: { id: string; provider: 'typesafe' | 'openai'; model: string | null };
+}
 
 export type JevRuntimeHandle = Pick<RuntimeHandle, 'createJob' | 'readJob' | 'sendFollowUp' | 'closeJob'>;
 

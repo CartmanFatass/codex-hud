@@ -1,7 +1,0 @@
-#!/usr/bin/env node
-(process.argv[2] === 'native-host'
-  ? import('../dist/managed/host-entry.js').then(({ main }) => main(process.argv.slice(3)))
-  : import('../dist/core/run/cli.js').then(({ main }) => main())).catch((error) => {
-  process.stderr.write(`hud-run: ${error.message}\n`);
-  process.exitCode = 1;
-});
