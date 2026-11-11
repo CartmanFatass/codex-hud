@@ -52,7 +52,7 @@ answer is the simplest option; anything beyond the spec goes to the owner.
 | --- | --- | --- |
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
 | implementer | pi, `openai/gpt-6.1-sol` high (skill `herdr-delegate`) | one slice each |
-| reviewer | pi, `mistral/zai-glm-5-3` max (owner, 2026-11-11: a second model family finds more than more effort) | milestone reviews and the risky cases above only |
+| reviewer | pi, `openai/gpt-6.1-sol` xhigh (owner, 2026-11-11: milestone reviews go to Sol; GLM is not qualified for them) | milestone reviews and the risky cases above only |
 | sonic | pi, DeepSeek V4.1 Flash | small chores for any role; never tests, bug hunting or design |
 | architect | pi, `openai/gpt-6-astra` high | only a structural question the orchestrator cannot settle; advice only |
 | Argon / ChatGPT Pro | `jev-ask` | only a new product direction |
