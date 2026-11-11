@@ -7,6 +7,15 @@ if (!((major === 22 && minor >= 13) || major >= 24) &&
   process.stderr.write('runtime_unavailable: Node 22.x >=22.13 or Node >=24 required (23 unsupported)\n');
   process.exit(5);
 }
+if (process.argv[2] === 'uninstall') {
+  const { realpathSync } = await import('node:fs');
+  const { dirname, resolve } = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+  const installer = resolve(dirname(realpathSync(process.argv[1])), '../install');
+  const result = spawnSync(installer, ['--uninstall', ...process.argv.slice(3)], { stdio: 'inherit' });
+  if (result.error) process.stderr.write(`${result.error.message}\n`);
+  process.exit(result.status ?? 1);
+}
 const compatibility = ['codex', 'codex-hud'].includes(process.argv[2]);
 const registeredPanel = process.argv[2] === 'panel' && Object.keys(process.env).some(k => k.startsWith('HUD_PANEL_'));
 import(registeredPanel ? '../dist/cli/panel-entry.js' : compatibility ? '../dist/cli/compat.js' : '../dist/cli/hud.js').then(async (module) => {

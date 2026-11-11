@@ -38,7 +38,7 @@ export async function main(
       const { importCommand } = await import('./import.js');
       return await importCommand(args.slice(1), io);
     }
-    if (args[0] === 'install' || args[0] === 'uninstall') {
+    if (args[0] === 'install') {
       const { installCommand } = await import('./install.js');
       return await installCommand(args, io);
     }

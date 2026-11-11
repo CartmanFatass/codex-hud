@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+HUD_HOME="${HUD_HOME:-$HOME/.hud}"
+BIN_DIR="$HOME/.local/bin"
+export REPO HUD_HOME BIN_DIR
+uninstall=false
+skip_build=false
+selected=false
+extensions=()
+fail() { printf 'Error: %s\n' "$*" >&2; exit 1; }
+
+while (($#)); do
+  case "$1" in
+    --uninstall) uninstall=true; shift ;;
+    --skip-build) skip_build=true; shift ;;
+    --with)
+      (($# >= 2)) && [[ -n "$2" && "$2" != ,* && "$2" != *, && "$2" != *,,* ]] || fail '--with requires comma-separated extension names'
+      selected=true
+      IFS=, read -r -a names <<< "$2"
+      extensions+=("${names[@]}")
+      shift 2 ;;
+    *) fail "Unknown argument: $1" ;;
+  esac
+done
+
+if $uninstall && ! $selected; then
+  for file in "$REPO"/install.d/*.sh; do
+    [[ -f "$file" ]] && extensions+=("$(basename "$file" .sh)")
+  done
+fi
+# Validate every requested extension before building or changing anything.
+for name in "${extensions[@]}"; do
+  [[ "$name" =~ ^[a-zA-Z0-9_-]+$ && -f "$REPO/install.d/$name.sh" ]] || fail "Missing or invalid extension: $name"
+done
+
+printf 'Checking Node runtime\n'
+command -v node >/dev/null || fail 'Node is required'
+node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit((major === 22 && minor >= 13) || major >= 24 ? 0 : 1)' || fail 'Node 22.x >=22.13 or Node >=24 required (23 unsupported)'
+
+if $uninstall; then
+  for name in "${extensions[@]}"; do
+    printf 'Uninstalling extension: %s\n' "$name"
+    ( source "$REPO/install.d/$name.sh"; hud_ext_uninstall )
+  done
+  printf 'Removing command symlinks owned by this repo\n'
+  for name in hud hud-mcp; do
+    link="$BIN_DIR/$name"
+    if [[ -L "$link" && "$(readlink -m "$link")" == "$REPO/"* ]]; then
+      rm -- "$link"
+    fi
+  done
+  printf 'HUD uninstalled; data kept at %s\n' "$HUD_HOME"
+  exit 0
+fi
+
+cd "$REPO"
+if $skip_build; then
+  printf 'Skipping dependencies and build (--skip-build)\n'
+else
+  if [[ ! -d node_modules ]]; then
+    printf 'Installing dependencies (npm ci)\n'
+    npm ci
+  else
+    printf 'Dependencies already present\n'
+  fi
+  printf 'Building HUD and hud-mcp\n'
+  npm run build && npm run build:hud-mcp || exit $?
+fi
+printf 'Ensuring HUD home: %s\n' "$HUD_HOME"
+if [[ ! -d "$HUD_HOME" ]]; then
+  mkdir -p -m 700 -- "$HUD_HOME"
+fi
+printf 'Installing command symlinks in %s\n' "$BIN_DIR"
+mkdir -p -- "$BIN_DIR"
+for name in hud hud-mcp; do
+  target="$REPO/bin/hud"
+  [[ "$name" == hud-mcp ]] && target="$REPO/packages/hud-mcp/bin/hud-mcp.mjs"
+  link="$BIN_DIR/$name"
+  if [[ -L "$link" && "$(readlink "$link")" == "$target" ]]; then
+    continue
+  fi
+  # Refuse collisions rather than overwriting an existing command or user file.
+  [[ ! -e "$link" && ! -L "$link" ]] || fail "Command already exists: $link"
+  ln -s -- "$target" "$link"
+done
+for name in "${extensions[@]}"; do
+  printf 'Installing extension: %s\n' "$name"
+  ( source "$REPO/install.d/$name.sh"; hud_ext_install )
+done
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *) printf 'Warning: %s is not on PATH; add it to use hud and hud-mcp.\n' "$BIN_DIR" >&2 ;;
+esac
+printf 'HUD installed; commands: %s/hud, %s/hud-mcp; data: %s\n' "$BIN_DIR" "$BIN_DIR" "$HUD_HOME"
