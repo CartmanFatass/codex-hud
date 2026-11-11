@@ -22,6 +22,11 @@ agent proposes.
    - **spec:** does it do what `docs/spec.md` asks, and does it do things nobody asked for (scope creep);
    - **simplicity and quality:** correctness defects, and what can be deleted (guards, options, abstractions, tests).
 
+   The review brief states the **design intent**: one line per change on what it is for, which trade-offs were
+   accepted on purpose and which behaviour is deliberate, so the reviewer judges against the intent instead of
+   guessing it (owner, 2026-11-11). Findings below the blocking bar (races that need a coincidence, test-coverage
+   suggestions, style) go in a separate optional list that does not change the verdict.
+
    One fresh implementer fixes the findings in one pass. Findings block only if a real user would hit them or the
    spec is violated.
 6. **Owner tries it.** The owner installs or runs the milestone. That is the acceptance.
