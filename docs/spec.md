@@ -21,6 +21,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    These features only read job files and write display text; they never prompt, brief or steer a worker. No consent
    or authority layer. A job may carry an optional package label (given to `hud_create`, else taken from the brief's
    title); the panel groups jobs by it into lanes. The label is display only: the MCP does not interpret it.
+   The panel also shows the main session's native subagents (Claude Code's Agent subagents incl. custom ones, Codex
+   subagents, pi's), read from the client's own transcripts, each with an external-model summary of what it is doing.
    A third panel tab, Project, shows the project at a glance: the control plane (roles in effect with their models,
    the convention and its source, which keys and the Jev browser are available), the working tree (branch, changes,
    which job is editing it, last commit), docs (spec milestone, STATE's items waiting for the owner, the newest
