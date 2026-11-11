@@ -1,5 +1,6 @@
 import { object, type HerdrTransport, type ObjectValue } from './transport.js';
 
+// Historical fixture label only; compatibility is defined by schema and protocol.
 export const HERDR_VERSION = '0.9.5';
 export const HERDR_PROTOCOL = 22;
 export const HERDR_SCHEMA = 1;
@@ -80,15 +81,13 @@ export class HerdrClient {
         this.cached = { at: this.now(), result: mismatch };
         return mismatch;
       }
-      const version = await this.transport.command(['--version']);
+      await this.transport.command(['--version']);
       const before = await this.transport.instance();
       const ping = await this.transport.request('ping', {});
       const after = await this.transport.instance();
       if (
         schema.schema_version !== HERDR_SCHEMA ||
         schema.protocol !== HERDR_PROTOCOL ||
-        version !== `herdr ${HERDR_VERSION}` ||
-        ping.version !== HERDR_VERSION ||
         ping.protocol !== HERDR_PROTOCOL
       )
         result = this.result(false, null, 'herdr_schema_mismatch');

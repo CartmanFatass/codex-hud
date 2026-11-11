@@ -337,10 +337,10 @@ export async function launchClaudeInTmux(
     const recordFile = join(installationRoot(), 'packages/hud-mcp/dist/packages/hud-mcp/src/hook/record.js');
     const scriptSha256 = fileHash(script),
       recordSha256 = fileHash(recordFile);
-    if (!scriptSha256 || !recordSha256 || executable.version !== record.CLAUDE_VERSION) return reject();
+    if (!scriptSha256 || !recordSha256) return reject();
     helper = {
       implementation: record.IMPLEMENTATION,
-      claudeVersion: record.CLAUDE_VERSION,
+      claudeVersion: executable.version,
       script,
       scriptSha256,
       record: recordFile,

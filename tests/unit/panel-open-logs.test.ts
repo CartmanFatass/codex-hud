@@ -235,6 +235,7 @@ class FakeHost implements HerdrTransport {
   methods: string[] = [];
   changed = false;
   version = 'herdr 0.9.5';
+  schema = structuredClone(schema);
   beforeFocus?: () => void;
   constructor(
     readonly server: string,
@@ -245,7 +246,7 @@ class FakeHost implements HerdrTransport {
   }
   async command(argv: readonly string[]) {
     this.commands.push([...argv]);
-    if (argv[0] === 'api') return schema;
+    if (argv[0] === 'api') return this.schema;
     if (argv[0] === '--version') return this.version;
     if (argv[0] === 'pane' && argv[1] === 'focus') return {};
     throw new Error('unexpected mutation');
@@ -440,7 +441,7 @@ test('Open refuses oversized artifact metadata during availability and after an 
 });
 
 test('host restart, schema drift, late selection change and revoked binding never focus', async () => {
-  for (const kind of ['server', 'version', 'selection', 'binding']) {
+  for (const kind of ['server', 'schema', 'selection', 'binding']) {
     const f = await hostFixture();
     try {
       const controller = new PanelHostController(f.options);
@@ -448,7 +449,7 @@ test('host restart, schema drift, late selection change and revoked binding neve
       await controller.refresh(f.target, () => current);
       assert.equal(controller.snapshot?.available, true);
       if (kind === 'server') f.transport.changed = true;
-      if (kind === 'version') f.transport.version = 'herdr 0.9.6';
+      if (kind === 'schema') f.transport.schema.protocol++;
       if (kind === 'selection')
         f.transport.beforeFocus = () => {
           current = false;

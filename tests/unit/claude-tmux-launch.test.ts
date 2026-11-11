@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   realpathSync,
   renameSync,
@@ -25,13 +27,14 @@ import {
   claudeLaunchPlan,
   materializeClaudePlan,
   launchClaudeInTmux,
+  type ClaudeHelper,
 } from '../../src/cli/claude-launch.js';
 import type { ProcRecord } from '../../src/core/run/process.js';
 import type { CapabilityManifestV1, LaunchProfile } from '../../src/core/types/capabilities.js';
 import { makeHookSettings } from '../../packages/hud-mcp/src/hook/record.js';
 import { digest } from '../../src/core/canonical.js';
 import { claudeCommand } from '../../src/cli/launcher.js';
-import { delegateConfig } from '../../src/cli/runtime.js';
+import { delegateConfig, installationRoot, mcpModule } from '../../src/cli/runtime.js';
 import type { ClaudeConfiguration } from '../../src/cli/claude-configuration.js';
 
 const identity = (path: string): NativeFile => ({
@@ -176,7 +179,7 @@ test('Claude tmux observer rejects forged locators, missing proof, wrong ancestr
   }
 });
 
-async function launchFixture() {
+async function launchFixture(withHook = false) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'hud-claude-tmux-')));
   const native = nativeFile(process.execPath)!;
   assert.ok(native);
@@ -201,6 +204,24 @@ async function launchFixture() {
     orphan_policy: 'continue',
     managedShellVerified: false,
   };
+  let helper: ClaudeHelper | null = null;
+  let hookSettings: Parameters<typeof claudeLaunchPlan>[0]['makeHookSettings'] = null;
+  if (withHook) {
+    profile.callSource = { kind: 'claude_pre_tool_use_v1' };
+    const record = await mcpModule('hook/record');
+    const script = join(installationRoot(), 'packages/hud-mcp/bin/hud-claude-hook.mjs');
+    const recordFile = join(installationRoot(), 'packages/hud-mcp/dist/packages/hud-mcp/src/hook/record.js');
+    const hash = (path: string) => createHash('sha256').update(readFileSync(path)).digest('hex');
+    helper = {
+      implementation: record.IMPLEMENTATION,
+      claudeVersion: executable.version,
+      script,
+      scriptSha256: hash(script),
+      record: recordFile,
+      recordSha256: hash(recordFile),
+    };
+    hookSettings = record.makeHookSettings;
+  }
   const env = { HOME: root, HUD_HOME: root, CLAUDE_CONFIG_DIR: root };
   const settings = {
     permissions: { allow: ['synthetic'] },
@@ -235,8 +256,8 @@ async function launchFixture() {
     cwd: realpathSync(process.cwd()),
     executable,
     startup,
-    helper: null,
-    makeHookSettings: null,
+    helper,
+    makeHookSettings: hookSettings,
   });
   const actual = claudeExpectation(plan, 'synthetic-reviewed-build');
   const manifest: CapabilityManifestV1 = {
@@ -269,37 +290,43 @@ async function launchFixture() {
   return { root, input, plan, startup, manifest, close: () => rmSync(root, { recursive: true, force: true }) };
 }
 
-test('Claude production matcher admits only exact synthetic plan, pins argv and rechecks before one dispatch', async () => {
-  const f = await launchFixture();
-  try {
-    let observations = 0,
-      launches = 0;
-    const result = await launchClaudeInTmux(f.input, {
-      configuration: () => ({ observation: f.input.configuration, reason: null }),
-      observe: async () => {
-        observations++;
-        return structuredClone(f.startup);
-      },
-      manifest: () => f.manifest,
-      hudRevision: 'synthetic-reviewed-build',
-      launch: async (command, env) => {
-        launches++;
-        assert.equal(observations, 2);
-        assert.equal(command.argv![0], f.plan.executable.path);
-        assert.deepEqual(command.argv!.slice(1, 2), ['literal $HOME; value']);
-        assert.equal(command.argv!.at(-2), '--');
-        assert.equal(command.argv!.at(-1), 'prompt --resume');
-        assert.equal(env.CLAUDE_CONFIG_DIR, f.root);
-        return 17;
-      },
-    });
-    assert.equal(result, 17);
-    assert.equal(launches, 1);
-    assert.deepEqual(readdirSync(f.root), []);
-  } finally {
-    f.close();
-  }
-});
+for (const withHook of [false, true])
+  test(`Claude production matcher admits synthetic plan${withHook ? ` with discovered hook version ${process.versions.node}` : ''}, pins argv and rechecks before one dispatch`, async () => {
+    const f = await launchFixture(withHook);
+    try {
+      let observations = 0,
+        launches = 0;
+      const result = await launchClaudeInTmux(f.input, {
+        configuration: () => ({ observation: f.input.configuration, reason: null }),
+        observe: async () => {
+          observations++;
+          return structuredClone(f.startup);
+        },
+        manifest: () => f.manifest,
+        hudRevision: 'synthetic-reviewed-build',
+        launch: async (command, env) => {
+          launches++;
+          assert.equal(observations, 2);
+          assert.equal(command.argv![0], f.plan.executable.path);
+          assert.deepEqual(command.argv!.slice(1, 2), ['literal $HOME; value']);
+          assert.equal(command.argv!.at(-2), '--');
+          assert.equal(command.argv!.at(-1), 'prompt --resume');
+          assert.equal(env.CLAUDE_CONFIG_DIR, f.root);
+          if (withHook) {
+            const hook = JSON.parse(readFileSync(env.HUD_CLAUDE_HOOK_CONFIG!, 'utf8'));
+            assert.equal(hook.claudeVersion, f.plan.executable.version);
+            assert.equal(hook.claudeExecutable, f.plan.executable.path);
+          }
+          return 17;
+        },
+      });
+      assert.equal(result, 17);
+      assert.equal(launches, 1);
+      assert.deepEqual(readdirSync(f.root), []);
+    } finally {
+      f.close();
+    }
+  });
 
 test('hud claude launches natively without requiring a reviewed or shipped manifest', async () => {
   const f = await launchFixture();
