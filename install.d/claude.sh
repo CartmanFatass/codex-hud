@@ -53,7 +53,7 @@ hud_ext_install() {
     # On a re-run, import the original wrapper rather than our replacement command.
     source_settings="$config/settings.json"
     [[ ! -f "$source_settings.hud-backup" ]] || source_settings+=".hud-backup"
-    "$BIN_DIR/hud" statusline import --from "$config/plugins/claude-hud/config.json" --settings "$source_settings" --apply
+    "$BIN_DIR/hud" statusline import --from "$config/plugins/claude-hud/config.json" --settings "$(readlink -f -- "$source_settings")" --apply
   fi
   hud_claude_settings install
 }
