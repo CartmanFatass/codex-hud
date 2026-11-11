@@ -9,7 +9,7 @@ import test from 'node:test';
 const repo = path.resolve('.');
 const filter = '-extensions/p10k-footer.ts';
 
-test('pi install/uninstall registers a checkout package and replaces only the p10k selection', async (t) => {
+test('pi install/uninstall registers both packages and replaces only the p10k selection', async (t) => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-pi-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const home = path.join(temp, 'home'),
@@ -27,6 +27,7 @@ test('pi install/uninstall registers a checkout package and replaces only the p1
     extensions: ['-builtin:mcp', 'extensions/other.ts'],
     theme: 'synthetic',
     unrelated: { keep: true },
+    packages: [pkg, display, 'npm:owner-package'],
   };
   const before = JSON.stringify(original) + '\n';
   fs.writeFileSync(settingsFile, before);
@@ -68,14 +69,15 @@ fs.writeFileSync(file, JSON.stringify(settings));
   const run = (...args) => {
     const result = spawnSync('./install', args, { cwd: repo, env, encoding: 'utf8' });
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.doesNotMatch(result.stdout, /claudeH|piH/);
   };
   run('--skip-build', '--with', 'pi');
   assert.equal(fs.readFileSync(backup, 'utf8'), before, 'backup precedes even pi registration');
-  // Workers run plain: only the delegation package is registered; pi-display is loaded by `pi -e` alone.
+  // Hand-registered packages stay registered exactly once.
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)), {
     ...original,
     extensions: [...original.extensions, filter],
-    packages: [pkg],
+    packages: original.packages,
   });
   const manifest = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json')));
   assert.deepEqual(manifest.pi, { extensions: ['./extensions/hud.mjs'], skills: ['./skills/hud-delegate/SKILL.md'] });
@@ -103,6 +105,7 @@ fs.writeFileSync(file, JSON.stringify(settings));
   run('--skip-build', '--with', 'pi');
   assert.equal(fs.readFileSync(backup, 'utf8'), before, 'reinstall never overwrites the backup');
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)).extensions, [...original.extensions, filter]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)).packages, original.packages);
   const changed = JSON.parse(fs.readFileSync(settingsFile));
   changed.laterKey = 'keep too';
   changed.extensions.push('extensions/later.ts');
@@ -111,7 +114,7 @@ fs.writeFileSync(file, JSON.stringify(settings));
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)), {
     ...original,
     extensions: [...original.extensions, 'extensions/later.ts'],
-    packages: [],
+    packages: ['npm:owner-package'],
     laterKey: 'keep too',
   });
   assert.equal(fs.existsSync(backup), false);
@@ -120,9 +123,13 @@ fs.writeFileSync(file, JSON.stringify(settings));
   run('--uninstall', '--with', 'pi'); // not-installed pi remove is harmless
   assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse), [
     ['install', pkg],
+    ['install', display],
     ['install', pkg],
+    ['install', display],
     ['remove', pkg],
+    ['remove', display],
     ['remove', pkg],
+    ['remove', display],
   ]);
   assert.equal(fs.readlinkSync(path.join(agent, 'extensions')), privateExtensions);
   assert.deepEqual(fs.readdirSync(privateExtensions), ['p10k-footer.ts']);

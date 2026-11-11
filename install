@@ -94,12 +94,10 @@ case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *) printf 'Warning: %s is not on PATH; add it to use hud and hud-mcp.\n' "$BIN_DIR" >&2 ;;
 esac
-# The HUD display is opt-in per launch; the installer never edits shell rc files.
+# Only Codex needs a launch function; the installer never edits shell rc files.
 hud_functions=()
 for name in "${extensions[@]}"; do
   case "$name" in
-    claude) hud_functions+=("claudeH() { claude --settings \"$HUD_HOME/claude.json\" \"\$@\"; }") ;;
-    pi) hud_functions+=("piH() { pi -e \"$HUD_HOME/pi-display\" \"\$@\"; }") ;;
     codex) hud_functions+=("codexH() { hud codex \"\$@\"; }") ;;
   esac
 done

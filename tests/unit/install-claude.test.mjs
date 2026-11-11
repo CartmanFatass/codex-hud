@@ -9,7 +9,7 @@ import test from 'node:test';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const commandLine = 'Run `hud panel` with Bash and report the pane id it prints.\n';
 
-test('Claude install opts the statusline out of settings.json, writes claude.json, and reverses only its changes', () => {
+test('Claude install maintains the global statusline and reverses only its changes', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-claude-'));
   try {
     const home = path.join(temp, 'home');
@@ -39,7 +39,9 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       unrelated: { keep: true },
     };
     const originalBytes = JSON.stringify(original, null, 2) + '\n';
-    fs.writeFileSync(settings, originalBytes);
+    const target = path.join(temp, 'dotfiles-settings.json');
+    fs.writeFileSync(target, originalBytes, { mode: 0o640 });
+    fs.symlinkSync(target, settings);
     fs.writeFileSync(pluginConfig, JSON.stringify({ showSeparators: true, display: { showAgents: true } }));
     const env = {
       ...process.env,
@@ -47,22 +49,24 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       HUD_HOME: hudHome,
       CODEX_HOME: path.join(temp, 'codex-home'),
       CLAUDE_CONFIG_DIR: config,
+      PI_CODING_AGENT_DIR: path.join(temp, 'pi-agent'),
       CLAUDE_ARGV_LOG: log,
       PATH: `${fakeBin}:${process.env.PATH}`,
     };
     const run = (...args) => {
       const result = spawnSync('./install', [...args, '--with', 'claude'], { cwd: root, env, encoding: 'utf8' });
       assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      assert.doesNotMatch(result.stdout, /claudeH|piH/);
     };
     const json = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
     const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
     run('--skip-build');
-    // An owner's own statusLine is kept; the HUD statusline lives only in claude.json.
-    assert.deepEqual(json(settings), original, 'the owner statusLine stays; no HUD statusLine is written');
+    // An owner's own statusLine is kept rather than replaced.
+    assert.deepEqual(json(settings), original, 'the owner statusLine stays');
     assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes);
-    assert.deepEqual(json(path.join(hudHome, 'claude.json')), {
-      statusLine: { type: 'command', command: path.join(bin, 'hud-statusline'), refreshInterval: 5 },
-    });
+    const hudLine = { type: 'command', command: path.join(bin, 'hud-statusline'), refreshInterval: 5 };
+    const legacy = path.join(hudHome, 'claude.json');
+    assert.equal(fs.existsSync(legacy), false);
     assert.deepEqual(calls(), [
       ['mcp', 'remove', '-s', 'user', 'hud'],
       ['mcp', 'add', '-s', 'user', 'hud', '-e', 'HUD_MCP_SURFACE=roles', '--', path.join(bin, 'hud-mcp')],
@@ -77,7 +81,7 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     assert.equal(imported.widthMargin, 4);
     assert.deepEqual(imported.forward, [path.join(home, '.cargo/bin/toktrack'), 'quota', 'record-claude']);
 
-    // An earlier install's HUD statusLine in settings.json is removed; the backup is kept.
+    // An earlier HUD entry is refreshed globally; the original backup is kept.
     const earlier = {
       statusLine: { type: 'command', command: '/synthetic/earlier/bin/hud-statusline', refreshInterval: 5 },
       unrelated: { changed: true },
@@ -87,16 +91,17 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     run('--skip-build');
     assert.deepEqual(
       json(settings),
-      { unrelated: { changed: true }, added: 42 },
-      'the earlier HUD statusLine is removed'
+      { statusLine: hudLine, unrelated: { changed: true }, added: 42 },
+      'the global HUD statusLine is refreshed'
     );
     assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes, 'reinstall keeps the original backup');
 
-    // Uninstall removes its own files, never restores statusLine, and never loses the
-    // owner statusLine that only the backup still holds.
+    fs.writeFileSync(legacy, JSON.stringify({ statusLine: hudLine }));
     run('--uninstall');
-    assert.deepEqual(json(settings), { unrelated: { changed: true }, added: 42 });
-    assert.equal(fs.existsSync(backup), true, 'the backup holding the owner statusLine is kept');
+    assert.deepEqual(json(settings), { statusLine: original.statusLine, unrelated: { changed: true }, added: 42 });
+    assert.equal(fs.existsSync(backup), false, 'the backed-up owner statusLine was restored');
+    assert.equal(fs.readlinkSync(settings), target);
+    assert.equal(fs.statSync(settings).mode & 0o777, 0o640);
     assert.deepEqual(calls().at(-1), ['mcp', 'remove', '-s', 'user', 'hud']);
     for (const file of [
       skill,
@@ -107,6 +112,14 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       assert.throws(() => fs.lstatSync(file), { code: 'ENOENT' });
     }
     assert.equal(fs.existsSync(pluginConfig), true, 'claude-hud stays installed');
+    fs.renameSync(pluginConfig, pluginConfig + '.saved'); // Next scenario has no old plugin to import.
+    fs.writeFileSync(settings, JSON.stringify({ unrelated: true }));
+    run('--skip-build');
+    assert.deepEqual(json(settings), { unrelated: true, statusLine: hudLine });
+    fs.writeFileSync(legacy, JSON.stringify({ statusLine: { command: 'owner-command' } }));
+    run('--uninstall');
+    assert.deepEqual(json(settings), { unrelated: true });
+    assert.deepEqual(json(legacy), { statusLine: { command: 'owner-command' } });
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

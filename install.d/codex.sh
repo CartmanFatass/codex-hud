@@ -2,6 +2,26 @@
 
 hud_codex_prompt_line='Run `hud panel` with Bash and report the pane id it prints.'
 
+hud_codex_mcp() {
+  local config="${CODEX_HOME:-$HOME/.codex}/config.toml" backup before=0 after=0 status=0
+  if [[ -f "$config" ]]; then
+    backup="$(readlink -f -- "$config").hud-backup"
+    [[ -e "$backup" ]] || cp -- "$config" "$backup"
+    before="$(grep -c '^[[:space:]]*#' "$config" || true)"
+  fi
+  codex mcp remove hud 2>/dev/null || true
+  if [[ "$1" == install ]]; then
+    codex mcp add hud --env HUD_MCP_SURFACE=roles -- "$BIN_DIR/hud-mcp" || status=$?
+  fi
+  if [[ -f "$config" ]]; then
+    after="$(grep -c '^[[:space:]]*#' "$config" || true)"
+  fi
+  if ((after < before)); then
+    printf 'Warning: Codex removed config.toml comments; original saved at %s\n' "$backup" >&2
+  fi
+  return "$status"
+}
+
 hud_ext_install() {
   local prompt="${CODEX_HOME:-$HOME/.codex}/prompts/hud.md"
   # Codex opens the panel with F12; remove only the legacy prompt we wrote.
@@ -9,8 +29,7 @@ hud_ext_install() {
     rm -- "$prompt"
   fi
   if command -v codex >/dev/null 2>&1; then
-    codex mcp remove hud 2>/dev/null || true
-    codex mcp add hud --env HUD_MCP_SURFACE=roles -- "$BIN_DIR/hud-mcp"
+    hud_codex_mcp install
     # Codex starts MCP servers with a trimmed environment; hud_create needs herdr's variables.
     local config="${CODEX_HOME:-$HOME/.codex}/config.toml"
     if [[ -f "$config" ]] && ! grep -q '^env_vars = \["HERDR_PANE_ID"' "$config"; then
@@ -37,7 +56,7 @@ hud_ext_install() {
 
 hud_ext_uninstall() {
   if command -v codex >/dev/null 2>&1; then
-    codex mcp remove hud 2>/dev/null || true
+    hud_codex_mcp uninstall
   else
     printf 'Warning: codex is not on PATH; skipping Codex MCP removal.\n' >&2
   fi

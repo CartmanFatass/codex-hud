@@ -9,10 +9,24 @@ The details behind the [README](../README.md): the panel part by part, every key
 
 ## Installing
 
-The opt-in Linux/WSL runtime requires Node **22.13+ within 22.x, or 24.x**. It does not install a harness,
-herdr, a browser or provider keys. Installation management is separate from `hud setup`; none of these commands
-calls a model, starts a job or opens a panel. The opt-in Claude plugin and pi package are described below.
-Do not run the historical root `install.sh` for this workflow.
+From the checkout, run `./install --with claude,pi,codex` (Node **22.13+ within 22.x, or 24.x**).
+It does not install a harness, herdr, tmux, a browser or provider keys. Do not run the historical root `install.sh`.
+The bottom status lines are always on: plain `claude` uses the global HUD statusline (an owner's existing
+non-HUD statusline is kept), plain `pi` loads both the delegation and display packages, and Codex's tmux bar
+comes with the installer's only printed shell function:
+
+```sh
+codexH() { hud codex "$@"; }
+```
+
+Only the panel is opt-in: `/hud` opens it in Claude and pi; F12 opens it in Codex. It never opens at launch.
+Claude settings follow symlinks and keep a one-time plain backup; uninstall removes the HUD statusline and
+restores a backed-up owner statusline. Codex keeps a one-time `.hud-backup` beside the resolved `config.toml`
+before MCP edits and warns if its official commands drop comment lines. Uninstall with `hud uninstall` or
+`./install --uninstall`; both pi packages are unregistered, and unrelated owner configuration stays.
+See [installer extensions](../install.d/README.md) for selection, backups and multiple Codex homes.
+
+The activation/receipt workflow below is historical, not the current checkout installer.
 
 A release contains clean-built `dist/`, `packages/hud-mcp/{bin,dist}`, the canonical
 `integrations/skills/hud-delegate/`, ordinary-named integration templates, notices and the bootstrap scripts.
@@ -140,8 +154,8 @@ With segment IDs and every other form, `/hud footer <original args>` changes the
 Preview writes nothing, apply changes only the section (and makes a backup), existing keys win and unknown keys
 refuse. No pi settings discovery or automatic import occurs.
 
-The panel never opens by itself: no session event splits a pane, and only `/hud` in the display package
-(`pi -e "$HUD_HOME/pi-display"`) opens one. Worker, nested or unknown contexts cannot open a side panel. Inherited
+The panel never opens by itself: no session event splits a pane, and only `/hud` in the registered display
+package (`$HUD_HOME/pi-display`) opens one. Worker, nested or unknown contexts cannot open a side panel. Inherited
 pane variables alone are not proof; no tmux fallback is added. `/hud off` is session-local. No preference is written
 by loading the package.
 

@@ -63,15 +63,16 @@ NODE
   fi
   if command -v pi >/dev/null; then
     pi install "$package"
+    pi install "$display"
   else
     printf 'Warning: pi is not on PATH; skipping pi package registration.\n' >&2
   fi
-  printf 'Display package prepared (not registered): %s; load it with pi -e %s\n' "$display" "$display"
 }
 
 hud_ext_uninstall() {
   if command -v pi >/dev/null; then
     pi remove "$HUD_HOME/pi-package" || true
+    pi remove "$HUD_HOME/pi-display" || true
   else
     printf 'Warning: pi is not on PATH; skipping pi package removal.\n' >&2
   fi

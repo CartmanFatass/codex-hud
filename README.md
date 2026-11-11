@@ -35,7 +35,7 @@ Yes. Press `F12` to open the **subagent tree** in a side panel: every agent the 
 
 **Q: Do I need to set up tmux manually?**
 
-No. Codex HUD auto-activates tmux for you. Just type `codex` and the HUD appears. If tmux isn't installed, the installer handles that too.
+No. `codexH` (the shell function printed by the installer) starts Codex with the HUD's tmux bar. tmux must be available.
 
 ## Quick Start
 
@@ -44,9 +44,15 @@ git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 ./install --with claude,pi,codex
 
-# Add the H functions printed by the installer to your shell, then launch:
+# Add the printed Codex function to your shell, then launch:
+codexH() { hud codex "$@"; }
 codexH
 ```
+
+The bottom status lines are always on: ordinary `claude` uses Claude's statusline,
+ordinary `pi` loads the HUD footer, and `codexH` brings Codex's tmux bar. An existing
+owner-defined non-HUD Claude statusline is preserved. Only the side panel is opt-in:
+open it with `/hud` in Claude or pi, or F12 in Codex; it never opens at launch.
 
 <details>
 <summary><b>Windows (WSL default)</b>: install, self-check and the PowerShell / cmd commands</summary>
@@ -216,7 +222,7 @@ CODEX_HUD_DENSITY=focus codex
 
 ## Development workbench
 
-New launches use the compact bottom bar. `F12` opens the right panel without taking focus from Codex; `Shift+F12` opens and focuses it. The panel can also be opened with `/hud`; it never opens at launch.
+New `codexH` launches use the compact bottom bar. `F12` opens the right panel without taking focus from Codex; `Shift+F12` opens and focuses it. Claude and pi open their panel with `/hud`; no panel opens at launch.
 
 **Outside modal pages, the panel forwards ordinary input to Codex.** Every panel command is the **prefix key, `Ctrl+\`, then one key**: `Ctrl+\` `,` opens settings, `Ctrl+\` `?` the help, `Ctrl+\` `b` pauses the brief (the full list is in [the reference](./docs/reference.md#keys), and the help's Shortcuts section). The prefix works wherever the cursor is, in Codex's pane or in the panel; `Ctrl+\` `j` `j` `j` moves three rows, since the moves repeat for half a second without the prefix. A command that needs the panel opens it first. Anything typed without the prefix goes to Codex: with the cursor in the panel (after `Shift+F12`, or a click), keys and pastes are passed to Codex's pane exactly as typed, a paste stays one bracketed paste, and the cursor moves back to Codex with them. Settings, help, activity and evidence pages capture their own navigation keys; Find also captures query text. Close the page with `Esc` or its Back button to resume normal forwarding. The mouse works as before.
 

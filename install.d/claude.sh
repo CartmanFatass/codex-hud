@@ -23,14 +23,18 @@ if (action === 'install') {
     if (fs.existsSync(file)) fs.copyFileSync(file, backup, fs.constants.COPYFILE_EXCL);
     else fs.writeFileSync(backup, '{}\n', { flag: 'wx', mode: 0o600 });
   }
-  // The HUD statusline is opt-in per launch through $HUD_HOME/claude.json; an
-  // earlier install's entry is removed from the global settings, an owner's own stays.
-  if (hudStatusLine(settings.statusLine)) {
-    delete settings.statusLine;
+  // Keep an owner's non-HUD statusline; install or refresh our global entry otherwise.
+  if (!settings.statusLine || hudStatusLine(settings.statusLine)) {
+    settings.statusLine = { type: 'command', command, refreshInterval: 5 };
     writeSettings();
   }
-  fs.writeFileSync(claudeJson, JSON.stringify({ statusLine: { type: 'command', command, refreshInterval: 5 } }, null, 2) + '\n', { mode: 0o600 });
 } else {
+  if (hudStatusLine(settings.statusLine)) {
+    delete settings.statusLine;
+    const original = fs.existsSync(backup) ? JSON.parse(fs.readFileSync(backup, 'utf8')) : {};
+    if (original.statusLine && !hudStatusLine(original.statusLine)) settings.statusLine = original.statusLine;
+    writeSettings();
+  }
   if (fs.existsSync(backup)) {
     const original = JSON.parse(fs.readFileSync(backup, 'utf8'));
     // The backup may hold the only copy of a pre-HUD owner statusLine: keep it then.
@@ -39,9 +43,9 @@ if (action === 'install') {
       JSON.stringify(original.statusLine) !== JSON.stringify(settings.statusLine);
     if (!lost) fs.unlinkSync(backup);
   }
-  if (hudStatusLine(settings.statusLine)) {
-    delete settings.statusLine;
-    writeSettings();
+  if (fs.existsSync(claudeJson)) {
+    const legacy = JSON.parse(fs.readFileSync(claudeJson, 'utf8'));
+    if (Object.keys(legacy).length === 1 && hudStatusLine(legacy.statusLine)) fs.unlinkSync(claudeJson);
   }
 }
 NODE
@@ -95,7 +99,6 @@ hud_ext_uninstall() {
   if [[ -f "$command_file" && "$(cat -- "$command_file")" == "$hud_claude_command_line" ]]; then
     rm -- "$command_file"
   fi
-  rm -f -- "$HUD_HOME/claude.json"
   for link in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-delegate" "$BIN_DIR/hud-statusline"; do
     if [[ -L "$link" && "$(readlink -m "$link")" == "$REPO/"* ]]; then
       rm -- "$link"

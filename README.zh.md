@@ -35,7 +35,7 @@
 
 **Q: 需要手动配置 tmux 吗？**
 
-不需要。Codex HUD 自动激活 tmux。只需输入 `codex`，HUD 就会出现。如果没装 tmux，安装程序也会搞定。
+不需要。安装程序打印的 shell 函数 `codexH` 会启动带 HUD tmux 状态栏的 Codex；运行前需备好 tmux。
 
 ## 快速开始
 
@@ -44,9 +44,14 @@ git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
 ./install --with claude,pi,codex
 
-# 将安装程序打印的 H 函数加入 shell，然后启动：
+# 将打印的 Codex 函数加入 shell，然后启动：
+codexH() { hud codex "$@"; }
 codexH
 ```
+
+底部状态行常开：直接启动 `claude` 即使用 Claude 状态行，直接启动 `pi` 即加载 HUD footer；
+Codex 的 tmux 状态栏随 `codexH` 启动。已有的非 HUD 自定义 Claude 状态行会保留。
+只有侧栏按需打开：Claude 和 pi 用 `/hud`，Codex 用 F12；启动时不会自动展开侧栏。
 
 <details>
 <summary><b>Windows（默认 WSL）</b>：安装、自检与 PowerShell / cmd 命令</summary>
@@ -195,7 +200,7 @@ CODEX_HUD_DENSITY=focus codex
 
 ## 开发面板
 
-新启动默认使用底部单行缩小模式。`F12` 在右侧打开面板，光标仍留在 Codex；`Shift+F12` 打开并把光标移进面板。也可用 `/hud` 打开面板；启动时不会自动展开。
+通过 `codexH` 新启动默认使用底部单行缩小模式。`F12` 在右侧打开面板，光标仍留在 Codex；`Shift+F12` 打开并把光标移进面板。Claude 和 pi 用 `/hud` 打开侧栏；启动时不会自动展开。
 
 **未打开弹出页面时，面板把普通输入交给 Codex。** 每条面板命令都是**前缀键 `Ctrl+\`，再按一个键**：`Ctrl+\` `,` 打开设置，`Ctrl+\` `?` 打开帮助，`Ctrl+\` `b` 暂停简报（完整列表见[参考文档](./docs/reference.zh.md#按键)和帮助里的“快捷键”一节）。光标在 Codex 窗格还是在面板里，前缀都有效；`Ctrl+\` `j` `j` `j` 下移三行，因为移动类按键在半秒内可以不再按前缀连按。需要面板的命令会先把面板打开。不带前缀输入的一切都交给 Codex：光标在面板里时（`Shift+F12` 或点击之后），按键和粘贴原样转给 Codex 窗格，粘贴仍是一次括号粘贴，光标随之回到 Codex。设置、帮助、活动中心和证据页面接收自己的导航按键；查找页还接收查询文字。用 `Esc` 或返回按钮关闭页面后，恢复普通输入转发。鼠标用法不变。
 
