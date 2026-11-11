@@ -21,7 +21,8 @@ test('pi install/uninstall registers a checkout package and replaces only the p1
   for (const dir of [home, hudHome, agent, fakeBin, privateExtensions]) fs.mkdirSync(dir, { mode: 0o700 });
   const settingsFile = path.join(agent, 'settings.json'),
     backup = settingsFile + '.hud-backup',
-    pkg = path.join(hudHome, 'pi-package');
+    pkg = path.join(hudHome, 'pi-package'),
+    display = path.join(hudHome, 'pi-display');
   const original = {
     extensions: ['-builtin:mcp', 'extensions/other.ts'],
     theme: 'synthetic',
@@ -70,6 +71,7 @@ fs.writeFileSync(file, JSON.stringify(settings));
   };
   run('--skip-build', '--with', 'pi');
   assert.equal(fs.readFileSync(backup, 'utf8'), before, 'backup precedes even pi registration');
+  // Workers run plain: only the delegation package is registered; pi-display is loaded by `pi -e` alone.
   assert.deepEqual(JSON.parse(fs.readFileSync(settingsFile)), {
     ...original,
     extensions: [...original.extensions, filter],
@@ -85,6 +87,14 @@ fs.writeFileSync(file, JSON.stringify(settings));
   assert.ok(fs.statSync(path.join(pkg, 'skills/hud-delegate/SKILL.md')).isFile());
   const { loadBinding } = await import(pathToFileURL(path.join(pkg, 'binding.mjs')));
   assert.deepEqual(loadBinding(pathToFileURL(path.join(pkg, 'binding.json'))), {
+    release: repo,
+    hudHome,
+    node: process.execPath,
+  });
+  const displayManifest = JSON.parse(fs.readFileSync(path.join(display, 'package.json')));
+  assert.deepEqual(displayManifest.pi, { extensions: ['./extensions/hud-display.mjs'] });
+  assert.ok(fs.statSync(path.join(display, 'extensions/hud-display.mjs')).isFile());
+  assert.deepEqual(loadBinding(pathToFileURL(path.join(display, 'binding.json'))), {
     release: repo,
     hudHome,
     node: process.execPath,
@@ -106,6 +116,7 @@ fs.writeFileSync(file, JSON.stringify(settings));
   });
   assert.equal(fs.existsSync(backup), false);
   assert.equal(fs.existsSync(pkg), false);
+  assert.equal(fs.existsSync(display), false);
   run('--uninstall', '--with', 'pi'); // not-installed pi remove is harmless
   assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse), [
     ['install', pkg],

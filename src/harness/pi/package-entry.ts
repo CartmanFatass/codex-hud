@@ -1,11 +1,10 @@
-/** Ordinary pi package: local controls, six thin-server proxies and the owned pi footer. */
+/** Ordinary pi package: six thin-server proxies (delegate) plus local controls and the owned pi footer (display). */
 import { PiRoleClient, PI_ROLE_TOOLS } from './role-client.js';
 import { createPiSegment, isPiTui } from './segment.js';
 import type { PiPackageBinding, PiPackageContext } from './package-context.js';
 export type { PiPackageBinding, PiPackageContext } from './package-context.js';
 import { displayTarget } from '../../integrations/panel/receipt.js';
 import { closePanelPane, panelPaneExists } from '../../cli/panel-pane.js';
-import { autoOpenEnabled } from '../../integrations/panel/eligibility.js';
 import { openPiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
 import type { FooterAPI, FooterHost } from './footer-host.js';
@@ -33,6 +32,8 @@ export interface PiPackageAPI extends FooterAPI {
 const reason = (error: unknown) =>
   error instanceof Error && /^[a-z_]{1,120}$/.test(error.message) ? error.message : 'local_operation_failed';
 type PanelOperation = 'open' | 'close' | 'toggle' | 'status';
+/** Delegation always loads; the display entry (footer, Work segment, /hud) only loads through `pi -e`. */
+export type PiPackageMode = 'delegate' | 'display';
 export function installPiPackage(
   pi: PiPackageAPI,
   binding: PiPackageBinding,
@@ -40,7 +41,8 @@ export function installPiPackage(
     env?: NodeJS.ProcessEnv;
     footerHost?: () => Promise<FooterHost>;
     segment?: Partial<Pick<Parameters<typeof createPiSegment>[0], 'now' | 'schedule'>>;
-  } = {}
+  } = {},
+  mode: PiPackageMode
 ) {
   const env = { ...(deps.env ?? process.env), HUD_HOME: binding.hudHome };
   const segment = createPiSegment({ env, ...deps.segment });
@@ -94,15 +96,17 @@ export function installPiPackage(
     ++epoch;
     const old = active;
     active = null;
-    segment.stop();
-    footer?.stop();
+    if (mode === 'display') {
+      segment.stop();
+      footer?.stop();
+    }
     // Stop tool calls before asynchronous panel cleanup or live observation.
     const stopped = old?.client.stop();
-    const closing = old ? panel(old, 'close') : undefined;
+    const closing = mode === 'display' && old ? panel(old, 'close') : undefined;
     cleanup = Promise.all([cleanup, stopped, closing]).then(() => {});
     return cleanup;
   }
-  async function start(ctx: PiPackageContext, automatic: boolean) {
+  async function start(ctx: PiPackageContext) {
     const closed = fence(),
       ticket = epoch;
     await closed;
@@ -122,32 +126,29 @@ export function installPiPackage(
     };
     active = s;
     if (!current(s) || ticket !== epoch) return;
-    if (isPiTui(ctx) && deps.footerHost) {
-      const host = footer ? undefined : await deps.footerHost();
-      if (!current(s) || ticket !== epoch) return;
-      if (!footer && host) footer = createP10kFooter(pi, host, env);
-      if (s.footerOn) footer?.start(ctx);
-    }
-    segment.start(ctx, displayTarget('pi', id, source).root, () => current(s));
-    if (isPiTui(ctx)) {
-      try {
-        if (!automatic || autoOpenEnabled(env)) await panel(s, 'open');
-        else s.diagnostic = 'panel_auto_open_disabled';
-      } catch (error) {
-        s.diagnostic = reason(error);
+    if (mode === 'display') {
+      if (isPiTui(ctx) && deps.footerHost) {
+        const host = footer ? undefined : await deps.footerHost();
+        if (!current(s) || ticket !== epoch) return;
+        if (!footer && host) footer = createP10kFooter(pi, host, env);
+        if (s.footerOn) footer?.start(ctx);
       }
+      segment.start(ctx, displayTarget('pi', id, source).root, () => current(s));
     }
   }
   function on(event: string, handler: (event: unknown, ctx: PiPackageContext) => void | Promise<void>) {
     const remove = pi.on(event, handler);
     if (remove) removers.push(remove);
   }
+  // Display-only subscriptions and command; the delegation entry registers none of them.
+  const onDisplay: typeof on = mode === 'display' ? on : () => {};
+  const registerHud = mode === 'display' ? pi.registerCommand.bind(pi) : undefined;
   on('session_start', async (_event, ctx) => {
-    await start(ctx, true);
+    await start(ctx);
   });
   for (const event of ['session_before_switch', 'session_before_fork', 'session_before_tree']) on(event, () => fence());
   on('session_tree', async (_event, ctx) => {
-    await start(ctx, true);
+    await start(ctx);
   });
   on('session_shutdown', () => {
     const result = fence();
@@ -170,17 +171,18 @@ export function installPiPackage(
     'session_compact_failed',
     'session_info_changed',
   ])
-    on(event, () => {
+    onDisplay(event, () => {
       segment.refresh();
       footer?.update();
     });
-  on('turn_start', (event) => footer?.turnStart((event as { timestamp?: number }).timestamp));
-  on('turn_end', () => footer?.turnEnd());
-  pi.registerCommand('hud', {
+  onDisplay('turn_start', (event) => footer?.turnStart((event as { timestamp?: number }).timestamp));
+  onDisplay('turn_end', () => footer?.turnEnd());
+  registerHud?.('hud', {
     description: 'Local HUD panel: on|off|toggle|status|reconnect|help; footer on|off or footer <segment options>',
     async handler(args, ctx) {
-      if (/^footer(?:\s|$)/.test(args.trim())) {
-        const options = args.trim().slice('footer'.length).trim();
+      const trimmed = args.trim();
+      if (/^footer(?:\s|$)/.test(trimmed)) {
+        const options = trimmed.slice('footer'.length).trim();
         if (options === 'on' || options === 'off') {
           const s = active;
           if (!s || !current(s)) ctx.ui.notify('HUD: session_unbound; use /hud reconnect', 'info');
@@ -199,15 +201,16 @@ export function installPiPackage(
         return;
       }
       let message: string;
-      const command = args.trim() || 'status';
+      // Bare /hud toggles the panel; the panel never opens by itself.
+      const command = trimmed || 'toggle';
       try {
         if (!['on', 'off', 'toggle', 'status', 'reconnect', 'help'].includes(command))
           message = 'unknown_subcommand; use on|off|toggle|status|reconnect|help';
         else if (command === 'help')
           message =
-            'Panel: on|off|toggle|status|reconnect|help. Footer: footer on|off restores/hides the HUD frame independently; footer <segment options>. off is session-local; reconnect rebinds a canceled transition.';
+            'Panel: bare /hud toggles; on|off|toggle|status|reconnect|help. Footer: footer on|off restores/hides the HUD frame independently; footer <segment options>. off is session-local; reconnect rebinds a canceled transition.';
         else if (command === 'reconnect') {
-          await start(ctx, false);
+          await start(ctx);
           message = active ? 'reconnected; ' + active.diagnostic : 'session_unbound';
         } else {
           const s = active;
@@ -224,6 +227,7 @@ export function installPiPackage(
       ctx.ui.notify('HUD: ' + message, 'info');
     },
   });
+  if (mode !== 'delegate') return;
   for (const tool of PI_ROLE_TOOLS)
     pi.registerTool({
       name: tool.name,

@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 
+hud_codex_prompt_line='Run `hud panel` with Bash and report the pane id it prints.'
+
 hud_ext_install() {
+  local prompt="${CODEX_HOME:-$HOME/.codex}/prompts/hud.md"
+  mkdir -p -- "$(dirname -- "$prompt")"
+  if [[ -f "$prompt" && "$(cat -- "$prompt")" != "$hud_codex_prompt_line" ]]; then
+    printf 'Warning: keeping existing prompt file: %s\n' "$prompt" >&2
+  else
+    printf '%s\n' "$hud_codex_prompt_line" > "$prompt"
+  fi
   if command -v codex >/dev/null 2>&1; then
     codex mcp remove hud 2>/dev/null || true
     codex mcp add hud --env HUD_MCP_SURFACE=roles -- "$BIN_DIR/hud-mcp"
@@ -38,5 +47,9 @@ hud_ext_uninstall() {
   local skill="${CODEX_HOME:-$HOME/.codex}/skills/hud-delegate"
   if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
     rm -- "$skill"
+  fi
+  local prompt="${CODEX_HOME:-$HOME/.codex}/prompts/hud.md"
+  if [[ -f "$prompt" && "$(cat -- "$prompt")" == "$hud_codex_prompt_line" ]]; then
+    rm -- "$prompt"
   fi
 }

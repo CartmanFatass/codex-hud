@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const commandLine = 'Run `hud panel` with Bash and report the pane id it prints.\n';
 
-test('Claude extension registers MCP, imports statusline, links skill, and reverses only its changes', () => {
+test('Claude install opts the statusline out of settings.json, writes claude.json, and reverses only its changes', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-claude-'));
   try {
     const home = path.join(temp, 'home');
@@ -56,11 +57,12 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     const json = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
     const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
     run('--skip-build');
-    assert.deepEqual(json(settings), {
-      ...original,
+    // An owner's own statusLine is kept; the HUD statusline lives only in claude.json.
+    assert.deepEqual(json(settings), original, 'the owner statusLine stays; no HUD statusLine is written');
+    assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes);
+    assert.deepEqual(json(path.join(hudHome, 'claude.json')), {
       statusLine: { type: 'command', command: path.join(bin, 'hud-statusline'), refreshInterval: 5 },
     });
-    assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes);
     assert.deepEqual(calls(), [
       ['mcp', 'remove', '-s', 'user', 'hud'],
       ['mcp', 'add', '-s', 'user', 'hud', '-e', 'HUD_MCP_SURFACE=roles', '--', path.join(bin, 'hud-mcp')],
@@ -68,19 +70,40 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     const skill = path.join(config, 'skills/hud-delegate');
     assert.equal(fs.readlinkSync(skill), path.join(root, 'integrations/skills/hud-delegate'));
     assert.equal(fs.readlinkSync(path.join(bin, 'hud-statusline')), path.join(root, 'bin/hud-statusline'));
+    assert.equal(fs.readFileSync(path.join(config, 'commands/hud.md'), 'utf8'), commandLine);
     const imported = json(path.join(hudHome, 'config.json')).statusline;
     assert.equal(imported.showSeparators, true);
     assert.equal(imported.display.showAgents, true);
     assert.equal(imported.widthMargin, 4);
     assert.deepEqual(imported.forward, [path.join(home, '.cargo/bin/toktrack'), 'quota', 'record-claude']);
 
+    // An earlier install's HUD statusLine in settings.json is removed; the backup is kept.
+    const earlier = {
+      statusLine: { type: 'command', command: '/synthetic/earlier/bin/hud-statusline', refreshInterval: 5 },
+      unrelated: { changed: true },
+      added: 42,
+    };
+    fs.writeFileSync(settings, JSON.stringify(earlier, null, 2) + '\n');
     run('--skip-build');
+    assert.deepEqual(
+      json(settings),
+      { unrelated: { changed: true }, added: 42 },
+      'the earlier HUD statusLine is removed'
+    );
     assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes, 'reinstall keeps the original backup');
-    fs.writeFileSync(settings, JSON.stringify({ ...json(settings), unrelated: { changed: true }, added: 42 }));
+
+    // Uninstall removes its own files, never restores statusLine, and never loses the
+    // owner statusLine that only the backup still holds.
     run('--uninstall');
-    assert.deepEqual(json(settings), { statusLine: original.statusLine, unrelated: { changed: true }, added: 42 });
+    assert.deepEqual(json(settings), { unrelated: { changed: true }, added: 42 });
+    assert.equal(fs.existsSync(backup), true, 'the backup holding the owner statusLine is kept');
     assert.deepEqual(calls().at(-1), ['mcp', 'remove', '-s', 'user', 'hud']);
-    for (const file of [backup, skill, path.join(bin, 'hud-statusline')]) {
+    for (const file of [
+      skill,
+      path.join(bin, 'hud-statusline'),
+      path.join(config, 'commands/hud.md'),
+      path.join(hudHome, 'claude.json'),
+    ]) {
       assert.throws(() => fs.lstatSync(file), { code: 'ENOENT' });
     }
     assert.equal(fs.existsSync(pluginConfig), true, 'claude-hud stays installed');

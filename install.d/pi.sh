@@ -37,20 +37,24 @@ NODE
 }
 
 hud_ext_install() {
-  local package="$HUD_HOME/pi-package"
-  mkdir -p -- "$package/extensions" "$package/skills"
+  local package="$HUD_HOME/pi-package" display="$HUD_HOME/pi-display"
+  mkdir -p -- "$package/extensions" "$package/skills" "$display/extensions"
   cp -- "$REPO/integrations/pi/package/package.template.json" "$package/package.json"
   cp -- "$REPO/integrations/pi/package/binding.mjs" "$package/binding.mjs"
   cp -- "$REPO/integrations/pi/package/extensions/hud.mjs" "$package/extensions/hud.mjs"
   ln -sfn -- "$REPO/integrations/skills/hud-delegate" "$package/skills/hud-delegate"
+  cp -- "$REPO/integrations/pi/package/display.template.json" "$display/package.json"
+  cp -- "$REPO/integrations/pi/package/binding.mjs" "$display/binding.mjs"
+  cp -- "$REPO/integrations/pi/package/extensions/hud-display.mjs" "$display/extensions/hud-display.mjs"
   node --input-type=module - <<'NODE'
 import fs from 'node:fs';
 import path from 'node:path';
-fs.writeFileSync(path.join(process.env.HUD_HOME, 'pi-package/binding.json'), JSON.stringify({
-  release: process.env.REPO,
-  hudHome: path.resolve(process.env.HUD_HOME),
-  node: process.execPath,
-}, null, 2) + '\n');
+for (const name of ['pi-package', 'pi-display'])
+  fs.writeFileSync(path.join(process.env.HUD_HOME, name, 'binding.json'), JSON.stringify({
+    release: process.env.REPO,
+    hudHome: path.resolve(process.env.HUD_HOME),
+    node: process.execPath,
+  }, null, 2) + '\n');
 NODE
   hud_pi_settings install
   local agent="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
@@ -62,6 +66,7 @@ NODE
   else
     printf 'Warning: pi is not on PATH; skipping pi package registration.\n' >&2
   fi
+  printf 'Display package prepared (not registered): %s; load it with pi -e %s\n' "$display" "$display"
 }
 
 hud_ext_uninstall() {
@@ -71,5 +76,5 @@ hud_ext_uninstall() {
     printf 'Warning: pi is not on PATH; skipping pi package removal.\n' >&2
   fi
   hud_pi_settings uninstall
-  rm -rf -- "$HUD_HOME/pi-package"
+  rm -rf -- "$HUD_HOME/pi-package" "$HUD_HOME/pi-display"
 }

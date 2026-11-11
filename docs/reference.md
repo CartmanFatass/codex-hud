@@ -87,10 +87,9 @@ catchable local failures stay blocked with a visible reason; prose and prefix lo
 Only command interception has a bounded startup/nonzero failure guard; lifecycle failure stays quiet. An externally
 imposed Claude hook timeout can still bypass interception, an explicitly measured platform limit in the runbook.
 
-Auto-open requires corroborated native registry/process/foreground TTY/complete ancestry and exact herdr pane
-proof. The registry has no affirmative topology field: this is conservative inference, never hook JSON authority.
-Worker/print/role sessions refuse explicit opens too; `off` is session-local. Persistent auto-open preference belongs
-in HUD-owned `integration-config.json`, not the renderer settings. Generation-fenced close never closes jobs.
+The panel never opens by itself; only `/hud` opens it. The registry has no affirmative topology field: this is
+conservative inference, never hook JSON authority.
+Worker/print/role sessions refuse explicit opens too; `off` is session-local. Generation-fenced close never closes jobs.
 Real herdr split/focus and A7's panel registration remain separate acceptance gates.
 
 Follow the [Claude owner runbook](../integrations/claude/README.md) for §H rows 4–6, exact preview commands,
@@ -141,13 +140,13 @@ With segment IDs and every other form, `/hud footer <original args>` changes the
 Preview writes nothing, apply changes only the section (and makes a backup), existing keys win and unknown keys
 refuse. No pi settings discovery or automatic import occurs.
 
-Panel auto-open requires corroborated native session/header, full ancestry, foreground TTY and matching herdr
-origin/instance proof. Worker, nested or unknown contexts cannot open a side panel. Inherited pane variables alone
-are not proof; no tmux fallback is added. `/hud off` is session-local, while `panelAutoOpen` in HUD-owned
-`integration-config.json` controls the persistent default. No preference is written by loading the package.
+The panel never opens by itself: no session event splits a pane, and only `/hud` in the display package
+(`pi -e "$HUD_HOME/pi-display"`) opens one. Worker, nested or unknown contexts cannot open a side panel. Inherited
+pane variables alone are not proof; no tmux fallback is added. `/hud off` is session-local. No preference is written
+by loading the package.
 
 Owner row 7 is a **separate** `row-7-preview`/`row-7-apply --plan ID` with explicit `--settings ABS --package ABS`.
-Row 10 is separately previewed with `row-10-preview` and `--panel-auto-open true|false`. Both reuse A1 backups,
+Both reuse A1 backups,
 stale-edit refusal and exact restoration; symlinked settings refuse instead of writing a private target. No MCP
 config is added and activation never reloads the client. Reverse newest receipts first with
 `restore-preview|restore --receipt ABS [--plan ID]`. See the [pi owner runbook](../integrations/pi/package/README.md)

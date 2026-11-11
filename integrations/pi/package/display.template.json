@@ -1,0 +1,16 @@
+{
+  "name": "hud-display",
+  "version": "0.0.0",
+  "description": "Universal HUD display: p10k-style footer, Work segment and /hud panel command",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "keywords": ["pi-package"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions/hud-display.mjs"]
+  }
+}

@@ -1,7 +1,7 @@
 {
   "name": "hud",
   "version": "0.0.0",
-  "description": "Universal HUD: local panel command, role tools and passive status segment",
+  "description": "Universal HUD delegation: six role tools and the hud-delegate skill",
   "private": true,
   "type": "module",
   "license": "MIT",

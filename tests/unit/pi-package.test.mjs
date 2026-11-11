@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { createFooterHost } from '../fakes/pi.mjs';
 const root = process.env.R6A_PI_EMITTED_ROOT ?? path.resolve('dist');
-const { displayTarget, saveJson } = await import(pathToFileURL(path.join(root, 'integrations/panel/receipt.js')));
+const { displayTarget } = await import(pathToFileURL(path.join(root, 'integrations/panel/receipt.js')));
 const { visualWidth, truncateAnsi } = await import(pathToFileURL(path.join(root, 'render/colors.js')));
 const footerHost = createFooterHost({ visibleWidth: visualWidth, truncateToWidth: truncateAnsi });
 const node = fs.realpathSync(process.execPath);
@@ -17,6 +17,7 @@ function setup(t) {
     cwd = path.join(dir, 'workspace'),
     release = path.join(dir, 'checkout with spaces'),
     packageDir = path.join(dir, 'pi-package'),
+    displayDir = path.join(dir, 'pi-display'),
     hudHome = path.join(dir, 'hud');
   for (const p of [home, cwd, hudHome, path.join(packageDir, 'extensions'), path.join(release, 'dist/harness/pi')])
     fs.mkdirSync(p, { recursive: true, mode: 0o700 });
@@ -24,22 +25,32 @@ function setup(t) {
   fs.writeFileSync(path.join(release, 'package.json'), JSON.stringify({ type: 'module' }));
   fs.writeFileSync(
     path.join(release, 'dist/harness/pi/package-entry.js'),
-    `import { installPiPackage as real } from ${JSON.stringify(pathToFileURL(path.join(root, 'harness/pi/package-entry.js')).href)}; export function installPiPackage(pi,b,deps) { return real(pi,b,globalThis[Symbol.for('hud-a5-test-ports')] ?? deps); }`
+    `import { installPiPackage as real } from ${JSON.stringify(pathToFileURL(path.join(root, 'harness/pi/package-entry.js')).href)}; export function installPiPackage(pi,b,deps,mode) { return real(pi,b,globalThis[Symbol.for('hud-a5-test-ports')] ?? deps,mode); }`
   );
   for (const entry of ['bin/hud', 'packages/hud-mcp/bin/hud-mcp.mjs']) {
     fs.mkdirSync(path.dirname(path.join(release, entry)), { recursive: true });
     fs.symlinkSync(path.resolve(entry), path.join(release, entry));
   }
+  const binding = { release, hudHome, node };
   for (const [from, to] of [
     ['package.template.json', 'package.json'],
     ['binding.mjs', 'binding.mjs'],
     ['extensions/hud.mjs', 'extensions/hud.mjs'],
   ])
     fs.copyFileSync(path.join('integrations/pi/package', from), path.join(packageDir, to));
-  const binding = { release, hudHome, node };
   fs.writeFileSync(path.join(packageDir, 'binding.json'), JSON.stringify(binding));
+  // The display package (footer, Work segment, /hud) is a second, unregistered dir.
+  fs.mkdirSync(path.join(displayDir, 'extensions'), { recursive: true, mode: 0o700 });
+  for (const [from, to] of [
+    ['display.template.json', 'package.json'],
+    ['binding.mjs', 'binding.mjs'],
+    ['extensions/hud-display.mjs', 'extensions/hud-display.mjs'],
+  ])
+    fs.copyFileSync(path.join('integrations/pi/package', from), path.join(displayDir, to));
+  fs.writeFileSync(path.join(displayDir, 'binding.json'), JSON.stringify(binding));
   // Native-node package-host tests supply host peers outside the release bundle.
   // Real pi loader alias resolution is separately probed; these modules never ship.
+  // Only the display entry imports the host; the delegation entry needs no peers.
   for (const [name, body] of [
     [
       'pi-coding-agent',
@@ -50,7 +61,7 @@ function setup(t) {
       `export {visualWidth as visibleWidth, truncateAnsi as truncateToWidth} from ${JSON.stringify(pathToFileURL(path.join(root, 'render/colors.js')).href)};`,
     ],
   ]) {
-    const peer = path.join(packageDir, 'node_modules/@earendil-works', name);
+    const peer = path.join(displayDir, 'node_modules/@earendil-works', name);
     fs.mkdirSync(peer, { recursive: true });
     fs.writeFileSync(path.join(peer, 'package.json'), JSON.stringify({ type: 'module', exports: './index.js' }));
     fs.writeFileSync(path.join(peer, 'index.js'), body);
@@ -63,7 +74,7 @@ function setup(t) {
     CLAUDE_CONFIG_DIR: path.join(dir, 'claude'),
     PI_CODING_AGENT_DIR: path.join(dir, 'agent'),
   };
-  return { home, cwd, packageDir, binding, env };
+  return { home, cwd, packageDir, displayDir, binding, env };
 }
 function host() {
   const handlers = new Map(),
@@ -213,11 +224,12 @@ function ports(f) {
     now: () => time,
   };
 }
-async function load(f, h, p) {
+async function load(f, h, p, extension = 'hud.mjs') {
   const key = Symbol.for('hud-a5-test-ports');
   globalThis[key] = p?.options;
   try {
-    const entry = await import(pathToFileURL(path.join(f.packageDir, 'extensions/hud.mjs')));
+    const dir = extension === 'hud.mjs' ? f.packageDir : f.displayDir;
+    const entry = await import(pathToFileURL(path.join(dir, 'extensions', extension)));
     await entry.default(h.pi);
   } finally {
     delete globalThis[key];
@@ -229,10 +241,9 @@ test('pi on/off/toggle/status uses the caller pane without native ancestry and r
     h = host(),
     c = context(f, h),
     p = ports(f, h, c);
-  saveJson(path.join(f.binding.hudHome, 'integration-config.json'), { panelAutoOpen: false });
-  await load(f, h, p);
+  await load(f, h, p, 'hud-display.mjs');
   await h.emit('session_start', c.ctx);
-  assert.equal(p.counts().splits, 0);
+  assert.equal(p.counts().splits, 0, 'session_start opens no panel');
   await h.commands.get('hud').handler('on', c.ctx);
   assert.equal(p.counts().splits, 1);
   const run = p.calls().find((argv) => argv[1] === 'run');
@@ -265,6 +276,32 @@ test('pi on/off/toggle/status uses the caller pane without native ancestry and r
   assert.equal(p.counts().splits, 3);
   await h.commands.get('hud').handler('toggle', c.ctx);
   assert.equal(h.calls.notices.at(-1), 'HUD: closed');
+  await h.commands.get('hud').handler('', c.ctx);
+  assert.equal(p.counts().splits, 4, 'bare /hud toggles the panel open');
+  await h.commands.get('hud').handler('', c.ctx);
+  assert.equal(h.calls.notices.at(-1), 'HUD: closed', 'bare /hud toggles the panel closed');
   assert.equal(h.calls.messages, 0);
+  await h.emit('session_shutdown', c.ctx);
+});
+
+test('the delegation-only package registers the tools but no footer, no /hud and no panel', async (t) => {
+  const f = setup(t),
+    h = host(),
+    c = context(f, h),
+    p = ports(f, h, c);
+  await load(f, h, p, 'hud.mjs');
+  assert.deepEqual([...h.tools.keys()].sort(), [
+    'hud_close',
+    'hud_create',
+    'hud_read',
+    'hud_respond',
+    'hud_roster',
+    'hud_send',
+  ]);
+  assert.equal(h.commands.size, 0, 'no /hud command');
+  await h.emit('session_start', c.ctx);
+  assert.equal(p.counts().splits, 0, 'the settings-registered package a worker could load opens no panel');
+  assert.equal(h.calls.footer, 0, 'no footer');
+  assert.equal(h.calls.status.length, 0, 'no Work segment');
   await h.emit('session_shutdown', c.ctx);
 });

@@ -50,12 +50,16 @@ if (process.argv[3] === 'remove') {
     };
     const add = ['mcp', 'add', 'hud', '--env', 'HUD_MCP_SURFACE=roles', '--', path.join(home, '.local/bin/hud-mcp')];
     const remove = ['mcp', 'remove', 'hud'];
+    const prompt = path.join(codexHome, 'prompts/hud.md');
+    const promptLine = 'Run `hud panel` with Bash and report the pane id it prints.\n';
     for (let i = 0; i < 2; i++) {
       run('--skip-build', '--with', 'codex');
       assert.equal(fs.readlinkSync(skill), target);
+      assert.equal(fs.readFileSync(prompt, 'utf8'), promptLine);
     }
     run('--uninstall', '--with', 'codex');
     assert.throws(() => fs.lstatSync(skill), { code: 'ENOENT' });
+    assert.throws(() => fs.lstatSync(prompt), { code: 'ENOENT' });
     assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse), [
       remove,
       add,
