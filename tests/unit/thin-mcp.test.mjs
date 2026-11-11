@@ -105,7 +105,11 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   assert.match(job.job, /^j[0-9a-f]{16}$/);
   assert.equal(job.task_dir, join(f.env.HUD_HOME, 'jobs', job.job));
   assert.equal(job.agent, 'synthetic-primary');
-  assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'), args.task);
+  // Breaks if hud_create stops naming the report path: workers then answer in the pane and the job fails.
+  assert.equal(
+    fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
+    `${args.task}\n\nWrite your final answer to ${join(job.task_dir, 'report.md')}; the job fails without that file.\n`
+  );
   assert.deepEqual(f.commands(), [
     {
       command: 'pi-dispatch',

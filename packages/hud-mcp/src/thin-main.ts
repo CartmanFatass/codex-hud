@@ -185,7 +185,9 @@ async function call(name: string, args: Args): Promise<unknown> {
     };
     const dir = directory(job.job);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(join(dir, 'brief.md'), task, { flag: 'wx', mode: 0o600 });
+    // Workers end without writing a file unless told where; pi-dispatch fails a job whose report is missing.
+    const brief = `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
+    fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
     // Persist before dispatch: an interrupted launch must not dispatch again on retry.
     save(job);
     const argv = [roleMap[role]!, '--task-dir', dir, '--workdir', cwd, '--output', join(dir, 'report.md')];
