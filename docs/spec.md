@@ -17,7 +17,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    is not bundled (owner, 2026-11-10). The main session never manages workers: `hud_create` starts them, the job
    watcher closes them; `hud_close` only closes one early (owner, 2026-11-11).
 2. **Show what is happening.** A side panel (Home, Work, Project) shows the main session's jobs and their state. The bottom
-   status lines are always on (Claude's statusline, pi's footer); only the side panel is opt-in: it opens only with
+   status lines are always on (Claude's statusline, pi's footer; Codex's tmux bar comes with `codexH`); only the side panel is opt-in: it opens only with
    `/hud` (in Codex with F12, as before) (owner, 2026-11-11). The delegation tools stay registered either way (owner,
    2026-11-11). Each client keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
    (taking in p10k-footer), Codex's existing tmux bar. The panel and status lines can use external models with the
