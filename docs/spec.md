@@ -19,7 +19,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    (taking in p10k-footer), Codex's existing tmux bar. The panel and status lines can use external models with the
    owner's own keys (`$HUD_HOME/credentials.env`, through the Decisions API) for job summaries, recaps and sentences.
    These features only read job files and write display text; they never prompt, brief or steer a worker. No consent
-   or authority layer.
+   or authority layer. A job may carry an optional package label (given to `hud_create`, else taken from the brief's
+   title); the panel groups jobs by it into lanes. The label is display only: the MCP does not interpret it.
 3. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, Jev,
    herdr); `hud uninstall` removes them. Registration uses each client's official commands where they exist.
 
