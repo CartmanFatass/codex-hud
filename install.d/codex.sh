@@ -4,6 +4,11 @@ hud_ext_install() {
   if command -v codex >/dev/null 2>&1; then
     codex mcp remove hud 2>/dev/null || true
     codex mcp add hud --env HUD_MCP_SURFACE=roles -- "$BIN_DIR/hud-mcp"
+    # Codex starts MCP servers with a trimmed environment; hud_create needs herdr's variables.
+    local config="${CODEX_HOME:-$HOME/.codex}/config.toml"
+    if [[ -f "$config" ]] && ! grep -q '^env_vars = \["HERDR_PANE_ID"' "$config"; then
+      sed -i --follow-symlinks '/^\[mcp_servers\.hud\]$/a env_vars = ["HERDR_PANE_ID", "HERDR_SOCKET_PATH", "HERDR_ENV", "HERDR_BIN_PATH", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID"]' "$config"
+    fi
   else
     printf 'Warning: codex is not on PATH; skipping Codex MCP registration.\n' >&2
   fi
