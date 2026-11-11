@@ -21,6 +21,11 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    These features only read job files and write display text; they never prompt, brief or steer a worker. No consent
    or authority layer. A job may carry an optional package label (given to `hud_create`, else taken from the brief's
    title); the panel groups jobs by it into lanes. The label is display only: the MCP does not interpret it.
+   A third panel tab, Project, shows the project at a glance: the control plane (roles in effect with their models,
+   the convention and its source, which keys and the Jev browser are available), the working tree (branch, changes,
+   which job is editing it, last commit), docs (spec milestone, STATE's items waiting for the owner, the newest
+   review) and the tickets from Matt's `to-tickets` (status, blocked-by, linked to the package lanes). Enter opens the
+   item's file in `$EDITOR` (default `vim`) in a herdr pane beside the panel.
 3. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, Jev,
    herdr); `hud uninstall` removes them. Registration uses each client's official commands where they exist.
 
@@ -55,6 +60,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   installs and uses it.
 - **M2, clean** (right after M1): delete the retired execution stack (R6b slice L), the old role facade and its identity/release checks (replaced by the thin layer), the old hud-mcp surfaces (the default managed surface and role-main), and their tests.
 - **M3, extend:** Jev and oracle jobs.
+- **M4, project view:** the Project tab, after Matt's skills are installed (tickets) and the package label works.
 
 ## 6. How work is done
 
