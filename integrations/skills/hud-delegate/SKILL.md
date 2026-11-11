@@ -14,19 +14,22 @@ Read the bindings with `hud roster show`. That uses the calling Codex, Claude, o
 - `oracle` proposes a design, or converges proposals into a decision. Request one phase at a time: `oracle.propose`, then `oracle.converge`. One request creates one job.
 - `imp` implements a defined change against a brief and completion criteria.
 - `reviewer` independently assesses a specified change and reports findings. You decide whether to accept the change or request repairs.
-- `sonic` does bounded work: exploration, search, tests, and small patches.
+- `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design.
 - `jev` does browser work and page judgments, including a question to a web oracle.
 
-## Recipes
+## Default workflow
 
-- Design. Request a proposal, then convergence, when both are needed. Skip the proposal when a concrete proposal already exists.
-- Build. Request implementation, then any required checks. Use sonic for those checks when the evidence is not already in hand. Then request review. You accept the change or send the findings back for repair.
-- Small task. Request sonic, then evaluate the result.
-- Browser task. Request jev, then use the result.
-
-For a repair, send the findings to the existing implementer when that backend can continue, then request another review. A fresh reviewer conversation is the default. The owned Pi lifetime has the additional grace restriction described below.
-
-The main session owns every handoff. HUD does not chain these steps.
+This is an overridable default, not a worker obligation. A project's own docs override it.
+- Give each brief scope, out of scope, completion criteria, a size budget and a stop rule:
+  if the work will not fit, stop and report rather than expand it.
+- Build one end-to-end slice per imp job with the simplest change that works.
+- Ask the main session only when blocked or a choice changes what the user sees or contradicts the brief or spec;
+  otherwise choose the simplest option and note it.
+- Have the implementer run the brief's main-path tests once at the end; no full suites unless requested.
+- Review at milestones or for risky changes: owner configs, deleting data, killing processes, installers—not per change.
+- Review spec compliance and scope creep separately from simplicity and real defects; findings do not imply new tests.
+- Read each result and decide whether to integrate, request a repair, review or stop. Workers do only their own job.
+The main session owns every handoff and decides every next step. HUD does not chain these steps.
 
 ## Jobs
 
@@ -42,7 +45,7 @@ Use the job's question channel. For Pi jobs, answer identified questions with hu
 
 ### Helpers
 
-An owned Pi implementer starts its own sonic and reviewer through internal helper tools. When the job's `helpers` show those slots, do not launch duplicate sonic or reviewer jobs; read the helper evidence and the report.
+An owned Pi implementer may use its internal sonic helper for small, fully specified chores, never test authoring, bug diagnosis, measurement or design. It calls the reviewer helper only when the brief says `review: yes`, for one pass, not an automatic re-review after fixes. When the job's `helpers` show those slots, do not launch duplicate sonic or reviewer jobs; read the helper evidence and the report. The main session decides what happens next.
 
 ### Repairs
 
