@@ -8,3 +8,5 @@ a failing hook stops the installer.
 
 `./install --uninstall` calls `hud_ext_uninstall` for every `install.d/*.sh` present;
 `--with name,...` limits it to those extensions. Core uninstall keeps HUD data.
+
+Run `CODEX_HOME=... ./install --with codex` once per Codex home (default `~/.codex`).
