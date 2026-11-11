@@ -323,7 +323,11 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
     smoke, the cost table and the owner runbook `docs/release-runbook.md`;
   - **R6B-1** (slices P, T, W and `scripts/audit-r6b-drain.mjs`), from the architect inventory
     `docs/reviews/2026-11-10-r6b-architect.md`;
-  - **TEST-SLIM-1A** (opt-in perf suite), finishing. TEST-SLIM-1B merged at `f0a555c`.
+  - **TEST-SLIM-2A**: one-pass display-side cut by behaviour.
+
+  Merged: TEST-SLIM-1B (`f0a555c`, shared stand-ins); TEST-SLIM-1A (`41fdb65`, opt-in `npm run test:perf`, 31 cases
+  moved, unit wall 320 s to 224 s). Gate on `41fdb65`: all green except one load-sensitive B6 idle-wait write count
+  (passes 3/3 alone; old ledger code, removed in slice L). The perf suite's B6 cancel p95 failure goes with slice L too.
 
   2026-11-10: the owner approved R6b slice L (full retirement, concept §15 "R6b full retirement approved"), including
   the WP0 exception for the `hud run` cases in `b11-cli.test.ts`.
