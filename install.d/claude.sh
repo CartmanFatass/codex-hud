@@ -31,7 +31,7 @@ hud_ext_install() {
   local config="${CLAUDE_CONFIG_DIR:-$HOME/.claude}" skill link source_settings
   if command -v claude >/dev/null; then
     claude mcp remove -s user hud 2>/dev/null || true
-    claude mcp add -s user -e HUD_MCP_SURFACE=roles hud -- "$BIN_DIR/hud-mcp"
+    claude mcp add -s user hud -e HUD_MCP_SURFACE=roles -- "$BIN_DIR/hud-mcp"
   else
     printf 'Warning: claude is not on PATH; skipping MCP registration.\n' >&2
   fi

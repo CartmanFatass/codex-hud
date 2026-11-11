@@ -63,7 +63,7 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes);
     assert.deepEqual(calls(), [
       ['mcp', 'remove', '-s', 'user', 'hud'],
-      ['mcp', 'add', '-s', 'user', '-e', 'HUD_MCP_SURFACE=roles', 'hud', '--', path.join(bin, 'hud-mcp')],
+      ['mcp', 'add', '-s', 'user', 'hud', '-e', 'HUD_MCP_SURFACE=roles', '--', path.join(bin, 'hud-mcp')],
     ]);
     const skill = path.join(config, 'skills/hud-delegate');
     assert.equal(fs.readlinkSync(skill), path.join(root, 'integrations/skills/hud-delegate'));
