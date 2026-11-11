@@ -7,15 +7,15 @@ description: Choose a fixed HUD role and hand work off one step at a time. The m
 
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role when a job finishes. A review verdict is information for you, not permission to continue.
 
-Read the bindings with `hud roster show`. That uses the calling Codex, Claude, or Pi session when its identity is available. Otherwise the report says `source: default (no session identity)` and no preset is selected. `hud roster use` needs that identity or an explicit root, and it never writes a default. The owner keeps the binding file. Do not invent a backend.
+Use `hud_roster` to see the available local pi-roles. Dispatch requires a herdr pane; there is no preset selection.
 
 ## Roles
 
-- `oracle` proposes a design, or converges proposals into a decision. Request one phase at a time: `oracle.propose`, then `oracle.converge`. One request creates one job.
+- `oracle` is not available until M3.
 - `imp` implements a defined change against a brief and completion criteria.
 - `reviewer` independently assesses a specified change and reports findings. You decide whether to accept the change or request repairs.
 - `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design.
-- `jev` does browser work and page judgments, including a question to a web oracle.
+- `jev` browser jobs are not available until M3.
 
 ## Default workflow
 
@@ -33,30 +33,28 @@ The main session owns every handoff and decides every next step. HUD does not ch
 
 ## Jobs
 
-Give every job a clear brief, the relevant artifacts, the working location, and the completion criteria. Use the backend and the capabilities `hud roster show` reports.
+Call `hud_create` with `role`, a stable `request_key`, the brief as `task`, and optionally `cwd`. Available roles are `imp` (pi-roles implementer), `reviewer` and `sonic`. The returned `task_dir` contains the brief, status, questions and report.
 
 ### Wait
 
-Arm the returned wait mechanism, and read results when notified. For herdr jobs, hud_create returns `wait.command` and `wait.argv`: the absolute path of the running package's `bin/hud`, not a bare `hud` that may be off PATH, with an explicit 3600000 ms bound. If no bin resolves, the command keeps `hud` and adds `wait_path: unresolved`. Background that command in the main session and let its completion reach you. Jev jobs instead return a hud_read mechanism: use that returned mechanism, not `hud wait`, and its behavior is unchanged. For owned Pi jobs, the caller-armed wait is the only wake channel, and it settles on STATUS idle_grace, `closed` or `failed`. DONE means settled, not accepted: read the report yourself. A timeout is not a failure: the command exits 6 with `event: TIMEOUT` and the current observation, so re-arm the same command. Re-arm the returned mechanism after you answer a question, send a fix, or the wait times out.
+Use `hud_read` with `job` and `wait_ms` (up to 120000), or wait for the DONE line pi-dispatch pushes to the caller's pane. Reads poll until `idle_grace`, `closed`, `failed`, an open question, or the timeout. Read again after a timeout, answer or repair. DONE means settled, not accepted: read the report yourself. Reports are capped at 64 KiB with a truncation flag; omit `job` to list the 20 newest jobs.
 
 ### Questions
 
-Use the job's question channel. For Pi jobs, answer identified questions with hud_respond and the request id; it writes `qN.answer.md` in the job's `qa` directory. The file protocol has no consumption receipt, so `consumed` stays false. Owned Pi uses its bounded QA timeout, default 1200 seconds, rather than waiting indefinitely. Handle external human requests, including login and permission screens, at their indicated location.
+`hud_read` lists unanswered `qa/qN.md` questions by id with the first 2 KiB. Answer with `hud_respond` using `job`, `request_id` and `answer`; it writes `qa/qN.answer.md` only once and never overwrites an existing answer.
 
 ### Helpers
 
-An owned Pi implementer may use its internal sonic helper for small, fully specified chores, never test authoring, bug diagnosis, measurement or design. It calls the reviewer helper only when the brief says `review: yes`, for one pass, not an automatic re-review after fixes. When the job's `helpers` show those slots, do not launch duplicate sonic or reviewer jobs; read the helper evidence and the report. The main session decides what happens next.
+An implementer runs with a split pane and may use pi-roles' helpers when the brief asks. Do not duplicate helper work; read the report. Sonic handles only fully specified chores, never tests, diagnosis, measurement or design. The main session owns every next step.
 
 ### Repairs
 
-Use hud_send with a stable message_key when the backend supports continuation. Codex, Claude and Grok jobs keep their existing open-job follow-up behavior; they do not require Pi STATUS. For owned Pi, send a fix to the same implementer only during idle_grace: that is Pi's model-declared prompt-cache TTL, not a fixed HUD timer. A send proves forwarding, not a new round, so keep the previous settled result until STATUS shows a new settlement. If the grace expired or the primary closed or failed, the continuation is unavailable: create a new job.
+Use `hud_send` with `job`, a stable `message_key` and `text` to continue the same implementer only while STATUS is `idle_grace`. Duplicate message keys are not sent again. Otherwise it returns `not_continuable`: create a new job.
 
 ### Close
 
-hud_close asks the owning backend to clean up. For owned Pi this uses the job-pinned HUD release to clean its owned agents and tab; other herdr and Jev jobs retain their own cleanup paths. Historical external/direct Pi jobs are read-only here: return cleanup to their owning release, never a PATH launcher or saved external reaper. This is explicit cleanup, not acceptance, and a repeated close is idempotent. Close when the resources are no longer needed; a settled job may still hold its tab.
+`hud_close` runs the local `pi-role-reap` for the job's task directory and returns its exit code and last line. Repeated close is fine. Close when resources are no longer needed; cleanup is not acceptance.
 
 Keep request keys stable; never blindly re-create an uncertain launch.
 
-A preset change affects future jobs only. Use another backend only under the owner's routing instructions. If work has already happened, keep that handoff explicit.
-
-Dispatch with the existing herdr / jev recipes using the resolved binding. This skill does not launch, wait, or retry on its own.
+HUD uses the locally installed pi-roles; it does not chain, retry or choose another backend on its own. Oracle and Jev jobs wait until M3.
