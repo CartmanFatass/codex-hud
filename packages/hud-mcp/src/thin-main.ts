@@ -14,6 +14,7 @@ interface Job {
   role: string;
   request_key: string;
   cwd: string;
+  herdr_pane: string;
   created_at: string;
   dispatch_exit_code: number | null;
   stderr_tail: string;
@@ -173,6 +174,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       role,
       request_key,
       cwd,
+      herdr_pane: process.env.HERDR_PANE_ID,
       created_at: new Date().toISOString(),
       dispatch_exit_code: null,
       stderr_tail: '',

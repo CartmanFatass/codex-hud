@@ -69,7 +69,11 @@ export function workRows(
   width: number,
   now: number
 ): MonitorRow[] {
-  const rows = board.lanes.flatMap((lane) => laneRows(input, lane, state, width, now));
+  const rows = board.lanes.flatMap((lane) =>
+    lane.id.startsWith('thin-job:')
+      ? lane.workers.map((worker) => workerRow(worker, width, now))
+      : laneRows(input, lane, state, width, now)
+  );
   if (!rows.length) rows.push(boardRow(theme.dim(t('No observed work'))));
   else if (width >= 100) rows.unshift(workAxisRow(width));
   if (board.coverage.incomplete) rows.unshift(boardRow(theme.warning(t('Needs-you coverage incomplete'))));
@@ -214,19 +218,21 @@ export function renderWorkboardFrame(
   frame.lines[0] = pair(inline ? nav + second : nav, theme.dim(hint), width);
   if (!inline && height > 1) frame.lines[1] = fit(second, width);
   if (!home && !inspector && headerRows < height - 1) {
-    const cards = board.workers.map((w) =>
-      projectWorkCard(
-        w,
-        now,
-        state.cardStallMinutes,
-        state.cardVisibility?.cardSummary !== false ? input.jobProgress?.get(w.id)?.note : undefined
-      )
-    );
+    const cards = board.workers
+      .filter((w) => !w.id.startsWith('thin-job:'))
+      .map((w) =>
+        projectWorkCard(
+          w,
+          now,
+          state.cardStallMinutes,
+          state.cardVisibility?.cardSummary !== false ? input.jobProgress?.get(w.id)?.note : undefined
+        )
+      );
     const summary = ['needs-you', 'in-progress', 'awaiting-acceptance', 'stalled', 'done'].flatMap((s) => {
       const matching = cards.filter((c) => c.state === s);
       return matching.length ? [`${workStateGlyph(matching[0])} ${matching.length} ${workStateWord(matching[0])}`] : [];
     });
-    frame.lines[headerRows++] = fit(summary.join('  '), width);
+    if (summary.length) frame.lines[headerRows++] = fit(summary.join('  '), width);
   }
   const bodyWidth = Math.max(0, width - 1);
   const cacheKey = JSON.stringify([

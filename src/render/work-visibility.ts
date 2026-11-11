@@ -57,6 +57,7 @@ export function visibleWorkboard(
   walk(input.tree.nodes);
   let until = Infinity;
   const visible = (worker: OwnerWorker, invocation: boolean) => {
+    if (worker.id.startsWith('thin-job:')) return true; // Thin history is already capped at the newest 20.
     // Current attention and successful unclosed facade output are not finished history.
     if (
       worker.homeNeedsHuman ||
