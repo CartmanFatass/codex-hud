@@ -8,6 +8,38 @@ import test from 'node:test';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
+// Breaks if install removes the explicit "Command already exists" refusal, even if ln itself still fails safely.
+test('core installer refuses an existing regular hud command without changing its content', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-existing-'));
+  try {
+    const repo = path.join(temp, 'checkout');
+    const home = path.join(temp, 'home');
+    const bin = path.join(home, '.local/bin');
+    fs.mkdirSync(repo);
+    fs.mkdirSync(bin, { recursive: true });
+    fs.copyFileSync(path.join(root, 'install'), path.join(repo, 'install'));
+    const command = path.join(bin, 'hud');
+    fs.writeFileSync(command, 'Synthetic owner command.\n');
+    const result = spawnSync('./install', ['--skip-build'], {
+      cwd: repo,
+      env: {
+        ...process.env,
+        HOME: home,
+        HUD_HOME: path.join(home, '.hud'),
+        CODEX_HOME: path.join(home, '.codex'),
+        CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+    assert.ok(result.stderr.includes(`Command already exists: ${command}`), result.stderr);
+    assert.equal(fs.lstatSync(command).isFile(), true);
+    assert.equal(fs.readFileSync(command, 'utf8'), 'Synthetic owner command.\n');
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test('core installer links commands, runs extension hooks, and uninstalls without deleting data', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-'));
   try {

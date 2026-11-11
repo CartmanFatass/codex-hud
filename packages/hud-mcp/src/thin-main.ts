@@ -39,6 +39,17 @@ function roles(): Map<string, Role> {
   }
   return result;
 }
+function convention() {
+  for (const path of [
+    join(process.cwd(), 'hud-convention.md'),
+    join(hudHome, 'hud-convention.md'),
+    fileURLToPath(new URL('../../../../hud-convention.md', import.meta.url)),
+  ]) {
+    const file = slice(path, 80000);
+    if (file) return { path, text: file.text.slice(0, 20000), truncated: file.truncated || file.text.length > 20000 };
+  }
+  throw new Error('convention_not_found');
+}
 interface Job {
   job: string;
   role: string;
@@ -59,7 +70,7 @@ const tool = (name: string, description: string, properties: Args, required: str
   inputSchema: { type: 'object', properties, required, additionalProperties: false },
 });
 const tools = [
-  tool('hud_roster', 'List local roles and their availability.', {}),
+  tool('hud_roster', 'List local roles, their availability, and the dispatch convention in effect.', {}),
   tool(
     'hud_create',
     'Dispatch a local pi role; request_key deduplicates jobs.',
@@ -189,6 +200,7 @@ async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_roster')
     return {
       roles: [...roles().values()].map((role) => ({ ...role, available: true })),
+      convention: convention(),
     };
   if (name === 'hud_create') {
     const role = required(args, 'role');
@@ -333,6 +345,7 @@ async function receive(line: string): Promise<void> {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: {} },
         serverInfo: { name: 'hud-mcp-thin', version: '0.1.0' },
+        instructions: 'Call hud_roster before dispatching.',
       };
       break;
     case 'ping':

@@ -7,7 +7,7 @@ description: Hand work to a local HUD role in its own herdr tab - imp (implement
 
 The user names a role and a task in plain words; you do the rest. Never ask them to name a tool.
 
-1. Call `hud_roster` once per session: the roles and the dispatch convention in effect.
+1. Call `hud_roster` once per session; it returns the roles and convention in effect, which the main session follows (`hud-convention.md` in the server's cwd, then `$HUD_HOME`, then the shipped default; first file wins whole, text truncated at 20,000 characters).
 2. Write the brief: the goal, scope and out of scope, completion criteria, a size budget and a stop rule. For a small
    ask the user's own sentence plus those limits is enough. Do not name a report file; HUD adds it.
 3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`.
@@ -23,25 +23,13 @@ Dispatch requires a herdr pane.
 
 ## Roles
 
-- `oracle` is not available until M3.
+The shipped defaults; `hud_roster` lists what is actually defined (files in `$HUD_HOME/roles/` add or override).
+
 - `imp` implements a defined change against a brief and completion criteria.
 - `reviewer` independently assesses a specified change and reports findings. You decide whether to accept the change or request repairs.
 - `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design.
-- `jev` browser jobs are not available until M3.
-
-## Default workflow
-
-This is an overridable default, not a worker obligation. A project's own docs override it.
-- Give each brief scope, out of scope, completion criteria, a size budget and a stop rule:
-  if the work will not fit, stop and report rather than expand it.
-- Build one end-to-end slice per imp job with the simplest change that works.
-- Ask the main session only when blocked or a choice changes what the user sees or contradicts the brief or spec;
-  otherwise choose the simplest option and note it.
-- Have the implementer run the brief's main-path tests once at the end; no full suites unless requested.
-- Review at milestones or for risky changes: owner configs, deleting data, killing processes, installers—not per change.
-- Review spec compliance and scope creep separately from simplicity and real defects; findings do not imply new tests.
-- Read each result and decide whether to integrate, request a repair, review or stop. Workers do only their own job.
-The main session owns every handoff and decides every next step. HUD does not chain these steps.
+- `architect` returns design options with their costs, including the smallest; you decide.
+- Oracle and Jev browser jobs are not available until M3.
 
 ## Details
 

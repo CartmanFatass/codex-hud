@@ -91,6 +91,41 @@ if (command === 'pi-dispatch') {
   };
 }
 
+// Breaks if roster omits the shipped convention/path, merges overrides, or reverses project/home/default precedence.
+test('thin roster returns the convention and its path with whole-file overrides', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const initialized = await f.rpc('initialize');
+  assert.equal(initialized.result.instructions, 'Call hud_roster before dispatching.');
+  const shipped = resolve('packages/hud-mcp/hud-convention.md');
+  assert.deepEqual((await f.call('hud_roster')).convention, {
+    path: shipped,
+    text: fs.readFileSync(shipped, 'utf8'),
+    truncated: false,
+  });
+  const owner = join(f.env.HUD_HOME, 'hud-convention.md');
+  fs.writeFileSync(owner, 'Synthetic owner convention.');
+  assert.deepEqual((await f.call('hud_roster')).convention, {
+    path: owner,
+    text: 'Synthetic owner convention.',
+    truncated: false,
+  });
+  const project = join(f.root, 'hud-convention.md');
+  fs.writeFileSync(project, 'Synthetic project convention.');
+  assert.deepEqual((await f.call('hud_roster')).convention, {
+    path: project,
+    text: 'Synthetic project convention.',
+    truncated: false,
+  });
+  fs.writeFileSync(project, 'x'.repeat(20001));
+  assert.deepEqual((await f.call('hud_roster')).convention, {
+    path: project,
+    text: 'x'.repeat(20000),
+    truncated: true,
+  });
+  assert.equal(fs.readFileSync(owner, 'utf8'), 'Synthetic owner convention.');
+  assert.equal(fs.readFileSync(project, 'utf8'), 'x'.repeat(20001));
+});
+
 test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   const initialized = await f.rpc('initialize', { protocolVersion: '2024-11-05' });
