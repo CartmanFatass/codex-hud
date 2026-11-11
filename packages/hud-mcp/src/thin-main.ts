@@ -119,6 +119,9 @@ interface Job {
   herdr_pane: string;
   created_at: string;
   package?: string;
+  model?: string | null;
+  thinking?: string | null;
+  model_source?: string | null;
   read_at?: string;
   reaped_at?: string;
   jev?: Role;
@@ -139,7 +142,15 @@ const tools = [
   tool(
     'hud_create',
     'Dispatch a local role; request_key deduplicates jobs and optional package is a display-only label.',
-    { role: text, request_key: text, task: text, cwd: text, package: text },
+    {
+      role: text,
+      request_key: text,
+      task: text,
+      cwd: text,
+      package: { ...text, description: 'Display-only package label.' },
+      model: { ...text, description: 'Override the pi role model for this job only.' },
+      thinking: { ...text, description: 'Override the pi role thinking for this job only.' },
+    },
     ['role', 'request_key', 'task']
   ),
   tool('hud_read', 'Read a job, optionally waiting for settlement or a question; omit job for the 20 newest.', {
@@ -432,6 +443,9 @@ function observation(job: Job) {
   return {
     job: job.job,
     role: job.role,
+    model: job.model,
+    thinking: job.thinking,
+    model_source: job.model_source,
     state: status?.state ?? (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 ? 'failed' : null),
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
@@ -450,7 +464,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     };
   if (name === 'hud_create') {
     const role = required(args, 'role');
-    const definition = roles().get(role);
+    let definition = roles().get(role);
     if (!definition) return { ok: false, code: 'role_unavailable' };
     const request_key = required(args, 'request_key');
     const existing = jobs().find((job) => job.request_key === request_key);
@@ -461,6 +475,13 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (!process.env.HERDR_PANE_ID) return { ok: false, code: 'herdr_required' };
     const task = required(args, 'task');
     if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
+    const overridden = args.model !== undefined || args.thinking !== undefined;
+    for (const key of ['model', 'thinking'] as const) {
+      if (args[key] === undefined) continue;
+      if (definition.harness !== 'pi') return { ok: false, code: 'invalid_arguments' };
+      definition = { ...definition, [key]: required(args, key) };
+    }
+    const effective = definition.harness === 'pi' ? assignment(definition) : null;
     const cwd = resolve(args.cwd === undefined ? process.cwd() : required(args, 'cwd'));
     const job: Job = {
       job: 'j' + randomBytes(8).toString('hex'),
@@ -471,6 +492,13 @@ async function call(name: string, args: Args): Promise<unknown> {
       created_at: new Date().toISOString(),
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(definition.harness === 'jev' ? { jev: definition } : {}),
+      ...(effective
+        ? {
+            model: effective.model,
+            thinking: effective.thinking,
+            model_source: overridden ? 'hud_create' : effective.model_source,
+          }
+        : {}),
       dispatch_exit_code: null,
       stderr_tail: '',
       message_keys: [],

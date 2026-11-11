@@ -628,6 +628,65 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   );
 });
 
+test(
+  'thin create overrides pi argv and records the job assignment without changing defaults',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t);
+    const args = {
+      role: 'imp',
+      request_key: 'model-override',
+      task: 'Synthetic task.',
+      model: 'synthetic/any-model',
+      thinking: 'max',
+    };
+    const job = await f.call('hud_create', args);
+    const argv = f.commands().find((c) => c.command === 'pi-role').args;
+    assert.deepEqual(argv.slice(-4), ['--model', args.model, '--thinking', args.thinking]);
+    assert.ok(argv.indexOf('--model') > argv.indexOf('--'));
+    assert.ok(
+      f
+        .commands()
+        .find((c) => c.args[0] === 'agent' && c.args[1] === 'start')
+        .args.includes(args.model)
+    );
+    const receipt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+    for (const value of [receipt(), await f.call('hud_read', { job: job.job })]) {
+      assert.equal(value.model, args.model);
+      assert.equal(value.thinking, args.thinking);
+      assert.equal(value.model_source, 'hud_create');
+    }
+    const launches = () => f.commands().filter((c) => c.command === 'pi-role').length;
+    assert.deepEqual(await f.call('hud_create', { ...args, model: '', thinking: 'low' }), job);
+    assert.equal(launches(), 1);
+    assert.equal(receipt().model, args.model);
+    const defaults = await f.call('hud_create', { role: 'imp', request_key: 'model-default', task: 'Synthetic task.' });
+    const original = JSON.parse(fs.readFileSync(join(defaults.task_dir, 'job.json')));
+    assert.equal(original.model, 'synthetic/default');
+    assert.equal(original.thinking, 'low');
+    assert.equal(launches(), 2);
+  }
+);
+
+test('thin create rejects model or thinking overrides for Jev roles', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  for (const override of [{ model: 'synthetic/other' }, { thinking: 'max' }]) {
+    assert.deepEqual(
+      await f.call('hud_create', {
+        role: 'oracle',
+        request_key: 'jev-override',
+        task: 'Synthetic question.',
+        ...override,
+      }),
+      {
+        ok: false,
+        code: 'invalid_arguments',
+      }
+    );
+  }
+  assert.deepEqual(f.commands(), []);
+});
+
 test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate sends', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   const args = { role: 'oracle', request_key: 'oracle-once', task: 'Synthetic question.' };

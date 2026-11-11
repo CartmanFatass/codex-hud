@@ -10,7 +10,7 @@ The user names a role and a task in plain words; you do the rest. Never ask them
 1. Call `hud_roster` once per session; it returns the roles and convention in effect, which the main session follows (`hud-convention.md` in the server's cwd, then `$HUD_HOME`, then the shipped default; first file wins whole, text truncated at 20,000 characters).
 2. Write the brief: the goal, scope and out of scope, completion criteria, a size budget and a stop rule. For a small
    ask the user's own sentence plus those limits is enough. Do not name a report file; HUD adds it.
-3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`.
+3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`; optional `model`/`thinking` run the role on another model for this job only.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
 5. Wait for the `[role@job] DONE` or `FAILED` line in your pane; do not poll. `hud_read` with `wait_ms` is the backup.
 6. Read the report (`hud_read`), check it (for code: the diff and the named checks), then decide: accept, repair, review
