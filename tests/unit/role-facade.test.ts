@@ -295,7 +295,7 @@ test('role tool schemas are the six static tools', () => {
   const bin = readFileSync(join(REPO_ROOT, 'packages/hud-mcp/bin/hud-mcp.mjs'), 'utf8');
   assert.match(bin, /selectMcpEntry/);
   assert.equal(selectMcpEntry(undefined), '../dist/packages/hud-mcp/src/main.js');
-  assert.equal(selectMcpEntry('roles'), '../dist/packages/hud-mcp/src/role-main.js');
+  assert.equal(selectMcpEntry('roles'), '../dist/packages/hud-mcp/src/thin-main.js');
   assert.throws(() => selectMcpEntry('bogus'), /unknown_surface: "bogus"/);
   assert.throws(() => selectMcpEntry(''), /unknown_surface: ""/);
   const roleTools = new RoleFacadeTools('/tmp/synthetic-hud').tools.map((tool) => tool.name);

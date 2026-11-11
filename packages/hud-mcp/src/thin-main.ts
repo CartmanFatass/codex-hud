@@ -19,6 +19,7 @@ interface Job {
   dispatch_exit_code: number | null;
   stderr_tail: string;
   message_keys: string[];
+  send_outcomes?: { key: string; exit_code: number | null; stderr_tail: string }[];
 }
 type Args = Record<string, unknown>;
 const text = { type: 'string' };
@@ -144,7 +145,9 @@ function observation(job: Job) {
   return {
     job: job.job,
     role: job.role,
-    state: status?.state ?? null,
+    state: status?.state ?? (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 ? 'failed' : null),
+    dispatch_exit_code: job.dispatch_exit_code,
+    stderr_tail: job.stderr_tail,
     exit_reason: status?.exit_reason ?? null,
     report_exists: report !== null,
     report: report?.text ?? null,
@@ -223,16 +226,27 @@ async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_send') {
     const key = required(args, 'message_key');
     const message = required(args, 'text');
-    if (job.message_keys.includes(key)) return { ok: true, sent: false };
+    if (job.message_keys.includes(key)) {
+      const outcome = job.send_outcomes?.find((outcome) => outcome.key === key);
+      return outcome?.exit_code === 0
+        ? { ok: true, sent: false }
+        : { ok: false, sent: false, code: 'send_failed', ...outcome };
+    }
     const agent = primary(dir);
     if (job.role !== 'imp' || observation(job).state !== 'idle_grace' || !agent)
       return { ok: false, code: 'not_continuable' };
     // Record the attempt first, so a lost reply cannot cause a duplicate prompt.
     job.message_keys.push(key);
+    const outcome = { key, exit_code: null as number | null, stderr_tail: '' };
+    (job.send_outcomes ??= []).push(outcome);
     save(job);
     // agent prompt types the text and submits it with Enter.
     const result = await run('herdr', ['agent', 'prompt', agent, message]);
+    outcome.exit_code = result.exit_code;
+    outcome.stderr_tail = result.stderr;
+    save(job);
     return {
+      ...(result.exit_code === 0 ? {} : { code: 'send_failed' }),
       ok: result.exit_code === 0,
       sent: result.exit_code === 0,
       exit_code: result.exit_code,

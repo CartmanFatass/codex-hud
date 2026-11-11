@@ -86,7 +86,10 @@ test('hud help and strict argument refusals never access or create a ledger', as
     for (const args of [['--help'], ['link', '--help'], ['link', 'export', '--help']]) {
       const result = await invoke(args, home);
       assert.equal(result.status, 0);
-      assert.equal(result.stdout, EXPORT_HELP);
+      assert.equal(
+        result.stdout,
+        EXPORT_HELP + '\n  hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n'
+      );
       assert.equal(result.stderr, '');
       assert.ok(
         result.stdout.includes(
@@ -95,7 +98,7 @@ test('hud help and strict argument refusals never access or create a ledger', as
       );
       const launchedHelp = child(args, home);
       assert.equal(launchedHelp.status, 0);
-      assert.deepEqual(launchedHelp.rawStdout, Buffer.from(EXPORT_HELP));
+      assert.deepEqual(launchedHelp.rawStdout, Buffer.from(result.stdout));
       assertChildStderr(launchedHelp);
       assert.deepEqual(readdirSync(home), []);
     }

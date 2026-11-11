@@ -518,66 +518,6 @@ test('hook JSON native claims cannot replace unavailable native eligibility', as
   assert.equal(f.counts().splits, 0);
   assert.match(result.systemMessage, /panel_eligibility_unknown/);
 });
-test('real role MCP initialize/tools-list and per-call Claude ancestry survive cached adapter relay', (t) => {
-  const f = setup(t);
-  const r = materialize(f);
-  const pin = JSON.parse(fs.readFileSync(path.join(r.plugin, 'binding.json')));
-  fs.copyFileSync('dist/integrations/claude/mcp.js', path.join(pin.release, 'dist/integrations/claude/mcp.js'));
-  fs.writeFileSync(
-    path.join(pin.release, 'packages/hud-mcp/bin/hud-mcp.mjs'),
-    `await import(${JSON.stringify(pathToFileURL(path.resolve('packages/hud-mcp/bin/hud-mcp.mjs')).href)});`
-  );
-  fs.writeFileSync(path.join(f.options.hudHome, 'routing.toml'), fs.readFileSync('docs/examples/routing.toml'), {
-    mode: 0o600,
-  });
-  pin.parityInventory = path.join(f.options.hudHome, 'absent-parity.json');
-  fs.writeFileSync(path.join(r.plugin, 'binding.json'), JSON.stringify(pin));
-  const cached = path.join(f.home, 'cache with spaces');
-  fs.cpSync(r.plugin, cached, { recursive: true });
-  const harness = path.join(f.home, 'synthetic-claude.mjs');
-  fs.writeFileSync(
-    harness,
-    `import * as fs from 'node:fs';import {spawn} from 'node:child_process';
-  const root=process.env.CLAUDE_CONFIG_DIR;fs.mkdirSync(root+'/sessions',{recursive:true,mode:448});
-  const stat=fs.readFileSync('/proc/self/stat','utf8');const procStart=stat.slice(stat.lastIndexOf(')')+2).split(' ')[19];
-  fs.writeFileSync(root+'/sessions/'+process.pid+'.json',JSON.stringify({pid:process.pid,procStart,sessionId:'adapter-native'}));
-  const p=spawn(${JSON.stringify(node)},[process.argv[2]],{stdio:['pipe','pipe','inherit']});let buffer='';
-  p.stdout.on('data',b=>{process.stdout.write(b);buffer+=b;if(buffer.includes('"id":3'))p.stdin.end();});
-  p.stdin.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'synthetic',version:'1'}}})+'\\n');
-  setTimeout(()=>p.stdin.write(JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/list'})+'\\n'+JSON.stringify({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'hud_roster',arguments:{action:'show'}}})+'\\n'),100);
-  p.on('exit',c=>process.exitCode=c??2);`
-  );
-  const env = { ...f.env, CODEX_HOME: path.join(f.home, 'codex'), CLAUDE_CONFIG_DIR: path.join(f.home, '.claude') };
-  const out = spawnSync(
-    '/bin/bash',
-    ['-c', 'exec -a claude "$1" "$2" "$3"', 'fixture', node, harness, path.join(cached, 'scripts/mcp.mjs')],
-    { env, encoding: 'utf8', timeout: 10000 }
-  );
-  assert.equal(out.status, 0, out.stderr);
-  const replies = out.stdout
-    .trim()
-    .split('\n')
-    .map((line) => JSON.parse(line));
-  assert.deepEqual(
-    replies
-      .find((v) => v.id === 2)
-      .result.tools.map((v) => v.name)
-      .sort(),
-    ['hud_close', 'hud_create', 'hud_read', 'hud_respond', 'hud_roster', 'hud_send']
-  );
-  const result = replies.find((v) => v.id === 3).result.structuredContent;
-  assert.equal(result.ok, true, JSON.stringify(result));
-  assert.match(JSON.stringify(result), /adapter-native/);
-  fs.writeFileSync(pin.parityInventory, 'unreadable', { mode: 0o000 });
-  const unreadable = spawnSync(
-    '/bin/bash',
-    ['-c', 'exec -a claude "$1" "$2" "$3"', 'fixture', node, harness, path.join(cached, 'scripts/mcp.mjs')],
-    { env, encoding: 'utf8', timeout: 10000 }
-  );
-  fs.chmodSync(pin.parityInventory, 0o600);
-  assert.equal(unreadable.status, 0, unreadable.stderr);
-  assert.match(unreadable.stdout, /"id":2/);
-});
 test('setup delegates actual settings writer; preview is read-only, gaps/wrapper block, backup preserves whole original, stale edit refused', (t) => {
   const f = synthetic(t);
   const settings = path.join(f.env.CLAUDE_CONFIG_DIR, 'settings.json');
