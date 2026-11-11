@@ -81,7 +81,8 @@ for name in hud hud-mcp; do
   if [[ -L "$link" && "$(readlink "$link")" == "$target" ]]; then
     continue
   fi
-  # Refuse collisions rather than overwriting an existing command or user file.
+  # A dangling command link is replaceable; keep live commands and user files.
+  [[ ! -L "$link" || -e "$link" ]] || rm -- "$link"
   [[ ! -e "$link" && ! -L "$link" ]] || fail "Command already exists: $link"
   ln -s -- "$target" "$link"
 done

@@ -32,7 +32,7 @@ if (command === 'pi-dispatch') {
     fs.writeFileSync(join(bin, command), fake, { mode: 0o700 });
   }
   const env = { ...process.env, HUD_MCP_SURFACE: 'roles', PATH: `${bin}:${process.env.PATH}`, FAKE_LOG: log };
-  for (const name of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR']) {
+  for (const name of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR']) {
     env[name] = join(root, name.toLowerCase());
     fs.mkdirSync(env[name]);
   }
@@ -154,6 +154,50 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   assert.deepEqual(await f.call('hud_close', { job: job.job }), { exit_code: 0, last_line: 'Synthetic reap complete' });
   assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
 });
+
+test(
+  'thin send records failed and successful outcomes without retrying a message key',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t);
+    const job = await f.call('hud_create', { role: 'imp', request_key: 'send-outcomes', task: 'Synthetic task.' });
+    fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+    const herdr = join(f.root, 'bin', 'herdr');
+    const fake = `#!${process.execPath}
+import fs from 'node:fs';
+fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args: process.argv.slice(2) }) + '\\n');
+`;
+    fs.writeFileSync(herdr, fake + "console.error('Synthetic prompt failure'); process.exit(9);\n");
+    const args = { job: job.job, message_key: 'failed-send', text: 'Synthetic continuation.' };
+    const failed = await f.call('hud_send', args);
+    assert.equal(failed.ok, false);
+    assert.equal(failed.code, 'send_failed');
+    assert.equal(failed.exit_code, 9);
+    assert.match(failed.stderr_tail, /Synthetic prompt failure/);
+    // The transport is now healthy, but retrying the failed key must not claim delivery or resend.
+    fs.writeFileSync(herdr, fake);
+    const retry = await f.call('hud_send', args);
+    assert.equal(retry.ok, false);
+    assert.equal(retry.sent, false);
+    assert.equal(retry.code, 'send_failed');
+    assert.equal(retry.exit_code, failed.exit_code);
+    assert.equal(retry.stderr_tail, failed.stderr_tail);
+    assert.equal(f.commands().filter((command) => command.command === 'herdr').length, 1);
+    const success = await f.call('hud_send', { ...args, message_key: 'successful-send' });
+    assert.equal(success.ok, true);
+    assert.equal(success.sent, true);
+    assert.deepEqual(await f.call('hud_send', { ...args, message_key: 'successful-send' }), { ok: true, sent: false });
+    assert.equal(f.commands().filter((command) => command.command === 'herdr').length, 2);
+    const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+    assert.deepEqual(
+      receipt.send_outcomes.map(({ key, exit_code }) => ({ key, exit_code })),
+      [
+        { key: 'failed-send', exit_code: 9 },
+        { key: 'successful-send', exit_code: 0 },
+      ]
+    );
+  }
+);
 
 test('thin create requires herdr without dispatching', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, false);

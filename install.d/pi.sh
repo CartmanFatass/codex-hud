@@ -7,21 +7,27 @@ const install = process.argv[2] === 'install';
 const agent = path.resolve(process.env.PI_CODING_AGENT_DIR || path.join(process.env.HOME, '.pi/agent'));
 const file = path.join(agent, 'settings.json');
 const backup = file + '.hud-backup';
+if (!install && !fs.existsSync(backup)) process.exit(0);
 const exists = fs.existsSync(file);
 const settings = exists ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
 if (!settings || typeof settings !== 'object' || Array.isArray(settings) ||
     (settings.extensions !== undefined && !Array.isArray(settings.extensions)))
   throw Error('Invalid pi settings or extensions array');
-if (install && exists) {
-  try { fs.copyFileSync(file, backup, fs.constants.COPYFILE_EXCL); }
-  catch (error) { if (error.code !== 'EEXIST') throw error; }
+if (install) {
+  fs.mkdirSync(agent, { recursive: true });
+  try {
+    if (exists) fs.copyFileSync(file, backup, fs.constants.COPYFILE_EXCL);
+    else fs.writeFileSync(backup, '{}\n', { flag: 'wx', mode: 0o600 });
+  } catch (error) { if (error.code !== 'EEXIST') throw error; }
 }
 const filter = '-extensions/p10k-footer.ts';
 const entries = settings.extensions ?? [];
-if (install ? !entries.includes(filter) : entries.includes(filter)) {
+const original = install ? {} : JSON.parse(fs.readFileSync(backup, 'utf8'));
+if (install ? !entries.includes(filter) : entries.includes(filter) && !original.extensions?.includes(filter)) {
   settings.extensions = install ? [...entries, filter] : entries.filter(entry => entry !== filter);
   fs.mkdirSync(agent, { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
+  fs.writeFileSync(file + '.hud-tmp', JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(file + '.hud-tmp', file);
 }
 if (!install) fs.rmSync(backup, { force: true });
 NODE

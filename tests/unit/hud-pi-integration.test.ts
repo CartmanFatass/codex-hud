@@ -54,8 +54,11 @@ test('hud dispatches pi help and preserves existing command help without HUD_HOM
     [['claude', '--help'], CLAUDE_HELP],
     [['run', '--help'], RUN_HELP],
     [['cache', '--help'], CACHE_HELP],
-    [['link', 'export', '--help'], EXPORT_HELP],
-    [['--help'], EXPORT_HELP],
+    [
+      ['link', 'export', '--help'],
+      EXPORT_HELP + '\n  hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n',
+    ],
+    [['--help'], EXPORT_HELP + '\n  hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n'],
   ] as const) {
     const capture = output();
     assert.equal(await main(args, capture.io), 0);

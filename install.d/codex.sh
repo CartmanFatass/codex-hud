@@ -10,6 +10,10 @@ hud_ext_install() {
 
   local skill="${CODEX_HOME:-$HOME/.codex}/skills/hud-delegate"
   if [[ -L "$skill" ]]; then
+    if [[ "$(readlink -m "$skill")" != "$REPO/"* ]]; then
+      printf 'Warning: %s is a foreign symlink; skipping Codex skill.\n' "$skill" >&2
+      return 0
+    fi
     rm -- "$skill"
   elif [[ -e "$skill" ]]; then
     printf 'Warning: %s is not a symlink; skipping Codex skill.\n' "$skill" >&2
