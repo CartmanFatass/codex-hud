@@ -10,6 +10,10 @@ Finish what you are doing first. Nothing here interrupts M1.
 Updated 2026-11-11: the owner agreed that the dispatch convention is one editable file handed out by `hud_roster`
 (section G). D2 changed with it: the bridge is that file, not a skill.
 
+Updated 2026-11-11 (owner, from `~/vibecoding/reports/Agent 编程工作流阅读清单.md`): TDD is a trial (D1); review,
+test-usefulness and who-writes-code rules (E); the deletion direction (D4); four numbers in milestone reports (F); two
+points in G; Matt's skills upstream is v1.3.2.
+
 ## What the owner settled in the discussion
 
 - The old workflow failed because management itself was delegated: agents managed and reviewed agents, and nobody
@@ -82,13 +86,14 @@ Serves spec §2.1 as reworded in A. Do not start before A is confirmed.
 
 ### D1. Matt Pocock's skills, unchanged
 
-- Update the local clone first (it is at `49dd158`, 2026-10-09).
+- Update the local clone first (it is at `49dd158`, 2026-10-09; upstream is at v1.3.2, 2026-10-29).
 - Install at user level, not into this repository (it is public). The owner's `~/.claude` and `~/.pi` are managed
   through `~/Fishpref`; tell the owner what will be installed and wait for a yes.
 - For the orchestrator (Claude Code): `grill-with-docs`, `to-spec`, `to-tickets`, `prototype`, `code-review`,
   `wait-what`, `wayfinder`, plus the skills these call (each skill names them; at least `grilling`,
   `domain-modeling`, `research`) and `setup-matt-pocock-skills`. Not `triage`, not `pr`, nothing from `misc/`.
-- For pi workers: `tdd`.
+- For pi workers: `tdd`, as a trial, not a fixed step of every ticket: imp writes a failing test first only on the
+  few external interfaces the owner has confirmed. Sources disagree on test-first for agents.
 - `setup-matt-pocock-skills` is typed by the owner, once, in this repo. Tracker: local files.
 - Do not edit these skills. Personal adjustments go into D2 and D4.
 
@@ -122,8 +127,8 @@ How the orchestrator handles an `ask_orchestrator` question:
 - A ticket that produces many questions was under-specified: fix the ticket.
 - The architect is consulted before the spec is written: it returns options with their costs, including the smallest
   one, and the owner decides. It is not called in the middle of implementation.
-- Check the pi-roles role texts (Fishpref) against the above and change only what is missing; `81e1859` already
-  covers part of it.
+- Check the pi-roles role texts (Fishpref) against the above and E; change only what is missing, following D4's
+  deletion direction. `81e1859` already covers part of it.
 
 ### D4. Less that is always loaded
 
@@ -135,6 +140,10 @@ How the orchestrator handles an `ask_orchestrator` question:
   dispatch convention. The loop description goes; the skills carry it.
 - The memory index for this project: remove entries that only describe superseded process rules. Keep environment
   facts and pointers.
+- Direction for D4 and the role-text check: delete, do not rewrite into longer versions. Remove ownership phrasing
+  ("this is your codebase"; it invites tests and docs nobody asked for), long anti-over-engineering clauses written
+  for older models (scope comes from each ticket), and caution clauses accumulated in memory, notes, instruction
+  files and messages between agents, wherever they can go.
 
 ### D5. Three ways of working
 
@@ -153,14 +162,25 @@ The owner chooses by what they type; nothing forces the full flow.
 - A worker or the orchestrator may decide alone to do less. Anything that adds beyond the budget goes back up; growth
   beyond the spec goes to the owner.
 - Tests sit at the outermost seam, one per behaviour the owner would notice. Deleted code takes its tests with it.
+- Only imp writes code. Reviewer and architect give judgements and write only their own report. Parallel imps only
+  when their files do not overlap. The role texts say the same.
+- Review (reviewer briefs and the reviewer role text): look at the diff only, not code that was already there; no
+  style checks. Two axes: against the spec (missing, wrong, unasked-for), and defects a user would hit plus what can
+  be deleted. One round by default; a second only if the fix itself looks wrong; at most three; never loop until
+  "clean". Findings come back to the orchestrator, who decides which get fixed.
+- Tests prove they are useful: for each new test, imp's report says which production change would make it fail, or
+  shows a red-then-green run. Tests that only check mocks are flagged in the report. Once per milestone, sample one
+  important module with a mutation check (break one behaviour on purpose, see whether a test fails). Deleting
+  useless tests is normal maintenance and needs no approval.
 
 ## F. Trial and what to report
 
 The next milestone after M2 runs the full flow once. Change the flow only where something actually went wrong, and
 tell the owner what that was.
 
-At each milestone give the owner three things: the demo, the size (lines added and removed against what the owner can
-newly do), and a ten-sentence description of how the system works now. A noun in that description that is not in the
+At each milestone give the owner: the demo, the size (lines added and removed against what the owner can newly do), a
+ten-sentence description of how the system works now, and four numbers: test count and source lines, review rounds,
+the sampled mutation check's result, and the number of problems the owner found when trying it. A noun in that description that is not in the
 spec or the glossary is something the owner has not agreed to; say why it exists.
 
 ## G. Slice CONVENTION: `hud_roster` hands out the dispatch convention
@@ -187,6 +207,11 @@ second.
   upgrading the HUD never writes or changes it.
 - **Out of scope:** validation or a schema, a tool that sets the convention, one convention per role, template
   variables, choosing between several conventions (a project file is the switch).
+- **Keep it short:** the convention file stays well under 20,000 characters; Claude Code truncates re-attached
+  skills there after a context compaction.
+- **Server instructions:** if it is simple, add one sentence to the MCP server instructions: "call `hud_roster`
+  before dispatching". Do not use MCP prompts or resources; clients do not support them uniformly.
+- These two points fit inside the budget below or are dropped.
 - **Budget:** about 30 source lines, one more case in `tests/unit/thin-mcp.test.mjs`. If it does not fit, stop and
   report. File names and the project location are the implementer's choice; take the simplest and say which.
 - **Demo:** `hud_roster` shows the default convention and its path; put a file under `$HUD_HOME` and it shows that
@@ -195,7 +220,7 @@ second.
 ## When the owner is needed
 
 - A: yes or no on the two spec sentences.
-- D1: yes on the installs; typing `/setup-matt-pocock-skills` once.
+- D1: yes on the installs; typing `/setup-matt-pocock-skills` once; naming the interfaces that get test-first.
 - D2 and G: editing the convention draft and putting it in place.
 - D3: answering rounds of structural questions.
 - C: the walkthrough. Every milestone: looking at the demo and trying the build, about one to two hours in total.
