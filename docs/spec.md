@@ -12,8 +12,10 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 1. **Delegate through one MCP.** From any of the three main sessions, start and use roles with six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`,
    `hud_close`. CLI roles run through herdr and pi-roles; browser jobs run through Jev. Roles are defined by files; the HUD ships defaults. The MCP knows no particular role and no workflow. The main session decides every next step; the HUD never chains roles itself. Workers are neutral: each does only its own job and never
    starts another role unless the brief asks. The HUD ships a short default dispatch convention; a project's or the owner's own file replaces it whole. `hud_roster` returns the roles and the convention in effect. The six
-   tools are a thin layer over the locally installed pi-roles (`pi-dispatch`, `STATUS.json`, `qN.answer.md`,
-   `pi-role-reap`); jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles is not bundled (owner, 2026-11-10).
+   tools are a thin layer over the locally installed pi-roles (its pi package, `STATUS.json`, `qN.answer.md`,
+   `pi-role-reap`); the MCP opens each job's herdr tab itself; jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles
+   is not bundled (owner, 2026-11-10). The main session never manages workers: `hud_create` starts them, the job
+   watcher closes them; `hud_close` only closes one early (owner, 2026-11-11).
 2. **Show what is happening.** A side panel (Home, Work, Project) shows the main session's jobs and their state. Each client
    keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
    (taking in p10k-footer), Codex's existing tmux bar. The panel and status lines can use external models with the
@@ -54,7 +56,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   cloned repo).
 - Everything else takes the simplest implementation that works. A new guard, option or abstraction needs a concrete
   reason written in the brief.
-- Lightweight: no resident service; the statusline and panel stay at least as fast as what they replace.
+- Lightweight: no resident service; a job watcher that `hud_create` starts on demand reacts to job-file and herdr
+  events, reaps finished jobs and exits when none is open (owner, 2026-11-11); the statusline and panel stay at least as fast as what they replace.
 - **Done means the owner can install it and use it**, not that the tests are green.
 
 ## 5. Milestones
