@@ -111,19 +111,35 @@ first, then alias, then native plugin registration, then generated integration. 
 The ordinary `hud` package is materialized by
 `node RELEASE/pi-package.mjs preview --prefix ABS --release DIGEST --node ABS` (then the same options with
 `apply --plan ID`). It pins the immutable release/digest and HUD home, and explicitly loads one entry and the
-hash-verified canonical delegation skill. It bundles no pi SDK and does not select the historical full-footer,
-managed delegation extension or worker-only entry.
+hash-verified canonical delegation skill. It bundles no pi SDK and does not select the historical standalone
+footer, managed delegation extension or worker-only entry. The ordinary package owns the p10k-style footer.
 
 `/hud on|off|toggle|status|reconnect|help` runs locally through pi's command API, never as a model message.
 Six role-tool proxies use the private evidence-bearing MCP channel, not `mcp.json` or a duplicate generic MCP
 registration. Session changes synchronously fence the old epoch before cleanup. Canceled transitions remain
 unbound until explicit reconnect; shutdown closes only the old channel and recorded display generation, not jobs.
 
-The package contributes only `setStatus("hud-delegation", text)`, **never `setFooter`**. p10k remains the sole footer
-owner. Events and one 5-second single-flight TUI timer read the exact current root's bounded role-summary cache;
-no scans/process launches/herdr/network occur on this path. Expired/unavailable cache clears idle counts. The
-panel is the only producer, so panel-off unavailability is deliberate. Print/RPC modes have no segment, timer or
-panel operations, even if RPC reports hasUI; the role bridge remains available.
+The HUD owns the pi footer and editor frame: the ported p10k band docks in the top border beside pi's working
+spinner, with the bottom rule and dim model/thinking/path/git/status identity row below. Palettes, provider marks,
+segment toggles and width-drop order match p10k-footer. `PI_HUD_PALETTE=p10k|gruvbox|nord|tokyo-night` and
+`PI_HUD_MARKS=ascii` are unchanged. Native usage/rate/history capture is outside render; repaint/resize only fits
+retained values. The post-persistence `context` hook refreshes the new prompt's usage before the provider request.
+Other extensions' `setStatus` values still show in the statuses area, including HUD delegation.
+Events and one 5-second single-flight TUI timer read the exact current root's bounded role-summary cache; no
+scans/process launches/herdr/network occur on that summary path. Expired/unavailable cache clears idle counts.
+The panel remains its only producer. Print/RPC modes have no footer, segment, timer or panel operations, even if
+RPC reports hasUI; the role bridge remains available. Panel controls `/hud on|off|toggle` remain independent of
+the everyday footer. `/hud footer off` restores pi's default editor/footer; `/hud footer on` mounts the HUD footer.
+
+Footer settings live in `$HUD_HOME/config.json.piFooter`, with p10k's `footer`/`band` boolean keys. Without this
+section all original defaults are on. Bare `/hud footer on|off` switches the whole footer for this session:
+the choice survives same-session `/tree` and `/hud reconnect`, resetting only on a new session or reload.
+With segment IDs and every other form, `/hud footer <original args>` changes the original options locally, e.g.
+`/hud footer off lens viz`, `/hud footer band off`, `/hud footer toggle git`, `/hud footer reset` and
+`/hud footer list`. To copy an old file explicitly, first run
+`hud import preview --pi-footer --from ABS/p10k-footer.json`, then the same command with `apply` after inspection.
+Preview writes nothing, apply changes only the section (and makes a backup), existing keys win and unknown keys
+refuse. No pi settings discovery or automatic import occurs.
 
 Panel auto-open requires corroborated native session/header, full ancestry, foreground TTY and matching herdr
 origin/instance proof. Worker, nested or unknown contexts cannot open a side panel. Inherited pane variables alone
@@ -135,8 +151,20 @@ Row 10 is separately previewed with `row-10-preview` and `--panel-auto-open true
 stale-edit refusal and exact restoration; symlinked settings refuse instead of writing a private target. No MCP
 config is added and activation never reloads the client. Reverse newest receipts first with
 `restore-preview|restore --receipt ABS [--plan ID]`. See the [pi owner runbook](../integrations/pi/package/README.md)
-for complete preview options, write-set rehearsal and isolated real-CLI probes. The orchestrator reports p10k
-already consumes extension statuses, so row 8 requires no patch unless owner-machine observation contradicts it.
+for complete preview options, write-set rehearsal and isolated real-CLI probes. **Before enabling the package,
+the owner must remove p10k-footer from pi's extension selection** (two footer/editor owners would fight). Back up
+the auto-discovered entry outside the extensions directory, at the approved install boundary:
+
+```sh
+mkdir -p "$PI_AGENT_DIR/backups"
+mv "$PI_AGENT_DIR/extensions/p10k-footer.ts" \
+  "$PI_AGENT_DIR/backups/p10k-footer.ts.$(date +%Y%m%d-%H%M%S).bak"
+```
+
+Use the explicit absolute pi agent directory (normally `~/.pi/agent`); moving a symlink preserves its target in
+Fishpref. Deselect any explicit p10k resource and historical `hud-footer.ts` too. The HUD deliberately detects and
+modifies none of these. Verify actual look, narrow widths and `/hud footer off` restoration after owner-controlled
+restart/reload. For rollback, deselect the HUD package before restoring the backup to an absent original path.
 
 ### Owned pi worker resources (PR3, before facade cutover)
 

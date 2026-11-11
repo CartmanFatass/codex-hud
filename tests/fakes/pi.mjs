@@ -320,3 +320,19 @@ export async function runPackageHost() {
   await emit('session_shutdown');
   await Promise.allSettled(running);
 }
+
+/** Only the native editor frame is synthetic; the port/original paints its real overrides. */
+export function createFooterHost({ visibleWidth, truncateToWidth }) {
+  class CustomEditor {
+    renderedVisibleLineCount = 1;
+    setWorkingStatusIndicator() {}
+    renderTopBorder(width) {
+      return '─'.repeat(Math.max(0, width));
+    }
+    render(width) {
+      return [this.renderTopBorder(width, 0), '  synthetic input', '─'.repeat(Math.max(0, width))];
+    }
+    invalidate() {}
+  }
+  return { CustomEditor, visibleWidth, truncateToWidth };
+}

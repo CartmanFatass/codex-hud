@@ -16,6 +16,7 @@ import { piPackageCommand } from '../../scripts/pi-package.mjs';
 import { digest } from '../../scripts/runtime-package/safety.mjs';
 import { EXTRA_FILES, REQUIRED_OUTPUTS } from '../../scripts/pack-cloud-preview.mjs';
 import { REQUIRED } from '../../scripts/runtime-package/manifest.mjs';
+import { createFooterHost, piPackage } from '../fakes/pi.mjs';
 const root = process.env.R6A_PI_EMITTED_ROOT ?? path.resolve('dist');
 const { capturePiPanel } = await import(pathToFileURL(path.join(root, 'harness/pi/package-native.js')));
 const { roleSummaryPath, readRoleSummary, ROLE_SUMMARY_TTL_MS } = await import(
@@ -26,6 +27,8 @@ const { readProcess } = await import(pathToFileURL(path.join(root, 'core/run/pro
 const { displayTarget, PanelStore, panelKey, saveJson } = await import(
   pathToFileURL(path.join(root, 'integrations/panel/receipt.js'))
 );
+const { visualWidth, truncateAnsi } = await import(pathToFileURL(path.join(root, 'render/colors.js')));
+const footerHost = createFooterHost({ visibleWidth: visualWidth, truncateToWidth: truncateAnsi });
 const node = fs.realpathSync(process.execPath);
 function setup(t) {
   const f = fixture(t, 'pi');
@@ -39,7 +42,7 @@ function setup(t) {
   replaceFixtureFile(
     f,
     'dist/harness/pi/package-entry.js',
-    `import { installPiPackage as real } from ${JSON.stringify(pathToFileURL(path.join(root, 'harness/pi/package-entry.js')).href)}; export function installPiPackage(pi,b) { return real(pi,b,globalThis[Symbol.for('hud-a5-test-ports')]); }`
+    `import { installPiPackage as real } from ${JSON.stringify(pathToFileURL(path.join(root, 'harness/pi/package-entry.js')).href)}; export function installPiPackage(pi,b,deps) { return real(pi,b,globalThis[Symbol.for('hud-a5-test-ports')] ?? deps); }`
   );
   const p = planInstall(f.bundle, f.prefix, undefined, false, true);
   executeInstall(f.bundle, f.prefix, p.planDigest, undefined, { stageOnly: true });
@@ -54,6 +57,23 @@ function setup(t) {
   const plan = planActivation(options),
     applied = applyActivation(options, plan.planId);
   const binding = JSON.parse(fs.readFileSync(path.join(plan.piPackage, 'binding.json')));
+  // Native-node package-host tests supply host peers outside the release bundle.
+  // Real pi loader alias resolution is separately probed; these modules never ship.
+  for (const [name, body] of [
+    [
+      'pi-coding-agent',
+      `import {createFooterHost} from ${JSON.stringify(pathToFileURL(path.resolve('tests/fakes/pi.mjs')).href)}; const {CustomEditor}=createFooterHost({}); export {CustomEditor};`,
+    ],
+    [
+      'pi-tui',
+      `export {visualWidth as visibleWidth, truncateAnsi as truncateToWidth} from ${JSON.stringify(pathToFileURL(path.join(root, 'render/colors.js')).href)};`,
+    ],
+  ]) {
+    const peer = path.join(plan.piPackage, 'node_modules/@earendil-works', name);
+    fs.mkdirSync(peer, { recursive: true });
+    fs.writeFileSync(path.join(peer, 'package.json'), JSON.stringify({ type: 'module', exports: './index.js' }));
+    fs.writeFileSync(path.join(peer, 'index.js'), body);
+  }
   return { ...f, options, plan, applied, binding, env: { ...f.env, HUD_HOME: options.hudHome } };
 }
 function host() {
@@ -62,6 +82,9 @@ function host() {
     tools = new Map(),
     statuses = new Map([['other', 'other-status']]);
   const calls = { footer: 0, messages: 0, status: [], notices: [], command: 0 };
+  let editor, footer;
+  const tui = { requestRender() {} };
+  const theme = { fg: (_token, text) => text };
   const pi = {
     on(event, handler) {
       const set = handlers.get(event) ?? new Set();
@@ -92,8 +115,15 @@ function host() {
       if (value === undefined) statuses.delete(key);
       else statuses.set(key, value);
     },
-    setFooter() {
+    theme,
+    setEditorComponent(factory) {
+      editor = factory?.(tui, theme, {});
+    },
+    setWidget() {},
+    setFooter(factory) {
       calls.footer++;
+      footer?.dispose?.();
+      footer = factory?.(tui, theme, { getExtensionStatuses: () => statuses });
     },
     notify(msg) {
       calls.notices.push(msg);
@@ -111,7 +141,10 @@ function host() {
     tools,
     statuses,
     emit,
-    footer: () => ['owner-model', 'owner-cost', ...statuses.values()].join('|'),
+    footer: () => {
+      footer?.render(400);
+      return editor?.render(400).join('\n') ?? ['pi-default', ...statuses.values()].join('|');
+    },
   };
 }
 function context(f, h, id = 'session-a', mode = 'tui') {
@@ -126,7 +159,13 @@ function context(f, h, id = 'session-a', mode = 'tui') {
     hasUI: mode === 'tui' || mode === 'rpc',
     cwd: f.cwd,
     ui: h.ui,
+    model: { id: 'synthetic-model', name: 'Synthetic Model', reasoning: true },
+    getContextUsage: () => ({ contextWindow: 200000, percent: 42 }),
     sessionManager: {
+      getEntries: () => [],
+      getBranch: () => [],
+      getLeafId: () => 'leaf',
+      getCwd: () => f.cwd,
       getSessionId: () => selected,
       getSessionDir: () => source,
       getSessionFile: () => file,
@@ -223,6 +262,7 @@ function ports(f, _h, c) {
   const launch = (pid) => (pid === 400 ? { argv: ['pi'], env: {} } : null);
   const options = {
     env: f.env,
+    footerHost: async () => footerHost,
     bridge: () => bridge,
     capture: async (_b, _c, _e, isCurrent) => ({ context: panelContext, native, herdr, isCurrent }),
     panelProbes: { processInfo, processLaunch: launch, registered: () => true },
@@ -299,17 +339,17 @@ test('inventory is complete and no generated skill or host SDK is bundled as a p
     assert.ok(Object.values(REQUIRED_OUTPUTS).includes(`dist/harness/pi/${n}.js`));
   assert.ok(!PI_TEMPLATES.some((p) => p.includes('node_modules') || p.includes('/skills/')));
 });
-test('REAL package entry start -> reload -> shutdown preserves synthetic p10k fields; exactly six proxies and no footer or message calls', async (t) => {
+test('REAL package entry start -> reload -> shutdown owns footer, restores defaults, keeps other statuses and exactly six proxies', async (t) => {
   const f = setup(t),
     h = host(),
     c = context(f, h),
     p = ports(f, h, c);
   summary(f, c.root, p.now());
-  assert.equal(h.footer(), 'owner-model|owner-cost|other-status');
+  assert.equal(h.footer(), 'pi-default|other-status');
   await load(f, h, p);
   await h.emit('session_start', c.ctx, { reason: 'startup' });
   assert.equal(h.calls.command, 1);
-  assert.equal(h.calls.footer, 0);
+  assert.equal(h.calls.footer, 1);
   assert.equal(h.calls.messages, 0);
   assert.deepEqual(
     [...h.tools.keys()],
@@ -319,8 +359,22 @@ test('REAL package entry start -> reload -> shutdown preserves synthetic p10k fi
     h.statuses.get('hud-delegation'),
     renderRoleSummary(readRoleSummary(f.env, c.root, { nowMs: p.now() }), 160)
   );
-  assert.match(h.footer(), /^owner-model\|owner-cost\|other-status\|Work:/);
-  assert.equal(p.counts().splits, 1);
+  assert.match(h.footer(), /Synthetic Model/);
+  assert.match(h.footer(), /other-status Work:/);
+  await h.commands.get('hud').handler('off', c.ctx);
+  assert.match(h.footer(), /Synthetic Model/, 'panel off leaves the everyday footer alone');
+  assert.equal(h.calls.footer, 1);
+  await h.commands.get('hud').handler('on', c.ctx);
+  assert.equal(p.counts().splits, 2);
+  const panelCounts = p.counts();
+  await h.commands.get('hud').handler('footer off', c.ctx);
+  assert.equal(h.footer(), 'pi-default|other-status|' + h.statuses.get('hud-delegation'));
+  await h.commands.get('hud').handler('footer on', c.ctx);
+  assert.match(h.footer(), /Synthetic Model/);
+  assert.deepEqual(p.counts(), panelCounts, 'footer controls do not touch the panel');
+  await h.commands.get('hud').handler('footer off path', c.ctx);
+  assert.ok(!h.footer().includes(c.ctx.cwd), 'segment forms still use the original parser');
+  await h.commands.get('hud').handler('footer on path', c.ctx);
   assert.equal(p.counts().starts, 1);
   assert.equal(p.timers.size, 1);
   await h.tools.get('hud_read').execute('host-call', {}, undefined, undefined, c.ctx);
@@ -334,20 +388,131 @@ test('REAL package entry start -> reload -> shutdown preserves synthetic p10k fi
   );
   assert.equal(p.timers.size, 0);
   await stop;
-  assert.equal(h.footer(), 'owner-model|owner-cost|other-status');
-  assert.equal(h.calls.footer, 0);
+  assert.equal(h.footer(), 'pi-default|other-status');
+  assert.ok(h.calls.footer >= 4);
   assert.equal(h.calls.messages, 0);
   assert.ok(h.calls.status.every(([k]) => k === 'hud-delegation'));
   assert.equal(
     [...h.handlers.values()].reduce((n, s) => n + s.size, 0),
     0
   );
-  const next = host();
+  const next = host(),
+    nextContext = context(f, next);
   await load(f, next, p);
-  await next.emit('session_start', c.ctx, { reason: 'reload' });
-  await next.emit('session_shutdown', c.ctx);
+  await next.emit('session_start', nextContext.ctx, { reason: 'reload' });
+  await next.emit('session_shutdown', nextContext.ctx);
   assert.equal(next.calls.command, 1);
-  assert.equal(next.calls.footer, 0);
+  assert.equal(next.calls.footer, 2);
+});
+test('context snapshot refreshes after native user persistence, before the response, never on repaint', async (t) => {
+  const pkg = piPackage();
+  if (!pkg || pkg.version !== '1.5.1') {
+    t.skip('requires installed pi 1.5.1 context estimator; no CLI/provider is launched');
+    return;
+  }
+  const { SessionManager } = await import(pathToFileURL(path.join(pkg.root, 'dist/core/session-manager.js')));
+  const { AgentSession } = await import(pathToFileURL(path.join(pkg.root, 'dist/core/agent-session.js')));
+  const f = setup(t),
+    h = host(),
+    c = context(f, h),
+    p = ports(f, h, c);
+  const native = SessionManager.inMemory(f.cwd);
+  const model = { ...c.ctx.model, contextWindow: 200000 };
+  const estimator = { sessionManager: native, _limitsModel: () => model };
+  let entries = 0,
+    branches = 0,
+    estimates = 0;
+  Object.assign(c.ctx.sessionManager, {
+    getEntries: () => {
+      entries++;
+      return native.getEntries();
+    },
+    getBranch: () => {
+      branches++;
+      return native.getBranch();
+    },
+    getLeafId: () => native.getLeafId(),
+  });
+  c.ctx.getContextUsage = () => {
+    estimates++;
+    return AgentSession.prototype.getContextUsage.call(estimator);
+  };
+  await load(f, h, p);
+  await h.emit('session_start', c.ctx);
+  await h.emit('agent_start', c.ctx);
+  await h.emit('turn_start', c.ctx, { timestamp: p.now() });
+  const user = { role: 'user', content: [{ type: 'text', text: 'x'.repeat(400000) }], timestamp: p.now() };
+  // Native 1.5.1 runs extension message_end handlers BEFORE appendMessage.
+  await h.emit('message_end', c.ctx, { message: user });
+  assert.match(h.footer(), /0\.0%\/200k/);
+  native.appendMessage(user);
+  assert.equal(AgentSession.prototype.getContextUsage.call(estimator).percent, 50);
+  const messages = [user];
+  await h.emit('context', c.ctx, { messages });
+  assert.deepEqual(messages, [user], 'observing context must not alter provider input');
+  assert.match(h.footer(), /50\.0%\/200k/, 'new prompt is visible before any response/turn_end');
+  const captured = { entries, branches, estimates };
+  for (let i = 0; i < 5; i++) h.footer();
+  assert.deepEqual({ entries, branches, estimates }, captured, 'repaints never invoke the native estimator/history');
+  await h.emit('session_shutdown', c.ctx);
+});
+test('footer-off survives same-session tree/reconnect, resetting only on new session or reload', async (t) => {
+  const f = setup(t),
+    h = host(),
+    c = context(f, h),
+    p = ports(f, h, c);
+  await load(f, h, p);
+  await h.emit('session_start', c.ctx);
+  await h.commands.get('hud').handler('footer off', c.ctx);
+  assert.ok(h.footer().startsWith('pi-default|'));
+  await h.emit('session_before_tree', c.ctx);
+  await h.emit('session_tree', c.ctx);
+  assert.ok(h.footer().startsWith('pi-default|'), 'same-session tree keeps footer off');
+  await h.commands.get('hud').handler('reconnect', c.ctx);
+  assert.ok(h.footer().startsWith('pi-default|'), 'reconnect must not remount the footer');
+  await h.emit('session_before_switch', c.ctx);
+  const next = context(f, h, 'session-b');
+  await h.emit('session_start', next.ctx);
+  assert.match(h.footer(), /Synthetic Model/, 'a new native session defaults on');
+  await h.commands.get('hud').handler('footer off', next.ctx);
+  await h.emit('session_shutdown', next.ctx, { reason: 'reload' });
+  const reloaded = host(),
+    again = context(f, reloaded, 'session-b'),
+    rp = ports(f, reloaded, again);
+  await load(f, reloaded, rp);
+  await reloaded.emit('session_start', again.ctx, { reason: 'reload' });
+  assert.match(reloaded.footer(), /Synthetic Model/, 'reload resets the session-local choice');
+  await reloaded.emit('session_shutdown', again.ctx);
+});
+test('footer off during deferred host loading cannot reinstall it; panel and six tools stay independent', async (t) => {
+  const f = setup(t),
+    h = host(),
+    c = context(f, h),
+    p = ports(f, h, c);
+  let release, entered;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const waiting = new Promise((resolve) => {
+    entered = resolve;
+  });
+  p.options.footerHost = async () => {
+    entered();
+    await gate;
+    return footerHost;
+  };
+  await load(f, h, p);
+  const startup = h.emit('session_start', c.ctx);
+  await waiting;
+  await h.commands.get('hud').handler('footer off', c.ctx);
+  release();
+  await startup;
+  assert.equal(h.calls.footer, 0);
+  assert.equal(p.timers.size, 1);
+  assert.equal(p.counts().splits, 1);
+  assert.equal(h.tools.size, 6);
+  await h.tools.get('hud_read').execute('off-tools', {}, undefined, undefined, c.ctx);
+  await h.emit('session_shutdown', c.ctx);
 });
 test('exact-root refresh expires while idle, changed text only; no discovery, launches, herdr or network in tick/render', async (t) => {
   const f = setup(t),
@@ -385,7 +550,9 @@ test('exact-root refresh expires while idle, changed text only; no discovery, la
     assert.match(h.footer(), /Work:/);
     p.advance(ROLE_SUMMARY_TTL_MS);
     assert.equal(h.statuses.has('hud-delegation'), false);
-    assert.equal(h.footer(), 'owner-model|owner-cost|other-status');
+    assert.match(h.footer(), /Synthetic Model/);
+    assert.match(h.footer(), /other-status/);
+    assert.ok(!h.footer().includes('Work:'));
   } finally {
     for (const [obj, key, value] of saved) obj[key] = value;
     syncBuiltinESMExports();

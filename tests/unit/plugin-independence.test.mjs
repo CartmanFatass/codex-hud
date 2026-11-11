@@ -67,6 +67,54 @@ test('real import preview never prints source values and does not write', async 
   assert.ok(!output.includes('unique-preview-secret-884'));
   assert.equal(tree(root), before);
 });
+for (const row of [
+  {
+    name: 'preview writes nothing',
+    mode: 'preview',
+    source: { footer: { model: false }, band: { cost: false } },
+    code: 0,
+  },
+  {
+    name: 'apply writes only section',
+    mode: 'apply',
+    source: { footer: { model: false }, band: { cost: false } },
+    code: 0,
+  },
+  { name: 'unknown section refused', mode: 'apply', source: { unknown: {} }, code: 1 },
+  { name: 'unknown key refused', mode: 'apply', source: { footer: { mystery: true } }, code: 1 },
+  { name: 'wrong zone refused', mode: 'apply', source: { band: { model: true } }, code: 1 },
+  { name: 'non-boolean refused', mode: 'apply', source: { band: { cost: 'off' } }, code: 1 },
+])
+  test(`piFooter settings import: ${row.name}`, async (t) => {
+    const root = fixture(t),
+      home = path.join(root, 'hud'),
+      source = path.join(root, 'selected-p10k.json');
+    fs.mkdirSync(home);
+    const config = { unrelated: { keep: 'synthetic' }, piFooter: { footer: { path: false } } };
+    fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(config));
+    // The explicit footer import must not import even HUD's old credential file.
+    fs.writeFileSync(path.join(home, 'jev.env'), 'OPENAI_API_KEY=synthetic-not-imported\n', { mode: 0o600 });
+    fs.writeFileSync(source, JSON.stringify(row.source));
+    const before = tree(root);
+    const code = await hudMain(['import', row.mode, '--pi-footer', '--from', source], {
+      env: { HOME: root, HUD_HOME: home },
+      stdout() {},
+      stderr() {},
+    });
+    assert.equal(code, row.code);
+    if (row.mode === 'preview' || row.code !== 0) assert.equal(tree(root), before);
+    else {
+      assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'config.json'))), {
+        unrelated: config.unrelated,
+        piFooter: { footer: { path: false, model: false }, band: { cost: false } },
+      });
+      assert.equal(fs.statSync(path.join(home, 'config.json')).mode & 0o777, 0o600);
+      assert.equal(fs.existsSync(path.join(home, 'hud-settings.json')), false);
+      assert.equal(fs.existsSync(path.join(home, 'credentials.env')), false);
+      assert.equal(fs.readdirSync(home).filter((n) => n.startsWith('config.json.bak.')).length, 1);
+      assert.equal(fs.readFileSync(source, 'utf8'), JSON.stringify(row.source));
+    }
+  });
 async function waitFor(fn, message) {
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {

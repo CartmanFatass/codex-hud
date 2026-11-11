@@ -9,9 +9,11 @@ import { importableSettings } from '../settings.js';
 import { parseAssignments } from '../jev/ask/config.js';
 import type { HudIO } from './link-export.js';
 import { CliError } from './private-home.js';
+import { validateFooterSettings } from '../harness/pi/footer-settings.js';
 
 export const IMPORT_HELP = `Usage: hud import preview|apply [--from <file>]...
 Explicitly name each old hud-settings.json or jev-ask TOML. No Codex home is guessed.
+For p10k settings: hud import preview|apply --pi-footer --from ABS (only config.json.piFooter).
 Also merges $HUD_HOME/jev.env into credentials.env when present.
 An explicitly named .env may be imported too (replaces the old setup command).
 Existing destination names/keys win; changed existing files get timestamped 0600 backups.
@@ -27,11 +29,14 @@ export async function importCommand(args: readonly string[], io: HudIO): Promise
   }
   const mode = args[0];
   if (mode !== 'preview' && mode !== 'apply') throw new CliError('invalid_arguments');
+  const piFooter = args[1] === '--pi-footer';
   const sources: string[] = [];
-  for (let i = 1; i < args.length; i += 2) {
+  for (let i = piFooter ? 2 : 1; i < args.length; i += 2) {
     if (args[i] !== '--from' || !args[i + 1] || args[i + 1].startsWith('--')) throw new CliError('invalid_arguments');
+    if (piFooter && !path.isAbsolute(args[i + 1])) throw new CliError('invalid_arguments');
     sources.push(path.resolve(args[i + 1]));
   }
+  if (piFooter && sources.length !== 1) throw new CliError('invalid_arguments');
   try {
     const home = getHudHome(io.env);
     if (!path.isAbsolute(home) || home.includes('\0')) throw new Error();
@@ -75,10 +80,13 @@ export async function importCommand(args: readonly string[], io: HudIO): Promise
     };
     const legacy = path.join(home, 'jev.env');
     // The sole implicit source is HUD's own old credential filename, never another tool's home.
-    if (!sources.includes(legacy) && readSafe(legacy, true) !== undefined) sources.unshift(legacy);
+    if (!piFooter && !sources.includes(legacy) && readSafe(legacy, true) !== undefined) sources.unshift(legacy);
     for (const source of sources) {
       const bytes = readSafe(source)!;
-      if (source.endsWith('.env')) {
+      if (piFooter) {
+        const settings = validateFooterSettings(jsonObject(bytes.toString('utf8')));
+        plan(source, path.join(home, 'config.json'), { piFooter: settings });
+      } else if (source.endsWith('.env')) {
         const entries = parseAssignments(bytes.toString('utf8'));
         const known = new Map(
           [...entries].filter(([name]) =>

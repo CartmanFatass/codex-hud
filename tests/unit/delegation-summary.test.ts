@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import ts from 'typescript';
 import { syncBuiltinESMExports } from 'node:module';
 import { handshakeFixture } from './b45-handshake-fixture.js';
 import { HandshakeService } from '../../packages/hud-mcp/src/handshake.js';
@@ -22,13 +21,7 @@ import {
 } from '../../src/core/delegation-summary-store.js';
 import { readStatuslineSummary } from '../../src/core/statusline-summary.js';
 import { renderStatuslineSummary } from '../../src/render/statusline-summary.js';
-import {
-  createPiDelegationSummaryProvider,
-  capturePiFooter,
-  renderPiFooter,
-  type PiFooterContext,
-  type PiFooterFactory,
-} from '../../src/harness/pi/footer.js';
+import { createPiDelegationSummaryProvider, type PiFooterIdentity } from '../../src/harness/pi/footer.js';
 import type { DelegationViewModel } from '../../src/core/link/view-model.js';
 import type { LinkTreeNode, LinkRelationProjection } from '../../src/core/link/types.js';
 import type { SessionRef } from '../../src/core/types/identity.js';
@@ -406,82 +399,28 @@ test('real owned worker publishes cache consumed first by actual hud-statusline,
   assert.equal(absent.stdout.trim().split('\n').length, 1);
 });
 
-test('real owned worker feeds shipped Pi extension, exact native switch/fork identity and I/O-free stale repaint', async (t) => {
+test('real owned worker feeds the retained Pi provider; exact native identity, source and freshness required', async (t) => {
   const f = await workerFixture(t, 'pi');
-  const oldHome = process.env.HUD_HOME,
-    oldRoot = process.env.HUD_PI_SOURCE_ROOT;
-  process.env.HUD_HOME = f.root;
-  process.env.HUD_PI_SOURCE_ROOT = f.sourceRoot;
-  t.after(() => {
-    if (oldHome === undefined) delete process.env.HUD_HOME;
-    else process.env.HUD_HOME = oldHome;
-    if (oldRoot === undefined) delete process.env.HUD_PI_SOURCE_ROOT;
-    else process.env.HUD_PI_SOURCE_ROOT = oldRoot;
-  });
-  let sessionId = f.parentRef.sessionId,
-    leaf = 'leaf-a';
-  let component: ReturnType<PiFooterFactory> | undefined;
-  const ctx: PiFooterContext = {
-    mode: 'tui',
-    hasUI: true,
-    model: { id: 'Native Pi model' },
-    sessionManager: {
-      getSessionId: () => sessionId,
-      getSessionFile: () => f.file,
-      getSessionDir: () => f.sourceRoot,
-      getLeafId: () => leaf,
-      getBranch: () => [],
-    },
-    getContextUsage: () => undefined,
-    isIdle: () => true,
-    ui: {
-      setFooter(factory) {
-        component?.dispose();
-        component = factory?.(
-          { requestRender() {} },
-          { fg: (_color, text) => text },
-          { getGitBranch: () => null, getExtensionStatuses: () => new Map(), onBranchChange: () => () => {} }
-        );
-      },
-    },
+  const identity: PiFooterIdentity = {
+    sessionId: f.parentRef.sessionId,
+    sessionFile: f.file,
+    sessionDir: f.sourceRoot,
+    leafId: 'leaf-a',
   };
-  const source = fs.readFileSync(resolve('extensions/pi/hud-footer.ts'), 'utf8');
-  const js = ts
-    .transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } })
-    .outputText.replace(
-      '../../dist/harness/pi/footer.js',
-      new URL('../../src/harness/pi/footer.js', import.meta.url).href
-    );
-  const entry = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
-  const handlers = new Map<string, (_event: unknown, ctx: PiFooterContext) => void>();
-  entry.default({
-    on: (name: string, callback: (_event: unknown, ctx: PiFooterContext) => void) => handlers.set(name, callback),
-    registerCommand() {},
-  });
-  handlers.get('session_start')!({}, ctx);
-  assert.match(component!.render(200).join('\n'), /Native Pi model/);
-  assert.match(component!.render(200).join('\n'), /partial.*Shared synthetic child/);
-  const provider = createPiDelegationSummaryProvider({ HUD_HOME: f.root, HUD_PI_SOURCE_ROOT: f.sourceRoot });
-  const snapshot = capturePiFooter(ctx, provider);
-  assert.ok(snapshot.hud.delegation);
-  // Once captured, repaint needs neither cache nor source storage and drops evidence at its own age boundary.
+  const env = { HUD_HOME: f.root, HUD_PI_SOURCE_ROOT: f.sourceRoot };
+  const provider = createPiDelegationSummaryProvider(env);
+  const result = provider(identity) as {
+    identity: PiFooterIdentity;
+    committedDelegation: { expiresAt: number; children: unknown[] };
+  };
+  assert.deepEqual(result.identity, identity);
+  assert.ok(result.committedDelegation);
+  assert.match(JSON.stringify(result.committedDelegation), /Shared synthetic child/);
+  assert.equal(provider({ ...identity, sessionId: 'synthetic-fork', leafId: 'leaf-fork' }), null);
+  assert.equal(createPiDelegationSummaryProvider({ ...env, HUD_PI_SOURCE_ROOT: '/unrelated' })(identity), null);
+  assert.equal(createPiDelegationSummaryProvider(env, () => result.committedDelegation.expiresAt + 1)(identity), null);
+  assert.equal(provider({ ...identity, sessionFile: null }), null);
   await f.close();
   fs.unlinkSync(delegationSummaryPath(f.root, f.parentRef));
-  assert.match(component!.render(200).join('\n'), /Shared synthetic child/);
-  assert.ok(
-    !renderPiFooter(snapshot, 200, snapshot.hud.delegation!.expiresAt + 1)
-      .join('\n')
-      .includes('Shared synthetic child')
-  );
-  sessionId = 'synthetic-fork';
-  leaf = 'leaf-fork';
-  handlers.get('session_tree')!({}, ctx);
-  assert.ok(!component!.render(200).join('\n').includes('Shared synthetic child'));
-  assert.equal(
-    capturePiFooter(ctx, createPiDelegationSummaryProvider({ HUD_HOME: f.root, HUD_PI_SOURCE_ROOT: '/unrelated' })).hud
-      .state,
-    'unavailable'
-  );
-  handlers.get('session_shutdown')!({}, ctx);
-  assert.equal(component, undefined);
+  assert.equal(provider(identity), null);
 });

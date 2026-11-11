@@ -1,6 +1,7 @@
 /** Narrow public pi API projections; no SDK runtime dependency. */
 import type { PiContext } from './delegation-context.js';
 import type { SegmentContext } from './segment.js';
+import type { FooterContext } from './footer-host.js';
 export interface PiPackageBinding {
   version: 1;
   release: string;
@@ -11,8 +12,11 @@ export interface PiPackageBinding {
 }
 export interface PiPackageContext extends PiContext, SegmentContext {
   cwd: string;
-  sessionManager: PiContext['sessionManager'] & {
-    getHeader(): { type: string; id: string; cwd: string; parentSession?: string } | null;
-  };
-  ui: SegmentContext['ui'] & { notify(message: string, type?: 'info' | 'warning' | 'error'): void };
+  model?: FooterContext['model'];
+  getContextUsage: FooterContext['getContextUsage'];
+  sessionManager: PiContext['sessionManager'] &
+    FooterContext['sessionManager'] & {
+      getHeader(): { type: string; id: string; cwd: string; parentSession?: string } | null;
+    };
+  ui: SegmentContext['ui'] & FooterContext['ui'];
 }
