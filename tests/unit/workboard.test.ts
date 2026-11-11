@@ -1,87 +1,19 @@
 import assert from 'node:assert/strict';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
-import { performance } from 'node:perf_hooks';
 import { PanelJobPipeline } from '../../src/tree-page.js';
 import { TaskObservationCollector } from '../../src/collectors/task-observations.js';
 import { homeCalls } from '../../src/collectors/workboard.js';
 import { targetKey, type WorkTarget } from '../../src/collectors/workboard-types.js';
-import { initialMonitorState, renderMonitor, handleMonitorInput, type MonitorState } from '../../src/render/monitor.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../src/render/monitor.js';
 import { WorkbenchInputDecoder } from '../../src/utils/workbench-input.js';
 import { monitorKey, commandSequence } from '../../src/utils/panel-command.js';
 import { stripAnsi, visualLength } from '../../src/render/colors.js';
 import { setDisplayConfig } from '../../src/render/hud-config.js';
 import { setLanguage } from '../../src/render/i18n.js';
-import { r5Fixture, ROOT_R5, FIXED_R5_NOW } from '../fixtures/r5-jobs.js';
-
-function fixture(t: TestContext) {
-  const f = r5Fixture(t),
-    workspace = join(f.home, 'workspace');
-  fs.mkdirSync(join(workspace, 'tmp', 'tasks'), { recursive: true });
-  const pipeline = new PanelJobPipeline(f.home, ROOT_R5, { live: false, now: f.now }, workspace);
-  t.after(() => pipeline.dispose());
-  const task = (name = 'T1') => {
-    const directory = join(workspace, 'tmp', 'tasks', name);
-    fs.mkdirSync(directory, { recursive: true });
-    return directory;
-  };
-  const put = (file: string, text: unknown, at = FIXED_R5_NOW - 60000) => {
-    f.put(file, text);
-    fs.utimesSync(file, new Date(at), new Date(at));
-  };
-  const qa = (
-    directory: string,
-    n: number,
-    answer: string,
-    options = ['A) Keep a shim', 'B) Remove the shim'],
-    suggested = 'A'
-  ) => {
-    put(
-      join(directory, 'qa', `q${n}.md`),
-      `# Question q${n} from implementer\n\nWhich approach?\n\nOptions:\n${options.map((o) => '- ' + o).join('\n')}\n\nDefault if unanswered: ${suggested}\n\nContext: Synthetic compatibility constraint.\n\nAnswer: write elsewhere (not a locator)\n`,
-      FIXED_R5_NOW - 120000
-    );
-    put(join(directory, 'qa', `q${n}.answer.md`), answer);
-  };
-  const status = (directory: string, patch: Record<string, unknown> = {}) =>
-    put(join(directory, 'STATUS.json'), {
-      version: 1,
-      task_dir: directory,
-      slot: 'primary',
-      role: 'implementer',
-      model: 'synthetic-model',
-      thinking: 'high',
-      session_id: 'synthetic-primary',
-      output_path: join(directory, 'report.md'),
-      output_written: false,
-      state: 'working',
-      helper_pending: null,
-      started_at: '2026-11-09T11:30:00Z',
-      settled_at: null,
-      idle_deadline_at: null,
-      ended_at: null,
-      exit_reason: null,
-      error: null,
-      ...patch,
-    });
-  const collect = async (ticks = 30) => {
-    for (let i = 0; i < ticks; i++) await pipeline.refresh();
-    const composition = pipeline.compose(f.emptyTree(), null, f.now());
-    return {
-      board: pipeline.workboard(composition.tree, composition.legacy),
-      tree: composition.tree,
-      cost: pipeline.artifactCost!,
-    };
-  };
-  const draw = async (state: MonitorState = initialMonitorState(), width = 56, height = 80) => {
-    const data = await collect();
-    const frame = renderMonitor({ tree: data.tree, workboard: data.board, state, width, height, nowMs: f.now() });
-    return { ...data, frame, text: frame.lines.map(stripAnsi).join('\n') };
-  };
-  return { ...f, workspace, pipeline, task, put, qa, status, collect, draw };
-}
+import { ROOT_R5, FIXED_R5_NOW } from '../fixtures/r5-jobs.js';
 
 test('workboard real QA files: equality, explicit choices, conservative free text, quotation, negation and multipart yes', async (t) => {
   const f = fixture(t),
@@ -499,42 +431,6 @@ for (const width of [16, 32, 44, 56, 110])
           }
         });
 
-test('workboard render-on-change quiet timing evidence, three runs on this host (not WSL qualification)', async (t) => {
-  const f = fixture(t),
-    d = f.task();
-  f.status(d);
-  f.qa(d, 1, 'B');
-  const data = await f.collect();
-  for (let run = 0; run < 3; run++) {
-    const samples: number[] = [];
-    for (let n = 0; n < 120; n++) {
-      const start = performance.now();
-      renderMonitor({
-        tree: data.tree,
-        workboard: data.board,
-        state: initialMonitorState(),
-        width: 56,
-        height: 50,
-        nowMs: f.now(),
-      });
-      samples.push(performance.now() - start);
-    }
-    samples.sort((a, b) => a - b);
-    console.log(
-      JSON.stringify({
-        measurement: 'workboard-full-render',
-        host: process.platform,
-        run,
-        n: samples.length,
-        p50: samples[59],
-        p95: samples[113],
-        p99: samples[118],
-        max: samples[119],
-      })
-    );
-  }
-});
-
 test('workboard primary read failure is stale, clean sources do not write, and workspace reset clears decisions', async (t) => {
   const f = fixture(t),
     d = f.task();
@@ -641,3 +537,4 @@ for (const standalone of [true, false])
     child.stdin.write(commandSequence('quit'));
     await new Promise<void>((resolve) => child.once('exit', () => resolve()));
   });
+import { fixture } from '../fixtures/workboard-perf.js';

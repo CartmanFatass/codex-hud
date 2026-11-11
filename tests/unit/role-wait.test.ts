@@ -1,101 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import ts from 'typescript';
-import { main } from '../../src/cli/hud.js';
 import { DEFAULT_WAIT_MS, waitForJob } from '../../src/roles/job-wait.js';
 import { REPO_ROOT } from '../fixtures/paths.js';
-
-const JOB = 'j0123456789abcdef';
-function fixture(t: TestContext, dispatch = false) {
-  const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-wait-')));
-  fs.chmodSync(home, 0o700);
-  const directory = join(home, 'jobs', JOB);
-  const bin = join(home, 'bin');
-  fs.mkdirSync(join(directory, 'qa'), { recursive: true, mode: 0o700 });
-  fs.mkdirSync(bin);
-  const receipt = {
-    schema: 1,
-    job: JOB,
-    role: 'imp',
-    phase: null,
-    state: 'open',
-    prompted: true,
-    binding: { executor: 'herdr', harness: 'pi' },
-    executor: { kind: 'herdr', agent: 'synthetic-agent' },
-    ...(dispatch
-      ? {
-          pi_dispatch: {
-            contract_version: 1,
-            role: 'implementer',
-            executable: '/synthetic/pi-dispatch',
-            reaper: '/synthetic/pi-role-reap',
-            launch: 'acked',
-          },
-        }
-      : {}),
-  };
-  fs.writeFileSync(join(directory, 'receipt.json'), JSON.stringify(receipt), { mode: 0o600 });
-  const status = {
-    version: 1,
-    task_dir: directory,
-    slot: 'primary',
-    role: 'implementer',
-    output_path: join(directory, 'report.md'),
-    state: 'working',
-    output_written: false,
-    session_id: 'synthetic-session',
-    model: null,
-    thinking: null,
-    error: null,
-    exit_reason: null,
-    settled_at: null,
-    idle_deadline_at: null,
-    ended_at: null,
-    helper_pending: null,
-  };
-  if (dispatch) fs.writeFileSync(join(directory, 'STATUS.json'), JSON.stringify(status));
-  const script = `#!${process.execPath}
-const args = process.argv.slice(2);
-if (process.env.WAIT_LOG) require('node:fs').appendFileSync(process.env.WAIT_LOG, JSON.stringify(args)+'\\n');
-if (args[1] === 'get') { console.log(JSON.stringify({result:{agent:{agent_status:'working'}}})); }
-else if (process.env.WAIT_MODE === 'hang') { setInterval(()=>{},1000); }
-else if (process.env.WAIT_MODE === 'malformed') { console.error('not JSON: timeout'); process.exitCode=1; }
-else if (process.env.WAIT_MODE === 'oversized') { console.error(' '.repeat(5000)+JSON.stringify({error:{code:'timeout'}})+'x'); process.exitCode=1; }
-else if (process.env.WAIT_MODE === 'multiline') { console.error(JSON.stringify({error:{code:'timeout'}})+'\\n{}'); process.exitCode=1; }
-else if (process.env.WAIT_MODE) { console.error(JSON.stringify({error:{code:process.env.WAIT_MODE,message:'synthetic'},id:'cli:agent:wait'})); process.exitCode=1; }
-else { console.log(JSON.stringify({result:{agent:{agent_status:'idle'}}})); }
-`;
-  fs.writeFileSync(join(bin, 'herdr'), script, { mode: 0o755 });
-  const env: NodeJS.ProcessEnv = {
-    HOME: home,
-    HUD_HOME: home,
-    PATH: bin,
-    WAIT_LOG: join(home, 'argv.log'),
-    PI_CODING_AGENT_DIR: join(home, 'pi'),
-    PI_ROLES_LEDGER: join(home, 'ledger'),
-  };
-  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const run = async (args: string[] = ['--job', JOB, '--timeout-ms', '0']) => {
-    let stdout = '',
-      stderr = '';
-    const code = await main(['wait', ...args], {
-      env,
-      stdout: (text) => {
-        stdout += text;
-      },
-      stderr: (text) => {
-        stderr += text;
-      },
-    });
-    return { code, value: stdout ? JSON.parse(stdout) : null, stderr };
-  };
-  return { home, directory, bin, env, receipt, status, run };
-}
 
 test('bare direct wait passes the 30 minute default; explicit bounds stay unchanged', async (t) => {
   const f = fixture(t);
@@ -233,30 +144,6 @@ test('wait module transitive import graph excludes facade, Jev, routing, MCP and
   assert.ok([...seen].some((file) => file.endsWith('/pi-dispatch-status.js')));
 });
 
-test('file-only waiter cold RSS remains narrow and observation writes nothing', (t) => {
-  const f = fixture(t, true);
-  const file = join(f.directory, 'STATUS.json');
-  const before = fs.statSync(file).mtimeMs;
-  const child = spawnSync(
-    process.execPath,
-    [
-      '--input-type=module',
-      '-e',
-      `
-    import { waitForJob } from ${JSON.stringify(pathToFileURL(join(REPO_ROOT, 'dist/roles/job-wait.js')).href)};
-    await waitForJob(process.env.HUD_HOME, process.env, ${JSON.stringify(JOB)}, 0);
-    console.log(process.memoryUsage().rss);
-  `,
-    ],
-    { env: f.env, encoding: 'utf8', timeout: 10000 }
-  );
-  assert.equal(child.status, 0, child.stderr);
-  const rss = Number(child.stdout.trim());
-  assert.ok(rss > 0 && rss < 80 * 1024 * 1024, `file-only RSS=${rss}`);
-  assert.equal(fs.statSync(file).mtimeMs, before);
-  t.diagnostic(`cold file-only waiter RSS=${rss} bytes; STATUS writes=0`);
-});
-
 test('real bin/hud wait dynamically bypasses the ordinary CLI and forbidden runtime graphs', (t) => {
   const f = fixture(t, true);
   const loader = join(f.home, 'guard.mjs');
@@ -275,4 +162,16 @@ test('real bin/hud wait dynamically bypasses the ordinary CLI and forbidden runt
   );
   assert.equal(child.status, 6, child.stderr);
   assert.equal(JSON.parse(child.stdout).event, 'TIMEOUT');
+});
+import { JOB, fixture } from '../fixtures/role-wait-perf.js';
+
+test('semantic residue: file-only wait observes STATUS without writing it', async (t) => {
+  const f = fixture(t, true);
+  const file = join(f.directory, 'STATUS.json');
+  const before = fs.statSync(file, { bigint: true });
+  const bytes = fs.readFileSync(file);
+  assert.equal((await waitForJob(f.home, f.env, JOB, 0)).event, 'TIMEOUT');
+  assert.equal(fs.statSync(file, { bigint: true }).mtimeNs, before.mtimeNs);
+  assert.equal(fs.statSync(file, { bigint: true }).ino, before.ino);
+  assert.deepEqual(fs.readFileSync(file), bytes);
 });

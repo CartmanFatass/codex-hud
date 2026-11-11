@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { performance } from 'node:perf_hooks';
 import test from 'node:test';
 import {
   mergeStatus,
@@ -13,29 +12,6 @@ import {
 import { checkpointBoundary, witnessObservationBoundary } from '../../src/core/checkpoint.js';
 import { initialParserState } from '../../src/core/observation.js';
 import type { ObservationView } from '../../src/core/types/observation.js';
-
-interface Step {
-  input: MergeInput;
-  nowMs: number;
-  ruleVersion: string;
-  expected: Record<string, unknown>;
-}
-interface Fixture {
-  id: string;
-  title: string;
-  steps: Step[];
-  otherNodes?: Step[];
-  parentChild?: { parentRef: unknown; childRef: unknown };
-}
-const fixtureDir = resolve('tests/fixtures/status-merge');
-const fixtures = readdirSync(fixtureDir)
-  .filter((name) => name.endsWith('.json'))
-  .sort()
-  .map((name) => ({
-    name,
-    fixture: JSON.parse(readFileSync(resolve(fixtureDir, name), 'utf8')) as Fixture,
-  }));
-const fixture = (id: string) => structuredClone(fixtures.find((f) => f.fixture.id === id)!.fixture);
 
 /** Expected values are hand-authored projections, not regenerated from the merger. */
 function matches(actual: unknown, expected: unknown, path = 'result'): void {
@@ -365,31 +341,6 @@ test('adding a known anchor to the same proved interval preserves its observed s
   assert.equal(next.continuity.episodeAnchor, 'same-turn');
   assert.equal(next.projection.stateSince, previous.projection.stateSince);
   assert.equal(next.projection.stateSinceBasis, previous.projection.stateSinceBasis);
-});
-
-test('10,000 representative pure merges microbenchmark', (t) => {
-  const steps = fixtures.map((f) => f.fixture.steps.at(-1)!);
-  for (let i = 0; i < 500; i++) {
-    const step = steps[i % steps.length];
-    mergeStatus(step.input, null, step.ruleVersion, step.nowMs);
-  }
-  const samples: number[] = [];
-  for (let i = 0; i < 10000; i++) {
-    const step = steps[i % steps.length];
-    const start = performance.now();
-    mergeStatus(step.input, null, step.ruleVersion, step.nowMs);
-    samples.push(performance.now() - start);
-  }
-  samples.sort((a, b) => a - b);
-  t.diagnostic(
-    JSON.stringify({
-      merges: samples.length,
-      unit: 'ms/merge',
-      p50: samples[5000],
-      p95: samples[9500],
-      max: samples.at(-1),
-    })
-  );
 });
 
 test('H09 registry activity responsibility preserves transcript pending/outcome and explicit conflicts', () => {
@@ -831,3 +782,4 @@ test('H10 stale recovery cannot reuse a pre-deadline observation under either th
     assert.equal(rebuilt.projection.stateSinceBasis, 'event', priorRule);
   }
 });
+import { Step, fixtures, fixture } from '../fixtures/status-merge-perf.js';

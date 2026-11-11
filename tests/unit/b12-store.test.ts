@@ -6,17 +6,11 @@ import * as path from 'node:path';
 import { fork, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { serialize, deserialize } from 'node:v8';
-import { performance } from 'node:perf_hooks';
-import { openObservationStore, type ObservationStore } from '../../src/core/observation-store.js';
-import {
-  checkpointBoundary,
-  witnessObservationBoundary,
-  prepareObservationCandidate,
-  type ObservationCandidate,
-} from '../../src/core/checkpoint.js';
-import { initialParserState, projectFreshness } from '../../src/core/observation.js';
+import { openObservationStore } from '../../src/core/observation-store.js';
+import { prepareObservationCandidate } from '../../src/core/checkpoint.js';
+import { projectFreshness } from '../../src/core/observation.js';
 import { fixtureRun } from '../fixtures/contracts/identity-execution.js';
-import { CodexAdapter, type CodexCheckpoint } from '../../src/harness/codex/index.js';
+import { CodexAdapter } from '../../src/harness/codex/index.js';
 import { createClaudeReader } from '../../src/harness/claude/reader.js';
 import { initial, ROOT, row } from '../fixtures/codex-facade/rollouts.js';
 import type { LaunchProfile } from '../../src/core/types/capabilities.js';
@@ -26,111 +20,7 @@ import type {
   ReaderCheckpoint,
   ObservationView,
 } from '../../src/core/types/observation.js';
-import type { SessionRef } from '../../src/core/types/identity.js';
 
-const [major, minor] = process.versions.node.split('.').map(Number);
-const supported = (major === 22 && minor >= 13) || major >= 24;
-const skip = supported ? false : 'observation SQLite requires Node 22.x >=22.13 or >=24';
-const NOW = 1_700_000_000_000;
-const REF: SessionRef = { harness: 'codex', sourceId: 'e'.repeat(64), sessionId: 'synthetic-session', threadId: null };
-
-function commit(seq = 1, generation = 1): ObservationCommit {
-  const stamp = {
-    ref: REF,
-    sourceGeneration: 1,
-    seqDomain: 'synthetic-observation',
-    commitSeq: seq,
-    inputLedgerSeq: null,
-  };
-  return {
-    ref: REF,
-    sourceGeneration: 1,
-    leaseGeneration: generation,
-    seqDomain: stamp.seqDomain,
-    commitSeq: seq,
-    observationStamp: stamp,
-    checkpoint: {
-      schemaVersion: 1,
-      readerVersion: 'synthetic-reader-1',
-      ref: REF,
-      fileId: { dev: 1, inode: 2 },
-      offset: seq * 10,
-      sourceGeneration: 1,
-      parserState: initialParserState(),
-    },
-    summary: {
-      nodeIdentity: { kind: 'session', ref: REF },
-      statusProjection: {
-        activity: 'working',
-        pendingReason: 'none',
-        lastTurnOutcome: 'none',
-        liveness: 'alive',
-        freshness: projectFreshness([], [], NOW),
-        stateKey: 'working',
-        stateSince: NOW,
-        stateSinceBasis: 'event',
-        isRunTerminal: null,
-        asOfSeq: null,
-        observationStamp: stamp,
-        asOf: NOW,
-        observedAt: NOW,
-        lastEvidenceAt: NOW,
-      },
-      conflict: null,
-      spent: {
-        tokens: { value: { input: seq, output: 0 }, quality: 'reported', source: 'synthetic', asOf: NOW },
-        costUsd: { value: null, quality: 'unknown', source: 'synthetic', asOf: NOW },
-      },
-      workspace: null,
-      coverage: { state: 'complete', skipped: {}, gaps: [], loaded: true },
-      loaded: true,
-      depth: 0,
-      evidenceStamp: `synthetic-${seq}`,
-    },
-    continuity: {
-      nodeIdentity: { kind: 'session', ref: REF },
-      ruleVersion: 'synthetic-rule-1',
-      sourceGeneration: 1,
-      episodeAnchor: 'synthetic-turn',
-      stateKey: 'working',
-      stateSince: NOW,
-      stateSinceBasis: 'event',
-    },
-    notices: [
-      { seq, seqDomain: stamp.seqDomain, created_at: NOW, ref: REF, kind: 'pending', inputStamp: `synthetic-${seq}` },
-    ],
-  };
-}
-function candidate(c = commit(), previous = c.commitSeq - 1): ObservationCandidate {
-  return {
-    commit: c,
-    previousCommitSeq: previous,
-    boundary: witnessObservationBoundary(c.checkpoint, c.summary, checkpointBoundary(c.checkpoint)),
-  };
-}
-async function fixture(t: TestContext) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'b12-observation-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  let now = NOW;
-  const options = { hudHome: root, sourceId: REF.sourceId, now: () => now };
-  const stores: ObservationStore[] = [];
-  const open = async (readOnly = false) => {
-    const store = await openObservationStore({ ...options, readOnly });
-    stores.push(store);
-    return store;
-  };
-  t.after(() => {
-    for (const store of stores) store.close();
-  });
-  return {
-    root,
-    options,
-    open,
-    now: (value: number) => {
-      now = value;
-    },
-  };
-}
 const code = (expected: string) => (error: unknown) => (error as { code: string }).code === expected;
 
 test(
@@ -862,84 +752,26 @@ test(
     }
   }
 );
+import { skip, NOW, REF, commit, candidate, fixture } from '../fixtures/b12-store-perf.js';
 
-test(
-  'B12 cost: 1000 publishes/reads, unchanged ages and early renewals cause zero database writes',
-  {
-    skip:
-      skip || (process.env.B12_BENCHMARK !== '1' && 'set B12_BENCHMARK=1 for the isolated 1000-sample disk benchmark'),
-    timeout: 60_000,
-  },
-  async (t) => {
-    const f = await fixture(t);
-    const store = await f.open();
-    const lease = store.acquire(REF, 'panel');
-    const publish: number[] = [];
-    const read: number[] = [];
-    let bytes = 0;
-    const before = process.resourceUsage();
-    const startSize = fs.statSync(store.databasePath).size;
-    for (let seq = 1; seq <= 1050; seq++) {
-      const prepared = candidate(commit(seq));
-      let start = performance.now();
-      const result = store.publish(prepared, lease);
-      if (seq > 50) {
-        publish.push(performance.now() - start);
-        bytes += result.bytes;
-      }
-      start = performance.now();
-      const current = store.readCurrent(REF)!;
-      if (seq > 50) read.push(performance.now() - start);
-      assert.equal(current.commitSeq, seq);
-    }
-    const afterPublish = process.resourceUsage();
-    const file = fs.readFileSync(store.databasePath);
-    const stat = fs.statSync(store.databasePath);
-    const idleStart = process.resourceUsage();
-    for (let n = 0; n < 1000; n++) {
-      const same = store.readCurrent(REF)!;
-      same.commitSeq++;
-      same.observationStamp.commitSeq++;
-      same.summary.statusProjection.observedAt += n;
-      same.summary.statusProjection.observationStamp = same.observationStamp;
-      assert.deepEqual(store.publish(candidate(same), lease), { changed: false, commitSeq: 1050, bytes: 0 });
-      store.renew(REF, lease);
-    }
-    const idleEnd = process.resourceUsage();
-    assert.equal(idleEnd.fsWrite - idleStart.fsWrite, 0);
-    assert.equal(fs.statSync(store.databasePath).mtimeMs, stat.mtimeMs);
-    assert.deepEqual(fs.readFileSync(store.databasePath), file);
-    if (process.env.B12_BENCHMARK_OUTPUT)
-      fs.writeFileSync(
-        process.env.B12_BENCHMARK_OUTPUT,
-        JSON.stringify({
-          publishMs: publish,
-          readMs: read,
-          serializedBytesPerCommit: bytes / 1000,
-          fsWrite512ByteBlocksPerCommit: (afterPublish.fsWrite - before.fsWrite) / 1050,
-          unchangedTickWrites: idleEnd.fsWrite - idleStart.fsWrite,
-        })
-      );
-    const distribution = (samples: number[]) => {
-      samples.sort((a, b) => a - b);
-      return {
-        n: samples.length,
-        p50: samples[499],
-        p95: samples[949],
-        p99: samples[989],
-        max: samples[999],
-        over50: samples.filter((n) => n >= 50).length,
-      };
-    };
-    t.diagnostic(
-      JSON.stringify({
-        publishMs: distribution(publish),
-        readMs: distribution(read),
-        serializedBytesPerCommit: bytes / 1000,
-        fsWrite512ByteBlocksPerCommit: (afterPublish.fsWrite - before.fsWrite) / 1050,
-        databaseGrowthBytes: fs.statSync(store.databasePath).size - startSize,
-        unchangedTickWrites: idleEnd.fsWrite - idleStart.fsWrite,
-      })
-    );
+test('semantic residue: unchanged ages and early renewals cause zero database writes', { skip }, async (t) => {
+  const f = await fixture(t),
+    store = await f.open();
+  const lease = store.acquire(REF, 'panel');
+  store.publish(candidate(), lease);
+  const bytes = fs.readFileSync(store.databasePath + '-wal');
+  const stat = fs.statSync(store.databasePath);
+  const writes = process.resourceUsage().fsWrite;
+  for (let n = 1; n <= 2; n++) {
+    const same = store.readCurrent(REF)!;
+    same.commitSeq++;
+    same.observationStamp.commitSeq++;
+    same.summary.statusProjection.observedAt += n;
+    same.summary.statusProjection.observationStamp = same.observationStamp;
+    assert.deepEqual(store.publish(candidate(same), lease), { changed: false, commitSeq: 1, bytes: 0 });
+    store.renew(REF, lease);
   }
-);
+  assert.equal(process.resourceUsage().fsWrite, writes);
+  assert.equal(fs.statSync(store.databasePath).mtimeMs, stat.mtimeMs);
+  assert.deepEqual(fs.readFileSync(store.databasePath + '-wal'), bytes);
+});

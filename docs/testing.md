@@ -37,7 +37,7 @@ hashes and visual frame hashes; keeping only similar coverage is insufficient.
 | `e2e`      | Three small synthetic product scenarios E01–E03 compose the real facade, panel collection and packaged host. Extend these; do not replicate the entire failure matrix at this layer.                                                                                           |
 | `visual`   | Existing pinned terminal frames, display widths, control targets and EN/ZH appearance. Baseline bytes are frozen; logic around them belongs to contract/pure owners.                                                                                                           |
 | WP0        | Inherited main behaviour and its pinned assertions/frames, unchanged by TEST-SLIM. Run by its existing runner and opt-in rules, not a replacement for the product map.                                                                                                         |
-| `perf`     | Opt-in latency, cold-cost, large-scale and throughput experiments. Proposed `npm run test:perf`, never part of `npm test` or the merge gate; the script does not exist yet. Keep small deterministic correctness rows in contract owners.                                      |
+| `perf`     | Opt-in latency, cold-cost, large-scale, RSS and throughput experiments in `tests/perf/`, run serially by `npm run test:perf` with host/Node/revision metadata. Never part of `npm test` or the merge gate. Small correctness residues remain in the default contract owners; frozen WP0 performance overlaps keep their existing routing.                                      |
 
 ## 3. Product behaviours and their owners
 
@@ -289,11 +289,11 @@ behaviours have separate owners. Frozen owners are routing pointers, never edits
 
 | ID  | User/contract behaviour                                                                  | One owning test                                                                                                                         | Layer  |
 | --- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| Q01 | Quiet/changed/scroll/resize rendering keeps declared host-labelled latency bounds        | `work-card-p2.test.ts` — P2 measured quiet/change/large-history/scroll/resize rendering, three runs on named host                       | `perf` |
-| Q02 | Large association/history scans remain bounded and fair without deleting durable records | `r5-job-bounds.test.ts` — R5 5000 associations: per-refresh caps, bounded projection, fair cursor continuation, no durable deletion     | `perf` |
-| Q03 | Cold owned launches report distribution and semantic write counts on a named host        | `pi-owned-orchestration.test.ts` — cost: cold fake launch n=20; launcher STATUS writes=0, unchanged journal reads=0 writes              | `perf` |
-| Q04 | Delegation projection/rows and selection interaction retain distinct latency budgets     | `b10b-s3-perf.test.ts` — compact, 200 nodes at 56 columns: reconcile + key press + every row + frame-diff, a changed tick, p99 <= 10 ms | `perf` |
-| Q05 | Ledger and MCP stress retain declared throughput, checkpoint and latency envelopes       | `ledger-perf.test.ts` — ledger benchmark: 1000 small writes and read-only snapshots with 10000 runs                                     | `perf` |
+| Q01 | Quiet/changed/scroll/resize rendering keeps declared host-labelled latency bounds        | `tests/perf/work-card-p2.test.ts` — P2 measured quiet/change/large-history/scroll/resize rendering, three runs on named host; `tests/perf/{workboard,job-progress}.test.ts` own their render timings                       | `perf` |
+| Q02 | Large association/history scans remain bounded and fair without deleting durable records | `tests/perf/r5-job-bounds.test.ts` — R5 5000 associations: per-refresh caps, bounded projection, fair cursor continuation, no durable deletion; closed-history workload     | `perf` |
+| Q03 | Cold owned launches report distribution and semantic write counts on a named host        | `tests/perf/pi-owned-orchestration.test.ts` — cold fake/real-loader n=20; `tests/perf/pi-dispatch-facade.test.ts` — PR4 cold launch samples; `tests/perf/role-wait.test.ts` — cold RSS              | `perf` |
+| Q04 | Delegation projection/rows and selection interaction retain distinct latency budgets     | `tests/perf/{b10b-perf,b10b-s2-perf,b10b-s3-perf}.test.ts` — projection, rows, selection and frame-diff latency; `tests/perf/status-merge.test.ts` — pure merge microbenchmark | `perf` |
+| Q05 | Ledger and MCP stress retain declared throughput, checkpoint and latency envelopes       | `tests/perf/{ledger-perf,b12-store,b12d-wal,b6-performance,b18-budgets,b19-drainer,handshake-benchmark}.test.ts` and `tests/perf/b21-process.test.mjs` — ledger, export, WAL and MCP stress; `tests/perf/materials.test.ts` — material build cost                                     | `perf` |
 
 ## 4. Shared stand-ins and fixtures (proposed, not created here)
 

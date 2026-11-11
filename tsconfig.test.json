@@ -7,6 +7,6 @@
     "declarationMap": false,
     "noEmitOnError": true
   },
-  "include": ["src/**/*", "tests/unit/**/*", "tests/fixtures/**/*"],
+  "include": ["src/**/*", "tests/unit/**/*", "tests/fixtures/**/*", "tests/perf/**/*"],
   "exclude": ["node_modules", "dist", "dist-test"]
 }

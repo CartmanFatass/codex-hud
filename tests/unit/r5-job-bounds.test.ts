@@ -2,42 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { r5Fixture, idR5 } from '../fixtures/r5-jobs.js';
-import { JOB_BOUNDS } from '../../src/collectors/job-observations.js';
+import { r5Fixture } from '../fixtures/r5-jobs.js';
 import { composeJobTree } from '../../src/collectors/job-tree.js';
-
-function diskSnapshot(path: string): string {
-  return JSON.stringify(
-    fs
-      .readdirSync(path, { withFileTypes: true })
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((e) => [
-        e.name,
-        e.isDirectory() ? diskSnapshot(join(path, e.name)) : fs.readFileSync(join(path, e.name)).toString('base64'),
-      ])
-  );
-}
-test('R5 5000 associations: per-refresh caps, bounded projection, fair cursor continuation, no durable deletion', async (t) => {
-  const f = r5Fixture(t),
-    c = f.observer();
-  for (let n = 1; n <= 5000; n++) f.association(n);
-  const before = diskSnapshot(f.home),
-    seen = new Set<string>();
-  let peakEntries = 0;
-  for (let tick = 0; tick < 1600 && seen.size < 5000; tick++) {
-    const snapshot = await c.refresh();
-    const tree = composeJobTree({ tree: f.emptyTree(), snapshot, root: 'synthetic/main', nowMs: f.now() }).tree;
-    assert.ok(snapshot.coverage.entries <= JOB_BOUNDS.entries);
-    assert.ok(snapshot.coverage.files <= JOB_BOUNDS.files);
-    assert.ok(snapshot.coverage.bytes <= JOB_BOUNDS.bytes);
-    assert.ok(tree.totalCount <= JOB_BOUNDS.nodes);
-    peakEntries = Math.max(peakEntries, snapshot.coverage.entries);
-    for (const job of snapshot.jobs) seen.add(job.jobId);
-  }
-  assert.equal(seen.size, 5000, 'every metadata-only live job must get a turn, not just the first directory page');
-  assert.ok(peakEntries > 0);
-  assert.equal(diskSnapshot(f.home), before);
-});
 
 test('R5 helper and QA discovery share the global entry/read budget across ticks', async (t) => {
   const f = r5Fixture(t),
@@ -77,23 +43,51 @@ test('R5 helper and QA discovery share the global entry/read budget across ticks
   }
   assert.equal(maximumEntries, 128, 'entry cap is exercised, not merely declared');
 });
+import { diskSnapshot } from '../fixtures/r5-job-bounds-perf.js';
+import { JOB_BOUNDS } from '../../src/collectors/job-observations.js';
 
-test('R5 closed display history prunes to 50 / 30 days, preserving all disk records', async (t) => {
+test('semantic residue: small association set exercises caps and fair continuation without deletion', async (t) => {
   const f = r5Fixture(t),
     c = f.observer();
-  for (let n = 1; n <= 260; n++) {
+  const count = JOB_BOUNDS.nodes + 1;
+  for (let n = 1; n <= count; n++) f.association(n);
+  const before = diskSnapshot(f.home),
+    seen = new Set<string>();
+  let peakEntries = 0,
+    peakNodes = 0;
+  for (let tick = 0; tick < 100 && seen.size < count; tick++) {
+    const snapshot = await c.refresh();
+    const tree = composeJobTree({ tree: f.emptyTree(), snapshot, root: 'synthetic/main', nowMs: f.now() }).tree;
+    assert.ok(snapshot.coverage.entries <= JOB_BOUNDS.entries);
+    assert.ok(snapshot.coverage.files <= JOB_BOUNDS.files);
+    assert.ok(snapshot.coverage.bytes <= JOB_BOUNDS.bytes);
+    assert.ok(tree.totalCount <= JOB_BOUNDS.nodes);
+    peakEntries = Math.max(peakEntries, snapshot.coverage.entries);
+    peakNodes = Math.max(peakNodes, tree.totalCount);
+    for (const job of snapshot.jobs) seen.add(job.jobId);
+  }
+  assert.ok(peakEntries > 0);
+  assert.ok(peakNodes > 0);
+  assert.equal(seen.size, count);
+  assert.equal(diskSnapshot(f.home), before);
+});
+
+test('semantic residue: closed history keeps 50 recent records and excludes a 31-day record without disk deletion', async (t) => {
+  const f = r5Fixture(t),
+    c = f.observer();
+  for (let n = 1; n <= 52; n++) {
     const a = f.association(n, {
       closed: true,
-      closed_at: new Date(f.now() - (n <= 60 ? 31 : 1) * 86400000).toISOString(),
+      closed_at: new Date(f.now() - (n === 1 ? 31 : 1) * 86400000).toISOString(),
     });
     f.receipt(a, { state: 'closed' });
   }
   const before = diskSnapshot(f.home);
   let snapshot = await c.refresh();
-  for (let n = 0; n < 300; n++) snapshot = await c.refresh();
+  for (let tick = 0; tick < 60; tick++) snapshot = await c.refresh();
   const result = composeJobTree({ tree: f.emptyTree(), snapshot, root: 'synthetic/main', nowMs: f.now() });
   assert.equal(result.tree.totalCount, 50);
-  assert.ok(snapshot.jobs.every((j) => Number.parseInt(j.jobId.slice(1), 16) > 60));
+  assert.ok(snapshot.jobs.every((j) => j.jobId !== 'j0000000000000001'));
+  assert.equal(fs.readdirSync(join(f.home, 'assoc')).length, 52);
   assert.equal(diskSnapshot(f.home), before);
-  assert.equal(fs.readdirSync(join(f.home, 'assoc')).length, 260);
 });

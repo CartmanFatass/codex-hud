@@ -7,8 +7,8 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import { notifyFixture, completion, factEvidence, reportFor } from './b21-fixture.js';
-import { recordWakeRegistered, recordWakeRevoked, recordWakeDelivered } from '../../src/ledger/notify-events.js';
-import { insertRecord, readLink, readContext } from '../../src/ledger/records.js';
+import { recordWakeRegistered, recordWakeDelivered } from '../../src/ledger/notify-events.js';
+import { insertRecord, readLink } from '../../src/ledger/records.js';
 import { authorizeRootCall, scopeSnapshot } from '../../src/ledger/call-context.js';
 import { acceptIntent } from '../../src/ledger/intents.js';
 import { commitReconcile, readReconcileSnapshot } from '../../src/ledger/reconcile.js';
@@ -17,12 +17,9 @@ import { WakeAdapters } from '../../src/core/wake/adapters.js';
 import { ReadControlService } from '../../packages/hud-mcp/src/read-control.js';
 import { readWakeState, wakeProjection } from '../../packages/hud-mcp/src/wake-state.js';
 import { touchHint } from '../../src/core/wait/hints.js';
-import { ledgerRuntimeSupported } from '../../src/ledger/runtime.js';
 import { openLedger } from '../../src/ledger/ledger.js';
 import { createServer } from 'node:net';
 import { makeProcessKey, makeSourceId, sessionOwnerKey, sessionRefKey } from '../../src/core/identity.js';
-const skip = !ledgerRuntimeSupported();
-type Fixture = Awaited<ReturnType<typeof notifyFixture>>;
 async function until(predicate: () => boolean | Promise<boolean>, ms = 2500) {
   const deadline = performance.now() + ms;
   while (!(await predicate())) {
@@ -49,25 +46,6 @@ function executable(f: Fixture, slow = 0) {
   );
   chmodSync(path, 0o700);
   return path;
-}
-async function register(f: Fixture) {
-  return f.ledger.transaction((tx) => recordWakeRegistered(tx, 'link-a', f.registration, Date.now()));
-}
-async function event(f: Fixture, count = 1) {
-  return f.ledger.transaction((tx) => {
-    const seqs: number[] = [];
-    for (let i = 0; i < count; i++) {
-      insertRecord(tx, 'events', {
-        runId: 'run-a',
-        linkId: 'link-a',
-        kind: 'run.state',
-        payload: { state: 'uncertain' },
-        at: Date.now() - i,
-      });
-      seqs.push(Number(tx.get('SELECT last_insert_rowid() AS n')!.n));
-    }
-    return seqs;
-  });
 }
 async function drainer(f: Fixture, exe: string, extra: Partial<ConstructorParameters<typeof WakeDrainer>[0]> = {}) {
   const d = new WakeDrainer({
@@ -170,7 +148,7 @@ test('B19 unknown retries only after recovery, reaches exhausted attempt 2, neve
 test(
   'B19 a parent call during transport or after unknown permanently suppresses that batch retry',
   { skip },
-  async (t) => {
+  async (_t) => {
     for (const during of [true, false]) {
       const f = await notifyFixture();
       await register(f);
@@ -323,8 +301,6 @@ test('B19 generation revocation after a reserved slot refuses the stale send', {
   });
   assert.equal(calls(f.root).length, 0);
 });
-
-// Direct subprocess helper stays a test dependency, never a production transport.
 import { spawnSync } from 'node:child_process';
 function requireChild() {
   return { spawnSync };
@@ -333,7 +309,7 @@ function requireChild() {
 test(
   'B19 real crash after reservation/before send and accepted/before outcome never creates a third send across restarts',
   { skip, timeout: 10000 },
-  async (t) => {
+  async (_t) => {
     for (const fault of ['reserve', 'transport']) {
       const f = await notifyFixture();
       await register(f);
@@ -428,7 +404,7 @@ test('B19 startup janitor unlinks only terminal-run hints older than one hour', 
 test(
   'B19 pi stale/no-endpoint rejection revokes atomically, degrades status and triggers no turn',
   { skip },
-  async (t) => {
+  async (_t) => {
     for (const absent of [true, false]) {
       const f = await notifyFixture();
       const sourceId = makeSourceId('pi', f.root);
@@ -868,71 +844,6 @@ test(
 );
 
 test(
-  'B19 status reduction stays below50ms with1000 accepted batches and preserves an older unconfirmed interval',
-  { skip },
-  async (t) => {
-    const f = await notifyFixture();
-    const reg = await register(f);
-    t.after(() => f.close());
-    await f.ledger.transaction((tx) => {
-      for (let i = 0; i < 1000; i++) {
-        insertRecord(tx, 'events', {
-          runId: 'run-a',
-          linkId: 'link-a',
-          kind: 'run.state',
-          payload: { state: 'uncertain' },
-          at: Date.now(),
-        });
-        const throughSeq = Number(tx.get('SELECT last_insert_rowid() AS n')!.n);
-        recordWakeDelivered(
-          tx,
-          'link-a',
-          { registrationSeq: reg, throughSeq, result: 'unknown', attempt: 1 },
-          Date.now()
-        );
-        recordWakeDelivered(
-          tx,
-          'link-a',
-          { registrationSeq: reg, throughSeq, result: 'accepted', attempt: 1 },
-          Date.now()
-        );
-      }
-    });
-    const service = new ReadControlService(f.ledger, f.root);
-    t.after(() => service.close());
-    const samples: number[] = [];
-    for (let i = 0; i < 25; i++) {
-      const start = performance.now();
-      const status = await service.status({ runId: 'run-a' }, () => f.parent.authority);
-      samples.push(performance.now() - start);
-      assert.equal(status.wake.state, 'registered');
-    }
-    samples.sort((a, b) => a - b);
-    const p95 = samples[Math.floor(samples.length * 0.95)];
-    assert.ok(p95 < 50, String(p95));
-    t.diagnostic(
-      `1000-batch status p50=${samples[12].toFixed(3)} p95=${p95.toFixed(3)} max=${samples.at(-1)!.toFixed(3)} ms`
-    );
-    const events = await event(f, 2);
-    await f.ledger.transaction((tx) => {
-      recordWakeDelivered(
-        tx,
-        'link-a',
-        { registrationSeq: reg, throughSeq: events[0], result: 'unknown', attempt: 1 },
-        Date.now()
-      );
-      recordWakeDelivered(
-        tx,
-        'link-a',
-        { registrationSeq: reg, throughSeq: events[1], result: 'accepted', attempt: 1 },
-        Date.now()
-      );
-    });
-    assert.equal((await service.status({ runId: 'run-a' }, () => f.parent.authority)).wake.state, 'unconfirmed');
-  }
-);
-
-test(
   'B19 terminal empty drain removes a late recreated covered hint and retains an uncovered later hint',
   { skip },
   async (t) => {
@@ -961,3 +872,34 @@ test(
     assert.equal(calls(f.root).length, 1);
   }
 );
+import { skip, Fixture, register, event } from '../fixtures/b19-drainer-perf.js';
+
+test('semantic residue: accepted wake batches cannot cover an older unconfirmed interval', { skip }, async (t) => {
+  const f = await notifyFixture();
+  t.after(() => f.close());
+  const reg = await register(f);
+  const service = new ReadControlService(f.ledger, f.root);
+  t.after(() => service.close());
+  const first = (await event(f))[0];
+  await f.ledger.transaction((tx) => {
+    for (const result of ['unknown', 'accepted'] as const)
+      recordWakeDelivered(tx, 'link-a', { registrationSeq: reg, throughSeq: first, result, attempt: 1 }, Date.now());
+  });
+  assert.equal((await service.status({ runId: 'run-a' }, () => f.parent.authority)).wake.state, 'registered');
+  const events = await event(f, 2);
+  await f.ledger.transaction((tx) => {
+    recordWakeDelivered(
+      tx,
+      'link-a',
+      { registrationSeq: reg, throughSeq: events[0], result: 'unknown', attempt: 1 },
+      Date.now()
+    );
+    recordWakeDelivered(
+      tx,
+      'link-a',
+      { registrationSeq: reg, throughSeq: events[1], result: 'accepted', attempt: 1 },
+      Date.now()
+    );
+  });
+  assert.equal((await service.status({ runId: 'run-a' }, () => f.parent.authority)).wake.state, 'unconfirmed');
+});
