@@ -988,6 +988,25 @@ the tools it replaces do for the owner today.
 - **Order.** The A8 release installs first; its statusline switch stays blocked by the parity check as designed. The
   parity release switches the Claude statusline and the pi footer.
 
+### 2026-11-10 One installer package with core and extensions (Jacob)
+
+The row-by-row owner runbook does not meet the requirement. The HUD ships as one release archive with a one-command
+installer, in the standard rustup/Homebrew-installer form: `./install` picks components interactively or takes flags
+(`--with claude,pi`), and the installed `hud install | uninstall | upgrade | status` add, remove and update
+components later. Versions stay side by side with rollback. No npm global package.
+
+- **Core** (always): the runtime, the `hud` / `hud-statusline` / `hud-mcp` commands, the HUD home, the side panel and
+  the MCP role tools.
+- **Extensions** (optional; each pulls in core): Claude (plugin, and the statusline that replaces claude-hud), pi
+  (package, and the footer that replaces p10k-footer), Codex (MCP, skill, tmux bar), Jev browser jobs (needs Chrome),
+  herdr integration (side panel and CLI jobs; needs herdr).
+- **Dependencies** are resolved by the installer: extension → core automatically; external tools (Node, herdr,
+  Chrome, a harness CLI) are checked and reported, never installed silently.
+- **Uninstall** removes chosen components; removing core removes the extensions first. One preview lists every
+  change, one confirmation applies it.
+- The A1 transaction engine, previews, receipts and exact restore stay underneath; the row commands remain for tests
+  and diagnosis. The owner runbook becomes a short install/check/uninstall page.
+
 ## 16. 评审状态与下一次评审
 
 v2.3仍为阶段A开工基线；[Oracle consult 1](./reviews/2026-11-01-astra-contracts.md) C01–C14及[consult 2](./reviews/2026-11-01-astra-consult2.md) D01–D13约束七契约，不是A9放行。A3五份探针已主审通过，Codex有界spoof已完成；[daemon补测](./probes/codex-daemon.md)是CLI0.166/daemon0.163在场direct-stdio有限证据（脚本exit=2、后续清理不改pass），非共享支持/A9前置。[A8](./probes/hud-run-visible.md)首轮拒绝，A8-fixB2关键证据已于8fdf4cf接受：同agent/session状态、实际context命令、父launcher退出后TTY输入/收尾；限所测版本和pane shell等待hud-run的前台形态，后台负对照仍失败。工程WP B2及生产取消/复用/性能/真实父MCP故障矩阵仍由B验收。

@@ -343,6 +343,11 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   **STATUSLINE-PARITY** (Claude) and **PI-FOOTER-PORT** (pi). The A8 release installs first; the parity release
   switches the Claude statusline and the pi footer.
 
+  2026-11-10 (owner): one installer package (concept §15 "One installer package with core and extensions"):
+  release archive + `./install`, components core + extensions, `hud install|uninstall|upgrade|status`. Architect
+  consult INSTALLER-ARCH running; implementation starts after A8 merges. The owner installs with the installer, not
+  the row runbook.
+
   Next:
   - R6b slice L, after A8 merges, the owner installs, and the drain audit passes (`--slice runtime`);
   - R7 acceptance, whose plan is drafted alongside;
