@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
+import { loadParitySettings } from './statusline-parity/settings.js';
 const LIMIT = 1024 * 1024;
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -11,6 +12,8 @@ export interface StatuslinePlan {
   target: string;
   currentHash: string | null;
   command: string;
+  shimPath?: string;
+  shimExists?: boolean;
   proposedHash: string;
 }
 interface Backup {
@@ -101,7 +104,12 @@ function read(file: string, limit = LIMIT): { bytes: Buffer; mode: number } | nu
   }
 }
 function parsed(bytes: Buffer): Record<string, unknown> {
-  const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    throw new Error('invalid_settings_json');
+  }
   if (!object(value)) throw new Error('invalid_settings_json');
   return value;
 }
@@ -113,12 +121,22 @@ function proposed(current: Buffer | null, command: string): Buffer {
   return result;
 }
 const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
-/** POSIX command, explicitly targeting the Node binary and product entrypoint used for preview. */
-export function previewStatusline(home: string, node: string, entry: string): StatuslinePlan {
+/** Plain public shim follows the active release across upgrades and rollback. */
+export function previewStatusline(
+  home: string,
+  node: string,
+  entry: string,
+  shimDir?: string,
+  env: NodeJS.ProcessEnv = { HOME: home }
+): StatuslinePlan {
   if (process.platform === 'win32') throw new Error('settings_posix_only');
   if (![node, entry].every((value) => path.isAbsolute(value) && !/[\0\r\n]/.test(value) && fs.statSync(value).isFile()))
     throw new Error('invalid_statusline_command');
-  const command = `${quote(node)} ${quote(entry)}`;
+  const publicShim = shimDir !== undefined || loadParitySettings(env) !== null;
+  const directory = shimDir ?? path.join(home, '.local/bin');
+  if (!path.isAbsolute(directory) || /[\0\r\n]/.test(directory)) throw new Error('invalid_shim_directory');
+  const shimPath = path.join(directory, 'hud-statusline');
+  const command = publicShim ? quote(shimPath) : `${quote(node)} ${quote(entry)}`;
   return pinned(home, (dir) => {
     const current = read(dir.file);
     return {
@@ -126,9 +144,24 @@ export function previewStatusline(home: string, node: string, entry: string): St
       target: dir.target,
       currentHash: current ? hash(current.bytes) : null,
       command,
+      ...(publicShim ? { shimPath, shimExists: usableShim(shimPath) } : {}),
       proposedHash: hash(proposed(current?.bytes ?? null, command)),
     };
   });
+}
+function usableShim(file: string): boolean {
+  try {
+    const stat = fs.lstatSync(file);
+    return (
+      stat.isFile() &&
+      !stat.isSymbolicLink() &&
+      stat.uid === process.getuid?.() &&
+      !(stat.mode & 0o022) &&
+      !!(stat.mode & 0o111)
+    );
+  } catch {
+    return false;
+  }
 }
 function validatePlan(value: unknown, home: string): StatuslinePlan {
   if (
@@ -139,6 +172,12 @@ function validatePlan(value: unknown, home: string): StatuslinePlan {
       value.currentHash === null ||
       (typeof value.currentHash === 'string' && /^[a-f0-9]{64}$/.test(value.currentHash))
     ) ||
+    (value.shimPath !== undefined &&
+      (typeof value.shimPath !== 'string' ||
+        !path.isAbsolute(value.shimPath) ||
+        path.basename(value.shimPath) !== 'hud-statusline' ||
+        typeof value.shimExists !== 'boolean' ||
+        value.command !== quote(value.shimPath))) ||
     typeof value.command !== 'string' ||
     !value.command ||
     value.command.length > 8192 ||
@@ -147,6 +186,7 @@ function validatePlan(value: unknown, home: string): StatuslinePlan {
     !/^[a-f0-9]{64}$/.test(value.proposedHash)
   )
     throw new Error('invalid_statusline_plan');
+  // SAFETY: every StatuslinePlan field is validated above, including the command/shim binding.
   return value as unknown as StatuslinePlan;
 }
 function locked<T>(file: string, work: () => T): T {
@@ -192,6 +232,7 @@ export function applyStatusline(
   value: unknown
 ): { target: string; backup: string; installedHash: string } {
   const plan = validatePlan(value, home);
+  if (plan.shimPath && !usableShim(plan.shimPath)) throw new Error('statusline_public_shim_missing_or_unsafe');
   return pinned(home, (dir) =>
     locked(dir.file, () => {
       const current = read(dir.file);
@@ -260,8 +301,16 @@ export function restoreStatusline(home: string, backup: string): { target: strin
   });
 }
 /** CLI routing is explicit. Preview never writes; apply needs a saved preview plan. */
-export function statuslineSettings(args: readonly string[], home: string, node: string, entry: string): object {
-  if (args.length === 1 && args[0] === 'preview') return previewStatusline(home, node, entry);
+export function statuslineSettings(
+  args: readonly string[],
+  home: string,
+  node: string,
+  entry: string,
+  env: NodeJS.ProcessEnv = { HOME: home }
+): object {
+  if (args.length === 1 && args[0] === 'preview') return previewStatusline(home, node, entry, undefined, env);
+  if (args.length === 3 && args[0] === 'preview' && args[1] === '--shim-dir' && path.isAbsolute(args[2]))
+    return previewStatusline(home, node, entry, args[2], env);
   if (args.length === 3 && args[0] === 'apply' && args[1] === '--plan' && path.isAbsolute(args[2])) {
     const plan = read(args[2]);
     if (!plan) throw new Error('missing_statusline_plan');

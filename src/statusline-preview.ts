@@ -28,12 +28,12 @@ export function statuslineWidth(args: readonly string[], envColumns?: string, tt
 }
 
 /** Stop reading on failure; do not wait for a producer that leaves stdin open. */
-export function readStatuslineInput(input: Readable, timeoutMs = 1000): Promise<unknown> {
+export function readStatuslineInputBytes(input: Readable, timeoutMs = 1000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let bytes = 0;
     let settled = false;
-    const finish = (error?: string, value?: unknown) => {
+    const finish = (error?: string, value?: Buffer) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -47,7 +47,7 @@ export function readStatuslineInput(input: Readable, timeoutMs = 1000): Promise<
         // a pending read after pause(); close it without affecting stdout/backend work.
         input.destroy();
         reject(new Error(error));
-      } else resolve(value);
+      } else resolve(value!);
     };
     const data = (chunk: Buffer | string) => {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
@@ -55,23 +55,26 @@ export function readStatuslineInput(input: Readable, timeoutMs = 1000): Promise<
       if (bytes > 64 * 1024) return finish('statusline_input_too_large');
       chunks.push(buffer);
     };
-    const end = () => {
-      try {
-        const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
-        const value: unknown = JSON.parse(text);
-        if (value === null || typeof value !== 'object' || Array.isArray(value))
-          return finish('invalid_statusline_input');
-        finish(undefined, value);
-      } catch {
-        finish('invalid_statusline_input');
-      }
-    };
+    const end = () => finish(undefined, Buffer.concat(chunks));
     const fail = () => finish('statusline_input_unavailable');
     const close = () => finish('statusline_input_unavailable');
     const timer = setTimeout(() => finish('statusline_input_timeout'), timeoutMs);
     input.on('data', data).once('end', end).once('error', fail).once('close', close);
     if (input.readableEnded || input.destroyed) finish('statusline_input_unavailable');
   });
+}
+
+function parseInput(bytes: Buffer): Record<string, unknown> {
+  try {
+    const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error();
+    return value as Record<string, unknown>;
+  } catch {
+    throw new Error('invalid_statusline_input');
+  }
+}
+export async function readStatuslineInput(input: Readable, timeoutMs = 1000): Promise<unknown> {
+  return parseInput(await readStatuslineInputBytes(input, timeoutMs));
 }
 
 export async function statuslinePreview(
@@ -83,6 +86,7 @@ export async function statuslinePreview(
     stdout: (text: string) => void | Promise<void>;
     stderr: (text: string) => void;
     render?: (value: unknown, width: number) => string | Promise<string>;
+    onInput?: (bytes: Buffer) => void;
   }
 ): Promise<number> {
   let output: string;
@@ -96,7 +100,9 @@ export async function statuslinePreview(
       return 2;
     }
     try {
-      const value = await readStatuslineInput(input);
+      const bytes = await readStatuslineInputBytes(input);
+      io.onInput?.(bytes);
+      const value = parseInput(bytes);
       output = (await (io.render ?? renderStatuslineSession)(value, width)) + '\n';
     } catch (error) {
       const reason = error instanceof Error ? error.message : '';

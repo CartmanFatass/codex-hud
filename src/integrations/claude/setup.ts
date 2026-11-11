@@ -1,10 +1,12 @@
 /** Setup is orchestration only: the existing statusline writer owns every settings edit. */
 import * as fs from 'node:fs';
 import { createHash } from 'node:crypto';
-import { join, isAbsolute } from 'node:path';
+import { join, isAbsolute, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { safePath } from '../panel/receipt.js';
 import type { ClaudeBinding } from './binding.js';
+import { importedSettings, loadParitySettings } from '../../statusline-parity/settings.js';
+import { wrapperJobs } from '../../statusline-parity/wrapper.js';
 const hash = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 export function readLocal(file: string): Buffer {
   safePath(file);
@@ -48,8 +50,20 @@ export function draftInventory(home: string, configPath: string) {
   const file = join(home, '.claude/settings.json');
   const settings = readLocal(file);
   const config = readLocal(configPath);
+  let supported = false;
+  try {
+    importedSettings(json(config));
+    supported = true;
+  } catch {
+    /* old compact inventories remain supported separately */
+  }
+  const command = (json(settings).statusLine as { command?: unknown } | undefined)?.command;
   return {
     version: 1,
+    supportedFields: supported
+      ? enabledFields(json(config))
+      : enabledFields(json(config)).filter((f) => COMPACT_FIELDS.has(f)),
+    wrapperJobs: typeof command === 'string' ? wrapperJobs(command, home) : null,
     settingsHash: hash(settings),
     configPath,
     configHash: hash(config),
@@ -78,11 +92,28 @@ export function parity(binding: ClaudeBinding, home: string): { status: string; 
     JSON.stringify(inventory.enabledFields) !== JSON.stringify(actual.enabledFields)
   )
     throw new Error('parity_inventory_stale');
-  const gaps = actual.enabledFields.filter((field) => !COMPACT_FIELDS.has(field));
+  let gaps = actual.enabledFields.filter((field) => !COMPACT_FIELDS.has(field));
+  const local = loadParitySettings({ HOME: home, HUD_HOME: binding.hudHome });
+  try {
+    const expected = importedSettings(json(readLocal(inventory.configPath))).statusline;
+    if (local && JSON.stringify({ ...local, widthMargin: 4, forward: undefined }) === JSON.stringify(expected))
+      gaps = [];
+  } catch {
+    /* Preserve explicit unsupported field gaps. */
+  }
   const setting = json(readLocal(join(home, '.claude/settings.json'))).statusLine;
   const command = setting && typeof setting === 'object' ? (setting as { command?: unknown }).command : '';
   if (typeof command !== 'string') gaps.push('unknown_statusline_setting');
-  else if (/[|;&<>`\n]|\$\(|\b(?:tee|toktrack|width)\b|--width/.test(command)) gaps.push('statusline_wrapper');
+  else if (/[|;&<>`\n]|\$\(|\b(?:tee|toktrack|width)\b|--width/.test(command)) {
+    const jobs = wrapperJobs(command, home);
+    if (
+      !jobs ||
+      !local ||
+      local.widthMargin !== jobs.widthMargin ||
+      JSON.stringify(local.forward) !== JSON.stringify(jobs.forward)
+    )
+      gaps.push('statusline_wrapper');
+  }
   return { status: gaps.length ? 'BLOCKED' : 'PASS', gaps };
 }
 export function setupCommand(args: readonly string[], binding: ClaudeBinding, env: NodeJS.ProcessEnv): object {
@@ -92,6 +123,7 @@ export function setupCommand(args: readonly string[], binding: ClaudeBinding, en
   const words = args.length ? [...args] : ['preview'];
   const valid =
     (words.length === 1 && words[0] === 'preview') ||
+    (words.length === 3 && words[0] === 'preview' && words[1] === '--shim-dir' && isAbsolute(words[2])) ||
     (words.length === 3 &&
       ((words[0] === 'apply' && words[1] === '--plan') || (words[0] === 'restore' && words[1] === '--backup')) &&
       isAbsolute(words[2]));
@@ -101,7 +133,11 @@ export function setupCommand(args: readonly string[], binding: ClaudeBinding, en
   // Do not accept a hand-authored replacement command; pin the plan to this release's preview.
   if (words[0] === 'apply') {
     const plan = json(readLocal(words[2]));
-    const preview = invoke(['preview'], binding, env) as Record<string, unknown>;
+    if (plan.shimPath !== undefined && (typeof plan.shimPath !== 'string' || !isAbsolute(plan.shimPath)))
+      throw new Error('invalid_statusline_shim');
+    const previewArgs =
+      typeof plan.shimPath === 'string' ? ['preview', '--shim-dir', dirname(plan.shimPath)] : ['preview'];
+    const preview = invoke(previewArgs, binding, env) as Record<string, unknown>;
     if (JSON.stringify(plan) !== JSON.stringify(preview)) throw new Error('statusline_plan_stale_or_foreign');
   }
   const result = invoke(words, binding, env);

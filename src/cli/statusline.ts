@@ -1,21 +1,20 @@
-import { truncateAnsi } from '../render/colors.js';
-import { readRoleSummary } from '../roles/role-summary.js';
-import { renderRoleSummary } from '../render/role-summary.js';
-import { NativeCallCollector } from '../collectors/native-calls.js';
-import { nativeCallLabel, jevCallLabel } from '../core/link/view-model.js';
-import { statuslineRef } from '../core/statusline-summary.js';
-import { monitorText } from '../render/monitor-text.js';
+import { existsSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
+import { getHudHome } from '../hud-home.js';
+import { record } from '../statusline-parity/storage.js';
 import { fileURLToPath } from 'node:url';
 import { statuslinePreview } from '../statusline-preview.js';
 import { statuslineSettings } from '../statusline-settings.js';
-import { readStatuslineSummary } from '../core/statusline-summary.js';
 import { renderStatuslineSession, type StatuslineSessionOptions } from '../render/statusline-session.js';
-import { renderStatuslineSummary } from '../render/statusline-summary.js';
 import type { HudIO } from './link-export.js';
+import { loadParitySettings, importStatusline } from '../statusline-parity/settings.js';
+import { collectAndRenderParity } from '../statusline-parity/collect.js';
+import { forwardInput } from '../statusline-parity/forward.js';
 
 export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--source ABSOLUTE_CLAUDE_ROOT]
        hud statusline --details [--lang en|zh] [--width COLUMNS] [--source ABSOLUTE_CLAUDE_ROOT]
-       hud statusline settings preview
+       hud statusline import --from ABS [--settings ABS] [--apply]
+       hud statusline settings preview [--shim-dir ABS]
        hud statusline settings apply --plan ABSOLUTE_FILE
        hud statusline settings restore --backup ABSOLUTE_FILE
        hud-statusline [same arguments]
@@ -24,6 +23,8 @@ Render stdin Claude facts, with a bounded read-only delegation line when availab
 Delegation source: --source or explicit CLAUDE_CONFIG_DIR; no guessed source/home.
 Direct-child fallback is partial, never a full-tree total. Missing data keeps line 1.
 No transcript reading, collection, network access or installation by default.
+An explicit HUD config.json statusline section enables claude-hud 0.8.0 compact parity.
+Import previews that section without writes; --apply writes HUD configuration only.
 Settings commands are explicit Linux opt-in operations under HOME/.claude.
 Preview before apply; keep the returned backup path for exact restore.
 USD is the provider's estimated session cost, not an invoice.
@@ -38,13 +39,26 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
     await io.stdout(STATUSLINE_HELP);
     return 0;
   }
+  if (args[0] === 'import') {
+    try {
+      await io.stdout(JSON.stringify(importStatusline(args.slice(1), io.env), null, 2) + '\n');
+      return 0;
+    } catch (e) {
+      const reason = (e instanceof Error ? e.message : 'invalid input')
+        .slice(0, 512)
+        .replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, '?');
+      io.stderr(`statusline_import_failed: ${reason}\n`);
+      return 2;
+    }
+  }
   if (args[0] === 'settings') {
     try {
       const result = statuslineSettings(
         args.slice(1),
         io.env.HOME ?? '',
         process.execPath,
-        fileURLToPath(new URL('../../bin/hud-statusline', import.meta.url))
+        fileURLToPath(new URL('../../bin/hud-statusline', import.meta.url)),
+        io.env
       );
       await io.stdout(JSON.stringify(result, null, 2) + '\n');
       return 0;
@@ -95,15 +109,65 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
       } else widthArgs.push(args[index]);
     }
   }
+  const parity = loadParitySettings(io.env);
+  const tty = process.stdout.isTTY ? process.stdout.columns : undefined;
+  const columns = parity
+    ? String(
+        Math.max(
+          1,
+          Math.min(
+            500,
+            (/^[1-9]\d*$/.test(io.env.COLUMNS ?? '') ? Number(io.env.COLUMNS) : (tty ?? 120)) - parity.widthMargin
+          )
+        )
+      )
+    : io.env.COLUMNS;
   return statuslinePreview(widthArgs, process.stdin, {
-    columns: io.env.COLUMNS,
-    ttyColumns: process.stdout.isTTY ? process.stdout.columns : undefined,
+    columns,
+    ttyColumns: tty,
+    onInput: parity ? (bytes) => forwardInput(parity.forward, bytes, io.env) : undefined,
     stdout: async (text) => {
       await io.stdout(text);
     },
     stderr: io.stderr,
     render: async (value, width) => {
-      const first = renderStatuslineSession(value, width, options);
+      const first =
+        parity && !options.details
+          ? collectAndRenderParity(value, width, parity, io.env)
+          : renderStatuslineSession(value, width, options);
+      // Ordinary sessions with no HUD delegation inputs must not pay for the ledger/native-host graph.
+      const source = sourceRoot ?? io.env.CLAUDE_CONFIG_DIR;
+      const native = record(value),
+        home = getHudHome(io.env);
+      if (
+        !source ||
+        !isAbsolute(source) ||
+        typeof native.session_id !== 'string' ||
+        !native.session_id ||
+        !['ledger.sqlite', 'delegation-summaries-v1', 'native-relations', 'display/role-summary'].some((p) =>
+          existsSync(join(home, p))
+        )
+      )
+        return first;
+      const [
+        { readRoleSummary },
+        { renderRoleSummary },
+        { NativeCallCollector },
+        { nativeCallLabel, jevCallLabel },
+        { statuslineRef, readStatuslineSummary },
+        { monitorText },
+        { truncateAnsi },
+        { renderStatuslineSummary },
+      ] = await Promise.all([
+        import('../roles/role-summary.js'),
+        import('../render/role-summary.js'),
+        import('../collectors/native-calls.js'),
+        import('../core/link/view-model.js'),
+        import('../core/statusline-summary.js'),
+        import('../render/monitor-text.js'),
+        import('../render/colors.js'),
+        import('../render/statusline-summary.js'),
+      ]);
       const nowMs = Date.now();
       const readStarted = performance.now();
       let role = '';
