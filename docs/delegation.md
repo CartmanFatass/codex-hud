@@ -18,7 +18,8 @@ agent proposes.
    slice. The implementer runs the main-path tests for what it changed, once, at the end.
 4. **Integrate.** The orchestrator reads each diff, tries the slice, and merges it into the milestone branch. No
    full gate per slice; one full test run at the end of the milestone.
-5. **Review once, at the milestone.** One reviewer on the whole milestone diff, two axes reported separately:
+5. **Review once, at the milestone.** Two reviewers from different model families, in parallel, on the same brief
+   and the whole milestone diff (owner, 2026-11-11: fewer reviews, better ones); each reports two axes separately:
    - **spec:** does it do what `docs/spec.md` asks, and does it do things nobody asked for (scope creep);
    - **simplicity and quality:** correctness defects, and what can be deleted (guards, options, abstractions, tests).
 
@@ -57,7 +58,7 @@ answer is the simplest option; anything beyond the spec goes to the owner.
 | --- | --- | --- |
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
 | implementer | pi, `openai/gpt-6.1-sol` high (skill `herdr-delegate`) | one slice each |
-| reviewer | pi, `openai/gpt-6.1-sol` xhigh; `glm-reviewer` (GLM-5.3 max) reviews Sol-built work, so writer and reviewer come from different model families (owner, 2026-11-11) | milestone reviews and the risky cases above only |
+| reviewer | pi, two in parallel: `openai/gpt-6.1-sol` xhigh and `mistral/deepseek-v4-1-flash-1017` max (`hud_create` model override). Chosen after a three-way trial on M3 (owner, 2026-11-11) | milestone reviews and the risky cases above only |
 | sonic | pi, DeepSeek V4.1 Flash | small chores for any role; never tests, bug hunting or design |
 | architect | pi, `openai/gpt-6-astra` high | only a structural question the orchestrator cannot settle; advice only |
 | Argon / ChatGPT Pro | `jev-ask` | only a new product direction |
