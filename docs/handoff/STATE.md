@@ -321,8 +321,6 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   Running:
   - **R6A-A8 + PIROLE PR5**, one package: Codex activation, the release rehearsal from a staged artifact, real-client
     smoke, the cost table and the owner runbook `docs/release-runbook.md`;
-  - **R6B-1** (slices P, T, W and `scripts/audit-r6b-drain.mjs`), from the architect inventory
-    `docs/reviews/2026-11-10-r6b-architect.md`;
 
   Merged: TEST-SLIM-1B (`f0a555c`, shared stand-ins); TEST-SLIM-1A (`41fdb65`, opt-in `npm run test:perf`, 31 cases
   moved, unit wall 320 s to 224 s). Gate on `41fdb65`: all green except one load-sensitive B6 idle-wait write count
@@ -333,6 +331,10 @@ Progress (2026-11-07; full handoff in `docs/handoff/2026-11-07-handoff.md`):
   in slice-L code (`src/harness/claude/managed-*`, hud-mcp `managed-runtime.ts`); the capability-manifest version
   tuples are checked at the slice-L re-census. TEST-SLIM-2A (`35531ef`): nine display test files, 823 lines (12.8%)
   cut. Gate on `35531ef`: all green, no reruns.
+
+  Merged: R6B-1 (`022c75c`): slices P, T and W retired (5.8k lines) and the read-only drain audit
+  `scripts/audit-r6b-drain.mjs` added. Gate on `022c75c`: all green, no reruns. Slice L waits for A8, the owner's
+  install and `--slice runtime`.
 
   2026-11-10: the owner approved R6b slice L (full retirement, concept §15 "R6b full retirement approved"), including
   the WP0 exception for the `hud run` cases in `b11-cli.test.ts`.
