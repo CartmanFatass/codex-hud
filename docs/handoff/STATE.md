@@ -13,10 +13,13 @@ Changes (owner, 2026-11-10):
 - `docs/delegation.md` is rewritten: grill, vertical slices, one implementer per slice without review, one two-axis
   review (spec incl. scope creep; simplicity) per milestone, the owner tries it. Role texts in pi-roles changed to
   match (Fishpref `81e1859`).
-- Next: grill the owner on M1 (usable: install, MCP in three clients, panel), then slice it.
+- Grilled M1 (owner, 2026-11-10): install from the repo with `./install`, MCP + skill in all three clients, `hud panel`,
+  Claude statusline at claude-hud parity, pi footer replacing p10k-footer. Old execution stack deleted right after M1
+  (M2). Milestones in `docs/spec.md` §5.
 
-In flight from before: STATUSLINE-PARITY and PI-FOOTER-PORT (M2 work, finishing their review); R6A-A8 (installer
-rehearsal; out of spec, pending the owner's call); INSTALLER-ARCH (done; superseded by the spec's simple installer).
+Status: STATUSLINE-PARITY merged (`4e3ba42`; old-workflow brief, heavy, prune at the M1 review). PI-FOOTER-PORT still
+running. R6A-A8 stopped by the owner's call, WIP kept on branch `r6a-a8` (`0b02400`). INSTALLER-ARCH reaped; its
+answer is superseded by the spec's simple installer. Next: owner approves the M1 slice list, then build.
 
 ## Current queue (2026-11-07): R0–R7
 

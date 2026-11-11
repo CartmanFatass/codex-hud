@@ -42,11 +42,12 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 
 ## 5. Milestones
 
-- **M1, usable:** `./install` (core + Claude, pi, Codex extensions) and uninstall; MCP and skill registered in all
-  three clients; `hud panel`; the six tools work for imp, reviewer and sonic through herdr. The owner installs and
-  uses it.
-- **M2, replace:** Claude statusline at claude-hud parity; pi footer replacing p10k-footer; Jev and oracle jobs.
-- **M3, clean:** delete the retired execution stack (R6b slice L) and its tests.
+- **M1, usable** (owner, 2026-11-10): `./install` run from the repo (core + Claude, pi, Codex extensions) and
+  `hud uninstall`; MCP and skill registered in all three clients; `hud panel`; the six tools work for imp, reviewer
+  and sonic through herdr; Claude statusline at claude-hud parity; pi footer replacing p10k-footer. The owner
+  installs and uses it.
+- **M2, clean** (right after M1): delete the retired execution stack (R6b slice L) and its tests.
+- **M3, extend:** Jev and oracle jobs.
 
 ## 6. How work is done
 
