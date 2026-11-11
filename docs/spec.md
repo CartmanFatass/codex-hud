@@ -30,6 +30,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 - No transactional installer: no plan IDs, receipts or byte-exact restore. A plain backup of each edited client file
   is enough.
 - No vendor version pins.
+- No tracking of upstream for ported parts (the claude-hud statusline, the p10k-style footer): they are ours and
+  change only for our needs (owner, 2026-11-10). pi and its extensions are updated with `pi update` when useful.
 - No Windows native, no npm publishing, no cross-machine use.
 
 ## 4. Threat model and quality bar
