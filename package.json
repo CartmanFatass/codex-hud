@@ -6,7 +6,6 @@
   "main": "dist/index.js",
   "bin": {
     "codex-hud": "./bin/codex-hud",
-    "hud-run": "./bin/hud-run",
     "hud": "./bin/hud",
     "hud-statusline": "./bin/hud-statusline"
   },
@@ -18,20 +17,15 @@
     "test:windows": "powershell -ExecutionPolicy Bypass -File ./tests/windows/test-powershell-entrypoints.ps1",
     "build:test": "node ./node_modules/typescript/bin/tsc -p tsconfig.test.json && node scripts/copy-jev-assets.mjs dist-test",
     "test": "npm run build && npm run build:test && npm run build:hud-mcp && npm run test:unit && npm run test:mjs",
-    "test:core": "bash tests/run-core.sh",
-    "test:herdr": "bash tests/herdr/run.sh",
     "test:unit": "node tests/run-default.mjs",
     "test:perf": "npm run build && npm run build:test && npm run build:hud-mcp && node tests/run-perf.mjs",
     "test:mjs": "node --test tests/unit/*.mjs",
     "test:integration": "bash tests/run-integration.sh",
-    "test:visual": "npm run build:test && node --test dist-test/tests/unit/visual-baselines.test.js",
-    "test:visual:update": "node tests/update-visual-baselines.mjs",
     "check:fixtures": "bash tests/check-fixtures.sh",
     "check:fixtures:selftest": "bash tests/check-fixtures.selftest.sh",
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write src tests",
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check src tests",
-    "build:hud-mcp": "node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json",
-    "test:hud-mcp": "npm run build:hud-mcp && node tests/run-default.mjs hud-mcp"
+    "build:hud-mcp": "node ./node_modules/typescript/bin/tsc -p packages/hud-mcp/tsconfig.json"
   },
   "keywords": [
     "codex",
@@ -47,8 +41,7 @@
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
-    "chokidar": "^5.0.0",
-    "@anthropic-ai/claude-agent-sdk": "0.3.319"
+    "chokidar": "^5.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

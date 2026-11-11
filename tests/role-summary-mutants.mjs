@@ -29,30 +29,6 @@ const variants = [
     'role-summary',
     'role summary actual collection',
   ],
-  [
-    'broad-cli-before-dispatch',
-    'bin/hud',
-    'const compatibility =',
-    "await import('../dist/cli/hud-main.js');\nconst compatibility =",
-    'panel-entry',
-    'panel same-process entry valid',
-  ],
-  [
-    'lifetime-kills-pane',
-    'dist-test/src/integrations/panel/lifetime.js',
-    'o.end(reason);',
-    "void o.herdr.close('panel-1', new PanelDeadline(500)); o.end(reason);",
-    'panel-control',
-    'panel lifetime ends on main exit',
-  ],
-  [
-    'old-generation-close',
-    'dist-test/src/integrations/panel/control.js',
-    '!r || !sameTarget(r, c) || o.generation !== r.generation',
-    '!r || !sameTarget(r, c)',
-    'panel-control',
-    'panel intent precedes split',
-  ],
 ];
 let killed = 0;
 for (const [name, relative, before, after, suite, pattern] of variants) {

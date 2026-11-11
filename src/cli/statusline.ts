@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { statuslinePreview } from '../statusline-preview.js';
 import { statuslineSettings } from '../statusline-settings.js';
 import { renderStatuslineSession, type StatuslineSessionOptions } from '../render/statusline-session.js';
-import type { HudIO } from './link-export.js';
+import type { HudIO } from './hud.js';
 import { loadParitySettings, importStatusline } from '../statusline-parity/settings.js';
 import { collectAndRenderParity } from '../statusline-parity/collect.js';
 import { forwardInput } from '../statusline-parity/forward.js';
@@ -19,9 +19,8 @@ export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--sourc
        hud statusline settings restore --backup ABSOLUTE_FILE
        hud-statusline [same arguments]
 
-Render stdin Claude facts, with a bounded read-only delegation line when available.
-Delegation source: --source or explicit CLAUDE_CONFIG_DIR; no guessed source/home.
-Direct-child fallback is partial, never a full-tree total. Missing data keeps line 1.
+Render stdin Claude facts, with the cached role summary when available.
+Summary source: --source or explicit CLAUDE_CONFIG_DIR; no guessed source/home.
 No transcript reading, collection, network access or installation by default.
 An explicit HUD config.json statusline section enables claude-hud 0.8.0 compact parity.
 Import previews that section without writes; --apply writes HUD configuration only.
@@ -135,7 +134,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
         parity && !options.details
           ? collectAndRenderParity(value, width, parity, io.env)
           : renderStatuslineSession(value, width, options);
-      // Ordinary sessions with no HUD delegation inputs must not pay for the ledger/native-host graph.
+      // Ordinary sessions with no role summary must not load the cache reader.
       const source = sourceRoot ?? io.env.CLAUDE_CONFIG_DIR;
       const native = record(value),
         home = getHudHome(io.env);
@@ -144,29 +143,13 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
         !isAbsolute(source) ||
         typeof native.session_id !== 'string' ||
         !native.session_id ||
-        !['ledger.sqlite', 'delegation-summaries-v1', 'native-relations', 'display/role-summary'].some((p) =>
-          existsSync(join(home, p))
-        )
+        !existsSync(join(home, 'display/role-summary'))
       )
         return first;
-      const [
-        { readRoleSummary },
-        { renderRoleSummary },
-        { NativeCallCollector },
-        { nativeCallLabel, jevCallLabel },
-        { statuslineRef, readStatuslineSummary },
-        { monitorText },
-        { truncateAnsi },
-        { renderStatuslineSummary },
-      ] = await Promise.all([
+      const [{ readRoleSummary }, { renderRoleSummary }, { statuslineRef }] = await Promise.all([
         import('../roles/role-summary.js'),
         import('../render/role-summary.js'),
-        import('../collectors/native-calls.js'),
-        import('../core/link/view-model.js'),
         import('../core/statusline-summary.js'),
-        import('../render/monitor-text.js'),
-        import('../render/colors.js'),
-        import('../render/statusline-summary.js'),
       ]);
       const nowMs = Date.now();
       const readStarted = performance.now();
@@ -184,31 +167,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
       } catch {
         /* Missing identity/cache is unavailable, never an empty work total. */
       }
-      const summary = await readStatuslineSummary(value, io.env, sourceRoot, {
-        nowMs,
-        budgetMs: Math.max(0, 20 - (performance.now() - readStarted)),
-      });
-      const second = renderStatuslineSummary(summary, width, nowMs);
-      let direct = '';
-      try {
-        const parent = statuslineRef(value, sourceRoot ?? io.env.CLAUDE_CONFIG_DIR);
-        if (parent) {
-          const calls = NativeCallCollector.fromEnv(io.env);
-          await calls.collect(parent.ref);
-          const view = calls.merge(null);
-          const labels = Object.values(view?.details ?? {}).flatMap((detail) =>
-            detail.nativeCall
-              ? [`${detail.nativeCall.relation.child.harness}: ${nativeCallLabel(detail.nativeCall)}`]
-              : detail.jevCall
-                ? [`jev: ${jevCallLabel(detail.jevCall)}`]
-                : []
-          );
-          if (labels.length) direct = truncateAnsi(monitorText(`Native calls: ${labels.join(' · ')}`), width);
-        }
-      } catch {
-        /* Keep the original native line and legacy summary on unavailable sources. */
-      }
-      return [first, second, direct, role].filter(Boolean).join('\n');
+      return [first, role].filter(Boolean).join('\n');
     },
   });
 }

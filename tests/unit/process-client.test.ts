@@ -33,7 +33,7 @@ function fixture(t: TestContext) {
   return { root, launch, script };
 }
 
-for (const entry of ['b12r-process.mjs', 'b16-process.mjs'])
+for (const entry of ['b12r-process.mjs'])
   test(
     `process client rejects pending and later RPC/point waits with ${entry} import diagnostics`,
     { timeout: 5000 },

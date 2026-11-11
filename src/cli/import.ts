@@ -7,7 +7,7 @@ import { getHudHome } from '../hud-home.js';
 import { resolveHudEnv } from '../utils/hud-env.js';
 import { importableSettings } from '../settings.js';
 import { parseAssignments } from '../jev/ask/config.js';
-import type { HudIO } from './link-export.js';
+import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 import { validateFooterSettings } from '../harness/pi/footer-settings.js';
 

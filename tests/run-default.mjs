@@ -3,9 +3,8 @@
 import { readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
-const mcp = process.argv[2] === 'hud-mcp';
-const source = mcp ? 'tests/hud-mcp' : 'tests/unit';
-const output = mcp ? 'packages/hud-mcp/dist' : 'dist-test';
+const source = 'tests/unit';
+const output = 'dist-test';
 const files = readdirSync(source)
   .filter((name) => name.endsWith('.test.ts'))
   .sort()

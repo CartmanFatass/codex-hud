@@ -3,12 +3,12 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LaunchCommand } from '../core/types/capabilities.js';
-import type { HudIO } from './link-export.js';
+import type { HudIO } from './hud.js';
 /** Works in root, test and hud-mcp emitted layouts without an environment-selected module. */
 export function installationRoot(): string {
   let directory = dirname(fileURLToPath(import.meta.url));
   for (let depth = 0; depth < 8; depth++, directory = dirname(directory)) {
-    if (existsSync(join(directory, 'bin/hud-run')) && existsSync(join(directory, 'package.json'))) return directory;
+    if (existsSync(join(directory, 'bin/hud')) && existsSync(join(directory, 'package.json'))) return directory;
   }
   throw new Error('installation_unavailable');
 }

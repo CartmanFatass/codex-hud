@@ -16,15 +16,6 @@ import type { TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-typ
 import { composeJobTree, type JobTreeResult } from './collectors/job-tree.js';
 import { NativeCallCollector } from './collectors/native-calls.js';
 import { performance } from 'node:perf_hooks';
-import { HudDelegationCollector, withDelegationObservation } from './collectors/delegation.js';
-import {
-  PanelHostController,
-  panelHostTarget,
-  panelHostStamp,
-  withPanelHostAvailability,
-} from './integrations/herdr/panel-host.js';
-import { DelegationLogView, type LogFrame } from './utils/delegation-log-view.js';
-import { initialParserState } from './core/observation.js';
 import type { DelegationViewModel } from './core/link/view-model.js';
 /** Live keyboard/mouse workbench beside the compact HUD. */
 import { navigateSession } from './utils/session-navigation.js';
@@ -99,7 +90,6 @@ import {
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
-import { PublicationWorker } from './core/link/publication-worker.js';
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js';
 import { Briefer } from './collectors/briefing.js';
@@ -612,7 +602,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     ? formatRosterRoot(parseRosterRoot(process.env.CODEX_HUD_PANEL_ROOT))
     : null;
   const allDelegations = !selectedRoot && process.env.CODEX_HUD_PANEL_ALL_DELEGATIONS === '1';
-  const delegationCollector = await HudDelegationCollector.open(process.env, getCodexHome());
   const nativeCalls = NativeCallCollector.fromEnv();
   const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot, {}, allDelegations ? null : HUD_CWD_REAL, {
     project: HUD_CWD_REAL,
@@ -694,50 +683,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const clipboard = createClipboardProvider();
   const navigateOnce = createNavigationGate();
   const openOnce = createOpenGate();
-  const runLogs = new DelegationLogView();
-  let logFrame: LogFrame | undefined;
-  const panelHost = new PanelHostController({ home: delegationCollector?.home ?? null });
   let panelDelegation: DelegationViewModel | null = null;
-  let appliedDelegation: DelegationViewModel | null = null;
-  let appliedHost: typeof panelHost.snapshot = null;
-  let panelEpoch = 0;
-  let panelSelection = '';
-  const logContext = () => ({
-    vm: panelDelegation,
-    root: tree.rootId,
-    epoch: panelEpoch,
-    selected: state.tree.selectedId,
-  });
   const syncPanelView = () => {
-    const selection = JSON.stringify([tree.rootId, state.tree.selectedId]);
-    if (selection !== panelSelection) {
-      panelSelection = selection;
-      panelEpoch++;
-      runLogs.close();
-      panelHost.invalidate();
-    }
-    if (appliedDelegation !== delegation || appliedHost !== panelHost.snapshot) {
-      appliedDelegation = delegation;
-      appliedHost = panelHost.snapshot;
-      panelDelegation = withPanelHostAvailability(delegation, panelHost.snapshot);
-    }
-    if (runLogs.isOpen && !runLogs.valid(logContext())) runLogs.close();
-  };
-  const refreshPanelHost = () => {
-    if (closed) return;
-    syncPanelView();
-    const target = panelHostTarget(delegation, state.tree.selectedId);
-    const epoch = panelEpoch;
-    const current = () => {
-      const next = panelHostTarget(delegation, state.tree.selectedId);
-      return !closed && epoch === panelEpoch && !!target && !!next && panelHostStamp(target) === panelHostStamp(next);
-    };
-    void panelHost.refresh(target, current).then(() => {
-      if (!closed) {
-        syncPanelView();
-        render();
-      }
-    });
+    panelDelegation = delegation;
   };
   let lastClickSwitch: { id: string; at: number } | undefined;
   let navigationMessage: string | null = null;
@@ -760,9 +708,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let frameEpoch = 0;
   let lastPaint: string[] | null = null;
   let closed = false;
-  let publicationWorker: PublicationWorker | null = null;
-  let publicationError: string | null = null;
-  let workerRefresh = false;
   let collecting = false;
   let collectingGit = false;
   let gitAgain = false;
@@ -1082,10 +1027,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     syncPanelView();
     const output = time('render', () => {
       let lines: string[];
-      if (runLogs.isOpen) {
-        logFrame = runLogs.render(process.stdout.columns || 30, process.stdout.rows || 24);
-        lines = logFrame.lines;
-      } else if (activityHub) {
+      if (activityHub) {
         activityFrame = renderActivityHub(
           journal.view(),
           activityHub,
@@ -1167,15 +1109,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           worktrees,
           diff,
           error,
-          publicationNotice: publicationError ? t('Publisher unavailable; read-only') : null,
           nowMs,
           hud: hud ? { ...hud, delegation: panelDelegation } : hud,
           notice:
             (navigationMessage ? boundedActionNotice(navigationMessage, width) : null) ||
-            panelHost.snapshot?.reason ||
-            (panelHostTarget(panelDelegation, state.tree.selectedId) && !panelHost.snapshot
-              ? 'Open unavailable: verifying exact host identity.'
-              : null) ||
             jobRender.notice ||
             hudProblems(hud, nowMs, t)[0],
           loading: jobRender.loading,
@@ -1412,7 +1349,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       adaptive = recordAdaptivePoll(adaptive, {
         scopeKey: collectionScope(),
         nowMs: Date.now(),
-        ...withDelegationObservation(collectionObservation(currentHud(), tree), delegation),
+        ...collectionObservation(currentHud(), tree),
         succeeded: !currentHud()?.stale && !error && currentHud()?.health?.sessionBound === true,
       });
     else if (!closed) void collect(true);
@@ -1423,8 +1360,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       await collectNowBody();
     } finally {
       collecting = false;
-      delegationCollector?.abandonCollection();
-      refreshPanelHost();
     }
   };
   const collectNowBody = async () => {
@@ -1440,31 +1375,14 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
       const observationRoot = allDelegations ? null : (selectedRoot ?? boundJobRoot);
       jobPipeline.setRoot(allDelegations ? null : observationRoot || 'unbound/no-session');
-      let jobCharge: [number, number, number] | undefined;
-      const jobRead = jobPipeline.refresh(
-        (bytes, entries, ms) => {
-          jobCharge = [bytes, entries, ms];
-        },
-        { deadline: delegationDeadline }
-      );
+      const jobRead = jobPipeline.refresh(undefined, { deadline: delegationDeadline });
       await jobRead;
       if (closed) return;
       const nativeRead = selectedRoot
         ? nativeCalls.collect()
         : nativeCalls.collectCodex(session?.sessionId, getCodexHome(), allDelegations);
-      delegation = delegationCollector
-        ? await delegationCollector.tick(
-            allDelegations ? undefined : session?.sessionId,
-            delegationDeadline,
-            Math.max(0, (publicationWorker ? 2 : 4) * 1024 * 1024 - (jobCharge?.[0] ?? 0))
-          )
-        : null;
-      const legacyDelegation = delegation;
-      if (workerRefresh) workerRefresh = false;
-      else publicationWorker?.request(allDelegations ? undefined : session?.sessionId);
+      const legacyDelegation = null;
       stage = 'rollout';
-      const rootReadStarted = performance.now();
-      const priorRootStats = parser.getReadStats();
       parser.setRolloutPath(session?.path ?? null);
       if (!session) {
         main = null;
@@ -1477,28 +1395,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         } else {
           lastParsedRollout = signature;
           try {
-            main = await parser.parse(
-              legacyDelegation || publicationWorker
-                ? {
-                    budget: {
-                      maxBytes: Math.max(
-                        0,
-                        (publicationWorker ? 2 : 4) * 1024 * 1024 -
-                          (jobCharge?.[0] ?? 0) -
-                          (delegationCollector?.collector.stats().bytesRead ?? 0)
-                      ),
-                      maxRecords: 2000,
-                      budgetMs: Math.max(0, Math.min(20, Math.floor(delegationDeadline - performance.now()))),
-                    },
-                    state: parser.getReadStats()?.state ?? initialParserState(),
-                  }
-                : undefined
-            );
-            if (
-              legacyDelegation &&
-              ((parser.getReadStats()?.remainingBytes ?? 0) > 0 || parser.getReadStats()?.continuation)
-            )
-              lastParsedRollout = null;
+            main = await parser.parse();
           } catch (err) {
             // A failed read is not "already parsed"; let the next tick retry.
             lastParsedRollout = null;
@@ -1506,18 +1403,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           }
         }
       }
-      const rootStats = parser.getReadStats();
-      if (legacyDelegation && rootStats && rootStats !== priorRootStats)
-        delegationCollector?.collector.chargeAdditionalRead(
-          rootStats.bytesRead,
-          rootStats.recordsRead,
-          performance.now() - rootReadStarted
-        );
       hudStatus.health.bind(Boolean(session));
       hudStatus.health.read();
       await nativeRead;
       await jobRead;
-      if (jobCharge) delegationCollector?.collector.chargeAdditionalRead(...jobCharge);
       if (closed) return;
       delegation = nativeCalls.merge(legacyDelegation);
       stage = 'tree';
@@ -1591,12 +1480,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
     let built: ReturnType<HudStatus['build']> | null = null;
     try {
-      const delegationMs = delegationCollector?.collector.stats().totalMs ?? 0;
-      if (delegationMs > 50)
-        hudStatus.health.fail(
-          'tree',
-          delegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms'
-        );
       built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree });
       if (delegation) Object.assign(built, { delegation });
       markActivitySourceSuccess('status');
@@ -1625,36 +1508,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         state.cardStallMinutes ?? 10
       );
     render();
-    try {
-      const publicationToken = delegationCollector?.publicationToken();
-      await delegationCollector?.afterPaint(
-        (committed) => {
-          if (closed) return;
-          applyJobComposition(committed, true);
-          syncPanelView();
-          if (!stale && summaryRoot)
-            roleSummary?.publish(
-              summaryRoot,
-              jobPipeline.workboard(tree, panelDelegation),
-              Date.now(),
-              state.cardStallMinutes ?? 10
-            );
-          jobs.apply(tree, switches(), resolveLanguage(settings.language));
-          if (built) Object.assign(built, { delegation });
-          render();
-        },
-        collectionStartedAt,
-        publicationToken
-      );
-      const fullDelegationMs = delegationCollector?.publicationStats().fullTickMs ?? 0;
-      if (fullDelegationMs > 50)
-        hudStatus.health.fail(
-          'tree',
-          fullDelegationMs >= 200 ? 'delegation_tick_performance_unqualified' : 'delegation_tick_over_50ms'
-        );
-    } finally {
-      collecting = false;
-    }
     readMainCols();
     void refreshInspection();
     void refreshAgentContext();
@@ -1751,13 +1604,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     closed = true;
     disposeLifetime?.();
     roleSummary?.dispose();
-    runLogs.close();
-    panelHost.close();
     const clipboardClosing = clipboard.close();
-    const workerClosing = publicationWorker?.close().then((clean) => {
-      if (!clean) process.stderr.write('observation_worker_cleanup_unconfirmed\n');
-    });
-    delegationCollector?.close();
     jobPipeline.dispose();
     briefer.stop();
     jobs.stop();
@@ -1786,7 +1633,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     snapshotWriter.remove();
     if (user) requestEnsureSingle();
     // Settle bounded local telemetry writes before the terminal process exits.
-    void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing, workerClosing]).finally(resolveDone);
+    void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing]).finally(resolveDone);
   };
   const switchNativeSession = (id: string) => {
     if (STANDALONE_PANEL) {
@@ -1922,12 +1769,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (closed) break;
       if (input.type === 'mouse' && !settings.mouse) continue;
       syncPanelView();
-      if (runLogs.isOpen) {
-        runLogs.input(input, logFrame, logContext());
-        if (!runLogs.isOpen && !state.keys) focusMain();
-        render();
-        continue;
-      }
       const fromSettings = Boolean(settingsPage);
       let panelInput = input.type === 'command';
       if (settingsLeave && confirmationFrame) {
@@ -2184,7 +2025,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       });
       state = result.state;
       syncPanelView();
-      if (result.action?.type !== 'delegation-open') refreshPanelHost();
       if (result.close) {
         finish(true);
         break;
@@ -2285,35 +2125,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
               panelDelegation,
               actionRoot === tree.rootId && actionEpoch === collectionEpoch,
               {
-                home: delegationCollector?.home ?? null,
+                home: null,
                 copy: clipboard.copy,
-                openLog: () => {
-                  if (!delegationCollector?.home) return false;
-                  const opened = runLogs.open(delegationCollector.home, action.key, logContext());
-                  if (opened) {
-                    focusPanel();
-                    render();
-                  }
-                  return opened;
-                },
-                open: async () => {
-                  const target = panelHostTarget(panelDelegation, action.key);
-                  const epoch = panelEpoch;
-                  const root = tree.rootId;
-                  return target
-                    ? panelHost.open(target, () => {
-                        const next = panelHostTarget(delegation, action.key);
-                        return (
-                          !closed &&
-                          root === tree.rootId &&
-                          epoch === panelEpoch &&
-                          state.tree.selectedId === selected &&
-                          !!next &&
-                          panelHostStamp(next) === panelHostStamp(target)
-                        );
-                      })
-                    : 'Open unavailable for this run.';
-                },
               }
             )
           ) ?? Promise.resolve('');
@@ -2373,31 +2186,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     dispatch(decoder.push(chunk));
     escapeTimer = setTimeout(() => dispatch(decoder.flushEscape()), 40);
   };
-  if (STANDALONE_PANEL && delegationCollector) {
-    try {
-      publicationWorker = new PublicationWorker(
-        delegationCollector.home,
-        getCodexHome(),
-        (changed, error, displays) => {
-          if (closed) return;
-          const displayChanged = delegationCollector.acceptPublicationDisplays(displays ?? []);
-          const previousError = publicationError;
-          publicationError = error;
-          if (error) {
-            render();
-          } else if (previousError) {
-            render();
-          }
-          if (changed || displayChanged) {
-            workerRefresh = true;
-            void collect(true);
-          }
-        }
-      );
-    } catch {
-      publicationError = 'observation_worker_unavailable';
-    }
-  }
   const onFinish = () => finish();
   const onResize = () => {
     lastPaint = null;

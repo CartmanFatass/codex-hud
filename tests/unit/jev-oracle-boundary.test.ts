@@ -27,7 +27,6 @@ import { jevCall } from '../../src/jev/runtime/ipc.js';
 import type { OracleFacts, OraclePage, OracleTarget, OracleTurn } from '../../src/jev/runtime/oracle.js';
 import type { JevJob } from '../../src/jev/runtime/types.js';
 import { facadeState, readRoleJevJob } from '../../src/roles/jev-adapter.js';
-import { createRoleJevExecutor, hudCreate, hudRead } from '../../src/roles/facade.js';
 
 const SESSION = { namespace: 'synthetic', sessionId: 'r4-boundary' };
 const PROMPT = 'synthetic boundary question';
@@ -895,59 +894,6 @@ for (const refusal of REFUSALS) {
       assert.equal(overIpc.error?.code, refusal.code);
       assert.equal(overIpc.error?.message, refusal.code);
       assert.ok(!JSON.stringify(overIpc).includes(SECRET));
-      // T3: the real facade uses a handle whose every operation crosses the socket.
-      // No fake substitutes for serialization, job failure or facade observation.
-      const handle = {
-        createJob: (request: unknown) =>
-          jevCall(env.socket, 'createJob', request as Record<string, unknown>) as Promise<JevJob>,
-        readJob: (jobId: string, options = {}) =>
-          jevCall(env.socket, 'readJob', { jobId, ...options }) as Promise<JevJob>,
-        sendFollowUp: (jobId: string, followUp: unknown) =>
-          jevCall(env.socket, 'sendFollowUp', { jobId, followUp }) as Promise<JevJob>,
-        closeJob: (jobId: string) => jevCall(env.socket, 'closeJob', { jobId }) as Promise<JevJob>,
-      };
-      writeFileSync(
-        join(env.home, 'routing.toml'),
-        `schema = 1
- default_preset = "test"
- [backends.web]
- executor = "jev"
- target = "${targetId}"
- [backends.cli]
- executor = "herdr"
- harness = "pi"
- model = "synthetic"
- recipe = "pi-role"
- [jev_decisions.test]
- provider = "typesafe"
- [presets.test]
- description = "Synthetic refusal fixture"
- jev_decisions = "test"
- [presets.test.roles]
- "oracle.propose" = "web"
- "oracle.converge" = "cli"
- imp = "cli"
- reviewer = "cli"
- sonic = "cli"
- jev = "web"
- `,
-        { mode: 0o600 }
-      );
-      const ctx = { home: env.home, root: SESSION, env: {}, jev: createRoleJevExecutor(env.home, handle) };
-      const launched = await hudCreate(ctx, {
-        role: 'oracle',
-        phase: 'propose',
-        request_key: 'facade-refusal',
-        task: PROMPT,
-        cwd: env.home,
-      });
-      assert.equal(launched.ok, true, JSON.stringify(launched));
-      const runtimeId = (launched.executor as { job: string }).job;
-      await untilTerminal(env.runtime, runtimeId);
-      const observed = await hudRead(ctx, { job: launched.job });
-      assert.equal(observed.state, 'error');
-      assert.equal(observed.status, refusal.code);
-      assert.equal((observed.error as { code: string }).code, refusal.code);
     });
   }
 }

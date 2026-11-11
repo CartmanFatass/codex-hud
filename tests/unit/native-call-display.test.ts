@@ -223,13 +223,9 @@ test('same official ID resume selects the live connection and excludes prior-con
   }
 });
 
-test('entrypoints keep native observer latency outside root parser budgets and native activity navigation', async () => {
+test('panel keeps native observer latency outside root parser budgets and native activity navigation', async () => {
   const { readFileSync } = await import('node:fs');
-  const bar = readFileSync(new URL('../../../src/index.ts', import.meta.url), 'utf8');
   const panel = readFileSync(new URL('../../../src/tree-page.ts', import.meta.url), 'utf8');
-  assert.match(bar, /delegationParseBudget = legacyDelegation/);
-  assert.ok(bar.indexOf('await nativeRead') > bar.indexOf('await parseRolloutIfChanged(session.path)'));
-  assert.match(panel, /legacyDelegation \|\| publicationWorker/);
   assert.ok(panel.indexOf('await nativeRead') > panel.indexOf('main = await parser.parse('));
   assert.match(panel, /if \(!delegation \|\| nativeOnly\)\s+walkNodes/);
   assert.match(panel, /const view = nativeCallsOnly\(delegation\) \? null : delegation/);

@@ -8,8 +8,6 @@ import { join, resolve } from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { previewStatusline, applyStatusline, restoreStatusline } from '../../src/statusline-settings.js';
 import { importStatusline } from '../../src/statusline-parity/settings.js';
-import { draftInventory, parity } from '../../src/integrations/claude/setup.js';
-import type { ClaudeBinding } from '../../src/integrations/claude/binding.js';
 import { OWNER_CONFIG } from '../fixtures/claude-hud-parity/fixture.js';
 import { setTimeout as sleep } from 'node:timers/promises';
 function fixture(
@@ -219,17 +217,11 @@ test('explicit known wrapper import migrates absolute forwarding and width; unkn
   const saved = JSON.parse(fs.readFileSync(join(hud, 'config.json'), 'utf8')).statusline;
   assert.deepEqual(saved.forward, [join(f.home, '.cargo/bin/toktrack'), 'quota', 'record-claude']);
   assert.equal(saved.widthMargin, 4);
-  const inventory = join(hud, 'parity.json');
-  const binding = { hudHome: hud, parityInventory: inventory } as ClaudeBinding;
-  fs.writeFileSync(inventory, JSON.stringify(draftInventory(f.home, config)));
-  assert.equal(parity(binding, f.home).status, 'PASS');
   fs.writeFileSync(f.file, JSON.stringify({ statusLine: { command: wrapper + '; echo extra-job' } }));
   assert.throws(
     () => importStatusline(['--from', config, '--settings', f.file], env),
     /unsupported_statusline_wrapper/
   );
-  fs.writeFileSync(inventory, JSON.stringify(draftInventory(f.home, config)));
-  assert.deepEqual(parity(binding, f.home).gaps, ['statusline_wrapper']);
 });
 
 test('public shim preview is plain, reports absence, and apply refuses until publication', (t) => {

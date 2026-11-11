@@ -1,4 +1,8 @@
-import type { HudIO } from './link-export.js';
+export interface HudIO {
+  env: NodeJS.ProcessEnv;
+  stdout: (text: string) => void | Promise<void>;
+  stderr: (text: string) => void;
+}
 import { CliError } from './private-home.js';
 
 function writeStdout(text: string): Promise<void> {
@@ -23,31 +27,22 @@ function writeStdout(text: string): Promise<void> {
   });
 }
 
-/** Dispatch wait before importing any of the ordinary CLI's execution graph. */
+/** Import the selected owner-facing command. */
 export async function main(
   args: readonly string[] = process.argv.slice(2),
   io: HudIO = {
     env: process.env,
     stdout: writeStdout,
     stderr: (text) => process.stderr.write(text),
-  },
-  received?: number
+  }
 ): Promise<number> {
   try {
     if (args[0] === 'import') {
       const { importCommand } = await import('./import.js');
       return await importCommand(args.slice(1), io);
     }
-    if (args[0] === 'install') {
-      const { installCommand } = await import('./install.js');
-      return await installCommand(args, io);
-    }
-    if (args[0] === 'wait') {
-      const { waitCommand } = await import('./wait.js');
-      return await waitCommand(args.slice(1), io);
-    }
     const cli = await import('./hud-main.js');
-    return await cli.main(args, io, received);
+    return await cli.main(args, io);
   } catch (error) {
     if (error instanceof CliError) {
       io.stderr(`${error.reason}\n`);

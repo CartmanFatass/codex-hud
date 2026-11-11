@@ -4,12 +4,6 @@ import { performance } from 'node:perf_hooks';
 import { promises as fsp } from 'node:fs';
 import { join, basename, resolve, dirname } from 'node:path';
 import { parseAssociation, DISPATCH_SLOT, type JobAssociation } from '../roles/association.js';
-import {
-  parseExternalAssociation,
-  externalRootHash,
-  EXTERNAL_ID,
-  type ExternalAssociation,
-} from '../roles/external-association.js';
 import { activeDispatchQuestion, parseDispatchStatus, type DispatchStatus } from '../roles/pi-dispatch-status.js';
 import { validDispatch, type PiDispatch } from '../roles/pi-dispatch.js';
 import {
@@ -65,7 +59,6 @@ type Op = { kind: 'file'; path: string; cap: number; prefix?: boolean } | { kind
 type Value = ReadValue | fs.Dirent | null | 'unreadable';
 interface Work {
   path: string;
-  external: boolean;
   iterator: Generator<Op, void, Value>;
   op?: Op;
   value?: Value;
@@ -232,7 +225,7 @@ export class JobObservationCollector {
     if (this.activeWork && this.activeWork.faults.length < 10) this.activeWork.faults.push(reason);
     if (this.budget.diagnostics.length < 100) this.budget.diagnostics.push(reason);
   }
-  private admit(path: string, external: boolean): boolean {
+  private admit(path: string): boolean {
     if (this.works.has(path)) return true;
     if (this.works.size >= JOB_BOUNDS.nodes) {
       const victim = [...this.works.values()]
@@ -246,7 +239,6 @@ export class JobObservationCollector {
     }
     const work: Work = {
       path,
-      external,
       iterator: undefined!,
       done: false,
       dependencies: new Map(),
@@ -275,20 +267,7 @@ export class JobObservationCollector {
       while ((entry = yield { kind: 'entry', path: join(this.home, 'assoc') }) && entry !== 'unreadable') {
         const e = entry as fs.Dirent;
         if (/^j[a-f0-9]{16}\.json$/.test(e.name)) {
-          while (!this.admit(join(this.home, 'assoc', e.name), false)) yield { kind: 'entry', path: '' };
-        }
-      }
-      const base = join(this.home, 'assoc-external');
-      while ((entry = yield { kind: 'entry', path: base }) && entry !== 'unreadable') {
-        const e = entry as fs.Dirent;
-        if (!e.isDirectory() || !/^[a-f0-9]{64}$/.test(e.name)) continue;
-        const directory = join(base, e.name);
-        let child: Value;
-        while ((child = yield { kind: 'entry', path: directory }) && child !== 'unreadable') {
-          const c = child as fs.Dirent;
-          if (c.name.endsWith('.json') && EXTERNAL_ID.test(c.name.slice(0, -5))) {
-            while (!this.admit(join(directory, c.name), true)) yield { kind: 'entry', path: '' };
-          }
+          while (!this.admit(join(this.home, 'assoc', e.name))) yield { kind: 'entry', path: '' };
         }
       }
       yield { kind: 'entry', path: '' }; // Yield a cycle boundary even for absent directories.
@@ -486,11 +465,7 @@ export class JobObservationCollector {
     };
   }
   private *observe(work: Work): Generator<Op, void, Value> {
-    const file = yield* this.read(work.path, work.external ? 4096 : 16 * 1024);
-    if (work.external) {
-      yield* this.external(work, file);
-      return;
-    }
+    const file = yield* this.read(work.path, 16 * 1024);
     if (file.reason === 'missing') {
       work.view = undefined;
       return;
@@ -1005,75 +980,6 @@ export class JobObservationCollector {
     } finally {
       this.closeDir(path);
     }
-  }
-  private *external(work: Work, file: ReadValue): Generator<Op, void, Value> {
-    const a: ExternalAssociation | null = parseExternalAssociation(json(file.text));
-    if (!a || basename(work.path) !== `${a.id}.json` || basename(join(work.path, '..')) !== externalRootHash(a.root)) {
-      this.stale(work, 'external_invalid_or_unreadable');
-      return;
-    }
-    if (this.root && a.root !== this.root) {
-      work.view = undefined;
-      return;
-    }
-    const previous = work.view;
-    if (
-      previous &&
-      (previous.root !== a.root ||
-        previous.location.agent !== a.agent ||
-        previous.location.pane_id !== a.pane ||
-        previous.location.tab_id !== a.tab)
-    ) {
-      this.stale(work, 'external_target_changed');
-      return;
-    }
-    const location = { agent: a.agent, pane_id: a.pane, tab_id: a.tab, workspace_id: a.workspace };
-    const live = this.live.match(location, this.nowMs);
-    const base = this.base(
-      {
-        schema: 1,
-        job: a.id,
-        root: a.root,
-        task_label: a.label,
-        role: 'imp',
-        phase: null,
-        preset: '',
-        cwd: '',
-        backend: {
-          id: 'external-herdr',
-          executor: 'herdr',
-          harness: null,
-          model: null,
-          effort: null,
-          recipe: null,
-          env_profile: null,
-        },
-        herdr: location,
-        report_path: '',
-        closed: false,
-      },
-      file.mtime
-    );
-    work.view = this.fresh(
-      {
-        ...base,
-        kind: 'external',
-        id: `external-herdr:${externalRootHash(a.root)}:${a.id}`,
-        role: null,
-        preset: null,
-        createdAt: time(a.registered_at),
-        lifecycle: live?.status ?? 'unknown',
-        status: live?.status === 'working' ? 'running' : 'unknown',
-        requests: null,
-        backend: null,
-        diagnostics: ['locator_only_no_instance_discriminator'],
-      },
-      previous,
-      file.mtime,
-      !!live,
-      live?.deadline ?? null,
-      'herdr_uncorroborated'
-    );
   }
   refresh(slice: JobReadSlice = {}): Promise<JobSnapshot> {
     if (this.pending) return this.pending;
