@@ -2,7 +2,7 @@
 
 ## Now (2026-11-11): M3 installed on the owner's machine; open items
 
-Installed from `6a251fda` (INSTALL-ON) and the owner tries it himself. Waiting on concept drafts before any code:
+Installed from `6a251fda` (INSTALL-ON); the owner tries it next. Waiting on concept drafts before any code:
 the bottom bars (Claude/pi in the Codex bar's design; owner: "the Codex bottom design can be used directly") and four
 panel fixes (Enter on a Work card opens its report, key hints never cut a word, lane map shows only real stages,
 readable worker tab labels). Field inventory: `tmp/tasks/BAR-UNIFY/fields.md`.
