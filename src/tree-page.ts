@@ -123,7 +123,8 @@ export class PanelJobPipeline {
     private root: string | null,
     private readonly options: JobObserverOptions = {},
     private readonly workspace: string | null = null,
-    private readonly thinScope: ThinJobScope = { project: workspace, pane: null }
+    private readonly thinScope: ThinJobScope = { project: workspace, pane: null },
+    readonly openedAt = Date.now()
   ) {
     this.observer = new JobObservationCollector(home, { ...options, root });
     this.artifacts = new TaskObservationCollector(workspace);
@@ -201,7 +202,7 @@ export class PanelJobPipeline {
       maxEntries: 128 - snapshot.coverage.entries,
       maxBytes: Math.max(0, Math.min(1024 * 1024, slice?.maxBytes ?? 1024 * 1024) - snapshot.coverage.bytes),
     });
-    this.thinJobs = readThinJobs(this.home, this.thinScope, JSON.parse, undefined, this.thinObservation);
+    this.thinJobs = readThinJobs(this.home, this.thinScope, JSON.parse, { openedAt: this.openedAt }, this.thinObservation);
     this.boardCache = undefined;
     this.snapshot = snapshot;
     this.taskSnapshot = tasks;
@@ -502,7 +503,7 @@ function requestEnsureSingle(): void {
 }
 
 export async function runLivePage(options: { installCleanup?: (end: () => void) => () => void } = {}): Promise<void> {
-  const reload = new PanelReload(), place = readPanelPlace();
+  const reload = new PanelReload(), place = readPanelPlace(), openedAt = place?.openedAt ?? Date.now();
   let restarting: Promise<void> | undefined;
   startProfiling('panel');
   if (STANDALONE_PANEL)
@@ -523,7 +524,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const jobPipeline = new PanelJobPipeline(nativeCalls.home, selectedRoot, {}, allDelegations ? null : HUD_CWD_REAL, {
     project: HUD_CWD_REAL,
     pane: process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null,
-  });
+  }, openedAt);
   let disposeLifetime: (() => void) | undefined;
   let disposeCaller: (() => void) | undefined;
   let nativeTree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
@@ -874,7 +875,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const ready = await reload.poll(() => Boolean(settingsPage && settingsDirty(settingsPage)));
     if (closed) return;
     if (ready) {
-      restarting = reload.restart({ state, widthOverride: widthOverride ?? null,
+      restarting = reload.restart({ state, openedAt, widthOverride: widthOverride ?? null,
         settings: settingsPage && { selected: settingsPage.selected, offset: settingsPage.offset } }, () => finish());
       await restarting;
       return;

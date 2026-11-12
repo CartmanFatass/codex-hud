@@ -4,12 +4,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { MonitorState } from '../render/monitor.js';
 
 const PLACE = 'HUD_PANEL_RELOAD_PLACE', SUPERVISED = 'HUD_PANEL_RELOAD_SUPERVISED', RESTART = 75;
-type Place = { state: MonitorState; settings: { selected: number; offset: number } | null; widthOverride?: number | null };
+type Place = { state: MonitorState; settings: { selected: number; offset: number } | null; widthOverride?: number | null; openedAt?: number };
 export function readPanelPlace(): Place | undefined {
   const raw = process.env[PLACE];
   delete process.env[PLACE];
-  try { return raw ? JSON.parse(raw, (_key, value) => value?.panelSet ? new Set(value.panelSet) : value) : undefined; }
-  catch { return undefined; }
+  try {
+    const place: Place | undefined = raw ? JSON.parse(raw, (_key, value) => value?.panelSet ? new Set(value.panelSet) : value) : undefined;
+    if (place) place.openedAt ??= Date.now(); // Legacy handoffs start their lifetime when consumed.
+    return place;
+  } catch { return undefined; }
 }
 /** One metadata probe per collection; only a quiet, loadable generation may replace this process. */
 export class PanelReload {

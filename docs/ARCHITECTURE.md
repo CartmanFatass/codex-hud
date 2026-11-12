@@ -71,7 +71,7 @@ observed files, the producer's own stamp where a producer wrote one. No deadline
 invented when the files do not state it; unknown phase or order is shown as unknown.
 
 **Thin jobs on Home.** `collectors/thin-jobs.ts` (`readThinJobs`, newest 20 in scope) gives each job directory
-under `$HUD_HOME/jobs` one lane with one worker and its answered questions as decisions; `PanelJobPipeline.workboard`
+under `$HUD_HOME/jobs` one lane with one worker and its answered questions as decisions; the panel's opening time (preserved in the reload `Place`, legacy fallback at handoff) excludes earlier settlements from STATUS facts before artifact reads, board projection or model planning, while active/unknown jobs remain eligible regardless of age; `PanelJobPipeline.workboard`
 prepends them to the lanes, workers and decisions. Only files the thin layer and pi-roles write are read: `job.json`
 (role, cwd, `created_at`), `brief.md` (task = its first heading, else its first line), `STATUS.json` (state, model,
 `thinking`, `started_at`, `settled_at`/`ended_at`), `qa/qN.md` and `qN.answer.md` (through `answerRecord`, so `≠` and

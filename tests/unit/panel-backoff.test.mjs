@@ -55,7 +55,7 @@ function fixture(t, count = 1) {
   const pipeline = new PanelJobPipeline(env.HUD_HOME, null, { live: false }, null, {
     project: null,
     pane: 'w4E:p1',
-  });
+  }, Date.now() - 60000);
   t.after(() => {
     pipeline.dispose();
     rmSync(root, { recursive: true, force: true });

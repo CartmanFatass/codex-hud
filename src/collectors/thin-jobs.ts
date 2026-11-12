@@ -149,7 +149,7 @@ export function readThinJobs(
   home: string,
   scope: ThinJobScope,
   parse = JSON.parse,
-  options?: { settledBefore: number },
+  options?: { settledBefore?: number; openedAt?: number },
   observation?: { complete: boolean }
 ): WorkLane[] {
   complete = herdrId(scope.pane);
@@ -163,12 +163,13 @@ export function readThinJobs(
   if (candidates.length > 200) complete = false;
   const jobs = candidates.slice(0, 200)
     .flatMap(({ id }) => {
-      // Bars have no history view. Keep active/unknown jobs for pinned questions, regardless of age.
+      // Filter from STATUS facts before reading receipts or artifacts; active/unknown jobs always stay.
       const status = options ? json(join(root, id, 'STATUS.json'), parse) : null;
       if (
         status &&
         ['done', 'closed', 'idle_grace', 'failed', 'stopped'].includes(String(status.v.state)) &&
-        (when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at) < options!.settledBefore
+        ((when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at) < (options?.settledBefore ?? -Infinity) ||
+          (when(status.v.settled_at) ?? when(status.v.ended_at) ?? status.at) < (options?.openedAt ?? -Infinity))
       )
         return [];
       const file = json(join(root, id, 'job.json'), parse),
@@ -210,6 +211,7 @@ export function readThinJobs(
     const at = status?.at ?? jobAt;
     // When the work settled, not when the process later exited: closing an idle job must not reset its age or outcome label.
     const settledAt = state === 'working' ? null : (when(s.settled_at) ?? when(s.ended_at) ?? at);
+    if (settledAt !== null && settledAt < (options?.openedAt ?? -Infinity)) continue;
     const briefFile = read(join(directory, 'brief.md')),
       brief = briefFile?.text ?? '';
     const briefTitle = first(brief.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? '');

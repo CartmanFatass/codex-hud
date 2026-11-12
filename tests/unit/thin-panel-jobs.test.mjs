@@ -99,7 +99,7 @@ function fixture(t) {
   job(5, 'PANEL-THIN', 'width flag', 'working', 1, null, 'w4E:p1', { harness: 'codex' });
   job(6, 'TEST-CUT', 'Folded old success', 'closed', 15, 15);
   job(7, 'WRONG-PANE', 'Never show another session', 'working', 1, null, 'w4E:p9');
-  const pipeline = new PanelJobPipeline(env.HUD_HOME, null, { live: false }, null, { project: home, pane: 'w4E:p1' });
+  const pipeline = new PanelJobPipeline(env.HUD_HOME, null, { live: false }, null, { project: home, pane: 'w4E:p1' }, now - 60 * 60000);
   const display = setDisplayConfig({ theme: 'none', icons: 'unicode', glyphs: 'glyph' }),
     language = setLanguage('en');
   t.after(() => {

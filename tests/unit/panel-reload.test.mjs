@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
-import { PanelReload } from '../../dist-test/src/utils/panel-reload.js';
+import { PanelReload, readPanelPlace } from '../../dist-test/src/utils/panel-reload.js';
 import { initialMonitorState } from '../../dist-test/src/render/monitor.js';
 import { readThinJobs } from '../../dist-test/src/collectors/thin-jobs.js';
 import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
@@ -50,6 +50,22 @@ function launch(t, f, script, args = [], extra = {}) {
 }
 const moduleUrl = pathToFileURL(resolve('dist-test/src/utils/panel-reload.js')).href;
 const encode = (place) => JSON.stringify(place, (_k, v) => v instanceof Set ? { panelSet: [...v] } : v);
+
+test('reload place retains opening time; legacy handoffs use their consumption time', () => {
+  const previous = process.env.HUD_PANEL_RELOAD_PLACE;
+  try {
+    const openedAt = Date.now() - 60000;
+    process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: initialMonitorState(), settings: null, openedAt });
+    assert.equal(readPanelPlace().openedAt, openedAt);
+    process.env.HUD_PANEL_RELOAD_PLACE = encode({ state: initialMonitorState(), settings: null });
+    const before = Date.now(), legacy = readPanelPlace(), after = Date.now();
+    assert.ok(legacy.openedAt >= before && legacy.openedAt <= after);
+    assert.equal(process.env.HUD_PANEL_RELOAD_PLACE, undefined);
+  } finally {
+    if (previous === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE;
+    else process.env.HUD_PANEL_RELOAD_PLACE = previous;
+  }
+});
 
 test('a real dist entry change is quiet for 2s, bursts coalesce, and a generation is attempted once', async (t) => {
   const f = fixture(t), entry = join(f.root, 'entry.js');
@@ -197,15 +213,18 @@ await runLivePage();process.exit(process.exitCode??0);`);
     baseline: readFileSync(entry, 'utf8'), restarts: () => events().filter((e) => e.restart) };
 }
 
-test('the live panel coalesces build bursts, restores Home selection/expanded state, and keeps a broken build alive with a notice', async (t) => {
-  const f = live(t);
+test('the live panel coalesces build bursts, retains jobs settled during its life, and keeps a broken build alive with a notice', async (t) => {
+  const openedAt = Date.now() - 60000;
+  const f = live(t, (state) => ({ state, settings: null, openedAt }));
   await until(() => f.output().includes('SYNTHETIC reload job'), 'initial collected Home frame did not render');
+  writeFileSync(join(f.env.HUD_HOME, 'jobs/j0000000000000000/STATUS.json'), JSON.stringify({ state: 'done', settled_at: new Date().toISOString() }));
   for (let i = 0; i < 3; i++) { appendFileSync(f.entry, `\n// build burst ${i}`); await delay(200); }
   await delay(1400);
   assert.equal(f.restarts().length, 0, 'quiet period measured from last change');
   await until(() => f.events().filter((e) => e.start).length === 2, 'panel did not replace itself');
   await delay(400);
   assert.equal(f.restarts().length, 1);
+  assert.equal(f.restarts()[0].restart.openedAt, openedAt);
   const saved = f.restarts()[0].restart.state;
   assert.equal(saved.mainTab, 'home');
   assert.deepEqual(saved.homeTarget, f.state.homeTarget);
@@ -217,8 +236,9 @@ test('the live panel coalesces build bursts, restores Home selection/expanded st
   assert.equal(f.child.exitCode, null);
   writeFileSync(f.entry, f.baseline + '\n// good recovery');
   await until(() => f.events().filter((e) => e.start).length === 3, 'good build did not recover');
+  assert.equal(f.restarts()[1].restart.openedAt, openedAt);
   const restored = f.restarts()[1].restart.state;
-  assert.deepEqual(restored.homeTarget, saved.homeTarget, 'selection survived the first collected frame');
+  assert.deepEqual(restored.homeTarget, saved.homeTarget, 'settled job and selection survived the first collected frame');
   assert.deepEqual(restored.boardExpanded, saved.boardExpanded);
   assert.deepEqual(restored.boardFolded, saved.boardFolded);
   assert.deepEqual(restored.boardToggled, saved.boardToggled);
