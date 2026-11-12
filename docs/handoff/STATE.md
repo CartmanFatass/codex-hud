@@ -7,7 +7,7 @@ Milestone: M3b · AI-THIN
 
 ## Next
 
-- M3B-REVIEW: the M3b two-axis milestone review (Sol xhigh + DS max).
+- M3B-REVIEW2: the closing M3b two-axis milestone review (Sol xhigh + DS max).
 - TICKETS: the Project tab's tickets section from to-tickets.
 
 ## Slices
@@ -45,7 +45,7 @@ board counts these; update at every landing or decision. -->
 - try · M3b · CARD-DETAILS · newest card expanded, others folded; keywords colour files, stances (approve, object,
   reject) and opinions (6c9cb40b)
 - working · M4 · TICKETS · to-tickets in the Project tab's tickets section
-- working · M3b · M3B-REVIEW · the M3b two-axis milestone review
+- working · M3b · M3B-REVIEW2 · the closing M3b two-axis milestone review (Sol xhigh + DS max)
 - try · — · PI-STOP · hud_close stops a working pi job in seconds, not after a 30 s wait (Fishpref 38447ef)
 - try · — · LEGACY-SKILLS · herdr-delegate, herdr-delegate-codex, pi-subagent retired to Fishpref (6bd0ef8)
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
