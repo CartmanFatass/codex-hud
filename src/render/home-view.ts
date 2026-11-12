@@ -1,9 +1,9 @@
 /** Home: the ask, package lanes, then decisions made for the owner. */
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
-import { callTime, isLocalDay } from '../collectors/workboard.js';
+import { isLocalDay } from '../collectors/workboard.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { boardRow, minuteAge, decisionRows, mark } from './workboard-rows.js';
+import { boardRow, minuteAge, decisionBlock, mark } from './workboard-rows.js';
 import { laneRows, orderedLanes, retainedWorker } from './work-lanes.js';
 import { stemLines } from './work-card.js';
 import { theme } from './colors.js';
@@ -38,33 +38,28 @@ export function homeRows(
         target
       )
     );
-    const body = [
-      r?.question ?? worker.ask ?? card.reason ?? '',
-      r?.context ? `${t('blocked')} ${r.context}` : '',
-      ...(r?.options ?? []),
-      r?.suggested ? `${t('default')} ${r.suggested}` : '',
-    ].filter(Boolean);
-    for (const text of body)
-      rows.push(
-        ...stemLines(text, width, theme.board.attention).map((line) =>
-          boardRow(
-            theme.board.slab(
-              text.startsWith(t('default') + ' ')
-                ? line.replace(
-                    new RegExp(`(${t('default')} )([a-zA-Z])([).,:])`),
-                    (_match, before, letter, after) => before + theme.board.askTitle(letter) + after
-                  )
-                : line
-            ),
-            target
-          )
-        )
-      );
+    const n = r?.options.length ?? 0;
+    const choices = [
+      n ? t(n === 1 ? '{n} option' : '{n} options', { n }) : '',
+      r?.suggested ? `${t('default')}: ${r.suggested}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    const lines = [
+      ...stemLines(r?.question ?? worker.ask ?? card.reason ?? '', width, theme.board.attention, 3),
+      ...(choices ? stemLines(choices, width, theme.board.attention, 1) : []),
+    ].map((line) =>
+      line.replace(
+        new RegExp(`(${t('default')}: )([a-zA-Z])([).,:])`),
+        (_match, before, letter, after) => before + theme.board.askTitle(letter) + after
+      )
+    );
+    rows.push(...lines.map((line) => boardRow(theme.board.slab(line), target)));
     rows.push(
       boardRow(
         theme.board.slab(
           fit(
-            `${theme.board.attention(mark('┃', '|'))} ${pair(monitorText(r?.evidence?.relativePath ?? ''), t('⏎ read'), Math.max(0, width - 2))}`,
+            `${theme.board.attention(mark('┃', '|'))} ${pair(monitorText(r?.evidence?.relativePath ?? ''), t('⏎ Work'), Math.max(0, width - 2))}`,
             width
           )
         ),
@@ -89,24 +84,6 @@ export function homeRows(
       if (lane.workers.every((w) => !retainedWorker(w, now, state.tree.showAll))) continue;
       rows.push(...laneRows(input, lane, state, width, now));
     }
-  const decisions = board.decisions
-    .filter((d) => isLocalDay(callTime(d), now))
-    .sort((a, b) => Number(b.departure) - Number(a.departure) || (callTime(b) ?? 0) - (callTime(a) ?? 0));
-  if (decisions.length) {
-    rows.push(
-      boardRow(
-        pair(
-          t('Decided for you') + ' ' + mark('─', '-').repeat(Math.max(0, width - 19)),
-          String(decisions.length),
-          width
-        )
-      )
-    );
-    for (let i = 0; i < decisions.length; i++) {
-      if (i && decisions[i - 1].departure && !decisions[i].departure) rows.push(boardRow(''));
-      const lane = board.lanes.find((l) => l.id === decisions[i].laneId);
-      if (lane) rows.push(...decisionRows(decisions[i], lane, state, width, now));
-    }
-  }
+  rows.push(...decisionBlock(board, state, width, now));
   return rows;
 }

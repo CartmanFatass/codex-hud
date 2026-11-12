@@ -3,11 +3,10 @@ import type { WorkboardSnapshot, WorkLane, OwnerWorker } from '../collectors/wor
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { renderWorkCard, workPhaseText } from './work-card.js';
+import { failed, renderWorkCard, workPhaseText } from './work-card.js';
 import { boardRow, mark } from './workboard-rows.js';
-import { fit, pair, monitorText } from './monitor-text.js';
-import { theme } from './colors.js';
-import { t, language } from './i18n.js';
+import { pair, monitorText } from './monitor-text.js';
+import { theme, visualLength } from './colors.js';
 export const FINISHED_LINGER_MS = 10 * 60000;
 export function retainedWorker(w: OwnerWorker, now: number, showAll = false): boolean {
   return (
@@ -39,30 +38,41 @@ export function orderedLanes(board: WorkboardSnapshot, now: number): WorkLane[] 
       Math.min(...b.workers.map((w) => workerPriority(w, now)))
   );
 }
-/** A thin-job lane has review and accept stops only once one of its jobs has a review round; a sonic or oracle job goes build to done. */
-export function laneStages(lane: WorkLane): string[] {
-  const reviewed =
-    !lane.id.startsWith('thin-job:') || lane.workers.some((w) => w.work?.phases.some((p) => p.startsWith('review')));
-  return reviewed ? ['build', 'review', 'accept', 'done'] : ['build', 'done'];
-}
-export function lineMap(lane: WorkLane, width: number): string {
-  const stages = laneStages(lane),
-    last = stages.length - 1;
-  // Fixing is the observed substage between review and acceptance, not a percentage.
-  const phase = lane.phase?.startsWith('review') ? 'review' : (lane.phase ?? 'build');
-  const stage = lane.phase?.includes('fixing') ? 1.6 : Math.max(0, stages.indexOf(phase));
-  const at = Math.round((stage * (width - 1)) / last);
-  return Array.from({ length: width }, (_, i) =>
-    i === at
-      ? theme.value(mark('◉', '@'))
-      : stages.some((_, n) => Math.round((n * (width - 1)) / last) === i)
-        ? i < at
-          ? theme.board.active(mark('●', 'o'))
-          : theme.board.frame(mark('○', 'o'))
-        : i < at
-          ? theme.board.active(mark('━', '='))
-          : theme.board.frame(mark('─', '-'))
-  ).join('');
+/**
+ * A lane's right side: one glyph per job, oldest dispatch first (`✓` done, `◉` running, `?` asking, `✗` failed, `−`
+ * stopped), then the role of the newest job running or asking. Older jobs that do not fit `room` are `+N`.
+ */
+export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room: number): string {
+  const cards = lane.workers
+    .filter((w) => retainedWorker(w, now, state.tree.showAll))
+    .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
+    .map((w) => projectWorkCard(w, now, state.cardStallMinutes));
+  const glyph = {
+    done: theme.board.success(mark('✓', '+')),
+    run: theme.board.active(mark('◉', '@')),
+    ask: theme.board.attention('?'),
+    fail: theme.board.danger(mark('✗', 'x')),
+    stop: theme.board.muted(mark('−', '-')),
+  };
+  const kinds = cards.map((c) =>
+    c.worker.state === 'stopped'
+      ? 'stop'
+      : failed(c)
+        ? 'fail'
+        : c.state === 'needs-you'
+          ? 'ask'
+          : c.state === 'in-progress' || c.state === 'stalled'
+            ? 'run'
+            : 'done'
+  );
+  const live = kinds.map((k) => k === 'run' || k === 'ask').lastIndexOf(true);
+  const role = live < 0 ? '' : ' ' + theme.board.muted(monitorText(cards[live].role));
+  let keep = cards.length;
+  const width = (n: number) => 2 * n - 1 + (n < cards.length ? String(cards.length - n).length + 2 : 0);
+  while (keep > 1 && width(keep) + visualLength(role) > room) keep--;
+  const older = cards.length - keep ? theme.board.muted(`+${cards.length - keep}`) + ' ' : '';
+  const glyphs = kinds.slice(-keep).map((k) => glyph[k]);
+  return older + glyphs.join(' ') + role;
 }
 export function laneRows(
   input: MonitorData,
@@ -83,32 +93,13 @@ export function laneRows(
         ? review.includes('accept')
           ? review
           : `${review.match(/^review r\d+/)?.[0]} · fixing`
-        : 'build'
-      : lane.workers.some((w) => projectWorkCard(w, now).state === 'awaiting-acceptance')
-        ? 'accept'
-        : 'done';
+        : (active.phase ?? 'build')
+      : 'done';
     lane = { ...lane, phase };
   }
   const label = `${monitorText(lane.label)}${lane.phase ? '  ' + workPhaseText(lane.phase) : ''}`;
-  const rows = [boardRow(work ? fit(label, width) : pair(label, lineMap(lane, 16), width), target)];
-  if (work) {
-    const names = [t('build'), t('review'), language() === 'zh' ? t('acceptance') : t('accept'), t('done')];
-    const step = Math.floor((width - 3) / 3);
-    rows.push(
-      boardRow(
-        fit(
-          '  ' +
-            (laneStages(lane).length === 2
-              ? pair(names[0], names[3], width - 3)
-              : fit(names[0], step) +
-                fit(names[1], step) +
-                pair(names[2], names[3], Math.max(0, width - 3 - 2 * step))),
-          width
-        )
-      )
-    );
-    rows.push(boardRow('  ' + lineMap(lane, Math.max(1, width - 3))), boardRow(''));
-  }
+  const strip = laneStrip(lane, state, now, Math.max(Math.floor(width / 3), width - visualLength(label) - 1));
+  const rows = [boardRow(pair(label, strip, width), target)];
   if (state.boardFolded?.has(lane.id)) return rows;
   const workers = [...lane.workers]
     .filter((w) => retainedWorker(w, now, state.tree.showAll))
@@ -118,9 +109,7 @@ export function laneRows(
     const logs = worker.nodeId ? input.agentLog?.get(worker.nodeId) : undefined;
     const sentence = worker.id.startsWith('thin-job:')
       ? (card.reason ?? '')
-      : (input.jobProgress?.get(worker.id)?.note?.line ??
-        [...(logs ?? [])].reverse().find((e) => ['note', 'digest', 'cause'].includes(e.kind))?.text ??
-        '');
+      : ([...(logs ?? [])].reverse().find((e) => ['note', 'digest', 'cause'].includes(e.kind))?.text ?? '');
     const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: worker.id });
     // Home's asking card is a title-only pointer back to the complete slab.
     const lines =

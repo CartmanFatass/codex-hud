@@ -64,6 +64,17 @@ export interface ThinJobScope {
   project: string | null;
   pane: string | null;
 }
+/**
+ * What a running job is doing, by role (owner, 2026-11-11): only an implementer builds; read-only roles review,
+ * research or ask. An unknown role is just working.
+ */
+export function runningVerb(role: string, harness: string): string {
+  if (/(^|-)imp$|implementer/.test(role)) return 'build';
+  if (/reviewer/.test(role)) return 'reviewing';
+  if (role === 'architect') return 'researching';
+  if (harness === 'jev') return /^flow/.test(role) ? 'generating' : 'asking web';
+  return 'working';
+}
 export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
   const root = join(home, 'jobs');
   const jobs = entries(root)
@@ -140,7 +151,9 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
       .filter((n) => /^review-\d+\.md$/.test(n))
       .sort((a, b) => number(a) - number(b));
     const phases: string[] = [];
-    if (report || reviews.length) phases.push('build ✓');
+    const verb = runningVerb(String(job.role), word(s.harness) ?? word(job.harness) ?? 'pi');
+    // Only a build is a step that later rounds follow; a read-only job's chain is just its state.
+    if (verb === 'build' && (report || reviews.length)) phases.push('build ✓');
     let phaseAt = 0,
       lastResult = '';
     for (const name of reviews) {
@@ -162,12 +175,10 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
       : state === 'failed'
         ? 'failed'
         : settledAt !== null
-          ? job.read_at || !report
-            ? 'done'
-            : 'accept'
+          ? 'done'
           : reviews.length
             ? 'fixing'
-            : 'build';
+            : verb;
     phases.push(phase);
     const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt);
     const sentence =
@@ -206,8 +217,9 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
         request: !!waiting,
         failed: state === 'failed',
         result: settledAt !== null,
-        facadeClosed: state === 'stopped' || !!job.read_at || !report,
-        facadeClosedAt: when(job.read_at) ?? settledAt,
+        // A settled job is done: no "report unread" stage, since only hud_read could tell (owner, 2026-11-11).
+        facadeClosed: true,
+        facadeClosedAt: settledAt,
         reason: sentence,
         ...(waiting
           ? {

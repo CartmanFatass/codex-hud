@@ -8,7 +8,7 @@ import { displayConfig } from './hud-config.js';
 import { providerMark } from './providers.js';
 import { mark } from './workboard-rows.js';
 export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
-const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
+export const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
 export const workStateWord = (card: WorkCard) => {
   if (card.worker.state === 'stopped') return t('stopped');
   return t(
@@ -56,24 +56,30 @@ export function identifiers(text: string): string {
     theme.board.identifier(s)
   );
 }
-export function stemLines(text: string, width: number, ink = theme.board.muted): string[] {
-  return flowLines(monitorText(text), Math.max(1, width - 3)).map((line) =>
-    fit(`${ink(mark('┃', '|'))} ${identifiers(line)}`, width)
-  );
+/** `max` keeps the first lines and cuts the rest into the last one with `…`. */
+export function stemLines(text: string, width: number, ink = theme.board.muted, max = Infinity): string[] {
+  const room = Math.max(1, width - 3);
+  let lines = flowLines(monitorText(text), room);
+  if (lines.length > max) lines = [...lines.slice(0, max - 1), truncateAnsi(lines.slice(max - 1).join(' '), room)];
+  return lines.map((line) => fit(`${ink(mark('┃', '|'))} ${identifiers(line)}`, width));
 }
-export function workRequestDetail(card: WorkCard, full = false): string {
+/** An open question as its paragraphs; the context and every option only when `full`. */
+export function requestLines(card: WorkCard, full = false): string[] {
   const r = card.worker.work?.requestInfo;
   return r
-    ? [r.question, ...(full ? r.options : []), r.suggested ? `${t('default')} ${r.suggested}` : '']
-        .filter(Boolean)
-        .join('\n')
-    : '';
+    ? [
+        r.question,
+        ...(full ? [r.context ? `${t('blocked')} ${r.context}` : '', ...r.options] : []),
+        r.suggested ? `${t('default')} ${r.suggested}` : '',
+      ].filter(Boolean)
+    : [];
 }
+export const workRequestDetail = (card: WorkCard, full = false): string => requestLines(card, full).join('\n');
 export function workCardDetail(card: WorkCard, sentence = ''): string {
   return sentence || card.worker.ask || card.worker.work?.reason || (card.reason ? t(card.reason) : '');
 }
 export function workPhaseText(phase: string): string {
-  return monitorText(phase).replace(/build|review|accept|done|fixing|asking|failed|stopped|major|minor/g, (word) => t(word));
+  return monitorText(phase).replace(/reviewing|researching|working|generating|asking web|build|review|accept|done|fixing|asking|failed|stopped|major|minor/g, (word) => t(word));
 }
 export function phaseChain(card: WorkCard): string {
   return card.phases
@@ -144,7 +150,9 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
       }
     }
   }
-  const detail = workCardDetail(card, sentence);
-  if (detail) rows.push(...stemLines(detail, width, ink));
+  // Work prints an open question whole; Home's card is the short one in home-view.
+  const asking = state.mainTab === 'work' && card.worker.homeNeedsHuman ? requestLines(card, true) : [];
+  for (const part of asking.length ? asking : [workCardDetail(card, sentence)])
+    if (part) rows.push(...stemLines(part, width, ink));
   return rows.map((line, i) => (i ? (failed(card) ? theme.board.failedBody : theme.board.body)(line) : line));
 }

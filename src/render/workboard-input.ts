@@ -162,7 +162,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (key === 'enter' || key === 'activate') {
-    const action = main ? jobFiles() : undefined;
+    // Home's Enter goes to Work, with the card or decision selected; there Enter opens the file.
+    const action = main && next.mainTab === 'work' ? jobFiles() : undefined;
     if (main && !action) activate();
     return result(action);
   }

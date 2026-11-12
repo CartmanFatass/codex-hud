@@ -1,7 +1,8 @@
 /** Shared cell-exact rows. No I/O. */
 import type { DecisionRecord, OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-types.js';
+import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
-import { callTime } from '../collectors/workboard.js';
+import { callTime, isLocalDay } from '../collectors/workboard.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
 import { theme, visualLength } from './colors.js';
 import { displayConfig } from './hud-config.js';
@@ -35,10 +36,11 @@ export function workerRow(worker: OwnerWorker, width: number, now: number): Moni
 }
 export const decisionTitle = (record: DecisionRecord) =>
   monitorText(record.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? record.title);
+/** One row on Home (title cut to fit); the whole title, question and `instead of` in Work. */
 export function decisionRows(
   record: DecisionRecord,
   lane: WorkLane,
-  _state: MonitorState,
+  state: MonitorState,
   width: number,
   now: number
 ): MonitorRow[] {
@@ -47,18 +49,39 @@ export function decisionRows(
   const worker = lane.workers.find((w) => w.evidence.some((e) => e.sourceId === source)) ?? lane.workers[0];
   const q = record.evidence[0]?.relativePath.match(/(?:^|\/)(q\d+)\.md$/)?.[1] ?? '';
   const ink = record.departure ? theme.board.attention : theme.board.muted;
-  const right = `${record.departure ? t('worth a look') + ' · ' : ''}${minuteAge(callTime(record), now)}`;
+  const age = minuteAge(callTime(record), now);
+  const left = `${ink(mark(record.departure ? '◆' : '◇', record.departure ? '*' : 'o'))} ${[`${monitorText(lane.label)} · ${roleWord(worker?.role ?? null)}`, q].filter(Boolean).join(' ')}`;
+  if (state.mainTab !== 'work') {
+    // `worth a look` gives way to the age alone when it would leave the title under ten cells.
+    const long = `${t('worth a look')} · ${age}`;
+    const right = record.departure && width - visualLength(left) - visualLength(long) - 3 >= 10 ? long : age;
+    return [boardRow(theme.board.title(pair(`${left}  ${ink(decisionTitle(record))}`, ink(right), width)), target)];
+  }
+  const right = `${record.departure ? t('worth a look') + ' · ' : ''}${age}`;
   const rows = [
-    theme.board.title(
-      pair(
-        `${ink(mark(record.departure ? '◆' : '◇', record.departure ? '*' : 'o'))} ${monitorText(lane.label)} · ${roleWord(worker?.role ?? null)} ${q}`,
-        ink(right),
-        width
-      )
-    ),
+    theme.board.title(pair(left, ink(right), width)),
     ...stemLines(decisionTitle(record), width, ink),
     ...(record.question ? stemLines(`${t('asked')} ${record.question}`, width, ink) : []),
     ...(record.departure && record.instead ? stemLines(`${t('instead of')} ${record.instead}`, width, ink) : []),
   ];
   return rows.map((text, i) => boardRow(i ? theme.board.body(text) : text, target));
+}
+/** "Decided for you": the header and a row or block per decision, departures first, then the newest. Home shows today's. */
+export function decisionBlock(board: WorkboardSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
+  const home = state.mainTab !== 'work';
+  const decisions = board.decisions
+    .filter((d) => !home || isLocalDay(callTime(d), now))
+    .sort((a, b) => Number(b.departure) - Number(a.departure) || (callTime(b) ?? 0) - (callTime(a) ?? 0));
+  if (!decisions.length) return [];
+  const rows = [
+    boardRow(
+      pair(t('Decided for you') + ' ' + mark('─', '-').repeat(Math.max(0, width - 19)), String(decisions.length), width)
+    ),
+  ];
+  for (let i = 0; i < decisions.length; i++) {
+    if (home && i && decisions[i - 1].departure && !decisions[i].departure) rows.push(boardRow(''));
+    const lane = board.lanes.find((l) => l.id === decisions[i].laneId);
+    if (lane) rows.push(...decisionRows(decisions[i], lane, state, width, now), ...(home ? [] : [boardRow('')]));
+  }
+  return rows;
 }

@@ -7,13 +7,12 @@ import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { createServer } from 'node:net';
-import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { readThinJobs, runningVerb } from '../../dist/collectors/thin-jobs.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { renderWorkCard, workStateInk } from '../../dist/render/work-card.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
-import { retainedWorker } from '../../dist/render/work-lanes.js';
 const workerFor = (f, id) =>
   readThinJobs(f.env.HUD_HOME, { project: null, pane: 'synthetic-pane' })
     .flatMap((lane) => lane.workers)
@@ -589,10 +588,10 @@ fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'herdr', args:
       join(job.task_dir, 'STATUS.json'),
       JSON.stringify({ state: 'idle_grace', settled_at: new Date(settled).toISOString() })
     );
+    // Settled is done, read or not: the panel has no "report unread" stage (owner, 2026-11-11).
     const unread = workerFor(f, job.job);
-    assert.equal(projectWorkCard(unread, settled).state, 'awaiting-acceptance');
-    assert.match(cardText(unread), /report ready/);
-    assert.equal(retainedWorker(unread, settled + 11 * 60000), true);
+    assert.equal(projectWorkCard(unread, settled).state, 'done');
+    assert.doesNotMatch(cardText(unread), /report ready/);
     assert.equal((await f.call('hud_read', { job: job.job })).report, 'Second report after repairs.');
     const secondStamp = JSON.parse(fs.readFileSync(receiptFile)).read_at;
     assert.ok(secondStamp);
@@ -869,4 +868,14 @@ test('thin create requires herdr without dispatching', { timeout: 10000 }, async
     { ok: false, code: 'herdr_required' }
   );
   assert.deepEqual(f.commands(), []);
+});
+
+test('a running job says what its role does: only an implementer builds', () => {
+  assert.equal(runningVerb('imp', 'pi'), 'build');
+  assert.equal(runningVerb('glm-imp', 'pi'), 'build');
+  assert.equal(runningVerb('reviewer', 'pi'), 'reviewing');
+  assert.equal(runningVerb('architect', 'pi'), 'researching');
+  assert.equal(runningVerb('oracle', 'jev'), 'asking web');
+  assert.equal(runningVerb('flow-video', 'jev'), 'generating');
+  assert.equal(runningVerb('sonic', 'pi'), 'working');
 });

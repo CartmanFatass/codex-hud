@@ -7,7 +7,7 @@ import { laneRows, orderedLanes, retainedWorker } from './work-lanes.js';
 import { workInspectorRows } from './work-inspector.js';
 import { homeRows, doneToday } from './home-view.js';
 import { visibleWorkboard } from './work-visibility.js';
-import { boardCursor, boardRow, section, workerRow, decisionTitle } from './workboard-rows.js';
+import { boardCursor, boardRow, section, workerRow, decisionTitle, decisionBlock } from './workboard-rows.js';
 import { theme, visualLength } from './colors.js';
 import { fit, monitorText, flowLines, pair } from './monitor-text.js';
 import { t } from './i18n.js';
@@ -23,6 +23,7 @@ export function workRows(
     ...orderedLanes(board, now)
       .filter((lane) => lane.workers.some((w) => retainedWorker(w, now, state.tree.showAll)))
       .flatMap((lane) => laneRows(input, lane, state, width, now)),
+    ...decisionBlock(board, state, width, now),
   ];
   if (!board.lanes.length) rows.push(boardRow(theme.dim(t('No observed work'))));
   return rows;

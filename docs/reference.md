@@ -269,8 +269,9 @@ disk and steer nothing.
 | `S` | Main summary, in the Inspector |
 
 **Keys on Home and Work.** Up/Down or `j`/`k` selects; Left/Right or `h`/`l` folds and expands; `v` inspects. Enter
-on Home opens the corresponding Work lane, card or decision; Enter in Work is inert, except on a job card: it opens
-that job's `report.md` (else `brief.md`) in `$EDITOR` beside the panel, as Enter on a decision opens its `qa` file. Esc
+on Home opens the corresponding Work lane, card or decision, selected and scrolled into view; Enter in Work is inert,
+except on a job card, which opens that job's `report.md` (else `brief.md`), or its open question, in `$EDITOR` beside the
+panel, as Enter on a decision there opens its `qa` file. Esc
 returns from the Inspector, and standalone Esc on the main page exits as before. The footer keeps whole hints only
 (`←→ tab  ↑↓ move  ⏎ open`): at a narrow width the hints on the right are dropped, never cut.
 
@@ -283,10 +284,15 @@ worker's QA result, a normal failure, a blocked job and a timeout never count. P
 answer that leaves an explicit option is shown as `≠` with `instead`; an ambiguous answer or free text stays
 routine. Only an explicit `One-way: true` line is pinned red; a prose mention is not. Routine and departure items
 are capped at three with `+N earlier`, older than two hours fold, and the list rolls over at local midnight. There
-is no seen state. Home labels its routine tier **decided for you** and shows each answer with its source question
-and explicit selected-option text when resolvable. The question ID keeps clipped rows distinct; expansion/Inspector
-shows the full bounded text. Home progress has a ten-cell ordinal axis only for observed design/build/review/acceptance
-phases—not a completion percentage or evidence of an unobserved earlier phase. Unknown/mixed phases have no bar.
+is no seen state. Home labels its routine tier **decided for you** and shows each answer as one row: mark, lane, role
+and question ID (`◇ AI-THIN · imp q1`), the answer cut to fit, the age (`worth a look` only where it leaves room). Work
+shows the answer, its source question and, for a departure, `instead of`, whole. Home's question card is short: the
+question in at most three lines, one `N options · default: …` line, the evidence file with `⏎ Work`; the `blocked`
+context and every option are in Work's card. A lane's row (the same one row on Home and Work) has the package label and
+its phase word on the left and, on the right, one glyph per job, oldest dispatch first: `✓` done, `◉` running, `?`
+asking, `✗` failed, `−` stopped (`+ @ ? x -` in text glyphs), then the role of the newest job that is running or
+asking. When the jobs do not fit, the newest keep their glyphs and `+N` counts the older ones. There is no progress
+track: a lane's phase is the word, not a percentage or an unobserved earlier stage.
 
 The one visible cursor belongs to one physical row. Worker lists align glyph, harness, role, task, model·effort and
 right-hand minute age; unknown harness/age cells stay blank. The tab row carries the prefix hint and clickable
@@ -301,9 +307,7 @@ file, see Keys). Enter on Home hands the
 selected lane, card or decision to Work and unfolds its lane. At 110 columns Home's peek draws the selected lane (the
 first when none is selected) through the same lane/card renderer, not a second interpretation. Lanes are observation
 navigation, not execution ownership; an unknown phase or order is shown as unknown. Wide Work reserves a written-title
-column and a shared ordinal stage axis; browser cards use recorded phases, not role-inferred build/design. A lane of
-jobs has the build, review, accept and done stops only once one of its jobs has a review round; until then (a sonic or
-oracle job never gets one) its line map is build to done.
+column; browser cards use recorded phases, not role-inferred build/design.
 
 **The work card.** One compact card is shared by Work and Home's peek, and the retained secondary renderer draws the
 same card. Collapsed, it is at most three physical lines: the role and short task with the state word and elapsed
@@ -1045,8 +1049,8 @@ Claude and pi open it with `/hud`; Codex uses F12. See `hud panel --help` for sy
 The MCP exposes six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`,
 `hud_respond` and `hud_close`. Roles and the dispatch convention come from files;
 job records and reports are plain files under `$HUD_HOME/jobs`.
-`hud_read` reads a report and marks it read for the panel. A successful new
-`hud_send` continuation makes the next report unread again.
+`hud_read` reads a report (and stamps `read_at` in the job record). The panel does not
+wait for that: a settled HUD job is done whether or not its report was read.
 
 ## Job sentences (R5UX-P3B)
 
