@@ -43,10 +43,8 @@ Milestone: M4 · Project view
   `npm run release` (clean worktree only) writes hud-<version>.tar.gz by git archive (tests, docs history, .scratch,
   .github, cx-continue, agent guides export-ignored); `npm run test:release` rehearses offline extract (path with a
   space) → ./install core + all extensions → hud / panel / MCP six tools + roster → both uninstall paths with data
-  kept; first-party audit clean. Round 10 (Sol + DS) on the release change, then the final archive is built from the
-  reviewed HEAD and the owner merges/tags; RELEASE-ARCHIVE (m4-close 06: `npm run release` = git archive minus dev-only paths, offline install
-  rehearsal in a temp HOME) running in parallel; then m4-close 06 (archive via git archive of tracked files
-  minus dev-only dirs, extraction rehearsal in a temp HOME), then stop for the owner before merge/tag.
+  kept; first-party audit clean. Round 10 (Sol xhigh + DS max) on b622a7ba..7dfc5aeb running; when both accept, the
+  final archive is built from the reviewed HEAD in a clean worktree, then stop for the owner before merge/tag.
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
   finding 1); delete that part of the command or keep it?
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
