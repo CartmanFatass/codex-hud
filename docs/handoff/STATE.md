@@ -19,6 +19,8 @@ Milestone: M4 · Project view
   earlier findings and the new work; fixes until both accept.
 - JOB-RETENTION (owner 2026-11-12, chose 1 day over immediate deletion) lands before the release; it also bounds
   the job-directory scan the re-review questioned.
+- After both reviewers accept: an architect (Astra) review of the whole project before the release (owner
+  2026-11-12); I decide what blocks.
 - Then m4-close 06 release: a clean-built archive (stale dist files from deleted sources must not ship) + ./install,
   temp-HOME install/uninstall, merge to main, tag.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
