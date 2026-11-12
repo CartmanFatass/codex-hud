@@ -24,6 +24,9 @@ Milestone: M4 · Project view
 - Queued after JOB-RETENTION and SESSION-LINK land: PANEL-SCOPE (owner 2026-11-12): a panel never loads HUD jobs
   that settled before it opened (running/asking jobs always show); the open time survives PANEL-RELOAD; directories
   still go after one day.
+- Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
+  `--session-dir <job>/sessions`, so those jobs keep real session files in the job dir; run
+  `python3 tmp/bin/migrate-sessions.py apply` before they turn one day old (pi-roles 27e2006 guards the self-link).
 - After both reviewers accept: an architect (Astra) review of the whole project before the release (owner
   2026-11-12); I decide what blocks.
 - Then m4-close 06 release: a clean-built archive (stale dist files from deleted sources must not ship) + ./install,
