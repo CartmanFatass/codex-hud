@@ -247,7 +247,7 @@ export class ProjectCollector {
       try {
         const filters = await neutralizeFilters(worktreeGit, this.cwd);
         this.git = parseWorktreeStatus(await worktreeGit(this.cwd, [
-          ...filters, 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal',
+          ...filters, 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal', '--ignore-submodules=dirty',
         ]));
         this.worktrees = parseWorktreeList(await worktreeGit(this.cwd, ['worktree', 'list', '--porcelain', '-z'])).slice(1);
         const [hash, at, subject] = (await worktreeGit(this.cwd, [

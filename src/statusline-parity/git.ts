@@ -3,6 +3,7 @@
 import { dirname, join, resolve, isAbsolute } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { cachePath, cached, readBytes, saveJson, signature } from './storage.js';
+import { safeGitEnv, SAFE_GIT_ARGS, FILTER_CONFIG_ARGS, filterOverrides } from '../utils/git-safety.js';
 export interface GitView {
   branch: string;
   dirty: boolean;
@@ -24,29 +25,8 @@ export function collectParityGit(cwd: string, env: NodeJS.ProcessEnv, now = Date
   const unchanged = old && Object.entries(old.stamps).every(([p, s]) => signature(p) === s);
   if (old && unchanged && now >= old.at && now - old.at < TTL) return old.value;
   const started = performance.now();
-  const configLocations = new Set(['GIT_CONFIG_GLOBAL', 'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_NOSYSTEM']);
-  const gitEnv: NodeJS.ProcessEnv = Object.fromEntries(
-    Object.entries(env).filter(([k]) => !k.startsWith('GIT_') || configLocations.has(k))
-  );
-  Object.assign(gitEnv, {
-    GIT_OPTIONAL_LOCKS: '0',
-    GIT_TERMINAL_PROMPT: '0',
-    GCM_INTERACTIVE: 'Never',
-    GIT_NO_LAZY_FETCH: '1',
-    GIT_NO_REPLACE_OBJECTS: '1',
-  });
-  const base = [
-    '--no-pager',
-    '--no-optional-locks',
-    '-c',
-    'core.fsmonitor=false',
-    '-c',
-    'core.hooksPath=/dev/null',
-    '-c',
-    'protocol.allow=never',
-    '-c',
-    'core.untrackedCache=false',
-  ];
+  const gitEnv = safeGitEnv(env);
+  const base = [...SAFE_GIT_ARGS];
   const run = (args: string[], codes = [0]): string => {
     const remaining = 120 - (performance.now() - started);
     if (remaining < 1) throw new Error('git_budget');
@@ -71,26 +51,7 @@ export function collectParityGit(cwd: string, env: NodeJS.ProcessEnv, now = Date
     const directory = discovered ? resolve(cwd, discovered[0]) : old!.directory;
     const commonRaw = discovered?.[1] ?? old!.common,
       common = isAbsolute(commonRaw) ? commonRaw : resolve(cwd, commonRaw);
-    const filters = run(['config', '--show-scope', '-z', '--get-regexp', '^filter\\.'], [0, 1]).split('\0');
-    const drivers = new Set<string>();
-    for (let i = 0; i + 1 < filters.length; i += 2) {
-      if (filters[i] === 'global' || filters[i] === 'system') continue;
-      const key = filters[i + 1].split('\n', 1)[0],
-        name = key.slice(7, key.lastIndexOf('.'));
-      if (!/^[\w.-]+$/.test(name)) throw new Error('unsafe_filter_name');
-      drivers.add(name);
-    }
-    for (const name of drivers)
-      base.push(
-        '-c',
-        `filter.${name}.clean=`,
-        '-c',
-        `filter.${name}.smudge=`,
-        '-c',
-        `filter.${name}.process=`,
-        '-c',
-        `filter.${name}.required=false`
-      );
+    base.push(...filterOverrides(run(FILTER_CONFIG_ARGS, [0, 1])));
     const output = run([
       'status',
       '--porcelain=v2',

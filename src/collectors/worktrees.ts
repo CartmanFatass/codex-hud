@@ -2,6 +2,8 @@
 import { execFile } from 'node:child_process';
 import { realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { safeGitEnv, SAFE_GIT_ARGS, neutralizeFilters } from '../utils/git-safety.js';
+export { neutralizeFilters } from '../utils/git-safety.js';
 
 export interface WorktreeStatus {
   changed: number;
@@ -40,23 +42,10 @@ export const WORKTREE_STALE_MS = 30_000;
 /** All invocations have bounded output/time, no shell, no lazy object fetch. */
 export const worktreeGit: WorktreeGit = (cwd, args) =>
   new Promise((yes, no) => {
-    const env = { ...process.env };
-    // A process launched from another Git operation must not redirect these reads.
-    for (const key of [
-      'GIT_DIR',
-      'GIT_WORK_TREE',
-      'GIT_INDEX_FILE',
-      'GIT_COMMON_DIR',
-      'GIT_NAMESPACE',
-      'GIT_EXTERNAL_DIFF',
-    ])
-      delete env[key];
     execFile(
       'git',
       [
-        '--no-optional-locks',
-        '-c',
-        'core.fsmonitor=false',
+        ...SAFE_GIT_ARGS,
         '-c',
         'color.ui=false',
         '-c',
@@ -71,12 +60,9 @@ export const worktreeGit: WorktreeGit = (cwd, args) =>
         maxBuffer: 1024 * 1024,
         windowsHide: true,
         env: {
-          ...env,
+          ...safeGitEnv(process.env),
           LC_ALL: 'C',
-          GIT_OPTIONAL_LOCKS: '0',
-          GIT_NO_LAZY_FETCH: '1',
           GIT_LITERAL_PATHSPECS: '1',
-          GIT_TERMINAL_PROMPT: '0',
         },
       },
       (error, stdout) => (error ? no(error) : yes(stdout))
@@ -169,36 +155,6 @@ export function parseWorktreeStatus(text: string): WorktreeStatus {
     if (row[0] === '2' && !records[++i]) throw new Error('Missing rename source');
   }
   return out;
-}
-
-export async function neutralizeFilters(run: WorktreeGit, cwd: string): Promise<string[]> {
-  let text: string;
-  try {
-    text = await run(cwd, [
-      'config',
-      '--null',
-      '--name-only',
-      '--get-regexp',
-      '^filter\\..*\\.(clean|process|required)$',
-    ]);
-  } catch (error) {
-    if ((error as { code?: number }).code === 1) return [];
-    throw error;
-  }
-  const names = new Set<string>();
-  for (const key of text.split('\0').filter(Boolean)) {
-    const match = /^filter\.([\s\S]+)\.(?:clean|process|required)$/.exec(key);
-    if (!match || match[1].includes('=')) throw new Error('Unsafe filter configuration');
-    names.add(match[1]);
-  }
-  return [...names].flatMap((name) => [
-    '-c',
-    `filter.${name}.clean=`,
-    '-c',
-    `filter.${name}.process=`,
-    '-c',
-    `filter.${name}.required=false`,
-  ]);
 }
 
 /** Only explicit settings/env or verified session/launch cwd are candidates. No log scraping. */

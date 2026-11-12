@@ -10,6 +10,7 @@
  */
 
 import { execFile } from 'node:child_process';
+import { safeGitEnv, SAFE_GIT_ARGS, neutralizeFilters } from '../../utils/git-safety.js';
 import * as bar from '../../render/layout/bar-fields.js';
 import { shortModel } from '../../render/providers.js';
 import { stripAnsi } from '../../render/colors.js';
@@ -281,7 +282,21 @@ export function createP10kFooter(
     const run =
       deps.gitStatus ??
       ((cwd, done) => {
-        execFile('git', ['-C', cwd, 'status', '--porcelain=v1', '-b'], { timeout: 1500 }, done);
+        const started = performance.now();
+        const run = (cwd: string, args: string[]): Promise<string> =>
+          new Promise((yes, no) => {
+            const remaining = 1500 - (performance.now() - started);
+            if (remaining < 1) return no(new Error('git_budget'));
+            execFile(
+              'git',
+              [...SAFE_GIT_ARGS, ...args],
+              { cwd, env: safeGitEnv(env), timeout: Math.max(1, Math.floor(remaining)) },
+              (error, stdout) => (error ? no(error) : yes(stdout))
+            );
+          });
+        neutralizeFilters(run, cwd)
+          .then((filters) => run(cwd, [...filters, 'status', '--porcelain=v1', '-b', '--ignore-submodules=dirty']))
+          .then((stdout) => done(null, stdout), (error) => done(error, ''));
       });
     run(cwd, (error, stdout) => {
       gitInFlight = false;

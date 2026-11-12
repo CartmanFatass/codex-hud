@@ -18,6 +18,7 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { GitStatus } from '../types.js';
+import { safeGitEnv, SAFE_GIT_ARGS, neutralizeFilters } from '../utils/git-safety.js';
 
 const GIT_TIMEOUT_MS = 5000;
 const GIT_MAX_BUFFER = 4 * 1024 * 1024;
@@ -155,14 +156,13 @@ export function parseGitStatusPorcelainV2(output: string): ParsedGitStatus {
   return parsed;
 }
 
-function runGit(cwd: string, args: string[]): Promise<string> {
+function runGit(cwd: string, args: string[], timeout = GIT_TIMEOUT_MS): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (timeout < 1) return reject(new Error('git_budget'));
     execFile(
       'git',
       [
-        '--no-optional-locks',
-        '-c',
-        'core.fsmonitor=false',
+        ...SAFE_GIT_ARGS,
         '-c',
         'color.ui=false',
         '-c',
@@ -172,15 +172,10 @@ function runGit(cwd: string, args: string[]): Promise<string> {
       {
         cwd,
         encoding: 'utf8',
-        timeout: GIT_TIMEOUT_MS,
+        timeout: Math.floor(timeout),
         maxBuffer: GIT_MAX_BUFFER,
         windowsHide: true,
-        env: {
-          ...process.env,
-          GIT_OPTIONAL_LOCKS: '0',
-          GIT_TERMINAL_PROMPT: '0',
-          GIT_NO_LAZY_FETCH: '1',
-        },
+        env: safeGitEnv(process.env),
       },
       (error, stdout) => {
         if (error) {
@@ -316,7 +311,10 @@ export function resetGitStatusCache(): void {
 async function readGitStatus(cwd: string): Promise<{ status: GitStatus; upstream: string | null }> {
   let output: string;
   try {
-    output = await runGit(cwd, ['status', '--porcelain=v2', '--branch']);
+    const started = performance.now();
+    const run = (cwd: string, args: string[]) => runGit(cwd, args, GIT_TIMEOUT_MS - (performance.now() - started));
+    const filters = await neutralizeFilters(run, cwd);
+    output = await run(cwd, [...filters, 'status', '--porcelain=v2', '--branch', '--ignore-submodules=dirty']);
   } catch {
     // Not a repository, git missing, or a timeout: the bar shows no git
     // section, exactly as the previous rev-parse probe did on failure.
