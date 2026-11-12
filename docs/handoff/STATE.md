@@ -37,7 +37,9 @@ Milestone: M4 · Project view
   listing and pi session totals grow with history; no deadline on MCP child processes. Round 8 on 1ec6e0ef: Sol changes-required (docs
   only: live pi /hud controls and piFooter cut from the reference; `codex-hud` examples name a command the installer
   does not install), DS accept (one false rotation sentence + optional notes); GIT-SAFE and FIX7 confirmed fixed by
-  both → RELEASE-DOCS2 (+ short ja/ko READMEs), then round 9 by both; then m4-close 06 (archive via git archive of tracked files
+  both → RELEASE-DOCS2 b622a7ba (+ short ja/ko READMEs). Round 9 (Sol xhigh + DS max on b622a7ba)
+  running; RELEASE-ARCHIVE (m4-close 06: `npm run release` = git archive minus dev-only paths, offline install
+  rehearsal in a temp HOME) running in parallel; then m4-close 06 (archive via git archive of tracked files
   minus dev-only dirs, extraction rehearsal in a temp HOME), then stop for the owner before merge/tag.
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
   finding 1); delete that part of the command or keep it?
@@ -134,7 +136,9 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX7 · 77500308 · round-7 follow-ups; CI runs only existing scripts on Node 24; fixture idents
 - try · M4 · RELEASE-DOCS · 1ec6e0ef · shipped docs describe today's HUD; Node ^22.13.0 || >=24 in engines + install preflight
 - done · M4 · M4-REVIEW8 · Sol changes-required (2 doc), DS accept · docs/reviews/2026-11-12-m4-review8-*.md
-- working · M4 · RELEASE-DOCS2 · round-8 doc fixes, short ja/ko READMEs (imp)
+- try · M4 · RELEASE-DOCS2 · b622a7ba · round-8 doc fixes, short ja/ko READMEs
+- working · M4 · M4-REVIEW9 · re-check of the round-8 doc fixes (Sol xhigh + DS max on b622a7ba)
+- working · M4 · RELEASE-ARCHIVE · release archive + extraction/install rehearsal, no merge/tag (imp)
 - done · M4 · M4-ARCH · Release: blocked (1: repo Git filters run from the Codex bar and pi footer) · docs/reviews/2026-11-12-m4-architect.md
 - try · M4 · GIT-SAFE · 76e2ba8b · one safe Git policy (src/utils/git-safety.ts) for Claude, Codex, pi footer, Project, Changes; submodule working trees not probed
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
