@@ -27,6 +27,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     tab(key === 'home-tab');
     return result();
   }
+  // 3 (and Ctrl+\ 3) is kept for the Project tab (M4), not built: it does nothing, not even open the hidden Changes view.
+  if (key === 'changes') return result();
   if (key === 'summary') {
     next.boardInspect = 'summary';
     next.focus = 'details';
@@ -79,31 +81,29 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
     if (lane?.identity.kind !== 'invocation') return;
     const worker = target.kind === 'worker' ? lane.workers.find((w) => w.id === target.workerId) : undefined;
-    // A job card with no question open opens its report, else its brief (Work tab; Home's Enter goes to Work).
+    // A job card with no question open opens its report, else its brief; the same on both tabs.
     const evidence =
       target.kind === 'decision'
         ? lane.decisions.find((d) => d.id === target.decisionId)?.evidence[0]
-        : (worker?.work?.requestInfo?.evidence ?? (next.mainTab === 'work' ? worker?.evidence.at(-1) : undefined));
+        : (worker?.work?.requestInfo?.evidence ?? worker?.evidence.at(-1));
     if (!evidence || !/^j[0-9a-f]{16}$/.test(evidence.sourceId)) return;
     const file = join(lane.identity.home, 'jobs', evidence.sourceId, evidence.relativePath);
     if (/^(report|brief)\.md$/.test(evidence.relativePath)) return { type: 'job-files', files: [file] };
     if (/^qa\/q\d+\.md$/.test(evidence.relativePath))
       return { type: 'job-files', files: [file, file.replace(/\.md$/, '.answer.md')] };
   };
-  const activate = () => {
+  // Enter, or a click on the selected item: a lane folds or unfolds, any other item expands or collapses in place.
+  // It never changes tab.
+  const activate = (target = selected()) => {
     if (next.boardAnchor) {
       toggle(next.boardAnchor);
       return;
     }
-    const target = selected();
-    if (next.mainTab === 'work' || !target) return;
-    next.mainTab = 'work';
-    next.workTarget = target;
-    next.focus = 'agents';
+    if (!target) return;
+    if (target.kind !== 'lane') return toggle(targetKey(target));
     const folded = new Set(next.boardFolded);
-    folded.delete(target.laneId);
+    if (!folded.delete(target.laneId)) folded.add(target.laneId);
     next.boardFolded = folded;
-    next.boardRevealed = undefined;
   };
   if (input.type === 'mouse') {
     const control =
@@ -124,7 +124,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         setTarget(target);
         activate();
       }
-      return result(jobFiles());
+      return result();
     }
     if (control?.kind === 'board-summary') {
       next.boardInspect = 'summary';
@@ -155,18 +155,18 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     const target = item ? boardFrame.targets.get(item) : undefined;
     if (target) {
-      if (selected() && targetKey(selected()!) === targetKey(target)) toggle(item!);
+      if (selected() && targetKey(selected()!) === targetKey(target)) activate(target);
       else setTarget(target);
       next.keys = true;
     }
     return result();
   }
   if (key === 'enter' || key === 'activate') {
-    // Home's Enter goes to Work, with the card or decision selected; there Enter opens the file.
-    const action = main && next.mainTab === 'work' ? jobFiles() : undefined;
-    if (main && !action) activate();
-    return result(action);
+    if (main) activate();
+    return result();
   }
+  // `o` (decoded as open-session, which is also Ctrl+\ o) opens the selected job's file in $EDITOR, on both tabs.
+  if (key === 'open-session' && main) return result(jobFiles());
   // Existing reveal is display-only and must apply to both main tabs (P2 q18).
   if (key === 'show-all' && main) {
     next.tree.showAll = !next.tree.showAll;
@@ -174,18 +174,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   // Removed controls cannot act through hidden legacy shortcuts either.
   if (
-    [
-      'resume-reconcile',
-      'reset',
-      'brief-toggle',
-      'filter',
-      'sort',
-      'open-session',
-      'main',
-      'log',
-      'pane-close',
-      'zoom',
-    ].includes(key)
+    ['resume-reconcile', 'reset', 'brief-toggle', 'filter', 'sort', 'main', 'log', 'pane-close', 'zoom'].includes(key)
   )
     return result();
   if (key === 'next-trouble' || key === 'previous-trouble') {
@@ -206,23 +195,9 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     return result();
   }
+  // Left and Right only move between the tabs (Home, Work; the Project tab comes with M4); they never fold or expand.
   if ((key === 'left' || key === 'right') && main) {
-    if (next.boardAnchor) {
-      toggle(next.boardAnchor, key === 'right');
-      return result();
-    }
-    const target = selected();
-    if (!target) return result();
-    if (target.kind !== 'lane') {
-      tab(next.mainTab === 'work');
-      return result();
-    }
-    if (next.mainTab === 'work' && target.kind === 'lane') {
-      const folded = new Set(next.boardFolded);
-      if (key === 'left') folded.add(target.laneId);
-      else folded.delete(target.laneId);
-      next.boardFolded = folded;
-    } else toggle(targetKey(target), key === 'right');
+    tab(key === 'left');
     return result();
   }
   if (main && ['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {

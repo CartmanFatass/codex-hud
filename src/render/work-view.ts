@@ -75,7 +75,7 @@ export function renderWorkboardHelp(
   const words = [
     'Help — Shortcuts',
     '1 Home · 2 Work · , Settings · ? Help',
-    '←→ tab · ↑↓ move · Enter opens the file',
+    '←→ tab · ↑↓ move · Enter expands or collapses · o opens the file',
     'a: reveal/hide finished agents · display only',
     'Esc: back',
   ];
@@ -163,7 +163,10 @@ export function renderWorkboardFrame(
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 });
   }
   const done = theme.board.success(t('✓ {n} done today', { n: doneToday(board, now) }));
-  const foot = footHints(inspector ? t('Esc: back') : t('←→ tab  ↑↓ move  ⏎ open'), width - visualLength(done) - 1);
+  const foot = footHints(
+    inspector ? t('Esc: back') : t('1 2 tab  ↑↓ move  ⏎ expand  o open'),
+    width - visualLength(done) - 1
+  );
   if (height > 1) frame.lines[height - 1] = pair(done, foot && theme.dim(foot), width);
   frame.lines = frame.lines.map((line) => fit(line, width));
   frame.panes.push({

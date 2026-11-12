@@ -72,6 +72,15 @@ A job that has settled (`ended_at`, else `settled_at`, else the file's mtime) le
 minutes (`FINISHED_LINGER_MS` in `home-view.ts`; the `a` reveal shows it again) and stays in the `today` line as
 `N done · M failed`; Work keeps all retained jobs. Model and thinking show only at 100+ columns.
 
+**Keys and display state on Home and Work** (`render/workboard-input.ts`). Enter, or a click on the selected item,
+toggles it in place and never changes tab: a lane header flips its id in `state.boardFolded`, any other target flips
+its `targetKey` in `state.boardExpanded`. Both sets are display only and not persisted, and both tabs share them.
+`decisionRows` draws a decision as one row collapsed and as the whole block expanded; Home's question card
+(`homeRows`) and Work's card (`renderWorkCard`) draw an open question short collapsed and with `requestLines(card,
+true)` expanded. `1`/`2` pick the tab, `3` is inert (the Project tab, M4; its prefix twin `Ctrl+\ 3` decodes to
+`changes` and is swallowed here), Left/Right switch tab, and `o` (decoded as `open-session`, also `Ctrl+\ o`) returns
+the `job-files` action that Enter used to on Work, on both tabs.
+
 **Facade closure.** The additive facade closure is separate from the Pi dispatcher closure. Helpers are not owners:
 a helper's records never become a task's or a job's authority.
 

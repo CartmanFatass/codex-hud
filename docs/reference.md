@@ -263,17 +263,19 @@ disk and steer nothing.
 |---|---|
 | `1` | Home |
 | `2` | Work |
-| `3` | Changes |
+| `3` | Nothing yet: kept for the Project tab |
 | `4` or `v` | Inspector |
 | `t` | Timeline |
 | `S` | Main-session details in the Inspector (factual, not a generated summary) |
 
-**Keys on Home and Work.** Up/Down or `j`/`k` selects; Left/Right or `h`/`l` folds and expands; `v` inspects. Enter
-on Home opens the corresponding Work lane, card or decision, selected and scrolled into view; Enter in Work is inert,
-except on a job card, which opens that job's `report.md` (else `brief.md`), or its open question, in `$EDITOR` beside the
-panel, as Enter on a decision there opens its `qa` file. Esc
-returns from the Inspector, and standalone Esc on the main page exits as before. The footer keeps whole hints only
-(`←→ tab  ↑↓ move  ⏎ open`): at a narrow width the hints on the right are dropped, never cut.
+**Keys on Home and Work.** `1` Home, `2` Work (`3` is kept for the Project tab and does nothing yet); Tab and
+Shift-Tab, or Left/Right (`h`/`l`), switch tab; Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection. Enter, or a
+click on the selected item, expands it in place and collapses it again; it never changes tab. Everything starts
+collapsed, and one expanded set is shared by both tabs (display only, not saved). On a lane header Enter folds or
+unfolds the lane. `o` opens the selected item's file in `$EDITOR` beside the panel: a job's open question with its
+answer file, else its `report.md`, else its `brief.md`; a decision's `qa` file. `v` or Space inspects. Esc returns from
+the Inspector, and standalone Esc on the main page exits as before. The footer keeps whole hints only
+(`1 2 tab  ↑↓ move  ⏎ expand  o open`): at a narrow width the hints on the right are dropped, never cut.
 
 **What Home shows.** Its badge and needs-you items count only terminal runtime jobs that ended needing a human. A
 worker's QA result, a normal failure, a blocked job and a timeout never count. Partial coverage never reads as
@@ -286,9 +288,11 @@ routine. Only an explicit `One-way: true` line is pinned red; a prose mention is
 are capped at three with `+N earlier`, older than two hours fold, and the list rolls over at local midnight. There
 is no seen state. Home labels its routine tier **decided for you** and shows each answer as one row: mark, lane, role
 and question ID (`◇ AI-THIN · imp q1`), the answer cut to fit, the age (`worth a look` only where it leaves room). Work
-shows the answer, its source question and, for a departure, `instead of`, whole. Home's question card is short: the
-question in at most three lines, one `N options · default: …` line, the evidence file with `⏎ Work`; the `blocked`
-context and every option are in Work's card. A lane's row (the same one row on Home and Work) has the package label and
+shows the answer, its source question and, for a departure, `instead of`, whole. On both tabs a decision is the one
+row until Enter expands it to that block. Home's question card is short: the question in at most three lines, one
+`N options · default: …` line, the evidence file with `⏎ expand  o open`; Enter expands it to the question whole, the
+`blocked` context and every option (`⏎ collapse`). Work's card of an open question shows the question and its default
+the same way, and Enter adds the context and every option. A lane's row (the same one row on Home and Work) has the package label and
 its phase word on the left and, on the right, one glyph per job, oldest dispatch first: `✓` done, `◉` running, `?`
 asking, `✗` failed, `−` stopped (`+ @ ? x -` in text glyphs), then the role of the newest job that is running or
 asking. When the jobs do not fit, the newest keep their glyphs and `+N` counts the older ones. There is no progress
@@ -301,10 +305,8 @@ necessary on narrower screens.
 
 **What Work shows.** Lanes plus the shared compact work cards: one lane per observed package, invocation or native
 session, its worker cards inside it and its recorded calls beside them. Navigation is logical rather than a cursor
-over painted cells — lane, then its workers, then its decisions. Left folds the selected lane and collapses the
-selected card; Right unfolds the lane and expands the selected card; Enter in Work is inert (a job card opens its
-file, see Keys). Enter on Home hands the
-selected lane, card or decision to Work and unfolds its lane. At 110 columns Home's peek draws the selected lane (the
+over painted cells — lane, then its workers, then its decisions. Enter folds or unfolds the selected lane, and expands
+or collapses the selected card or decision (see Keys). At 110 columns Home's peek draws the selected lane (the
 first when none is selected) through the same lane/card renderer, not a second interpretation. Lanes are observation
 navigation, not execution ownership; an unknown phase or order is shown as unknown. Wide Work reserves a written-title
 column; browser cards use recorded phases, not role-inferred build/design.

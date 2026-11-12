@@ -36,7 +36,7 @@ export function workerRow(worker: OwnerWorker, width: number, now: number): Moni
 }
 export const decisionTitle = (record: DecisionRecord) =>
   monitorText(record.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? record.title);
-/** One row on Home (title cut to fit); the whole title, question and `instead of` in Work. */
+/** Collapsed, one row (title cut to fit); expanded (Enter), the whole title, question and `instead of`. Same on both tabs. */
 export function decisionRows(
   record: DecisionRecord,
   lane: WorkLane,
@@ -51,7 +51,7 @@ export function decisionRows(
   const ink = record.departure ? theme.board.attention : theme.board.muted;
   const age = minuteAge(callTime(record), now);
   const left = `${ink(mark(record.departure ? '◆' : '◇', record.departure ? '*' : 'o'))} ${[`${monitorText(lane.label)} · ${roleWord(worker?.role ?? null)}`, q].filter(Boolean).join(' ')}`;
-  if (state.mainTab !== 'work') {
+  if (!state.boardExpanded?.has(targetKey(target))) {
     // `worth a look` gives way to the age alone when it would leave the title under ten cells.
     const long = `${t('worth a look')} · ${age}`;
     const right = record.departure && width - visualLength(left) - visualLength(long) - 3 >= 10 ? long : age;
@@ -64,7 +64,7 @@ export function decisionRows(
     ...(record.question ? stemLines(`${t('asked')} ${record.question}`, width, ink) : []),
     ...(record.departure && record.instead ? stemLines(`${t('instead of')} ${record.instead}`, width, ink) : []),
   ];
-  return rows.map((text, i) => boardRow(i ? theme.board.body(text) : text, target));
+  return [...rows.map((text, i) => boardRow(i ? theme.board.body(text) : text, target)), boardRow('')];
 }
 /** "Decided for you": the header and a row or block per decision, departures first, then the newest. Home shows today's. */
 export function decisionBlock(board: WorkboardSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
@@ -79,9 +79,9 @@ export function decisionBlock(board: WorkboardSnapshot, state: MonitorState, wid
     ),
   ];
   for (let i = 0; i < decisions.length; i++) {
-    if (home && i && decisions[i - 1].departure && !decisions[i].departure) rows.push(boardRow(''));
+    if (i && decisions[i - 1].departure && !decisions[i].departure && rows.at(-1)?.text) rows.push(boardRow(''));
     const lane = board.lanes.find((l) => l.id === decisions[i].laneId);
-    if (lane) rows.push(...decisionRows(decisions[i], lane, state, width, now), ...(home ? [] : [boardRow('')]));
+    if (lane) rows.push(...decisionRows(decisions[i], lane, state, width, now));
   }
   return rows;
 }

@@ -11,6 +11,8 @@ import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
 import { Notifier } from '../../dist/notify.js';
 import { frameDiff } from '../../dist/render/frame-diff.js';
+import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
+import { targetKey } from '../../dist/collectors/workboard-types.js';
 const now = new Date().setHours(12, 0, 0, 0);
 const question =
   'Where should the model chip go on a card whose phase strip is longer than one complete line at 56 columns, without hiding any of the important results?';
@@ -112,12 +114,20 @@ function fixture(t) {
   return { env, pipeline, tree, render, put, askDir, ready };
 }
 const plain = (frame) => frame.lines.map(stripAnsi);
+// Everything starts collapsed; this is the state of a panel where every card and decision was expanded with Enter.
+const expandAll = (board, from = initialMonitorState()) => ({
+  ...from,
+  boardExpanded: new Set([
+    ...board.workers.map((w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id })),
+    ...board.decisions.map((d) => targetKey({ kind: 'decision', laneId: d.laneId, decisionId: d.id })),
+  ]),
+});
 const joined = (frame) =>
   plain(frame)
     .map((l) => l.replace(/^[┃|]\s?/, '').trim())
     .join(' ')
     .replace(/\s+/g, ' ');
-test('v7 Work: whole Tier-1 text, Home: exact EN/ZH cells, attention lanes, decision order and ten-minute fold', async (t) => {
+test('v7 expanded Work: whole Tier-1 text, Home: exact EN/ZH cells, attention lanes, decision order and ten-minute fold', async (t) => {
   const f = fixture(t);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree);
@@ -125,7 +135,7 @@ test('v7 Work: whole Tier-1 text, Home: exact EN/ZH cells, attention lanes, deci
   for (const lang of ['en', 'zh']) {
     setLanguage(lang);
     const frame = f.render(board, 'home');
-    const text = joined(f.render(board, 'work'));
+    const text = joined(f.render(board, 'work', 180, 56, expandAll(board)));
     for (const full of [
       question,
       blocked,
@@ -162,16 +172,16 @@ test('v7 Work: whole Tier-1 text, Home: exact EN/ZH cells, attention lanes, deci
   const decision = board.decisions.find((d) => d.departure);
   const target = { kind: 'decision', laneId: decision.laneId, decisionId: decision.id };
   const state = { ...home.state, homeTarget: target };
-  // Home's Enter goes to Work with the decision selected and scrolled into view; there Enter opens its files.
+  // Enter expands the decision in place and the tab stays; `o` opens its files.
   const opened = handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame: home });
   assert.equal(opened.action, undefined);
-  assert.deepEqual([opened.state.mainTab, opened.state.workTarget], ['work', target]);
-  const work = f.render(board, 'work', 24, 56, opened.state);
+  assert.equal(opened.state.mainTab, 'home');
+  const work = f.render(board, 'work', 24, 56, { ...opened.state, workTarget: target });
   assert.ok(
     plain(work).some((l) => l.startsWith('◆ PANEL-THIN · imp q2')),
     'the decision is on screen'
   );
-  const enter = handleMonitorInput(opened.state, { type: 'key', key: 'enter' }, { tree: f.tree, frame: work });
+  const enter = handleMonitorInput(work.state, { type: 'key', key: 'open-session' }, { tree: f.tree, frame: work });
   assert.deepEqual(enter.action.files, [join(f.askDir, 'qa/q2.md'), join(f.askDir, 'qa/q2.answer.md')]);
   const notifier = new Notifier({ enabled: true, cooldownMs: 0, deliver() {} });
   assert.ok(notifier.update({}, now, board).some((e) => e.message.includes(question)));
@@ -189,9 +199,10 @@ test('Home is a scannable summary: a short question card and one row per decisio
     const home = plain(f.render(board, 'home', 180, width));
     for (const line of home) assert.equal(visualLength(line), width, line);
     const at = home.findIndex((l) => l.startsWith('? imp · PANEL-THIN')),
-      card = home.slice(at, home.findIndex((l, i) => i > at && l.includes('⏎ Work')) + 1);
+      card = home.slice(at, home.findIndex((l, i) => i > at && l.includes('⏎ expand')) + 1);
     assert.ok(card.length >= 3 && card.length <= 6, `${width} columns: ${card.length} rows\n${card.join('\n')}`);
     assert.match(card.join('\n'), /┃ 3 options · default: a\)/);
+    assert.match(card.at(-1), /┃ qa\/q3\.md\s+⏎ expand  o open$/);
     assert.doesNotMatch(card.join('\n'), /blocked|b\) beside/);
     if (width === 40) assert.match(card.at(-3), /…\s*$/, 'a long question is cut with an ellipsis');
     const decided = home.findIndex((l) => l.startsWith('Decided for you'));
@@ -201,7 +212,7 @@ test('Home is a scannable summary: a short question card and one row per decisio
     assert.match(home[decided + 3], /^◇ PANEL-THIN · imp q1  yes\s+\d+m\s*$/);
     assert.doesNotMatch(home.join('\n'), /asked|instead of/);
   }
-  const work = joined(f.render(board, 'work')).replace(/\s/g, '');
+  const work = joined(f.render(board, 'work', 180, 56, expandAll(board))).replace(/\s/g, '');
   for (const full of [
     question,
     'blocked ' + blocked,
@@ -244,30 +255,87 @@ test('v7 Work: file-derived phase chain and vendor/model/full effort chips', asy
     assert.doesNotMatch(line, /\x1b|\[38;2;/);
   }
 });
-test('Work: Enter opens a job card file, footer hints never cut a word', async (t) => {
+test('`o` opens a job card file on both tabs, footer hints never cut a word', async (t) => {
   const f = fixture(t);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree),
     frame = f.render(board, 'work');
-  const enter = (id, mainTab = 'work') => {
+  const open = (id, mainTab = 'work', key = 'open-session') => {
     const worker = board.workers.find((w) => w.id === 'thin-job:j' + String(id).padStart(16, '0'));
     const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
     const state = { ...frame.state, mainTab, workTarget: target, homeTarget: target };
-    return handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame });
+    return handleMonitorInput(state, { type: 'key', key }, { tree: f.tree, frame });
   };
   const jobs = join(f.env.HUD_HOME, 'jobs', 'j');
-  assert.deepEqual(enter(4).action, { type: 'job-files', files: [join(f.ready, 'report.md')] });
-  assert.deepEqual(enter(3).action, { type: 'job-files', files: [jobs + '0000000000000003/brief.md'] });
-  assert.equal(enter(4, 'home').action, undefined, 'on Home, Enter still goes to the Work tab');
-  assert.equal(enter(4, 'home').state.mainTab, 'work');
+  assert.deepEqual(open(4).action, { type: 'job-files', files: [join(f.ready, 'report.md')] });
+  assert.deepEqual(open(3).action, { type: 'job-files', files: [jobs + '0000000000000003/brief.md'] });
+  assert.deepEqual(open(4, 'home').action, open(4).action, 'the same on Home');
+  assert.equal(open(4, 'home', 'enter').action, undefined, 'Enter opens no file and stays on its tab');
+  assert.equal(open(4, 'home', 'enter').state.mainTab, 'home');
   const foot = (width) =>
     plain(renderMonitor({ tree: f.tree, workboard: board, state: frame.state, width, height: 40, nowMs: now }))
       .at(-1)
       .replace(/^✓ 3 done today\s*/, '>');
-  assert.deepEqual([56, 30, 28, 20].map(foot), ['>←→ tab  ↑↓ move  ⏎ open', '>←→ tab  ↑↓ move', '>←→ tab', '>']);
+  assert.deepEqual([56, 40, 30, 20].map(foot), [
+    '>1 2 tab  ↑↓ move  ⏎ expand  o open',
+    '>1 2 tab  ↑↓ move',
+    '>1 2 tab',
+    '>',
+  ]);
   // The row is erased before it is written: a full-width row would lose its last cell to an erase after it.
   const painted = frameDiff(null, ['abc']);
   assert.ok(painted.indexOf('\x1b[K') < painted.indexOf('abc') && !painted.endsWith('\x1b[K'));
+});
+test('Enter expands and collapses in place on both tabs, 1 2 pick the tab, 3 does nothing, arrows move', async (t) => {
+  const f = fixture(t);
+  await f.pipeline.refresh();
+  const board = f.pipeline.workboard(f.tree);
+  const departure = board.decisions.find((d) => d.departure);
+  const asking = board.workers.find((w) => w.homeNeedsHuman);
+  const targets = {
+    decision: { kind: 'decision', laneId: departure.laneId, decisionId: departure.id },
+    card: { kind: 'worker', laneId: asking.laneId, workerId: asking.id },
+    lane: { kind: 'lane', laneId: departure.laneId },
+  };
+  const rendered = (state) => f.render(board, state.mainTab, 180, 56, state);
+  const text = (state) => plain(rendered(state)).join('\n');
+  const press = (state, bytes) => {
+    const frame = rendered(state);
+    const [input] = new WorkbenchInputDecoder('workboard').push(Buffer.from(bytes));
+    return handleMonitorInput(frame.state, input, { tree: f.tree, frame });
+  };
+  const at = (tab, target) => ({ ...initialMonitorState(), mainTab: tab, [tab + 'Target']: target });
+  for (const tab of ['home', 'work']) {
+    const toggles = (target, shown) => {
+      let state = at(tab, target);
+      assert.doesNotMatch(text(state), shown, `${tab} starts collapsed`);
+      state = press(state, '\r').state;
+      assert.match(text(state), shown, `${tab}: Enter expands`);
+      state = press(state, '\r').state;
+      assert.doesNotMatch(text(state), shown, `${tab}: Enter again collapses`);
+      assert.equal(state.mainTab, tab, 'the tab stays');
+    };
+    toggles(targets.decision, /^┃ instead of /m);
+    toggles(targets.card, /cannot be finished/);
+    // A lane header folds its cards; Enter again unfolds them.
+    const folded = press(at(tab, targets.lane), '\r').state;
+    assert.doesNotMatch(text(folded), /thin job cards/);
+    assert.equal(folded.mainTab, tab);
+    assert.match(text(press(folded, '\r').state), /thin job cards/);
+  }
+  assert.match(text(press(at('home', targets.card), '\r').state), /⏎ collapse  o open/);
+  // 1 and 2 pick the tab; 3 is the Project tab (M4): nothing happens, and the hidden Changes view stays hidden.
+  for (const tab of ['home', 'work']) {
+    const before = rendered(at(tab, targets.card)).state;
+    assert.deepEqual(press(before, '3').state, before);
+    assert.equal(press(before, tab === 'home' ? '2' : '1').state.mainTab, tab === 'home' ? 'work' : 'home');
+    assert.equal(press(before, tab === 'home' ? '1' : '2').state.mainTab, tab);
+  }
+  // Left and Right switch tabs and never fold, even with a lane selected.
+  const work = at('work', targets.lane);
+  assert.equal(press(work, '\x1b[D').state.mainTab, 'home');
+  assert.equal(press(at('home', targets.lane), '\x1b[C').state.mainTab, 'work');
+  assert.equal(press(work, '\x1b[D').state.boardFolded, undefined);
 });
 test('a lane row ends in one glyph per job, oldest first, then the role of the newest running or asking one', async (t) => {
   const f = fixture(t);

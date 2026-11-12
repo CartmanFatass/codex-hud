@@ -1,11 +1,11 @@
 /** Home: the ask, package lanes, then decisions made for the owner. */
-import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
+import { targetKey, type WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { isLocalDay } from '../collectors/workboard.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { boardRow, minuteAge, decisionBlock, mark } from './workboard-rows.js';
 import { laneRows, orderedLanes, retainedWorker } from './work-lanes.js';
-import { stemLines } from './work-card.js';
+import { requestLines, stemLines } from './work-card.js';
 import { theme } from './colors.js';
 import { fit, pair, monitorText } from './monitor-text.js';
 import { t } from './i18n.js';
@@ -26,6 +26,9 @@ export function homeRows(
       r = worker.work?.requestInfo;
     const target = { kind: 'worker' as const, laneId: worker.laneId, workerId: worker.id };
     const lane = board.lanes.find((l) => l.id === worker.laneId);
+    // Collapsed, the short card; Enter expands it to the question whole, the context and every option.
+    const open = state.boardExpanded?.has(targetKey(target)) === true;
+    const hint = `${t(open ? '⏎ collapse' : '⏎ expand')}  ${t('o open')}`;
     rows.push(
       boardRow(
         theme.board.askTitle(
@@ -45,10 +48,14 @@ export function homeRows(
     ]
       .filter(Boolean)
       .join(' · ');
-    const lines = [
-      ...stemLines(r?.question ?? worker.ask ?? card.reason ?? '', width, theme.board.attention, 3),
-      ...(choices ? stemLines(choices, width, theme.board.attention, 1) : []),
-    ].map((line) =>
+    const lines = (
+      open && r
+        ? requestLines(card, true).flatMap((part) => stemLines(part, width, theme.board.attention))
+        : [
+            ...stemLines(r?.question ?? worker.ask ?? card.reason ?? '', width, theme.board.attention, 3),
+            ...(choices ? stemLines(choices, width, theme.board.attention, 1) : []),
+          ]
+    ).map((line) =>
       line.replace(
         new RegExp(`(${t('default')}: )([a-zA-Z])([).,:])`),
         (_match, before, letter, after) => before + theme.board.askTitle(letter) + after
@@ -59,7 +66,7 @@ export function homeRows(
       boardRow(
         theme.board.slab(
           fit(
-            `${theme.board.attention(mark('┃', '|'))} ${pair(monitorText(r?.evidence?.relativePath ?? ''), t('⏎ Work'), Math.max(0, width - 2))}`,
+            `${theme.board.attention(mark('┃', '|'))} ${pair(monitorText(r?.evidence?.relativePath ?? ''), hint, Math.max(0, width - 2))}`,
             width
           )
         ),

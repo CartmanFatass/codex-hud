@@ -1,5 +1,6 @@
 /** Stems and tracks: one title band, a two-cell state gutter, whole factual sentences. */
 import type { WorkCard } from '../collectors/work-card.js';
+import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorState } from './monitor.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
@@ -172,10 +173,14 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
       }
     }
   }
-  // Work prints an open question whole; Home's card is the short one in home-view.
+  // Work prints an open question and its default, and with the card expanded (Enter) the context and every option;
+  // Home's card is the short one in home-view.
   const generated = card.worker.modelSentence;
-  const asking = state.mainTab === 'work' && card.worker.homeNeedsHuman ? requestLines(card, true) : [];
-  // The model sentence replaces the factual line, never an open question Work prints whole.
+  const open = state.boardExpanded?.has(
+    targetKey({ kind: 'worker', laneId: card.worker.laneId, workerId: card.worker.id })
+  );
+  const asking = state.mainTab === 'work' && card.worker.homeNeedsHuman ? requestLines(card, open) : [];
+  // The model sentence replaces the factual line, never an open question Work prints.
   if (generated) rows.push(jobSentenceLine(generated, width, ink));
   for (const part of asking.length ? asking : generated ? [] : [workCardDetail(card, sentence)])
     if (part) rows.push(...stemLines(part, width, ink));
