@@ -302,7 +302,6 @@ check that no test uses it.
 | `render/workbench.ts`, `render/subagent-tree-view.ts`, `render/sparkline.ts` | The old panel renderer. Only tests import them (`workbench.test`, `panel.test`, `resources.test`, `subagent-status.test`, `test-subagent-tree.mjs`). |
 | `render/lines/*` | The old multi-line bar. Live code uses only `formatTokenCount` (from `lines/activity-line.ts`). A few `.mjs` tests import the line renderers. |
 | `src/test-render.ts` | A standalone mock renderer that nothing runs. `npm run test:render` runs `dist/index.js`. |
-| `utils/tree-keys.ts` | Imported only for its types, by `render/panel-state.ts`. `parseTreeKey` is not on the input path. |
 | `bin/codex-hud-tree` | Runs `dist/tree-page.js`. Its comment says tmux display-popup uses it, but nothing in the repo calls it. |
 | `dist/utils/tmux-copy.js` | A stale build output with no source file. `tsc` never cleans `dist/`. |
 
@@ -649,6 +648,7 @@ job using the same key. Retry cooldowns do not carry across languages.
 | Feature | What can leave the machine when the master is effectively on |
 |---|---|
 | Decision titles | that thin job's question and answer files only, ≤4096 bytes each (§5.6) |
+| Native-agent sentences (`nativeMaterial`) | public name/role (80 characters each), task/pre-create charge (400), state/turn, report (600), action (200), final result (8,000 head/tail) and error output (2,000); settled non-Claude agents may read one safe 32 KiB transcript tail |
 | Visible progress | bounded public current-turn evidence in §5.5 |
 | Result/stage digest | public final answer, head and tail, ≤8000 characters |
 | Agent labels | parent's pre-create public plaintext with path/role, else plaintext task; ≤400 characters per item, up to 8 items |

@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { spawn, spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
 import { projectFixture, projectFrames, plain, NOW, TREE } from '../fixtures/project-page.mjs';
 import { progressSegments } from '../../dist/render/project-view.js';
@@ -13,6 +15,7 @@ import { initialMonitorState, handleMonitorInput } from '../../dist/render/monit
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { openEditorPane } from '../../dist/cli/panel-pane.js';
+import { commandSequence, monitorKey, needsOpenPanel } from '../../dist/utils/panel-command.js';
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/project-frames.json', import.meta.url), 'utf8'));
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'project-page-'));
@@ -105,6 +108,73 @@ test('2 and arrows/Tab switch Home ⇄ Project with independent cursor/scroll; 3
   assert.equal(frame.state.focus, 'changes');
   assert.equal(projectShown(frame.state), false);
 });
+test('Codex prefix 2 binds pane-2, selects Project, and opens a closed panel on that command', async (t) => {
+  const f = await fixture(t), bin = join(f.root, 'bin'), log = join(f.root, 'tmux.jsonl');
+  fs.writeFileSync(join(bin, 'tmux'), `#!${process.execPath}
+import fs from 'node:fs';
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.TMUX_TEST_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === 'display-message') console.log(process.env.TMUX_TEST_PANEL || '');
+if (args.includes('@codex_hud_main_pane')) console.log('%1');
+`, { mode: 0o700 });
+  const env = { ...process.env, ...f.env, PATH: `${bin}:${process.env.PATH}`, TMUX_TEST_LOG: log };
+  const keys = spawnSync('bash', ['bin/codex-hud-keys', 'synthetic-session', 'C-\\'], { env, encoding: 'utf8' });
+  assert.equal(keys.status, 0, keys.stderr);
+  const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.ok(calls().some((a) => a[0] === 'bind-key' && a[3] === '2' && a.at(-1).endsWith(' pane-2')));
+  const decoder = new WorkbenchInputDecoder('workboard', { forward: true });
+  const input = decoder.push(Buffer.from(commandSequence('pane-2')))[0];
+  assert.deepEqual(input, { type: 'command', command: 'pane-2' });
+  assert.equal(needsOpenPanel(input.command), true);
+  const frame = f.render(80, 'en', initialMonitorState());
+  assert.equal(press(frame, monitorKey(input.command)).state.mainTab, 'project');
+  // Run the real command carrier with a synthetic tmux and a recording toggle boundary.
+  fs.copyFileSync('bin/codex-hud-command', join(bin, 'codex-hud-command'));
+  fs.writeFileSync(join(bin, 'codex-hud-toggle'), 'printf "%s\\n" "$@" > "$TOGGLE_TEST_LOG"\n');
+  const toggled = join(f.root, 'toggle.txt');
+  const closed = spawnSync('bash', [join(bin, 'codex-hud-command'), 'synthetic-session', 'pane-2'], {
+    env: { ...env, TOGGLE_TEST_LOG: toggled }, encoding: 'utf8',
+  });
+  assert.equal(closed.status, 0, closed.stderr);
+  assert.equal(fs.readFileSync(toggled, 'utf8'), 'synthetic-session\n--command\npane-2\n');
+  const open = spawnSync('bash', ['bin/codex-hud-command', 'synthetic-session', 'pane-2'], {
+    env: { ...env, TMUX_TEST_PANEL: '%2' }, encoding: 'utf8',
+  });
+  assert.equal(open.status, 0, open.stderr);
+  const sent = calls().at(-1);
+  assert.deepEqual(sent.slice(0, 4), ['send-keys', '-t', '%2', '-H']);
+  assert.equal(Buffer.from(sent.slice(4).map((s) => parseInt(s, 16))).toString(), commandSequence('pane-2'));
+});
+
+test('Project collection failure is caught and the live panel re-arms collection', async (t) => {
+  const f = await fixture(t), runner = join(f.root, 'collect-fault.mjs');
+  fs.writeFileSync(runner, `
+import { ProjectCollector } from ${JSON.stringify(pathToFileURL(resolve('dist/collectors/project-board.js')).href)};
+import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};
+let calls = 0;
+ProjectCollector.prototype.collect = async function () {
+  if (++calls === 1) throw Error('synthetic-project-fault');
+  process.stdout.write('REARMED'); process.exit(0);
+};
+await runLivePage();
+`);
+  const settings = join(f.root, 'settings.json');
+  f.put(settings, { modelEnabled: false });
+  const child = spawn(process.execPath, [runner], {
+    env: { ...process.env, ...f.env, HUD_SETTINGS_PATH: settings, CODEX_HUD_STANDALONE_PANEL: '1' },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let stdout = '', stderr = '';
+  child.stdout.on('data', (b) => { stdout += b; });
+  child.stderr.on('data', (b) => { stderr += b; });
+  const timeout = setTimeout(() => child.kill('SIGKILL'), 10000);
+  t.after(() => { clearTimeout(timeout); if (child.exitCode === null) child.kill('SIGKILL'); });
+  const code = await new Promise((done) => child.once('exit', done));
+  clearTimeout(timeout);
+  assert.equal(code, 0, stderr);
+  assert.match(stdout, /REARMED/);
+});
+
 function editorHerdr(f) {
   const log = join(f.root, 'editor.jsonl'), bin = join(f.root, 'bin');
   fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}
@@ -147,6 +217,10 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
     ['pane', 'run', 'synthetic-editor', `synthetic-editor --wait '${f.root}/a file'\\''s name.md' '${f.root}/second file.md'; exit`],
   ]);
 });
+test('empty editor file lists are inert even without a herdr pane', async () => {
+  await openEditorPane([], {});
+});
+
 test('Editor tab label is the first basename, capped at 24 display cells', async (t) => {
   const f = await fixture(t), { env, calls } = editorHerdr(f);
   for (const name of ['a'.repeat(40) + '.md', '界'.repeat(20) + '.md']) {

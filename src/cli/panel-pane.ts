@@ -10,6 +10,7 @@ async function command(argv: string[], env: NodeJS.ProcessEnv) {
 }
 
 export async function openEditorPane(files: string[], env: NodeJS.ProcessEnv): Promise<void> {
+  if (!files.length) return;
   if (!env.HERDR_PANE_ID) throw Error('panel_requires_herdr');
   const panel = await command(['pane', 'get', env.HERDR_PANE_ID], env).catch(() => null);
   const workspace = isRecord(panel?.pane) ? panel.pane.workspace_id : undefined;

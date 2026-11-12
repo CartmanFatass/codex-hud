@@ -32,6 +32,8 @@ const KEYS: Record<string, string> = {
   a: 'show-all',
   v: 'detail-toggle',
   r: 'reset',
+  s: 'settings-save',
+  t: 'settings-test',
   ',': 'settings',
   o: 'open-session',
   // Home's next and previous trouble cards.

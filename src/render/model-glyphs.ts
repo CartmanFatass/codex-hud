@@ -180,13 +180,3 @@ export function fitModelEffortToken(
   }
   return '';
 }
-
-export function modelLegend(): string {
-  const families = (Object.keys(MODEL_GLYPHS) as ModelFamily[])
-    .map((family) => `${MODEL_GLYPHS[family]} ${MODEL_LABELS[family]}`)
-    .join('  ');
-  const efforts = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
-    .map((effort) => `${EFFORT_GLYPHS[effort]} ${effort}`)
-    .join('  ');
-  return `${families}\n${efforts}`;
-}

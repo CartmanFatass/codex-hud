@@ -118,6 +118,14 @@ test('decision titles share paint in collapsed/expanded rows; visible eight-word
       assert.ok(rows.includes(expected), expected);
     assert.doesNotMatch(stripAnsi(rows), /[«»!+]/);
   }
+  for (const [language, raw, expected] of [
+    ['en', '«+Accept» «design» «!today» «-instead»', '«+Accept» «design» today instead'],
+    ['zh', '«+批准»«设计»«!今天»«-替代»', '«+批准»«设计»今天替代'],
+  ]) {
+    const title = markedTitle(raw, language);
+    assert.equal(title, expected);
+    assert.equal(keywordMarks(title).spans.length, 2);
+  }
   assert.equal(markedTitle('One two three four five six «!seven eight nine ten»', 'en'), 'One two three four five six «!seven eight»');
   for (const language of ['en', 'zh']) {
     const title = markedTitle(language === 'en' ? '«+Accept» one two three four five six seven eight nine' : '«+批准»使用更简单的解析器并保留文件检查和结果验证。', language);

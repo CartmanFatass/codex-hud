@@ -22,7 +22,7 @@ export function markedTitle(text: string, language: string): string {
   const words = [...new Intl.Segmenter(language, { granularity: 'word' }).segment(plain)].filter((s) => s.isWordLike);
   const end = words[8]?.index ?? plain.length;
   let title = '', cursor = 0;
-  for (const span of spans) {
+  for (const span of spans.slice(0, 2)) {
     if (span.start >= end) break;
     const stop = Math.min(end, span.end);
     title += plain.slice(cursor, span.start) + `«${span.type}${plain.slice(span.start, stop).trimEnd()}»`;

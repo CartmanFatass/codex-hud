@@ -357,20 +357,6 @@ export class PanelJobPipeline {
   }
 }
 
-/** Final action boundary, shared by keyboard, mouse and legacy dispatch. */
-export function panelActionAllowed(tree: SubagentTree, id: string): boolean {
-  if (jobOnlyNode({ id })) return false;
-  let denied = false;
-  walkNodes(tree.nodes, (node) => {
-    if (node.id === id && jobOnlyNode(node)) denied = true;
-  });
-  return !denied;
-}
-/** Shared final dispatch seam: every keyboard/mouse switch or legacy action goes through it. */
-export function dispatchPanelAction<T>(tree: SubagentTree, id: string, dispatch: () => T): T | undefined {
-  return panelActionAllowed(tree, id) ? dispatch() : undefined;
-}
-
 /** Feed global observation uncertainty into the panel's existing empty-state and notice vocabulary. */
 export function panelJobRenderState(
   result: Pick<JobTreeResult, 'coverage' | 'diagnostics'> | null,
@@ -993,6 +979,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       );
       decisionTitles.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, visibleDecisions);
       jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
+      const projectFacts = await projectCollector.collect(
+        projectShown(state, Boolean(settingsPage)),
+        jobPipeline.workboard(tree, panelDelegation),
+        Date.now()
+      );
+      if (projectFacts) project = projectFacts;
       error = settingsError || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });
@@ -1016,12 +1008,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         /* A state file nobody can write is not a reason to stop drawing. */
       }
     }
-    const projectFacts = await projectCollector.collect(
-      projectShown(state, Boolean(settingsPage)),
-      jobPipeline.workboard(tree, panelDelegation),
-      Date.now()
-    );
-    if (projectFacts) project = projectFacts;
     // Collection owns publication. Paint only consumes the same cached workboard.
     syncPanelView();
     render();

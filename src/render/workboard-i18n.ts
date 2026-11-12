@@ -106,7 +106,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Icons, or words (text)': '图标或纯文字',
   'Model calls per hour, all features; at the cap, sentences wait':
     '每小时调用次数，所有功能合计；达到上限时句子暂不更新',
-  'Done native agents hide after this; Home uses fixed lifetimes': '原生代理完成后隐藏的时间；首页使用固定时限',
   'Keys: $HUD_HOME/credentials.env': '密钥：$HUD_HOME/credentials.env',
   Marks: '图例',
   move: '移动',
@@ -163,4 +162,5 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab':
     '↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页',
   'click selects · again expands · wheel scrolls': '点击选中 · 再点展开 · 滚轮滚动',
+  "In Codex's own panel press {p} first": '在 Codex 自带的面板中，请先按 {p}',
 };

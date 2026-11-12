@@ -333,9 +333,9 @@ export function handleSettingsInput(
     } else key = input.button === 'wheel-down' ? 'down' : 'up';
   }
   if (key === 'escape' || key === 'settings' || key === 'close') return { state: next, action: 'back' };
-  if (key === 'sort') return { state: next, action: 'save' };
+  if (key === 'settings-save') return { state: next, action: 'save' };
   if (key === 'reset') return { state: next, action: 'reset' };
-  if (key === 'next-tab' && settingGroup(next) === 'Models') return { state: next, action: 'test-api' };
+  if (key === 'settings-test' && settingGroup(next) === 'Models') return { state: next, action: 'test-api' };
   const moved = next.selected;
   if (key === 'down' || key === 'tab') next.selected = Math.min(SETTING_ROWS.length - 1, next.selected + 1);
   if (key === 'up' || key === 'shift-tab') next.selected = Math.max(0, next.selected - 1);

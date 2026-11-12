@@ -157,7 +157,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (!target) return;
     const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
     const worker = target.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
-    if (worker?.nativeDepth !== undefined) return { type: 'open-files', files: worker.files?.[0]?.paths ?? [] };
+    if (worker?.nativeDepth !== undefined) {
+      const files = worker.files?.[0]?.paths;
+      return files?.length ? { type: 'open-files', files } : undefined;
+    }
     if (!target.laneId.startsWith('thin-job:') || lane?.identity.kind !== 'invocation') return;
     // A job card with no question open opens its report, else its brief.
     const evidence =
@@ -247,7 +250,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   // Removed controls cannot act through hidden legacy shortcuts either.
-  if (['resume-reconcile', 'reset', 'filter', 'sort', 'main', 'log', 'pane-close', 'zoom'].includes(key))
+  if (['resume-reconcile', 'reset', 'filter', 'main', 'log', 'pane-close', 'zoom'].includes(key))
     return result();
   if (key === 'next-trouble' || key === 'previous-trouble') {
     const workers = boardFrame.snapshot.workers;

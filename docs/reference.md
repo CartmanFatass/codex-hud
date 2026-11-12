@@ -532,7 +532,7 @@ Native cards use this same Inspector: expanded card, role/harness, model/effort,
 
 ### Changes summary
 
-`3` / `Ctrl+\ 3` keeps Changes as a factual summary: the source repository's branch and HEAD, ahead/behind counts (unknown without upstream evidence), staged/unstaged/untracked counts, and one row per worktree with its path, branch and dirty/clean state. Missing or stale status stays unknown. There are no per-file lists, file/worktree selection, Inspector previews or diffs. Collection runs only while Changes is focused, with bounded round-robin worktree status probes; Git filters and lazy fetching stay disabled. It provides no staging, commit or checkout actions. PAGES-BUILD will restyle this retained summary.
+`3` / `Ctrl+\ 3` keeps Changes as a factual summary: the source repository's branch and HEAD, ahead/behind counts (unknown without upstream evidence), staged/unstaged/untracked counts, and one row per worktree with its path, branch and dirty/clean state. Missing or stale status stays unknown. There are no per-file lists, file/worktree selection, Inspector previews or diffs. Collection runs only while Changes is focused, with bounded round-robin worktree status probes; Git filters and lazy fetching stay disabled. It provides no staging, commit or checkout actions.
 
 ### Settings
 
@@ -545,7 +545,7 @@ Settings is one page with four open groups, in this order:
 | Models | Model text, Model, Call cap; read-only calls this hour against the cap, and Test API ([LLM](#llm)) |
 | Codex | Width, Prefix key, Bar on launch |
 
-Bar style cycles the shared `BAR_STYLES` (`line`, `p10k` in this checkout) and saves `barStyle` for the bottom bars.
+Bar style cycles the shared `BAR_STYLES` (`line`, `p10k`, `gauge`, `tide`, `micro`, `stacked`, `headline`, `triptych`) and saves `barStyle` for the bottom bars.
 
 The page is a draft: Theme and Icons paint in the draft value, so it is its own preview, and there is no separate Preview block. The selected row's help sits under it as a `┃` stem. A non-default value is in the accent, and a changed row is marked `*`. The top band reads `‹ Settings` and, when the draft is dirty, `unsaved` at the right; a click on that word saves. `s` saves, `r` resets only the selected group, and `t` runs the Models Test API. Esc with a dirty draft opens **Save and leave**, **Discard changes**, **Continue editing** (the default; Esc also continues editing). There are no Reset all or header buttons, no accordion and no read-health dump. ↑/↓ select rows; PgUp/PgDn jump groups. Short panes scroll and retain the selected row's help.
 

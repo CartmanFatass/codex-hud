@@ -97,7 +97,7 @@ export function handleSettingsConfirmation(
   }
   if (input.type !== 'key') return { state };
   if (['escape', 'close', 'settings'].includes(input.key)) return { state, action: 'cancel' };
-  if (input.key === 'sort') return { state: { ...state, choice: 'save' }, action: 'save' };
+  if (input.key === 'settings-save') return { state: { ...state, choice: 'save' }, action: 'save' };
   if (input.raw === 'd') return { state: { ...state, choice: 'discard' }, action: 'discard' };
   if (input.raw === 'c') return { state, action: 'cancel' };
   if (['enter', 'space'].includes(input.key)) return { state, action: state.choice };

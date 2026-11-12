@@ -117,6 +117,37 @@ test('native hide rules: done 10m, failed/stopped 30m; a reveals in place and na
     assert.equal(draw.workboard.snapshot.workers.length > 0, visible, state + ' ' + minutes);
   }
 });
+test('native cards without a transcript offer no open-files action on Home or in Inspector', (t) => {
+  const f = fixture(t), tree = f.claude();
+  tree.nodes[0].rolloutPath = undefined;
+  const worker = f.board(tree).workers.find((w) => w.task === 'Repair parser');
+  const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
+  let frame = f.render(120, 'en', { ...initialMonitorState(), homeTarget: target }, tree);
+  const press = (key) => handleMonitorInput(frame.state, { type: 'key', key }, { frame, tree, nowMs: NOW, standalone: true });
+  assert.equal(press('open-session').action, undefined);
+  frame = f.render(120, 'en', press('inspect').state, tree);
+  for (const key of ['enter', 'open-session']) assert.equal(press(key).action, undefined);
+  assert.equal(frame.workboard.rows.some((r) => r.files?.length), false);
+});
+
+test('matched nested Claude parents are complete; unmatched parents remain incomplete on warm refreshes', (t) => {
+  const f = fixture(t), meta = join(f.dir, 'agent-lead.meta.json');
+  f.put(meta, { ...JSON.parse(fs.readFileSync(meta, 'utf8')), finished: true });
+  for (let i = 0; i < 2; i++) {
+    const tree = f.claude();
+    assert.equal(tree.nodes[0].children.length, 1);
+    assert.equal(tree.nodes[0].children[0].depth, 2);
+    assert.equal(tree.incomplete, false);
+    assert.equal(f.collector.complete, true);
+  }
+  const child = join(f.dir, 'agent-child.meta.json');
+  f.put(child, { ...JSON.parse(fs.readFileSync(child, 'utf8')), toolUseId: 'unmatched-parent' });
+  for (let i = 0; i < 2; i++) {
+    assert.equal(f.claude().incomplete, true);
+    assert.equal(f.collector.complete, false);
+  }
+});
+
 for (const mode of ['off', 'no-key', 'on'])
   for (const language of ['en', 'zh'])
     test(`native sentences use the job queue, master/key gate and two-minute floor: ${mode} ${language}`, async (t) => {
