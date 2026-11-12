@@ -410,7 +410,7 @@ test('changed/oversized sources, missing milestone and source fallback never inv
   f.put(join(f.cwd, 'docs/handoff/STATE.md'), 'Milestone:\n\n## Waiting for the owner\n- Still waiting\n');
   data = await f.collector.collect(true, f.board, NOW + 1);
   assert.equal(data.docs.some((i) => i.label === 'spec'), false, 'an empty milestone must not consume the next heading');
-  fs.unlinkSync(join(f.hud, 'jev-runtime/runtime.json'));
+  fs.unlinkSync(join(f.env.PATH, 'google-chrome'));
   fs.unlinkSync(join(f.cwd, 'hud-convention.md'));
   f.put(join(f.hud, 'hud-convention.md'), '# User convention');
   f.put(join(f.cwd, 'docs/handoff/STATE.md'), 'x'.repeat(65536) + '\nMilestone: NEVER_READ_TAIL\n');

@@ -34,7 +34,10 @@ export async function projectFixture(root) {
   put(join(cwd, '.claude/agents/project-agent.md'), '# Synthetic project agent');
   put(join(home, '.codex/agents/codex-agent.toml'), 'model = "synthetic"');
   put(join(hud, 'credentials.env'), '# Synthetic names and values only\nMISTRAL_API_KEY=NEVER_RENDER_MISTRAL_VALUE\nOPENAI_API_KEY=""\nTYPESAFE_API_KEY=NEVER_RENDER_TYPESAFE_VALUE\nexport SYNTHETIC_KEY=NEVER_RENDER_OTHER_VALUE\n');
-  put(join(hud, 'jev-runtime/runtime.json'), { endpoint: 'synthetic-not-contacted' });
+  for (const name of ['google-chrome', 'jev-ask']) {
+    put(join(bin, name), '#!/bin/sh\nexit 99\n');
+    fs.chmodSync(join(bin, name), 0o700);
+  }
   const id = 'j0000000000000001', job = join(hud, 'jobs', id);
   put(join(job, 'job.json'), { job: id, role: 'imp', cwd, herdr_pane: 'w4E:p1', package: 'M4-PROJECT', created_at: new Date(NOW - 20 * 60000).toISOString() });
   put(join(job, 'STATUS.json'), { state: 'working', started_at: new Date(NOW - 20 * 60000).toISOString() });

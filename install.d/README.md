@@ -1,7 +1,9 @@
 # Installer extensions
 
-`./install --with claude,pi,codex` sources each selected `install.d/<name>.sh` and calls
+`./install --with claude,pi,codex,browser,herdr` sources each selected `install.d/<name>.sh` and calls
 `hud_ext_install`. Extensions define both `hud_ext_install` and `hud_ext_uninstall`.
+An optional `hud_ext_check` runs after name validation, before builds or filesystem changes
+(install only); herdr and browser use it to refuse missing requirements without changing anything.
 The functions receive exported environment variables `REPO` (checkout root), `HUD_HOME`
 (default `$HOME/.hud`) and `BIN_DIR` (`$HOME/.local/bin`). Hooks should be idempotent;
 a failing hook stops the installer.
@@ -56,3 +58,13 @@ pi gets the `/hud` command from the display package. Codex installs no prompt fi
   The official Codex commands may drop comments; a warning names that retained
   backup if the number of comment lines falls. No comments are reinserted.
   `hud codex` is the HUD launch (tmux bar); F12 opens the panel.
+- **herdr**: checks PATH for `herdr`, `pi-role`, `pi-role-reap`, `pi-dispatch` and `pi`,
+  printing their locations and sources. Only missing `herdr` fails installation.
+  No external tool or herdr registration is installed; uninstall is a stated no-op.
+- **browser**: checks PATH for `google-chrome`, `jev-ask`, `jev-aistudio` and `jev-flow`,
+  printing locations and sources. Missing Chrome or `jev-ask` fails in preflight;
+  the other CLIs are optional and reported. Nothing is installed, configured or launched:
+  no HUD config, marker, browser directory or backup is written. Configure Chrome and
+  the external Jev CLIs separately; their own setup is used for browser jobs. Uninstall
+  is a stated no-op. Project reports browser availability with the same Chrome + `jev-ask`
+  PATH check. The Decision API and panel need no browser extension.

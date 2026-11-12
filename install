@@ -35,6 +35,12 @@ for name in "${extensions[@]}"; do
   [[ "$name" =~ ^[a-zA-Z0-9_-]+$ && -f "$REPO/install.d/$name.sh" ]] || fail "Missing or invalid extension: $name"
 done
 
+if ! $uninstall; then
+  for name in "${extensions[@]}"; do
+    ( source "$REPO/install.d/$name.sh"; if declare -F hud_ext_check >/dev/null; then hud_ext_check; fi )
+  done
+fi
+
 printf 'Checking Node runtime\n'
 command -v node >/dev/null || fail 'Node is required'
 node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit((major === 22 && minor >= 13) || major >= 24 ? 0 : 1)' || fail 'Node 22.x >=22.13 or Node >=24 required (23 unsupported)'

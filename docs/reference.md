@@ -9,8 +9,14 @@ The details behind the [README](../README.md): the panel part by part, every key
 
 ## Installing
 
-From the checkout, run `./install --with claude,pi,codex` (Node **22.13+ within 22.x, or 24.x**).
-It does not install a harness, herdr, tmux, a browser or provider keys. Do not run the historical root `install.sh`.
+From the checkout, run `./install --with claude,pi,codex,browser,herdr` (Node **22.13+ within 22.x, or 24.x**).
+Choose any of the five extensions: **claude**, **pi**, **codex**, **browser**, **herdr**; core is always included.
+External tools are checked and reported, never silently installed; provide provider keys separately.
+The herdr extension checks herdr and pi-roles on PATH (only missing herdr fails; uninstall is a no-op).
+The browser extension checks PATH for `google-chrome`, `jev-ask`, `jev-aistudio` and `jev-flow`;
+missing Chrome or `jev-ask` fails before any changes. It writes no browser config, directories or backups,
+never launches Chrome or signs in, and uninstall is a no-op. Configure Chrome and the external Jev CLIs
+separately. Project uses the same Chrome + `jev-ask` PATH check. The Decision API and panel work without it.
 The bottom status lines are always on: plain `claude` uses the global HUD statusline (an owner's existing
 non-HUD statusline is kept), plain `pi` loads both the delegation and display packages, and Codex's tmux bar
 comes with the installer's only printed shell function:

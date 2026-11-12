@@ -7,6 +7,20 @@
 - [机器可读的状态](#机器可读的状态)
 - [配置](#配置)：[环境变量](#环境变量) · [提醒](#提醒) · [config.toml](#configtoml)
 
+## 安装
+
+在检出目录运行 `./install --with claude,pi,codex,browser,herdr`（Node **22.x ≥22.13 或 24.x**）。
+可任选五个扩展：**claude**、**pi**、**codex**、**browser**、**herdr**；核心始终安装。
+外部工具只检查并报告，不会静默安装；提供方密钥另行配置。
+herdr 扩展检查 PATH 中的 herdr 与 pi-roles 命令，仅缺少 herdr 时失败；卸载不做修改。
+browser 扩展检查 PATH 中的 `google-chrome`、`jev-ask`、`jev-aistudio` 和 `jev-flow`；缺少 Chrome
+或 `jev-ask` 时，在任何修改前失败。只检查，不写浏览器配置、目录或备份，不启动 Chrome、不登录；卸载不做修改。
+Chrome 与外部 Jev CLI 使用各自的配置，需另行设置。项目页也以 Chrome + `jev-ask` 的 PATH 检查显示可用性。
+不用 browser 扩展，决策 API 和面板也能工作。
+Claude 的状态栏与 pi 的页脚始终开启；Codex 使用安装器输出的 `codexH() { hud codex "$@"; }`。
+只有面板按需打开：Claude、pi 用 `/hud`，Codex 用 F12。用 `hud uninstall` 或 `./install --uninstall` 卸载。
+扩展修改内容、备份及多个 Codex home 的用法见[安装器扩展](../install.d/README.md)。
+
 ## 替你决定：标题与内容语言
 
 「替你决定」的标题及展开行、详情中的问题、答案、替代选项和原因都跟随设置中的语言。每个决定仍只调用一次

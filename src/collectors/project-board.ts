@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
-import { roleRegistry } from '../roles/roster.js';
+import { executable, roleRegistry } from '../roles/roster.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 export interface ProjectItem {
@@ -224,8 +224,7 @@ export class ProjectCollector {
     // Names match CREDENTIAL_FIELDS in jev/ask/config.ts; no credential loader/value reader is called.
     out.keys = [...new Set(['GEMINI_API_KEY', 'MISTRAL_API_KEY', 'OPENAI_API_KEY', 'TYPESAFE_API_KEY', ...keys.keys()])]
       .map((n) => [n, keys.get(n) ?? false]);
-    try { out.browser = fs.statSync(join(this.hudHome, 'jev-runtime/runtime.json')).isFile(); }
-    catch { /* not set up */ }
+    out.browser = !!executable('google-chrome', this.env) && !!executable('jev-ask', this.env);
     for (const w of board.workers.filter((w) => w.state === 'working')) {
       const id = w.evidence[0]?.sourceId;
       if (!id || !/^j[0-9a-f]{16}$/.test(id)) continue;
