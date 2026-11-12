@@ -99,6 +99,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX · m4-close 05: the review's behaviour findings (brief independence, statusline default, bounded job scan, settings guards, TZ, docs) (8cd38f1e)
 - try · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime, dead modules and the historical installer chain (769cfa3d)
 - try · M4 · SESSION-LINK · owner: pi session history stays in pi's default place; job directories only link to it (23a9782d; Fishpref 45d93a1)
+- working · M4 · M4-REVIEW3 · third review round (Sol xhigh + DS max on 2a0f8735)
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
 - try · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (71801be1; existing 99 pi sessions moved to ~/.pi/agent/sessions and linked first, toktrack totals unchanged)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
@@ -108,7 +109,7 @@ board counts these; update at every landing or decision. -->
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
-## Now (2026-11-12, night): fix round 2 (M4-FIX2, M4-PRUNE2) and JOB-RETENTION running; then re-review 3; owner away
+## Now (2026-11-12, night): review round 3 running; fix round 2, SESSION-LINK, JOB-RETENTION, PANEL-SCOPE landed; owner away
 
 Landed since noon: NATIVE-TREE, PROGRESS-BOARD, OPEN-TAB, CARD-DETAILS, TICKETS, PI-STOP (Fishpref), legacy skills
 retired, Matt Pocock skills installed (to-tickets slices multi-slice features), closing M3b review + M3B-FIX2.
