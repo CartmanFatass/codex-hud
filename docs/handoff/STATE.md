@@ -1,5 +1,11 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
+Milestone: M3b · AI-THIN
+
+## Waiting for the owner
+
+- Try M3b on the real panel: one sentence per card, decision and result; keywords scan at a glance.
+
 ## Now (2026-11-12): M3b closing; themes and pages building in worktrees
 
 Landed today: hud_read/list perf (`5ac1ee5c`), bar perf (`476bed9f`), ONE-PAGE Home (`9e54af8b`), stopped-after-report
