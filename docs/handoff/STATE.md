@@ -56,7 +56,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · NP-03 · native-polish 03: Chinese keyword marks colour instead of showing brackets (746971eb)
 - try · M4 · NP-04 · native-polish 04: HUD job cards show a short title (eb3e5558)
 - try · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers (live check passed; Fishpref pi-roles fixed)
-- working · M4 · GEMINI-DECIDE · Google Gemini Decisions API is Jev's primary decision provider; OpenAI fallback (TypeSafe credits expiring)
+- working · M4 · GEMINI-DECIDE · Google Gemini Decisions API is Jev's primary decision provider; OpenAI fallback (TypeSafe credits expiring) ; switchable in Settings (owner)
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
 ## Now (2026-11-12, evening): M3b closed after its second review; M4 Project tab complete with progress board and tickets
