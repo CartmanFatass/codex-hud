@@ -18,8 +18,8 @@ Milestone: M4 · Project view
 - m4-close 05: M4-FIX (review behaviour findings, imp) and M4-PRUNE (delete the unreachable retired stack and dead
   modules, imp; owner approved the deletion 2026-11-12) run in parallel; then both reviewers re-check until accept.
 - Then m4-close 06 release: archive + ./install, temp-HOME install/uninstall, merge to main, tag.
-- Ask the owner: the historical installer chain (install.sh, uninstall.sh, bin/*.ps1) and the spec's browser/herdr
-  installer extensions (DS review notes).
+- Owner 2026-11-12: delete the historical installer chain (added to M4-PRUNE) and complete the installer with the
+  browser and herdr extensions (INSTALL-EXT, imp), both before the release.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
@@ -89,7 +89,8 @@ board counts these; update at every landing or decision. -->
 - try · M4 · CALL-BREAKDOWN · owner: Settings shows this hour's calls per feature, LLM and Decision (209d2c58)
 - accepted · M4 · M4-REVIEW · m4-close 04: whole-project review (Sol xhigh + DS max on 3b17f7a0): changes-required, Sol 4 major, DS 2 major + 4 minor (docs/reviews/2026-11-12-m4-review-*)
 - working · M4 · M4-FIX · m4-close 05: the review's behaviour findings (brief independence, statusline default, bounded job scan, settings guards, TZ, docs) (imp)
-- working · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime and dead modules (imp)
+- working · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime, dead modules and the historical installer chain (imp)
+- working · M4 · INSTALL-EXT · owner: ./install gets the browser and herdr extensions of spec §2.3 (imp)
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
