@@ -8,7 +8,7 @@ Milestone: M4 · Project view
 ## Next
 
 - native-polish (.scratch/native-polish): all five landed; owner tries them. M4 review next.
-- GEMINI-DECIDE running (owner: Google Decisions API first, OpenAI if the rate is not enough).
+- GEMINI-DECIDE running. Then RUN-LABEL-GEMINI: run labelling (small, batched) moves to Gemini's free tier.
 
 ## Slices
 
@@ -56,7 +56,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · NP-03 · native-polish 03: Chinese keyword marks colour instead of showing brackets (746971eb)
 - try · M4 · NP-04 · native-polish 04: HUD job cards show a short title (eb3e5558)
 - try · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers (live check passed; Fishpref pi-roles fixed)
-- working · M4 · GEMINI-DECIDE · Google Gemini Decisions API is Jev's primary decision provider; OpenAI fallback (TypeSafe credits expiring) ; switchable in Settings (owner)
+- working · M4 · GEMINI-DECIDE · Gemini Decisions API provider + Settings switch; default primary OpenAI (Jev pages too heavy for the free tier), 429 cooldown
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
 ## Now (2026-11-12, evening): M3b closed after its second review; M4 Project tab complete with progress board and tickets
