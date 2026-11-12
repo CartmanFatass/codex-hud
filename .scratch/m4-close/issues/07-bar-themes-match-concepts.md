@@ -7,8 +7,8 @@ concept: segment shapes, separators, meters, colour roles and spacing. The defau
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] For each theme, a side-by-side of the concept and the new render at 80 and 120 columns, with the remaining differences named and justified
-- [ ] Claude statusline, pi footer/ribbon and Codex tmux bar all follow the corrected themes
-- [ ] Bar tests and frames updated; bar render cost unchanged
+- [x] For each theme, a side-by-side of the concept and the new render at 80 and 120 columns, with the remaining differences named and justified
+- [x] Claude statusline, pi footer/ribbon and Codex tmux bar all follow the corrected themes
+- [x] Bar tests and frames updated; bar render cost unchanged

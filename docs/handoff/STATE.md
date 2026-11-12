@@ -9,8 +9,9 @@ Milestone: M4 · Project view
   show the brief's heading as title (NP-04); Chinese 「」 keywords are coloured (NP-03); Home's spare rows show progress
   and open tickets, Enter jumps to Project (HOME-PROGRESS); Settings → Models → Decision API switches Jev's provider
   (GEMINI-DECIDE); settled cards show an outcome mark, the Inspector shows kind/outcome/review counts, Project has a
-  Model fit table, questions show a category (DL; needs a working Gemini or OpenAI key); Settings → Theme offers
-  terminal, titanium, mocha, arctic, ember, contrast, latte, paper and each changes Home/Project/Inspector (THEMES).
+  questions show a category (DL; needs a working Gemini or OpenAI key); Settings → Theme offers
+  terminal, titanium, mocha, arctic, ember, contrast, latte, paper and each changes Home/Project/Inspector (THEMES); bottom bars in each look match the concepts (BAR-FIDELITY);
+  Home's progress/tickets sit at the bottom, Model fit is gone (HOME-TIDY).
 
 ## Next
 
@@ -74,7 +75,8 @@ board counts these; update at every landing or decision. -->
 - try · M4 · THEMES · m4-close 02: each theme its own board inks; refined terminal; new arctic, ember, contrast, paper (frontend-implementer) (6f9a079f)
 - try · M4 · ROW-FIX · native rows keep one order; a growing transcript counts as activity (no false 停滞); running cards drop the flipping tool name (66f37e57)
 - working · M4 · HOME-RECOMMEND · m4-close 08: Settings Home mode Default | Recommended (Decision-API ranking) + progress brief on top (owner) (imp)
-- working · M4 · BAR-FIDELITY · m4-close 07: bar themes match their approved concepts (frontend-implementer)
+- try · M4 · BAR-FIDELITY · m4-close 07: the six bar looks match their approved concepts (inks, spacing, idioms) (frontend-implementer) (2e2b2650)
+- try · M4 · HOME-TIDY · owner: Model fit removed from Project; Home's progress block sits at the bottom of the spare rows (42e8bcc5)
 - try · M4 · OAI-RUNNING · decision labels follow the Settings choice (default OpenAI, owner); running Claude subagents visible again (meta without finished) (5d0e54aa)
 - todo · M4 · M4-REVIEW · m4-close 04–05: whole-project two-reviewer review and its fixes
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
