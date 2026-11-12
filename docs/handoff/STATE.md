@@ -131,7 +131,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX7 · 77500308 · round-7 follow-ups; CI runs only existing scripts on Node 24; fixture idents
 - working · M4 · RELEASE-DOCS · shipped docs describe today's HUD; real Node floor (imp)
 - done · M4 · M4-ARCH · Release: blocked (1: repo Git filters run from the Codex bar and pi footer) · docs/reviews/2026-11-12-m4-architect.md
-- working · M4 · GIT-SAFE · one safe Git policy for every bar's status read (imp)
+- try · M4 · GIT-SAFE · 76e2ba8b · one safe Git policy (src/utils/git-safety.ts) for Claude, Codex, pi footer, Project, Changes; submodule working trees not probed
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
 - try · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (71801be1; existing 99 pi sessions moved to ~/.pi/agent/sessions and linked first, toktrack totals unchanged)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
