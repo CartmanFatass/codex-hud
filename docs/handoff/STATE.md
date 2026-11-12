@@ -15,10 +15,11 @@ Milestone: M4 · Project view
 
 ## Next
 
-- m4-close (.scratch/m4-close, 7 tickets): 01 HOME-LAYOUT, 02 THEMES, 07 BAR-FIDELITY (frontend-implementer) and
-  03 landed (LIVE-FIX); then 04 whole-project review (Sol xhigh + DS max), 05 fixes until both accept, 06 release
-  archive + merge to main + tag.
-- m4-close 08 HOME-RECOMMEND (owner, 2026-11-12) added; 04 now also waits for it.
+- m4-close 05: M4-FIX (review behaviour findings, imp) and M4-PRUNE (delete the unreachable retired stack and dead
+  modules, imp; owner approved the deletion 2026-11-12) run in parallel; then both reviewers re-check until accept.
+- Then m4-close 06 release: archive + ./install, temp-HOME install/uninstall, merge to main, tag.
+- Ask the owner: the historical installer chain (install.sh, uninstall.sh, bin/*.ps1) and the spec's browser/herdr
+  installer extensions (DS review notes).
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
@@ -86,11 +87,13 @@ board counts these; update at every landing or decision. -->
 - try · M4 · SNAPSHOTS · `npm run snapshots:update` rewrites every frame snapshot (51d16a29)
 - try · M4 · PANEL-RELOAD · owner: the panel restarts itself after a new build, keeping its place (0d160038)
 - try · M4 · CALL-BREAKDOWN · owner: Settings shows this hour's calls per feature, LLM and Decision (209d2c58)
-- working · M4 · M4-REVIEW · m4-close 04–05: whole-project two-reviewer review and its fixes (Sol xhigh + DS max on 3b17f7a0)
+- accepted · M4 · M4-REVIEW · m4-close 04: whole-project review (Sol xhigh + DS max on 3b17f7a0): changes-required, Sol 4 major, DS 2 major + 4 minor (docs/reviews/2026-11-12-m4-review-*)
+- working · M4 · M4-FIX · m4-close 05: the review's behaviour findings (brief independence, statusline default, bounded job scan, settings guards, TZ, docs) (imp)
+- working · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime and dead modules (imp)
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
-## Now (2026-11-12, night): M4 closing: native-polish, CLAUDE-BIND, GEMINI-DECIDE, HOME-PROGRESS landed; DL and LIVE-FIX running; then the M4 review
+## Now (2026-11-12, night): M4 fix round: M4-FIX and M4-PRUNE running; PANEL-RELOAD, CALL-BREAKDOWN, CARD-FOLD, SNAPSHOTS landed
 
 Landed since noon: NATIVE-TREE, PROGRESS-BOARD, OPEN-TAB, CARD-DETAILS, TICKETS, PI-STOP (Fishpref), legacy skills
 retired, Matt Pocock skills installed (to-tickets slices multi-slice features), closing M3b review + M3B-FIX2.
