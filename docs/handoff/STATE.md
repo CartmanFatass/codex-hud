@@ -15,7 +15,7 @@ Milestone: M4 · Project view
 
 ## Next
 
-- m4-close (.scratch/m4-close, owner-approved 6 tickets): 01 HOME-LAYOUT and 02 THEMES (frontend-implementer) and
+- m4-close (.scratch/m4-close, 7 tickets): 01 HOME-LAYOUT, 02 THEMES, 07 BAR-FIDELITY (frontend-implementer) and
   03 in LIVE-FIX run now; then 04 whole-project review (Sol xhigh + DS max), 05 fixes until both accept, 06 release
   archive + merge to main + tag.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
@@ -72,6 +72,7 @@ board counts these; update at every landing or decision. -->
 - working · M4 · LIVE-FIX · live-check bugs: active job shown stalled; finished subagents briefly running on open; «--flag» read as reject
 - working · M4 · HOME-LAYOUT · m4-close 01: Home's progress block layout (frontend-implementer)
 - working · M4 · THEMES · m4-close 02: distinct themes, refined default, 3–4 new themes (frontend-implementer)
+- working · M4 · BAR-FIDELITY · m4-close 07: bar themes match their approved concepts (frontend-implementer)
 - todo · M4 · M4-REVIEW · m4-close 04–05: whole-project two-reviewer review and its fixes
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
