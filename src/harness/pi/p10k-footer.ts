@@ -4,16 +4,17 @@
  *
  *   DeepSeek V4.1 Flash 1017 max │ ━━━━────── 42%/200K │ example main +1 *1 ?3 │ lens ✓   MCP 2  skills 5
  *
- * It replaces p10k-footer's band in the editor's top border and its identity row; pi's own editor, with its working
- * indicator, stays as it is. Other extensions' statuses (pi-lens, pi-viz) are read through the footer data provider and
- * share the right cluster, lowest priority. pi has no quota, so the cost the session reported stands in its place. The
- * notice zone tells the HUD jobs' events and questions (the footer host sees no skill loads, so none are told). A
- * reading with no data is left out.
+ * The editor's top border carries the p10k ribbon and other extensions' statuses, after pi's native working
+ * indicator. Context stays on the shared bottom bar; cost lives only in the ribbon. The notice zone tells the HUD
+ * jobs' events and questions (the footer host sees no skill loads, so none are told).
  */
 
 import { execFile } from 'node:child_process';
 import * as bar from '../../render/layout/bar-fields.js';
 import { shortModel } from '../../render/providers.js';
+import { stripAnsi } from '../../render/colors.js';
+import { monitorText } from '../../render/monitor-text.js';
+import { formatTokenCount } from '../../render/lines/activity-line.js';
 import type { WorkSignals } from '../../render/work-summary.js';
 import { applyBarSettings } from '../../bar-settings.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
@@ -32,7 +33,7 @@ export function createP10kFooter(
 ) {
   // ─── Which segments exist, and which are on ────────────────────────────────
 
-  /** The config groups kept from p10k-footer, so an imported `piFooter` section still applies; both are one line now. */
+  /** Context is listed with the bottom fields, but keeps its legacy band.context config key. */
   type Group = 'band' | 'footer';
 
   /** Every toggleable segment, in the order `/hud footer` lists them and the config file writes them. */
@@ -46,8 +47,14 @@ export function createP10kFooter(
     lens: { group: 'footer', label: 'pi-lens verdict', on: true },
     viz: { group: 'footer', label: 'pi-viz diagram mode', on: true },
     statuses: { group: 'footer', label: 'other extensions setStatus() values', on: true },
-    context: { group: 'band', label: 'context window usage', on: true },
+    context: { group: 'footer', label: 'context window usage', on: true },
+    session: { group: 'band', label: 'session name', on: true },
+    cache: { group: 'band', label: 'prompt cache hit rate', on: true },
+    tokens: { group: 'band', label: 'session tokens', on: true },
+    tps: { group: 'band', label: 'output tokens / second', on: true },
+    ttft: { group: 'band', label: 'time to first token', on: true },
     cost: { group: 'band', label: 'session cost', on: true },
+    time: { group: 'band', label: 'session working time', on: true },
   } as const satisfies Record<string, { group: Group; label: string; on: boolean }>;
 
   type SegmentId = keyof typeof SEGMENT_SPECS;
@@ -66,7 +73,7 @@ export function createP10kFooter(
   }
   function saveConfig(next: HudConfig): string | null {
     const sections: Record<string, Record<string, boolean>> = { footer: {}, band: {} };
-    for (const id of SEGMENT_IDS) sections[SEGMENT_SPECS[id].group][id] = next[id];
+    for (const id of SEGMENT_IDS) sections[id === 'context' ? 'band' : SEGMENT_SPECS[id].group][id] = next[id];
     try {
       saveFooterSettings(sections, env);
       return null;
@@ -170,6 +177,8 @@ export function createP10kFooter(
     sessionId: string;
     leafId: string | null;
     totals: UsageTotals;
+    activeMs: number;
+    rates: { tps: number | null; ttftMs: number | null };
   }
 
   /** Cumulative usage over the whole session, rescanned only when the leaf moves. */
@@ -186,7 +195,17 @@ export function createP10kFooter(
     // Entries after a message inherit its model: `usage` entries and summaries
     // carry no model of their own.
     let modelId: string | undefined = ctx.model?.id;
+    let activeMs = 0;
+    const rates: Stats['rates'] = { tps: null, ttftMs: null };
     for (const entry of ctx.sessionManager.getEntries()) {
+      if (entry.type === 'custom' && entry.customType === 'tps') {
+        const data = entry.data as
+          { tps?: number; timing?: { ttftMs?: number; totalMs?: number }; model?: { modelId?: string } } | undefined;
+        const total = data?.timing?.totalMs;
+        if (typeof total === 'number' && Number.isFinite(total) && total > 0) activeMs += total;
+        if (data?.model?.modelId) modelId = data.model.modelId;
+        continue;
+      }
       let usage: EntryUsage | undefined;
       if (entry.type === 'usage') {
         usage = entry.usage;
@@ -211,10 +230,21 @@ export function createP10kFooter(
         totals.estimated ||= priced.estimated;
       }
     }
+    // Latest valid rates on the active branch; burst deliveries keep the last measurement.
+    for (const entry of ctx.sessionManager.getBranch()) {
+      if (entry.type !== 'custom' || entry.customType !== 'tps') continue;
+      const data = entry.data as { tps?: number; timing?: { ttftMs?: number } } | undefined;
+      const tps = data?.tps,
+        ttft = data?.timing?.ttftMs;
+      if (typeof tps === 'number' && Number.isFinite(tps) && tps > 0) rates.tps = tps;
+      if (typeof ttft === 'number' && Number.isFinite(ttft) && ttft >= 0) rates.ttftMs = ttft;
+    }
     return {
       sessionId: ctx.sessionManager.getSessionId(),
       leafId: ctx.sessionManager.getLeafId(),
       totals,
+      activeMs,
+      rates,
     };
   }
 
@@ -389,18 +419,10 @@ export function createP10kFooter(
     return undefined;
   }
 
-  // ─── Other extensions' statuses (the `statuses` chip) ──────────────────────
+  // ─── Other extensions' statuses ────────────────────────────────────────────
 
-  /**
-   * Statuses other extensions publish with `ctx.ui.setStatus()`. They are only
-   * reachable through the footer factory's `FooterDataProvider`, so the factory
-   * below stashes it here and the identity line reads it on the next render.
-   *
-   * This is why the footer is not simply blanked: blanking it also hides every
-   * extension status, which is how pi-lens's own line and pi-tps's notices went
-   * missing.
-   */
-  let footerStatuses: ReadonlyMap<string, string> | null = null;
+  /** The footer owns the provider; the top border reads it live, before giving any space to the ribbon. */
+  let footerStatuses: (() => ReadonlyMap<string, string>) | null = null;
 
   /** `$0.0423` for pocket change, `$1.24` once it is real money. */
   function formatCost(cost: number): string {
@@ -421,7 +443,7 @@ export function createP10kFooter(
   const DUPLICATE_STATUS_KEYS = new Set(['mcp', 'lens', 'pi-lens', 'pi-lens-lsp', HUD_STATUS_KEY]);
 
   /** What pi has to say, as `renderBar` takes it; a switched-off or empty field is simply not there. */
-  function buildFacts(ctx: FooterContext, pi: FooterAPI, stats: Stats): bar.BarFacts {
+  function buildFacts(ctx: FooterContext, pi: FooterAPI): bar.BarFacts {
     const model = ctx.model;
     const thinking = model?.reasoning ? pi.getThinkingLevel?.() : undefined;
     // Context pressure against the window; `?` while pi has no reading yet.
@@ -441,9 +463,8 @@ export function createP10kFooter(
           .map(([mark, n]) => ` ${mark}${n}`)
       : [];
     const place = enabled('path') ? basename(cwd) || cwd : '';
-    // pi-lens's verdict and pi-viz's mode, and every other extension's words, lead the right cluster:
+    // pi-lens's verdict and pi-viz's mode lead the right cluster:
     // `lens ✓` when every analyzed file is clean, `lens 2E 1W` when not.
-    const statuses = footerStatuses ?? new Map<string, string>();
     const words: bar.Form[] = [];
     if (lensAnalyzed && enabled('lens')) {
       const { errors, warnings } = lensTotals();
@@ -451,9 +472,6 @@ export function createP10kFooter(
       words.push([['lens', 'dim'], [' '], [verdict || '\u2713', errors > 0 ? 'bad' : warnings > 0 ? 'warn' : 'ok']]);
     }
     if (capturedViz && enabled('viz')) words.push([['viz', 'dim'], [' '], [capturedViz, 'value']]);
-    if (enabled('statuses'))
-      for (const [key, value] of statuses)
-        if (!DUPLICATE_STATUS_KEYS.has(key) && value.trim()) words.push([[value.trim(), 'value']]);
     return {
       model: model
         ? {
@@ -474,12 +492,6 @@ export function createP10kFooter(
         marks: marks.join(''),
         dirty: marks.length > 0,
       },
-      // pi has no usage window: what the provider reported (`$0.420`), else our list price for the models the session ran
-      // on (`~$0.420`).
-      quota:
-        enabled('cost') && stats.totals.priced
-          ? { text: `${stats.totals.estimated ? '~' : ''}$${formatCost(stats.totals.cost)}` }
-          : undefined,
       needs: work.needs,
       events: work.events,
       loaded: {
@@ -503,7 +515,7 @@ export function createP10kFooter(
   let mounted = false;
   let live = true;
   const removers: (() => void)[] = [];
-  // Hide pi-tps's measurements from the chat; the footer no longer shows them.
+  // Measurements belong in the ribbon, not in the chat.
   pi.registerEntryRenderer?.('tps', () => undefined);
   function listen(name: string, handler: (data: unknown) => void) {
     const remove = pi.events?.on(name, (data) => {
@@ -535,11 +547,12 @@ export function createP10kFooter(
     capturedViz = readVizMode(ctx);
     capturedLoaded = loadedCounts(pi);
     const cwd = ctx.sessionManager.getCwd(),
+      name = ctx.sessionManager.getSessionName?.(),
       usage = ctx.getContextUsage();
     view = {
       ...ctx,
       model: ctx.model ? { ...ctx.model } : undefined,
-      sessionManager: { ...ctx.sessionManager, getCwd: () => cwd },
+      sessionManager: { ...ctx.sessionManager, getCwd: () => cwd, getSessionName: () => name },
       getContextUsage: () => usage,
     };
     refreshGit(cwd, () => {
@@ -550,9 +563,91 @@ export function createP10kFooter(
   /** The one line, fitted to `width`; pi's own width measure has the last word, so the host never gets a wider row. */
   function line(width: number): string {
     if (!view || !stats || !mounted || width <= 0) return '';
-    const text = bar.renderBar(buildFacts(view, pi, stats), width).line;
+    const text = bar.renderBar(buildFacts(view, pi), width).line;
     return host.visibleWidth(text) > width ? host.truncateToWidth(text, width, '') : text;
   }
+  /** Original p10k palette: terminal indices, not fixed RGB; every arrow bridges neighbouring backgrounds. */
+  function band(width: number, nowMs: number): string {
+    if (!view || !stats || width < 6) return '';
+    const { totals, rates } = stats;
+    const prompt = totals.input + totals.cacheRead + totals.cacheWrite;
+    const seconds = Math.floor(
+      (stats.activeMs + (turnStartedAt === null ? 0 : Math.max(0, nowMs - turnStartedAt))) / 1000
+    );
+    const duration =
+      seconds >= 3600
+        ? `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+        : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    const segments: { text: string; bg: number }[] = [];
+    const add = (id: SegmentId, text: string, bg: number) => {
+      if (enabled(id) && text) segments.push({ text, bg });
+    };
+    add('session', monitorText(view.sessionManager.getSessionName?.()?.trim() ?? ''), 183);
+    add('cache', `cache ${prompt > 0 ? `${Math.round((totals.cacheRead / prompt) * 100)}%` : '-'}`, 152);
+    add('tokens', `tok ${prompt + totals.output > 0 ? formatTokenCount(prompt + totals.output) : '-'}`, 146);
+    add('tps', rates.tps === null ? '- t/s' : `${rates.tps.toFixed(1)} t/s`, 173);
+    add(
+      'ttft',
+      `TTFT ${rates.ttftMs === null ? '-' : rates.ttftMs >= 1000 ? `${(rates.ttftMs / 1000).toFixed(1)}s` : `${Math.round(rates.ttftMs)}ms`}`,
+      250
+    );
+    add('cost', totals.priced ? `${totals.estimated ? '~' : ''}$${formatCost(totals.cost)}` : '$-', 179);
+    add('time', duration, 187);
+    const size = () => 1 + segments.reduce((n, s) => n + host.visibleWidth(s.text) + 3, 0);
+    // Drop whole segments from the right; only the final block is ever cut.
+    while (segments.length > 1 && size() > width) segments.pop();
+    if (!segments.length) return '';
+    if (size() > width) segments[0]!.text = host.truncateToWidth(segments[0]!.text, width - 4, '…');
+    const fg = (index: number) => (noColor() ? '' : `\x1b[38;5;${index}m`);
+    const bg = (index: number) => (noColor() ? '' : `\x1b[48;5;${index}m`);
+    const reset = noColor() ? '' : '\x1b[0m';
+    let out = reset + fg(segments[0]!.bg) + '\ue0b6';
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i]!,
+        next = segments[i + 1];
+      out += bg(s.bg) + fg(235) + ` ${s.text} `;
+      out += (next ? bg(next.bg) : reset) + fg(s.bg) + '\ue0b0';
+    }
+    return out + reset;
+  }
+  const noColor = () => Boolean(env.NO_COLOR ?? process.env.NO_COLOR);
+  function statuses(): string {
+    if (!enabled('statuses')) return '';
+    try {
+      return [...(footerStatuses?.() ?? [])]
+        .filter(([key]) => !DUPLICATE_STATUS_KEYS.has(key))
+        .map(([, value]) => monitorText(stripAnsi(value.trim())))
+        .filter(Boolean)
+        .join(' · ');
+    } catch {
+      return '';
+    }
+  }
+  class BandEditor extends host.CustomEditor {
+    renderTopBorder(width: number, hiddenLineCount: number): string {
+      const base: string = super.renderTopBorder(width, hiddenLineCount);
+      // Reuse pi's actual left working indicator and scroll hint, touching only trailing rule cells.
+      const tail = stripAnsi(base).match(/─+$/)?.[0].length ?? 0;
+      if (!mounted || tail < 2) return noColor() ? stripAnsi(base) : base;
+      let prefix = host.truncateToWidth(base, width - tail, '');
+      let room = tail - 1;
+      const words = statuses();
+      if (words && room > 4) {
+        if (!prefix) {
+          prefix = current!.ui.theme.fg('borderMuted', '── ');
+          room -= 3;
+        }
+        const text = host.truncateToWidth(words, room - 1, '…');
+        prefix += current!.ui.theme.fg('muted', text) + ' ';
+        room -= host.visibleWidth(text) + 1;
+      }
+      const ribbon = band(room, Date.now());
+      const rule = current!.ui.theme.fg('borderMuted', '─'.repeat(Math.max(0, room - host.visibleWidth(ribbon))));
+      const result = prefix + rule + ribbon + current!.ui.theme.fg('borderMuted', '─');
+      return noColor() ? stripAnsi(result) : result;
+    }
+  }
+  let turnStartedAt: number | null = null;
   function stop() {
     const ctx = current;
     mounted = false;
@@ -560,7 +655,9 @@ export function createP10kFooter(
     view = null;
     repaint = null;
     stats = undefined;
+    turnStartedAt = null;
     footerStatuses = null;
+    ctx?.ui.setEditorComponent(undefined);
     ctx?.ui.setFooter(undefined);
   }
   function start(ctx: FooterContext) {
@@ -576,17 +673,9 @@ export function createP10kFooter(
     update();
     ctx.ui.setFooter((tui, _theme, data) => {
       repaint = () => tui.requestRender();
-      const statuses = () => {
-        try {
-          footerStatuses = data.getExtensionStatuses();
-        } catch {
-          footerStatuses = null;
-        }
-      };
-      statuses();
+      footerStatuses = () => data.getExtensionStatuses();
       return {
         render(width) {
-          statuses();
           const text = line(width);
           return text ? [text] : [];
         },
@@ -596,6 +685,9 @@ export function createP10kFooter(
         },
       };
     });
+    ctx.ui.setEditorComponent(
+      (tui, theme, keybindings) => new BandEditor(tui, theme, keybindings, { embedWorkingStatus: true })
+    );
   }
   return {
     start,
@@ -606,8 +698,13 @@ export function createP10kFooter(
       work = signals;
       repaint?.();
     },
+    working() {
+      turnStartedAt = Date.now();
+      update();
+    },
     /** A run is over: the bar's two display keys may have changed since the footer mounted. */
     settled() {
+      turnStartedAt = null;
       applyBarSettings();
       update();
     },

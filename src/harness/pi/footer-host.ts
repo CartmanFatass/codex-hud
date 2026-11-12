@@ -11,6 +11,10 @@ export interface FooterFrame {
   fg(token: string, text: string): string;
 }
 export interface FooterHost {
+  /** Host-owned native class, including its protected renderTopBorder hook. */
+  CustomEditor: new (
+    ...args: any[]
+  ) => FooterComponent & { renderTopBorder(width: number, hiddenLineCount: number): string };
   visibleWidth(text: string): number;
   truncateToWidth(text: string, width: number, ellipsis?: string): string;
 }
@@ -52,6 +56,9 @@ export interface FooterContext {
   ui: {
     theme: FooterFrame;
     notify(message: string, type?: 'info' | 'error' | 'warning'): void;
+    setEditorComponent(
+      factory: ((tui: FooterTui, theme: unknown, keybindings: unknown) => FooterComponent) | undefined
+    ): void;
     setFooter(
       factory:
         | ((

@@ -162,7 +162,6 @@ export function installPiPackage(
   for (const event of [
     'model_select',
     'thinking_level_select',
-    'agent_start',
     'agent_settled',
     'message_end',
     // message_end runs before native persistence. context runs after persistence,
@@ -176,6 +175,10 @@ export function installPiPackage(
       segment.refresh();
       footer?.update();
     });
+  onDisplay('agent_start', () => {
+    segment.refresh();
+    footer?.working();
+  });
   onDisplay('agent_end', () => {
     segment.refresh();
     footer?.settled();

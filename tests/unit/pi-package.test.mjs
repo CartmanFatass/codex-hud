@@ -145,6 +145,7 @@ function host() {
       footer?.render(400);
       return editor?.render(400).join('\n') ?? ['pi-default', ...statuses.values()].join('|');
     },
+    components: () => ({ editor, footer }),
   };
 }
 function context(f, h, id = 'session-a', mode = 'tui') {
@@ -308,15 +309,47 @@ test('combined pi packages retain delegation after canceled navigation and displ
 });
 
 test('agent_end updates the mounted footer exactly once', async (t) => {
-  const f = setup(t), h = host(), c = context(f, h), p = ports(f);
+  const f = setup(t),
+    h = host(),
+    c = context(f, h),
+    p = ports(f);
   let scans = 0;
-  c.ctx.sessionManager.getBranch = () => { scans++; return []; };
+  c.ctx.sessionManager.getBranch = () => {
+    scans++;
+    return [];
+  };
   await load(f, h, p, 'hud-display.mjs');
   await h.emit('session_start', c.ctx);
   scans = 0;
   await h.emit('agent_end', c.ctx);
   assert.equal(scans, 1);
   await h.emit('session_shutdown', c.ctx);
+});
+
+test('footer band toggles and footer off restore pi editor and footer, including shutdown', async (t) => {
+  const f = setup(t),
+    h = host(),
+    c = context(f, h),
+    p = ports(f);
+  c.ctx.sessionManager.getSessionName = () => 'Synthetic ribbon';
+  await load(f, h, p, 'hud-display.mjs');
+  await h.emit('session_start', c.ctx);
+  const command = (args) => h.commands.get('hud').handler('footer ' + args, c.ctx);
+  const top = () => h.components().editor.render(160)[0];
+  assert.match(top(), /Synthetic ribbon.*cache/);
+  assert.equal(h.components().footer.render(160).length, 1);
+  await command('band off');
+  assert.doesNotMatch(top(), /Synthetic ribbon|cache/);
+  assert.match(h.components().footer.render(160)[0], /42%/);
+  await command('band on');
+  assert.match(top(), /Synthetic ribbon/);
+  await command('off');
+  assert.deepEqual(h.components(), { editor: undefined, footer: undefined });
+  assert.match(h.footer(), /pi-default.*other-status/);
+  await command('on');
+  assert.match(top(), /Synthetic ribbon/);
+  await h.emit('session_shutdown', c.ctx);
+  assert.deepEqual(h.components(), { editor: undefined, footer: undefined });
 });
 
 test('the delegation-only package registers the tools but no footer, no /hud and no panel', async (t) => {

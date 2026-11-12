@@ -13,7 +13,8 @@ const { createFooterHost } = await import(pathToFileURL(join(process.cwd(), 'tes
 function plainFooterTruncate(text: string, width: number, ellipsis = '...'): string {
   if (width <= 0) return '';
   if (visualWidth(text) <= width) return text;
-  const clipped = truncateAnsi(text, width, ellipsis);
+  // HUD's truncator reserves one cell even for an empty ellipsis; pi's does not.
+  const clipped = ellipsis ? truncateAnsi(text, width, ellipsis) : truncateAnsi(text + ' ', width + 1, '');
   return ellipsis ? clipped.slice(0, -ellipsis.length) + '\x1b[0m' + ellipsis + '\x1b[0m' : clipped + '\x1b[0m';
 }
 export const parityHost: FooterHost = createFooterHost({
@@ -36,6 +37,7 @@ export function parityFixture(row: ParityRow, host = parityHost) {
   const statuses = new Map([['other', 'other status']]);
   const bus = new Map<string, (data: unknown) => void>();
   let footer: FooterComponent | undefined;
+  let editor: FooterComponent | undefined;
   let reads = 0,
     branches = 0,
     gitCalls = 0;
@@ -82,6 +84,9 @@ export function parityFixture(row: ParityRow, host = parityHost) {
         setStatus(key, value) {
           if (value === undefined) statuses.delete(key);
           else statuses.set(key, value);
+        },
+        setEditorComponent(factory) {
+          editor = factory?.({ requestRender() {} }, ctx.ui.theme, {});
         },
         setFooter(factory) {
           footer?.dispose?.();
@@ -153,6 +158,15 @@ export function parityFixture(row: ParityRow, host = parityHost) {
     render(width = row.width) {
       return footer?.render(width) ?? [];
     },
+    top(width = row.width, hidden = 0) {
+      return (
+        (editor as { renderTopBorder(width: number, hidden: number): string } | undefined)?.renderTopBorder(
+          width,
+          hidden
+        ) ?? ''
+      );
+    },
+    editor: () => editor,
     dispose() {
       segment.stop();
       controller.dispose();

@@ -323,11 +323,20 @@ export async function runPackageHost() {
 
 /** Only the native editor frame is synthetic; the port/original paints its real overrides. */
 export function createFooterHost({ visibleWidth, truncateToWidth }) {
+  const measure = visibleWidth ?? ((text) => Array.from(text).length);
   class CustomEditor {
     renderedVisibleLineCount = 1;
-    setWorkingStatusIndicator() {}
-    renderTopBorder(width) {
-      return '─'.repeat(Math.max(0, width));
+    setWorkingStatusIndicator(indicator) {
+      this.indicator = indicator;
+    }
+    renderTopBorder(width, hiddenLineCount = 0) {
+      // Only the stock frame is synthetic; HUD calls this hook before adding its real ribbon.
+      const status = this.indicator?.renderInBorder(Math.max(1, width - 5)) ?? '';
+      const left = status && measure(status) + 5 <= width ? `── ${status} ` : '';
+      const hint = hiddenLineCount > 0 && width >= 40 ? ` ↑ ${hiddenLineCount} more ` : '';
+      const beforeHint = hint ? Math.max(0, Math.floor((width - measure(hint)) / 2) - measure(left)) : 0;
+      const prefix = left + '─'.repeat(beforeHint) + hint;
+      return prefix + '─'.repeat(Math.max(0, width - measure(prefix)));
     }
     render(width) {
       return [this.renderTopBorder(width, 0), '  synthetic input', '─'.repeat(Math.max(0, width))];
