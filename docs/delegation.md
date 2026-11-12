@@ -69,7 +69,12 @@ Codex tests use `codex2` (free account, `gpt-6-luna` medium), never the main `co
 
 ## Conventions
 
-- Task scratch: `tmp/tasks/<slice>/` (git-ignored). Worktrees: `../MyHUD-<slice>`, `node_modules` hard-linked.
-- Every test run uses a temporary HOME / HUD_HOME / CODEX_HOME / CLAUDE_CONFIG_DIR.
+- Task scratch: `tmp/tasks/<slice>/` (git-ignored).
+- One worktree per code imp (owner, 2026-11-12): the owner's statusline, pi footer and panel run from the main
+  checkout's `dist/`, so an imp never builds there. `tmp/wt-new.sh <slice>` makes `../MyHUD-wt/<slice>` on branch
+  `wt/<slice>` with `node_modules` symlinked; `hud_create` gets that `cwd`. The orchestrator commits in the worktree,
+  cherry-picks onto `universal-hud`, runs the full suite in the main checkout, then removes the worktree.
+- Every test run uses a temporary HOME / HUD_HOME / CODEX_HOME / CLAUDE_CONFIG_DIR: `tmp/env.sh <command>`, run from
+  inside the checkout or worktree it should act on.
 - Synthetic data only in the repo (public). Never print or commit keys.
 - The orchestrator commits; push at milestone boundaries.
