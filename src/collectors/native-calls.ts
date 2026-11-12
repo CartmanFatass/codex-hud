@@ -2,7 +2,7 @@ import { digest } from '../core/canonical.js';
 /** Read-only adapter for direct official calls. Never launches/resumes a host or writes a store. */
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { realpathSync } from 'node:fs';
+import { realpathSync, readdirSync } from 'node:fs';
 import { readRelations, nativeKey, ownerKey, type DirectRelation, type NativeOwner } from '../managed/relations.js';
 import { readJevRelations, type JevRelation } from '../managed/jev-host.js';
 import { NativeHostClient, type NativeHostPort } from '../managed/host-ipc.js';
@@ -64,6 +64,15 @@ export class NativeCallCollector {
   private calls: NativeCallDisplay[] = [];
   private jevCalls: JevCallDisplay[] = [];
   private unavailable: string | null = null;
+  private jevUnavailable = true;
+  get emptyAndComplete(): boolean {
+    try {
+      if (readdirSync(join(this.home, 'native-relations')).length) return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return false;
+    }
+    return !this.unavailable && !this.jevUnavailable && !this.calls.length && !this.jevCalls.length;
+  }
   constructor(
     readonly home: string,
     private readonly port: NativeHostPort = new NativeHostClient(home, false),
@@ -77,6 +86,7 @@ export class NativeCallCollector {
   async collectCodex(sessionId: string | undefined, root: string, all = false): Promise<void> {
     let owner: NativeOwner | undefined;
     if (!all) {
+      this.jevUnavailable = true;
       if (!sessionId) {
         this.calls = [];
         this.jevCalls = [];
@@ -97,9 +107,11 @@ export class NativeCallCollector {
   }
   private async collectJev(owner?: NativeOwner): Promise<void> {
     let relations: JevRelation[];
+    this.jevUnavailable = false;
     try {
       relations = this.readJev(this.home, owner, 64);
     } catch {
+      this.jevUnavailable = true;
       this.jevCalls = this.jevCalls
         .filter((call) => !owner || ownerKey(call.relation.owner) === ownerKey(owner))
         .map((call) => ({ ...call, unavailable: 'jev_relations_unavailable' }));

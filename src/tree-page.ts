@@ -85,13 +85,8 @@ import { ModelProbe, apiSettings } from './collectors/model-probe.js';
 import { JobSentences } from './collectors/job-sentences.js';
 import { DecisionTitles } from './collectors/decision-titles.js';
 import { hudProblems } from './render/hud-diagnostics.js';
-import {
-  createAdaptivePollState,
-  adaptivePollDue,
-  forceAdaptivePoll,
-  recordAdaptivePoll,
-} from './collectors/adaptive-poll.js';
-import { collectionObservation } from './utils/collection-observation.js';
+import { createAdaptivePollState, forceAdaptivePoll, recordAdaptivePoll } from './collectors/adaptive-poll.js';
+import { collectionObservation, jobPanelObservation } from './utils/collection-observation.js';
 import { ProgressSummarizer, progressTargets } from './collectors/progress-summary.js';
 import { cardSummaryTargets } from './render/cards.js';
 import { AgentLog, logsIn, MODEL_KINDS } from './collectors/agent-log.js';
@@ -127,6 +122,10 @@ export class PanelJobPipeline {
     board: WorkboardSnapshot;
   };
   private thinJobs: ReturnType<typeof readThinJobs> = [];
+  private thinObservation = { complete: false };
+  observation(tree: SubagentTree, legacy: DelegationViewModel | null, nativeQuiet: boolean) {
+    return jobPanelObservation(this.workboard(tree, legacy), this.thinObservation.complete, nativeQuiet);
+  }
   private snapshot: JobSnapshot | null = null;
   private generation = 0;
   private closed = false;
@@ -214,7 +213,7 @@ export class PanelJobPipeline {
       maxEntries: 128 - snapshot.coverage.entries,
       maxBytes: Math.max(0, Math.min(1024 * 1024, slice?.maxBytes ?? 1024 * 1024) - snapshot.coverage.bytes),
     });
-    this.thinJobs = readThinJobs(this.home, this.thinScope);
+    this.thinJobs = readThinJobs(this.home, this.thinScope, JSON.parse, undefined, this.thinObservation);
     this.boardCache = undefined;
     this.snapshot = snapshot;
     this.taskSnapshot = tasks;
@@ -740,8 +739,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const timers: Array<ReturnType<typeof setInterval>> = [];
   // Collection runs at the refresh setting; repaints between collections only
   // move the clocks, once a second (see nextRepaintDelay).
-  let collectTimer: ReturnType<typeof setInterval> | undefined;
+  let collectTimer: ReturnType<typeof setTimeout> | undefined;
   let collectEvery = 0;
+  let collectClock = 0;
   let adaptive = createAdaptivePollState(settings.refreshMs);
   let collectionEpoch = 0;
   let repaintTimer: ReturnType<typeof setTimeout> | undefined;
@@ -836,6 +836,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     adaptive = forceAdaptivePoll(adaptive);
     collectionEpoch++;
     render();
+    void collect(true);
   };
   /**
    * The next clock-only repaint. A second while something on screen shows
@@ -907,10 +908,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   /** (Re)arm collection at the refresh setting; a no-op while it is unchanged. */
   const armCollect = () => {
     if (closed || (collectTimer && collectEvery === settings.refreshMs)) return;
-    if (collectTimer) clearInterval(collectTimer);
+    if (collectTimer) clearTimeout(collectTimer);
     collectEvery = settings.refreshMs;
+    collectClock = Date.now();
     adaptive = createAdaptivePollState(collectEvery);
-    collectTimer = setInterval(() => void collect(), collectEvery);
+    collectTimer = setTimeout(() => void collect(), collectEvery);
   };
   const applyAgentContext = () => {
     walkNodes(tree.nodes, (node) => {
@@ -981,17 +983,29 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       collectionEpoch++;
     }
     if (closed || collecting) return;
-    if (!adaptivePollDue(adaptive, collectionScope(), Date.now())) return;
     const epoch = collectionEpoch;
     await timeAsync('collect', collectNow);
-    if (epoch === collectionEpoch)
+    if (epoch === collectionEpoch) {
+      const data = currentHud();
+      const native = collectionObservation(data, tree);
+      const jobOnly = STANDALONE_PANEL && !boundJobRoot;
+      const jobQuiet = jobOnly && !selectedRoot && !nativeTree.nodes.length && native.activity !== 'active';
+      const observation = jobOnly
+        ? jobPipeline.observation(tree, panelDelegation, jobQuiet && nativeCalls.emptyAndComplete)
+        : { ...native, succeeded: data?.health?.sessionBound === true };
       adaptive = recordAdaptivePoll(adaptive, {
         scopeKey: collectionScope(),
         nowMs: Date.now(),
-        ...collectionObservation(currentHud(), tree),
-        succeeded: !currentHud()?.stale && !error && currentHud()?.health?.sessionBound === true,
+        ...observation,
+        fingerprint: JSON.stringify([native.fingerprint, observation.fingerprint]),
+        succeeded: observation.succeeded && !data?.stale && !error,
       });
-    else if (!closed) void collect(true);
+      if (collectTimer) clearTimeout(collectTimer);
+      let due = adaptive.nextDueAt;
+      if (adaptive.intervalMs === collectEvery)
+        due += (collectEvery - ((due - collectClock) % collectEvery)) % collectEvery;
+      if (!closed) collectTimer = setTimeout(() => void collect(), Math.max(1, due - Date.now()));
+    } else if (!closed) void collect(true);
   };
   const collectNow = async () => {
     collecting = true;
@@ -1180,7 +1194,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     agentLog.flush();
     flushTreeScans();
     timers.forEach(clearInterval);
-    if (collectTimer) clearInterval(collectTimer);
+    if (collectTimer) clearTimeout(collectTimer);
     if (repaintTimer) clearTimeout(repaintTimer);
     stopProfiling();
     if (escapeTimer) clearTimeout(escapeTimer);

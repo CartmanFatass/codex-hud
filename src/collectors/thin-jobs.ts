@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
 import type { DecisionRecord, EvidenceRef, OwnerWorker, WorkLane } from './workboard-types.js';
 
-function entries(path: string): string[] {
+let complete = false;
+function entries(path: string, missingOK = false): string[] {
   try {
     return fs.readdirSync(path);
-  } catch {
+  } catch (error) {
+    if (!missingOK || (error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
     return [];
   }
 }
@@ -23,18 +25,21 @@ function read(path: string, max = 65536): Snap | null {
   let fd: number | undefined;
   try {
     const st = fs.lstatSync(path);
-    if (!st.isFile()) return null;
+    if (!st.isFile()) throw new Error('nonregular_job_file');
     seen.add(path);
     const stamp = `${st.mtimeMs}:${st.size}:${st.ino}`;
     const hit = cache.get(path);
+    if (hit?.stamp === stamp && !hit.snap.whole) complete = false;
     if (hit?.stamp === stamp) return hit.snap;
     fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
     const buffer = Buffer.alloc(max + 1);
     const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
     const snap = { text: buffer.subarray(0, Math.min(size, max)).toString('utf8'), at: st.mtimeMs, whole: size <= max };
+    complete &&= snap.whole;
     cache.set(path, { stamp, snap });
     return snap;
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
     return null;
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
@@ -42,6 +47,7 @@ function read(path: string, max = 65536): Snap | null {
 }
 function json(path: string, parse: (text: string) => unknown): { v: Record<string, unknown>; at: number } | null {
   const file = read(path);
+  if (!file?.whole) complete = false;
   if (!file?.whole) return null;
   if (file.json === undefined) {
     try {
@@ -51,6 +57,7 @@ function json(path: string, parse: (text: string) => unknown): { v: Record<strin
       file.json = null;
     }
   }
+  if (!file.json) complete = false;
   return file.json ? { v: file.json, at: file.at } : null;
 }
 const when = (v: unknown): number | null => {
@@ -84,8 +91,10 @@ export function readThinJobs(
   home: string,
   scope: ThinJobScope,
   parse = JSON.parse,
-  options?: { settledBefore: number }
+  options?: { settledBefore: number },
+  observation?: { complete: boolean }
 ): WorkLane[] {
+  complete = Boolean(scope.pane);
   seen.clear();
   const root = join(home, 'jobs');
   const jobs = entries(root)
@@ -101,6 +110,7 @@ export function readThinJobs(
         return [];
       const file = json(join(root, id, 'job.json'), parse),
         job = file?.v;
+      if (!file || !job || job.job !== id || typeof job.role !== 'string') complete = false;
       if (
         !file ||
         !job ||
@@ -111,12 +121,13 @@ export function readThinJobs(
       )
         return [];
       const created = when(job.created_at);
+      if (created === null) complete = false;
       return created === null ? [] : [{ id, job, created, jobAt: file.at, status }];
     })
-    .sort((a, b) => b.created - a.created || a.id.localeCompare(b.id))
-    .slice(0, 200);
+    .sort((a, b) => b.created - a.created || a.id.localeCompare(b.id));
+  if (jobs.length > 200) complete = false;
   const lanes = new Map<string, WorkLane>();
-  for (const { id, job, created, jobAt, status: checkedStatus } of jobs) {
+  for (const { id, job, created, jobAt, status: checkedStatus } of jobs.slice(0, 200)) {
     const directory = join(root, id),
       status = checkedStatus ?? json(join(directory, 'STATUS.json'), parse),
       s = status?.v ?? {};
@@ -156,11 +167,12 @@ export function readThinJobs(
     addFile('brief.md', 'brief', briefFile);
     let pending: { fields: ReturnType<typeof questionFields>; evidence: EvidenceRef; id: string } | undefined;
     const qa = join(directory, 'qa'),
-      names = new Set(entries(qa));
+      names = new Set(entries(qa, true));
     for (const name of [...names].filter((n) => /^q\d+\.md$/.test(n)).sort((a, b) => number(a) - number(b))) {
       const answerName = name.replace('.md', '.answer.md');
       const q = read(join(qa, name)),
         a = names.has(answerName) ? read(join(qa, answerName)) : null;
+      if (!q || (names.has(answerName) && !a)) complete = false;
       if (!q) continue;
       const fields = questionFields(q.text);
       files.push({
@@ -204,6 +216,7 @@ export function readThinJobs(
       lastResult = '';
     for (const name of reviews) {
       const review = read(join(directory, name));
+      if (!review) complete = false;
       if (!review) continue;
       const verdict = reviewVerdict(review.text);
       const major = review.text.match(/\b(\d+)\s+(?:major|important)\b/i)?.[1];
@@ -302,5 +315,6 @@ export function readThinJobs(
   }
   // Keep all receipt signatures, but only artifacts used by the retained lanes (no clear-all churn).
   for (const path of cache.keys()) if (!seen.has(path)) cache.delete(path);
+  if (observation) observation.complete = complete;
   return [...lanes.values()];
 }
