@@ -99,6 +99,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX · m4-close 05: the review's behaviour findings (brief independence, statusline default, bounded job scan, settings guards, TZ, docs) (8cd38f1e)
 - try · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime, dead modules and the historical installer chain (769cfa3d)
 - try · M4 · SESSION-LINK · owner: pi session history stays in pi's default place; job directories only link to it (23a9782d; Fishpref 45d93a1)
+- working · M4 · RETENTION-SAFE · the job watcher moves real pi session files to pi's store before deleting a job directory (imp; review-3 q1 ruling)
 - working · M4 · M4-REVIEW3 · third review round (Sol xhigh + DS max on 2a0f8735)
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
 - try · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (71801be1; existing 99 pi sessions moved to ~/.pi/agent/sessions and linked first, toktrack totals unchanged)
