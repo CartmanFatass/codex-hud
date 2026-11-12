@@ -142,7 +142,8 @@ collects only when `projectShown` says Project is the visible main page, with no
 retains its snapshot and passes `MonitorData.project` into the pure `render/project-view.ts` rows and
 shared `renderWorkboardFrame` viewport. Project has separate cursor/scroll/fold state; Control plane
 and native agents start folded. File rows emit `open-files`, the generalised former `job-files` action;
-the existing `openEditorPane` opens `$EDITOR` (default vim) in a right-hand herdr pane.
+the existing `openEditorPane` opens `$EDITOR` (default vim) in a focused herdr tab in the panel's workspace,
+closing it on editor exit; a failed workspace lookup falls back to a right-hand split.
 
 Sources: STATE.md's `## Waiting for the owner`, `## Next`, `## Slices`, `## Now (...)` heading and
 `Milestone:` line (docs/handoff first, root fallback), docs/spec.md, up to twelve review candidates,

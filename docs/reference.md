@@ -290,7 +290,9 @@ and that row cannot be opened. Browser ✓ means only that the browser runtime's
 not that a browser is running or logged in. Nothing starts the MCP, browser or a model.
 
 Up/Down move over file rows and section headers; Enter or `o` folds a header or opens the selected file
-in `$EDITOR` (default `vim`) in a herdr pane beside the panel. Project keeps its cursor and scroll separate
+in `$EDITOR` (default `vim`) in its own focused herdr tab in the panel's workspace. The tab is labelled with
+the first file's basename (at most 24 cells) and closes when the editor exits. If the workspace lookup fails,
+a split beside the panel is used instead. Project keeps its cursor and scroll separate
 from Home. Collection runs only while Project is shown (not behind Help, Settings, Changes or the Inspector),
 uses stat-signature caches and 64 KiB file reads, and probes git at most once per five seconds through the
 existing safe git helper. Rendering only consumes the retained snapshot.
@@ -311,7 +313,7 @@ The panel has two passive tabs: **Home** (needs-you questions or `✓ Nothing ne
 | `4` or `v` | Inspector |
 
 **Keys on Home.** `1` returns Home; `2` opens Project; `3` opens Changes. Tab/Shift-Tab and Left/Right (`h`/`l`) switch Home ⇄ Project. Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection; `n`/`N` select the next/previous trouble without leaving Home. Enter, or a click on the selected item, expands/collapses in place. Cards and decisions start collapsed (display only, not saved). On a lane header Enter folds or
-unfolds the lane. `o` opens the selected item's file in `$EDITOR` beside the panel: a job's open question with its
+unfolds the lane. `o` opens the selected item's file in `$EDITOR` in its own herdr tab: a job's open question with its
 answer file, else its `report.md`, else its `brief.md`; a decision's `qa` file. `v` or Space inspects. Esc returns from
 the Inspector, and standalone Esc on the main page exits as before. The footer
 keeps whole hints only (`↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab`): at a narrow width the hints

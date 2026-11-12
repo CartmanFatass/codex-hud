@@ -1,4 +1,6 @@
 /** Simple local herdr pane operations shared by the CLI and pi package. */
+import { basename } from 'node:path';
+import { truncateAnsi } from '../render/colors.js';
 import { runHerdr, herdrResult, isRecord } from '../roles/herdr-run.js';
 
 async function command(argv: string[], env: NodeJS.ProcessEnv) {
@@ -9,14 +11,23 @@ async function command(argv: string[], env: NodeJS.ProcessEnv) {
 
 export async function openEditorPane(files: string[], env: NodeJS.ProcessEnv): Promise<void> {
   if (!env.HERDR_PANE_ID) throw Error('panel_requires_herdr');
+  const panel = await command(['pane', 'get', env.HERDR_PANE_ID], env).catch(() => null);
+  const workspace = isRecord(panel?.pane) ? panel.pane.workspace_id : undefined;
+  const inTab = typeof workspace === 'string' && workspace.length > 0;
   const result = await command(
-    ['pane', 'split', env.HERDR_PANE_ID, '--direction', 'right', '--focus', '--cwd', process.cwd()],
+    inTab
+      ? [
+          'tab', 'create', '--workspace', workspace, '--cwd', process.cwd(),
+          '--label', truncateAnsi(basename(files[0]), 24), '--focus',
+        ]
+      : ['pane', 'split', env.HERDR_PANE_ID, '--direction', 'right', '--focus', '--cwd', process.cwd()],
     env
   );
-  const pane = isRecord(result?.pane) ? result.pane.pane_id : undefined;
-  if (typeof pane !== 'string') throw Error('panel_split_unknown');
+  const root = inTab ? result?.root_pane : result?.pane;
+  const pane = isRecord(root) ? root.pane_id : undefined;
+  if (typeof pane !== 'string' || !pane) throw Error(inTab ? 'panel_tab_unknown' : 'panel_split_unknown');
   const paths = files.map((file) => `'${file.replaceAll("'", "'\\''")}'`).join(' ');
-  await command(['pane', 'run', pane, `${env.EDITOR || 'vim'} ${paths}`], env);
+  await command(['pane', 'run', pane, `${env.EDITOR || 'vim'} ${paths}; exit`], env);
 }
 
 export async function closePanelPane(pane: string, env: NodeJS.ProcessEnv): Promise<void> {
