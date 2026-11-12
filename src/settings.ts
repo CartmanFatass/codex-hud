@@ -16,8 +16,6 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
   sort: 'active' | 'created';
   mouse: boolean;
   tasks: boolean;
-  changes: boolean;
-  activity: boolean;
   details: boolean;
   refreshMs: number;
   treeWidth: number;
@@ -30,19 +28,9 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
   agentsPane: 'open' | 'closed';
   changesPane: 'open' | 'closed';
   detailsPane: 'open' | 'closed';
-  /** The session's observed events, newest first. */
-  timelinePane: 'open' | 'closed';
-  /**
-   * How the timeline draws the main session and the agents' stages: `rail`,
-   * an L1's stages branching off the main session's rail; `indent`, a level
-   * in for an L1 and two for an L2; `lanes`, a lane per direction.
-   */
-  timelineStyle: 'rail' | 'indent' | 'lanes';
-  /** The timeline's window: the newest this many hours, the earlier entries a row at its end brings back. */
-  timelineHours: 1 | 3 | 6 | 12 | 24;
   /**
    * The roles of the agents an L1 starts (`reviewer`, `critic`) that the
-   * timeline and the cards give a line of their own, a comma list; a name
+   * saved important-scope summary policy includes, a comma list; a name
    * also matches a role ending in it after a dash (`critic`, a
    * `team-platform-critic`). The rest are counts on their L1's line and
    * card; a failed or flagged one always gets its line.
@@ -53,12 +41,6 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
    * as a card above them; `compact`, the tree with the brief and log under it.
    */
   panelStyle: 'rich' | 'compact';
-  /**
-   * How the open panes share the panel: `stack`, one above the other, each
-   * opened and closed from the bar; `tabs`, one pane at a time over the whole
-   * panel, the bar's buttons switching between them as a browser's tabs do.
-   */
-  paneLayout: 'stack' | 'tabs';
   worktreeRoot: string;
   modelEnabled: boolean;
   /** The tree panel's and the brief's language; auto follows the locale. */
@@ -118,13 +100,10 @@ export function defaultSettings(): HudSettings {
     barFields: [...DEFAULT_BAR_FIELDS],
     agentColors: 'name',
     look: 'tab',
-    paneLayout: 'stack',
     statusline: true,
     sort: 'active',
     mouse: true,
     tasks: false,
-    changes: true,
-    activity: false,
     details: true,
     refreshMs: 1000,
     treeWidth: 48,
@@ -132,10 +111,7 @@ export function defaultSettings(): HudSettings {
     agentsPane: 'open',
     changesPane: 'closed',
     detailsPane: 'closed',
-    timelinePane: 'closed',
     panelStyle: 'rich',
-    timelineStyle: 'rail',
-    timelineHours: 3,
     importantRoles: '',
     worktreeRoot: '',
     modelEnabled: (() => {
@@ -191,8 +167,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   sort: oneOf('active', 'created'),
   mouse: isBoolean,
   tasks: isBoolean,
-  changes: isBoolean,
-  activity: isBoolean,
   details: isBoolean,
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
@@ -200,12 +174,8 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   agentsPane: oneOf('open', 'closed'),
   changesPane: oneOf('open', 'closed'),
   detailsPane: oneOf('open', 'closed'),
-  timelinePane: oneOf('open', 'closed'),
-  timelineStyle: oneOf('rail', 'indent', 'lanes'),
-  timelineHours: (value) => value === 1 || value === 3 || value === 6 || value === 12 || value === 24,
   importantRoles: isText(1000),
   panelStyle: oneOf('rich', 'compact'),
-  paneLayout: oneOf('stack', 'tabs'),
   look: oneOf(...LOOKS),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
@@ -239,7 +209,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   icons: oneOf('unicode', 'nerd', 'emoji', 'text'),
 };
 
-const PANE_KEYS = ['agentsPane', 'changesPane', 'detailsPane', 'timelinePane'] as const;
+const PANE_KEYS = ['agentsPane', 'changesPane', 'detailsPane'] as const;
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result = { ...base };
@@ -247,8 +217,6 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const values = { ...(raw as Record<string, unknown>) };
   // A pane is open or closed; one saved folded, as earlier versions could, is closed.
   for (const key of PANE_KEYS) if (values[key] === 'folded') values[key] = 'closed';
-  // The worktrees are listed over the changes now: a worktrees pane saved open opens the changes.
-  if (values.worktreesPane === 'open') values.changesPane = 'open';
   for (const key of Object.keys(validators) as Array<keyof HudSettings>) {
     if (Object.hasOwn(values, key) && validators[key](values[key])) {
       Object.assign(result, { [key]: values[key] });

@@ -1,11 +1,10 @@
 import { nativeCallsOnly } from '../core/link/view-model.js';
 /**
  * Each pane's rows: the agents (the compact tree, or the cards and their
- * summary), the worktrees, the changes, the timeline, and the brief and
+ * summary), the repository summary, and the brief and
  * the agent log under the compact tree. The Inspector's are its own module's.
  */
 import type { SubagentTreeNode } from '../types.js';
-import type { GitChangedFile } from '../collectors/git-changes.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
 import type { MonitorData, MonitorPane, MonitorRow, MonitorState } from './monitor.js';
 import type { DelegationView } from './delegation/panel.js';
@@ -26,15 +25,6 @@ import {
   finishedAt,
   FRESH_FINISH_MS,
   writtenAge,
-  worktreeLabel,
-  worktreeLabelText,
-  worktreeName,
-  isUntracked,
-  UNTRACKED_ROW,
-  changeLetter,
-  lineCounts,
-  listsWorktrees,
-  worktreeItem,
   agentRate,
   rateText,
 } from './monitor-labels.js';
@@ -49,7 +39,6 @@ import {
   needsInput,
 } from './job-details.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
-import { timelineRows } from './monitor-timeline.js';
 import { delegationAgentsRows, mixedAgentsRows, mixedOrdinaryNodes } from './delegation/panel.js';
 
 /**
@@ -222,226 +211,39 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
   return result;
 }
 
-/**
- * The changes' counts in words, zero counts left out, in the order
- * conflicts, staged, unstaged, untracked: "5 未暂存 · 2924 未跟踪". Short of
- * room the least wanted count goes first, untracked, then staged; the words
- * stay.
- */
-export function changeCounts(files: readonly GitChangedFile[], width: number): string {
-  const changed = (x: string) => x !== ' ' && x !== '.' && x !== '?';
-  const count = {
-    conflicts: files.filter((f) => f.conflict).length,
-    staged: files.filter((f) => !f.conflict && changed(f.index)).length,
-    unstaged: files.filter((f) => !f.conflict && changed(f.worktree)).length,
-    untracked: files.filter((f) => !f.conflict && f.index === '?' && f.worktree === '?').length,
-  };
-  const part = (key: keyof typeof count) =>
-    count[key] ? (key === 'conflicts' ? theme.warning : colors.dim)(t(`{n} ${key}`, { n: count[key] })) : '';
-  const line = (keys: Array<keyof typeof count>) => keys.map(part).filter(Boolean).join(colors.dim(' · '));
-  for (const keys of [
-    ['conflicts', 'staged', 'unstaged', 'untracked'],
-    ['conflicts', 'staged', 'unstaged'],
-    ['conflicts', 'unstaged'],
-  ] as Array<Array<keyof typeof count>>) {
-    const text = line(keys);
-    if (text && visualLength(text) <= width) return text;
-  }
-  return truncateAnsi(line(['conflicts', 'unstaged']) || line(['conflicts', 'staged', 'unstaged', 'untracked']), width);
-}
-
-/**
- * Each path as the changes list shows it in `width` columns: whole where it
- * fits, else the shortest ending that no other path in the list shares
- * ("a/SKILL.md", "SKILL.md" for a name only it has). Where that ending is
- * still too long, the directory that tells it apart stays with the name and
- * the middle goes (".agents/…/SKILL.md", then ".ag…/SKILL.md"), and last the
- * start is cut ("…/SKILL.md").
- */
-export function shownPaths(paths: readonly string[], width: number): string[] {
-  // An untracked directory keeps its slash on its name: "r02/".
-  const split = paths.map((path) => {
-    const parts = path.split('/').filter(Boolean);
-    if (path.endsWith('/') && parts.length) parts[parts.length - 1] += '/';
-    return parts;
-  });
-  const ending = (n: number, of: string[]) => of.slice(-n).join('/');
-  // How many paths end in each run of n parts, counted once per n: a list of
-  // thousands of untracked files is drawn on every repaint.
-  const counts = new Map<number, Map<string, number>>();
-  const shared = (n: number, parts: string[]) => {
-    let byEnding = counts.get(n);
-    if (!byEnding) {
-      byEnding = new Map();
-      for (const other of split)
-        if (other.length >= n) {
-          const key = ending(n, other);
-          byEnding.set(key, (byEnding.get(key) ?? 0) + 1);
-        }
-      counts.set(n, byEnding);
-    }
-    return (byEnding.get(ending(n, parts)) ?? 0) > 1;
-  };
-  return paths.map((path, i) => {
-    if (visualLength(path) <= width) return path;
-    const parts = split[i];
-    let k = 1;
-    while (k < parts.length && shared(k, parts)) k++;
-    const unique = ending(k, parts);
-    if (visualLength(unique) <= width) return unique;
-    if (k > 1) {
-      const kept = `${parts[parts.length - k]}/…/${parts.at(-1)}`;
-      if (visualLength(kept) <= width) return kept;
-      // Narrower still, the start of that directory is what tells it apart: ".ag…/SKILL.md".
-      let head = '';
-      let used = visualLength(`…/${parts.at(-1)}`);
-      for (const ch of parts[parts.length - k]) {
-        used += visualLength(ch);
-        if (used > width) break;
-        head += ch;
-      }
-      if (head) return `${head}…/${parts.at(-1)}`;
-    }
-    let tail = '';
-    let used = 1;
-    for (const ch of [...unique].reverse()) {
-      used += visualLength(ch);
-      if (used > width) break;
-      tail = ch + tail;
-    }
-    return '…' + tail;
-  });
-}
-
-/** The changed files, tracked then untracked, each with its path as the list shows it. */
-interface ChangesSplit {
-  files: readonly GitChangedFile[];
-  width: number;
-  tracked: Array<[GitChangedFile, string]>;
-  untracked: Array<[GitChangedFile, string]>;
-}
-let changesCache: ChangesSplit | undefined;
-function splitChanges(files: readonly GitChangedFile[], width: number): ChangesSplit {
-  const shown = shownPaths(
-    files.map((file) => file.path),
-    width
-  );
-  const split: ChangesSplit = { files, width, tracked: [], untracked: [] };
-  files.forEach((file, i) => (isUntracked(file) ? split.untracked : split.tracked).push([file, shown[i]]));
-  return split;
-}
-
-/**
- * The worktrees over the changes, where there is more than one: a row each,
- * the one whose changes are listed marked "●" and named in bold, how far its
- * branch is from upstream and its state on the right. Then a rule naming it
- * again, with its counts, over its files.
- */
-function worktreeRows(
-  input: MonitorData,
-  state: MonitorState,
-  width: number,
-  now: number,
-  counts: string
-): MonitorRow[] {
-  const entries = input.worktrees?.entries ?? [];
-  const names = entries.map(worktreeName);
-  const rows: MonitorRow[] = [];
-  let listed = '';
-  for (const [i, entry] of entries.entries()) {
-    const item = worktreeItem(entry.path);
-    const current = entry.path === state.selectedWorktree;
-    const label = worktreeLabel(entry, now);
-    const paint = label.startsWith('!') || entry.error ? theme.warning : label === 'clean' ? colors.dim : theme.value;
-    const ahead = entry.status?.ahead ? theme.success(`↑${entry.status.ahead}`) + ' ' : '';
-    const behind = entry.status?.behind ? theme.error(`↓${entry.status.behind}`) + ' ' : '';
-    // Locked is a word after the status, not a letter glued to the name.
-    const locked = entry.locked !== undefined ? colors.dim(` · ${t('locked')}`) : '';
-    // Two of the same name are told apart by what their HEAD commit says,
-    // never by a hash: it stands in for the name, which the Inspector gives.
-    const twin = names.filter((name) => name === names[i]).length > 1;
-    const name = monitorText(twin && entry.subject ? entry.subject : names[i]);
-    if (current) listed = name;
-    const left = `${item === state.selectedFile ? '›' : ' '}${current ? theme.accent('●') : ' '} ${current ? theme.strong(name) : name}`;
-    rows.push({ item, text: pair(left, `${ahead}${behind}${paint(worktreeLabelText(label))}${locked}`, width) });
-  }
-  const head = `${colors.dim('─ ')}${theme.strong(listed || t('Changes'))}${counts ? colors.dim(' · ') + counts : ''} `;
-  rows.push({ text: truncateAnsi(head + colors.dim('─'.repeat(Math.max(0, width - visualLength(head)))), width) });
-  return rows;
-}
-
-/**
- * The changes: the worktrees on top where there is a choice of them, then
- * the listed one's counts, what the model said the diff does, and its files,
- * the untracked folded into one row at the end. One cursor runs through the
- * worktrees and the files alike.
- */
-function changesRows(input: MonitorData, state: MonitorState, width: number, now: number): MonitorRow[] {
+/** Repository facts only; no file rows, selection, preview or diff. */
+function changesRows(input: MonitorData, _state: MonitorState, width: number, now: number): MonitorRow[] {
   const snapshot = input.worktrees;
-  const git = input.git;
   const rows: MonitorRow[] = [];
-  // Empty, loading or clean is no line of its own; an error says what is wrong.
-  if (snapshot?.error)
-    rows.push(
-      { text: theme.warning(t('No readable repository')) },
-      { text: colors.dim(t('Set worktreeRoot')) },
-      ...wrapped(snapshot.error, width).map((text) => ({ text: colors.dim(text) }))
-    );
+  if (snapshot?.error) rows.push({ text: theme.warning(t('No readable repository')) });
   if (snapshot?.truncated) rows.push({ text: theme.warning(t('Worktree list limited')) });
-  if (git?.error) rows.push({ text: theme.warning(t('Git incomplete')) });
-  // Worked out once per git read and width, not on every repaint.
-  const pathWidth = Math.max(1, width - 4);
-  const files = git?.root ? git.files : [];
-  if (changesCache?.files !== files || changesCache.width !== pathWidth) changesCache = splitChanges(files, pathWidth);
-  const { tracked, untracked } = changesCache;
-  // The untracked files are counted on their own row, at the end.
-  const counts = files.length
-    ? changeCounts(
-        tracked.map(([file]) => file),
+  const current = snapshot?.entries
+    .filter((entry) => snapshot.sourcePath === entry.path || snapshot.sourcePath?.startsWith(entry.path + '/'))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  if (current) {
+    rows.push(
+      ...wrapped(
+        t('Branch: {branch}', { branch: monitorText(current.branch ?? t(current.bare ? 'bare' : 'detached')) }),
         width
-      )
-    : '';
-  if (listsWorktrees(snapshot)) rows.push(...worktreeRows(input, state, width, now, counts));
-  else if (counts) rows.push({ text: counts });
-  if (!git?.root) return rows;
-  // What the diff does, in the model's words, marked as such; older than the diff, it says so.
-  const summary = files.length ? input.notes?.changes : undefined;
-  if (summary) {
-    for (const line of summary.lines)
-      rows.push(
-        ...flowLines(monitorText(line), Math.max(1, width - 2)).map((text, i) => ({
-          text: `${i ? ' ' : colors.dim('~')} ${text}`,
-        }))
-      );
-    if (!summary.current)
-      rows.push(
-        ...flowLines(
-          t('(written {age}, before the latest edits)', { age: writtenAge(summary.at, now) }),
-          Math.max(1, width - 2)
-        ).map((text) => ({ text: colors.dim(`  ${text}`) }))
-      );
+      ).map((text) => ({ text }))
+    );
+    rows.push(
+      ...wrapped(t('HEAD: {head}', { head: monitorText(current.head ?? t('unknown')) }), width).map((text) => ({
+        text,
+      }))
+    );
+    if (current.status && now - (current.observedAt ?? 0) <= 30_000) {
+      const status = current.status;
+      for (const key of ['ahead', 'behind', 'staged', 'unstaged', 'untracked'] as const)
+        rows.push({ text: t(`{n} ${key}`, { n: status[key] ?? '?' }) });
+    } else rows.push({ text: theme.warning(t('Git incomplete')) });
   }
-  const mark = (item: string) => (item === state.selectedFile ? '›' : ' ');
-  // A letter for what happened, the path, and the lines it adds and removes at the right where they fit.
-  for (const [file, shown] of tracked) {
-    const left = `${mark(file.path)} ${changeLetter(file)} ${monitorText(shown)}`;
-    const lines = lineCounts(file);
-    const gap = width - visualLength(left) - visualLength(lines);
+  for (const entry of snapshot?.entries ?? []) {
+    const dirty = entry.status && now - (entry.observedAt ?? 0) <= 30_000 ? entry.status.changed > 0 : null;
+    const label = `${monitorText(entry.branch ?? t(entry.bare ? 'bare' : 'detached'))} · ${t(dirty === null ? 'unknown' : dirty ? 'dirty' : 'clean')}`;
     rows.push({
-      item: file.path,
-      text: truncateAnsi(lines && gap >= 2 ? left + ' '.repeat(gap) + lines : left, width),
+      text: pair(truncateAnsi(monitorText(entry.path), Math.max(1, width - visualLength(label) - 1)), label, width),
     });
-  }
-  // The untracked files folded into a row that counts them; Enter or a click lists them under it.
-  if (untracked.length) {
-    const open = Boolean(state.untrackedOpen);
-    rows.push({
-      item: UNTRACKED_ROW,
-      text: `${mark(UNTRACKED_ROW)} ${colors.dim(`${open ? '▾' : '▸'} ${t('{n} untracked', { n: untracked.length })}`)}`,
-    });
-    if (open)
-      for (const [file, shown] of untracked)
-        rows.push({ item: file.path, text: truncateAnsi(`${mark(file.path)}   ${monitorText(shown)}`, width) });
   }
   return rows;
 }
@@ -455,7 +257,6 @@ export function paneRows(
   delegation?: DelegationView
 ): MonitorRow[] {
   if (id === 'agents') return agentRows(input, state, width, now);
-  if (id === 'timeline') return timelineRows(input, width, now);
   if (id === 'changes') return changesRows(input, state, width, now);
   return inspectorRows(input, state, width, now, delegation);
 }

@@ -1,11 +1,5 @@
-/**
- * What the panel says about an agent, a worktree or a changed file beside
- * its name: its status icon, how long ago, the turn clock, its own colour,
- * what a worktree is called and where it is, and what happened to a file.
- */
+/** Shared agent status, ages, clocks and colours. */
 import type { SessionActivity, SubagentTreeNode } from '../types.js';
-import type { WorktreeInfo } from '../collectors/worktrees.js';
-import type { GitChangedFile } from '../collectors/git-changes.js';
 import { theme, colors } from './colors.js';
 import { palette } from './palette.js';
 import { iconSet, displayConfig } from './hud-config.js';
@@ -71,93 +65,6 @@ export function nodeStatus(
     default:
       return { icon: '?', label: 'unknown', paint: colors.dim };
   }
-}
-
-export function worktreeLabel(entry: WorktreeInfo, now: number): string {
-  if (entry.bare) return 'bare';
-  if (entry.prunable !== undefined) return 'prunable';
-  if (entry.error) return 'unreadable';
-  if (!entry.status || entry.observedAt === undefined) return '?';
-  if (now - entry.observedAt > 30_000) return 'stale';
-  if (entry.status.conflicts) return `!${entry.status.conflicts}`;
-  return entry.status.changed ? `${entry.status.changed} mod` : 'clean';
-}
-/** A file git does not track yet. */
-export function isUntracked(file: GitChangedFile): boolean {
-  return file.index === '?' && file.worktree === '?';
-}
-/** The changes list's one row for its untracked files, as an item: no path can hold a NUL. */
-export const UNTRACKED_ROW = '\0untracked';
-/** A worktree's row in the changes list, as an item: its path behind a NUL, so no file's path is one. */
-const WORKTREE_ROW = '\0worktree:';
-export function worktreeItem(path: string): string {
-  return WORKTREE_ROW + path;
-}
-/** Whether the changes list heads its files with the worktrees: only where there is more than one to choose from. */
-export function listsWorktrees(snapshot: { entries: readonly unknown[] } | null | undefined): boolean {
-  return (snapshot?.entries.length ?? 0) > 1;
-}
-/** The worktree a changes item is the row of, or undefined for a file's. */
-export function worktreeOfItem(item: string | null | undefined): string | undefined {
-  return item?.startsWith(WORKTREE_ROW) ? item.slice(WORKTREE_ROW.length) : undefined;
-}
-/**
- * What happened to a changed file, as one letter in its colour: added
- * green, deleted red, renamed or copied blue, modified (and the rest)
- * yellow, and a conflict a red "!". Added, deleted, renamed or copied in the
- * index says more than an edit on top of it.
- */
-export function changeLetter(file: GitChangedFile): string {
-  if (file.conflict) return theme.error('!');
-  const set = (code: string) => code !== ' ' && code !== '.';
-  const code = set(file.index) && file.index !== 'M' ? file.index : set(file.worktree) ? file.worktree : file.index;
-  return (
-    code === 'A'
-      ? theme.success
-      : code === 'D'
-        ? theme.error
-        : code === 'R' || code === 'C'
-          ? theme.info
-          : theme.warning
-  )(code);
-}
-/** The lines a changed file adds and removes, "+12 −3", a side with none left out. */
-export function lineCounts(file: GitChangedFile): string {
-  return [file.added ? theme.success(`+${file.added}`) : '', file.removed ? theme.error(`−${file.removed}`) : '']
-    .filter(Boolean)
-    .join(' ');
-}
-/** A worktree label in the reader's language; the label itself stays a stable code. */
-export function worktreeLabelText(label: string): string {
-  const changed = label.match(/^(\d+) mod$/);
-  return changed ? t('{n} mod', { n: changed[1] }) : label.startsWith('!') ? label : t(label);
-}
-/** A directory name that is an id, not a name: hex of 7 or more characters, or a UUID. */
-export const ID_NAME = /^(?:[0-9a-f]{7,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
-/**
- * What a worktree is called on screen: its branch; detached, its
- * directory's name, or, where that is an id, the nearest directory above it
- * that is neither an id nor `.git` (`atlas-launch-sources`, not a 32-digit
- * hash). No hash is ever shown.
- */
-export function worktreeName(entry: WorktreeInfo): string {
-  if (entry.branch) return entry.branch;
-  const parts = entry.path.split(/[\\/]+/).filter(Boolean);
-  for (let i = parts.length - 1; i >= 0; i--) if (!ID_NAME.test(parts[i]) && parts[i] !== '.git') return parts[i];
-  return t(entry.bare ? 'bare' : 'detached');
-}
-/**
- * Where a worktree is, relative to the repository's main worktree: up to its
- * first id directory, then "…" (`.git/atlas-launch-sources/…`). Empty for
- * the main worktree itself.
- */
-export function worktreePlace(entry: WorktreeInfo, root: string | undefined): string {
-  const path = entry.path.replace(/[\\/]+$/, '');
-  const base = root?.replace(/[\\/]+$/, '');
-  const relative = base && path.startsWith(base + '/') ? path.slice(base.length + 1) : base === path ? '' : path;
-  const parts = relative.split(/[\\/]+/).filter(Boolean);
-  const id = parts.findIndex((part) => ID_NAME.test(part));
-  return id < 0 ? parts.join('/') : [...parts.slice(0, id), '…'].join('/');
 }
 
 /**

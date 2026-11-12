@@ -27,8 +27,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     home();
     return result();
   }
-  // Reserved Project keys must not reach hidden secondary views.
-  if (key === 'project-tab' || key === 'changes') return result();
+  // Project is reserved; Changes remains a factual repository summary.
+  if (key === 'project-tab') return result();
+  if (key === 'changes') {
+    next.focus = 'changes';
+    next.boardInspect = undefined;
+    next.modes.changes = 'open';
+    next.zoom = true;
+    return result();
+  }
   if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
   const inspect = () => {
     const target = next.homeTarget;
@@ -169,7 +176,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     ].map((w) => ({ kind: 'worker' as const, laneId: w.laneId, workerId: w.id }));
     if (targets.length) {
       const at = targets.findIndex((t) => selected() && targetKey(t) === targetKey(selected()!));
-      const target = targets[(at + (key === 'previous-trouble' ? targets.length - 1 : 1) + targets.length) % targets.length];
+      const target =
+        targets[(at + (key === 'previous-trouble' ? targets.length - 1 : 1) + targets.length) % targets.length];
       setTarget(target);
       const folded = new Set(next.boardFolded);
       folded.delete(target.laneId);

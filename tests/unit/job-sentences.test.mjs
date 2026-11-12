@@ -111,7 +111,6 @@ function fixture(t, mode = 'on', language = 'en') {
     f.service.stop();
     model.cancelAll();
     await settle();
-    await model.flushTelemetry();
     setDisplayConfig(previous);
     fs.rmSync(home, { recursive: true, force: true });
   });

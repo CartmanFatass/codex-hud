@@ -215,20 +215,6 @@ export function withInputRefresh<T>(hasInput: boolean, processInput: () => T, re
   }
 }
 
-/** Resolve an activity identity to an unambiguous projected key. */
-export function delegationActivityTarget(
-  vm: DelegationViewModel,
-  rootId: string,
-  id: string
-): { root: boolean; key: string | null } | null {
-  if (id === rootId && rootId) return { root: true, key: null };
-  const matches = vm.tree.nodes.filter(
-    (node) =>
-      node.identity.kind === 'session' && node.identity.ref.harness === 'codex' && node.identity.ref.sessionId === id
-  );
-  return matches.length === 1 ? { root: false, key: matches[0].key } : null;
-}
-
 /** Serialise navigation and publish its completion only while the originating view is current. */
 export function createNavigationGate() {
   let busy = false;
@@ -255,23 +241,6 @@ export function createNavigationGate() {
       busy = false;
     }
   };
-}
-
-/** Reveal the target while retaining unrelated folded branches. */
-export function revealDelegationAncestors(
-  vm: DelegationViewModel,
-  key: string,
-  collapsed: ReadonlySet<string>
-): Set<string> {
-  const result = new Set(collapsed);
-  let node = vm.tree.nodes.find((item) => item.key === key);
-  const seen = new Set<string>();
-  while (node?.parentKey && !seen.has(node.parentKey)) {
-    seen.add(node.parentKey);
-    result.delete(node.parentKey);
-    node = vm.tree.nodes.find((item) => item.key === node?.parentKey);
-  }
-  return result;
 }
 
 /** A second Open on the same row must not start another host interaction. */

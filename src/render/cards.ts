@@ -303,12 +303,7 @@ export function cardSummaryTargets(
   now: number
 ): Set<string> {
   const targets = new Set<string>();
-  if (
-    state.style !== 'rich' ||
-    state.help ||
-    !paneShown(state, 'agents') ||
-    (state.zoom && !state.tabbed && state.focus !== 'agents')
-  )
+  if (state.style !== 'rich' || state.help || !paneShown(state, 'agents') || (state.zoom && state.focus !== 'agents'))
     return targets;
   const v = visibility(state);
   for (const row of listedAgents(input.tree.nodes, state, now)) {

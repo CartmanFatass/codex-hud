@@ -1,7 +1,7 @@
 /**
  * The agents as research directions: each L1 agent (one the main session
  * started) with the agents under it is a direction, and a colour marks it
- * on the timeline and the cards. An L1 with no subtasks of its own that
+ * on the cards. An L1 with no subtasks of its own that
  * exchanged most of its messages with one that has them works for that one
  * (a critic, an oracle): it takes that direction's colour.
  *
@@ -9,7 +9,7 @@
  * rollout recorded (src/collectors/agent-stages.ts). Nothing is guessed from
  * names.
  */
-import type { AgentStage, SubagentTree, SubagentTreeNode } from '../types.js';
+import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
 import { eachThread } from '../collectors/subagent-tree.js';
 import { isGuardian } from './panel-state.js';
@@ -136,41 +136,6 @@ export function directions(tree: SubagentTree): Directions {
   };
   memo = { tree, theme: palette().name, value };
   return value;
-}
-
-/**
- * Whom a helper L1's stage was for: the agent that set it, where that is a
- * lead with subtasks, else the lead that sent it the most messages during
- * the stage. Nothing for an agent that is no helper.
- */
-export function stageServes(dirs: Directions, id: string, stage: AgentStage): string | undefined {
-  if (!dirs.serves.has(id)) return undefined;
-  const lead = (path: string | undefined) => {
-    const other = path ? dirs.byPath.get(path) : undefined;
-    const hit = other ? dirs.node.get(other) : undefined;
-    return hit && hit.level === 0 && subtasks(hit.node).length ? other : undefined;
-  };
-  const by = lead(stage.by?.sender);
-  if (by) return by;
-  let best: string | undefined;
-  let most = 0;
-  for (const [path, count] of Object.entries(stage.peers ?? {})) {
-    const other = lead(path);
-    if (other && count > most) {
-      most = count;
-      best = other;
-    }
-  }
-  return best ?? dirs.serves.get(id);
-}
-
-/** Subtasks by state: running, failed and done. */
-export function tally(kids: readonly SubagentTreeNode[]): { running: number; failed: number; done: number } {
-  return {
-    running: kids.filter(isLive).length,
-    failed: kids.filter((kid) => kid.status === 'error').length,
-    done: kids.filter((kid) => kid.status === 'completed').length,
-  };
 }
 
 /**

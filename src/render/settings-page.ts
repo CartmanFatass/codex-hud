@@ -4,7 +4,7 @@ import type { HudHealthState } from '../types.js';
 import { truncateAnsi, colors, theme, visualLength } from './colors.js';
 import { t, language } from './i18n.js';
 import { flowLines } from './monitor-text.js';
-import { age, TIMELINE_STYLES, TIMELINE_HOURS, type MonitorControl } from './monitor.js';
+import { age, type MonitorControl } from './monitor.js';
 import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
 import { PANEL_WIDTHS } from '../utils/pane-width.js';
 import { LOOKS, AGENT_COLOR_MODES, type IconMode, type LookName } from './hud-config.js';
@@ -26,7 +26,7 @@ const PROBE_FAILURES: Record<string, string> = {
 };
 export type SettingKey = keyof HudSettings;
 export type SettingGroup = 'Display' | 'Panel' | 'Agents' | 'Cards' | 'LLM' | 'Status bar' | 'Input';
-export type SettingsAction = 'back' | 'save' | 'reset' | 'reset-all' | 'test-api' | 'diagnostics';
+export type SettingsAction = 'back' | 'save' | 'reset' | 'reset-all' | 'test-api';
 
 export interface SettingRow {
   /** A real field, or a virtual row whose get/set must read/write only real fields. */
@@ -141,15 +141,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Agent cards, or the tree and log',
   },
   {
-    key: 'paneLayout',
-    group: 'Panel',
-    label: 'Panes',
-    short: 'Panes',
-    values: ['stack', 'tabs'],
-    help: 'Tabs: one pane at a time, from the bar',
-    format: (value) => (value === 'tabs' ? 'tabs' : 'stacked'),
-  },
-  {
     key: 'statusCard',
     group: 'Panel',
     label: 'Status card',
@@ -157,25 +148,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     values: ['full', 'status', 'min'],
     help: 'Foot card: brief, status, one line',
   },
-  {
-    key: 'timelineStyle',
-    group: 'Panel',
-    label: 'Timeline style',
-    short: 'Style',
-    values: TIMELINE_STYLES,
-    help: 'Main rail, indent, or lanes',
-  },
-  {
-    key: 'timelineHours',
-    group: 'Panel',
-    label: 'Timeline span',
-    short: 'Span',
-    values: TIMELINE_HOURS,
-    help: 'Hours shown; more on demand',
-    format: (value) => `${value}h`,
-  },
-  // The widths the panel is laid out for, each a step in what fits: the meters, the model badge's words, the timeline's
-  // lanes. Codex keeps 41 whatever is asked, and a width from the file or a dragged border steps from where it falls.
+  // Codex keeps 41 columns; custom widths step from where they fall.
   {
     key: 'treeWidth',
     group: 'Panel',
@@ -417,7 +390,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 // Composite rows own their hidden counterparts even when their current value does not expose them.
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'look', 'icons', 'glyphs', 'agentColors', 'motion'],
-  Panel: ['language', 'panelStyle', 'paneLayout', 'statusCard', 'timelineStyle', 'timelineHours', 'treeWidth', 'art'],
+  Panel: ['language', 'panelStyle', 'statusCard', 'treeWidth', 'art'],
   Agents: ['sort', 'finishedLingerMs', 'importantRoles', 'agentLog'],
   Cards: ['cardLabel', 'cardSummary', 'cardClock', 'cardCorners', 'cardStallMinutes'],
   LLM: ['modelEnabled'],
@@ -475,7 +448,7 @@ export interface SettingsFrame {
   /** Main navigation hit targets, routed by the caller, not settings input. */
   navigationControls: MonitorControl[];
   actions: Array<{
-    action: Exclude<SettingsAction, 'test-api' | 'diagnostics'>;
+    action: Exclude<SettingsAction, 'test-api'>;
     x: number;
     width: number;
   }>;
@@ -634,15 +607,15 @@ export function healthLine(health: HudHealthState | undefined, nowMs: number): s
   return current ? theme.warning(`${read} · ${failure}`) : colors.dim(`${read} · ${failure}`);
 }
 
-/** Model calls so far today and in the last hour, against the cap; null before the first call. */
+/** Calls this hour against the shared cap, including a known zero. */
 export function modelCallsLine(usage: { today: number; lastHour: number; cap: number } | undefined): string | null {
-  if (!usage || !usage.today) return null;
-  const text = t('Model calls today: {n} · last hour {h}/{cap}', { n: usage.today, h: usage.lastHour, cap: usage.cap });
+  if (!usage) return null;
+  const text = t('Model calls this hour: {h}/{cap}', { h: usage.lastHour, cap: usage.cap });
   return usage.lastHour >= usage.cap ? theme.warning(text) : colors.dim(text);
 }
 
 /** The rows whose value the panel's top shows: the bar and the pane titles. */
-const PREVIEWED: ReadonlySet<SettingKey> = new Set<SettingKey>(['theme', 'paneLayout', 'look', 'icons']);
+const PREVIEWED: ReadonlySet<SettingKey> = new Set<SettingKey>(['theme', 'look', 'icons']);
 /** The fewest rows the list keeps when a preview takes some of the page. */
 const LIST_MIN = 6;
 
@@ -678,8 +651,9 @@ export function renderSettingsPage(
   const headerY = navLines.length;
   const available = Math.max(0, height - headerY);
   const healthRow = health && available > 3 ? healthLine(health.state, health.nowMs ?? Date.now()) : null;
-  const callsRow = health && available > 4 ? modelCallsLine(health.modelCalls) : null;
   const selected = Math.min(SETTING_ROWS.length - 1, Math.max(0, state.selected));
+  const callsRow =
+    health && SETTING_ROWS[selected].group === 'LLM' && available > 4 ? modelCallsLine(health.modelCalls) : null;
   const probe = health?.probe;
   const probeRows =
     probe && SETTING_ROWS[selected].group === 'LLM' && available > 8
@@ -813,7 +787,7 @@ export function renderSettingsPage(
     lines.push(
       colors.dim(
         SETTING_ROWS[selected].group === 'LLM' && probe
-          ? t('t: test/cancel API · d: diagnostics')
+          ? t('t: test/cancel API')
           : width < 30
             ? '↑↓ ←→'
             : width >= 48
@@ -882,7 +856,6 @@ export function handleSettingsInput(
   if (key === 'escape' || key === 'settings' || key === 'close') return { state: next, action: 'back' };
   if (key === 'sort') return { state: next, action: 'save' };
   if (key === 'reset') return { state: next, action: 'reset' };
-  if (key === 'diagnostics') return { state: next, action: 'diagnostics' };
   if (key === 'next-tab' && settingGroup(next) === 'LLM') return { state: next, action: 'test-api' };
   const moved = next.selected;
   if (key === 'down' || key === 'tab') next.selected = Math.min(SETTING_ROWS.length - 1, next.selected + 1);

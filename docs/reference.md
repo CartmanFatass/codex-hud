@@ -2,7 +2,7 @@
 
 The details behind the [README](../README.md): the panel part by part, every key, the settings and the model features, the machine-readable state, and the configuration. [中文](./reference.zh.md)
 
-- [The panel](#the-panel): [Panes](#panes) · [Layouts](#layouts) · [The control bar](#the-control-bar) · [Looks and icons](#looks-and-icons) · [The status card](#the-status-card) · [Scrolling and selection](#scrolling-and-selection) · [Keys](#keys) · [Switching sessions](#switching-sessions) · [Agents in the list](#agents-in-the-list) · [Timeline](#timeline) · [Agent log](#agent-log) · [Inspector and Changes](#inspector-and-changes) · [Settings](#settings) · [Card settings](#card-settings) · [LLM](#llm) · [Picture](#picture)
+- [The panel](#the-panel): [Panes](#panes) · [Layouts](#layouts) · [The control bar](#the-control-bar) · [Looks and icons](#looks-and-icons) · [The status card](#the-status-card) · [Scrolling and selection](#scrolling-and-selection) · [Keys](#keys) · [Switching sessions](#switching-sessions) · [Agents in the list](#agents-in-the-list) · [Agent log](#agent-log) · [Inspector](#inspector) · [Changes summary](#changes-summary) · [Settings](#settings) · [Card settings](#card-settings) · [LLM](#llm) · [Picture](#picture)
 - [Output throughput](#output-throughput)
 - [Machine-readable state](#machine-readable-state)
 - [Configuration](#configuration): [Environment Variables](#environment-variables) · [Notifications](#notifications) · [config.toml](#configtoml)
@@ -261,11 +261,10 @@ The panel has one passive page, **Home**: needs-you questions (or `✓ Nothing n
 | `Ctrl+\`, then | Opens |
 |---|---|
 | `1` | Home |
-| `2` / `3` | Nothing yet: kept for the Project tab |
+| `3` | Changes summary |
 | `4` or `v` | Inspector |
-| `t` | Timeline |
 
-**Keys on Home.** `1` returns Home; `2`, `3`, Tab/Shift-Tab and Left/Right (`h`/`l`) do nothing on the page. Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection; `n`/`N` select the next/previous trouble without leaving Home. Enter, or a click on the selected item, expands/collapses in place. Cards and decisions start collapsed (display only, not saved). On a lane header Enter folds or
+**Keys on Home.** `1` returns Home; `3` opens Changes; `2`, Tab/Shift-Tab and Left/Right (`h`/`l`) do nothing on the page. Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection; `n`/`N` select the next/previous trouble without leaving Home. Enter, or a click on the selected item, expands/collapses in place. Cards and decisions start collapsed (display only, not saved). On a lane header Enter folds or
 unfolds the lane. `o` opens the selected item's file in `$EDITOR` beside the panel: a job's open question with its
 answer file, else its `report.md`, else its `brief.md`; a decision's `qa` file. `v` or Space inspects. Esc returns from
 the Inspector, and standalone Esc on the main page exits as before. The footer keeps whole hints only
@@ -325,7 +324,7 @@ are unchanged. Light/terminal palettes retain their legible equivalents. Mono an
 
 ### Panes
 
-There are four panes: **1 Agents** (the cards in rich, the tree in compact), **2 Timeline**, **3 Changes** (the worktrees over the changed files) and **4 Inspector**; Agents is open by default, the others open from the bar or with `Ctrl+\` `2`–`4`. Panes stack vertically. Each has a **title row** naming it, drawn as the panel's look draws it (below), with which rows are in view at its right end when it scrolls (`7–14/46`), or else how many it holds (`4 files`, `9 events`); then its rows behind a gutter `│` on the left only (in the accent for the focused pane, dim for the rest): no right border and no bottom rule. In a panel 30 rows or taller a blank row parts the sections: under the bar, between two panes and above the status card; never at a pane's expense, and not in the frame look, whose edges part them already. A pane is **open or closed**; a closed one takes no row at all. A click on a pane's title zooms it to the room between the bar and the status card, and a second click restores it, as `Ctrl+\` `z` does. A pane takes no more rows than it has to show; spare height goes to Agents, or to the Inspector while it has the focus. The agents area works the same way: its title row carries the counts, a click on it zooms the cards, and it can be closed from the bar, the other panes then sharing its room.
+Home is the live page. The retained secondary renderer has Agents (cards or compact tree), Changes (repository/worktree summary only) and Inspector (agent/job evidence). Settings and Help remain. The old Agents pane stays until NATIVE-TREE; secondary panes retain their focus, scroll and title-zoom controls. There is no Timeline, activity hub, Summary or diagnostics page, and no stacked-versus-tabs preference.
 
 ### Layouts
 
@@ -342,14 +341,11 @@ Every view counts alike: an **agent** is one the main session started, a **subta
 **The control bar** is the panel's first row (two in the frame look), and every control the panel has is on it; cards, the status card and the panes' titles draw none. Each control is a **button**: its icon, and its word where it fits. No key is written on it; the keys are in the help.
 
 ```
-120 columns   ⌂ Main   ▦ Agents   ≣ Timeline  ± Changes  ◫ Inspect  ⚙ Settings                  ǁ Pause models  ⊕ 1 finished  ? Help
- 56 columns   ⌂  ▦ Agents   ≣ Timeline  ±  ◫  ⚙ Settings      ǁ ⊕1 ?
- 40 columns   ⌂  ▦ Agents  ≣ ± ◫ Settings     ǁ ⊕1 ?
- 32 columns   ⌂  ▦  ≣ ± ◫ Settings    ǁ ⊕1 ?
+⌂ Main   ▦ Agents   ± Changes   ◫ Inspect   ⚙ Settings   ǁ Pause models   ? Help
 ```
 
 - `⌂` returns Codex to the main session. Its word (Main) shows where every button has room for its own, and in the frame look's title wherever it fits.
-- The tabs are the panes, in their order: `▦` Agents, `≣` Timeline, `±` Changes, `◫` Inspect, each the icon its pane's title carries. The focused tab is drawn as the look draws it (a filled tab in the tab look); an open one is in the text colour, a closed one dim. In the stacked layout one click opens a closed pane and focuses it, and closes an open one, the cards included; in the tabs layout it shows that pane, and the pane's title leaves its name to the tab: it is the pane's counts and where its rows are (`✓38 done  · 101 subtasks    23–44/103`), or in the frame look the frame's edge alone.
+- Secondary pane buttons are `▦` Agents, `±` Changes and `◫` Inspect. They open/focus or close their pane. The Home page has its own top row; `3` opens Changes, `v` inspects.
 - `⌨` (Keys here) appears while the panel keeps the keys (after a click on a blank row or a gutter): nothing typed reaches Codex until Esc or a click on it hands them back. It is in the accent, its word where the row has room, and it is never given up for room before the help button.
 - `⇢` (Switch) appears while an agent is selected in the Agents pane, or open in the Inspector: a click switches the actual Codex conversation to it, as `o` does. It gives way for room together with the models' button.
 - `ǁ` / `▶` (Pause models / Resume models) toggles the same Model text master preference, shown when the model service is available; `⊕N` shows the finished agents the linger window put away and `⊖` hides them again, shown only when there are some (in rich, the agents, the list's rows: their descendants belong to their cards rather than adding entries to this button's count; in compact, every row the tree put away). Where the row fits the words it reads `⊕ N finished`, or `⊖ Hide` while they are shown; otherwise it stays `⊕N` / `⊖N`. With icons set to text it stays `+N older`. The labelled **Settings** navigation tab opens settings; `?` opens the help. Settings stays on the navigation row, including the frame look's second row, not among the right-side actions. Its word survives at 24 columns and above; below that it uses a short word, not a gear alone.
@@ -360,21 +356,21 @@ Every view counts alike: an **agent** is one the main session started, a **subta
 **Look** (Settings → Display → Look, or `CODEX_HUD_LOOK`) draws the bar and the panes' titles in one of five ways. Picking a look in Settings sets Icons to the set it was drawn with (`CODEX_HUD_LOOK` alone leaves them as they are); Icons can change them after.
 
 ```
-tab     ⌂  ▦ Agents   ≣ Timeline  ±  ◫  ⚙ Settings      ǁ ⊕1 ?
-band    ⌂ ▦ Agents   ≣ Timeline   ±   ◫   ⚙ Settings ── ǁ ⊕1 ?
-tile    ⌂  🤖 Agents    🕘    📝    🔍    Settings      ǁ ⊕1 ?
-frame  ╭─ ⌂ Main ────────────────────────── ǁ ⊕ 1 finished ? ─╮
-       │  ▦ Agents    ≣ Timeline   ±   ◫   ⚙ Settings         │
-pill    ⌂ ▦ Agents  ≣ Timeline  ±  ◫  ⚙ Settings      ǁ ⊕1 ?
+tab     ⌂  ▦ Agents   ± Changes  ◫ Inspect  ⚙ Settings
+band    ⌂ ▦ Agents   ± Changes   ◫ Inspect   ⚙ Settings ──
+tile    ⌂  🤖 Agents    📝 Changes    🔍 Inspect    Settings
+frame  ╭─ ⌂ Main ──────────────────────────────────────╮
+       │  ▦ Agents    ± Changes   ◫ Inspect   Settings │
+pill    ⌂ ▦ Agents  ± Changes  ◫ Inspect  ⚙ Settings
 ```
 
 - **tab** (Tab row, the default; Unicode icons): the focused tab is filled, a column of its colour either side of its face. A pane's title is its icon and name, the accent where the focus is, on no surface of its own.
 - **band** (Status band; Unicode icons): the bar is a band on its own background, as the status card's is, its spare columns an accent rule between the tabs and the actions; the focused tab is in the accent. The panes' titles are bands too, a zoomed one filled as the focused tab is.
 - **tile** (Emoji tiles; emoji icons): every open tab sits on a chip of its own, the focused one filled; a pane's title runs on into a rule, the accent where the focus is.
-- **frame** (Frame; Unicode icons): a rounded frame round the whole panel. The main session is the title on its top edge, with the actions at that edge's right end; the tabs are the row under it; each pane's title is an edge across the frame (`├─ ± Changes ──────────── 4 files ─┤`), its rows between the frame's sides (the left one in the accent beside the focused pane), and the status card's corner closes it (`╰─ … ─╯`). Under 20 columns it is drawn as tab.
+- **frame** (Frame; Unicode icons): a rounded frame round the whole panel. The main session is the title on its top edge, with the actions at that edge's right end; the tabs are the row under it; each pane's title is an edge across the frame (`├─ ± Changes ──────────────────────┤`), its rows between the frame's sides (the left one in the accent beside the focused pane), and the status card's corner closes it (`╰─ … ─╯`). Under 20 columns it is drawn as tab.
 - **pill** (Pills; Nerd Font icons): the focused tab is a pill with rounded ends; the panes' titles are pills, the focused pane's in the tab colour, the rest on a chip.
 
-**Icons** (Settings → Display → Icons, or `CODEX_HUD_ICONS`) picks the set: `unicode` (the glyphs above), `nerd` ([Nerd Font](https://www.nerdfonts.com/) icons: a home `U+F015`, a robot `U+F06A9`, a history clock `U+F1DA`, a diff `U+F440`, an info circle `U+F05A`, pause / play `U+F04C` / `U+F04B`, an eye and a struck eye `U+F06E` / `U+F070`, a cog `U+F013`, a question circle `U+F059`), `emoji` (the panes as 🤖 🕘 📝 🔍, two columns each, the actions keeping their Unicode glyphs), or `text`: the buttons are words alone (`← Main`, `Agents Timeline Changes Inspect`, `Pause models`, `+1 older`, `Settings Help`), shortened where narrow (`Ag Tl Ch In`, `Pause`); set to text, the panel's other marks are words too (`12d ago`, the bottom bar's `Working` and `Idle`). Model label (`glyphs`) is the panel's model badge's alone: its text value writes the model and effort as words and leaves the icons as they are. The bottom bar always names the model in words. The Unicode and Nerd Font icons and the pills' rounded ends are drawn by MesloLGS NF (see [Font](../README.md#font)).
+**Icons** (Settings → Display → Icons, or `CODEX_HUD_ICONS`) picks the set: `unicode` (the glyphs above), `nerd` ([Nerd Font](https://www.nerdfonts.com/) icons: a home `U+F015`, a robot `U+F06A9`, a diff `U+F440`, an info circle `U+F05A`, pause / play `U+F04C` / `U+F04B`, an eye and a struck eye `U+F06E` / `U+F070`, a cog `U+F013`, a question circle `U+F059`), `emoji` (the panes as 🤖 📝 🔍, two columns each, the actions keeping their Unicode glyphs), or `text`: the buttons are words alone (`← Main`, `Agents Changes Inspect`, `Pause models`, `+1 older`, `Settings Help`), shortened where narrow (`Ag Ch In`, `Pause`); set to text, the panel's other marks are words too (`12d ago`, the bottom bar's `Working` and `Idle`). Model label (`glyphs`) is the panel's model badge's alone: its text value writes the model and effort as words and leaves the icons as they are. The bottom bar always names the model in words. The Unicode and Nerd Font icons and the pills' rounded ends are drawn by MesloLGS NF (see [Font](../README.md#font)).
 
 ### The status card
 
@@ -402,26 +398,23 @@ Compact keeps min and status (full there is status); `Ctrl+\` `r` switches betwe
 
 ### Scrolling and selection
 
-The view under the agents' title row scrolls when it does not fit: the wheel over it, `PgUp`/`PgDn`, and moving the selection, which brings the selected agent into view. The title row says at its right end which rows are in view (`6–17/40`). Where it is scrolled to holds across repaints and new content, and is clamped when content shrinks. A view under 12 rows drops its blank lines before it hides content. The status card and the open panes 2–4 keep their place.
+The view under the agents' title row scrolls when it does not fit: the wheel over it, `PgUp`/`PgDn`, and moving the selection, which brings the selected agent into view. The title row says at its right end which rows are in view (`6–17/40`). Where it is scrolled to holds across repaints and new content, and is clamped when content shrinks. A view under 12 rows drops its blank lines before it hides content. The status card and the open secondary panes keep their place.
 At 16–20 columns, margins shrink. Use `Ctrl+\` `z` to give the focused pane the full height.
-Selection follows agent IDs and file paths across refreshes, and every pane retains its scroll position.
+Selection follows agent IDs across refreshes, and every pane retains its scroll position.
 
 ### Keys
 
-Every key below follows the prefix: `Ctrl+\`, then the key (or the prefix chosen in Settings; a settings file saved before `Ctrl+\` became the default, with no prefix of its own, keeps `Ctrl+]`, which Codex 0.160 also binds to Skip Question). Outside settings, help, activity and evidence modals, a key typed without it goes to Codex.
+Every key below follows the prefix: `Ctrl+\`, then the key (or the prefix chosen in Settings; a settings file saved before `Ctrl+\` became the default, with no prefix of its own, keeps `Ctrl+]`, which Codex 0.160 also binds to Skip Question). Outside Settings and Help, a key typed without it goes to Codex.
 
 | `Ctrl+\`, then | Action |
 |-----|--------|
-| `u` | Activity hub: inbox, since viewed, find, history |
-| `p` | Find agents by name, role or path; pin selected agents |
-| `c` | Evidence sources, model-call dashboard, diagnostic preview/export |
 | `,` / `?` | Open settings / the help (also the Settings tab and `?` button); in settings, arrows, Enter and click change values, Save applies them. The help has three pages, a tab each beside its title: Keys, Mouse (the buttons and the mouse) and Legend; a click on a tab, Tab/Shift+Tab or ←/→ turn them, ↑/↓ and PgUp/PgDn scroll one. Too narrow for the three tabs, it shows `‹ page ›`, each arrow a click to the page before or after |
-| `Tab` / `Shift+Tab` | Cycle pane focus (in the tabs layout, show the next or the previous pane) |
-| `1`–`4` | Open and focus a pane, or close it if it is open: `1` Agents (the cards in rich), `2` Timeline, `3` Changes, `4` Inspector; in the tabs layout, show it; so does a click on its tab |
+| `Tab` / `Shift+Tab` | Cycle secondary-pane focus; inert on Home |
+| `1`, `3`, `4` | Home, Changes summary, Inspector |
 | `x` | Close the focused pane (stacked layout) |
 | `j` / `k`, `↑` / `↓` | Move the selection or scroll; repeats without the prefix for half a second (`Ctrl+\` `j` `j` `j`) |
 | `PgUp` / `PgDn`, `g` / `G` | Page (the agents view scrolls a page; repeats), first/last item |
-| `Enter` / Space / `v` | Open Inspector on the selection (no card expansion); inside Inspector, expand/collapse timestamps, IDs and full paths (`▾ More`); in the Timeline, open the agent of the entry under the cursor (↑/↓ step through the agents' entries), else bring back twenty earlier entries |
+| `Enter` / Space / `v` | Home: Enter expands; Space / `v` inspects. In the old Agents pane, inspect the agent; inside Inspector, expand/collapse timestamps and IDs (`▾ More`). Changes has no selectable detail |
 | `h` / `l` (compact) | Fold/unfold or navigate parent/child agents |
 | `s` | Active-first / creation order |
 | `a` | Show or hide the finished agents the tree has put away (the `⊕N` button) |
@@ -444,24 +437,6 @@ Every key below follows the prefix: `Ctrl+\`, then the key (or the prefix chosen
 | Click a card (rich) | Select it, without expanding or collapsing. A second click on the name within 400 ms switches (underlined when the Codex pane is at least 63 columns). A child line selects that child. Enter, Space, `v` or `◫` opens the Inspector |
 | Click an agent (compact) | Open the Inspector; a second click within 400 ms switches |
 | Click a blank row, or the gutter | Keep the next keys in the panel until Esc. While they are held the bar shows `⌨ Keys here` (the glyph alone where narrow, `Keys` with icons set to text); a click on it hands them back too |
-
-### Local activity and evidence
-
-`Ctrl+\ u` opens a modal with five tabs. Tab/left/right change tabs, arrows/wheel select rows, Enter inspects a current agent, and Escape returns. Historical agents absent from the current tree are not used as live navigation targets.
-
-- **Inbox:** observed approvals, failures and readback/collection problems. Mark read (`r`), snooze ten minutes (`s`), pin (`p`), or use the named buttons. Read is not resolved: recovery requires successful evidence from the corresponding source. This does not add another desktop notification channel.
-- **Since viewed:** unacknowledged completion/failure, observed Git-state changes and stored model-summary changes. `v` / Mark viewed acknowledges only the visible events; opening or closing the modal does not discard unseen events. Git file state is collected on demand while this tab or Changes is open; unavailable/stale state is labelled. This is not a complete between-times Git diff.
-- **Find:** filter name, role or agent path, including Unicode and pasted text. Ordinary letters are query text while editing; Ctrl+P or the Pin button pins the selection, Ctrl+F returns to query editing. Pins are scoped to the root session. Normal input forwarding resumes when the modal closes.
-- **History:** bounded observed state snapshots and their retained events, explicitly labelled historical. It does not record the conversation, restore the terminal or rerun tasks.
-- **Sessions:** the root sessions started in this session's directory over the last 7 days (at most eight, the most recently written first): when, how long ago, the session id's head, and `this session` on the current one. The selected one's resume command is under the list, whole (the id on lines of its own where the line cannot hold it): `$ codex resume <id>`. The HUD never runs it, and nothing here calls a model; the list is read from the rollouts' first lines only while the tab is open, at most every ten seconds.
-
-The private atomic journal under `$HUD_HOME/display/activity/` is scoped by root session and bounded to 500 events, 48 snapshots, 200 agents/pins, 30 days and 4 MiB serialized. It retains only necessary status, bounded paths and already generated model summaries, not raw tasks, conversation, commands or reasoning. Bar and panel both observe; concurrent panels merge changes. A contended/unwritable store remains visibly pending for a later flush. Time without a running HUD is not reconstructed.
-
-`Ctrl+\ c` explains main/selected-agent evidence, timestamps, estimated TPS and Herdr readback/conflicts. The status-band TPS is clickable; `Ctrl+\ d` retains the Inspector diagnostics with a Sources/Calls/Export entry. Unknown data remains unknown, and lifecycle completion does not verify work quality.
-
-The Calls tab groups locally observed requests, cache hits, successes, failures, cancellations, limits and mean dispatch-to-settlement duration by feature, including connection probes. Retention is 24 hours / 1000 records. Requests include cached consumers and refusals, not just provider calls; durations exclude queue time. Other panels' pending work and older/pre-instrumentation calls are unavailable. Unknown tokens and dollar cost are not estimated as billing.
-
-Export shows a fixed full JSON preview first. Save report / `s` writes those exact bytes to a new 0600 file under `$HUD_HOME/display/diagnostics/`. It excludes credentials, endpoints, identifiers, file paths and source/summary text. Versions, platform and a startup entry-file hash identify only the entry observed at process start, not the whole build or current Git checkout.
 
 Repeated positively idle, unchanged observations gradually reduce collection to at most five seconds (an already slower configured cadence is preserved). Activity, uncertainty, failure, input or source change restores normal polling. Redraw/input remain independent. Large scans yield between chunks; individual JSON parsing remains synchronous. Poll cadence is not a model or notification delivery guarantee.
 
@@ -509,55 +484,11 @@ Parent links support both metadata locations. Missing status evidence stays unkn
 
 Each agent's rollout is read once, each read going on from where the last one stopped. How far each was read and what it held (status, stages, open calls) is kept in `$HUD_HOME/display/scan/`, one file for each rollout of more than 256 KB (mode 0600, removed after a week neither used nor written), so a panel or bar started again reads only what was written since. A saved read is used only while the file still matches it (the same file and thread, the bytes it ended on unchanged); otherwise the rollout is read again from its start.
 
-Agents are named by the last segment of their task path, the name Codex's `/subagents` picker shows: `/synthetic/tokenizer-checks` reads `tokenizer-checks`. That name remains until an eligible native label arrives under the Model text master switch. The short model label can then name the agent in cards, rows, the compact tree, Timeline and Inspector heading. The Inspector retains the native name used for switching. Cards → Task label suppresses labels on cards only; it does not change naming elsewhere or request a new label. There is no separate Agent names LLM control. The random nickname Codex also assigns stays in the Inspector; observed roles appear on work cards. Guardian approval reviews have no separate work card: their evidence remains in the Inspector and aggregate counts, not a card chip.
+Agents are named by the last segment of their task path, the name Codex's `/subagents` picker shows: `/synthetic/tokenizer-checks` reads `tokenizer-checks`. That name remains until an eligible native label arrives under the Model text master switch. The short model label can then name the agent in cards, rows, the compact tree and Inspector heading. The Inspector retains the native name used for switching. Cards → Task label suppresses labels on cards only; it does not change naming elsewhere or request a new label. There is no separate Agent names LLM control. The random nickname Codex also assigns stays in the Inspector; observed roles appear on work cards. Guardian approval reviews have no separate work card: their evidence remains in the Inspector and aggregate counts, not a card chip.
 
 With the session read and its tree built, a session that has started no agent, subtask or review says so in one dim line under the title (`No agents started in this session yet`), with where the help is; until then, or with no session bound, the view stays blank rather than guess. With Model text off or no matching endpoint key, no new summaries are written. Stored model log entries are retained on disk but hidden while the service is off; native names and factual state still render.
 
 Finished agents leave the list 3 minutes after they finish (Settings → Hide finished: 1m, 3m, 10m, 30m or never). Running and failed agents never leave, and a finished agent whose child is still shown stays dimmed (still a card in rich). The optional card clock, or the compact row, says how long ago it finished; the control bar counts what was put away (`⊕12`), and clicking that or `Ctrl+\` `a` shows everything again.
-
-### Timeline
-
-Pane 2, closed by default, lays the session out on the main session's axis, newest first, each entry with its age, said once at the top of a run of entries of one age.
-
-| Level | What gets a line |
-|-------|------------------|
-| The main session (left) | A turn that finished, with the head of what it told you (`⏎`), approvals asked for and answered, compaction, a quota window crossing 80 % and 95 %, turns interrupted or failed, and failed tool calls, each by the command it ran (an `exec` script's first command, `✗ rg -n …`), else the tool's name; the same one in a row is one line with `×N`. |
-| An agent the main session started (a level in) | A line for each of its stages: one that ended sits at its end, with how long it took, the subtasks under it, at any depth, that finished in that time (`✓2 ✗1`) and, for the agent's newest, the first lines of what it returned; one still running sits at its start, with its clock and what the agent said it would do. A helper's stage names the lead it was for (`Performance advice → Tokenizer speed`). |
-| A subtask (a level further in) | Only those that matter (failed, flagged or in Key roles, independent of the card Child scope), at their end |
-
-- Each agent is in its direction's colour, the one its card's name has: an L1 and the agents under it share a colour, a helper takes its lead's, and directions at work side by side get colours apart.
-- **Agent colours** (Settings → Display, `agentColors`) says where that colour shows: on names and marks (`name`, the default), on the marks alone (`mark`: the timeline's rails and lanes, and the work kind's glyph on a card, the names in the text colour), or nowhere (`off`). The Inspector's heading follows it too.
-- A failure's cause, when the enabled model service wrote one, is under it, marked `~`.
-- Facts the rollouts recorded only: a quiet stretch is not an entry. Guardian reviews' comings and goings are left out, their failures kept.
-- A pending approval also says how long it has waited, on the bar's alert (widest form) and in the panel's status card.
-
-Settings → Panel → Timeline style draws the levels three ways:
-
-```
-rail      28m ⏎ CJK stage 1 is merged; vertical punct…
-          30m ├─▸ Performance advice                 ◵
-              │    Checking whether the lookup table
-          40m │ ╰✗ b03_review_harness              15m
-          50m ├─▸ CJK correctness                    ◴
-
-indent    28m ⏎ CJK stage 1 is merged; vertical punct…
-          30m   ▸ Performance advice                 ◵
-                  Checking whether the lookup table
-          40m     ✗ b03_review_harness             15m
-          50m   ▸ CJK correctness                    ◴
-
-lanes     28m ⏎ │ │ CJK stage 1 is merged; vertical p…
-          30m │ ▸ │ Performance advice               ◵
-              │ │ │   Checking whether the lookup
-          40m │ ✗ │   b03_review_harness           15m
-          50m │ │ ▸ CJK correctness                  ◴
-```
-
-- **rail** (the default): the main session's entries on a rail down the left, the agents' off it, a subtask's a step further.
-- **indent**: the same levels as indents alone.
-- **lanes**: a lane beside the main session's for each direction that has subtasks or is at work, three of them, four from 48 columns wide; a direction's entries sit on its lane, and a lane runs from the top while its direction is at work.
-
-Settings → Panel → Timeline span is the window: the last 1, 3 (the default), 6, 12 or 24 hours, and at least the newest eight entries whatever their age; a stage still running shows wherever it started. What is earlier is counted on a last row, `▸ 40 earlier`: a click on it, or Enter while the Timeline has the focus, brings back twenty more at a time. An agent's entry opens that agent in the Inspector: a click on any of its lines, or ↑/↓ to put the cursor on it (the cursor stops only on agents' entries and the earlier row; down starts at the top of the view) and Enter. Esc from that Inspector comes back to the Timeline, its cursor where it was. PgUp/PgDn, `g`/`G` and the wheel still scroll the view, and let the cursor go.
 
 ### Agent log
 
@@ -569,7 +500,7 @@ Each subagent has a log, newest first: its starts, finishes and failures and its
 - **In compact:** Each block is headed by the agent's status, kind glyph and Codex name, with its model name or task on the line under it; each agent shows its latest two entries, the selected one six and leads the list, and the Inspector shows all of them but the update it shows above, and none while the log holds only starts and finishes. Each entry's age is a column of its own, its text hanging beside it, without chat markdown. Clicking a log line opens the Inspector on that agent.
 - **Storage and switches:** The log is kept per session in `$HUD_HOME/display/agent-log/` (mode 0600, removed after 30 days). Stored model notes, digests and causes are retained but not passed to the renderer with Model text off or no matching key; they can be shown again in the current language when the service is on. In compact and the Inspector, observed entries are always available while the model service is on; otherwise Agents → Agent log controls those observed entries independently. Neither switch turns the log into card history.
 
-### Inspector and Changes
+### Inspector
 
 Inspector shows, in this order:
 
@@ -586,11 +517,9 @@ Press `v` for full timestamps and UUIDs. Session-switch notices stay in the foot
 
 The Inspector's **~ Model summary** section shows the newest stored model note in the panel language, separately from the agent's own Latest update. **Coverage** (`coverageAt`) identifies the public snapshot covered; **Generated** (`generatedAt`) is when the result was produced. Each appears only when that metadata is explicitly known. Older notes without coverage metadata say **Recorded** (their log timestamp), never an invented coverage boundary; no generated time is inferred. The section also explains progress context: model service off or unavailable, summary hidden, agent not live, no public progress evidence, refresh cooldown, retry wait (and remaining retry delay when known), progress concurrency cap or hourly model call cap. Queued and writing are distinct states. These diagnostics read existing state and do not broaden progress targets; rendering them makes no model call.
 
-Changes lists the worktrees over the files, where there is more than one: a row each, the one whose files are listed marked `●` and in bold, how far its branch is from upstream (`↑2`, `↓1`) and its state on the right (`4 mod`, `clean`, `locked`); then a rule naming it again with its counts (`─ main · 2 unstaged ───`), and its files. One cursor runs through the worktrees and the files: on a worktree's row it lists that worktree's files, and Enter shows its details in the Inspector (its HEAD commit's subject, branch, state and counts, the full path under More; no hash). A settings file from before, with a Worktrees pane saved open, opens Changes. The files belong to the listed worktree; no file ownership is inferred from agent activity.
-Each file is one letter for what happened to it, in its colour: `M` modified (yellow), `A` added (green), `D` deleted (red), `R` or `C` renamed or copied (blue), `!` a conflict (red); the lines it adds and removes are at the right end where they fit (`+12 −3`), and the counts above the list say how many are staged and unstaged. Untracked files fold into one last row, `▸ 12 untracked`: Enter or a click lists them under it, and again folds them. Compact summaries use Δ for changed files, S for staged and U for unstaged.
-Select a file and press Enter for staged/unstaged patches (their hunks; the git header, which repeats the path and names blobs by hash, is left out) or bounded untracked-file content; an untracked directory lists how many files it holds and their paths. The heading names the file, with the lines it adds and removes (`+12 −3`) and, dim under it, its folder; each section is headed Staged, Unstaged or Untracked in the panel's language. A long line wraps where a word ends, its later rows two columns in so the `+`/`-` column starts only its first; a tab is spaces to the next fourth column. Inspector zooms automatically; Esc restores the panes.
-Long preview lines wrap; additions are green, deletions red and hunk markers cyan, retaining +/- markers without color. Git reads disable external diffs,
-content filters and partial-clone lazy fetching. The panel provides no staging, commit or checkout actions.
+### Changes summary
+
+`3` / `Ctrl+\ 3` keeps Changes as a factual summary: the source repository's branch and HEAD, ahead/behind counts (unknown without upstream evidence), staged/unstaged/untracked counts, and one row per worktree with its path, branch and dirty/clean state. Missing or stale status stays unknown. There are no per-file lists, file/worktree selection, Inspector previews or diffs. Collection runs only while Changes is focused, with bounded round-robin worktree status probes; Git filters and lazy fetching stay disabled. It provides no staging, commit or checkout actions. PAGES-BUILD will restyle this retained summary.
 
 ### Settings
 
@@ -598,21 +527,21 @@ The main Settings tab remains above the page and is highlighted while settings i
 
 **Reset group** (or plain `r` while settings is open) changes only the selected row's section in the draft; **Reset all** resets the known preferences owned by the settings page, not the entire settings file. Both require Save to apply. Neither resets the API base, model ID, hourly call cap or picture asset path/file, and neither changes credentials. Resetting LLM, or resetting all preferences, sets `modelEnabled: false`; it does not restore the key-aware enabled default. Other section resets leave the master preference alone.
 
-Settings → Panel → Width offers the widths the panel is laid out for: 32, 40, 48 columns (the default) and 56, each a step in what fits (the row meters, the model badge's words, the timeline's fourth lane); ←/→ step between them and come round past either end. Another width, from the settings file or a dragged border, still draws, and ←/→ step on from where it falls. Save applies it at once, and Codex keeps at least 41 columns, so in a narrow window the panel gets less than it asks for. A 0 from an older settings file reads as the default width, 48. The width is applied again whenever the tmux window changes size, as when a session started detached is attached from a wider terminal; dragging the border by hand is left alone. `CODEX_HUD_TREE_WIDTH` remains an initial override when no saved settings exist.
+Settings → Panel → Width offers the widths the panel is laid out for: 32, 40, 48 columns (the default) and 56, each a step in what fits (the row meters and the model badge's words); ←/→ step between them and come round past either end. Another width, from the settings file or a dragged border, still draws, and ←/→ step on from where it falls. Save applies it at once, and Codex keeps at least 41 columns, so in a narrow window the panel gets less than it asks for. A 0 from an older settings file reads as the default width, 48. The width is applied again whenever the tmux window changes size, as when a session started detached is attached from a wider terminal; dragging the border by hand is left alone. `CODEX_HUD_TREE_WIDTH` remains an initial override when no saved settings exist.
 
 Settings has seven contiguous groups, in this order:
 
 | Group | Rows |
 |-------|------|
 | Display | Theme, Look, Icons, Model label, Agent colours, Motion |
-| Panel | Language, Layout, Panes, Status card, the Timeline's style and span, Width, Picture |
+| Panel | Language, Layout, Status card, Width, Picture |
 | Agents | Order, Hide finished, Key roles, Agent log |
 | Cards | Task label, Agent summary, Turn clock, Stall threshold and Corners ([Card settings](#card-settings)) |
-| LLM | Model text, Model, Call cap ([LLM](#llm)) |
+| LLM | Model text, Model, Call cap; read-only calls this hour against the shared cap ([LLM](#llm)) |
 | Status bar | Bar on launch, Density, Context, Notifications |
 | Input | Mouse, Prefix key, Refresh |
 
-Related notification preferences share one row: Notifications (off, tmux, or tmux and the desktop). The panes 2–4 have no row: the bar opens and closes them, and remembers them.
+Related notification preferences share one row: Notifications (off, tmux, or tmux and the desktop). The secondary panes have no row: the bar opens and closes them, and remembers them.
 
 **Moving around**
 
@@ -643,7 +572,7 @@ Related notification preferences share one row: Notifications (off, tmux, or tmu
 
 **When the panel last read the session.** Above the help line, one row says when the panel last read the session (`HUD read the session 2s ago`) and, if a read has failed, where, when and why; a failure newer than the last good read is shown as a warning. That is how a quiet session and a HUD that cannot read stop looking alike, since a failed read otherwise leaves the last good values on screen.
 
-Agents → Key roles (`importantRoles` in the settings file) names the roles whose subtasks matter. The page offers none, the default, each role the session's subtasks have, as the observed roles say it, and what is set; several at once are a comma list in the settings file (`"importantRoles": "critic, oracle"`), which the page keeps among its values. A subtask in one of them is eligible under its lead's saved important-scope child-summary policy (not a restored child-card row) and gets a line in the Timeline. Failed or flagged subtasks also qualify. A name matches the role or the role's end after a dash, so `critic` names `team-platform-critic`. With none, only failed and flagged subtasks matter.
+Agents → Key roles (`importantRoles` in the settings file) names the roles whose subtasks matter. The page offers none, the default, each role the session's subtasks have, as the observed roles say it, and what is set; several at once are a comma list in the settings file (`"importantRoles": "critic, oracle"`), which the page keeps among its values. A subtask in one of them is eligible under its lead's saved important-scope child-summary policy (not a restored child-card row) without restoring child-card rows. Failed or flagged subtasks also qualify. A name matches the role or the role's end after a dash, so `critic` names `team-platform-critic`. With none, only failed and flagged subtasks matter.
 
 ### Card settings
 
@@ -678,7 +607,7 @@ Model text covers **thin-job card sentences and decision titles** and the retain
 - **Agent names:** A short task name and kind of work, based on the parent's public plaintext from before the agent was created (with task path and role), else a plaintext task. Up to eight tasks are batched, each capped at 400 characters. Encrypted Fernet tasks are never sent. Labels are kept by input hash and language in `display/model-cache/labels.json`. Until a label is available, the native name stays. Cards → Task label controls its display on cards, not label generation; the Inspector retains the native name used for switching.
 - **Card progress:** A native agent is eligible only through the existing rich-layout, visible-summary policy, while the Agents pane is shown and no modal is open. Agent summary and saved child-summary/scope preferences, filters and linger rules constrain targets. Input is public current-turn evidence: up to four reports of 600 characters each, stage intent (300), open tool/action (200), plaintext task and pre-create charge (300 each), name and role (80 each), stage metadata and descendant status counts. Without a public report, stage intent or open action, nothing is sent. Output is one sentence of at most 120 characters. Unchanged input is cached/deduplicated, changed input refreshes at most once per minute, and failures retry after ten minutes. Hiding the relevant summary or pane, opening a modal, switching the master off, or changing root/language/turn cancels obsolete work. Full notes and queue/failure/cap diagnostics stay in the Inspector.
 - **Result digest:** A completed native agent's public final answer is sent, up to 8,000 characters (head and tail for longer answers), for conclusion, basis and caveats. Long completed stage answers can also be digested. Results go to the agent log and Inspector. Agents finished more than an hour ago are considered only when inspected.
-- **Failure cause:** A failed native agent's recorded errors or last failed command output, or a failed main-session tool's command and output tail (up to 2,000 characters), produces one explanatory line. Agent causes go to the log and Inspector; tool causes are retained in memory for the Timeline. No recorded error output means no request.
+- **Failure cause:** A failed native agent's recorded errors or last failed command output, produces one explanatory line in the agent log and Inspector. No recorded error output means no request.
 
 Reasoning and private channels are excluded. Only the thin-job inputs listed above are newly admitted; legacy facade-only jobs and task directories remain excluded. There is no job-content consent flow. Periodic overviews, main recaps, session titles, approval wording and change summaries are no longer generated or loaded. Hidden/secondary views receive factual state only, not generated overview text. The old `codex-hud brief --dry-run` command now reports that periodic briefs and recaps were removed; it is not an input preview.
 
@@ -960,7 +889,7 @@ New sessions start with the compact bottom bar; `F12` or `/hud` opens the panel.
 
 ### Diagnostics and connection checks
 
-Press the HUD prefix (`Ctrl+\` by default), then `d`, to open HUD diagnostics
+Current read failures appear as notices in the panel; inspect an agent with `v` for its evidence
 in the Inspector, including the main session's TPS sample time, sample duration
 and estimation method. In an agent's Inspector, Enter expands those same TPS
 details. Current-turn, older/previous-turn and missing measurements are distinct.

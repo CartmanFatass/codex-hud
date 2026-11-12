@@ -834,7 +834,7 @@ export class ModelJobs {
       if (node.status !== 'error' || at === undefined || !node.rolloutPath) return;
       const id = `agent:${node.id}:failed:${at}`;
       if (this.causes.has(id) || (node.id !== input.inspected && input.now - at > CAUSE_RECENT_MS)) return;
-      if (!this.due(id, input.now) || this.inFlight('tool:') + this.inFlight('agent:') >= MAX_IN_FLIGHT) return;
+      if (!this.due(id, input.now) || this.inFlight('agent:') >= MAX_IN_FLIGHT) return;
       const file = node.rolloutPath;
       const generation = this.generation;
       this.running.add(id);
@@ -876,14 +876,6 @@ export class ModelJobs {
           }
         );
       }
-    });
-  }
-
-  /** The timeline with the causes known so far on their events. */
-  withCauses<T extends { id: string; cause?: string }>(events: readonly T[]): T[] {
-    return events.map((event) => {
-      const cause = this.causes.get(event.id);
-      return cause && event.cause !== cause ? { ...event, cause } : event;
     });
   }
 }

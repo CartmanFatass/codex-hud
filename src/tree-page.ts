@@ -21,9 +21,7 @@ import {
   dispatchDelegationAction,
   createClipboardProvider,
   withInputRefresh,
-  delegationActivityTarget,
   createNavigationGate,
-  revealDelegationAncestors,
   createOpenGate,
   sameDelegationActionTarget,
   boundedActionNotice,
@@ -52,12 +50,7 @@ import {
 import { spawn, execFile, execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import {
-  SessionFinder,
-  findRolloutsInDaysYielding,
-  treeLookbackDays,
-  recentSessions,
-} from './collectors/session-finder.js';
+import { SessionFinder, findRolloutsInDaysYielding, treeLookbackDays } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
 import {
   buildSubagentTreeYielding,
@@ -66,14 +59,12 @@ import {
   flushTreeScans,
 } from './collectors/subagent-tree.js';
 import { TreeScanStore } from './collectors/tree-scan-store.js';
-import { collectGitChanges, readGitDiff, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import {
   renderMonitor,
   initialMonitorState,
   reconcileMonitor,
   handleMonitorInput,
-  canMonitorDiff,
   monitorModes,
   monitorSettings,
   monitorPreferences,
@@ -94,31 +85,7 @@ import { SmallModel, modelHttpRequest } from './collectors/small-model.js';
 import { ModelProbe, apiSettings } from './collectors/model-probe.js';
 import { JobSentences } from './collectors/job-sentences.js';
 import { DecisionTitles } from './collectors/decision-titles.js';
-import { hudProblems, diagnosticLines } from './render/hud-diagnostics.js';
-import { ActivityJournal } from './collectors/activity-journal.js';
-import {
-  initialActivityHubState,
-  renderActivityHub,
-  handleActivityHubInput,
-  type ActivityHubState,
-  type ActivityHubFrame,
-  type RecentSessionRow,
-} from './render/activity-hub.js';
-import {
-  initialObservabilityState,
-  renderObservabilityPage,
-  handleObservabilityInput,
-  type ObservabilityState,
-  type ObservabilityFrame,
-} from './render/observability-page.js';
-import {
-  createDiagnosticExportPreview,
-  saveDiagnosticExport,
-  type DiagnosticExportPreview,
-} from './diagnostics/diagnostic-export.js';
-import { captureRuntimeIdentity } from './diagnostics/runtime-identity.js';
-import { modelTelemetryLines } from './render/model-telemetry.js';
-import type { ModelTelemetrySummary } from './collectors/model-telemetry.js';
+import { hudProblems } from './render/hud-diagnostics.js';
 import {
   createAdaptivePollState,
   adaptivePollDue,
@@ -126,7 +93,6 @@ import {
   recordAdaptivePoll,
 } from './collectors/adaptive-poll.js';
 import { collectionObservation } from './utils/collection-observation.js';
-import { scopedActivityObservation } from './utils/activity-observation.js';
 import { ProgressSummarizer, progressTargets } from './collectors/progress-summary.js';
 import { cardSummaryTargets } from './render/cards.js';
 import { controlBar } from './render/control-bar.js';
@@ -139,8 +105,6 @@ import {
   displayOnlySummaryRoot,
   type JobSwitches,
 } from './collectors/model-jobs.js';
-import { WorkbenchHistory } from './collectors/workbench-events.js';
-import type { WorkbenchEvent } from './render/workbench-state.js';
 import { getCodexHome } from './utils/codex-path.js';
 import { getHudDisplayHome } from './hud-home.js';
 import { subtaskRoles } from './render/directions.js';
@@ -449,7 +413,6 @@ export function panelJobRenderState(
 /** At most one tail read per agent per this long, however often we repaint. */
 const AGENT_CONTEXT_INTERVAL_MS = 3000;
 // This identifies the entry file observed at startup, not files replaced later.
-const runtimeIdentity = captureRuntimeIdentity({ entryFile: import.meta.url });
 
 /** A path as people write it: the home directory as `~`. */
 function shortPath(file: string): string {
@@ -616,7 +579,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   // Typing here goes to Codex; with no Codex pane to give it to (the panel
   // run on its own), the keys drive the panel as they used to.
   const mainPane = STANDALONE_PANEL ? undefined : resolveMainPane();
-  // Search modals need literal Unicode and paste even in a standalone panel.
   const decoder = new WorkbenchInputDecoder('workboard', { forward: !STANDALONE_PANEL });
   const forwarder = new KeyForwarder(
     () => mainPane,
@@ -642,16 +604,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     return { ...next, ...monitorSettings(settings) };
   };
   let state = configuredState();
-  let journal = new ActivityJournal({ rootId: '' });
-  let journalRoot = '';
-  let agentLogRoot = '';
-  let activityHealthSuccess = { tree: 0, status: 0, worktrees: 0 };
-  let activityHub: ActivityHubState | null = null;
-  let activityFrame: ActivityHubFrame | undefined;
-  let observability: ObservabilityState | null = null;
-  let observabilityFrame: ObservabilityFrame | undefined;
-  let exportPreview: DiagnosticExportPreview | undefined;
-  let telemetry: ModelTelemetrySummary | undefined;
   let settingsPage: SettingsPageState | null = null;
   let settingsFrame: SettingsFrame | undefined;
   let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
@@ -675,11 +627,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   // the same rollout as the HUD, so it re-reads nothing while the file is still.
   let lastParsedRollout: string | null = null;
   let worktrees: WorktreesSnapshot | null = null;
-  let git: GitChanges | null = null;
-  let gitRevision = 0;
-  let gitObservedAt = 0;
-  let diff: string[] | undefined;
-  let diffKey = '';
+  let collectingGit = false;
+  let gitAgain = false;
   let error: string | null = settingsError || null;
   let frame: MonitorFrame | undefined;
   let frameRoot = '';
@@ -687,10 +636,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let lastPaint: string[] | null = null;
   let closed = false;
   let collecting = false;
-  let collectingGit = false;
-  let gitAgain = false;
-  let inspecting = false;
-  let inspectAgain = false;
   // Per-agent context fill and output rate, kept beside the tree because the
   // tree is rebuilt from the rollout on every collection and would otherwise lose them.
   const agentContext = new Map<string, AgentTokens>();
@@ -717,9 +662,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   );
   // Each subagent's log: observed changes and model notes, kept per session.
   const agentLog = new AgentLog(path.join(getHudDisplayHome(), 'agent-log'));
-  // The Timeline pane's events: the rollout's and the agent log's, one list.
-  const history = new WorkbenchHistory();
-  let timeline: WorkbenchEvent[] = [];
   // Visible summary subjects request public progress independently of the periodic brief.
   const progress = new ProgressSummarizer(model, agentLog, { onChange: () => render() });
   const updateProgress = () => {
@@ -728,12 +670,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     progress.update({
       tree,
       targets:
-        state.style === 'rich' &&
-        paneShown(state, 'agents') &&
-        !state.help &&
-        !settingsPage &&
-        !activityHub &&
-        !observability
+        state.style === 'rich' && paneShown(state, 'agents') && !state.help && !settingsPage
           ? progressTargets(
               tree,
               cardSummaryTargets({ tree, agentLog: logsIn(agentLog.snapshot(), language) }, state, now)
@@ -826,52 +763,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         }
       : undefined;
   };
-  const observeActivity = () => {
-    if (tree.rootId !== journalRoot) {
-      journal.flush();
-      journalRoot = tree.rootId;
-      journal = new ActivityJournal({ displayHome: getHudDisplayHome(), rootId: journalRoot });
-      activityHub = activityHub ? initialActivityHubState(activityHub.tab) : null;
-      exportPreview = undefined;
-    }
-    if (!journalRoot) return;
-    journal.observe(
-      scopedActivityObservation(journalRoot, agentLogRoot, {
-        tree,
-        data: currentHud(),
-        logs: agentLog.snapshot(),
-        git,
-        gitObservedAt,
-        gitFresh: !!git?.root && !git.error && gitObservedAt > 0 && Date.now() - gitObservedAt <= 15_000,
-        modelAvailable: modelOn,
-        healthSignals: Object.entries(activityHealthSuccess)
-          .filter(([, at]) => at > 0)
-          .map(([source, at]) => ({ key: `collector:${source}`, kind: 'health' as const, active: false, at })),
-      })
-    );
-  };
-  const sampleTelemetry = () => {
-    telemetry = model.telemetry();
-  };
-  const markActivitySourceSuccess = (source: keyof typeof activityHealthSuccess) => {
-    const failure = hudStatus.health.current().lastError;
-    if (
-      !activityHealthSuccess[source] ||
-      (failure?.source === source && failure.at.getTime() >= activityHealthSuccess[source])
-    )
-      activityHealthSuccess[source] = Date.now();
-  };
-  const captureExport = () => {
-    sampleTelemetry();
-    exportPreview = createDiagnosticExportPreview({
-      data: currentHud(),
-      tree,
-      selectedId: state.tree.selectedId ?? undefined,
-      telemetry,
-      runtimeIdentity,
-      nowMs: Date.now(),
-    });
-  };
   // The panel replaces the bar, so it publishes the same notifications and snapshot.
   const notifier = new Notifier(resolveNotifierOptions(process.env, settings));
   const snapshotWriter = new SnapshotWriter();
@@ -889,63 +780,13 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
 
   // The panel's top as a draft of the settings would draw it.
   const previewTop = (draft: HudSettings, width: number) =>
-    withDisplaySettings(draft, () => panelTop({ tree }, { ...state, tabbed: draft.paneLayout === 'tabs' }, width));
-  // This directory's recent sessions, read only while the activity hub's Sessions tab is open, at most every ten seconds.
-  let sessionsRead: { at: number; cwd: string; rows: RecentSessionRow[] } | null = null;
-  const sessionList = (): RecentSessionRow[] => {
-    const cwd = main?.session?.cwd || HUD_CWD;
-    const now = Date.now();
-    if (!sessionsRead || sessionsRead.cwd !== cwd || now - sessionsRead.at >= 10_000) {
-      let rows: RecentSessionRow[] = [];
-      try {
-        rows = recentSessions(cwd).map((file) => {
-          return {
-            id: file.sessionId,
-            modifiedAt: file.modifiedAt.getTime(),
-            ...(file.sessionId === tree.rootId ? { current: true } : {}),
-          };
-        });
-      } catch {
-        /* An unreadable sessions directory lists nothing. */
-      }
-      sessionsRead = { at: now, cwd, rows };
-    }
-    return sessionsRead.rows;
-  };
+    withDisplaySettings(draft, () => panelTop({ tree }, state, width));
   const render = () => {
     if (closed) return;
     syncPanelView();
     const output = time('render', () => {
       let lines: string[];
-      if (activityHub) {
-        activityFrame = renderActivityHub(
-          journal.view(),
-          activityHub,
-          process.stdout.columns || 30,
-          process.stdout.rows || 24,
-          Date.now(),
-          activityHub.tab === 'sessions' ? sessionList() : []
-        );
-        activityHub = activityFrame.state;
-        lines = activityFrame.lines;
-      } else if (observability) {
-        const width = process.stdout.columns || 30;
-        observabilityFrame = renderObservabilityPage(
-          observability,
-          {
-            sources: diagnosticLines(currentHud(), width, Date.now(), {
-              tree,
-              selectedId: state.tree.selectedId ?? undefined,
-            }),
-            calls: modelTelemetryLines(telemetry, width),
-            preview: exportPreview?.json,
-          },
-          width,
-          process.stdout.rows || 24
-        );
-        observability = observabilityFrame.state;
-        lines = observabilityFrame.lines;
-      } else if (settingsPage) {
+      if (settingsPage) {
         // Key roles offers the roles the subtasks have now.
         settingsFrame = renderSettingsPage(
           { ...settingsPage, roles: subtaskRoles(tree) },
@@ -953,7 +794,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           process.stdout.rows || 24,
           {
             state: hudStatus.health.current(),
-            modelCalls: !modelOn ? undefined : model.usage(),
+            modelCalls: model.usage(),
             probe: probe.current(),
             settingsFile: shortPath(settingsPath()),
           },
@@ -998,9 +839,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           workboard: decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree, panelDelegation))),
           modelEnabled: settings.modelEnabled,
           state,
-          git,
           worktrees,
-          diff,
           error,
           nowMs,
           hud: hud ? { ...hud, delegation: panelDelegation } : hud,
@@ -1017,7 +856,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
             backendOn: modelOn,
             targets: cardSummaryTargets({ tree, agentLog: agentLogs }, state, nowMs),
           },
-          timeline: modelOn ? jobs.withCauses(timeline) : timeline,
           status: (nowMs) => statusCard(hud ?? null, nowMs),
           session: (nowMs) => sessionState(hud ?? null, nowMs),
           width,
@@ -1050,7 +888,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const data = hudStatus.current();
     const activity = data?.activity;
     const anchor = activity?.state === 'working' ? activity.turnStartedAt?.getTime() : undefined;
-    if (settingsPage || activityHub || observability) return nextRepaintDelay(now, anchor);
+    if (settingsPage) return nextRepaintDelay(now, anchor);
     let live = activity?.state === 'working';
     if (!live)
       walkNodes(tree.nodes, (node) => {
@@ -1080,7 +918,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       const target = resolveResetTime(window, now);
       if (target) consider(msUntilCountdownChanges(target.getTime(), now));
     }
-    if (paneShown(state, 'timeline')) for (const event of timeline) ageAt(event.at);
     return Math.min(60_000, Math.max(1, wait));
   };
   const scheduleRepaint = () => {
@@ -1178,45 +1015,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       readingAgentContext = false;
     }
   };
-  const refreshInspection = async () => {
-    if (closed) return;
-    if (inspecting) {
-      inspectAgain = true;
-      return;
-    }
-    inspecting = true;
-    const selectedFile = git?.files.find((file) => file.path === state.selectedFile);
-    try {
-      if (state.preview === 'file' && selectedFile && git?.root && canMonitorDiff(frame)) {
-        const key = JSON.stringify([git.root, selectedFile.path, gitRevision]);
-        if (key !== diffKey) {
-          const repoRoot = git.root;
-          const revision = gitRevision;
-          const result = await readGitDiff(repoRoot, selectedFile);
-          if (
-            !closed &&
-            state.selectedFile === selectedFile.path &&
-            git?.root === repoRoot &&
-            gitRevision === revision
-          ) {
-            diff = result;
-            diffKey = key;
-          } else inspectAgain = true;
-        }
-      }
-    } catch {
-      if (state.preview === 'file') diff = ['Unable to read this file preview'];
-    } finally {
-      inspecting = false;
-      render();
-      if (inspectAgain && !closed) {
-        inspectAgain = false;
-        void refreshInspection();
-      }
-    }
-  };
-  const collectionScope = () =>
-    `${tree.rootId}:${activityHub?.tab ?? observability?.tab ?? state.focus}:${JSON.stringify(state.modes)}`;
+  const collectionScope = () => `${tree.rootId}:${state.focus}:${JSON.stringify(state.modes)}`;
   const collect = async (force = false) => {
     if (force) {
       adaptive = forceAdaptivePoll(adaptive);
@@ -1294,18 +1093,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       const rootId = main?.session?.id ?? session?.sessionId ?? selectedRoot ?? '';
       if (rootId !== tree.rootId) {
         state = configuredState();
-        diff = undefined;
-        diffKey = '';
-        git = null;
-        gitObservedAt = 0;
         worktrees = null;
-        // Cancel old-root writers before loading the next root's model log. A failed
-        // subsequent tree read must never journal the previous session's summaries.
+        // Cancel old-root writers before loading the next root's model log.
         progress.stop();
         jobs.stop();
         agentLog.attach(rootId);
-        agentLogRoot = rootId;
-        activityHealthSuccess = { tree: 0, status: 0, worktrees: 0 };
         agentContext.clear();
         agentContextReadAt.clear();
         tree = { rootId, nodes: [], totalCount: 0, updatedAt: new Date() };
@@ -1337,15 +1129,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       nativeTree = tree;
       applyJobComposition(legacyDelegation);
       treeBuiltFor = rootId;
-      markActivitySourceSuccess('tree');
       applyAgentContext();
       jobs.apply(tree, switches(), resolveLanguage(settings.language));
       // On the same tick as the tree, so the log never lags it.
       if (time('agentlog.observe', () => agentLog.observe(summaryTree(tree)))) agentLog.flush();
-      timeline = time('timeline', () =>
-        history.timeline(tree, main, logsIn(agentLog.snapshot(), resolveLanguage(settings.language)))
-      );
-      state = reconcileMonitor(state, tree, git, worktrees, Date.now(), delegation);
+      state = reconcileMonitor(state, tree, Date.now(), delegation);
       updateProgress();
       updateJobs();
       const visibleDecisions = new Set(
@@ -1365,7 +1153,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     try {
       built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree });
       if (delegation) Object.assign(built, { delegation });
-      markActivitySourceSuccess('status');
     } catch (err) {
       hudStatus.health.fail('status', err); /* The foot keeps its last good rows. */
     }
@@ -1377,13 +1164,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         /* A state file nobody can write is not a reason to stop drawing. */
       }
     }
-    observeActivity();
-    if (observability) sampleTelemetry();
     // Collection owns publication. Paint only consumes the same cached workboard.
     syncPanelView();
     render();
     readMainCols();
-    void refreshInspection();
     void refreshAgentContext();
   };
   const sources = () =>
@@ -1394,13 +1178,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       gitAgain = true;
       return;
     }
-    // Closed monitors are absent, not empty frames continuously collecting
-    // data; in the tabs layout only the pane shown is read for.
-    const wantChanges =
-      activityHub?.tab === 'updates' ||
-      paneShown(state, 'changes') ||
-      (paneShown(state, 'details') && state.preview === 'file');
-    if (!wantChanges && !(paneShown(state, 'details') && state.preview === 'worktree')) return;
+    if (state.focus !== 'changes') return;
     collectingGit = true;
     const candidates = sources();
     const requestKey = JSON.stringify(candidates);
@@ -1412,49 +1190,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         return;
       }
       worktrees = snapshot;
-      if (!snapshot.error) markActivitySourceSuccess('worktrees');
-      const previousWorktree = state.selectedWorktree;
-      state = reconcileMonitor(state, tree, git, worktrees, Date.now(), delegation);
-      if (state.selectedWorktree !== previousWorktree) {
-        git = null;
-        diff = undefined;
-        diffKey = '';
-      }
       render();
-      const entry = worktrees.entries.find((w) => w.path === state.selectedWorktree);
-      if (wantChanges && entry && !entry.bare && entry.prunable === undefined) {
-        const selected = entry.path;
-        const result = await timeAsync('git.changes', () => collectGitChanges(selected));
-        if (closed) return;
-        if (requestKey !== JSON.stringify(sources()) || selected !== state.selectedWorktree) {
-          gitAgain = true;
-          return;
-        }
-        git = result;
-        gitRevision++;
-        gitObservedAt = Date.now();
-        const previousFile = state.selectedFile;
-        state = reconcileMonitor(state, tree, git, worktrees, Date.now(), delegation);
-        if (previousFile !== state.selectedFile) {
-          diff = undefined;
-          diffKey = '';
-        }
-      } else if (!entry || entry.bare || entry.prunable !== undefined) {
-        git = null;
-        diff = undefined;
-        diffKey = '';
-      }
-      observeActivity();
-      render();
-      void refreshInspection();
     } catch (err) {
       hudStatus.health.fail('worktrees', err);
       worktrees = { sourcePath: null, entries: [], updatedAt: Date.now(), error: 'Worktree read failed' };
-      git = null;
-      gitObservedAt = 0;
-      diff = undefined;
-      diffKey = '';
-      observeActivity();
       render();
     } finally {
       collectingGit = false;
@@ -1478,7 +1217,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     model.cancelAll();
     probe.cancel();
     agentLog.flush();
-    journal.flush();
     flushTreeScans();
     timers.forEach(clearInterval);
     if (collectTimer) clearInterval(collectTimer);
@@ -1497,8 +1235,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     process.stdout.write(LEAVE);
     snapshotWriter.remove();
     if (user) requestEnsureSingle();
-    // Settle bounded local telemetry writes before the terminal process exits.
-    void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing]).finally(async () => {
+    void clipboardClosing.finally(async () => {
       if (callerGone) await closePanelPane(process.env.HERDR_PANE_ID!, process.env).catch(() => {});
       resolveDone();
     });
@@ -1582,9 +1319,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         revealed: null,
       };
       updateProgress();
-      git = null;
-      diff = undefined;
-      diffKey = '';
+      worktrees = null;
       void refreshGit();
       notifier.configure(resolveNotifierOptions(process.env, settings));
       if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
@@ -1627,7 +1362,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     return { type: 'key', key: monitorKey(command) };
   };
   const processInput = (inputs: WorkbenchInput[]) => {
-    const overlayBefore = Boolean(settingsPage || state.help || activityHub || observability);
+    const overlayBefore = Boolean(settingsPage || state.help);
     // What goes to Codex, in order, sent once the whole read is through.
     const forward: ForwardItem[] = [];
     for (let input of inputs) {
@@ -1668,83 +1403,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         input = { type: 'key', key: destination };
         panelInput = true;
       }
-      if (activityHub || observability) {
-        if (input.type === 'command') {
-          const key = overlayKey(input.command, 'help');
-          if (key) input = { type: 'key', key };
-          else {
-            activityHub = null;
-            observability = null;
-            exportPreview = undefined;
-          }
-        }
-        if (activityHub && activityFrame) {
-          const tab = activityHub.tab;
-          const result = handleActivityHubInput(activityHub, input, activityFrame);
-          activityHub = result.state;
-          const action = result.action;
-          if (action?.type === 'close') {
-            activityHub = null;
-            focusMain();
-          } else if (action?.type === 'read') journal.markRead(action.eventId, action.value);
-          else if (action?.type === 'snooze') journal.snooze(action.eventId, action.until);
-          else if (action?.type === 'pin') journal.pin(action.agentId, action.value);
-          else if (action?.type === 'viewed') journal.markViewed(action.receipt);
-          else if (action?.type === 'target') {
-            const nativeOnly = nativeCallsOnly(delegation);
-            const target =
-              delegation && !nativeOnly ? delegationActivityTarget(delegation, tree.rootId, action.agentId) : null;
-            const selected = target?.key ?? null;
-            let live = delegation && !nativeOnly ? target !== null : action.agentId === tree.rootId;
-            if (!delegation || nativeOnly)
-              walkNodes(tree.nodes, (node) => {
-                if (node.id === action.agentId) live = true;
-              });
-            if (live) {
-              state = {
-                ...state,
-                keys: true,
-                focus: 'details',
-                preview: action.agentId === tree.rootId ? 'diagnostics' : 'agent',
-                tree: {
-                  ...state.tree,
-                  selectedId: action.agentId === tree.rootId ? state.tree.selectedId : (selected ?? action.agentId),
-                  collapsed:
-                    delegation && selected
-                      ? revealDelegationAncestors(delegation, selected, state.tree.collapsed)
-                      : state.tree.collapsed,
-                  showAll: true,
-                },
-                modes: { ...state.modes, details: 'open' },
-                scroll: { ...state.scroll, details: 0 },
-              };
-              activityHub = null;
-            } else navigationMessage = t('This historical agent is no longer in the current tree');
-          }
-          updateProgress();
-          render();
-          if (activityHub?.tab === 'updates' && tab !== 'updates') void refreshGit();
-          continue;
-        }
-        if (observability && observabilityFrame) {
-          const result = handleObservabilityInput(observability, input, observabilityFrame);
-          observability = result.state;
-          if (result.action === 'close') {
-            observability = null;
-            exportPreview = undefined;
-            focusMain();
-          } else if (result.action === 'preview') captureExport();
-          else if (result.action === 'save' && exportPreview) {
-            const saved = saveDiagnosticExport(exportPreview, getHudDisplayHome());
-            observability.message = saved.ok
-              ? t('Report saved: {path}', { path: saved.path })
-              : t('Report could not be saved');
-          }
-          updateProgress();
-          render();
-          continue;
-        }
-      }
       if (input.type === 'command') {
         const decoded = commandInput(input.command);
         if (!decoded) {
@@ -1767,27 +1425,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         // paste has nowhere to go.
         if (input.type === 'paste') continue;
         if (input.key === 'close') input = { type: 'key', key: 'escape' };
-      }
-      if (input.type === 'key' && ['activity-hub', 'find-agent', 'observability'].includes(input.key)) {
-        if (settingsPage && !requestSettingsLeave(input.key)) {
-          render();
-          continue;
-        }
-        state = { ...state, help: false };
-        if (input.key === 'observability') {
-          sampleTelemetry();
-          observability = initialObservabilityState();
-          activityHub = null;
-        } else {
-          observeActivity();
-          activityHub = initialActivityHubState(input.key === 'find-agent' ? 'find' : 'inbox');
-          observability = null;
-        }
-        exportPreview = undefined;
-        focusPanel();
-        updateProgress();
-        render();
-        continue;
       }
       if (input.type === 'paste') continue;
       if (settingsPage && settingsFrame && input.type === 'mouse' && input.button === 'left') {
@@ -1840,14 +1477,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
               if (settingsPage) settingsPage.message = t('Connection test failed');
               render();
             });
-        } else if (result.action === 'diagnostics' && requestSettingsLeave('diagnostics')) {
-          state = {
-            ...state,
-            preview: 'diagnostics',
-            focus: 'details',
-            modes: { ...state.modes, details: 'open' },
-            scroll: { ...state.scroll, details: 0 },
-          };
         }
         updateProgress();
         render();
@@ -1859,26 +1488,16 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       const actionEpoch = frameEpoch;
       const result = handleMonitorInput(state, input, {
         tree,
-        git,
-        worktrees,
         frame,
         navigationOverlay: fromSettings,
         standalone: STANDALONE_PANEL,
       });
       state = result.state;
       syncPanelView();
+      if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
       if (result.close) {
         finish(true);
         break;
-      }
-      if (state.selectedFile !== previous.selectedFile) {
-        diff = undefined;
-        diffKey = '';
-      }
-      if (state.selectedWorktree !== previous.selectedWorktree) {
-        git = null;
-        diff = undefined;
-        diffKey = '';
       }
       if (JSON.stringify(state.modes) !== JSON.stringify(previous.modes)) {
         try {
@@ -1925,13 +1544,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           message: '',
         };
       }
-      if (result.action?.type === 'observability') {
-        sampleTelemetry();
-        observability = initialObservabilityState();
-        activityHub = null;
-        exportPreview = undefined;
-        focusPanel();
-      }
       if (result.action?.type === 'pick' && input.type === 'mouse') {
         const id = result.action.id;
         const at = Date.now();
@@ -1947,14 +1559,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (previous.keys && !state.keys) focusMain();
       updateProgress();
       render();
-      // A tab shown in the tabs layout is read for at once, as an opened pane is.
-      if (
-        state.selectedWorktree !== previous.selectedWorktree ||
-        JSON.stringify(state.modes) !== JSON.stringify(previous.modes) ||
-        (state.tabbed && state.focus !== previous.focus)
-      )
-        void refreshGit();
-      void refreshInspection();
       if (
         result.action &&
         (result.action.type === 'delegation-open' ||
@@ -2012,7 +1616,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
     if (!STANDALONE_PANEL && forward.length) void forwarder.send(forward);
     if (!settingsPage) probe.cancel();
-    if (!closed && !overlayBefore && (settingsPage || state.help || activityHub || observability)) focusPanel();
+    if (!closed && !overlayBefore && (settingsPage || state.help)) focusPanel();
   };
   const dispatch = (inputs: WorkbenchInput[]) =>
     withInputRefresh(
@@ -2038,7 +1642,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     lastPaint = null;
     render();
     readMainCols();
-    void refreshInspection();
     // A client attaching at another size shares the change with this pane;
     // wait for the burst of resizes to settle, then take back the policy width.
     if (resizeTimer) clearTimeout(resizeTimer);

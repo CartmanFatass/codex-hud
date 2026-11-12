@@ -171,8 +171,15 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes, decision o
   assert.equal(opened.action, undefined);
   assert.equal(opened.state.mainTab, 'home');
   const expanded = f.render(board, 24, 56, opened.state);
-  assert.ok(plain(expanded).some((l) => l.startsWith('◆ PANEL-THIN · imp q2')), 'the decision is on screen');
-  const enter = handleMonitorInput(expanded.state, { type: 'key', key: 'open-session' }, { tree: f.tree, frame: expanded });
+  assert.ok(
+    plain(expanded).some((l) => l.startsWith('◆ PANEL-THIN · imp q2')),
+    'the decision is on screen'
+  );
+  const enter = handleMonitorInput(
+    expanded.state,
+    { type: 'key', key: 'open-session' },
+    { tree: f.tree, frame: expanded }
+  );
   assert.deepEqual(enter.action.files, [join(f.askDir, 'qa/q2.md'), join(f.askDir, 'qa/q2.answer.md')]);
   const notifier = new Notifier({ enabled: true, cooldownMs: 0, deliver() {} });
   assert.deepEqual(notifier.update({}, now, board), [], 'existing questions and settled jobs are the baseline');
@@ -246,7 +253,8 @@ test('`o` opens a job card file on Home, footer hints never cut a word', async (
   assert.equal(open(4, 'enter').action, undefined, 'Enter opens no file');
   const foot = (width) =>
     plain(renderMonitor({ tree: f.tree, workboard: board, state: frame.state, width, height: 40, nowMs: now }))
-      .at(-1).trimEnd();
+      .at(-1)
+      .trimEnd();
   assert.deepEqual([56, 40, 30, 20].map(foot), [
     '↑↓ move  ⏎ expand  o open  a all',
     '↑↓ move  ⏎ expand  o open  a all',
@@ -262,25 +270,32 @@ test('Home Enter toggles cards, decisions and lanes; reserved navigation is iner
   f.put(join(f.askDir, 'qa/q0.md'), '# Question\n\nOlder choice?\n\nDefault if unanswered: yes', 1500);
   f.put(join(f.askDir, 'qa/q0.answer.md'), 'yes', 1500);
   await f.pipeline.refresh();
-  const board = f.pipeline.workboard(f.tree), d = board.decisions.find((d) => d.departure), w = board.workers[0];
+  const board = f.pipeline.workboard(f.tree),
+    d = board.decisions.find((d) => d.departure),
+    w = board.workers[0];
   const rendered = (state) => f.render(board, 180, 56, state);
   const text = (state) => plain(rendered(state)).join('\n');
   const press = (state, bytes) => {
-    const frame = rendered(state), [input] = new WorkbenchInputDecoder('workboard').push(Buffer.from(bytes));
+    const frame = rendered(state),
+      [input] = new WorkbenchInputDecoder('workboard').push(Buffer.from(bytes));
     return handleMonitorInput(frame.state, input, { tree: f.tree, frame, nowMs: now }).state;
   };
   const at = (target) => ({ ...initialMonitorState(), mainTab: 'home', homeTarget: target });
   const card = at({ kind: 'worker', laneId: w.laneId, workerId: w.id });
-  for (const [state, shown] of [[card, /cannot be finished/], [at({ kind: 'decision', laneId: d.laneId, decisionId: d.id }), /^┃ instead of /m]]) {
+  for (const [state, shown] of [
+    [card, /cannot be finished/],
+    [at({ kind: 'decision', laneId: d.laneId, decisionId: d.id }), /^┃ instead of /m],
+  ]) {
     assert.doesNotMatch(text(state), shown);
     assert.match(text(press(state, '\r')), shown);
     assert.doesNotMatch(text(press(press(state, '\r'), '\r')), shown);
   }
-  const lane = at({ kind: 'lane', laneId: w.laneId }), folded = press(lane, '\r');
+  const lane = at({ kind: 'lane', laneId: w.laneId }),
+    folded = press(lane, '\r');
   assert.doesNotMatch(text(folded), /thin job cards/);
   assert.match(text(press(folded, '\r')), /thin job cards/);
   const before = rendered(card).state;
-  for (const key of ['2', '3', '\x1b[D', '\x1b[C', '\t', '\x1b[Z', '\x1b_codex-hud:pane-2\x1b\\']) assert.deepEqual(press(before, key), before);
+  for (const key of ['2', '\x1b[D', '\x1b[C', '\t', '\x1b[Z']) assert.deepEqual(press(before, key), before);
   assert.equal(press(before, '1').mainTab, 'home');
   assert.equal(press(before, 'n').mainTab, 'home');
   assert.equal(press(before, 'N').mainTab, 'home');
@@ -290,28 +305,45 @@ test('Home Enter toggles cards, decisions and lanes; reserved navigation is iner
 });
 test('Home expiry thresholds and show-all use the real render/input path', async (t) => {
   const f = fixture(t);
-  f.put(join(f.env.HUD_HOME, 'jobs/j0000000000000006/STATUS.json'), { state: 'stopped', settled_at: new Date(now - 15 * 60000).toISOString() });
+  f.put(join(f.env.HUD_HOME, 'jobs/j0000000000000006/STATUS.json'), {
+    state: 'stopped',
+    settled_at: new Date(now - 15 * 60000).toISOString(),
+  });
   await f.pipeline.refresh();
-  const board = f.pipeline.workboard(f.tree), worker = (n) => board.workers.find((w) => w.id.endsWith(String(n)));
+  const board = f.pipeline.workboard(f.tree),
+    worker = (n) => board.workers.find((w) => w.id.endsWith(String(n)));
   const decision = (q) => board.decisions.find((d) => d.evidence[0].relativePath === `qa/${q}.md`);
-  for (const [kind, item, minutes] of [['workers', worker(4), 5], ['workers', worker(3), 21], ['workers', worker(6), 15], ['decisions', decision('q1'), 22], ['decisions', decision('q2'), 114]]) {
-    const draw = (at, state = initialMonitorState()) => renderMonitor({ tree: f.tree, workboard: board, state, width: 56, height: 180, nowMs: at });
-    const edge = now + minutes * 60000, has = (frame) => frame.workboard.snapshot[kind].some((v) => v.id === item.id);
+  for (const [kind, item, minutes] of [
+    ['workers', worker(4), 5],
+    ['workers', worker(3), 21],
+    ['workers', worker(6), 15],
+    ['decisions', decision('q1'), 22],
+    ['decisions', decision('q2'), 114],
+  ]) {
+    const draw = (at, state = initialMonitorState()) =>
+      renderMonitor({ tree: f.tree, workboard: board, state, width: 56, height: 180, nowMs: at });
+    const edge = now + minutes * 60000,
+      has = (frame) => frame.workboard.snapshot[kind].some((v) => v.id === item.id);
     assert.ok(has(draw(edge - 1)), `${kind} visible before threshold`);
     const hidden = draw(edge);
     assert.ok(!has(hidden), `${kind} hidden at threshold`);
     assert.match(plain(hidden).join('\n'), /\+\d+ older · a/);
-    const toggle = (frame) => handleMonitorInput(frame.state, { type: 'key', key: 'show-all' }, { tree: f.tree, frame }).state;
+    const toggle = (frame) =>
+      handleMonitorInput(frame.state, { type: 'key', key: 'show-all' }, { tree: f.tree, frame }).state;
     const shown = draw(edge, toggle(hidden));
     assert.ok(has(shown), `${kind} revealed by a`);
-    const target = kind === 'workers' ? { kind: 'worker', laneId: item.laneId, workerId: item.id } : { kind: 'decision', laneId: item.laneId, decisionId: item.id };
+    const target =
+      kind === 'workers'
+        ? { kind: 'worker', laneId: item.laneId, workerId: item.id }
+        : { kind: 'decision', laneId: item.laneId, decisionId: item.id };
     const rows = shown.workboard.rows.filter((r) => r.item === targetKey(target));
     assert.equal(rows.length, 1, 'old items start as one row');
     assert.match(stripAnsi(rows[0].text), /older/);
     const state = { ...shown.state, homeTarget: target };
     const expanded = handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame: shown }).state;
     assert.ok(expanded.boardExpanded.has(targetKey(target)));
-    if (item !== worker(6)) assert.ok(draw(edge, expanded).workboard.rows.filter((r) => r.item === targetKey(target)).length > 1, item.id);
+    if (item !== worker(6))
+      assert.ok(draw(edge, expanded).workboard.rows.filter((r) => r.item === targetKey(target)).length > 1, item.id);
     assert.ok(!has(draw(edge, toggle(shown))), `${kind} hidden again by a`);
   }
 });
@@ -321,11 +353,18 @@ test('a current decision keeps its author after the finished job hides', async (
   f.put(join(f.ready, 'qa/q1.answer.md'), 'yes', 5);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree);
-  const frame = renderMonitor({ tree: f.tree, workboard: board, state: initialMonitorState(), width: 56, height: 180, nowMs: now + 5 * 60000 });
+  const frame = renderMonitor({
+    tree: f.tree,
+    workboard: board,
+    state: initialMonitorState(),
+    width: 56,
+    height: 180,
+    nowMs: now + 5 * 60000,
+  });
   assert.ok(!frame.workboard.snapshot.workers.some((w) => w.id.endsWith('4')));
   assert.match(plain(frame).join('\n'), /TEST-CUT · imp q1/);
 });
-test('model button uses the master preference; b matches it, S and secondary 3 are inert', async (t) => {
+test('model button uses the master preference; b matches it and S is inert', async (t) => {
   const f = fixture(t);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree);
@@ -349,16 +388,6 @@ test('model button uses the master preference; b matches it, S and secondary 3 a
     assert.deepEqual(handleMonitorInput(frame.state, input, ctx).state, frame.state);
   }
   assert.deepEqual(new WorkbenchInputDecoder('workboard').push(Buffer.from('\x1b_codex-hud:summary\x1b\\')), []);
-  const frame = renderMonitor({
-    tree: f.tree,
-    state: { ...initialMonitorState(), focus: 'timeline' },
-    width: 56,
-    height: 40,
-  });
-  assert.deepEqual(
-    handleMonitorInput(frame.state, { type: 'key', key: 'changes' }, { tree: f.tree, frame }).state,
-    frame.state
-  );
 });
 test('a lane row ends in one glyph per job, oldest first, then the role of the newest running or asking one', async (t) => {
   const f = fixture(t);
@@ -397,6 +426,42 @@ test('a lane row ends in one glyph per job, oldest first, then the role of the n
   assert.match(row('STRIP'), /^STRIP  build\s+- \+ @ imp$/);
   assert.match(row('BAD'), /^BAD .*\s+x$/);
 });
+test('Home → thin-job Inspector → Changes preserves summary mouse controls with the production sidecar', async (t) => {
+  const f = fixture(t);
+  await f.pipeline.refresh();
+  const board = f.pipeline.workboard(f.tree);
+  const worker = board.workers[0];
+  const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
+  let frame = f.render(board, 24, 56, { ...initialMonitorState(), homeTarget: target });
+  const act = (input) => handleMonitorInput(frame.state, input, { tree: f.tree, frame, nowMs: now }).state;
+  const inspecting = act({ type: 'key', key: 'inspect' });
+  assert.ok(inspecting.boardInspect, 'exercise the thin-job Inspector, not a native agent');
+  frame = f.render(board, 24, 56, inspecting);
+  const changes = act({ type: 'key', key: 'changes' });
+  assert.equal(changes.boardInspect, undefined);
+  const worktrees = {
+    sourcePath: '/synthetic/w0',
+    updatedAt: now,
+    entries: Array.from({ length: 40 }, (_, i) => ({
+      path: `/synthetic/w${i}`,
+      branch: `branch-${i}`,
+      head: '1234567',
+      status: { changed: 0, staged: 0, unstaged: 0, untracked: 0, ahead: 0, behind: 0 },
+      observedAt: now,
+    })),
+  };
+  const render = (state) =>
+    renderMonitor({ tree: f.tree, workboard: board, worktrees, state, width: 56, height: 24, nowMs: now });
+  frame = render(changes);
+  assert.ok(frame.workboard, 'keep the production sidecar on every subsequent frame');
+  const pane = frame.panes.find((p) => p.id === 'changes');
+  assert.ok(act({ type: 'mouse', button: 'wheel-down', x: pane.x + 1, y: pane.y + 1 }).scroll.changes > 0);
+  const title = frame.controls.find((c) => c.kind === 'zoom' && c.pane === 'changes');
+  assert.equal(act({ type: 'mouse', button: 'left', x: title.x, y: title.y }).zoom, false);
+  frame = render(act({ type: 'key', key: 'home-tab' }));
+  assert.equal(frame.state.focus, 'agents');
+});
+
 test('statusline Work count reads job folders with no role-summary cache', (t) => {
   const f = fixture(t);
   assert.equal(existsSync(join(f.env.HUD_HOME, 'display/role-summary')), false);

@@ -1,6 +1,5 @@
-/** The Inspector: the selected agent in full, a worktree's details, or a changed file's diff. */
+/** The Inspector: the selected agent or job in full. */
 import type { SubagentTreeNode, TokenSpent } from '../types.js';
-import type { GitChanges } from '../collectors/git-changes.js';
 import { progressReason, type ProgressReason } from '../collectors/progress-summary.js';
 import type { AgentLogEntry, AgentLogKind } from '../collectors/agent-log.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
@@ -11,9 +10,9 @@ import { displayConfig } from './hud-config.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { t } from './i18n.js';
 import { workInspectorRows } from './work-inspector.js';
-import { diagnosticLines, tokenRateDetails } from './hud-diagnostics.js';
+import { tokenRateDetails } from './hud-diagnostics.js';
 import { shownName, labelled } from './agent-title.js';
-import { monitorText, plainText, pair, wrapped, helpLines, flowLines, diffRows, pathRows } from './monitor-text.js';
+import { monitorText, plainText, wrapped, helpLines, flowLines } from './monitor-text.js';
 import { newestIntent } from './cards.js';
 import { effectiveStatus, shownNode, badgeOf, jobSections, facadeOnly } from './job-details.js';
 import { conflictDetails } from '../core/link/conflict-details.js';
@@ -22,32 +21,7 @@ import { sameSessionRef } from '../core/identity.js';
 import type { LinkTreeNode } from '../core/link/types.js';
 import type { DelegationView } from './delegation/panel.js';
 import { RESUME_DIAGNOSTIC, selectedActions } from './delegation/actions.js';
-import {
-  age,
-  nodeStatus,
-  isQuiet,
-  agentRate,
-  rateText,
-  finishedAt,
-  agentPaint,
-  writtenAge,
-  worktreeLabel,
-  worktreeLabelText,
-  worktreeName,
-  worktreePlace,
-  ID_NAME,
-  UNTRACKED_ROW,
-  lineCounts,
-} from './monitor-labels.js';
-
-function basename(path: string): string {
-  return (
-    path
-      .replace(/[\\/]+$/, '')
-      .split(/[\\/]/)
-      .at(-1) || path
-  );
-}
+import { age, nodeStatus, isQuiet, agentRate, rateText, finishedAt, agentPaint, writtenAge } from './monitor-labels.js';
 
 function findNode(nodes: SubagentTreeNode[], id: string | null): SubagentTreeNode | undefined {
   for (const node of nodes) {
@@ -408,7 +382,7 @@ function agentInspectorRows(
   // back through monitorText (which correctly escapes untrusted controls).
   // Both names show here: the model's name for what the agent does, and
   // the name Codex's own picker and transcript print.
-  // The heading in the agent's own colour, as the timeline names it.
+  // The heading in the agent's own colour.
   // With labels as names the label heads it and Codex's name is under
   // it; without, the name heads it and the label is under it.
   const own = agentPaint(node.id);
@@ -589,7 +563,7 @@ function agentInspectorRows(
   return rows;
 }
 
-/** The Inspector's rows: the agent, worktree or file it was opened on. */
+/** The Inspector's rows for the selected agent or job. */
 export function inspectorRows(
   input: MonitorData,
   state: MonitorState,
@@ -598,17 +572,6 @@ export function inspectorRows(
   delegation?: DelegationView
 ): MonitorRow[] {
   // Inspector is explicitly opened (Enter/v/4), never follows agent clicks into a transcript.
-  let lines: string[] = [];
-  if (state.preview === 'diagnostics') {
-    const label = truncateAnsi(t('[Sources · Calls · Export]'), width);
-    return [
-      { text: theme.accent(label), controls: [{ kind: 'observability', x: 0, width: visualLength(label) }] },
-      ...diagnosticLines(input.hud, width, now, {
-        tree: input.tree,
-        selectedId: state.tree.selectedId ?? undefined,
-      }).map((text) => ({ text })),
-    ];
-  }
   if (state.preview === 'agent') {
     const worker = input.workboard?.workers.find((worker) => worker.nodeId === state.tree.selectedId);
     const work = worker?.work ? workInspectorRows(worker, state, width, now, true) : [];
@@ -617,129 +580,8 @@ export function inspectorRows(
     const node = findNode(input.tree.nodes, state.tree.selectedId);
     if (!node) return work;
     else return [...work, ...agentInspectorRows(input, state, node, width, now)];
-  } else if (state.preview === 'worktree') {
-    const entry = input.worktrees?.entries.find((e) => e.path === state.selectedWorktree);
-    if (!entry) lines = [];
-    else {
-      // Its name, where it is and what its HEAD commit says; no hash, not even a short one.
-      const place = worktreePlace(entry, input.worktrees?.entries[0]?.path);
-      const rows: MonitorRow[] = wrapped(worktreeName(entry), width).map((text) => ({ text: theme.strong(text) }));
-      if (entry.subject)
-        rows.push(...flowLines(monitorText(entry.subject), width).map((text) => ({ text: colors.dim(text) })));
-      lines = [
-        t('Branch: {branch}', { branch: entry.branch ?? t(entry.bare ? 'bare' : 'detached') }),
-        t('Status: {status}', { status: worktreeLabelText(worktreeLabel(entry, now)) }) +
-          (entry.locked !== undefined ? ` · ${t('locked')}` : ''),
-      ];
-      if (place) lines.push(place);
-      if (entry.error) lines.push(entry.error);
-      if (entry.locked) lines.push(t('Locked: {reason}', { reason: entry.locked }));
-      if (entry.prunable !== undefined) lines.push(t('Prunable: {reason}', { reason: entry.prunable || t('yes') }));
-      // Its counts, and how far it is from its upstream, each left out at zero (or unknown).
-      if (entry.status) {
-        const status = entry.status;
-        const counts = (['conflicts', 'staged', 'unstaged', 'untracked'] as const)
-          .filter((key) => status[key])
-          .map((key) => t(`{n} ${key}`, { n: status[key] }));
-        const drift = [
-          status.ahead ? t('{n} ahead', { n: status.ahead }) : '',
-          status.behind ? t('{n} behind', { n: status.behind }) : '',
-        ].filter(Boolean);
-        for (const parts of [counts, drift]) if (parts.length) lines.push(parts.join(' · '));
-      }
-      lines.push(t('Workspace status, not agent ownership'));
-      // The full path is more, where it holds no id; there is nothing else more to show.
-      const full = entry.path.split(/[\\/]+/).some((part) => ID_NAME.test(part)) ? '' : entry.path;
-      if (full && state.expanded) lines.push(full);
-      if (full) lines.push(t(state.expanded ? '▴ Less' : '▾ More'));
-      return [...rows, ...lines.flatMap((line) => wrapped(line, width).map((text) => ({ text })))];
-    }
-  } else {
-    if (!state.selectedFile || state.selectedFile === UNTRACKED_ROW) return [];
-    return [
-      ...fileHeading(state.selectedFile, input.git, Boolean(state.expanded), width),
-      ...fileBody(state.selectedFile, input.diff ?? [], width),
-    ];
   }
-  return lines.flatMap((line) => wrapped(line, width).map((text) => ({ text })));
-}
-
-/**
- * The Inspector's heading for a changed file: its name, and the lines it
- * adds and removes at the right end where they fit beside it ("+12 −3",
- * a side with none left out), then the directory it is in, dim; expanded,
- * the repository too. An untracked directory is named with its slash.
- */
-function fileHeading(path: string, git: GitChanges | null | undefined, expanded: boolean, width: number): MonitorRow[] {
-  const file = git?.files.find((entry) => entry.path === path);
-  const counts = file?.binary ? colors.dim(t('binary')) : file ? lineCounts(file) : '';
-  const name = monitorText(basename(path) + (path.endsWith('/') ? '/' : ''));
-  const rows: MonitorRow[] =
-    counts && visualLength(name) + 1 + visualLength(counts) <= width
-      ? [{ text: pair(theme.strong(name), counts, width) }]
-      : [
-          ...wrapped(name, width).map((text) => ({ text: theme.strong(text) })),
-          ...(counts ? [{ text: truncateAnsi(counts, width) }] : []),
-        ];
-  const parts = path.replace(/[\\/]+$/, '').split(/[\\/]/);
-  const folder = parts.length > 1 ? `${parts.slice(0, -1).join('/')}/` : '';
-  for (const line of [folder, expanded ? (git?.root ?? '') : ''].filter(Boolean))
-    rows.push(...pathRows(line, width).map((text) => ({ text: colors.dim(text) })));
-  return rows;
-}
-
-/** The labels readGitDiff starts its sections with, in the reader's words. */
-const SECTIONS: Record<string, string> = { Staged: 'Staged', Unstaged: 'Unstaged', Untracked: 'Untracked' };
-
-/**
- * The Inspector's body for a changed file: readGitDiff's sections, each
- * under its label in the reader's words on a dim rule. A section's label
- * starts it: the first line, and Unstaged after Staged, whose lines are a
- * diff's and never just that word. A file's git header repeats its path and
- * names its blobs by hash: the heading says which file it is, so only the
- * hunks are shown, each line wrapped where a word ends and painted for what
- * it does. An untracked directory says how many files it holds, then each
- * one's path inside it.
- */
-function fileBody(path: string, diff: readonly string[], width: number): MonitorRow[] {
-  const label = (title: string) => {
-    const text = ` ${t(title)} `;
-    return {
-      text: colors.dim(truncateAnsi(`──${text}${'─'.repeat(Math.max(0, width - 2 - visualLength(text)))}`, width)),
-    };
-  };
-  const listing = path.endsWith('/') && diff[0] === 'Untracked' ? /^(\d+) files?$/.exec(diff[1] ?? '') : null;
-  if (listing) {
-    const n = Number(listing[1]);
-    return [
-      { text: colors.dim(truncateAnsi(`${t('Untracked')} · ${n === 1 ? t('1 file') : t('{n} files', { n })}`, width)) },
-      ...diff.slice(2).flatMap((line) => diffRows(line, width).map((text) => ({ text: theme.value(text) }))),
-    ];
-  }
-  const rows: MonitorRow[] = [];
-  let header = false;
-  diff.forEach((line, i) => {
-    if (SECTIONS[line] && (i === 0 || (line === 'Unstaged' && diff[0] === 'Staged'))) {
-      header = false;
-      rows.push(label(SECTIONS[line]));
-      return;
-    }
-    if (line.startsWith('diff --git ')) {
-      header = true;
-      return;
-    }
-    if (line.startsWith('@@')) header = false;
-    if (header && /^(index [0-9a-f]+\.\.[0-9a-f]+|--- |\+\+\+ )/.test(line)) return;
-    const paint = line.startsWith('@@')
-      ? theme.info
-      : line.startsWith('+')
-        ? theme.success
-        : line.startsWith('-')
-          ? theme.error
-          : theme.value;
-    rows.push(...diffRows(line, width).map((text) => ({ text: paint(text) })));
-  });
-  return rows;
+  return [];
 }
 
 /** Entries a model wrote, marked as such wherever they are shown. */

@@ -3,7 +3,6 @@ import type { ProgressState, ProgressContext } from '../collectors/progress-summ
 /** Default F12 view: a monitor, not another transcript. No I/O or terminal input here. */
 import type { HudData, SubagentTree } from '../types.js';
 import type { DelegationViewModel, HudDelegationData } from '../core/link/view-model.js';
-import type { GitChanges } from '../collectors/git-changes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
 import { defaultCardVisibility, type CardVisibility } from '../card-visibility.js';
@@ -19,16 +18,8 @@ import { t } from './i18n.js';
 import { agentsTitleAt, drawAgentsView } from './agents-view.js';
 import { controlBar, paneHead, icon, look, type CountsText, type RowButtons } from './control-bar.js';
 import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
-import type { WorkbenchEvent } from './workbench-state.js';
 import { fit, wrapped, helpLines } from './monitor-text.js';
-import {
-  TURN_CLOCKS,
-  TURN_CLOCK_LONG,
-  isUntracked,
-  UNTRACKED_ROW,
-  listsWorktrees,
-  worktreeOfItem,
-} from './monitor-labels.js';
+import { TURN_CLOCKS, TURN_CLOCK_LONG } from './monitor-labels.js';
 import { paneRows, agentsView, putAwayCount, summaryRow } from './monitor-panes.js';
 import {
   delegationPutAway,
@@ -40,7 +31,6 @@ import {
 } from './delegation/panel.js';
 import { resolveSelection } from './delegation/selection.js';
 import { selectedActions, type DelegationAction } from './delegation/actions.js';
-import { timelineCount, type TimelineStyle } from './monitor-timeline.js';
 import { roleSet } from './directions.js';
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { renderWorkboardFrame, renderWorkboardHelp } from './work-view.js';
@@ -53,9 +43,6 @@ export {
   agoText,
   age,
   nodeStatus,
-  worktreeLabel,
-  worktreeName,
-  worktreePlace,
   TURN_CLOCKS,
   QUIET_MS,
   FRESH_FINISH_MS,
@@ -73,28 +60,11 @@ export {
   RATE_FRESH_MS,
 } from './monitor-labels.js';
 export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type EdgeMeter } from './monitor-meter.js';
-export {
-  summaryRow,
-  emptyAgentsRows,
-  guardianChip,
-  changeCounts,
-  shownPaths,
-  briefSaid,
-  briefRuleRow,
-  briefRule,
-} from './monitor-panes.js';
-export {
-  timelineText,
-  TIMELINE_STYLES,
-  TIMELINE_HOURS,
-  TIMELINE_STEP,
-  TIMELINE_EARLIER,
-  type TimelineStyle,
-} from './monitor-timeline.js';
+export { summaryRow, emptyAgentsRows, guardianChip, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
 export { MODEL_LOG_KINDS } from './monitor-inspector.js';
-export { clickTab, monitorRowAt, monitorItemAt, canMonitorDiff, handleMonitorInput } from './monitor-input.js';
+export { clickTab, monitorRowAt, monitorItemAt, handleMonitorInput } from './monitor-input.js';
 
-export const MONITOR_PANES = ['agents', 'timeline', 'changes', 'details'] as const;
+export const MONITOR_PANES = ['agents', 'changes', 'details'] as const;
 export type MonitorPane = (typeof MONITOR_PANES)[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
@@ -113,16 +83,7 @@ export interface MonitorState {
   focus: MonitorPane;
   modes: MonitorModes;
   scroll: Record<MonitorPane, number>;
-  /** The worktree whose changes are listed. */
-  selectedWorktree: string | null;
-  /**
-   * The changes' cursor: a file's path, the untracked files' row, or a
-   * worktree's row (`worktreeItem`), where the list heads its files with them.
-   */
-  selectedFile: string | null;
-  /** Changes: the untracked files listed under their row, not folded into it. */
-  untrackedOpen?: boolean;
-  preview: 'agent' | 'worktree' | 'file' | 'diagnostics';
+  preview: 'agent';
   help: boolean;
   zoom: boolean;
   helpScroll?: number;
@@ -155,23 +116,7 @@ export interface MonitorState {
   labelAsName?: boolean;
   /** How far the status card's brief is scrolled. */
   statusScroll?: number;
-  /**
-   * The panes as a browser's tabs: one shown at a time, the bar's tabs
-   * switching between them, and `modes` kept as the stacked panes left them.
-   * The panel sets it from settings.
-   */
-  tabbed?: boolean;
-  /** How the timeline draws its levels: off a rail, indented, or in lanes. The panel sets it from settings. */
-  timelineStyle?: TimelineStyle;
-  /** The timeline's window, the newest hours. The panel sets it from settings. */
-  timelineHours?: number;
-  /** Entries the reader brought back from before the window. Panel state, reset with the session. */
-  timelineMore?: number;
-  /** The timeline's cursor: an agent entry's item, or the earlier row's. None until ↑ or ↓ in the pane. */
-  timelineCursor?: string | null;
-  /** The pane the Inspector was opened from, when it is not the agent's own list: Esc goes back there. */
-  inspectFrom?: 'timeline';
-  /** The L2 roles the timeline and the cards give a line of their own. The panel sets it from settings. */
+  /** The L2 roles eligible for the saved important-scope summary policy. */
   importantRoles?: ReadonlySet<string>;
   /** The cards' corners. The panel sets it from settings. */
   cardCorners?: 'square' | 'round';
@@ -251,7 +196,6 @@ export interface MonitorControl {
     | 'log'
     | 'switch'
     | 'zoom'
-    | 'observability'
     | 'keys'
     | 'open-session'
     | 'delegation-open'
@@ -292,9 +236,7 @@ export interface MonitorData {
   state: MonitorState;
   width: number;
   height: number;
-  git?: GitChanges | null;
   worktrees?: WorktreesSnapshot | null;
-  diff?: string[];
   nowMs?: number;
   notice?: string | null;
   error?: string | null;
@@ -325,14 +267,12 @@ export interface MonitorData {
    * while a tool or agent has failed.
    */
   session?: (nowMs: number) => { text: string; short?: string; attention: boolean; failed?: boolean } | null;
-  /** The session's observed events, newest first, for the Timeline pane. */
-  timeline?: readonly WorkbenchEvent[];
   /**
    * Model-written readings, each shown marked as such: the pending approval's
    * command in plain words, and what the current diff does (`current` false
    * once the diff has moved on since it was written).
    */
-  notes?: { approval?: string; changes?: { lines: string[]; at: number; current: boolean } };
+  notes?: { approval?: string };
   /** The session has not been read yet: an empty tree is not news. */
   loading?: boolean;
   /**
@@ -350,8 +290,6 @@ export interface MonitorContext {
   tree: SubagentTree;
   /** The clock the frame was drawn with, so a click resolves against the rows it saw. */
   nowMs?: number;
-  git?: GitChanges | null;
-  worktrees?: WorktreesSnapshot | null;
   frame?: MonitorFrame;
   /** Leaving a modal via a navigation tab selects/opens its pane instead of toggling it shut. */
   navigationOverlay?: boolean;
@@ -367,7 +305,6 @@ export interface MonitorOutcome {
     | { type: 'pick'; id: string }
     | { type: 'brief-toggle' }
     | { type: 'status-level' }
-    | { type: 'observability' }
     | Exclude<DelegationAction, { type: 'switch' }>;
 }
 
@@ -376,10 +313,8 @@ export function initialMonitorState(): MonitorState {
     mainTab: 'home',
     tree: { ...initialPanelState(), sort: 'active' },
     focus: 'agents',
-    modes: { agents: 'open', timeline: 'closed', changes: 'closed', details: 'closed' },
-    scroll: { agents: 0, timeline: 0, changes: 0, details: 0 },
-    selectedWorktree: null,
-    selectedFile: null,
+    modes: { agents: 'open', changes: 'closed', details: 'closed' },
+    scroll: { agents: 0, changes: 0, details: 0 },
     preview: 'agent',
     help: false,
     zoom: false,
@@ -391,7 +326,6 @@ export function initialMonitorState(): MonitorState {
 export function monitorModes(settings: HudSettings): MonitorModes {
   return {
     agents: settings.agentsPane,
-    timeline: settings.timelinePane,
     changes: settings.changesPane,
     details: settings.detailsPane,
   };
@@ -404,12 +338,9 @@ export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
   };
   (Object.keys(cardVisibility) as Array<keyof CardVisibility>).forEach(copy);
   return {
-    tabbed: settings.paneLayout === 'tabs',
     style: settings.panelStyle,
     statusLevel: settings.statusCard,
     labelAsName: true,
-    timelineStyle: settings.timelineStyle,
-    timelineHours: settings.timelineHours,
     importantRoles: roleSet(settings.importantRoles),
     cardCorners: settings.cardCorners,
     cardStallMinutes: settings.cardStallMinutes,
@@ -428,31 +359,9 @@ export function listedAgents(nodes: SubagentTree['nodes'], state: MonitorState, 
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return {
     agentsPane: state.modes.agents,
-    timelinePane: state.modes.timeline,
     changesPane: state.modes.changes,
     detailsPane: state.modes.details,
   };
-}
-/**
- * The changes' cursor: the row it was on while that row is listed (a
- * worktree's, or a file's), the untracked files' row when its file is folded
- * into it, else the first file. Only the reader puts it on a worktree's row:
- * the files of a worktree just listed are still being read.
- */
-function fileSelection(
-  state: MonitorState,
-  git?: GitChanges | null,
-  worktrees?: WorktreesSnapshot | null
-): string | null {
-  const on = worktreeOfItem(state.selectedFile);
-  if (on !== undefined && listsWorktrees(worktrees) && worktrees!.entries.some((w) => w.path === on))
-    return state.selectedFile;
-  const files = git?.files ?? [];
-  const folded = files.some(isUntracked);
-  if (state.selectedFile === UNTRACKED_ROW && folded) return UNTRACKED_ROW;
-  const file = files.find((f) => f.path === state.selectedFile);
-  if (file) return isUntracked(file) && !state.untrackedOpen ? UNTRACKED_ROW : file.path;
-  return files.find((f) => !isUntracked(f))?.path ?? (folded ? UNTRACKED_ROW : null);
 }
 /** The plan options a state asks for (the fold, the history, the order). */
 function planOptions(state: MonitorState, nowMs: number): PlanOptions {
@@ -473,8 +382,6 @@ function planOptions(state: MonitorState, nowMs: number): PlanOptions {
 export function reconcileMonitor(
   state: MonitorState,
   tree: SubagentTree,
-  git?: GitChanges | null,
-  worktrees?: WorktreesSnapshot | null,
   nowMs: number = Date.now(),
   delegation?: DelegationViewModel | null
 ): MonitorState {
@@ -500,20 +407,11 @@ export function reconcileMonitor(
         : { ...state.tree, selectedId: key, view: state.tree.view === 'detail' && !key ? 'tree' : state.tree.view };
   } else if (delegation === undefined && state.delegating) selected = state.tree;
   else selected = reconcileSelection(state.tree, tree.nodes, listedAgents(tree.nodes, state, nowMs));
-  const entries = worktrees?.entries ?? [];
-  const selectedWorktree = entries.some((w) => w.path === state.selectedWorktree)
-    ? state.selectedWorktree
-    : (entries.find((w) => !w.bare && w.prunable === undefined)?.path ?? entries[0]?.path ?? null);
-  const selectedFile = fileSelection(state, git, worktrees);
-  // In the tabs layout any pane can be the one shown, whatever the stacked layout left closed.
   const focus =
-    state.tabbed || state.modes[state.focus] !== 'closed'
+    state.modes[state.focus] !== 'closed'
       ? state.focus
       : (MONITOR_PANES.find((id) => state.modes[id] !== 'closed') ?? 'agents');
-  const changed =
-    selected.selectedId !== state.tree.selectedId ||
-    selectedWorktree !== state.selectedWorktree ||
-    selectedFile !== state.selectedFile;
+  const changed = selected.selectedId !== state.tree.selectedId;
   // A selection the panel made for itself (the first agent, or a stand-in
   // for one that left) is not the reader moving: the view stays put.
   const revealed = selected.selectedId !== state.tree.selectedId ? selected.selectedId : state.revealed;
@@ -521,8 +419,6 @@ export function reconcileMonitor(
     ...state,
     ...(view ? { delegating: true as const } : {}),
     tree: selected,
-    selectedWorktree,
-    selectedFile,
     focus,
     revealed,
     scroll: { ...state.scroll, details: changed ? 0 : state.scroll.details },
@@ -552,7 +448,7 @@ export function panelTop(
   return [
     ...bar.lines,
     ...(bar.lines.length < 2 ? [''] : []),
-    paneHead(state.focus, width, { focused: true, zoomed: false, named: !state.tabbed, info }),
+    paneHead(state.focus, width, { focused: true, zoomed: false, info }),
   ];
 }
 
@@ -576,7 +472,6 @@ const HELP_KEY_COLUMN = 12;
 function helpText(
   rich: boolean,
   prefix: string,
-  tabbed = false,
   cardSummary = true,
   delegation = false
 ): Array<string | { head: string; tab: HelpTab }> {
@@ -590,16 +485,11 @@ function helpText(
       '{p} ,  settings  {p} ?  help',
       '{p} b  pause / resume models',
       '{p} a  show / hide older',
-      '{p} d  HUD diagnostics and TPS details',
-      '{p} u  inbox, updates and history',
-      '{p} p  find and pin agents',
-      '{p} c  sources, model calls and export',
       '{p} 1 Home',
       '{p} ↑ ↓  move',
       '{p} o  open  {p} v  inspect',
       '{p} PgUp PgDn  scroll  {p} g G  first / last',
       '{p} ⏎  expand / collapse',
-      "Timeline: ↑ ↓ an agent's entry, Enter inspects",
       ...(rich ? [] : ['{p} h l  fold / unfold agent']),
       '{p} f  filter  {p} s  order',
       // The delegation view's keys (design §2, §3.7): only where that view is drawn, so the legacy help is as it was.
@@ -621,7 +511,7 @@ function helpText(
           t('{open} switch Codex to the selected agent', { open: icon('open') }),
         ]
       : []),
-    t(tabbed ? "Click a pane's tab: show it" : "Click a pane's button: open or close it"),
+    t("Click a pane's button: open or close it"),
     head('Mouse', 'mouse'),
     ...[
       ...(rich
@@ -639,8 +529,7 @@ function helpText(
             'Click a blank row: keys stay here',
             'Esc: keys back to Codex',
           ]),
-      'Click an agent on the timeline: inspect',
-      ...(tabbed ? [] : ["Click a pane's title: zoom / restore"]),
+      "Click a pane's title: zoom / restore",
       "Click the card's band: its level",
       'PgUp/PgDn or wheel scroll',
     ].map((line) => t(line)),
@@ -663,7 +552,6 @@ function helpText(
       'status card gutter colour = main session state',
       '┃ = auto-compact point',
       '◈N = guardian reviews  +N = folded agents',
-      'Timeline: ⏎ turn finished  ×N in a row',
       'yellow clock = quiet 5m+',
       '──56%── = context or quota used, the % at the fill',
       'meter: blue, yellow past 70%, red past 85%',
@@ -675,9 +563,9 @@ function helpText(
   ];
 }
 
-/** Whether a pane is drawn, and so worth reading for: open when stacked, the one shown in the tabs layout. */
+/** Whether a pane is open, and so worth reading for. */
 export function paneShown(state: MonitorState, id: MonitorPane): boolean {
-  return state.tabbed ? state.focus === id : state.modes[id] === 'open';
+  return state.modes[id] === 'open';
 }
 
 /** The control bar's `⇢` and `↻` for the selected row of a delegation view. */
@@ -691,7 +579,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const height = Math.max(0, Math.floor(input.height));
   const now = input.nowMs ?? Date.now();
   const delegation = nativeCallsOnly(input.hud?.delegation) ? null : (input.hud?.delegation ?? null);
-  const state = reconcileMonitor(input.state, input.tree, input.git, input.worktrees, now, delegation);
+  const state = reconcileMonitor(input.state, input.tree, now, delegation);
   const frame: MonitorFrame = { lines: [], panes: [], controls: [], state };
   // Secondary views keep the board context so prefix 1 returns to Home.
   if (input.workboard)
@@ -722,7 +610,6 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const text = helpText(
       state.style === 'rich',
       prefix,
-      Boolean(state.tabbed),
       state.cardVisibility?.cardSummary ?? defaultCardVisibility().cardSummary,
       Boolean(delegation)
     );
@@ -864,10 +751,8 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   let budget = Math.max(0, height - top - footRows - noticeRows.length);
   // A closed pane takes no row at all; in the tabs layout only the one shown
   // has rows, all of them, and there is nothing to zoom.
-  const zoom = state.zoom && !state.tabbed;
-  const ids = state.tabbed
-    ? [state.focus]
-    : MONITOR_PANES.filter((id) => state.modes[id] !== 'closed' && (!zoom || id === state.focus));
+  const zoom = state.zoom;
+  const ids = MONITOR_PANES.filter((id) => state.modes[id] !== 'closed' && (!zoom || id === state.focus));
   // Where the panel is tall enough a blank row parts its sections: under the
   // bar, between two panes and above the status card. Not in the frame look,
   // whose edges part them already, and never at a pane's expense: short of
@@ -975,7 +860,6 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
             right: range && colors.dim(range),
             focused,
             zoomed,
-            named: !state.tabbed,
           }),
         framed ? 2 : 0
       );
@@ -987,12 +871,6 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     const edge = edgeOf(id);
     const count = Math.max(0, h - edge);
     let offset = Math.max(0, Math.min(state.scroll[id], Math.max(0, rows.length - count)));
-    const selected = id === 'changes' ? state.selectedFile : id === 'timeline' ? (state.timelineCursor ?? null) : null;
-    const index = selected ? rows.findIndex((row) => row.item === selected) : -1;
-    if (index >= 0 && count > 0) {
-      if (index < offset) offset = index;
-      else if (index >= offset + count) offset = index - count + 1;
-    }
     state.scroll[id] = offset;
     const pane = {
       id,
@@ -1012,9 +890,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     // on it zooms or restores the pane.
     const range =
       rows.length > count && count ? `${offset + 1}–${Math.min(rows.length, offset + count)}/${rows.length}` : '';
-    const total = id === 'changes' ? (input.git?.files.length ?? 0) : id === 'timeline' ? timelineCount(rows) : 0;
-    const right = range || (total ? t(id === 'changes' ? '{n} files' : '{n} events', { n: total }) : '');
-    frame.lines[y] = paneHead(id, width, { right: right && colors.dim(right), focused, zoomed, named: !state.tabbed });
+    frame.lines[y] = paneHead(id, width, { right: range && colors.dim(range), focused, zoomed });
     titles.add(y);
     frame.controls.push({ kind: 'zoom', pane: id, x: 0, y, width });
     // The gutter in the pane's state colour: the accent where the keys go.
@@ -1022,11 +898,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     for (let i = 0; i < count; i++) {
       const row = rows[offset + i];
       const clipped = truncateAnsi(row?.text ?? '', inner);
-      // The highlight covers the row's words, not the blank run after them:
-      // a selected short name should not paint a bar across the pane.
-      const highlight = row?.item && row.item === selected && focused;
-      const body =
-        (highlight ? theme.selected(clipped) : clipped) + ' '.repeat(Math.max(0, inner - visualLength(clipped)));
+      const body = clipped + ' '.repeat(Math.max(0, inner - visualLength(clipped)));
       frame.lines[y + 1 + i] = truncateAnsi(rule(gutter) + body, cw);
     }
     y += h;

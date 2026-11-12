@@ -25,16 +25,6 @@ import { performance } from 'node:perf_hooks';
 import { t, type Language } from '../render/i18n.js';
 import { wrongLanguage } from './reply-language.js';
 import { ModelRuntimeStore } from './model-runtime-store.js';
-import {
-  boundedTelemetry,
-  summarizeModelTelemetry,
-  telemetryFeature,
-  telemetryFailure,
-  TELEMETRY_RECORD_LIMIT,
-  type ModelTelemetryRecord,
-  type ModelTelemetrySummary,
-  type TelemetryFeature,
-} from './model-telemetry.js';
 
 export type ModelBackend = 'off' | 'api';
 /** minimal/medium are advanced typed-only compatibility values, never inferred. */
@@ -58,8 +48,6 @@ export interface ModelRequest {
   materialUnchanged?: true;
   /** Who is asking; selects an API model route, but is never sent. */
   feature: string;
-  /** Optional allowlisted accounting group; never affects routing, payload or cache identity. */
-  telemetryFeature?: TelemetryFeature;
   system: string;
   prompt: string;
   /** Defaults to `low`, what every feature used before levels were a choice. */
@@ -384,7 +372,6 @@ interface Job {
   order: number;
   retryAt?: number;
   startedAt?: number;
-  dispatchedAt?: number;
   id: string;
   listeners: Set<() => void>;
   /** Stops a running job; set while it runs. */
@@ -415,20 +402,13 @@ export class SmallModel {
   private lastSuccessAt?: number;
   private lastFailure?: ModelDiagnostics['lastFailure'];
   private readonly store: ModelRuntimeStore | null;
-  private readonly telemetryStore: ModelRuntimeStore | null;
   private readonly dir: string | null;
   private readonly clock: () => number;
-  private telemetryRecords: ModelTelemetryRecord[] = [];
-  private telemetryWrites: Promise<void> = Promise.resolve();
-  private telemetrySaving = false;
-  private readonly telemetryDirty = new Map<string, ModelTelemetryRecord>();
-  private telemetryUnavailable = false;
 
   constructor(private readonly options: SmallModelOptions = {}) {
     this.dir = options.dir ?? null;
     this.clock = options.clock ? () => options.clock!() : Date.now;
     this.store = this.dir ? new ModelRuntimeStore(this.dir) : null;
-    this.telemetryStore = this.dir ? new ModelRuntimeStore(path.join(this.dir, 'telemetry')) : null;
   }
 
   configure(patch: { backend?: ModelBackend; api?: ModelApi; hourlyCap?: number }): void {
@@ -458,88 +438,6 @@ export class SmallModel {
       ...(this.lastSuccessAt !== undefined ? { lastSuccessAt: this.lastSuccessAt } : {}),
       ...(this.lastFailure ? { lastFailure: { ...this.lastFailure } } : {}),
     };
-  }
-
-  /**
-   * Local read-only disk sampling when dir is configured; never sends a request.
-   * Shared settled records plus this instance's pending work, within 24h/1000
-   * records. Other panels' in-flight work and pre-instrumentation calls are unknown.
-   * Cache hits count local consumers, not provider calls. Durations exclude queue
-   * time; they measure dispatch to public settlement (including cancellation).
-   */
-  telemetry(now: number = this.clock()): ModelTelemetrySummary {
-    let shared: ModelTelemetryRecord[] = [];
-    if (this.telemetryStore) {
-      try {
-        shared = this.telemetryStore.telemetry();
-      } catch {
-        this.telemetryUnavailable = true;
-      }
-    }
-    return summarizeModelTelemetry(
-      [...shared, ...this.telemetryRecords],
-      now,
-      !this.store ? 'memory' : this.telemetryUnavailable ? 'unavailable' : this.telemetrySaving ? 'pending' : 'shared'
-    );
-  }
-
-  /** Optional shutdown/test barrier; never sends model traffic or retries failures. */
-  async flushTelemetry(): Promise<void> {
-    do {
-      await this.telemetryWrites;
-    } while (this.telemetrySaving);
-  }
-
-  private recordTelemetry(job: Job, result?: ModelResult, capturedNow?: number): void {
-    const now = capturedNow ?? this.clock();
-    const outcome = !result
-      ? 'pending'
-      : result.ok
-        ? result.cached
-          ? 'cache'
-          : 'success'
-        : result.cancelled
-          ? 'cancelled'
-          : result.reason === 'hourly-cap'
-            ? 'limited'
-            : result.refused
-              ? 'refused'
-              : 'failure';
-    const record: ModelTelemetryRecord = {
-      id: job.id,
-      feature: telemetryFeature(job.request.telemetryFeature ?? job.request.feature),
-      at: job.queuedAt,
-      outcome,
-      durationMs: result && job.dispatchedAt !== undefined && now >= job.dispatchedAt ? now - job.dispatchedAt : null,
-      failure:
-        result && !result.ok && !result.cancelled ? telemetryFailure(result.classification ?? result.reason) : null,
-    };
-    this.telemetryRecords = boundedTelemetry([...this.telemetryRecords, record], now);
-    // Accounting must never delay settlement, change request ordering or cause a retry.
-    if (this.telemetryStore && result) {
-      this.telemetryDirty.set(record.id, record);
-      while (this.telemetryDirty.size > TELEMETRY_RECORD_LIMIT)
-        this.telemetryDirty.delete(this.telemetryDirty.keys().next().value!);
-      if (!this.telemetrySaving) {
-        this.telemetrySaving = true;
-        // Coalesce a burst into bounded batches; no unbounded promise chain.
-        this.telemetryWrites = Promise.resolve().then(async () => {
-          try {
-            while (this.telemetryDirty.size) {
-              const records = [...this.telemetryDirty.values()];
-              this.telemetryDirty.clear();
-              try {
-                await this.telemetryStore!.recordTelemetryBatch(records, capturedNow ?? this.clock());
-              } catch {
-                this.telemetryUnavailable = true;
-              }
-            }
-          } finally {
-            this.telemetrySaving = false;
-          }
-        });
-      }
-    }
   }
 
   private changed(): void {
@@ -582,14 +480,12 @@ export class SmallModel {
         resolve: (value) => {
           if (!job.settled) {
             job.settled = true;
-            this.recordTelemetry(job, value);
             this.setStatus(job, 'settled');
             resolve(value);
           }
         },
       };
     });
-    this.recordTelemetry(job);
     let hit: { text: string; at: number } | undefined;
     this.reloadCache();
     hit = digest ? this.cache.get(digest) : undefined;
@@ -798,8 +694,6 @@ export class SmallModel {
       this.calls.push(now);
     }
     let outcome: ModelResult;
-    const dispatchAt = this.clock();
-    job.dispatchedAt = dispatchAt;
     try {
       outcome = await this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>);
       // Written in another language than asked: a failure, never cached, never shown as if it obeyed.

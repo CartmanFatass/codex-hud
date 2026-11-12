@@ -31,7 +31,7 @@ Yes. Press `F12` to open the **subagent tree** in a side panel: every agent the 
 
 `Ctrl+T` is left alone on purpose — that is Codex's own transcript overlay.
 
-![Codex HUD — the panel: the agents the session started as cards, their subtasks inside, the timeline under them and the status card; beside it, a file's diff in the Inspector](./docs/fig/panel.png)
+![Codex HUD — historical panel screenshot; current Home uses compact job cards](./docs/fig/panel.png)
 
 **Q: Do I need to set up tmux manually?**
 
@@ -224,23 +224,11 @@ CODEX_HUD_DENSITY=focus codex
 
 New `codexH` launches use the compact bottom bar. `F12` opens the right panel without taking focus from Codex; `Shift+F12` opens and focuses it. Claude and pi open their panel with `/hud`; no panel opens at launch.
 
-**Outside modal pages, the panel forwards ordinary input to Codex.** Every panel command is the **prefix key, `Ctrl+\`, then one key**: `Ctrl+\` `,` opens settings, `Ctrl+\` `?` the help, `Ctrl+\` `b` pauses the brief (the full list is in [the reference](./docs/reference.md#keys), and the help's Shortcuts section). The prefix works wherever the cursor is, in Codex's pane or in the panel; `Ctrl+\` `j` `j` `j` moves three rows, since the moves repeat for half a second without the prefix. A command that needs the panel opens it first. Anything typed without the prefix goes to Codex: with the cursor in the panel (after `Shift+F12`, or a click), keys and pastes are passed to Codex's pane exactly as typed, a paste stays one bracketed paste, and the cursor moves back to Codex with them. Settings, help, activity and evidence pages capture their own navigation keys; Find also captures query text. Close the page with `Esc` or its Back button to resume normal forwarding. The mouse works as before.
+**Outside modal pages, the panel forwards ordinary input to Codex.** Every panel command is the **prefix key, `Ctrl+\`, then one key**: `Ctrl+\` `,` opens settings, `Ctrl+\` `?` the help, `Ctrl+\` `b` pauses the brief (the full list is in [the reference](./docs/reference.md#keys), and the help's Shortcuts section). The prefix works wherever the cursor is, in Codex's pane or in the panel; `Ctrl+\` `j` `j` `j` moves three rows, since the moves repeat for half a second without the prefix. A command that needs the panel opens it first. Anything typed without the prefix goes to Codex: with the cursor in the panel (after `Shift+F12`, or a click), keys and pastes are passed to Codex's pane exactly as typed, a paste stays one bracketed paste, and the cursor moves back to Codex with them. Settings and Help capture their own navigation keys. Close the page with `Esc` or its Back button to resume normal forwarding. The mouse works as before.
 
 `Ctrl+\` twice sends `Ctrl+\` itself to the pane with the cursor. `Ctrl+\` is the prefix on a fresh install because Codex 0.160 binds `Ctrl+]` to *Skip Question* (no Codex 0.160 binding uses `Ctrl+\`). A settings file saved before this change, with no prefix of its own, keeps `Ctrl+]`; Settings → Input → Prefix key switches between the two (`Ctrl+G`, Codex's external editor, and `Alt+]`, which a terminal sends as the start of an escape sequence, are not offered). With `Ctrl+]` as the prefix, Codex's Skip Question is `Ctrl+]` `Ctrl+]`. The prefix is a key table in the HUD's own tmux session: the server's root and `Ctrl+B` tables are untouched. A changed prefix is installed at once for the panel that saved it; a session started before this version keeps its old keys until it is launched again.
 
-Agents opens by default; the Timeline, Changes and the Inspector open on demand. The focused heading and selected row are highlighted; status colors are concentrated on the icons:
-
-| Pane | Content |
-|------|---------|
-| **1 Agents** | A card for each agent the main session started: who it works with, what it is doing now, the newest notes a model wrote about it, the subtasks that matter and the rest counted by role, its name in its direction's colour; the agent's own words and its task are in the Inspector, whole; compact, the tree of every agent |
-| **2 Timeline** | The session on the main session's axis: its turns, approvals and failures, each agent's stages a level in with what they returned, and only the subtasks that matter, in each direction's colour, as a rail, indents or lanes |
-| **3 Changes** | The worktrees on top, where there are several, each by name (its branch; detached, the nearest directory that is not an id, such as `bench-sources`) with its changed/conflicted state and `locked` in words, and no hash, here or in the Inspector; then the files of the selected one, each with a coloured letter for what happened to it (`M`, `A`, `D`, `R`, `!` for a conflict) and its `+12 −3` where it fits, under their counts in words (`2 staged · 5 unstaged`, zeros left out); untracked files fold into one last row (`▸ 12 untracked`) that Enter or a click opens, and an untracked directory is one row there (`bench/corpus/`), as `git status` lists it; a path too long to fit shows the shortest ending that tells it apart (`.agents/…/SKILL.md`); selectable even at narrow widths |
-| **4 Inspector** | Agent status and activity times, worktree details, or colored file diffs |
-
-**Panes** (Settings → Panel → Panes) sets how the panes share the panel:
-
-- **stacked** (the default): every open pane at once, as above.
-- **tabs**: one pane at a time, as a browser shows one page, with all the height between the bar and the status card. Every pane has a tab on the bar; a click on one shows that pane, as `Ctrl+\` `1`–`4` does, and `Ctrl+\` `Tab` shows the next. The tab names the pane, so its title keeps only its counts and where its rows are. Nothing is zoomed or closed in this layout, and the stacked layout's open and closed panes are as they were when it comes back.
+Home is the only page: questions, compact job cards and current decisions. `1` returns Home; `3` / `Ctrl+\ 3` opens Changes, now only branch/HEAD, ahead/behind and staged/unstaged/untracked counts, plus one path/branch/dirty-or-clean row per worktree. There are no file lists, previews or diffs. `v` / `4` opens the agent/job Inspector. Settings and Help remain; the old Agents pane stays until NATIVE-TREE. Timeline, the activity hub, Summary, diagnostics pages and the stacked-versus-tabs preference are removed.
 
 **Two layouts** (Settings → Panel → Layout): **rich**, the default, gives every visible agent the main session started the same configurable card, active or idle. There is no expand/collapse: Settings → Cards controls each field independently, including the latest AI summary and child-agent one-sentence summaries. Child scope defaults to live and important tasks; names and status always remain. Child role counts independently hides the footer counts without hiding child rows or summaries. Click selects, Enter or Space opens the Inspector. **compact** is the tree, one row per agent and subtask, with the brief, the recap and the agent log under it. Both count alike, as the status card, the bar and `codex-hud --json` do: the agents the main session started, their subtasks and the guardian reviews, each apart.
 
@@ -254,11 +242,9 @@ Cards keep progress status brief (queued, writing, failed or capped). The Inspec
 
 **The status card** at the foot carries the bar's fields while the panel is open and, at its full level, the main session's brief; `Ctrl+\` `r` steps through its three levels.
 
-Local activity and evidence: `Ctrl+\ u` opens the inbox, unseen changes and history; `Ctrl+\ p` finds/pins agents; `Ctrl+\ c` shows sources, model calls and an export preview. Saving a report is explicit, and these features make no additional model requests. See the [reference](./docs/reference.md#local-activity-and-evidence).
+Settings → LLM shows calls this hour against the shared hourly cap, including zero and with model text off. Test API (`t`) uses fixed synthetic messages within that same cap. Full agent evidence and progress reasons stay in the Inspector.
 
-Press `Ctrl+\`, then `d`, for diagnostics and main-session TPS evidence. Settings → LLM → Test API (`t`) checks all three routes using fixed synthetic messages within the shared call cap. See the [performance measurements](./docs/performance-20261024.md).
-
-The rest is in **[the reference](./docs/reference.md)**: the panes and both layouts in full, the control bar, the looks and icon sets, the status card, every key and mouse action, switching sessions, the Timeline, the agent log, the Inspector, Settings, the LLM features, the picture and the output rate.
+The rest is in **[the reference](./docs/reference.md)**: the panes and both layouts in full, the control bar, the looks and icon sets, the status card, every key and mouse action, switching sessions, the agent log, the Inspector, Settings, the LLM features, the picture and the output rate.
 
 ## Usage
 

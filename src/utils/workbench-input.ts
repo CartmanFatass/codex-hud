@@ -47,14 +47,12 @@ const KEYS: Record<string, string> = {
   '?': 'help',
   b: 'brief-toggle',
   x: 'pane-close',
-  d: 'diagnostics',
   '[': 'previous-tab',
   ']': 'next-tab',
   t: 'next-tab',
   '1': 'agents',
-  '2': 'details',
   '3': 'changes',
-  '4': 'activity',
+  '4': 'details',
 };
 const ESCAPES: Record<string, string> = {
   '\x1b[A': 'up',
@@ -146,16 +144,11 @@ export class WorkbenchInputDecoder {
                   '1': 'home-tab',
                   '2': 'project-tab',
                   '4': 'inspect',
-                  t: 'timeline',
                   v: 'inspect',
                   ' ': 'inspect',
                 } as Record<string, string>
               )[ch] ?? KEYS[ch])
-            : this.profile === 'monitor' && ch === '2'
-              ? 'timeline'
-              : this.profile === 'monitor' && ch === '4'
-                ? 'details'
-                : KEYS[ch];
+            : KEYS[ch];
         this.pending = this.pending.slice(ch.length);
         key(name, ch);
         continue;

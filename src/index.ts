@@ -6,7 +6,6 @@
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getCodexHome } from './utils/codex-path.js';
 import { getHudDisplayHome, getHudHome } from './hud-home.js';
 import { spawn } from 'child_process';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
@@ -24,8 +23,6 @@ import {
   recordAdaptivePoll,
 } from './collectors/adaptive-poll.js';
 import { collectionObservation } from './utils/collection-observation.js';
-import { ActivityJournal } from './collectors/activity-journal.js';
-import { scopedActivityObservation } from './utils/activity-observation.js';
 import { tmuxFocusPaneArgs, tmuxForwardKeyArgs } from './utils/hud-input.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
 import { renderToStdout, cleanupRenderer, currentStatusBar } from './render/index.js';
@@ -117,8 +114,6 @@ const paneRuntimeStateCollector = process.platform === 'win32' ? new PaneRuntime
 
 // Cached data that gets updated by watchers
 let cachedHudData: HudData | null = null;
-let journal: ActivityJournal | undefined;
-let journalRoot = '';
 let configNeedsRefresh = false;
 const parseRolloutSafely = createParseQueue(() => rolloutParser.parse());
 
@@ -239,13 +234,6 @@ async function mainLoop(): Promise<void> {
     const epoch = collectionEpoch;
     try {
       const data = await collectData();
-      const rootId = data.session?.id ?? data.subagentTree?.rootId ?? '';
-      if (rootId !== journalRoot) {
-        journal?.flush();
-        journalRoot = rootId;
-        journal = rootId ? new ActivityJournal({ codexHome: getCodexHome(), rootId }) : undefined;
-      }
-      journal?.observe(scopedActivityObservation(rootId, rootId, { tree: data.subagentTree, data }));
       data.notices = notices.observe(data, Date.now());
       data.work = readJobSignals(Date.now());
       renderToStdout(data, HUD_PANE_HEIGHT);
@@ -294,7 +282,6 @@ function shutdown(): void {
 
   // A snapshot of a HUD that is no longer running would read as live.
   snapshotWriter.remove();
-  journal?.flush();
   flushTreeScans();
   stopProfiling();
   // Clean up watchers

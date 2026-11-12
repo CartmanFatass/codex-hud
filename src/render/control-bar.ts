@@ -83,7 +83,6 @@ export const UNICODE_ICONS: Record<IconName, string> = {
   agents: '▦',
   changes: '±',
   details: '◫',
-  timeline: '≣',
   pause: 'ǁ',
   resume: '▶',
   show: '⊕',
@@ -106,7 +105,6 @@ export const ICONS: Record<IconName, string> = {
   agents: '\u{f06a9}',
   changes: '',
   details: '',
-  timeline: '',
   pause: '',
   resume: '',
   show: '',
@@ -129,7 +127,6 @@ export const EMOJI_ICONS: Record<IconName, string> = {
   agents: '🤖',
   changes: '📝',
   details: '🔍',
-  timeline: '🕘',
 };
 
 /** The icon the panel draws for `name`, or '' with icons off. */
@@ -166,10 +163,6 @@ const PANE_NAMES: Record<MonitorPane, Record<'en' | 'zh', { title: string; tab: 
   details: {
     en: { title: 'Inspector', tab: 'Inspect', short: 'In' },
     zh: { title: '详情', tab: '详情', short: '详情' },
-  },
-  timeline: {
-    en: { title: 'Timeline', tab: 'Timeline', short: 'Tl' },
-    zh: { title: '时间线', tab: '时间线', short: '时间…' },
   },
 };
 
@@ -228,7 +221,7 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
   const tabs: Spec[] = [];
   for (const id of MONITOR_PANES) {
     // In the tabs layout every pane has a tab: none is closed.
-    const mode = state.tabbed ? 'open' : state.modes[id];
+    const mode = state.modes[id];
     const focused = !input.settingsActive && id === state.focus && mode === 'open';
     // With no colour a tab cannot say closed; only the panes there are get one.
     if (mode === 'closed' && (keep < 4 || palette().name === 'none')) continue;
@@ -491,7 +484,7 @@ function rowBar(state: MonitorState, input: BarInput, width: number): Bar {
     for (const [level, gap] of OPTIONS) {
       // The actions' words come last and go first: never in place of a button.
       if (level === 'every' && keep < 4) continue;
-      if (level === 'named' && !state.tabbed) continue;
+      if (level === 'named') continue;
       // With the selected row's buttons, the last level tries their words at both gaps before it gives them up.
       if (level === 'none' && hasRow) {
         closing.push(gap);
@@ -642,7 +635,7 @@ function frameBar(state: MonitorState, input: BarInput, width: number): Bar {
     if (!top) continue;
     // The tabs, a column in from the frame's left side, ending a column short of its right.
     for (const [level, gap] of OPTIONS) {
-      if (level === 'every' || (level === 'named' && !state.tabbed)) continue;
+      if (level === 'every' || level === 'named') continue;
       const tabs = set.tabs.map((spec) =>
         paint('frame', face(spec, hasWord(level, spec), hasIcon(level, spec)), spec.state)
       );

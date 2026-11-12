@@ -69,7 +69,7 @@ asked); a question left on a finished job was settled by its default and is not 
 
 **Home display and keys** (`render/workboard-input.ts`). The top row is titled Home. Rows are needs-you question cards (or `✓ Nothing needs you · N running`), package lanes with cards, then current **Decided for you** rows. Lanes require visible jobs, the decisions section requires visible decisions. `+N older · a` names hidden items (translated); `a` toggles them in place, newest first, marked older and collapsed to one row until Enter expands. It uses `tree.showAll`; there is no History tab. The scan bounds the data to its newest 200 jobs.
 Enter/click toggles cards and decisions through `boardExpanded` (collapsed by default), and lane headers through `boardFolded`. These sets are display-only, not saved. Expanded cards retain complete model sentences, keywords and factual detail; expanded questions retain context/options, and decisions retain question/alternative.
-`1` returns Home; `2`, `3`, Left/Right and Tab/Shift-Tab do nothing on the page. Up/Down move, `n`/`N` select trouble without leaving Home, `o` opens job files and `v` inspects. Footer: `↑↓ move  ⏎ expand  o open  a all` (whole hints drop from the right when narrow). The top-row `ǁ`/`▶` and `b` still toggle the model master switch; `S` is removed.
+`1` returns Home; `3` opens the repository/worktree Changes summary; `2`, Left/Right and Tab/Shift-Tab do nothing on the page. Up/Down move, `n`/`N` select trouble without leaving Home, `o` opens job files and `v` inspects. Footer: `↑↓ move  ⏎ expand  o open  a all` (whole hints drop from the right when narrow). The top-row `ǁ`/`▶` and `b` still toggle the model master switch; `S` is removed.
 There is no Work tab, target, scroll, control or row path; only `homeTarget`/`homeScroll` remain. The Inspector and retained secondary views keep their own focus/scroll.
 
 **Facade closure.** The additive facade closure is separate from the Pi dispatcher closure. Helpers are not owners:
@@ -83,7 +83,7 @@ old content back. It gets no new features; its removal is scheduled after P2.
 
 **Scope of P2 / ONE-PAGE.** Home draws the approved lanes and compact work cards through the shared lane/card renderer. The four active card states, their precedence, the stall threshold and the
 facade-close rule are presentation only: execution status, wait semantics, acceptance and sources are unchanged. The
-snapshot publisher, Timeline, factual Changes data and diagnostics remain. Model generation now follows §5;
+snapshot publisher remains. CLEANUP-VIEWS removes Timeline, activity/history and diagnostic pages and their producers; Changes remains as repository/worktree summary only (owner correction). Model generation now follows §5;
 no recap, overview or facade-only sentence generator is wired into this pipeline.
 
 ## Owned pi workers (PIROLE PR3; not selected for new jobs until PR4)
@@ -178,7 +178,7 @@ Data flows one way:
                                                          ├─► readAgentTokens (context %, tok/s)
                                                          ├─► ModelJobs / ProgressSummarizer (optional LLM)
                                                          └─► renderMonitor ─► panel frame
- git / worktrees ─► collectGitChanges, WorktreeCollector ─┘
+ git worktrees ─► WorktreeCollector ─► Changes summary
 ```
 
 Collection does all the I/O. Rendering is pure: given the same data, `nowMs`
@@ -447,8 +447,7 @@ thin-job sentences use a separate bounded job-local collector (§5.6), not a fac
 |---|---|
 | `agent-log.ts` (`AgentLog.observe`) | A per-agent history in `display/agent-log/<rootId>.json`, capped at 30 entries per agent, 200 agents, 600 characters per entry, and 30 days. It has two families of kinds. **Observed:** `started`, `finished`, `failed` and `report` (the agent's own words, through `agent-report.ts`, final and commentary channels only). **Model-written:** `note`, `digest` and `cause` (`MODEL_LOG_KINDS`). |
 | `agent-context.ts` (`readAgentTokens`) | Each running agent's context fill and output rate (`AgentTokens {usage, rate}`). It reads incrementally from the rollout tail, at most every 3 s, and re-reads after a shrink or inode change. `task_started` resets the rate's baseline; tool-call/output pairs exclude the union of tool waits. It shares the wallclock proxy with the main parser. |
-| `workbench-events.ts` | The timeline's events, capped at 500. |
-| `git-changes.ts`, `worktrees.ts` | The Changes pane. Read only while a pane that shows them is open. Probes run round-robin. On failure the counts are null, never 0. |
+| `worktrees.ts` | Changes summary: branch/HEAD, ahead/behind, staged/unstaged/untracked counts, and worktree path/branch/dirty state. Bounded round-robin probes only while Changes is focused; missing/stale status is unknown. No file lists, previews, diffs or commit-subject probes. |
 
 ---
 
@@ -732,10 +731,9 @@ The steps inside `renderMonitor` (`render/monitor.ts`):
 reconcile state
 planFoot                     status card (status-foot.ts / status-block.ts), levels min | status | full
 controlBar                   pane tabs + Settings; 5 looks: tab, band, tile, frame, pill  (control-bar.ts)
-panes (PANES = agents, timeline, changes, details):
+panes (PANES = agents, changes, details):
   agents   → agents-view.ts  agentsView → richRows (cards.ts) | agentRows (compact)
-  timeline → monitor-timeline.ts timelineRows
-  changes  → monitor-panes.ts changesRows (+ worktrees)
+  changes  → monitor-panes.ts changesRows (repository/worktree summary only)
   details  → monitor-inspector.ts inspectorRows  (the Inspector)
 placeArt                     optional picture (art.ts)
 footPlan.draw
@@ -829,8 +827,8 @@ against Codex 0.154 and 0.157.
   Values use the actual terminal width's right edge; from 70 columns a stable
   help column reserves the rightmost portion. Width applies on Save, followed
   by a repaint as well as the stdout resize event; no draft-only resize.
-  Cards controls presentation; the three LLM rows control the master switch,
-  model and call cap. Rows stay editable to prepare preferences in advance.
+  Cards controls presentation; the three editable LLM rows control the master switch,
+  model and call cap, with a read-only hourly usage row. Rows stay editable to prepare preferences in advance.
   Turning Model text off hides stored model text without deleting it. Hiding card
   content narrows automatic progress targets, not the other native background
   jobs. There are no periodic brief or per-feature settings.
@@ -859,9 +857,6 @@ against Codex 0.154 and 0.157.
 | `scan/` | panel | tree scan cache (`SCAN_VERSION`) |
 | `agent-log/<rootId>.json` | panel | per-agent history |
 | `model-cache/{cache,calls,labels}.json` | panel | model replies, hourly call log, labels |
-| `activity/<root-hash>.json` | bar or panel | bounded per-root events, observed snapshots, pins and explicit viewed/read/snooze receipts |
-| `model-cache/telemetry/telemetry.json` | model service | allowlisted settled feature outcomes, 24h/1000 records, coordination independent of budget/cache claims |
-| `diagnostics/diagnostic-<uuid>.json` | explicit export action | exact preview bytes, fresh exclusive 0600 file, no source content or identifiers |
 | `profile.log` | both | only with `CODEX_HUD_PROFILE=1` |
 
 **Display.** `icons` decides icons or words everywhere: the buttons, the
@@ -1155,14 +1150,15 @@ newlines. This reduces nested tmux/Herdr traffic for clock-only repaints. Each r
 after a full-width row the cursor is still on the last cell, so an erase-to-end-of-line written afterwards would wipe
 that cell in Herdr's terminal (every right-aligned row lost its last character, `⏎ open` read `⏎ ope`).
 
-### Operational diagnostics and explicit probes
+### Current failures and explicit probes
 
-`collectors/bridge-health.ts` reads bounded per-attach health reports on collection
-ticks. The pure `render/hud-diagnostics.ts` formats current failures and TPS evidence.
-`Ctrl+\ d` selects Inspector preview `diagnostics`; agent TPS evidence is expanded
-with the existing Inspector Enter action. Unbound sessions are distinct from read
-failures via `HudHealth.bind`, while model lifecycle callbacks repaint classified
-failures and queue status without performing I/O in the renderer.
+`collectors/bridge-health.ts` still supplies current health notices to the panel/bar.
+`render/hud-diagnostics.ts` retains only `hudProblems` and agent `tokenRateDetails`,
+used by those notices and the agent Inspector. There is no diagnostics page or
+Sources/Calls/Export navigation. Settings → LLM shows `SmallModel.usage()` calls this
+hour against the shared cap, even with model text off; known zero is shown. The
+separate feature telemetry store and its settlement writes are removed; ordinary
+call reservations, cache coordination and `calls.json` remain.
 
 `collectors/model-probe.ts` owns cancellable Settings API checks. It snapshots the
 connection and checks labels, progress and cause with the same configured model
@@ -1177,32 +1173,13 @@ Performance evidence and the reproducible synthetic workload are documented in
 `buildSubagentTreeYielding` to yield between files; the synchronous API remains
 for existing consumers. Neither API changes the scan cache schema.
 
-### Local activity, evidence and adaptive collection
+### Adaptive collection
 
-`ActivityJournal` distils root-scoped facts from fresh coherent HudData/tree/logs;
-both entry points observe it so closing the panel does not stop recording. The
-panel uses `scopedActivityObservation` to reject retained material from a previous
-root, and cancels old model jobs/attaches AgentLog before awaiting a new tree.
-Per-source successful collection watermarks resolve that source's historic
-errors; a successful session read does not certify Git/tree/status recovery.
-Unchanged observations are coalesced; mutations reload and merge under a private
-lock, and a pending write is retained. The journal's in-memory `view()` is safe
-on redraw. Its limits and incomplete-history semantics are in the reference.
-
-`render/activity-hub.ts` is a pure modal renderer/input reducer for Inbox,
-Since viewed, Find and History. A seen receipt names only the events actually
-visible in that frame. Search receives literal Unicode/paste; keys cannot fall
-through into Codex while either new modal owns input. Historical target IDs
-are checked against the current tree before opening an Inspector.
-
-`diagnostics/provenance.ts` builds an allowlisted evidence object. The Sources
-view and diagnostic export share it; `model.telemetry()` samples local records
-outside rendering. Export freezes an allowlisted preview; only an explicit
-save writes the same bytes. Startup identity is captured once from the panel
-entry file and manifest, labelled `entry-file-at-start`, not whole-build/Git
-identity. Telemetry never changes provider payloads, cache keys, budget claims,
-or retry behavior; probe telemetry overrides grouping only. Shutdown settles
-bounded local telemetry writes before process exit.
+Retired Timeline/history collection, activity journalling, inbox/pins/view receipts,
+recent-session modal scans and diagnostic export have no running producers. Existing
+user state is left alone. AgentLog stays: native models, the old Agents pane and
+agent/job Inspector still read its observations, notes, digests, causes and labels.
+The shared rollout parser and its checkpoint event schema are unchanged.
 
 `adaptive-poll.ts` changes collection cadence, never repaint/input cadence.
 `collectionObservation` fingerprints stable evidence, excluding refresh-time

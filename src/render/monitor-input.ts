@@ -27,8 +27,6 @@ import type { DelegationView } from './delegation/panel.js';
 import { directions } from './directions.js';
 import { WHEEL_ROWS } from './agents-view.js';
 import { nextLevel } from './status-foot.js';
-import { UNTRACKED_ROW, worktreeOfItem } from './monitor-labels.js';
-import { TIMELINE_EARLIER, TIMELINE_STEP, timelineAgent } from './monitor-timeline.js';
 
 /**
  * A click on a pane's button, or its number after the prefix: an open pane
@@ -36,8 +34,6 @@ import { TIMELINE_EARLIER, TIMELINE_STEP, timelineAgent } from './monitor-timeli
  * the focus moves to the next pane still open.
  */
 export function clickTab(state: MonitorState, id: MonitorPane): MonitorState {
-  // In the tabs layout a tab shows its pane, as a browser's does: none opens or closes.
-  if (state.tabbed) return openPane(state, id);
   if (state.modes[id] === 'closed') return openPane({ ...state, zoom: false }, id);
   return closePane(state, id);
 }
@@ -46,20 +42,6 @@ function closePane(state: MonitorState, id: MonitorPane): MonitorState {
   const focus = state.focus !== id ? state.focus : (MONITOR_PANES.find((pane) => modes[pane] !== 'closed') ?? id);
   return { ...state, modes, zoom: state.zoom && state.focus !== id, focus };
 }
-/** What the Inspector shows for the changes' cursor: the worktree it is on, else the file. */
-function changesPreview(state: MonitorState): MonitorState['preview'] {
-  return worktreeOfItem(state.selectedFile) !== undefined ? 'worktree' : 'file';
-}
-/**
- * The changes' cursor onto `item`. On a worktree's row it lists that
- * worktree's changes too, as the old worktrees pane's selection did.
- */
-function pointChanges(state: MonitorState, item: string): void {
-  state.selectedFile = item;
-  const worktree = worktreeOfItem(item);
-  if (worktree !== undefined) state.selectedWorktree = worktree;
-  state.preview = changesPreview(state);
-}
 /** `r` or the band: step the level that is on screen. */
 function cycleStatus(state: MonitorState, ctx: MonitorContext): void {
   const height = ctx.frame?.lines.length ?? Number.POSITIVE_INFINITY;
@@ -67,9 +49,8 @@ function cycleStatus(state: MonitorState, ctx: MonitorContext): void {
   state.statusScroll = 0;
 }
 function openPane(state: MonitorState, id: MonitorPane): MonitorState {
-  const preview = id === 'agents' ? 'agent' : id === 'changes' ? changesPreview(state) : state.preview;
-  // The tabs layout shows it and leaves the stacked layout's panes as they were.
-  const modes = state.tabbed ? state.modes : { ...state.modes, [id]: 'open' as const };
+  const preview = state.preview;
+  const modes = { ...state.modes, [id]: 'open' as const };
   return {
     ...state,
     focus: id,
@@ -89,9 +70,6 @@ export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRo
 }
 export function monitorItemAt(pane: MonitorRect, x: number, y: number): string | undefined {
   return monitorRowAt(pane, x, y)?.item || undefined;
-}
-export function canMonitorDiff(frame?: MonitorFrame): boolean {
-  return Boolean(frame?.panes.some((p) => p.id === 'details' && p.height > 1 && p.width >= 16));
 }
 export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   let next: MonitorState = {
@@ -170,7 +148,6 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
         ? result()
         : rowAction(control.kind, control.kind === 'delegation-open' ? openButtonAction : recoverAction);
     if (control?.kind === 'settings') return result({ type: 'settings' });
-    if (control?.kind === 'observability') return result({ type: 'observability' });
     if (control?.kind === 'help') {
       next.help = true;
       next.helpScroll = 0;
@@ -191,7 +168,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     }
     // A pane's band, or the agents' summary: zoom that pane, or restore it.
     if (control?.kind === 'zoom' && control.pane) {
-      if (!next.tabbed) next.zoom = !(next.zoom && next.focus === control.pane);
+      next.zoom = !(next.zoom && next.focus === control.pane);
       next.focus = control.pane;
       return result();
     }
@@ -207,7 +184,6 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       next.scroll.details = 0;
       next.revealed = id;
       next.focus = 'agents';
-      delete next.inspectFrom;
     };
     const inspect = (id: string) => {
       pick(id);
@@ -277,24 +253,6 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
             inspect(id);
             return result({ type: 'pick', id });
           }
-          if (pane.id === 'changes') {
-            pointChanges(next, id);
-            if (id === UNTRACKED_ROW) next.untrackedOpen = !next.untrackedOpen;
-          }
-          // The timeline's last row: twenty more from before its window.
-          else if (pane.id === 'timeline' && id === TIMELINE_EARLIER) {
-            next.timelineMore = (next.timelineMore ?? 0) + TIMELINE_STEP;
-            return result();
-          }
-          // An agent's entry: the cursor on it, and the agent in the Inspector; Esc comes back here.
-          else if (pane.id === 'timeline') {
-            const agent = timelineAgent(id);
-            if (agent && directions(ctx.tree).node.has(agent)) {
-              next.timelineCursor = id;
-              next = inspectFromTimeline(next, agent);
-              return result();
-            }
-          }
           next.scroll.details = 0;
           return result();
         }
@@ -305,25 +263,10 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
           next.scroll.agents + (input.button === 'wheel-down' ? WHEEL_ROWS : -WHEEL_ROWS)
         );
         return result();
-      } else if (pane.id === 'timeline') {
-        // The wheel scrolls the timeline; its cursor, which the view would follow back, goes.
-        next.timelineCursor = null;
-        next.scroll.timeline = Math.max(
-          0,
-          next.scroll.timeline + (input.button === 'wheel-down' ? WHEEL_ROWS : -WHEEL_ROWS)
-        );
-        return result();
       } else key = input.button === 'wheel-down' ? 'down' : 'up';
     }
   }
   if (key === 'settings') return result({ type: 'settings' });
-  if (key === 'changes') return result(); // 3 is reserved for Project (M4).
-  if (key === 'diagnostics') {
-    next.preview = 'diagnostics';
-    next = openPane(next, 'details');
-    next.scroll.details = 0;
-    return result();
-  }
   if (key === 'inspect' || key === 'activate') key = 'enter';
   if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
   // `r` is Reset on the settings page; here it changes how much the status card shows.
@@ -345,7 +288,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     next.help = true;
     next.helpScroll = 0;
   } else if (key === 'pane-close') {
-    if (!next.tabbed && next.modes[next.focus] !== 'closed') next = closePane(next, next.focus);
+    if (next.modes[next.focus] !== 'closed') next = closePane(next, next.focus);
   }
   // A pane's number, as its button: open it, or close it.
   else if (MONITOR_PANES.includes(key as MonitorPane))
@@ -353,7 +296,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       ? openPane({ ...next, zoom: false }, key as MonitorPane)
       : clickTab(next, key as MonitorPane);
   else if (key === 'tab' || key === 'shift-tab') {
-    const visible = MONITOR_PANES.filter((id) => next.tabbed || next.modes[id] !== 'closed');
+    const visible = MONITOR_PANES.filter((id) => next.modes[id] !== 'closed');
     if (visible.length)
       next.focus = visible[(visible.indexOf(next.focus) + (key === 'tab' ? 1 : visible.length - 1)) % visible.length];
   } else if (key === 'enter' || key === 'detail-toggle') {
@@ -363,55 +306,25 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       next.scroll.details = 0;
       return result();
     }
-    // On an agent's entry, Enter opens the agent in the Inspector. Elsewhere
-    // (no cursor, or the earlier row) it brings back twenty more from before
-    // the window, where there are any.
-    if (from === 'timeline') {
-      const rows = ctx.frame?.panes.find((p) => p.id === 'timeline')?.rows ?? [];
-      const agent = timelineAgent(next.timelineCursor);
-      if (agent && rows.some((row) => row.item === next.timelineCursor) && directions(ctx.tree).node.has(agent)) {
-        next = inspectFromTimeline(next, agent);
-        return result();
-      }
-      if (rows.some((row) => row.item === TIMELINE_EARLIER))
-        next.timelineMore = (next.timelineMore ?? 0) + TIMELINE_STEP;
-      return result();
-    }
-    // The untracked files' row lists them under it, or folds them back, in place.
-    if (from === 'changes' && next.selectedFile === UNTRACKED_ROW) {
-      next.untrackedOpen = !next.untrackedOpen;
-      return result();
-    }
-    if (from === 'agents') {
-      next.preview = 'agent';
-      delete next.inspectFrom;
-    } else if (from === 'changes') next.preview = changesPreview(next);
+    if (from === 'changes') return result();
     next = openPane(next, 'details');
     next.scroll.details = 0;
     next.expanded = false;
-    // A diff wants the room; a worktree's details are a few lines.
-    if (from === 'changes' && next.preview === 'file' && !next.tabbed) next.zoom = true;
   } else if (key === 'zoom') {
-    if (!next.tabbed) next.zoom = !next.zoom;
+    next.zoom = !next.zoom;
   } else if (key === 'escape') {
     if (next.keys) {
       next.keys = false;
       return result();
     }
-    if (next.zoom && !next.tabbed) next.zoom = false;
+    if (next.zoom) next.zoom = false;
     else if (next.focus === 'details') {
-      // Back to what was inspected; the tabs layout closes nothing on the way.
-      if (!next.tabbed) next.modes.details = 'closed';
-      const back =
-        next.preview === 'agent' &&
-        next.inspectFrom === 'timeline' &&
-        (next.tabbed || next.modes.timeline !== 'closed');
-      next.focus = back ? 'timeline' : next.preview === 'agent' ? 'agents' : 'changes';
-      delete next.inspectFrom;
+      next.modes.details = 'closed';
+      next.focus = 'agents';
     }
     // The bottom of the ladder is the agents list, never the panel's end:
     // pressed again and again, Esc stops there. q and F12 close the panel.
-    else if (next.focus !== 'agents' && (next.tabbed || next.modes.agents !== 'closed')) next.focus = 'agents';
+    else if (next.focus !== 'agents' && next.modes.agents !== 'closed') next.focus = 'agents';
   } else {
     const pane = ctx.frame?.panes.find((p) => p.id === next.focus);
     const page = Math.max(1, (pane?.height ?? 5) - (pane?.edge ?? 1));
@@ -447,83 +360,17 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       } else if (key === 'sort') next.tree.sort = next.tree.sort === 'active' ? 'created' : 'active';
       else if (['left', 'right', 'filter'].includes(key))
         next.tree = applyKey(next.tree, key as 'left' | 'right' | 'filter', rows).state;
-    } else if (next.focus === 'timeline' && (key === 'up' || key === 'down')) {
-      // ↑ ↓ step the cursor through the agents' entries and the earlier row;
-      // no cursor yet, down starts at the top of the view, up at its foot.
-      const ids = pane
-        ? [...new Set(pane.rows.map((row) => row.item).filter((id): id is string => id !== undefined))]
-        : [];
-      if (ids.length) {
-        const index = ids.indexOf(next.timelineCursor ?? '');
-        const inView = (id: string) => {
-          const at = pane!.rows.findIndex((row) => row.item === id);
-          return at >= pane!.offset && at < pane!.offset + page;
-        };
-        const target =
-          index >= 0
-            ? index + delta
-            : delta > 0
-              ? Math.max(0, ids.findIndex(inView))
-              : (() => {
-                  const shown = ids.filter(inView);
-                  return shown.length ? ids.indexOf(shown.at(-1)!) : ids.length - 1;
-                })();
-        next.timelineCursor = ids[Math.max(0, Math.min(ids.length - 1, target))];
-      } else next.scroll.timeline = Math.max(0, next.scroll.timeline + delta);
     } else if (move) {
-      // Paging the timeline moves its view, and lets its cursor go: the view would follow it back.
-      if (next.focus === 'timeline') next.timelineCursor = null;
-      const ids = pane
-        ? [...new Set(pane.rows.map((row) => row.item).filter((id): id is string => id !== undefined))]
-        : [];
-      if (ids.length && next.focus === 'changes') {
-        // No cursor yet: down starts at the first row, up at the last.
-        const index = ids.indexOf(next.selectedFile ?? '');
-        const target =
-          key === 'home'
-            ? 0
-            : key === 'end'
-              ? ids.length - 1
-              : index < 0
-                ? delta > 0
-                  ? 0
-                  : ids.length - 1
-                : index + delta;
-        pointChanges(next, ids[Math.max(0, Math.min(ids.length - 1, target))]);
-      } else
-        next.scroll[next.focus] =
-          key === 'home'
-            ? 0
-            : key === 'end'
-              ? Math.max(0, (pane?.contentLength ?? 0) - page)
-              : Math.max(0, next.scroll[next.focus] + delta);
+      next.scroll[next.focus] =
+        key === 'home'
+          ? 0
+          : key === 'end'
+            ? Math.max(0, (pane?.contentLength ?? 0) - page)
+            : Math.max(0, next.scroll[next.focus] + delta);
     }
   }
-  if (
-    next.tree.selectedId !== state.tree.selectedId ||
-    next.selectedWorktree !== state.selectedWorktree ||
-    next.selectedFile !== state.selectedFile
-  )
-    next.scroll.details = 0;
+  if (next.tree.selectedId !== state.tree.selectedId) next.scroll.details = 0;
   return result();
-}
-
-/** The agent in the Inspector, opened from the timeline: selected as from its card, Esc coming back to the timeline. */
-function inspectFromTimeline(state: MonitorState, agent: string): MonitorState {
-  const next = openPane(
-    {
-      ...state,
-      tree: { ...state.tree, selectedId: agent },
-      preview: 'agent',
-      revealed: agent,
-      focus: 'agents',
-      scroll: { ...state.scroll, details: 0 },
-    },
-    'details'
-  );
-  next.expanded = false;
-  next.inspectFrom = 'timeline';
-  return next;
 }
 
 /**
