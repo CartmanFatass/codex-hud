@@ -39,7 +39,12 @@ Milestone: M4 · Project view
   does not install), DS accept (one false rotation sentence + optional notes); GIT-SAFE and FIX7 confirmed fixed by
   both → RELEASE-DOCS2 b622a7ba (+ short ja/ko READMEs). Round 9 on b622a7ba: **both accept**; their small optional notes fixed directly (Changes view
   ignores submodules; pi display package is registered, never `pi -e`). The full suite on Node 22.13.0 fails 5
-  watcher tests, so the Node floor becomes 24 (only tested line; owner runs 24) — RELEASE-ARCHIVE addendum 1; RELEASE-ARCHIVE (m4-close 06: `npm run release` = git archive minus dev-only paths, offline install
+  watcher tests, so the Node floor becomes 24 (only tested line; owner runs 24). RELEASE-ARCHIVE c00936e4:
+  `npm run release` (clean worktree only) writes hud-<version>.tar.gz by git archive (tests, docs history, .scratch,
+  .github, cx-continue, agent guides export-ignored); `npm run test:release` rehearses offline extract (path with a
+  space) → ./install core + all extensions → hud / panel / MCP six tools + roster → both uninstall paths with data
+  kept; first-party audit clean. Round 10 (Sol + DS) on the release change, then the final archive is built from the
+  reviewed HEAD and the owner merges/tags; RELEASE-ARCHIVE (m4-close 06: `npm run release` = git archive minus dev-only paths, offline install
   rehearsal in a temp HOME) running in parallel; then m4-close 06 (archive via git archive of tracked files
   minus dev-only dirs, extraction rehearsal in a temp HOME), then stop for the owner before merge/tag.
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
@@ -139,7 +144,7 @@ board counts these; update at every landing or decision. -->
 - done · M4 · M4-REVIEW8 · Sol changes-required (2 doc), DS accept · docs/reviews/2026-11-12-m4-review8-*.md
 - try · M4 · RELEASE-DOCS2 · b622a7ba · round-8 doc fixes, short ja/ko READMEs
 - done · M4 · M4-REVIEW9 · Sol accept, DS accept · docs/reviews/2026-11-12-m4-review9-*.md
-- working · M4 · RELEASE-ARCHIVE · release archive + extraction/install rehearsal, no merge/tag (imp)
+- try · M4 · RELEASE-ARCHIVE · c00936e4 · npm run release + offline install rehearsal (test:release); Node floor 24
 - done · M4 · M4-ARCH · Release: blocked (1: repo Git filters run from the Codex bar and pi footer) · docs/reviews/2026-11-12-m4-architect.md
 - try · M4 · GIT-SAFE · 76e2ba8b · one safe Git policy (src/utils/git-safety.ts) for Claude, Codex, pi footer, Project, Changes; submodule working trees not probed
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
