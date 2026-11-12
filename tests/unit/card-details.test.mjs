@@ -106,6 +106,34 @@ test('malformed, prefix-only, five marks and nesting strip syntax without colour
   setDisplayConfig({ theme: 'terminal', icons: 'text' });
   assert.equal(paintSentence('«!prefer»'), 'prefer');
 });
+test('corner keyword grammar preserves ordinary quotations and shares the four-mark limit', (t) => {
+  fixture(t);
+  assert.deepEqual(keywordMarks('「bar-fields.ts」以「835行」'), keywordMarks('«bar-fields.ts»以«835行»'));
+  assert.deepEqual(keywordMarks('「+批准」「-拒绝」「!更简单」'), keywordMarks('«+批准»«-拒绝»«!更简单»'));
+  for (const quote of [
+    '「普通引用，保留原文」', '「这是一整句中文。」', '「真的吗？」', '「请保留！」',
+    '「甲；乙」', '「甲：乙」', '「甲,乙」', '「甲;乙」', '「甲:乙」', '「yes!」', '「why?」',
+    '「two words」', '「甲\t乙」', '「甲\n乙」', '「」', '「+」', '「unfinished', 'unopened」',
+    '「外层「内层」「另一层」」', `「${'字'.repeat(25)}」`, '「sentence.」',
+  ]) {
+    assert.deepEqual(keywordMarks(quote), { plain: quote, spans: [], valid: true }, quote);
+    if (!/[\t\n]/.test(quote)) assert.equal(paintSentence(quote), quote, quote);
+  }
+  for (const word of ['字'.repeat(24), '😀'.repeat(24)]) {
+    assert.equal(keywordMarks(`「${word}」`).spans.length, 1);
+    assert.equal(keywordMarks(`「${word}字」`).spans.length, 0);
+  }
+  const four = '«甲»「乙」«+丙»「!丁」';
+  assert.equal(keywordMarks(four).spans.length, 4);
+  const five = keywordMarks(four + '「戊」');
+  assert.equal(five.valid, false);
+  assert.deepEqual(five.spans, []);
+  assert.equal(five.plain, '甲乙丙丁戊');
+  assert.equal(paintSentence('「普通引用，保留原文」和「关键词」'),
+    '「普通引用，保留原文」和' + theme.board.identifier('关键词'));
+  assert.equal(markedTitle('「+批准」使用「!更简单」', 'zh'), '«+批准»使用«!更简单»');
+  assert.equal(markedTitle('「甲，乙」', 'zh'), '「甲，乙」');
+});
 test('decision titles share paint in collapsed/expanded rows; visible eight-word cap does not count prefixes or break marks', (t) => {
   const f = fixture(t), lane = f.board.lanes[0];
   const d = { id: 'synthetic-decision', laneId: lane.id, title: 'Fallback', modelTitle: '«+Accept» «!simpler report.md»',

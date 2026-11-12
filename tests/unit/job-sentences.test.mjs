@@ -44,7 +44,7 @@ function fixture(t, mode = 'on', language = 'en') {
                   message: {
                     content:
                       f.reply ??
-                      (f.calls.at(-1).messages[0].content.includes('Simplified Chinese')
+                      (f.calls.at(-1).messages[0].content.includes('sentence in Simplified Chinese')
                         ? '正在检查«解析器»边界。'
                         : 'Checking «parser» boundaries.'),
                   },
@@ -68,7 +68,7 @@ function fixture(t, mode = 'on', language = 'en') {
     mode !== 'off' &&
     !('error' in modelHttpRequest({ base: '', model: '' }, { feature: 'job-sentence', system: '', prompt: '' }, env));
   f.service.configure(f.on, language);
-  put('job.json', { job: id, role: 'imp', created_at: new Date(f.now).toISOString(), herdr_pane: 'main' });
+  put('job.json', { job: id, role: 'imp', created_at: new Date(f.now).toISOString(), herdr_pane: 'w4E:p1' });
   put('brief.md', '# SYNTHETIC: check parser\nGoal: repair boundaries.');
   put('STATUS.json', { state: 'working' });
   put('report.md', 'Factual progress');
@@ -88,7 +88,7 @@ function fixture(t, mode = 'on', language = 'en') {
       }) + '\n'
     );
   f.board = () => {
-    const lanes = readThinJobs(home, { pane: 'main', project: null });
+    const lanes = readThinJobs(home, { pane: 'w4E:p1', project: null });
     return {
       lanes,
       workers: lanes.flatMap((l) => l.workers),
@@ -375,27 +375,29 @@ for (const language of ['en', 'zh']) {
       f.put('STATUS.json', { state, settled_at: state === 'working' ? undefined : new Date(f.now).toISOString() });
       f.reply = language === 'en'
         ? 'Review «+accepts» or «-rejects» report.md and «!recommends simplicity».'
-        : '评审«+批准»或«-拒绝»report.md并«!认为更简单»。';
+        : '评审「+批准」或「-拒绝」report.md并「!认为更简单」。';
       const board = await f.update(), ansi = f.render(board, 120);
       assert.ok(ansi.includes(theme.board.success(language === 'en' ? 'accepts' : '批准')));
       assert.ok(ansi.includes(theme.board.danger(language === 'en' ? 'rejects' : '拒绝')));
       assert.ok(ansi.includes(theme.board.opinion(language === 'en' ? 'recommends simplicity' : '认为更简单')));
       assert.ok(ansi.includes(theme.board.identifier('report.md')));
-      assert.doesNotMatch(stripAnsi(ansi), /[«»!+]/);
+      assert.doesNotMatch(stripAnsi(ansi), /[«»「」!+]/);
     }
     assert.equal(f.calls.length, 3);
     assert.match(f.calls[0].messages[0].content, /up to 4 keywords/);
+    assert.match(f.calls[0].messages[0].content, /Use «…» keyword delimiters in every language, including Simplified Chinese/);
   });
   test(`typed decision model response survives word cap, painting and cache: ${language}`, async (t) => {
     const f = decisionFixture(t);
     f.service.configure(true, language);
-    f.reply = language === 'en' ? '«+Accept» the «!simpler report.md»' : '«+批准»使用«!更简单的report.md»。';
+    f.reply = language === 'en' ? '«+Accept» the «!simpler report.md»' : '「+批准」使用「!更简单的report.md」。';
     let board = await f.update();
     const paint = () => decisionRows(board.decisions[0], board.lanes[0], initialMonitorState(), 160, f.now).map((r) => r.text).join('\n');
     assert.ok(paint().includes(theme.board.success(language === 'en' ? 'Accept' : '批准')));
     assert.ok(paint().includes(theme.board.identifier('report.md')));
-    assert.doesNotMatch(stripAnsi(paint()), /[«»!+]/);
+    assert.doesNotMatch(stripAnsi(paint()), /[«»「」!+]/);
     assert.match(f.calls[0].messages[0].content, /up to 2 keywords/);
+    assert.match(f.calls[0].messages[0].content, /Use «…» keyword delimiters in every language, including Simplified Chinese/);
     f.service = new DecisionTitles(f.model, f.file);
     f.service.configure(true, language);
     board = await f.update();
@@ -403,6 +405,23 @@ for (const language of ['en', 'zh']) {
     assert.ok(paint().includes(theme.board.success(language === 'en' ? 'Accept' : '批准')));
   });
 }
+test('Chinese corner keywords from model paint without brackets and survive cached reopen', async (t) => {
+  const f = fixture(t, 'on', 'zh');
+  f.reply = '「bar-fields.ts」以「835行」完成检查。';
+  let board = await f.update();
+  const check = () => {
+    const ansi = f.render(board, 120);
+    assert.match(stripAnsi(ansi), /bar-fields.ts以835行完成检查。/);
+    for (const word of ['bar-fields.ts', '835行']) assert.ok(ansi.includes(theme.board.identifier(word)));
+    assert.doesNotMatch(ansi, /[«»「」]/);
+  };
+  check();
+  f.service = new JobSentences(f.model, f.file, () => {}, () => f.now);
+  f.service.configure(true, 'zh');
+  board = await f.update();
+  check();
+  assert.equal(f.calls.length, 1);
+});
 for (const mode of ['off', 'no-key'])
   test(`decision factual fallback: ${mode}`, async (t) => {
     const f = decisionFixture(t, mode),

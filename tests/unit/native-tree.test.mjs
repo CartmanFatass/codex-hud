@@ -171,7 +171,7 @@ for (const mode of ['off', 'no-key', 'on'])
                   message: {
                     content: JSON.stringify(
                       language === 'zh'
-                        ? { name: '解析器修复', sentence: '检查«解析器»和report.md，«+批准»或«-拒绝»，«!认为更简单»。' }
+                        ? { name: '解析器修复', sentence: '检查「解析器」和report.md，「+批准」或「-拒绝」，「!认为更简单」。' }
                         : { name: 'Parser repair', sentence: 'Checking «parser» and report.md, «+accept» or «-reject» with «!simpler design».' }
                     ),
                   },
@@ -228,9 +228,11 @@ for (const mode of ['off', 'no-key', 'on'])
         for (const span of [theme.board.identifier(language === 'en' ? 'parser' : '解析器'), theme.board.identifier('report.md'),
           theme.board.success(language === 'en' ? 'accept' : '批准'), theme.board.danger(language === 'en' ? 'reject' : '拒绝'),
           theme.board.opinion(language === 'en' ? 'simpler design' : '认为更简单')]) assert.ok(ansi.includes(span));
+        assert.doesNotMatch(ansi, /[«»「」]/);
       };
       checkPaint(board);
       assert.match(calls[0].messages[0].content, /up to 4 keywords/);
+      assert.match(calls[0].messages[0].content, /Use «…» keyword delimiters in every language, including Simplified Chinese/);
       now += 119999;
       tree.nodes[0].status = 'completed';
       tree.nodes[0].statusAt = new Date(now);

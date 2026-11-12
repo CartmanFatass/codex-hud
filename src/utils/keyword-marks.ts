@@ -1,5 +1,23 @@
-/** Display grammar: «word», «+approval», «-objection», «!opinion». Old plain marks remain valid. */
+/** Only short, balanced, non-nested corner quotes are alternate keyword marks. */
+function cornerMarks(raw: string): string {
+  let depth = 0, start = 0, cursor = 0, nested = false, text = '';
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === '「') {
+      if (depth++ === 0) { start = i; nested = false; }
+      else nested = true;
+    } else if (raw[i] === '」' && depth && --depth === 0) {
+      const content = raw.slice(start + 1, i), payload = content.replace(/^[+!-]/, '');
+      if (!nested && payload && Array.from(payload).length <= 24 && !/[\s。！？!?，,；;：:]|\.$/.test(payload)) {
+        text += raw.slice(cursor, start) + `«${content}»`;
+        cursor = i + 1;
+      }
+    }
+  }
+  return text + raw.slice(cursor);
+}
+/** Display grammar: «word», «+approval», «-objection», «!opinion», plus short 「…」 marks. */
 export function keywordMarks(raw: string) {
+  raw = cornerMarks(raw);
   const spans: { start: number; end: number; type: string }[] = [];
   let plain = '', cursor = 0;
   const matches = [...raw.matchAll(/«([+!-]?)([^«»]*)»/g)];
@@ -30,4 +48,4 @@ export function markedTitle(text: string, language: string): string {
   }
   return (title + plain.slice(cursor, end)).trim();
 }
-export const keywordPrompt = 'Mark up to 4 keywords: «word», «+approve/accept/agree/pass 批准/同意/通过/接受», «-reject/object/oppose/fail/block 拒绝/反对/驳回/失败/阻塞», «!opinion or recommendation». Use the prefix for its meaning, not as literal wording.';
+export const keywordPrompt = 'Use «…» keyword delimiters in every language, including Simplified Chinese (for example «解析器»); do not use 「…」. Mark up to 4 keywords: «word», «+approve/accept/agree/pass 批准/同意/通过/接受», «-reject/object/oppose/fail/block 拒绝/反对/驳回/失败/阻塞», «!opinion or recommendation». Use the prefix for its meaning, not as literal wording.';
