@@ -8,9 +8,9 @@ Gemini first (free tier; the owner's key), fail over to OpenAI, are cached by in
 They do not follow the Settings "Decision API" row (that row is Jev's browser jobs). Display only: a label never
 changes a job's state or steers a worker.
 
-**Blocked by:** GEMINI-DECIDE landing (outside this feature)
+**Blocked by:** None (GEMINI-DECIDE landed fe3aed6c)
 
-**Status:** ready-for-agent
+**Status:** claimed (DL)
 
 - [ ] One decision call per settlement, input bounded to the report's head and the status; reopening the panel or an unchanged report makes no call
 - [ ] Outcome mark on Home, in the Inspector and on the progress board, EN and ZH, 80 and 120 columns

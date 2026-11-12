@@ -4,11 +4,19 @@ Milestone: M4 · Project view
 
 ## Waiting for the owner
 
+- Try (8 landed): reopen `/hud` in a Claude pane → Home shows `Claude · 本次会话` with nested subagents indented
+  (CLAUDE-BIND, NP-01, NP-05); a subagent waiting on background work turns ◉ again when it resumes (NP-02); job cards
+  show the brief's heading as title (NP-04); Chinese 「」 keywords are coloured (NP-03); Home's spare rows show progress
+  and open tickets, Enter jumps to Project (HOME-PROGRESS); Settings → Models → Decision API switches Jev's provider
+  (GEMINI-DECIDE).
+- Gemini key: Google answers 402 "prepayment credits depleted"; check the project's billing in AI Studio or make a
+  key in a project without prepaid billing. Until then Gemini calls fail over to OpenAI.
 
 ## Next
 
-- native-polish (.scratch/native-polish): all five landed; owner tries them. M4 review next.
-- DL running; DL: decision-labels (.scratch/decision-labels) 01–06 by one imp in order (owner). Replaces RUN-LABEL-GEMINI.
+- DL (decision-labels 01–06, one imp) and LIVE-FIX running in parallel.
+- When both land: the M4 milestone review (two reviewers, brief ready in tmp/tasks/M4-REVIEW), then its fixes.
+- Small leftovers for me: pi-roles' pi-dispatch test still uses synthetic ids (its fake herdr generates them).
 
 ## Slices
 
@@ -59,9 +67,10 @@ board counts these; update at every landing or decision. -->
 - try · M4 · GEMINI-DECIDE · Gemini Decisions API provider + Settings switch; default primary OpenAI (Jev pages too heavy for the free tier), 429 cooldown (fe3aed6c)
 - working · M4 · DL · decision-labels 01–06 in one slice (owner): outcome, kind, model fit, looping mark, question category, review severity
 - try · M4 · HOME-PROGRESS · Home shows a compact progress board and open tickets in its spare rows (owner) (2de1e8a7)
+- working · M4 · LIVE-FIX · live-check bugs: active job shown stalled; finished subagents briefly running on open; «--flag» read as reject
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
-## Now (2026-11-12, evening): M3b closed after its second review; M4 Project tab complete with progress board and tickets
+## Now (2026-11-12, night): M4 closing: native-polish, CLAUDE-BIND, GEMINI-DECIDE, HOME-PROGRESS landed; DL and LIVE-FIX running; then the M4 review
 
 Landed since noon: NATIVE-TREE, PROGRESS-BOARD, OPEN-TAB, CARD-DETAILS, TICKETS, PI-STOP (Fishpref), legacy skills
 retired, Matt Pocock skills installed (to-tickets slices multi-slice features), closing M3b review + M3B-FIX2.

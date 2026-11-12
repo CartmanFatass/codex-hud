@@ -6,7 +6,7 @@ that have no label yet get one in the background, inside the shared hourly cap, 
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** claimed (DL)
 
 - [ ] One call per job, input bounded to the brief's title and goal; cached, so a job is labelled once
 - [ ] Inspector shows the kind, EN and ZH

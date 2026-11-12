@@ -6,7 +6,7 @@ that need the owner's authorisation are listed first. Display only: the category
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** claimed (DL)
 
 - [ ] One call per question, input bounded to the question file; cached by its revision
 - [ ] Category chip on pending questions and decided rows; authorisation questions sort first
