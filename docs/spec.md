@@ -16,7 +16,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    `pi-role-reap`); the MCP opens each job's herdr tab itself; jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles
    is not bundled (owner, 2026-11-10). The main session never manages workers: `hud_create` starts them, the job
    watcher closes them; `hud_close` only closes one early (owner, 2026-11-11).
-2. **Show what is happening.** A side panel (Home, History, Project) shows the main session's jobs and their state; Home is one page: what needs the owner, then the package lanes with their job cards, then the decisions (Home and Work merged, owner, 2026-11-11). Finished jobs and older decisions leave Home after a short time and are listed in History (owner, 2026-11-11). The bottom
+2. **Show what is happening.** A side panel (Home, Project) shows the main session's jobs and their state; Home is one page: what needs the owner, then the package lanes with their job cards, then the decisions (Home and Work merged, owner, 2026-11-11). Finished jobs and older decisions hide after a short time; `a` shows them again in place (owner, 2026-11-11). The bottom
    status lines are always on (Claude's statusline, pi's footer; Codex's tmux bar comes with `codexH`); only the side panel is opt-in: it opens only with
    `/hud` (in Codex with F12, as before) (owner, 2026-11-11). The delegation tools stay registered either way (owner,
    2026-11-11). Each client keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
