@@ -188,7 +188,8 @@ export function nativeWorker(node: SubagentTreeNode, laneId = `native:${node.id}
           ? 'Result ready'
           : node.status === 'error'
             ? 'Work failed; inspect the job'
-            : node.action?.text,
+            : // Not the current tool name: it flips every few seconds. The model sentence describes running work.
+              undefined,
     },
   };
 }

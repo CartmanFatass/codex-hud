@@ -23,6 +23,9 @@ type Row = {
   endTurn: Date | undefined;
 };
 const safe = (v: unknown, max = 600) => (typeof v === 'string' ? v.slice(0, max) : '');
+/** A growing transcript is activity even before replay reaches its newest lines (as a Codex rollout's mtime is). */
+const newer = (at: Date | undefined, mtime: number) =>
+  Number.isFinite(mtime) && (!at || mtime > at.getTime()) ? new Date(mtime) : at;
 export class ClaudeNativeTree {
   private rows = new Map<string, Row>();
   private listing = '';
@@ -88,7 +91,7 @@ export class ClaudeNativeTree {
           if (reads >= 8) {
             replaying = true;
             this.complete = false;
-            if (row) nodes.push({ ...row.node, replaying: true, children: [] });
+            if (row) nodes.push({ ...row.node, lastEventAt: newer(row.node.lastEventAt, stat.mtimeMs), replaying: true, children: [] });
             continue;
           }
           reads += 2;
@@ -227,11 +230,15 @@ export class ClaudeNativeTree {
       if (row)
         nodes.push({
           ...row.node,
+          lastEventAt: newer(row.node.lastEventAt, row.mtime),
           replaying: row.offset < row.size || !!row.pending.length || row.skipping,
           children: [],
         });
     }
     this.cursor = (this.cursor + 4) % Math.max(1, this.names.length);
+    // The read cursor rotates; the rows must not, or Home reshuffles every refresh.
+    const started = (n: SubagentTreeNode) => n.startedAt?.getTime() ?? Infinity;
+    nodes.sort((a, b) => started(a) - started(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     const owners = new Map<string, SubagentTreeNode>();
     for (const n of nodes)
       for (const call of this.rows.get(`agent-${n.ref!.threadId}.meta.json`)?.calls ?? []) owners.set(call, n);

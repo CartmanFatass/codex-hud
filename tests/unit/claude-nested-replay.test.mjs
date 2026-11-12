@@ -207,3 +207,28 @@ test('Claude read-to-end fallback does not hide an orphan indefinitely, includin
   assert.equal(tree.nodes[0].ref.threadId, 'child');
   assert.equal(tree.nodes[0].status, 'running');
 });
+
+test('a running Claude agent whose transcript still grows is in progress, not stalled, while replay lags', async (t) => {
+  const { nativeWorker, projectWorkCard } = await import('../../dist-test/src/collectors/work-card.js');
+  const f = fixture(t);
+  const old = (text) =>
+    JSON.stringify({ type: 'assistant', timestamp: new Date(NOW - 20 * 60000).toISOString(), message: { content: [{ type: 'text', text }] } }) + '\n';
+  f.put(f.file, old('Synthetic filler. '.repeat(256)).repeat(300) + message([{ type: 'text', text: 'Now.' }]));
+  const lead = (tree) => tree.nodes.find((n) => n.ref.threadId === 'lead');
+  const first = lead(f.claude());
+  assert.equal(first.replaying, true, 'first chunk leaves the newest lines unread');
+  assert.equal(first.lastEventAt.getTime(), NOW, 'the transcript mtime stands for activity');
+  assert.equal(projectWorkCard(nativeWorker(first), NOW + 60000).state, 'in-progress');
+});
+
+test('Claude rows keep one order across refreshes while the read cursor rotates', (t) => {
+  const f = fixture(t);
+  for (const [id, minutes] of [['b1', 5], ['a2', 4], ['c3', 3], ['d4', 2], ['e5', 1]]) {
+    f.put(join(f.dir, `agent-${id}.meta.json`), { agentType: 'synthetic', description: id, spawnDepth: 1 });
+    f.put(join(f.dir, `agent-${id}.jsonl`), JSON.stringify({ type: 'assistant', timestamp: new Date(NOW - minutes * 60000).toISOString(), message: { content: [{ type: 'text', text: id }] } }) + '\n');
+  }
+  drain(f);
+  const orders = new Set();
+  for (let pass = 0; pass < 6; pass++) orders.add(f.claude().nodes.map((n) => n.ref.threadId).join(','));
+  assert.equal(orders.size, 1, [...orders].join(' | '));
+});
