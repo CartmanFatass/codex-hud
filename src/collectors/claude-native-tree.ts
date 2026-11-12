@@ -96,7 +96,8 @@ export class ClaudeNativeTree {
           this.bytes += Buffer.byteLength(metadata?.text ?? '');
           if (metadata && !metadata.stamp) throw Error('unreadable');
           const meta = metadata ? JSON.parse(metadata.text) : row!.meta;
-          if (!meta || typeof meta.finished !== 'boolean') throw Error('invalid_meta');
+          if (!meta || typeof meta !== 'object' || Array.isArray(meta) ||
+            (meta.finished !== undefined && typeof meta.finished !== 'boolean')) throw Error('invalid_meta');
           const id = name.slice(6, -10);
           const previous = row;
           row = {

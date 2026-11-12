@@ -553,7 +553,7 @@ thin-job sentences use a separate bounded job-local collector (§5.6), not a fac
 
 ## Jev decision providers
 
-`GeminiDecisionProvider` shares TypeSafe's keyed question builders/answer parser, converting state to Gemini input and statements to `noul`. `GEMINI_API_KEY` comes through `readHudCredentials` from the environment or `$HUD_HOME/credentials.env`. OpenAI is the default primary; Settings → Models → Decision API saves `config.json`'s `decisions.primary`, never a second persisted copy. It applies to the next job/CLI invocation; running jobs and explicit profiles stay pinned. Automatic fallback is the first other keyed provider in Gemini → OpenAI → TypeSafe order; explicit fallback wins unless identical to primary. One fallback call covers missing credentials, quota/rate-limit, auth, 5xx or timeout; malformed answers and safety refusals do not fail over. Gemini's free tier is 200 RPM / 50,000 TPM / 10,000 RPD; quota replies cool it down process-wide in memory for Retry-After/retryDelay or 60 seconds, then it is retried. Safety 400 becomes refusal. TypeSafe stays explicitly selectable. The display-text service below remains separate and never sends the Gemini key to a chat endpoint.
+`GeminiDecisionProvider` shares TypeSafe's keyed question builders/answer parser, converting state to Gemini input and statements to `noul`. `GEMINI_API_KEY` comes through `readHudCredentials` from the environment or `$HUD_HOME/credentials.env`. OpenAI is the default primary; Settings → Models → Decision API saves `config.json`'s `decisions.primary`, never a second persisted copy. It applies to the next job/CLI invocation or uncached display-label request; running jobs and explicit profiles stay pinned. Automatic fallback is the first other keyed provider in Gemini → OpenAI → TypeSafe order; explicit fallback wins unless identical to primary. One fallback call covers missing credentials, quota/rate-limit, auth, 5xx or timeout; malformed answers and safety refusals do not fail over. Gemini's free tier is 200 RPM / 50,000 TPM / 10,000 RPD; quota replies cool it down process-wide in memory for Retry-After/retryDelay or 60 seconds, then it is retried. Safety 400 becomes refusal. TypeSafe stays explicitly selectable. The display-text service below remains separate and never sends the Gemini key to a chat endpoint.
 
 ## 5. The optional model features
 
@@ -746,10 +746,10 @@ The private `model-cache/job-sentences.json` retains up to 200 language-keyed jo
 ### 5.7 Decision labels (`collectors/decision-labels.ts`)
 
 `DecisionLabels.update` runs on the existing panel collection tick, never during painting. One in-flight
-label request uses the landed `GeminiDecisionProvider` first and `OpenAIDecisionProvider` as the only fallback,
-via the existing `FailoverDecisionProvider` and its process-wide Gemini quota cooldown. It deliberately ignores
-Settings → Decision API and browser-job routing configuration. Both keys come from `readHudCredentials`;
-TypeSafe-only credentials do not enable display labels. The model-text master gates calls and overlays,
+label request uses the shared `selectDecisionProvider`, following Settings → Models → Decision API
+(`decisions.primary`, default OpenAI), the same automatic/explicit fallback and process-wide Gemini quota cooldown
+as Jev. Gemini, OpenAI and TypeSafe keys come from `readHudCredentials`; any decision key can enable labels.
+Provider failures store empty answers, never raw HTTP text, under the existing per-revision cache/retry rules. The model-text master gates calls and overlays,
 independently of the chat endpoint's key. Disabling/root changes/exit abort pending labels. No watcher,
 worker message, question answer/delay, lifecycle write or process is introduced.
 

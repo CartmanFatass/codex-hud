@@ -2,9 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { readHudCredentials } from '../jev/ask/config.js';
-import { GeminiDecisionProvider } from '../jev/providers/gemini.js';
-import { OpenAIDecisionProvider } from '../jev/providers/openai.js';
-import { FailoverDecisionProvider } from '../jev/failover.js';
+import { selectDecisionProvider } from '../jev/decide.js';
 import { validateChoice } from '../jev/model.js';
 import type { JudgmentChoice } from '../jev/judge.js';
 import type { Answer } from '../jev/decide.js';
@@ -49,7 +47,7 @@ export class DecisionLabels {
   }
   configure(on: boolean, cap: number): void {
     let keyed = false;
-    try { const c = readHudCredentials(this.env); keyed = !!(c.geminiApiKey || c.openaiApiKey); } catch { /* off */ }
+    try { const c = readHudCredentials(this.env); keyed = !!(c.geminiApiKey || c.openaiApiKey || c.typesafeApiKey); } catch { /* off */ }
     this.enabled = on && keyed;
     this.cap = cap;
     if (!this.enabled) this.stop();
@@ -134,11 +132,8 @@ export class DecisionLabels {
           first = false;
           return this.fetcher(url, init);
         };
-        const c = readHudCredentials(this.env);
-        const provider = new FailoverDecisionProvider('gemini',
-          c.geminiApiKey ? new GeminiDecisionProvider({ apiKey: c.geminiApiKey, fetcher: cappedFetch }) : undefined,
-          c.openaiApiKey ? new OpenAIDecisionProvider({ apiKey: c.openaiApiKey, fetcher: cappedFetch }) : undefined);
-        const result = await provider.judge({ page: { url: '', title: 'HUD display labels', text: JSON.stringify(p.input) },
+        const provider = await selectDecisionProvider(undefined, this.env, cappedFetch);
+        const result = await provider.judge!({ page: { url: '', title: 'HUD display labels', text: JSON.stringify(p.input) },
           elements: [], facts: {}, deltas: {}, statements: [], choices: p.questions }, { signal: abort.signal, cacheKey: digest });
         answers = p.questions.map((q) => {
           const a = result.answers.find((a) => a.name === q.name);

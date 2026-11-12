@@ -50,6 +50,30 @@ test('Home: real Claude meta/transcript collection and Codex three-level tree, 8
       assert.doesNotMatch(text, /PRIVATE-CLAUDE|PRIVATE-CHANNEL|Agents/);
     }
 });
+for (const finished of [undefined, false]) test(`Claude real-shaped running metadata (finished=${finished}) reaches its Home lane, then completes`, (t) => {
+  const f = fixture(t), file = join(f.dir, 'agent-lead.meta.json');
+  const meta = { agentType: 'frontend-implementer', description: 'Repair parser', toolUseId: 'root-call',
+    spawnDepth: 1, requestShape: 'background', ...(finished === undefined ? {} : { finished }) };
+  f.put(file, meta);
+  const check = (completed) => {
+    const tree = f.claude(), node = tree.nodes.find((n) => n.role === 'frontend-implementer');
+    assert.ok(node, 'running agents must not be dropped as invalid_meta');
+    assert.equal(tree.incomplete, false);
+    assert.equal(node.status, completed ? 'completed' : 'running');
+    assert.equal(f.board(tree).workers.find((w) => w.id === node.id).state, completed ? 'done' : 'working');
+    const text = f.render(120, 'zh', initialMonitorState(), tree).lines.map(stripAnsi).join('\n');
+    assert.match(text, /Claude · 本次会话/);
+    assert.match(text, completed ? /✓ frontend-implementer/ : /◉ frontend-implementer/);
+  };
+  check(false); check(false);
+  assert.equal(f.collector.bytes, 0, 'unchanged running metadata remains stat-only');
+  f.put(file, { ...meta, finished: true });
+  check(true);
+  assert.equal(f.collector.bytes, fs.statSync(file).size, 'completion reads only changed metadata');
+  check(true);
+  assert.equal(f.collector.bytes, 0);
+});
+
 test('native hide rules: done 10m, failed/stopped 30m; a reveals in place and native Inspector opens transcript', (t) => {
   const f = fixture(t),
     tree = f.combined();

@@ -108,7 +108,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   },
   {
     key: 'decisionApi', group: 'Models', label: 'Decision API', values: ['gemini', 'openai', 'typesafe'],
-    help: 'Primary for the next browser job; automatic fallback uses another keyed provider',
+    help: 'Primary for Jev and display labels; automatic fallback uses another keyed provider',
     format: (value) => ({ gemini: 'Gemini', openai: 'OpenAI', typesafe: 'TypeSafe' })[String(value)] ?? String(value),
   },
   {

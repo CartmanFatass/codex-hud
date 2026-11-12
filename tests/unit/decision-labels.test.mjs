@@ -16,6 +16,7 @@ import { initialMonitorState, renderMonitor } from '../../dist-test/src/render/m
 import { setLanguage, t as tr } from '../../dist-test/src/render/i18n.js';
 import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
 import { stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
+import { saveSettings } from '../../dist-test/src/settings.js';
 
 const pause = () => new Promise((r) => setTimeout(r, 5));
 const empty = (workers = [], decisions = []) => ({ revision: '1', coverage: { incomplete: false, diagnostics: [], workspace: null },
@@ -41,13 +42,16 @@ function fixture(t, keys = { GEMINI_API_KEY: 'synthetic-gemini', OPENAI_API_KEY:
     const lanes = readThinJobs(home, { pane: 'w4E:p1', project: '/synthetic/project' });
     return { ...empty(), lanes, workers: lanes.flatMap((l) => l.workers), decisions: lanes.flatMap((l) => l.decisions) };
   };
+  f.config = (decisions) => fs.writeFileSync(join(home, 'config.json'), JSON.stringify({ decisions }));
   f.fetch = async (url, init) => {
-    const body = JSON.parse(init.body), gemini = String(url).includes('googleapis');
+    const body = JSON.parse(init.body), gemini = String(url).includes('googleapis'), keyed = !Array.isArray(body.questions);
     f.calls.push({ url: String(url), body });
     if (f.quota && gemini) return new Response(JSON.stringify({ error: { status: 'RESOURCE_EXHAUSTED' } }), { status: 429, headers: { 'retry-after': '60' } });
-    const qs = gemini ? Object.entries(body.questions).map(([name, q]) => ({ name, values: Object.keys(q.criteria) }))
+    const status = f.fail?.(String(url));
+    if (status) return new Response(JSON.stringify({ error: { message: 'prepayment credits depleted SYNTHETIC-HTTP-BODY' } }), { status });
+    const qs = keyed ? Object.entries(body.questions).map(([name, q]) => ({ name, values: Object.keys(q.criteria) }))
       : body.questions.map((q) => ({ name: q.name, values: q.choices.map((c) => c.value) }));
-    const input = JSON.stringify(body.input);
+    const input = JSON.stringify(body.input ?? body.state);
     const answers = qs.map(({ name, values }) => {
       const choice = f.reply?.(name, input, values) ?? (name === 'outcome' ? 'partial' : name === 'progress' ? (input.includes('failed command') ? 'looping' : 'progressing')
         : name === 'category' ? (input.includes('authorise') ? 'owner authorisation' : 'clarification')
@@ -56,7 +60,7 @@ function fixture(t, keys = { GEMINI_API_KEY: 'synthetic-gemini', OPENAI_API_KEY:
       const probabilities = Object.fromEntries(values.map((v) => [v, v === choice ? 0.9 : 0.1 / (values.length - 1)]));
       return { name, type: 'choice', choice, confidence: 0.9, probabilities };
     });
-    return new Response(JSON.stringify({ answers: gemini ? Object.fromEntries(answers.map(({ name, ...a }) => [name, a])) : answers.map((a) => ({ ...a, probabilities: Object.entries(a.probabilities).map(([value, probability]) => ({ value, probability })) })) }));
+    return new Response(JSON.stringify({ answers: keyed ? Object.fromEntries(answers.map(({ name, ...a }) => [name, a])) : answers.map((a) => ({ ...a, probabilities: Object.entries(a.probabilities).map(([value, probability]) => ({ value, probability })) })) }));
   };
   f.open = () => { f.service = new DecisionLabels(dir, () => {}, env, f.fetch, () => f.now); f.service.configure(true, f.cap ?? 60); };
   f.open();
@@ -85,8 +89,8 @@ test('01: one bounded outcome per settlement, cache reopen, no lifecycle mutatio
   f.now += 1000; f.put(id, 'STATUS.json', { state: 'done', settled_at: new Date(f.now).toISOString() });
   await f.pump(); assert.equal(f.calls.length, 2, 'a new settlement is eligible');
 });
-for (const mode of ['off', 'no-key', 'typesafe-only']) test(`01: ${mode} hides labels and sends nothing`, async (t) => {
-  const f = fixture(t, mode === 'off' ? undefined : mode === 'typesafe-only' ? { TYPESAFE_API_KEY: 'synthetic' } : {});
+for (const mode of ['off', 'no-key']) test(`01: ${mode} hides labels and sends nothing`, async (t) => {
+  const f = fixture(t, mode === 'off' ? undefined : {});
   const id = f.job(); f.put(id, 'report.md', 'Done');
   if (mode === 'off') f.service.configure(false, 60);
   const board = await f.pump(); assert.equal(f.calls.length, 0); assert.equal(board.workers[0].labels, undefined);
@@ -99,12 +103,12 @@ test('02: multi-kind once, bounded title/goal, newest-first 30-day backfill insi
     f.put(id, 'brief.md', `# ${title}\n\nGoal: feature UI.\n\nNOT-OUTBOUND\n` + 'x'.repeat(2000));
   let board = await f.pump();
   assert.equal(f.calls.length, 2);
-  assert.match(f.calls[0].body.input, /newest/); assert.match(f.calls[1].body.input, /older/);
+  assert.match(JSON.stringify(f.calls[0].body.input), /newest/); assert.match(JSON.stringify(f.calls[1].body.input), /older/);
   assert.doesNotMatch(JSON.stringify(f.calls), /NOT-OUTBOUND|expired/);
   assert.deepEqual(board.workers[0].labels.kinds, ['ui', 'feature']);
   f.open(); await f.pump(); assert.equal(f.calls.length, 2);
   f.now += 3600001; board = await f.pump(); assert.equal(f.calls.length, 3);
-  assert.match(f.calls[2].body.input, /oldest/);
+  assert.match(JSON.stringify(f.calls[2].body.input), /oldest/);
   assert.equal(board.workers.find((w) => w.id.endsWith(expired)).labels.kinds.length, 0);
   f.now += 3600001; f.put(newest, 'brief.md', '# Changed title\n\nNew goal');
   await f.pump(); assert.equal(f.calls.length, 3, 'kind is frozen per job');
@@ -192,8 +196,8 @@ test('06: findings split independently of headings, bounded, revision cached, em
   f.put(id, 'review-1.md', '# Unusual headings\n' + Array.from({ length: 30 }, (_, i) => `${i + 1}. finding ${i} ${'x'.repeat(500)}`).join('\n') + '\nNOT-OUTBOUND');
   let board = await f.pump(); assert.equal(f.calls.length, 1);
   assert.deepEqual(board.workers[0].labels.severity, [8, 8, 8]);
-  assert.equal(Object.keys(f.calls[0].body.questions).length, 24);
-  assert.ok(JSON.parse(f.calls[0].body.input.split('\n').slice(1).join('\n')).page.text.length <= 24 * 410);
+  assert.equal(f.calls[0].body.questions.length, 24);
+  assert.ok(f.calls[0].body.input[0].content[1].data.page.text.length <= 24 * 410);
   assert.doesNotMatch(JSON.stringify(f.calls), /Unusual headings|NOT-OUTBOUND/);
   f.open(); await f.pump(); assert.equal(f.calls.length, 1);
   f.now += 1000; f.put(id, 'review-1.md', '# Anything\n- Fix this\n  continued detail\n- Consider that\n');
@@ -298,8 +302,60 @@ test('master off aborts an in-flight label and excludes its late result', async 
   assert.equal(fs.existsSync(join(f.dir, 'decision-labels')), false);
 });
 
+test('Decision API defaults to OpenAI and Settings switches the next uncached label to Gemini/TypeSafe', async (t) => {
+  const f = fixture(t, { OPENAI_API_KEY: 'synthetic-openai', GEMINI_API_KEY: 'synthetic-gemini', TYPESAFE_API_KEY: 'synthetic-typesafe' });
+  for (const [i, primary, url] of [[1, undefined, /api.openai.com/], [2, 'gemini', /googleapis/], [3, 'typesafe', /typesafe/]]) {
+    if (primary) {
+      const before = process.env.HUD_HOME;
+      process.env.HUD_HOME = f.home;
+      try { saveSettings({ decisionApi: primary }); }
+      finally { if (before === undefined) delete process.env.HUD_HOME; else process.env.HUD_HOME = before; }
+      assert.equal(JSON.parse(fs.readFileSync(join(f.home, 'config.json'), 'utf8')).decisions.primary, primary);
+    }
+    const id = f.job(i); f.put(id, 'report.md', 'Synthetic completed work');
+    const board = await f.pump();
+    assert.equal(f.calls.length, i, 'one call per new settlement; existing labels remain cached');
+    assert.match(f.calls.at(-1).url, url);
+    assert.equal(board.workers.find((w) => w.id.endsWith(id)).labels.outcome.value, 'partial');
+  }
+});
+
+for (const mode of ['missing-primary', 'automatic', 'explicit', 'same-as-primary', 'typesafe-only'])
+  test(`labels reuse the shared provider fallback: ${mode}`, async (t) => {
+    const f = fixture(t, mode === 'missing-primary' ? { GEMINI_API_KEY: 'synthetic' }
+      : mode === 'typesafe-only' ? { TYPESAFE_API_KEY: 'synthetic' }
+      : { OPENAI_API_KEY: 'synthetic', GEMINI_API_KEY: 'synthetic', TYPESAFE_API_KEY: 'synthetic' });
+    f.config({ primary: 'openai', ...(mode === 'explicit' ? { fallback: 'typesafe' } : mode === 'same-as-primary' ? { fallback: 'openai' } : {}) });
+    f.fail = (url) => url.includes('openai') ? 503 : undefined;
+    const id = f.job(); f.put(id, 'report.md', 'Partial synthetic work');
+    const board = await f.pump();
+    assert.equal(f.calls.length, ['missing-primary', 'typesafe-only'].includes(mode) ? 1 : 2);
+    assert.match(f.calls.at(-1).url, ['explicit', 'typesafe-only'].includes(mode) ? /typesafe/ : /googleapis/);
+    assert.equal(board.workers[0].labels.outcome.value, 'partial');
+  });
+
+for (const primary of ['openai', 'gemini']) test(`failed ${primary} label hides HTTP 402 text and retains revision retry rules`, async (t) => {
+  const f = fixture(t); f.config({ primary });
+  f.fail = () => 402;
+  const id = f.job(); f.put(id, 'report.md', 'Synthetic work');
+  let board = await f.pump();
+  assert.equal(f.calls.length, 1, '402 does not change the existing failover rule');
+  assert.equal(board.workers[0].labels.outcome, undefined);
+  const texts = [homeRows(board, initialMonitorState(), 120, f.now, { workboard: board }),
+    workInspectorRows(board.workers[0], initialMonitorState(), 120, f.now)];
+  for (const rows of texts) assert.doesNotMatch(rows.map((r) => stripAnsi(r.text)).join('\n'), /402|prepayment|SYNTHETIC-HTTP-BODY|decision_provider_error/);
+  for (const file of fs.readdirSync(join(f.dir, 'decision-labels')))
+    assert.doesNotMatch(fs.readFileSync(join(f.dir, 'decision-labels', file), 'utf8'), /402|prepayment|SYNTHETIC-HTTP-BODY/);
+  f.fail = undefined; f.open(); await f.pump();
+  assert.equal(f.calls.length, 1, 'failed unchanged revision stays quiet across reopen');
+  f.now += 1000; f.put(id, 'STATUS.json', { state: 'done', settled_at: new Date(f.now).toISOString() });
+  board = await f.pump();
+  assert.equal(f.calls.length, 2, 'a new settlement retries normally');
+  assert.equal(board.workers[0].labels.outcome.value, 'partial');
+});
+
 test('01: Gemini 429 reuses cooldown and OpenAI failover; every HTTP attempt shares the text hourly cap', async (t) => {
-  const f = fixture(t); f.quota = true; f.cap = 3; f.open();
+  const f = fixture(t); f.config({ primary: 'gemini' }); f.quota = true; f.cap = 3; f.open();
   const id = f.job(); f.put(id, 'report.md', 'Partial synthetic work');
   let board = await f.pump(); assert.equal(f.calls.length, 2); assert.match(f.calls[0].url, /googleapis/); assert.match(f.calls[1].url, /api.openai.com/);
   assert.equal(board.workers[0].labels.outcome.value, 'partial');

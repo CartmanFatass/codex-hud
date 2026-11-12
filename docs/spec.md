@@ -27,8 +27,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    owner's own keys (`$HUD_HOME/credentials.env`, through the Decisions API) for job summaries, recaps and sentences.
    These features only read job files and write display text; they never prompt, brief or steer a worker.
    Decision-API labels (owner, 2026-11-12): a settled job's outcome, a job's kind, a quiet running card that repeats
-   the same failure, a worker question's category and a review's findings by severity, Gemini's free tier first with
-   OpenAI as fallback; the Project tab adds a model-fit table (kind × role · model · thinking: runs, outcomes, median
+   the same failure, a worker question's category and a review's findings by severity, through the Decision API chosen in Settings
+   (default OpenAI); the Project tab adds a model-fit table (kind × role · model · thinking: runs, outcomes, median
    time) from those labels. Display only, like the rest. No consent
    or authority layer. A job may carry an optional package label (given to `hud_create`, else taken from the brief's
    title); the panel groups jobs by it into lanes. The label is display only: the MCP does not interpret it.
