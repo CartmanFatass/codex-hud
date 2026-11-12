@@ -1,11 +1,26 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
-## Now (2026-11-11): M3 installed on the owner's machine; open items
+## Now (2026-11-11, night): bottom bars and panel polish done, pushed; theme concepts running
 
-Installed from `6a251fda` (INSTALL-ON); the owner tries it next. Handoff: `docs/handoff/2026-11-11-handoff.md`. Waiting on concept drafts before any code:
-the bottom bars (Claude/pi in the Codex bar's design; owner: "the Codex bottom design can be used directly") and four
-panel fixes (Enter on a Work card opens its report, key hints never cut a word, lane map shows only real stages,
-readable worker tab labels). Field inventory: `tmp/tasks/BAR-UNIFY/fields.md`.
+The owner is satisfied with the bars (pushed through `6f641d82`). The three bottom bars (Claude statusline, pi
+footer, Codex tmux bar) show one field set on one line:
+- model with its provider mark and a short name (`✻ opus-5.5 high`);
+- context as a claude-hud bar against the auto-compact window (`40%/400K`);
+- repo and branch;
+- each client's own quota (claude-hud bar; pi shows `$` or `~$`);
+- an event-only notice zone (`◐|✓|✗ name [model · effort]`, `✦ skill`, `!` needs-you; 3 min each, two at a time);
+- `MCP n  skills n` on the right.
+
+`barStyle` is line (default) or p10k (powerline capsules); `barFields` switches fields off. PANEL-POLISH
+(`e60d5bb7`): Enter on a Work card opens its report, rows are erased before they are written (fixes `⏎ ope`), lane
+maps show only real stages, readable worker tab labels. The real-herdr check of the `⏎ ope` fix is still the
+owner's.
+
+Running: BAR-THEMES, a concept-only job for 5–8 bar themes (`tmp/tasks/BAR-THEMES/`). The owner picks; a later slice
+builds them.
+
+Waiting on the owner: whether the Codex `◆ window spent, on credits now` notice stays (it is outside the
+owner's notice list).
 
 Open defects and requirements:
 - **An orchestrator-stopped job reports nothing** (owner, 2026-11-11): stopping a job on purpose must not push
