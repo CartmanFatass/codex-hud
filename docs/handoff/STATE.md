@@ -97,7 +97,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime, dead modules and the historical installer chain (769cfa3d)
 - working · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (imp)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
-- working · M4 · M4-FIX2 · re-review fixes: reload keeps place and width in bound panels; brief persists across sentence changes (imp)
+- try · M4 · M4-FIX2 · re-review fixes: reload keeps place and width in bound panels; brief persists across sentence changes (152db34b)
 - working · M4 · M4-PRUNE2 · re-review: delete the remaining retired runtime exports and host/bridge; docs and READMEs that describe deleted things (imp)
 - try · M4 · INSTALL-EXT · owner: ./install gets the browser and herdr extensions of spec §2.3 (96deabe9)
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
