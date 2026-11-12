@@ -22,6 +22,9 @@ import {
   assertJevLocations,
   loadJevConfig,
   readHudCredentials,
+  readHudConfig,
+  decisionFallback,
+  decisionKeys,
   resolveDecisions,
   type JevConfig,
 } from '../ask/config.js';
@@ -50,6 +53,7 @@ import { RESERVED_STATEMENT_NAMES, awaitStates, type JudgmentProvider, type Page
 import { actionSpace, type PageState } from '../model.js';
 import { OpenAIDecisionProvider } from '../providers/openai.js';
 import { TypeSafeDecisionProvider } from '../providers/typesafe.js';
+import { GeminiDecisionProvider } from '../providers/gemini.js';
 import { fakeBrowser, fakeProvider } from './fake.js';
 import { chatgptTarget, type OracleBrowser } from './chatgpt.js';
 import { chatgptStore, runOracle, type OracleTarget } from './oracle.js';
@@ -969,6 +973,7 @@ export class JevRuntime implements JevExecutor {
       if (!value.apiKey) return undefined;
       if (this.options.providerFactory) return this.options.providerFactory(value);
       if (this.options.fake) return { ...fakeProvider(), id: value.id, model: value.model };
+      if (value.id === 'gemini') return new GeminiDecisionProvider({ apiKey: value.apiKey });
       return value.id === 'openai'
         ? new OpenAIDecisionProvider({ apiKey: value.apiKey, baseUrl: value.baseUrl })
         : new TypeSafeDecisionProvider({ apiKey: value.apiKey, model: value.model });
@@ -988,14 +993,14 @@ export class JevRuntime implements JevExecutor {
 
   private resolveDecision(profile: JevCreateRequest['jevDecisions']): ResolvedDecision {
     const explicit = profile?.provider;
-    if (explicit !== undefined && explicit !== 'typesafe' && explicit !== 'openai') {
+    if (explicit !== undefined && explicit !== 'gemini' && explicit !== 'typesafe' && explicit !== 'openai') {
       throw new JevRuntimeError('invalid_request', 'invalid_request');
     }
     const creds = readHudCredentials(process.env, this.hudHome);
-    const config = this.config?.decisions ?? resolveDecisions({});
+    const config = resolveDecisions(readHudConfig(join(this.hudHome, 'config.json')));
     const primary = explicit ?? config.primary;
     const make = (id: DecisionProviderId, primaryModel?: string | null): ResolvedDecision =>
-      id === 'openai'
+      id === 'gemini' ? { id, model: 'gemini-decision-1', apiKey: creds.geminiApiKey ?? '' } : id === 'openai'
         ? {
             id,
             model: 'gpt-6-luna',
@@ -1010,12 +1015,13 @@ export class JevRuntime implements JevExecutor {
     // A profile/stored model binds only its primary. Never carry a model name
     // across providers; fallback model/endpoint selection remains config-bound.
     const resolved = make(primary, profile?.model);
-    if (config.fallback !== primary) {
-      const fallback = make(config.fallback);
+    const fallbackId = decisionFallback(config, creds, primary);
+    if (fallbackId) {
+      const fallback = make(fallbackId);
       if (fallback.apiKey) resolved.fallback = fallback;
     }
     if (!resolved.apiKey && !resolved.fallback) {
-      const decision = decideProviderId(primary, { typesafe: !!creds.typesafeApiKey, openai: !!creds.openaiApiKey });
+      const decision = decideProviderId(primary, decisionKeys(creds));
       throw new JevRuntimeError(
         'jev_credentials_missing',
         'jev_credentials_missing',
@@ -1430,7 +1436,7 @@ function parseCreate(request: JevCreateRequest): JevCreateRequest {
 function parseProfile(profile: JevCreateRequest['jevDecisions']): JevCreateRequest['jevDecisions'] {
   if (profile === undefined || profile === null) return undefined;
   if (typeof profile !== 'object') throw new JevRuntimeError('invalid_request', 'invalid_request');
-  if (profile.provider !== undefined && profile.provider !== 'typesafe' && profile.provider !== 'openai') {
+  if (profile.provider !== undefined && profile.provider !== 'gemini' && profile.provider !== 'typesafe' && profile.provider !== 'openai') {
     throw new JevRuntimeError('invalid_request', 'invalid_request');
   }
   if (profile.id !== undefined && (typeof profile.id !== 'string' || !NAME.test(profile.id))) {

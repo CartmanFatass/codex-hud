@@ -2,7 +2,7 @@
 
 export type JevJobTag = 'ask' | 'browse' | 'judge';
 export type JevAskTarget = 'chatgpt-pro' | 'aistudio';
-export type JevDecisionId = 'typesafe' | 'openai';
+export type JevDecisionId = 'gemini' | 'typesafe' | 'openai';
 
 export interface JevSession {
   namespace: string;
@@ -39,7 +39,7 @@ export type JevJobInput =
 export interface JevCreateRequest {
   requestKey: string;
   session: JevSession;
-  /** Resolved `jev_decisions` profile. Omitted: TypeSafe when that credential is present. */
+  /** Resolved `jev_decisions` profile. Omitted: configured primary (OpenAI by default) with automatic fallback. */
   jevDecisions?: JevDecisionProfile;
   input: JevJobInput;
 }

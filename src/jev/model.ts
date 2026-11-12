@@ -15,7 +15,8 @@ export class DecisionProviderError extends Error {
   readonly code = 'decision_provider_error';
   constructor(
     readonly providerCause: 'network' | 'http' | 'timeout',
-    readonly status?: number
+    readonly status?: number,
+    readonly retryAfterMs?: number
   ) {
     super(
       providerCause !== 'http'
@@ -203,7 +204,8 @@ export async function postJson(
   signal?: AbortSignal,
   fetcher: typeof fetch = fetch,
   timeoutMs = DECISION_ATTEMPT_TIMEOUT_MS,
-  maxAttempts = 3
+  maxAttempts = 3,
+  wire?: { headers?: Record<string, string>; onHttpError?: (response: Response) => Promise<unknown> }
 ): Promise<unknown> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const attemptSignal = signal
@@ -213,7 +215,7 @@ export async function postJson(
     try {
       response = await fetcher(url, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        headers: { ...(wire?.headers ?? { Authorization: `Bearer ${key}` }), 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         signal: attemptSignal,
       });
@@ -227,8 +229,11 @@ export async function postJson(
       await sleep(500 * 2 ** attempt, signal);
       continue;
     }
-    if (!response.ok) throw new DecisionProviderError('http', response.status);
     try {
+      if (!response.ok) {
+        if (wire?.onHttpError) return await wire.onHttpError(response);
+        throw new DecisionProviderError('http', response.status);
+      }
       return await response.json();
     } catch (error) {
       if (signal?.aborted) throw error;

@@ -46,7 +46,7 @@ test('LLM has only switch, model and cap; key defaults on and retired settings l
     );
     assert.deepEqual(
       SETTING_ROWS.filter((r) => r.group === 'Models').map((r) => r.key),
-      ['modelEnabled', 'model', 'modelCallsPerHour']
+      ['modelEnabled', 'model', 'decisionApi', 'modelCallsPerHour']
     );
     const text = stripAnsi(
       renderSettingsPage(

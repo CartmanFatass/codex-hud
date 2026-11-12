@@ -218,7 +218,7 @@ export class ProjectCollector {
       return names;
     }) ?? new Map<string, boolean>();
     // Names match CREDENTIAL_FIELDS in jev/ask/config.ts; no credential loader/value reader is called.
-    out.keys = [...new Set(['MISTRAL_API_KEY', 'OPENAI_API_KEY', 'TYPESAFE_API_KEY', ...keys.keys()])]
+    out.keys = [...new Set(['GEMINI_API_KEY', 'MISTRAL_API_KEY', 'OPENAI_API_KEY', 'TYPESAFE_API_KEY', ...keys.keys()])]
       .map((n) => [n, keys.get(n) ?? false]);
     try { out.browser = fs.statSync(join(this.hudHome, 'jev-runtime/runtime.json')).isFile(); }
     catch { /* not set up */ }

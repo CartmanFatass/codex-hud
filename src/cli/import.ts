@@ -90,7 +90,7 @@ export async function importCommand(args: readonly string[], io: HudIO): Promise
         const entries = parseAssignments(bytes.toString('utf8'));
         const known = new Map(
           [...entries].filter(([name]) =>
-            /^(?:(?:OPENAI|MISTRAL)_API_KEY|(?:OPENAI|MISTRAL)_BASE_URL|TYPESAFE_API_KEY|TYPESAFE_MODEL|TEXT_MODEL_[A-Z0-9_]+)$/.test(
+            /^(?:(?:GEMINI|OPENAI|MISTRAL)_API_KEY|(?:OPENAI|MISTRAL)_BASE_URL|TYPESAFE_API_KEY|TYPESAFE_MODEL|TEXT_MODEL_[A-Z0-9_]+)$/.test(
               name
             )
           )

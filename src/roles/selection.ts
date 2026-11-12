@@ -58,7 +58,7 @@ export interface ResolvedRoster {
   readonly root: string | null;
   readonly jev_decisions: {
     readonly id: string;
-    readonly provider: 'typesafe' | 'openai';
+    readonly provider: 'gemini' | 'typesafe' | 'openai';
     readonly model: string | null;
   };
   readonly roles: readonly ResolvedSlot[];

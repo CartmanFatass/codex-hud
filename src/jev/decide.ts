@@ -27,7 +27,7 @@ export type Answer =
   | { name: string; kind: 'predicate'; probability: number }
   | { name: string; kind: 'refusal' };
 
-export type DecisionProviderId = 'typesafe' | 'openai';
+export type DecisionProviderId = 'gemini' | 'typesafe' | 'openai';
 
 export interface DecisionResult {
   /** Actual responder, including per-call failover. */
@@ -51,24 +51,25 @@ export interface DecisionProvider {
 }
 
 /**
- * Explicit provider wins. With none set, TypeSafe wins when its key is present,
- * including when both keys are present. The result names a variable, never a key value.
+ * Explicit provider wins; otherwise OpenAI is primary. Name variables, never key values.
  */
 export function decideProviderId(
   explicit: DecisionProviderId | undefined,
-  present: { typesafe: boolean; openai: boolean }
+  present: { gemini?: boolean; typesafe: boolean; openai: boolean }
 ): { ok: true; provider: DecisionProviderId } | { ok: false; provider: DecisionProviderId; variable: string } {
-  if (explicit === 'typesafe' || !explicit) {
+  if (explicit === 'gemini') return present.gemini
+    ? { ok: true, provider: 'gemini' } : { ok: false, provider: 'gemini', variable: 'GEMINI_API_KEY' };
+  if (explicit === 'typesafe') {
     return present.typesafe
       ? { ok: true, provider: 'typesafe' }
       : { ok: false, provider: 'typesafe', variable: 'TYPESAFE_API_KEY' };
   }
-  if (explicit === 'openai') {
+  if (explicit === 'openai' || !explicit) {
     return present.openai
       ? { ok: true, provider: 'openai' }
       : { ok: false, provider: 'openai', variable: 'OPENAI_API_KEY' };
   }
-  return { ok: false, provider: 'typesafe', variable: 'TYPESAFE_API_KEY' };
+  return { ok: false, provider: 'openai', variable: 'OPENAI_API_KEY' };
 }
 
 export interface ResolvedDecision {
@@ -104,7 +105,7 @@ export class DecisionRefused extends Error {
 export class JevCredentialsMissing extends Error {
   readonly code = 'jev_credentials_missing';
   constructor(
-    readonly provider: 'openai' | 'typesafe',
+    readonly provider: DecisionProviderId,
     readonly variable: string
   ) {
     super('jev_credentials_missing');
@@ -136,7 +137,7 @@ export function resolveDecision(
     if (!targetAnswer) throw new DecisionInvalid();
     if (targetAnswer.kind === 'refusal') return { refused: true, question, operation: selected };
     const ids = Object.keys(built.targets[selected]);
-    const checkIds = providerId === 'openai' && ids.length === 1 ? [...ids, OPENAI_NONE_CHOICE] : ids;
+    const checkIds = providerId !== 'typesafe' && ids.length === 1 ? [...ids, OPENAI_NONE_CHOICE] : ids;
     const target = checked(targetAnswer, checkIds, providerId);
     if (target.choice === OPENAI_NONE_CHOICE) return { refused: true, question, operation: selected };
     const probabilities: Record<string, number> = {};
@@ -193,16 +194,18 @@ export async function selectDecisionProvider(
   env: NodeJS.ProcessEnv = process.env,
   fetcher?: typeof fetch
 ): Promise<DecisionProvider> {
-  const { readHudCredentials, readHudConfig, resolveDecisions } = await import('./ask/config.js');
+  const { readHudCredentials, readHudConfig, resolveDecisions, decisionFallback } = await import('./ask/config.js');
   const { getHudHome } = await import('../hud-home.js');
   const { join } = await import('node:path');
   const { FailoverDecisionProvider } = await import('./failover.js');
   const { OpenAIDecisionProvider } = await import('./providers/openai.js');
   const { TypeSafeDecisionProvider } = await import('./providers/typesafe.js');
+  const { GeminiDecisionProvider } = await import('./providers/gemini.js');
   const creds = readHudCredentials(env);
   const config = resolveDecisions(readHudConfig(join(getHudHome(env), 'config.json')));
   const primary = explicit ?? config.primary;
   const make = (id: DecisionProviderId): DecisionProvider | undefined => {
+    if (id === 'gemini') return creds.geminiApiKey ? new GeminiDecisionProvider({ apiKey: creds.geminiApiKey, fetcher }) : undefined;
     if (id === 'openai')
       return creds.openaiApiKey
         ? new OpenAIDecisionProvider({
@@ -220,8 +223,9 @@ export async function selectDecisionProvider(
       : undefined;
   };
   const first = make(primary);
-  const fallback = config.fallback !== primary ? make(config.fallback) : undefined;
+  const fallbackId = decisionFallback(config, creds, primary);
+  const fallback = fallbackId ? make(fallbackId) : undefined;
   if (!first && !fallback)
-    throw new JevCredentialsMissing(primary, primary === 'typesafe' ? 'TYPESAFE_API_KEY' : 'OPENAI_API_KEY');
+    throw new JevCredentialsMissing(primary, `${primary.toUpperCase()}_API_KEY`);
   return new FailoverDecisionProvider(primary, first, fallback);
 }

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import * as path from 'node:path';
 import { getHudHome } from '../../hud-home.js';
-import { decideProviderId } from '../decide.js';
+import { decideProviderId, type DecisionProviderId } from '../decide.js';
 import { JevFailure } from './error.js';
 
 export const ASK_MAX_WAIT_MS = 2 * 60 * 60 * 1000;
@@ -28,10 +28,10 @@ export interface JevProxy {
   bypass?: string;
 }
 export interface DecisionConfig {
-  primary: 'typesafe' | 'openai';
-  fallback: 'typesafe' | 'openai';
+  primary: DecisionProviderId;
+  fallback?: DecisionProviderId;
   /** Compatibility alias; new configuration uses primary. */
-  provider?: 'typesafe' | 'openai';
+  provider?: DecisionProviderId;
   openai: { baseUrl?: string };
   typesafe: { model?: string };
 }
@@ -63,6 +63,7 @@ export interface LoadJevConfigOptions {
   home?: string;
 }
 export interface JevCredentials {
+  geminiApiKey?: string;
   openaiApiKey?: string;
   openaiBaseUrl?: string;
   typesafeApiKey?: string;
@@ -72,6 +73,7 @@ export interface JevCredentials {
   textModel: Record<string, string>;
 }
 export type DecisionChoice =
+  | { ok: true; provider: 'gemini'; model: string; apiKey: string }
   | { ok: true; provider: 'openai'; model: typeof OPENAI_DECISION_MODEL; baseUrl: string; apiKey: string }
   | { ok: true; provider: 'typesafe'; model: string; apiKey: string }
   | { ok: false; error: 'jev_credentials_missing'; provider: string; variable: string };
@@ -136,14 +138,14 @@ export function assertJevLocations(config: Pick<JevConfig, 'cdpUrl' | 'chrome' |
 export function resolveDecisions(root: Record<string, unknown>): DecisionConfig {
   const legacy = object(object(root.jev ?? {}, 'jev').decisions ?? {}, 'jev.decisions');
   const raw = object(root.decisions ?? {}, 'decisions');
-  const primary = raw.primary ?? raw.provider ?? legacy.provider ?? 'typesafe';
-  const fallback = raw.fallback ?? 'openai';
+  const primary = raw.primary ?? raw.provider ?? legacy.provider ?? 'openai';
+  const fallback = raw.fallback;
   for (const [name, value] of [
     ['primary', primary],
     ['fallback', fallback],
   ]) {
-    if (value !== 'typesafe' && value !== 'openai')
-      throw new JevFailure('config', `decisions.${name} must be typesafe or openai`);
+    if (value !== undefined && value !== 'gemini' && value !== 'typesafe' && value !== 'openai')
+      throw new JevFailure('config', `decisions.${name} must be gemini, typesafe or openai`);
   }
   const openai = object(raw.openai ?? legacy.openai ?? {}, 'decisions.openai');
   const typesafe = object(raw.typesafe ?? legacy.typesafe ?? {}, 'decisions.typesafe');
@@ -192,6 +194,7 @@ export function parseAssignments(text: string): Map<string, string> {
   return result;
 }
 const CREDENTIAL_FIELDS = {
+  GEMINI_API_KEY: 'geminiApiKey',
   OPENAI_API_KEY: 'openaiApiKey',
   OPENAI_BASE_URL: 'openaiBaseUrl',
   TYPESAFE_API_KEY: 'typesafeApiKey',
@@ -230,12 +233,20 @@ export function readHudCredentials(
     if (name.startsWith('TEXT_MODEL_') && value !== undefined) creds.textModel[name] = value;
   return creds;
 }
+export function decisionKeys(creds: JevCredentials): Record<DecisionProviderId, boolean> {
+  return { gemini: !!creds.geminiApiKey, openai: !!creds.openaiApiKey, typesafe: !!creds.typesafeApiKey };
+}
+export function decisionFallback(config: DecisionConfig, creds: JevCredentials, primary = config.primary): DecisionProviderId | undefined {
+  return config.fallback && config.fallback !== primary ? config.fallback :
+    (['gemini', 'openai', 'typesafe'] as const).find((id) => id !== primary && decisionKeys(creds)[id]);
+}
 export function selectDecisionProvider(config: JevConfig, creds: JevCredentials): DecisionChoice {
-  const decision = decideProviderId(config.decisions.primary ?? config.decisions.provider, {
-    typesafe: !!creds.typesafeApiKey,
-    openai: !!creds.openaiApiKey,
-  });
+  const primary = config.decisions.primary ?? config.decisions.provider;
+  const keys = decisionKeys(creds);
+  const fallback = decisionFallback(config.decisions, creds, primary);
+  const decision = decideProviderId(!keys[primary] && fallback && keys[fallback] ? fallback : primary, keys);
   if (!decision.ok) return { ...decision, error: 'jev_credentials_missing' };
+  if (decision.provider === 'gemini') return { ok: true, provider: 'gemini', model: 'gemini-decision-1', apiKey: creds.geminiApiKey ?? '' };
   if (decision.provider === 'typesafe')
     return {
       ok: true,

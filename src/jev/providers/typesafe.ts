@@ -61,7 +61,9 @@ export function parseTypeSafeAnswers(payload: unknown): Answer[] {
   const answers = (payload as { answers?: Record<string, unknown> } | null)?.answers;
   if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return [];
   return Object.entries(answers).map(([name, value]) => {
-    const answer = (value ?? {}) as { choice?: unknown; probabilities?: unknown; confidence?: unknown };
+    const answer = (value ?? {}) as { type?: unknown; noul?: unknown; choice?: unknown; probabilities?: unknown; confidence?: unknown };
+    if (answer.type === 'refusal') return { name, kind: 'refusal' as const };
+    if (answer.type === 'noul') return { name, kind: 'predicate' as const, probability: typeof answer.noul === 'number' ? answer.noul : Number.NaN };
     const probabilities: Record<string, number> = {};
     if (answer.probabilities && typeof answer.probabilities === 'object' && !Array.isArray(answer.probabilities)) {
       for (const [key, probability] of Object.entries(answer.probabilities)) {

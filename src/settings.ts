@@ -1,4 +1,5 @@
-import { readHudCredentials } from './jev/ask/config.js';
+import type { DecisionProviderId } from './jev/decide.js';
+import { readHudConfig, resolveDecisions, readHudCredentials } from './jev/ask/config.js';
 import { resolveHudEnv } from './utils/hud-env.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -28,6 +29,8 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   detailsPane: 'open' | 'closed';
   worktreeRoot: string;
   modelEnabled: boolean;
+  /** Draft-only; persisted solely as config.json decisions.primary. */
+  decisionApi: DecisionProviderId;
   /** The tree panel's and the brief's language; auto follows the locale. */
   language: 'auto' | 'en' | 'zh';
   /** `api` brief: the endpoint's base URL, up to `/v1`; empty is Mistral's. */
@@ -77,6 +80,7 @@ export function defaultSettings(): HudSettings {
     language: 'auto',
     briefingApiBase: 'https://api.mistral.ai/v1',
     model: 'deepseek-v4-1-flash-1017',
+    decisionApi: 'openai',
     modelCallsPerHour: 60,
     cardStallMinutes: 10,
     notify: false,
@@ -115,6 +119,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   detailsPane: oneOf('open', 'closed'),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
+  decisionApi: oneOf('gemini', 'openai', 'typesafe'),
   language: oneOf('auto', 'en', 'zh'),
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
   model: isText(200),
@@ -148,7 +153,7 @@ export function importableSettings(raw: unknown): Partial<HudSettings> {
   const values = raw as Record<string, unknown>;
   return Object.fromEntries(
     Object.entries(validators)
-      .filter(([key, valid]) => Object.hasOwn(values, key) && valid(values[key]))
+      .filter(([key, valid]) => key !== 'decisionApi' && Object.hasOwn(values, key) && valid(values[key]))
       .map(([key]) => [key, values[key]])
   );
 }
@@ -189,17 +194,25 @@ function readSettings(file: string): HudSettings {
 
 /** Missing files use defaults. Malformed JSON and I/O failures belong to the caller. */
 export function loadSettings(): HudSettings {
-  return readSettings(settingsPath());
+  return { ...readSettings(settingsPath()), decisionApi: resolveDecisions(readHudConfig(path.join(getHudHome(), 'config.json'))).primary };
 }
 
 /** Validate a patch against existing preferences and atomically replace the file. */
 export function saveSettings(patch: Partial<HudSettings>): HudSettings {
   const file = settingsPath();
-  const settings = mergeValidated(readSettings(file), patch);
+  const settings = mergeValidated(loadSettings(), patch);
+  if (patch.decisionApi !== undefined && validators.decisionApi(patch.decisionApi)) {
+    const configFile = path.join(getHudHome(), 'config.json'), root = readHudConfig(configFile);
+    root.decisions = { ...(root.decisions as object ?? {}), primary: settings.decisionApi };
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    const temp = `${configFile}.${randomUUID()}.tmp`;
+    try { fs.writeFileSync(temp, JSON.stringify(root, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); fs.renameSync(temp, configFile); }
+    finally { if (fs.existsSync(temp)) fs.unlinkSync(temp); }
+  }
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
   try {
-    fs.writeFileSync(temporary, `${JSON.stringify(settings, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    fs.writeFileSync(temporary, `${JSON.stringify(settings, (key, value) => key === 'decisionApi' ? undefined : value, 2)}\n`, { flag: 'wx', mode: 0o600 });
     fs.renameSync(temporary, file);
   } finally {
     try {

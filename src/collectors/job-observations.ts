@@ -614,7 +614,7 @@ export class JobObservationCollector {
           : null,
         decision:
           object(raw.provider) &&
-          ['typesafe', 'openai'].includes(String(raw.provider.id)) &&
+          ['gemini', 'typesafe', 'openai'].includes(String(raw.provider.id)) &&
           typeof raw.provider.model === 'string' &&
           raw.provider.model.length <= 400
             ? { id: String(raw.provider.id), model: raw.provider.model }

@@ -394,9 +394,10 @@ base 留空即 `https://api.mistral.ai/v1`。key 只来自进程环境变量或 
 
 ### HUD 凭证与 Jev 配置
 
-HUD 读取 `$HUD_HOME/credentials.env`（`HUD_HOME` 默认 `~/.hud`）。它必须是权限 **0600** 的普通文件；符号链接和 FIFO 会被拒绝，不跟随也不阻塞。格式为 `NAME=VALUE`，可加 `export ` 前缀和/或引号；**不做插值**。已知名称有 `TYPESAFE_API_KEY`、`TYPESAFE_MODEL`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MISTRAL_API_KEY`、`MISTRAL_BASE_URL` 和 `TEXT_MODEL_*`。
+HUD 读取 `$HUD_HOME/credentials.env`（`HUD_HOME` 默认 `~/.hud`）。它必须是权限 **0600** 的普通文件；符号链接和 FIFO 会被拒绝，不跟随也不阻塞。格式为 `NAME=VALUE`，可加 `export ` 前缀和/或引号；**不做插值**。已知名称有 `GEMINI_API_KEY`、`TYPESAFE_API_KEY`、`TYPESAFE_MODEL`、`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MISTRAL_API_KEY`、`MISTRAL_BASE_URL` 和 `TEXT_MODEL_*`。
 
 ```dotenv
+GEMINI_API_KEY=synthetic-gemini-key
 TYPESAFE_API_KEY=synthetic-typesafe-key
 OPENAI_API_KEY=synthetic-openai-key
 MISTRAL_API_KEY=synthetic-mistral-key
@@ -404,7 +405,7 @@ MISTRAL_API_KEY=synthetic-mistral-key
 
 凭证每次重新读取，不缓存。每个名称先取进程环境变量，再取 `credentials.env`。文件缺失就没有 key。不会从 pi、Codex、jev-ask 或其它文件隐式读取 key，`jev.env` 也不再是回退来源。
 
-**决策提供方。**`config.json` 使用 `decisions.primary` 和 `decisions.fallback`，取值 `typesafe` 或 `openai`；两者都未设置时分别为 `typesafe` 和 `openai`。顶层 `decisions.primary` 缺失时，依次把 `decisions.provider`、旧的 `jev.decisions.provider` 当作 primary。只有 fallback 的 key 存在时才会使用 fallback：它在单次调用中接管配额（429）、认证（401/403）、5xx 或超时失败；格式错误或被拒绝的回复仍归原提供方。primary 的 key 缺失而 fallback 的 key 存在时，用 fallback 并记录原因 `credentials_missing`；两者都没有时调用以 `jev_credentials_missing` 失败，并指出 primary 的变量名。最多只有一次 fallback 调用，也不会重复浏览器动作：任务记录的 `decisionCalls` 写明实际作答的提供方和回退原因。
+**决策提供方。**`config.json` 使用 `decisions.primary` 和 `decisions.fallback`，取值 `gemini`、`openai` 或 `typesafe`。默认 primary 为 **OpenAI**；自动 fallback 按 Gemini → OpenAI → TypeSafe 顺序选择第一个有 key 的其他提供方。显式 fallback 保留；若与 primary 相同，则自动选择。顶层 `decisions.primary` 缺失时，依次把 `decisions.provider`、旧的 `jev.decisions.provider` 当作 primary。设置 → 模型 → **决策 API** 在 Gemini / OpenAI / TypeSafe 间切换，按 `s` 只保存 `decisions.primary`；`（无 key）` 标记缺少凭证，但仍可选择。下个任务或决策 CLI 调用生效，运行中任务保留原提供方，显式任务配置仍固定。面板不显示或编辑 key。只有 fallback 的 key 存在时才会使用 fallback：它在单次调用中接管配额（429）、认证（401/403）、5xx 或超时失败；格式错误或被拒绝的回复仍归原提供方。primary 的 key 缺失而 fallback 的 key 存在时，用 fallback 并记录原因 `credentials_missing`；两者都没有时调用以 `jev_credentials_missing` 失败，并指出 primary 的变量名。Gemini（`gemini-decision-1`）使用 `x-goog-api-key`，无上下文缓存，输出 token 恒为 0；免费额度为 200 RPM、50,000 TPM、10,000 RPD。Gemini 配额/限流回复（429 或 `RESOURCE_EXHAUSTED`）触发进程内存冷却期：取 `Retry-After` / `retryDelay`，否则 60 秒；期间跳过 Gemini，到期再尝试。安全过滤 400 作为拒绝，不触发回退。若 Gemini 是任务的 fallback 且处于冷却期，则跳过并返回 primary 的错误，不尝试第三个提供方。TypeSafe 仍可显式选择。最多只有一次 fallback 调用，也不会重复浏览器动作：任务记录的 `decisionCalls` 写明实际作答的提供方和回退原因。
 
 **导入旧配置。**旧位置只能通过一次性的显式 `hud import preview|apply [--from <文件>]...` 访问；不会自动发现，也不猜任何 Codex home。用 `--from` 逐个指定旧的 `hud-settings.json` 或 jev-ask TOML；也可以显式指定 `.env`。存在 `$HUD_HOME/jev.env` 时会自动合并进 `credentials.env`。`preview` 打印来源、目标以及将新增或跳过的名称/键，不写任何文件；`apply` 从不覆盖已有的 HUD 值（已有值优先，每个跳过都会报告），为每个被改动的目标做带时间戳的 0600 备份，并且可重复执行。输出从不包含值。TOML 的 `[jev]` 段映射为 `config.json` 的 `jev`（`cdp_url` → `cdpUrl`、`chrome`、`profile`、`state_dir` → `stateDir` 以及其它 camelCase 字段），`[aistudio]` 映射为 `aistudio`（`cdp_url` → `cdpUrl`、`state_dir` → `stateDir`、`models`、`default_model` → `model`、`default_thinking` → `thinking`）。运行时的 TOML 和 `JEV_ASK_CONFIG` 会被忽略。
 

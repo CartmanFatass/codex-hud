@@ -39,7 +39,7 @@ export interface JobReceipt {
   phase: OraclePhase | null;
   routing_revision: string;
   preset: string;
-  jev_decisions: { id: string; provider: 'typesafe' | 'openai'; model: string | null };
+  jev_decisions: { id: string; provider: 'gemini' | 'typesafe' | 'openai'; model: string | null };
   binding: ReturnType<typeof backendJson>;
   cwd: string;
   task_label: string;

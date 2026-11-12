@@ -40,6 +40,9 @@ const ZH: Record<string, string> = {
   ...WORKBOARD_ZH,
   stopped: '已停止',
   'Model text': '模型文字',
+  'Decision API': '决策 API',
+  '(no key)': '（无 key）',
+  'Primary for the next browser job; automatic fallback uses another keyed provider': '下个浏览器任务的首选 API；自动回退到有 key 的其他提供方',
   'Sends public agent material for display text; off sends nothing': '发送 agent 公开材料以生成显示文字；关闭时不发送',
   'Chat-completions model; edit model in hud-settings.json for another ID':
     '聊天补全模型；在 hud-settings.json 的 model 中填写其他模型 ID',

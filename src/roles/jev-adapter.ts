@@ -40,7 +40,7 @@ export interface JevLaunchRequest {
   /** Oracle prompt. Null for a `jev` role; that prompt is `input.text`. */
   readonly task: string | null;
   readonly cwd: string | null;
-  readonly jevDecisions: { id: string; provider: 'typesafe' | 'openai'; model: string | null };
+  readonly jevDecisions: { id: string; provider: 'gemini' | 'typesafe' | 'openai'; model: string | null };
 }
 
 export type JevRuntimeHandle = Pick<RuntimeHandle, 'createJob' | 'readJob' | 'sendFollowUp' | 'closeJob'>;

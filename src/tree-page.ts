@@ -19,7 +19,8 @@ import type { DelegationViewModel } from './core/link/view-model.js';
 import {
   withInputRefresh,
 } from './utils/delegation-actions.js';
-import { defaultSettings, saveSettings, settingsPath, type HudSettings } from './settings.js';
+import { readHudCredentials, decisionKeys } from './jev/ask/config.js';
+import { defaultSettings, loadSettings, saveSettings, settingsPath, type HudSettings } from './settings.js';
 import { homedir } from 'node:os';
 import { runtimeSettings, applyDisplaySettings, withDisplaySettings } from './settings-runtime.js';
 import { treeWidthKeeper } from './utils/pane-width.js';
@@ -1280,7 +1281,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       }
       if (result.action?.type === 'settings') {
         settingsPage = {
-          draft: { ...settings, ...monitorPreferences(state) },
+          draft: { ...settings, ...monitorPreferences(state), decisionApi: loadSettings().decisionApi },
+          decisionKeys: decisionKeys(readHudCredentials()),
           selected: 0,
           offset: 0,
           message: '',

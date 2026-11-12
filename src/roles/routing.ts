@@ -26,7 +26,7 @@ export type HerdrHarness = (typeof HERDR_HARNESSES)[number];
 export const JEV_TARGETS = ['chatgpt-pro', 'aistudio', 'browser'] as const;
 export type JevTarget = (typeof JEV_TARGETS)[number];
 
-export const DECISION_PROVIDERS = ['typesafe', 'openai'] as const;
+export const DECISION_PROVIDERS = ['gemini', 'typesafe', 'openai'] as const;
 export type DecisionProvider = (typeof DECISION_PROVIDERS)[number];
 
 export type RoutingErrorCode =

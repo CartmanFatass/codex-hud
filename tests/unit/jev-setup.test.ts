@@ -72,7 +72,7 @@ test('preview is byte/tree read-only; apply imports settings, env and TOML exist
   fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ theme: 'latte' }));
   fs.writeFileSync(
     join(f.hud, 'jev.env'),
-    `OPENAI_API_KEY=${secrets[0]}\nTYPESAFE_API_KEY=unique-typesafe-520\nMISTRAL_API_KEY=unique-mistral-521\nTEXT_MODEL_FOO=literal-522\nOTHER_SECRET=hidden-523\n`
+    `OPENAI_API_KEY=${secrets[0]}\nGEMINI_API_KEY=unique-gemini-525\nTYPESAFE_API_KEY=unique-typesafe-520\nMISTRAL_API_KEY=unique-mistral-521\nTEXT_MODEL_FOO=literal-522\nOTHER_SECRET=hidden-523\n`
   );
   fs.writeFileSync(
     join(f.hud, 'credentials.env'),
@@ -93,6 +93,7 @@ test('preview is byte/tree read-only; apply imports settings, env and TOML exist
   assert.equal(tree(f.root), before);
   for (const secret of [
     ...secrets,
+    'unique-gemini-525',
     'unique-typesafe-520',
     'unique-mistral-521',
     'literal-522',
@@ -102,6 +103,7 @@ test('preview is byte/tree read-only; apply imports settings, env and TOML exist
     assert.ok(!f.output().includes(secret), 'preview leaked a value');
   for (const name of [
     'OPENAI_API_KEY',
+    'GEMINI_API_KEY',
     'TYPESAFE_API_KEY',
     'jev.cdpUrl',
     'aistudio.stateDir',
@@ -116,6 +118,7 @@ test('preview is byte/tree read-only; apply imports settings, env and TOML exist
   assert.deepEqual(saved, { theme: 'latte', language: 'en' });
   const creds = readCredentialsEnv(join(f.hud, 'credentials.env'));
   assert.equal(creds.openaiApiKey, 'existing-wins-524');
+  assert.equal(creds.geminiApiKey, 'unique-gemini-525');
   assert.equal(creds.typesafeApiKey, 'unique-typesafe-520');
   assert.equal(creds.mistralApiKey, 'unique-mistral-521');
   assert.equal(creds.textModel.TEXT_MODEL_FOO, 'literal-522');

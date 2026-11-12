@@ -219,7 +219,7 @@ using `worktreeGit` and its
 filter neutralisation, at most every five seconds; failure is unknown, not a fabricated clean tree.
 Credentials are reduced immediately to name/presence booleans (empty RHS is absent), never cached as
 text or exposed as openable files. Known provider names match the credential loader (Mistral, OpenAI,
-TypeSafe); other declared names are included. Browser setup is only a cheap `jev-runtime/runtime.json`
+Gemini, TypeSafe); other declared names are included. Browser setup is only a cheap `jev-runtime/runtime.json`
 file check, not a live-health claim. This collector makes no model requests, starts nothing and writes nothing.
 
 ## 1. The mental model in one screen
@@ -537,9 +537,13 @@ thin-job sentences use a separate bounded job-local collector (§5.6), not a fac
 
 ---
 
+## Jev decision providers
+
+`GeminiDecisionProvider` shares TypeSafe's keyed question builders/answer parser, converting state to Gemini input and statements to `noul`. `GEMINI_API_KEY` comes through `readHudCredentials` from the environment or `$HUD_HOME/credentials.env`. OpenAI is the default primary; Settings → Models → Decision API saves `config.json`'s `decisions.primary`, never a second persisted copy. It applies to the next job/CLI invocation; running jobs and explicit profiles stay pinned. Automatic fallback is the first other keyed provider in Gemini → OpenAI → TypeSafe order; explicit fallback wins unless identical to primary. One fallback call covers missing credentials, quota/rate-limit, auth, 5xx or timeout; malformed answers and safety refusals do not fail over. Gemini's free tier is 200 RPM / 50,000 TPM / 10,000 RPD; quota replies cool it down process-wide in memory for Retry-After/retryDelay or 60 seconds, then it is retried. Safety 400 becomes refusal. TypeSafe stays explicitly selectable. The display-text service below remains separate and never sends the Gemini key to a chat endpoint.
+
 ## 5. The optional model features
 
-The Models group contains exactly three preferences: `modelEnabled` (Model text),
+The display-text service uses three preferences in Models (beside Jev's Decision API): `modelEnabled` (Model text),
 `model` (default `deepseek-v4-1-flash-1017`) and `modelCallsPerHour` (default 60).
 There is no backend selector, per-feature switch, pacing control, tier model,
 effort preference or consent flow. Old keys are ignored, not migrated, and are

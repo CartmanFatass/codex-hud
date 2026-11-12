@@ -20,6 +20,11 @@ export function fallbackReason(error: unknown): FallbackReason | undefined {
   if (error.status !== undefined && error.status >= 500 && error.status <= 599) return 'server';
   return undefined;
 }
+let geminiRetryAt = 0;
+function cooldown(provider: DecisionProvider, error: unknown): void {
+  if (provider.id === 'gemini' && fallbackReason(error) === 'quota')
+    geminiRetryAt = Date.now() + ((error as DecisionProviderError).retryAfterMs ?? 60_000);
+}
 export class FailoverDecisionProvider implements DecisionProvider {
   private answered?: DecisionProvider;
   get id(): DecisionProviderId {
@@ -47,27 +52,32 @@ export class FailoverDecisionProvider implements DecisionProvider {
     let reason: FallbackReason | undefined;
     let result: DecisionResult;
     let provider = this.primary;
-    if (!provider) reason = 'credentials_missing';
+    const fallback = this.fallback?.id === 'gemini' && Date.now() < geminiRetryAt ? undefined : this.fallback;
+    if (provider?.id === 'gemini' && Date.now() < geminiRetryAt) { provider = undefined; reason = 'quota'; }
+    if (!provider) reason ??= 'credentials_missing';
     else {
       try {
         result = await invoke(provider);
         return this.finish(operation, provider, result);
       } catch (error) {
         if (options.signal?.aborted) throw error;
+        cooldown(provider, error);
         reason = fallbackReason(error);
-        if (!reason || !this.fallback || this.fallback.id === this.primaryId) throw error;
+        if (!reason || !fallback || fallback.id === this.primaryId) throw error;
       }
     }
-    provider = this.fallback;
+    provider = fallback;
+    if (!provider && reason === 'quota') throw new DecisionProviderError('http', 429, Math.max(0, geminiRetryAt - Date.now()));
     if (!provider || provider.id === this.primaryId)
       throw new JevCredentialsMissing(
         this.primaryId,
-        this.primaryId === 'typesafe' ? 'TYPESAFE_API_KEY' : 'OPENAI_API_KEY'
+        `${this.primaryId.toUpperCase()}_API_KEY`
       );
     options.signal?.throwIfAborted();
     try {
       result = await invoke(provider); // exactly one fallback; its failure is final
     } catch (error) {
+      cooldown(provider, error);
       this.record({
         primary: this.primaryId,
         provider: provider.id,

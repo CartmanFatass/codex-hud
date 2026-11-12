@@ -107,6 +107,11 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     literal: true,
   },
   {
+    key: 'decisionApi', group: 'Models', label: 'Decision API', values: ['gemini', 'openai', 'typesafe'],
+    help: 'Primary for the next browser job; automatic fallback uses another keyed provider',
+    format: (value) => ({ gemini: 'Gemini', openai: 'OpenAI', typesafe: 'TypeSafe' })[String(value)] ?? String(value),
+  },
+  {
     key: 'modelCallsPerHour',
     group: 'Models',
     label: 'Call cap',
@@ -150,6 +155,7 @@ export interface SettingsPageState {
   offset: number;
   message: string;
   original?: HudSettings;
+  decisionKeys?: Partial<Record<HudSettings['decisionApi'], boolean>>;
 }
 export function settingGroup(stateOrRow: Pick<SettingsPageState, 'selected'> | SettingRow): SettingGroup {
   return 'group' in stateOrRow
@@ -216,7 +222,7 @@ export function renderSettingsPage(
       changed = rowValue(row, original) !== value,
       active = rowValue(row, defaultSettings()) !== value;
     const shown = truncateAnsi(
-        valueText(row, value),
+        valueText(row, value) + (row.key === 'decisionApi' && !state.decisionKeys?.[value as HudSettings['decisionApi']] ? ` ${t('(no key)')}` : ''),
         Math.max(1, width - visualLength(t(row.label)) - (i === selected ? 7 : 3))
       ),
       tail = i === selected ? `${mark('‹', '<')} ${shown} ${mark('›', '>')}` : shown;

@@ -63,7 +63,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
     }
   }
   assert.doesNotMatch(JSON.stringify(f.data), /NEVER_RENDER/);
-  assert.deepEqual(f.data.keys, [['MISTRAL_API_KEY', true], ['OPENAI_API_KEY', false], ['TYPESAFE_API_KEY', true], ['SYNTHETIC_KEY', true]]);
+  assert.deepEqual(f.data.keys, [['GEMINI_API_KEY', false], ['MISTRAL_API_KEY', true], ['OPENAI_API_KEY', false], ['TYPESAFE_API_KEY', true], ['SYNTHETIC_KEY', true]]);
   assert.ok([...f.collector.cache.get(join(f.hud, 'credentials.env')).value.values()].every((v) => typeof v === 'boolean'));
 });
 test('Control plane and native agents start folded and Enter unfolds/folds through real input', async (t) => {
@@ -405,7 +405,7 @@ test('changed/oversized sources, missing milestone and source fallback never inv
   const noMilestone = plain(f.render(80, 'en', undefined, 56, data)).join('\n');
   assert.match(noMilestone, /M1  M2  M3  M3b  M4/);
   assert.doesNotMatch(noMilestone, /\[M1\]|\(M3b\)/);
-  assert.deepEqual(data.keys, [['MISTRAL_API_KEY', false], ['OPENAI_API_KEY', false], ['TYPESAFE_API_KEY', false], ['OTHER_NAME', true]]);
+  assert.deepEqual(data.keys, [['GEMINI_API_KEY', false], ['MISTRAL_API_KEY', false], ['OPENAI_API_KEY', false], ['TYPESAFE_API_KEY', false], ['OTHER_NAME', true]]);
   f.put(join(f.cwd, 'docs/handoff/STATE.md'), 'Milestone:\n\n## Waiting for the owner\n- Still waiting\n');
   data = await f.collector.collect(true, f.board, NOW + 1);
   assert.equal(data.docs.some((i) => i.label === 'spec'), false, 'an empty milestone must not consume the next heading');

@@ -125,6 +125,22 @@ test('browse completes through the fake CDP browser', { timeout: DEFAULT_CDP_TIM
   assert.equal(new URL(fake.httpUrl).hostname, '127.0.0.1');
 });
 
+test('new runtime jobs reread primary while explicit profiles stay pinned', async (t) => {
+  const hudHome = home(t);
+  writeEnv(hudHome, 'GEMINI_API_KEY=synthetic-google\nOPENAI_API_KEY=synthetic-openai\nTYPESAFE_API_KEY=synthetic-typesafe\n');
+  const runtime = await started(t, hudHome);
+  for (const [index, provider] of ['openai', 'gemini', 'typesafe'].entries()) {
+    if (index === 1) writeFileSync(join(hudHome, 'config.json'), JSON.stringify({ decisions: { primary: 'gemini' } }));
+    const job = await runtime.createJob({ requestKey: `provider-${index}`, session,
+      ...(index === 2 ? { jevDecisions: { provider: 'typesafe' as const } } : {}),
+      input: { tag: 'judge', url: 'https://example.invalid/fixture', statements: [{ name: 'ready', statement: 'The page is ready.' }] },
+    });
+    const finished = await until(() => runtime.readJob(job.id), 'completed');
+    assert.equal(finished.state, 'completed');
+    assert.equal(finished.provider?.id, provider);
+  }
+});
+
 test('judge runs read-only against the fake page', async (t) => {
   const hudHome = home(t);
   bothKeys(hudHome);
