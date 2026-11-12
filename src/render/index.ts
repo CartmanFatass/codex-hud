@@ -7,7 +7,7 @@ import { resolveHudEnv } from '../utils/hud-env.js';
 import { execFile } from 'node:child_process';
 import type { HudData, RenderOptions, LayoutConfig, LayoutMode } from '../types.js';
 import { renderHud, fitStatusBar } from './header.js';
-import type { FitResult } from './layout/engine.js';
+import type { FitResult } from './layout/bar-fields.js';
 import { colors, truncateAnsi } from './colors.js';
 import { time } from '../utils/profile.js';
 

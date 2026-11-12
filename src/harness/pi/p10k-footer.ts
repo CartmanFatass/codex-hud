@@ -1,21 +1,20 @@
 /**
- * The pi footer: one line below the editor, in the grammar of the Codex bar and Claude's statusline
- * (`render/layout/bar-fields.ts`): the same segments in the same order, with the same separators, glyphs and colours,
- * fitted by dropping whole segments, lowest priority first.
+ * The pi footer: one line below the editor, from the shared bar builder (`render/layout/bar-fields.ts`), so it shows the
+ * same fields in the same order as Claude's statusline and the Codex bar, in the style `barStyle` picks:
  *
- *   DeepSeek V4.1 Flash 1017 max │ ━━━━────── 42%/200K │ example main +1 *1 ?3 │ 57 tok/s │ cache 73% │ $0.420
+ *   DeepSeek V4.1 Flash 1017 max │ ━━━━────── 42%/200K │ example main +1 *1 ?3 │ lens ✓   MCP 2  skills 5
  *
  * It replaces p10k-footer's band in the editor's top border and its identity row; pi's own editor, with its working
- * indicator, stays as it is. Other extensions' statuses (pi-lens, pi-viz, the HUD's Work counts) are read through the
- * footer data provider. TPS and TTFT come from the `tps` entries @monotykamary/pi-tps appends to the session, read from
- * the session so a missed event or a resumed session cannot leave them empty. A reading with no data is left out.
+ * indicator, stays as it is. Other extensions' statuses (pi-lens, pi-viz) are read through the footer data provider and
+ * share the right cluster, lowest priority. pi has no quota, so the cost the session reported stands in its place. The
+ * notice zone tells the HUD jobs' events and questions (the footer host sees no skill loads, so none are told). A
+ * reading with no data is left out.
  */
 
 import { execFile } from 'node:child_process';
-import { colors, theme, truncate } from '../../render/colors.js';
-import { formatTokenCount } from '../../render/lines/activity-line.js';
 import * as bar from '../../render/layout/bar-fields.js';
-import type { BarModule } from '../../render/layout/engine.js';
+import type { WorkSignals } from '../../render/work-summary.js';
+import { applyBarSettings } from '../../settings-runtime.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
 import { HUD_STATUS_KEY } from './segment.js';
 import type { FooterAPI, FooterContext, FooterHost } from './footer-host.js';
@@ -46,14 +45,8 @@ export function createP10kFooter(
     lens: { group: 'footer', label: 'pi-lens verdict', on: true },
     viz: { group: 'footer', label: 'pi-viz diagram mode', on: true },
     statuses: { group: 'footer', label: 'other extensions setStatus() values', on: true },
-    session: { group: 'band', label: 'session name', on: true },
     context: { group: 'band', label: 'context window usage', on: true },
-    cache: { group: 'band', label: 'prompt cache hit rate', on: true },
-    tokens: { group: 'band', label: 'session token total', on: true },
-    tps: { group: 'band', label: 'output tokens / second', on: true },
-    ttft: { group: 'band', label: 'time to first token', on: true },
     cost: { group: 'band', label: 'session cost', on: true },
-    time: { group: 'band', label: 'session working time', on: true },
   } as const satisfies Record<string, { group: Group; label: string; on: boolean }>;
 
   type SegmentId = keyof typeof SEGMENT_SPECS;
@@ -174,25 +167,15 @@ export function createP10kFooter(
     sessionId: string;
     leafId: string | null;
     totals: UsageTotals;
-    /** Wall clock spent inside turns, summed from the per-turn telemetry. */
-    activeMs: number;
   }
 
   /** Cumulative usage over the whole session, rescanned only when the leaf moves. */
   function computeStats(ctx: FooterContext): Stats {
     const totals: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, priced: false };
-    let activeMs = 0;
     // Entries after a message inherit its model: `usage` entries and summaries
     // carry no model of their own.
     let modelId: string | undefined = ctx.model?.id;
     for (const entry of ctx.sessionManager.getEntries()) {
-      if (entry.type === 'custom' && entry.customType === 'tps') {
-        const data = entry.data as (TpsTelemetry & { model?: { modelId?: string } }) | undefined;
-        const total = data?.timing?.totalMs;
-        if (typeof total === 'number' && Number.isFinite(total) && total > 0) activeMs += total;
-        if (data?.model?.modelId) modelId = data.model.modelId;
-        continue;
-      }
       let usage: EntryUsage | undefined;
       if (entry.type === 'usage') {
         usage = entry.usage;
@@ -220,7 +203,6 @@ export function createP10kFooter(
       sessionId: ctx.sessionManager.getSessionId(),
       leafId: ctx.sessionManager.getLeafId(),
       totals,
-      activeMs,
     };
   }
 
@@ -286,63 +268,6 @@ export function createP10kFooter(
       gitCache = { cwd, state, at: Date.now() };
       onUpdate();
     });
-  }
-
-  // ─── Telemetry (from @monotykamary/pi-tps) ──────────────────────────────────
-
-  interface TpsTelemetry {
-    tps?: number | null;
-    timing?: { ttftMs?: number | null; totalMs?: number | null } | null;
-  }
-
-  interface Rates {
-    tps: number | null;
-    ttftMs: number | null;
-  }
-
-  let rates: Rates = { tps: null, ttftMs: null };
-  /** Start of the turn that is running, so its time counts before it ends. */
-  let turnStartedAt: number | null = null;
-  /** Leaf the rates were read at; `undefined` forces a re-read on the next paint. */
-  let ratesLeaf: string | null | undefined;
-
-  function readRates(telemetry: TpsTelemetry | null | undefined): Rates {
-    const tps = telemetry?.tps;
-    const ttft = telemetry?.timing?.ttftMs;
-    return {
-      tps: typeof tps === 'number' && Number.isFinite(tps) && tps > 0 ? tps : null,
-      ttftMs: typeof ttft === 'number' && Number.isFinite(ttft) && ttft >= 0 ? ttft : null,
-    };
-  }
-
-  /**
-   * Keep the last measurement when the new one is empty (burst delivery reports
-   * no rate). Both rate segments stay in the band, so the band keeps its width
-   * instead of reflowing on every burst.
-   */
-  function rememberRates(next: Rates): void {
-    rates = { tps: next.tps ?? rates.tps, ttftMs: next.ttftMs ?? rates.ttftMs };
-  }
-
-  /**
-   * The newest measurement on the active branch, read from the session rather
-   * than only from `tps:telemetry`: a missed event or a resumed session would
-   * otherwise leave the rate segments empty. The scan stops at the first `tps`
-   * entry and only runs when the leaf moved, so it costs nothing per paint.
-   */
-  function refreshRates(ctx: FooterContext): Rates {
-    const leafId = ctx.sessionManager.getLeafId();
-    if (ratesLeaf === leafId) return rates;
-    ratesLeaf = leafId;
-
-    const entries = ctx.sessionManager.getBranch();
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const entry = entries[i];
-      if (entry.type !== 'custom' || entry.customType !== 'tps') continue;
-      rememberRates(readRates(entry.data as TpsTelemetry));
-      break;
-    }
-    return rates;
   }
 
   // ─── Loaded resources (MCP servers, skills) ─────────────────────────────────
@@ -470,36 +395,12 @@ export function createP10kFooter(
    */
   let footerStatuses: ReadonlyMap<string, string> | null = null;
 
-  /** The session name, if this build of pi has one and it is set. */
-  function readSessionName(ctx: FooterContext): string | undefined {
-    try {
-      const name = ctx.sessionManager.getSessionName?.();
-      return name && name.trim() ? name.trim() : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  function formatMs(ms: number): string {
-    return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
-  }
-
   /** `$0.0423` for pocket change, `$1.24` once it is real money. */
   function formatCost(cost: number): string {
     if (cost >= 100) return cost.toFixed(1);
     if (cost >= 1) return cost.toFixed(2);
     if (cost >= 0.01) return cost.toFixed(3);
     return cost.toFixed(4);
-  }
-
-  /** `4:02` under an hour, `1:23:45` above it. */
-  function formatDuration(ms: number): string {
-    const seconds = Math.max(0, Math.floor(ms / 1000));
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const rest = seconds % 60;
-    const pad = (value: number) => value.toString().padStart(2, '0');
-    return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`;
   }
 
   // ─── Segment assembly ───────────────────────────────────────────────────────
@@ -512,29 +413,14 @@ export function createP10kFooter(
    */
   const DUPLICATE_STATUS_KEYS = new Set(['mcp', 'lens', 'pi-lens', 'pi-lens-lsp', HUD_STATUS_KEY]);
 
-  /** The bar's fields in the shared order; a switched-off or empty field is simply not there. */
-  function buildModules(ctx: FooterContext, pi: FooterAPI, stats: Stats): BarModule[] {
-    const modules: BarModule[] = [];
-    const add = (id: SegmentId, module: BarModule) => {
-      if (enabled(id)) modules.push(module);
-    };
+  /** What pi has to say, as `renderBar` takes it; a switched-off or empty field is simply not there. */
+  function buildFacts(ctx: FooterContext, pi: FooterAPI, stats: Stats): bar.BarFacts {
     const model = ctx.model;
     const thinking = model?.reasoning ? pi.getThinkingLevel?.() : undefined;
-    add(
-      'model',
-      bar.identityModule(
-        model ? compactModelName(model.name || model.id) : 'no-model',
-        enabled('thinking') && thinking && thinking !== 'off' ? thinking : undefined
-      )
-    );
-
     // Context pressure against the window; `?` while pi has no reading yet.
     const usage = ctx.getContextUsage();
     const window = usage?.contextWindow ?? model?.contextWindow ?? 0;
     const percent = usage && usage.percent !== null ? Math.round(usage.percent) : null;
-    if (percent !== null || window > 0)
-      add('context', bar.contextModule(percent ?? 0, percent === null ? '?' : `${percent}%`, window, 10));
-
     // The directory's name, then the branch with its staged `+`, unstaged `*` and untracked `?` counts.
     const cwd = ctx.sessionManager.getCwd();
     const git = enabled('git') ? readGit(cwd) : null;
@@ -543,67 +429,56 @@ export function createP10kFooter(
           ['+', git.staged],
           ['*', git.unstaged],
           ['?', git.untracked],
-        ].filter(([, n]) => n)
+        ]
+          .filter(([, n]) => n)
+          .map(([mark, n]) => ` ${mark}${n}`)
       : [];
     const place = enabled('path') ? basename(cwd) || cwd : '';
-    add(
-      'path',
-      bar.projectModule(
-        place || git?.branch || '',
-        place ? (git?.branch ?? null) : null,
-        marks.map(([m, n]) => ` ${m}${n}`).join('')
-      )
-    );
-
-    if (rates.tps !== null) add('tps', bar.speedModule(rates.tps, turnStartedAt !== null));
-
-    // Prompt-cache hit rate over the whole session: cached reads against every prompt token the model saw.
-    const { totals } = stats;
-    const promptTokens = totals.input + totals.cacheRead + totals.cacheWrite;
-    if (promptTokens > 0)
-      add('cache', bar.readingModule('cache', 'cache', `${Math.round((totals.cacheRead / promptTokens) * 100)}%`));
-    if (rates.ttftMs !== null) add('ttft', bar.readingModule('ttft', 'ttft', formatMs(rates.ttftMs)));
-    // What the provider reported, else our list price for the models the session ran on.
-    if (totals.priced) add('cost', bar.readingModule('cost', '', `$${formatCost(totals.cost)}`));
-    // Wall clock spent inside turns, plus the turn that is running right now.
-    const elapsed = stats.activeMs + (turnStartedAt === null ? 0 : Math.max(0, Date.now() - turnStartedAt));
-    if (elapsed > 0) add('time', bar.readingModule('active', 'active', formatDuration(elapsed)));
-
-    // The HUD's Work counts arrive as an extension status; pi-lens's verdict and pi-viz's mode, and every other
-    // extension's words, share one low-priority field. `lens ✓` when every analyzed file is clean, `lens 2E 1W` when not.
+    // pi-lens's verdict and pi-viz's mode, and every other extension's words, lead the right cluster:
+    // `lens ✓` when every analyzed file is clean, `lens 2E 1W` when not.
     const statuses = footerStatuses ?? new Map<string, string>();
-    modules.push(bar.workModule(statuses.get(HUD_STATUS_KEY)?.trim() ?? ''));
-    const words: string[] = [];
+    const words: bar.Form[] = [];
     if (lensAnalyzed && enabled('lens')) {
       const { errors, warnings } = lensTotals();
       const verdict = [errors > 0 ? `${errors}E` : '', warnings > 0 ? `${warnings}W` : ''].filter(Boolean).join(' ');
-      const paint = errors > 0 ? theme.error : warnings > 0 ? theme.warning : theme.success;
-      words.push(`${colors.dim('lens')} ${paint(verdict || '\u2713')}`);
+      words.push([['lens', 'dim'], [' '], [verdict || '\u2713', errors > 0 ? 'bad' : warnings > 0 ? 'warn' : 'ok']]);
     }
-    if (capturedViz && enabled('viz')) words.push(`${colors.dim('viz')} ${theme.value(capturedViz)}`);
+    if (capturedViz && enabled('viz')) words.push([['viz', 'dim'], [' '], [capturedViz, 'value']]);
     if (enabled('statuses'))
       for (const [key, value] of statuses)
-        if (!DUPLICATE_STATUS_KEYS.has(key) && value.trim()) words.push(theme.value(value.trim()));
-    if (words.length)
-      modules.push({
-        id: 'extensions',
-        priority: bar.MODULE_PRIORITY.extensions,
-        group: 'extensions',
-        variants: { full: words.join('  '), short: words[0] },
-      });
-
-    // What pi loaded, then the session's token total and its name.
-    modules.push(
-      bar.configModule([
-        ['MCP', enabled('mcp') ? capturedLoaded.mcp : 0],
-        ['skills', enabled('skill') ? capturedLoaded.skills : 0],
-      ])
-    );
-    const total = promptTokens + totals.output;
-    if (total > 0) add('tokens', bar.tokensModule(formatTokenCount(total)));
-    const name = readSessionName(ctx);
-    if (name) add('session', bar.metaModule('session', theme.value(truncate(name, 28))));
-    return modules;
+        if (!DUPLICATE_STATUS_KEYS.has(key) && value.trim()) words.push([[value.trim(), 'value']]);
+    return {
+      model: model
+        ? {
+            name: compactModelName(model.name || model.id),
+            effort: enabled('thinking') && thinking && thinking !== 'off' ? thinking : undefined,
+            id: model.id,
+            provider: model.provider,
+            baseUrl: model.baseUrl,
+          }
+        : undefined,
+      context:
+        enabled('context') && (percent !== null || window > 0)
+          ? { percent: percent ?? 0, shown: percent === null ? '?' : `${percent}%`, window }
+          : undefined,
+      project: {
+        name: place || git?.branch || '',
+        branch: place ? (git?.branch ?? null) : null,
+        marks: marks.join(''),
+        dirty: marks.length > 0,
+      },
+      // pi has no usage window: what the provider reported, else our list price for the models the session ran on.
+      quota: enabled('cost') && stats.totals.priced ? { text: `$${formatCost(stats.totals.cost)}` } : undefined,
+      needs: work.needs,
+      events: work.events,
+      loaded: {
+        counts: [
+          ['MCP', enabled('mcp') ? capturedLoaded.mcp : 0],
+          ['skills', enabled('skill') ? capturedLoaded.skills : 0],
+        ],
+        words,
+      },
+    };
   }
 
   let current: FooterContext | null = null;
@@ -611,10 +486,13 @@ export function createP10kFooter(
   let stats: Stats | undefined;
   let capturedViz: string | undefined;
   let capturedLoaded: LoadedCounts = { mcp: 0, skills: 0 };
+  /** What the HUD jobs ask and just did, pushed by the Work segment's timer. */
+  let work: WorkSignals = { needs: [], events: [] };
   let repaint: (() => void) | null = null;
   let mounted = false;
   let live = true;
   const removers: (() => void)[] = [];
+  // Hide pi-tps's measurements from the chat; the footer no longer shows them.
   pi.registerEntryRenderer?.('tps', () => undefined);
   function listen(name: string, handler: (data: unknown) => void) {
     const remove = pi.events?.on(name, (data) => {
@@ -622,11 +500,6 @@ export function createP10kFooter(
     });
     if (remove) removers.push(remove);
   }
-  listen('tps:telemetry', (data) => {
-    rememberRates(readRates(data as TpsTelemetry));
-    ratesLeaf = undefined;
-    update();
-  });
   listen('pi-lens/analysis-complete', (data) => {
     const payload = data as { filePath?: unknown; diagnostics?: unknown } | undefined;
     recordLensFile(payload?.filePath, payload?.diagnostics);
@@ -648,16 +521,14 @@ export function createP10kFooter(
     const sessionId = ctx.sessionManager.getSessionId(),
       leafId = ctx.sessionManager.getLeafId();
     if (!stats || stats.sessionId !== sessionId || stats.leafId !== leafId) stats = computeStats(ctx);
-    refreshRates(ctx);
     capturedViz = readVizMode(ctx);
     capturedLoaded = loadedCounts(pi);
     const cwd = ctx.sessionManager.getCwd(),
-      name = readSessionName(ctx),
       usage = ctx.getContextUsage();
     view = {
       ...ctx,
       model: ctx.model ? { ...ctx.model } : undefined,
-      sessionManager: { ...ctx.sessionManager, getCwd: () => cwd, getSessionName: () => name },
+      sessionManager: { ...ctx.sessionManager, getCwd: () => cwd },
       getContextUsage: () => usage,
     };
     refreshGit(cwd, () => {
@@ -668,7 +539,7 @@ export function createP10kFooter(
   /** The one line, fitted to `width`; pi's own width measure has the last word, so the host never gets a wider row. */
   function line(width: number): string {
     if (!view || !stats || !mounted || width <= 0) return '';
-    const text = bar.fitBar(buildModules(view, pi, stats), width).line;
+    const text = bar.renderBar(buildFacts(view, pi, stats), width).line;
     return host.visibleWidth(text) > width ? host.truncateToWidth(text, width, '') : text;
   }
   function stop() {
@@ -687,9 +558,8 @@ export function createP10kFooter(
     current = ctx;
     mounted = true;
     config = fromSettings();
-    rates = { tps: null, ttftMs: null };
-    ratesLeaf = undefined;
-    turnStartedAt = null;
+    work = { needs: [], events: [] };
+    applyBarSettings();
     lensFiles.clear();
     lensAnalyzed = false;
     update();
@@ -720,14 +590,14 @@ export function createP10kFooter(
     start,
     stop,
     update,
-    turnStart(timestamp?: number) {
-      if (mounted) {
-        turnStartedAt = timestamp ?? Date.now();
-        repaint?.();
-      }
+    /** The Work segment's timer: what the HUD jobs ask now and what they just did. */
+    setWork(signals: WorkSignals) {
+      work = signals;
+      repaint?.();
     },
-    turnEnd() {
-      turnStartedAt = null;
+    /** A run is over: the bar's two display keys may have changed since the footer mounted. */
+    settled() {
+      applyBarSettings();
       update();
     },
     async command(args: string, ctx: FooterContext) {

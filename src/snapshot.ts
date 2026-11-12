@@ -18,7 +18,7 @@ import { collectAttention } from './render/attention.js';
 import { readQuotaWindows } from './render/quota.js';
 import { agentCounts, eachThread, type StatusCounts, type ThreadKind } from './collectors/subagent-tree.js';
 import { getHudDisplayHome } from './hud-home.js';
-import type { BarSegment, VariantLevel } from './render/layout/engine.js';
+import type { BarSegment, VariantLevel } from './render/layout/bar-fields.js';
 import type { HudData, SubagentTreeNode } from './types.js';
 
 /** 2: `agents` counts the agents the main session started, with `subtasks` and `reviews` beside them; nodes carry a kind. */

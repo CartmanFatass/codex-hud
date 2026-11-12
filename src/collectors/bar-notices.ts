@@ -1,11 +1,9 @@
 /**
  * What just happened in the main session, for the bar's notice zone: an agent
- * it started finished or failed, a turn finished, the account went on to its
- * credits. Each is a change between two collections, so the tracker keeps
- * what the last one saw; the first collection of a session only sets that
- * baseline, and nothing that happened before the HUD looked is replayed. The
- * one exception is a session found idle: its turn's end is on record, so the
- * bar can say how long ago that was.
+ * it started finished or failed, the account went on to its credits. Each is
+ * a change between two collections, so the tracker keeps what the last one
+ * saw; the first collection of a session only sets that baseline, and
+ * nothing that happened before the HUD looked is replayed.
  */
 
 import type { BarNotice, HudData, SubagentTreeNode } from '../types.js';
@@ -26,8 +24,6 @@ function onCredits(data: HudData, nowMs: number): boolean {
 export class BarNoticeTracker {
   private root: string | null = null;
   private agents = new Map<string, SubagentTreeNode['status']>();
-  private working = false;
-  private turnStartedAt: Date | undefined;
   private credits = false;
   private notices: BarNotice[] = [];
 
@@ -45,34 +41,15 @@ export class BarNoticeTracker {
     const agents = topAgents(data);
     for (const node of agents) {
       const before = this.agents.get(node.id);
+      // Dated by its own start: an agent the tree only now lists is old news to the bar.
+      if (!fresh && before === undefined && (node.status === 'running' || node.status === 'starting'))
+        found.push({ kind: 'agent-started', subject: node.name, at: node.startedAt ?? at });
       if (!fresh && (before === 'running' || before === 'starting')) {
         if (node.status === 'completed') found.push({ kind: 'agent-done', subject: node.name, at });
         else if (node.status === 'error') found.push({ kind: 'agent-failed', subject: node.name, at });
       }
     }
     this.agents = new Map(agents.map((node) => [node.id, node.status]));
-
-    const state = data.stale ? undefined : data.activity?.state;
-    if (state !== undefined) {
-      const working = state === 'working';
-      if (working) {
-        this.turnStartedAt = data.activity?.turnStartedAt ?? this.turnStartedAt;
-      } else if (state === 'idle' && (this.working || fresh)) {
-        // Found idle on a first look, the turn's end is the activity's own time.
-        const ended = fresh ? data.activity?.updatedAt : at;
-        const started = data.activity?.turnStartedAt ?? this.turnStartedAt;
-        if (ended) {
-          found.push({
-            kind: 'turn-done',
-            at: ended,
-            ...(started && started.getTime() <= ended.getTime()
-              ? { durationMs: ended.getTime() - started.getTime() }
-              : {}),
-          });
-        }
-      }
-      this.working = working;
-    }
 
     const credits = onCredits(data, nowMs);
     if (!fresh && credits && !this.credits) found.push({ kind: 'credits', at });

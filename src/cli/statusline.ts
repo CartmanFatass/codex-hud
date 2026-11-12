@@ -1,10 +1,11 @@
 import { getHudHome } from '../hud-home.js';
 import { readThinJobs } from '../collectors/thin-jobs.js';
-import { renderWorkSummary } from '../render/work-summary.js';
+import { renderWorkSummary, workSignals } from '../render/work-summary.js';
 import { fileURLToPath } from 'node:url';
 import { visualLength } from '../render/colors.js';
 import { statuslinePreview } from '../statusline-preview.js';
 import { statuslineSettings } from '../statusline-settings.js';
+import { applyBarSettings } from '../settings-runtime.js';
 import { renderStatuslineSession, type StatuslineSessionOptions } from '../render/statusline-session.js';
 import type { HudIO } from './hud.js';
 import { loadParitySettings, importStatusline } from '../statusline-parity/settings.js';
@@ -131,9 +132,11 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
     render: async (value, width) => {
       const now = Date.now();
       const lanes = readThinJobs(getHudHome(io.env), { project: null, pane: io.env.HERDR_PANE_ID ?? null });
-      // The bar is one line: the Work counts are a segment of it, not a row below.
-      if (parity && !options.details)
-        return collectAndRenderParity(value, width, parity, io.env, now, renderWorkSummary(lanes, 500, now));
+      // The bar is one line: what the jobs ask and just did are events of its notice zone, not a row below.
+      if (parity && !options.details) {
+        applyBarSettings();
+        return collectAndRenderParity(value, width, parity, io.env, now, workSignals(lanes, now));
+      }
       const first = renderStatuslineSession(value, width, options);
       const work = renderWorkSummary(lanes, width, now);
       if (options.details) return [first, work].filter(Boolean).join('\n');

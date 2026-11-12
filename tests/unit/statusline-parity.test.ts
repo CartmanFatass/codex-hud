@@ -4,13 +4,11 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { renderParity } from '../../src/statusline-parity/render.js';
-import { setDisplayConfig } from '../../src/render/hud-config.js';
 import { visualWidth } from '../../src/render/colors.js';
 import { collectTranscript, TRANSCRIPT_CHUNK } from '../../src/statusline-parity/transcript.js';
 import { collectParityGit } from '../../src/statusline-parity/git.js';
 import { paritySettings } from '../../src/statusline-parity/settings.js';
-import { NOW, OWNER_CONFIG, parityFixture } from '../fixtures/claude-hud-parity/fixture.js';
+import { NOW, parityFixture } from '../fixtures/claude-hud-parity/fixture.js';
 const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '');
 function fixture(t: test.TestContext, scenario: Parameters<typeof parityFixture>[1] = 'idle') {
   const home = fs.mkdtempSync(join(tmpdir(), 'hud-parity-'));
@@ -24,88 +22,6 @@ const tool = (name: string, id: string, input: object, time = '2026-01-02T11:59:
     message: { content: [{ type: 'tool_use', name, id, input }] },
   }) + '\n';
 const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }[] = [
-  {
-    name: 'Claude bar at 120 columns: one line, the Codex bar grammar in the shared order',
-    run(t) {
-      const previous = setDisplayConfig({ theme: 'none' });
-      t.after(() => setDisplayConfig(previous));
-      const transcript = {
-        agents: [
-          { id: 'a', type: 'Explore', description: 'Older', start: NOW - 90000, startPos: 1, background: false },
-          {
-            id: 'b',
-            type: 'frontend-implementer',
-            model: 'claude-sonnet-5-5',
-            description: 'BAR-UNIFY one-line bars',
-            start: NOW - 12 * 60000,
-            startPos: 2,
-            background: false,
-          },
-        ],
-        todos: [
-          { content: 'One', status: 'completed' },
-          { content: 'Two', status: 'in_progress' },
-        ],
-        skills: ['hud-delegate'],
-        sessionStart: NOW - 5 * 60000,
-        ultracode: false,
-        bytesRead: 0,
-        pendingHistory: false,
-      };
-      const input = {
-        model: { display_name: 'Opus 5.5' },
-        effort: 'high',
-        cwd: '/synthetic/project',
-        context_window: { used_percentage: 4, context_window_size: 1000000 },
-        rate_limits: { five_hour: { used_percentage: 8, resets_at: (NOW + 79 * 60000) / 1000 } },
-      };
-      const evidence = {
-        transcript,
-        counts: { claudeMdCount: 2, rulesCount: 0, mcpCount: 4, hooksCount: 0 },
-        git: { branch: 'main', dirty: true, ahead: 0, behind: 0 },
-      };
-      const line = renderParity(
-        input,
-        120,
-        paritySettings(OWNER_CONFIG),
-        evidence,
-        NOW,
-        {},
-        'Work: 1 needs you · 2 running'
-      );
-      assert.ok(!line.includes('\n') && visualWidth(line) <= 120, 'one row that fits the width');
-      // Under pressure the effort, meter and reset time go, the description is cut at a word, the model drops.
-      assert.match(
-        strip(line),
-        /^Opus 5\.5 │ 4%\/1M │ project main\* │ 5h 8% │ ◐ frontend-implementer: BAR-UNIFY… 12m \+1 │ Tasks 1\/2 │ Work: 1 needs you$/
-      );
-      // With room, the newest running agent is told in full, and the right cluster (what Claude loaded) follows.
-      assert.match(
-        strip(
-          renderParity(input, 240, paritySettings(OWNER_CONFIG), evidence, NOW, {}, 'Work: 1 needs you · 2 running')
-        ),
-        /^Opus 5\.5 high │ [━╸]*─+ 4%\/1M │ project main\* │ 5h 8% reset 1h19m │ ◐ frontend-implementer \[sonnet-5\.5\]: BAR-UNIFY one-line bars 12m \+1 │ Tasks 1\/2 │ Work: 1 needs you · 2 running {3,}CLAUDE\.md 2 {2}MCP 4 {2}skills 1 {2}session 5m$/
-      );
-      // With none running, the newest finished agent stays by name for ten minutes, then goes.
-      const finished = (end: number) => ({
-        ...evidence,
-        transcript: { ...transcript, agents: transcript.agents.map((a) => ({ ...a, end })) },
-      });
-      assert.match(
-        strip(renderParity(input, 120, paritySettings(OWNER_CONFIG), finished(NOW - 9 * 60000), NOW)),
-        /│ ✓ frontend-implementer\b.*\+1 │/
-      );
-      assert.doesNotMatch(
-        strip(renderParity(input, 120, paritySettings(OWNER_CONFIG), finished(NOW - 11 * 60000), NOW)),
-        /frontend-implementer/
-      );
-      // Narrower, whole segments go, lowest priority first; the line never wraps.
-      for (const width of [100, 60, 30]) {
-        const narrow = renderParity(input, width, paritySettings(OWNER_CONFIG), evidence, NOW, {}, '');
-        assert.ok(!narrow.includes('\n') && visualWidth(narrow) <= width, strip(narrow));
-      }
-    },
-  },
   {
     name: 'append growth reads only new bytes; malformed records and split UTF-8 are not fatal',
     run(t) {
@@ -278,6 +194,19 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
       v = collectTranscript(f.file, f.env);
       assert.equal(v.agents[0].start, started);
       assert.equal(v.agents[0].end, Date.parse('2026-01-02T11:59:50Z'));
+      // A skill load is dated by its call, the latest call counts, and the echo (no timestamp) is no load.
+      fs.appendFileSync(f.file, tool('Skill', 'skill-1', { skill: 'hud-delegate' }, '2026-01-02T11:59:31Z'));
+      fs.appendFileSync(f.file, tool('Skill', 'skill-2', { skill: 'hud-delegate' }, '2026-01-02T11:59:35Z'));
+      fs.appendFileSync(
+        f.file,
+        JSON.stringify({
+          type: 'api-request-blob',
+          message: { content: [{ type: 'tool_use', name: 'Skill', id: 'echo', input: { skill: 'other' } }] },
+        }) + '\n'
+      );
+      v = collectTranscript(f.file, f.env);
+      assert.deepEqual(v.skillLoads, [{ name: 'hud-delegate', at: Date.parse('2026-01-02T11:59:35Z') }]);
+      assert.deepEqual(v.skills, ['hud-delegate']);
       // Many ordinary results must not consume the separate agent budget.
       fs.appendFileSync(
         f.file,

@@ -7,7 +7,7 @@ import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getCodexHome } from './utils/codex-path.js';
-import { getHudDisplayHome } from './hud-home.js';
+import { getHudDisplayHome, getHudHome } from './hud-home.js';
 import { spawn } from 'child_process';
 import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
@@ -33,6 +33,8 @@ import { colors } from './render/colors.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { BarNoticeTracker } from './collectors/bar-notices.js';
+import { readThinJobs } from './collectors/thin-jobs.js';
+import { workSignals, type WorkSignals } from './render/work-summary.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
 import type { RolloutParseResult } from './collectors/rollout.js';
 import type { HudData } from './types.js';
@@ -91,6 +93,19 @@ const sessionFinder = new SessionFinder(
 // for one event is worse than none.
 const notifier = new Notifier(resolveNotifierOptions());
 const notices = new BarNoticeTracker();
+// What this pane's HUD jobs ask and just did, read at most every 5 s.
+let jobSignals: { at: number; signals?: WorkSignals } = { at: 0 };
+function readJobSignals(now: number): WorkSignals | undefined {
+  if (now - jobSignals.at >= 5000) {
+    try {
+      const lanes = readThinJobs(getHudHome(), { project: null, pane: process.env.HERDR_PANE_ID ?? null });
+      jobSignals = { at: now, signals: workSignals(lanes, now) };
+    } catch {
+      jobSignals = { at: now };
+    }
+  }
+  return jobSignals.signals;
+}
 
 // The same tick that draws the bar also publishes what it drew, so a click,
 // a script or another pane can read the state the reader is looking at.
@@ -235,6 +250,7 @@ async function mainLoop(): Promise<void> {
       }
       journal?.observe(scopedActivityObservation(rootId, rootId, { tree: data.subagentTree, data }));
       data.notices = notices.observe(data, Date.now());
+      data.work = readJobSignals(Date.now());
       renderToStdout(data, HUD_PANE_HEIGHT);
       // Notifications and the state file run on the collection tick, not on
       // the repaint a status refresh triggers.

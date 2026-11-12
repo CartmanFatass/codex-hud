@@ -678,64 +678,58 @@ progress jobs, sharing `SmallModel`'s single-flight queue and hourly cap.
 
 ### 6.1 The bar
 
-Call chain:
+Three clients draw one bottom bar: Claude's statusline (`cli/statusline.ts` → `statusline-parity/render.ts`), pi's
+footer (`harness/pi/p10k-footer.ts`) and the Codex tmux bar (`render/header.ts` `fitStatusBar` →
+`layout/bar-modules.ts` `barFacts`). Each client only collects **facts**; `layout/bar-fields.ts` `renderBar(facts,
+width, now)` words them, paints them in the chosen style and fits them to one line.
 
-1. `index.ts` `renderToStdout`
-2. `composeStdoutFrame`
-3. `render/header.ts` `renderHud`
-4. `fitStatusBar`
-5. `layout/bar-modules.ts` `buildBarModules`
-6. `layout/engine.ts` `fitModules`
+Codex call chain: `index.ts` `renderToStdout` → `composeStdoutFrame` → `render/header.ts` `renderHud` →
+`fitStatusBar` → `barFacts` + `renderBar`.
 
-**Modules.** A `BarModule` has:
+**Facts.** `BarFacts` holds the optional `model`, `context`, `project`, `quota`, `needs` (what waits on the owner),
+`events` (`BarEvent`: `started | done | failed | warn | skill`, text, short text, subject key, time) and `loaded` (counts
+and extra words). A client leaves out what it cannot supply; a missing fact is never shown as zero. Words that carry
+meaning (`started`, `finished`, `failed`, an age via `span`) come from shared helpers (`agentEvent`, `span`) so the
+three clients say the same thing.
 
-- an `id`;
-- a `priority`, from `MODULE_PRIORITY`;
-- an optional `group` (neighbours in one group are joined by two spaces, the
-  rest by a dim ` │ `);
-- an optional `align`: unset for the leading cluster, `fill`, or `right`;
-- an optional `pinned` flag (never hidden), `optional` flag (may leave in the
-  shortening pass), `flex` flag (fill zone only: cut to the room left),
-  `shrink` order (from `SHRINK`) and `reserve` (columns per variant);
-- `variants`: `full`, `short` and `min`.
+**Fields, fixed order.** `model effort │ context %/window │ repo branch(dirty) │ quota │ notice zone ···· MCP n
+skills n`. The fields shown are the `barFields` display setting (default all but `quota`; no UI); `barStyle` picks
+`line` (`│` separators, roles painted with theme inks) or `p10k` (powerline capsules on the old p10k-footer palette
+indices, flat: a space either side of each field, no separator glyph; it needs a theme, so `none` stays `line`; the
+`text` icon set gives the provider's initials). Both are in
+`render/hud-config.ts` and `settings.ts` (`HUD_BAR_STYLE`, `HUD_BAR_FIELDS`); the Codex bar gets them through
+`applyDisplaySettings`, the Claude statusline and the pi footer, which draw only the bar, through
+`settings-runtime.ts` `applyBarSettings()`.
 
-**Clusters.** The leading cluster: what the session runs on (model and
-effort, context against the whole window, repository, usage) and the main
-session now (state and clock, rate, agents, plan). The fill zone follows it
-with no gap: the alert, then the notice zone. The trailing cluster is what
-Codex loaded (MCP, skills, hooks; in `full`, approval/sandbox, tokens, session
-id), pushed to the last column; the slack sits before it.
+**Context against compaction.** The window the percentage is measured against is where the client compacts, when the
+client says so: Claude's `autoCompactWindow` (`statusline-parity/collect.ts` `compactWindow`, read-only from
+`settings.json` in `$CLAUDE_CONFIG_DIR` or `~/.claude`) and Codex's `model_auto_compact_token_limit`. pi supplies none.
 
-**Notices.** `collectors/bar-notices.ts` `BarNoticeTracker` compares each
-collection with the last (in `index.ts` `mainLoop`) and keeps what changed in
-`HudData.notices`, newest first: an L1 agent finished or failed, a turn ended,
-the account went on to credits. A session's first collection only sets the
-baseline, except that a session found idle gets its turn's end from the
-activity's own time. `noticeModule` shows the newest in colour for
-`NOTICE_FRESH_MS`; then, while working, the running call as `name target`
-(`actionText` reads the command out of an `exec` script); else the newest
-notice, dim.
+**The notice zone is events, not states.** A subagent or HUD job started, finished or failed, and a skill load, each
+stay `NOTICE_MS` (3 minutes) after they happened, dated by the event, not by when a collector saw it. An agent or job
+has one item, its latest (`BarEvent.key`: `finished` replaces `started`). The zone shows two items at once where there
+is room for both at their short forms (`BarEvent.short`, then without the age): items 2k and 2k+1 with
+`k = floor(now / 5 s) % ceil(n / 2)`; a pinned needs-you item takes the first slot and the events rotate through the
+second. With room for one, `events[floor(now / 5 s) % n]` shows. The choice is a pure function of the clock, so a
+client keeps no state. What needs the owner (an approval, a HUD job's question) is pinned while open. There is no
+running line, no tool at work, no turn-done notice and no last-event fallback; with no event the zone is empty.
+Sources: for Codex `collectors/bar-notices.ts` `BarNoticeTracker` (`HudData.notices`, newest first, one per change
+between collections: an L1 agent started, finished or failed, the account went on to credits) plus `HudData.work`; for
+Claude the transcript (agents, and `skillLoads`, the time of the latest `Skill` call of each name, from conversation
+records only); for pi the HUD jobs only. HUD jobs come from `render/work-summary.ts` `workSignals(lanes, now)` (`needs`,
+`events`) in all three; the Codex process reads the job folders at most every 5 seconds (`index.ts` `readJobSignals`).
+pi's footer host and the Codex collectors expose no skill loads, so those clients tell none.
 
-**Fitting.** `fitModules` shortens before it hides and hides the lowest
-priority first, truncating only as a last resort. A module with a `shrink`
-order takes its turns among the hides instead, which is how the right cluster,
-the effort, the meter, the notice zone's claim, the agents' label, the branch
-and the clock go in that order. A `flex` module asks for a fixed `FLEX_WANT`
-columns in its first form, whatever its words, and for none in its last; in
-both it is cut to the room the fixed fields leave, and left out under
-`FLEX_MIN`. The engine returns the `segments` it placed, and the snapshot
-saves them so a click on the bar can be mapped to a field
-(`utils/click-map.ts`).
+**Fitting.** The line is always one row. When it is too wide, one form or segment at a time gives up in the order of
+`LADDER` (cheapest loss first): the loaded cluster to counts only (the whole cluster at once while a notice shows: the
+notice is shown in full, not abbreviated to save it), the context meter, the model's effort, the quota's reset, the
+project's short form, the loaded cluster, the project's name only, the quota, the project, the context. The loop stops
+as soon as the notice fits whole or two events fit side by side. The model is never dropped (`truncateAnsi` is the last
+resort); the notice is cut at a word with `…` only when every field has already given way. A pinned needs-you notice
+is a segment of its own, in full. `FitResult.segments` lets the snapshot save placements, so a click maps to a field
+(`utils/click-map.ts`: the notice zone focuses, the context and quota open the panel).
 
-**Holding still.** Fields whose words change every second (the clock, the
-rate) `reserve` their columns: the text is padded, so the fit and every
-neighbour stay put. The notice zone's fixed claim does the same for it. A field
-with nothing to say takes no columns; it comes and goes rarely.
-
-**Density.** `DENSITY_MODULES` sets which modules each density preset may show at all.
-
-**Missing data.** A field without trustworthy data renders as `''` and is
-skipped. Never show a zero you do not have.
+**Missing data.** A field without trustworthy data is left out. Never show a zero you do not have.
 
 The bar is English-only.
 
@@ -1098,19 +1092,17 @@ through `monitorSettings`. The obsolete `cardNotes` option is no longer used.
 
 ### Add or change a bar field
 
-The credits field (commit `44ce0a7`) is a complete example.
+All three bars share `layout/bar-fields.ts`; a field is added once.
 
-1. Get the data into `HudData`, through the parser or `HudStatus`.
-2. Add a module to `layout/bar-modules.ts`:
-   - give it an entry in `MODULE_PRIORITY`;
-   - give it `full`, `short` and `min` variants;
-   - return `''` when the data is missing;
-   - add it to `DENSITY_MODULES` if it belongs in focus or balanced.
-3. If the panel's status card should show it too, change `status-block.ts`
-   and `status-foot.ts`.
-4. If it can raise an alert, change `render/attention.ts`.
-5. Write tests at several widths, and update the reference and both READMEs if
-   they describe it.
+1. Add its name to `BAR_FIELDS` in `render/hud-config.ts` (and decide whether it is in `DEFAULT_BAR_FIELDS`).
+2. Add its facts to `BarFacts` and a segment builder in `bar-fields.ts`: its forms from longest to shortest, each a
+   list of `[text, role]` parts (roles map to theme inks in `line`, and to plain text in `p10k`). Return nothing when
+   the fact is missing.
+3. Give it a place in `LADDER` (who gives up a form or a segment, in which order).
+4. Collect the fact in each client that can: `layout/bar-modules.ts` `barFacts` (Codex), `statusline-parity/render.ts`
+   (Claude) and `harness/pi/p10k-footer.ts` `buildFacts` (pi). A client that cannot supply it leaves it out.
+5. If it can raise an alert, change `render/attention.ts`.
+6. Write tests at several widths (`tests/unit/bar-layout.test.ts`), and update the reference if it describes it.
 
 ### Add a line to a card or the Inspector
 

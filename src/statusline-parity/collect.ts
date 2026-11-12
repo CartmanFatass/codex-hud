@@ -1,4 +1,7 @@
 /** Opt-in statusline I/O boundary; the default renderer never calls this module's collectors. */
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+import type { WorkSignals } from '../render/work-summary.js';
 import { collectTranscript } from './transcript.js';
 import { collectConfigCounts } from './config-counts.js';
 import { collectParityGit } from './git.js';
@@ -11,13 +14,29 @@ interface ContextCache {
   identity: string;
   context: Record<string, unknown>;
 }
+/**
+ * Where Claude compacts on its own, in tokens: the model's `autoCompactWindow` in the user's settings.json, else the
+ * top-level one, unless auto-compact is off. Read only; null when the file or the key is not there.
+ */
+export function compactWindow(env: NodeJS.ProcessEnv, modelId: string): number | null {
+  try {
+    const file = join(env.CLAUDE_CONFIG_DIR || join(env.HOME ?? '', '.claude'), 'settings.json');
+    if (fs.statSync(file).size > 1024 * 1024) return null;
+    const settings = record(JSON.parse(fs.readFileSync(file, 'utf8')));
+    const own = record(record(settings.modelSettings)[modelId.replace(/\[[^\]]*\]$/, '')]).autoCompactWindow;
+    const window = own ?? settings.autoCompactWindow;
+    return settings.autoCompactEnabled !== false && typeof window === 'number' && window > 0 ? window : null;
+  } catch {
+    return null;
+  }
+}
 export function collectAndRenderParity(
   input: unknown,
   width: number,
   settings: ParitySettings,
   env: NodeJS.ProcessEnv,
   now = Date.now(),
-  work = ''
+  work?: WorkSignals
 ): string {
   const value = record(input),
     file =
@@ -64,9 +83,11 @@ export function collectAndRenderParity(
     }
   }
   const cwd = typeof value.cwd === 'string' && value.cwd.length <= 4096 ? value.cwd : undefined;
-  const counts = settings.display.showConfigCounts
-    ? collectConfigCounts(cwd, env)
-    : { claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 };
+  const counts = settings.display.showConfigCounts ? collectConfigCounts(cwd, env) : { mcpCount: 0 };
   const git = cwd && settings.gitStatus.enabled ? collectParityGit(cwd, env, now) : null;
-  return renderParity(native, width, settings, { transcript, counts, git }, now, env, work);
+  const compact = compactWindow(
+    env,
+    typeof record(value.model).id === 'string' ? (record(value.model).id as string) : ''
+  );
+  return renderParity(native, width, settings, { transcript, counts, git, compact }, now, env, work);
 }

@@ -209,37 +209,6 @@ export function countSkills(
 }
 
 /**
- * Hook handlers in the hooks.json files Codex reads: its home's and the
- * repository's `.codex/hooks.json`. Each event holds groups and each group its
- * handlers; the handlers are counted. Null when neither file could be read.
- */
-export function countHooks(cwd: string, codexHome: string = getCodexHome()): number | null {
-  const root = repoFolders(cwd).at(-1) ?? cwd;
-  const files = [...new Set([path.join(codexHome, 'hooks.json'), path.join(root, '.codex', 'hooks.json')])];
-  let total = 0;
-  let read = false;
-  for (const file of files) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-      continue;
-    }
-    read = true;
-    const events = (parsed as { hooks?: unknown })?.hooks;
-    if (!events || typeof events !== 'object') continue;
-    for (const groups of Object.values(events as Record<string, unknown>)) {
-      if (!Array.isArray(groups)) continue;
-      for (const group of groups) {
-        const handlers = (group as { hooks?: unknown })?.hooks;
-        if (Array.isArray(handlers)) total += handlers.length;
-      }
-    }
-  }
-  return read ? total : null;
-}
-
-/**
  * Collect all project information
  * Phase 3: Extended with additional file counts and Codex-specific module status
  */
@@ -266,7 +235,6 @@ export function collectProjectInfo(cwd?: string, config?: CodexConfig): ProjectI
     configsCount,
     extensionsCount: mcpCount, // MCP servers are treated as extensions
     skillsCount: countSkills(workDir),
-    hooksCount: config?.hooks_enabled === false ? 0 : countHooks(workDir),
     workMode,
   };
 }

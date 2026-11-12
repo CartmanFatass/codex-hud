@@ -2,7 +2,7 @@
  * What a click on the status bar means.
  *
  * The bar is one line of separate fields, so a click on it is not one gesture
- * but several. Clicking the alert or the agent counts is a request to go and
+ * but several. Clicking the notice zone is a request to go and
  * look, which wants the keyboard in the panel; clicking a meter is a request
  * to see more of it, which does not, because taking focus out of Codex
  * mid-sentence is worse than the extra keypress. Anything else — a separator,
@@ -19,9 +19,9 @@ export interface ClickSegment {
 export type ClickAction = 'toggle' | 'open' | 'open-focus';
 
 /** Fields you click because you intend to read and drive the panel. */
-const FOCUS_FIELDS = new Set(['attention', 'agents', 'hint']);
+const FOCUS_FIELDS = new Set(['notice']);
 /** Fields the panel elaborates on, but that you are only glancing at. */
-const OPEN_FIELDS = new Set(['context', 'quota', 'tokens', 'tasks']);
+const OPEN_FIELDS = new Set(['context', 'quota']);
 
 export function segmentAt(segments: ClickSegment[], x: number): ClickSegment | undefined {
   if (!Number.isFinite(x)) {

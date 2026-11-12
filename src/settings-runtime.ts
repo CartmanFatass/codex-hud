@@ -18,6 +18,8 @@ function displayOf(settings: HudSettings) {
     look: settings.look,
     motion: settings.motion,
     context: settings.context,
+    barStyle: settings.barStyle,
+    barFields: settings.barFields,
     agentColors: settings.agentColors,
     theme: process.env.NO_COLOR ? ('none' as const) : settings.theme,
   };
@@ -32,5 +34,14 @@ export function withDisplaySettings<T>(settings: HudSettings, draw: () => T): T 
     return draw();
   } finally {
     setDisplayConfig(previous);
+  }
+}
+/** The bar's own two keys, for the processes that draw only the bar (Claude's statusline, pi's footer). */
+export function applyBarSettings(): void {
+  try {
+    const { barStyle, barFields } = runtimeSettings();
+    setDisplayConfig({ barStyle, barFields });
+  } catch {
+    /* an unreadable settings file leaves the bar as it was */
   }
 }

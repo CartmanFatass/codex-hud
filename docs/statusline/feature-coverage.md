@@ -1,6 +1,27 @@
 # Statusline feature coverage
 
-## Owner-config parity: claude-hud 0.8.0 (STATUSLINE-PARITY)
+## The statusline now: one line in the shared bar grammar (BAR-UNIFY, BAR-UNIFY-2)
+
+With the `statusline` section in `$HUD_HOME/config.json` the statusline draws **one line**, at every width, built by the
+same function as pi's footer and the Codex bar (`src/render/layout/bar-fields.ts`; see `docs/reference.md`, The bottom
+bars). The parity collectors below still gather the facts; the 0.8.0 multi-line layout (its header, usage, skills,
+agent and todo rows) is replaced by:
+
+| Field, in order | Claude facts |
+| --- | --- |
+| model | stdin `model.display_name` / `model.id`, `effort` (or the transcript's ultracode/`/effort`); provider mark from the model id and environment |
+| context | stdin `context_window.used_percentage` and size, with the bounded context cache and the compact-boundary guard; the window is Claude's `autoCompactWindow` (the model's, else the top-level one, from `settings.json` in `$CLAUDE_CONFIG_DIR` or `~/.claude`, read only, unless `autoCompactEnabled` is `false`, and only when below `context_window_size`) |
+| project | stdin `cwd` basename and the local Git branch with dirty marker and ahead/behind (`statusline-parity/git.ts`) |
+| quota (off by default) | stdin `rate_limits`: the tightest window and its reset; no OAuth or usage call |
+| notice zone | events only, each for three minutes, one per subject: a subagent started/finished/failed (transcript Task/Agent calls and results), a HUD job started/finished/failed, a skill loaded (the time of its latest transcript `Skill` call; conversation records only, never a request echo); what needs the owner is pinned while open. Two items at once where there is room. Empty when idle |
+| loaded | `MCP n` (settings and `.mcp.json`, from the MCP count while `showConfigCounts` is on) and `skills n` (transcript Skill calls) |
+
+Gone from the line: tasks/todos, tool activity, turn-done notices, CLAUDE.md, rules and hook counts (no longer
+collected), the usage bar's multi-line form, the turn clock and session duration, and the separate `Work:` row (job counts are events of the notice zone now). Two keys
+choose the look: `barStyle` (`line` or `p10k`) and `barFields` (which fields show); both are read by the statusline
+process from `hud-settings.json`. The old table below is the 0.8.0 reference the collectors were checked against.
+
+## Historical: owner-config parity with claude-hud 0.8.0 (STATUSLINE-PARITY)
 
 An explicit `$HUD_HOME/config.json` **statusline** section opts into the owner's compact
 layout; without that section the original compact output remains byte-identical (B02).

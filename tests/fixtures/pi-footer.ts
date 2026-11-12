@@ -92,8 +92,8 @@ export function parityFixture(row: ParityRow, host = parityHost) {
   const controller = createP10kFooter(
     {
       getThinkingLevel: () => 'high',
-      getAllTools: () => [],
-      getCommands: () => [],
+      getAllTools: () => [{ name: 'mcp__a__x' }, { name: 'mcp__b__y' }],
+      getCommands: () => [{ source: 'skill' }, { source: 'skill' }, { source: 'skill' }],
       events: {
         on(name, cb) {
           bus.set(name, cb);
@@ -112,7 +112,12 @@ export function parityFixture(row: ParityRow, host = parityHost) {
       },
     }
   );
-  const segment = createPiSegment({ env, now: () => FOOTER_NOW, schedule: () => () => {} });
+  const segment = createPiSegment({
+    env,
+    now: () => FOOTER_NOW,
+    schedule: () => () => {},
+    onSignals: (signals) => controller.setWork(signals),
+  });
   const root = 'pi-synthetic/synthetic-session';
   function publish(coverage: 'complete' | 'partial' | 'unavailable') {
     const jobs = join(home, 'jobs');
@@ -138,7 +143,6 @@ export function parityFixture(row: ParityRow, host = parityHost) {
   if (row.delegation) publish(row.delegation);
   controller.start(ctx);
   if (row.delegation) segment.start(ctx, root, () => true);
-  if (row.working) controller.turnStart(FOOTER_NOW - 5000);
   return {
     controller,
     ctx,

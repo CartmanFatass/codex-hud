@@ -132,12 +132,12 @@ Six role-tool proxies use the private evidence-bearing MCP channel, not `mcp.jso
 registration. Session changes synchronously fence the old epoch before cleanup. Canceled transitions remain
 unbound until explicit reconnect; shutdown closes only the old channel and recorded display generation, not jobs.
 
-The HUD owns the pi footer and editor frame: the ported p10k band docks in the top border beside pi's working
-spinner, with the bottom rule and dim model/thinking/path/git/status identity row below. Palettes, provider marks,
-segment toggles and width-drop order match p10k-footer. `PI_HUD_PALETTE=p10k|gruvbox|nord|tokyo-night` and
-`PI_HUD_MARKS=ascii` are unchanged. Native usage/rate/history capture is outside render; repaint/resize only fits
-retained values. The post-persistence `context` hook refreshes the new prompt's usage before the provider request.
-Other extensions' `setStatus` values still show in the statuses area, including HUD delegation.
+The HUD owns the pi footer: one line below pi's own editor, drawn by the same builder as Claude's statusline and the
+Codex bar (see [The bottom bars](#the-bottom-bars)), so it shows the same fields in the same order. pi has no quota,
+so the session's cost stands in the quota's place when `quota` is on. Other extensions' `setStatus` values (pi-lens,
+pi-viz, the HUD's own `review ok`) share the right cluster at the lowest priority. Native usage/rate/history capture is
+outside render; repaint/resize only fits retained values. The post-persistence `context` hook refreshes the new
+prompt's usage before the provider request.
 Events and one 5-second single-flight TUI timer read the exact current root's bounded role-summary cache; no
 scans/process launches/herdr/network occur on that summary path. Expired/unavailable cache clears idle counts.
 The panel remains its only producer. Print/RPC modes have no footer, segment, timer or panel operations, even if
@@ -412,7 +412,7 @@ pill    ⌂ ▦ Agents  ≣ Timeline  ±  ◫  ⚙ Settings      ǁ ⊕1 ?
 ╰─ parser-kit · main * ↑2 7d ───────────────────────────99% ↺4d18h
 ```
 
-- **The band**, on its own background across the width: the session's state (while it works, the running tool and its target, the turn's clock and `~N tok/s`; idle, how long it has waited on you since the turn finished, from a minute on: `✓ Idle 12m`; the bottom bar's notice zone says when the turn ended, `✓ turn done in 12:48 · 12m ago`), the model badge and the session's age; the context meter, the percentage where the fill ends and the window size at the tail (a `┃` tick marks the auto-compact point when `config.toml` sets `model_auto_compact_token_limit`); then, wherever a brief is configured, its state (`~3m` for the recap's age, then in words: writing…, failed, paused). A click anywhere on the band steps the level, as `r`.
+- **The band**, on its own background across the width: the session's state (while it works, the running tool and its target, the turn's clock and `~N tok/s`; idle, how long it has waited on you since the turn finished, from a minute on: `✓ Idle 12m`; the bottom bars do not say when a turn ended), the model badge and the session's age; the context meter, the percentage where the fill ends and the window size at the tail (a `┃` tick marks the auto-compact point when `config.toml` sets `model_auto_compact_token_limit`); then, wherever a brief is configured, its state (`~3m` for the recap's age, then in words: writing…, failed, paused). A click anywhere on the band steps the level, as `r`.
 - **The body** hangs off a left gutter (`│`) in the main session's state colour: dim idle, info working, error failed, warning stale or needing you (an approval, a failed tool, agent, subtask or review, a recap that needs you).
 - **The corner** (`╰─`): where the session works (the project in bold, `› repo` when it differs, `· branch`); the quota meter for the tightest window, labelled `7d` and read `99%` (a full window with credits behind it reads the balance instead, `credits 31.8K`, and is not marked `!`: Codex goes on, on credits); and the reset countdown.
 - Meters fill in the info colour, warning past 70 %, error past 85 %, over a dim track.
@@ -772,7 +772,7 @@ Panel → Picture draws a picture in the panel's empty space: braille dots, dots
 
 ## Output throughput
 
-The bottom bar shows the main session's rate as a whole number, `42 tok/s`, once enough output-token samples exist: bright while the running turn has a sample of its own, and otherwise the last turn's, dim and unchanged. The panel's status band writes `~42 tok/s`.
+The bottom bars do not show the rate (they show no clocks or rates at all, see [The bottom bars](#the-bottom-bars)); the panel's status band writes `~42 tok/s`.
 Selected-agent details show that agent's estimate; expand with `v` to see the sample interval.
 The estimate follows the **wallclock** convention: measured **output** tokens divided by
 elapsed time in the current turn, including initial latency (TTFT) and generation stalls,
@@ -834,7 +834,7 @@ happens. Another successful read alone does not rewrite the file, so
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CODEX_HUD_DENSITY` | `balanced` | How much the bar shows (`focus` / `balanced` / `full`) |
+| `CODEX_HUD_DENSITY` | `balanced` | Kept for old settings files; the bottom bars no longer read it, `barFields` chooses their fields |
 | `CODEX_HUD_THEME` | `terminal` | Palette (`terminal` / `titanium` / `mocha` / `latte` / `none`) |
 | `CODEX_HUD_LOOK` | `tab` | How the panel's bar and pane titles are drawn (`tab` / `band` / `tile` / `frame` / `pill`) |
 | `CODEX_HUD_ICONS` | `unicode` | The panel's icons (`unicode` / `nerd` / `emoji` / `text`) |
@@ -848,7 +848,56 @@ happens. Another successful read alone does not rewrite the file, so
 
 Status glyphs use semantic colors: cyan `▸` working, green `✓` turn complete, yellow `■` interrupted, red `✗` failed. Yellow `?` means collection failed. Silence does not turn a working session idle.
 
-The bottom bar reads left to right without gaps. First, what the session runs on: the model and its effort (`gpt-5.6-astra xhigh`), a meter and the context the last request held against the model's whole window, as Codex reported them (`━━━━╸───── 149.1K/380K`, no baseline taken off; plain below 70%, yellow past 70%, red past 85%), the repository and its branch (`codex-hud main*↑2`), and the account's usage as one reading, the tightest window (`7d 38%`), or, once that window is spent and credits carry the account on, the balance alone (`credits 6.8K`). Then the main session now: its state and the turn's clock (`▸ 12:58`; idle, `✓ idle`), its output rate, its agents (`Agents 1▸ 1✓`) and its plan (`Tasks 2/5`). Then the notice zone, which takes the columns left: an alert that needs you first (an approval waiting, or a failed tool, agent, subtask or review, on the danger colour); then, for a minute and in colour, what just happened (`✓ explorer finished · 12s ago`, `✗ explorer failed`, `✓ turn done in 12:48`, `◆ window spent, on credits now`); after that, while Codex works, the tool at work and what it works on (`exec_command npm test`, or the command a script runs), and, idle, the last notice, dim, with how long ago. At the right edge, what Codex loaded: MCP servers, skills and hooks (`MCP 2  skills 10  hooks 1`). The clock and the rate keep their columns whatever their length, and the notice zone the same share of the line whatever it says, so nothing before it moves while the session runs. Narrow, the right cluster leaves first, then the effort and the context meter; then the notice zone gives up its share and takes only what is left, and the agents' label, the branch and the clock go. There is no prompt-cache reminder: Codex keeps the cache.
+### The bottom bars
+
+Claude's statusline, pi's footer and Codex's tmux bar are one line each, built by one function
+(`src/render/layout/bar-fields.ts`) from facts each client collects. They show the same fields in the same order, at
+every width, and a field a client cannot supply is left out, never shown as zero:
+
+```
+model effort │ context %/window │ repo branch(dirty) │ quota │ notice zone ········ MCP n  skills n
+```
+
+- **model**: the model and its effort (`gpt-5.6-astra xhigh`); in the p10k style a provider mark leads it (`text`
+  icons: the provider's initials).
+- **context**: a meter and the percentage against the window (`━━━━────── 40%/400K`, the same on all three; plain below
+  70%, yellow past 70%, red past 85%). The window is where the client compacts when it says so: Claude's `autoCompactWindow` (the model's
+  own entry under `modelSettings`, else the top-level one, in `settings.json` under `$CLAUDE_CONFIG_DIR` or `~/.claude`;
+  a `[1m]` suffix on the model id is ignored; used only when `autoCompactEnabled` is not `false` and the value is below
+  the model's window) and Codex's `model_auto_compact_token_limit` from `config.toml`; otherwise the model's whole
+  window. pi has no such setting. The files are read, never written.
+- **project**: the repository and its branch with its state (`example main*↑2`; pi: `main +1 *1 ?1`).
+- **quota** (off by default): the tightest usage window and its reset (`5h 8% reset 1h19m`), or the credits that carry
+  the account on (`credits 6.8K`); in pi the session's cost (`$0.420`).
+- **notice zone**: events only. A subagent or HUD job that started, finished or failed, and a skill that was loaded,
+  each show for three minutes (`◐ started explorer · 20s ago`, `✓ finished explorer · 1m ago`, `✗ explorer failed`,
+  `✦ skill hud-delegate · 30s ago`). Each subagent or job has one item, its latest event, so `finished` replaces
+  `started`. The zone shows two items side by side where there is room for both (each at least in its short form: no
+  model or detail, then no age), the pair advancing every five seconds (`k = floor(now / 5 s) % ceil(n / 2)`, items
+  2k and 2k+1); with room for one it shows one and the current ones take turns; nothing rotates when everything fits.
+  What needs you (an approval, a HUD job's question) is pinned on the alert colour in the first slot for as long as it
+  is open, and the second slot rotates through the events. There is no running line, no tool at work, no turn-done
+  notice and no last-event fallback: an idle session leaves the zone empty. A notice shows in full: when it is in the
+  way the whole `loaded` cluster goes first, then the other fields shorten in the order below, and only as a last
+  resort is the notice cut at a word with `…`. Skill loads come from Claude's transcript only; pi and Codex expose none.
+- **loaded**, at the right edge: MCP servers and skills (`MCP 2  skills 10`), and in pi the other extensions' words.
+
+Gone from the bars: tasks, output rate, cache percentage, time to first token, the turn's clock, active time, turn-done
+notices, hooks, CLAUDE.md and rules counts, sandbox/approval mode and session age. The panel keeps its own band.
+
+Narrow, the line gives up in this order, cheapest loss first, and the model is never dropped: the loaded cluster (to
+counts only, or at once when a notice is showing); the context meter; the effort; the quota's reset; the project's short
+form; the loaded cluster; the project's name only; the quota; the project; the context.
+
+Two keys in `$HUD_HOME/hud-settings.json` (or the environment) apply to all three bars at once; there is no settings page
+for them, and a saved key wins over the environment like the other display settings:
+
+| Key | Environment | Values |
+|-----|-------------|--------|
+| `barStyle` | `HUD_BAR_STYLE` (`CODEX_HUD_BAR_STYLE`) | `line` (default: `│` separators), or `p10k` (flat capsules, each field on its own colour with a space either side and nothing between them, in the colour theme; theme `none` has no colours, so it stays `line`) |
+| `barFields` | `HUD_BAR_FIELDS` (`CODEX_HUD_BAR_FIELDS`, comma separated) | A list from `model, context, project, quota, notice, loaded`; the default is all but `quota`. The order stays fixed; the key only switches fields off. |
+
+With the `text` icon set (`CODEX_HUD_ICONS=text`) the provider mark in the p10k look is the provider's initials.
 
 The panel's context percentages follow [Codex 0.154's calculation](https://github.com/openai/codex/blob/rust-v0.154.0/codex-rs/protocol/src/protocol.rs#L2258), subtracting the fixed 12K baseline from both the latest context usage and the window, so `20%` there equals native `80% context left`. Custom windows <=12K retain a raw-window fallback. Cumulative session tokens never measure context fill.
 

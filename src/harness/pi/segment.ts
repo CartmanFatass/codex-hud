@@ -1,7 +1,7 @@
 /** Exact-root passive status. Never owns a footer or starts a summary producer. */
 import { readThinJobs } from '../../collectors/thin-jobs.js';
 import { getHudHome } from '../../hud-home.js';
-import { renderWorkSummary } from '../../render/work-summary.js';
+import { renderWorkSummary, workSignals, type WorkSignals } from '../../render/work-summary.js';
 export const HUD_STATUS_KEY = 'hud-delegation';
 export interface SegmentContext {
   mode: string;
@@ -13,6 +13,8 @@ export function createPiSegment(options: {
   env: NodeJS.ProcessEnv;
   now?: () => number;
   schedule?: (callback: () => void, ms: number) => () => void;
+  /** Told what the jobs ask and just did, at every refresh and, empty, when the segment stops. */
+  onSignals?: (signals: WorkSignals) => void;
 }) {
   let current: { ctx: SegmentContext; root: string; isCurrent(): boolean } | null = null;
   let cancel: (() => void) | undefined;
@@ -32,12 +34,10 @@ export function createPiSegment(options: {
       stop();
       return;
     }
-    const next =
-      renderWorkSummary(
-        readThinJobs(getHudHome(options.env), { project: null, pane: options.env.HERDR_PANE_ID ?? null }),
-        160,
-        (options.now ?? Date.now)()
-      ) || undefined;
+    const now = (options.now ?? Date.now)();
+    const lanes = readThinJobs(getHudHome(options.env), { project: null, pane: options.env.HERDR_PANE_ID ?? null });
+    options.onSignals?.(workSignals(lanes, now));
+    const next = renderWorkSummary(lanes, 160, now) || undefined;
     if (current === state && (!published || next !== text)) {
       published = true;
       text = next;
@@ -61,6 +61,7 @@ export function createPiSegment(options: {
     text = undefined;
     published = false;
     if (old && isPiTui(old.ctx)) old.ctx.ui.setStatus(HUD_STATUS_KEY, undefined);
+    options.onSignals?.({ needs: [], events: [] });
   }
   return {
     start(ctx: SegmentContext, root: string, isCurrent: () => boolean) {

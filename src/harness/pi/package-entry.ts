@@ -45,8 +45,8 @@ export function installPiPackage(
   mode: PiPackageMode
 ) {
   const env = { ...(deps.env ?? process.env), HUD_HOME: binding.hudHome };
-  const segment = createPiSegment({ env, ...deps.segment });
   let footer: ReturnType<typeof createP10kFooter> | undefined;
+  const segment = createPiSegment({ env, ...deps.segment, onSignals: (signals) => footer?.setWork(signals) });
   type State = {
     ctx: PiPackageContext;
     id: string;
@@ -177,8 +177,7 @@ export function installPiPackage(
       segment.refresh();
       footer?.update();
     });
-  onDisplay('turn_start', (event) => footer?.turnStart((event as { timestamp?: number }).timestamp));
-  onDisplay('turn_end', () => footer?.turnEnd());
+  onDisplay('agent_end', () => footer?.settled());
   registerHud?.('hud', {
     description: 'Local HUD panel: on|off|toggle|status|reconnect|help; footer on|off or footer <segment options>',
     async handler(args, ctx) {

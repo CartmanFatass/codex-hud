@@ -2,8 +2,8 @@
  * Header line renderer
  *
  * Layout:
- * Row 1: the status bar, assembled from the modules in `layout/bar-modules.ts`
- * and fitted to the pane by `layout/engine.ts`.
+ * Row 1: the status bar, drawn from the facts in `layout/bar-modules.ts` by the
+ * shared builder in `layout/bar-fields.ts`.
  * Rows 2+: active subagents by depth — one row per level, up to 3 levels,
  * directory-tree prefixes showing which lineage each agent belongs to.
  */
@@ -12,31 +12,19 @@ import type { HudData, RenderOptions, LayoutConfig, SubagentTree } from '../type
 import { DEFAULT_LAYOUT } from '../types.js';
 import type { HudDelegationData } from '../core/link/view-model.js';
 import { colors, visualLength, truncateAnsi, padEnd } from './colors.js';
-import { buildBarModules } from './layout/bar-modules.js';
-import { fitBar } from './layout/bar-fields.js';
-import type { FitResult } from './layout/engine.js';
+import { barFacts } from './layout/bar-modules.js';
+import { renderBar, type FitResult } from './layout/bar-fields.js';
 import { renderSubagentChip } from './subagent-chip.js';
 import { collectActiveTreeLineages, type SubagentTreeEntry } from '../collectors/subagent-tree.js';
 
-/**
- * The single status line.
- *
- * Fields are assembled as modules and fitted to the pane by
- * `fitModules`, which shortens before it hides and keeps an alert on screen
- * after everything else has gone. Nothing here concatenates and clips.
- */
+/** The single status line, fitted to the pane: the shared bar builder shortens, drops whole fields and never wraps. */
 export function fitStatusBar(
   data: HudData & HudDelegationData,
-  layout: LayoutConfig,
+  _layout: LayoutConfig,
   width: number,
-  nowMs?: number
+  nowMs: number = Date.now()
 ): FitResult {
-  const modules = buildBarModules(data, {
-    barWidth: layout.barWidth ?? 10,
-    width,
-    ...(nowMs === undefined ? {} : { nowMs }),
-  });
-  return fitBar(modules, width);
+  return renderBar(barFacts(data, nowMs), width, nowMs);
 }
 
 function renderStatusHeader(data: HudData & HudDelegationData, layout: LayoutConfig, width: number): string {

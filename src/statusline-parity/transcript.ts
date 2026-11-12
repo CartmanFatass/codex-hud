@@ -48,7 +48,7 @@ interface State {
   todos: Todo[];
   todoPos: number;
   tasks: Task[];
-  skills: { name: string; pos: number }[];
+  skills: { name: string; pos: number; at?: number }[];
   ultracode: boolean;
   effortPos: number;
   compactAt?: number;
@@ -66,6 +66,8 @@ export interface TranscriptView {
   pendingHistory: boolean;
   compactAt?: number;
   compactPostTokens?: number;
+  /** When each skill was last loaded, for the bar's notice zone; none for a call the transcript did not date. */
+  skillLoads?: { name: string; at: number }[];
 }
 const safe = (v: unknown, n = 512) => (typeof v === 'string' ? monitorText(v.slice(0, n)).trim() : '');
 function status(v: unknown): string | undefined {
@@ -147,9 +149,10 @@ function reduce(s: State, raw: string, pos: number): void {
         const rawSkill = safe(input.skill);
         const skill = rawSkill.length > 64 ? rawSkill.slice(0, 63) + '…' : rawSkill;
         if (skill) {
-          const old = s.skills.find((x) => x.name === skill);
+          let old = s.skills.find((x) => x.name === skill);
           if (old) old.pos = Math.min(old.pos, pos);
-          else if (s.skills.length < CAP) s.skills.push({ name: skill, pos });
+          else if (s.skills.length < CAP) s.skills.push((old = { name: skill, pos }));
+          if (old && Number.isFinite(time)) old.at = Math.max(old.at ?? 0, time);
         }
       } else if (name === 'Task' || name === 'Agent') {
         let a = s.agents.find((a) => a.id === id);
@@ -246,6 +249,7 @@ function view(s: State, bytesRead: number): TranscriptView {
     pendingHistory: s.backfill > 0,
     compactAt: s.compactAt,
     compactPostTokens: s.compactPostTokens,
+    skillLoads: s.skills.flatMap((x) => (x.at === undefined ? [] : [{ name: x.name, at: x.at }])),
   };
 }
 export function collectTranscript(file: string, env: NodeJS.ProcessEnv): TranscriptView {

@@ -13,6 +13,13 @@ export type ThemeName = 'terminal' | 'mocha' | 'latte' | 'titanium' | 'none';
 export type GlyphMode = 'glyph' | 'text' | 'both';
 export type MotionMode = 'full' | 'reduced';
 export type ContextMode = 'used' | 'remaining';
+/** The bottom bars (Claude, pi, Codex), all three at once: `│` separators (`line`) or powerline capsules (`p10k`). */
+export type BarStyle = 'line' | 'p10k';
+/** The bar's fields in their fixed order; `loaded` is the right cluster (MCP, skills, pi's extension words). */
+export const BAR_FIELDS = ['model', 'context', 'project', 'quota', 'notice', 'loaded'] as const;
+export type BarField = (typeof BAR_FIELDS)[number];
+/** Shown unless the settings say otherwise: all but the quota, which is switched on by naming it. */
+export const DEFAULT_BAR_FIELDS: readonly BarField[] = BAR_FIELDS.filter((field) => field !== 'quota');
 /** The panel's buttons and titles: Unicode icons, Nerd Font icons, emoji for the panes, or words alone. */
 export type IconMode = 'unicode' | 'nerd' | 'emoji' | 'text';
 /**
@@ -32,6 +39,9 @@ export interface HudDisplayConfig {
   look: LookName;
   motion: MotionMode;
   context: ContextMode;
+  barStyle: BarStyle;
+  /** Which bar fields show (all but the quota by default); the order is fixed. */
+  barFields: BarField[];
   /**
    * Where an agent's colour shows (its direction's on the timeline and the
    * cards, its own in the Inspector): on its name and its marks (`name`, the
@@ -64,6 +74,12 @@ function resolveTheme(env: NodeJS.ProcessEnv): ThemeName {
   return pick(resolveHudEnv(env, 'HUD_THEME'), THEMES, 'terminal');
 }
 
+/** The fields named in a comma or space separated list, in their fixed order; no valid name means the default ones. */
+function barFieldsOf(raw: string | undefined): BarField[] {
+  const named = BAR_FIELDS.filter((field) => (raw ?? '').split(/[\s,]+/).includes(field));
+  return named.length ? named : [...DEFAULT_BAR_FIELDS];
+}
+
 export function resolveDisplayConfig(env: NodeJS.ProcessEnv = process.env): HudDisplayConfig {
   return {
     density: pick(resolveHudEnv(env, 'HUD_DENSITY'), DENSITIES, 'balanced'),
@@ -73,6 +89,8 @@ export function resolveDisplayConfig(env: NodeJS.ProcessEnv = process.env): HudD
     look: pick(resolveHudEnv(env, 'HUD_LOOK'), [...LOOKS], 'tab'),
     motion: resolveHudEnv(env, 'HUD_REDUCED_MOTION') === '1' ? 'reduced' : 'full',
     context: pick(resolveHudEnv(env, 'HUD_CONTEXT'), ['used', 'remaining'], 'used'),
+    barStyle: pick(resolveHudEnv(env, 'HUD_BAR_STYLE'), ['line', 'p10k'], 'line'),
+    barFields: barFieldsOf(resolveHudEnv(env, 'HUD_BAR_FIELDS')),
     agentColors: 'name',
   };
 }

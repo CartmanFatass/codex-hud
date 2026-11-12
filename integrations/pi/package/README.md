@@ -57,21 +57,21 @@ Host pi libraries are peers, never bundled dependencies. No dotfile is shipped.
 
 ## Footer ownership and freshness
 
-The HUD now owns the pi footer: the authorised p10k-footer port draws the same
-Powerlevel10k band in the editor's top border, working spinner, full-width bottom
-rule and dim identity row. It uses pi's own `CustomEditor` (keybindings, input,
-paste and autocomplete are inherited); host libraries remain unbundled peers.
-Other extensions' `setStatus` entries, including `hud-delegation`, appear in the
-identity row through the original statuses segment. No competing footer should be
-loaded. Shutdown, navigation fencing and `/hud footer off` restore pi's default UI.
+The HUD now owns the pi footer: one line below pi's own editor, drawn by the same builder as Claude's statusline and the
+Codex bar, so it shows the same fields in the same order (`model effort │ context │ repo branch │ cost │ notice zone
+···· MCP n  skills n`; see `docs/reference.md`, The bottom bars). Other extensions' `setStatus` entries, including
+`hud-delegation`, share the right cluster at the lowest priority. The notice zone tells events only (a HUD job started,
+finished or failed, each for three minutes; the footer host sees no skill loads) and pins what needs you. pi's own `CustomEditor`
+(keybindings, input, paste and autocomplete) is not replaced; host libraries remain unbundled peers. No competing
+footer should be loaded. Shutdown, navigation fencing and `/hud footer off` restore pi's default UI.
 `/hud footer on` mounts the HUD footer again. These bare footer controls do not
 operate the panel; panel controls do not operate the footer. A footer-off choice
 survives same-session `/tree` and `/hud reconnect`; a new session or reload resets it.
 
-Settings live only in `$HUD_HOME/config.json` under `piFooter`, with the original
-`footer` and `band` boolean keys. Without the section all original defaults are
-on (the owner's settings are an explicit import, not new defaults).
-`PI_HUD_PALETTE=p10k|gruvbox|nord|tokyo-night` and `PI_HUD_MARKS=ascii` are unchanged.
+Settings live in `$HUD_HOME/config.json` under `piFooter`, with the original `footer` and `band` boolean keys, which
+now switch the fields they name inside the one line. Without the section all defaults are on (the owner's settings are
+an explicit import, not new defaults). The look is the HUD's display settings: `barStyle` (`line` or `p10k`) and
+`barFields`, in `$HUD_HOME/hud-settings.json`; `PI_HUD_PALETTE` and `PI_HUD_MARKS` are gone.
 Except for bare `/hud footer on|off` (whole-footer session controls), the original
 option grammar is namespaced unchanged under `/hud footer`: for example
 `/hud footer off lens viz`, `/hud footer on all`, `/hud footer band off`,
