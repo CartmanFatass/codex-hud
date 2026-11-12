@@ -84,8 +84,8 @@ old content back. It gets no new features; its removal is scheduled after P2.
 **Scope of P2.** Work is the approved lanes and compact work cards, and Home's 110-column peek draws the selected
 lane through the same lane/card renderer. The four active card states, their precedence, the stall threshold and the
 facade-close rule are presentation only: execution status, wait semantics, acceptance and sources are unchanged. The
-snapshot publisher, the recap and brief backends, the main summary, the Timeline, Changes and the diagnostics are
-unchanged.
+snapshot publisher, Timeline, factual Changes data and diagnostics remain. Model generation now follows §5;
+no recap, overview or facade-only sentence generator is wired into this pipeline.
 
 ## Owned pi workers (PIROLE PR3; not selected for new jobs until PR4)
 
@@ -160,7 +160,7 @@ Codex writes to disk.
 | Size | 1 line (`HUD_PANE_HEIGHT`) | a column, usually 32–56 wide, 48 unless a width is asked for |
 | Loop | 1 s tick + chokidar watchers | `settings.refreshMs` collect (default 1 s), no watcher |
 | Renders with | `render/header.ts` → `layout/` engine | `render/monitor.ts` `renderMonitor` |
-| Writes | `display/state/<session>.json` snapshot, notifications | the same snapshot and notifications, on its collect tick; scan cache, agent logs, model cache, recaps, settings |
+| Writes | `display/state/<session>.json` snapshot, notifications | the same snapshot and notifications, on its collect tick; scan cache, agent logs, model cache, settings |
 
 At any time **only one of the two is running**. The launcher starts with the compact bar, never the panel.
 `codex-hud-toggle` (F12) swaps one for the other; `/hud` also opens the panel. The two processes never talk to each other directly. They share state
@@ -177,7 +177,7 @@ Data flows one way:
  sessions/*.jsonl┘                                           
  sessions/*.jsonl ─► buildSubagentTree ─► SubagentTree ─┬─► AgentLog.observe ─► agent log
                                                          ├─► readAgentTokens (context %, tok/s)
-                                                         ├─► Briefer / ModelJobs (optional LLM)
+                                                         ├─► ModelJobs / ProgressSummarizer (optional LLM)
                                                          └─► renderMonitor ─► panel frame
  git / worktrees ─► collectGitChanges, WorktreeCollector ─┘
 ```
@@ -198,7 +198,7 @@ src/settings.ts      HudSettings: defaults, validation, load/save of hud-setting
 src/settings-runtime.ts  applies settings + env to the display config
 src/snapshot.ts      machine-readable snapshot (codex-hud --json); bar or panel
 src/notify.ts        tmux / desktop notifications (bar or panel)
-src/brief-dry-run.ts `codex-hud brief --dry-run`
+src/collectors/brief-dry-run.ts  removal notice for `codex-hud brief --dry-run`
 src/collectors/      everything that reads disk, sqlite, git, or calls a model
 src/render/          pure rendering: bar modules, panel panes, cards, theme, i18n
 src/utils/           tmux input, key forwarding, session navigation, profiling …
@@ -232,7 +232,7 @@ check that no test uses it.
    - `--help`, `--self-check`, `--list`.
    - `--kill` kills every session for this directory.
    - `--json` prints `$HUD_HOME/display/state/<session>.json`.
-   - `brief --dry-run` runs `dist/brief-dry-run.js`.
+   - `brief --dry-run` reports that periodic briefs and recaps were removed.
 2. **Session identity.**
    - The prefix is `codex-hud-<md5(PWD \0 realpath CODEX_HOME)[:8]>`.
    - A session is named `<prefix>-<YYYYmmddHHMMSS>-<pid>`.
@@ -432,17 +432,16 @@ An embedded panel shows only the bound exact source/session root. Standalone `hu
 retains all-delegations mode; `hud panel --root <namespace/session-id>` selects observations
 only, not control identity. All-roots collection runs once and partitions the snapshot by
 exact root. Missing native roots use metadata-only `job-root:<root-hash>` containers,
-without invented rollout, footer or recap material. Discovery/projection limits can leave
+without an invented rollout or native footer. Discovery/projection limits can leave
 partial coverage; absence never proves success or no pending work. Global collection and
 projection uncertainty is retained across publication and feeds the existing `tree partial` /
 `not loaded` notice; it suppresses the affirmative empty-state text until coverage is known.
 
-There is no job-material bridge. Job-only branches are filtered before label/cause/brief/
-progress material planning, text formatting and cache-key hashing. Local task labels,
-reports and questions are not model material and cannot borrow a parent grant. Native
-nodes enriched with `job` keep the existing eligibility/SmallModel/cache path. Dry-run
-uses the same composition/filter, reports omitted job summaries, and performs no model
-or Herdr startup and no writes. The bar import graph reaches none of the job collectors.
+There is no job-material bridge. Job-only branches are excluded before native label,
+cause, digest or progress prompts are built. Local task labels, reports and questions
+are not model inputs. Native nodes enriched with `job` keep the existing native
+eligibility/SmallModel/cache path. The deleted job-sentence collector and authority
+layer have no replacement; job cards stay deterministic.
 
 ### 4.6 Per-agent data the panel adds
 
@@ -457,29 +456,38 @@ or Herdr startup and no writes. The bar import graph reaches none of the job col
 
 ## 5. The optional model features
 
-Everything here is **off by default**. The master switch is
-`settings.briefing` (`off | agy | api`). Legacy `omp` settings migrate to
-`api`; the OMP subprocess backend is no longer supported. While it is `off`, nothing
-leaves the machine.
+The LLM group contains exactly three preferences: `modelEnabled` (Model text),
+`model` (default `deepseek-v4-1-flash-1017`) and `modelCallsPerHour` (default 60).
+There is no backend selector, per-feature switch, pacing control, tier model,
+effort preference or consent flow. Old keys are ignored, not migrated, and are
+omitted on the next settings save; user caches and state are not deleted.
+
+Without a saved master preference, `defaultSettings()` enables model text when
+the HUD credential reader finds a Mistral or OpenAI key; otherwise it defaults
+off. A saved boolean wins. `tree-page.ts` also checks `modelHttpRequest` before
+configuring the service: without a key for the configured endpoint the effective
+service is off even if the preference is on. Off sends no model requests.
+The retained `brief-toggle` shortcut toggles this same master preference, not a
+separate pause state.
 
 ### 5.1 One service: `collectors/small-model.ts`
 
 Every request goes through `SmallModel.submit`, which provides:
 
-- **Backends.**
-  - `agy` runs as a CLI subprocess: no shell, cwd set to the system
-    temp directory, 90 s timeout, output capped at 64 KB.
-  - `api` sends an OpenAI-compatible `POST <base>/chat/completions`.
-    Labels, titles and approval descriptions use the lite tier; progress
-    summaries, agents briefs, digests and changes use low; recaps and failure
-    causes use medium. The default base is `https://api.mistral.ai/v1` and all
-    three tiers default to `deepseek-v4-1-flash-1017`; each is configurable.
-  - `briefingApiModel`, when nonempty, overrides the API tiers.
-    `CODEX_HUD_BRIEF_MODEL` overrides the model on either backend.
-  - A queued request retains its submitted backend and model. Cache identity
-    includes backend, endpoint and actual model, never the API key.
+- **Transport.** OpenAI-compatible `POST <base>/chat/completions`, with the
+  base from `briefingApiBase` (empty uses `https://api.mistral.ai/v1`) and one
+  `model` for all purposes. `CODEX_HUD_BRIEF_MODEL` remains an environment
+  override. This path does not use Jev's decision provider.
+  Credentials come only from the environment or `$HUD_HOME/credentials.env`:
+  exact HTTPS origins `api.mistral.ai` and `api.openai.com` receive only their
+  matching provider key, with environment precedence. Custom endpoints receive
+  neither key. Missing keys disable requests; userinfo URLs and redirects refuse.
+  Internal per-purpose efforts remain `none` for labels, `low` for progress and
+  digests, `high` for causes. Bounded reasoning requests add 512 tokens; there is
+  no fallback to another model/effort. A queued request retains its submitted
+  configuration. Cache identity includes endpoint and actual model, never the key.
 - **Queue.** One request in flight at a time. `cancelAll()` runs when the panel
-  closes; cancellation holds the active slot until the fetch/subprocess settles.
+  closes; cancellation holds the active slot until the fetch settles.
   HTTP redirects are refused, and reflected credentials are removed from errors.
 - **Cache.** Only for callers that pass a `cacheKey`. Up to 200 entries in
   `display/model-cache/cache.json`.
@@ -497,7 +505,7 @@ Every request goes through `SmallModel.submit`, which provides:
   `display/model-cache/calls.json` is shared by every panel on the same `$HUD_HOME`.
 - **Private files.** `writePrivateFile`: directories 0700, files 0600, written
   to a temp file and renamed into place. The panel's state files (scan cache,
-  agent log, model cache, recaps) use it. `settings.ts` and `snapshot.ts` do
+  agent log and model cache) use it. `settings.ts` and `snapshot.ts` do
   the same temp-file, 0600 and rename write on their own.
   Snapshot ownership follows the atomically renamed file's device/inode, so
   an outgoing writer leaves a replacement snapshot alone; no separate owner
@@ -506,83 +514,44 @@ Every request goes through `SmallModel.submit`, which provides:
 Nothing calls a model while rendering. Results are stored, and then
 `onChange` triggers a repaint.
 
-### 5.2 The brief and the main-session recap
+### 5.2 Native text only; no overview generator
 
-These live in `collectors/briefing.ts` and `collectors/recap.ts`.
+The retained features are native-agent labels, visible progress sentences,
+result digests and failure causes. `tree-page.ts` derives the internal
+`JobSwitches` from the effective master state: all three background jobs on,
+or `NO_JOBS`; these are not independent user settings. Progress additionally
+follows the existing card-visibility and native-eligibility gates (§5.5).
 
-**What it covers.** `Briefer.update` runs on every collection. Its scope comes
-from `briefingScope()`, set by the two switches `briefAgents` and `briefMain`.
-
-**When it runs.** There are two triggers:
-
-- **The interval** (`briefingMs`, default 5 min): runs when a fast fingerprint
-  has changed. That fingerprint covers stage edges, status changes, failures,
-  important subtasks, and for the recap new user messages, turn ends, plan
-  steps and approvals.
-- **The floor** (`recapFloorMs`, default 15 min): runs when a floor
-  fingerprint has changed. It adds routine progress.
-
-Settings shows the two as one row, Brief pace, with four pairs to choose from.
-Periodic agent brief (`briefAgents`) and main recap (`briefMain`) have separate
-switches. Live progress (`agentProgress`) is independent and not paced by this row.
-
-**Input.** `briefMaterial` builds:
-
-- `<directions>`: one ranked entry per L1, made by `reportText`;
-- `<news>`;
-- `<previous_brief>`;
-- for the recap, `<main>`.
-
-**Size budget.** The target is 16 KB (`REPORT_BYTES`), trimmed in a fixed
-order. Entries flagged for attention are never trimmed.
-
-**Reply.** It must be JSON: `{overall, agents:[{agent, attention, note}], main?}`.
-With `agentLabels` on (`BriefingContext.labels`), each agent entry also has
-`label` and `kind`: a short name for what the agent is on now and its kind of
-work. `parseBrief` reads them as `readLabel` reads the labels job's.
-A reply in any other shape gets one repair request.
-
-**Language.** Every prompt says to write in the panel's language, whatever the
-material is in, and to translate what it keeps from `<previous_recap>` or
-`<previous_brief>` (`tongueRule`). A language switch drops the brief on screen,
-resets `coveredAt` and asks at once. The log is passed through `logsIn`, so a
-note in the other language is neither the previous brief nor counted as
-covering the news. A stored recap's `overall` and `coveredAt` are used only
-when it is in the current language.
-
-**Where results go:**
-
-- each agent's note goes to the agent log as a `note`, stamped with its
-  language (`lang`) and, when given, its `label` and `taskKind`;
-- the main part goes to `display/recaps/<sessionId>.json`, with its fingerprints.
-
-Saving the fingerprints means reopening the panel does not start a new call.
-
-Changing the model connection cancels the active brief without reporting a
-failure. Its material remains eligible for the next interval.
+Periodic agent overviews, main recaps, session titles, approval descriptions,
+change summaries and facade-only job sentences have been removed. The panel
+and bar neither load old recap/title files nor write new ones. Hidden and
+secondary views receive factual state, not generated overview text.
+`collectors/briefing.ts` and `collectors/recap.ts` retain renderer DTO types
+only. `codex-hud brief --dry-run` reports the removal; it no longer previews
+outbound material.
 
 ### 5.3 Background jobs (`collectors/model-jobs.ts`)
 
-Each job has its own switch. All of them follow the backend and pause switches.
+All retained jobs follow the single master switch and endpoint-key gate.
+Facade-only and display-only roots are excluded before input construction.
 
 | Job | Output |
 |---|---|
 | Result digest, stage digest | an agent log `digest` |
-| Agent labels from task texts, session title | `model-cache/labels.json`, `recaps/<id>.title.json` |
+| Agent labels from public task text | `model-cache/labels.json` |
 | Failure cause | an agent log `cause` (agents); in memory only (tool calls) |
-| Change summary, approval description | in memory only |
 
 **Where a label comes from.** `ModelJobs.apply` shows the labels job's name
 for the parent's plaintext from before this agent was created (`node.charge`,
-with its path and role), else for a plaintext task, else the newest label a
-brief note gave in the panel's language (`AgentLog.label`). A Fernet payload
-(`gAAAAA`) is not sent. Codex 0.162 encrypts the task a subagent is sent
-(§11), so the charge is the text the labels job can still read. The brief's
-name fills in until that label arrives, and does not replace it once it has.
+with its path and role), else for a plaintext task, else a compatible stored log label
+in the panel's language (`AgentLog.label`). A Fernet payload (`gAAAAA`) is
+not sent. Codex 0.162 encrypts the task a subagent is sent (§11), so the charge
+is the text the labels job can still read. Without a label, use the native
+name; no overview request is made to fill a gap.
 
 **Language.** Digests and causes are stamped with the language they were
-asked in. A language change clears the in-memory readings; a digest, cause or
-title in the other language counts as absent and is asked for again.
+asked in. A language change clears the in-memory readings; a digest or cause
+in the other language counts as absent and is eligible to be asked for again.
 Language/root changes and stop/restart also advance a request generation:
 late model replies and pending disk reads cannot land in, or clear, a newer
 job using the same key. Retry cooldowns do not carry across languages.
@@ -593,66 +562,47 @@ job using the same key. Retry cooldowns do not carry across languages.
 
 **Prompts.** Every prompt wraps its input as quoted data.
 
-**Approval descriptions.** `isVerdict` throws away a reply that judges the
-command ("safe", "should approve") instead of describing it.
+### 5.4 Outbound native input
 
-### 5.4 Privacy, by setting
-
-| Setting | What can leave the machine |
+| Feature | What can leave the machine when the master is effectively on |
 |---|---|
-| `briefAgents` | periodic brief: agent names and roles, tasks and intents (≤300 characters), updates (≤600), stage results, previous notes |
-| `agentProgress` | visible live card summaries: the bounded public progress material in §5.5; independent of `briefAgents` |
-| `briefMain` | user prompts and the assistant's public replies (≤4000 characters), plan, goal, approval summary |
-| `resultDigest` | final answers, head and tail, ≤8000 characters |
-| `sources/<sourceId>/model.json` `delegatedDigest` + exact scope + independent `outbound.json` grant | explicit `hud digest run`: one authenticated completed delegated report summary, ≤32 KiB UTF-8 and ≤8000 code points; no reportPath/transcript/task/parent text |
-| `agentLabels` | the parent's plaintext from before the subagent was created (≤400, with its path and role), else a plaintext task (≤400), and the first prompt (≤1500). A Fernet payload is not sent. The brief's labels send nothing more than the brief |
-| `failureCause` | error output (≤2000) and the command |
-| `changeSummary` | diff stat and hunks (≤6000) |
-| `approvalDescription` | the command (≤2000) |
+| Visible progress | bounded public current-turn evidence in §5.5 |
+| Result/stage digest | public final answer, head and tail, ≤8000 characters |
+| Agent labels | parent's pre-create public plaintext with path/role, else plaintext task; ≤400 characters per item, up to 8 items |
+| Failure cause | recorded error output tail (≤2000 characters) and command where available |
 
-All outbound features pass through `core/materials`: source/ref/origin scope and
-purpose/recipient grants are checked before request text or model cache keys are
-built, and again at queue dispatch and cache publication. General replies and
-provenance live under `model-cache/materials-v1/`, sharing the original call budget
-and coordination. Original Codex caches/notes have a restricted compatibility
-scope; unknown recap ancestry cannot be reused as main-only material. No input
-fields or size limits are added by this boundary.
+Callers build these bounded prompts and submit directly to `SmallModel`; the
+former `core/materials` authority/consent layer and job-report adapters are gone.
+Facade-only labels, questions and reports are not outbound inputs. Model output
+is display text, never lifecycle, acceptance or execution evidence.
 
-The explicit [F4 digest CLI](cloud/f4-digest-cli.md) adds only the completed-report
-summary adapter. Plan is metadata-only; run uses full-ref delegated/result/digest
-scope and a concrete recipient grant, default-deny without legacy permission
-inheritance. Its new source-scoped `model-runtime-v1/` shares the ordinary F4
-budget and generic cache across invocations, not the legacy Codex budget. Coverage
-is one summary record; generated prose is not lifecycle or control evidence.
-
-Reasoning and other private channels are never read for any of these.
-Pre-create charge collection uses the same public channel/phase boundary as
-agent reports and accepts only public text blocks. Private or unknown
-assistant channels are excluded before anything reaches a label or summary;
-scan version 3 invalidates previously collected charge caches.
-`codex-hud brief --dry-run` prints exactly what a brief or recap would send,
-with its sizes. It does not cover the jobs in §5.3.
+Reasoning and private channels are excluded. Pre-create charge collection uses
+the same public channel/phase boundary as agent reports and accepts only public
+text blocks. Private or unknown assistant channels are excluded before anything
+reaches a label or summary. Neither main prompts for session titles nor diff
+hunks for change summaries are sent by the panel.
 
 ### 5.5 On-demand live progress (`collectors/progress-summary.ts`)
 
-`ProgressSummarizer` is independent of the rolling brief's interval and scope.
-`cardSummaryTargets` uses the exact card visibility settings, list filters and
-linger window; `progressTargets` narrows those explicit IDs to live agents.
-A hidden main summary, child list or child summary never implicitly requests
-that subject. This follows `agentProgress`, backend and pause switches, not
-`briefAgents`. Closing the Agents pane or opening a modal clears the targets.
+`ProgressSummarizer` follows the effective master switch and the existing
+rich-layout/native eligibility policy. `cardSummaryTargets` uses the exact
+card visibility settings, list filters and linger window; `progressTargets`
+narrows those explicit IDs to live native agents. A hidden summary, child
+list or child summary never implicitly requests that subject. Closing the
+Agents pane or opening a modal clears the targets.
 Rendering only reads lifecycle state and stored notes; it calls no model.
 `ModelHandle.status` and subscriptions distinguish queued from running without
 releasing a cancelled single-flight slot early. Public progress diagnostics
 contain only phases, safe reasons and timestamps, never request text, endpoints
 or reflected backend errors. The Inspector explains disabled/hidden/inactive,
-missing public evidence, cooldown/retry, concurrency and hourly limits. Cards
-show only concise queued/running/failure/cap hints beside enabled summaries.
+missing public evidence, cooldown/retry, concurrency and hourly limits.
+These diagnostics stay in the Inspector rather than adding compact-card prose.
 Generated notes carry explicit `coverageAt` and actual `generatedAt` (cache reuse
-keeps the original generation time); old/periodic notes have only recorded time
-unless coverage is explicitly known. Stored model entries remain visible with
-the backend off; `logsIn(..., observed=false)` still hides observed history when
-its separate log switch is off.
+keeps the original generation time); old notes have only recorded time unless
+coverage is explicitly known. With the effective master off, `tree-page.ts`
+filters model log kinds before rendering, falls back to native names and omits
+generated tool causes. Files are retained. `logsIn(..., observed=false)` also
+hides observed history when its separate Agent log switch is off.
 
 Input is quoted public evidence from the current turn: up to four reports of
 600 characters each, current stage intent (300), current tool/action (200),
@@ -666,8 +616,8 @@ the agent log. `summarySentence` also trims verbose replies to one sentence.
 
 A stable input fingerprint caches and deduplicates notes. Changed public
 progress is refreshed at most once per minute while its summary is visible;
-failures retry after ten minutes. Hiding a summary, pausing, changing
-roots/language/turns or exiting cancels obsolete work. Newer reports in the same turn do not starve
+failures retry after ten minutes. Hiding a summary, switching the master off,
+changing roots/language/turns or exiting cancels obsolete work. Newer reports in the same turn do not starve
 an in-flight snapshot; its note lands with its original coverage time, then a
 later refresh can cover the new evidence. There are at most three pending
 progress jobs, sharing `SmallModel`'s single-flight queue and hourly cap.
@@ -756,7 +706,7 @@ kept as the historical/secondary description of the stacked monitor.*
 `tree-page.ts` runs the panel:
 
 - **`collectNow`** builds the tree, runs `jobs.apply` and `agentLog.observe`,
-  reads agent tokens, then calls `updateBriefer` and `updateJobs`.
+  reads agent tokens, then calls `updateProgress` and `updateJobs`. No briefer is constructed.
 - **`render`** calls `renderMonitor(input)` and gets back a `MonitorFrame`:
   `lines`, `panes`, `controls` and `state`.
 - **Painting.** Writes `ESC[H … ESC[J` only when the frame differs from `lastPaint`.
@@ -783,9 +733,9 @@ footPlan.draw
 ```
 
 **Height budget.** Each open pane gets one row first. The remaining rows are
-handed out round-robin. Rich mode reserves the status brief's height independently
-of card content settings, so adding fields scrolls agents rather than shrinking
-the recap. Compact mode can give unused rows to the foot. What is left goes to
+handed out round-robin. The secondary renderer reserves the factual status foot
+independently of card contents. Compact mode can give unused rows to the foot.
+No generated brief or recap is supplied. What is left goes to
 details or agents. Blank separator rows appear only when the height is 30 or more.
 
 **Types.** A `MonitorRow` is `{text, item, key, controls, counts}`. A
@@ -794,48 +744,25 @@ selection by item id, so it survives reordering.
 
 ### 6.3 Cards (`render/cards.ts`)
 
-The agents pane shows one card per L1 agent, with its subtasks inside. The
-rules below were set by the user; keep them.
+Home's peek, Work and the retained secondary renderer share the compact work
+card described in the opening panel update. It shows role/task, deterministic
+state and minute age, an observed phase chain when known, and one detail line:
+reason, reported test/file counts or an eligible native model sentence. It has
+no rich-card telemetry, child rows, relations, model badge or footer. Full native
+model/effort, evidence, logs and progress diagnostics stay in the Inspector.
 
-- **No expand/collapse state.** Every visible L1 is the same configurable
-  card, working or idle. There is no card arrow, `cards` set or expansion
-  control. Clicking selects; Enter/Space or the Inspector button opens details.
-- **Independent contents.** `src/card-visibility.ts` defines booleans for AI
-  label, Codex original name, newest summary, relations, current action, child
-  list, child summary, role counts, model badge, review chip, clock, output rate
-  and context meter. Child role counts (`cardRoleCounts`, shown as 子 agent
-  数量统计) controls only the footer's `2 scout · 1 implementer` counts;
-  disabling it leaves child lines, summaries and progress targets unchanged.
-  Name and status always remain. `cardSubagentScope` is
-  `live | important | all`, default `important` (live plus failed, flagged and
-  key-role descendants). Disabling a field removes its space, not its data.
-- **Model text only.** A main summary shows only the latest model note wrapped
-  whole. Raw task, pre-create `charge`, stage intent, agent reports and older
-  notes remain in the Inspector. `cardLabel` affects names on this card only;
-  other views keep their own naming policy. Original name is optional.
-- **Child summaries are one sentence.** An active child uses its newest note,
-  never a stale digest. A failed child prefers cause; a settled child prefers
-  digest, else a note. `summarySentence` takes the first sentence/first digest
-  line, capped at 160 code points, so evidence and caveats stay in the
-  Inspector. The sentence wraps beside/under the name, rather than losing the
-  end to a one-row cut. Child clocks follow the card clock switch.
-- **Visibility controls generation.** `cardSummaryTargets` returns only the
-  subject IDs whose summary is enabled in the current rendered list. Progress
-  requests (§5.5) run in the collection/input layer, never in rendering.
-  Pending/error text accompanies the respective enabled summary and retains
-  old words. Turning off child summaries leaves the child names and status.
-- **The model badge** spells the version with the family (`6.1sol·max` in
-  text mode, glyph then those words in both). Glyph mode stays the symbols.
-  `modelLegend()` keeps the family names (`★ Sol`): it is a key, not a badge.
-  The Inspector shows the full slug.
-- **The footer** shows the clock, then the output rate (`~42 tok/s`) when it
-  fits, then the context meter.
-- **The summary row** at the top of the pane adds up every live thread's rate.
-  `agentRate` in `monitor-labels.ts` decides whether a rate is current enough
-  to show.
+The Cards group exposes `cardLabel`, `cardSummary`, `cardClock`,
+`cardStallMinutes` and `cardCorners`. Label visibility affects card names only;
+summary visibility constrains automatic native progress targets. Neither is a
+separate LLM permission or a switch for result digests, labels or causes.
+Saved child-summary/scope preferences in `card-visibility.ts` still constrain
+native eligibility, but do not restore the retired rich-card body or controls.
+`cardSummaryTargets` and `progressTargets` run in the collection/input layer,
+never from rendering. Model requests still need the effective master state.
 
-The compact log and the Inspector still use a dim `~` to mark model-written
-text.
+Raw native task/charge, reports and older notes remain in the Inspector. A
+facade-only card uses deterministic observations, not a generated job sentence.
+Compact logs and the Inspector mark model-written text with a dim `~`.
 
 ### 6.4 Input
 
@@ -894,21 +821,20 @@ against Codex 0.154 and 0.157.
   Values use the actual terminal width's right edge; from 70 columns a stable
   help column reserves the rightmost portion. Width applies on Save, followed
   by a repaint as well as the stdout resize event; no draft-only resize.
-  Cards controls presentation; LLM controls model generation and privacy.
-  A selected unavailable row explains its dependency rather than just dimming.
-  Rows stay editable to prepare preferences in advance. Pausing models does
-  not hide stored summaries, and hiding card content does not disable unrelated
-  periodic briefs or result digests. The automatic progress target list follows
-  only the enabled card summaries.
-- `card-presets.ts` owns three combinations of the thirteen content booleans:
-  minimal, progress and monitor. The virtual `cardPreset` row derives custom
-  from actual switches, never persists metadata, and leaves child scope,
-  corners, model permissions, credentials and other settings unchanged.
+  Cards controls presentation; the three LLM rows control the master switch,
+  model and call cap. Rows stay editable to prepare preferences in advance.
+  Turning Model text off hides stored model text without deleting it. Hiding card
+  content narrows automatic progress targets, not the other native background
+  jobs. There are no periodic brief or per-feature settings.
+- `card-presets.ts` retains legacy combinations for fixture/compatibility
+  callers only. There is no preset row on the current page; it cannot restore
+  retired rich-card contents. The five current Cards controls remain independent
+  of the model master preference and credentials.
 - Reset group restores only its explicit owned fields (including hidden
   counterparts of composite rows). Reset all means known page preferences,
-  not connection data: backend, API endpoint/key/models/reasoning, call cap
-  and picture/worktree assets survive. LLM/all reset disables generation and
-  pauses models rather than silently granting default permissions. Both
+  not connection data: API endpoint, model ID, call cap and picture/worktree
+  assets survive. LLM/all reset sets `modelEnabled: false` rather than restoring
+  the key-aware enabled default. No credential or consent record is written. Both
   helpers only prepare drafts; Save is required.
 - They are stored in `$HUD_HOME/hud-settings.json` (default `~/.hud`), or at
   `HUD_SETTINGS_PATH`. The file is capped at 64 KiB and written
@@ -925,14 +851,13 @@ against Codex 0.154 and 0.157.
 | `scan/` | panel | tree scan cache (`SCAN_VERSION`) |
 | `agent-log/<rootId>.json` | panel | per-agent history |
 | `model-cache/{cache,calls,labels}.json` | panel | model replies, hourly call log, labels |
-| `recaps/<sessionId>{,.title}.json` | panel | main recap and session title |
 | `activity/<root-hash>.json` | bar or panel | bounded per-root events, observed snapshots, pins and explicit viewed/read/snooze receipts |
 | `model-cache/telemetry/telemetry.json` | model service | allowlisted settled feature outcomes, 24h/1000 records, coordination independent of budget/cache claims |
 | `diagnostics/diagnostic-<uuid>.json` | explicit export action | exact preview bytes, fresh exclusive 0600 file, no source content or identifiers |
 | `profile.log` | both | only with `CODEX_HUD_PROFILE=1` |
 
 **Display.** `icons` decides icons or words everywhere: the buttons, the
-titles, the brief's field labels, "ago", the bar's activity and cache marks
+titles, "ago", the bar's activity and cache marks
 (`iconSet()`, `iconic()`). `glyphs` is the model badge's alone; nothing else
 reads it.
 
@@ -965,8 +890,9 @@ Check this list before every change to `src/render/` or `src/collectors/`.
   nothing else uses: an agents view whose tree, read and built for the bound
   root, holds no thread at all (`emptyAgentsRows`: one sentence and where the
   help is; nothing while `loading`), and, in rich, a closing line after the
-  cards when the card summary is shown but no backend is set.
-- [ ] Cards hold model-written text only (§6.3).
+  cards when summaries are enabled but the model service is unavailable.
+- [ ] Cards use deterministic observations and, for eligible native agents,
+  an optional stored model sentence (§6.3), never raw report/task/helper prose.
 - [ ] Rendering is pure. Pass `nowMs` in, never call `Date.now()`, and compute
   click rows with the same `nowMs` the frame used.
 
@@ -980,7 +906,8 @@ Check this list before every change to `src/render/` or `src/collectors/`.
 
 **Privacy and the repository**
 
-- [ ] With `briefing` set to `off`, nothing leaves the machine.
+- [ ] With `modelEnabled: false`, no model request is sent. Without a matching
+  endpoint key, the panel's model service is also off.
 - [ ] Every new model input is listed in §5.4 and in the reference.
 - [ ] New HUD state files are private: written with `writePrivateFile`, or
   with the same temp-file, 0600 and rename pattern.
@@ -1049,7 +976,7 @@ outside the repo.
 
 - `CODEX_HUD_PROFILE=1` times each stage into `display/profile.log`.
 - `docs/reviews/ui-audit.mjs` and `render-ui-preview.py` support UI review.
-- `codex-hud brief --dry-run` shows what a brief would send.
+- `codex-hud brief --dry-run` is a removal notice, not an outbound-input preview.
 - `docs/issues/` holds 16 fixed bugs (in Chinese). Read the matching one
   before touching the rollout parser or the tmux scripts.
 
@@ -1089,11 +1016,9 @@ through `monitorSettings`. The obsolete `cardNotes` option is no longer used.
    `cardSummary: isBoolean`.
 2. `src/render/settings-page.ts`: add a row, for example
    `{key, group, label, short, values, help}`, in the group it belongs to:
-   Display, Panel, Agents, Cards, LLM (anything that sends material to a model, its
-   help starting "Sends"), Status bar or Input. Settings that only make sense
+   Display, Panel, Agents, Cards, LLM (the master switch, model and call cap only), Status bar or Input. Settings that only make sense
    together are one row: give it `get` (their value as one) and `set` (the
-   settings a value stands for), as Brief pace, Agent names and
-   Notifications do; `rowValue` and `withRowValue` read and write through them.
+   settings a value stands for), as Notifications does; `rowValue` and `withRowValue` read and write through them.
 3. If rendering needs it: add a field to `MonitorState`
    (`render/monitor.ts`), map it in `monitorSettings`, and read it where it
    is drawn.
@@ -1167,27 +1092,25 @@ All three bars share `layout/bar-fields.ts`; a field is added once.
 
 **Model features**
 
-- **Prompts on the command line.** `agy` receives the whole prompt as
-  command-line arguments, so other local users can read it with `ps`.
-- **API key fallback.** The `api` backend uses its explicit key or
-  `CODEX_HUD_BRIEF_API_KEY`. `OPENAI_API_KEY` is a fallback only for the
-  official OpenAI origin, never for a custom endpoint.
-- **No cache for briefs.** Briefs and recaps are never cached. Background jobs
-  (§5.3) and live progress (§5.5) are cached.
+- **Credential origin.** The panel uses only the matching Mistral/OpenAI key
+  from the environment or HUD credential file for the exact provider HTTPS
+  origin. There is no settings-file key or general key fallback for custom
+  endpoints (§5.1).
+- **Shared cache.** Native background jobs (§5.3) and progress (§5.5) reuse
+  cached replies; there is no periodic overview generator.
 - **Late refusal.** The hourly cap is checked when a request runs, not when it
   is queued, so a queued job can be refused late.
 - **Shared model state.** `model-runtime-store.ts` coordinates local panels with unique process tickets, atomic budget reservation, cache merge and same-input claims. A lost sender may conservatively consume its reservation; failures refuse rather than bypass accounting.
-- **Jobs ignore the scope.** §5.3 jobs follow only the backend and pause
-  switches, not `briefAgents` or `briefMain`.
-- **Lost on restart.** Tool-call causes, change summaries and approval
-  descriptions live only in memory.
+- **One master.** §5.3 jobs follow the effective master state, not retired
+  per-feature or scope keys. Progress also follows native visibility gates.
+- **Lost on restart.** Main-session tool-call causes live only in memory.
 - **Encrypted tasks.** Codex 0.162 sends inter-agent messages encrypted:
   `spawn_agent`, `send_message` and `followup_task` carry a Fernet token, and
   an `agent_message` a plaintext header and `encrypted_content`. `node.task`
   is then empty or sealed. The labels job sends the parent's own plaintext
   from before the spawn (`node.charge`) when the rollout still has it, and
-  otherwise has nothing to send; the brief's labels (§5.2) cover that case
-  until a charge label arrives. The details page shows the charge whole.
+  otherwise has nothing to send; the native name remains when no compatible
+  stored label is available. The details page shows the charge whole.
   The card does not.
 - **Mixed languages.** What a model wrote stays in the log in the language it
   was written in. Anything that shows or resends log text goes through
@@ -1234,11 +1157,12 @@ failures via `HudHealth.bind`, while model lifecycle callbacks repaint classifie
 failures and queue status without performing I/O in the renderer.
 
 `collectors/model-probe.ts` owns cancellable Settings API checks. It snapshots the
-connection, resolves three feature routes, uses a separate SmallModel instance
-sharing the ordinary budget directory, and sends only fixed synthetic text. A
-configuration fingerprint and generation counter reject late results when leaving
-or changing the draft. Off remains no-network; explicit probes may run while
-ordinary model generation is paused.
+connection and checks labels, progress and cause with the same configured model
+and their internal effort defaults. A separate SmallModel instance shares the
+ordinary budget directory and sends only fixed synthetic text. A configuration
+fingerprint and generation counter reject late results when leaving or changing
+the draft. The master off or a missing endpoint key prevents network requests;
+there is no separate pause bypass.
 
 Performance evidence and the reproducible synthetic workload are documented in
 [the performance report](./performance-20261024.md). Panel tree collection uses
@@ -1292,8 +1216,8 @@ Strict candidates retain quiet older roots rather than filtering by HUD startup.
 An ambiguous candidate set returns null. A unique current registry observation
 also supports selection without a host locator. A selected ordinary session has a full
 `SessionRef`, nullable process/occupant observations and no invented managed run.
-The bar, panel and dry-run call sites keep their existing finder/parser paths:
-their newest-cwd selection is a different policy from strict facade binding.
+The bar and panel keep their existing finder/parser paths: their newest-cwd
+selection is a different policy from strict facade binding.
 
 `open` defers I/O to a serialized `read`. The opt-in rollout scanner stops at the
 first byte, record or soft time budget (defaults 4 MiB, 2000 records and 20 ms).
@@ -1341,51 +1265,3 @@ public v3 type draft: the `universal` slots reuse core identities, metrics,
 workspace, status, lifecycle and observation stamps. Any future v3 outlet must be
 selected explicitly and use a separate path. `snapshot.ts`, its version 2 writer
 and the existing `--json` path retain their fields, units and output bytes.
-
-## Job sentences (R5UX-P3B)
-
-`collectors/job-progress.ts` is the only owner of job-sentence I/O; renderers receive immutable
-display DTOs. `JobProgress.update` runs from the panel's existing collection slice
-(`jobPipeline.sentenceCollection`, wired in `src/tree-page.ts`), never from a paint, resize, fold or
-clock path. Its gates run before any identity, body, hash or cache lookup: the SmallModel backend,
-`briefing`, `agentProgress`, pause, card visibility, the active page, and an applied recipient from
-`SmallModel.jobCardRecipient()`.
-
-**Authority.** `JobMaterialAuthority` (`core/materials/job.ts`) reads the private
-`$HUD_HOME/job-materials-v1/policy.json` (mode-checked, ≤64 KiB, symlink- and chain-checked) and
-`authorize` requires `scope.facade`, a matching `job_card` grant for the concrete `recipientId`, and a
-current facade source. Discovered `tmp/tasks` roots are not facade sources, so they are denied without
-a grant. `setConsent` is the explicit Settings action only (`SettingsAction 'job-consent'`); ordinary
-save/reset never writes a grant. Material is built by `JobPublicOutputAdapter` and `buildMaterials`
-from the allowlisted fields (`JOB_FIELDS`: goal, test heading, owned path, public output, review,
-question, report) under 16 KiB / 32 fragments, and `JobBudgetPending` propagates as a typed `pending`
-rather than a refusal.
-
-**Scheduling.** `JOB_PROGRESS_LIMITS` holds 3 outstanding requests, 200 scheduling records, a 60 s
-per-job interval, a 600 s retry floor and an 8192 cumulative probe admission cap. A request is made
-only when the envelope fingerprint differs from the last attempt, and `SmallModel.submitJob` reuses
-the ordinary queue, transport, hourly cap and cache. A target past the probe cap is marked declined
-with an Inspector reason and is not retried. Budget deferral consumes only the remaining shared
-collection slice (32 files, 1 MiB, 128 entries) after the deterministic collectors, so a cold job
-completes over several ticks. Three persistent extraction/in-flight slots match the adapter's
-three-entry reduction cache; a batch finishes before another is admitted. Completed notes revalidate
-round-robin. Waiting notes retain prose but lose attention conservatively until a new assessment.
-`jobInspectorTargets` supplies a separate collection-only retention set: the inspected existing DTO
-is revalidated without permitting a new Inspector-only model request. Policy/recipient changes still
-clear all views, and episode/question/root changes immediately invalidate retained DTOs.
-
-**Recipient identity.** `resolveRecipient`/`bindResolvedRecipient` fingerprint the canonical origin
-and the selected account selection (`origin · key source`, environment vs `credentials.env`); the key
-value never enters identity or display, and `jobCardRecipientLabel` shows only origin, model and
-source description. A source/name/origin change therefore needs fresh consent, while an in-process
-key rotation under the same selection denies and a cross-restart rotation under the same selection
-is the same account. Credential selection, the A0 panel rule and F4 are untouched.
-
-**Display and fences.** `projectWorkCard` keeps `deterministicState` and adds `modelAttention`; the
-state becomes `needs-you` for display only, and Home's badge still comes from `homeNeedsHuman`.
-`parseJobProgress` rejects malformed, oversized, off-language or out-of-request replies (basis IDs
-must be admitted evidence, at most 4, a line needs basis, attention needs a line). Scope, language,
-policy and recipient changes cancel or fence handles; a same-episode append may finish its snapshot
-but `sameBasis` drops attention whose evidence changed, and revocation cancels queued, in-flight and
-cached notes. `DerivedMaterialStore` persists only notes that re-validate against the current
-envelope, recipient and policy, and output is never re-admitted as material.
