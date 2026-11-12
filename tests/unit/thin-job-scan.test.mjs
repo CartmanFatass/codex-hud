@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
-test('300 jobs: unchanged scan parses no receipts; a changed job appears next scan', (t) => {
+test('newest 200 jobs: unchanged scan parses no receipts; a changed job appears next scan', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-scan-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const scope = { project: null, pane: 'w4E:p1' };
@@ -33,11 +34,12 @@ test('300 jobs: unchanged scan parses no receipts; a changed job appears next sc
       ['report.md', 'Synthetic result'],
     ])
       fs.writeFileSync(join(dir, name), text);
+    fs.utimesSync(dir, n, n);
   }
   const workers = () => readThinJobs(home, scope, parse).flatMap((lane) => lane.workers);
   const first = workers();
   assert.equal(first.length, 200);
-  assert.equal(parses, 300);
+  assert.equal(parses, 200);
   parses = 0;
   assert.deepEqual(workers(), first);
   assert.equal(parses, 0);
@@ -54,6 +56,69 @@ test('300 jobs: unchanged scan parses no receipts; a changed job appears next sc
   const retained = readThinJobs(home, scope, parse, { settledBefore: cutoff }).flatMap(l => l.workers);
   assert.equal(retained.length, 3, 'old working and unknown jobs plus recent settlement remain');
   assert.equal(retained.filter(w => w.state === 'working').length, 2);
+});
+
+test('1,000 old jobs: cold invocations reuse persisted facts, bounded bodies, changed STATUS is seen', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'thin-cold-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const scope = { project: null, pane: 'w4E:p1' };
+  for (let n = 0; n < 1000; n++) {
+    const job = `j${n.toString(16).padStart(16, '0')}`, dir = join(home, 'jobs', job);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job, role: 'imp', herdr_pane: 'w4E:p2', created_at: new Date(n * 1000).toISOString() }));
+    fs.writeFileSync(join(dir, 'STATUS.json'), '{"state":"closed"}');
+    fs.writeFileSync(join(dir, 'brief.md'), '# Synthetic retained brief');
+    fs.writeFileSync(join(dir, 'report.md'), 'Synthetic retained report');
+    fs.utimesSync(dir, n, n);
+  }
+  let parses = 0, artifacts = 0, lists = 0;
+  const stats = new Map(), originals = { openSync: fs.openSync, lstatSync: fs.lstatSync, readdirSync: fs.readdirSync };
+  fs.openSync = (file, ...args) => {
+    if (/\/(brief|report|review-\d+|q\d+(?:\.answer)?)\.md$/.test(String(file))) artifacts++;
+    return originals.openSync(file, ...args);
+  };
+  fs.lstatSync = (file, ...args) => {
+    if (/\/jobs\/j[0-9a-f]{16}$/.test(String(file))) stats.set(String(file), (stats.get(String(file)) ?? 0) + 1);
+    return originals.lstatSync(file, ...args);
+  };
+  fs.readdirSync = (file, ...args) => { if (String(file) === join(home, 'jobs')) lists++; return originals.readdirSync(file, ...args); };
+  syncBuiltinESMExports();
+  t.after(() => { Object.assign(fs, originals); syncBuiltinESMExports(); });
+  const parse = (s) => { parses++; return JSON.parse(s); };
+  const options = { settledBefore: Date.now() + 60000 };
+  const first = await import('../../dist/collectors/thin-jobs.js?cold1');
+  assert.deepEqual(first.readThinJobs(home, scope, parse, options), []);
+  assert.ok(parses <= 200, String(parses));
+  assert.equal(artifacts, 0, 'no artifacts for the other pane');
+  assert.equal(lists, 1); assert.equal(stats.size, 1000); assert.ok([...stats.values()].every((n) => n === 1));
+  stats.clear(); lists = 0;
+  const cacheFile = join(home, 'display/thin-jobs.json');
+  const stamp = fs.statSync(cacheFile).mtimeMs;
+  parses = 0;
+  const second = await import('../../dist/collectors/thin-jobs.js?cold2');
+  assert.deepEqual(second.readThinJobs(home, scope, parse, options), []);
+  assert.ok(parses <= 3, String(parses));
+  assert.equal(artifacts, 0, 'cold invocation still reads no other-pane artifacts');
+  assert.equal(lists, 1); assert.ok([...stats.values()].every((n) => n === 1));
+  assert.equal(fs.statSync(cacheFile).mtimeMs, stamp, 'unchanged refresh does not rewrite cache');
+  const dir = join(home, 'jobs', 'j00000000000003e7');
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: 'j00000000000003e7', role: 'imp', herdr_pane: scope.pane, created_at: new Date(999000).toISOString() }));
+  fs.writeFileSync(join(dir, 'STATUS.json'), '{"state":"working","model":"changed-status"}');
+  const changed = second.readThinJobs(home, scope, parse, options).flatMap((l) => l.workers);
+  assert.equal(changed[0].model, 'changed-status');
+  fs.writeFileSync(cacheFile, '{broken');
+  const third = await import('../../dist/collectors/thin-jobs.js?cold3');
+  assert.equal(third.readThinJobs(home, scope, parse, options).flatMap((l) => l.workers)[0].model, 'changed-status');
+});
+
+test('settled HUD card age is time since settlement, not run duration', async (t) => {
+  const { projectWorkCard } = await import('../../dist/collectors/work-card.js');
+  const now = Date.parse('2030-01-01T12:00:00Z');
+  for (const state of ['done', 'failed', 'stopped']) {
+    const worker = { id: 'thin-job:j0000000000000001', state, startedAt: now - 3600000, settledAt: now - 120000,
+      work: { facadeClosed: true, failed: state === 'failed', activityAt: now - 120000 } };
+    assert.equal(projectWorkCard(worker, now).elapsedMinutes, 2);
+  }
 });
 
 test('a job stopped after writing its report shows as done; one stopped without it stays stopped', (t) => {

@@ -8,7 +8,7 @@ import { applyBarSettings } from '../bar-settings.js';
 import { NOTICE_MS } from '../render/layout/bar-fields.js';
 import { renderStatuslineSession, type StatuslineSessionOptions } from '../render/statusline-session.js';
 import type { HudIO } from './hud.js';
-import { loadParitySettings } from '../statusline-parity/settings.js';
+import { loadParitySettings, paritySettings } from '../statusline-parity/settings.js';
 import { collectAndRenderParity } from '../statusline-parity/collect.js';
 import { forwardInput } from '../statusline-parity/forward.js';
 
@@ -22,7 +22,7 @@ export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--sourc
 
 Render stdin Claude facts, with Work counts from this pane's job folders.
 No transcript reading, collection, network access or installation by default.
-An explicit HUD config.json statusline section enables claude-hud 0.8.0 compact parity.
+The shared bar uses HUD config.json statusline preferences, or defaults when absent.
 Import previews that section without writes; --apply writes HUD configuration only.
 Settings commands are explicit Linux opt-in operations under HOME/.claude.
 Preview before apply; keep the returned backup path for exact restore.
@@ -110,7 +110,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
       } else widthArgs.push(args[index]);
     }
   }
-  const parity = loadParitySettings(io.env);
+  const parity = loadParitySettings(io.env) ?? paritySettings({});
   const tty = process.stdout.isTTY ? process.stdout.columns : undefined;
   const columns = parity
     ? String(

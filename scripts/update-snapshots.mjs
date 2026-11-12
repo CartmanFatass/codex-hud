@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+process.env.TZ = 'UTC';
 const root = process.cwd();
 const fixture = (name) => join(root, 'tests/fixtures', name);
 const load = (name) => import(new URL(`../tests/fixtures/${name}`, import.meta.url));

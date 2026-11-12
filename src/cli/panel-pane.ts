@@ -1,7 +1,7 @@
 /** Simple local herdr pane operations shared by the CLI and pi package. */
 import { basename } from 'node:path';
 import { loadSettings } from '../settings.js';
-import { panelWidth } from '../utils/pane-width.js';
+import { panelWidth, DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { truncateAnsi } from '../render/colors.js';
 import { runHerdr, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
 
@@ -73,7 +73,7 @@ export async function openPanelPane(
   argv: string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
-  width = loadSettings(env).treeWidth,
+  width = (() => { try { return loadSettings(env).treeWidth; } catch { return DEFAULT_WIDTH; } })(),
   columns = process.stdout.isTTY ? process.stdout.columns : Number(env.COLUMNS)
 ): Promise<string> {
   if (!herdrId(env.HERDR_PANE_ID)) throw Error('panel_requires_herdr');

@@ -572,9 +572,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     next.modes = monitorModes(settings);
     return { ...next, ...monitorSettings(settings) };
   };
+  const availableDecisionKeys = () => { try { return decisionKeys(readHudCredentials()); } catch { return undefined; } };
   let state = place?.state ?? configuredState();
   let settingsPage: SettingsPageState | null = place?.settings
-    ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: decisionKeys(readHudCredentials()), message: '' } : null;
+    ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: availableDecisionKeys(), message: '' } : null;
   let settingsFrame: SettingsFrame | undefined;
   let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
   let confirmationFrame: SettingsConfirmationFrame | undefined;
@@ -1312,9 +1313,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         }
       }
       if (result.action?.type === 'settings') {
+        let decisionApi = settings.decisionApi;
+        try { decisionApi = loadSettings().decisionApi; } catch { /* Keep the loaded draft. */ }
         settingsPage = {
-          draft: { ...settings, ...monitorPreferences(state), decisionApi: loadSettings().decisionApi },
-          decisionKeys: decisionKeys(readHudCredentials()),
+          draft: { ...settings, ...monitorPreferences(state), decisionApi },
+          decisionKeys: availableDecisionKeys(),
           selected: 0,
           offset: 0,
           message: '',

@@ -257,7 +257,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   // `o` (also Ctrl+\ o) opens the selected job's file in $EDITOR.
-  if (key === 'open-session' && main) return result(jobFiles());
+  if (key === 'open-session' && main) return result(next.boardAnchor ? undefined : jobFiles());
   if (key === 'show-all' && main) {
     next.tree.showAll = !next.tree.showAll;
     return result();

@@ -210,16 +210,22 @@ function readSettings(file: string): HudSettings {
   }
 }
 
-/** Missing files use defaults. Malformed JSON and I/O failures belong to the caller. */
+function decisionApi(env = process.env): DecisionProviderId {
+  try { return resolveDecisions(readHudConfig(path.join(getHudHome(env), 'config.json'))).primary; }
+  catch { return 'openai'; }
+}
+/** Missing files use defaults. Malformed preference JSON and I/O failures belong to the caller. */
 export function loadSettings(env = process.env): HudSettings {
-  return { ...readSettings(settingsPath(env)), decisionApi: resolveDecisions(readHudConfig(path.join(getHudHome(env), 'config.json'))).primary };
+  return { ...readSettings(settingsPath(env)), decisionApi: decisionApi(env) };
 }
 
 /** Validate a patch against existing preferences and atomically replace the file. */
 export function saveSettings(patch: Partial<HudSettings>): HudSettings {
   const file = settingsPath();
-  const settings = mergeValidated(loadSettings(), patch);
-  if (patch.decisionApi !== undefined && validators.decisionApi(patch.decisionApi)) {
+  let current: HudSettings;
+  try { current = loadSettings(); } catch { current = { ...defaultSettings(), decisionApi: decisionApi() }; }
+  const settings = mergeValidated(current, patch);
+  if (settings.decisionApi !== current.decisionApi) {
     const configFile = path.join(getHudHome(), 'config.json'), root = readHudConfig(configFile);
     root.decisions = { ...(root.decisions as object ?? {}), primary: settings.decisionApi };
     fs.mkdirSync(path.dirname(configFile), { recursive: true });

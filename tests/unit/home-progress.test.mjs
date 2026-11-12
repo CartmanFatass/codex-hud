@@ -113,6 +113,7 @@ test('real Home input: Up/Down/End select the block, Enter/click opens Project p
     assert.equal(frame.state.boardAnchor, 'home-progress:tickets:native-tree');
     frame = f.render(width, 'en', 80, press(frame, 'up').state);
     assert.equal(frame.state.boardAnchor, 'home-progress:progress');
+    assert.equal(press(frame, 'open-session').action, undefined, 'o on progress never opens a stale card file');
     frame.state.projectFolded = new Set(['progress', 'tickets', 'tickets:native-tree', 'control']);
     let result = press(frame, 'enter');
     assert.equal(result.state.mainTab, 'project');

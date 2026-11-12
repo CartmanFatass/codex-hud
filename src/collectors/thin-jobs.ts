@@ -22,6 +22,41 @@ interface Snap {
 }
 const cache = new Map<string, { stamp: string; snap: Snap }>();
 const seen = new Set<string>();
+let cacheHome = '', saved = '';
+// Persist only receipt/STATUS facts, never reports, questions or transcript text.
+const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'dispatch_exit_code',
+  'state', 'started_at', 'settled_at', 'ended_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'reason']);
+function restore(home: string): void {
+  if (cacheHome === home) return;
+  cacheHome = home; cache.clear(); saved = '';
+  try {
+    const file = join(home, 'display/thin-jobs.json');
+    if (fs.statSync(file).size > 1048576) return;
+    const text = fs.readFileSync(file, 'utf8'), rows = JSON.parse(text);
+    if (!Array.isArray(rows) || rows.length > 400) return;
+    for (const [rel, stamp, snap] of rows) {
+      if (!/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
+        !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
+        !(snap.json === null || (snap.json && typeof snap.json === 'object'))) throw Error('cache');
+      cache.set(join(home, 'jobs', rel), { stamp, snap: { ...snap, text: '' } });
+    }
+    saved = text;
+  } catch { cache.clear(); }
+}
+function persist(home: string): void {
+  const root = join(home, 'jobs') + '/';
+  const rows = [...cache].filter(([p]) => /\/(job|STATUS)\.json$/.test(p)).map(([p, { stamp, snap }]) =>
+    [p.slice(root.length), stamp, { at: snap.at, whole: snap.whole, json: snap.json ?
+      Object.fromEntries(Object.entries(snap.json).filter(([k]) => factKeys.has(k))) : null }]);
+  const text = JSON.stringify(rows);
+  if (text === saved || text.length > 1048576) return;
+  const file = join(home, 'display/thin-jobs.json'), temp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.mkdirSync(join(home, 'display'), { recursive: true });
+    fs.writeFileSync(temp, text, { mode: 0o600 }); fs.renameSync(temp, file); saved = text;
+  } catch { /* An unavailable display cache must not stop collection. */ }
+  finally { try { fs.unlinkSync(temp); } catch { /* renamed or unavailable */ } }
+}
 function read(path: string, max = 65536): Snap | null {
   let fd: number | undefined;
   try {
@@ -117,10 +152,15 @@ export function readThinJobs(
 ): WorkLane[] {
   complete = herdrId(scope.pane);
   seen.clear();
+  restore(home);
   const root = join(home, 'jobs');
-  const jobs = entries(root)
-    .filter((id) => /^j[0-9a-f]{16}$/.test(id))
-    .flatMap((id) => {
+  const candidates = entries(root).filter((id) => /^j[0-9a-f]{16}$/.test(id)).flatMap((id) => {
+    try { const st = fs.lstatSync(join(root, id)); return st.isDirectory() ? [{ id, at: st.mtimeMs }] : []; }
+    catch { complete = false; return []; }
+  }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id));
+  if (candidates.length > 200) complete = false;
+  const jobs = candidates.slice(0, 200)
+    .flatMap(({ id }) => {
       // Bars have no history view. Keep active/unknown jobs for pinned questions, regardless of age.
       const status = options ? json(join(root, id, 'STATUS.json'), parse) : null;
       if (
@@ -146,7 +186,6 @@ export function readThinJobs(
       return created === null ? [] : [{ id, job, created, jobAt: file.at, status }];
     })
     .sort((a, b) => b.created - a.created || a.id.localeCompare(b.id));
-  if (jobs.length > 200) complete = false;
   const lanes = new Map<string, WorkLane>();
   for (const { id, job, created, jobAt, status: checkedStatus } of jobs.slice(0, 200)) {
     const directory = join(root, id),
@@ -338,8 +377,9 @@ export function readThinJobs(
       evidence: [],
     });
   }
-  // Keep all receipt signatures, but only artifacts used by the retained lanes (no clear-all churn).
+  // Retain only signatures used by this bounded scan.
   for (const path of cache.keys()) if (!seen.has(path)) cache.delete(path);
+  persist(home);
   if (observation) observation.complete = complete;
   return [...lanes.values()];
 }

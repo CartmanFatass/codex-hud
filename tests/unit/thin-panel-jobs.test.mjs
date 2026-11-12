@@ -466,18 +466,22 @@ test('Home → thin-job Inspector → Changes preserves summary mouse controls w
   assert.equal(frame.state.focus, 'agents');
 });
 
-test('statusline Work count reads job folders with no role-summary cache', (t) => {
+test('statusline notices and explicit detail counts read job folders with no role-summary cache', (t) => {
   const f = fixture(t);
   assert.equal(existsSync(join(f.env.HUD_HOME, 'display/role-summary')), false);
   const clock = join(f.env.HOME, 'clock.mjs');
   writeFileSync(clock, `Date.now=()=>${now};`);
-  const result = spawnSync(process.execPath, ['--import', clock, resolve('bin/hud'), 'statusline', '--width', '160'], {
+  const run = (args = []) => spawnSync(process.execPath, ['--import', clock, resolve('bin/hud'), 'statusline', '--width', '160', ...args], {
     env: f.env,
     input: JSON.stringify({ session_id: 'synthetic', model: { display_name: 'Synthetic' } }),
     encoding: 'utf8',
     timeout: 10000,
   });
+  const result = run();
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Work: 1 needs you/, 'shared bar pins owner questions rather than persistent counts');
+  const details = run(['--details']);
+  assert.equal(details.status, 0, details.stderr);
   // A settled job is done, read or not: no "report ready" count.
-  assert.match(result.stdout, /Work: 1 needs you · 1 stalled · 1 failed · 1 running/);
+  assert.match(details.stdout, /Work: 1 needs you · 1 stalled · 1 failed · 1 running/);
 });

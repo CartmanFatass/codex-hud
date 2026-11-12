@@ -6,7 +6,8 @@ import { join, resolve, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { panelWidth, treeWidthKeeper, TreeWidthKeeper } from '../../dist/utils/pane-width.js';
-import { defaultSettings, loadSettings } from '../../dist/settings.js';
+import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
+import { openPanelPane } from '../../dist/cli/panel-pane.js';
 import { SETTING_ROWS, resetSettingsGroup } from '../../dist/render/settings-page.js';
 
 function fixture(t) {
@@ -19,7 +20,7 @@ const fs = require('node:fs'), args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
 const {total, width} = JSON.parse(fs.readFileSync(${JSON.stringify(geometry)}, 'utf8'));
 const rect = (x, width) => ({x, y: 0, width, height: 40});
-console.log(JSON.stringify({result: args[1] === 'get' ? {pane: {pane_id: args[2]}} : {layout: {
+console.log(JSON.stringify({result: args[1] === 'split' ? {pane: {pane_id: 'w4E:p3'}} : args[1] === 'get' ? {pane: {pane_id: args[2]}} : {layout: {
   panes: [{pane_id: 'w4E:p1', rect: rect(0, total - width)}, {pane_id: 'w4E:p2', rect: rect(total - width, width)},
     {pane_id: 'w4E:p9', rect: {x: 0, y: 40, width: total, height: 40}}],
   splits: [{direction: 'right', ratio: 1 - width / total, rect: rect(0, total)}]
@@ -93,6 +94,47 @@ for (const [herdr, override, tmuxHere] of [[true, false], [false, false], [true,
       assert.equal(f.calls().filter((a) => a[1] === 'resize').length, 1, 'unrelated save leaves the border alone');
     } else assert.deepEqual(f.calls().filter((a) => a[0] === 'pane' || a[0] === 'tmux'), []);
   });
+
+for (const bad of ['settings', 'config', 'decisions', 'credentials'])
+  test(`panel width, opening Settings and saving survive malformed ${bad}`, { timeout: 20000 }, async (t) => {
+    const f = fixture(t), env = { ...f.env, COLUMNS: '160' };
+    mkdirSync(env.HUD_HOME);
+    const config = join(env.HUD_HOME, 'config.json');
+    const bytes = bad === 'config' ? '{ broken JSON' : bad === 'decisions' ? '{"decisions":{"primary":"invalid","fallback":42}}' : '{ "jev": {} }\n';
+    writeFileSync(config, bytes);
+    if (bad === 'settings') writeFileSync(join(env.HUD_HOME, 'hud-settings.json'), '{ broken');
+    if (bad === 'credentials') writeFileSync(join(env.HUD_HOME, 'credentials.env'), 'OPENAI_API_KEY=synthetic\n', { mode: 0o644 });
+    await openPanelPane(['synthetic-panel'], f.dir, env);
+    const split = f.calls().find((a) => a[1] === 'split');
+    assert.ok(split.includes('HUD_PANEL_WIDTH=56'));
+    const child = spawn(process.execPath, [resolve('dist/tree-page.js')], { cwd: f.dir, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+    let output = '', stderr = '';
+    child.stdout.on('data', (s) => { output += s; }); child.stderr.on('data', (s) => { stderr += s; });
+    await until(() => output.includes('Home'), 'panel did not paint: ' + stderr);
+    child.stdin.write(',');
+    await until(() => output.includes('Settings'), 'settings did not open: ' + stderr);
+    child.stdin.write('s');
+    const file = join(env.HUD_HOME, 'hud-settings.json');
+    await until(() => { try { return JSON.parse(readFileSync(file, 'utf8')).treeWidth === 56; } catch { return false; } }, 'settings not saved: ' + stderr);
+    assert.equal(child.exitCode, null);
+    assert.equal(readFileSync(config, 'utf8'), bytes, 'unrelated save preserves even broken config bytes');
+  });
+
+test('only a changed Decision API rewrites config; malformed config is never destroyed', (t) => {
+  const f = fixture(t), old = process.env; process.env = { ...old, ...f.env };
+  t.after(() => { process.env = old; });
+  mkdirSync(f.env.HUD_HOME);
+  const file = join(f.env.HUD_HOME, 'config.json'), bytes = '{ "decisions": { "primary": "gemini" }, "jev": {} }\n';
+  writeFileSync(file, bytes);
+  saveSettings({ ...loadSettings(), theme: 'titanium' });
+  assert.equal(readFileSync(file, 'utf8'), bytes);
+  saveSettings({ decisionApi: 'openai' });
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).decisions.primary, 'openai');
+  writeFileSync(file, '{ broken');
+  assert.throws(() => saveSettings({ decisionApi: 'gemini' }));
+  assert.equal(readFileSync(file, 'utf8'), '{ broken');
+});
 
 test('keeper follows containing width, leaves manual drags alone and clamps with panelWidth', async (t) => {
   const f = fixture(t), saved = { ...process.env };

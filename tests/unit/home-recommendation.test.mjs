@@ -137,17 +137,37 @@ test('one batch per fingerprint, changed board waits two minutes; age/sentence/i
   const added = f.job(3); f.scores[added] = 4;
   await f.pump(); assert.equal(f.calls.length, 3, 'membership also changes the fingerprint');
 });
-for (const mode of ['error', 'malformed', 'invalid', 'no-key', 'off']) test(`${mode}: Default order, no brief/error on Home, unchanged failures do not retry`, async (t) => {
+for (const mode of ['error', 'malformed', 'invalid', 'no-key', 'off']) test(`${mode}: ranking failure is independent of brief; unchanged failures do not retry`, async (t) => {
   const f = fixture(t, mode !== 'no-key'); f.job(1); f.job(2, 'done');
   if (mode === 'off') f.configure(false); else f[mode] = true;
   const source = f.board(), lines = f.render(source).lines;
   const result = await f.pump(source);
-  assert.equal(result, source); assert.deepEqual(f.render(result).lines, lines);
+  assert.deepEqual(result.lanes, source.lanes);
+  const textUp = !['no-key', 'off'].includes(mode);
+  assert.equal(result.homeBrief, textUp ? f.text : undefined);
+  if (!textUp) assert.deepEqual(f.render(result).lines, lines);
   assert.doesNotMatch(plain(f.render(result)), /SYNTHETIC-FAILURE|invalid|error|brief/i);
-  assert.equal(f.briefs.length, 0);
+  assert.equal(f.briefs.length, textUp ? 1 : 0);
   assert.equal(f.calls.length, ['no-key', 'off'].includes(mode) ? 0 : 1);
   f.now += 120000; await f.pump(source);
   assert.equal(f.calls.length, ['no-key', 'off'].includes(mode) ? 0 : 1);
+});
+test('changed sentences refresh only the independent brief after the Summary interval; trimmed newline is valid', async (t) => {
+  const f = fixture(t); f.job(1);
+  const source = f.board(); await f.pump(source);
+  const changed = structuredClone(source);
+  changed.workers[0].modelSentence = 'Integration checks are running.';
+  f.text = 'Integration checks are running.\n';
+  f.now += 299999; await f.pump(changed); assert.equal(f.briefs.length, 1);
+  f.now++; const result = await f.pump(changed);
+  assert.equal(f.briefs.length, 2); assert.equal(f.calls.length, 1);
+  assert.equal(result.homeBrief, f.text.trim());
+  f.now += 600000; await f.pump(changed); assert.equal(f.briefs.length, 2, 'unchanged digest is not resubmitted');
+});
+test('text model works with no Decision API key', async (t) => {
+  const f = fixture(t); delete f.env.OPENAI_API_KEY; f.configure(); f.job(1);
+  assert.equal((await f.pump()).homeBrief, f.text);
+  assert.equal(f.calls.length, 0); assert.equal(f.briefs.length, 1);
 });
 test('ranking keeps its two-minute floor; brief defaults to five minutes and interval changes apply live', async (t) => {
   const f = fixture(t), id = f.job(1);
@@ -191,7 +211,9 @@ test('never blocks a frame; off cancels late ranking/brief results', async (t) =
   assert.equal(f.service.apply(source), source);
   for (let i = 0; i < 50 && !f.calls.length; i++) await pause();
   f.configure(false); release(); await pause(); await pause();
-  assert.equal(f.service.apply(source), source); assert.equal(f.briefs.length, 0);
+  assert.equal(f.service.apply(source), source);
+  const attempts = f.briefs.length;
+  await f.pump(source); assert.equal(f.briefs.length, attempts, 'off never submits another brief');
 });
 test('failure and ended-human 0 stay first and never expire/fold; native subtrees rank as intact groups', async (t) => {
   const f = fixture(t), live = f.job(1), fail = f.job(2, 'failed');
