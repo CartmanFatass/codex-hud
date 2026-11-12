@@ -18,6 +18,7 @@
     "test": "npm run build && npm run build:test && npm run build:hud-mcp && npm run test:unit && npm run test:mjs",
     "test:unit": "node tests/run-default.mjs",
     "test:mjs": "node --test tests/unit/*.mjs",
+    "snapshots:update": "npm run build && npm run build:test && node scripts/update-snapshots.mjs",
     "check:fixtures": "bash tests/check-fixtures.sh",
     "format": "node ./node_modules/prettier/bin/prettier.cjs --write src tests",
     "format:check": "node ./node_modules/prettier/bin/prettier.cjs --check src tests",

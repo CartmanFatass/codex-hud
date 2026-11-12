@@ -104,6 +104,12 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
     wall of text, and the keywords scan at a glance.
 - **M4, project view:** the Project tab, after the other open items. It does not wait for Matt's skills: the tickets
   section stays empty until a later slice adapts to-tickets (owner, 2026-11-12).
+  - Frozen (owner, 2026-11-12): M4 closes with the whole-project review, its fixes, three last slices (the panel
+    reloads itself after a new build; Settings shows model calls per feature; one command updates the test
+    snapshots) and the release. New ideas go to the M5 candidates below, not into M4.
+- **M5 candidates (not scheduled; the owner picks):** job directories and model caches get a retention period
+  (the owner sees the deletion list first); a transcript is read tail-first on open so status shows at once, with the
+  nesting filled in behind; rarely changed Settings rows fold under "Advanced".
 
 ## 6. How work is done
 

@@ -1077,6 +1077,8 @@ npm run test:integration # tests/run-integration.sh: tmux shell suites, exit 77 
 npm run test:visual      # fixed synthetic terminal-cell frames + semantic checks
 npm run test:visual:update # explicit local-only baseline update; refused in CI
 npm run test:windows     # PowerShell entry points, with fake binaries
+npm run snapshots:update # rewrite every tests/fixtures/*frames*.json and bar-themes.json from the build;
+                         #   name files to limit it; review the diff: an unintended change is a regression
 ```
 
 **Continuous integration.** CI (`.github/workflows/ci.yml`) runs `npm test` on
