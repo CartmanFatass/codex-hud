@@ -21,13 +21,13 @@ async function fixture(t) {
 const ctx = (frame) => ({ tree: TREE, frame, nowMs: NOW, standalone: true });
 const press = (frame, key) => handleMonitorInput(frame.state, { type: 'key', key }, ctx(frame));
 const compact = (frame) => frame.workboard.rows.filter((r) => r.item?.startsWith('home-progress:'));
-test('Home frames at 80/120 EN/ZH: tickets shrink first, legend next, block goes before any card', async (t) => {
+test('Home frames at 52/80/120 EN/ZH: tickets shrink first, legend, bar, summary, then the block goes before any card', async (t) => {
   const f = await fixture(t);
   assert.deepEqual(homeFrames(f), expected);
   assert.ok(f.board.workers.some((w) => w.homeNeedsHuman));
   assert.ok(f.board.workers.some((w) => w.nativeDepth === 1));
   assert.ok(f.board.decisions.length);
-  for (const width of [80, 120]) for (const lang of ['en', 'zh']) {
+  for (const width of [52, 80, 120]) for (const lang of ['en', 'zh']) {
     const baseline = f.render(width, lang, 100, initialMonitorState(), { ...f.data, summary: '', ladder: { ids: [] }, tickets: [] });
     const base = baseline.workboard.rows.length;
     const tall = f.render(width, lang, base + 24);
@@ -35,16 +35,17 @@ test('Home frames at 80/120 EN/ZH: tickets shrink first, legend next, block goes
     assert.match(text, /Synthetic milestone closing/);
     assert.match(text, /M3b/);
     assert.match(text, /native-tree.*1\/12/);
-    assert.match(text, /02 Home lanes/);
-    assert.match(text, /09 Vocabulary claimed/);
+    assert.match(text, /09 Vocabulary claimed[\s\S]*02 Home lanes/, 'working before ready');
+    assert.match(text, lang === 'en' ? /\+5 more/ : /另 5 个/, 'a short list: five tickets and the rest counted');
+    assert.doesNotMatch(text, /Settings cleanup|Vocabulary ready-for-agent/);
     assert.match(text, lang === 'en' ? /blocked/ : /受阻/);
     assert.doesNotMatch(compact(tall).map((r) => stripAnsi(r.text)).join('\n'), /NATIVE-TREE|ORPHAN|now:|Next|retired-tools|07 Vocabulary resolved|08 Vocabulary wontfix/);
     let seenTickets = false, seenLegend = false;
     for (let spare = 30; spare >= -3; spare--) {
       const height = base + 2 + spare, frame = f.render(width, lang, height), rows = compact(frame);
       for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
-      const body = frame.workboard.rows.filter((r) => !r.item?.startsWith('home-progress:'));
-      assert.deepEqual(body, baseline.workboard.rows, 'questions, job/native cards, decisions unchanged');
+      assert.deepEqual(frame.workboard.rows.slice(0, base), baseline.workboard.rows, 'questions, job/native cards, decisions unchanged');
+      assert.ok(frame.workboard.rows.length - base <= Math.max(0, spare), 'only whole spare rows, the separator included');
       const tickets = rows.some((r) => r.item.startsWith('home-progress:tickets:'));
       const legend = rows.some((r) => stripAnsi(r.text).includes(lang === 'en' ? 'accepted 1' : '已验收 1'));
       if (tickets) { seenTickets = true; assert.ok(legend); }
@@ -60,6 +61,28 @@ test('Home frames at 80/120 EN/ZH: tickets shrink first, legend next, block goes
     const resized = f.render(width, lang, base + 4, state);
     assert.equal(compact(resized).length, 0);
     assert.equal(resized.state.boardAnchor, undefined, 'removed block cannot retain an invisible cursor');
+  }
+});
+test('Home progress layout: separator row, milestone on the rule, bar as wide as the aligned legend, zero states hidden, short list', async (t) => {
+  const f = await fixture(t), glyphs = (line) => [...line.matchAll(/●/g)].map((m) => visualLength(line.slice(0, m.index)));
+  for (const width of [52, 80, 120]) for (const lang of ['en', 'zh']) {
+    const base = f.render(width, lang, 100, undefined, null).workboard.rows.length, at = (data, spare = 14) => plain(f.render(width, lang, base + 2 + spare, undefined, data));
+    const lines = at(f.data), head = lines.findIndex((l) => /^(Progress|进度) ─/.test(l));
+    assert.equal(lines[head - 1].trim(), '', 'a blank row separates the block from the decisions above');
+    assert.match(lines[head], lang === 'en' ? /Milestone M3b$/ : /里程碑 M3b$/);
+    assert.match(lines[head + 1], /^  Synthetic milestone closing/);
+    const [bar, ...legend] = lines.slice(head + 2, head + 5).map((l) => l.trimEnd());
+    assert.equal(legend.length, 2);
+    assert.equal(visualLength(bar), Math.max(...legend.map(visualLength)), 'the bar is as wide as the legend grid');
+    assert.ok(visualLength(bar) <= 60 && visualLength(bar) <= width - 2, 'not the full width');
+    assert.deepEqual(glyphs(legend[0]), glyphs(legend[1]), 'legend columns align');
+    assert.match(lines[head + 5], /^(Tickets|工单) · native-tree ─/);
+    assert.match(lines[head + 5], lang === 'en' ? /1\/12 done$/ : /1\/12 完成$/);
+    const sparse = at({ ...f.data, counts: { ...f.data.counts, todo: 0, dropped: 0 } }).join('\n');
+    assert.doesNotMatch(sparse, lang === 'en' ? /todo|dropped/ : /待办|已放弃/, 'zero counts add no legend entry');
+    const few = at({ ...f.data, tickets: [{ ...f.data.tickets[0], tickets: f.data.tickets[0].tickets.slice(0, 7) }] }).join('\n');
+    assert.match(few, /02 Home lanes[\s\S]*03 Inspector[\s\S]*06 Polish[\s\S]*04 Settings cleanup[\s\S]*05 Shortcuts/, 'ready before blocked');
+    assert.doesNotMatch(few, /more|另 \d+ 个/, 'five open tickets fit the short list');
   }
 });
 test('expanded questions/cards/decisions and notices claim space before progress; missing facts never get placeholders', async (t) => {

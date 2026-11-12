@@ -8,7 +8,7 @@ import { projectRows, homeProgressRows } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
-import { theme, visualLength } from './colors.js';
+import { theme, visualLength, stripAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 export { footHints } from './workboard-rows.js';
@@ -133,7 +133,8 @@ export function renderWorkboardFrame(
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
-  if (!sub && !project) rows.push(...homeProgressRows(input.project, width, height - 2 - rows.length));
+  if (!sub && !project)
+    rows.push(...homeProgressRows(input.project, width, height - 2 - rows.length, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim()));
   if (state.boardAnchor?.startsWith('home-progress:') && !rows.some((r) => r.item === state.boardAnchor))
     state.boardAnchor = undefined;
   const targets = new Map<string, WorkTarget>();

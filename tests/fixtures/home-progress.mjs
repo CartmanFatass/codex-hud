@@ -26,9 +26,10 @@ export async function homeFixture(root) {
   return { ...f, board, collector, data, render };
 }
 export function homeFrames(f) {
-  return Object.fromEntries([80, 120].flatMap((width) => ['en', 'zh'].flatMap((lang) => {
-    const base = f.render(width, lang, 100, undefined, undefined).workboard.rows.filter((r) => !r.item?.startsWith('home-progress:')).length;
-    return [['tall', base + 24], ['tickets-short', base + 10], ['legend-short', base + 5], ['gone', base + 4]]
-      .map(([size, height]) => [`home-${width}-${lang}-${size}`, plain(f.render(width, lang, height))]);
+  return Object.fromEntries([52, 80, 120].flatMap((width) => ['en', 'zh'].flatMap((lang) => {
+    const base = f.render(width, lang, 100, undefined, null).workboard.rows.length;
+    // Spare rows after the cards: everything, tickets cut, legend only, bar only, block gone.
+    return [['tall', 14], ['tickets-short', 9], ['legend-short', 6], ['bar-short', 4], ['gone', 2]]
+      .map(([size, spare]) => [`home-${width}-${lang}-${size}`, plain(f.render(width, lang, base + 2 + spare))]);
   })));
 }

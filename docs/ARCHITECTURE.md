@@ -214,11 +214,15 @@ This is a display join, never ticket completion evidence. It adds no job-directo
 call or write. Nothing is drawn when there are no valid local tickets; the existing `projectShown` gate
 prevents full ticket/job collection behind a modal; Home reads tickets without the job overlay.
 
-**Home spare rows** use `homeProgressRows` from the same Project row kit and `progressBarRows`/`progressSegments`.
-`renderWorkboardFrame` first builds all question, job/native card, decision, older-item and notice rows, then
-budgets the compact block against `height - 2 - rows.length` (not the scroll window). It appends summary,
-current milestone and bar only with at least three spare rows; the shared legend gets space before feature
-counts/open tickets. Tickets shrink first, then the legend drops, then the block disappears. No slice-in-flight
+**Home spare rows** use `homeProgressRows` from the same Project row kit: `legendItem`/`barText` (shared with
+`progressBarRows`/`progressSegments`) and `section` for the two rule headers. `renderWorkboardFrame` first builds all
+question, job/native card, decision, older-item and notice rows, then budgets the compact block against
+`height - 2 - rows.length` (not the scroll window). The block is a blank separator row (skipped when the last row is
+already blank, e.g. after an expanded card), a `Progress ── Milestone` rule, the summary, the bar and the legend grid,
+then per feature a `Tickets · feature ── done/total` rule and at most `HOME_TICKETS` rows (working, ready, blocked;
+`+N more`). It needs at least three spare rows and takes them in that order, so the shrink order is tickets, legend,
+bar, summary, block. The legend (`legendGrid`) lists nonzero states in aligned columns, the fewest rows that fit
+`HOME_BLOCK` cells, and sets the bar's width. No slice-in-flight
 rows are copied. Non-card selection reuses `boardAnchor`; Enter/click routes to Project's progress or feature
 fold row and unfolds the destination. A resize removing the block clears its anchor, preserving card navigation.
 

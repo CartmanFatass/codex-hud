@@ -337,12 +337,28 @@ no body reread. Rendering only consumes the retained snapshot.
 
 The panel has two passive tabs: **Home** (needs-you questions or `✓ Nothing needs you · N running`, package lanes with job cards, then **Decided for you**) and **Project** (the project at a glance). There is no Work tab.
 
-**Spare-row progress.** After the cards and decisions, Home uses only otherwise unused rows for STATE's one-line
-`## Now` summary, the current milestone, the shared stacked bar and legend counts, then open tickets grouped by
-feature (done/total; ready, working or blocked ticket numbers and short titles). Completed/dropped tickets and
-slices in flight are not repeated. As the pane shortens, tickets shrink first, then the legend disappears, then
-the whole block goes before it can displace a card. Up/Down selects it; Enter or a click opens Project at Progress
-or the ticket's feature, unfolded. Home does not trigger git, control-plane, custom-agent or ticket-job scans.
+**Spare-row progress.** After the cards and decisions, Home uses only otherwise unused rows for one block, set off
+from the decisions by a blank row and drawn like Home's other sections (a title, a rule, a right-hand fact):
+
+```
+Progress ───────────────────────────── Milestone M3b
+  <STATE's one-line "Now" summary, cut to the width>
+  ████████████████▓▓▓▓░░░░░░░██████░░░░░░░░
+  ● working 2   ● blocked 1    ● landed, to try 1
+  ● todo 1      ● accepted 1   ● dropped 1
+Tickets · <feature> ──────────────────────── 1/12 done
+  09 <title>                                 working
+  02 <title>                                   ready
+  +5 more
+```
+
+The stacked bar is as wide as the legend, not the pane. The legend lists states with a nonzero count in aligned
+columns, in the fewest rows that fit (at most 60 cells wide). Open tickets per feature are a short list, at most
+six rows: working first, then ready, then blocked, with `+N more` for the rest. Completed/dropped tickets and
+slices in flight are not repeated. As the pane shortens, tickets shrink first, then the legend, then the bar, then
+the summary; the whole block goes before it can displace a card. Up/Down selects it; Enter or a click opens Project
+at Progress or the ticket's feature, unfolded. Home does not trigger git, control-plane, custom-agent or
+ticket-job scans.
 
 | `Ctrl+\`, then | Opens |
 |---|---|

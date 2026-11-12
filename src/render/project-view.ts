@@ -34,32 +34,52 @@ function pack(parts: string[], width: number, max = Infinity): string[] {
   if (line) lines.push(line);
   return lines.slice(0, max);
 }
+const legendItem = (data: ProjectSnapshot, s: SliceState) =>
+  sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${data.counts[s]}`);
+const barText = (data: ProjectSnapshot, width: number) => progressSegments(data.counts, width).map(({ state, width: cells }) =>
+  sliceInk(state)(mark(state === 'todo' || state === 'dropped' ? '░' : state === 'try' ? '▓' : '█', '#').repeat(cells))).join('');
 function progressBarRows(data: ProjectSnapshot, width: number): MonitorRow[] {
-  const segments = progressSegments(data.counts, width), rows: MonitorRow[] = [];
-  if (segments.some((s) => s.width)) rows.push(boardRow(segments.map(({ state, width: cells }) =>
-    sliceInk(state)(mark(state === 'todo' || state === 'dropped' ? '░' : state === 'try' ? '▓' : '█', '#').repeat(cells))).join('')));
-  return [...rows, ...pack(SLICE_STATES.map((s) => sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${data.counts[s]}`)), width)
-    .map((line) => boardRow(fit(line, width)))];
+  const rows: MonitorRow[] = [];
+  if (progressSegments(data.counts, width).some((s) => s.width)) rows.push(boardRow(barText(data, width)));
+  return [...rows, ...pack(SLICE_STATES.map((s) => legendItem(data, s)), width).map((line) => boardRow(fit(line, width)))];
 }
-/** Only whole spare rows; cards and decisions have already claimed their space. */
-export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number): MonitorRow[] {
+const HOME_BLOCK = 60, HOME_TICKETS = 6;
+/** Legend entries as a grid of aligned columns, in the fewest rows that fit `room`: a split never leaves one entry alone. */
+function legendGrid(entries: string[], room: number): { lines: string[]; width: number } {
+  const widths = entries.map(visualLength);
+  for (let rows = 1; entries.length; rows++) {
+    const cols = Math.ceil(entries.length / rows);
+    const wide = Array.from({ length: cols }, (_, c) => Math.max(...widths.filter((_, i) => i % cols === c)));
+    const total = wide.reduce((a, b) => a + b, 0) + 3 * (cols - 1);
+    if (total <= room || cols === 1) return { width: total, lines: Array.from({ length: Math.ceil(entries.length / cols) }, (_, r) =>
+      entries.slice(r * cols, (r + 1) * cols).map((e, c) => e + ' '.repeat(wide[c] - widths[r * cols + c])).join('   ')) };
+  }
+  return { lines: [], width: 0 };
+}
+/** Only whole spare rows; cards and decisions have already claimed their space. Shrinks from the bottom up: tickets, legend, bar, summary. */
+export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number, gap = true): MonitorRow[] {
   if (!data || spare < 3 || (!data.summary && !data.ladder.current && !data.tickets.length)) return [];
-  const link = (text: string, id = 'progress'): MonitorRow => ({ text: fit(text, width), item: `home-progress:${id}` });
-  const bars = progressBarRows(data, width), hasBar = SLICE_STATES.some((s) => data.counts[s]);
-  const legend = bars.slice(hasBar ? 1 : 0);
-  const rows = [link(theme.board.title(t('Progress')) + (data.summary ? ` · ${monitorText(data.summary)}` : '')),
-    ...(data.ladder.current ? [link(`${t('Milestone')}: ${monitorText(data.ladder.current)}`)] : []),
-    ...(hasBar ? [link(bars[0].text)] : [])];
-  if (rows.length + legend.length > spare) return rows;
-  rows.push(...legend.map((r) => link(r.text)));
+  const row = (text: string, id = 'progress'): MonitorRow => ({ text: fit(text, width), item: `home-progress:${id}` });
+  const states = SLICE_STATES.filter((s) => data.counts[s]);
+  const legend = legendGrid(states.map((s) => legendItem(data, s)), Math.min(width - 2, HOME_BLOCK));
+  const rows = [...(gap ? [boardRow('')] : []),
+    { ...section(t('Progress'), width, data.ladder.current ? `${t('Milestone')} ${monitorText(data.ladder.current)}` : ''), item: 'home-progress:progress' },
+    ...(data.summary ? [row('  ' + monitorText(data.summary))] : []),
+    ...(states.length ? [row('  ' + barText(data, Math.max(0, Math.min(width - 2, Math.max(24, legend.width)))))] : [])].slice(0, spare);
+  if (rows.length + legend.lines.length > spare) return rows;
+  rows.push(...legend.lines.map((line) => row('  ' + line)));
+  const rank = { working: 0, ready: 1, blocked: 2 } as Record<string, number>;
   for (const feature of data.tickets) {
-    const open = feature.tickets.filter((r) => ['ready', 'working', 'blocked'].includes(r.state));
-    if (!open.length || spare - rows.length < 2) continue;
+    const open = feature.tickets.filter((r) => r.state in rank).sort((a, b) => rank[a.state] - rank[b.state]);
+    const slots = Math.min(HOME_TICKETS, spare - rows.length - 1);
+    if (!open.length || slots < 1) continue;
     const id = `tickets:${feature.slug}`, done = feature.tickets.filter((r) => r.state === 'done').length;
-    rows.push(link(pair(`${t('Tickets')} · ${monitorText(feature.slug)}`,
-      t('{done}/{total} done', { done, total: feature.tickets.length }), width), id));
-    for (const ticket of open.slice(0, spare - rows.length)) rows.push(link(pair(
+    rows.push({ ...section(`${t('Tickets')} · ${monitorText(feature.slug)}`, width,
+      t('{done}/{total} done', { done, total: feature.tickets.length })), item: `home-progress:${id}` });
+    const cut = open.length > slots && slots > 2, shown = open.slice(0, cut ? slots - 1 : slots);
+    for (const ticket of shown) rows.push(row(pair(
       `  ${monitorText(ticket.number + ' ' + ticket.title)}`, theme.board.muted(t(ticket.state)), width), id));
+    if (cut) rows.push(row('  ' + theme.board.muted(t('+{n} more', { n: open.length - shown.length })), id));
   }
   return rows;
 }
