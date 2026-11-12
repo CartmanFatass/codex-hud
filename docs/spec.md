@@ -85,7 +85,9 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
     redone there the same way.
   - Old views (owner, 2026-11-11): keep the Inspector (`v`), Settings and Help; delete Timeline, Changes, the
     Activity hub, Summary and the diagnostics pages, keeping only the model-call count (in Settings → LLM); the old
-    Agents pane goes after NATIVE-TREE redoes native agents on Home. A separate cleanup slice after ONE-PAGE.
+    Agents pane goes after NATIVE-TREE redoes native agents on Home. A separate cleanup slice after ONE-PAGE. The kept
+    pages are redrawn in Home's look; Settings drops the panel picture, Look presets, the Nerd Font and emoji icon sets,
+    the motion switch, the stack/tabs layouts, the foot status card and the rows only they used (owner, 2026-11-11).
   - Done: the owner runs real jobs on the real panel; card, decision and result lines are one sentence each, not a
     wall of text, and the keywords scan at a glance.
 - **M4, project view:** the Project tab, after Matt's skills are installed (tickets) and the package label works.
