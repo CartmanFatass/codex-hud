@@ -82,7 +82,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · HOME-TIDY · owner: Model fit removed from Project; Home's progress block sits at the bottom of the spare rows (42e8bcc5)
 - try · M4 · OAI-RUNNING · decision labels follow the Settings choice (default OpenAI, owner); running Claude subagents visible again (meta without finished) (5d0e54aa)
 - try · M4 · SETTLE-FIX · closing an idle job no longer resets its 完成 age and re-asks its outcome label (8ada150e)
-- todo · M4 · M4-REVIEW · m4-close 04–05: whole-project two-reviewer review and its fixes
+- working · M4 · M4-REVIEW · m4-close 04–05: whole-project two-reviewer review and its fixes (Sol xhigh + DS max on 3b17f7a0)
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
