@@ -37,7 +37,7 @@ test('Settings → Models shows real hourly usage/cap, including zero and with m
         const text = frame.lines.map(stripAnsi).join('\n');
         assert.match(text, calls.length ? /2\/7/ : /0\/7/);
         assert.match(text, language === 'en' ? /Calls this hour/ : /本小时调用/);
-        const display = renderSettingsPage({ ...state, selected: 0 }, width, 24, health);
+        const display = renderSettingsPage({ ...state, selected: 0 }, width, 20, health);
         assert.doesNotMatch(
           display.lines.map(stripAnsi).join('\n'),
           /Calls this hour|本小时调用/,

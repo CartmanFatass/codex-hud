@@ -14,7 +14,6 @@ import type { AgentLogEntry } from '../collectors/agent-log.js';
 import { eachThread } from '../collectors/subagent-tree.js';
 import { isGuardian } from './panel-state.js';
 import { palette, type Paint } from './palette.js';
-import { displayConfig } from './hud-config.js';
 import { isLive, finishedAt } from './monitor-labels.js';
 
 /** Fewest messages, both ways, that make an L1 another's helper. */
@@ -29,10 +28,7 @@ export interface Directions {
   node: ReadonlyMap<string, { node: SubagentTreeNode; level: number }>;
   /** Agent ids by task path (`/root/a/b`), for a message's sender. */
   byPath: ReadonlyMap<string, string>;
-  /** The colour of the direction an agent is in, for its marks (rails, lanes); none for the main session, an unknown id or agent colours off. */
   paint(id?: string): Paint;
-  /** The same colour for an agent's name: none unless agent colours are on names. */
-  name(id?: string): Paint;
 }
 
 /**
@@ -126,84 +122,15 @@ export function directions(tree: SubagentTree): Directions {
     byPath,
     paint(id?: string): Paint {
       const l1 = id ? family.get(id) : undefined;
-      if (!l1 || displayConfig().agentColors === 'off') return plain;
+      if (!l1) return plain;
       const at = index.get(serves.get(l1) ?? l1);
       return at === undefined ? plain : colours[at];
-    },
-    name(id?: string): Paint {
-      return displayConfig().agentColors === 'name' ? value.paint(id) : plain;
     },
   };
   memo = { tree, theme: palette().name, value };
   return value;
 }
 
-/**
- * Whether an L2's comings and goings are worth a line of their own: it
- * failed, it is in a role the reader named (one whose results matter, a
- * critic's verdict), or the brief flagged it. A name matches the role or
- * its end after a dash: `critic` names `team-platform-critic`, as the cards,
- * leaving a shared prefix out, may say it.
- */
-export function isImportant(
-  node: SubagentTreeNode,
-  log: readonly AgentLogEntry[] | undefined,
-  roles: ReadonlySet<string>
-): boolean {
-  const role = node.role;
-  const named = Boolean(role && [...roles].some((name) => role === name || role.endsWith(`-${name}`)));
-  return node.status === 'error' || named || Boolean(log?.at(-1)?.attention);
-}
-
-let prefixMemo: { tree: SubagentTree; prefix: string } | undefined;
-/**
- * The first part of a role's name every role with one shares: `team-` of
- * `team-implementer` and `team-reviewer`, which the cards leave out. Read over
- * the whole session, so every card says a role the same way.
- */
-export function rolePrefix(tree: SubagentTree): string {
-  if (prefixMemo?.tree === tree) return prefixMemo.prefix;
-  const roles = new Set<string>();
-  const walk = (nodes: readonly SubagentTreeNode[]) => {
-    for (const node of nodes) {
-      if (node.role?.includes('-')) roles.add(node.role);
-      walk(node.children);
-    }
-  };
-  walk(tree.nodes);
-  const [first, ...rest] = [...roles];
-  const head = first ? first.slice(0, first.indexOf('-') + 1) : '';
-  const prefix = rest.length && rest.every((role) => role.startsWith(head)) ? head : '';
-  prefixMemo = { tree, prefix };
-  return prefix;
-}
-
-/**
- * The roles the session's subtasks have, as the cards say them (the prefix
- * every role shares left out), the most used first: what Settings → Key
- * roles offers. Codex's default agent has no role to name.
- */
-export function subtaskRoles(tree: SubagentTree): string[] {
-  const prefix = rolePrefix(tree);
-  const counts = new Map<string, number>();
-  for (const node of tree.nodes) {
-    if (isGuardian(node)) continue;
-    for (const kid of subtasks(node)) {
-      const role = kid.role;
-      if (!role || role === 'default') continue;
-      const name = prefix && role.startsWith(prefix) && role.length > prefix.length ? role.slice(prefix.length) : role;
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-  }
-  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
-}
-
-/** The roles named in the setting: a comma list, spaces ignored. */
-export function roleSet(text: string | undefined): ReadonlySet<string> {
-  return new Set(
-    (text ?? '')
-      .split(',')
-      .map((role) => role.trim())
-      .filter(Boolean)
-  );
+export function isImportant(node: SubagentTreeNode, log: readonly AgentLogEntry[] | undefined): boolean {
+  return node.status === 'error' || Boolean(log?.at(-1)?.attention);
 }

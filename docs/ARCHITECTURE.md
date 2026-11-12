@@ -811,9 +811,8 @@ against Codex 0.154 and 0.157.
 
 - `HudSettings` holds the type, `defaultSettings()` the defaults, a per-key
   validator table the checks, and `loadSettings` / `saveSettings` the I/O.
-- The page has four open groups, in this order: Display (Theme, Bar style, Icons, Language,
-  Agent colours), Panel (Stall threshold, Notifications, Refresh, Mouse, Order,
-  Key roles, Hide finished, Agent log, Task label, Agent summary), Models (Model
+- The page has four open groups, in this order: Display (Theme, Bar style, Icons, Language),
+  Panel (Stall threshold, Notifications, Refresh, Mouse, Agent log, Task label, Agent summary), Models (Model
   text, Model, Call cap, plus the read-only calls-this-hour gauge and Test API)
   and Codex (Width, Prefix key, Bar on launch). There is no accordion, no header
   buttons and no Reset all: `SETTING_ROWS` is one flat list and every group is
@@ -832,9 +831,7 @@ against Codex 0.154 and 0.157.
 - `card-presets.ts` retains legacy combinations for fixture/compatibility
   callers only. There is no preset row on the current page; it cannot restore
   retired rich-card contents. `agentLog`, `cardLabel` and `cardSummary` are kept
-  for NATIVE-TREE; Order, Key roles, Agent colours and Hide finished stay because
-  the retained native renderer and native progress eligibility still read them.
-  Hide finished affects the native tree only, not Home's fixed lifetimes.
+  for NATIVE-TREE.
 - Reset group restores only its explicit owned fields. Resetting Models sets
   `modelEnabled: false` and preserves the connection, model and call cap; no
   other group touches the master preference. There is no Reset all. No

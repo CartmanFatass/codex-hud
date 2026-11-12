@@ -423,7 +423,6 @@ export function agentsView(
         selectedId: state.tree.selectedId,
         collapsed: state.tree.collapsed,
         showHistory: state.tree.showAll,
-        sortByCreation: state.tree.sort === 'created',
         viewport,
         empty: () => emptyAgentsRows(input, width),
       }),

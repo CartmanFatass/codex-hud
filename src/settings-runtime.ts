@@ -10,7 +10,6 @@ export function runtimeSettings(): HudSettings {
         ...defaultSettings(),
         theme: display.theme,
         icons: display.icons === 'text' ? ('text' as const) : ('unicode' as const),
-        agentColors: display.agentColors,
         barStyle: display.barStyle,
         barFields: display.barFields,
       };
@@ -28,7 +27,6 @@ function displayOf(settings: HudSettings) {
     motion: 'reduced' as const,
     barStyle: settings.barStyle,
     barFields: settings.barFields,
-    agentColors: settings.agentColors,
     theme: process.env.NO_COLOR ? ('none' as const) : settings.theme,
   };
 }

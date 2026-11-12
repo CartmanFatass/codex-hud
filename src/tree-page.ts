@@ -104,7 +104,6 @@ import {
 } from './collectors/model-jobs.js';
 import { getCodexHome } from './utils/codex-path.js';
 import { getHudDisplayHome } from './hud-home.js';
-import { subtaskRoles } from './render/directions.js';
 import { HudStatus } from './collectors/hud-status.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
@@ -592,8 +591,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   else reinstallPrefix(settings.prefixKey);
   const configuredState = () => {
     const next = initialMonitorState();
-    next.tree.sort = settings.sort;
-    next.tree.lingerMs = settings.finishedLingerMs;
     next.modes = monitorModes(settings);
     return { ...next, ...monitorSettings(settings) };
   };
@@ -753,10 +750,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const output = time('render', () => {
       let lines: string[];
       if (settingsPage) {
-        // Key roles offers the roles the subtasks have now.
         settingsFrame = withDisplaySettings(settingsPage.draft, () =>
           renderSettingsPage(
-            { ...settingsPage!, roles: subtaskRoles(tree) },
+            settingsPage!,
             process.stdout.columns || 30,
             process.stdout.rows || 24,
             {
@@ -1269,7 +1265,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       state = {
         ...state,
         ...monitorSettings(settings),
-        tree: { ...state.tree, sort: settings.sort, lingerMs: settings.finishedLingerMs },
         modes: monitorModes(settings),
         zoom: false,
         scroll: { ...state.scroll, agents: 0 },
@@ -1462,7 +1457,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       }
       if (result.action?.type === 'settings') {
         settingsPage = {
-          draft: { ...settings, ...monitorPreferences(state), sort: state.tree.sort ?? 'active' },
+          draft: { ...settings, ...monitorPreferences(state) },
           selected: 0,
           offset: 0,
           message: '',

@@ -181,11 +181,19 @@ test('Settings Bar style cycles the exported styles, saves barStyle, and ignores
       density: 'full',
       context: 'remaining',
       glyphs: 'glyph',
+      sort: 'created',
+      importantRoles: 'critic, oracle',
+      agentColors: 'off',
+      finishedLingerMs: 0,
     })
   );
   let draft = loadSettings();
   assert.equal(draft.icons, 'unicode');
-  for (const key of [
+  const retired = [
+    'sort',
+    'importantRoles',
+    'agentColors',
+    'finishedLingerMs',
     'look',
     'motion',
     'art',
@@ -197,8 +205,11 @@ test('Settings Bar style cycles the exported styles, saves barStyle, and ignores
     'density',
     'context',
     'glyphs',
-  ])
+  ];
+  for (const key of retired) {
     assert.equal(key in draft, false, key);
+    assert.equal(SETTING_ROWS.some((row) => row.key === key), false, key);
+  }
   const selected = SETTING_ROWS.findIndex((r) => r.key === 'barStyle');
   let state = { draft, original: draft, selected, offset: 0, message: '' };
   for (let i = 1; i <= BAR_STYLES.length; i++) {
@@ -210,8 +221,7 @@ test('Settings Bar style cycles the exported styles, saves barStyle, and ignores
   saveSettings(state.draft);
   assert.equal(loadSettings().barStyle, BAR_STYLES.at(-1));
   const stored = JSON.parse(readFileSync(process.env.HUD_SETTINGS_PATH, 'utf8'));
-  assert.equal(stored.look, undefined);
-  assert.equal(stored.artImage, undefined);
+  for (const key of retired) assert.equal(key in stored, false, key);
   const reset = resetSettingsGroup({ ...state.draft, modelEnabled: true }, 'Models');
   assert.equal(reset.modelEnabled, false);
   assert.equal(reset.model, state.draft.model);

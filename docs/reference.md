@@ -444,7 +444,7 @@ Agents are named by the last segment of their task path, the name Codex's `/suba
 
 With the session read and its tree built, a session that has started no agent, subtask or review says so in one dim line under the title (`No agents started in this session yet`), with where the help is; until then, or with no session bound, the view stays blank rather than guess. With Model text off or no matching endpoint key, no new summaries are written. Stored model log entries are retained on disk but hidden while the service is off; native names and factual state still render.
 
-Finished agents leave the list 3 minutes after they finish (Settings → Hide finished: 1m, 3m, 10m, 30m or never). Running and failed agents never leave, and a finished agent whose child is still shown stays dimmed (still a card in rich). The compact row says how long ago it finished; the control bar counts what was put away (`⊕12`), and clicking that or `Ctrl+\` `a` shows everything again.
+Native agents use active-first order, default colours and no key-role priority. Finished native agents leave the list 3 minutes after they finish (fixed lifetime; Home's hide rules are unchanged). Running and failed agents never leave, and a finished agent whose child is still shown stays dimmed (still a card in rich). The compact row says how long ago it finished; the control bar counts what was put away (`⊕12`), and clicking that or `Ctrl+\` `a` shows everything again.
 
 ### Agent log
 
@@ -491,12 +491,10 @@ Settings is one page with four open groups, in this order:
 
 | Group | Rows |
 |-------|------|
-| Display | Theme, Bar style, Icons, Language, Agent colours |
-| Panel | Stall threshold, Notifications, Refresh, Mouse, Order, Key roles, Hide finished, Agent log, Task label, Agent summary |
+| Display | Theme, Bar style, Icons, Language |
+| Panel | Stall threshold, Notifications, Refresh, Mouse, Agent log, Task label, Agent summary |
 | Models | Model text, Model, Call cap; read-only calls this hour against the cap, and Test API ([LLM](#llm)) |
 | Codex | Width, Prefix key, Bar on launch |
-
-Order, Key roles, Agent colours and Hide finished stay because the retained native renderer and native progress eligibility still read them. Hide finished affects the native tree only, not Home's fixed lifetimes. `agentLog`, `cardLabel` and `cardSummary` are kept for NATIVE-TREE.
 
 Bar style cycles the shared `BAR_STYLES` (`line`, `p10k` in this checkout) and saves `barStyle` for the bottom bars.
 
@@ -513,8 +511,6 @@ Related notification preferences share one row: Notifications (off, tmux, or tmu
 **Saving.** Unsaved fields show `*`; Save persists to `$HUD_HOME/hud-settings.json` (or `HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Bar on launch applies from the next launch.
 
 **Removed preferences.** `look`, `glyphs`, `motion`, `panelStyle`, `statusCard`, `art`, `artImage`, `density`, `context`, `cardCorners` and `cardClock` are deleted. Unknown old keys are ignored and omitted on the next save; old `nerd` and `emoji` Icons values load as `unicode`. There is no layout selector, picture or foot status card. The art renderer, decoder and script are deleted; user assets are untouched. (The optional picture was already absent on Home.)
-
-Panel → Key roles (`importantRoles` in the settings file) names the roles whose subtasks matter. The page offers none, the default, each role the session's subtasks have, as the observed roles say it, and what is set; several at once are a comma list in the settings file (`"importantRoles": "critic, oracle"`), which the page keeps among its values. A subtask in one of them is eligible under its lead's saved important-scope child-summary policy (not a restored child-card row) without restoring child-card rows. Failed or flagged subtasks also qualify. A name matches the role or the role's end after a dash, so `critic` names `team-platform-critic`. With none, only failed and flagged subtasks matter.
 
 ### LLM
 

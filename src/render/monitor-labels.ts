@@ -202,11 +202,9 @@ export function finishedAt(node: SubagentTreeNode): Date | undefined {
 /**
  * An agent's own colour, the same on every repaint and in every pane: for
  * following one agent down the timeline and into the Inspector. Not on its
- * card, whose colour is its state. A name's colour, so none unless agent
- * colours are on names.
+ * card, whose colour is its state.
  */
 export function agentPaint(id: string): (s: string) => string {
-  if (displayConfig().agentColors !== 'name') return (s) => s;
   const colours = palette().agents;
   let hash = 0;
   for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;

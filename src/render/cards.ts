@@ -283,7 +283,6 @@ function shownKids(
 ): SubagentTreeNode[] {
   const v = visibility(state);
   if (!v.cardSubagents) return [];
-  const roles = state.importantRoles ?? new Set<string>();
   const at = (kid: SubagentTreeNode) => (isLive(kid) ? Infinity : (finishedAt(kid)?.getTime() ?? 0));
   return [...subtasks(node), ...reviewsUnder(node)]
     .filter(
@@ -291,7 +290,7 @@ function shownKids(
         v.cardSubagentScope === 'all' ||
         isLive(kid) ||
         (v.cardSubagentScope === 'important' &&
-          (jobFlagged(kid) || isImportant(kid, input.agentLog?.get(kid.id), roles)))
+          (jobFlagged(kid) || isImportant(kid, input.agentLog?.get(kid.id))))
     )
     .sort((a, b) => Number(effectiveStatus(b) === 'error') - Number(effectiveStatus(a) === 'error') || at(b) - at(a));
 }

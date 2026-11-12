@@ -22,29 +22,15 @@ export interface HudSettings
     Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'>,
     Omit<CardVisibility, 'cardClock'> {
   statusline: boolean;
-  sort: 'active' | 'created';
   mouse: boolean;
   tasks: boolean;
   details: boolean;
   refreshMs: number;
   treeWidth: number;
-  /**
-   * How long a finished agent stays in the tree's default view, in ms. 0
-   * keeps every agent; the panel can still reveal hidden ones on demand.
-   */
-  finishedLingerMs: number;
   // Monitor visibility is independent of legacy boolean panel preferences.
   agentsPane: 'open' | 'closed';
   changesPane: 'open' | 'closed';
   detailsPane: 'open' | 'closed';
-  /**
-   * The roles of the agents an L1 starts (`reviewer`, `critic`) that the
-   * saved important-scope summary policy includes, a comma list; a name
-   * also matches a role ending in it after a dash (`critic`, a
-   * `team-platform-critic`). The rest are counts on their L1's line and
-   * card; a failed or flagged one always gets its line.
-   */
-  importantRoles: string;
   worktreeRoot: string;
   modelEnabled: boolean;
   /** The tree panel's and the brief's language; auto follows the locale. */
@@ -80,19 +66,15 @@ export function defaultSettings(): HudSettings {
     theme: 'terminal',
     barStyle: 'line',
     barFields: [...DEFAULT_BAR_FIELDS],
-    agentColors: 'name',
     statusline: true,
-    sort: 'active',
     mouse: true,
     tasks: false,
     details: true,
     refreshMs: 1000,
     treeWidth: 48,
-    finishedLingerMs: 180_000,
     agentsPane: 'open',
     changesPane: 'closed',
     detailsPane: 'closed',
-    importantRoles: '',
     worktreeRoot: '',
     modelEnabled: (() => {
       try {
@@ -135,18 +117,14 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   barStyle: oneOf(...BAR_STYLES),
   barFields: (value) =>
     Array.isArray(value) && value.every((field) => (BAR_FIELDS as readonly unknown[]).includes(field)),
-  agentColors: oneOf('name', 'mark', 'off'),
-  sort: oneOf('active', 'created'),
   mouse: isBoolean,
   tasks: isBoolean,
   details: isBoolean,
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
-  finishedLingerMs: (value) => value === 0 || isIntegerBetween(value, 10_000, 86_400_000),
   agentsPane: oneOf('open', 'closed'),
   changesPane: oneOf('open', 'closed'),
   detailsPane: oneOf('open', 'closed'),
-  importantRoles: isText(1000),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
   language: oneOf('auto', 'en', 'zh'),

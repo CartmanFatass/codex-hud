@@ -24,7 +24,6 @@ import {
 } from './delegation/panel.js';
 import { resolveSelection } from './delegation/selection.js';
 import { selectedActions, type DelegationAction } from './delegation/actions.js';
-import { roleSet } from './directions.js';
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { renderWorkboardFrame } from './work-view.js';
 
@@ -105,8 +104,6 @@ export interface MonitorState {
   keys?: boolean;
   /** A label, once arrived, stands where the agent's name is shown. The panel sets it from settings. */
   labelAsName?: boolean;
-  /** The L2 roles eligible for the saved important-scope summary policy. */
-  importantRoles?: ReadonlySet<string>;
   cardStallMinutes?: number;
   /**
    * The last render drew the delegation view, so `tree.selectedId` is one of its row keys. A reconcile that has no view
@@ -283,7 +280,7 @@ export interface MonitorOutcome {
 export function initialMonitorState(): MonitorState {
   return {
     mainTab: 'home',
-    tree: { ...initialPanelState(), sort: 'active' },
+    tree: initialPanelState(),
     focus: 'agents',
     modes: { agents: 'open', changes: 'closed', details: 'closed' },
     scroll: { agents: 0, changes: 0, details: 0 },
@@ -313,7 +310,6 @@ export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
   return {
     style: 'rich',
     labelAsName: true,
-    importantRoles: roleSet(settings.importantRoles),
     cardStallMinutes: settings.cardStallMinutes,
     cardVisibility,
   };
@@ -340,7 +336,6 @@ function planOptions(state: MonitorState, nowMs: number): PlanOptions {
     nowMs,
     collapsed: state.tree.collapsed,
     showHistory: state.tree.showAll,
-    sortByCreation: state.tree.sort === 'created',
   };
 }
 

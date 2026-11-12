@@ -45,7 +45,6 @@ export interface DelegationPanelOptions {
   selectedId?: string | null;
   collapsed?: ReadonlySet<string>;
   showHistory?: boolean;
-  sortByCreation?: boolean;
   ascii?: boolean;
   say?: Say;
   /** The rows the agents pane shows, pinned ones included: rich folds cards to fit it (§3.5). Absent: no limit. */
@@ -64,7 +63,7 @@ export interface DelegationView {
   nowMs: number;
 }
 
-export type PlanOptions = Pick<DelegationPanelOptions, 'nowMs' | 'collapsed' | 'showHistory' | 'sortByCreation'>;
+export type PlanOptions = Pick<DelegationPanelOptions, 'nowMs' | 'collapsed' | 'showHistory'>;
 
 const ordinaryKeys = new WeakMap<DelegationViewModel, readonly string[]>();
 /** Called by reconciliation with exactly the ordinary rows eligible for this frame. */
@@ -110,7 +109,6 @@ export function delegationView(
     nowMs: options.nowMs,
     collapsed: options.collapsed,
     showHistory: options.showHistory,
-    sortByCreation: options.sortByCreation,
   });
   const dest = mixedDestinations(destinationsOf(plan, options.style), ordinaryKeys.get(vm) ?? []);
   return { vm, proj, plan, dest, style: options.style, nowMs: options.nowMs };
@@ -126,7 +124,6 @@ export function delegationPutAway(vm: DelegationViewModel, options: PlanOptions)
     nowMs: options.nowMs,
     collapsed: options.collapsed,
     showHistory: false,
-    sortByCreation: options.sortByCreation,
   }).putAway;
 }
 
@@ -364,7 +361,6 @@ export function delegationAgentsRows(vm: DelegationViewModel, options: Delegatio
     nowMs,
     collapsed: options.collapsed,
     showHistory: options.showHistory,
-    sortByCreation: options.sortByCreation,
   });
   const selectedKey = options.selectedId && plan.index.has(options.selectedId) ? options.selectedId : null;
   const rows: MonitorRow[] = [];

@@ -44,8 +44,6 @@ export interface RowOptions {
   collapsed?: ReadonlySet<string>;
   /** `a`: finished rows stay on the list instead of folding into `⊕N`. */
   showHistory?: boolean;
-  /** `s`: creation order alone, no buckets. */
-  sortByCreation?: boolean;
 }
 
 export interface FoldInfo {
@@ -109,15 +107,13 @@ function creationOf(pn: PNode): number {
 }
 
 /** §3.2: by subtree bucket, trouble newest first, the rest in creation order. */
-export function compareSiblings(byCreation: boolean) {
+export function compareSiblings() {
   return (a: PNode, b: PNode): number => {
-    if (!byCreation) {
-      if (a.sub.rank !== b.sub.rank) return a.sub.rank - b.sub.rank;
-      if (a.sub.rank === 0) {
-        const ta = Number.isFinite(a.sub.sortAt) ? a.sub.sortAt! : Number.NEGATIVE_INFINITY;
-        const tb = Number.isFinite(b.sub.sortAt) ? b.sub.sortAt! : Number.NEGATIVE_INFINITY;
-        if (ta !== tb) return ta > tb ? -1 : 1;
-      }
+    if (a.sub.rank !== b.sub.rank) return a.sub.rank - b.sub.rank;
+    if (a.sub.rank === 0) {
+      const ta = Number.isFinite(a.sub.sortAt) ? a.sub.sortAt! : Number.NEGATIVE_INFINITY;
+      const tb = Number.isFinite(b.sub.sortAt) ? b.sub.sortAt! : Number.NEGATIVE_INFINITY;
+      if (ta !== tb) return ta > tb ? -1 : 1;
     }
     const ca = creationOf(a);
     const cb = creationOf(b);
@@ -153,7 +149,7 @@ const PLAN_MEMO_ENTRIES = 4;
 
 /** The rows in order, with each row's tree drawing and fold; no strings are built. */
 export function planRows(proj: DelegationProjection, options: RowOptions): RowPlan {
-  const memoKey = `${options.showHistory ? 1 : 0}|${options.sortByCreation ? 1 : 0}|${
+  const memoKey = `${options.showHistory ? 1 : 0}|${
     options.collapsed && options.collapsed.size > 0 ? [...options.collapsed].sort().join('\u0001') : ''
   }`;
   const memo = planMemo.get(proj);
@@ -163,7 +159,7 @@ export function planRows(proj: DelegationProjection, options: RowOptions): RowPl
   let from = Number.NEGATIVE_INFINITY;
   let until = Number.POSITIVE_INFINITY;
 
-  const compare = compareSiblings(options.sortByCreation === true);
+  const compare = compareSiblings();
   const rows: PlannedRow[] = [];
   const away = new Map<string, string>();
   const putRows = new Map<string, number>();

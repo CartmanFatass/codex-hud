@@ -16,20 +16,14 @@ export type PanelView = 'tree' | 'detail' | 'session' | 'help';
 export type PanelFilter = 'all' | 'active' | 'failed' | 'unknown';
 
 export const FILTER_ORDER: PanelFilter[] = ['all', 'active', 'failed', 'unknown'];
+const FINISHED_LINGER_MS = 180_000;
 
 export interface PanelState {
   view: PanelView;
-  sort?: 'active' | 'created';
   selectedId: string | null;
   collapsed: ReadonlySet<string>;
   filter: PanelFilter;
   scroll: number;
-  /**
-   * How long a finished agent stays in the unfiltered view, in ms; 0 or
-   * absent keeps every agent. A session that spawned thirty agents an hour
-   * ago should not bury the two that are running now.
-   */
-  lingerMs?: number;
   /** Bring back the agents the linger window put away. */
   showAll?: boolean;
 }
@@ -74,7 +68,7 @@ function matchesFilter(node: SubagentTreeNode, filter: PanelFilter): boolean {
  * one that finished at no recorded time counts as long finished.
  */
 export function isExpired(node: SubagentTreeNode, state: PanelState, nowMs: number): boolean {
-  if (!state.lingerMs || state.lingerMs <= 0 || state.showAll || state.filter !== 'all') {
+  if (state.showAll || state.filter !== 'all') {
     return false;
   }
   const status = effectiveStatus(node);
@@ -89,7 +83,7 @@ export function isExpired(node: SubagentTreeNode, state: PanelState, nowMs: numb
   const native = status === 'completed' ? (node.statusAt ?? node.lastEventAt) : (node.lastEventAt ?? node.statusAt);
   const settled = (node.job ? jobSettledAt(node) : undefined) ?? native;
   const at = settled?.getTime();
-  return at === undefined || !Number.isFinite(at) || nowMs - at > state.lingerMs;
+  return at === undefined || !Number.isFinite(at) || nowMs - at > FINISHED_LINGER_MS;
 }
 
 /**
@@ -138,8 +132,7 @@ export function countExpired(nodes: SubagentTreeNode[], state: PanelState, nowMs
 }
 
 /** Sort only siblings. Live descendants bring their whole branch forward. */
-function orderedSiblings(nodes: SubagentTreeNode[], mode: PanelState['sort']): SubagentTreeNode[] {
-  if (!mode) return nodes;
+function orderedSiblings(nodes: SubagentTreeNode[]): SubagentTreeNode[] {
   const priority = (node: SubagentTreeNode): { rank: number; started: number } => {
     const status = effectiveStatus(node);
     const active = status === 'running' || status === 'starting';
@@ -154,12 +147,10 @@ function orderedSiblings(nodes: SubagentTreeNode[], mode: PanelState['sort']): S
   };
   const ranks = new Map(nodes.map((node) => [node.id, priority(node)]));
   return [...nodes].sort((a, b) => {
-    if (mode === 'active') {
-      const aa = ranks.get(a.id)!;
-      const bb = ranks.get(b.id)!;
-      if (aa.rank !== bb.rank) return aa.rank - bb.rank;
-      if (aa.rank === 0 && aa.started !== bb.started) return bb.started - aa.started;
-    }
+    const aa = ranks.get(a.id)!;
+    const bb = ranks.get(b.id)!;
+    if (aa.rank !== bb.rank) return aa.rank - bb.rank;
+    if (aa.rank === 0 && aa.started !== bb.started) return bb.started - aa.started;
     return (a.startedAt?.getTime() ?? 0) - (b.startedAt?.getTime() ?? 0) || a.id.localeCompare(b.id);
   });
 }
@@ -176,10 +167,7 @@ export function visibleRows(nodes: SubagentTreeNode[], state: PanelState, nowMs:
   const rows: PanelRow[] = [];
 
   const walk = (items: SubagentTreeNode[], depth: number, prefix: string, parentId: string | null): void => {
-    const shown = orderedSiblings(
-      items.filter((node) => subtreeMatches(node, state, nowMs)),
-      state.sort
-    );
+    const shown = orderedSiblings(items.filter((node) => subtreeMatches(node, state, nowMs)));
     shown.forEach((node, index) => {
       const isLast = index === shown.length - 1;
       const branch = depth === 0 ? '' : isLast ? '└─ ' : '├─ ';

@@ -39,7 +39,6 @@ export interface SettingRow {
   set?: (value: SettingValue, settings: HudSettings) => Partial<HudSettings>;
 }
 const seconds = (value: SettingValue) => `${Number(value) / 1000}s`;
-const minutes = (value: SettingValue) => (Number(value) === 0 ? t('never') : t('{n}m', { n: Number(value) / 60_000 }));
 const NOTIFY_WORDS: Record<string, string> = { off: 'off', tmux: 'tmux', desktop: 'tmux + desktop' };
 export const SETTING_ROWS: readonly SettingRow[] = [
   {
@@ -64,14 +63,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     label: 'Language',
     values: ['auto', 'en', 'zh'],
     help: 'Panel and everything a model writes',
-  },
-  {
-    key: 'agentColors',
-    group: 'Display',
-    label: 'Agent colours',
-    values: ['name', 'mark', 'off'],
-    help: 'On names and marks, marks only, or none',
-    format: (value) => (value === 'name' ? 'names' : value === 'mark' ? 'marks' : 'off'),
   },
   {
     key: 'cardStallMinutes',
@@ -100,24 +91,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format: seconds,
   },
   { key: 'mouse', group: 'Panel', label: 'Mouse', values: [true, false], help: 'Click and scroll the panel' },
-  { key: 'sort', group: 'Panel', label: 'Order', values: ['active', 'created'], help: 'Running first, or by age' },
-  {
-    key: 'importantRoles',
-    group: 'Panel',
-    label: 'Key roles',
-    values: [''],
-    help: 'Their subtasks are named',
-    literal: true,
-    format: (value) => (value === '' ? 'none' : truncateAnsi(String(value), 15)),
-  },
-  {
-    key: 'finishedLingerMs',
-    group: 'Panel',
-    label: 'Hide finished',
-    values: [60_000, 180_000, 600_000, 1_800_000, 0],
-    help: 'Done native agents hide after this; Home uses fixed lifetimes',
-    format: minutes,
-  },
   {
     key: 'agentLog',
     group: 'Panel',
@@ -198,7 +171,6 @@ export interface SettingsPageState {
   offset: number;
   message: string;
   original?: HudSettings;
-  roles?: readonly string[];
 }
 export function settingGroup(stateOrRow: Pick<SettingsPageState, 'selected'> | SettingRow): SettingGroup {
   return 'group' in stateOrRow
@@ -214,16 +186,13 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
   );
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
-  Display: ['theme', 'barStyle', 'icons', 'language', 'agentColors'],
+  Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: [
     'cardStallMinutes',
     'notify',
     'notifyDesktop',
     'refreshMs',
     'mouse',
-    'sort',
-    'importantRoles',
-    'finishedLingerMs',
     'agentLog',
     'cardLabel',
     'cardSummary',
@@ -238,13 +207,6 @@ export function resetSettingsGroup(draft: HudSettings, group: string): HudSettin
   for (const key of RESET_FIELDS[group as SettingGroup]) Object.assign(patch, { [key]: defaults[key] });
   if (group === 'Models') patch.modelEnabled = false;
   return { ...draft, ...patch };
-}
-export function rowValues(
-  row: SettingRow,
-  state: Pick<SettingsPageState, 'draft' | 'original' | 'roles'>
-): readonly SettingValue[] {
-  if (row.key !== 'importantRoles') return row.values;
-  return [...new Set(['', ...(state.roles ?? []), state.original?.importantRoles ?? '', state.draft.importantRoles])];
 }
 export interface SettingsFrame {
   lines: string[];
@@ -426,7 +388,7 @@ export function handleSettingsInput(
   if (next.selected !== moved) next.message = '';
   if (key === 'enter' || key === 'left' || key === 'right') {
     const row = SETTING_ROWS[next.selected],
-      values = rowValues(row, next),
+      values = row.values,
       current = rowValue(row, next.draft);
     let index = values.indexOf(current);
     if (index < 0 && typeof current === 'number') {

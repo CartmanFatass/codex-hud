@@ -312,8 +312,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
         const target = key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, index) + delta;
         const row = rows[Math.max(0, Math.min(rows.length - 1, target))];
         if (row) next.tree.selectedId = row.node.id;
-      } else if (key === 'sort') next.tree.sort = next.tree.sort === 'active' ? 'created' : 'active';
-      else if (['left', 'right', 'filter'].includes(key))
+      } else if (['left', 'right', 'filter'].includes(key))
         next.tree = applyKey(next.tree, key as 'left' | 'right' | 'filter', rows).state;
     } else if (move) {
       next.scroll[next.focus] =
@@ -361,8 +360,7 @@ function navigateDelegation(
     const target = key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, at) + delta;
     const to = rows[Math.max(0, Math.min(rows.length - 1, target))];
     if (to) next.tree.selectedId = to.key;
-  } else if (key === 'sort') next.tree.sort = next.tree.sort === 'active' ? 'created' : 'active';
-  else if (key === 'left' && row) {
+  } else if (key === 'left' && row) {
     // Fold an open branch, otherwise step out to the parent.
     if (row.pn && row.pn.children.length > 0 && !row.fold) fold(row.pn.key, true);
     else if (row.parentKey !== null && view.dest.index.has(row.parentKey)) next.tree.selectedId = row.parentKey;
