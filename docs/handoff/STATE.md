@@ -1,13 +1,14 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
-Milestone: M3b · AI-THIN
+Milestone: M4 · Project view
 
 ## Waiting for the owner
 
 
 ## Next
 
-- M3B-FIX2: the closing review's fixes; then M3b is done and M4 continues.
+- M3b closed. Try Settings `s`/`t` and Codex `Ctrl+\` `2`.
+- M4: slice the next feature with to-tickets so the Tickets section has real data; M4 review after.
 
 ## Slices
 
@@ -45,12 +46,17 @@ board counts these; update at every landing or decision. -->
   reject) and opinions (6c9cb40b)
 - try · M4 · TICKETS · the Project tab's Tickets section from to-tickets' .scratch tracker (6364ddad)
 - accepted · M3b · M3B-REVIEW2 · the closing M3b two-axis milestone review (Sol xhigh + DS max): changes-required, 2 blocking keys (docs/reviews/2026-11-12-m3b-review2-*)
-- working · M3b · M3B-FIX2 · the closing review's fixes: Codex Ctrl+\ 2, Settings s/t, dead code, docs
+- try · M3b · M3B-FIX2 · the closing review's fixes: Codex Ctrl+\ 2, Settings s/t, dead code, docs (c283e7ea)
 - try · — · PI-STOP · hud_close stops a working pi job in seconds, not after a 30 s wait (Fishpref 38447ef)
 - try · — · LEGACY-SKILLS · herdr-delegate, herdr-delegate-codex, pi-subagent retired to Fishpref (6bd0ef8)
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
-## Now (2026-11-12): M3b closing; themes and pages building in worktrees
+## Now (2026-11-12, evening): M3b closed after its second review; M4 Project tab complete with progress board and tickets
+
+Landed since noon: NATIVE-TREE, PROGRESS-BOARD, OPEN-TAB, CARD-DETAILS, TICKETS, PI-STOP (Fishpref), legacy skills
+retired, Matt Pocock skills installed (to-tickets slices multi-slice features), closing M3b review + M3B-FIX2.
+
+### Earlier on 2026-11-12
 
 Landed today: hud_read/list perf (`5ac1ee5c`), bar perf (`476bed9f`), ONE-PAGE Home (`9e54af8b`), stopped-after-report
 shows done (`979414c6`), pi ribbon back in the editor's top border (`75519c63`, owner checked), CLEANUP-VIEWS
