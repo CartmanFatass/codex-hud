@@ -110,11 +110,16 @@ function scan() {
   let open = false,
     nearest = Infinity;
   for (const id of fs.readdirSync(jobs)) {
+    if (!/^j[a-f0-9]{16}$/.test(id)) continue;
     const dir = join(jobs, id);
-    if (!fs.statSync(dir).isDirectory()) continue;
+    try {
+      if (!fs.lstatSync(dir).isDirectory()) continue;
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
+    }
     const jobFile = join(dir, 'job.json'),
       job = json(jobFile);
-    if (job?.reaped_at) continue;
     const statusFile = join(dir, 'STATUS.json');
     let status = json(statusFile);
     const session = read(join(dir, 'SESSION.txt'));
@@ -138,7 +143,14 @@ function scan() {
       continue;
     }
     if (!['closed', 'failed', 'stopped'].includes(status.state)) continue;
-    if (!tab) continue;
+    const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
+    const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
+    if (expires < Date.now()) {
+      fs.rmSync(dir, { recursive: true, force: true });
+      log(`delete ${id} state=${status.state}`);
+      continue;
+    }
+    if (job?.reaped_at || !tab) continue;
     if (status.state === 'failed') {
       const ended = Date.parse(status.ended_at);
       const deadline = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + retention;

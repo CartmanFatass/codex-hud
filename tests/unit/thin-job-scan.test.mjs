@@ -111,6 +111,51 @@ test('1,000 old jobs: cold invocations reuse persisted facts, bounded bodies, ch
   assert.equal(third.readThinJobs(home, scope, parse, options).flatMap((l) => l.workers)[0].model, 'changed-status');
 });
 
+test('listed jobs disappearing before or during read are omitted and forgotten by the persisted cache', async (t) => {
+  for (const bar of [false, true]) for (const duringOpen of [false, true]) {
+    const home = fs.mkdtempSync(join(tmpdir(), 'thin-vanished-'));
+    t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+    const scope = { project: null, pane: 'w4E:p1' };
+    const id = 'j0000000000000001', dir = join(home, 'jobs', id);
+    const survivor = 'j0000000000000002';
+    for (const job of [id, survivor]) {
+      const directory = join(home, 'jobs', job);
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(join(directory, 'job.json'), JSON.stringify({ job, role: 'imp', herdr_pane: scope.pane, created_at: '2030-01-01' }));
+      fs.writeFileSync(join(directory, 'STATUS.json'), '{"state":"working"}');
+    }
+    const options = bar ? { settledBefore: Date.now() } : undefined;
+    assert.equal(readThinJobs(home, scope, JSON.parse, options).flatMap((l) => l.workers).length, 2);
+    const cacheFile = join(home, 'display/thin-jobs.json');
+    assert.ok(fs.readFileSync(cacheFile, 'utf8').includes(id));
+    // Force a body read despite the warm receipt cache, then remove the real directory at the I/O boundary.
+    fs.appendFileSync(join(dir, 'job.json'), '\n');
+    const method = duringOpen ? 'openSync' : 'lstatSync', original = fs[method];
+    let removed = false;
+    fs[method] = (file, ...args) => {
+      if (String(file) === join(dir, 'job.json')) {
+        removed = true;
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+      return original(file, ...args);
+    };
+    syncBuiltinESMExports();
+    try {
+      const workers = readThinJobs(home, scope, JSON.parse, options).flatMap((l) => l.workers);
+      assert.equal(removed, true, 'exercised disappearance after directory listing');
+      assert.deepEqual(workers.map((w) => w.id), [`thin-job:${survivor}`]);
+      const rows = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+      assert.ok(rows.every(([rel]) => !rel.startsWith(id + '/')), 'no persisted facts for vanished job');
+      assert.equal(rows.length, 2, 'other job receipt and STATUS remain cached');
+    } finally {
+      fs[method] = original;
+      syncBuiltinESMExports();
+    }
+    const cold = await import(`../../dist/collectors/thin-jobs.js?vanished-${bar}-${duringOpen}`);
+    assert.deepEqual(cold.readThinJobs(home, scope, JSON.parse, options).flatMap((l) => l.workers).map((w) => w.id), [`thin-job:${survivor}`]);
+  }
+});
+
 test('settled HUD card age is time since settlement, not run duration', async (t) => {
   const { projectWorkCard } = await import('../../dist/collectors/work-card.js');
   const now = Date.parse('2030-01-01T12:00:00Z');

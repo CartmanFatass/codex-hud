@@ -75,6 +75,8 @@ function read(path: string, max = 65536): Snap | null {
     cache.set(path, { stamp, snap });
     return snap;
   } catch (error) {
+    cache.delete(path);
+    seen.delete(path);
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
     return null;
   } finally {
@@ -171,6 +173,8 @@ export function readThinJobs(
         return [];
       const file = json(join(root, id, 'job.json'), parse),
         job = file?.v;
+      // Bars may have read STATUS before the directory vanished during the receipt read.
+      if (!file) seen.delete(join(root, id, 'STATUS.json'));
       if (!file || !job || job.job !== id || typeof job.role !== 'string') complete = false;
       if (
         !file ||
