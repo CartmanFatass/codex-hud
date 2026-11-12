@@ -215,7 +215,7 @@ test('Home shows questions, lanes with cards, then decisions; Enter reveals the 
     const decided = home.findIndex((l) => l.startsWith('Decided for you'));
     assert.ok(at < lane && lane < decided);
     assert.match(home[lane + 1], /thin job cards/);
-    assert.match(home[0], /^ Home\s*$/);
+    assert.match(home[0], /^ Home 1\s+models on$/);
     assert.match(home[decided + 1], /^◆ PANEL-THIN · imp q2 .*…/);
     assert.match(home[decided + 1], /\d+m\s*$/);
     assert.equal(home[decided + 2].trim(), '');
@@ -256,10 +256,10 @@ test('`o` opens a job card file on Home, footer hints never cut a word', async (
       .at(-1)
       .trimEnd();
   assert.deepEqual([56, 40, 30, 20].map(foot), [
-    '↑↓ move  ⏎ expand  o open  a all',
-    '↑↓ move  ⏎ expand  o open  a all',
-    '↑↓ move  ⏎ expand  o open',
-    '↑↓ move  ⏎ expand',
+    '✓ 2 done today      ↑↓ move  ⏎ expand  o open  v inspect',
+    '✓ 2 done today         ↑↓ move  ⏎ expand',
+    '✓ 2 done today         ↑↓ move',
+    '✓ 2 done today',
   ]);
   // The row is erased before it is written: a full-width row would lose its last cell to an erase after it.
   const painted = frameDiff(null, ['abc']);
@@ -338,7 +338,8 @@ test('Home expiry thresholds and show-all use the real render/input path', async
         : { kind: 'decision', laneId: item.laneId, decisionId: item.id };
     const rows = shown.workboard.rows.filter((r) => r.item === targetKey(target));
     assert.equal(rows.length, 1, 'old items start as one row');
-    assert.match(stripAnsi(rows[0].text), /older/);
+    assert.doesNotMatch(stripAnsi(rows[0].text), /older/);
+    assert.match(plain(shown).join('\n'), /\d+ older shown · a hide/);
     const state = { ...shown.state, homeTarget: target };
     const expanded = handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame: shown }).state;
     assert.ok(expanded.boardExpanded.has(targetKey(target)));
@@ -373,7 +374,7 @@ test('model button uses the master preference; b matches it and S is inert', asy
   for (const enabled of [true, false]) {
     const frame = renderMonitor({ tree: f.tree, workboard: board, state, modelEnabled, width: 56, height: 40 });
     assert.equal(modelEnabled, enabled);
-    assert.match(stripAnsi(frame.lines[0]), enabled ? /ǁ/ : /▶/);
+    assert.match(stripAnsi(frame.lines[0]), enabled ? /models on/ : /models off/);
     const control = frame.controls.find((c) => c.kind === 'brief');
     const ctx = { tree: f.tree, frame };
     const clicked = handleMonitorInput(
@@ -456,8 +457,8 @@ test('Home → thin-job Inspector → Changes preserves summary mouse controls w
   assert.ok(frame.workboard, 'keep the production sidecar on every subsequent frame');
   const pane = frame.panes.find((p) => p.id === 'changes');
   assert.ok(act({ type: 'mouse', button: 'wheel-down', x: pane.x + 1, y: pane.y + 1 }).scroll.changes > 0);
-  const title = frame.controls.find((c) => c.kind === 'zoom' && c.pane === 'changes');
-  assert.equal(act({ type: 'mouse', button: 'left', x: title.x, y: title.y }).zoom, false);
+  const title = frame.controls.find((c) => c.kind === 'board-back');
+  assert.equal(act({ type: 'mouse', button: 'left', x: title.x, y: title.y }).focus, 'agents');
   frame = render(act({ type: 'key', key: 'home-tab' }));
   assert.equal(frame.state.focus, 'agents');
 });

@@ -67,9 +67,9 @@ files cost one `lstat` per refresh. States are shown as the owner's words: `work
 that is working and has an unanswered question is **need you** (the question's first line, minutes since it was
 asked); a question left on a finished job was settled by its default and is not shown. Jobs group by their display-only package labels. Fixed lifetimes live together in `render/work-visibility.ts`: running/asking jobs stay; done jobs hide after 10 minutes, failed/stopped jobs after 30 minutes. Decisions hide after 30 minutes, departures after 2 hours. There are no lifetime settings.
 
-**Home display and keys** (`render/workboard-input.ts`). The top row is titled Home. Rows are needs-you question cards (or `✓ Nothing needs you · N running`), package lanes with cards, then current **Decided for you** rows. Lanes require visible jobs, the decisions section requires visible decisions. `+N older · a` names hidden items (translated); `a` toggles them in place, newest first, marked older and collapsed to one row until Enter expands. It uses `tree.showAll`; there is no History tab. The scan bounds the data to its newest 200 jobs.
+**Home display and keys** (`render/workboard-input.ts`). The top band is titled Home with the asking count when there are questions, and the models on/off word on the right, which a click or `b` toggles. Rows are needs-you question cards (or `✓ Nothing needs you · N running`), package lanes with cards, then current **Decided for you** rows. Lanes require visible jobs, the decisions section requires visible decisions. `+N older · a` names hidden items (translated); while they are shown it reads `N older shown · a hide`. `a` toggles them in place, newest first: older items are wholly muted, bandless one-row titles with no older prefix, and a lane whose jobs are all old has a muted header too. It uses `tree.showAll`; there is no History tab. The scan bounds the data to its newest 200 jobs.
 Enter/click toggles cards and decisions through `boardExpanded` (collapsed by default), and lane headers through `boardFolded`. These sets are display-only, not saved. Expanded cards retain complete model sentences, keywords and factual detail; expanded questions retain context/options, and decisions retain question/alternative.
-`1` returns Home; `3` opens the repository/worktree Changes summary; `2`, Left/Right and Tab/Shift-Tab do nothing on the page. Up/Down move, `n`/`N` select trouble without leaving Home, `o` opens job files and `v` inspects. Footer: `↑↓ move  ⏎ expand  o open  a all` (whole hints drop from the right when narrow). The top-row `ǁ`/`▶` and `b` still toggle the model master switch; `S` is removed.
+`1` returns Home; `3` opens the repository/worktree Changes summary; `2`, Left/Right and Tab/Shift-Tab do nothing on the page (`2` is reserved for Project and inert until M4). Up/Down move, `n`/`N` select trouble without leaving Home, `o` opens job files and `v` inspects. Footer: `↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help` (whole hints drop from the right when narrow). Help lists `1` and `3` only. The top-row models word and `b` toggle the model master switch; `S` is removed.
 There is no Work tab, target, scroll, control or row path; only `homeTarget`/`homeScroll` remain. The Inspector and retained secondary views keep their own focus/scroll.
 
 **Facade closure.** The additive facade closure is separate from the Pi dispatcher closure. Helpers are not owners:
@@ -77,7 +77,7 @@ a helper's records never become a task's or a job's authority.
 
 **The retained secondary renderer.** `renderMonitor` keeps its no-sidecar path to the stacked secondary layout for
 legacy, secondary and fixture callers only (owner ruling q4). Production always supplies the workboard sidecar, so
-the live panel never reaches this path. It keeps its secondary chrome, footer and keys, and its cards are the same
+the live panel never reaches this path. It keeps its secondary chrome and keys, without the removed status foot, and its cards are the same
 compact work card the live pages draw — no old rich-card body, no second card renderer and no flag that brings the
 old content back. It gets no new features; its removal is scheduled after P2.
 
@@ -172,7 +172,7 @@ Data flows one way:
  $CODEX_HOME (written by Codex)                codex-hud
  ─────────────────────────────                 ─────────
  logs_2.sqlite ─┐
- shell_snapshots├─► SessionFinder ─► RolloutParser ─► HudStatus ─► HudData ─► bar / status card
+ shell_snapshots├─► SessionFinder ─► RolloutParser ─► HudStatus ─► HudData ─► bar / panel facts
  sessions/*.jsonl┘                                           
  sessions/*.jsonl ─► buildSubagentTree ─► SubagentTree ─┬─► AgentLog.observe ─► agent log
                                                          ├─► readAgentTokens (context %, tok/s)
@@ -280,7 +280,7 @@ The bar and panel get their context from environment variables:
 | `codex-hud-command` | Sends a panel command as `ESC _ codex-hud:<cmd> ESC \` into the panel pane's input. Opens the panel first if a command needs it. |
 | `codex-hud-paste` | Pastes from the system clipboard, falling back to the tmux buffer. |
 | `codex-hud-resize` | Keeps the bar's height through window resizes. |
-| `codex-hud-art`, `codex-hud-fonts` | Set the panel picture; install MesloLGS NF. |
+| `codex-hud-fonts` | Install MesloLGS NF. |
 | `install.sh`, `uninstall.sh` | Write and remove the marked `# codex-hud alias` lines in shell rc files. |
 | `*.ps1`, `bin/windows/` | Windows: route to WSL Ubuntu, install, and set up profile shims. |
 
@@ -370,7 +370,7 @@ a file is read at all.
   cumulative counters do not refresh a measurement;
 - `quota-forecast.ts` (a least-squares fit of the usage window).
 
-The bar renders `HudData`, and so does the panel's status card. The panel passes the tree it already built into `HudStatus.build`, so that build does not scan the rollouts again. A git refresh calls `onChange` only when the status itself changed.
+The bar renders `HudData`; the panel retains its facts for notices and snapshots. The panel passes the tree it already built into `HudStatus.build`, so that build does not scan the rollouts again. A git refresh calls `onChange` only when the status itself changed.
 
 ### 4.4 The agent tree (`collectors/subagent-tree.ts`)
 
@@ -453,7 +453,7 @@ thin-job sentences use a separate bounded job-local collector (§5.6), not a fac
 
 ## 5. The optional model features
 
-The LLM group contains exactly three preferences: `modelEnabled` (Model text),
+The Models group contains exactly three preferences: `modelEnabled` (Model text),
 `model` (default `deepseek-v4-1-flash-1017`) and `modelCallsPerHour` (default 60).
 There is no backend selector, per-feature switch, pacing control, tier model,
 effort preference or consent flow. Old keys are ignored, not migrated, and are
@@ -666,7 +666,7 @@ indices: a space either side of each field and a powerline arrow (``) in its col
 arrows when icons are `text`; it needs a theme, so `none` stays `line`; the
 `text` icon set gives the provider's initials). Both are in
 `render/hud-config.ts` and `settings.ts` (`HUD_BAR_STYLE`, `HUD_BAR_FIELDS`); the Codex bar gets them through
-`applyDisplaySettings`, the Claude statusline and the pi footer, which draw only the bar, through
+`applyDisplaySettings` (Settings → Display → Bar style cycles the exported `BAR_STYLES`), the Claude statusline and the pi footer, which draw only the bar, through
 `settings-runtime.ts` `applyBarSettings()`.
 
 **Context against compaction.** The window the percentage is measured against is where the client compacts, when the
@@ -729,21 +729,23 @@ The steps inside `renderMonitor` (`render/monitor.ts`):
 
 ```
 reconcile state
-planFoot                     status card (status-foot.ts / status-block.ts), levels min | status | full
-controlBar                   pane tabs + Settings; 5 looks: tab, band, tile, frame, pill  (control-bar.ts)
 panes (PANES = agents, changes, details):
   agents   → agents-view.ts  agentsView → richRows (cards.ts) | agentRows (compact)
   changes  → monitor-panes.ts changesRows (repository/worktree summary only)
   details  → monitor-inspector.ts inspectorRows  (the Inspector)
-placeArt                     optional picture (art.ts)
-footPlan.draw
+controlBar                   retained secondary chrome only (control-bar.ts)
 ```
 
+The live pages do not use this pipeline: `renderWorkboardFrame` (`render/work-view.ts`) draws Home, the Inspector,
+Help and Changes with the shared workboard frame — one top title band, exact-width rows, one footer, no status foot
+and no picture. The no-sidecar secondary renderer described here is fixed to the rich layout; fixtures may still ask for
+compact.
+
 **Height budget.** Each open pane gets one row first. The remaining rows are
-handed out round-robin. The secondary renderer reserves the factual status foot
-independently of card contents. Compact mode can give unused rows to the foot.
-No generated brief or recap is supplied. What is left goes to
-details or agents. Blank separator rows appear only when the height is 30 or more.
+handed out round-robin. The live pages have no status foot; the retained
+secondary renderer keeps its own. No generated brief or recap is supplied. What
+is left goes to details or agents. Blank separator rows appear only when the
+height is 30 or more.
 
 **Types.** A `MonitorRow` is `{text, item, key, controls, counts}`. A
 `MonitorControl` is a clickable rectangle. `panel-state.ts` keeps the
@@ -757,12 +759,13 @@ reason, reported test/file counts or an eligible native model sentence. It has
 no rich-card telemetry, child rows, relations, model badge or footer. Full native
 model/effort, evidence, logs and progress diagnostics stay in the Inspector.
 
-The Cards group exposes `cardLabel`, `cardSummary`, `cardClock`,
-`cardStallMinutes` and `cardCorners`. Label visibility affects card names only;
-summary visibility constrains automatic native progress targets. Neither is a
-separate LLM permission or a switch for result digests, labels or causes.
-Saved child-summary/scope preferences in `card-visibility.ts` still constrain
-native eligibility, but do not restore the retired rich-card body or controls.
+The Panel group exposes `cardLabel`, `cardSummary` and `cardStallMinutes`;
+`agentLog` is kept for the retained compact view and Inspector. Label
+visibility affects card names only; summary visibility constrains automatic
+native progress targets. Neither is a separate LLM permission or a switch for
+result digests, labels or causes. Saved child-summary/scope preferences in
+`card-visibility.ts` still constrain native eligibility, but do not restore the
+retired rich-card body or controls.
 `cardSummaryTargets` and `progressTargets` run in the collection/input layer,
 never from rendering. Model requests still need the effective master state.
 
@@ -808,46 +811,46 @@ against Codex 0.154 and 0.157.
 
 - `HudSettings` holds the type, `defaultSettings()` the defaults, a per-key
   validator table the checks, and `loadSettings` / `saveSettings` the I/O.
-- The page separates Display, Panel, Agents, Cards, LLM, Status bar and Input,
-  drawn as an accordion (`displayLines(draft, selected)`): the selected row's
-  group open, the others folded to one line with `SECTION_SUMMARY` values.
-  `SettingsFrame.groups` maps a folded line to its group's first row, so a
-  click there only selects; `rows` stays the map of real rows, whose click
-  steps a value. PgUp/PgDn step by group.
-  Settings is a labelled main navigation tab (`BarInput.settingsActive`), not a
-  gear-only action. The page keeps that bar above its Back/Save/Reset header;
-  `navigationControls` and `headerY` retain correct hit maps. Clicking the
-  active Settings tab keeps the draft. A dirty draft leaving through Back,
-  Escape, navigation or a prefix command goes through `settings-confirmation`:
-  save-and-leave, discard, or continue editing (the safe default). Save failure
-  retains the draft and pending decision. Destinations are keys rather than
-  old mouse coordinates, because saving can resize the panel. Clean drafts
-  leave immediately. `navigationOverlay` opens/selects the target instead of
-  toggling an already-open stacked pane closed. Normal stacked clicks still toggle.
-  Values use the actual terminal width's right edge; from 70 columns a stable
-  help column reserves the rightmost portion. Width applies on Save, followed
-  by a repaint as well as the stdout resize event; no draft-only resize.
-  Cards controls presentation; the three editable LLM rows control the master switch,
-  model and call cap, with a read-only hourly usage row. Rows stay editable to prepare preferences in advance.
-  Turning Model text off hides stored model text without deleting it. Hiding card
-  content narrows automatic progress targets, not the other native background
-  jobs. There are no periodic brief or per-feature settings.
+- The page has four open groups, in this order: Display (Theme, Bar style, Icons, Language,
+  Agent colours), Panel (Stall threshold, Notifications, Refresh, Mouse, Order,
+  Key roles, Hide finished, Agent log, Task label, Agent summary), Models (Model
+  text, Model, Call cap, plus the read-only calls-this-hour gauge and Test API)
+  and Codex (Width, Prefix key, Bar on launch). There is no accordion, no header
+  buttons and no Reset all: `SETTING_ROWS` is one flat list and every group is
+  open. The page is a draft; Theme and Icons paint in the draft value, so the
+  page is its own preview. The selected row's help is a `┃` stem under it; a
+  non-default value is in the accent and a changed row is marked `*`. The top
+  band reads `‹ Settings` and `unsaved` at the right when dirty (a click saves).
+  `s` saves, `r` resets only the selected group, `t` runs Test API, and Esc with
+  a dirty draft opens `settings-confirmation`: save-and-leave, discard, or
+  continue editing (the safe default). Save failure retains the draft and
+  pending decision. Destinations are keys rather than old mouse coordinates,
+  because saving can resize the panel. Clean drafts leave immediately. Values
+  align at the actual terminal width's right edge; saving a new width reflows
+  the rows. Width applies on Save, followed by a repaint as well as the stdout
+  resize event; no draft-only resize.
 - `card-presets.ts` retains legacy combinations for fixture/compatibility
   callers only. There is no preset row on the current page; it cannot restore
-  retired rich-card contents. The five current Cards controls remain independent
-  of the model master preference and credentials.
-- Reset group restores only its explicit owned fields (including hidden
-  counterparts of composite rows). Reset all means known page preferences,
-  not connection data: API endpoint, model ID, call cap and picture/worktree
-  assets survive. LLM/all reset sets `modelEnabled: false` rather than restoring
-  the key-aware enabled default. No credential or consent record is written. Both
-  helpers only prepare drafts; Save is required.
+  retired rich-card contents. `agentLog`, `cardLabel` and `cardSummary` are kept
+  for NATIVE-TREE; Order, Key roles, Agent colours and Hide finished stay because
+  the retained native renderer and native progress eligibility still read them.
+  Hide finished affects the native tree only, not Home's fixed lifetimes.
+- Reset group restores only its explicit owned fields. Resetting Models sets
+  `modelEnabled: false` and preserves the connection, model and call cap; no
+  other group touches the master preference. There is no Reset all. No
+  credential or consent record is written; the helper only prepares a draft and
+  Save is required.
 - They are stored in `$HUD_HOME/hud-settings.json` (default `~/.hud`), or at
   `HUD_SETTINGS_PATH`. The file is capped at 64 KiB and written
   atomically with mode 0600.
 - Once that file exists, the display environment variables
-  (`CODEX_HUD_THEME`, `DENSITY`, `LOOK`, …) are ignored. Only `NO_COLOR` still
-  wins (`settings-runtime.ts`).
+  (`CODEX_HUD_THEME`, `CODEX_HUD_ICONS`, `CODEX_HUD_BAR_STYLE`,
+  `CODEX_HUD_BAR_FIELDS`, …) are ignored. Only `NO_COLOR` still wins
+  (`settings-runtime.ts`). Removed preferences (`look`, `glyphs`, `motion`,
+  `panelStyle`, `statusCard`, `art`, `artImage`, `density`, `context`,
+  `cardCorners`, `cardClock`) are not in `HudSettings`; unknown old keys are
+  ignored and omitted on the next save, and old `nerd`/`emoji` icons load as
+  `unicode`.
 
 **Files under `$HUD_HOME/display/`:**
 
@@ -861,8 +864,7 @@ against Codex 0.154 and 0.157.
 
 **Display.** `icons` decides icons or words everywhere: the buttons, the
 titles, "ago", the bar's activity and cache marks
-(`iconSet()`, `iconic()`). `glyphs` is the model badge's alone; nothing else
-reads it.
+(`iconSet()`, `iconic()`). It is `unicode` or `text`; there is no look selector.
 
 **Read from `$CODEX_HOME`, never written:** `config.toml`, `sessions/`,
 `shell_snapshots/`, `logs_2.sqlite`, `goals_1.sqlite`.
@@ -964,7 +966,7 @@ runs them.
   the local date for the rollout directory, matching the session finder.
 
 **Visual regressions.** `tests/fixtures/visual-baselines.ts` creates fixed-time
-EN/ZH frames across five widths, five looks and three shared presets, plus
+EN/ZH frames across five widths and the shared presets, plus
 settings, confirmations and Inspector lifecycle scenes. The reviewed JSON
 retains trailing cells; tests report the exact case and first changed row.
 This is textual terminal-cell coverage, not pixel/font screenshots. Updating
@@ -1018,14 +1020,15 @@ through `monitorSettings`. The obsolete `cardNotes` option is no longer used.
    `defaultSettings()`, and a validator, for example
    `cardSummary: isBoolean`.
 2. `src/render/settings-page.ts`: add a row, for example
-   `{key, group, label, short, values, help}`, in the group it belongs to:
-   Display, Panel, Agents, Cards, LLM (the master switch, model and call cap only), Status bar or Input. Settings that only make sense
-   together are one row: give it `get` (their value as one) and `set` (the
-   settings a value stands for), as Notifications does; `rowValue` and `withRowValue` read and write through them.
+   `{key, group, label, values, help}`, in the group it belongs to: Display,
+   Panel, Models (the master switch, model and call cap) or Codex. Settings that
+   only make sense together are one row: give it `get` (their value as one) and
+   `set` (the settings a value stands for), as Notifications does; `rowValue`
+   and `withRowValue` read and write through them.
 3. If rendering needs it: add a field to `MonitorState`
    (`render/monitor.ts`), map it in `monitorSettings`, and read it where it
    is drawn.
-4. `src/render/i18n.ts`: add ZH strings for the label, the short label and the help.
+4. `src/render/i18n.ts`: add ZH strings for the label and the help.
 5. Tests:
    - `settings.test` covers the default and validation;
    - the settings page has one more row, so heights in `settings-page.test`
@@ -1061,7 +1064,7 @@ All three bars share `layout/bar-fields.ts`; a field is added once.
 2. Bind it in `bin/codex-hud-keys`.
 3. If the command only navigates, update **both** `needsOpenPanel` and the
    copy of that list in `bin/codex-hud-command`.
-4. Name it in the help (Shortcuts) and in the reference's keys section.
+4. Name it in the help (Keys) and in the reference's keys section.
 
 ---
 
@@ -1155,7 +1158,7 @@ that cell in Herdr's terminal (every right-aligned row lost its last character, 
 `collectors/bridge-health.ts` still supplies current health notices to the panel/bar.
 `render/hud-diagnostics.ts` retains only `hudProblems` and agent `tokenRateDetails`,
 used by those notices and the agent Inspector. There is no diagnostics page or
-Sources/Calls/Export navigation. Settings → LLM shows `SmallModel.usage()` calls this
+Sources/Calls/Export navigation. Settings → Models shows `SmallModel.usage()` calls this
 hour against the shared cap, even with model text off; known zero is shown. The
 separate feature telemetry store and its settlement writes are removed; ordinary
 call reservations, cache coordination and `calls.json` remain.

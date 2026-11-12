@@ -1,48 +1,205 @@
-/** The same local Work facts in source-only and existing native/job Inspectors. */
-import type { OwnerWorker } from '../collectors/workboard-types.js';
+/** Expanded Home cards, honest local facts and openable workflow files. No I/O. */
+import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-types.js';
+import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
-import { workCardDetail, workRequestDetail, workPhaseText, workStateWord } from './work-card.js';
-import { flowLines, monitorText } from './monitor-text.js';
-import { section } from './workboard-rows.js';
+import { renderWorkCard, requestLines, stemLines, workPhaseText, workStateGlyph, workStateInk } from './work-card.js';
+import {
+  kvRows,
+  section,
+  itemRow,
+  mark,
+  minuteAge,
+  decisionTitle,
+  decisionRows,
+  boardRow,
+  asciiBoard,
+} from './workboard-rows.js';
+import { theme } from './colors.js';
+import { monitorText, fit } from './monitor-text.js';
+import { providerMark } from './providers.js';
+import { laneStrip } from './work-lanes.js';
 import { t } from './i18n.js';
-
+export function localTime(at: number | null, now: number): string {
+  if (at === null) return '';
+  const date = new Date(at),
+    today = new Date(now);
+  return (
+    (date.toDateString() === today.toDateString()
+      ? ''
+      : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ') + date.toTimeString().slice(0, 5)
+  );
+}
+function facts(entries: [string, string][], width: number): MonitorRow[] {
+  const parts = entries
+    .filter(([, value]) => value)
+    .map(([label, value]) => kvRows(label, value, width >= 80 ? Math.floor(width / 2) - 1 : width));
+  if (width < 80) return parts.flat();
+  const rows: MonitorRow[] = [],
+    half = Math.floor(width / 2);
+  for (let i = 0; i < parts.length; i += 2)
+    for (let j = 0; j < Math.max(parts[i].length, parts[i + 1]?.length ?? 0); j++)
+      rows.push(boardRow(fit(parts[i][j]?.text ?? '', half) + fit(parts[i + 1]?.[j]?.text ?? '', width - half)));
+  return rows;
+}
 export function workInspectorRows(
   worker: OwnerWorker,
   state: MonitorState,
   width: number,
   now: number,
-  heading = true
+  _heading = true
 ): MonitorRow[] {
-  const rows: MonitorRow[] = heading ? [section(t('Work details'), width)] : [];
-  const add = (label: string, value: string) => {
-    for (const text of flowLines(`${t(label)}: ${monitorText(value)}`, width)) rows.push({ text });
-  };
-  const card = projectWorkCard(worker, now, state.cardStallMinutes);
-  add('Work state', workStateWord(card));
-  add('State', worker.state);
-  for (const phase of card.phases) add('Observed phase', workPhaseText(phase));
-  const detail =
-    worker.work?.requestInfo && card.reason === 'Decision requested; inspect the job'
-      ? workRequestDetail(card, true)
-      : workCardDetail(card);
-  for (const line of detail.split('\n').filter(Boolean)) add('Work details', line);
-  if (worker.work?.activityAt !== null && worker.work?.activityAt !== undefined)
-    add('Last activity', new Date(worker.work.activityAt).toISOString());
-  if (worker.work) add('Time basis', worker.work.activityBasis);
-  const evidence = [
-    ...worker.evidence,
-    ...(worker.work?.phaseEvidence ?? []),
-    ...(worker.work?.requestInfo?.evidence ? [worker.work.requestInfo.evidence] : []),
+  const card = projectWorkCard(worker, now, state.cardStallMinutes),
+    target: WorkTarget = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
+  const expanded = { ...state, boardExpanded: new Set([targetKey(target)]) };
+  const rows =
+    card.state === 'needs-you'
+      ? [
+          boardRow(renderWorkCard(card, expanded, width)[0]),
+          ...requestLines(card, true).flatMap((s) =>
+            stemLines(s, width, theme.board.attention).map((text) => boardRow(theme.board.slab(text)))
+          ),
+        ]
+      : renderWorkCard(card, expanded, width).map((text) => boardRow(text));
+  const stamp = (at: number | null) =>
+    at === null ? '' : `${localTime(at, now)} · ${t('{age} ago', { age: minuteAge(at, now) })}`;
+  const model = worker.model?.replace(/^.*\//, '') ?? '',
+    glyph = !asciiBoard() ? providerMark({ id: model, provider: worker.provider })?.glyph : '';
+  rows.push(
+    boardRow(''),
+    ...facts(
+      [
+        ['role', [worker.role, worker.harness].filter(Boolean).join(' · ')],
+        ['model', [model ? `${glyph ? glyph + ' ' : ''}${model}` : '', worker.effort].filter(Boolean).join(' · ')],
+        ['package', worker.laneId.replace(/^thin-job:package:/, '')],
+        ['state', [t(worker.state), worker.phase ? workPhaseText(worker.phase) : ''].filter(Boolean).join(' · ')],
+        ['started', stamp(worker.startedAt)],
+        [
+          worker.homeNeedsHuman ? 'asked' : worker.settledAt !== null ? 'ended' : 'activity',
+          stamp(worker.homeNeedsHuman ? worker.humanEndedAt : (worker.settledAt ?? worker.work?.activityAt ?? null)),
+        ],
+      ],
+      width
+    )
+  );
+  const files = worker.files ?? [];
+  if (files.length) rows.push(boardRow(''), section(t('Files'), width, String(files.length)));
+  for (const file of files) {
+    const decision = file.qid ? file.state : undefined;
+    const glyph =
+      decision === 'open'
+        ? '?'
+        : decision
+          ? mark(decision === 'departure' ? '◆' : '◇', decision === 'departure' ? '*' : 'o')
+          : '';
+    const ink = decision === 'open' || decision === 'departure' ? theme.board.attention : theme.board.muted;
+    const row = itemRow(
+      ink(glyph),
+      monitorText(file.qid ? `${file.qid}  ${file.title ?? ''}` : file.rel) +
+        (file.verdict
+          ? '  ' + (file.verdict === 'accept' ? theme.board.success : theme.board.attention)(monitorText(file.verdict))
+          : ''),
+      file.state === 'open' && worker.homeNeedsHuman
+        ? `${t('asking')} ${minuteAge(file.at, now)}`
+        : localTime(file.at, now),
+      width
+    );
+    rows.push({ ...row, item: 'file:' + file.paths[0], files: file.paths });
+  }
+  return rows;
+}
+export function boardInspectorRows(
+  lane: WorkLane | undefined,
+  target: WorkTarget | undefined,
+  state: MonitorState,
+  width: number,
+  now: number
+): MonitorRow[] {
+  if (!lane || !target) return [];
+  if (target.kind === 'worker') {
+    const worker = lane.workers.find((w) => w.id === target.workerId);
+    return worker
+      ? [
+          boardRow(''),
+          ...workInspectorRows(
+            {
+              ...worker,
+              files: worker.files?.map((f) => ({
+                ...f,
+                title:
+                  lane.decisions.find((d) =>
+                    d.evidence.some((e) => e.sourceId === worker.evidence[0]?.sourceId && e.relativePath === f.rel)
+                  )?.modelTitle ?? f.title,
+              })),
+            },
+            state,
+            width,
+            now
+          ),
+        ]
+      : [];
+  }
+  if (target.kind === 'lane')
+    return [
+      boardRow(''),
+      boardRow(
+        theme.board.title(
+          itemRow(
+            mark('▸', '>'),
+            monitorText(lane.label) + '  ' + workPhaseText(lane.phase ?? ''),
+            laneStrip(lane, state, now, Math.floor(width / 3)),
+            width
+          ).text
+        )
+      ),
+      ...facts(
+        [
+          ['jobs', String(lane.workers.length)],
+          ['decisions', String(lane.decisions.length)],
+          ['started', localTime(lane.startedAt, now)],
+        ],
+        width
+      ),
+      boardRow(''),
+      section(t('Jobs'), width),
+      ...lane.workers.map((w) => ({
+        ...itemRow(
+          workStateInk(projectWorkCard(w, now))(workStateGlyph(projectWorkCard(w, now))),
+          monitorText(`${w.role ?? ''}  ${w.task}`),
+          minuteAge(w.startedAt, now),
+          width
+        ),
+        item: 'file:' + w.id,
+        files: w.files?.find((f) => f.kind === 'report')?.paths ?? w.files?.find((f) => f.kind === 'brief')?.paths,
+      })),
+    ];
+  const d = lane.decisions.find((d) => d.id === target.decisionId);
+  if (!d) return [];
+  const rows = [
+    boardRow(''),
+    decisionRows(d, lane, { ...state, boardExpanded: new Set([targetKey(target)]) }, width, now)[0],
+    ...stemLines(decisionTitle(d), width).map((text) => boardRow(theme.board.body(text))),
+    boardRow(''),
+    ...[
+      ['asked', d.question],
+      [d.verdict ? 'verdict' : 'answer', d.verdict ?? d.option],
+      ['instead of', d.instead],
+      ['why', d.rationale ?? d.context],
+    ].flatMap(([label, value]) =>
+      value ? kvRows(label!, value, width, label === 'instead of' ? theme.board.attention : undefined) : []
+    ),
   ];
-  const seen = new Set<string>();
-  for (const item of evidence) {
-    const key = JSON.stringify([item.sourceId, item.relativePath, item.revision]);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    add('Source', item.relativePath + (item.section ? ' #' + item.section : ''));
-    add('Time basis', item.timeBasis);
-    if (item.at !== null && Number.isFinite(item.at)) add('Evidence time', new Date(item.at).toISOString());
+  rows.push(boardRow(''), section(t('Files'), width, String(d.evidence.length)));
+  for (const e of d.evidence) {
+    const paths =
+      lane.identity.kind === 'invocation' && /^j[0-9a-f]{16}$/.test(e.sourceId)
+        ? [`${lane.identity.home}/jobs/${e.sourceId}/${e.relativePath}`]
+        : undefined;
+    rows.push({
+      ...itemRow('', monitorText(e.relativePath), localTime(e.at, now), width),
+      item: paths ? 'file:' + paths[0] : undefined,
+      files: paths,
+    });
   }
   return rows;
 }

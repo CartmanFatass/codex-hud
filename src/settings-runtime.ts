@@ -3,7 +3,17 @@ import { existsSync } from 'node:fs';
 import { loadSettings, defaultSettings, settingsPath, type HudSettings } from './settings.js';
 import { resolveDisplayConfig, setDisplayConfig } from './render/hud-config.js';
 export function runtimeSettings(): HudSettings {
-  const settings = existsSync(settingsPath()) ? loadSettings() : { ...defaultSettings(), ...resolveDisplayConfig() };
+  const display = resolveDisplayConfig();
+  const settings = existsSync(settingsPath())
+    ? loadSettings()
+    : {
+        ...defaultSettings(),
+        theme: display.theme,
+        icons: display.icons === 'text' ? ('text' as const) : ('unicode' as const),
+        agentColors: display.agentColors,
+        barStyle: display.barStyle,
+        barFields: display.barFields,
+      };
   if (!existsSync(settingsPath())) {
     const width = Number(resolveHudEnv(process.env, 'HUD_TREE_WIDTH'));
     if (Number.isInteger(width) && width >= 16 && width <= 200) settings.treeWidth = width;
@@ -12,12 +22,10 @@ export function runtimeSettings(): HudSettings {
 }
 function displayOf(settings: HudSettings) {
   return {
-    density: settings.density,
-    glyphs: settings.glyphs,
     icons: settings.icons,
-    look: settings.look,
-    motion: settings.motion,
-    context: settings.context,
+    glyphs: 'both' as const,
+    look: 'tab' as const,
+    motion: 'reduced' as const,
     barStyle: settings.barStyle,
     barFields: settings.barFields,
     agentColors: settings.agentColors,

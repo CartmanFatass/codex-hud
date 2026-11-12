@@ -23,6 +23,38 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.boardRevealed = undefined;
     next.boardAnchor = undefined;
   };
+  const back =
+    input.type === 'mouse' &&
+    input.button === 'left' &&
+    frame?.controls.some(
+      (c) => c.kind === 'board-back' && c.y === input.y && input.x >= c.x && input.x < c.x + c.width
+    );
+  if (back || (key === 'escape' && next.focus === 'changes')) {
+    home();
+    return result();
+  }
+  if (inspector && next.boardInspect) {
+    const rows = boardFrame.rows.filter((r) => r.files?.length),
+      at = rows.findIndex((r) => r.item === next.inspectCursor);
+    if (input.type === 'mouse' && input.button === 'left') {
+      const pane = frame?.panes.find((p) => p.id === 'details'),
+        row = pane && monitorRowAt(pane, input.x, input.y);
+      if (row?.files?.length) {
+        next.inspectCursor = row.item;
+        return result({ type: 'job-files', files: row.files });
+      }
+    }
+    if (['enter', 'activate', 'open-session'].includes(key))
+      return result(rows[at] ? { type: 'job-files', files: rows[at].files! } : undefined);
+    if (['up', 'down', 'home', 'end', 'page-up', 'page-down'].includes(key)) {
+      const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
+      next.inspectCursor =
+        rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]
+          ?.item;
+      return result();
+    }
+    if (['home-tab', 'project-tab', 'left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
+  }
   if (key === 'home-tab') {
     home();
     return result();
@@ -48,6 +80,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.focus = 'details';
     next.modes.details = 'open';
     next.scroll.details = 0;
+    next.inspectCursor = undefined;
+    next.boardRevealed = undefined;
     next.zoom = false;
   };
   if ((key === 'inspect' || key === 'details' || key === 'detail-toggle' || key === 'space') && main) {
@@ -90,7 +124,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const file = join(lane.identity.home, 'jobs', evidence.sourceId, evidence.relativePath);
     if (/^(report|brief)\.md$/.test(evidence.relativePath)) return { type: 'job-files', files: [file] };
     if (/^qa\/q\d+\.md$/.test(evidence.relativePath))
-      return { type: 'job-files', files: [file, file.replace(/\.md$/, '.answer.md')] };
+      return {
+        type: 'job-files',
+        files: worker?.work?.requestInfo?.evidence === evidence ? [file] : [file, file.replace(/\.md$/, '.answer.md')],
+      };
   };
   // Enter, or a click on the selected item: a lane folds or unfolds, any other item expands or collapses in place.
   // It never changes tab.

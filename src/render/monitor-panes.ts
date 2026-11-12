@@ -39,6 +39,7 @@ import {
   needsInput,
 } from './job-details.js';
 import { inspectorRows, logEntryLines } from './monitor-inspector.js';
+import { section, kvRows, itemRow } from './workboard-rows.js';
 import { delegationAgentsRows, mixedAgentsRows, mixedOrdinaryNodes } from './delegation/panel.js';
 
 /**
@@ -212,7 +213,7 @@ function agentRows(input: MonitorData, state: MonitorState, width: number, now: 
 }
 
 /** Repository facts only; no file rows, selection, preview or diff. */
-function changesRows(input: MonitorData, _state: MonitorState, width: number, now: number): MonitorRow[] {
+export function changesRows(input: MonitorData, _state: MonitorState, width: number, now: number): MonitorRow[] {
   const snapshot = input.worktrees;
   const rows: MonitorRow[] = [];
   if (snapshot?.error) rows.push({ text: theme.warning(t('No readable repository')) });
@@ -221,29 +222,19 @@ function changesRows(input: MonitorData, _state: MonitorState, width: number, no
     .filter((entry) => snapshot.sourcePath === entry.path || snapshot.sourcePath?.startsWith(entry.path + '/'))
     .sort((a, b) => b.path.length - a.path.length)[0];
   if (current) {
-    rows.push(
-      ...wrapped(
-        t('Branch: {branch}', { branch: monitorText(current.branch ?? t(current.bare ? 'bare' : 'detached')) }),
-        width
-      ).map((text) => ({ text }))
-    );
-    rows.push(
-      ...wrapped(t('HEAD: {head}', { head: monitorText(current.head ?? t('unknown')) }), width).map((text) => ({
-        text,
-      }))
-    );
+    rows.push(...kvRows('branch', current.branch ?? t(current.bare ? 'bare' : 'detached'), width));
+    rows.push(...kvRows('HEAD', current.head ?? t('unknown'), width));
     if (current.status && now - (current.observedAt ?? 0) <= 30_000) {
       const status = current.status;
       for (const key of ['ahead', 'behind', 'staged', 'unstaged', 'untracked'] as const)
-        rows.push({ text: t(`{n} ${key}`, { n: status[key] ?? '?' }) });
+        rows.push(...kvRows(key, String(status[key] ?? '?'), width));
     } else rows.push({ text: theme.warning(t('Git incomplete')) });
   }
+  rows.push({ text: '' }, section(t('Worktrees'), width, String(snapshot?.entries.length ?? 0)));
   for (const entry of snapshot?.entries ?? []) {
     const dirty = entry.status && now - (entry.observedAt ?? 0) <= 30_000 ? entry.status.changed > 0 : null;
     const label = `${monitorText(entry.branch ?? t(entry.bare ? 'bare' : 'detached'))} · ${t(dirty === null ? 'unknown' : dirty ? 'dirty' : 'clean')}`;
-    rows.push({
-      text: pair(truncateAnsi(monitorText(entry.path), Math.max(1, width - visualLength(label) - 1)), label, width),
-    });
+    rows.push(itemRow('', monitorText(entry.path), label, width));
   }
   return rows;
 }

@@ -7,19 +7,12 @@ import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
 import { defaultCardVisibility, type CardVisibility } from '../card-visibility.js';
 import { initialPanelState, reconcileSelection, visibleRows, type PanelState, type PanelRow } from './panel-state.js';
-import { theme, colors, visualLength, truncateAnsi, stripAnsi } from './colors.js';
-import { modelLegend } from './model-glyphs.js';
-import { iconSet } from './hud-config.js';
-import { palette } from './palette.js';
+import { theme, colors, visualLength, truncateAnsi } from './colors.js';
 import type { Brief } from '../collectors/briefing.js';
 import type { AgentLogEntry } from '../collectors/agent-log.js';
-import type { StatusCard } from './status-block.js';
-import { t } from './i18n.js';
 import { agentsTitleAt, drawAgentsView } from './agents-view.js';
-import { controlBar, paneHead, icon, look, type CountsText, type RowButtons } from './control-bar.js';
-import { planFoot, type StatusLevel, type FootInfo } from './status-foot.js';
-import { fit, wrapped, helpLines } from './monitor-text.js';
-import { TURN_CLOCKS, TURN_CLOCK_LONG } from './monitor-labels.js';
+import { controlBar, paneHead, look, type CountsText, type RowButtons } from './control-bar.js';
+import { fit, wrapped } from './monitor-text.js';
 import { paneRows, agentsView, putAwayCount, summaryRow } from './monitor-panes.js';
 import {
   delegationPutAway,
@@ -33,7 +26,7 @@ import { resolveSelection } from './delegation/selection.js';
 import { selectedActions, type DelegationAction } from './delegation/actions.js';
 import { roleSet } from './directions.js';
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
-import { renderWorkboardFrame, renderWorkboardHelp } from './work-view.js';
+import { renderWorkboardFrame } from './work-view.js';
 
 // The panel is drawn by the modules beside this one; what they export is
 // exported here too, so a caller imports the monitor from one place.
@@ -79,6 +72,8 @@ export interface MonitorState {
   /** Display-only fold cursor; never a workflow identity or native selection. */
   boardAnchor?: string;
   boardInspect?: WorkTarget;
+  /** The Inspector row the cursor is on: its `item`, a row with files. */
+  inspectCursor?: string;
   tree: PanelState;
   focus: MonitorPane;
   modes: MonitorModes;
@@ -87,8 +82,6 @@ export interface MonitorState {
   help: boolean;
   zoom: boolean;
   helpScroll?: number;
-  /** The help's page: keys, then buttons and mouse, then the legend. */
-  helpTab?: HelpTab;
   expanded?: boolean;
   /**
    * How the agents are shown: `rich`, a card each; `compact` (or absent), the
@@ -108,18 +101,12 @@ export interface MonitorState {
    * the scroll it was taken at, so a scroll since then is not undone.
    */
   anchor?: { key: string; delta: number; offset: number };
-  /** How much the status card shows; absent is `full`. The panel sets it from settings. */
-  statusLevel?: StatusLevel;
   /** Keys stay in the panel. Esc clears it and returns them to Codex. */
   keys?: boolean;
   /** A label, once arrived, stands where the agent's name is shown. The panel sets it from settings. */
   labelAsName?: boolean;
-  /** How far the status card's brief is scrolled. */
-  statusScroll?: number;
   /** The L2 roles eligible for the saved important-scope summary policy. */
   importantRoles?: ReadonlySet<string>;
-  /** The cards' corners. The panel sets it from settings. */
-  cardCorners?: 'square' | 'round';
   cardStallMinutes?: number;
   /**
    * The last render drew the delegation view, so `tree.selectedId` is one of its row keys. A reconcile that has no view
@@ -154,6 +141,8 @@ export interface MonitorRow {
   lead?: boolean;
   /** The item this row is a part of, when it has an item of its own: a sub-row's line in its card (B10B-s3). */
   of?: string;
+  /** Files the row stands for, which `⏎` opens in the Inspector. */
+  files?: string[];
 }
 export interface MonitorRect {
   id: MonitorPane;
@@ -183,6 +172,7 @@ export interface MonitorControl {
   kind:
     | 'main'
     | 'board-home'
+    | 'board-back'
     | 'board-pick'
     | 'board-activate'
     | 'board-inspect'
@@ -190,9 +180,7 @@ export interface MonitorControl {
     | 'tab'
     | 'older'
     | 'help'
-    | 'help-tab'
     | 'brief'
-    | 'level'
     | 'log'
     | 'switch'
     | 'zoom'
@@ -221,8 +209,6 @@ export interface MonitorFrame {
   controls: MonitorControl[];
   state: MonitorState;
   helpPage?: { count: number; total: number };
-  /** The status card's place and its brief's scroll, for the wheel. */
-  statusCard?: FootInfo;
   /** The delegation view this frame drew (its plan, its rows), what a key or a click is resolved against. */
   delegation?: DelegationView;
 }
@@ -248,12 +234,6 @@ export interface MonitorData {
   brief?: Brief & { paused?: boolean };
   modelEnabled?: boolean;
   /**
-   * The status bar's fields for the card at the foot of the panel (while the
-   * panel is open it replaces the bar), as parts the monitor fits to the
-   * card's edges.
-   */
-  status?: (nowMs: number) => StatusCard | null;
-  /**
    * Each agent's log, oldest entry first, by agent id: shown under the brief
    * for the agents the tree shows, and whole in the Inspector.
    */
@@ -261,12 +241,6 @@ export interface MonitorData {
   /** Per-agent progress request state, collected without rendering I/O. */
   progress?: ReadonlyMap<string, ProgressState>;
   progressContext?: ProgressContext;
-  /**
-   * What the main session is doing, as the status card words it, for the
-   * card's one-line form; `attention` while it waits on the person, `failed`
-   * while a tool or agent has failed.
-   */
-  session?: (nowMs: number) => { text: string; short?: string; attention: boolean; failed?: boolean } | null;
   /**
    * Model-written readings, each shown marked as such: the pending approval's
    * command in plain words, and what the current diff does (`current` false
@@ -280,11 +254,10 @@ export interface MonitorData {
    * Codex pane is too narrow to show agent ids. Absent means yes.
    */
   linkNames?: boolean;
-  /**
-   * Decoration for the empty stretch above the foot: lines at most `cols`
-   * wide and `rows` tall, or null when nothing fits.
-   */
-  art?: (cols: number, rows: number) => string[] | null;
+  /** The mouse is on: the help says what a click does. */
+  mouse?: boolean;
+  /** The panel is Codex's own, so keys reach it only after the prefix. */
+  embedded?: boolean;
 }
 export interface MonitorContext {
   tree: SubagentTree;
@@ -304,7 +277,6 @@ export interface MonitorOutcome {
     | { type: 'switch'; id: string }
     | { type: 'pick'; id: string }
     | { type: 'brief-toggle' }
-    | { type: 'status-level' }
     | Exclude<DelegationAction, { type: 'switch' }>;
 }
 
@@ -334,15 +306,14 @@ export function monitorModes(settings: HudSettings): MonitorModes {
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
   const cardVisibility = defaultCardVisibility();
   const copy = <K extends keyof CardVisibility>(key: K) => {
-    cardVisibility[key] = settings[key];
+    if (key !== 'cardClock')
+      Object.assign(cardVisibility, { [key]: settings[key as Exclude<keyof CardVisibility, 'cardClock'>] });
   };
   (Object.keys(cardVisibility) as Array<keyof CardVisibility>).forEach(copy);
   return {
-    style: settings.panelStyle,
-    statusLevel: settings.statusCard,
+    style: 'rich',
     labelAsName: true,
     importantRoles: roleSet(settings.importantRoles),
-    cardCorners: settings.cardCorners,
     cardStallMinutes: settings.cardStallMinutes,
     cardVisibility,
   };
@@ -425,143 +396,10 @@ export function reconcileMonitor(
   };
 }
 
-/**
- * The panel's top as the display config now draws it: the control bar and
- * the focused pane's title (the agents' with their counts; in the tabs
- * layout, the counts alone), for the settings page to preview a look, its
- * icons, a theme or the panes before they are saved. A one-row bar has a
- * blank row under it, as a tall panel parts its sections, so every look is
- * three rows and the page holds still while the looks are stepped through.
- */
-export function panelTop(
-  input: Pick<MonitorData, 'tree' | 'modelEnabled' | 'nowMs'>,
-  state: MonitorState,
-  width: number
-): string[] {
-  const now = input.nowMs ?? Date.now();
-  const bar = controlBar(
-    state,
-    { modelEnabled: input.modelEnabled, expired: putAwayCount(input.tree.nodes, state, now) },
-    width
-  );
-  const info = state.focus === 'agents' ? summaryRow(input).row.counts : undefined;
-  return [
-    ...bar.lines,
-    ...(bar.lines.length < 2 ? [''] : []),
-    paneHead(state.focus, width, { focused: true, zoomed: false, info }),
-  ];
-}
-
-/** The help's pages, in order: one at a time, a tab each on its top row. */
-export const HELP_TABS = ['keys', 'mouse', 'legend'] as const;
-export type HelpTab = (typeof HELP_TABS)[number];
-const HELP_TAB_WORDS: Record<HelpTab, string> = { keys: 'Keys', mouse: 'Mouse', legend: 'Legend' };
-
 /** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
 const DENSE_BELOW = 12;
 /** Rows from which a blank row parts the panel's sections. */
 const PARTED_FROM = 30;
-/** The widest the help's key column grows: a longer key pushes its own line on. */
-const HELP_KEY_COLUMN = 12;
-
-/**
- * The help: the shortcuts (the tmux prefix, then a key; nothing typed in the
- * panel is the panel's), the buttons, the mouse, then the legend. `prefix`
- * is the prefix as people write it, "Ctrl+\".
- */
-function helpText(
-  rich: boolean,
-  prefix: string,
-  cardSummary = true,
-  delegation = false
-): Array<string | { head: string; tab: HelpTab }> {
-  const p = { p: prefix };
-  const head = (text: string, tab: HelpTab = 'keys') => ({ head: t(text, p), tab });
-  return [
-    head('Shortcuts: {p}, then a key'),
-    ...[
-      'Keys typed in the panel go to Codex',
-      'F12  panel on / off  Shift+F12  into it',
-      '{p} ,  settings  {p} ?  help',
-      '{p} b  pause / resume models',
-      '{p} a  show / hide older',
-      '{p} 1 Home',
-      '{p} ↑ ↓  move',
-      '{p} o  open  {p} v  inspect',
-      '{p} PgUp PgDn  scroll  {p} g G  first / last',
-      '{p} ⏎  expand / collapse',
-      ...(rich ? [] : ['{p} h l  fold / unfold agent']),
-      '{p} f  filter  {p} s  order',
-      // The delegation view's keys (design §2, §3.7): only where that view is drawn, so the legacy help is as it was.
-      ...(delegation ? ['{p} n N  next / previous trouble', '{p} L  log', '{p} R  resume / reconcile'] : []),
-      rich ? '{p} r  status card: min / status / full' : '{p} r  status card: min / status',
-      '{p} Esc  back  {p} q  close panel',
-      '{p} {p}  {p} itself, to Codex',
-    ].map((line) => t(line, p)),
-    head('Buttons, top row', 'mouse'),
-    // With icons on, what each icon is; with words, the words say it.
-    ...(iconSet() !== 'text'
-      ? [
-          t('{icon} main session', { icon: icon('main') }),
-          t('{icons} the panes, as titled', { icons: MONITOR_PANES.map((id) => icon(id)).join(' ') }),
-          t('{pause} / {resume} pause / resume models', { pause: icon('pause'), resume: icon('resume') }),
-          t('{show} show older  {hide} hide them', { show: icon('show'), hide: icon('hide') }),
-          t('{settings} settings  {help} help', { settings: icon('settings'), help: icon('help') }),
-          t('{keys} keys stay in the panel: click it or Esc', { keys: icon('keys') }),
-          t('{open} switch Codex to the selected agent', { open: icon('open') }),
-        ]
-      : []),
-    t("Click a pane's button: open or close it"),
-    head('Mouse', 'mouse'),
-    ...[
-      ...(rich
-        ? [
-            'Click a card: select',
-            'Click its name: select; double-click switches',
-            'A subtask line selects it',
-            'Click a blank row: keys stay here',
-            'Esc: keys back to Codex',
-            'Wheel over the card: its brief',
-          ]
-        : [
-            'Click agent: inspect; double-click switches',
-            'Click a log line: inspect',
-            'Click a blank row: keys stay here',
-            'Esc: keys back to Codex',
-          ]),
-      "Click a pane's title: zoom / restore",
-      "Click the card's band: its level",
-      'PgUp/PgDn or wheel scroll',
-    ].map((line) => t(line)),
-    head('Legend', 'legend'),
-    ...[
-      '1 Home',
-      '↑↓ move  ⏎ expand/collapse  o open  v inspect',
-      '✓ = turn completed',
-      '? = no status evidence',
-      '! = needs a look',
-      '⌕ research  ⚗ experiment  ⚒ fix',
-      '◈ review  ✎ writing  ∑ summary',
-    ].map((line) => t(line)),
-    t('{clocks} turn <1m, the quarter hour, 1h+', {
-      clocks: TURN_CLOCKS.map(([, glyph]) => glyph).join('') + TURN_CLOCK_LONG,
-    }),
-    ...(rich && cardSummary ? [t('Latest note: written by a model')] : []),
-    ...[
-      '~ = written by a model',
-      'status card gutter colour = main session state',
-      '┃ = auto-compact point',
-      '◈N = guardian reviews  +N = folded agents',
-      'yellow clock = quiet 5m+',
-      '──56%── = context or quota used, the % at the fill',
-      'meter: blue, yellow past 70%, red past 85%',
-      'dim name = done 1m+ ago',
-      'mod = changed files',
-      'stale = >30s since read',
-    ].map((line) => t(line)),
-    ...stripAnsi(modelLegend()).split('\n'),
-  ];
-}
 
 /** Whether a pane is open, and so worth reading for. */
 export function paneShown(state: MonitorState, id: MonitorPane): boolean {
@@ -590,126 +428,26 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       style: state.style === 'rich' ? 'rich' : 'compact',
     });
   if (!width || !height) return frame;
-  if (state.help && input.workboard && (!state.helpTab || state.helpTab === 'keys'))
-    return renderWorkboardHelp(input, state, input.workboard, input.nowMs ?? Date.now());
-  if (state.help) {
-    // A heading is painted line by line once wrapped, so each of its lines keeps the colour.
-    // An entry is a key, two spaces, what it does: "{p} {p}  {p} itself" is
-    // one. A line of two shortcuts is split between them, never inside one.
-    const prefix = input.prefix ?? 'Ctrl+\\';
-    const keyStart = new RegExp(`  (?=(?:${prefix.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}|Shift\\+F12) )`);
-    const split = (line: string) => {
-      const out: string[] = [];
-      for (const part of line.split(keyStart)) {
-        if (out.length && !out[out.length - 1].includes('  ')) out[out.length - 1] += `  ${part}`;
-        else out.push(part);
-      }
-      return out;
-    };
-    const entries = (line: string) => (visualLength(line) <= width ? [line] : split(line));
-    const text = helpText(
-      state.style === 'rich',
-      prefix,
-      state.cardVisibility?.cardSummary ?? defaultCardVisibility().cardSummary,
-      Boolean(delegation)
+  if (state.help)
+    return renderWorkboardFrame(
+      input,
+      state,
+      input.workboard ?? {
+        revision: '',
+        lanes: [],
+        workers: [],
+        decisions: [],
+        coverage: { incomplete: false, diagnostics: [], workspace: null },
+      },
+      now
     );
-    // The shortcuts, up to the second heading, are a table: each key without
-    // the prefix its heading names, in a column, and what it does beside it,
-    // wrapped under itself. A line with no key is a sentence.
-    const shortcuts = Math.max(
-      1,
-      text.findIndex((line, i) => i > 0 && typeof line !== 'string')
-    );
-    const keyed = (entry: string) => {
-      const bare = entry.startsWith(`${prefix} `) ? entry.slice(prefix.length + 1) : entry;
-      const at = bare.indexOf('  ');
-      return at > 0 ? { key: bare.slice(0, at), does: bare.slice(at + 2) } : null;
-    };
-    const keys = text
-      .slice(0, shortcuts)
-      .flatMap((line) => (typeof line === 'string' ? split(line).flatMap((entry) => keyed(entry) ?? []) : []));
-    const column = Math.min(HELP_KEY_COLUMN, Math.max(1, ...keys.map((entry) => visualLength(entry.key))));
-    // One page at a time: the lines under the headings of the chosen tab.
-    const page: HelpTab = HELP_TABS.includes(state.helpTab as HelpTab) ? (state.helpTab as HelpTab) : 'keys';
-    let tab: HelpTab = 'keys';
-    let first = true;
-    const help = text.flatMap((line, i) => {
-      if (typeof line !== 'string') tab = line.tab;
-      if (tab !== page) return [];
-      // A blank line parts the sections of a page.
-      // The legend's page is its one section: its tab names it already.
-      if (typeof line !== 'string' && line.tab === 'legend') return [];
-      if (typeof line !== 'string') {
-        const gap = first ? [] : [''];
-        first = false;
-        return [...gap, ...helpLines(line.head, width).map((text) => theme.accent(text))];
-      }
-      if (i >= shortcuts) return entries(line).flatMap((entry) => helpLines(entry, width));
-      return split(line).flatMap((entry) => {
-        const shortcut = keyed(entry);
-        if (!shortcut) return helpLines(entry, width);
-        const key = shortcut.key + ' '.repeat(Math.max(0, column - visualLength(shortcut.key)));
-        const hang = visualLength(key) + 2;
-        // A column too narrow to read beside: what it does goes under the key.
-        if (width - hang < 6)
-          return [
-            theme.value(shortcut.key),
-            ...helpLines(shortcut.does, Math.max(1, width - 2)).map((does) => `  ${does}`),
-          ];
-        return helpLines(shortcut.does, Math.max(1, width - hang)).map((does, j) =>
-          j ? ' '.repeat(hang) + does : `${theme.value(key)}  ${does}`
-        );
-      });
-    });
-    // A modal: its keys are real while it is open, and its way out is a button.
-    // Its pages are tabs beside the title, or on a row of their own where they do not fit.
-    const back = t('[Back]');
-    frame.controls.push({ kind: 'help', x: 0, y: 0, width: visualLength(back) });
-    const title = `${colors.dim(back)} ${theme.accent(t('Help'))}`;
-    const faces = HELP_TABS.map((id) => {
-      const word = t(HELP_TAB_WORDS[id]);
-      const text =
-        id !== page
-          ? colors.dim(` ${word} `)
-          : palette().name === 'none'
-            ? `[${word}]`
-            : theme.tab(theme.bold(` ${word} `));
-      return { id, text };
-    });
-    const tabsWidth = faces.reduce((n, face) => n + visualLength(face.text), 0) + faces.length - 1;
-    const beside = visualLength(title) + 2 + tabsWidth <= width;
-    const header = beside ? [title + '  '] : [title, ''];
-    const y0 = beside ? 0 : 1;
-    if (beside || tabsWidth <= width) {
-      let x = visualLength(header[y0]);
-      for (const face of faces) {
-        frame.controls.push({ kind: 'help-tab', item: face.id, x, y: y0, width: visualLength(face.text) });
-        header[y0] += face.text + ' ';
-        x += visualLength(face.text) + 1;
-      }
-    } else {
-      // Too narrow for every tab: the page shown between the steps to the one before and after.
-      const at = HELP_TABS.indexOf(page);
-      const before = HELP_TABS[(at + HELP_TABS.length - 1) % HELP_TABS.length];
-      const after = HELP_TABS[(at + 1) % HELP_TABS.length];
-      const word = faces[at].text;
-      header[1] = `${colors.dim('‹')} ${word} ${colors.dim('›')}`;
-      frame.controls.push({ kind: 'help-tab', item: before, x: 0, y: 1, width: 1 });
-      frame.controls.push({ kind: 'help-tab', item: after, x: visualLength(header[1]) - 1, y: 1, width: 1 });
-    }
-    const count = Math.max(0, height - header.length - 1);
-    state.helpScroll = Math.max(0, Math.min(state.helpScroll ?? 0, Math.max(0, help.length - count)));
-    frame.helpPage = { count, total: help.length };
-    frame.lines = [...header, ...help.slice(state.helpScroll, state.helpScroll + count)];
-    while (frame.lines.length < height - 1) frame.lines.push('');
-    if (height > 1) frame.lines.push(colors.dim(`↕ ${state.helpScroll + 1}/${help.length}`));
-    frame.lines = frame.lines.slice(0, height).map((line) => truncateAnsi(line, width));
-    return frame;
-  }
   // P2 sidecar seam (q4): production always supplies the workboard sidecar, so the live panel
   // never reaches the no-sidecar path below. It is retained only for legacy/secondary callers
   // and fixtures, draws the same compact work card, and its removal is scheduled after P2.
-  if (input.workboard && (state.focus === 'agents' || (state.focus === 'details' && state.boardInspect))) {
+  if (
+    input.workboard &&
+    (state.focus === 'agents' || state.focus === 'changes' || (state.focus === 'details' && state.boardInspect))
+  ) {
     return renderWorkboardFrame(input, state, input.workboard, now);
   }
   // A pane is drawn as the status card is: a title naming it, then its rows
@@ -728,12 +466,6 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
           ...(notice ? wrapped(notice, Math.max(1, cw - 2)).slice(0, 2) : []),
         ].slice(0, Math.max(0, height - 2))
       : [];
-  // The status card takes the foot, at the level chosen, at most about a
-  // third of the panel; it replaces the key hint's own line.
-  let footPlan = input.workboard
-    ? { rows: 0, draw: (_frame: MonitorFrame, _foot: number) => {} }
-    : planFoot(input, state, width, height, now, noticeRows.length);
-  let footRows = footPlan.rows;
   // Every control the panel has is on its first rows; nothing else is a button.
   const dview = frame.delegation;
   const bar = controlBar(
@@ -748,7 +480,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     width
   );
   const top = Math.min(height, bar.lines.length);
-  let budget = Math.max(0, height - top - footRows - noticeRows.length);
+  let budget = Math.max(0, height - top - noticeRows.length);
   // A closed pane takes no row at all; in the tabs layout only the one shown
   // has rows, all of them, and there is nothing to zoom.
   const zoom = state.zoom;
@@ -757,7 +489,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   // bar, between two panes and above the status card. Not in the frame look,
   // whose edges part them already, and never at a pane's expense: short of
   // a title and a row for each pane besides, there are none.
-  const footed = footRows + noticeRows.length > 0;
+  const footed = noticeRows.length > 0;
   let gaps = !framed && height >= PARTED_FROM && ids.length ? ids.length + (footed ? 1 : 0) : 0;
   if (budget - gaps < 2 * ids.length) gaps = 0;
   budget -= gaps;
@@ -793,16 +525,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     }
     if (!grew) break;
   }
-  // Rows no pane has a use for are the status card's, as far as its brief fills them.
-  if (budget > 0 && footRows && state.style !== 'rich') {
-    footPlan = input.workboard
-      ? { rows: 0, draw: (_frame: MonitorFrame, _foot: number) => {} }
-      : planFoot(input, state, width, height, now, noticeRows.length, footRows + budget);
-    budget += footRows - footPlan.rows;
-    footRows = footPlan.rows;
-  }
-  // What is left goes to the inspector when it has focus, else to the agents
-  // view, where it is the room the art may use. Small worktree lists stay compact.
+  // Spare rows go to the focused Inspector, else the agents view.
   const fillable = order.filter((id) => (sizes.get(id) ?? 0) > 0);
   const fill =
     state.focus === 'details' && fillable.includes('details')
@@ -903,8 +626,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     }
     y += h;
   }
-  const foot = height - footRows;
-  if (input.art) placeArt(frame.lines, foot - noticeRows.length, cw, input.art, top);
+  const foot = height;
   for (let i = 0; i < noticeRows.length; i++)
     frame.lines[foot - noticeRows.length + i] = theme.warning(fit(noticeRows[i], cw));
   if (framed) {
@@ -916,27 +638,5 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
       frame.lines[row] = `${side('│')} ${fit(frame.lines[row], cw)} ${theme.frame('│')}`;
     }
   }
-  footPlan.draw(frame, foot);
   return frame;
-}
-
-/**
- * Put the decoration in the blank run of lines that ends just above `end`,
- * centred, with a blank line kept above and below it so it never touches the
- * brief or the card. It only ever takes lines nothing else drew on, so it
- * goes away by itself as agents and brief text need the room.
- */
-function placeArt(lines: string[], end: number, width: number, art: NonNullable<MonitorData['art']>, first = 1): void {
-  let start = end;
-  while (start > first && stripAnsi(lines[start - 1]).trim() === '') start--;
-  const rows = end - start - 2;
-  if (rows <= 0 || width < 8) return;
-  const drawing = art(width - 2, rows);
-  if (!drawing?.length) return;
-  const cols = Math.max(...drawing.map(visualLength));
-  const left = ' '.repeat(Math.max(0, Math.floor((width - cols) / 2)));
-  const top = start + 1 + Math.floor((rows - drawing.length) / 2);
-  drawing.forEach((line, i) => {
-    lines[top + i] = fit(left + line, width);
-  });
 }

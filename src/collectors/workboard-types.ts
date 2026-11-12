@@ -35,6 +35,16 @@ export interface DecisionRecord {
   readonly evidence: readonly EvidenceRef[];
 }
 export interface OwnerWorker {
+  readonly files?: readonly {
+    rel: string;
+    kind: 'brief' | 'report' | 'review' | 'question';
+    at: number;
+    paths: string[];
+    qid?: string;
+    title?: string;
+    verdict?: string;
+    state?: 'open' | 'answered' | 'departure';
+  }[];
   /** Display-only model sentence; never state or execution evidence. */
   readonly modelSentence?: string;
   readonly work?: import('./work-card.js').WorkFacts;

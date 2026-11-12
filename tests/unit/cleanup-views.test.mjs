@@ -14,7 +14,7 @@ import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 
 const tree = { rootId: 'synthetic', nodes: [], totalCount: 0, updatedAt: new Date(0) };
-test('Settings → LLM shows real hourly usage/cap, including zero and with model text off, in EN/ZH', (t) => {
+test('Settings → Models shows real hourly usage/cap, including zero and with model text off, in EN/ZH', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'hud-settings-calls-'));
   const previous = setLanguage('en');
   t.after(() => {
@@ -36,9 +36,13 @@ test('Settings → LLM shows real hourly usage/cap, including zero and with mode
         assert.ok(frame.lines.every((line) => visualLength(line) === width));
         const text = frame.lines.map(stripAnsi).join('\n');
         assert.match(text, calls.length ? /2\/7/ : /0\/7/);
-        assert.match(text, language === 'en' ? /Model calls this hour/ : /近一小时模型调用/);
+        assert.match(text, language === 'en' ? /Calls this hour/ : /本小时调用/);
         const display = renderSettingsPage({ ...state, selected: 0 }, width, 24, health);
-        assert.doesNotMatch(display.lines.map(stripAnsi).join('\n'), /Model calls this hour|近一小时模型调用/);
+        assert.doesNotMatch(
+          display.lines.map(stripAnsi).join('\n'),
+          /Calls this hour|本小时调用/,
+          'short viewport scrolls to selected Display row'
+        );
       }
     }
   }
@@ -88,13 +92,13 @@ test('Changes keeps key 3 and repository/worktree summary; no file selection, pr
   const pane = frame.panes.find((p) => p.id === 'changes');
   const text = pane.rows.map((row) => stripAnsi(row.text)).join('\n');
   for (const fact of [
-    'Branch: trunk',
-    'HEAD:',
-    '0 ahead',
-    '0 behind',
-    '1 staged',
-    '1 unstaged',
-    '1 untracked',
+    'branch     trunk',
+    'HEAD',
+    'ahead      0',
+    'behind     0',
+    'staged     1',
+    'unstaged   1',
+    'untracked  1',
     'trunk · dirty',
     'side · clean',
   ])
@@ -121,9 +125,9 @@ test('Changes keeps key 3 and repository/worktree summary; no file selection, pr
       .find((p) => p.id === 'changes')
       .rows.map((r) => stripAnsi(r.text))
       .join('\n');
-    assert.match(summary, /Branch: side/);
-    assert.match(summary, /1 unstaged/);
-    assert.match(summary, /0 staged/);
-    assert.doesNotMatch(summary, /Branch: trunk/);
+    assert.match(summary, /branch\s+side/);
+    assert.match(summary, /unstaged\s+1/);
+    assert.match(summary, /staged\s+0/);
+    assert.doesNotMatch(summary, /branch\s+trunk/);
   }
 });

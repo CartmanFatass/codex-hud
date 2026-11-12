@@ -32,7 +32,7 @@ export const workStateGlyph = (card: WorkCard) => {
       : card.state === 'stalled'
         ? mark('◷', '~')
         : card.state === 'in-progress'
-          ? mark('●', '*')
+          ? mark('◉', '@')
           : mark('✓', '+');
 };
 export const workStateInk = (card: WorkCard) => {
@@ -70,7 +70,7 @@ export function stemLines(text: string, width: number, ink = theme.board.muted, 
 export function jobSentenceLine(raw: string, width: number, ink = theme.board.muted): string {
   return jobSentenceRows(raw, width, ink, false)[0];
 }
-function jobSentenceRows(raw: string, width: number, ink: (s: string) => string, full: boolean): string[] {
+export function jobSentenceRows(raw: string, width: number, ink: (s: string) => string, full: boolean): string[] {
   const safe = monitorText(raw).replace(/\s+/g, ' ').trim(),
     room = Math.max(1, width - 3);
   const spans = [...safe.matchAll(/«([^«»]+)»/g)];

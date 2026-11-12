@@ -6,7 +6,7 @@ import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { failed, renderWorkCard, workPhaseText } from './work-card.js';
 import { boardRow, mark } from './workboard-rows.js';
 import { pair, monitorText, fit } from './monitor-text.js';
-import { theme, visualLength } from './colors.js';
+import { theme, visualLength, stripAnsi } from './colors.js';
 import { currentWorker } from './work-visibility.js';
 import { t } from './i18n.js';
 export function workerPriority(w: OwnerWorker, now: number): number {
@@ -89,9 +89,14 @@ export function laneRows(
   }
   const label = `${monitorText(lane.label)}${lane.phase ? '  ' + workPhaseText(lane.phase) : ''}`;
   const strip = laneStrip(lane, state, now, Math.max(Math.floor(width / 3), width - visualLength(label) - 1));
-  const rows = [boardRow(pair(label, strip, width), target)];
+  const header = pair(label, strip, width);
+  const rows = [
+    boardRow(lane.workers.every((w) => !currentWorker(w, now)) ? theme.board.muted(stripAnsi(header)) : header, target),
+  ];
   if (state.boardFolded?.has(lane.id)) return rows;
-  const workers = state.tree.showAll ? lane.workers : [...lane.workers].sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
+  const workers = state.tree.showAll
+    ? lane.workers
+    : [...lane.workers].sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
   for (const worker of workers) {
     const card = projectWorkCard(worker, now, state.cardStallMinutes);
     const logs = worker.nodeId ? input.agentLog?.get(worker.nodeId) : undefined;
@@ -104,8 +109,7 @@ export function laneRows(
       worker.homeNeedsHuman && !worker.modelSentence
         ? renderWorkCard(card, state, width, '').slice(0, 1)
         : renderWorkCard(card, state, width, sentence);
-    if (!currentWorker(worker, now) && !state.boardExpanded?.has(key))
-      lines = [fit(`${t('older item')} · ${lines[0]}`, width)];
+    if (!currentWorker(worker, now) && !state.boardExpanded?.has(key)) lines = [theme.board.muted(stripAnsi(lines[0]))];
     rows.push(...lines.map((text) => ({ text, item: key, key })));
   }
   rows.push(boardRow(''));

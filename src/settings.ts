@@ -7,7 +7,6 @@ import {
   BAR_FIELDS,
   BAR_STYLES,
   DEFAULT_BAR_FIELDS,
-  LOOKS,
   type HudDisplayConfig,
   type IconMode,
 } from './render/hud-config.js';
@@ -18,7 +17,10 @@ import { PREFIX_KEYS, type PrefixKey } from './utils/panel-command.js';
 /** The prefix before Ctrl+\ was the default, kept by settings files saved without one. */
 export const LEGACY_PREFIX_KEY: PrefixKey = 'C-]';
 
-export interface HudSettings extends HudDisplayConfig, CardVisibility {
+export interface HudSettings
+  extends
+    Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'>,
+    Omit<CardVisibility, 'cardClock'> {
   statusline: boolean;
   sort: 'active' | 'created';
   mouse: boolean;
@@ -43,11 +45,6 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
    * card; a failed or flagged one always gets its line.
    */
   importantRoles: string;
-  /**
-   * How the panel shows the agents: `rich`, a card per agent with the recap
-   * as a card above them; `compact`, the tree with the brief and log under it.
-   */
-  panelStyle: 'rich' | 'compact';
   worktreeRoot: string;
   modelEnabled: boolean;
   /** The tree panel's and the brief's language; auto follows the locale. */
@@ -57,56 +54,33 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
   model: string;
   /** Show each agent's log under the tree even with the model backend off (observed entries only). */
   agentLog: boolean;
-  /** The cards' corners: square (`┌ └`) or round (`╭ ╰`). */
-  cardCorners: 'square' | 'round';
   /** Display-only inactivity threshold, never an execution deadline. */
   cardStallMinutes: number;
-  /**
-   * How much the status card at the foot of the panel shows: `min`, its top
-   * edge alone, the session's state on it; `status`, the bar's fields;
-   * `full`, those and the main session's brief under them (rich only:
-   * compact shows the brief above).
-   */
-  statusCard: 'min' | 'status' | 'full';
   /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
   modelCallsPerHour: number;
   /** Notifications in tmux on approvals, failures and finished agents. CODEX_HUD_NOTIFY, when set, wins. */
   notify: boolean;
   /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
   notifyDesktop: boolean;
-  /** A picture drawn in text in the panel's empty space, and its style. */
-  art: 'off' | 'dots' | 'color' | 'ascii';
-  /** The picture: any image ffmpeg can read. `codex-hud-art <image>` sets it. */
-  artImage: string;
   /**
    * The tmux key in front of every panel command (`Ctrl+\` then `,` opens
    * settings; `Ctrl+]` for files saved before it was the default). Only keys checked against Codex's own bindings are offered;
    * see PREFIX_KEYS. bin/codex-hud-keys installs it.
    */
   prefixKey: PrefixKey;
-  /**
-   * The control bar's buttons and the panes' titles: Unicode icons
-   * (`unicode`, the default), Nerd Font icons (`nerd`, for a terminal with
-   * one), emoji for the panes (`emoji`), each beside its word where it fits,
-   * or the words alone (`text`), there and wherever else a mark could stand
-   * for a word. The model badge has its own setting, `glyphs`.
-   */
+  /** Unicode marks or their ASCII/text equivalents. Old icon sets load as unicode. */
   icons: IconMode;
 }
 
 /** Built-in defaults; callers apply environment or runtime display overrides. */
 export function defaultSettings(): HudSettings {
+  const { cardClock: _clock, ...visibility } = defaultCardVisibility();
   return {
-    ...defaultCardVisibility(),
-    density: 'balanced',
+    ...visibility,
     theme: 'terminal',
-    glyphs: 'both',
-    motion: 'full',
-    context: 'used',
     barStyle: 'line',
     barFields: [...DEFAULT_BAR_FIELDS],
     agentColors: 'name',
-    look: 'tab',
     statusline: true,
     sort: 'active',
     mouse: true,
@@ -118,7 +92,6 @@ export function defaultSettings(): HudSettings {
     agentsPane: 'open',
     changesPane: 'closed',
     detailsPane: 'closed',
-    panelStyle: 'rich',
     importantRoles: '',
     worktreeRoot: '',
     modelEnabled: (() => {
@@ -132,15 +105,11 @@ export function defaultSettings(): HudSettings {
     language: 'auto',
     briefingApiBase: 'https://api.mistral.ai/v1',
     model: 'deepseek-v4-1-flash-1017',
-    statusCard: 'full',
     modelCallsPerHour: 60,
     agentLog: false,
-    cardCorners: 'square',
     cardStallMinutes: 10,
     notify: false,
     notifyDesktop: false,
-    art: 'off',
-    artImage: '',
     prefixKey: 'C-\\',
     icons: 'unicode',
   };
@@ -162,11 +131,7 @@ const isText =
 
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusline: isBoolean,
-  density: oneOf('focus', 'balanced', 'full'),
   theme: oneOf('terminal', 'mocha', 'latte', 'titanium', 'none'),
-  glyphs: oneOf('glyph', 'text', 'both'),
-  motion: oneOf('full', 'reduced'),
-  context: oneOf('used', 'remaining'),
   barStyle: oneOf(...BAR_STYLES),
   barFields: (value) =>
     Array.isArray(value) && value.every((field) => (BAR_FIELDS as readonly unknown[]).includes(field)),
@@ -182,16 +147,12 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   changesPane: oneOf('open', 'closed'),
   detailsPane: oneOf('open', 'closed'),
   importantRoles: isText(1000),
-  panelStyle: oneOf('rich', 'compact'),
-  look: oneOf(...LOOKS),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
   language: oneOf('auto', 'en', 'zh'),
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
   model: isText(200),
-  statusCard: oneOf('min', 'status', 'full'),
   agentLog: isBoolean,
-  cardCorners: oneOf('square', 'round'),
   cardStallMinutes: (value) => isIntegerBetween(value, 1, 120),
   cardRoleCounts: isBoolean,
   cardLabel: isBoolean,
@@ -204,16 +165,13 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   cardSubagentScope: oneOf('live', 'important', 'all'),
   cardModel: isBoolean,
   cardReviews: isBoolean,
-  cardClock: isBoolean,
   cardRate: isBoolean,
   cardContext: isBoolean,
   notify: isBoolean,
   notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
-  art: oneOf('off', 'dots', 'color', 'ascii'),
-  artImage: isText(4096),
   prefixKey: oneOf(...PREFIX_KEYS),
-  icons: oneOf('unicode', 'nerd', 'emoji', 'text'),
+  icons: oneOf('unicode', 'text'),
 };
 
 const PANE_KEYS = ['agentsPane', 'changesPane', 'detailsPane'] as const;

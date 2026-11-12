@@ -8,6 +8,7 @@ import { requestLines, stemLines } from './work-card.js';
 import { theme } from './colors.js';
 import { fit, pair, monitorText } from './monitor-text.js';
 import { t } from './i18n.js';
+import { currentWorker, currentDecision } from './work-visibility.js';
 export function homeRows(
   board: WorkboardSnapshot,
   state: MonitorState,
@@ -83,7 +84,13 @@ export function homeRows(
     }
   rows.push(...decisionBlock(board, state, width, now, input?.workboard));
   const source = input?.workboard;
-  const hidden = source ? source.workers.length - board.workers.length + source.decisions.length - board.decisions.length : 0;
-  if (hidden) rows.push(boardRow(theme.dim(t('+{n} older · a', { n: hidden }))));
+  const hidden = source
+    ? source.workers.filter((w) => !currentWorker(w, now)).length +
+      source.decisions.filter((d) => !currentDecision(d, now)).length
+    : 0;
+  if (hidden)
+    rows.push(
+      boardRow(theme.board.muted(t(state.tree.showAll ? '{n} older shown · a hide' : '+{n} older · a', { n: hidden })))
+    );
   return rows;
 }

@@ -1,7 +1,10 @@
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-import { colors, theme, truncateAnsi, visualLength } from './colors.js';
+import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
-import { flowLines, monitorText } from './monitor-text.js';
+import { flowLines, monitorText, pair } from './monitor-text.js';
+import { subTopRow, footRow, mark } from './workboard-rows.js';
+import { stemLines } from './work-card.js';
+import { SETTING_ROWS, rowValue, valueText, type SettingsPageState } from './settings-page.js';
 
 export type SettingsLeaveChoice = 'save' | 'discard' | 'cancel';
 export interface SettingsConfirmationState {
@@ -30,22 +33,41 @@ export function renderSettingsConfirmation(
   state: SettingsConfirmationState,
   width: number,
   height: number,
-  navigationRows = 0
+  navigationRows = 0,
+  settings?: SettingsPageState
 ): SettingsConfirmationFrame {
   width = Math.max(0, Math.floor(width));
   height = Math.max(0, Math.floor(height));
-  const lines = base.slice(0, Math.min(height, navigationRows));
+  const lines = [subTopRow(t('Settings'), theme.board.attention(t('unsaved')), width)].slice(0, height);
   const controls: SettingsConfirmationFrame['controls'] = [];
-  if (lines.length < height) lines.push(theme.strong(t('Unsaved settings')));
+  const changed = settings?.original
+    ? SETTING_ROWS.filter((row) => rowValue(row, settings.draft) !== rowValue(row, settings.original!))
+    : [];
   const remaining = height - lines.length;
   const message = state.error ? monitorText(state.error) : t('Save your changes before leaving?');
   // Three decisions take precedence over explanation in a short terminal.
   const messageRows = Math.max(0, Math.min(3, remaining - CHOICES.length));
+  if (lines.length < height) lines.push('');
   lines.push(
     ...flowLines(message, width)
       .slice(0, messageRows)
-      .map((line) => (state.error ? theme.warning(line) : colors.dim(line)))
+      .map((line, i) =>
+        theme.board.askTitle(
+          fit(i === 0 && width >= 56 ? pair(line, t('{n} changed', { n: changed.length }), width) : line, width)
+        )
+      )
   );
+  for (const row of changed) {
+    if (lines.length >= height - 5) break;
+    lines.push(
+      ...stemLines(
+        `${t(row.label)}  ${valueText(row, rowValue(row, settings!.original!))} ${mark('→', '->')} ${valueText(row, rowValue(row, settings!.draft))}`,
+        width
+      )
+        .slice(0, height - 5 - lines.length)
+        .map((line) => theme.board.slab(line))
+    );
+  }
   const shownChoices =
     height - lines.length < CHOICES.length
       ? [state.choice, ...CHOICES.filter((choice) => choice !== state.choice)]
@@ -54,12 +76,12 @@ export function renderSettingsConfirmation(
     if (lines.length >= height) break;
     const selected = choice === state.choice;
     const label = t(width < 24 ? SHORT[choice] : LABELS[choice]);
-    const text = ` ${selected ? '›' : ' '} ${label}`;
+    const text = `  ${label}`;
     controls.push({ choice, x: 0, y: lines.length, width });
-    lines.push(selected ? theme.selected(theme.strong(text)) : text);
+    lines.push(selected ? theme.board.selected(fit(text, width)) : text);
   }
-  if (lines.length < height) lines.push(colors.dim(t('←→ choose · Enter confirms · Esc keeps editing')));
-  while (lines.length < height) lines.push('');
+  while (lines.length < height - 1) lines.push('');
+  if (lines.length < height) lines.push(footRow('', t('←→ choose  ⏎ confirm  esc keep editing'), width));
   return { lines: lines.map((line) => fit(line, width)), controls };
 }
 

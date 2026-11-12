@@ -8,9 +8,8 @@ import type {
   MonitorRect,
   MonitorRow,
   MonitorState,
-  HelpTab,
 } from './monitor.js';
-import { MONITOR_PANES, HELP_TABS, listedAgents } from './monitor.js';
+import { MONITOR_PANES, listedAgents } from './monitor.js';
 import { applyKey } from './panel-state.js';
 import { workboardInput } from './workboard-input.js';
 import {
@@ -26,7 +25,6 @@ import { stepStop, stopsOf } from './delegation/selection.js';
 import type { DelegationView } from './delegation/panel.js';
 import { directions } from './directions.js';
 import { WHEEL_ROWS } from './agents-view.js';
-import { nextLevel } from './status-foot.js';
 
 /**
  * A click on a pane's button, or its number after the prefix: an open pane
@@ -41,12 +39,6 @@ function closePane(state: MonitorState, id: MonitorPane): MonitorState {
   const modes = { ...state.modes, [id]: 'closed' as const };
   const focus = state.focus !== id ? state.focus : (MONITOR_PANES.find((pane) => modes[pane] !== 'closed') ?? id);
   return { ...state, modes, zoom: state.zoom && state.focus !== id, focus };
-}
-/** `r` or the band: step the level that is on screen. */
-function cycleStatus(state: MonitorState, ctx: MonitorContext): void {
-  const height = ctx.frame?.lines.length ?? Number.POSITIVE_INFINITY;
-  state.statusLevel = nextLevel(state, height);
-  state.statusScroll = 0;
 }
 function openPane(state: MonitorState, id: MonitorPane): MonitorState {
   const preview = state.preview;
@@ -104,23 +96,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       ctx.frame?.controls.some(
         (c) => c.kind === 'help' && input.y === c.y && input.x >= c.x && input.x < c.x + c.width
       );
-    const tab =
-      input.type === 'mouse' && input.button === 'left'
-        ? ctx.frame?.controls.find(
-            (c) => c.kind === 'help-tab' && input.y === c.y && input.x >= c.x && input.x < c.x + c.width
-          )
-        : undefined;
-    const pages = HELP_TABS;
-    const at = Math.max(0, pages.indexOf(next.helpTab ?? 'keys'));
     if (back || ['escape', 'help', 'enter'].includes(key)) next.help = false;
-    // Its pages: a click on a tab, or Tab and the arrows across.
-    else if (tab?.item) {
-      next.helpTab = tab.item as HelpTab;
-      next.helpScroll = 0;
-    } else if (['tab', 'right', 'shift-tab', 'left'].includes(key)) {
-      next.helpTab = pages[(at + (key === 'tab' || key === 'right' ? 1 : pages.length - 1)) % pages.length];
-      next.helpScroll = 0;
-    } else {
+    else {
       if (input.type === 'mouse')
         key = input.button === 'wheel-down' ? 'down' : input.button === 'wheel-up' ? 'up' : '';
       const page = Math.max(1, ctx.frame?.helpPage?.count ?? 1);
@@ -173,10 +150,6 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
       return result();
     }
     if (control?.kind === 'brief') return result({ type: 'brief-toggle' });
-    if (control?.kind === 'level') {
-      cycleStatus(next, ctx);
-      return result({ type: 'status-level' });
-    }
     // What was clicked is in view already: selecting it does not scroll.
     const pick = (id: string) => {
       next.tree.selectedId = id;
@@ -202,19 +175,6 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     if (control?.kind === 'switch' && control.item) {
       pick(control.item);
       return result({ type: 'pick', id: control.item });
-    }
-    // The wheel over the status card scrolls its brief, the rows above it stay.
-    const card = ctx.frame?.statusCard;
-    if (input.button !== 'left' && card && input.y >= card.y && input.y < card.y + card.height) {
-      if (card.total > card.brief)
-        next.statusScroll = Math.max(
-          0,
-          Math.min(
-            card.total - card.brief,
-            (next.statusScroll ?? 0) + (input.button === 'wheel-down' ? WHEEL_ROWS : -WHEEL_ROWS)
-          )
-        );
-      return result();
     }
     {
       const pane = ctx.frame?.panes.find(
@@ -269,11 +229,6 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   if (key === 'settings') return result({ type: 'settings' });
   if (key === 'inspect' || key === 'activate') key = 'enter';
   if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
-  // `r` is Reset on the settings page; here it changes how much the status card shows.
-  if (key === 'reset') {
-    cycleStatus(next, ctx);
-    return result({ type: 'status-level' });
-  }
   if (key === 'main') return result({ type: 'switch', id: ctx.tree.rootId });
   // `o`, `L` and `R` on a delegation row: Open or Switch, Log, Reconcile or Resume. Each acts when its button is drawn.
   if (key === 'open-session' && (del || next.delegating)) return rowAction('delegation-open', openKeyAction);

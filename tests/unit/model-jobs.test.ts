@@ -34,12 +34,12 @@ test('LLM has only switch, model and cap; key defaults on and old feature settin
     assert.equal('briefing' in draft, false);
     assert.equal('changeSummary' in draft, false);
     assert.deepEqual(
-      SETTING_ROWS.filter((r) => r.group === 'LLM').map((r) => r.key),
+      SETTING_ROWS.filter((r) => r.group === 'Models').map((r) => r.key),
       ['modelEnabled', 'model', 'modelCallsPerHour']
     );
     const text = stripAnsi(
       renderSettingsPage(
-        { draft, selected: SETTING_ROWS.findIndex((r) => r.group === 'LLM'), offset: 0, message: '' },
+        { draft, selected: SETTING_ROWS.findIndex((r) => r.group === 'Models'), offset: 0, message: '' },
         100,
         30
       ).lines.join('\n')

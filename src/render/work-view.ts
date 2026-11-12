@@ -1,73 +1,72 @@
-/** Passive Home viewport. The full width belongs to the rows, including column zero. */
+/** One frame grammar for Home and the kept passive pages. */
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
-import { icon } from './control-bar.js';
-import { workInspectorRows } from './work-inspector.js';
+import { boardInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
 import { visibleWorkboard } from './work-visibility.js';
-import { boardCursor, boardRow, section, workerRow, decisionTitle } from './workboard-rows.js';
+import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
+import { changesRows } from './monitor-panes.js';
 import { theme, visualLength } from './colors.js';
-import { fit, monitorText, flowLines } from './monitor-text.js';
+import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
-export function boardInspectorRows(
-  input: MonitorData,
-  board: WorkboardSnapshot,
-  state: MonitorState,
-  width: number
-): MonitorRow[] {
-  const target = state.boardInspect;
-  if (!target) return [];
-  const lane = board.lanes.find((l) => l.id === target.laneId);
-  if (!lane) return [{ text: t('Source no longer available') }];
-  const rows = [section(t('Source details'), width)];
-  const add = (label: string, value: string) =>
-    rows.push(...flowLines(`${t(label)}: ${monitorText(value)}`, width).map((text) => ({ text })));
-  add('Title', lane.title);
-  const decision = target.kind === 'decision' ? lane.decisions.find((d) => d.id === target.decisionId) : null;
-  if (decision) {
-    add('answer', decisionTitle(decision));
-    if (decision.question) add('asked', decision.question);
-    if (decision.instead) add('instead of', decision.instead);
-  } else if (target.kind === 'worker') {
-    const worker = lane.workers.find((w) => w.id === target.workerId);
-    if (worker)
-      rows.push(
-        workerRow(worker, width, input.nowMs ?? 0),
-        ...workInspectorRows(worker, state, width, input.nowMs ?? 0)
-      );
-  }
-  return rows;
-}
-/** Key hints are separated by two spaces; whole hints are dropped from the right until the rest fits `room`. */
-export function footHints(hints: string, room: number): string {
-  const parts = hints.split('  ');
-  while (parts.length && visualLength(parts.join('  ')) > room) parts.pop();
-  return parts.join('  ');
-}
-export function renderWorkboardHelp(
-  input: MonitorData,
-  state: MonitorState,
-  board: WorkboardSnapshot,
-  now: number
-): MonitorFrame {
-  const frame = renderWorkboardFrame(input, state, board, now);
-  const words = [
-    'Help — Shortcuts',
-    '1 Home · , Settings · ? Help',
-    '↑↓ move · ⏎ expand/collapse · o open · v inspect',
-    'b: pause / resume models',
-    'a: show/hide older jobs and decisions',
-    'Esc: back',
+export { footHints } from './workboard-rows.js';
+function helpRows(input: MonitorData, width: number): MonitorRow[] {
+  const half = width >= 80 ? Math.floor((width - 4) / 2) : width;
+  const keys = [
+    section(t('Keys'), half),
+    ...[
+      ['1', 'Home'],
+      ['3', 'Changes'],
+      ['↑ ↓', 'move'],
+      ['⏎', 'expand / collapse in place'],
+      ['o', 'open the file in $EDITOR'],
+      ['v', 'inspect: details and files'],
+      ['a', 'show / hide older jobs and decisions (Home)'],
+      ['n N', 'next / previous trouble (Home)'],
+      ['b', 'models on / off'],
+      [',', 'Settings'],
+      ['?', 'this page'],
+      ['Esc', 'back'],
+    ].flatMap(([key, label]) => kvRows(key, t(label), half, undefined, 7)),
   ];
-  frame.lines = frame.lines.map((_, i) => fit(t(words[i] ?? ''), input.width));
-  frame.controls = [];
-  return frame;
+  const marks = [
+    section(t('Marks'), half),
+    boardRow(
+      `${theme.board.success(mark('✓', '+'))} ${t('done')}      ${theme.board.active(mark('◉', '@'))} ${t('running')}   ${theme.board.attention('?')} ${t('asking you')}`
+    ),
+    boardRow(
+      `${theme.board.danger(mark('✗', 'x'))} ${t('failed')}    ${theme.board.muted(mark('−', '-'))} ${t('stopped')}   ${theme.board.stalled(mark('◷', '~'))} ${t('stalled')}`
+    ),
+    boardRow(`${theme.board.attention(mark('◆', '*'))} ${t('answer differs from the default')}`),
+    boardRow(`${theme.board.muted(mark('◇', 'o'))} ${t('answer as proposed')}`),
+    boardRow(`${theme.board.active(mark('┃', '|'))} ${t('body of a card')}`),
+    ...flowLines(t('dim rows are older ones, shown with a'), half).map((s) => boardRow(theme.board.muted(s))),
+    ...flowLines(t('lavender words are marked by the model'), half).map((s) => boardRow(theme.board.identifier(s))),
+  ];
+  const rows =
+    width < 80
+      ? [...keys, boardRow(''), ...marks]
+      : Array.from({ length: Math.max(keys.length, marks.length) }, (_, i) =>
+          boardRow(fit(keys[i]?.text ?? '', half) + '    ' + fit(marks[i]?.text ?? '', width - half - 4))
+        );
+  const notes = [
+    'In the Inspector ⏎ opens the file',
+    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
+  ];
+  rows.push(boardRow(''), ...notes.flatMap((s) => flowLines(t(s), width).map((s) => boardRow(theme.board.muted(s)))));
+  if (input.embedded)
+    rows.push(
+      ...flowLines(t("In Codex's own panel press {p} first", { p: input.prefix ?? 'Ctrl+\\' }), width).map((s) =>
+        boardRow(theme.board.muted(s))
+      )
+    );
+  return [boardRow(''), ...rows];
 }
 export function renderWorkboardFrame(
   input: MonitorData,
   state: MonitorState,
-  board: WorkboardSnapshot,
+  source: WorkboardSnapshot,
   now: number
 ): MonitorFrame {
   const width = Math.max(0, Math.floor(input.width)),
@@ -79,16 +78,50 @@ export function renderWorkboardFrame(
     controls: [],
   };
   if (!width || !height) return frame;
-  const inspector = state.focus === 'details';
-  board = visibleWorkboard(input, board, state, now);
-  const title = ` ${t('Home')} `, x = visualLength(title);
-  frame.controls.push({ kind: 'board-home', x: 0, y: 0, width: x });
-  const models = input.modelEnabled !== undefined && x + 3 <= width;
-  frame.lines[0] = fit(theme.board.title(title) + (models ? ` ${icon(input.modelEnabled ? 'pause' : 'resume')} ` : ''), width);
-  if (models) frame.controls.push({ kind: 'brief', x, y: 0, width: 3 });
-  let rows = inspector
-    ? boardInspectorRows(input, board, state, width)
-    : homeRows(board, state, width, now, input);
+  const help = state.help,
+    inspector = !help && state.focus === 'details',
+    changes = !help && state.focus === 'changes';
+  const sub = inspector || help || changes;
+  const board = inspector ? source : visibleWorkboard(input, source, state, now);
+  const target = state.boardInspect;
+  const lane = board.lanes.find((l) => l.id === target?.laneId);
+  const decision = target?.kind === 'decision' ? lane?.decisions.find((d) => d.id === target.decisionId) : undefined;
+  const worker =
+    target?.kind === 'worker'
+      ? lane?.workers.find((w) => w.id === target.workerId)
+      : lane?.workers.find((w) => w.evidence.some((e) => e.sourceId === decision?.evidence[0]?.sourceId));
+  const crumb = help
+    ? t('Help')
+    : changes
+      ? t('Changes')
+      : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}${target?.kind === 'decision' ? ' ' + (lane?.decisions.find((d) => d.id === target.decisionId)?.evidence[0]?.relativePath.match(/q\d+/)?.[0] ?? '') : ''}`;
+  if (sub) {
+    frame.lines[0] = subTopRow(crumb, '', width);
+    frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width: 2 });
+  } else {
+    const count = board.workers.filter((w) => w.homeNeedsHuman).length;
+    const title = ` ${t('Home')}${count ? ' ' + theme.board.attention(String(count)) : ''} `;
+    const models = t(input.modelEnabled === false ? 'models off' : 'models on');
+    frame.lines[0] = pair(
+      theme.board.title(title),
+      (input.modelEnabled === false ? theme.board.attention : theme.board.muted)(models),
+      width
+    );
+    frame.controls.push({ kind: 'board-home', x: 0, y: 0, width: visualLength(title) });
+    frame.controls.push({
+      kind: 'brief',
+      x: Math.max(0, width - visualLength(models)),
+      y: 0,
+      width: visualLength(models),
+    });
+  }
+  const rows = help
+    ? helpRows(input, width)
+    : changes
+      ? [boardRow(''), ...changesRows(input, state, width, now)]
+      : inspector
+        ? boardInspectorRows(lane, state.boardInspect, state, width, now)
+        : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   const targets = new Map<string, WorkTarget>();
@@ -101,36 +134,74 @@ export function renderWorkboardFrame(
     for (const target of all) targets.set(targetKey(target), target);
   }
   let selected = state.homeTarget;
-  if (!selected || !rows.some((r) => r.item === targetKey(selected!)))
-    selected = rows.flatMap((r) => (r.item && targets.has(r.item) ? [targets.get(r.item)!] : []))[0];
-  state.homeTarget = selected;
-  const key = selected ? targetKey(selected) : '',
-    cursorAt = rows.findIndex((r) => r.item === key);
-  const room = Math.max(0, height - 2),
+  if (!sub && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
+    const order = source.lanes.flatMap((l) => [
+      { kind: 'lane' as const, laneId: l.id },
+      ...l.workers.map((w) => ({ kind: 'worker' as const, laneId: l.id, workerId: w.id })),
+      ...l.decisions.map((d) => ({ kind: 'decision' as const, laneId: l.id, decisionId: d.id })),
+    ]);
+    const at = order.findIndex((t) => selected && targetKey(t) === targetKey(selected));
+    selected = order
+      .map((target, i) => ({ target, distance: Math.abs(i - at) }))
+      .filter(({ target }) => rows.some((r) => r.item === targetKey(target)))
+      .sort((a, b) => a.distance - b.distance)[0]?.target;
+    state.homeTarget = selected;
+  }
+  const files = rows.filter((r) => r.files?.length);
+  if (inspector && !files.some((r) => r.item === state.inspectCursor))
+    state.inspectCursor =
+      files.find((r) => r.files?.[0].endsWith(worker?.work?.requestInfo?.evidence?.relativePath ?? '/report.md'))
+        ?.item ?? files[0]?.item;
+  const key = inspector ? state.inspectCursor : selected ? targetKey(selected) : '';
+  const cursorAt = rows.findIndex((r) => r.item === key),
+    room = Math.max(0, height - 2),
     max = Math.max(0, rows.length - room);
-  let offset = Math.max(
-    0,
-    Math.min(max, inspector ? state.scroll.details : (state.homeScroll ?? 0))
-  );
-  if (!inspector && key && state.boardRevealed !== key && room) {
+  const scroll = help
+    ? (state.helpScroll ?? 0)
+    : sub
+      ? state.scroll[changes ? 'changes' : 'details']
+      : (state.homeScroll ?? 0);
+  let offset = Math.max(0, Math.min(max, scroll));
+  if (!help && !changes && key && state.boardRevealed !== key && room) {
     if (cursorAt < offset) offset = cursorAt;
     else if (cursorAt >= offset + room) offset = cursorAt - room + 1;
     state.boardRevealed = key;
   }
-  if (inspector) state.scroll.details = offset;
+  if (help) {
+    state.helpScroll = offset;
+    frame.helpPage = { count: room, total: rows.length };
+  } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
   else state.homeScroll = offset;
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
     if (!row) continue;
     const text = fit(row.paint?.() ?? row.text, width);
-    frame.lines[i + 1] = !inspector && offset + i === cursorAt ? boardCursor(text) : text;
+    frame.lines[i + 1] = !help && !changes && offset + i === cursorAt ? boardCursor(text) : text;
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 });
   }
-  const foot = footHints(inspector ? t('Esc: back') : t('↑↓ move  ⏎ expand  o open  a all'), width);
-  if (height > 1) frame.lines[height - 1] = fit(theme.dim(foot), width);
+  const today = new Date(now).toDateString();
+  const done = source.workers.filter(
+    (w) =>
+      ['done', 'completed', 'closed', 'idle_grace'].includes(w.state) &&
+      w.settledAt !== null &&
+      new Date(w.settledAt).toDateString() === today
+  ).length;
+  const hints = help
+    ? '↑↓ scroll  esc back'
+    : inspector
+      ? '↑↓ move  ⏎ open  esc back'
+      : changes
+        ? '↑↓ scroll  esc back'
+        : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help';
+  if (height > 1)
+    frame.lines[height - 1] = footRow(
+      sub ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
+      t(hints),
+      width
+    );
   frame.lines = frame.lines.map((line) => fit(line, width));
   frame.panes.push({
-    id: inspector ? 'details' : 'agents',
+    id: inspector ? 'details' : changes ? 'changes' : 'agents',
     x: 0,
     y: 1,
     width,

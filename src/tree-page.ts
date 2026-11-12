@@ -36,7 +36,6 @@ import {
   handleSettingsInput,
   settingsDirty,
   resetSettingsGroup,
-  resetAllPreferences,
   SETTING_ROWS,
   type SettingsPageState,
   type SettingsFrame,
@@ -73,7 +72,6 @@ import {
   msUntilCountdownChanges,
   finishedAt,
   paneShown,
-  panelTop,
   type MonitorFrame,
 } from './render/monitor.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
@@ -95,7 +93,6 @@ import {
 import { collectionObservation } from './utils/collection-observation.js';
 import { ProgressSummarizer, progressTargets } from './collectors/progress-summary.js';
 import { cardSummaryTargets } from './render/cards.js';
-import { controlBar } from './render/control-bar.js';
 import { AgentLog, logsIn, MODEL_KINDS } from './collectors/agent-log.js';
 import {
   ModelJobs,
@@ -112,9 +109,6 @@ import { HudStatus } from './collectors/hud-status.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { resolveResetTime } from './render/quota.js';
-import { statusCard, sessionState } from './render/status-block.js';
-import { artSize, renderArt, type ArtBitmap } from './render/art.js';
-import { loadArtImage } from './collectors/art-image.js';
 import { t, setLanguage, resolveLanguage } from './render/i18n.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
 import type { HealthSource } from './collectors/hud-health.js';
@@ -709,31 +703,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         now: Date.now(),
       })
     );
-  // The decoration picture, decoded once per path; a failed read means none.
-  let art: { path: string; bitmap: ArtBitmap | null } = { path: '', bitmap: null };
-  const loadArt = () => {
-    const path = settings.art === 'off' ? '' : settings.artImage;
-    if (path === art.path) return;
-    art = { path, bitmap: null };
-    if (!path) {
-      render();
-      return;
-    }
-    loadArtImage(path)
-      .then((bitmap) => {
-        if (art.path === path) {
-          art.bitmap = bitmap;
-          render();
-        }
-      })
-      .catch(() => {});
-  };
-  const drawArt = (cols: number, rows: number) => {
-    const style = settings.art;
-    if (!art.bitmap || style === 'off') return null;
-    const size = artSize(art.bitmap, cols, rows);
-    return size ? renderArt(art.bitmap, style, size.cols, size.rows) : null;
-  };
   const configureModel = () => {
     modelOn =
       settings.modelEnabled &&
@@ -778,9 +747,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let repaintTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveDone = () => {};
 
-  // The panel's top as a draft of the settings would draw it.
-  const previewTop = (draft: HudSettings, width: number) =>
-    withDisplaySettings(draft, () => panelTop({ tree }, state, width));
   const render = () => {
     if (closed) return;
     syncPanelView();
@@ -788,24 +754,17 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       let lines: string[];
       if (settingsPage) {
         // Key roles offers the roles the subtasks have now.
-        settingsFrame = renderSettingsPage(
-          { ...settingsPage, roles: subtaskRoles(tree) },
-          process.stdout.columns || 30,
-          process.stdout.rows || 24,
-          {
-            state: hudStatus.health.current(),
-            modelCalls: model.usage(),
-            probe: probe.current(),
-            settingsFile: shortPath(settingsPath()),
-          },
-          previewTop,
-          controlBar(
-            state,
+        settingsFrame = withDisplaySettings(settingsPage.draft, () =>
+          renderSettingsPage(
+            { ...settingsPage!, roles: subtaskRoles(tree) },
+            process.stdout.columns || 30,
+            process.stdout.rows || 24,
             {
-              settingsActive: true,
-              expired: 0,
-            },
-            process.stdout.columns || 30
+              state: hudStatus.health.current(),
+              modelCalls: model.usage(),
+              probe: probe.current(),
+              settingsFile: shortPath(settingsPath()),
+            }
           )
         );
         settingsPage = settingsFrame.state;
@@ -816,7 +775,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
             settingsLeave,
             process.stdout.columns || 30,
             process.stdout.rows || 24,
-            settingsFrame.headerY
+            1,
+            settingsPage
           );
           lines = confirmationFrame.lines;
         }
@@ -838,6 +798,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           tree,
           workboard: decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree, panelDelegation))),
           modelEnabled: settings.modelEnabled,
+          mouse: settings.mouse,
+          embedded: !STANDALONE_PANEL,
           state,
           worktrees,
           error,
@@ -848,7 +810,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
             jobRender.notice ||
             hudProblems(hud, nowMs, t)[0],
           loading: jobRender.loading,
-          art: drawArt,
           prefix: prefixName(settings.prefixKey),
           agentLog: agentLogs,
           progress: progress.state(),
@@ -856,8 +817,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
             backendOn: modelOn,
             targets: cardSummaryTargets({ tree, agentLog: agentLogs }, state, nowMs),
           },
-          status: (nowMs) => statusCard(hud ?? null, nowMs),
-          session: (nowMs) => sessionState(hud ?? null, nowMs),
           width,
           height: process.stdout.rows || 24,
           linkNames: mainCols === null || mainCols >= 63,
@@ -1307,14 +1266,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       jobs.apply(tree, switches(), resolveLanguage(settings.language));
       if (!jobsOn()) jobs.stop();
       armCollect();
-      loadArt();
       state = {
         ...state,
         ...monitorSettings(settings),
         tree: { ...state.tree, sort: settings.sort, lingerMs: settings.finishedLingerMs },
         modes: monitorModes(settings),
         zoom: false,
-        statusScroll: 0,
         scroll: { ...state.scroll, agents: 0 },
         revealed: null,
       };
@@ -1427,25 +1384,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         if (input.key === 'close') input = { type: 'key', key: 'escape' };
       }
       if (input.type === 'paste') continue;
-      if (settingsPage && settingsFrame && input.type === 'mouse' && input.button === 'left') {
-        const { x, y } = input;
-        const hit = settingsFrame.navigationControls.find((c) => y === c.y && x >= c.x && x < c.x + c.width);
-        if (hit) {
-          if (hit.kind === 'settings') continue;
-          const destination =
-            hit.kind === 'tab'
-              ? hit.pane
-              : ({ main: 'main', help: 'help', brief: 'brief-toggle', older: 'show-all' } as Record<string, string>)[
-                  hit.kind
-                ];
-          if (!destination) continue;
-          if (!requestSettingsLeave(destination)) {
-            render();
-            continue;
-          }
-          input = { type: 'key', key: destination };
-        }
-      }
       if (settingsPage && settingsFrame) {
         const result = handleSettingsInput(settingsPage, input, settingsFrame);
         settingsPage = result.state;
@@ -1457,18 +1395,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
             ...settingsPage,
             draft: resetSettingsGroup(settingsPage.draft, group),
             message: t(
-              group === 'LLM'
+              group === 'Models'
                 ? 'Model generation disabled; connection preserved; Save to apply'
                 : 'Group defaults ready; Save to apply'
             ),
           };
-        } else if (result.action === 'reset-all')
-          settingsPage = {
-            ...settingsPage,
-            draft: resetAllPreferences(settingsPage.draft),
-            message: t('Preference defaults ready; model connection preserved and generation paused'),
-          };
-        else if (result.action === 'save') applySettingsDraft();
+        } else if (result.action === 'save') applySettingsDraft();
         else if (result.action === 'test-api') {
           if (probe.current().running) probe.cancel();
           else
@@ -1523,14 +1455,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
             jobs.stop();
           }
           updateProgress();
-        } catch (err) {
-          settingsError = t('Panel preferences could not be saved: {reason}', { reason: String(err) });
-          error = settingsError;
-        }
-      }
-      if (result.action?.type === 'status-level' && state.statusLevel) {
-        try {
-          settings = saveSettings({ statusCard: state.statusLevel });
         } catch (err) {
           settingsError = t('Panel preferences could not be saved: {reason}', { reason: String(err) });
           error = settingsError;
@@ -1665,7 +1589,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     process.stdin.on('data', onData);
     render();
     readMainCols();
-    loadArt();
     void collect().then(runInitialCommand);
     void refreshGit();
     armCollect();

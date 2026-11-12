@@ -80,8 +80,12 @@ export function runningVerb(role: string, harness: string): string {
   if (harness === 'jev') return /^flow/.test(role) ? 'generating' : 'asking web';
   return 'working';
 }
-export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.parse,
-  options?: { settledBefore: number }): WorkLane[] {
+export function readThinJobs(
+  home: string,
+  scope: ThinJobScope,
+  parse = JSON.parse,
+  options?: { settledBefore: number }
+): WorkLane[] {
   seen.clear();
   const root = join(home, 'jobs');
   const jobs = entries(root)
@@ -89,8 +93,12 @@ export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.par
     .flatMap((id) => {
       // Bars have no history view. Keep active/unknown jobs for pinned questions, regardless of age.
       const status = options ? json(join(root, id, 'STATUS.json'), parse) : null;
-      if (status && ['done', 'closed', 'idle_grace', 'failed', 'stopped'].includes(String(status.v.state)) &&
-        (when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at) < options!.settledBefore) return [];
+      if (
+        status &&
+        ['done', 'closed', 'idle_grace', 'failed', 'stopped'].includes(String(status.v.state)) &&
+        (when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at) < options!.settledBefore
+      )
+        return [];
       const file = json(join(root, id, 'job.json'), parse),
         job = file?.v;
       if (
@@ -113,12 +121,17 @@ export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.par
       status = checkedStatus ?? json(join(directory, 'STATUS.json'), parse),
       s = status?.v ?? {};
     // A job closed after it wrote its report finished its task; only the close raced settlement (owner, 2026-11-12).
-    const state = s.state === 'stopped' ? (s.output_written === true ? 'done' : 'stopped') :
-      s.state === 'failed' || (!status && typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0)
-        ? 'failed'
-        : ['closed', 'idle_grace', 'done'].includes(String(s.state))
+    const state =
+      s.state === 'stopped'
+        ? s.output_written === true
           ? 'done'
-          : 'working';
+          : 'stopped'
+        : s.state === 'failed' ||
+            (!status && typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0)
+          ? 'failed'
+          : ['closed', 'idle_grace', 'done'].includes(String(s.state))
+            ? 'done'
+            : 'working';
     const at = status?.at ?? jobAt;
     const settledAt = state === 'working' ? null : (when(s.ended_at) ?? when(s.settled_at) ?? at);
     const briefFile = read(join(directory, 'brief.md')),
@@ -136,6 +149,11 @@ export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.par
       timeBasis: 'file-mtime',
     });
     const decisions: DecisionRecord[] = [];
+    const files: NonNullable<OwnerWorker['files']>[number][] = [];
+    const addFile = (rel: string, kind: 'brief' | 'report' | 'review', snap: Snap | null, verdict?: string) => {
+      if (snap) files.push({ rel, kind, at: snap.at, paths: [join(directory, rel)], verdict });
+    };
+    addFile('brief.md', 'brief', briefFile);
     let pending: { fields: ReturnType<typeof questionFields>; evidence: EvidenceRef; id: string } | undefined;
     const qa = join(directory, 'qa'),
       names = new Set(entries(qa));
@@ -144,6 +162,16 @@ export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.par
       const q = read(join(qa, name)),
         a = names.has(answerName) ? read(join(qa, answerName)) : null;
       if (!q) continue;
+      const fields = questionFields(q.text);
+      files.push({
+        rel: `qa/${name}`,
+        kind: 'question',
+        at: a?.at ?? q.at,
+        paths: [join(qa, name), ...(a ? [join(qa, answerName)] : [])],
+        qid: name.slice(0, -3),
+        title: fields.question,
+        state: a ? 'answered' : 'open',
+      });
       if (!a) pending ??= { fields: questionFields(q.text), evidence: ref(`qa/${name}`, q), id: name.slice(0, -3) };
       else {
         const record = answerRecord(
@@ -154,7 +182,13 @@ export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.par
           ref(`qa/${name}`, q),
           ref(`qa/${answerName}`, a)
         );
-        if (record) decisions.push(record);
+        if (record) {
+          decisions.push(record);
+          Object.assign(files.at(-1)!, {
+            title: record.option ?? fields.question,
+            state: record.departure ? 'departure' : 'answered',
+          });
+        }
       }
     }
     const waiting = state === 'working' ? pending : undefined;
@@ -178,19 +212,23 @@ export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.par
         verdict === 'accept'
           ? 'accept'
           : [major ? `${major} major` : '', minor ? `${minor} minor` : ''].filter(Boolean).join(' ') || (verdict ?? '');
+      addFile(name, 'review', review, result);
       phases.push(`review r${number(name)}${result ? ' ' + result : ''}`);
       phaseAt = review.at;
       lastResult = first(review.text);
     }
-    const phase = state === 'stopped' ? 'stopped' : waiting
-      ? 'asking'
-      : state === 'failed'
-        ? 'failed'
-        : settledAt !== null
-          ? 'done'
-          : reviews.length
-            ? 'fixing'
-            : verb;
+    const phase =
+      state === 'stopped'
+        ? 'stopped'
+        : waiting
+          ? 'asking'
+          : state === 'failed'
+            ? 'failed'
+            : settledAt !== null
+              ? 'done'
+              : reviews.length
+                ? 'fixing'
+                : verb;
     phases.push(phase);
     const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt);
     const sentence =
@@ -198,7 +236,9 @@ export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.par
       (state === 'failed' ? (word(s.exit_reason) ?? word(s.reason)) : null) ||
       (report && report.at >= phaseAt ? first(report.text) : lastResult) ||
       '';
+    addFile('report.md', 'report', report);
     const worker: OwnerWorker = {
+      files,
       id: workerId,
       laneId,
       role: String(job.role),
