@@ -85,7 +85,7 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
   assert.ok(visualWidth(f.render(60)[0]) <= 60);
 });
 
-test('notice zone: two items at once, one per subject, needs-you pinned, three minutes, loaded gives way', (t) => {
+test('notice zone: the newest two, steady over time, one per subject, needs-you pinned, three minutes, loaded gives way', (t) => {
   noColour(t);
   const at = 1_800_000_000_000 - (1_800_000_000_000 % 15_000);
   const event = (kind: 'started' | 'done' | 'failed', text: string, ago: number, key?: string) => ({
@@ -101,30 +101,27 @@ test('notice zone: two items at once, one per subject, needs-you pinned, three m
   ];
   const zone = (facts: BarFacts, now: number, width = 160) =>
     stripAnsi(renderBar({ model: { name: 'M' }, ...facts }, width, now).line);
-  // Three events at 160 columns: the newest two, then after 5 s the pair advances (the third alone), then it cycles.
-  assert.match(zone({ events }, at), /^M │ ◐ started a · 10s ago │ ✓ finished b · 20s ago$/);
-  assert.match(zone({ events }, at + 5000), /^M │ ✗ failed c · 35s ago$/);
-  assert.match(zone({ events }, at + 10_000), /started a · 20s ago │ ✓ finished b/);
-  // With too little room one shows, and all take turns.
-  const narrow = [0, 5000, 10_000].map(
-    (dt) => zone({ events }, at + dt, 25).match(/started a|finished b|failed c/)?.[0]
-  );
-  assert.equal(new Set(narrow).size, 3);
-  // A pinned item takes the first slot; the events take the second in turn.
+  // Three events at 160 columns: the newest two, and the bar does not change while time passes (no rotation, no clock).
+  assert.equal(zone({ events }, at), 'M │ ◐ started a │ ✓ finished b');
+  for (const dt of [5000, 10_000, 60_000]) assert.equal(zone({ events }, at + dt), zone({ events }, at));
+  // With too little room the newest alone shows, and stays.
+  assert.match(zone({ events }, at, 25), /started a/);
+  assert.equal(zone({ events }, at + 5000, 25), zone({ events }, at, 25));
+  // A pinned item takes the first slot, the newest event the second.
   const needs = ['Work: 1 needs you'];
-  assert.match(zone({ events, needs }, at), /^M │ ! Work: 1 needs you │ ◐ started a · 10s ago$/);
-  assert.match(zone({ events, needs }, at + 5000), /^M │ ! Work: 1 needs you │ ✓ finished b/);
+  assert.equal(zone({ events, needs }, at), 'M │ ! Work: 1 needs you │ ◐ started a');
+  assert.equal(zone({ events, needs }, at + 5000), zone({ events, needs }, at));
   // One item per subject: `finished` replaces `started`, and nothing else is there.
   const same = [event('started', 'started a', 60_000, 'a'), event('done', 'finished a', 10_000, 'a')];
-  assert.equal(zone({ events: same }, at), 'M │ ✓ finished a · 10s ago');
+  assert.equal(zone({ events: same }, at), 'M │ ✓ finished a');
   // An event is shown at +2 minutes and gone at +4, and nothing replaces it.
   const old = [event('done', 'finished d', 0)];
-  assert.match(zone({ events: old }, at + 120_000), /finished d · 2m ago$/);
+  assert.match(zone({ events: old }, at + 120_000), /finished d$/);
   assert.equal(zone({ events: old }, at + NOTICE_MS + 60_000), 'M');
   // A notice shows in full: the loaded cluster gives way for it, and comes back with room (or with no notice).
   const loaded = { counts: [['MCP', 2]] as const };
-  assert.match(zone({ events: old, loaded }, at, 40), /^M │ ✓ finished d · 0s ago +MCP 2$/);
-  assert.equal(zone({ events: old, loaded }, at, 28), 'M │ ✓ finished d · 0s ago');
+  assert.match(zone({ events: old, loaded }, at, 30), /^M │ ✓ finished d +MCP 2$/);
+  assert.equal(zone({ events: old, loaded }, at, 18), 'M │ ✓ finished d');
   assert.match(zone({ events: [], loaded }, at, 28), /^M +MCP 2$/);
   // A background subagent that started 10 minutes ago and still runs is not an event; a skill load is, for three minutes.
   const transcript = {
@@ -147,7 +144,7 @@ test('notice zone: two items at once, one per subject, needs-you pinned, three m
       )
     );
   assert.doesNotMatch(draw([]), /Explore/);
-  assert.match(draw(transcript.skillLoads), /✦ skill hud-delegate · 30s ago/);
+  assert.match(draw(transcript.skillLoads), /✦ skill hud-delegate/);
 });
 
 test('context is measured against where Claude and Codex compact, when their settings say so', (t) => {
@@ -248,7 +245,7 @@ test('subagent notices: name, model, effort from the agent definition; the main 
   assert.equal(stripAnsi(renderBar({ model: { name: 'M' }, events }, 80, NOW).line), 'M │ ✓ reviewer [haiku-4.5]');
   // A long notice at 120 columns is cut at a word before the main model's effort goes.
   const skillLoads = [{ name: 'a-skill-with-a-very-long-name-that-cannot-fit-on-the-bar-at-all', at: NOW - 30_000 }];
-  assert.match(draw(120, { agents: [], skillLoads }), /^✻ opus-5\.5 high │ .*✦ skill… · 30s ago$/);
+  assert.match(draw(120, { agents: [], skillLoads }), /^✻ opus-5\.5 high │ .*✦ skill(?: hud-delegate|…)$/);
 });
 
 test('model names are short: route, vendor, date, build and window words go, version hyphens become dots', () => {

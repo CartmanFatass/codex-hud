@@ -14,12 +14,13 @@
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
 import { formatTokenCount } from '../lines/activity-line.js';
 import { displayConfig, iconSet, type BarField } from '../hud-config.js';
-import { age } from '../monitor-labels.js';
 import { providerMark, shortModel } from '../providers.js';
 
-/** How long an event stays in the notice zone; the items it cannot show together take turns every `ROTATE_MS`. */
+/**
+ * How long an event stays in the notice zone. Nothing rotates and nothing ticks (owner, 2026-11-11: a bar that keeps
+ * changing is a flicker): the newest events that fit are shown, and an item's text does not change while it stays.
+ */
 export const NOTICE_MS = 180_000;
-const ROTATE_MS = 5000;
 const CELLS = 10;
 /** The weekly window shows beside the 5 h one from here on (or alone, when it is the only one). */
 const WEEKLY_AT = 80;
@@ -285,7 +286,7 @@ const MARKS = {
 
 const clean = (words: string) => words.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
 
-function noticeOf(event: BarEvent, now: number): Notice {
+function noticeOf(event: BarEvent): Notice {
   const [mark, tone] = MARKS[event.kind];
   return {
     mark,
@@ -293,8 +294,8 @@ function noticeOf(event: BarEvent, now: number): Notice {
     words: clean(event.text),
     short: clean(event.short ?? event.text),
     name: event.name && clean(event.name),
-    // An agent's item says who, not when.
-    tail: event.name === undefined ? ` · ${age(new Date(event.at), now)} ago` : '',
+    // No age: a counting clock would change the bar every refresh.
+    tail: '',
   };
 }
 
@@ -312,7 +313,7 @@ function zoneOf(
     if (now - event.at < NOTICE_MS) latest.set(event.key ?? event.text, event);
   const events = [...latest.values()]
     .sort((a, b) => b.at - a.at || a.text.localeCompare(b.text))
-    .map((event) => noticeOf(event, now));
+    .map((event) => noticeOf(event));
   const words = facts.needs?.length ? clean(facts.needs.join(' · ')) : '';
   const alert: Notice | null = words ? { mark: '!', tone: 'alert', words, short: words, tail: '' } : null;
   return alert || events.length ? { alert, events } : null;
@@ -407,9 +408,8 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
   const arrow = p10k && !ascii ? 1 : 0;
   const on = new Set<BarField>(barFields);
   const zone = on.has('notice') ? zoneOf(facts, now) : null;
-  const tick = Math.floor(now / ROTATE_MS);
-  // The item shown when there is room for one: all the current ones take turns. A pinned item stays.
-  const lone = zone && !zone.alert ? zone.events[tick % zone.events.length] : null;
+  // The item shown when there is room for one: the newest. A pinned item stays.
+  const lone = zone && !zone.alert ? (zone.events[0] ?? null) : null;
   // An alert is a badge on its own colour, with a space inside it; capsules and plain text have none.
   const pad = p10k || themeName === 'none' ? '' : ' ';
   const left = [
@@ -433,8 +433,9 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
   const fields = () => left.filter(alive);
   const room = (count: number) =>
     width - leftWidth([...fields().map(size), ...Array<number>(count).fill(0)]) - gap() - rightWidth();
-  // Two events at once need room for the two widest at their shortest; then the fields stay as they are.
+  // The two newest at once need room for both at their shortest; then the fields stay as they are.
   const smallest = (zone?.events ?? [])
+    .slice(0, 2)
     .map((event) => textWidth(noticeSeg(event, Infinity, pad, 2)))
     .sort((a, b) => b - a);
   const wide = () => !zone?.alert && smallest.length > 1 && smallest[0] + smallest[1] <= room(2);
@@ -456,12 +457,11 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
   if (zone) {
     const events = zone.events;
     if (zone.alert) {
-      // Pinned first, and the second slot takes the events in turn, when one fits at least in its short form.
-      if (events.length) shown.push(...(fitItems([events[tick % events.length]], room(1), pad) ?? []));
+      // Pinned first, and the newest event beside it when it fits at least in its short form.
+      if (events.length) shown.push(...(fitItems([events[0]], room(1), pad) ?? []));
     } else if (wide()) {
-      // Two at once: items 2k and 2k+1.
-      const k = tick % Math.ceil(events.length / 2);
-      shown.push(...(fitItems(events.slice(2 * k, 2 * k + 2), room(2), pad) ?? []));
+      // The two newest at once.
+      shown.push(...(fitItems(events.slice(0, 2), room(2), pad) ?? []));
     } else {
       const seg = lone && noticeSeg(lone, room(1), pad);
       if (seg) shown.push(seg);
