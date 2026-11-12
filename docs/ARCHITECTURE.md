@@ -144,16 +144,41 @@ shared `renderWorkboardFrame` viewport. Project has separate cursor/scroll/fold 
 and native agents start folded. File rows emit `open-files`, the generalised former `job-files` action;
 the existing `openEditorPane` opens `$EDITOR` (default vim) in a right-hand herdr pane.
 
-Sources: STATE.md's `## Waiting for the owner` bullets and `Milestone:` line (docs/handoff first,
-root fallback), docs/spec.md, up to twelve review candidates, current-tree working thin jobs from the
+Sources: STATE.md's `## Waiting for the owner`, `## Next`, `## Slices`, `## Now (...)` heading and
+`Milestone:` line (docs/handoff first, root fallback), docs/spec.md, up to twelve review candidates,
+current-tree working thin jobs from the
 existing workboard, role assignments, convention and instruction files, and native Claude/Codex agent
 files. `roles/roster.ts` is extracted from the thin MCP's registry: `hud_roster` and Project use the
 same role validation/override/assignment/convention logic without starting the MCP. Project supplies
 cached, bounded readers; the MCP keeps its original reader semantics. Missing milestone means no spec
 row. There is no Tickets section in this slice.
 
+**Progress** sits between Waiting for you and Working tree. STATE's mtime dates the header; the Now heading
+supplies the summary. The Slices ledger (`- state · milestone · ID · description (optional commit)`) counts only
+working/blocked/try/todo/accepted/dropped; comments and unknown states do not count. A cumulative-rounded,
+full-width stacked bar uses the six theme roles, and its wrapped legend retains zero counts. Milestone chips
+come from the top-level bold `M…` bullets in spec §5; the first token of STATE's Milestone line selects the current
+chip, otherwise all ids stay unmarked. Summary and chips open STATE.md.
+
+Working/blocked ledger entries and linked worktrees become slice blocks, matched by worktree basename. The
+collector joins the newest job by canonical cwd, considering only the newest 64 job directories by mtime;
+only job.json/STATUS.json bodies are read (64 KiB each), through the existing signature cache. Directory names
+are cached, directory mtimes are ranked, and report/brief paths are metadata-only checks. File bodies outside
+those 64 jobs are not loaded for this lookup. The existing main-checkout editing rows remain unchanged.
+`projectRows` gets the overlaid **unfiltered** workboard from `renderWorkboardFrame`, so it reuses Home's actual
+worker/card detail and model sentence (including shared keyword painting/word cutting) without new collection
+or model requests, even for a job Home hides. The master switch controls the model overlay. A slice opens its
+report, else brief, else STATE; no job means just its first row. Next shows up to four joined bullets and a
+remainder count. The latest commit remains under Working tree, since there is no landed-commit list.
+
+Drift is display-only: a working ledger entry without a linked worktree (not blocked), an unlisted worktree,
+or a worktree with a non-active ledger state gets an attention `!` and reason. The Progress header counts marks;
+no ledger, job or worktree is modified. All Progress rows use the existing Project fold/file actions.
+
 Files and directory membership use stat-signature caches, reads stop at 64 KiB, directory discovery
-stops at 128 names per source, and obsolete cache entries are pruned. Git uses `worktreeGit` and its
+stops at 128 names per source (job directory membership is enumerated to rank the newest 64), and obsolete
+cache entries are pruned. Git status, last commit and `worktree list --porcelain -z` share one five-second gate
+using `worktreeGit` and its
 filter neutralisation, at most every five seconds; failure is unknown, not a fabricated clean tree.
 Credentials are reduced immediately to name/presence booleans (empty RHS is absent), never cached as
 text or exposed as openable files. Known provider names match the credential loader (Mistral, OpenAI,

@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import { projectFixture, projectFrames, plain, NOW, TREE } from '../fixtures/project-page.mjs';
+import { progressSegments } from '../../dist/render/project-view.js';
+import { renderWorkCard } from '../../dist/render/work-card.js';
+import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
 import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
@@ -26,7 +29,18 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.waiting.length, 2);
   assert.match(f.data.waiting[1].value, /after trying the synthetic setup/);
   assert.equal(f.data.editing.length, 1);
-  assert.equal(f.data.docs[0].value, 'M4 · Project');
+  assert.equal(f.data.docs[0].value, 'M3b · AI-THIN');
+  assert.deepEqual(f.data.counts, { working: 2, blocked: 1, try: 1, todo: 1, accepted: 1, dropped: 1 });
+  assert.deepEqual(f.data.ladder.ids, ['M1', 'M2', 'M3', 'M3b', 'M4']);
+  assert.equal(f.data.ladder.current, 'M3b');
+  assert.equal(f.data.summary, 'Synthetic milestone closing; pages building in worktrees');
+  assert.equal(f.data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.sliceJob, 'report.md'));
+  assert.deepEqual(f.data.slices.filter((s) => s.drift).map((s) => [s.label, s.drift]), [
+    ['ORPHAN', 'no worktree'], ['NO-JOB', 'not in ledger'],
+  ]);
+  assert.equal(f.data.slices.find((s) => s.label === 'BLOCKED').drift, undefined);
+  assert.equal(f.data.next.length, 5);
+  assert.equal(f.data.next[0].value, 'NATIVE-TREE: native subagents on Home beside package lanes');
   assert.match(f.data.docs[1].path, /2026-11-12-review.md$/);
   assert.ok(f.data.control.some((r) => r.label === 'imp' && r.value === 'pi  synthetic/model  high'));
   assert.equal(f.data.agents.length, 3);
@@ -35,9 +49,12 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
     const frame = f.render(width, lang);
     for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
     const text = plain(frame).join('\n');
-    assert.doesNotMatch(text, /NEVER_RENDER|unrelated bullet|Tickets|工单/);
+    assert.doesNotMatch(text, /NEVER_RENDER|unrelated bullet|Tickets|工单|INVISIBLE|M5|NOT-A-MILESTONE/);
+    assert.match(text, /\[M1\]  \[M2\]  \[M3\]  \(M3b\)  M4/);
+    assert.match(text, /\+1\b/);
+    if (width >= 80) assert.match(text, /Which synthetic option\?/);
     if (lang === 'zh') {
-      assert.match(text, /^ 首页  项目 2/m);
+      assert.match(text, /^ 首页 1  项目 2/m);
       assert.doesNotMatch(text, /\bProject 2\b|3 agent\b/);
       assert.ok(frame.workboard.rows.some((r) => stripAnsi(r.text).startsWith('▸ 代理')));
     }
@@ -98,7 +115,7 @@ test('Enter and o open the exact Project file through fake herdr; default editor
     frame.state.projectCursor = row.item;
     for (const key of ['enter', 'open-session']) assert.deepEqual(press(frame, key).action, { type: 'open-files', files: row.files });
   }
-  const file = rows.find((r) => r.files[0].endsWith('STATE.md'));
+  const file = rows.find((r) => r.files[0] === join(f.sliceJob, 'report.md'));
   frame.state.projectCursor = file.item;
   await openEditorPane(press(frame, 'enter').action.files, env);
   const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
@@ -126,8 +143,143 @@ test('Home and overlays collect nothing; warm Project uses signatures and git wa
   assert.equal(calls.readSync, 0);
   assert.equal(calls.opendirSync, 0);
   assert.ok(calls.lstatSync > 0);
+  assert.equal(warm.slices.some((s) => s.label === 'NO-JOB'), true, 'worktree list shares the git gate');
   const expired = await f.collector.collect(true, f.board, NOW + 5000);
   assert.equal(expired.git, undefined, 'a failed git refresh is unknown, not stale success');
+  assert.equal(expired.slices.some((s) => s.label === 'NO-JOB'), false);
+});
+test('Progress folds through real input without disturbing other Project sections', async (t) => {
+  const f = await fixture(t);
+  let frame = f.render(80);
+  frame.state.projectCursor = 'project:fold:progress';
+  frame = f.render(80, 'en', press(frame, 'enter').state);
+  assert.match(plain(frame).join('\n'), /▸ Progress/);
+  assert.doesNotMatch(plain(frame).join('\n'), /NATIVE-TREE|now:|\[M1\]/);
+  assert.match(plain(frame).join('\n'), /Working tree/);
+  frame = f.render(80, 'en', press(frame, 'enter').state);
+  assert.match(plain(frame).join('\n'), /NATIVE-TREE/);
+});
+test('polish: Next text aligns without filename tails and slice states use the bar colours', async (t) => {
+  const f = await fixture(t);
+  for (const width of [80, 120]) for (const lang of ['en', 'zh']) {
+    const frame = f.render(width, lang), next = frame.workboard.rows.filter((r) => /:next:\d+$/.test(r.item ?? ''));
+    assert.equal(next.length, 4);
+    for (const [i, row] of next.entries()) {
+      const text = stripAnsi(row.text), start = text.indexOf(f.data.next[i].value);
+      assert.equal(visualLength(text.slice(0, start)), 13);
+      assert.doesNotMatch(text, /STATE\.md/);
+      frame.state.projectCursor = row.item;
+      for (const key of ['enter', 'open-session']) assert.deepEqual(press(frame, key).action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
+    }
+    assert.ok(frame.workboard.rows.some((r) => /^ {13}\+1\s*$/.test(stripAnsi(r.text))));
+  }
+  const coloured = f.render(120, 'en', undefined, 56, f.data, true, 'unicode', 'mocha');
+  const bar = coloured.workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text))).text;
+  const inks = [...bar.matchAll(/(\x1b\[[0-9;]+m)[█▓░]+/g)].map((m) => m[1]);
+  const row = (frame, id) => frame.workboard.rows.find((r) => stripAnsi(r.text).includes(id) && /:slice:\d+$/.test(r.item ?? '')).text;
+  assert.ok(row(coloured, 'NATIVE-TREE').includes(inks[0] + '◐'));
+  assert.ok(row(coloured, 'BLOCKED').includes(inks[1] + '◆'));
+  for (const id of ['ORPHAN', 'NO-JOB']) assert.match(stripAnsi(row(coloured, id)), /^  ! /);
+  const ascii = f.render(80, 'en', undefined, 56, f.data, true, 'text');
+  assert.match(stripAnsi(row(ascii, 'NATIVE-TREE')), /^  @ /);
+  assert.match(stripAnsi(row(ascii, 'BLOCKED')), /^  ! /);
+});
+test('bar proportions fill the row in EN/ZH and text icons, including zero states', async (t) => {
+  const f = await fixture(t);
+  for (const width of [32, 80, 120]) {
+    const segments = progressSegments(f.data.counts, width);
+    assert.equal(segments.reduce((sum, s) => sum + s.width, 0), width);
+    for (const s of segments) assert.ok(Math.abs(s.width - width * f.data.counts[s.state] / 7) <= 1);
+    for (const lang of ['en', 'zh']) {
+      const bar = f.render(width, lang).workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text)));
+      assert.equal(visualLength(bar.text), width);
+    }
+  }
+  const ascii = f.render(80, 'en', undefined, 56, f.data, true, 'text');
+  assert.ok(ascii.workboard.rows.some((r) => stripAnsi(r.text) === '#'.repeat(80)));
+  assert.doesNotMatch(plain(ascii).join('\n'), /[█▓░●]/);
+  const counts = { working: 2, blocked: 0, try: 0, todo: 1, accepted: 0, dropped: 0 };
+  const data = { ...f.data, counts };
+  const text = plain(f.render(120, 'en', undefined, 56, data)).join('\n');
+  assert.match(text, /blocked 0/);
+  assert.match(text, /landed, to try 0/);
+  assert.match(text, /accepted 0/);
+  assert.match(text, /dropped 0/);
+  assert.equal(progressSegments(counts, 80).find((s) => s.state === 'blocked').width, 0);
+});
+test('drift distinguishes a missing worktree, an unlisted tree and a landed tree; blocked may have no tree', async (t) => {
+  const f = await fixture(t), state = join(f.cwd, 'docs/handoff/STATE.md');
+  const original = fs.readFileSync(state, 'utf8');
+  f.put(state, original.replace('## Now', '- try · M4 · NO-JOB · landed but worktree remains (abcdef0)\n\n## Now'));
+  const data = await f.collector.collect(true, f.board, NOW + 1);
+  assert.equal(data.counts.try, 2);
+  assert.equal(data.slices.find((s) => s.label === 'NO-JOB').drift, 'ledger');
+  assert.equal(data.slices.find((s) => s.label === 'NO-JOB').ledgerState, 'try');
+  const text = plain(f.render(120, 'en', undefined, 56, data)).join('\n');
+  assert.match(text, /updated 12:35 · ! 2/);
+  assert.match(text, /! NO-JOB.*ledger: try/);
+  assert.match(text, /! ORPHAN.*no worktree/);
+  assert.doesNotMatch(text, /! BLOCKED/);
+  f.put(state, original.replace('Milestone: M3b', 'Milestone: UNMATCHED'));
+  const noMatch = await f.collector.collect(true, f.board, NOW + 2);
+  assert.doesNotMatch(plain(f.render(80, 'en', undefined, 56, noMatch)).join('\n'), /\[M1\]|\(M3b\)/);
+  fs.utimesSync(state, new Date(NOW - 86400000), new Date(NOW - 86400000));
+  const old = await f.collector.collect(true, f.board, NOW + 3);
+  assert.match(plain(f.render(120, 'en', undefined, 56, old)).join('\n'), /updated 2026-11-11/);
+});
+test('slice lines use the same Home worker fact/model and keep hidden jobs available; files fall back to STATE', async (t) => {
+  const f = await fixture(t), worker = f.board.workers.find((w) => w.evidence[0]?.sourceId === 'j0000000000000002');
+  const home = renderWorkCard(projectWorkCard(worker, NOW), initialMonitorState(), 120).map(stripAnsi).join('\n');
+  assert.match(home, /Question: Which synthetic option\?/);
+  assert.match(plain(f.render(120)).join('\n'), /now: Question: Which synthetic option\?/);
+  worker.modelSentence = 'Building «synthetic agents» in the Home lane.';
+  assert.match(plain(f.render(120)).join('\n'), /now: Building synthetic agents in the Home lane\./);
+  const coloured = f.render(120, 'en', undefined, 56, f.data, true, 'unicode', 'mocha');
+  assert.match(coloured.workboard.rows.find((r) => stripAnsi(r.text).includes('now: Building')).text, /\x1b\[[0-9;]+msynthetic agents\x1b\[0m/);
+  assert.doesNotMatch(plain(f.render(120, 'en', undefined, 56, f.data, false)).join('\n'), /Building synthetic agents/);
+  assert.match(plain(f.render(120, 'en', undefined, 56, f.data, false)).join('\n'), /now: Question: Which synthetic option\?/);
+  worker.state = 'done'; worker.settledAt = NOW - 3600000; worker.homeNeedsHuman = false;
+  const hidden = f.render(120);
+  assert.equal(hidden.workboard.snapshot.workers.some((w) => w.id === worker.id), false);
+  assert.match(plain(hidden).join('\n'), /now: Building synthetic agents/);
+  fs.unlinkSync(join(f.sliceJob, 'report.md'));
+  let data = await f.collector.collect(true, f.board, NOW + 1);
+  assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.sliceJob, 'brief.md'));
+  fs.unlinkSync(join(f.sliceJob, 'brief.md'));
+  data = await f.collector.collect(true, f.board, NOW + 2);
+  assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.cwd, 'docs/handoff/STATE.md'));
+  const frame = f.render(120, 'en', undefined, 56, data);
+  for (const suffix of ['summary', 'chips:0', 'slice:0']) {
+    frame.state.projectCursor = frame.workboard.rows.find((r) => r.item?.endsWith(suffix)).item;
+    assert.deepEqual(press(frame, 'enter').action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
+  }
+});
+test('job lookup reads only job/STATUS in the newest 64 directories and resolves cwd aliases', async (t) => {
+  const f = await fixture(t), alias = join(f.root, 'linked-alias');
+  fs.symlinkSync(f.linked[0], alias);
+  for (const id of ['j0000000000000001', 'j0000000000000002'])
+    fs.utimesSync(join(f.hud, 'jobs', id), new Date(NOW - 86400000), new Date(NOW - 86400000));
+  const ids = [];
+  for (let i = 0; i < 66; i++) {
+    const id = `j${(100 + i).toString(16).padStart(16, '0')}`, dir = join(f.hud, 'jobs', id);
+    ids.push(id);
+    f.put(join(dir, 'job.json'), { job: id, role: 'imp', cwd: i < 2 ? alias : join(f.root, `unrelated-${i}`),
+      created_at: new Date(NOW - i * 1000).toISOString() });
+    f.put(join(dir, 'STATUS.json'), { state: 'working' });
+    fs.utimesSync(dir, new Date(NOW - i * 1000), new Date(NOW - i * 1000));
+  }
+  const original = fs.openSync, opened = [];
+  fs.openSync = (path, ...args) => { if (String(path).includes('/jobs/')) opened.push(String(path)); return original(path, ...args); };
+  syncBuiltinESMExports();
+  let data;
+  try { data = await f.collector.collect(true, f.board, NOW + 1); }
+  finally { fs.openSync = original; syncBuiltinESMExports(); }
+  assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').jobId, ids[0]);
+  const readIds = new Set(opened.map((p) => p.match(/\/jobs\/(j[0-9a-f]+)\//)[1]));
+  assert.equal(readIds.size, 64);
+  assert.equal(readIds.has(ids[64]), false);
+  assert.equal(readIds.has(ids[65]), false);
+  assert.ok(opened.every((p) => /\/(job|STATUS)\.json$/.test(p)), 'no question, brief or report body reads');
 });
 test('changed/oversized sources, missing milestone and source fallback never invent facts', async (t) => {
   const f = await fixture(t);
@@ -136,6 +288,10 @@ test('changed/oversized sources, missing milestone and source fallback never inv
   let data = await f.collector.collect(true, f.board, NOW + 1);
   assert.deepEqual(data.waiting.map((i) => i.value), ['New owner item']);
   assert.equal(data.docs.some((i) => i.label === 'spec'), false);
+  assert.deepEqual(data.ladder.ids, ['M1', 'M2', 'M3', 'M3b', 'M4']);
+  const noMilestone = plain(f.render(80, 'en', undefined, 56, data)).join('\n');
+  assert.match(noMilestone, /M1  M2  M3  M3b  M4/);
+  assert.doesNotMatch(noMilestone, /\[M1\]|\(M3b\)/);
   assert.deepEqual(data.keys, [['MISTRAL_API_KEY', false], ['OPENAI_API_KEY', false], ['TYPESAFE_API_KEY', false], ['OTHER_NAME', true]]);
   f.put(join(f.cwd, 'docs/handoff/STATE.md'), 'Milestone:\n\n## Waiting for the owner\n- Still waiting\n');
   data = await f.collector.collect(true, f.board, NOW + 1);

@@ -253,10 +253,34 @@ later-package confirmation; changing the public selector does not rewrite them.
 ## Project
 
 Project shows **Waiting for you** (the bullet list under `## Waiting for the owner` in
-`docs/handoff/STATE.md`, falling back to root `STATE.md`), **Working tree** (branch and change counts,
+`docs/handoff/STATE.md`, falling back to root `STATE.md`), **Progress**, **Working tree** (branch and change counts,
 working HUD jobs whose cwd is this tree, last commit), **Docs** (STATE's `Milestone:` value and the newest
 of up to twelve reviews), then **Control plane**. No milestone is guessed when the line is absent.
 There is no Tickets section yet; to-tickets integration is a later slice.
+
+Progress is a read-only board from the project files, not a model estimate:
+
+- **Updated** is STATE's file mtime (HH:MM today, otherwise YYYY-MM-DD). The summary is the text after the
+  first colon in its `## Now (...)` heading.
+- The full-width stacked bar and its six-state legend count STATE's `## Slices` ledger. Each bullet has the form
+  `- working · M3b · SLICE-ID · what it is (optional commit)`. Recognised states are `working`, `blocked`, `try`
+  (landed, to try), `todo`, `accepted`, `dropped`; comments and unknown states do not count. Zero counts remain visible.
+- Milestone chips come, in order, from the top-level bold `M…` bullets in `docs/spec.md`'s `## 5. Milestones`.
+  Those before the first token of STATE's `Milestone:` line are done, the current chip is highlighted, and later
+  ones are dim. Missing or unmatched milestone: plain ids, no guessed progress.
+- Each working/blocked slice has a block; linked worktrees whose ids are not active in the ledger also appear.
+  A job is the newest receipt whose cwd resolves to that linked worktree. Its `now:` line reuses Home's card
+  text (and coloured model keywords when the master switch is on), with role and age or an unanswered-question `?`.
+  Slices with no job have only the first row. The main checkout's editing jobs stay under Working tree.
+- Attention `!` marks ledger drift: a working slice with **no worktree** (blocked slices are exempt), a linked
+  worktree **not in ledger**, or one whose **ledger: state** is no longer working/blocked. The header counts these marks.
+- STATE's `## Next` bullets follow, with continuation lines joined, at most four shown and `+n` for the rest.
+
+Summary and chips open STATE.md; slice rows open the job's report, else brief, else STATE.md; Next opens STATE.md.
+Progress folds like the other sections. The last commit stays in Working tree because the ledger replaces the
+separate landed-commit list. Linked worktree discovery shares the five-second git gate. Job lookup reads only
+`job.json` and `STATUS.json` in the newest 64 job directories by mtime; report/brief existence is checked without
+reading their bodies. Card text comes from the already-collected workboard, including jobs hidden on Home.
 
 Control plane starts folded. It lists the same effective role registry as `hud_roster`, each role's
 harness/model/thinking, HUD and pi-roles source files, the project/user/default convention in effect,

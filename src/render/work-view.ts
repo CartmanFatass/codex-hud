@@ -129,7 +129,7 @@ export function renderWorkboardFrame(
       : inspector
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
         : project
-          ? projectRows(input.project, state, width, now)
+          ? projectRows(input.project, state, width, now, source, input.modelEnabled)
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));

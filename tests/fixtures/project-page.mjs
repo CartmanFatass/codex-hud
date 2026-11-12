@@ -19,8 +19,8 @@ export async function projectFixture(root) {
     fs.writeFileSync(path, typeof text === 'string' ? text : JSON.stringify(text));
     fs.utimesSync(path, new Date(NOW - age * 60000), new Date(NOW - age * 60000));
   };
-  put(join(cwd, 'docs/handoff/STATE.md'), '# State\n\nMilestone: M4 · Project\n\n## Waiting for the owner\n\n- Try the Project tab\n- Choose the browser profile\n  after trying the synthetic setup\n\n## Later\n- Never show this unrelated bullet\n');
-  put(join(cwd, 'docs/spec.md'), '# Synthetic spec');
+  put(join(cwd, 'docs/handoff/STATE.md'), '# State\n\nMilestone: M3b · AI-THIN\n\n## Waiting for the owner\n\n- Try the Project tab\n- Choose the browser profile\n  after trying the synthetic setup\n\n## Next\n- NATIVE-TREE: native subagents on Home\n  beside package lanes\n- PROGRESS-BOARD: project progress\n- Try the milestone\n- Review the milestone\n- Later follow-up\n\n## Slices\n\n<!-- One line per synthetic slice; this comment is ignored. -->\n- working · M3b · NATIVE-TREE · native subagents on Home, one lane per main session\n- working · M4 · ORPHAN · a working slice without a worktree\n- blocked · M4 · BLOCKED · waiting for a synthetic prerequisite\n- try · M3b · LANDING · a landed slice (1234567)\n- accepted · M3 · SHIPPED · an accepted slice (2345678)\n- todo · M4 · QUEUE · a later slice\n- dropped · M4 · RETIRED · a dropped slice\n- mystery · M4 · INVISIBLE · an unknown state must not count\n\n## Now (2026-11-12): Synthetic milestone closing; pages building in worktrees\n\n## Later\n- Never show this unrelated bullet\n');
+  put(join(cwd, 'docs/spec.md'), '# Synthetic spec\n\n## 5. Milestones\n\n- **M1, usable**\n- **M2, clean**\n- **M3, extend**\n- **M3b, AI-THIN**\n  - **NOT-A-MILESTONE, nested**\n- **M4, project view**\n\n## 6. Other\n- **M5, not in the ladder**\n');
   put(join(cwd, 'docs/reviews/2026-11-11-review.md'), '# Older review', 120);
   put(join(cwd, 'docs/reviews/2026-11-12-review.md'), 'Verdict: accept', 30);
   put(join(cwd, 'hud-convention.md'), '# Project convention');
@@ -52,14 +52,31 @@ export async function projectFixture(root) {
   const hash = object('commit', `tree ${tree}\nauthor Synthetic <synthetic@example.invalid> ${stamp} +0000\ncommitter Synthetic <synthetic@example.invalid> ${stamp} +0000\n\nSynthetic Project baseline\n`);
   put(join(cwd, '.git/HEAD'), 'ref: refs/heads/synthetic-project\n');
   put(join(cwd, '.git/refs/heads/synthetic-project'), hash + '\n');
+  const linked = ['NATIVE-TREE', 'NO-JOB'].map((name) => {
+    const path = join(root, name), admin = join(cwd, '.git/worktrees', name);
+    put(join(path, '.git'), `gitdir: ${admin}\n`);
+    put(join(admin, 'gitdir'), join(path, '.git') + '\n');
+    put(join(admin, 'commondir'), '../..\n');
+    put(join(admin, 'HEAD'), `ref: refs/heads/wt/${name}\n`);
+    put(join(cwd, '.git/refs/heads/wt', name), hash + '\n');
+    return path;
+  });
+  const sliceJob = join(hud, 'jobs/j0000000000000002');
+  put(join(sliceJob, 'job.json'), { job: 'j0000000000000002', role: 'imp', cwd: linked[0], herdr_pane: 'synthetic-main', created_at: new Date(NOW - 12 * 60000).toISOString() });
+  put(join(sliceJob, 'STATUS.json'), { state: 'working', started_at: new Date(NOW - 12 * 60000).toISOString() });
+  put(join(sliceJob, 'qa/q1.md'), 'Question: Which synthetic option?');
+  put(join(sliceJob, 'brief.md'), '# NATIVE-TREE: synthetic subagents');
+  put(join(sliceJob, 'report.md'), '# Synthetic progress report');
+  board.lanes = readThinJobs(hud, { project: cwd, pane: 'synthetic-main' });
+  board.workers = board.lanes.flatMap((l) => l.workers);
   const collector = new ProjectCollector(cwd, hud, env, home);
   const data = await collector.collect(true, board, NOW);
-  const render = (width, lang = 'en', state = { ...initialMonitorState(), mainTab: 'project', projectFolded: new Set(['agents']) }, height = 42) => {
-    const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }), previous = setLanguage(lang);
-    try { return renderMonitor({ tree: TREE, workboard: board, project: data, state, width, height, nowMs: NOW, modelEnabled: true }); }
+  const render = (width, lang = 'en', state = { ...initialMonitorState(), mainTab: 'project', projectFolded: new Set(['agents']) }, height = 56, snapshot = data, modelEnabled = true, icons = 'unicode', theme = 'none') => {
+    const display = setDisplayConfig({ theme, icons }), previous = setLanguage(lang);
+    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, state, width, height, nowMs: NOW, modelEnabled }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
-  return { cwd, hud, home, env, put, board, collector, data, render, job };
+  return { cwd, hud, home, env, put, board, collector, data, render, job, linked, sliceJob };
 }
 export const plain = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd());
 export function projectFrames(f) {

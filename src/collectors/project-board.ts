@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { roleRegistry } from '../roles/roster.js';
-import { neutralizeFilters, parseWorktreeStatus, worktreeGit, type WorktreeStatus } from './worktrees.js';
+import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 export interface ProjectItem {
   label: string;
@@ -11,6 +11,8 @@ export interface ProjectItem {
   path?: string;
   at?: number;
 }
+export const SLICE_STATES = ['working', 'blocked', 'try', 'todo', 'accepted', 'dropped'] as const;
+export type SliceState = typeof SLICE_STATES[number];
 export interface ProjectSnapshot {
   waiting: ProjectItem[];
   docs: ProjectItem[];
@@ -20,7 +22,14 @@ export interface ProjectSnapshot {
   browser: boolean;
   roleCount: number;
   git?: WorktreeStatus;
+  ladder: { ids: string[]; current?: string };
+  slices: (ProjectItem & { jobId?: string; role?: string; asking?: boolean; drift?: string; ledgerState?: string })[];
+  counts: Record<SliceState, number>;
+  summary: string;
+  statePath?: string;
+  updatedAt?: number;
   last?: { text: string; at: number };
+  next: ProjectItem[];
   editing: ProjectItem[];
 }
 export const projectShown = (state: { mainTab?: string; focus: string; help: boolean }, modal = false) =>
@@ -31,6 +40,7 @@ export class ProjectCollector {
   private gitAt = -Infinity;
   private git?: WorktreeStatus;
   private last?: ProjectSnapshot['last'];
+  private worktrees: WorktreeInfo[] = [];
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) {}
   private cached<T>(path: string, load: (st: fs.Stats) => T): T | null {
     try {
@@ -45,11 +55,11 @@ export class ProjectCollector {
       return value;
     } catch { this.cache.delete(path); return null; }
   }
-  private names = (path: string): string[] => this.cached(path, (st) => {
+  private names = (path: string, limit = 128): string[] => this.cached(path, (st) => {
     if (!st.isDirectory()) return [];
     const dir = fs.opendirSync(path), names: string[] = [];
     try {
-      for (let entry; names.length < 128 && (entry = dir.readSync());) names.push(entry.name);
+      for (let entry; names.length < limit && (entry = dir.readSync());) names.push(entry.name);
     } finally { dir.closeSync(); }
     return names.sort();
   }) ?? [];
@@ -72,14 +82,38 @@ export class ProjectCollector {
     this.seen.clear();
     const out: ProjectSnapshot = {
       waiting: [], docs: [], control: [], agents: [], keys: [], browser: false, roleCount: 0, editing: [],
+      ladder: { ids: [] }, slices: [], next: [], summary: '',
+      counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
     };
     const statePath = [join(this.cwd, 'docs/handoff/STATE.md'), join(this.cwd, 'STATE.md')].find((p) => this.read(p));
     const state = statePath ? this.read(statePath)!.text : '';
-    const waiting = state.split(/^## Waiting for the owner[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
-    out.waiting = [...waiting.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].map((m) => ({
-      label: '', value: m[1].replace(/\s+/g, ' ').trim(), path: statePath,
-    }));
+    const bullets = (heading: string) => {
+      const section = state.split(new RegExp(`^## ${heading}[ \\t]*\\r?$`, 'm'))[1]?.split(/^## /m)[0] ?? '';
+      return [...section.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].map((m) => ({
+        label: '', value: m[1].replace(/\s+/g, ' ').trim(), path: statePath,
+      }));
+    };
+    out.waiting = bullets('Waiting for the owner');
+    out.next = bullets('Next');
+    out.statePath = statePath;
+    try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
+    out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim() ?? '';
+    const ledger = new Map<string, { state: string; text: string }>();
+    for (const row of bullets('Slices')) {
+      const parts = row.value.split(/\s+·\s+/);
+      if (parts.length < 4) continue;
+      const [status, , id, ...text] = parts;
+      ledger.set(id, { state: status, text: text.join(' · ') });
+      if (!SLICE_STATES.includes(status as SliceState)) continue;
+      out.counts[status as SliceState]++;
+      if (status === 'working' || status === 'blocked') out.slices.push({
+        label: id, value: text.join(' · '), path: statePath, ledgerState: status,
+      });
+    }
     const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
+    const spec = this.read(join(this.cwd, 'docs/spec.md'))?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
+    out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M[^,\s*]+),/gm)].map((m) => m[1]);
+    out.ladder.current = milestone?.split(/\s+/)[0];
     if (milestone) out.docs.push({ label: 'spec', value: milestone, path: join(this.cwd, 'docs/spec.md') });
     const reviews = join(this.cwd, 'docs/reviews');
     const review = this.names(reviews).filter((n) => n.endsWith('.md')).reverse().slice(0, 12)
@@ -159,19 +193,59 @@ export class ProjectCollector {
       this.gitAt = now;
       this.git = undefined;
       this.last = undefined;
+      this.worktrees = [];
       try {
         const filters = await neutralizeFilters(worktreeGit, this.cwd);
         this.git = parseWorktreeStatus(await worktreeGit(this.cwd, [
           ...filters, 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=normal',
         ]));
+        this.worktrees = parseWorktreeList(await worktreeGit(this.cwd, ['worktree', 'list', '--porcelain', '-z'])).slice(1);
         const [hash, at, subject] = (await worktreeGit(this.cwd, [
           'log', '-1', '--no-show-signature', '--format=%h%x00%ct%x00%s',
         ])).trim().split('\0');
-        if (hash && Number.isFinite(Number(at))) this.last = { text: `${hash} ${subject}`, at: Number(at) * 1000 };
+        if (hash && at && Number.isFinite(Number(at))) this.last = { text: `${hash} ${subject}`, at: Number(at) * 1000 };
       } catch { /* No repo, unborn HEAD or failed probe: unknown, not zero. */ }
     }
     out.git = this.git;
     out.last = this.last;
+    const canonical = (path: string) => { try { return fs.realpathSync(path); } catch { return resolve(path); } };
+    const jobsRoot = join(this.hudHome, 'jobs');
+    const jobs = this.names(jobsRoot, Infinity).filter((id) => /^j[0-9a-f]{16}$/.test(id)).flatMap((id) => {
+      try {
+        const st = fs.lstatSync(join(jobsRoot, id));
+        return st.isDirectory() ? [{ id, at: st.mtimeMs }] : [];
+      } catch { return []; }
+    }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id)).slice(0, 64);
+    const byTree = new Map<string, { jobId: string; role: string; asking: boolean; path?: string; at?: number; created: number }>();
+    const json = (path: string) => {
+      const file = this.read(path);
+      try { return file && !file.truncated ? JSON.parse(file.text) : null; } catch { return null; }
+    };
+    for (const { id } of jobs) {
+      const dir = join(jobsRoot, id), job = json(join(dir, 'job.json'));
+      if (!job || typeof job.cwd !== 'string') continue;
+      const cwd = canonical(job.cwd);
+      const created = Date.parse(job.created_at) || 0;
+      if ((byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
+      const s = json(join(dir, 'STATUS.json')) ?? {};
+      const report = join(dir, 'report.md'), brief = join(dir, 'brief.md');
+      const path = [report, brief].find((p) => this.cached(p, (st) => st.isFile()));
+      const at = Date.parse(s.started_at ?? job.created_at);
+      byTree.set(cwd, { jobId: id, role: typeof job.role === 'string' ? job.role : '', created,
+        asking: s.state === 'waiting_orchestrator', path, ...(Number.isFinite(at) ? { at } : {}) });
+    }
+    for (const slice of out.slices) if (ledger.get(slice.label)?.state === 'working' &&
+      !this.worktrees.some((tree) => basename(tree.path) === slice.label)) slice.drift = 'no worktree';
+    for (const tree of this.worktrees) {
+      const id = basename(tree.path), job = byTree.get(canonical(tree.path)), entry = ledger.get(id);
+      let slice = out.slices.find((r) => r.label === id);
+      if (!slice) {
+        slice = { label: id, value: entry?.text ?? '', path: statePath,
+          drift: entry ? 'ledger' : 'not in ledger', ledgerState: entry?.state };
+        out.slices.push(slice);
+      }
+      if (job) Object.assign(slice, job, { path: job.path ?? statePath });
+    }
     for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
     return out;
   }
