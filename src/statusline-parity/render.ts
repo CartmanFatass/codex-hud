@@ -72,24 +72,29 @@ function cut(text: string, n: number): string {
   }
   return out ? out + '…' : '';
 }
+/** How long a finished agent stays on the bar by name (owner, 2026-11-11: 60 s was too short). */
+const FINISHED_SHOWN_MS = 10 * 60_000;
 /**
  * While an agent runs the segment tells it as the claude-hud row did: `◐ type [model]: description 12m`, the newest of
- * several with `+N`. Narrower the description is cut first, then the model goes. With none running: the counts.
+ * several with `+N`. With none running, the newest agent finished in the last ten minutes stays the same way with `✓`
+ * and its run time. Narrower the description is cut first, then the model goes.
  */
 function agentsModule(agents: TranscriptView['agents'], now: number): BarModule {
   const running = agents.filter((a) => a.end === undefined).sort((a, b) => b.startPos - a.startPos);
-  const [a] = running;
-  if (!a) {
-    const completed = agents.filter((x) => x.end !== undefined && x.end <= now && now - x.end <= 60000).length;
-    return bar.agentCountsModule({ active: 0, completed, failed: 0, unknown: 0 });
-  }
+  const finished = agents
+    .filter((x) => x.end !== undefined && x.end <= now && now - x.end <= FINISHED_SHOWN_MS)
+    .sort((x, y) => y.end! - x.end! || y.startPos - x.startPos);
+  const shown = running.length ? running : finished;
+  const [a] = shown;
+  if (!a) return bar.agentCountsModule({ active: 0, completed: 0, failed: 0, unknown: 0 });
   const name = safe(a.type, 24) || 'agent',
     model = agentModel(a.model),
-    ms = Math.max(0, now - a.start),
-    time = ms < 60000 ? `${Math.floor(ms / 1000)}s` : span(Math.floor(ms / 60000));
+    ms = Math.max(0, (a.end ?? now) - a.start),
+    time = ms < 60000 ? `${Math.floor(ms / 1000)}s` : span(Math.floor(ms / 60000)),
+    glyph = running.length ? theme.info('◐') : theme.success('✓');
   const row = (words: number, withModel: boolean) => {
     const description = cut(safe(a.description, 200), words);
-    return `${theme.info('◐')} ${theme.agentType(name)}${withModel && model ? colors.dim(` [${model}]`) : ''}${description ? colors.dim(': ') + theme.value(description) : ''} ${colors.dim(time + (running.length > 1 ? ` +${running.length - 1}` : ''))}`;
+    return `${glyph} ${theme.agentType(name)}${withModel && model ? colors.dim(` [${model}]`) : ''}${description ? colors.dim(': ') + theme.value(description) : ''} ${colors.dim(time + (shown.length > 1 ? ` +${shown.length - 1}` : ''))}`;
   };
   // The description is cut after the effort has gone, the model after the reset time.
   return {

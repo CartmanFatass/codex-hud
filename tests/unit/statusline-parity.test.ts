@@ -86,12 +86,19 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
         ),
         /^Opus 5\.5 high │ [━╸]*─+ 4%\/1M │ project main\* │ 5h 8% reset 1h19m │ ◐ frontend-implementer \[sonnet-5\.5\]: BAR-UNIFY one-line bars 12m \+1 │ Tasks 1\/2 │ Work: 1 needs you · 2 running {3,}CLAUDE\.md 2 {2}MCP 4 {2}skills 1 {2}session 5m$/
       );
-      // With none running, the counts.
-      const idle = {
+      // With none running, the newest finished agent stays by name for ten minutes, then goes.
+      const finished = (end: number) => ({
         ...evidence,
-        transcript: { ...transcript, agents: transcript.agents.map((a) => ({ ...a, end: NOW - 5000 })) },
-      };
-      assert.match(strip(renderParity(input, 120, paritySettings(OWNER_CONFIG), idle, NOW)), /Agents 2✓/);
+        transcript: { ...transcript, agents: transcript.agents.map((a) => ({ ...a, end })) },
+      });
+      assert.match(
+        strip(renderParity(input, 120, paritySettings(OWNER_CONFIG), finished(NOW - 9 * 60000), NOW)),
+        /│ ✓ frontend-implementer\b.*\+1 │/
+      );
+      assert.doesNotMatch(
+        strip(renderParity(input, 120, paritySettings(OWNER_CONFIG), finished(NOW - 11 * 60000), NOW)),
+        /frontend-implementer/
+      );
       // Narrower, whole segments go, lowest priority first; the line never wraps.
       for (const width of [100, 60, 30]) {
         const narrow = renderParity(input, width, paritySettings(OWNER_CONFIG), evidence, NOW, {}, '');
