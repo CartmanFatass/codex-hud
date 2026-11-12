@@ -21,9 +21,6 @@ Milestone: M4 · Project view
   the job-directory scan the re-review questioned.
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
   finding 1); delete that part of the command or keep it?
-- Queued after JOB-RETENTION and SESSION-LINK land: PANEL-SCOPE (owner 2026-11-12): a panel never loads HUD jobs
-  that settled before it opened (running/asking jobs always show); the open time survives PANEL-RELOAD; directories
-  still go after one day.
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
   `--session-dir <job>/sessions`, so those jobs keep real session files in the job dir; run
   `python3 tmp/bin/migrate-sessions.py apply` before they turn one day old (pi-roles 27e2006 guards the self-link).
@@ -102,6 +99,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX · m4-close 05: the review's behaviour findings (brief independence, statusline default, bounded job scan, settings guards, TZ, docs) (8cd38f1e)
 - try · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime, dead modules and the historical installer chain (769cfa3d)
 - try · M4 · SESSION-LINK · owner: pi session history stays in pi's default place; job directories only link to it (23a9782d; Fishpref 45d93a1)
+- try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
 - try · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (71801be1; existing 99 pi sessions moved to ~/.pi/agent/sessions and linked first, toktrack totals unchanged)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
 - try · M4 · M4-FIX2 · re-review fixes: reload keeps place and width in bound panels; brief persists across sentence changes (152db34b)
