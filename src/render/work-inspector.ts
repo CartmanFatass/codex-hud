@@ -12,8 +12,7 @@ export function workInspectorRows(
   state: MonitorState,
   width: number,
   now: number,
-  heading = true,
-  progress?: import('../collectors/job-progress.js').JobProgressDisplay
+  heading = true
 ): MonitorRow[] {
   const rows: MonitorRow[] = heading ? [section(t('Work details'), width)] : [];
   const add = (label: string, value: string) => {
@@ -21,18 +20,6 @@ export function workInspectorRows(
   };
   const card = projectWorkCard(worker, now, state.cardStallMinutes);
   add('Work state', workStateWord(card));
-  if (progress?.reason) add('Job sentence', t(progress.reason));
-  if (progress?.note) {
-    const note = progress.note;
-    add('Job sentence', note.line || t('Empty assessment'));
-    if (note.attention) add('Model assessment', t('needs you'));
-    add('Generated at', new Date(note.generatedAt).toISOString());
-    for (const basis of note.basisEvidence) {
-      add('Basis', `${basis.id}: ${basis.locator}${basis.truncated ? ' [' + t('truncated') + ']' : ''}`);
-      add('Evidence', basis.text);
-    }
-    for (const gap of note.coverage) add('Coverage', gap);
-  }
   add('State', worker.state);
   for (const phase of card.phases) add('Observed phase', workPhaseText(phase));
   const detail =

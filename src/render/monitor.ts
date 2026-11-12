@@ -294,7 +294,6 @@ export interface MonitorData {
   hud?: HudData & HudDelegationData;
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
-  jobProgress?: import('../collectors/job-progress.js').JobProgressView;
   /** The tmux prefix as the help writes it ("Ctrl+\"). */
   prefix?: string;
   state: MonitorState;
@@ -414,7 +413,7 @@ export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
     tabbed: settings.paneLayout === 'tabs',
     style: settings.panelStyle,
     statusLevel: settings.statusCard,
-    labelAsName: settings.labelAsName,
+    labelAsName: true,
     timelineStyle: settings.timelineStyle,
     timelineHours: settings.timelineHours,
     importantRoles: roleSet(settings.importantRoles),

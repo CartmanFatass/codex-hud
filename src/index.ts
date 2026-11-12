@@ -169,9 +169,6 @@ async function collectData(): Promise<HudData> {
     // Settings saved in the panel reach the notifier here; an environment
     // variable that was set still wins.
     notifier.configure(resolveNotifierOptions(process.env, settings));
-    // The panel writes the session title beside the recap when the labels feature is on.
-    hudStatus.titleDir =
-      settings.agentLabels && settings.briefing !== 'off' ? path.join(getHudDisplayHome(), 'recaps') : null;
   } catch {
     /* Keep last valid display settings. */
   }

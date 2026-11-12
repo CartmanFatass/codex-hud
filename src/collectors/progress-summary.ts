@@ -1,4 +1,3 @@
-import { legacyRequest, legacyTreeSubjects, materialRequest, recordStamp } from '../core/materials/request.js';
 /** On-demand notes about live agents, from bounded public observations only. */
 import { createHash } from 'node:crypto';
 import type { Language } from '../render/i18n.js';
@@ -32,8 +31,6 @@ const MAX_TRACKED = 200;
 
 export type ProgressReason =
   | 'off'
-  | 'paused'
-  | 'progress-disabled'
   | 'summary-hidden'
   | 'not-live'
   | 'no-evidence'
@@ -44,8 +41,6 @@ export type ProgressReason =
 /** Display gates use the exact visible subjects, before live-agent narrowing. */
 export interface ProgressContext {
   backendOn: boolean;
-  paused: boolean;
-  enabled: boolean;
   targets: ReadonlySet<string>;
 }
 /** Public lifecycle and times only. Never contains request material or backend errors. */
@@ -64,8 +59,6 @@ export type ProgressSummaryState = ProgressState;
 /** Gate precedence is shared by collection and the Inspector, with no extra model request. */
 export function progressReason(node: SubagentTreeNode, context: ProgressContext): ProgressReason | undefined {
   if (!context.backendOn) return 'off';
-  if (context.paused) return 'paused';
-  if (!context.enabled) return 'progress-disabled';
   if (!context.targets.has(node.id)) return 'summary-hidden';
   if (!isLive(node)) return 'not-live';
   return undefined;
@@ -76,7 +69,7 @@ export interface ProgressSummaryInput {
   targets: ReadonlySet<string>;
   /** Backend enabled and not paused. Off/pause cancels even queued work. */
   on: boolean;
-  offReason?: 'off' | 'paused' | 'progress-disabled';
+  offReason?: 'off';
   language: Language;
   now: number;
 }
@@ -214,60 +207,11 @@ interface ProgressSchedule {
   fingerprint: string;
   node: SubagentTreeNode;
 }
-function progressSchedule(node: SubagentTreeNode, log: AgentLog): ProgressSchedule | null {
-  const identityMetadata = (subject: SubagentTreeNode) => {
-    // SAFETY: optional identity metadata is inspected as unknown, never treated as authorization.
-    const identity = subject as unknown as { ref?: unknown; origin?: unknown; sourceId?: unknown; harness?: unknown };
-    return [
-      subject.id,
-      subject.rolloutPath,
-      identity.ref,
-      identity.origin,
-      identity.sourceId,
-      identity.harness,
-      Object.hasOwn(subject, 'ref'),
-      Object.hasOwn(subject, 'sourceId'),
-      Object.hasOwn(subject, 'harness'),
-    ];
-  };
-  const stage = node.stages?.at(-1);
-  const current = stage?.status === 'running' ? stage : undefined;
-  const turn = Math.max(ms(node.turnStartedAt), ms(current?.startedAt), ms(node.startedAt));
-  const reports = log.entries(node.id).filter((entry) => entry.kind === 'report' && entry.at >= turn);
-  const latest = node.lastReport && ms(node.lastReport.at) >= turn ? node.lastReport : undefined;
-  const action = node.action && ms(node.action.at) >= turn ? node.action : undefined;
-  if (!reports.length && !latest && !(current && Object.hasOwn(current, 'intent')) && !action) return null;
-  const descendants: unknown[] = [];
-  eachThread(node.children, (child) => descendants.push([identityMetadata(child), child.status]));
-  return {
-    node,
-    identity: JSON.stringify([turn, current?.turnId ?? '', identityMetadata(node)]),
-    fingerprint: JSON.stringify([
-      recordStamp(node),
-      turn,
-      current?.turnId ?? '',
-      node.status,
-      ms(node.statusAt),
-      reports.map((entry) => [entry.at, recordStamp(entry)]),
-      ms(latest?.at),
-      recordStamp(latest),
-      ms(action?.at),
-      recordStamp(action),
-      recordStamp(current),
-      descendants,
-    ]),
-  };
-}
-
 interface Work {
   identity: string;
   fingerprint: string;
   materialFingerprint?: string;
   materialIdentity?: string;
-  pendingMaterialIdentity?: string;
-  pendingIncludesCharge?: boolean;
-  checkedSchedule?: string;
-  validation?: Promise<void>;
   done?: string;
   lastStart?: number;
   failedAt?: number;
@@ -334,8 +278,8 @@ export class ProgressSummarizer {
           : !isLive(node)
             ? 'not-live'
             : undefined;
-      const snapshot = reason ? null : progressSchedule(node, this.log);
-      if (snapshot) wanted.set(node.id, snapshot);
+      const snapshot = reason ? null : material(node, this.log, true);
+      if (snapshot) wanted.set(node.id, { ...snapshot, node });
       else this.states.set(node.id, { running: false, phase: 'blocked', reason: reason ?? 'no-evidence' });
     });
     for (const [id, work] of this.work) {
@@ -350,7 +294,6 @@ export class ProgressSummarizer {
       }
       work.fingerprint = snapshot.fingerprint;
       if (work.handle) {
-        this.validatePending(id, work, snapshot, input);
         this.publish(id, work);
         continue;
       }
@@ -376,54 +319,6 @@ export class ProgressSummarizer {
     for (const [id, work] of this.work) {
       if (this.work.size <= MAX_TRACKED) break;
       if (!wanted.has(id) && !work.handle) this.work.delete(id);
-    }
-  }
-
-  private validatePending(id: string, work: Work, snapshot: ProgressSchedule, input: ProgressSummaryInput): void {
-    if (work.checkedSchedule === snapshot.fingerprint) return;
-    work.checkedSchedule = snapshot.fingerprint;
-    const allSubjects = legacyTreeSubjects(input.tree, input.rootRolloutPath);
-    const self = allSubjects.find((subject) => subject.sessionId === id);
-    const contributors = new Set([id]);
-    eachThread(snapshot.node.children, (child) => contributors.add(child.id));
-    const parent = allSubjects.find((subject) => subject.sessionId === self?.parentSessionId);
-    const subjects = allSubjects.filter(
-      (subject) => contributors.has(subject.sessionId) || (work.pendingIncludesCharge && subject === parent)
-    );
-    const generationRoot = this.rootId;
-    const finish = (allowed: boolean) => {
-      if (
-        !work.handle ||
-        this.work.get(id) !== work ||
-        this.rootId !== generationRoot ||
-        this.language !== input.language
-      )
-        return;
-      if (!allowed) {
-        this.cancel(work);
-        const replacement: Work = { identity: snapshot.identity, fingerprint: snapshot.fingerprint };
-        this.work.set(id, replacement);
-        this.ask(id, replacement, snapshot, input);
-        return;
-      }
-      const current = material(snapshot.node, this.log, work.pendingIncludesCharge);
-      if (!current || work.pendingMaterialIdentity === undefined || current.identity === work.pendingMaterialIdentity)
-        return;
-      this.cancel(work);
-      const replacement: Work = { identity: snapshot.identity, fingerprint: snapshot.fingerprint };
-      this.work.set(id, replacement);
-      this.ask(id, replacement, snapshot, input);
-    };
-    try {
-      if (work.pendingIncludesCharge && !parent) {
-        finish(false);
-        return;
-      }
-      const checked = this.model.inspectLegacyMaterials(subjects, 'progress');
-      if (typeof checked === 'boolean') finish(checked);
-      else work.validation = checked.then(finish, () => finish(false));
-    } catch {
-      finish(false);
     }
   }
 
@@ -457,44 +352,16 @@ export class ProgressSummarizer {
     delete work.error;
     delete work.reason;
     delete work.failedAt;
-    const contributors = new Set<string>();
-    eachThread(input.tree.nodes, (node) => {
-      if (node.id !== id) return;
-      contributors.add(node.id);
-      eachThread(node.children, (child) => contributors.add(child.id));
+    const built = material(snapshot.node, this.log, true);
+    if (!built) return;
+    const handle = this.model.submit({
+      feature: 'progress',
+      thinking: 'low',
+      language,
+      system: progressSystemPrompt(language),
+      prompt: built.prompt(),
+      cacheKey: `progress-sentence-v2:${root}:${id}:${language}:${createHash('sha256').update(built.identity).digest('hex')}:${createHash('sha256').update(built.fingerprint).digest('hex')}`,
     });
-    const allSubjects = legacyTreeSubjects(input.tree, input.rootRolloutPath);
-    const self = allSubjects.find((subject) => subject.sessionId === id);
-    const parent = allSubjects.find((subject) => subject.sessionId === self?.parentSessionId);
-    const subjects = allSubjects.filter((subject) => contributors.has(subject.sessionId));
-    let built: Material | null = null;
-    const planned = materialRequest('progress', {
-      purpose: 'progress',
-      legacy: subjects,
-      legacyOptional: parent ? [parent] : [],
-      compose: (plannedEnvelope) => {
-        const admittedParent =
-          !!parent &&
-          plannedEnvelope?.fragments.some((fragment) =>
-            fragment.provenance.some((p) => p.ref.sessionId === parent.sessionId)
-          );
-        work.pendingIncludesCharge = admittedParent;
-        built = material(snapshot.node, this.log, admittedParent);
-        work.pendingMaterialIdentity = built?.identity;
-        work.checkedSchedule = snapshot.fingerprint;
-        if (!built || (built.fingerprint === work.materialFingerprint && built.identity === work.materialIdentity))
-          return { feature: 'progress', system: '', prompt: '', materialUnchanged: true };
-        return {
-          feature: 'progress',
-          thinking: 'low',
-          language,
-          system: progressSystemPrompt(language),
-          prompt: built.prompt(),
-          cacheKey: `progress-sentence-v2:${root}:${id}:${language}:${createHash('sha256').update(built.identity).digest('hex')}:${createHash('sha256').update(built.fingerprint).digest('hex')}`,
-        };
-      },
-    });
-    const handle = this.model.submit(planned);
     work.handle = handle;
     // A queue transition repaints without waiting for the next collection tick.
     work.unsubscribe = handle.subscribe?.(() => {
@@ -519,7 +386,6 @@ export class ProgressSummarizer {
     };
     void handle.result.then(
       async (result) => {
-        if (work.validation) await work.validation;
         // New public updates in the same turn must not starve a slow request.
         // Its note covers the old snapshot; a later refresh can cover new evidence.
         if (
@@ -543,7 +409,6 @@ export class ProgressSummarizer {
           } else fail(result.reason === 'hourly-cap' ? 'hourly-cap' : 'retry');
           return;
         }
-        if (handle.isAuthorized && !handle.isAuthorized()) return;
         const text = summarySentence(result.text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ''), PROGRESS_NOTE_CHARS);
         if (!text) {
           fail();

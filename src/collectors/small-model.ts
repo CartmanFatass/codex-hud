@@ -7,8 +7,6 @@
  *
  * - one request is `{feature, system, prompt, thinking?, cacheKey?}` and its
  *   answer is text or a reason there is none;
- * - the backend is the `briefing` setting: `agy` or an
- *   OpenAI-compatible chat completions endpoint (`api`);
  * - one request is in flight at a time; the rest wait their turn, and the
  *   owner of a request can cancel it, waiting or running;
  * - a request that passes a `cacheKey` is answered from a cache of earlier
@@ -18,89 +16,15 @@
  *   owner shows, never silently dropped. Calls are logged (timestamps only)
  *   so the cap and "calls today" hold across panel restarts.
  *
- * Feature formatters run only after the materials entry grants their public
- * observations. Queue dispatch, cache consumption and write-back revalidate it.
  */
 import { readHudCredentials } from '../jev/ask/config.js';
-import { resolveHudEnv } from '../utils/hud-env.js';
-import { sessionRefKey } from '../core/identity.js';
-import { outboundDecision } from '../core/export.js';
-import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { t, type Language } from '../render/i18n.js';
 import { wrongLanguage } from './reply-language.js';
 import { ModelRuntimeStore } from './model-runtime-store.js';
-import {
-  buildMaterials,
-  isEnvelope,
-  revalidateMaterials,
-  fingerprint,
-  markLegacy,
-  type MaterialAuthority,
-  type MaterialEnvelope,
-  type ResolvedRecipient,
-} from '../core/materials/index.js';
-import {
-  legacyRequest,
-  type LegacySubject,
-  type MaterialPlan,
-  type JobMaterialPlan,
-} from '../core/materials/request.js';
-import {
-  revalidateJobMaterials,
-  JobMaterialAuthority,
-  withJobBudget,
-  hasJobBudget,
-  JobBudgetPending,
-  invalidateJobPaths,
-  jobDispatchBudget,
-  withJobDispatchBudget,
-  jobFileMetrics,
-  type JobReadBudget,
-  type JobMaterialEnvelope,
-  type JobPending,
-} from '../core/materials/job.js';
-export interface JobModelRequest extends ModelRequest {
-  feature: 'job_card';
-  jobMaterials: JobMaterialPlan;
-}
-type JobPendingResult = JobPending & { ok: false };
-type InternalModelResult = ModelResult | JobPendingResult;
-class JobScopeChanged extends Error {}
-export type JobModelHandle = Omit<ModelHandle, 'result' | 'status'> & {
-  readonly status: ModelStatus | 'pending';
-  result: Promise<ModelResult | (JobPending & { ok: false })>;
-};
-const preparedJobs = new WeakMap<
-  JobMaterialPlan,
-  ReturnType<typeof import('../core/materials/job.js').buildJobMaterials>
->();
-type ModelEnvelope = MaterialEnvelope | JobMaterialEnvelope;
-type ModelAuthority = MaterialAuthority | JobMaterialAuthority;
-const jobEnvelope = (envelope: ModelEnvelope): envelope is JobMaterialEnvelope =>
-  'kind' in envelope && envelope.kind === 'job';
-function revalidateModelMaterials(
-  envelope: ModelEnvelope,
-  authority: ModelAuthority,
-  recipient: ResolvedRecipient | null
-): boolean {
-  return jobEnvelope(envelope)
-    ? authority instanceof JobMaterialAuthority && revalidateJobMaterials(envelope, authority, recipient)
-    : !(authority instanceof JobMaterialAuthority) && revalidateMaterials(envelope, authority, recipient);
-}
-import { MaterialCache } from '../core/materials/cache.js';
-import {
-  resolveRecipient,
-  bindResolvedRecipient,
-  CliRecipientBinding,
-  type MaterialRoute,
-} from '../core/materials/recipient.js';
-import { LegacyRecapScopes } from '../core/materials/legacy-scopes.js';
-import { LegacyCodexBridge } from '../core/materials/legacy.js';
 import {
   boundedTelemetry,
   summarizeModelTelemetry,
@@ -112,12 +36,11 @@ import {
   type TelemetryFeature,
 } from './model-telemetry.js';
 
-export type ModelBackend = 'off' | 'agy' | 'api';
+export type ModelBackend = 'off' | 'api';
 /** minimal/medium are advanced typed-only compatibility values, never inferred. */
 export type ApiEffort = 'off' | 'none' | 'low' | 'high' | 'xhigh' | 'max' | 'minimal' | 'medium';
 export const REASONING_TOKEN_ALLOWANCE = 512;
 export const DEFAULT_API_EFFORTS = { lite: 'none', low: 'low', medium: 'high' } as const;
-/** Thinking levels; agy and `api` take the subset they know. */
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto';
 
 /** Where `api` requests go. Empty fields fall back as `modelHttpRequest` says. */
@@ -125,22 +48,13 @@ export interface ModelApi {
   base: string;
   /** Nonempty is a global override, retained for existing configurations. */
   model: string;
-  models?: Partial<Record<ApiModelTier, string>>;
   /** Ignored legacy input. Credentials come only from the HUD credential reader. */
   key?: string;
   /** F4-only explicit source keyEnv binding. null means accountless; never populated by settings. */
   sourceCredential?: string | null;
-  efforts?: Partial<Record<ApiModelTier, ApiEffort>>;
 }
 
 export interface ModelRequest {
-  /** Public observations are selected before any prompt or cache identity is constructed. */
-  materials?: MaterialPlan;
-  /** Explicit disjoint job variant. Supplying both variants denies. */
-  jobMaterials?: JobMaterialPlan;
-  /** Only the authorized legacy feature-cache adapter may supply this local reply. */
-  legacyCachedText?: string;
-  /** An authorized scope check found no new material; no transport or cache mutation. */
   materialUnchanged?: true;
   /** Who is asking; selects an API model route, but is never sent. */
   feature: string;
@@ -216,21 +130,10 @@ export interface ModelHandle {
   /** Public lifecycle only: never exposes a prompt, endpoint or credential. */
   readonly status: ModelStatus;
   readonly generatedAt?: number;
-  readonly materials?: MaterialEnvelope;
-  readonly jobMaterials?: JobMaterialEnvelope;
-  isAuthorized?(): boolean;
   subscribe(listener: () => void): () => void;
   result: Promise<ModelResult>;
   /** Drop the request: a waiting one never runs, a running one is stopped. */
   cancel(): void;
-}
-
-function privateMaterialHandle<T extends ModelHandle | JobModelHandle>(handle: T): T {
-  for (const key of ['materials', 'jobMaterials', 'isAuthorized']) {
-    const descriptor = Object.getOwnPropertyDescriptor(handle, key);
-    if (descriptor) Object.defineProperty(handle, key, { ...descriptor, enumerable: false });
-  }
-  return handle;
 }
 
 export interface ModelUsage {
@@ -242,16 +145,9 @@ export interface ModelUsage {
 }
 
 export const DEFAULT_THINKING: ThinkingLevel = 'low';
-/** agy's model names carry their effort level; this one is `low`. */
-export const DEFAULT_AGY_MODEL = 'gemini-3.8-flash-low';
-const AGY_MODEL_FAMILY = 'gemini-3.8-flash';
-/** Levels agy's model list has a `<family>-<level>` name for. */
-const AGY_MODEL_LEVELS: readonly ThinkingLevel[] = ['low', 'medium', 'high'];
-/** Levels agy's `--effort` flag accepts. */
-const AGY_EFFORTS: readonly ThinkingLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 /** A tier's explicit effort wins. The legacy switch never invents unsupported values. */
-export function apiEffort(api: ModelApi, tier: ApiModelTier): ApiEffort {
-  return api.efforts?.[tier] ?? DEFAULT_API_EFFORTS[tier];
+export function apiEffort(_api: ModelApi, tier: ApiModelTier): ApiEffort {
+  return DEFAULT_API_EFFORTS[tier];
 }
 
 const TIMEOUT_MS = 90_000;
@@ -275,39 +171,6 @@ export function apiModelTier(feature: string): ApiModelTier {
   if (['labels', 'title', 'approval'].includes(feature)) return 'lite';
   if (['recap', 'cause'].includes(feature)) return 'medium';
   return 'low';
-}
-
-/** The program and arguments for one request. No shell is involved. */
-export function modelCommand(
-  _backend: 'agy',
-  request: Pick<ModelRequest, 'system' | 'prompt' | 'thinking'>,
-  env: NodeJS.ProcessEnv = process.env
-): { file: string; args: string[] } {
-  const override = env.CODEX_HUD_BRIEF_MODEL?.trim();
-  const thinking = request.thinking ?? DEFAULT_THINKING;
-  // agy has no system prompt flag; the instructions lead the prompt instead.
-  // Its default model's name carries the level, so a level it has a name
-  // for picks that model; anything else goes to --effort. At `low` this is
-  // exactly the command the brief has always run.
-  let model = override || DEFAULT_AGY_MODEL;
-  let effort: string | undefined;
-  if (!override && AGY_MODEL_LEVELS.includes(thinking)) model = `${AGY_MODEL_FAMILY}-${thinking}`;
-  else if (AGY_EFFORTS.includes(thinking) && (override || thinking !== DEFAULT_THINKING)) effort = thinking;
-  return {
-    file: 'agy',
-    args: [
-      '-p',
-      `${request.system}\n\n${request.prompt}`,
-      '--model',
-      model,
-      ...(effort ? ['--effort', effort] : []),
-      '--output-format',
-      'text',
-      '--print-timeout',
-      '80s',
-      '--disable-slash-commands',
-    ],
-  };
 }
 
 /**
@@ -337,11 +200,9 @@ export function modelHttpRequest(
     return { error: 'api: invalid endpoint' };
   }
   const tier = apiModelTier(request.feature);
-  const model =
-    env.CODEX_HUD_BRIEF_MODEL?.trim() || api.model.trim() || api.models?.[tier]?.trim() || DEFAULT_API_MODELS[tier];
+  const model = env.CODEX_HUD_BRIEF_MODEL?.trim() || api.model.trim() || DEFAULT_API_MODELS[tier];
   // General provider keys are bound to exact HTTPS origins, never a lookalike or custom port.
   let key = api.sourceCredential?.trim() || '';
-  let keySource = key ? 'explicit-source' : 'accountless';
   if (
     api.sourceCredential === undefined &&
     (origin === 'https://api.openai.com' || origin === 'https://api.mistral.ai')
@@ -349,23 +210,18 @@ export function modelHttpRequest(
     try {
       const name = origin === 'https://api.mistral.ai' ? 'MISTRAL_API_KEY' : 'OPENAI_API_KEY';
       key = env[name]?.trim() || '';
-      if (key) keySource = `${name} from environment`;
       if (!key) {
         const creds = readHudCredentials(env);
         key = (origin === 'https://api.mistral.ai' ? creds.mistralApiKey : creds.openaiApiKey)?.trim() || '';
-        if (key) keySource = `${name} from credentials.env`;
       }
     } catch {
       return { error: 'api: credential file must be a regular file with mode 0600' };
     }
   }
-  const selection = request.feature === 'job_card' ? { accountSelection: `${origin} · ${keySource}` } : {};
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (!key && api.sourceCredential === undefined)
     return {
       error: 'api: off (missing provider key in environment or $HUD_HOME/credentials.env)',
-      ...selection,
-      ...(request.feature === 'job_card' ? { url, model } : {}),
     };
   if (key) headers.authorization = `Bearer ${key}`;
   const configuredEffort = apiEffort(api, tier);
@@ -383,7 +239,7 @@ export function modelHttpRequest(
       { role: 'user', content: request.prompt },
     ],
   });
-  return { url, headers, body, model, ...selection };
+  return { url, headers, body, model };
 }
 
 /** The reply text of a chat completion; some servers send content as parts. */
@@ -442,8 +298,6 @@ function validFormat(request: ModelRequest, text: string): boolean {
     return request.validateResponse ? request.validateResponse(text) === true : true;
   } catch {
     return false;
-  } finally {
-    if (request.validateResponse) invalidateJobPaths();
   }
 }
 
@@ -517,27 +371,13 @@ function httpClassification(status: number, json: unknown): ModelFailureClassifi
 
 interface Job {
   request: ModelRequest;
-  envelope?: ModelEnvelope;
-  authority?: ModelAuthority;
-  recipient?: ResolvedRecipient;
-  legacy?: boolean;
-  probe?: boolean;
   backend: ModelBackend;
   env?: NodeJS.ProcessEnv;
   store?: ModelRuntimeStore | null;
-  command?: ReturnType<typeof modelCommand>;
   http?: ReturnType<typeof modelHttpRequest>;
   digest: string | null;
-  resolve: (result: InternalModelResult) => void;
-  dispatchBudget?: JobReadBudget;
-  telemetryAdmitted?: boolean;
-  pending?: boolean;
-  reserved?: boolean;
-  pendingSettlement?: Promise<JobPendingResult>;
+  resolve: (result: ModelResult) => void;
   settled: boolean;
-  settling?: boolean;
-  finished?: boolean;
-  settlementOverride?: InternalModelResult;
   status: ModelStatus;
   generatedAt?: number;
   queuedAt: number;
@@ -559,12 +399,6 @@ export interface SmallModelOptions {
   clock?: () => number;
   /** Safe lifecycle notification; callers can read diagnostics() and repaint. */
   onChange?: () => void;
-  /** Injected by source-aware composition; missing scope/policy never means allow. */
-  materials?: MaterialAuthority;
-  /** Account identity is explicit and never derived from credentials. */
-  account?: string;
-  trustedProfile?: string;
-  resolveRecipient?: (route: MaterialRoute) => ResolvedRecipient | null;
 }
 
 export class SmallModel {
@@ -572,8 +406,6 @@ export class SmallModel {
   private api: ModelApi = { base: '', model: '', key: '' };
   private cap = DEFAULT_HOURLY_CAP;
   private readonly queue: Job[] = [];
-  private readonly preflights = new Set<ModelHandle>();
-  private readonly settlingJobs = new Set<Job>();
   private active: Job | null = null;
   private cache = new Map<string, { text: string; at: number }>();
   private calls: number[] = [];
@@ -583,15 +415,8 @@ export class SmallModel {
   private lastSuccessAt?: number;
   private lastFailure?: ModelDiagnostics['lastFailure'];
   private readonly store: ModelRuntimeStore | null;
-  private readonly materialStore: ModelRuntimeStore | null;
   private readonly telemetryStore: ModelRuntimeStore | null;
   private readonly dir: string | null;
-  private readonly materialCache: MaterialCache;
-  private readonly legacyBridge: LegacyCodexBridge;
-  private readonly cliRecipient = new CliRecipientBinding();
-  /** Sensitive values are compared privately, never fingerprinted, persisted or reported. */
-  private readonly apiCredentials = new Map<string, string | undefined>();
-  readonly recapScopes: LegacyRecapScopes;
   private readonly clock: () => number;
   private telemetryRecords: ModelTelemetryRecord[] = [];
   private telemetryWrites: Promise<void> = Promise.resolve();
@@ -601,87 +426,18 @@ export class SmallModel {
 
   constructor(private readonly options: SmallModelOptions = {}) {
     this.dir = options.dir ?? null;
-    this.clock = options.clock ? () => this.callback(() => options.clock!()) : Date.now;
-    this.materialCache = new MaterialCache(this.dir);
-    this.recapScopes = new LegacyRecapScopes(this.dir ? path.join(this.dir, 'materials-v1', 'recap-scopes') : null);
-    this.legacyBridge = new LegacyCodexBridge(
-      this.dir,
-      options.env ?? process.env,
-      () => ({
-        route: this.route('brief'),
-        credential: (() => {
-          if (this.backend !== 'api') return undefined;
-          const http = modelHttpRequest(
-            this.api,
-            { feature: 'brief', system: '', prompt: '' },
-            options.env ?? process.env
-          );
-          return 'error' in http ? undefined : http.headers.authorization;
-        })(),
-        matches: (raw) => {
-          if (raw.briefing !== this.backend) return false;
-          if (this.backend === 'agy') return true;
-          const configured = {
-            base: typeof raw.briefingApiBase === 'string' ? raw.briefingApiBase : '',
-            model: typeof raw.briefingApiModel === 'string' ? raw.briefingApiModel : '',
-          };
-          const expected = modelHttpRequest(
-            configured,
-            { feature: 'brief', system: '', prompt: '' },
-            options.env ?? process.env
-          );
-          const actual = modelHttpRequest(
-            this.api,
-            { feature: 'brief', system: '', prompt: '' },
-            options.env ?? process.env
-          );
-          return (
-            !('error' in expected) &&
-            !('error' in actual) &&
-            expected.url === actual.url &&
-            expected.headers.authorization === actual.headers.authorization
-          );
-        },
-      }),
-      this.cliRecipient
-    );
+    this.clock = options.clock ? () => options.clock!() : Date.now;
     this.store = this.dir ? new ModelRuntimeStore(this.dir) : null;
-    this.materialStore = this.dir
-      ? new ModelRuntimeStore(this.dir, path.join(this.dir, 'materials-v1', 'replies'))
-      : null;
     this.telemetryStore = this.dir ? new ModelRuntimeStore(path.join(this.dir, 'telemetry')) : null;
   }
 
   configure(patch: { backend?: ModelBackend; api?: ModelApi; hourlyCap?: number }): void {
     const backend = patch.backend ?? this.backend;
-    const api = patch.api
-      ? {
-          ...patch.api,
-          models: patch.api.models ? { ...patch.api.models } : undefined,
-          efforts: patch.api.efforts ? { ...patch.api.efforts } : undefined,
-        }
-      : this.api;
+    const api = patch.api ?? this.api;
     const changed = backend !== this.backend || JSON.stringify(api) !== JSON.stringify(this.api);
     if (changed) this.cancelAll();
     this.backend = backend;
     this.api = api;
-    if (changed && backend === 'agy') this.cliRecipient.capture(this.options.env ?? process.env);
-    if (changed && backend === 'api' && this.options.account && !this.options.resolveRecipient) {
-      try {
-        this.recipient(this.route('brief'));
-      } catch {
-        /* Unknown connection cannot establish a baseline. */
-      }
-    }
-    // Panel composition calls configure at startup/settings save, outside collection/paint.
-    if (
-      changed &&
-      backend !== 'off' &&
-      !this.options.materials &&
-      !this.options.account &&
-      !this.options.resolveRecipient
-    )
-      this.legacyBridge.observeConfiguration();
     if (patch.hourlyCap !== undefined && Number.isFinite(patch.hourlyCap) && patch.hourlyCap > 0)
       this.cap = Math.floor(patch.hourlyCap);
   }
@@ -735,7 +491,6 @@ export class SmallModel {
   }
 
   private recordTelemetry(job: Job, result?: ModelResult, capturedNow?: number): void {
-    if (job.envelope && jobEnvelope(job.envelope) && !job.telemetryAdmitted) return;
     const now = capturedNow ?? this.clock();
     const outcome = !result
       ? 'pending'
@@ -787,671 +542,36 @@ export class SmallModel {
     }
   }
 
-  private callback<T>(fn: () => T, job = this.active): T {
+  private changed(): void {
     try {
-      if (job?.envelope && jobEnvelope(job.envelope) && job.dispatchBudget)
-        return withJobDispatchBudget(job.dispatchedAt === undefined ? job.dispatchBudget : jobDispatchBudget(), fn);
-      return fn();
-    } finally {
-      invalidateJobPaths();
-    }
-  }
-  private changed(job = this.active): void {
-    try {
-      if (this.options.onChange) this.callback(() => this.options.onChange!(), job);
+      if (this.options.onChange) this.options.onChange!();
     } catch {
       /* Observers cannot strand work. */
-    } finally {
-      invalidateJobPaths();
     }
-  }
-
-  private route(
-    feature: string,
-    env: NodeJS.ProcessEnv = this.options.env ?? process.env
-  ): MaterialRoute & { effort?: ApiEffort } {
-    const empty = { feature, system: '', prompt: '' };
-    const http = this.backend === 'api' ? modelHttpRequest(this.api, empty, env) : undefined;
-    const command = this.backend === 'agy' ? modelCommand('agy', empty, env) : undefined;
-    return {
-      backend: this.backend,
-      endpoint: http?.url ?? '',
-      model: http?.model ?? command?.args[command.args.indexOf('--model') + 1],
-      reasoning: this.backend === 'api' && apiEffort(this.api, apiModelTier(feature)) !== 'off',
-      ...(this.backend === 'api' && apiEffort(this.api, apiModelTier(feature)) !== 'off'
-        ? { effort: apiEffort(this.api, apiModelTier(feature)) }
-        : {}),
-    };
-  }
-  private recipient(route: MaterialRoute, jobCard = false): ResolvedRecipient | null {
-    const resolve = () => {
-      try {
-        return this.options.resolveRecipient!(route);
-      } finally {
-        invalidateJobPaths();
-      }
-    };
-    const selected =
-      jobCard && !this.options.account && !this.options.resolveRecipient && route.backend === 'api'
-        ? modelHttpRequest(this.api, { feature: 'job_card', system: '', prompt: '' }, this.options.env ?? process.env)
-        : undefined;
-    const resolved = this.options.resolveRecipient
-      ? bindResolvedRecipient(route, resolve())
-      : resolveRecipient(route, this.options.account ?? selected?.accountSelection, this.options.trustedProfile);
-    if (route.backend === 'agy') return this.cliRecipient.bind(resolved, this.options.env ?? process.env);
-    if (route.backend === 'api' && resolved && !this.options.resolveRecipient) {
-      const http = modelHttpRequest(
-        this.api,
-        { feature: 'brief', system: '', prompt: '' },
-        this.options.env ?? process.env
-      );
-      if ('error' in http && !selected?.accountSelection?.endsWith('accountless')) return null;
-      const credential = 'error' in http ? undefined : http.headers.authorization;
-      if (this.apiCredentials.has(resolved.recipientId)) {
-        if (this.apiCredentials.get(resolved.recipientId) !== credential) return null;
-      } else this.apiCredentials.set(resolved.recipientId, credential);
-    }
-    return resolved;
-  }
-  private hasExplicitRecipient(): boolean {
-    return (
-      this.options.account !== undefined ||
-      this.options.trustedProfile !== undefined ||
-      this.options.resolveRecipient !== undefined
-    );
-  }
-
-  private prepare(
-    plan: MaterialPlan | undefined,
-    route: MaterialRoute,
-    authority: MaterialAuthority | undefined,
-    recipient: ResolvedRecipient | null,
-    feature: string
-  ): {
-    envelope: MaterialEnvelope;
-    authority: MaterialAuthority;
-    recipient: ResolvedRecipient;
-    request: ModelRequest;
-    legacy: boolean;
-  } | null {
-    if (!plan) return null;
-    if (plan.probe) {
-      const target = resolveRecipient(route, 'explicit-synthetic-probe');
-      if (!target || route.backend !== 'api') return null;
-      const sourceId = fingerprint('hud-synthetic-probe-v1');
-      const probeAuthority: MaterialAuthority = {
-        scope: (source) =>
-          source === sourceId
-            ? { revision: 0, local: true, allows: (p, purpose) => p.field === 'probe' && purpose === 'probe' }
-            : null,
-        policy: (source) => ({
-          schemaVersion: 1,
-          sourceId: source,
-          revision: 0,
-          grants: [
-            {
-              purpose: 'probe',
-              recipientId: target.recipientId,
-              decision: 'allow',
-              grantedAt: 0,
-            },
-          ],
-        }),
-      };
-      const probe = buildMaterials({
-        purpose: 'probe',
-        resolvedRecipient: target,
-        authority: probeAuthority,
-        subjects: [
-          {
-            ref: { sourceId, harness: 'codex', sessionId: 'synthetic-probe', threadId: null },
-            origin: 'native',
-            field: 'probe',
-            kind: 'public_text',
-            recordFingerprint: fingerprint('synthetic-probe'),
-            read: () => 'Reply with OK.',
-          },
-        ],
-        limits: { maxBytes: 100 },
-      });
-      if (!isEnvelope(probe)) return null;
-      return {
-        envelope: probe,
-        authority: probeAuthority,
-        recipient: target,
-        legacy: false,
-        request: {
-          feature,
-          system: 'This is a connectivity check. Return only OK.',
-          prompt: 'Reply with OK.',
-          priority: 'interactive',
-          maxOutputTokens: 256,
-          timeoutMs: 15000,
-          telemetryFeature: 'probe',
-        },
-      };
-    }
-    let subjects = plan.subjects;
-    let legacy = false;
-    let requiredRefs: string[] = [];
-    if (plan.legacy && !subjects) {
-      if (this.hasExplicitRecipient() && !recipient) return null;
-      const view = this.legacyBridge.prepare(plan, route);
-      if (!view) return null;
-      subjects = view.subjects;
-      requiredRefs = view.requiredRefs;
-      recipient ??= view.recipient;
-      if (authority) {
-        const explicit = authority;
-        authority = {
-          scope: (sourceId) => {
-            const current = explicit.scope(sourceId);
-            const compatible = view.authority.scope(sourceId);
-            return current?.local && compatible?.local
-              ? {
-                  revision: current.revision,
-                  local: true,
-                  allows: (p, purpose) => current.allows(p, purpose) && compatible.allows(p, purpose),
-                }
-              : null;
-          },
-          policy: (sourceId) =>
-            outboundDecision(view.authority.policy(sourceId), {
-              sourceId,
-              purpose: plan.purpose,
-              recipientId: view.recipient.recipientId,
-            }) === 'allow'
-              ? explicit.policy(sourceId)
-              : null,
-        };
-      } else authority = view.authority;
-      legacy = true;
-    }
-    if (!authority || !recipient || !subjects) return null;
-    if (legacy) markLegacy(null, authority);
-    const decision = buildMaterials({
-      subjects,
-      purpose: plan.purpose,
-      resolvedRecipient: recipient,
-      authority,
-      limits: { maxBytes: plan.maxBytes ?? 65536 },
-      allowPartial: plan.legacyOptional?.length ? true : plan.allowPartial,
-    });
-    if (!isEnvelope(decision) || !revalidateMaterials(decision, authority, recipient)) return null;
-    const admittedRefs = new Set(
-      decision.fragments.flatMap((fragment) => fragment.provenance.map((p) => sessionRefKey(p.ref)))
-    );
-    if (requiredRefs.some((ref) => !admittedRefs.has(ref))) return null;
-    if (legacy) markLegacy(decision, authority);
-    if (plan.inherited && !revalidateMaterials(plan.inherited, authority, recipient)) return null;
-    const request = plan.compose(decision);
-    if (legacy || plan.inherited) {
-      // The formatted aggregate (and repair/translation) inherits the COMPLETE union.
-      const parents = plan.inherited ? [decision, plan.inherited] : [decision];
-      const aggregate = buildMaterials({
-        subjects: parents.map((parent) => ({
-          ref: parent.fragments[0].provenance[0].ref,
-          origin: parent.fragments[0].provenance[0].origin,
-          field: plan.purpose,
-          kind: 'derived' as const,
-          derived: parent,
-          recordFingerprint: parent.fingerprint,
-          read: () => JSON.stringify([request.system, request.prompt, request.cacheKey ?? '']),
-        })),
-        purpose: plan.purpose,
-        resolvedRecipient: recipient,
-        authority,
-        limits: { maxBytes: 262144 },
-      });
-      if (!isEnvelope(aggregate)) return null;
-      if (legacy) markLegacy(aggregate, authority);
-      return { envelope: aggregate, authority, recipient, request, legacy };
-    }
-    return { envelope: decision, authority, recipient, request, legacy };
-  }
-  private authorizationFailure(): ModelResult {
-    return { ok: false, error: 'requires_authorization', refused: true, cancelled: true };
-  }
-  /** Public checks never borrow the worker's budget or release unproven material. */
-  private publicAuthorized(job: Job): boolean {
-    if (!job.envelope || !jobEnvelope(job.envelope)) return this.authorized(job);
-    try {
-      return hasJobBudget()
-        ? this.authorized(job, false)
-        : withJobDispatchBudget(jobDispatchBudget(), () => this.authorized(job, false));
-    } catch (error) {
-      if (error instanceof JobBudgetPending) return false;
-      throw error;
-    }
-  }
-  private authorized(job: Job, dispatch = true): boolean {
-    try {
-      if (job.backend === 'api' && job.http && !('error' in job.http)) {
-        const current = modelHttpRequest(
-          this.api,
-          { feature: job.request.feature, system: '', prompt: '' },
-          this.options.env ?? process.env
-        );
-        if ('error' in current || current.headers.authorization !== job.http.headers.authorization) return false;
-      }
-      const route = this.route(job.request.feature);
-      const recipient = job.probe
-        ? resolveRecipient(route, 'explicit-synthetic-probe')
-        : job.legacy && !this.hasExplicitRecipient()
-          ? this.legacyBridge.recipient(route)
-          : this.recipient(route, job.request.feature === 'job_card');
-      if (!job.envelope || !job.authority) return false;
-      const validate = () => revalidateModelMaterials(job.envelope!, job.authority!, recipient);
-      if (dispatch && jobEnvelope(job.envelope) && job.dispatchBudget) {
-        // Reply/publication fences are separate fresh opportunities after transport.
-        return withJobDispatchBudget(
-          job.dispatchedAt === undefined ? job.dispatchBudget : jobDispatchBudget(),
-          validate
-        );
-      }
-      return validate();
-    } catch (error) {
-      if (error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope)) throw error;
-      return false;
-    }
-  }
-  private cacheAllowed(job: Job, text: string, at: number): boolean {
-    try {
-      return !!job.envelope && (job.legacy === true || this.materialCache.has(job.digest!, job.envelope, text, at));
-    } finally {
-      if (job.envelope && jobEnvelope(job.envelope)) invalidateJobPaths();
-    }
-  }
-
-  /** Off-tick permission check for local asynchronous extraction; transport still rechecks the captured subjects. */
-  inspectLegacyMaterials(
-    subjects: readonly LegacySubject[],
-    purpose: import('../core/types/export.js').OutboundPurpose
-  ): boolean | Promise<boolean> {
-    return new Promise((resolve) =>
-      setImmediate(() => {
-        if (this.backend === 'off') {
-          resolve(false);
-          return;
-        }
-        try {
-          const route = this.route(purpose === 'label' ? 'labels' : purpose);
-          const plan = legacyRequest(purpose === 'label' ? 'labels' : purpose, subjects, () => ({
-            feature: purpose,
-            system: '',
-            prompt: '',
-          })).materials!;
-          resolve(!!this.prepare(plan, route, this.options.materials, this.recipient(route), purpose));
-        } catch {
-          resolve(false);
-        }
-      })
-    );
-  }
-  inspectLocalLegacy(subjects: readonly LegacySubject[]): boolean | Promise<boolean> {
-    return new Promise((resolve) =>
-      setImmediate(() => {
-        try {
-          if (!this.historicalDisplaySubjects(subjects)) {
-            resolve(false);
-            return;
-          }
-          const identified = this.legacyBridge.identifyNative(subjects, 'brief');
-          resolve(
-            !!identified &&
-              identified.every(
-                (subject) =>
-                  !this.options.materials || this.options.materials.scope(subject.ref.sourceId)?.local === true
-              )
-          );
-        } catch {
-          resolve(false);
-        }
-      })
-    );
-  }
-  /** Display-only legacy cache access uses local scope, including with backend off; it creates no material grant. */
-  readLegacyLabels<T>(
-    subjects: readonly LegacySubject[],
-    file: string,
-    consume: (admitted?: ReadonlySet<string>) => T,
-    optionalSubjects: readonly LegacySubject[] = []
-  ): T | null | Promise<T | null> {
-    return new Promise((resolve) =>
-      setImmediate(() => {
-        try {
-          if (!this.historicalDisplaySubjects(subjects)) {
-            resolve(null);
-            return;
-          }
-          const identified = this.legacyBridge.identifyNative(subjects, 'label');
-          if (
-            !identified ||
-            !this.legacyBridge.localLabelFile(file) ||
-            identified.some(
-              (subject) => this.options.materials && this.options.materials.scope(subject.ref.sourceId)?.local !== true
-            )
-          ) {
-            resolve(null);
-            return;
-          }
-          const admitted = new Set(identified.map((subject) => subject.ref.sessionId));
-          for (const optional of optionalSubjects) {
-            if (!this.historicalDisplaySubjects([optional])) continue;
-            const proven = this.legacyBridge.identifyNative([optional], 'label');
-            if (
-              proven?.every(
-                (subject) =>
-                  !this.options.materials || this.options.materials.scope(subject.ref.sourceId)?.local === true
-              )
-            )
-              admitted.add(optional.sessionId);
-          }
-          resolve(consume(admitted));
-        } catch {
-          resolve(null);
-        }
-      })
-    );
-  }
-
-  private historicalDisplaySubjects(subjects: readonly LegacySubject[]): boolean {
-    return subjects.every(
-      (subject) =>
-        !subject.ref &&
-        !subject.universal &&
-        subject.origin === undefined &&
-        (!subject.chargeFor ||
-          (!subject.chargeFor.ref && !subject.chargeFor.universal && subject.chargeFor.origin === undefined))
-    );
-  }
-
-  /** Exact job-card recipient; collection/settings only, never a paint-time probe. */
-  jobCardRecipient(): ResolvedRecipient | null {
-    if (this.backend === 'off') return null;
-    try {
-      return this.recipient(this.route('job_card'), true);
-    } catch {
-      return null;
-    }
-  }
-
-  /** Safe connection description composed with Settings, never credential bytes or IDs. */
-  jobCardRecipientLabel(): string | null {
-    const recipient = this.jobCardRecipient();
-    if (!recipient) return null;
-    const selected = modelHttpRequest(
-      this.api,
-      { feature: 'job_card', system: '', prompt: '' },
-      this.options.env ?? process.env
-    );
-    return selected.accountSelection ? `${selected.accountSelection} · ${recipient.model}` : recipient.model;
   }
 
   /** Queue a request. It starts at once when nothing else is in flight. */
-  submit(request: JobModelRequest): JobModelHandle;
-  submit(request: ModelRequest): ModelHandle;
-  submit(request: ModelRequest): ModelHandle | JobModelHandle {
-    if (request.feature === 'job_card' && request.jobMaterials && !request.materials)
-      return this.submitJob(request.jobMaterials);
-    return this.submitOrdinary(request);
-  }
-  /** Job-only pending outcome; never enters queue, telemetry, cache, or cap accounting. */
-  submitJob(plan: JobMaterialPlan): JobModelHandle {
-    const pending = (): JobModelHandle => ({
-      status: 'pending',
-      result: Promise.resolve({ ok: false, pending: true, reason: 'budget' }),
-      subscribe: () => () => {},
-      cancel: () => {},
-      isAuthorized: () => false,
-    });
-    if (this.backend === 'off')
-      return this.submitNow({ feature: 'job_card', system: '', prompt: '', jobMaterials: plan });
-    const budget = plan.budget ?? plan.subject.budget;
-    if (
-      budget &&
-      ((budget.probes ?? 0) >= (budget.maxProbes ?? 2048) ||
-        (budget.deadline !== undefined && performance.now() >= budget.deadline))
-    )
-      return pending();
-    try {
-      return withJobBudget(budget, () => {
-        const recipient = this.recipient(this.route('job_card'), true);
-        const decision = buildMaterials({
-          kind: 'job',
-          purpose: plan.purpose,
-          subject: plan.subject,
-          authority: plan.authority,
-          resolvedRecipient: recipient,
-          limits: { maxBytes: 16384, maxFragments: 32 },
-          budget,
-        });
-        if ('pending' in decision) return pending();
-        const preparedPlan = { ...plan };
-        preparedJobs.set(preparedPlan, decision);
-        try {
-          return this.submitNow({ feature: 'job_card', system: '', prompt: '', jobMaterials: preparedPlan });
-        } finally {
-          preparedJobs.delete(preparedPlan);
-        }
-      });
-    } catch (error) {
-      if (error instanceof JobBudgetPending) return pending();
-      throw error;
-    }
-  }
-  private submitOrdinary(request: ModelRequest): ModelHandle {
-    if (!request.materials?.legacy || this.backend === 'off') return this.submitNow(request);
-    // Legacy proof touches the original home. Schedule it outside the collection/paint turn.
-    let inner: ModelHandle | undefined;
-    let cancelled = false;
-    let resolve!: (result: ModelResult) => void;
-    const listeners = new Set<() => void>();
-    const routeSnapshot = JSON.stringify(this.route(request.feature));
-    const env = this.options.env ?? process.env;
-    const sourceContext = JSON.stringify([
-      env.CODEX_HOME,
-      env.CODEX_SESSIONS_PATH,
-      resolveHudEnv(env, 'HUD_SETTINGS_PATH'),
-      env.HUD_HOME,
-      env.PATH,
-    ]);
-    const emptyHttp =
-      this.backend === 'api'
-        ? modelHttpRequest(this.api, { feature: request.feature, system: '', prompt: '' }, env)
-        : undefined;
-    const credential = emptyHttp && !('error' in emptyHttp) ? emptyHttp.headers.authorization : undefined;
-    const result = new Promise<ModelResult>((done) => {
-      resolve = done;
-    });
-    setImmediate(() => {
-      this.preflights.delete(handle);
-      if (cancelled) return;
-      const currentHttp =
-        this.backend === 'api'
-          ? modelHttpRequest(this.api, { feature: request.feature, system: '', prompt: '' }, env)
-          : undefined;
-      const currentCredential =
-        currentHttp && !('error' in currentHttp) ? currentHttp.headers.authorization : undefined;
-      if (
-        routeSnapshot !== JSON.stringify(this.route(request.feature)) ||
-        credential !== currentCredential ||
-        sourceContext !==
-          JSON.stringify([
-            env.CODEX_HOME,
-            env.CODEX_SESSIONS_PATH,
-            resolveHudEnv(env, 'HUD_SETTINGS_PATH'),
-            env.HUD_HOME,
-            env.PATH,
-          ])
-      ) {
-        resolve(this.authorizationFailure());
-        return;
-      }
-      const changed = () => {
-        for (const listener of listeners) {
-          try {
-            listener();
-          } catch {
-            /* Observer only. */
-          }
-        }
-      };
-      try {
-        inner = this.submitNow(request);
-        inner.subscribe(changed);
-        inner.result.then(resolve);
-        changed();
-      } catch {
-        resolve(this.authorizationFailure());
-      }
-    });
-    const handle: ModelHandle = {
-      result,
-      get status() {
-        return inner?.status ?? (cancelled ? 'settled' : 'queued');
-      },
-      get generatedAt() {
-        return inner?.generatedAt;
-      },
-      get materials() {
-        return inner?.materials;
-      },
-      isAuthorized: () => inner?.isAuthorized?.() === true,
-      subscribe(listener) {
-        listeners.add(listener);
-        return () => {
-          listeners.delete(listener);
-        };
-      },
-      cancel() {
-        cancelled = true;
-        if (inner) inner.cancel();
-        else resolve({ ok: false, error: 'cancelled', cancelled: true });
-      },
-    };
-    this.preflights.add(handle);
-    return privateMaterialHandle(handle);
-  }
-
-  private submitNow(request: JobModelRequest): JobModelHandle;
-  private submitNow(request: ModelRequest): ModelHandle;
-  private submitNow(request: ModelRequest): ModelHandle | JobModelHandle {
-    // Resolve the route with EMPTY material. Authorization precedes all formatting and hashing.
+  submit(request: ModelRequest): ModelHandle {
     const backend = this.backend;
     const env = { ...(this.options.env ?? process.env) };
-    let route = this.route(request.feature, env);
-    const plan = request.materials;
-    const jobPlan = request.jobMaterials;
-    let envelope: ModelEnvelope | undefined;
-    let authority: ModelAuthority | undefined = jobPlan?.authority ?? plan?.authority ?? this.options.materials;
-    let recipient: ResolvedRecipient | null = null;
-    try {
-      if (backend !== 'off') recipient = this.recipient(route, request.feature === 'job_card');
-    } catch {
-      /* Unknown target denies. */
-    }
-    let refusal: ModelResult | undefined;
-    let legacy = false;
-    if (backend === 'off') refusal = { ok: false, error: 'model backend off', refused: true };
-    else if (route.backend === 'api' && !route.endpoint)
-      refusal = {
-        ok: false,
-        error: 'api: invalid endpoint',
-        classification: 'invalid-response',
-      };
-    else {
-      let prepared: ReturnType<SmallModel['prepare']> = null;
-      try {
-        if (!jobPlan)
-          prepared = this.prepare(plan, route, authority as MaterialAuthority | undefined, recipient, request.feature);
-      } catch {
-        /* Invalid adapters deny. */
-      }
-      if (
-        jobPlan &&
-        !plan &&
-        jobPlan.kind === 'job' &&
-        jobPlan.purpose === 'job_card' &&
-        request.feature === 'job_card'
-      ) {
-        try {
-          const decision =
-            preparedJobs.get(jobPlan) ??
-            buildMaterials({
-              kind: 'job',
-              purpose: jobPlan.purpose,
-              subject: jobPlan.subject,
-              authority: jobPlan.authority,
-              resolvedRecipient: recipient,
-              limits: { maxBytes: 16384, maxFragments: 32 },
-            });
-          if (
-            !('denied' in decision) &&
-            !('pending' in decision) &&
-            revalidateJobMaterials(decision, jobPlan.authority, recipient)
-          ) {
-            envelope = decision;
-            authority = jobPlan.authority;
-            let composed: ModelRequest;
-            try {
-              composed = jobPlan.compose(decision);
-            } finally {
-              invalidateJobPaths();
-            }
-            request = {
-              ...composed,
-              feature: 'job_card',
-              materials: undefined,
-              jobMaterials: undefined,
-            };
-            if (!revalidateJobMaterials(decision, jobPlan.authority, recipient)) refusal = this.authorizationFailure();
-          } else refusal = { ok: false, error: 'requires_authorization', refused: true };
-        } catch (error) {
-          if (error instanceof JobBudgetPending) throw error;
-          refusal = { ok: false, error: 'requires_authorization', refused: true };
-        }
-      } else if (prepared) {
-        envelope = prepared.envelope;
-        authority = prepared.authority;
-        recipient = prepared.recipient;
-        legacy = prepared.legacy;
-        request = { ...prepared.request, materials: undefined };
-      } else refusal = { ok: false, error: 'requires_authorization', refused: true };
-    }
-    // Denied getters are never evaluated, including prompt/system/cacheKey.
-    if (refusal) request = { feature: request.feature, system: '', prompt: '' };
-    const http = !refusal && backend === 'api' ? modelHttpRequest(this.api, request, env) : undefined;
-    const command = !refusal && backend === 'agy' ? modelCommand('agy', request, env) : undefined;
-    if (command) command.file = this.cliRecipient.executable() ?? command.file;
-    if (!refusal)
-      route = {
-        ...route,
-        model: http && !('error' in http) ? http.model : command?.args[command.args.indexOf('--model') + 1],
-      };
+    const http = backend === 'api' ? modelHttpRequest(this.api, request, env) : undefined;
     const digest =
-      !refusal && request.cacheKey !== undefined
-        ? requestDigest(
-            request,
-            legacy
-              ? route
-              : ({ ...route, materialDomain: envelope!.cacheDomain, language: request.language } as typeof route)
-          )
+      backend !== 'off' && request.cacheKey !== undefined
+        ? requestDigest(request, {
+            backend,
+            endpoint: http?.url,
+            model: http?.model,
+            effort: apiEffort(this.api, apiModelTier(request.feature)),
+          })
         : null;
     let job!: Job;
-    const result = new Promise<InternalModelResult>((resolve) => {
+    const result = new Promise<ModelResult>((resolve) => {
       job = {
         request,
-        envelope,
-        authority,
-        recipient: recipient ?? undefined,
-        legacy,
-        probe: plan?.probe,
         env,
-        store: legacy ? this.store : this.materialStore,
+        store: this.store,
         backend,
         http,
-        command,
         digest,
         id: randomUUID(),
         queuedAt: this.clock(),
@@ -1460,28 +580,9 @@ export class SmallModel {
         status: 'queued',
         listeners: new Set(),
         resolve: (value) => {
-          if (job.envelope && jobEnvelope(job.envelope)) {
-            if (job.settled) return;
-            if (job.settling) {
-              if (!value.ok && (!job.settlementOverride || 'pending' in job.settlementOverride))
-                job.settlementOverride = value;
-              return;
-            }
-            job.settling = true;
-            this.settlingJobs.add(job);
-            void this.settleJob(job, value, resolve);
-            return;
-          }
           if (!job.settled) {
             job.settled = true;
-            if ('pending' in value) {
-              job.pending = true;
-              if (job.dispatchedAt === undefined)
-                this.telemetryRecords = this.telemetryRecords.filter((record) => record.id !== job.id);
-            } else {
-              job.telemetryAdmitted = true;
-              this.recordTelemetry(job, value);
-            }
+            this.recordTelemetry(job, value);
             this.setStatus(job, 'settled');
             resolve(value);
           }
@@ -1489,77 +590,32 @@ export class SmallModel {
       };
     });
     this.recordTelemetry(job);
-    if (!refusal && jobPlan && envelope) {
-      const unsubscribe = jobPlan.authority.subscribe(() => {
-        if (job.settled) return;
-        try {
-          if (this.authorized(job)) return;
-        } catch (error) {
-          if (!(error instanceof JobBudgetPending)) throw error;
-          const at = this.queue.indexOf(job);
-          if (at >= 0) this.queue.splice(at, 1);
-          job.stop?.();
-          void this.pendingDispatch(job).then(job.resolve);
-          this.pump();
-          return;
-        }
-        const at = this.queue.indexOf(job);
-        if (at >= 0) this.queue.splice(at, 1);
-        job.stop?.();
-        job.resolve(this.authorizationFailure());
-        this.pump();
-      });
-      void result.then(unsubscribe);
-    }
     let hit: { text: string; at: number } | undefined;
-    // Job cache consumption belongs to the fresh, bounded microtask worker (q11).
-    // Preserve the synchronous path exactly for native/legacy/non-job requests.
-    if (!envelope || !jobEnvelope(envelope)) {
-      if (!refusal) this.reloadCache(legacy);
-      hit = digest ? this.cache.get(digest) : undefined;
-      if (hit && (!this.authorized(job) || !this.cacheAllowed(job, hit.text, hit.at))) hit = undefined;
-      if (hit && !acceptable(request, hit.text)) {
-        this.cache.delete(digest!);
-        hit = undefined;
-      }
-    }
-    if (refusal) {
-      job.resolve(refusal);
+    this.reloadCache();
+    hit = digest ? this.cache.get(digest) : undefined;
+    if (hit && !acceptable(request, hit.text)) hit = undefined;
+    if (backend === 'off') {
+      job.resolve({ ok: false, error: 'model backend off', refused: true });
+    } else if (http && 'error' in http) {
+      job.resolve({ ok: false, error: http.error, refused: true });
     } else if (request.materialUnchanged) {
       job.resolve({ ok: false, error: 'unchanged', unchanged: true });
-    } else if (legacy && request.legacyCachedText !== undefined) {
-      job.resolve(
-        validFormat(request, request.legacyCachedText)
-          ? { ok: true, text: request.legacyCachedText, cached: true }
-          : { ok: false, error: 'Invalid response', classification: 'invalid-response' }
-      );
     } else if (hit) {
       job.generatedAt = hit.at;
       job.resolve({ ok: true, text: hit.text, cached: true });
     } else {
       this.queue.push(job);
       this.changed();
-      if (envelope && jobEnvelope(envelope)) queueMicrotask(() => this.pump());
-      else this.pump();
+      this.pump();
     }
-    const thisModel = this;
-    return privateMaterialHandle({
+    return {
       result,
       get status() {
-        return job.pending ? ('pending' as const) : job.status;
+        return job.status;
       },
       get generatedAt() {
         return job.generatedAt;
       },
-      get materials() {
-        return job.envelope && !jobEnvelope(job.envelope) ? job.envelope : undefined;
-      },
-      get jobMaterials() {
-        return !job.pending && job.envelope && jobEnvelope(job.envelope) && thisModel.publicAuthorized(job)
-          ? job.envelope
-          : undefined;
-      },
-      isAuthorized: () => !job.pending && this.publicAuthorized(job),
       subscribe: (listener) => {
         job.listeners.add(listener);
         return () => {
@@ -1576,84 +632,12 @@ export class SmallModel {
         // Abort is asynchronous. Keep the active slot until run() settles,
         // otherwise a replacement can overlap a fetch/subprocess still stopping.
       },
-    });
-  }
-
-  /** All job callbacks precede the last fresh fence and inline Promise commit. */
-  private async settleJob(
-    job: Job,
-    value: InternalModelResult,
-    deliver: (value: InternalModelResult) => void
-  ): Promise<void> {
-    let result = value,
-      now = Date.now();
-    const unavailable = (): ModelResult => ({
-      ok: false,
-      error: 'model shared state unavailable',
-      refused: true,
-      reason: 'runtime-unavailable',
-    });
-    const pending = async (): Promise<InternalModelResult> => {
-      try {
-        return await this.pendingDispatch(job);
-      } catch {
-        return unavailable();
-      }
     };
-    if (!('pending' in value)) {
-      try {
-        now = this.options.clock ? this.callback(() => this.options.clock!(), job) : Date.now();
-      } catch (error) {
-        if (value.ok) result = error instanceof JobBudgetPending ? await pending() : unavailable();
-      }
-    }
-    job.pending = 'pending' in result;
-    this.setStatus(job, 'settled');
-    if (job.finished && this.active === job) {
-      this.active = null;
-      this.changed(job); // Queue-release observers are pre-publication callbacks too.
-    }
-    result = job.settlementOverride ?? result;
-    if (result.ok) {
-      try {
-        if (!this.authorized(job)) result = this.authorizationFailure();
-      } catch (error) {
-        result = error instanceof JobBudgetPending ? await pending() : unavailable();
-      }
-    }
-    result = job.settlementOverride ?? result;
-    if (
-      job.envelope &&
-      jobEnvelope(job.envelope) &&
-      job.authority instanceof JobMaterialAuthority &&
-      job.authority.knownInvalid(job.envelope)
-    )
-      result = this.authorizationFailure();
-    job.pending = 'pending' in result;
-    if ('pending' in result) {
-      if (job.dispatchedAt === undefined)
-        this.telemetryRecords = this.telemetryRecords.filter((record) => record.id !== job.id);
-    } else {
-      job.telemetryAdmitted = true;
-      // Captured time means neither recording nor its asynchronous batch invokes a clock callback after the fence.
-      try {
-        this.recordTelemetry(job, result, now);
-      } catch {
-        this.telemetryUnavailable = true;
-      }
-    }
-    job.settled = true;
-    job.settling = false;
-    this.settlingJobs.delete(job);
-    deliver(result);
-    this.pump();
   }
 
   /** Cancel everything, waiting and running: the panel is closing. */
   cancelAll(): void {
-    for (const handle of this.preflights) handle.cancel();
-    this.preflights.clear();
-    for (const job of [...this.queue, ...(this.active ? [this.active] : []), ...this.settlingJobs]) {
+    for (const job of [...this.queue, ...(this.active ? [this.active] : [])]) {
       job.stop?.();
       job.resolve({ ok: false, error: 'cancelled', cancelled: true });
     }
@@ -1667,14 +651,12 @@ export class SmallModel {
   private setStatus(job: Job, status: ModelStatus): void {
     if (job.status === status) return;
     job.status = status;
-    this.changed(job);
+    this.changed();
     for (const listener of job.listeners) {
       try {
-        this.callback(listener, job);
+        listener();
       } catch {
         /* Observers must not strand a queue slot or its result. */
-      } finally {
-        invalidateJobPaths();
       }
     }
   }
@@ -1709,21 +691,16 @@ export class SmallModel {
     this.priorityBurst = index === oldest.index ? 0 : this.priorityBurst + 1;
     const job = this.queue.splice(index, 1)[0];
     this.active = job;
-    if (job.envelope && jobEnvelope(job.envelope)) job.dispatchBudget = jobDispatchBudget();
     // Disk coordination can wait for another panel. It becomes running only
     // once this process has a reservation and is about to send.
     if (!this.store) this.markRunning(job);
     void this.run(job)
-      .catch((error): InternalModelResult =>
-        error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope)
-          ? { ok: false, pending: true, reason: 'budget' }
-          : {
-              ok: false,
-              error: 'model shared state unavailable',
-              refused: true,
-              reason: 'runtime-unavailable',
-            }
-      )
+      .catch((): ModelResult => ({
+        ok: false,
+        error: 'model shared state unavailable',
+        refused: true,
+        reason: 'runtime-unavailable',
+      }))
       .then(async (outcome) => {
         if (outcome === WAITING_FOR_PEER) {
           if (!job.settled) {
@@ -1735,31 +712,11 @@ export class SmallModel {
           this.pump();
           return;
         }
-        job.finished = true;
-        if (outcome.ok) {
-          try {
-            if (!this.authorized(job)) outcome = this.authorizationFailure();
-          } catch (error) {
-            if (error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope))
-              outcome = await this.pendingDispatch(job);
-            else throw error;
-          }
-        }
-        if ('pending' in outcome) {
-          job.resolve(outcome);
-          if (this.active === job) {
-            this.active = null;
-            this.changed();
-            this.pump();
-          }
-          return;
-        }
         if (outcome.ok && job.generatedAt === undefined) job.generatedAt = this.clock();
         if (!job.settled) {
           if (outcome.ok) {
             this.lastSuccessAt = job.generatedAt;
             if (job.digest) {
-              if (!this.store) this.materialCache.remember(job.digest, job.envelope!, outcome.text, job.generatedAt!);
               this.remember(job.digest, outcome.text, job.generatedAt!);
             }
           } else if (!outcome.cancelled)
@@ -1793,30 +750,8 @@ export class SmallModel {
     };
   }
 
-  private pendingDispatch(job: Job): Promise<JobPendingResult> {
-    return (job.pendingSettlement ??= (async () => {
-      if (job.reserved) {
-        jobFileMetrics.dispatch.pendingAfterReserve++;
-        if (job.store && job.digest) await job.store.finish(job.digest, job.id);
-      } else jobFileMetrics.dispatch.pendingBeforeReserve++;
-      return { ok: false, pending: true, reason: 'budget' };
-    })());
-  }
-  private async run(job: Job): Promise<InternalModelResult | typeof WAITING_FOR_PEER> {
-    try {
-      return await this.runCurrent(job);
-    } catch (error) {
-      if (error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope))
-        return this.pendingDispatch(job);
-      if (job.envelope && jobEnvelope(job.envelope) && job.reserved && job.store && job.digest)
-        await job.store.finish(job.digest, job.id);
-      if (error instanceof JobScopeChanged) return this.authorizationFailure();
-      throw error;
-    }
-  }
-  private async runCurrent(job: Job): Promise<ModelResult | typeof WAITING_FOR_PEER> {
+  private async run(job: Job): Promise<ModelResult | typeof WAITING_FOR_PEER> {
     if (job.settled) return { ok: false, error: 'cancelled', cancelled: true };
-    if (!this.authorized(job)) return this.authorizationFailure();
     const backend = job.backend;
     const store = job.store;
     if (backend === 'off') return { ok: false, error: 'model backend off', refused: true };
@@ -1828,24 +763,14 @@ export class SmallModel {
         job.id,
         this.cap,
         this.clock,
-        () => job.settled || !this.authorized(job),
-        (text) => {
-          const accepted = acceptable(job.request, text);
-          if (job.envelope && jobEnvelope(job.envelope) && !this.authorized(job)) throw new JobScopeChanged();
-          return accepted;
-        }
+        () => job.settled,
+        (text) => acceptable(job.request, text)
       );
-      if (reservation.kind === 'reserved') job.reserved = true;
       if (job.settled) {
         if (reservation.kind === 'reserved' && job.digest) await store.finish(job.digest, job.id);
         return { ok: false, error: 'cancelled', cancelled: true };
       }
-      if (!this.authorized(job)) {
-        if (reservation.kind === 'reserved' && job.digest) await store.finish(job.digest, job.id);
-        return this.authorizationFailure();
-      }
       if (reservation.kind === 'cached') {
-        if (!this.cacheAllowed(job, reservation.entry.text, reservation.entry.at)) return this.authorizationFailure();
         job.generatedAt = reservation.entry.at;
         return { ok: true, text: reservation.entry.text, cached: true };
       }
@@ -1863,7 +788,7 @@ export class SmallModel {
       const now = this.clock();
       if (job.digest) {
         const hit = this.cache.get(job.digest);
-        if (hit && this.cacheAllowed(job, hit.text, hit.at) && acceptable(job.request, hit.text)) {
+        if (hit && acceptable(job.request, hit.text)) {
           job.generatedAt = hit.at;
           return { ok: true, text: hit.text, cached: true };
         }
@@ -1871,28 +796,12 @@ export class SmallModel {
       }
       if (callsWithin(this.calls, now, HOUR_MS) >= this.cap) return this.capResult();
       this.calls.push(now);
-      job.reserved = true;
-    }
-    // Includes queue wait, peer coordination and synchronous lifecycle callbacks.
-    if (!this.authorized(job)) {
-      if (store && job.digest) await store.finish(job.digest, job.id);
-      return this.authorizationFailure();
     }
     let outcome: ModelResult;
     const dispatchAt = this.clock();
-    if (job.envelope && jobEnvelope(job.envelope)) {
-      job.telemetryAdmitted = true;
-      this.recordTelemetry(job);
-      if (job.settled || !this.authorized(job)) {
-        if (store && job.digest) await store.finish(job.digest, job.id);
-        return this.authorizationFailure();
-      }
-    }
     job.dispatchedAt = dispatchAt;
     try {
-      outcome = await (backend === 'api'
-        ? this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>)
-        : this.spawn(job, job.command!));
+      outcome = await this.request(job, http as Exclude<typeof http, { error: string } | null | undefined>);
       // Written in another language than asked: a failure, never cached, never shown as if it obeyed.
       if (outcome.ok && !acceptable(job.request, outcome.text))
         outcome = {
@@ -1900,10 +809,8 @@ export class SmallModel {
           error: validFormat(job.request, outcome.text) ? t('Reply not in the panel language') : 'Invalid response',
           classification: 'invalid-response',
         };
-      if (outcome.ok && !this.authorized(job)) outcome = this.authorizationFailure();
       if (outcome.ok) job.generatedAt = this.clock();
-    } catch (error) {
-      if (error instanceof JobBudgetPending && job.envelope && jobEnvelope(job.envelope)) throw error;
+    } catch {
       outcome = { ok: false, error: 'model request failed', classification: 'network' };
     } finally {
       job.stop = undefined;
@@ -1914,69 +821,10 @@ export class SmallModel {
         job.digest,
         job.id,
         outcome.ok && !job.settled ? { text: outcome.text, at: job.generatedAt! } : undefined,
-        () => {
-          if (job.settled || !this.authorized(job)) return false;
-          this.materialCache.remember(job.digest!, job.envelope!, outcome.ok ? outcome.text : '', job.generatedAt!);
-          return true;
-        }
+        () => !job.settled
       );
     }
     return outcome;
-  }
-
-  private spawn(job: Job, { file, args }: { file: string; args: string[] }): Promise<ModelResult> {
-    return new Promise((resolve) => {
-      let child: ChildProcess;
-      try {
-        child = spawn(file, args, { cwd: os.tmpdir(), env: job.env, stdio: ['ignore', 'pipe', 'pipe'] });
-      } catch {
-        resolve({ ok: false, error: `${file}: connection failed`, classification: 'network' });
-        return;
-      }
-      let killTimer: ReturnType<typeof setTimeout> | undefined;
-      const stop = () => {
-        child.kill();
-        killTimer ??= setTimeout(() => child.kill('SIGKILL'), 1000);
-      };
-      job.stop = stop;
-      let out = '';
-      child.stdout?.on('data', (chunk: Buffer) => {
-        if (out.length < MAX_OUTPUT_BYTES) out += chunk.toString('utf8');
-      });
-      child.stderr?.resume();
-      let timedOut = false;
-      const timer = setTimeout(() => {
-        timedOut = true;
-        stop();
-      }, timeoutMs(job.request));
-      let settled = false;
-      const done = (message: string | null) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        clearTimeout(killTimer);
-        const text = cleanOutput(out);
-        if (!validFormat(job.request, out)) {
-          resolve({ ok: false, error: 'Invalid response', classification: 'invalid-response' });
-          return;
-        }
-        resolve(
-          !timedOut && message === null && text
-            ? { ok: true, text }
-            : {
-                ok: false,
-                error: timedOut ? `${file} timed out` : (message ?? `${file} returned nothing`),
-                classification: timedOut ? 'timeout' : message === null ? 'invalid-response' : 'network',
-              }
-        );
-      };
-      child.on('error', (error) =>
-        done((error as NodeJS.ErrnoException).code === 'ENOENT' ? `${file} not found` : `${file}: connection failed`)
-      );
-      child.on('close', (code, signal) =>
-        done(code === 0 ? null : signal ? `${file} stopped (${signal})` : `${file} exit ${code}`)
-      );
-    });
   }
 
   private async request(
@@ -2043,8 +891,8 @@ export class SmallModel {
     }
   }
 
-  private reloadCache(legacy: boolean): void {
-    const store = legacy ? this.store : this.materialStore;
+  private reloadCache(): void {
+    const store = this.store;
     if (!store) return;
     try {
       this.cache = store.cache();

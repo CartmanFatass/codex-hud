@@ -1,4 +1,3 @@
-import { materialRequest } from '../core/materials/request.js';
 import { createHash } from 'node:crypto';
 import type { HudSettings } from '../settings.js';
 import {
@@ -24,7 +23,7 @@ export interface ModelProbeState {
 const ROUTES = [
   { tier: 'lite', feature: 'labels' },
   { tier: 'low', feature: 'progress' },
-  { tier: 'medium', feature: 'recap' },
+  { tier: 'medium', feature: 'cause' },
 ] as const;
 const question = {
   system: 'This is a connectivity check. Return only OK.',
@@ -38,7 +37,7 @@ export function probeFingerprint(settings: HudSettings, env: NodeJS.ProcessEnv =
   return createHash('sha256')
     .update(
       JSON.stringify([
-        settings.briefing,
+        settings.modelEnabled,
         apiSettings(settings),
         env.CODEX_HUD_BRIEF_MODEL,
         (() => {
@@ -54,17 +53,7 @@ export function probeFingerprint(settings: HudSettings, env: NodeJS.ProcessEnv =
 export function apiSettings(settings: HudSettings) {
   return {
     base: settings.briefingApiBase,
-    model: settings.briefingApiModel,
-    efforts: {
-      lite: settings.briefingApiLiteEffort,
-      low: settings.briefingApiLowEffort,
-      medium: settings.briefingApiMediumEffort,
-    },
-    models: {
-      lite: settings.briefingApiLiteModel,
-      low: settings.briefingApiLowModel,
-      medium: settings.briefingApiMediumModel,
-    },
+    model: settings.model,
   };
 }
 
@@ -107,7 +96,7 @@ export class ModelProbe {
     this.cancel();
     const generation = this.generation;
     this.fingerprint = probeFingerprint(settings, this.options.env);
-    if (settings.briefing !== 'api') {
+    if (!settings.modelEnabled) {
       this.value = { running: false, rows: [], unavailable: true };
       this.onChange();
       return;
@@ -128,17 +117,11 @@ export class ModelProbe {
       const start = Date.now();
       this.value.rows[i].status = 'running';
       this.onChange();
-      const handle = (this.handle = model.submit(
-        materialRequest(ROUTES[i].feature, {
-          purpose: 'probe',
-          probe: true,
-          compose: () => ({
-            ...question,
-            feature: ROUTES[i].feature,
-            telemetryFeature: 'probe',
-          }),
-        })
-      ));
+      const handle = (this.handle = model.submit({
+        ...question,
+        feature: ROUTES[i].feature,
+        telemetryFeature: 'probe',
+      }));
       const result: ModelResult = await handle.result;
       if (generation !== this.generation) return;
       this.value.rows[i] = {

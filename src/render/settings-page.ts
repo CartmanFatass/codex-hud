@@ -24,9 +24,9 @@ const PROBE_FAILURES: Record<string, string> = {
   'hourly-cap': 'Call cap reached',
   'runtime-unavailable': 'Budget store unavailable',
 };
-export type SettingKey = keyof HudSettings | 'jobMaterialConsent';
+export type SettingKey = keyof HudSettings;
 export type SettingGroup = 'Display' | 'Panel' | 'Agents' | 'Cards' | 'LLM' | 'Status bar' | 'Input';
-export type SettingsAction = 'back' | 'save' | 'reset' | 'reset-all' | 'test-api' | 'diagnostics' | 'job-consent';
+export type SettingsAction = 'back' | 'save' | 'reset' | 'reset-all' | 'test-api' | 'diagnostics';
 
 export interface SettingRow {
   /** A real field, or a virtual row whose get/set must read/write only real fields. */
@@ -69,10 +69,6 @@ export const LOOK_ICONS: Record<LookName, IconMode> = {
 };
 const ICON_WORDS: Record<IconMode, string> = { unicode: 'Unicode', nerd: 'Nerd Font', emoji: 'Emoji', text: 'text' };
 
-/** The brief's paces: how soon on news that matters, and how often at most on routine news. */
-const PACES = ['60000/300000', '120000/600000', '300000/900000', '600000/1800000'] as const;
-const pace = (value: SettingValue) => String(value).split('/').map(Number);
-const NAME_WORDS: Record<string, string> = { name: 'as name', line: 'under name', off: 'off' };
 const NOTIFY_WORDS: Record<string, string> = { off: 'off', tmux: 'tmux', desktop: 'tmux + desktop' };
 
 /** Settings in contiguous sections; display-only card switches stay separate from model generators. */
@@ -277,85 +273,22 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Minutes without new evidence; presentation only',
     format: (value) => `${value}m`,
   },
-  // Everything that sends material to a model, in one place, each with its
-  // own switch and a help line saying what it sends.
   {
-    key: 'briefing',
+    key: 'modelEnabled',
     group: 'LLM',
-    label: 'Backend',
+    label: 'Model text',
+    short: 'Model text',
+    values: [true, false],
+    help: 'Sends public agent material for display text; off sends nothing',
+  },
+  {
+    key: 'model',
+    group: 'LLM',
+    label: 'Model',
     short: 'Model',
-    values: ['off', 'agy', 'api'],
-    help: 'Off sends nothing; enabled sends selected public material to AGY or API',
-  },
-  {
-    key: 'briefingPaused',
-    group: 'LLM',
-    label: 'Pause models',
-    short: 'Pause',
-    values: [false, true],
-    help: 'Pause all model generation; keep stored text',
-  },
-  ...(['lite', 'low', 'medium'] as const).map((tier): SettingRow => ({
-    key: { lite: 'briefingApiLiteEffort', low: 'briefingApiLowEffort', medium: 'briefingApiMediumEffort' }[
-      tier
-    ] as keyof HudSettings,
-    group: 'LLM',
-    label: { lite: 'Lite effort', low: 'Low effort', medium: 'Medium effort' }[tier],
-    short: { lite: 'Lite effort', low: 'Low effort', medium: 'Med effort' }[tier],
-    values: ['off', 'none', 'low', 'high', 'xhigh', 'max'],
-    help: 'API tier effort; off omits it, none disables reasoning',
+    values: ['deepseek-v4-1-flash-1017'],
+    help: 'Chat-completions model; edit model in hud-settings.json for another ID',
     literal: true,
-  })),
-  {
-    key: 'briefAgents',
-    group: 'LLM',
-    label: 'Periodic agent brief',
-    short: 'Agent brief',
-    values: [true, false],
-    help: 'Sends agent tasks and public updates for periodic summaries',
-  },
-  {
-    key: 'briefMain',
-    group: 'LLM',
-    label: 'Main recap',
-    short: 'Recap',
-    values: [false, true],
-    help: 'Sends your prompts and public replies for the main recap',
-  },
-  {
-    key: 'jobMaterialConsent',
-    group: 'LLM',
-    label: 'Job content consent',
-    short: 'Job consent',
-    values: ['denied', 'granted'],
-    help: 'Sends facade job content only with consent; Enter grants/revokes the applied recipient',
-    get: () => 'denied',
-    set: () => ({}),
-  },
-  {
-    key: 'agentProgress',
-    group: 'LLM',
-    label: 'Card progress',
-    short: 'Progress',
-    values: [true, false],
-    help: 'Sends public reports, intents and actions for visible card summaries',
-  },
-  {
-    key: 'briefingMs',
-    group: 'LLM',
-    label: 'Brief pace',
-    short: 'Pace',
-    values: PACES,
-    help: 'At most: on change · routine news',
-    format: (value) =>
-      pace(value)
-        .map((ms) => minutes(ms))
-        .join(' · '),
-    get: (settings) => `${settings.briefingMs}/${settings.recapFloorMs}`,
-    set: (value) => {
-      const [briefingMs, recapFloorMs] = pace(value);
-      return { briefingMs, recapFloorMs };
-    },
   },
   {
     key: 'modelCallsPerHour',
@@ -365,51 +298,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     values: [30, 60, 120, 240],
     help: 'Model calls per hour, all items',
     format: (value) => `${value}/h`,
-  },
-  {
-    key: 'resultDigest',
-    group: 'LLM',
-    label: 'Result digest',
-    short: 'Digest',
-    values: [false, true],
-    help: "Sends agents' final and long stage answers",
-  },
-  // A model's name for what each agent is on, in place of Codex's name or under it, and the session's title: the brief
-  // names the agents it writes about, and an agent's task, where Codex has not encrypted it, is sent for one before that.
-  {
-    key: 'agentLabels',
-    group: 'LLM',
-    label: 'Agent names',
-    short: 'Names',
-    values: ['name', 'line', 'off'],
-    help: 'Sends agent tasks, first prompt; names, title',
-    format: (value) => NAME_WORDS[String(value)] ?? String(value),
-    get: (settings) => (settings.agentLabels ? (settings.labelAsName ? 'name' : 'line') : 'off'),
-    set: (value) => (value === 'off' ? { agentLabels: false } : { agentLabels: true, labelAsName: value === 'name' }),
-  },
-  {
-    key: 'failureCause',
-    group: 'LLM',
-    label: 'Failure cause',
-    short: 'Cause',
-    values: [false, true],
-    help: 'Sends the tail of error output',
-  },
-  {
-    key: 'changeSummary',
-    group: 'LLM',
-    label: 'Change summary',
-    short: 'Diff',
-    values: [false, true],
-    help: 'Sends diff stat and hunks',
-  },
-  {
-    key: 'approvalDescription',
-    group: 'LLM',
-    label: 'Approval words',
-    short: 'Approve',
-    values: [false, true],
-    help: 'Sends the command to approve',
   },
   {
     key: 'statusline',
@@ -506,9 +394,6 @@ export interface SettingsPageState {
   original?: HudSettings;
   /** The roles the session's subtasks have, the most used first: what Key roles offers. */
   roles?: readonly string[];
-  /** Composed outside paint using the applied connection, never serialized with preferences. */
-  jobConsent?: 'granted' | 'denied' | 'unavailable';
-  jobRecipient?: string;
 }
 
 /** The current section for routing group reset; accepts either a state or a row. */
@@ -535,34 +420,10 @@ const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Panel: ['language', 'panelStyle', 'paneLayout', 'statusCard', 'timelineStyle', 'timelineHours', 'treeWidth', 'art'],
   Agents: ['sort', 'finishedLingerMs', 'importantRoles', 'agentLog'],
   Cards: ['cardLabel', 'cardSummary', 'cardClock', 'cardCorners', 'cardStallMinutes'],
-  LLM: [
-    'briefingPaused',
-    'briefAgents',
-    'briefMain',
-    'agentProgress',
-    'briefingMs',
-    'recapFloorMs',
-    'resultDigest',
-    'agentLabels',
-    'labelAsName',
-    'failureCause',
-    'changeSummary',
-    'approvalDescription',
-  ],
+  LLM: ['modelEnabled'],
   'Status bar': ['statusline', 'density', 'context', 'notify', 'notifyDesktop'],
   Input: ['mouse', 'prefixKey', 'refreshMs'],
 };
-const GENERATION_PERMISSIONS = [
-  'briefAgents',
-  'briefMain',
-  'agentProgress',
-  'resultDigest',
-  'agentLabels',
-  'failureCause',
-  'changeSummary',
-  'approvalDescription',
-] as const;
-
 /**
  * Return a new draft restoring just this group's explicit preference fields.
  * LLM reset is deliberately conservative: disable all generation and pause,
@@ -576,10 +437,7 @@ export function resetSettingsGroup(draft: HudSettings, group: string): HudSettin
   const defaults = defaultSettings();
   const patch: Partial<HudSettings> = {};
   for (const key of RESET_FIELDS[group as SettingGroup]) Object.assign(patch, { [key]: defaults[key] });
-  if (group === 'LLM') {
-    for (const key of GENERATION_PERMISSIONS) patch[key] = false;
-    patch.briefingPaused = true;
-  }
+  if (group === 'LLM') patch.modelEnabled = false;
   return { ...draft, ...patch };
 }
 
@@ -617,7 +475,7 @@ export interface SettingsFrame {
   /** Main navigation hit targets, routed by the caller, not settings input. */
   navigationControls: MonitorControl[];
   actions: Array<{
-    action: Exclude<SettingsAction, 'test-api' | 'diagnostics' | 'job-consent'>;
+    action: Exclude<SettingsAction, 'test-api' | 'diagnostics'>;
     x: number;
     width: number;
   }>;
@@ -626,48 +484,17 @@ export interface SettingsFrame {
 
 type DisplayLine = { group: string } | { index: number } | { note: string } | { folded: SettingGroup; first: number };
 
-/**
- * Where the model connection is set, for the Backend row: the settings file
- * and the keys in it, with whether base and key are set (never their
- * values). AGY needs no connection; off says what to choose first.
- */
-function connectionLines(draft: HudSettings, file: string, width: number): string[] {
-  const text =
-    draft.briefing === 'agy'
-      ? [t('AGY runs the agy command; CODEX_HUD_BRIEF_MODEL overrides its model')]
-      : draft.briefing !== 'api'
-        ? [t('For api, set the connection in {file}', { file })]
-        : [
-            t('Connection: edit {file}', { file }),
-            // Neither the endpoint nor the key is shown, only whether each is set, as diagnostics treat them.
-            t('briefingApiBase: {base}', { base: t(draft.briefingApiBase ? 'set' : 'empty, uses Mistral') }),
-            t('Models: briefingApiLiteModel, briefingApiLowModel, briefingApiMediumModel'),
-            t('Keys: environment or $HUD_HOME/credentials.env (0600); MISTRAL_API_KEY / OPENAI_API_KEY by host'),
-            t('Defaults: Mistral, deepseek-v4-1-flash-1017; efforts none / low / high'),
-          ];
+function connectionLines(_draft: HudSettings, file: string, width: number): string[] {
+  const text = [
+    t('Connection: edit {file}', { file }),
+    t('Keys: environment or $HUD_HOME/credentials.env (0600); MISTRAL_API_KEY / OPENAI_API_KEY by host'),
+  ];
   return text.flatMap((line) => flowLines(line, width)).map((line) => colors.dim(line));
 }
 
 /** Why a selectable row currently has no effect, translated for the selected-row help. */
 export function settingInactiveReason(rowOrKey: SettingRow | SettingKey, draft: HudSettings): string | null {
   const key = typeof rowOrKey === 'string' ? rowOrKey : rowOrKey.key;
-  const row = typeof rowOrKey === 'string' ? SETTING_ROWS.find((entry) => entry.key === key) : rowOrKey;
-  if (row?.group === 'Cards') {
-    if (key === 'cardLabel' && !draft.agentLabels) return t('Requires agent names enabled');
-  }
-  // The pace configures periodic work only, not on-demand card progress.
-  if (key === 'briefingMs' && !draft.briefAgents && !draft.briefMain && !draft.changeSummary)
-    return t('Requires periodic agent brief, main recap or change summary');
-  if (row?.group === 'LLM' && !['briefing', 'briefingMs', 'modelCallsPerHour'].includes(key)) {
-    if (draft.briefing === 'off') return t('Model backend is off; nothing is sent');
-    if (key !== 'briefingPaused' && draft.briefingPaused) return t('Model generation is paused; stored text remains');
-    if (key === 'agentProgress') {
-      if (draft.panelStyle !== 'rich') return t('Requires rich card layout');
-      if (!draft.cardSummary && !(draft.cardSubagents && draft.cardSubagentSummary))
-        return t('Requires agent summary or child lines with summaries');
-    }
-  }
-  if (key === 'agentLog' && draft.briefing !== 'off') return t('Log is always shown with a model backend');
   if (key === 'art' && !draft.artImage) return t('Requires a picture set with codex-hud-art');
   return null;
 }
@@ -680,16 +507,12 @@ export function settingInactiveReason(rowOrKey: SettingRow | SettingKey, draft: 
  * fit a 24-row page without scrolling, where fifty-odd rows did not.
  * ↑/↓ still walk the rows in order, opening each section as they enter it.
  */
-function displayLines(draft: HudSettings, selected: number): DisplayLine[] {
+function displayLines(_draft: HudSettings, selected: number): DisplayLine[] {
   const open = SETTING_ROWS[selected]?.group;
   return SETTING_ROWS.flatMap((row, index): DisplayLine[] => {
     const first = index === 0 || SETTING_ROWS[index - 1].group !== row.group;
     if (row.group !== open) return first ? [{ folded: row.group, first: index }] : [];
-    return [
-      ...(first ? [{ group: row.group }] : []),
-      { index },
-      ...(row.key === 'briefing' && draft.briefing === 'off' ? [{ note: 'takes effect with a backend' }] : []),
-    ];
+    return [...(first ? [{ group: row.group }] : []), { index }];
   });
 }
 
@@ -699,7 +522,7 @@ const SECTION_SUMMARY: Record<SettingGroup, readonly SettingKey[]> = {
   Panel: ['language', 'panelStyle', 'treeWidth'],
   Agents: ['sort', 'finishedLingerMs'],
   Cards: ['cardClock', 'cardStallMinutes'],
-  LLM: ['briefing'],
+  LLM: ['modelEnabled'],
   'Status bar': ['statusline', 'density'],
   Input: ['prefixKey', 'refreshMs'],
 };
@@ -717,7 +540,6 @@ function foldedLine(group: SettingGroup, draft: HudSettings, original: HudSettin
     // On or off alone says nothing: the switch's short name goes with it.
     return [typeof value === 'boolean' ? `${t(row.short)} ${text}` : text];
   });
-  if (group === 'LLM' && draft.briefing !== 'off' && draft.briefingPaused) parts.push(t('paused'));
   const gutter = ` ${dirty ? theme.warning('*') : ' '} `;
   const name = `${colors.dim('▸')} ${t(group)}`;
   const room = width - visualLength(gutter) - visualLength(name) - 2;
@@ -875,7 +697,7 @@ export function renderSettingsPage(
   // The connection is not edited here (no secret is typed into a terminal
   // page): selected, Backend says which file and which keys hold it.
   const connection =
-    health?.settingsFile && SETTING_ROWS[selected].key === 'briefing' && available > 10
+    health?.settingsFile && SETTING_ROWS[selected].key === 'model' && available > 10
       ? connectionLines(state.draft, monitorText(health.settingsFile), width)
       : [];
   const reason = settingInactiveReason(SETTING_ROWS[selected], state.draft);
@@ -962,7 +784,7 @@ export function renderSettingsPage(
     const row = SETTING_ROWS[line.index];
     const drawn = rowLine(
       row,
-      row.key === 'jobMaterialConsent' ? (state.jobConsent ?? 'unavailable') : rowValue(row, state.draft),
+      rowValue(row, state.draft),
       line.index === selected,
       rowValue(row, original) !== rowValue(row, state.draft),
       settingInactiveReason(row, state.draft) !== null,
@@ -984,13 +806,7 @@ export function renderSettingsPage(
   lines.push(...reasonLines.map((line) => theme.warning(line)));
   if (footerCount > 0) {
     const row = SETTING_ROWS[selected];
-    lines.push(
-      state.message
-        ? theme.accent(state.message)
-        : colors.dim(
-            row.key === 'jobMaterialConsent' && state.jobRecipient ? monitorText(state.jobRecipient) : t(row.help)
-          )
-    );
+    lines.push(state.message ? theme.accent(state.message) : colors.dim(t(row.help)));
   }
   if (footerCount > 1) {
     // Save, Reset and Back are the buttons on the top row; only the moves are left to say.
@@ -1092,7 +908,6 @@ export function handleSettingsInput(
   if (next.selected !== moved) next.message = '';
   if (key === 'enter' || key === 'left' || key === 'right') {
     const row = SETTING_ROWS[next.selected];
-    if (row.key === 'jobMaterialConsent') return { state: next, action: 'job-consent' };
     const values = rowValues(row, next);
     const current = rowValue(row, next.draft);
     let index = values.indexOf(current);

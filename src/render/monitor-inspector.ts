@@ -60,8 +60,6 @@ function findNode(nodes: SubagentTreeNode[], id: string | null): SubagentTreeNod
 
 const PROGRESS_REASONS: Record<ProgressReason, string> = {
   off: 'model backend off',
-  paused: 'models paused',
-  'progress-disabled': 'live progress disabled',
   'summary-hidden': 'summary hidden',
   'not-live': 'agent not live',
   'no-evidence': 'no public progress evidence',
@@ -613,9 +611,7 @@ export function inspectorRows(
   }
   if (state.preview === 'agent') {
     const worker = input.workboard?.workers.find((worker) => worker.nodeId === state.tree.selectedId);
-    const work = worker?.work
-      ? workInspectorRows(worker, state, width, now, true, input.jobProgress?.get(worker.id))
-      : [];
+    const work = worker?.work ? workInspectorRows(worker, state, width, now, true) : [];
     if (delegation)
       return [...work, ...delegationInspectorRows(delegation, state.tree.selectedId, width, input, state, now)];
     const node = findNode(input.tree.nodes, state.tree.selectedId);

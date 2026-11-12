@@ -23,14 +23,11 @@ import { HudHealth } from './hud-health.js';
 import { time, timeAsync } from '../utils/profile.js';
 import type { RolloutParseResult } from './rollout.js';
 import { quotaForecast } from './quota-forecast.js';
-import { readSessionTitle } from './recap.js';
 import type { CodexConfig, GitStatus, HudData, ProjectInfo, SessionInfo } from '../types.js';
 import { BridgeHealthReader } from './bridge-health.js';
 import { getHudDisplayHome } from '../hud-home.js';
 
 const SYNC_REFRESH_MS = 3000;
-/** The session title file is read at most this often. */
-const TITLE_REFRESH_MS = 5000;
 
 export const NO_GIT: GitStatus = {
   branch: null,
@@ -85,12 +82,6 @@ export class HudStatus {
   private git: GitStatus = NO_GIT;
   private gitInFlight = false;
   private readonly gitTargets = new GitTargetCache();
-  /**
-   * Where the panel writes session titles, when the labels feature is on;
-   * null shows none. Set from the settings on each tick.
-   */
-  titleDir: string | null = null;
-  private title: { dir: string; id: string; at: number; text?: string } | null = null;
   private last: HudData | null = null;
   private readonly bridgeHealth = new BridgeHealthReader(getHudDisplayHome());
   /** Fed by the caller's collection and by the git refresh here; carried on every build. */
@@ -146,7 +137,6 @@ export class HudStatus {
         : { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() });
     const health = this.health.current();
     const forecast = quotaForecast(rollout?.quotaSamples ?? [], now);
-    const sessionTitle = this.sessionTitle(rootId, now);
 
     this.last = {
       bridgeHealth: this.bridgeHealth.read(now),
@@ -171,21 +161,8 @@ export class HudStatus {
       displayMode: 'single',
       ...(health.lastReadAt || health.lastError ? { health } : {}),
       ...(forecast ? { quotaForecast: forecast } : {}),
-      ...(sessionTitle ? { sessionTitle } : {}),
     };
     return this.last;
-  }
-
-  private sessionTitle(id: string, now: number): string | undefined {
-    const dir = this.titleDir;
-    if (!dir || !id) {
-      this.title = null;
-      return undefined;
-    }
-    if (this.title?.dir !== dir || this.title.id !== id || now - this.title.at >= TITLE_REFRESH_MS) {
-      this.title = { dir, id, at: now, text: readSessionTitle(dir, id)?.title };
-    }
-    return this.title.text;
   }
 
   private refreshGit(rollout: RolloutParseResult | null): void {

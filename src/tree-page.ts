@@ -10,7 +10,6 @@ import type { JobSnapshot } from './collectors/job-display-types.js';
 import { TaskObservationCollector } from './collectors/task-observations.js';
 import { buildWorkboard } from './collectors/workboard.js';
 import { readThinJobs, type ThinJobScope } from './collectors/thin-jobs.js';
-import { jobInspectorTargets } from './render/work-visibility.js';
 import type { TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-types.js';
 import { composeJobTree, type JobTreeResult } from './collectors/job-tree.js';
 import { NativeCallCollector } from './collectors/native-calls.js';
@@ -29,7 +28,7 @@ import {
   sameDelegationActionTarget,
   boundedActionNotice,
 } from './utils/delegation-actions.js';
-import { defaultSettings, saveSettings, briefingScope, settingsPath, type HudSettings } from './settings.js';
+import { defaultSettings, saveSettings, settingsPath, type HudSettings } from './settings.js';
 import { homedir } from 'node:os';
 import { runtimeSettings, applyDisplaySettings, withDisplaySettings } from './settings-runtime.js';
 import { treeWidthKeeper } from './utils/pane-width.js';
@@ -67,7 +66,7 @@ import {
   flushTreeScans,
 } from './collectors/subagent-tree.js';
 import { TreeScanStore } from './collectors/tree-scan-store.js';
-import { collectGitChanges, readGitDiff, readDiffHunks, type GitChanges } from './collectors/git-changes.js';
+import { collectGitChanges, readGitDiff, type GitChanges } from './collectors/git-changes.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import {
   renderMonitor,
@@ -91,12 +90,8 @@ import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand }
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js';
-import { Briefer } from './collectors/briefing.js';
-import { SmallModel } from './collectors/small-model.js';
-import { JobProgress } from './collectors/job-progress.js';
-import { JobMaterialAuthority, jobReadBudget, type JobReadBudget } from './core/materials/job.js';
-import { DerivedMaterialStore } from './core/materials/derived.js';
-import { ModelProbe } from './collectors/model-probe.js';
+import { SmallModel, modelHttpRequest } from './collectors/small-model.js';
+import { ModelProbe, apiSettings } from './collectors/model-probe.js';
 import { hudProblems, diagnosticLines } from './render/hud-diagnostics.js';
 import { ActivityJournal } from './collectors/activity-journal.js';
 import {
@@ -133,8 +128,7 @@ import { scopedActivityObservation } from './utils/activity-observation.js';
 import { ProgressSummarizer, progressTargets } from './collectors/progress-summary.js';
 import { cardSummaryTargets } from './render/cards.js';
 import { controlBar } from './render/control-bar.js';
-import { RecapStore } from './collectors/recap.js';
-import { AgentLog, logsIn } from './collectors/agent-log.js';
+import { AgentLog, logsIn, MODEL_KINDS } from './collectors/agent-log.js';
 import {
   ModelJobs,
   NO_JOBS,
@@ -147,8 +141,7 @@ import { WorkbenchHistory } from './collectors/workbench-events.js';
 import type { WorkbenchEvent } from './render/workbench-state.js';
 import { getCodexHome } from './utils/codex-path.js';
 import { getHudDisplayHome } from './hud-home.js';
-import { codexGoal } from './collectors/codex-goal.js';
-import { roleSet, subtaskRoles } from './render/directions.js';
+import { subtaskRoles } from './render/directions.js';
 import { HudStatus } from './collectors/hud-status.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
@@ -178,7 +171,6 @@ export class PanelJobPipeline {
   private generation = 0;
   private closed = false;
   /** Collection-only bridge; presentation never invokes it. Consumes this slice's remainder. */
-  sentenceCollection?: (budget: JobReadBudget) => void;
   constructor(
     readonly home: string,
     private root: string | null,
@@ -266,18 +258,9 @@ export class PanelJobPipeline {
     this.boardCache = undefined;
     this.snapshot = snapshot;
     this.taskSnapshot = tasks;
-    const materialBudget: JobReadBudget = {
-      ...jobReadBudget(),
-      deadline: slice?.deadline,
-      files: snapshot.coverage.files + tasks.cost.files,
-      bytes: snapshot.coverage.bytes + tasks.cost.bytes,
-      entries: snapshot.coverage.entries + tasks.cost.entries,
-      probes: tasks.cost.probes,
-    };
-    this.sentenceCollection?.(materialBudget);
     charge?.(
-      materialBudget.bytes,
-      (materialBudget.entries ?? 0) + materialBudget.files + (materialBudget.probes ?? 0),
+      snapshot.coverage.bytes + tasks.cost.bytes,
+      snapshot.coverage.entries + tasks.cost.entries + snapshot.coverage.files + tasks.cost.files + tasks.cost.probes,
       performance.now() - start
     );
     return true;
@@ -667,7 +650,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let exportPreview: DiagnosticExportPreview | undefined;
   let telemetry: ModelTelemetrySummary | undefined;
   let settingsPage: SettingsPageState | null = null;
-  let displayedJobRecipientId: string | null = null;
   let settingsFrame: SettingsFrame | undefined;
   let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
   let confirmationFrame: SettingsConfirmationFrame | undefined;
@@ -716,6 +698,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const widthKeeper = STANDALONE_PANEL ? null : treeWidthKeeper(() => settings.treeWidth);
   // Every model call of the panel goes through one service: one queue, one
   // cache, one hourly cap. Its cache and call log live beside the HUD's state.
+  let modelOn = false;
   let modelChanged = () => {};
   const model = new SmallModel({ dir: path.join(getHudDisplayHome(), 'model-cache'), onChange: () => modelChanged() });
   const probe = new ModelProbe({ dir: path.join(getHudDisplayHome(), 'model-cache') }, () => render());
@@ -724,64 +707,13 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   // The Timeline pane's events: the rollout's and the agent log's, one list.
   const history = new WorkbenchHistory();
   let timeline: WorkbenchEvent[] = [];
-  const recaps = new RecapStore(path.join(getHudDisplayHome(), 'recaps'));
-  // Repaints when a brief starts, lands or fails; render() is defined below.
-  const briefer = new Briefer(() => render(), { model, store: recaps, log: agentLog });
   // Visible summary subjects request public progress independently of the periodic brief.
   const progress = new ProgressSummarizer(model, agentLog, { onChange: () => render() });
-  const openJobProgress = () => {
-    try {
-      return new JobProgress(
-        model,
-        new JobMaterialAuthority(nativeCalls.home),
-        new DerivedMaterialStore(path.join(getHudDisplayHome(), 'model-cache', 'derived')),
-        () => render()
-      );
-    } catch {
-      return null;
-    }
-  };
-  let jobProgress = openJobProgress();
-  const composeJobConsent = (page: SettingsPageState) => {
-    displayedJobRecipientId = model.jobCardRecipient()?.recipientId ?? null;
-    page.jobConsent = jobProgress?.consentState() ?? 'unavailable';
-    page.jobRecipient = model.jobCardRecipientLabel() ?? undefined;
-  };
-  let sentenceTargets: ReadonlySet<string> = new Set();
-  let sentenceRetainTargets: ReadonlySet<string> = new Set();
-  jobPipeline.sentenceCollection = (budget) => {
-    jobProgress ??= openJobProgress();
-    jobProgress?.update({
-      board: jobPipeline.workboard(tree, panelDelegation),
-      targets: sentenceTargets,
-      retainTargets: sentenceRetainTargets,
-      on:
-        settings.briefing !== 'off' &&
-        settings.agentProgress &&
-        !settings.briefingPaused &&
-        state.cardVisibility?.cardSummary !== false &&
-        !settingsPage &&
-        !state.help &&
-        !activityHub &&
-        !observability,
-      language: resolveLanguage(settings.language),
-      now: Date.now(),
-      budget,
-    });
-  };
   const updateProgress = () => {
-    if (
-      settings.briefing === 'off' ||
-      settings.briefingPaused ||
-      !settings.agentProgress ||
-      state.cardVisibility?.cardSummary === false
-    )
-      jobProgress?.stop();
     const now = Date.now();
     const language = resolveLanguage(settings.language);
     progress.update({
       tree,
-      rootRolloutPath: main?.session?.rolloutPath,
       targets:
         state.style === 'rich' &&
         paneShown(state, 'agents') &&
@@ -794,31 +726,20 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
               cardSummaryTargets({ tree, agentLog: logsIn(agentLog.snapshot(), language) }, state, now)
             )
           : new Set(),
-      on: settings.briefing !== 'off' && settings.agentProgress && !settings.briefingPaused,
-      offReason: settings.briefing === 'off' ? 'off' : settings.briefingPaused ? 'paused' : 'progress-disabled',
+      on: modelOn,
+      offReason: 'off',
       language,
       now,
     });
   };
-  /** The model's other jobs, each behind its own switch; all off with the backend. */
   const switches = (): JobSwitches =>
-    settings.briefing === 'off'
-      ? NO_JOBS
-      : {
-          resultDigest: settings.resultDigest,
-          agentLabels: settings.agentLabels,
-          failureCause: settings.failureCause,
-          changeSummary: settings.changeSummary,
-          approvalDescription: settings.approvalDescription,
-        };
-  const jobsOn = () => settings.briefing !== 'off' && !settings.briefingPaused;
+    modelOn ? { resultDigest: true, agentLabels: true, failureCause: true } : NO_JOBS;
+  const jobsOn = () => modelOn;
   // A label or digest landing is put on the tree at once, not at the next collection.
   const jobs = new ModelJobs({
     model,
     log: agentLog,
     labelsFile: path.join(getHudDisplayHome(), 'model-cache', 'labels.json'),
-    titles: recaps,
-    readHunks: readDiffHunks,
     onChange: () => {
       jobs.apply(tree, switches(), resolveLanguage(settings.language));
       render();
@@ -834,7 +755,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         on: jobsOn(),
         inspected:
           paneShown(state, 'details') && state.preview === 'agent' ? (state.tree.selectedId ?? undefined) : undefined,
-        recapGoal: briefCommand() === 'off' ? undefined : briefer.current().recap?.goal,
         digestLabels: { basis: t('Basis:'), caveats: t('Caveats:') },
         now: Date.now(),
       })
@@ -864,49 +784,20 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const size = artSize(art.bitmap, cols, rows);
     return size ? renderArt(art.bitmap, style, size.cols, size.rows) : null;
   };
-  const configureBriefer = () =>
+  const configureModel = () => {
+    modelOn =
+      settings.modelEnabled &&
+      !('error' in modelHttpRequest(apiSettings(settings), { feature: 'progress', system: '', prompt: '' }));
     model.configure({
-      backend: settings.briefing,
+      backend: modelOn ? 'api' : 'off',
       api: {
         base: settings.briefingApiBase,
-        model: settings.briefingApiModel,
-        efforts: {
-          lite: settings.briefingApiLiteEffort,
-          low: settings.briefingApiLowEffort,
-          medium: settings.briefingApiMediumEffort,
-        },
-        models: {
-          lite: settings.briefingApiLiteModel,
-          low: settings.briefingApiLowModel,
-          medium: settings.briefingApiMediumModel,
-        },
+        model: settings.model,
       },
       hourlyCap: settings.modelCallsPerHour,
     });
-  const scope = () => briefingScope(settings);
-  /** The brief's backend as the Briefer sees it: off too when neither brief nor recap is on. */
-  const briefCommand = () => (scope() ? settings.briefing : 'off');
-  // The goal set in Codex is main-session material: read only for a scope that sends it.
-  const updateBriefer = (paused: boolean) =>
-    time('brief.update', () =>
-      briefer.update(
-        tree,
-        briefCommand(),
-        settings.briefingMs,
-        resolveLanguage(settings.language),
-        Date.now(),
-        paused,
-        {
-          scope: scope() ?? 'agents',
-          main,
-          floorMs: settings.recapFloorMs,
-          importantRoles: roleSet(settings.importantRoles),
-          goal: settings.briefing !== 'off' && settings.briefMain ? codexGoal(getCodexHome(), tree.rootId) : null,
-          labels: switches().agentLabels,
-        }
-      )
-    );
-  configureBriefer();
+  };
+  configureModel();
   // The bar's fields, for the foot of the panel: the panel replaces the bar
   // while it is open. Fed from this page's own parse of the rollout.
   const hudStatus = new HudStatus(HUD_CWD, () => render(), 30_000);
@@ -916,7 +807,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     return data
       ? {
           ...data,
-          modelHealth: settings.briefing === 'off' ? undefined : model.diagnostics(),
+          modelHealth: !modelOn ? undefined : model.diagnostics(),
         }
       : undefined;
   };
@@ -937,7 +828,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         git,
         gitObservedAt,
         gitFresh: !!git?.root && !git.error && gitObservedAt > 0 && Date.now() - gitObservedAt <= 15_000,
-        modelAvailable: settings.briefing !== 'off',
+        modelAvailable: modelOn,
         healthSignals: Object.entries(activityHealthSuccess)
           .filter(([, at]) => at > 0)
           .map(([source, at]) => ({ key: `collector:${source}`, kind: 'health' as const, active: false, at })),
@@ -983,13 +874,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
 
   // The panel's top as a draft of the settings would draw it.
   const previewTop = (draft: HudSettings, width: number) =>
-    withDisplaySettings(draft, () =>
-      panelTop(
-        { tree, brief: settings.briefing === 'off' ? undefined : { paused: settings.briefingPaused } },
-        { ...state, tabbed: draft.paneLayout === 'tabs' },
-        width
-      )
-    );
+    withDisplaySettings(draft, () => panelTop({ tree }, { ...state, tabbed: draft.paneLayout === 'tabs' }, width));
   // This directory's recent sessions, read only while the activity hub's Sessions tab is open, at most every ten seconds.
   let sessionsRead: { at: number; cwd: string; rows: RecentSessionRow[] } | null = null;
   const sessionList = (): RecentSessionRow[] => {
@@ -999,12 +884,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       let rows: RecentSessionRow[] = [];
       try {
         rows = recentSessions(cwd).map((file) => {
-          // A title a model wrote earlier, read from its file: nothing is asked for here.
-          const title = recaps.loadTitle(file.sessionId)?.title;
           return {
             id: file.sessionId,
             modifiedAt: file.modifiedAt.getTime(),
-            ...(title ? { title } : {}),
             ...(file.sessionId === tree.rootId ? { current: true } : {}),
           };
         });
@@ -1056,7 +938,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           process.stdout.rows || 24,
           {
             state: hudStatus.health.current(),
-            modelCalls: settings.briefing === 'off' ? undefined : model.usage(),
+            modelCalls: !modelOn ? undefined : model.usage(),
             probe: probe.current(),
             settingsFile: shortPath(settingsPath()),
           },
@@ -1066,7 +948,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
             {
               settingsActive: true,
               expired: 0,
-              brief: settings.briefing === 'off' ? undefined : { paused: settings.briefingPaused },
             },
             process.stdout.columns || 30
           )
@@ -1089,14 +970,17 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const hud = currentHud();
         const jobRender = panelJobRenderState(jobComposition, !collected || treeBuiltFor !== tree.rootId);
         const agentLogs = logsIn(
-          agentLog.snapshot(),
+          modelOn
+            ? agentLog.snapshot()
+            : new Map(
+                [...agentLog.snapshot()].map(([id, entries]) => [id, entries.filter((e) => !MODEL_KINDS.has(e.kind))])
+              ),
           resolveLanguage(settings.language),
-          settings.briefing !== 'off' || settings.agentLog
+          modelOn || settings.agentLog
         );
         frame = renderMonitor({
           tree,
           workboard: jobPipeline.workboard(tree, panelDelegation),
-          jobProgress: jobProgress?.state(),
           state,
           git,
           worktrees,
@@ -1111,23 +995,13 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           loading: jobRender.loading,
           art: drawArt,
           prefix: prefixName(settings.prefixKey),
-          brief:
-            settings.briefing === 'off'
-              ? undefined
-              : { ...(briefCommand() === 'off' ? {} : briefer.current()), paused: settings.briefingPaused },
           agentLog: agentLogs,
           progress: progress.state(),
           progressContext: {
-            backendOn: settings.briefing !== 'off',
-            paused: settings.briefingPaused,
-            enabled: settings.agentProgress,
+            backendOn: modelOn,
             targets: cardSummaryTargets({ tree, agentLog: agentLogs }, state, nowMs),
           },
-          timeline: jobs.withCauses(timeline),
-          notes: {
-            approval: switches().approvalDescription ? jobs.approvalNote(main?.pendingApproval) : undefined,
-            changes: switches().changeSummary ? jobs.changeNote(git) : undefined,
-          },
+          timeline: modelOn ? jobs.withCauses(timeline) : timeline,
           status: (nowMs) => statusCard(hud ?? null, nowMs),
           session: (nowMs) => sessionState(hud ?? null, nowMs),
           width,
@@ -1137,8 +1011,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         frameRoot = tree.rootId;
         frameEpoch = collectionEpoch;
         state = frame.state;
-        sentenceTargets = frame.workboard?.sentenceTargets ?? new Set();
-        sentenceRetainTargets = jobInspectorTargets(jobPipeline.workboard(tree, panelDelegation), state);
         lines = frame.lines;
       }
       return lines;
@@ -1414,9 +1286,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         // Cancel old-root writers before loading the next root's model log. A failed
         // subsequent tree read must never journal the previous session's summaries.
         progress.stop();
-        jobProgress?.stop();
         jobs.stop();
-        briefer.stop();
         agentLog.attach(rootId);
         agentLogRoot = rootId;
         activityHealthSuccess = { tree: 0, status: 0, worktrees: 0 };
@@ -1461,7 +1331,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       );
       state = reconcileMonitor(state, tree, git, worktrees, Date.now(), delegation);
       updateProgress();
-      updateBriefer(settings.briefingPaused);
       updateJobs();
       error = settingsError || null;
     } catch (err) {
@@ -1543,15 +1412,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         git = result;
         gitRevision++;
         gitObservedAt = Date.now();
-        // While the pane is open, and at most once per floor period.
-        jobs.updateChanges(git, {
-          on: jobsOn(),
-          enabled: switches().changeSummary,
-          open: paneShown(state, 'changes'),
-          floorMs: settings.recapFloorMs,
-          language: resolveLanguage(settings.language),
-          now: Date.now(),
-        });
         const previousFile = state.selectedFile;
         state = reconcileMonitor(state, tree, git, worktrees, Date.now(), delegation);
         if (previousFile !== state.selectedFile) {
@@ -1589,10 +1449,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     disposeLifetime?.();
     const clipboardClosing = clipboard.close();
     jobPipeline.dispose();
-    briefer.stop();
     jobs.stop();
     progress.stop();
-    jobProgress?.dispose();
     model.cancelAll();
     probe.cancel();
     agentLog.flush();
@@ -1677,13 +1535,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     try {
       const previousPrefix = settings.prefixKey;
       settings = saveSettings(page.draft);
-      jobProgress?.stop();
       settingsError = '';
       error = null;
       applyDisplaySettings(settings);
       setLanguage(resolveLanguage(settings.language));
-      configureBriefer();
-      composeJobConsent(page);
+      configureModel();
       jobs.apply(tree, switches(), resolveLanguage(settings.language));
       if (!jobsOn()) jobs.stop();
       armCollect();
@@ -1699,7 +1555,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         revealed: null,
       };
       updateProgress();
-      updateBriefer(settings.briefingPaused);
       git = null;
       diff = undefined;
       diffKey = '';
@@ -1931,30 +1786,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const result = handleSettingsInput(settingsPage, input, settingsFrame);
         settingsPage = result.state;
         probe.invalidate(settingsPage.draft);
-        if (result.action === 'job-consent') {
-          try {
-            if (settingsDirty(settingsPage))
-              settingsPage.message = t('Save connection settings before granting job content');
-            else {
-              if (!jobProgress) {
-                fs.mkdirSync(nativeCalls.home, { recursive: true, mode: 0o700 });
-                jobProgress = openJobProgress();
-              }
-              const written = jobProgress?.consent(
-                settingsPage.jobConsent === 'granted' ? 'deny' : 'allow',
-                Date.now(),
-                displayedJobRecipientId
-              );
-              if (!written)
-                settingsPage.message = t(
-                  'Job recipient changed or unavailable; inspect the connection before granting'
-                );
-              composeJobConsent(settingsPage);
-            }
-          } catch {
-            settingsPage.message = t('Could not save job consent');
-          }
-        } else if (result.action === 'back') requestSettingsLeave();
+        if (result.action === 'back') requestSettingsLeave();
         else if (result.action === 'reset') {
           const group = SETTING_ROWS[settingsPage.selected].group;
           settingsPage = {
@@ -2035,13 +1867,13 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           render();
         });
       }
-      if (result.action?.type === 'brief-toggle' && settings.briefing !== 'off') {
+      if (result.action?.type === 'brief-toggle') {
         try {
-          settings = saveSettings({ briefingPaused: !settings.briefingPaused });
-          // Resuming asks at once when there is news, rather than at the next tick.
-          if (!settings.briefingPaused) void collect();
+          settings = saveSettings({ modelEnabled: !settings.modelEnabled });
+          configureModel();
+          jobs.apply(tree, switches(), resolveLanguage(settings.language));
+          if (modelOn) void collect();
           else {
-            updateBriefer(true);
             jobs.stop();
           }
           updateProgress();
@@ -2065,7 +1897,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           offset: 0,
           message: '',
         };
-        composeJobConsent(settingsPage);
       }
       if (result.action?.type === 'observability') {
         sampleTelemetry();

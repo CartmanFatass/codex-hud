@@ -1,4 +1,4 @@
-import type { ApiEffort } from './collectors/small-model.js';
+import { readHudCredentials } from './jev/ask/config.js';
 import { resolveHudEnv } from './utils/hud-env.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -60,42 +60,12 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
    */
   paneLayout: 'stack' | 'tabs';
   worktreeRoot: string;
-  /**
-   * Who writes the agents brief under the tree: nobody, `agy`, or any
-   * OpenAI-compatible chat completions endpoint (`api`, set up below).
-   */
-  briefing: 'off' | 'agy' | 'api';
-  /** The shortest gap between two briefs, in ms. A brief also waits for something to change. */
-  briefingMs: number;
-  /** The brief's switch in the panel: true holds the model calls, keeping the last brief. */
-  briefingPaused: boolean;
+  modelEnabled: boolean;
   /** The tree panel's and the brief's language; auto follows the locale. */
   language: 'auto' | 'en' | 'zh';
   /** `api` brief: the endpoint's base URL, up to `/v1`; empty is Mistral's. */
   briefingApiBase: string;
-  /** Nonempty overrides all API task routes (backwards compatibility). */
-  briefingApiModel: string;
-  briefingApiLiteModel: string;
-  briefingApiLowModel: string;
-  briefingApiMediumModel: string;
-  briefingApiLiteEffort: ApiEffort;
-  briefingApiLowEffort: ApiEffort;
-  briefingApiMediumEffort: ApiEffort;
-  /** The agents brief: subagents' tasks and latest updates go to the backend. On by default once a backend is chosen. */
-  briefAgents: boolean;
-  /** Public progress summaries for enabled visible card subjects; independent of the periodic brief. */
-  agentProgress: boolean;
-  /**
-   * The main-session recap: the person's prompts and the assistant's public
-   * replies go to the backend. Off by default; it is the more sensitive one.
-   */
-  briefMain: boolean;
-  /**
-   * Routine every: the slower pace the agents brief (new updates, the running
-   * command, routine subtasks), the main recap (a long turn) and the change
-   * summary share, at most one run each per this while anything changed, in ms.
-   */
-  recapFloorMs: number;
+  model: string;
   /** Show each agent's log under the tree even with the model backend off (observed entries only). */
   agentLog: boolean;
   /** The cards' corners: square (`┌ └`) or round (`╭ ╰`). */
@@ -111,30 +81,6 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
   statusCard: 'min' | 'status' | 'full';
   /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
   modelCallsPerHour: number;
-  /** A finished agent's final answer in three lines; sends the answer (head and tail when long). */
-  resultDigest: boolean;
-  /**
-   * Short labels for agents, for what each is on now, and a session title.
-   * The brief writes an agent's label with its note, from what it already
-   * sends; where Codex left an agent's task readable, the task text is sent
-   * for one too, and the first prompt for the title when there is no recap.
-   * On by default, it does nothing until a backend is chosen, and the backend
-   * is off by default. Settings shows it and `labelAsName` as one row.
-   */
-  agentLabels: boolean;
-  /**
-   * A label, once one has arrived, stands where the agent's name is shown:
-   * its card or row, the compact tree, the timeline, the Inspector's heading.
-   * The name stays one look away (the Inspector or optional card original name), and
-   * switching to an agent still goes by the name Codex's picker prints.
-   */
-  labelAsName: boolean;
-  /** One line on why a tool call or an agent failed; sends the tail of the error output. */
-  failureCause: boolean;
-  /** One or two lines on what the current diff does; sends the diff stat and bounded hunks. */
-  changeSummary: boolean;
-  /** The command awaiting approval in plain words; sends the command. A description, never a verdict. */
-  approvalDescription: boolean;
   /** Notifications in tmux on approvals, failures and finished agents. CODEX_HUD_NOTIFY, when set, wins. */
   notify: boolean;
   /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
@@ -157,13 +103,6 @@ export interface HudSettings extends HudDisplayConfig, CardVisibility {
    * for a word. The model badge has its own setting, `glyphs`.
    */
   icons: IconMode;
-}
-
-/** What the brief covers, from its two switches; null when neither is on. */
-export function briefingScope(
-  settings: Pick<HudSettings, 'briefAgents' | 'briefMain'>
-): 'agents' | 'main' | 'both' | null {
-  return settings.briefAgents ? (settings.briefMain ? 'both' : 'agents') : settings.briefMain ? 'main' : null;
 }
 
 /** Built-in defaults; callers apply environment or runtime display overrides. */
@@ -199,22 +138,17 @@ export function defaultSettings(): HudSettings {
     timelineHours: 3,
     importantRoles: '',
     worktreeRoot: '',
-    briefing: 'off',
-    briefingMs: 300_000,
-    briefingPaused: false,
+    modelEnabled: (() => {
+      try {
+        const c = readHudCredentials();
+        return !!(c.mistralApiKey?.trim() || c.openaiApiKey?.trim());
+      } catch {
+        return false;
+      }
+    })(),
     language: 'auto',
     briefingApiBase: 'https://api.mistral.ai/v1',
-    briefingApiModel: '',
-    briefingApiLiteEffort: 'none',
-    briefingApiLowEffort: 'low',
-    briefingApiMediumEffort: 'high',
-    briefingApiLiteModel: 'deepseek-v4-1-flash-1017',
-    briefingApiLowModel: 'deepseek-v4-1-flash-1017',
-    briefingApiMediumModel: 'deepseek-v4-1-flash-1017',
-    briefAgents: true,
-    briefMain: false,
-    agentProgress: true,
-    recapFloorMs: 900_000,
+    model: 'deepseek-v4-1-flash-1017',
     statusCard: 'full',
     modelCallsPerHour: 60,
     agentLog: false,
@@ -222,12 +156,6 @@ export function defaultSettings(): HudSettings {
     cardStallMinutes: 10,
     notify: false,
     notifyDesktop: false,
-    resultDigest: false,
-    agentLabels: true,
-    labelAsName: true,
-    failureCause: false,
-    changeSummary: false,
-    approvalDescription: false,
     art: 'off',
     artImage: '',
     prefixKey: 'C-\\',
@@ -280,22 +208,10 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   paneLayout: oneOf('stack', 'tabs'),
   look: oneOf(...LOOKS),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
-  briefing: oneOf('off', 'agy', 'api'),
-  briefingMs: (value) => isIntegerBetween(value, 30_000, 3_600_000),
-  briefingPaused: isBoolean,
+  modelEnabled: isBoolean,
   language: oneOf('auto', 'en', 'zh'),
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
-  briefingApiModel: isText(200),
-  briefingApiLiteModel: isText(200),
-  briefingApiLowModel: isText(200),
-  briefingApiMediumModel: isText(200),
-  briefingApiLiteEffort: oneOf('off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'),
-  briefingApiLowEffort: oneOf('off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'),
-  briefingApiMediumEffort: oneOf('off', 'none', 'low', 'high', 'xhigh', 'max', 'minimal', 'medium'),
-  briefAgents: isBoolean,
-  agentProgress: isBoolean,
-  briefMain: isBoolean,
-  recapFloorMs: (value) => isIntegerBetween(value, 60_000, 7_200_000),
+  model: isText(200),
   statusCard: oneOf('min', 'status', 'full'),
   agentLog: isBoolean,
   cardCorners: oneOf('square', 'round'),
@@ -317,12 +233,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   notify: isBoolean,
   notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
-  resultDigest: isBoolean,
-  agentLabels: isBoolean,
-  labelAsName: isBoolean,
-  failureCause: isBoolean,
-  changeSummary: isBoolean,
-  approvalDescription: isBoolean,
   art: oneOf('off', 'dots', 'color', 'ascii'),
   artImage: isText(4096),
   prefixKey: oneOf(...PREFIX_KEYS),
@@ -335,8 +245,6 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result = { ...base };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
   const values = { ...(raw as Record<string, unknown>) };
-  // OMP was removed: preserve opt-in intent by migrating to API, never AGY.
-  if (values.briefing === 'omp') values.briefing = 'api';
   // A pane is open or closed; one saved folded, as earlier versions could, is closed.
   for (const key of PANE_KEYS) if (values[key] === 'folded') values[key] = 'closed';
   // The worktrees are listed over the changes now: a worktrees pane saved open opens the changes.
