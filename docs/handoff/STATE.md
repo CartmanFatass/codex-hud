@@ -98,7 +98,7 @@ board counts these; update at every landing or decision. -->
 - accepted · M4 · M4-REVIEW · m4-close 04: whole-project review (Sol xhigh + DS max on 3b17f7a0): changes-required, Sol 4 major, DS 2 major + 4 minor (docs/reviews/2026-11-12-m4-review-*)
 - try · M4 · M4-FIX · m4-close 05: the review's behaviour findings (brief independence, statusline default, bounded job scan, settings guards, TZ, docs) (8cd38f1e)
 - try · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime, dead modules and the historical installer chain (769cfa3d)
-- working · M4 · SESSION-LINK · owner: pi session history stays in pi's default place; job directories only link to it (imp; HUD + Fishpref pi-roles)
+- try · M4 · SESSION-LINK · owner: pi session history stays in pi's default place; job directories only link to it (23a9782d; Fishpref 45d93a1)
 - working · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (done on wt/JOB-RETENTION 290a9fe5; held until SESSION-LINK lands and existing sessions are moved, else the first watcher run deletes real pi sessions)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
 - try · M4 · M4-FIX2 · re-review fixes: reload keeps place and width in bound panels; brief persists across sentence changes (152db34b)
