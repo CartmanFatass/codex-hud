@@ -15,6 +15,7 @@ import { renderWorkCard, jobSentenceLine } from '../../dist/render/work-card.js'
 import { laneRows } from '../../dist/render/work-lanes.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi, theme, visualLength } from '../../dist/render/colors.js';
 const settle = async () => {
   for (let i = 0; i < 12; i++) await new Promise(setImmediate);
@@ -68,7 +69,7 @@ function fixture(t, mode = 'on', language = 'en') {
     mode !== 'off' &&
     !('error' in modelHttpRequest({ base: '', model: '' }, { feature: 'job-sentence', system: '', prompt: '' }, env));
   f.service.configure(f.on, language);
-  put('job.json', { job: id, role: 'imp', created_at: new Date(f.now).toISOString(), herdr_pane: 'w4E:p1' });
+  put('job.json', { job: id, role: 'imp', package: 'SYNTHETIC', created_at: new Date(f.now).toISOString(), herdr_pane: 'w4E:p1' });
   put('brief.md', '# SYNTHETIC: check parser\nGoal: repair boundaries.');
   put('STATUS.json', { state: 'working' });
   put('report.md', 'Factual progress');
@@ -164,6 +165,85 @@ test('thin job: real file collection, keyword card, coalescing, cached reopen, a
   await f.update();
   assert.equal(f.calls.length, 3);
 });
+for (const language of ['en', 'zh']) {
+  test(`short job titles: heading, same-call name, fallback, Home/Inspector/Project frames (${language})`, async (t) => {
+    const f = fixture(t, 'on', language);
+    const previous = setLanguage(language);
+    t.after(() => setLanguage(previous));
+    const heading = language === 'en' ? 'CLAUDE-BIND: bind the caller' : 'CLAUDE-BIND: 绑定调用会话';
+    const name = language === 'en' ? 'Bind caller' : '绑定调用会话';
+    f.reply = JSON.stringify({ name, sentence: language === 'en' ? 'Checking bindings.' : '正在检查绑定。' });
+    f.put('brief.md', `# ${heading}\n\nRead and carry out the brief /synthetic/brief.md\n\n## Later heading`);
+    let board = await f.update();
+    assert.equal(board.workers[0].task, heading, 'brief heading outranks the generated name');
+    assert.equal(f.calls.length, 1, 'name and sentence use one existing request');
+    assert.match(f.calls[0].messages[0].content, /Reply as JSON.*short task name/);
+    const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) };
+    const renderFrames = (board, expected) => {
+      const worker = board.workers[0];
+      const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
+      const project = {
+        waiting: [], docs: [], control: [], agents: [], keys: [], editing: [], roleCount: 0,
+        ladder: { ids: [] }, counts: { working: 1, blocked: 0, try: 0, accepted: 0, todo: 0, dropped: 0 },
+        slices: [{ label: 'CLAUDE-BIND', value: 'bind the caller', jobId: worker.evidence[0].sourceId }],
+        next: [], summary: '',
+      };
+      for (const width of [80, 120]) {
+        const home = renderMonitor({ tree, workboard: board, state: initialMonitorState(), width, height: 30, nowMs: f.now });
+        const state = handleMonitorInput({ ...home.state, homeTarget: target }, { type: 'key', key: 'inspect' }, { tree, frame: home }).state;
+        const inspector = renderMonitor({ tree, workboard: board, state, width, height: 30, nowMs: f.now });
+        for (const frame of [home, inspector]) {
+          const text = frame.lines.map(stripAnsi).join('\n');
+          assert.ok(text.includes(expected), text);
+          assert.doesNotMatch(text, /Read and carry out|\/synthetic\/brief/);
+          for (const line of frame.lines) assert.equal(visualLength(line), width);
+        }
+        const progress = renderMonitor({ tree, workboard: board, project, state: { ...initialMonitorState(), mainTab: 'project' }, width, height: 30, nowMs: f.now });
+        assert.match(progress.lines.map(stripAnsi).join('\n'), /CLAUDE-BIND/);
+        assert.doesNotMatch(progress.lines.map(stripAnsi).join('\n'), /Read and carry out|\/synthetic\/brief/);
+        for (const line of progress.lines) assert.equal(visualLength(line), width);
+        if (process.env.PANEL_DUMPS)
+          fs.writeFileSync(join(process.env.PANEL_DUMPS, `short-title-${language}-${width}-${expected === heading ? 'heading' : 'name'}.txt`), home.lines.map(stripAnsi).join('\n') + '\n');
+      }
+    };
+    renderFrames(board, heading);
+    f.service.configure(false, language);
+    assert.equal(f.service.apply(f.board()).workers[0].task, heading, 'heading remains with master off');
+    const task = 'Read and carry out the brief /synthetic/brief.md';
+    f.put('brief.md', task + '\nThis second line is not the title.');
+    assert.equal(f.service.apply(f.board()).workers[0].task, task, 'off uses first task line');
+    f.service.configure(true, language);
+    board = f.service.apply(f.board());
+    assert.equal(board.workers[0].task, name, 'without a heading use the same-response name');
+    renderFrames(board, name);
+    const reads = t.mock.method(fsMutable, 'readSync');
+    f.board();
+    assert.equal(reads.mock.callCount(), 0, 'warm heading/fallback collection adds no file reads');
+    f.service = new JobSentences(f.model, f.file);
+    f.service.configure(true, language);
+    assert.equal(f.service.apply(f.board()).workers[0].task, name, 'cached name survives reopen');
+    assert.equal(f.calls.length, 1);
+  });
+}
+test('unnamed thin job: pending, plain and blank-name replies keep the first line cut to fit', async (t) => {
+  const f = fixture(t);
+  const task = 'Read and carry out the brief /synthetic/' + 'long-path/'.repeat(20) + 'brief.md';
+  f.put('brief.md', task + '\nSECOND-LINE-MUST-NOT-BE-A-TITLE');
+  for (const reply of ['Checking boundaries.', JSON.stringify({ name: '  ', sentence: 'Checking boundaries.' })]) {
+    f.reply = reply;
+    assert.equal(f.service.apply(f.board()).workers[0].task, task);
+    const board = await f.update();
+    assert.equal(board.workers[0].task, task);
+    for (const width of [80, 120]) {
+      const title = stripAnsi(f.render(board, width)).split('\n')[0];
+      assert.match(title, /Read and carry out.*…/);
+      assert.equal(visualLength(title), width);
+      assert.doesNotMatch(title, /SECOND-LINE/);
+    }
+    f.now += 120_001;
+    f.put('report.md', 'Changed factual progress');
+  }
+});
 test('ordinary cards expand the whole marked sentence and factual detail, then collapse on Home', async (t) => {
   const f = fixture(t);
   f.reply = 'Checking «parser boundaries» while preserving the complete sentence through its very last word.';
@@ -248,6 +328,10 @@ for (const mode of ['off', 'no-key'])
     assert.equal(f.calls.length, 0);
     assert.match(stripAnsi(f.render(board)), /Factual progress/);
     assert.equal(board.workers[0].modelSentence, undefined);
+    assert.equal(board.workers[0].task, 'SYNTHETIC: check parser');
+    f.put('brief.md', 'First task line\nSecond task line');
+    assert.equal((await f.update()).workers[0].task, 'First task line');
+    assert.equal(f.calls.length, 0);
   });
 test('Chinese request, question/review/answer changes, one request per job in flight, failed final retry', async (t) => {
   const f = fixture(t, 'on', 'zh');

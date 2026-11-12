@@ -147,8 +147,8 @@ export function readThinJobs(
     const settledAt = state === 'working' ? null : (when(s.ended_at) ?? when(s.settled_at) ?? at);
     const briefFile = read(join(directory, 'brief.md')),
       brief = briefFile?.text ?? '';
-    const title =
-      first(brief.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? brief) || word(job.title) || id.slice(-6);
+    const briefTitle = first(brief.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? '');
+    const title = briefTitle || first(brief) || first(word(job.title) ?? '') || id.slice(-6);
     const label = word(job.package) ?? (title.includes(':') ? title.split(':', 1)[0] : title);
     const laneId = `thin-job:package:${label}`,
       workerId = `thin-job:${id}`;
@@ -257,6 +257,7 @@ export function readThinJobs(
       role: String(job.role),
       harness: word(s.harness) ?? word(job.harness) ?? 'pi',
       task: title,
+      ...(briefTitle ? { briefTitle } : {}),
       state,
       startedAt: when(s.started_at) ?? created,
       settledAt,

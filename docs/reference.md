@@ -470,6 +470,11 @@ In Settings, ↑/↓ select, ←/→ or Enter change a value, `s` saves, `r` res
 
 Repeated positively idle, unchanged observations gradually reduce collection to at most five seconds (an already slower configured cadence is preserved). Activity, uncertainty, failure, input or source change restores normal polling. Redraw/input remain independent. Large scans yield between chunks; individual JSON parsing remains synchronous. Poll cadence is not a model or notification delivery guarantee.
 
+HUD job titles on Home and in the Inspector prefer the first heading in the job's stored `brief.md`.
+Without a heading, Model text uses the short task name returned with the existing sentence; while pending,
+off or unavailable, the first task line is cut to fit. Referenced brief paths are not followed. Project slice
+blocks keep their short ledger ID and description, not the raw dispatch text.
+
 ### Native agents on Home
 
 Each main session has one lane (`Claude · this session`, `Codex · this session`) beside the package lanes, with one card per native subagent, including custom Claude agents. Children indent one level; deeper descendants are flat and say `↳ parent`. Native cards use the job grammar: done hides after 10 minutes, failed/stopped after 30; `a` reveals them in place. A hidden parent never hides a live descendant. pi has no native subagents; its HUD helpers already appear as job cards.

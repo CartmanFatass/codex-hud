@@ -62,6 +62,8 @@ export interface OwnerWorker {
   readonly harness: string | null;
   readonly role: string | null;
   readonly task: string;
+  /** Thin job's first brief heading, preferred over a generated short name. */
+  readonly briefTitle?: string;
   readonly model: string | null;
   readonly provider?: string | null;
   readonly effort: string | null;
