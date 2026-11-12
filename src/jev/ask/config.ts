@@ -1,32 +1,10 @@
 // HUD-owned configuration only. Legacy files are read exclusively by `hud import`.
 import * as fs from 'node:fs';
-import { homedir } from 'node:os';
 import * as path from 'node:path';
 import { getHudHome } from '../../hud-home.js';
-import { decideProviderId, type DecisionProviderId } from '../decide.js';
+import type { DecisionProviderId } from '../decide.js';
 import { JevFailure } from './error.js';
 
-export const ASK_MAX_WAIT_MS = 2 * 60 * 60 * 1000;
-export const ASK_MAX_WAIT_CAP_MS = 4 * 60 * 60 * 1000;
-export const ASK_QUEUE_LIMIT = 4;
-export const ASK_LIVE_LIMIT = 8;
-export const ASK_ABANDON_MS = 24 * 60 * 60 * 1000;
-export const DEFAULT_PROVIDER_ROOT = 'https://chatgpt.com/';
-export const DEFAULT_GEMINI_ROOT = 'https://gemini.google.com/app';
-export const DEFAULT_MODEL = 'GPT-6';
-export const DEFAULT_EFFORT_WORD = 'Pro';
-export const DEFAULT_GEMINI_EFFORT_LABEL = 'Argon 高';
-export const DEFAULT_KEEPALIVE_SECONDS = 15;
-export const DEFAULT_CDP_TIMEOUT_MS = 60_000;
-export const DEFAULT_USER_AGENT =
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
-export const OPENAI_DECISION_MODEL = 'gpt-6-luna';
-export const DEFAULT_TYPESAFE_MODEL = 'jev-latest';
-export const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com';
-export interface JevProxy {
-  server?: string;
-  bypass?: string;
-}
 export interface DecisionConfig {
   primary: DecisionProviderId;
   fallback?: DecisionProviderId;
@@ -34,33 +12,6 @@ export interface DecisionConfig {
   provider?: DecisionProviderId;
   openai: { baseUrl?: string };
   typesafe: { model?: string };
-}
-export interface JevConfig {
-  cdpUrl: string;
-  chrome?: string;
-  profile?: string;
-  userAgent: string;
-  stateDir: string;
-  providerRoot: string;
-  geminiRoot: string;
-  model: string;
-  effortWord: string;
-  geminiEffortLabel: string;
-  keepaliveSeconds: number;
-  cdpTimeoutMs: number;
-  proxy: JevProxy;
-  decisions: DecisionConfig;
-  ask: { maxWaitMs: number; queueLimit: number; liveLimit: number; abandonMs: number };
-}
-export interface LoadJevConfigOptions {
-  configJsonPath?: string;
-  configJson?: unknown;
-  configJsonIsJev?: boolean;
-  /** Ignored legacy inputs; no runtime TOML reads. */
-  tomlPath?: string;
-  tomlText?: string;
-  capturedEnv?: Record<string, string | undefined>;
-  home?: string;
 }
 export interface JevCredentials {
   geminiApiKey?: string;
@@ -72,14 +23,6 @@ export interface JevCredentials {
   mistralBaseUrl?: string;
   textModel: Record<string, string>;
 }
-export type DecisionChoice =
-  | { ok: true; provider: 'gemini'; model: string; apiKey: string }
-  | { ok: true; provider: 'openai'; model: typeof OPENAI_DECISION_MODEL; baseUrl: string; apiKey: string }
-  | { ok: true; provider: 'typesafe'; model: string; apiKey: string }
-  | { ok: false; error: 'jev_credentials_missing'; provider: string; variable: string };
-export function defaultHudConfigPath(home = homedir()): string {
-  return path.join(getHudHome(process.env, home), 'config.json');
-}
 export function readHudConfig(file: string): Record<string, unknown> {
   try {
     return object(JSON.parse(fs.readFileSync(file, 'utf8')), 'config.json');
@@ -87,53 +30,6 @@ export function readHudConfig(file: string): Record<string, unknown> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
     throw new JevFailure('config', 'config.json must be a readable JSON object');
   }
-}
-export function loadJevConfig(options: LoadJevConfigOptions = {}): JevConfig {
-  const env = options.capturedEnv ?? process.env;
-  const home = options.home ?? env.HOME ?? homedir();
-  const root =
-    options.configJson === undefined
-      ? readHudConfig(options.configJsonPath ?? path.join(getHudHome(env, home), 'config.json'))
-      : object(options.configJson, 'config.json');
-  const json = options.configJsonIsJev ? root : object(root.jev ?? {}, 'jev');
-  const text = (key: string, fallback = ''): string => {
-    if (json[key] === undefined) return fallback;
-    if (typeof json[key] !== 'string') throw new JevFailure('config', `jev.${key} must be a string`);
-    return json[key] as string;
-  };
-  const location = (key: string) => requiredJevLocation(text(key), `jev.${key}`).replace(/^~(?=\/|$)/, home);
-  const number = (key: string, fallback: number) => finiteNumber(json[key] ?? fallback, `jev.${key}`);
-  const ask = object(json.ask ?? {}, 'jev.ask');
-  return {
-    cdpUrl: location('cdpUrl'),
-    chrome: location('chrome'),
-    profile: location('profile'),
-    stateDir: location('stateDir'),
-    userAgent: text('userAgent', DEFAULT_USER_AGENT),
-    providerRoot: text('providerRoot', DEFAULT_PROVIDER_ROOT),
-    geminiRoot: text('geminiRoot', DEFAULT_GEMINI_ROOT),
-    model: text('model', DEFAULT_MODEL),
-    effortWord: text('effortWord', DEFAULT_EFFORT_WORD),
-    geminiEffortLabel: text('geminiEffortLabel', DEFAULT_GEMINI_EFFORT_LABEL),
-    keepaliveSeconds: number('keepaliveSeconds', DEFAULT_KEEPALIVE_SECONDS),
-    cdpTimeoutMs: number('cdpTimeoutMs', DEFAULT_CDP_TIMEOUT_MS),
-    proxy: resolveProxy(json, env),
-    decisions: resolveDecisions(options.configJsonIsJev ? { jev: json } : root),
-    ask: {
-      maxWaitMs: Math.min(ASK_MAX_WAIT_CAP_MS, finiteNumber(ask.maxWaitMs ?? ASK_MAX_WAIT_MS, 'ask.maxWaitMs')),
-      queueLimit: finiteNumber(ask.queueLimit ?? ASK_QUEUE_LIMIT, 'ask.queueLimit'),
-      liveLimit: finiteNumber(ask.liveLimit ?? ASK_LIVE_LIMIT, 'ask.liveLimit'),
-      abandonMs: finiteNumber(ask.abandonMs ?? ASK_ABANDON_MS, 'ask.abandonMs'),
-    },
-  };
-}
-export function requiredJevLocation(value: string | undefined, key: string): string {
-  if (!value?.trim()) throw new JevFailure('pre_send', `Missing ${key} in $HUD_HOME/config.json; run hud import`);
-  return value;
-}
-export function assertJevLocations(config: Pick<JevConfig, 'cdpUrl' | 'chrome' | 'profile' | 'stateDir'>): void {
-  for (const key of ['cdpUrl', 'chrome', 'profile', 'stateDir'] as const)
-    requiredJevLocation(config[key], `jev.${key}`);
 }
 export function resolveDecisions(root: Record<string, unknown>): DecisionConfig {
   const legacy = object(object(root.jev ?? {}, 'jev').decisions ?? {}, 'jev.decisions');
@@ -211,16 +107,6 @@ export function readCredentialsEnv(file: string): JevCredentials {
   }
   return creds;
 }
-/** Explicit-file compatibility helper, never implicit fallback. */
-export const readJevEnv = readCredentialsEnv;
-/** Explicit source-scoped keyEnv lookup; no host matching or legacy file discovery. */
-export function readHudCredentialName(
-  name: string,
-  env: Record<string, string | undefined>,
-  hudHome = getHudHome(env)
-): string | undefined {
-  return env[name] ?? readPrivateAssignments(path.join(hudHome, 'credentials.env')).get(name);
-}
 export function readHudCredentials(
   env: Record<string, string | undefined> = process.env,
   hudHome = getHudHome(env)
@@ -240,94 +126,8 @@ export function decisionFallback(config: DecisionConfig, creds: JevCredentials, 
   return config.fallback && config.fallback !== primary ? config.fallback :
     (['gemini', 'openai', 'typesafe'] as const).find((id) => id !== primary && decisionKeys(creds)[id]);
 }
-export function selectDecisionProvider(config: JevConfig, creds: JevCredentials): DecisionChoice {
-  const primary = config.decisions.primary ?? config.decisions.provider;
-  const keys = decisionKeys(creds);
-  const fallback = decisionFallback(config.decisions, creds, primary);
-  const decision = decideProviderId(!keys[primary] && fallback && keys[fallback] ? fallback : primary, keys);
-  if (!decision.ok) return { ...decision, error: 'jev_credentials_missing' };
-  if (decision.provider === 'gemini') return { ok: true, provider: 'gemini', model: 'gemini-decision-1', apiKey: creds.geminiApiKey ?? '' };
-  if (decision.provider === 'typesafe')
-    return {
-      ok: true,
-      provider: 'typesafe',
-      model: config.decisions.typesafe.model || creds.typesafeModel || DEFAULT_TYPESAFE_MODEL,
-      apiKey: creds.typesafeApiKey ?? '',
-    };
-  return {
-    ok: true,
-    provider: 'openai',
-    model: OPENAI_DECISION_MODEL,
-    baseUrl: config.decisions.openai.baseUrl || creds.openaiBaseUrl || DEFAULT_OPENAI_BASE_URL,
-    apiKey: creds.openaiApiKey ?? '',
-  };
-}
-export function credentialsForJob(envFile: string, config: JevConfig): DecisionChoice {
-  return selectDecisionProvider(config, readCredentialsEnv(envFile));
-}
-export function proxyForSpawn(captured: Record<string, string | undefined>, home?: string): Record<string, string> {
-  try {
-    return hostProxyEnv(loadJevConfig({ capturedEnv: captured, home }));
-  } catch (error) {
-    if (!(error instanceof JevFailure)) throw error;
-    return proxyProcessEnv({
-      server: firstEnv(captured, ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY', 'all_proxy', 'ALL_PROXY']),
-      bypass: firstEnv(captured, ['no_proxy', 'NO_PROXY']),
-    });
-  }
-}
-export function hostProxyEnv(config: JevConfig): Record<string, string> {
-  return proxyProcessEnv(config.proxy);
-}
-export function proxyProcessEnv(proxy: JevProxy): Record<string, string> {
-  const hosts = [
-    ...new Set([
-      '127.0.0.1',
-      'localhost',
-      ...(proxy.bypass ?? '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-    ]),
-  ];
-  return {
-    NO_PROXY: hosts.join(','),
-    no_proxy: hosts.join(','),
-    ...(proxy.server ? { HTTPS_PROXY: proxy.server, https_proxy: proxy.server } : {}),
-  };
-}
-export function chromeProxyFlags(proxy: JevProxy): string[] {
-  if (!proxy.server?.trim()) return [];
-  const hosts = (proxy.bypass ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return [`--proxy-server=${proxy.server.trim()}`, ...(hosts.length ? [`--proxy-bypass-list=${hosts.join(';')}`] : [])];
-}
-function resolveProxy(json: Record<string, unknown>, env: Record<string, string | undefined>): JevProxy {
-  const proxy = object(json.proxy ?? {}, 'jev.proxy');
-  return {
-    server:
-      typeof proxy.server === 'string' && proxy.server.trim()
-        ? proxy.server.trim()
-        : firstEnv(env, ['https_proxy', 'HTTPS_PROXY', 'http_proxy', 'HTTP_PROXY']),
-    bypass:
-      typeof proxy.bypass === 'string' && proxy.bypass.trim()
-        ? proxy.bypass.trim()
-        : firstEnv(env, ['no_proxy', 'NO_PROXY']),
-  };
-}
-function firstEnv(env: Record<string, string | undefined>, names: string[]): string | undefined {
-  for (const name of names) if (env[name]?.trim()) return env[name]!.trim();
-  return undefined;
-}
 function object(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new JevFailure('config', `${name} must be an object`);
   return value as Record<string, unknown>;
-}
-function finiteNumber(value: unknown, name: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
-    throw new JevFailure('config', `${name} must be a non-negative number`);
-  return value;
 }

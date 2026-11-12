@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, opendirSync, renameSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, lstatSync, readFileSync, opendirSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
 import type { NativeRef } from './types.js';
 export interface NativeOwner {
@@ -23,59 +23,6 @@ export const ownerKey = (owner: NativeOwner): string =>
 export function nativeKey(ref: NativeRef): string {
   return JSON.stringify([ref.harness, ref.harness === 'codex' ? ref.threadId : ref.sessionId]);
 }
-/** Optional caller locators may be omitted, but cannot replace an observed native locator. */
-export function nativeLocatorMatches(stored: NativeRef, requested: NativeRef): boolean {
-  if (nativeKey(stored) !== nativeKey(requested)) return false;
-  if (stored.harness === 'pi' && requested.harness === 'pi')
-    return requested.sessionFile === undefined || requested.sessionFile === stored.sessionFile;
-  if (stored.harness === 'codex' && requested.harness === 'codex')
-    return requested.sessionId === undefined || requested.sessionId === stored.sessionId;
-  return true;
-}
-export function privateDirectory(path: string): void {
-  if (!isAbsolute(path)) throw new Error('private_directory_must_be_absolute');
-  mkdirSync(path, { recursive: true, mode: 0o700 });
-  const st = lstatSync(path);
-  if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== process.getuid?.() || st.mode & 0o077)
-    throw new Error('unsafe_private_directory');
-}
-/** Only direct creation facts. No operations, approvals, wake receipts or inferred status. */
-export class RelationStore {
-  readonly directory: string;
-  constructor(home: string) {
-    privateDirectory(home);
-    this.directory = join(home, 'native-relations');
-    privateDirectory(this.directory);
-  }
-  record(relation: DirectRelation): void {
-    if (!validRelation(relation)) throw new Error('invalid_native_relation');
-    const key = createHash('sha256')
-      .update(JSON.stringify([ownerKey(relation.owner), relation.callId, nativeKey(relation.child)]))
-      .digest('hex');
-    const path = join(this.directory, `${key}.json`);
-    const temporary = `${path}.${randomUUID()}.tmp`;
-    writeFileSync(temporary, JSON.stringify(relation), { mode: 0o600, flag: 'wx' });
-    renameSync(temporary, path);
-  }
-  list(owner?: NativeOwner): DirectRelation[] {
-    return readRelationsDirectory(this.directory, owner);
-  }
-  resolveOwned(owner: NativeOwner, ref: NativeRef, profileId: string): DirectRelation {
-    const matching = this.list(owner).filter((row) => nativeKey(row.child) === nativeKey(ref));
-    if (!matching.length) throw new Error('native_relation_not_owned');
-    const profiles = matching.filter((row) => row.profileId === profileId);
-    if (!profiles.length) throw new Error('native_relation_profile_mismatch');
-    // Resume records retain native location observations, not caller-provided replacements.
-    profiles.sort((a, b) => b.createdAt - a.createdAt);
-    const stored = profiles[0];
-    if (!nativeLocatorMatches(stored.child, ref)) throw new Error('native_relation_locator_mismatch');
-    return stored;
-  }
-  owns(owner: NativeOwner, ref: NativeRef): boolean {
-    return this.list(owner).some((row) => nativeLocatorMatches(row.child, ref));
-  }
-}
-
 /** Read-only UI path: never creates a directory or starts a backend. */
 export function readRelations(
   home: string,

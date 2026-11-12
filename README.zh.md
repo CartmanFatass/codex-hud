@@ -53,95 +53,14 @@ codexH
 Codex 的 tmux 状态栏随 `codexH` 启动。已有的非 HUD 自定义 Claude 状态行会保留。
 只有侧栏按需打开：Claude 和 pi 用 `/hud`，Codex 用 F12；启动时不会自动展开侧栏。
 
-<details>
-<summary><b>Windows（默认 WSL）</b>：安装、自检与 PowerShell / cmd 命令</summary>
-
-当前 branch 在 Windows 上只把 WSL HUD 作为受支持的 HUD 运行时。PowerShell 和 cmd 只是启动 shell；HUD 本身会在 Ubuntu WSL 的 Bash + tmux 中运行。
-
-1. 下载并切换到当前 branch：
-
-```powershell
-git clone https://github.com/CartmanFatass/codex-hud.git
-cd codex-hud
-git switch feature/windows-support-dual-entry
-.\bin\codex-hud-install.ps1
-```
-
-2. 打开新的 PowerShell 或 cmd 窗口，然后检查 WSL runtime：
-
-```powershell
-codex --self-check
-```
-
-![Windows WSL self-check](./docs/fig/wsl-self-check.png)
-
-3. 启动 Codex HUD：
-
-```powershell
-codex
-```
-
-![Windows WSL launch](./docs/fig/windows-wsl.png)
-
-说明：
-
-- `codex` 在 Windows 上默认启动 WSL HUD。
-- `codex --wsl ...` 显式使用同一条 WSL HUD 路径，并在转发给 Codex CLI 前移除 wrapper 参数。
-- native PowerShell HUD 暂未作为用户启动模式支持；legacy native-mode 请求会 fail fast 并提示使用 WSL HUD。
-- `codex-hud-wsl` 是显式 WSL 完整 HUD 命令。
-- `cmd.exe` 用户会获得托管 `.cmd` shim，并通过同一套 PowerShell entrypoint 启动。
-
-**管理命令**
-
-首次安装后，以下命令自动加入 shell：
-
-| 命令 | 说明 |
-|------|------|
-| `codex-hud-sync` | 重新构建并刷新当前 checkout 的别名 |
-| `codex-hud-upgrade` | 拉取最新代码后重新构建 |
-| `codex-hud-uninstall` | 移除别名并停止 HUD 会话 |
-
-**Windows WSL 默认入口说明（2026-05-22）**
-
-Windows 当前默认只使用 WSL HUD 启动路径：
-
-- `codex`：默认 Windows 入口；直接启动 WSL HUD，WSL HUD 不可用时才降级为普通 Windows `codex` CLI。
-- `codex --wsl ...`：显式使用 WSL HUD，并在转发给 Codex CLI 前移除 wrapper 参数。
-- legacy native-mode 请求：native PowerShell HUD 暂未支持，会 fail fast 并提示使用 WSL HUD。
-- `codex-hud-wsl`：显式 WSL 完整 HUD 模式（Ubuntu + Bash + tmux）。
-- `cmd.exe`：安装后会获得托管 `.cmd` shim，实际调用同一套 PowerShell entrypoint，并使用 `ExecutionPolicy Bypass`。
-
-PowerShell 安装方式：
-
-```powershell
-git clone https://github.com/CartmanFatass/codex-hud.git
-cd codex-hud
-.\bin\codex-hud-install.ps1
-```
-
-说明：`codex-hud-install.ps1` 会写入 PowerShell profile 管理块，生成 cmd shim，并提供以下命令映射：
-
-- `codex`
-- `codex-resume`
-- `codex-hud-wsl`
-- `codex-hud-sync`
-- `codex-hud-upgrade`
-- `codex-hud-uninstall`
-
-安装脚本会在 Windows 上准备 Node.js 与 Codex CLI；Windows 默认 HUD 路径只使用 WSL，因此默认不再安装 native tmux。在 WSL 中会通过 root 或 passwordless `sudo` 准备 `tmux`、Node.js LTS、`npm` 和 `@openai/codex`。如果 WSL 权限不足，会 fail fast 并输出可在 WSL 内手动执行的命令。
-
-Linux/macOS/Git Bash 的 `install.sh` 也会对缺失依赖 fail fast，并输出精确检查项与安装指导。关键检查包括 `command -v node`、`node --version`、`command -v npm`、`npm --version`、`command -v tmux` 与 `tmux -V`。
-
-</details>
-
 ### 字体
 
-面板的图标、胶囊的圆角和圆角框，都是 **MesloLGS NF**（powerlevel10k 使用的 Nerd Font）画成一列宽的字符；换成别的字体时，其中一些会由后备字体以另一种大小画出，或者画不出来。安装程序会为当前用户装好它：
+面板的图标、胶囊的圆角和圆角框，都是 **MesloLGS NF**（powerlevel10k 使用的 Nerd Font）画成一列宽的字符；换成别的字体时，其中一些会由后备字体以另一种大小画出，或者画不出来。没有安装程序会替你装好：`bin/codex-hud-fonts` 是一个独立、可选的脚本，由你自己运行。
 
-- `./bin/codex-hud-install`（以及 `codex-hud-sync`、`codex-hud-upgrade`）会运行 `bin/codex-hud-fonts`，把四个字形装进 Linux 的 `~/.local/share/fonts`（随后运行 `fc-cache`）或 macOS 的 `~/Library/Fonts`。
-- Windows 上，`codex-hud-install.ps1` 像资源管理器的“安装”一样，为当前 Windows 用户安装。WSL 里画面板的终端是 Windows 程序，字体应装在 Windows 上：在 WSL 里运行 `bin/codex-hud-fonts` 只会说明 Windows 是否已有这个字体、怎样安装，不写入任何文件。
+- Linux 和 macOS 上，它为当前用户把四个字形装进 Linux 的 `~/.local/share/fonts`（随后运行 `fc-cache`）或 macOS 的 `~/Library/Fonts`。
+- WSL 里画面板的终端是 Windows 程序，字体应装在 Windows 上：在 WSL 里运行 `bin/codex-hud-fonts` 只会说明 Windows 是否已有这个字体、怎样安装，不写入任何文件。
 
-字体文件取自 [romkatv/powerlevel10k-media](https://github.com/romkatv/powerlevel10k-media) 的一个固定提交，先从 GitHub 下载，失败时改用 jsDelivr 上的同一份，每个文件都必须与记录的 SHA-256 一致。装好后把终端字体设为 `MesloLGS NF`（Windows Terminal：设置 → 配置文件 → 默认值 → 外观 → 字体）。`bin/codex-hud-fonts --check` 查看是否已安装；`CODEX_HUD_SKIP_FONTS=1` 让安装跳过字体。没有这个字体 HUD 也能运行，只是部分图标由别的字体画出。
+字体文件取自 [romkatv/powerlevel10k-media](https://github.com/romkatv/powerlevel10k-media) 的一个固定提交，先从 GitHub 下载，失败时改用 jsDelivr 上的同一份，每个文件都必须与记录的 SHA-256 一致。装好后把终端字体设为 `MesloLGS NF`（Windows Terminal：设置 → 配置文件 → 默认值 → 外观 → 字体）。`bin/codex-hud-fonts --check` 查看是否已安装。没有这个字体 HUD 也能运行，只是部分图标由别的字体画出。
 
 ## HUD 显示了什么？
 
@@ -243,7 +162,6 @@ CODEX_HUD_DENSITY=focus codex
 ```bash
 codex                        # 启动并自动显示 HUD
 codex --model gpt-5          # 传递 Codex CLI 参数
-codex --wsl --model gpt-5    # Windows 下显式使用 WSL HUD
 codex "help me debug this"   # 带初始提示
 codex-resume                 # 恢复上次会话
 ```
@@ -278,9 +196,8 @@ codex-hud brief --dry-run    # 打印简报此刻会发送的内容
 | Linux | 已支持 |
 | macOS (Apple Silicon) | 已支持 |
 | macOS (Intel) | 待测试 |
-| Windows PowerShell | 已支持为启动 shell；native PowerShell HUD 暂未支持 |
-| Windows cmd | 已支持（托管 `.cmd` shim） |
-| Windows WSL Ubuntu | 已支持（Windows 默认 HUD 路径与 `codex-hud-wsl` 完整 HUD 入口） |
+| Windows WSL Ubuntu | 已支持（HUD 运行在 WSL 中） |
+| 原生 Windows（PowerShell / cmd） | 不支持 |
 
 ## 开发
 

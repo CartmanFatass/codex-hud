@@ -44,61 +44,12 @@
 ```bash
 git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
-./bin/codex-hud-install
+./install --with claude,pi,codex
 
-# シェルをリフレッシュして、以下を入力：
-codex
+# シェルをリフレッシュし、表示された Codex 関数を追加してから起動：
+codexH() { hud codex "$@"; }
+codexH
 ```
-
-<details>
-<summary><b>Windows（WSL デフォルト）</b>：インストール、self-check、PowerShell / cmd コマンド</summary>
-
-この branch では、Windows のサポート対象 HUD runtime は WSL です。PowerShell と cmd はランチャー shell として使い、HUD 本体は Ubuntu WSL の Bash + tmux で動作します。
-
-1. ダウンロードして current branch に切り替えます：
-
-```powershell
-git clone https://github.com/CartmanFatass/codex-hud.git
-cd codex-hud
-git switch feature/windows-support-dual-entry
-.\bin\codex-hud-install.ps1
-```
-
-2. 新しい PowerShell または cmd ウィンドウを開き、WSL runtime を確認します：
-
-```powershell
-codex --self-check
-```
-
-![Windows WSL self-check](./docs/fig/wsl-self-check.png)
-
-3. Codex HUD を起動します：
-
-```powershell
-codex
-```
-
-![Windows WSL launch](./docs/fig/windows-wsl.png)
-
-Notes:
-
-- `codex` は Windows ではデフォルトで WSL HUD を起動します。
-- `codex --wsl ...` は同じ WSL HUD パスを明示的に選択し、Codex CLI に渡す前に wrapper 引数を取り除きます。
-- native PowerShell HUD は現在、ユーザー向け起動モードとしては未サポートです。legacy native-mode request は fail fast し、WSL HUD の使用を案内します。
-- `codex-hud-wsl` は Ubuntu WSL で完全な HUD を起動する明示コマンドです。
-- `cmd.exe` ユーザーには、同じ PowerShell entrypoint を呼び出す管理済み `.cmd` shim が提供されます。
-
-**管理コマンド**
-
-初回インストール後、以下のコマンドがシェルに追加されます：
-
-| コマンド | 説明 |
-|----------|------|
-| `codex-hud-sync` | 現在のチェックアウトを再ビルドしエイリアスを更新 |
-| `codex-hud-upgrade` | 最新の変更をプルして再ビルド |
-| `codex-hud-uninstall` | エイリアスを削除し HUD セッションを停止 |
-
-</details>
 
 ## HUD に何が表示される？
 
@@ -195,9 +146,8 @@ enabled = true
 | Linux | 対応済み |
 | macOS (Apple Silicon) | 対応済み |
 | macOS (Intel) | テスト待ち |
-| Windows PowerShell | ランチャー shell として対応、native PowerShell HUD は未サポート |
-| Windows cmd | 管理済み `.cmd` shim で対応 |
-| Windows WSL Ubuntu | Windows のデフォルト HUD パスとして対応 |
+| Windows WSL Ubuntu | 対応済み（HUD は WSL 内で動作） |
+| ネイティブ Windows（PowerShell / cmd） | 未サポート |
 
 ## 開発
 

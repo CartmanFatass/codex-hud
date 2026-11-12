@@ -1,4 +1,4 @@
-/** Explicit opt-in only. No plugin discovery and no imported executable configuration. */
+/** Shared default statusline settings. No plugin discovery and no imported executable configuration. */
 import { join, isAbsolute } from 'node:path';
 import { getHudHome } from '../hud-home.js';
 import { readJson, record } from './storage.js';

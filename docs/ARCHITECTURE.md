@@ -184,8 +184,8 @@ using `worktreeGit` and its
 filter neutralisation, at most every five seconds; failure is unknown, not a fabricated clean tree.
 Credentials are reduced immediately to name/presence booleans (empty RHS is absent), never cached as
 text or exposed as openable files. Known provider names match the credential loader (Mistral, OpenAI,
-Gemini, TypeSafe); other declared names are included. Browser setup is only a cheap `jev-runtime/runtime.json`
-file check, not a live-health claim. This collector makes no model requests, starts nothing and writes nothing.
+Gemini, TypeSafe); other declared names are included. Browser ✓ means `google-chrome` and `jev-ask` are found
+on PATH, not a live-health or login claim. This collector makes no model requests, starts nothing and writes nothing.
 
 ## 1. The mental model in one screen
 
@@ -270,10 +270,7 @@ check that no test uses it.
 
 | File | Status |
 |---|---|
-| `render/workbench.ts`, `render/subagent-tree-view.ts`, `render/sparkline.ts` | The old panel renderer. Only tests import them (`workbench.test`, `panel.test`, `resources.test`, `subagent-status.test`, `test-subagent-tree.mjs`). |
-| `src/test-render.ts` | A standalone mock renderer that nothing runs. `npm run test:render` runs `dist/index.js`. |
 | `bin/codex-hud-tree` | Runs `dist/tree-page.js`. Its comment says tmux display-popup uses it, but nothing in the repo calls it. |
-| `dist/utils/tmux-copy.js` | A stale build output with no source file. `tsc` never cleans `dist/`. |
 
 ---
 
@@ -953,6 +950,7 @@ against Codex 0.154 and 0.157.
 |---|---|---|
 | `state/<session>.json` | bar or panel | snapshot for `--json` and bar clicks; deleted on exit only by the process that owns it |
 | `scan/` | panel | tree scan cache (`SCAN_VERSION`) |
+| `thin-jobs.json` | panel or statusline | private (0600), atomically replaced stat-signature cache of `job.json`/`STATUS.json` facts; unchanged files reuse parsed facts across processes; missing/malformed cache rebuilds from job files, never job authority |
 | `model-cache/{cache,calls,job-sentences,decision-titles}.json` | panel | shared replies/call log and display overlays; retired agent-log/label files are not read or removed |
 | `profile.log` | both | only with `CODEX_HUD_PROFILE=1` |
 

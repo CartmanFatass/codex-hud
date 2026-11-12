@@ -48,7 +48,6 @@ After merging, push and update STATE.md. Never touch `main`, never force-push, n
 - **Local-only work is skipped and recorded, never simulated.** That covers:
   - anything that needs Herdr, tmux, logged-in Codex/Claude/pi CLIs, Jev or the shared browser;
   - `npm run test:herdr`, `tests/integration/*real-tmux.sh`, `tests/probes/*.sh` and `B13_REAL=1`;
-  - `install.sh` and `uninstall.sh`;
   - anything touching a real `~/.hud`, `~/.claude`, `~/.codex*` or `~/.pi`.
 - `docs/delegation.md`, `tmp/tasks/` and Herdr pane names in older docs describe the former local setup.
 - `.codegraph/` is not available. Search with grep.

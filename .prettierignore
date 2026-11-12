@@ -3,8 +3,6 @@ dist-test
 node_modules
 docs
 *.md
-# Upstream snapshot body must stay byte-identical. Prettier would reflow it.
-src/jev/snapshot.js
 # Compact JSON.stringify bytes of the decision request. Pretty-printing would not match the wire body.
 tests/fixtures/jev/decisions/openai/request.json
 tests/fixtures/jev/decisions/typesafe/request.json

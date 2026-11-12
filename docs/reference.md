@@ -323,7 +323,7 @@ Control plane starts folded. It lists the same effective role registry as `hud_r
 harness/model/thinking, HUD and pi-roles source files, the project/user/default convention in effect,
 CLAUDE.md and AGENTS.md. Native custom agents (Claude user/project and Codex user) have their own fold.
 Keys show names and ✓/− only (empty declarations count as unavailable); no credential value is kept or displayed,
-and that row cannot be opened. Browser ✓ means only that the browser runtime's `runtime.json` file exists,
+and that row cannot be opened. Browser ✓ means only that `google-chrome` and `jev-ask` are found on PATH,
 not that a browser is running or logged in. Nothing starts the MCP, browser or a model.
 
 Up/Down move over file rows and section headers; Enter or `o` folds a header or opens the selected file
@@ -563,6 +563,8 @@ Parent links support both metadata locations. Missing status evidence stays unkn
 
 Each agent's rollout is read once, each read going on from where the last one stopped. How far each was read and what it held (status, stages, open calls) is kept in `$HUD_HOME/display/scan/`, one file for each rollout of more than 256 KB (mode 0600, removed after a week neither used nor written), so a panel or bar started again reads only what was written since. A saved read is used only while the file still matches it (the same file and thread, the bytes it ended on unchanged); otherwise the rollout is read again from its start.
 
+**Thin-job display cache.** `$HUD_HOME/display/thin-jobs.json` is a private (0600), atomically replaced cache of stat-signature-checked `job.json` and `STATUS.json` facts shared by the panel and statusline. It avoids re-parsing unchanged files across processes; it is disposable display state, not job authority. Missing or malformed cache data is rebuilt from the job files.
+
 Native names remain factual until the shared model service supplies a short task name. There is no agent-log page, preference or writer; existing files remain on disk. A single generated sentence covers current work, the final result or failure cause, under the same master/key/language/rate gates as job sentences.
 
 ### Inspector
@@ -734,7 +736,7 @@ hud import preview --from /tmp/old-codex/hud-settings.json --from /tmp/old-jev/c
 hud import apply --from /tmp/old-codex/hud-settings.json --from /tmp/old-jev/config.toml
 ```
 
-**Jev locations.** `cdpUrl`, `chrome`, `profile` and `stateDir` are required in the `jev` section of `$HUD_HOME/config.json`; there is no built-in CDP URL. A missing one fails closed before any browser contact (`pre_send`), naming the missing key and `hud import`. Sharing the owner's existing logged-in Chrome and jev-ask state directory is supported only as explicit values in that file, never as a code default. AI Studio settings live in `aistudio`, with `stateDir` required and `cdpUrl`, `models`, `model` and `thinking` optional; its `stateDir` keeps the deliberately shared one-send-per-key semantics and must already exist. `jev.stateDir` likewise explicitly names the owner's shared operation-record directory. A missing configuration reports the HUD file.
+**Jev locations.** The HUD does not contact a browser. Browser tasks run the external `jev-*` CLIs, which own Chrome, profile, CDP and operation-state setup; configure those tools directly. The legacy `jev` location and `aistudio` sections written by `hud import` are not used for browser setup by the HUD. The Decision API configuration above remains HUD-owned.
 
 ## Output throughput
 

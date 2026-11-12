@@ -75,7 +75,7 @@ export class NativeCallCollector {
   }
   constructor(
     readonly home: string,
-    private readonly port: NativeHostPort = new NativeHostClient(home, false),
+    private readonly port: NativeHostPort = new NativeHostClient(home),
     private readonly read = readRelations,
     private readonly readJev = readJevRelations
   ) {}

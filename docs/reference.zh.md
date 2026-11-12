@@ -304,6 +304,8 @@ hud observe-herdr --root synthetic/main --id checks --remove
 
 每个 agent 的 rollout 只读一次，每次从上次停下的地方接着读。读到哪里、读到了什么（状态、阶段、未返回的调用）保存在 `$HUD_HOME/display/scan/`，超过 256 KB 的 rollout 各一个文件（权限 0600，一周既没用到也没更新即删除），侧栏或状态栏重新启动时只读之后新写入的部分。只有文件仍与保存的记录相符（同一个文件和线程，记录结束处的字节没变）时才使用它，否则从头重新读取。
 
+**任务显示缓存。**`$HUD_HOME/display/thin-jobs.json` 是面板与状态行共享的私有缓存（0600，原子替换），保存经 stat 签名校验的 `job.json` 与 `STATUS.json` 事实，避免跨进程重复解析未变文件。它只是可重建的显示状态，不是任务状态的权威来源；缺失或损坏时从任务文件重建。
+
 代理以任务路径的最后一段命名，与 Codex `/subagents` 选择器显示的名字一致：`/root/essays_2020_2021` 显示为 `essays_2020_2021`。标签到达之前，这个名字是树的行、卡片和日志块的标题。开启「Agent 名称」（默认为替换名字，设置了后端后生效）后，模型为它当前工作起的短名会在卡片、行、紧凑树、时间线和 Inspector 标题里替换它，工作换了名字也跟着换（设置 → 模型增强 →「Agent 名称」：写在名字下时紧凑卡片保留 Codex 名字，短名放在日志名字下；关闭则用 Codex 的名字）；Inspector 始终保留 Codex 的原名，保留的原生切换也始终按原名进行；已停用的「原始名字」卡片控件不再出现。卡片 →「任务标签」只控制卡片上的标签：关闭后卡片保留 Codex 名字，不改变其它视图的命名策略，也不生成新标签。Codex 随机分配的昵称（Copernicus、Meitner 等）保留在 Inspector 中，已观察到的角色显示在工作卡片上。守护批准评审没有单独的工作卡片，其证据保留在详情和聚合统计中，不再显示为卡片徽标。
 
 会话已读取、树已建好后，如果这个会话没有启动任何 agent、子任务或审查，标题下会用一行暗色文字说明（`本会话还没有启动 agent`），并写出帮助入口；在此之前，或尚未绑定会话时，区域保持空白，不作猜测。没有配置模型后端且卡片显示 Agent 总结时，最后一张卡片之后有一行暗色文字说明不会生成新的总结（`~ 未配置模型后端，不会生成新的总结：设置 → LLM`）；已保存的总结仍留在卡片上。
@@ -523,7 +525,7 @@ hud import preview --from /tmp/old-codex/hud-settings.json --from /tmp/old-jev/c
 hud import apply --from /tmp/old-codex/hud-settings.json --from /tmp/old-jev/config.toml
 ```
 
-**Jev 位置。**`$HUD_HOME/config.json` 的 `jev` 段必须提供 `cdpUrl`、`chrome`、`profile` 和 `stateDir`；没有内置的 CDP 地址。缺少任一项都会在任何浏览器接触之前（`pre_send`）失败，指出缺失的键并提示 `hud import`。共享所有者已登录的 Chrome 和 jev-ask 状态目录只作为该文件中的显式值支持，绝不是代码默认值。AI Studio 设置位于 `aistudio`，`stateDir` 必填，`cdpUrl`、`models`、`model` 和 `thinking` 可选；它的 `stateDir` 保留刻意共享的「一次发送对应一个 key」语义，且必须已存在。`jev.stateDir` 同样显式指定所有者共享的操作记录目录。配置缺失时报告 HUD 文件。
+**Jev 位置。**HUD 不接触浏览器。浏览器任务运行外部 `jev-*` CLI，由这些工具管理 Chrome、profile、CDP 和操作状态；请直接配置对应工具。`hud import` 写入的旧 `jev` 位置与 `aistudio` 段不再用于 HUD 的浏览器设置。上面的决策 API 配置仍由 HUD 管理。
 
 **按来源的 key。**委派摘要来源可在其私有 `model.json`（`connection.keyEnv`）中指定自己的 key 变量名。该名称先取捕获的环境变量，再取 `$HUD_HOME/credentials.env`，不读其它文件；`keyEnv: null` 表示无账户，不发送 key。它与面板路径互不相通：按主机匹配的面板 key 绝不会发给来源的自定义 base，来源的 key 也绝不进入面板；面板路径使用自定义 base 且没有主机匹配的 key 时关闭，不发请求。
 

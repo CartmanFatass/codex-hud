@@ -1,4 +1,4 @@
-/** Opt-in statusline I/O boundary; the default renderer never calls this module's collectors. */
+/** Shared default statusline I/O boundary. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { WorkSignals } from '../render/work-summary.js';

@@ -54,103 +54,14 @@ ordinary `pi` loads the HUD footer, and `codexH` brings Codex's tmux bar. An exi
 owner-defined non-HUD Claude statusline is preserved. Only the side panel is opt-in:
 open it with `/hud` in Claude or pi, or F12 in Codex; it never opens at launch.
 
-<details>
-<summary><b>Windows (WSL default)</b>: install, self-check and the PowerShell / cmd commands</summary>
-
-> This branch documents the Windows WSL-first build: Windows `codex` launches the WSL HUD by default, native PowerShell HUD is not a supported user launch mode, and Linux/macOS keep the existing Bash flow.
-
-This branch uses WSL as the supported Windows HUD runtime. PowerShell and cmd are launcher shells; the HUD itself runs in Ubuntu WSL with Bash and tmux.
-
-> **Warning:** Windows installation has not been validated on a native Windows host; back up your existing Codex installation before running it.
-
-1. Download and switch to this branch:
-
-```powershell
-git clone https://github.com/CartmanFatass/codex-hud.git
-cd codex-hud
-git switch feature/windows-support-dual-entry
-.\bin\codex-hud-install.ps1
-```
-
-2. Open a new PowerShell or cmd window, then check the WSL runtime:
-
-```powershell
-codex --self-check
-```
-
-![Windows WSL self-check](./docs/fig/wsl-self-check.png)
-
-3. Run Codex HUD:
-
-```powershell
-codex
-```
-
-![Windows WSL launch](./docs/fig/windows-wsl.png)
-
-Notes:
-
-- `codex` launches the WSL HUD by default on Windows.
-- `codex --wsl ...` explicitly requests the same WSL HUD path and strips the wrapper flag before forwarding Codex CLI args.
-- Native PowerShell HUD is currently unsupported as a user launch mode; legacy native-mode requests fail fast with an unsupported-mode error.
-- `codex-hud-wsl` is the explicit full-HUD command for WSL Ubuntu.
-- `cmd.exe` users get managed `.cmd` shims that invoke the same PowerShell entrypoints with `ExecutionPolicy Bypass`.
-
-`codex-hud-install.ps1` automatically:
-
-- install Node.js LTS on Windows if needed
-- preserve an existing Windows Codex CLI and install `@openai/codex` only when missing
-- ensure Ubuntu WSL is available when possible
-- provision WSL with `tmux`, Node.js LTS, `npm`, and `@openai/codex` only when missing
-- fail fast with exact manual WSL commands if root or passwordless `sudo` is unavailable
-
-For Linux/macOS/Git Bash installs, `install.sh` now fails fast with exact checks and install guidance when required tools are missing. The main required checks are `command -v node`, `node --version`, `command -v npm`, `npm --version`, `command -v tmux`, and `tmux -V`.
-
-**Windows default path**
-
-```powershell
-. $PROFILE.CurrentUserAllHosts
-codex
-codex --wsl
-codex --self-check
-codex-resume
-```
-
-Use `codex` when you want the normal Windows entry. It uses WSL HUD by default. Use `codex --wsl` when you want to be explicit about the WSL path. Legacy native-mode requests are intentionally rejected because native PowerShell HUD is not supported yet.
-
-**WSL full HUD path**
-
-```powershell
-. $PROFILE.CurrentUserAllHosts
-codex-hud-wsl
-codex-hud-wsl "help me debug this"
-```
-
-Use this when you want the full Bash + tmux HUD inside WSL Ubuntu.
-
-**Management commands**
-
-After the first install, these are available in PowerShell and cmd:
-
-| Command | Description |
-|---------|-------------|
-| `codex` | Default Windows entry: WSL HUD, then plain Windows codex fallback |
-| `codex-resume` | Resume through the same Windows WSL entry |
-| `codex-hud-wsl` | Launch full HUD mode via WSL |
-| `codex-hud-sync` | Rebuild and refresh aliases for the current checkout |
-| `codex-hud-upgrade` | Pull latest changes, then rebuild |
-| `codex-hud-uninstall` | Remove aliases and stop HUD sessions |
-
-</details>
-
 ### Font
 
-The panel's icons, the pills' rounded ends and the frame are glyphs that **MesloLGS NF**, the Nerd Font powerlevel10k uses, draws one column wide; another font draws some of them from a fallback at another size, or not at all. The installers put it in place for your user:
+The panel's icons, the pills' rounded ends and the frame are glyphs that **MesloLGS NF**, the Nerd Font powerlevel10k uses, draws one column wide; another font draws some of them from a fallback at another size, or not at all. Nothing installs it for you: `bin/codex-hud-fonts` is a standalone, optional script you run yourself.
 
-- `./bin/codex-hud-install` (and so `codex-hud-sync` and `codex-hud-upgrade`) runs `bin/codex-hud-fonts`, which installs its four faces into `~/.local/share/fonts` on Linux (then runs `fc-cache`) or `~/Library/Fonts` on macOS.
-- On Windows, `codex-hud-install.ps1` installs them for your Windows user, as Explorer's *Install* does. In WSL the terminal that draws the panel is a Windows program, so the font belongs there: `bin/codex-hud-fonts` run in WSL only says whether Windows has it and how to add it, and writes nothing.
+- On Linux and macOS it installs its four faces for your user, into `~/.local/share/fonts` on Linux (then runs `fc-cache`) or `~/Library/Fonts` on macOS.
+- In WSL the terminal that draws the panel is a Windows program, so the font belongs on Windows: `bin/codex-hud-fonts` run in WSL only says whether Windows has it and how to add it, and writes nothing.
 
-The files come from one pinned commit of [romkatv/powerlevel10k-media](https://github.com/romkatv/powerlevel10k-media), from GitHub or else jsDelivr's copy of it, and each must match its SHA-256. Then set the terminal's font to `MesloLGS NF` (Windows Terminal: Settings → Profiles → Defaults → Appearance → Font face). `bin/codex-hud-fonts --check` says whether it is installed; `CODEX_HUD_SKIP_FONTS=1` leaves the font out of the install. The HUD runs without it, some icons then drawn by another font.
+The files come from one pinned commit of [romkatv/powerlevel10k-media](https://github.com/romkatv/powerlevel10k-media), from GitHub or else jsDelivr's copy of it, and each must match its SHA-256. Then set the terminal's font to `MesloLGS NF` (Windows Terminal: Settings → Profiles → Defaults → Appearance → Font face). `bin/codex-hud-fonts --check` says whether it is installed. The HUD runs without it, some icons then drawn by another font.
 
 ## What's on the HUD?
 
@@ -251,10 +162,8 @@ The rest is in **[the reference](./docs/reference.md)**: the panes and both layo
 ```bash
 codex                        # Launch with HUD
 codex --model gpt-5          # Pass any Codex CLI args
-codex --wsl --model gpt-5    # Explicit WSL HUD mode on Windows
 codex "help me debug this"   # With prompt
 codex-resume                 # Resume last session
-codex-hud-wsl                # Explicit full HUD in WSL (Windows only)
 ```
 
 <details>
@@ -286,9 +195,8 @@ Leaving a changed settings draft via Back/Esc, navigation or a leaving prefix co
 | Linux | Supported |
 | macOS (Apple Silicon) | Supported |
 | macOS (Intel) | Testing pending |
-| Windows PowerShell | Supported as launcher shell; native PowerShell HUD is unsupported |
-| Windows cmd | Supported (managed `.cmd` shims) |
-| Windows WSL Ubuntu | Supported (default Windows HUD path and `codex-hud-wsl` full HUD entry) |
+| Windows WSL Ubuntu | Supported (the HUD runs in WSL) |
+| Native Windows (PowerShell / cmd) | Unsupported |
 
 ## Development
 

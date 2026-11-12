@@ -1,4 +1,3 @@
-import type { capacityProjection } from '../capacity.js';
 import type { Report, ActionDescriptor, ParentOffline } from '../types/lifecycle.js';
 import type { StatusProjection } from '../types/observation.js';
 import type { LinkTreeProjection } from './types.js';
@@ -11,7 +10,7 @@ export interface DelegationViewModel {
   tree: LinkTreeProjection;
   nativeCalls?: { count: number; unavailable: string | null };
   /** Null when the ledger is degraded; never claim zero occupancy from an unreadable ledger. */
-  capacity: ReturnType<typeof capacityProjection> | null;
+  capacity: null;
   limits: LoadedLimits;
   /** Node-keyed additions; conflicts outside the tree remain in tree.relations. */
   details: Readonly<Record<string, DelegationNodeDetails>>;
