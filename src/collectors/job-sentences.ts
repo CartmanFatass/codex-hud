@@ -125,7 +125,13 @@ function nativeMaterial(n: SubagentTreeNode, w: OwnerWorker) {
     turn: n.turnStartedAt,
     report: n.lastReport?.text.slice(0, 600),
     action: n.action?.text.slice(0, 200),
-    result: w.settledAt !== null ? headTail(n.stages?.at(-1)?.result ?? finalAnswer(text)?.text ?? '', 8000) : '',
+    result:
+      w.settledAt !== null
+        ? headTail(
+            n.ref?.harness === 'claude' ? (n.lastReport?.text ?? '') : (n.stages?.at(-1)?.result ?? finalAnswer(text)?.text ?? ''),
+            8000
+          )
+        : '',
     error: errorMaterial(text),
   };
 }

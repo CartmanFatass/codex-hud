@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import fsMutable from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
@@ -267,6 +268,141 @@ for (const mode of ['off', 'no-key', 'on'])
       assert.equal(service.apply(f.board(tree)).workers[0].modelSentence, undefined);
       assert.equal(service.apply(f.board(tree)).workers[0].task, 'Repair parser');
     });
+function resumedFixture(t) {
+  const f = fixture(t), meta = join(f.dir, 'agent-lead.meta.json'), file = join(f.dir, 'agent-lead.jsonl');
+  fs.unlinkSync(join(f.dir, 'agent-child.meta.json'));
+  fs.unlinkSync(join(f.dir, 'agent-child.jsonl'));
+  const metadata = (finished, at = NOW) => {
+    f.put(meta, { agentType: 'tester', description: 'Wait for background work', finished, spawnDepth: 1 });
+    fs.utimesSync(meta, new Date(at), new Date(at));
+  };
+  const record = (content, at, stop_reason, type = 'assistant') => JSON.stringify({
+    type, timestamp: new Date(at).toISOString(), message: { role: type, content, stop_reason },
+  }) + '\n';
+  const append = (content, at, stop, type) => fs.appendFileSync(file, record(content, at, stop, type));
+  metadata(true);
+  f.put(file, record([{ type: 'text', text: 'Waiting 40 seconds in the background.' }], NOW - 1000, 'end_turn'));
+  return { ...f, meta, file, metadata, append, record };
+}
+test('Claude resumes after background wait: running card, fresh last-reply final under floor/cap, unchanged reopen is free', async (t) => {
+  const f = resumedFixture(t);
+  let now = NOW, calls = [];
+  const model = new SmallModel({
+    env: { HOME: f.home, HUD_HOME: f.home, MISTRAL_API_KEY: 'synthetic-key' },
+    clock: () => now,
+    fetch: async (_url, init) => {
+      const body = JSON.parse(init.body);
+      calls.push(body);
+      const input = JSON.parse(body.messages[1].content.slice('<job>\n'.length, -'\n</job>'.length));
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+        name: 'Background check', sentence: input.result.includes('FINAL-RESULT') ? 'Background check passed.' : 'Waiting in the background.',
+      }) } }] }));
+    },
+  });
+  model.configure({ backend: 'api', hourlyCap: 2 });
+  const cache = join(f.home, 'sentences.json');
+  let service = new JobSentences(model, cache, () => {}, () => now);
+  service.configure(true, 'en');
+  t.after(() => { service.stop(); model.cancelAll(); });
+  const update = async () => {
+    const tree = f.claude(), board = f.board(tree);
+    service.update(board, f.home, tree);
+    await tick();
+    return { tree, board: service.apply(board) };
+  };
+  let current = await update();
+  assert.equal(current.board.workers[0].state, 'done');
+  assert.equal(calls.length, 1);
+  assert.match(current.board.workers[0].modelSentence, /Waiting/);
+  now += 20_000;
+  f.append([{ type: 'tool_use', id: 'background-read', name: 'Read', input: {} }], now);
+  current = await update();
+  assert.equal(current.tree.nodes[0].status, 'running');
+  assert.equal(current.tree.nodes[0].statusAt, undefined);
+  assert.equal(current.board.workers[0].state, 'working');
+  assert.match(f.render(120, 'en', initialMonitorState(), current.tree).lines.map(stripAnsi).join('\n'), /◉ tester/);
+  assert.equal(calls.length, 1, 'resumption cannot bypass the two-minute floor');
+  f.append([{ type: 'tool_result', tool_use_id: 'background-read', content: 'Finished' }], now + 1000, undefined, 'user');
+  now += 20_000;
+  f.append([{ type: 'text', text: 'Background completed. ' + 'checked '.repeat(1500) + 'FINAL-RESULT: all passed.' }], now, 'end_turn');
+  current = await update();
+  const settlement = current.board.workers[0].settledAt;
+  assert.equal(current.board.workers[0].state, 'done');
+  assert.equal(settlement, now);
+  assert.equal(calls.length, 1, 'new settlement also respects the floor');
+  now = NOW + 120_001;
+  current = await update();
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].messages[1].content, /FINAL-RESULT: all passed/);
+  assert.doesNotMatch(calls[1].messages[1].content, /Waiting 40 seconds/);
+  const input = JSON.parse(calls[1].messages[1].content.slice('<job>\n'.length, -'\n</job>'.length));
+  assert.ok(input.result.length <= 8000);
+  assert.ok(input.report.length <= 600);
+  assert.equal(current.board.workers[0].modelSentence, 'Background check passed.');
+  service = new JobSentences(model, cache, () => {}, () => now);
+  service.configure(true, 'en');
+  now += 300_000;
+  const reads = t.mock.method(fsMutable, 'readSync');
+  current = await update();
+  assert.equal(f.collector.bytes, 0);
+  assert.equal(reads.mock.callCount(), 0, 'finished unchanged transcript and sentence are stat/cache-only');
+  assert.equal(calls.length, 2);
+  assert.equal(current.board.workers[0].settledAt, settlement);
+  assert.equal(current.board.workers[0].modelSentence, 'Background check passed.');
+  f.append([{ type: 'text', text: 'Another completed result.' }], now, 'end_turn');
+  await update();
+  assert.equal(calls.length, 2, 'a further settlement cannot bypass the shared hourly cap');
+});
+test('Claude resumed settlement needs the last public end_turn and no open tools; fresh metadata also settles', (t) => {
+  const f = resumedFixture(t);
+  assert.equal(f.claude().nodes[0].status, 'completed');
+  f.append([{ type: 'tool_use', id: 'sleep', name: 'Bash', input: { command: 'sleep 40' } }], NOW + 1000);
+  assert.equal(f.claude().nodes[0].status, 'running');
+  f.append([{ type: 'text', text: 'Not finished while tool is open.' }], NOW + 2000, 'end_turn');
+  assert.equal(f.claude().nodes[0].status, 'running');
+  f.append([{ type: 'tool_result', tool_use_id: 'sleep', content: 'Done' }], NOW + 3000, undefined, 'user');
+  assert.equal(f.claude().nodes[0].status, 'running', 'a tool result after end_turn is not a settlement');
+  fs.appendFileSync(f.file, JSON.stringify({ type: 'assistant', timestamp: new Date(NOW + 4000).toISOString(),
+    message: { channel: 'analysis', content: [{ type: 'text', text: 'PRIVATE-RESUMED' }], stop_reason: 'end_turn' } }) + '\n');
+  assert.equal(f.claude().nodes[0].status, 'running', 'private end_turn cannot settle');
+  const final = f.record([{ type: 'text', text: 'Final public reply.' }], NOW + 5000, 'end_turn');
+  fs.appendFileSync(f.file, final.slice(0, -1));
+  assert.notEqual(f.claude().nodes[0].status, 'completed', 'partial JSONL is not a settlement');
+  fs.appendFileSync(f.file, '\n');
+  let tree = f.claude();
+  assert.equal(tree.nodes[0].status, 'completed');
+  assert.equal(tree.nodes[0].statusAt.getTime(), NOW + 5000);
+  assert.equal(tree.nodes[0].lastReport.text, 'Final public reply.');
+  f.append([{ type: 'text', text: 'Another continuation.' }], NOW + 6000);
+  assert.equal(f.claude().nodes[0].status, 'running', 'later growth reopens an end_turn settlement too');
+  f.metadata(true, NOW + 7000);
+  tree = f.claude();
+  assert.equal(tree.nodes[0].status, 'completed');
+  assert.equal(tree.nodes[0].statusAt.getTime(), NOW + 7000);
+  assert.equal(f.collector.bytes, fs.statSync(f.meta).size, 'metadata-only settlement does not reread transcript');
+  assert.equal(f.claude().nodes[0].status, 'completed');
+  assert.equal(f.collector.bytes, 0);
+  f.metadata(false, NOW + 8000);
+  assert.equal(f.claude().nodes[0].status, 'running');
+  f.append([{ type: 'text', text: 'Settled without another metadata write.' }], NOW + 9000, 'end_turn');
+  assert.equal(f.claude().nodes[0].status, 'completed');
+});
+test('Claude resumed end_turn waits for bounded transcript catch-up', (t) => {
+  const f = resumedFixture(t);
+  f.claude();
+  f.append([{ type: 'text', text: 'x'.repeat(1048576 + 100) + 'Final reply.' }], NOW + 1000, 'end_turn');
+  let tree = f.claude();
+  assert.notEqual(tree.nodes[0].status, 'completed');
+  assert.equal(tree.incomplete, true);
+  assert.ok(f.collector.bytes <= 1048576);
+  tree = f.claude();
+  assert.equal(tree.nodes[0].status, 'completed');
+  assert.equal(tree.nodes[0].statusAt.getTime(), NOW + 1000);
+  assert.match(tree.nodes[0].lastReport.text, /Final reply\.$/);
+  assert.ok(tree.nodes[0].lastReport.text.length <= 8000);
+  f.claude();
+  assert.equal(f.collector.bytes, 0);
+});
 test('Claude reader bounds/unchanged reads, incremental tails, nesting and uncertain evidence never back off working natives', (t) => {
   const f = fixture(t);
   f.claude();

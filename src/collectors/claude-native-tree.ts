@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import { readJobFile } from './job-sentences.js';
 import { makeSourceId } from '../core/identity.js';
+import { headTail } from './model-jobs.js';
 type Row = {
   stamp: string;
   metaStamp: string;
@@ -17,6 +18,9 @@ type Row = {
   meta: Record<string, unknown>;
   node: SubagentTreeNode;
   calls: Set<string>;
+  openTools: Set<string>;
+  resumed: boolean;
+  endTurn: Date | undefined;
 };
 const safe = (v: unknown, max = 600) => (typeof v === 'string' ? v.slice(0, max) : '');
 export class ClaudeNativeTree {
@@ -107,20 +111,35 @@ export class ClaudeNativeTree {
             omitted: previous?.omitted ?? false,
             meta,
             calls: new Set(previous?.calls),
+            openTools: new Set(previous?.openTools),
+            resumed: previous?.resumed ?? false,
+            endTurn: previous?.endTurn,
             node: {
               ...previous?.node,
               id: `claude:${session}:${id}`,
               name: safe(meta.description) || safe(meta.agentType) || id,
               role: safe(meta.agentType) || 'agent',
               task: safe(meta.description),
-              status: meta.finished ? 'completed' : 'running',
-              statusAt: meta.finished ? new Date(metaStat.mtimeMs) : undefined,
+              status: previous?.node.status ?? (meta.finished ? 'completed' : 'running'),
+              statusAt: previous ? previous.node.statusAt : meta.finished ? new Date(metaStat.mtimeMs) : undefined,
               rolloutPath: file,
               ref: { harness: 'claude', sourceId: makeSourceId('claude', source), sessionId: session, threadId: id },
               depth: 1,
               children: [],
             },
           };
+          // A finished flag can describe an interim reply before background work resumes.
+          if (previous && stat.size > previous.size && (previous.node.status === 'completed' || row.resumed)) {
+            row.resumed = true;
+            row.endTurn = undefined;
+            row.node.status = 'running';
+            row.node.statusAt = undefined;
+          }
+          if (metadata) {
+            row.node.status = meta.finished ? 'completed' : 'running';
+            row.node.statusAt = meta.finished ? new Date(metaStat.mtimeMs) : undefined;
+            row.resumed = !meta.finished && (row.resumed || previous?.node.status === 'completed');
+          }
           let fd: number | undefined;
           let chunk: Buffer;
           try {
@@ -154,23 +173,28 @@ export class ClaudeNativeTree {
               if (!Number.isFinite(at.getTime()) || !m || !Array.isArray(m.content)) continue;
               row.node.startedAt ??= at;
               row.node.lastEventAt = at;
-              for (const b of m.content)
-                if (b.type === 'tool_result' && b.tool_use_id === call) row.node.action = undefined;
               if (
-                e.type !== 'assistant' ||
                 (e.channel && !['final', 'commentary'].includes(e.channel)) ||
                 (m.channel && !['final', 'commentary'].includes(m.channel)) ||
                 (m.phase && !['final_answer', 'commentary'].includes(m.phase))
               )
                 continue;
+              row.endTurn = e.type === 'assistant' && m.stop_reason === 'end_turn' ? at : undefined;
+              for (const b of m.content)
+                if (b.type === 'tool_result') {
+                  row.openTools.delete(b.tool_use_id);
+                  if (b.tool_use_id === call) row.node.action = undefined;
+                }
+              if (e.type !== 'assistant') continue;
               row.node.model = safe(m.model, 128) || row.node.model;
               for (const b of m.content) {
                 if (b.type === 'tool_use') {
                   call = b.id;
+                  if (typeof b.id === 'string') row.openTools.add(b.id);
                   if (typeof b.id === 'string' && ['Agent', 'Task'].includes(b.name)) row.calls.add(b.id);
                   row.node.action = { name: safe(b.name, 200), text: safe(b.name, 200), at };
                 } else if (b.type === 'text' && typeof b.text === 'string') {
-                  row.node.lastReport = { text: safe(b.text), at, kind: meta.finished ? 'reply' : 'update' };
+                  row.node.lastReport = { text: headTail(b.text, 8000), at, kind: 'update' };
                 }
               }
             } catch {
@@ -182,6 +206,12 @@ export class ClaudeNativeTree {
             row.pending = Buffer.alloc(0);
             row.skipping = row.omitted = true;
           }
+          if (row.resumed && row.offset === stat.size && !row.pending.length && row.endTurn && !row.openTools.size) {
+            row.node.status = 'completed';
+            row.node.statusAt = row.endTurn;
+            row.resumed = false;
+          }
+          if (row.node.lastReport) row.node.lastReport.kind = row.node.status === 'completed' ? 'reply' : 'update';
           this.rows.set(name, row);
         }
         if (row && row.offset < stat.size) replaying = true;
@@ -193,7 +223,12 @@ export class ClaudeNativeTree {
           this.rows.set(name, row);
         }
       }
-      if (row) nodes.push({ ...row.node, children: [] });
+      if (row)
+        nodes.push({
+          ...row.node,
+          status: row.offset < row.size || row.pending.length || row.skipping ? 'unknown' : row.node.status,
+          children: [],
+        });
     }
     this.cursor = (this.cursor + 4) % Math.max(1, this.names.length);
     const owners = new Map<string, SubagentTreeNode>();

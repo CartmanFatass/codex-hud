@@ -483,6 +483,8 @@ Ordinary `hud panel` resolves the caller through `herdr pane current` at open ti
 
 Codex retains its incremental rollout tree. Claude reads the bounded `ID/subagents/agent-*.meta.json` membership and replays JSONL forward in bounded passes, remembering public Agent/Task calls so a nested card stays under its parent even when the starting call is far from the transcript's end. Unchanged transcripts cost no body read; truncated/replaced transcripts replay from the start with old parent evidence cleared. During catch-up, an unmatched nested card waits for its parent rather than appearing at top level; if all transcripts catch up without a match, it appears at top level so work is not hidden indefinitely. Unreadable/deferred evidence is incomplete, not idle. Native coverage conservatively keeps base polling; the job-only 5-second backoff still requires positively empty native coverage. `o` opens a native transcript, never switches the client's conversation.
 
+A finished Claude subagent returns to running (`◉`) when its transcript grows, including after waiting for background work. It settles again when fresh metadata says finished or its last public record is an assistant `end_turn` with no open tool call. Partial/replaying records cannot supply that final reply. Each new settlement can refresh the result sentence from the real last public reply, with the same two-minute spacing and shared call cap; unchanged finished transcripts keep their result without extra reads or model calls.
+
 ### Historical job observations
 
 The panel also observes role-facade CLI/browser jobs, dispatch helpers and explicitly
