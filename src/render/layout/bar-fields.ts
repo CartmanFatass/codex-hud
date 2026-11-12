@@ -310,9 +310,18 @@ function zoneOf(
   const latest = new Map<string, BarEvent>();
   for (const event of [...(facts.events ?? [])].sort((a, b) => a.at - b.at))
     if (now - event.at < NOTICE_MS) latest.set(event.key ?? event.text, event);
-  const events = [...latest.values()]
-    .sort((a, b) => b.at - a.at || a.text.localeCompare(b.text))
-    .map((event) => noticeOf(event));
+  // The same kind of event for the same name (three `frontend-implementer`s started) is one item with `×3`.
+  const groups = new Map<string, BarEvent[]>();
+  for (const event of [...latest.values()].sort((a, b) => b.at - a.at || a.text.localeCompare(b.text))) {
+    const group = `${event.kind}\u0000${event.short ?? event.text}`;
+    groups.set(group, [...(groups.get(group) ?? []), event]);
+  }
+  const events = [...groups.values()].map(([newest, ...rest]) => {
+    if (!rest.length) return noticeOf(newest);
+    const times = ` ×${rest.length + 1}`;
+    const text = rest.every((event) => event.text === newest.text) ? newest.text : (newest.short ?? newest.text);
+    return noticeOf({ ...newest, text: text + times, short: (newest.short ?? newest.text) + times });
+  });
   const words = facts.needs?.length ? clean(facts.needs.join(' · ')) : '';
   const alert: Notice | null = words ? { mark: '!', tone: 'alert', words, short: words, tail: '' } : null;
   return alert || events.length ? { alert, events } : null;

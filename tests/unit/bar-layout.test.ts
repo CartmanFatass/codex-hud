@@ -114,6 +114,11 @@ test('notice zone: the newest two, steady over time, one per subject, needs-you 
   // One item per subject: `finished` replaces `started`, and nothing else is there.
   const same = [event('started', 'started a', 60_000, 'a'), event('done', 'finished a', 10_000, 'a')];
   assert.equal(zone({ events: same }, at), 'M │ ✓ finished a');
+  // Three subagents of one name started: one item with ×3, not the name three times; a different kind stays apart.
+  const three = [1, 2, 3].map((n) => agentEvent('started', { id: `fe${n}`, name: 'frontend-implementer', model: 'claude-sonnet-5-5' }, at - n * 1000));
+  assert.equal(zone({ events: three }, at), 'M │ ◐ frontend-implementer [sonnet-5.5] ×3');
+  const mixed = [...three.slice(0, 2), agentEvent('done', { id: 'fe3', name: 'frontend-implementer' }, at - 500)];
+  assert.equal(zone({ events: mixed }, at), 'M │ ✓ frontend-implementer │ ◐ frontend-implementer [sonnet-5.5] ×2');
   // An event is shown at +2 minutes and gone at +4, and nothing replaces it.
   const old = [event('done', 'finished d', 0)];
   assert.match(zone({ events: old }, at + 120_000), /finished d$/);
