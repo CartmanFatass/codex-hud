@@ -203,3 +203,95 @@ test('all six looks: needs-you remains visible, absent facts are absent, event e
     assert.doesNotMatch(stripAnsi(renderBar(facts, 80, THEME_NOW + 180000).line), /reviewer/);
   }
 });
+
+// The concepts' colour roles and idioms (docs/reference.md "The looks"): quiet 160-column facts, one agent notice.
+const conceptFacts: BarFacts = {
+  model: { name: 'opus-5.5', effort: 'high', id: 'claude-opus-5-5', provider: 'anthropic' },
+  context: { percent: 40, shown: '40%', window: 400000 },
+  project: { name: 'example', branch: 'main', marks: '*' },
+  quota: { windows: [{ label: '5h', percent: 8, reset: '1h19m' }] },
+  loaded: {
+    counts: [
+      ['MCP', 4],
+      ['skills', 1],
+    ],
+  },
+};
+function conceptRows(style: (typeof BAR_STYLES)[number], extra: Partial<BarFacts> = {}, width = 160) {
+  setDisplayConfig({ barStyle: style, theme: 'terminal', barFields: [...BAR_FIELDS] });
+  const line = renderBar({ ...conceptFacts, ...extra }, width, THEME_NOW).line;
+  return { line, rows: line.split('\n').map(stripAnsi) };
+}
+
+test('the six looks paint with the concepts own 256-colour inks, never the terminal palette', (t) => {
+  const previous = setDisplayConfig({});
+  t.after(() => setDisplayConfig(previous));
+  const events = [agentEvent('started', { name: 'imp', model: 'gpt-6.1-sol', effort: 'high' }, THEME_NOW - 1000)];
+  for (const style of BAR_STYLES.slice(2)) {
+    const { line } = conceptRows(style, { events });
+    assert.doesNotMatch(line, /\x1b\[(?:[39][0-7]|2)m/, `${style} uses basic ANSI colours or dim`);
+    assert.match(line, /;5;71m/, `${style}: the 40% context is the concept's green (71)`);
+  }
+  assert.match(
+    conceptRows('gauge').line,
+    /\x1b\[1m\x1b\[48;5;71m\x1b\[38;5;233m/,
+    'filled plate text is bold dark on the level colour'
+  );
+});
+
+test('each look keeps its concept idiom: ctx label, group order, aligned columns, flush-right vitals, leaders', (t) => {
+  const previous = setDisplayConfig({});
+  t.after(() => setDisplayConfig(previous));
+  assert.match(
+    conceptRows('tide').rows[0]!,
+    /high {3}ctx 40%\/400K {3}example main\*/,
+    'airy spacing and the ctx label'
+  );
+  const micro = conceptRows('micro').rows[0]!;
+  assert.match(micro, /⋔ example main\*/);
+  assert.match(micro, /↻1h19m/);
+  assert.ok(micro.indexOf('example') < micro.indexOf('40%'), 'who before the meters');
+  const stacked = conceptRows('stacked').rows;
+  assert.equal(stacked[1]!.indexOf('high'), stacked[0]!.indexOf('opus-5.5'), 'effort under the name, past the mark');
+  assert.match(stacked[1]!, /━.* 400K/);
+  assert.doesNotMatch(stacked[1]!, /\/400K/);
+  const headline = conceptRows('headline').rows[0]!;
+  assert.match(headline, /^ {20,}✻ opus-5\.5 high/, 'quiet: the left is empty');
+  assert.match(headline, /skills 1$/);
+  assert.match(conceptRows('triptych').rows[0]!, /example main\* ·{5,} /);
+  const needs = conceptRows('headline', { needs: ['Work: 1 needs you'] }).rows[0]!;
+  assert.match(needs, /^ ! Work: 1 needs you {5,}✻ opus-5\.5/, 'the alert leads and the vitals stay flush right');
+});
+
+test('the six looks fit every width, in both light and dark', (t) => {
+  const previous = setDisplayConfig({});
+  t.after(() => setDisplayConfig(previous));
+  const events = [
+    agentEvent(
+      'started',
+      { name: 'frontend-implementer', model: 'claude-sonnet-5-5', effort: 'xhigh' },
+      THEME_NOW - 1000
+    ),
+    agentEvent('done', { name: 'reviewer' }, THEME_NOW - 2000),
+  ];
+  const variants: Partial<BarFacts>[] = [
+    { events },
+    { needs: ['Work: 1 needs you'] },
+    { events, needs: ['Work: 1 needs you'] },
+    {},
+  ];
+  for (const theme of ['terminal', 'latte'] as const)
+    for (const style of BAR_STYLES.slice(2))
+      for (const extra of variants)
+        for (let width = 1; width <= 200; width += 3) {
+          setDisplayConfig({ barStyle: style, theme, barFields: [...BAR_FIELDS] });
+          const rows = renderBar(
+            { ...conceptFacts, context: { percent: 90, shown: '90%', window: 400000 }, ...extra },
+            width,
+            THEME_NOW
+          ).line.split('\n');
+          assert.ok(rows.length <= (style === 'stacked' ? 2 : 1));
+          for (const row of rows)
+            assert.ok(visualWidth(row) <= width, `${style} ${theme} ${width}: ${visualWidth(row)}`);
+        }
+});

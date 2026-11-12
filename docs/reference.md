@@ -849,12 +849,14 @@ The looks (same facts, fuller forms first as width allows):
 
 - `line` — today's look: coloured text with `│` separators; the default is unchanged.
 - `p10k` — powerline capsules, each field on its own colour; flat without arrows with `icons: text`.
-- `gauge` — **Gauge Plates**: context and quota numbers sit on backgrounds filled to their readings; raised event tags.
-- `tide` — **Tide**: the whole row is tinted to the context percentage (teal, amber from 70%, red from 85%); requires `COLORTERM=truecolor` or `24bit` for tints, with tier-coloured numbers and no tint on 256-colour terminals.
-- `micro` — **Micro Glyphs**: eighth-block meters unfold when there is room, one-cell level glyphs when tight.
-- `stacked` — **Stacked**: values over their details in two aligned rows in Claude's statusline and pi's footer; Codex's fixed one-row tmux pane falls back to `line` (no pane-height policy changes).
-- `headline` — **Headline**: warning tags and events lead; model, project and other vitals follow.
-- `triptych` — **Triptych**: identity on the left, notices between leader rules, pressure and loaded counts on the right.
+- `gauge` — **Gauge Plates**: context and quota (reset included) sit on plates filled to their readings, bold dark text on the level colour over a track; event tags are raised, a `▌` in the event's colour leading.
+- `tide` — **Tide**: the whole row is tinted to the context percentage (teal, amber from 70%, red from 85%); requires `COLORTERM=truecolor` or `24bit` for tints, with tier-coloured numbers and no tint on 256-colour terminals. `ctx` is spelt out, the reset is dim.
+- `micro` — **Micro Glyphs**: model and `⋔ repo` first, then the meters, then the notices, with two columns inside a group and four between groups. Both meters are ten-cell eighth-block bars when there is room, or both one-cell level glyphs when tight; a reset reads `↻1h19m`.
+- `stacked` — **Stacked**: values over their details in two aligned rows in Claude's statusline and pi's footer (the effort under the model's name, a thin bar and the window under the context, the branch under the repo, the reset under the quota, an agent's `model · effort` under its name, `MCP` over `skills`; pi's extension words get a column of their own); Codex's fixed one-row tmux pane falls back to `line` (no pane-height policy changes).
+- `headline` — **Headline**: warning tags (context from 70%, quota from 75%) and events lead on the left, the alert alone when something needs you; model, project, context, quota and `MCP`/`skills` follow as one dim cluster flush right, so a quiet bar is a whisper at the right edge.
+- `triptych` — **Triptych**: identity on the left, notices between leader rules (`·` dots when quiet), pressure on the right: recessed gauges, a ten-cell one for the context and an eight-cell one for the quota, then the loaded counts.
+
+The six looks have their own ink table (256-colour, from the approved concepts; `latte` swaps in the light set), so they do not follow the terminal's ANSI palette or the panel palette: levels green 71, yellow 179, red 167, quota blue 69 and magenta 170, branch and agent names 176, event marks blue 75 (running), green 71, red 167, violet 141 (skill), alert 209 with dark bold text. Names and readings are bold (not in Headline); an agent's name is bold except in Micro and Triptych. Fields are separated by three columns (Triptych two, Stacked five from 160 columns wide) and by two when the line is short. When a line is still too wide the shared ladder applies: the loaded cluster gives way to a notice first, then the other fields as in the list above.
 
 `NO_COLOR` and theme `none` fall back to `line`. The pi editor's top-right ribbon follows the chosen look too;
 under `line` and `p10k` it keeps today's powerline ribbon. Its border remains one row even under Stacked, using

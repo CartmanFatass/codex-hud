@@ -54,6 +54,7 @@ type Role =
   | 'agent'
   | 'usage'
   | 'usageHigh'
+  | 'skill'
   | 'lead';
 /** A piece of text and its role; `bar` pieces are a meter's cells, which the capsule look leaves out. */
 export type Form = ReadonlyArray<readonly [text: string, role?: Role, bar?: true]>;
@@ -131,6 +132,7 @@ const INK: Record<Role, (text: string) => string> = {
   warn: theme.warning,
   bad: theme.error,
   info: theme.info,
+  skill: theme.info,
   agent: plain(35),
   usage: plain(94),
   usageHigh: plain(95),
@@ -166,6 +168,7 @@ const P10K = {
   bad: [204, 235],
   ok: [108, 235],
   info: [110, 235],
+  skill: [110, 235],
   alert: [209, 235],
 } as const satisfies Record<string, Ink>;
 const fg = (index: number) => `\x1b[38;5;${index}m`;
@@ -266,7 +269,7 @@ function loadedSeg(l: NonNullable<BarFacts['loaded']>): Seg {
 
 interface Notice {
   mark: string;
-  tone: 'alert' | 'ok' | 'bad' | 'info';
+  tone: 'alert' | 'ok' | 'bad' | 'info' | 'skill';
   words: string;
   /** The words with no model and no detail. */
   short: string;
@@ -280,7 +283,7 @@ const MARKS = {
   done: [icons.check, 'ok'],
   failed: [icons.cross, 'bad'],
   warn: ['◆', 'alert'],
-  skill: ['✦', 'info'],
+  skill: ['✦', 'skill'],
 } as const;
 
 const clean = (words: string) => words.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
@@ -393,18 +396,66 @@ const raised = () => (light() ? 254 : 235);
 const LEVEL_INKS: Partial<Record<Role, number>> = { ok: 71, warn: 179, bad: 167, usage: 69, usageHigh: 170 };
 const levelInk = (role: Role): number => LEVEL_INKS[role] ?? 75;
 const levelGlyph = (p: number) => '▁▂▃▄▅▆▇█'[Math.min(7, Math.floor((clamp(p) * 8) / 100))];
-const paintForm = (form: Form, lead?: number, meterBack?: number): string =>
+/** The looks' own 256-colour inks from the approved concepts, [dark, light]: the panel palette does not drive them. */
+const LOOK_INKS: Partial<Record<Role, readonly [number, number]>> = {
+  value: [252, 235],
+  name: [252, 235],
+  project: [252, 235],
+  dim: [243, 245],
+  branch: [176, 133],
+  agent: [176, 133],
+  info: [75, 25],
+  skill: [141, 61],
+  ok: [71, 28],
+  warn: [179, 136],
+  bad: [167, 160],
+  usage: [69, 26],
+  usageHigh: [170, 127],
+  alert: [209, 209],
+};
+/** Headline's vitals recede: dimmer text and no bold names. */
+const QUIET_INKS: Partial<Record<Role, readonly [number, number]>> = {
+  value: [249, 240],
+  name: [254, 233],
+  project: [254, 233],
+  dim: [242, 247],
+};
+/** The columns between fields while there is room (the concepts'); two when there is not. */
+const AIRY = { gauge: 3, tide: 3, headline: 3, micro: 4, stacked: 3, triptych: 2 };
+/** The provider marks' pale colours, darkened for a light terminal. */
+const LIGHT_MARKS: Record<number, number> = { 79: 29, 173: 130, 69: 26, 110: 67, 141: 97 };
+/** Names and level readings are bold (Headline's are not); an agent's name is bold except in Micro and Triptych. */
+function lookInk(role: Role, part: string, style: BarStyle): string {
+  const ink = (style === 'headline' ? QUIET_INKS[role] : undefined) ?? LOOK_INKS[role];
+  if (!ink) return part;
+  const bold =
+    role === 'name' || role === 'project'
+      ? style !== 'headline'
+      : role === 'agent'
+        ? style !== 'micro' && style !== 'triptych'
+        : role in LEVEL_INKS && style !== 'headline' && part.includes('%');
+  return `${bold ? '\x1b[1m' : ''}${fg(ink[+light()])}${part}${RESET}`;
+}
+const ruleInk = (words: string) => `${fg(light() ? 250 : 239)}${words}${RESET}`;
+const paintForm = (form: Form, style: BarStyle, lead?: number, meterBack?: number): string =>
   form
     .map(([part, role, bar]) => {
-      if (bar && meterBack !== undefined) return `${bg(meterBack)}${role ? INK[role](part) : part}${RESET}`;
-      return role === 'lead' && lead !== undefined ? `${fg(lead)}${part}${RESET}` : role ? INK[role](part) : part;
+      const ink =
+        role === 'lead'
+          ? lead === undefined
+            ? part
+            : `${fg((light() && LIGHT_MARKS[lead]) || lead)}${part}${RESET}`
+          : role
+            ? lookInk(role, part, style)
+            : part;
+      return bar && role && meterBack !== undefined ? `${bg(meterBack)}${ink}` : ink;
     })
     .join('');
 
 /** Shared ten-cell gauges: eighth blocks for Micro/Triptych; a half-step thin rule for Stacked. */
-function lookMeter(percent: number, role: Role, style: BarStyle): Form {
-  const units = Math.round((clamp(percent) / 100) * 10 * (style === 'stacked' ? 2 : 8));
+function lookMeter(percent: number, role: Role, style: BarStyle, cells = 10): Form {
   const scale = style === 'stacked' ? 2 : 8;
+  const units = Math.round((clamp(percent) / 100) * cells * scale);
   const full = Math.floor(units / scale),
     edge = units % scale;
   return [
@@ -413,24 +464,23 @@ function lookMeter(percent: number, role: Role, style: BarStyle): Form {
       role,
       true,
     ],
-    [(style === 'stacked' ? '─' : style === 'triptych' ? ' ' : '░').repeat(10 - full - (edge ? 1 : 0)), 'dim', true],
+    [(style === 'stacked' ? '─' : style === 'triptych' ? ' ' : '░').repeat(cells - full - (edge ? 1 : 0)), 'dim', true],
     [' ', undefined, true],
   ];
 }
 
-/** Fill the number's own cells rather than spending another ten columns on a meter. */
+/** Fill the number's own cells rather than spending another ten columns on a meter: two runs, bold on the level colour. */
 function plate(words: string, percent: number, role: Role): string {
-  let x = 0;
   const edge = Math.round((visualLength(words) * clamp(percent)) / 100);
-  return (
-    [...words]
-      .map((ch) => {
-        const filled = x < edge;
-        x += visualLength(ch);
-        return `${bg(filled ? levelInk(role) : track())}${fg(filled ? 233 : light() ? 235 : 252)}${ch}`;
-      })
-      .join('') + RESET
-  );
+  let x = 0,
+    cut = 0;
+  for (const ch of words) {
+    if (x >= edge) break;
+    x += visualLength(ch);
+    cut += ch.length;
+  }
+  const fill = `\x1b[1m${bg(levelInk(role))}${fg(233)}${words.slice(0, cut)}`;
+  return `${fill}\x1b[22m${bg(track())}${fg(light() ? 235 : 252)}${words.slice(cut)}${RESET}`;
 }
 
 /** Tide's 256 fallback deliberately has no tint: the palette has no sufficiently quiet one. */
@@ -496,7 +546,7 @@ export function renderThemedRibbon(
       if (style === 'headline' && /^~?\$/.test(words)) return `${bg(179)}${fg(233)}${words}${RESET}`;
       return `${fg(style === 'stacked' ? 245 : s.bg)}${words}${RESET}`;
     })
-    .join(style === 'triptych' ? theme.separator(' ─') : '  ');
+    .join(style === 'triptych' ? ruleInk(' ─') : '  ');
   if (style === 'tide') row = tide(row, Math.min(width, visualLength(row)), percent);
   return visualLength(row) > width ? truncateAnsi(row, width) + RESET : row;
 }
@@ -512,14 +562,17 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     seg.forms = [seg.forms[0]!, noticeSeg(n, Infinity, '', 1)?.forms[0] ?? seg.forms[0]!];
     return seg;
   });
-  const list = [
+  const fields = [
     on.has('model') && facts.model ? modelSeg(facts.model, iconSet() === 'text') : null,
     on.has('context') && facts.context ? contextSeg(facts.context) : null,
     on.has('project') && facts.project?.name ? projectSeg(facts.project) : null,
     on.has('quota') && facts.quota ? quotaSeg(facts.quota) : null,
-    ...noticeSegments,
-    on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null,
-  ].filter((s): s is Seg => s !== null);
+  ];
+  // Micro tells who (model, repo) before the meters.
+  if (style === 'micro') fields.splice(1, 0, ...fields.splice(2, 1));
+  const list = [...fields, ...noticeSegments, on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null].filter(
+    (s): s is Seg => s !== null
+  );
   const reading = (s: Seg): { percent: number; role: Role } | null => {
     if (s.id === 'context' && facts.context)
       return { percent: facts.context.percent, role: contextRole(facts.context.percent) };
@@ -531,70 +584,119 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
   };
   const isTag = (s: Seg) =>
     style === 'headline' &&
-    (s.id === 'notice' || (reading(s) && ['warn', 'bad', 'usageHigh'].includes(reading(s)!.role)));
+    (s.id === 'notice' || (!zone?.alert && reading(s) && ['warn', 'bad', 'usageHigh'].includes(reading(s)!.role)));
+  // One meter form for both gauges: the bars go together, as the concepts have them.
+  const bars = () => !list.some((s) => (s.id === 'context' && s.at > 0) || (s.id === 'quota' && s.at > 1));
   const body = (s: Seg): Form => {
     const form = s.forms[s.at] ?? [];
-    if (!form.length) return [];
     const r = reading(s);
-    if (r && style !== 'micro' && style !== 'triptych' && style !== 'stacked') return form.filter(([, , bar]) => !bar);
-    if (r && style === 'micro' && !form.some(([, , bar]) => bar)) {
-      const at = form.findIndex(([, role]) => role === r.role);
-      return [...form.slice(0, at), [`${levelGlyph(r.percent)} `, r.role], ...form.slice(at)];
-    }
-    if (r && (style === 'micro' || style === 'triptych')) {
-      let replaced = false;
-      return form.flatMap((piece): Form => {
-        if (!piece[2]) return [piece];
-        if (replaced) return [];
-        replaced = true;
-        return lookMeter(r.percent, r.role, style);
-      });
-    }
-    return form;
+    if (!form.length) return [];
+    if (!r) return style === 'micro' && s.id === 'project' && iconSet() !== 'text' ? [['⋔ ', 'dim'], ...form] : form;
+    // The reset is dim, and `↻1h19m` in Micro; Tide and Headline say `ctx`.
+    const nums = form
+      .filter(([, , bar]) => !bar)
+      .map(([w, role]): Form[number] =>
+        w.startsWith(' (') ? [style === 'micro' ? ` ↻${w.slice(2, -1)}` : w, 'dim'] : [w, role]
+      );
+    const label: Form = s.id === 'context' && (style === 'tide' || style === 'headline') ? [['ctx ', 'dim']] : [];
+    const glyph: Form = style === 'micro' ? [[`${levelGlyph(r.percent)} `, r.role]] : [];
+    const meter =
+      style === 'micro' || style === 'triptych'
+        ? bars()
+          ? lookMeter(r.percent, r.role, style, s.id === 'quota' && style === 'triptych' ? 8 : 10)
+          : style === 'micro'
+            ? glyph
+            : []
+        : [];
+    const at = Math.max(
+      nums.findIndex(([, role]) => role === r.role),
+      0
+    );
+    return [...label, ...nums.slice(0, at), ...meter, ...nums.slice(at)];
   };
   const rows = (s: Seg): [Form, Form] => {
     const f = body(s);
     if (style !== 'stacked' || !f.length) return [f, []];
     const r = reading(s);
-    if (s.id === 'model' && facts.model) return [s.forms[1]!, s.at ? [] : [[facts.model.effort ?? '', 'dim']]];
-    if (r) {
-      const numbers = f.filter(([, , bar]) => !bar);
-      const detail = numbers.filter(([words]) => words.startsWith('/') || words.startsWith(' ('));
+    if (s.id === 'model' && facts.model) {
+      // The effort sits under the name, past the provider's mark.
+      const mark = s.forms[1]![0]!;
       return [
+        s.forms[1]!,
+        s.at ? [] : [[' '.repeat(mark[1] === 'lead' ? visualLength(mark[0]) : 0)], [facts.model.effort ?? '', 'dim']],
+      ];
+    }
+    if (r) {
+      const detail = f.filter(([words]) => words.startsWith('/') || words.startsWith(' ('));
+      return [
+        [...(s.id === 'context' ? [['ctx ', 'dim'] as const] : []), ...f.filter((piece) => !detail.includes(piece))],
         [
-          ...(s.id === 'context' ? [['ctx ', 'dim'] as const] : []),
-          ...numbers.filter((piece) => !detail.includes(piece)),
+          ...(bars() ? lookMeter(r.percent, r.role, style) : []),
+          ...detail.map(([w, role]): Form[number] => [w.trim().replace(/^\//, ''), role]),
         ],
-        [...(s.at ? [] : lookMeter(r.percent, r.role, style)), ...detail],
       ];
     }
     if (s.id === 'project')
       return [f.filter(([, role]) => role === 'project'), f.filter(([, role]) => role === 'branch')];
-    if (s.id === 'notice') return [f.filter(([, role]) => role !== 'dim'), f.filter(([, role]) => role === 'dim')];
+    if (s.id === 'notice')
+      // The agent's `[model · effort]` goes under its name, without the brackets.
+      return [
+        f.filter(([, role]) => role !== 'dim'),
+        f
+          .filter(([w, role]) => role === 'dim' && w.trim())
+          .map(([w]): Form[number] => [`  ${w.replace(/[[\]]/g, '').trim()}`, 'dim']),
+      ];
     if (s.id === 'loaded') {
+      // pi's extension words stand in a column of their own, MCP over skills beside it.
       const cut = f.findIndex(([words]) => words === 'skills');
-      return cut > 0 ? [f.slice(0, cut), f.slice(cut)] : [f, []];
+      const counts = Math.max(
+        0,
+        f.findIndex(([words]) => words === 'MCP')
+      );
+      return cut > 0
+        ? [f.slice(0, cut), [[' '.repeat(visualLength(text(f.slice(0, counts))))], ...f.slice(cut)]]
+        : [f, []];
     }
     return [f, []];
   };
   const render = (s: Seg): string[] => {
     const forms = rows(s);
     const r = reading(s);
-    if (zone?.alert && s === noticeSegments[0]) return [`${bg(209)}${fg(233)} ${text(forms[0])} ${RESET}`, ''];
+    if (zone?.alert && s === noticeSegments[0]) return [`\x1b[1m${bg(209)}${fg(233)} ${text(forms[0])} ${RESET}`, ''];
     if (style === 'gauge' && r) return [plate(` ${text(forms[0])} `, r.percent, r.role), ''];
     if (style === 'gauge' && s.id === 'notice')
       return [
-        `${bg(raised())}${fg(s.ink[0])}▌${paintForm(forms[0]).replaceAll(RESET, RESET + bg(raised()))} ${RESET}`,
+        `${bg(raised())}${lookInk(forms[0]![0]![1]!, '▌', style)}${paintForm(forms[0], style).replaceAll(RESET, RESET + bg(raised()))} ${RESET}`,
         '',
       ];
     if (isTag(s) && r)
-      return [`${bg(levelInk(r.role))}${fg(233)} ▲ ${s.id === 'context' ? 'ctx ' : ''}${text(forms[0])} ${RESET}`, ''];
-    return forms.map((f) => paintForm(f, s.lead, style === 'triptych' ? track() : undefined));
+      return [
+        `\x1b[1m${bg(r.role === 'bad' && !light() ? 203 : levelInk(r.role))}${fg(233)} ▲ ${text(forms[0])} ${RESET}`,
+        '',
+      ];
+    return forms.map((f) => paintForm(f, style, s.lead, style === 'triptych' ? track() : undefined));
   };
   const alive = () => list.filter((s) => text(body(s)));
-  const size = (s: Seg) => Math.max(...render(s).map(visualLength));
+  // A segment's width is measured again for every ladder step; only a changed form or meter needs a new measure.
+  const measured = new Map<Seg, { forms: Seg['forms']; at: number; wide: boolean; width: number }>();
+  const size = (s: Seg) => {
+    const known = measured.get(s),
+      wide = bars();
+    if (known?.forms === s.forms && known.at === s.at && known.wide === wide) return known.width;
+    const width = Math.max(...render(s).map(visualLength));
+    measured.set(s, { forms: s.forms, at: s.at, wide, width });
+    return width;
+  };
+  // The looks' spacing, from the concepts: airy between fields while there is room, two columns when there is not.
+  // Micro keeps a field's own group (who, meters, notices) at two.
+  let roomy = true;
+  const group = (id: string) => (id === 'model' || id === 'project' ? 0 : id === 'context' || id === 'quota' ? 1 : 2);
+  const airy = style === 'stacked' && width >= 160 ? 5 : (AIRY[style as 'gauge'] ?? 2);
+  const space = (a?: Seg, b?: Seg) =>
+    !roomy || (style === 'micro' && a && b && group(a.id) === group(b.id)) ? 2 : airy;
   const natural = () =>
-    alive().reduce((n, s) => n + size(s), 0) + Math.max(0, alive().length - 1) * 2 + (style === 'triptych' ? 4 : 0);
+    alive().reduce((n, s, i, all) => n + size(s) + (i ? space(all[i - 1], s) : 0), 0) + (style === 'triptych' ? 4 : 0);
+  roomy = natural() <= width;
   const cutNotice = () => {
     const s = noticeSegments[0];
     if (!s) return false;
@@ -607,7 +709,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
   };
   // The existing ladder's losses, with notice metadata giving way before the main effort.
   for (const id of LADDER) {
-    if (natural() <= width) break;
+    if (roomy || natural() <= width) break;
     // Like line's two-item fit: metadata can go as a whole when both newest names fit beside the vitals.
     const before = noticeSegments.map((s) => s.at);
     if (noticeSegments.length > 1) {
@@ -626,8 +728,8 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     if (s && s.at < s.forms.length) s.at++;
   }
   // Last resort for the notice zone: keep the pinned/newest one and cut at a word, never split its metadata.
-  if (natural() > width && noticeSegments.length > 1) noticeSegments[1]!.at = 2;
-  if (natural() > width && noticeSegments[0] && !cutNotice()) noticeSegments[0].forms = [];
+  if (!roomy && natural() > width && noticeSegments.length > 1) noticeSegments[1]!.at = 2;
+  if (!roomy && natural() > width && noticeSegments[0] && !cutNotice()) noticeSegments[0].forms = [];
   const shown = alive();
   const segments: BarSegment[] = [];
   const out = ['', ''];
@@ -641,31 +743,31 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     x += w;
   };
   const gap = (n: number, rule = '') => {
-    const fill = rule && n >= 3 ? theme.separator(` ${rule.repeat(n - 2)} `) : ' '.repeat(Math.max(0, n));
+    const fill = rule && n >= 3 ? ruleInk(` ${rule.repeat(n - 2)} `) : ' '.repeat(Math.max(0, n));
     out[0] += fill;
     out[1] += ' '.repeat(Math.max(0, n));
     x += n;
   };
   const cluster = (items: Seg[]) =>
     items.forEach((s, i) => {
-      if (i) gap(2);
+      if (i) gap(space(items[i - 1], s));
       put(s);
     });
-  if (style === 'triptych') {
-    const left = shown.filter((s) => s.id === 'model' || s.id === 'project');
-    const middle = shown.filter((s) => s.id === 'notice');
+  if (style === 'triptych' || style === 'headline') {
+    // Triptych: who, what is happening between rules, pressure. Headline: the tags, then the vitals flush right.
+    const left = shown.filter(style === 'headline' ? isTag : (s) => s.id === 'model' || s.id === 'project');
+    const middle = style === 'headline' ? [] : shown.filter((s) => s.id === 'notice');
     const right = shown.filter((s) => !left.includes(s) && !middle.includes(s));
-    const total = (items: Seg[]) => items.reduce((n, s) => n + size(s), 0) + Math.max(0, items.length - 1) * 2;
+    const total = (items: Seg[]) => items.reduce((n, s, i) => n + size(s) + (i ? space(items[i - 1], s) : 0), 0);
     const room = Math.max(0, width - total(left) - total(middle) - total(right));
     cluster(left);
-    gap(middle.length ? Math.floor(room / 2) : room, middle.length ? '─' : '·');
+    gap(middle.length ? Math.floor(room / 2) : room, middle.length ? '─' : style === 'triptych' ? '·' : '');
     cluster(middle);
     if (middle.length) gap(room - Math.floor(room / 2), '─');
     cluster(right);
   } else {
-    const ordered = style === 'headline' ? [...shown.filter(isTag), ...shown.filter((s) => !isTag(s))] : shown;
-    ordered.forEach((s, i) => {
-      if (i) gap(s.id === 'loaded' ? Math.max(2, width - x - size(s)) : 2);
+    shown.forEach((s, i) => {
+      if (i) gap(s.id === 'loaded' ? Math.max(2, width - x - size(s)) : space(shown[i - 1], s));
       put(s);
     });
   }
