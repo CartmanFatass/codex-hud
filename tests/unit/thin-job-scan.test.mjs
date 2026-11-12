@@ -55,3 +55,17 @@ test('300 jobs: unchanged scan parses no receipts; a changed job appears next sc
   assert.equal(retained.length, 3, 'old working and unknown jobs plus recent settlement remain');
   assert.equal(retained.filter(w => w.state === 'working').length, 2);
 });
+
+test('a job stopped after writing its report shows as done; one stopped without it stays stopped', (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'thin-stop-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const scope = { project: null, pane: 'synthetic' };
+  for (const [n, written] of [[1, true], [2, false]]) {
+    const job = `j${n.toString(16).padStart(16, '0')}`, dir = join(home, 'jobs', job);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job, role: 'imp', herdr_pane: scope.pane, created_at: new Date(n * 1000).toISOString() }));
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'stopped', exit_reason: 'stop requested', output_written: written }));
+  }
+  const states = Object.fromEntries(readThinJobs(home, scope).flatMap((l) => l.workers).map((w) => [w.id.slice(-1), w.state]));
+  assert.deepEqual(states, { 1: 'done', 2: 'stopped' });
+});

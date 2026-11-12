@@ -112,7 +112,8 @@ export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.par
     const directory = join(root, id),
       status = checkedStatus ?? json(join(directory, 'STATUS.json'), parse),
       s = status?.v ?? {};
-    const state = s.state === 'stopped' ? 'stopped' :
+    // A job closed after it wrote its report finished its task; only the close raced settlement (owner, 2026-11-12).
+    const state = s.state === 'stopped' ? (s.output_written === true ? 'done' : 'stopped') :
       s.state === 'failed' || (!status && typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0)
         ? 'failed'
         : ['closed', 'idle_grace', 'done'].includes(String(s.state))
