@@ -6,9 +6,9 @@ was dispatched with ("Read and carry out the brief /home/…").
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A job whose brief starts with a `# heading` shows that heading as its card title
-- [ ] Without a heading, the model's short name (master switch on) or the first line of the task, cut to fit
-- [ ] No extra file reads beyond the bounded brief read the panel already does; no extra model calls
-- [ ] Home frames at 80 and 120 columns, EN and ZH
+- [x] A job whose brief starts with a `# heading` shows that heading as its card title
+- [x] Without a heading, the model's short name (master switch on) or the first line of the task, cut to fit
+- [x] No extra file reads beyond the bounded brief read the panel already does; no extra model calls
+- [x] Home frames at 80 and 120 columns, EN and ZH

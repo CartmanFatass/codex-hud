@@ -7,7 +7,7 @@ Milestone: M4 · Project view
 
 ## Next
 
-- native-polish (.scratch/native-polish): 03 landed; 01, 04 running; 02 after 01; 05 after CLAUDE-BIND. M4 review after.
+- native-polish (.scratch/native-polish): 03, 04 landed; 01 running; 02 after 01; 05 after CLAUDE-BIND. M4 review after.
 
 ## Slices
 
@@ -53,7 +53,7 @@ board counts these; update at every landing or decision. -->
 - working · M4 · NP-01 · native-polish 01: nested Claude subagents always sit under their parent
 - todo · M4 · NP-02 · native-polish 02: a resumed Claude subagent shows running again and gets a fresh result
 - try · M4 · NP-03 · native-polish 03: Chinese keyword marks colour instead of showing brackets (746971eb)
-- working · M4 · NP-04 · native-polish 04: HUD job cards show a short title
+- try · M4 · NP-04 · native-polish 04: HUD job cards show a short title (eb3e5558)
 - todo · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
