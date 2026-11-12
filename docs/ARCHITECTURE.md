@@ -695,7 +695,8 @@ three clients say the same thing.
 **Fields, fixed order.** `model effort │ context %/window │ repo branch(dirty) │ quota │ notice zone ···· MCP n
 skills n`. The fields shown are the `barFields` display setting (default all but `quota`; no UI); `barStyle` picks
 `line` (`│` separators, roles painted with theme inks) or `p10k` (powerline capsules on the old p10k-footer palette
-indices, flat: a space either side of each field, no separator glyph; it needs a theme, so `none` stays `line`; the
+indices: a space either side of each field and a powerline arrow (``) in its colour into the next, flat without
+arrows when icons are `text`; it needs a theme, so `none` stays `line`; the
 `text` icon set gives the provider's initials). Both are in
 `render/hud-config.ts` and `settings.ts` (`HUD_BAR_STYLE`, `HUD_BAR_FIELDS`); the Codex bar gets them through
 `applyDisplaySettings`, the Claude statusline and the pi footer, which draw only the bar, through

@@ -894,7 +894,7 @@ for them, and a saved key wins over the environment like the other display setti
 
 | Key | Environment | Values |
 |-----|-------------|--------|
-| `barStyle` | `HUD_BAR_STYLE` (`CODEX_HUD_BAR_STYLE`) | `line` (default: `│` separators), or `p10k` (flat capsules, each field on its own colour with a space either side and nothing between them, in the colour theme; theme `none` has no colours, so it stays `line`) |
+| `barStyle` | `HUD_BAR_STYLE` (`CODEX_HUD_BAR_STYLE`) | `line` (default: `│` separators), or `p10k` (powerline capsules: each field on its own colour with a space either side and a powerline arrow into the next, flat without arrows when `icons` is `text`; theme `none` has no colours, so it stays `line`) |
 | `barFields` | `HUD_BAR_FIELDS` (`CODEX_HUD_BAR_FIELDS`, comma separated) | A list from `model, context, project, quota, notice, loaded`; the default is all but `quota`. The order stays fixed; the key only switches fields off. |
 
 With the `text` icon set (`CODEX_HUD_ICONS=text`) the provider mark in the p10k look is the provider's initials.

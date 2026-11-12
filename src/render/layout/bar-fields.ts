@@ -5,8 +5,8 @@
  *   model effort │ context %/window │ repo branch │ quota │ notice zone ········ MCP n  skills n
  *
  * Fields a client cannot supply are left out, never shown as zero. The fields shown are `barFields`; the style is
- * `barStyle`: `│` separators (`line`), or flat capsules side by side (`p10k`: each segment padded by a space on its own
- * background, no separator glyph). The line always fits: forms shorten and whole segments drop in the order of
+ * `barStyle`: `│` separators (`line`), or powerline capsules (`p10k`: each segment padded by a space on its own
+ * background, an arrow in its colour leading into the next; flat, without arrows, when icons are text). The line always fits: forms shorten and whole segments drop in the order of
  * `LADDER`, and the notice zone, which only tells events, shows in full: the loaded cluster gives way for it first, the
  * other fields after, and only as a last resort is it cut at a word.
  */
@@ -366,6 +366,8 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
   // No colour asked for means no capsules: a capsule is a background.
   const p10k = barStyle === 'p10k' && themeName !== 'none';
   const ascii = iconSet() === 'text';
+  // The powerline arrows: one column after each left segment, one before the right cluster.
+  const arrow = p10k && !ascii ? 1 : 0;
   const on = new Set<BarField>(barFields);
   const zone = on.has('notice') ? zoneOf(facts, now) : null;
   const tick = Math.floor(now / ROTATE_MS);
@@ -390,8 +392,8 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
   const alive = (seg: Seg) => text(form(seg)).length > 0;
   const size = (seg: Seg) => visualLength(text(form(seg)));
   const leftWidth = (sizes: number[]) =>
-    sizes.reduce((a, b) => a + b, 0) + (p10k ? 2 * sizes.length : 3 * Math.max(0, sizes.length - 1));
-  const rightWidth = () => (right && alive(right) ? size(right) + (p10k ? 2 : 0) : 0);
+    sizes.reduce((a, b) => a + b, 0) + (p10k ? (2 + arrow) * sizes.length : 3 * Math.max(0, sizes.length - 1));
+  const rightWidth = () => (right && alive(right) ? size(right) + (p10k ? 2 + arrow : 0) : 0);
   const gap = () => (rightWidth() ? (leftWidth(left.filter(alive).map(size)) ? (p10k ? 1 : 3) : 0) : 0);
   const fields = () => left.filter(alive);
   const room = (count: number) =>
@@ -449,10 +451,12 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
     if (p10k) {
       // Neighbours on one colour would run together: the later one takes the next shade.
       const back = seg.ink[0] === before ? seg.ink[0] + 1 : seg.ink[0];
+      // The previous capsule's arrow points into this one: its colour on this background.
+      if (arrow && i) line += `${bg(back)}${fg(before)}\ue0b0`;
       before = back;
       line += `${bg(back)}${fg(seg.ink[1])} ${paint(seg)} ${RESET}`;
       mark(seg, x + 1);
-      x += size(seg) + 2;
+      x += size(seg) + 2 + arrow;
     } else {
       if (i) {
         line += theme.separator(' │ ');
@@ -463,13 +467,15 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
       x += size(seg);
     }
   });
+  // The last left capsule's arrow fades into the terminal background.
+  if (arrow && before >= 0) line += `${fg(before)}\ue0b0${RESET}`;
   if (tail) {
     const room = Math.max(width - x - rightWidth(), 0);
     const [bgc, fgc] = tail.ink;
     line += ' '.repeat(room);
     x += room;
-    mark(tail, x + (p10k ? 1 : 0));
-    line += p10k ? `${bg(bgc)}${fg(fgc)} ${paint(tail)} ${RESET}` : paint(tail);
+    mark(tail, x + (p10k ? 1 + arrow : 0));
+    line += p10k ? `${arrow ? `${fg(bgc)}\ue0b2` : ''}${bg(bgc)}${fg(fgc)} ${paint(tail)} ${RESET}` : paint(tail);
   }
   return {
     line: visualLength(line) > width ? truncateAnsi(line, width) + RESET : line,
