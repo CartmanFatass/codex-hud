@@ -573,7 +573,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     return { ...next, ...monitorSettings(settings) };
   };
   const availableDecisionKeys = () => { try { return decisionKeys(readHudCredentials()); } catch { return undefined; } };
-  let state = place?.state ?? configuredState();
+  let state = { ...configuredState(), ...place?.state };
   let settingsPage: SettingsPageState | null = place?.settings
     ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: availableDecisionKeys(), message: '' } : null;
   let settingsFrame: SettingsFrame | undefined;
@@ -607,7 +607,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let readingAgentContext = false;
   let escapeTimer: ReturnType<typeof setTimeout> | undefined;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
-  let widthOverride = Number(process.env.HUD_PANEL_WIDTH) || undefined;
+  let widthOverride = place?.widthOverride === null ? undefined
+    : place?.widthOverride ?? (Number(process.env.HUD_PANEL_WIDTH) || undefined);
   const widthKeeper = STANDALONE_PANEL && !process.env.HUD_PANEL_CALLER_PANE
     ? null : treeWidthKeeper(() => widthOverride ?? settings.treeWidth);
   // Every model call of the panel goes through one service: one queue, one
@@ -873,7 +874,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const ready = await reload.poll(() => Boolean(settingsPage && settingsDirty(settingsPage)));
     if (closed) return;
     if (ready) {
-      restarting = reload.restart({ state, settings: settingsPage && { selected: settingsPage.selected, offset: settingsPage.offset } }, () => finish());
+      restarting = reload.restart({ state, widthOverride: widthOverride ?? null,
+        settings: settingsPage && { selected: settingsPage.selected, offset: settingsPage.offset } }, () => finish());
       await restarting;
       return;
     }
@@ -964,7 +966,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           : undefined;
       const rootId = main?.session?.id ?? session?.sessionId ?? claude?.rootId ?? selectedRoot ?? '';
       if (rootId !== tree.rootId) {
-        state = configuredState();
+        if (treeBuiltFor !== null) state = configuredState();
         worktrees = null;
         // Cancel old-root writers before loading the next root's model log.
         decisionLabels.stop();

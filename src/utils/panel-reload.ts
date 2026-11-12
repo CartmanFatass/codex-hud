@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { MonitorState } from '../render/monitor.js';
 
 const PLACE = 'HUD_PANEL_RELOAD_PLACE', SUPERVISED = 'HUD_PANEL_RELOAD_SUPERVISED', RESTART = 75;
-type Place = { state: MonitorState; settings: { selected: number; offset: number } | null };
+type Place = { state: MonitorState; settings: { selected: number; offset: number } | null; widthOverride?: number | null };
 export function readPanelPlace(): Place | undefined {
   const raw = process.env[PLACE];
   delete process.env[PLACE];

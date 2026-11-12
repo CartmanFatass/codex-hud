@@ -9,6 +9,8 @@ import { PanelReload } from '../../dist-test/src/utils/panel-reload.js';
 import { initialMonitorState } from '../../dist-test/src/render/monitor.js';
 import { readThinJobs } from '../../dist-test/src/collectors/thin-jobs.js';
 import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
+import { makeSourceId } from '../../dist-test/src/core/identity.js';
+import { SETTING_ROWS } from '../../dist-test/src/render/settings-page.js';
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(predicate, message, timeout = 10000) {
@@ -140,8 +142,32 @@ else await reload.restart({state:{},settings:null},()=>{});`);
   assert.deepEqual(await run.exited, { code: 23, signal: null });
 });
 
-function live(t, initialPlace) {
+function live(t, initialPlace, { bound = false, width = false } = {}) {
   const f = fixture(t);
+  if (bound) {
+    const source = join(f.env.CLAUDE_CONFIG_DIR, 'projects', 'synthetic');
+    mkdirSync(join(source, 'synthetic-session', 'subagents'), { recursive: true });
+    writeFileSync(join(source, 'synthetic-session.jsonl'), JSON.stringify({ type: 'user', message: { content: 'Synthetic root' } }) + '\n');
+    Object.assign(f.env, { CODEX_HUD_PANEL_ROOT: `${makeSourceId('claude', source)}/synthetic-session`,
+      CODEX_HUD_PANEL_HARNESS: 'claude', CODEX_HUD_PANEL_SOURCE: source });
+  }
+  const geometry = join(f.root, 'geometry.json');
+  if (width) {
+    const bin = join(f.root, 'bin'); mkdirSync(bin);
+    writeFileSync(geometry, JSON.stringify({ total: 160, width: 56, resizes: [] }));
+    writeFileSync(join(bin, 'herdr'), `#!${process.execPath}
+import fs from 'node:fs';
+const file=${JSON.stringify(geometry)}, args=process.argv.slice(2), g=JSON.parse(fs.readFileSync(file));
+if(args[1]==='resize') { const amount=Number(args[args.indexOf('--amount')+1]);
+  g.width+=g.total*amount*(args.includes('left')?1:-1);g.resizes.push(args);fs.writeFileSync(file,JSON.stringify(g)); }
+const rect=(x,width)=>({x,y:0,width,height:40});
+console.log(JSON.stringify({result:args[1]==='layout'?{layout:{
+  panes:[{pane_id:'w4E:p1',rect:rect(0,g.total-g.width)},{pane_id:'w4E:p2',rect:rect(g.total-g.width,g.width)}],
+  splits:[{direction:'right',ratio:1-g.width/g.total,rect:rect(0,g.total)}]
+}}:{pane:{pane_id:args[2]}}}));
+`, { mode: 0o700 });
+    Object.assign(f.env, { PATH: `${bin}:${f.env.PATH}`, HERDR_PANE_ID: 'w4E:p2', HUD_PANEL_WIDTH: '56' });
+  }
   cpSync(resolve('dist-test/src'), join(f.root, 'dist'), { recursive: true });
   symlinkSync(resolve('node_modules'), join(f.root, 'node_modules'), 'dir');
   const log = join(f.root, 'events.jsonl'), runner = join(f.root, 'live.mjs'), entry = join(f.root, 'dist/tree-page.js');
@@ -167,7 +193,8 @@ PanelReload.prototype.restart=function(place,finish){log({restart:place});return
 await runLivePage();process.exit(process.exitCode??0);`);
   const run = launch(t, f, runner, ['same argv'], { SYNTHETIC: 'same env', HUD_PANEL_RELOAD_PLACE: encode(typeof initialPlace === 'function' ? initialPlace(state) : initialPlace ?? { state, settings: null }), CODEX_HUD_INITIAL_COMMAND: 'help' });
   const events = () => readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-  return { ...f, ...run, entry, events, state, baseline: readFileSync(entry, 'utf8'), restarts: () => events().filter((e) => e.restart) };
+  return { ...f, ...run, entry, events, state, geometry: () => JSON.parse(readFileSync(geometry, 'utf8')),
+    baseline: readFileSync(entry, 'utf8'), restarts: () => events().filter((e) => e.restart) };
 }
 
 test('the live panel coalesces build bursts, restores Home selection/expanded state, and keeps a broken build alive with a notice', async (t) => {
@@ -203,11 +230,11 @@ test('the live panel coalesces build bursts, restores Home selection/expanded st
   assert.equal(f.restarts().length, 2, 'no restart loop on an unchanged generation');
 });
 
-for (const view of ['project', 'help', 'inspector']) test(`the live panel restores ${view} across replacements`, async (t) => {
+for (const bound of [false, true]) for (const view of ['project', 'help', 'inspector']) test(`the live ${bound ? 'Claude-bound' : 'unbound'} panel restores ${view}, selection and show-all across replacements`, async (t) => {
   const f = live(t, (state) => ({ state: { ...state,
     mainTab: view === 'project' ? 'project' : 'home', help: view === 'help',
     focus: view === 'inspector' ? 'details' : 'agents', boardInspect: view === 'inspector' ? state.homeTarget : undefined,
-  }, settings: null }));
+  }, settings: null }), { bound });
   await until(() => f.output().includes('models off') || f.output().includes('Home ›') || f.output().includes('Help'), 'first collected view did not render');
   for (let generation = 1; generation <= 2; generation++) {
     appendFileSync(f.entry, `\n// ${view} build ${generation}`);
@@ -218,6 +245,25 @@ for (const view of ['project', 'help', 'inspector']) test(`the live panel restor
     assert.equal(state.help, view === 'help');
     assert.equal(state.focus, view === 'inspector' ? 'details' : 'agents');
     if (view === 'inspector') assert.deepEqual(state.boardInspect, f.state.homeTarget);
+    assert.deepEqual(state.homeTarget, f.state.homeTarget);
+    assert.equal(state.tree.showAll, true);
+    assert.deepEqual(state.boardToggled.panelSet, [...f.state.boardToggled]);
+    assert.equal(state.cardHideMinutes, 15, 'missing handoff fields get configured defaults');
+  }
+});
+
+test('saving Width 64 from opening width 56 keeps 64 across real panel replacements', async (t) => {
+  const f = live(t, (state) => ({ state, settings: { selected: SETTING_ROWS.findIndex((r) => r.key === 'treeWidth'), offset: 0 } }), { width: true });
+  await until(() => f.output().includes('Settings'), 'Settings did not open');
+  f.child.stdin.write('\x1b[Cs');
+  await until(() => Math.abs(f.geometry().width - 64) < 0.01, 'saved width was not applied: ' + f.stderr());
+  assert.equal(JSON.parse(readFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), 'utf8')).treeWidth, 64);
+  for (let generation = 1; generation <= 2; generation++) {
+    appendFileSync(f.entry, `\n// saved width build ${generation}`);
+    await until(() => f.events().filter((e) => e.start).length === generation + 1, 'panel did not replace itself');
+    await delay(700);
+    assert.ok(Math.abs(f.geometry().width - 64) < 0.01, JSON.stringify(f.geometry()));
+    assert.equal(f.geometry().resizes.length, 1, 'no reload-time shrink to opening width');
   }
 });
 

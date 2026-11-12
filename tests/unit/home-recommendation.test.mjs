@@ -23,6 +23,7 @@ function fixture(t, keys = true) {
     const body = JSON.parse(init.body);
     if (String(url).includes('/chat/completions')) {
       f.briefs.push(body);
+      if (f.briefHold) await f.briefHold;
       if (f.briefError) return new Response('{}', { status: 400 });
       return new Response(JSON.stringify({ choices: [{ message: { content: f.text } }] }));
     }
@@ -129,8 +130,8 @@ test('one batch per fingerprint, changed board waits two minutes; age/sentence/i
   await f.pump({ ...source, workers: source.workers.map((w) => ({ ...w, modelSentence: 'A new sentence.' })) });
   assert.equal(f.calls.length, 1);
   f.status(id, 'done'); const changed = f.board();
-  assert.equal(f.service.apply(changed), changed, 'a stale brief/rank is not applied to a changed board');
-  assert.equal(await f.pump(changed), changed); assert.equal(f.calls.length, 1);
+  assert.equal(f.service.apply(changed).homeBrief, f.text, 'last brief stays while the changed board waits');
+  assert.deepEqual((await f.pump(changed)).workers, changed.workers, 'stale ranks are not applied'); assert.equal(f.calls.length, 1);
   f.now += 59999; await f.pump(changed); assert.equal(f.calls.length, 1);
   f.now++; await f.pump(changed); assert.equal(f.calls.length, 2);
   f.now += 120000; await f.pump(changed); assert.equal(f.calls.length, 2);
@@ -155,11 +156,23 @@ for (const mode of ['error', 'malformed', 'invalid', 'no-key', 'off']) test(`${m
 test('changed sentences refresh only the independent brief after the Summary interval; trimmed newline is valid', async (t) => {
   const f = fixture(t); f.job(1);
   const source = f.board(); await f.pump(source);
+  const previous = f.text;
   const changed = structuredClone(source);
   changed.workers[0].modelSentence = 'Integration checks are running.';
   f.text = 'Integration checks are running.\n';
-  f.now += 299999; await f.pump(changed); assert.equal(f.briefs.length, 1);
-  f.now++; const result = await f.pump(changed);
+  f.now += 299999;
+  const waiting = await f.pump(changed);
+  assert.equal(f.briefs.length, 1);
+  assert.equal(waiting.homeBrief, previous);
+  assert.match(plain(f.render(waiting)), /The build finished/);
+  let release;
+  f.briefHold = new Promise((resolve) => { release = resolve; });
+  f.now++;
+  const pending = await f.pump(changed);
+  assert.equal(pending.homeBrief, previous, 'old brief stays while the replacement is in flight');
+  assert.equal(f.briefs.length, 2);
+  release();
+  const result = await f.pump(changed);
   assert.equal(f.briefs.length, 2); assert.equal(f.calls.length, 1);
   assert.equal(result.homeBrief, f.text.trim());
   f.now += 600000; await f.pump(changed); assert.equal(f.briefs.length, 2, 'unchanged digest is not resubmitted');
@@ -173,7 +186,7 @@ test('ranking keeps its two-minute floor; brief defaults to five minutes and int
   const f = fixture(t), id = f.job(1);
   await f.pump(); assert.equal(f.briefs.length, 1);
   f.now += 120000; f.status(id, 'done');
-  let board = await f.pump(); assert.equal(f.calls.length, 2); assert.equal(f.briefs.length, 1); assert.equal(board.homeBrief, undefined);
+  let board = await f.pump(); assert.equal(f.calls.length, 2); assert.equal(f.briefs.length, 1); assert.equal(board.homeBrief, f.text);
   f.now += 179999; await f.pump(); assert.equal(f.briefs.length, 1);
   f.now++; board = await f.pump(); assert.equal(f.briefs.length, 2); assert.ok(board.homeBrief); assert.equal(f.calls.length, 2);
   f.configure(true, 'en', 10); f.now += 120000; f.job(2);
@@ -203,6 +216,34 @@ test('a failed separate brief keeps a valid ranking, without Home errors', async
   const ranked = await f.pump();
   assert.equal(ranked.workers[0].homeFolded, true); assert.equal(ranked.homeBrief, undefined);
   const text = plain(f.render(ranked)); assert.match(text, /\+1 older/); assert.doesNotMatch(text, /error|invalid|unavailable/i);
+});
+test('an initial failed brief retries the unchanged digest after the Summary interval', async (t) => {
+  const f = fixture(t); f.job(1); f.briefError = true;
+  assert.equal((await f.pump()).homeBrief, undefined);
+  assert.equal(f.briefs.length, 1);
+  f.briefError = false; f.now += 299999;
+  await f.pump(); assert.equal(f.briefs.length, 1);
+  f.now++;
+  const recovered = await f.pump();
+  assert.equal(f.briefs.length, 2);
+  assert.equal(recovered.homeBrief, f.text);
+});
+test('a failed brief retries after the Summary interval, preserving the last success until recovery', async (t) => {
+  const f = fixture(t); f.job(1);
+  const source = f.board();
+  await f.pump(source);
+  const previous = f.text, changed = structuredClone(source);
+  changed.workers[0].modelSentence = 'Synthetic checks have started.';
+  f.now += 300000; f.briefError = true;
+  assert.equal((await f.pump(changed)).homeBrief, previous);
+  assert.equal(f.briefs.length, 2);
+  f.briefError = false; f.text = 'Synthetic checks have started.';
+  f.now += 299999;
+  assert.equal((await f.pump(changed)).homeBrief, previous);
+  assert.equal(f.briefs.length, 2, 'failed digest still obeys the Summary interval');
+  f.now++;
+  assert.equal((await f.pump(changed)).homeBrief, f.text);
+  assert.equal(f.briefs.length, 3, 'same failed digest retries');
 });
 test('never blocks a frame; off cancels late ranking/brief results', async (t) => {
   const f = fixture(t); f.job(1);
