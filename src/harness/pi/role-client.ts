@@ -134,7 +134,7 @@ export const PI_ROLE_TOOLS = [
   }),
   tool(
     'hud_send',
-    'Continue an eligible role during idle_grace; message_key deduplicates sends.',
+    'Send a message to a pi job: queued while it works, a continuation during idle_grace (roles that can continue); message_key deduplicates sends.',
     { job: text, message_key: text, text },
     ['job', 'message_key', 'text']
   ),

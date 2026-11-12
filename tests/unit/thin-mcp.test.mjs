@@ -18,7 +18,7 @@ const workerFor = (f, id) =>
     .flatMap((lane) => lane.workers)
     .find((worker) => worker.id === 'thin-job:' + id);
 const cardText = (worker) =>
-  renderWorkCard(projectWorkCard(worker, Date.now()), { ...initialMonitorState(), mainTab: 'work' }, 56)
+  renderWorkCard(projectWorkCard(worker, Date.now()), { ...initialMonitorState(), mainTab: 'home' }, 56)
     .map(stripAnsi)
     .join('\n');
 
@@ -545,6 +545,20 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   assert.equal(fs.readFileSync(join(job.task_dir, 'qa', 'q1.answer.md'), 'utf8'), answer.answer);
   assert.deepEqual(await f.call('hud_close', { job: job.job }), { exit_code: 0, last_line: 'Synthetic reap complete' });
   assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
+});
+
+test('thin send queues a message for a working pi job and refuses a finished one', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const job = await f.call('hud_create', { role: 'reviewer', request_key: 'send-queue', task: 'Synthetic task.' });
+  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  const sent = await f.call('hud_send', { job: job.job, message_key: 'queued', text: 'Synthetic addendum.' });
+  assert.equal(sent.sent, true);
+  assert.equal(sent.queued, true);
+  assert.deepEqual(f.commands().at(-1).args.slice(0, 2), ['agent', 'prompt']);
+  assert.equal(f.commands().at(-1).args.at(-1), 'Synthetic addendum.');
+  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  const late = await f.call('hud_send', { job: job.job, message_key: 'late', text: 'Synthetic late.' });
+  assert.equal(late.code, 'not_continuable');
 });
 
 test(

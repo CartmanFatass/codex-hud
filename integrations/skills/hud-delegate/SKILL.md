@@ -48,7 +48,7 @@ An implementer may use pi-roles' helpers when the brief asks; they open in a pan
 
 ### Repairs
 
-Use `hud_send` with `job`, a stable `message_key` and `text` to continue the same implementer only while STATUS is `idle_grace`. Duplicate message keys are not sent again. Otherwise it returns `not_continuable`: create a new job.
+Use `hud_send` with `job`, a stable `message_key` and `text` to add to a pi job: while it works (STATUS `working`, `waiting_helper`, `waiting_orchestrator`) the message is queued and the worker reads it after its current step (`queued: true`); while it is in `idle_grace` it continues a role that can continue. Duplicate message keys are not sent again. A finished job returns `not_continuable`: create a new job.
 
 Keep request keys stable; never blindly re-create an uncertain launch.
 

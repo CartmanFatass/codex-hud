@@ -180,7 +180,7 @@ const tools = [
   }),
   tool(
     'hud_send',
-    'Continue an eligible role during idle_grace; message_key deduplicates sends.',
+    'Send a message to a pi job: queued while it works, a continuation during idle_grace (roles that can continue); message_key deduplicates sends.',
     { job: text, message_key: text, text },
     ['job', 'message_key', 'text']
   ),
@@ -666,7 +666,11 @@ async function call(name: string, args: Args): Promise<unknown> {
         : { ok: false, sent: false, code: 'send_failed', ...outcome };
     }
     const agent = primary(dir);
-    if (job.jev || !roles().get(job.role)?.can_continue || observation(job).state !== 'idle_grace' || !agent)
+    const state = observation(job).state ?? '';
+    // A working pi job queues the message (pi takes it after its current step); a settled one continues in its
+    // idle grace when the role allows (owner, 2026-11-11).
+    const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
+    if (job.jev || !agent || !(queued || (state === 'idle_grace' && roles().get(job.role)?.can_continue)))
       return { ok: false, code: 'not_continuable' };
     // Record the attempt first, so a lost reply cannot cause a duplicate prompt.
     job.message_keys.push(key);
@@ -682,6 +686,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       ...(result.exit_code === 0 ? {} : { code: 'send_failed' }),
       ok: result.exit_code === 0,
       sent: result.exit_code === 0,
+      ...(queued ? { queued: true } : {}),
       exit_code: result.exit_code,
       stderr_tail: result.stderr,
     };
