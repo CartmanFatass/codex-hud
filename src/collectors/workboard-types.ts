@@ -35,6 +35,13 @@ export interface DecisionRecord {
   readonly evidence: readonly EvidenceRef[];
 }
 export interface OwnerWorker {
+  readonly resources?: {
+    context?: number;
+    rate?: import('./token-rate.js').TokenRateSnapshot;
+    spent?: import('../types.js').TokenSpent;
+  };
+  readonly nativeDepth?: number;
+  readonly parentName?: string;
   readonly files?: readonly {
     rel: string;
     kind: 'brief' | 'report' | 'review' | 'question';

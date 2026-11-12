@@ -1,4 +1,3 @@
-import { nativeCallsOnly } from './core/link/view-model.js';
 import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pane.js';
 import { ProjectCollector, projectShown, type ProjectSnapshot } from './collectors/project-board.js';
 import { pathToFileURL } from 'node:url';
@@ -17,15 +16,8 @@ import { NativeCallCollector } from './collectors/native-calls.js';
 import { performance } from 'node:perf_hooks';
 import type { DelegationViewModel } from './core/link/view-model.js';
 /** Live keyboard/mouse workbench beside the compact HUD. */
-import { navigateSession } from './utils/session-navigation.js';
 import {
-  dispatchDelegationAction,
-  createClipboardProvider,
   withInputRefresh,
-  createNavigationGate,
-  createOpenGate,
-  sameDelegationActionTarget,
-  boundedActionNotice,
 } from './utils/delegation-actions.js';
 import { defaultSettings, saveSettings, settingsPath, type HudSettings } from './settings.js';
 import { homedir } from 'node:os';
@@ -54,7 +46,6 @@ import { SessionFinder, findRolloutsInDaysYielding, treeLookbackDays } from './c
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
 import {
   buildSubagentTreeYielding,
-  uniquePickerLabel,
   useTreeScanStore,
   flushTreeScans,
 } from './collectors/subagent-tree.js';
@@ -87,17 +78,8 @@ import { DecisionTitles } from './collectors/decision-titles.js';
 import { hudProblems } from './render/hud-diagnostics.js';
 import { createAdaptivePollState, forceAdaptivePoll, recordAdaptivePoll } from './collectors/adaptive-poll.js';
 import { collectionObservation, jobPanelObservation } from './utils/collection-observation.js';
-import { ProgressSummarizer, progressTargets } from './collectors/progress-summary.js';
-import { cardSummaryTargets } from './render/cards.js';
-import { AgentLog, logsIn, MODEL_KINDS } from './collectors/agent-log.js';
-import {
-  ModelJobs,
-  NO_JOBS,
-  jobOnlyNode,
-  summaryTree,
-  displayOnlySummaryRoot,
-  type JobSwitches,
-} from './collectors/model-jobs.js';
+import { jobOnlyNode, displayOnlySummaryRoot } from './collectors/model-jobs.js';
+import { ClaudeNativeTree } from './collectors/claude-native-tree.js';
 import { getCodexHome } from './utils/codex-path.js';
 import { getHudDisplayHome } from './hud-home.js';
 import { HudStatus } from './collectors/hud-status.js';
@@ -603,15 +585,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let confirmationFrame: SettingsConfirmationFrame | undefined;
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
-  const clipboard = createClipboardProvider();
-  const navigateOnce = createNavigationGate();
-  const openOnce = createOpenGate();
   let panelDelegation: DelegationViewModel | null = null;
   const syncPanelView = () => {
     panelDelegation = delegation;
   };
-  let lastClickSwitch: { id: string; at: number } | undefined;
-  let navigationMessage: string | null = null;
   let tree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
   // The root the tree was last built for: until then an empty tree is not news.
   let treeBuiltFor: string | null = null;
@@ -624,8 +601,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let gitAgain = false;
   let error: string | null = settingsError || null;
   let frame: MonitorFrame | undefined;
-  let frameRoot = '';
-  let frameEpoch = 0;
   let lastPaint: string[] | null = null;
   let closed = false;
   let collecting = false;
@@ -653,55 +628,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     path.join(getHudDisplayHome(), 'model-cache', 'decision-titles.json'),
     () => render()
   );
-  // Each subagent's log: observed changes and model notes, kept per session.
-  const agentLog = new AgentLog(path.join(getHudDisplayHome(), 'agent-log'));
-  // Visible summary subjects request public progress independently of the periodic brief.
-  const progress = new ProgressSummarizer(model, agentLog, { onChange: () => render() });
-  const updateProgress = () => {
-    const now = Date.now();
-    const language = resolveLanguage(settings.language);
-    progress.update({
-      tree,
-      targets:
-        state.style === 'rich' && paneShown(state, 'agents') && !state.help && !settingsPage
-          ? progressTargets(
-              tree,
-              cardSummaryTargets({ tree, agentLog: logsIn(agentLog.snapshot(), language) }, state, now)
-            )
-          : new Set(),
-      on: modelOn,
-      offReason: 'off',
-      language,
-      now,
-    });
-  };
-  const switches = (): JobSwitches =>
-    modelOn ? { resultDigest: true, agentLabels: true, failureCause: true } : NO_JOBS;
-  const jobsOn = () => modelOn;
-  // A label or digest landing is put on the tree at once, not at the next collection.
-  const jobs = new ModelJobs({
-    model,
-    log: agentLog,
-    labelsFile: path.join(getHudDisplayHome(), 'model-cache', 'labels.json'),
-    onChange: () => {
-      jobs.apply(tree, switches(), resolveLanguage(settings.language));
-      render();
-    },
-  });
-  const updateJobs = () =>
-    time('jobs.update', () =>
-      jobs.update({
-        tree,
-        main,
-        switches: switches(),
-        language: resolveLanguage(settings.language),
-        on: jobsOn(),
-        inspected:
-          paneShown(state, 'details') && state.preview === 'agent' ? (state.tree.selectedId ?? undefined) : undefined,
-        digestLabels: { basis: t('Basis:'), caveats: t('Caveats:') },
-        now: Date.now(),
-      })
-    );
+  const claudeNative = new ClaudeNativeTree();
   const configureModel = () => {
     modelOn =
       settings.modelEnabled &&
@@ -734,8 +661,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   // The panel replaces the bar, so it publishes the same notifications and snapshot.
   const notifier = new Notifier(resolveNotifierOptions(process.env, settings));
   const snapshotWriter = new SnapshotWriter();
-  /** Codex's pane width, when tmux has reported it. Unknown still allows session links. */
-  let mainCols: number | null = null;
   const timers: Array<ReturnType<typeof setInterval>> = [];
   // Collection runs at the refresh setting; repaints between collections only
   // move the clocks, once a second (see nextRepaintDelay).
@@ -754,17 +679,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       let lines: string[];
       if (settingsPage) {
         settingsFrame = withDisplaySettings(settingsPage.draft, () =>
-          renderSettingsPage(
-            settingsPage!,
-            process.stdout.columns || 30,
-            process.stdout.rows || 24,
-            {
-              state: hudStatus.health.current(),
-              modelCalls: model.usage(),
-              probe: probe.current(),
-              settingsFile: shortPath(settingsPath()),
-            }
-          )
+          renderSettingsPage(settingsPage!, process.stdout.columns || 30, process.stdout.rows || 24, {
+            state: hudStatus.health.current(),
+            modelCalls: model.usage(),
+            probe: probe.current(),
+            settingsFile: shortPath(settingsPath()),
+          })
         );
         settingsPage = settingsFrame.state;
         lines = settingsFrame.lines;
@@ -784,15 +704,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const nowMs = Date.now();
         const hud = currentHud();
         const jobRender = panelJobRenderState(jobComposition, !collected || treeBuiltFor !== tree.rootId);
-        const agentLogs = logsIn(
-          modelOn
-            ? agentLog.snapshot()
-            : new Map(
-                [...agentLog.snapshot()].map(([id, entries]) => [id, entries.filter((e) => !MODEL_KINDS.has(e.kind))])
-              ),
-          resolveLanguage(settings.language),
-          modelOn || settings.agentLog
-        );
         frame = renderMonitor({
           tree,
           workboard: decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree, panelDelegation))),
@@ -805,24 +716,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           error,
           nowMs,
           hud: hud ? { ...hud, delegation: panelDelegation } : hud,
-          notice:
-            (navigationMessage ? boundedActionNotice(navigationMessage, width) : null) ||
-            jobRender.notice ||
-            hudProblems(hud, nowMs, t)[0],
+          notice: jobRender.notice || hudProblems(hud, nowMs, t)[0],
           loading: jobRender.loading,
           prefix: prefixName(settings.prefixKey),
-          agentLog: agentLogs,
-          progress: progress.state(),
-          progressContext: {
-            backendOn: modelOn,
-            targets: cardSummaryTargets({ tree, agentLog: agentLogs }, state, nowMs),
-          },
           width,
           height: process.stdout.rows || 24,
-          linkNames: mainCols === null || mainCols >= 63,
         });
-        frameRoot = tree.rootId;
-        frameEpoch = collectionEpoch;
         state = frame.state;
         lines = frame.lines;
       }
@@ -887,24 +786,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       scheduleRepaint();
     }, repaintDelay());
   };
-  /** The Codex pane's columns, so a narrow one is not offered as a link. */
-  const readMainCols = () => {
-    if (STANDALONE_PANEL) return;
-    const pane = process.env.CODEX_HUD_MAIN_PANE;
-    if (!pane) return;
-    execFile(
-      process.env.CODEX_HUD_TMUX_BIN || 'tmux',
-      ['display-message', '-p', '-t', pane, '#{pane_width}'],
-      { timeout: 1500, windowsHide: true },
-      (err, stdout) => {
-        if (closed || err) return;
-        const cols = Number(String(stdout ?? '').trim());
-        if (!Number.isInteger(cols) || cols <= 0 || cols === mainCols) return;
-        mainCols = cols;
-        render();
-      }
-    );
-  };
   /** (Re)arm collection at the refresh setting; a no-op while it is unchanged. */
   const armCollect = () => {
     if (closed || (collectTimer && collectEvery === settings.refreshMs)) return;
@@ -951,7 +832,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       let changed = false;
       for (const id of wanted) {
         const path = byId.get(id)?.rolloutPath;
-        if (!path) continue;
+        if (!path || byId.get(id)?.ref?.harness === 'claude') continue;
         if (now - (agentContextReadAt.get(id) ?? 0) < AGENT_CONTEXT_INTERVAL_MS) continue;
         agentContextReadAt.set(id, now);
         const tokens = await readAgentTokens(path);
@@ -968,6 +849,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         }
       if (changed) {
         applyAgentContext();
+        tree = { ...tree };
         render();
       }
     } catch {
@@ -1063,14 +945,16 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (closed) return;
       delegation = nativeCalls.merge(legacyDelegation);
       stage = 'tree';
-      const rootId = main?.session?.id ?? session?.sessionId ?? selectedRoot ?? '';
+      const claude =
+        selectedRoot && process.env.CODEX_HUD_PANEL_HARNESS === 'claude' && process.env.CODEX_HUD_PANEL_SOURCE
+          ? claudeNative.refresh(process.env.CODEX_HUD_PANEL_SOURCE, parseRosterRoot(selectedRoot).sessionId)
+          : undefined;
+      const rootId = main?.session?.id ?? session?.sessionId ?? claude?.rootId ?? selectedRoot ?? '';
       if (rootId !== tree.rootId) {
         state = configuredState();
         worktrees = null;
         // Cancel old-root writers before loading the next root's model log.
-        progress.stop();
-        jobs.stop();
-        agentLog.attach(rootId);
+        jobSentences.stop();
         agentContext.clear();
         agentContextReadAt.clear();
         tree = { rootId, nodes: [], totalCount: 0, updatedAt: new Date() };
@@ -1097,23 +981,18 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           ? await timeAsync('tree.build', () =>
               buildSubagentTreeYielding(rootId, main?.subagents ?? [], 3, Date.now(), listed)
             )
-          : { rootId, nodes: [], totalCount: 0, updatedAt: new Date() };
+          : (claude ?? { rootId, nodes: [], totalCount: 0, updatedAt: new Date() });
       if (closed) return;
       nativeTree = tree;
       applyJobComposition(legacyDelegation);
       treeBuiltFor = rootId;
       applyAgentContext();
-      jobs.apply(tree, switches(), resolveLanguage(settings.language));
-      // On the same tick as the tree, so the log never lags it.
-      if (time('agentlog.observe', () => agentLog.observe(summaryTree(tree)))) agentLog.flush();
       state = reconcileMonitor(state, tree, Date.now(), delegation);
-      updateProgress();
-      updateJobs();
       const visibleDecisions = new Set(
         (frame?.panes ?? []).flatMap((p) => p.rows.slice(p.offset, p.offset + (p.visible ?? 0)).map((r) => r.item!))
       );
       decisionTitles.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, visibleDecisions);
-      jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home);
+      jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       error = settingsError || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });
@@ -1137,12 +1016,15 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         /* A state file nobody can write is not a reason to stop drawing. */
       }
     }
-    const projectFacts = await projectCollector.collect(projectShown(state, Boolean(settingsPage)), jobPipeline.workboard(tree, panelDelegation), Date.now());
+    const projectFacts = await projectCollector.collect(
+      projectShown(state, Boolean(settingsPage)),
+      jobPipeline.workboard(tree, panelDelegation),
+      Date.now()
+    );
     if (projectFacts) project = projectFacts;
     // Collection owns publication. Paint only consumes the same cached workboard.
     syncPanelView();
     render();
-    readMainCols();
     void refreshAgentContext();
   };
   const sources = () =>
@@ -1183,15 +1065,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     closed = true;
     disposeLifetime?.();
     disposeCaller?.();
-    const clipboardClosing = clipboard.close();
     jobPipeline.dispose();
-    jobs.stop();
-    progress.stop();
+
     jobSentences.stop();
     decisionTitles.stop();
     model.cancelAll();
     probe.cancel();
-    agentLog.flush();
     flushTreeScans();
     timers.forEach(clearInterval);
     if (collectTimer) clearTimeout(collectTimer);
@@ -1210,59 +1089,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     process.stdout.write(LEAVE);
     snapshotWriter.remove();
     if (user) requestEnsureSingle();
-    void clipboardClosing.finally(async () => {
-      if (callerGone) await closePanelPane(process.env.HERDR_PANE_ID!, process.env).catch(() => {});
-      resolveDone();
-    });
+    if (callerGone) void closePanelPane(process.env.HERDR_PANE_ID!, process.env).catch(() => {}).finally(resolveDone);
+    else resolveDone();
   };
-  const switchNativeSession = (id: string) => {
-    if (STANDALONE_PANEL) {
-      navigationMessage = t('Switching is unavailable in the standalone panel.');
-      render();
-      return;
-    }
-    const root = tree.rootId;
-    const view = nativeCallsOnly(delegation) ? null : delegation;
-    const selected = state.tree.selectedId;
-    const label = view ? undefined : uniquePickerLabel(tree, id);
-    const selectedIdentity = (snapshot: DelegationViewModel | null) => {
-      if (nativeCallsOnly(snapshot)) snapshot = null;
-      const node = snapshot?.tree.nodes.find((item) => item.key === selected);
-      return snapshot
-        ? JSON.stringify({
-            ledger: snapshot.tree.ledger.ledgerId,
-            identity: node?.identity,
-            parent: node?.parentKey,
-            run: node?.currentRun?.runId,
-          })
-        : null;
-    };
-    const identity = selectedIdentity(view);
-    const current = () =>
-      !closed &&
-      tree.rootId === root &&
-      state.tree.selectedId === selected &&
-      selectedIdentity(delegation) === identity;
-    return navigateOnce(
-      id,
-      () => navigateSession(process.env.CODEX_HUD_MAIN_PANE, { id, label }, undefined, current),
-      current,
-      () => {
-        navigationMessage = t('Switching Codex session…');
-        render();
-      },
-      (outcome) => {
-        navigationMessage =
-          'error' in outcome
-            ? t('Switch failed: {reason}', { reason: String(outcome.error) })
-            : outcome.value.ok
-              ? null
-              : outcome.value.message;
-        render();
-      }
-    );
-  };
-  const switchSession = (id: string) => dispatchPanelAction(tree, id, () => switchNativeSession(id));
   /**
    * A command from the prefix table as the input it stands for. An open
    * overlay keeps the ones that move inside it or close it; any other
@@ -1279,8 +1108,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       applyDisplaySettings(settings);
       setLanguage(resolveLanguage(settings.language));
       configureModel();
-      jobs.apply(tree, switches(), resolveLanguage(settings.language));
-      if (!jobsOn()) jobs.stop();
+
       armCollect();
       state = {
         ...state,
@@ -1288,9 +1116,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         modes: monitorModes(settings),
         zoom: false,
         scroll: { ...state.scroll, agents: 0 },
-        revealed: null,
       };
-      updateProgress();
       worktrees = null;
       void refreshGit();
       notifier.configure(resolveNotifierOptions(process.env, settings));
@@ -1366,7 +1192,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         settingsLeave = null;
         settingsPage = null;
         if (!destination) {
-          updateProgress();
           render();
           continue;
         }
@@ -1425,14 +1250,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
               render();
             });
         }
-        updateProgress();
         render();
         continue;
       }
       const previous = state;
-      const actionFrame = frame;
-      const actionRoot = frameRoot;
-      const actionEpoch = frameEpoch;
       const result = handleMonitorInput(state, input, {
         tree,
         frame,
@@ -1465,12 +1286,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         try {
           settings = saveSettings({ modelEnabled: !settings.modelEnabled });
           configureModel();
-          jobs.apply(tree, switches(), resolveLanguage(settings.language));
           if (modelOn) void collect();
-          else {
-            jobs.stop();
-          }
-          updateProgress();
         } catch (err) {
           settingsError = t('Panel preferences could not be saved: {reason}', { reason: String(err) });
           error = settingsError;
@@ -1484,75 +1300,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           message: '',
         };
       }
-      if (result.action?.type === 'pick' && input.type === 'mouse') {
-        const id = result.action.id;
-        const at = Date.now();
-        const again = lastClickSwitch?.id === id && at - lastClickSwitch.at < 400;
-        lastClickSwitch = again ? undefined : { id, at };
-        if (again) {
-          if (mainCols !== null && mainCols < 63)
-            navigationMessage = t('The Codex pane is too narrow to show agent IDs; widen it, then try again.');
-          else void switchSession(id);
-        }
-      }
       if (!previous.keys && state.keys) focusPanel();
       if (previous.keys && !state.keys) focusMain();
-      updateProgress();
       render();
-      if (
-        result.action &&
-        (result.action.type === 'delegation-open' ||
-          result.action.type === 'delegation-log' ||
-          result.action.type === 'delegation-copy' ||
-          result.action.type === 'delegation-diagnostic')
-      ) {
-        const action = result.action;
-        const selected = state.tree.selectedId;
-        const execute = () =>
-          dispatchPanelAction(tree, action.key, () =>
-            dispatchDelegationAction(
-              action,
-              actionFrame?.delegation?.vm,
-              panelDelegation,
-              actionRoot === tree.rootId && actionEpoch === collectionEpoch,
-              {
-                home: null,
-                copy: clipboard.copy,
-              }
-            )
-          ) ?? Promise.resolve('');
-        void (action.type === 'delegation-open' ? openOnce(action.key, execute) : execute()).then((message) => {
-          if (
-            message === null ||
-            closed ||
-            actionRoot !== tree.rootId ||
-            !sameDelegationActionTarget(actionFrame?.delegation?.vm, panelDelegation, action.key) ||
-            state.tree.selectedId !== selected
-          )
-            return;
-          navigationMessage = message;
-          render();
-        });
-      }
-      if (result.action?.type === 'switch') {
-        const id = result.action.id;
-        const at = Date.now();
-        // Deduplicate a mouse burst only. This is NOT evidence of Codex's current thread.
-        const duplicate = input.type === 'mouse' && lastClickSwitch?.id === id && at - lastClickSwitch.at < 400;
-        if (input.type === 'mouse') lastClickSwitch = { id, at };
-        if (
-          !duplicate &&
-          (!actionFrame?.delegation ||
-            (actionFrame.delegation.vm === panelDelegation &&
-              actionRoot === tree.rootId &&
-              actionEpoch === collectionEpoch))
-        )
-          void switchSession(id);
-        else if (!duplicate) {
-          navigationMessage = t('Selection changed; try again.');
-          render();
-        }
-      }
     }
     if (!STANDALONE_PANEL && forward.length) void forwarder.send(forward);
     if (!settingsPage) probe.cancel();
@@ -1581,7 +1331,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const onResize = () => {
     lastPaint = null;
     render();
-    readMainCols();
     // A client attaching at another size shares the change with this pane;
     // wait for the burst of resizes to settle, then take back the policy width.
     if (resizeTimer) clearTimeout(resizeTimer);
@@ -1604,7 +1353,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     process.stdin.resume();
     process.stdin.on('data', onData);
     render();
-    readMainCols();
     void collect().then(runInitialCommand);
     void refreshGit();
     armCollect();

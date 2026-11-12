@@ -12,6 +12,18 @@ be worth keeping. To find one, search for the symbol, or run
 
 ---
 
+## NATIVE-TREE update: one Home, native session lanes
+
+`buildWorkboard` projects every native descendant into one lane per main session beside package lanes. A direct child is a normal card, its child indents two cells, deeper descendants stay flat with `↳ parent`. Native cards use `nativeWorker`, the same `projectWorkCard`/`renderWorkCard` and fixed `currentWorker` lifetimes as HUD jobs (done 10 minutes; failed/stopped 30). `a` reveals expired cards in place without breaking parent/child order. `v` uses `boardInspect` and the thin-job Inspector; `o`/Enter opens its transcript. One resource facts row retains available context %, estimated tokens/s and cumulative tokens spent; no missing value is invented.
+
+Codex collection remains incremental and bounded. `ClaudeNativeTree` reads the selected session's `subagents/agent-*.meta.json` and JSONL: at most 401 directory entries, 200 agents, eight changed file reads per refresh (four metadata/JSONL pairs, 8 KiB/32 KiB each), with stat-signature reuse and a rotating cursor. Metadata supplies agent type/description, `finished` and the parent tool-use identity; public Agent calls in subagent tails establish nesting. Unmatched nested parents, deferred/failed reads and capped discovery mark the tree incomplete. The initial oversized transcript's start time is unknown; retained public calls survive tail movement. There is no watcher or process. pi has no native subagents; its helpers are HUD jobs.
+
+Claude statusline stdin already has the session id/transcript path and inherits `HERDR_PANE_ID`. `rememberClaudePane` writes `$HUD_HOME/panes/<pane>.json` atomically (0600), only when its content changes. `hud panel` uses only its exact pane's record while that transcript exists; explicit selection wins. The CLI carries the selected source/harness into the panel. No record or missing transcript keeps the existing unbound jobs view. Native lanes conservatively keep base cadence: job-only backoff still requires `nativeCalls.emptyAndComplete` and positively empty native trees; active/incomplete native evidence never authorizes 5-second quiet polling.
+
+`JobSentences` now owns native names and current/result/cause sentences too, using the same master/key/language gates, per-agent two-minute floor, three pending handles and `SmallModel` queue/cap/cache. It reuses `ModelJobs`' public material reducers (`labelSource`, `finalAnswer`, `errorMaterial`, `headTail`), not its old schedulers. Native input is bounded collected public task/charge (400), name/role (80 each), report (600), action (200), final result (8,000 head/tail) and error output (2,000); a settled Codex agent can read one safe 32 KiB tail. The response carries a short name and one keyword-marked sentence, stored with job sentences; output never changes lifecycle/activity evidence. Existing caches/logs are not deleted.
+
+Deleted: the old Agents layout, its control bar/cards/Inspector histories and session-switch controls, `AgentLog`, `ProgressSummarizer`, separate `ModelJobs` scheduling, and `card-visibility`. Settings `agentLog`, `cardLabel`, `cardSummary`, `agentsPane` and other old card-only preferences load as ignored keys and disappear on save. All `renderMonitor` callers now use the workboard frame; without a sidecar the native tree is projected into Home. This update supersedes the historical renderer/model descriptions below.
+
 ## R5UX-P1 update: passive Home and Work
 
 > **ONE-PAGE / M4 update: Home and Work are merged into Home; Project is the second tab.** This section supersedes the older stacked-monitor description of
@@ -75,7 +87,7 @@ There is no Work tab, target, scroll, control or row path; only `homeTarget`/`ho
 **Facade closure.** The additive facade closure is separate from the Pi dispatcher closure. Helpers are not owners:
 a helper's records never become a task's or a job's authority.
 
-**The retained secondary renderer.** `renderMonitor` keeps its no-sidecar path to the stacked secondary layout for
+**The retired secondary renderer.** `renderMonitor` keeps its no-sidecar path to the stacked secondary layout for
 legacy, secondary and fixture callers only (owner ruling q4). Production always supplies the workboard sidecar, so
 the live panel never reaches this path. It keeps its secondary chrome and keys, without the removed status foot, and its cards are the same
 compact work card the live pages draw — no old rich-card body, no second card renderer and no flag that brings the
@@ -496,7 +508,7 @@ thin-job sentences use a separate bounded job-local collector (§5.6), not a fac
 
 | Module | What it keeps |
 |---|---|
-| `agent-log.ts` (`AgentLog.observe`) | A per-agent history in `display/agent-log/<rootId>.json`, capped at 30 entries per agent, 200 agents, 600 characters per entry, and 30 days. It has two families of kinds. **Observed:** `started`, `finished`, `failed` and `report` (the agent's own words, through `agent-report.ts`, final and commentary channels only). **Model-written:** `note`, `digest` and `cause` (`MODEL_LOG_KINDS`). |
+| `claude-native-tree.ts` | Signature-cached bounded native Claude metadata/JSONL tails; public task/name, action/report and nesting. No agent-log writer. |
 | `agent-context.ts` (`readAgentTokens`) | Each running agent's context fill and output rate (`AgentTokens {usage, rate}`). It reads incrementally from the rollout tail, at most every 3 s, and re-reads after a shrink or inode change. `task_started` resets the rate's baseline; tool-call/output pairs exclude the union of tool waits. It shares the wallclock proxy with the main parser. |
 | `worktrees.ts` | Changes summary: branch/HEAD, ahead/behind, staged/unstaged/untracked counts, and worktree path/branch/dirty state. Bounded round-robin probes only while Changes is focused; missing/stale status is unknown. No file lists, previews, diffs or commit-subject probes. |
 
@@ -863,7 +875,7 @@ against Codex 0.154 and 0.157.
 - `HudSettings` holds the type, `defaultSettings()` the defaults, a per-key
   validator table the checks, and `loadSettings` / `saveSettings` the I/O.
 - The page has four open groups, in this order: Display (Theme, Bar style, Icons, Language),
-  Panel (Stall threshold, Notifications, Refresh, Mouse, Agent log, Task label, Agent summary), Models (Model
+  Panel (Stall threshold, Notifications, Refresh, Mouse), Models (Model
   text, Model, Call cap, plus the read-only calls-this-hour gauge and Test API)
   and Codex (Width, Prefix key, Bar on launch). There is no accordion, no header
   buttons and no Reset all: `SETTING_ROWS` is one flat list and every group is
@@ -881,8 +893,7 @@ against Codex 0.154 and 0.157.
   resize event; no draft-only resize.
 - `card-presets.ts` retains legacy combinations for fixture/compatibility
   callers only. There is no preset row on the current page; it cannot restore
-  retired rich-card contents. `agentLog`, `cardLabel` and `cardSummary` are kept
-  for NATIVE-TREE.
+  retired rich-card contents. `agentLog`, `cardLabel` and `cardSummary` are retired by NATIVE-TREE.
 - Reset group restores only its explicit owned fields. Resetting Models sets
   `modelEnabled: false` and preserves the connection, model and call cap; no
   other group touches the master preference. There is no Reset all. No
@@ -906,8 +917,7 @@ against Codex 0.154 and 0.157.
 |---|---|---|
 | `state/<session>.json` | bar or panel | snapshot for `--json` and bar clicks; deleted on exit only by the process that owns it |
 | `scan/` | panel | tree scan cache (`SCAN_VERSION`) |
-| `agent-log/<rootId>.json` | panel | per-agent history |
-| `model-cache/{cache,calls,labels}.json` | panel | model replies, hourly call log, labels |
+| `model-cache/{cache,calls,job-sentences,decision-titles}.json` | panel | shared replies/call log and display overlays; retired agent-log/label files are not read or removed |
 | `profile.log` | both | only with `CODEX_HUD_PROFILE=1` |
 
 **Display.** `icons` decides icons or words everywhere: the buttons, the

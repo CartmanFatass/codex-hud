@@ -175,43 +175,35 @@ export function buildWorkboard(
     });
   }
   // Exact native-ref enrichment is already resolved by the tree composer. Helpers are not owner rows.
-  const addNative = (node: SubagentTreeNode) => {
-    if (node.job) return;
-    if (node.id.startsWith('job-root:')) {
-      for (const child of node.children) addNative(child);
-      return;
+  const nativeLanes = new Map<string, WorkLane>();
+  const addNative = (node: SubagentTreeNode, parent?: SubagentTreeNode) => {
+    if (node.id.startsWith('job-root:')) return;
+    if (!node.job) {
+      const harness = node.ref?.harness ?? 'codex';
+      const root = node.ref
+        ? `${node.ref.sourceId}/${node.ref.harness === 'claude' ? node.ref.sessionId : tree.rootId}`
+        : tree.rootId;
+      const id = `native:${harness}:${root}`;
+      const worker = { ...nativeWorker(node, id), harness, parentName: parent?.name };
+      let lane = nativeLanes.get(id);
+      if (!lane) {
+        lane = {
+          id,
+          identity: { kind: 'native', refKey: root },
+          label: `${harness === 'claude' ? 'Claude' : 'Codex'} · this session`,
+          title: '',
+          startedAt: worker.startedAt,
+          phase: null,
+          workers: [],
+          decisions: [],
+          evidence: [],
+        };
+        nativeLanes.set(id, lane);
+        lanes.push(lane);
+      }
+      (lane.workers as OwnerWorker[]).push(worker);
     }
-    const id = `native:${node.id}`;
-    const worker: OwnerWorker = {
-      ...nativeWorker(node, id),
-      id: node.id,
-      nodeId: node.id,
-      laneId: id,
-      harness: node.ref?.harness ?? 'codex',
-      role: node.role ?? null,
-      task: node.label || node.name,
-      model: node.model ?? null,
-      effort: node.effort ?? null,
-      state: node.status,
-      startedAt: node.turnStartedAt?.getTime() ?? node.startedAt?.getTime() ?? null,
-      settledAt: ['completed', 'error'].includes(node.status) ? (node.statusAt?.getTime() ?? null) : null,
-      phase: null,
-      homeNeedsHuman: false,
-      humanEndedAt: null,
-      stale: node.status === 'unknown',
-      evidence: [],
-    };
-    lanes.push({
-      id,
-      identity: { kind: 'native', refKey: node.id },
-      label: node.name,
-      title: node.label || node.name,
-      startedAt: worker.startedAt,
-      phase: null,
-      workers: [worker],
-      decisions: [],
-      evidence: [],
-    });
+    for (const child of node.children) addNative(child, node);
   };
   for (const node of tree.nodes) addNative(node);
   // Residual legacy observations remain explicitly historical/read-only, not invented native subjects.
@@ -253,7 +245,7 @@ export function buildWorkboard(
     });
   }
   lanes.sort((a, b) => (a.startedAt ?? Infinity) - (b.startedAt ?? Infinity) || a.id.localeCompare(b.id));
-  let partial = tasks.coverage.incomplete || jobs.coverage.incomplete;
+  let partial = !!tree.incomplete || tasks.coverage.incomplete || jobs.coverage.incomplete;
   if (lanes.length > 200) {
     lanes.length = 200;
     partial = true;

@@ -2,7 +2,7 @@
 
 The details behind the [README](../README.md): the panel part by part, every key, the settings and the model features, the machine-readable state, and the configuration. [中文](./reference.zh.md)
 
-- [The panel](#the-panel): [Panes](#panes) · [Frame](#frame) · [Icons](#icons) · [Scrolling and selection](#scrolling-and-selection) · [Keys](#keys) · [Switching sessions](#switching-sessions) · [Agents in the list](#agents-in-the-list) · [Agent log](#agent-log) · [Inspector](#inspector) · [Changes summary](#changes-summary) · [Settings](#settings) · [LLM](#llm)
+- [The panel](#the-panel): [Panes](#panes) · [Frame](#frame) · [Icons](#icons) · [Scrolling and selection](#scrolling-and-selection) · [Keys](#keys) · [Native agents on Home](#native-agents-on-home) · [Inspector](#inspector) · [Changes summary](#changes-summary) · [Settings](#settings) · [LLM](#llm)
 - [Output throughput](#output-throughput)
 - [Machine-readable state](#machine-readable-state)
 - [Configuration](#configuration): [Environment Variables](#environment-variables) · [Notifications](#notifications) · [config.toml](#configtoml)
@@ -336,7 +336,7 @@ track: a lane's phase is the word, not a percentage or an unobserved earlier sta
 
 The top row has Home and Project tabs, with their asking/waiting counts, and the models on/off word on the right, which a click or `b` toggles. Lanes are observation navigation, not execution ownership; unknown phases stay unknown.
 
-**The work card.** Home and the retained secondary renderer share one compact card: role and short task, state and minute age, then one deterministic line — the reason, the reported test and
+**The work card.** All Home lanes share one compact card: role and short task, state and minute age, then one deterministic line — the reason, the reported test and
 file counts, or the optional model sentence for a thin job or eligible native agent. The four active states
 are needs you, working, to accept and stalled; done is the settled fifth. There is no blank sentence slot, no
 task/report/helper prose, no telemetry, context meter, tok/s, model badge, child rows, relations or footer. The
@@ -345,8 +345,7 @@ is exactly `Verdict: accept` or `Verdict: changes-required` (CRLF allowed) and t
 output written; a helper's exit alone is not a verdict. Current helper progress/failure also requires compatible known
 primary/helper starts and file times; reused or unconfirmed slots show unknown helper state, never a current failure.
 Readable current QA shows its question/default locally, with options and evidence in expanded detail and Inspector;
-unavailable details use the generic inspect instruction. Native/facade Inspectors retain their original details and action
-fences alongside the full job state/history/evidence. A changes-required round shows `fixing` only once the primary
+unavailable details use the generic inspect instruction. Native cards use the same thin Inspector, with their transcript as the openable detail. A changes-required round shows `fixing` only once the primary
 resumes, never merely because the review ended. A direct task cannot infer acceptance or a merge, and a pi STATUS
 auto-close is not facade closure.
 
@@ -358,9 +357,7 @@ result or ordinary failure never becomes Home's needs-you. A facade result stays
 closure. Running/asking jobs stay; done jobs hide after 10 minutes, failed/stopped jobs after 30 minutes. Lanes show only with visible jobs, and **Decided for you** only with visible decisions. `+N older · a` at the end counts hidden jobs and decisions; while they are shown it reads `N older shown · a hide`. `a` reveals them newest first as muted, bandless one-row titles (no older prefix), one row each until Enter expands; `a` again hides them. These fixed lifetimes have no settings, and the scan bounds history to its newest 200 jobs. Expiry never
 hides terminal human-needed workers, admitted daily one-way decisions, partial coverage or unclosed facade output.
 
-**Retained secondary renderer.** Production always supplies the workboard sidecar. The no-sidecar stacked renderer is
-retained only for fixture and legacy callers, is never reached by the live panel, and is scheduled for removal after
-P2 (q4). It uses the same compact work card, not the old rich cards, and gains no new features.
+**One renderer.** Home, Project and the kept passive pages share the workboard renderer. Callers without a sidecar project their native tree into the same Home lanes.
 
 **What Home does not have.** No old status-control footer, recovery, Resume, Reconcile or status-level controls.
 The top-row models on/off word and `b` toggle the same Model text master switch; the three Models settings are described
@@ -373,9 +370,9 @@ are unchanged. Light/terminal palettes retain their legible equivalents. Mono an
 
 ### Panes
 
-Home is the live page. The retained secondary renderer has Agents (cards or compact tree), Changes (repository/worktree summary only) and Inspector (agent/job evidence). Settings and Help remain. The old Agents pane stays until NATIVE-TREE; secondary panes retain their focus, scroll and title-zoom controls. There is no Timeline, activity hub, Summary or diagnostics page, and no stacked-versus-tabs preference.
+Home and Project are the two tabs. Changes (repository/worktree summary), the Inspector, Settings and Help remain. There is no Agents pane, compact-tree layout, pane zoom, agent log, native session-switch control, Timeline, activity hub, Summary or diagnostics page.
 
-Every view counts alike: an **agent** is one the main session started, a **subtask** an agent under one, at any depth, and a **review** a guardian approval review, wherever it sits. The Agents pane's title row and cards, notifications, which say the failures as one phrase (`! 1 agent · 1 subtask · 1 review failed`), the bar's Agents field and alert, and `codex-hud --json` all count the three apart, and an agent counts as running while a subtask of it runs. Those aggregate counters are unchanged; compact work cards do not repeat subtask/review counters.
+Every view counts alike: an **agent** is one the main session started, a **subtask** an agent under one, at any depth, and a **review** a guardian approval review, wherever it sits. Notifications, which say the failures as one phrase (`! 1 agent · 1 subtask · 1 review failed`), the bar's Agents field and alert, and `codex-hud --json` all count the three apart, and an agent counts as running while a subtask of it runs. Those aggregate counters are unchanged; compact work cards do not repeat subtask/review counters.
 
 ### Frame
 
@@ -390,8 +387,7 @@ The live pages (Home, Inspector, Settings, Help, Changes) share one frame gramma
 - one footer: factual on the left (`✓ N done today` on Home) and whole hints on the right, dropped from the right when
   narrow, never cut.
 
-The retained secondary renderer keeps its own chrome and keys, without the removed status foot (see [Panes](#panes)); it is fixed to the rich
-layout, though fixtures may still ask for compact. Its removal is scheduled after P2.
+All callers use this frame, including callers without an explicit workboard. There is no alternate Agents layout.
 
 ### Icons
 
@@ -403,9 +399,7 @@ Unicode glyphs are used. The bottom bar always names the model in words. The Uni
 
 ### Scrolling and selection
 
-The view under the agents' title row scrolls when it does not fit: the wheel over it, `PgUp`/`PgDn`, and moving the selection, which brings the selected agent into view. The title row says at its right end which rows are in view (`6–17/40`). Where it is scrolled to holds across repaints and new content, and is clamped when content shrinks. A view under 12 rows drops its blank lines before it hides content. The open secondary panes keep their place.
-At 16–20 columns, margins shrink. Use `Ctrl+\` `z` to give the focused pane the full height.
-Selection follows agent IDs across refreshes, and every pane retains its scroll position.
+Each page scrolls when it does not fit: wheel, `PgUp`/`PgDn`, or moving the selection. The cursor follows stable card IDs; Home, Project and the Inspector retain their own scroll positions. Native descendants remain under their parent in the session lane, including when `a` reveals older cards.
 
 ### Keys
 
@@ -445,22 +439,24 @@ In Settings, ↑/↓ select, ←/→ or Enter change a value, `s` saves, `r` res
 
 Repeated positively idle, unchanged observations gradually reduce collection to at most five seconds (an already slower configured cadence is preserved). Activity, uncertainty, failure, input or source change restores normal polling. Redraw/input remain independent. Large scans yield between chunks; individual JSON parsing remains synchronous. Poll cadence is not a model or notification delivery guarantee.
 
-### Switching sessions
+### Native agents on Home
 
-Session switching drives Codex's own `/subagents` picker (verified against Codex 0.154 and 0.157) and selects the row showing the agent's exact UUID; it never submits guessed `/agent <id>` commands. It requires an empty composer (including the read-only composer of a sub-agent view) or the recognized picker. Drafts, copy mode and unsupported views produce a visible message instead of forced input. Keyboard selection alone previews the agent; `o` switches. Visible targets are reached in one movement batch, long lists a page at a time, and the row is rechecked before Enter. The picker is not reopened afterward, avoiding a second popup and transcript redraw. A delivered request does not independently confirm the final Codex view.
+Each main session has one lane (`Claude · this session`, `Codex · this session`) beside the package lanes, with one card per native subagent, including custom Claude agents. Children indent one level; deeper descendants are flat and say `↳ parent`. Native cards use the job grammar: done hides after 10 minutes, failed/stopped after 30; `a` reveals them in place. A hidden parent never hides a live descendant. pi has no native subagents; its HUD helpers already appear as job cards.
 
-Below about 63 columns Codex stops printing UUIDs in the picker. The agent is then matched by the name the picker prints (its task path, or `Main [default]`), and only when no other agent of the session prints the same name; otherwise the switch is refused with a request to widen the Codex pane. While agents are running, Codex adds a "Sub-agents running" note to the conversation each time the picker opens; that note is Codex's own.
+Claude's statusline remembers its session/transcript in a private `$HUD_HOME/panes/<HERDR_PANE_ID>.json` display binding, only when its content changes. Ordinary `hud panel` from that exact pane binds it while the transcript exists; missing/stale records retain the unbound jobs view. Explicit `--root` or `--harness claude --session ID --source <project transcript directory>` wins. No process is launched to discover a session.
 
-### Agents in the list
+Codex retains its incremental rollout tree. Claude reads the bounded `ID/subagents/agent-*.meta.json` membership and signature-cached JSONL tails, with `toolUseId` linking descendants to a parent's public Agent call. Unreadable/deferred evidence is incomplete, not idle. Native coverage conservatively keeps base polling; the job-only 5-second backoff still requires positively empty native coverage. `o` opens a native transcript, never switches the client's conversation.
+
+### Historical job observations
 
 The panel also observes role-facade CLI/browser jobs, dispatch helpers and explicitly
-registered external Herdr tasks in the same Agents pane. Jobs attach only to their exact
+registered external Herdr tasks as read-only workboard observations. Jobs attach only to their exact
 recorded root. Native sessions are enriched only by a complete matching native reference;
 labels, pane names or reused session strings do not establish a match. Source freshness,
 lifecycle and outcome remain separate: an unavailable host is not a task failure, and a
 report file is not proof of successful work. Stale live work is counted as unknown.
 Legacy facade-only summaries remain unavailable. Thin jobs use the bounded job-local sentence path
-under [LLM](#llm); native-enriched rows keep the ordinary native summary path.
+under [LLM](#llm); native cards share that sentence service.
 These observation ids cannot be used for Codex Switch, legacy Open or Resume.
 
 `hud panel` opens the existing all-delegations view. To view only one root, use
@@ -489,21 +485,7 @@ Parent links support both metadata locations. Missing status evidence stays unkn
 
 Each agent's rollout is read once, each read going on from where the last one stopped. How far each was read and what it held (status, stages, open calls) is kept in `$HUD_HOME/display/scan/`, one file for each rollout of more than 256 KB (mode 0600, removed after a week neither used nor written), so a panel or bar started again reads only what was written since. A saved read is used only while the file still matches it (the same file and thread, the bytes it ended on unchanged); otherwise the rollout is read again from its start.
 
-Agents are named by the last segment of their task path, the name Codex's `/subagents` picker shows: `/synthetic/tokenizer-checks` reads `tokenizer-checks`. That name remains until an eligible native label arrives under the Model text master switch. The short model label can then name the agent in cards, rows, the compact tree and Inspector heading. The Inspector retains the native name used for switching. Panel → Task label suppresses labels on cards only; it does not change naming elsewhere or request a new label. There is no separate Agent names LLM control. The random nickname Codex also assigns stays in the Inspector; observed roles appear on work cards. Guardian approval reviews have no separate work card: their evidence remains in the Inspector and aggregate counts, not a card chip.
-
-With the session read and its tree built, a session that has started no agent, subtask or review says so in one dim line under the title (`No agents started in this session yet`), with where the help is; until then, or with no session bound, the view stays blank rather than guess. With Model text off or no matching endpoint key, no new summaries are written. Stored model log entries are retained on disk but hidden while the service is off; native names and factual state still render.
-
-Native agents use active-first order, default colours and no key-role priority. Finished native agents leave the list 3 minutes after they finish (fixed lifetime; Home's hide rules are unchanged). Running and failed agents never leave, and a finished agent whose child is still shown stays dimmed (still a card in rich). The compact row says how long ago it finished; the control bar counts what was put away (`⊕12`), and clicking that or `Ctrl+\` `a` shows everything again.
-
-### Agent log
-
-Each subagent has a log, newest first: its starts, finishes and failures and its latest updates as observed, written on the same read that updates the tree, and stored model progress notes, digests and causes, marked `~` as model-written in compact and the Inspector. A rich card does not list that log (see the cards above); the Inspector does.
-
-- **Language:** What a model wrote shows in the language it was written in: switch Language and the other language's notes step aside until a generator writes them again, while the observed entries stay.
-- **Append-only within retention:** a new progress note adds an entry rather than replacing the last.
-- **It follows the tree:** An agent the tree hides (put away, filtered out, under a collapsed parent) is not shown, and a collapsed parent says how many logs are folded under it; showing the agent again shows its whole log.
-- **In compact:** Each block is headed by the agent's status, kind glyph and Codex name, with its model name or task on the line under it; each agent shows its latest two entries, the selected one six and leads the list, and the Inspector shows all of them but the update it shows above, and none while the log holds only starts and finishes. Each entry's age is a column of its own, its text hanging beside it, without chat markdown. Clicking a log line opens the Inspector on that agent.
-- **Storage and switches:** The log is kept per session in `$HUD_HOME/display/agent-log/` (mode 0600, removed after 30 days). Stored model notes, digests and causes are retained but not passed to the renderer with Model text off or no matching key; they can be shown again in the current language when the service is on. In compact and the Inspector, observed entries are always available while the model service is on; otherwise Panel → Agent log controls those observed entries independently. Neither switch turns the log into card history.
+Native names remain factual until the shared model service supplies a short task name. There is no agent-log page, preference or writer; existing files remain on disk. A single generated sentence covers current work, the final result or failure cause, under the same master/key/language/rate gates as job sentences.
 
 ### Inspector
 
@@ -515,20 +497,7 @@ An open question opens only `qN.md`; an answered pair opens both files. The sele
 else `report.md`, else `brief.md`. A decision shows its band and full title stem, then asked, answer (or verdict),
 instead and why, and both qa files.
 
-The retained native agent Inspector is unchanged; it shows, in this order:
-
-1. Name, model and effort (the glyphs, then the full slug and effort: `☀◆ gpt-6-astra · max`; the card's badge is the short form, `6astra·max` in text mode)
-2. Its task path, when that path has more than one segment
-3. Status
-4. Its context (`Ctx`) and, while it writes, its output rate (`Out ~42 tok/s`)
-5. What it has spent over its life, once its rollout has reported it (`Tokens 1.2M in (cache 84%) · 32.1K out`, the cumulative `total_token_usage` of its newest report; narrow, the cache share goes, then the output)
-6. Where the parent rollout still has plaintext from before this agent was created, that text under What it was given
-7. Where the rollout keeps the task sealed, what it said it would do as it opened its newest stage (`Took on`, its own words, whole)
-8. Its latest update, its task (always) and its log, turn age and last activity
-
-Press `v` for full timestamps and UUIDs. Session-switch notices stay in the footer. A click on a blank row, or on the gutter left of a pane, keeps the next keys in the panel until Esc, or a click on the bar's `⌨ Keys here` chip, hands them back to Codex. Each long part sits under a dim rule (`── What it was given ──`), two columns in. A click on a card only selects it; a second click on its name within 400 ms switches the session. Enter, Space, `v` or `◫` opens the Inspector on the selection. `o` and `⌂` switch at once. In narrow Codex panes, session switching uses the unique-name fallback or asks for more width, as described in [Switching sessions](#switching-sessions).
-
-The Inspector's **~ Model summary** section shows the newest stored model note in the panel language, separately from the agent's own Latest update. **Coverage** (`coverageAt`) identifies the public snapshot covered; **Generated** (`generatedAt`) is when the result was produced. Each appears only when that metadata is explicitly known. Older notes without coverage metadata say **Recorded** (their log timestamp), never an invented coverage boundary; no generated time is inferred. The section also explains progress context: model service off or unavailable, summary hidden, agent not live, no public progress evidence, refresh cooldown, retry wait (and remaining retry delay when known), progress concurrency cap or hourly model call cap. Queued and writing are distinct states. These diagnostics read existing state and do not broaden progress targets; rendering them makes no model call.
+Native cards use this same Inspector: expanded card, role/harness, model/effort, parent, state and times, then its transcript under Files (`o`/Enter opens it). One additional facts row shows context fill %, estimated tokens/s and cumulative tokens spent when those observations already exist for that agent; missing fields are omitted and the row makes no extra read or model call. The old queue diagnostics, stage/peer/log histories and native session-switch controls are gone. The transcript is the full detail.
 
 ### Changes summary
 
@@ -541,7 +510,7 @@ Settings is one page with four open groups, in this order:
 | Group | Rows |
 |-------|------|
 | Display | Theme, Bar style, Icons, Language |
-| Panel | Stall threshold, Notifications, Refresh, Mouse, Agent log, Task label, Agent summary |
+| Panel | Stall threshold, Notifications, Refresh, Mouse |
 | Models | Model text, Model, Call cap; read-only calls this hour against the cap, and Test API ([LLM](#llm)) |
 | Codex | Width, Prefix key, Bar on launch |
 
@@ -555,7 +524,7 @@ Settings → Codex → Width offers the widths the panel is laid out for: 32, 40
 
 Related notification preferences share one row: Notifications (off, tmux, or tmux and the desktop).
 
-**Rows and values.** Labels stay left and values align at the actual pane's right edge; the selected value reads `‹ value ›`, and ←/→, Enter or a click change it (a click on `‹` steps back). Saving a new panel width reflows the rows to that real width. Rows with unavailable dependencies are dim but remain selectable so preferences can be preconfigured. Model generation needs both Model text on and a matching endpoint key; presentation switches stay independent. Turning the master off does not clear stored log text or change the card preferences. Agent log controls observed entries in the retained compact view and Inspector when the model service is off. Model log entries are hidden while the master is off or no matching key is available, independently of Agent log; the stored files are retained.
+**Rows and values.** Labels stay left and values align at the actual pane's right edge; the selected value reads `‹ value ›`, and ←/→, Enter or a click change it (a click on `‹` steps back). Saving a new panel width reflows the rows to that real width. Rows with unavailable dependencies are dim but remain selectable so preferences can be preconfigured. Model generation needs both Model text on and a matching endpoint key. Off hides generated text and restores native names and factual lines. `agentLog`, `cardLabel`, `cardSummary`, `agentsPane` and the old card-only visibility keys are ignored on load and omitted on save; existing user caches/log files are not deleted.
 
 **Saving.** Unsaved fields show `*`; Save persists to `$HUD_HOME/hud-settings.json` (or `HUD_SETTINGS_PATH`) and updates the compact HUD on its next refresh. Saved preferences override environment defaults; `NO_COLOR` still wins. Bar on launch applies from the next launch.
 
@@ -571,20 +540,17 @@ The Models group has exactly three preference rows. There is one chat-completion
 | Model | `model` | `deepseek-v4-1-flash-1017` | Model ID for all retained features; edit the settings file for a different ID |
 | Call cap | `modelCallsPerHour` | `60` | Hourly provider-call limit shared across panels using the same `$HUD_HOME` |
 
-Without a saved master preference, Model text defaults on when a Mistral or OpenAI key is available from the HUD credential reader, otherwise off. A saved boolean wins. Even when on, the panel makes no request without a matching key for its configured endpoint. `Ctrl+\` `b` and the retained secondary renderer's Pause/Resume models action toggle this same master preference; there is no separate pause setting. Turning it off hides stored model text and falls back to native names and factual state without deleting caches or logs.
+Without a saved master preference, Model text defaults on when a Mistral or OpenAI key is available from the HUD credential reader, otherwise off. A saved boolean wins. Even when on, the panel makes no request without a matching key for its configured endpoint. `b` and the top-row models word toggle this same master preference; there is no separate pause setting. Turning it off hides stored model text and falls back to native names and factual state without deleting caches or logs.
 
-Model text covers **thin-job card sentences and decision titles** and the retained **native-agent names, visible progress sentences, result digests and failure causes**. They follow the master switch together; none has its own LLM setting. Model text is display text, not observed fact or a verdict; compact logs and the Inspector mark it with `~`.
+Model text covers **job/native card sentences and native task names**, and **decision titles**. They follow the master switch together; none has its own LLM setting. Model text is display text, not observed fact or a verdict; its keywords use the same colour on Home and in the Inspector.
 
 - **Thin-job card sentence:** One sentence on what the job is doing now (or did once settled), in the panel language. The model marks 1–3 keywords with `«…»`; cards remove the marks and colour valid keywords. Unmarked/malformed output stays plain. Collapsed, the sentence occupies one row, cut at a word with `…` when narrow. Enter expands the whole sentence with keywords coloured and the whole factual line underneath; Enter again collapses it. Without model text, expansion shows the whole factual line. Off/no matching key keeps the factual line unchanged. Input stays inside that job directory: brief title/goal, STATUS state/phase, open question, newest review verdict, first report lines once settled, and four recent public assistant-text/tool-call blocks from a bounded 32 KiB session tail while working. State, phase, question/answer, report/review and session-activity changes are folded into requests at least two minutes apart per job, with no overlapping requests for that job. One successful final sentence freezes that settlement (`settledAt`); continuing the same job and settling again allows a new final sentence after the shared two-minute floor. Failures can retry after two minutes; unchanged running input renews the two-minute read window without a model call. Last sentences/fingerprints survive panel reopen in `display/model-cache/job-sentences.json` (200 records), without a new call for unchanged input. These requests share the ordinary queue/cap. The collapsed settled card's final sentence is its one-line result; expansion reveals the factual detail, not a second generated result.
 - **Decision titles:** Each thin-job “Decided for you” row gets what was decided in at most eight words, in the panel language, from only its question and answer files (4096 bytes each). The same title leads the expanded text; Enter, the question and the alternative are unchanged. Until it arrives, or off/without a key, the original option/title stays. Titles persist in `display/model-cache/decision-titles.json` (200 records), keyed by decision id, answer revision and language: a second render or reopened panel makes no call; a changed answer revision gets a new title. Visible decisions go first, with at most three pending requests on the shared queue/cap; failures retry after two minutes.
-- **Agent names:** A short task name and kind of work, based on the parent's public plaintext from before the agent was created (with task path and role), else a plaintext task. Up to eight tasks are batched, each capped at 400 characters. Encrypted Fernet tasks are never sent. Labels are kept by input hash and language in `display/model-cache/labels.json`. Until a label is available, the native name stays. Cards → Task label controls its display on cards, not label generation; the Inspector retains the native name used for switching.
-- **Card progress:** A native agent is eligible only through the existing rich-layout, visible-summary policy, while the Agents pane is shown and no modal is open. Agent summary and saved child-summary/scope preferences, filters and linger rules constrain targets. Input is public current-turn evidence: up to four reports of 600 characters each, stage intent (300), open tool/action (200), plaintext task and pre-create charge (300 each), name and role (80 each), stage metadata and descendant status counts. Without a public report, stage intent or open action, nothing is sent. Output is one sentence of at most 120 characters. Unchanged input is cached/deduplicated, changed input refreshes at most once per minute, and failures retry after ten minutes. Hiding the relevant summary or pane, opening a modal, switching the master off, or changing root/language/turn cancels obsolete work. Full notes and queue/failure/cap diagnostics stay in the Inspector.
-- **Result digest:** A completed native agent's public final answer is sent, up to 8,000 characters (head and tail for longer answers), for conclusion, basis and caveats. Long completed stage answers can also be digested. Results go to the agent log and Inspector. Agents finished more than an hour ago are considered only when inspected.
-- **Failure cause:** A failed native agent's recorded errors or last failed command output, produces one explanatory line in the agent log and Inspector. No recorded error output means no request.
+- **Native names and sentences:** The same `JobSentences` queue/cache generates a short task name and one sentence about current work, a settled result or failure cause. Requests are at least two minutes apart per agent across languages, with a successful final sentence frozen to its settlement; the shared service admits at most three pending handles. Native input reuses the collected name/role (80 chars each), public task/pre-create charge (400), latest public report (600), tool/action (200), latest stage/public final result (8,000 head/tail) and recorded error output (2,000). A settled Codex agent may need one safe 32 KiB transcript tail; Claude uses its already-collected public text. Sealed tasks, reasoning/private/unknown channels and legacy job-only nodes stay excluded. No separate labels/digests/causes/progress schedulers or agent-log writer remain. Off/no key restores the native name and factual line without deleting old caches.
 
 Reasoning and private channels are excluded. Only the thin-job inputs listed above are newly admitted; legacy facade-only jobs and task directories remain excluded. There is no job-content consent flow. Periodic overviews, main recaps, session titles, approval wording and change summaries are no longer generated or loaded. Hidden/secondary views receive factual state only, not generated overview text. The old `codex-hud brief --dry-run` command now reports that periodic briefs and recaps were removed; it is not an input preview.
 
-**Language and storage.** Retained features write in Settings → Display → Language. Off-language stored entries step aside; replies plainly in the wrong language are rejected and not cached. Names and short quotes may contain another language. Model cache and call-log files under `$HUD_HOME/display/model-cache/` are private (0600). Native background failures retry after ten minutes; thin-job sentence failures wait at least two minutes. All requests share the single-flight queue, cache and cap; cache identity includes input, endpoint and actual model, never the key. Settings shows calls made this hour.
+**Language and storage.** Retained features write in Settings → Display → Language. Off-language stored entries step aside; replies plainly in the wrong language are rejected and not cached. Names and short quotes may contain another language. Model cache and call-log files under `$HUD_HOME/display/model-cache/` are private (0600). Native and thin-job sentence failures wait at least two minutes. All requests share the single-flight queue, cache and cap; cache identity includes input, endpoint and actual model, never the key. Settings shows calls made this hour.
 
 **Connection.** Configure the endpoint in the settings file (`$HUD_HOME/hud-settings.json`, or `HUD_SETTINGS_PATH`); there is no connection editor in the panel:
 

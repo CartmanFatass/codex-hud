@@ -520,6 +520,8 @@ export interface SubagentTreeNode {
 }
 
 export interface SubagentTree {
+  /** Bounded native discovery/read left uncertain or deferred evidence. */
+  incomplete?: boolean;
   rootId: string;
   nodes: SubagentTreeNode[];
   totalCount: number;

@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { realpathSync, statSync } from 'node:fs';
+import { claudePaneSession } from '../collectors/claude-pane-session.js';
 import { displayTarget } from '../integrations/panel/receipt.js';
 import { getHudHome } from '../hud-home.js';
 import { resolveHudEnv } from '../utils/hud-env.js';
@@ -26,7 +27,7 @@ settings retain priority; NO_COLOR still disables color.
 `;
 
 /** Display selection only. Explicit source is a transcript root, never job authority. */
-export function panelSelection(args: readonly string[]): { root: string | null } {
+export function panelSelection(args: readonly string[]): { root: string | null; source?: string; harness?: Harness } {
   if (!args.length) return { root: null };
   if (args[0] === '--root') {
     if (args.length !== 2) throw new CliError('invalid_arguments');
@@ -51,7 +52,7 @@ export function panelSelection(args: readonly string[]): { root: string | null }
   if (!source) throw new CliError('invalid_arguments');
   try {
     if (realpathSync(source) !== source || !statSync(source).isDirectory()) throw new Error('noncanonical');
-    return { root: displayTarget(harness, session, source).root };
+    return { root: displayTarget(harness, session, source).root, source, harness };
   } catch {
     throw new CliError('invalid_arguments');
   }
@@ -74,10 +75,12 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
   }
   const here = rest[0] === '--here';
   const selection = here ? rest.slice(1) : rest;
-  const { root } = panelSelection(selection);
+  const bound = selection.length ? undefined : claudePaneSession(io.env);
+  const selected = bound ? ['--harness', 'claude', '--session', bound.session, '--source', bound.source] : selection;
+  const { root, source, harness } = panelSelection(selected);
   if (!here && io.env.HERDR_PANE_ID) {
     const pane = await openPanelPane(
-      [process.execPath, join(installationRoot(), 'bin/hud'), 'panel', '--here', ...selection],
+      [process.execPath, join(installationRoot(), 'bin/hud'), 'panel', '--here', ...selected],
       process.cwd(),
       io.env,
       width
@@ -93,6 +96,8 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
 
       CODEX_HUD_PANEL_ALL_DELEGATIONS: root ? '0' : '1',
       ...(root ? { CODEX_HUD_PANEL_ROOT: root } : {}),
+      CODEX_HUD_PANEL_SOURCE: source ?? '',
+      CODEX_HUD_PANEL_HARNESS: harness ?? '',
       CODEX_HUD_STANDALONE_PANEL: '1',
     }
   );

@@ -118,7 +118,11 @@ export function requestLines(card: WorkCard, full = false): string[] {
 }
 export const workRequestDetail = (card: WorkCard, full = false): string => requestLines(card, full).join('\n');
 export function workCardDetail(card: WorkCard, sentence = ''): string {
-  return sentence || card.worker.ask || card.worker.work?.reason || (card.reason ? t(card.reason) : '');
+  return (
+    sentence ||
+    card.worker.ask ||
+    (card.worker.work?.reason ? t(card.worker.work.reason) : card.reason ? t(card.reason) : '')
+  );
 }
 export function workPhaseText(phase: string): string {
   return monitorText(phase).replace(
@@ -139,7 +143,13 @@ export function workCardName(card: WorkCard, _state: MonitorState, width: number
   const role = monitorText(card.role),
     x = 2 + visualLength(role) + 2;
   return {
-    text: truncateAnsi(monitorText(card.title), Math.max(0, width - x - visualLength(right) - 2)),
+    text: truncateAnsi(
+      monitorText(
+        card.title +
+          ((card.worker.nativeDepth ?? 0) > 2 && card.worker.parentName ? ` ↳ ${card.worker.parentName}` : '')
+      ),
+      Math.max(0, width - x - visualLength(right) - 2)
+    ),
     x,
     right,
     role,

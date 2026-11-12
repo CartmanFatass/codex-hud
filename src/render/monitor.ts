@@ -1,35 +1,13 @@
-import { nativeCallsOnly } from '../core/link/view-model.js';
-import type { ProgressState, ProgressContext } from '../collectors/progress-summary.js';
-/** Default F12 view: a monitor, not another transcript. No I/O or terminal input here. */
+/** Pure Home, Project and retained passive pages. No legacy Agents layout. */
 import type { HudData, SubagentTree } from '../types.js';
 import type { DelegationViewModel, HudDelegationData } from '../core/link/view-model.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import type { HudSettings } from '../settings.js';
-import { defaultCardVisibility, type CardVisibility } from '../card-visibility.js';
-import { initialPanelState, reconcileSelection, visibleRows, type PanelState, type PanelRow } from './panel-state.js';
-import { theme, colors, visualLength, truncateAnsi } from './colors.js';
-import type { Brief } from '../collectors/briefing.js';
-import type { AgentLogEntry } from '../collectors/agent-log.js';
-import { agentsTitleAt, drawAgentsView } from './agents-view.js';
-import { controlBar, paneHead, look, type CountsText, type RowButtons } from './control-bar.js';
-import { fit, wrapped } from './monitor-text.js';
-import { paneRows, agentsView, putAwayCount, summaryRow } from './monitor-panes.js';
-import {
-  delegationPutAway,
-  delegationView,
-  rememberMixedDestinations,
-  mixedOrdinaryNodes,
-  type DelegationView,
-  type PlanOptions,
-} from './delegation/panel.js';
-import { resolveSelection } from './delegation/selection.js';
-import { selectedActions, type DelegationAction } from './delegation/actions.js';
+import { initialPanelState, type PanelState } from './panel-state.js';
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
+import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
-
-// The panel is drawn by the modules beside this one; what they export is
-// exported here too, so a caller imports the monitor from one place.
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
   iconic,
@@ -53,16 +31,14 @@ export {
   RATE_FRESH_MS,
 } from './monitor-labels.js';
 export { CONTEXT_METER_WIDTH, contextLine, METER_MIN, meterText, meterRow, type EdgeMeter } from './monitor-meter.js';
-export { summaryRow, emptyAgentsRows, guardianChip, briefSaid, briefRuleRow, briefRule } from './monitor-panes.js';
-export { MODEL_LOG_KINDS } from './monitor-inspector.js';
-export { clickTab, monitorRowAt, monitorItemAt, handleMonitorInput } from './monitor-input.js';
+export { monitorRowAt, monitorItemAt, handleMonitorInput } from './monitor-input.js';
 
+// `agents` is the internal Home viewport id, not a separate pane or tab.
 export const MONITOR_PANES = ['agents', 'changes', 'details'] as const;
 export type MonitorPane = (typeof MONITOR_PANES)[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
-  /** Home is the main page; focus tracks retained secondary views separately. */
   mainTab?: 'home' | 'project';
   projectCursor?: string;
   projectScroll?: number;
@@ -72,10 +48,8 @@ export interface MonitorState {
   boardExpanded?: ReadonlySet<string>;
   boardFolded?: ReadonlySet<string>;
   boardRevealed?: string;
-  /** Display-only fold cursor; never a workflow identity or native selection. */
   boardAnchor?: string;
   boardInspect?: WorkTarget;
-  /** The Inspector row the cursor is on: its `item`, a row with files. */
   inspectCursor?: string;
   tree: PanelState;
   focus: MonitorPane;
@@ -85,64 +59,21 @@ export interface MonitorState {
   help: boolean;
   zoom: boolean;
   helpScroll?: number;
-  expanded?: boolean;
-  /**
-   * How the agents are shown: `rich`, a card each; `compact` (or absent), the
-   * tree with the brief and log under it. The panel sets it from settings.
-   */
-  style?: PanelStyle;
-  /** Rich-card fields shown independently. The panel sets them from settings. */
-  cardVisibility?: Partial<CardVisibility>;
-  /**
-   * The agent the agents view last scrolled into view: the view follows the
-   * selection when it moves, and otherwise stays where the reader put it.
-   */
-  revealed?: string | null;
-  /**
-   * The first row in view, as a block key and how far into it, so content
-   * arriving above does not move what the reader is looking at; `offset` is
-   * the scroll it was taken at, so a scroll since then is not undone.
-   */
-  anchor?: { key: string; delta: number; offset: number };
-  /** Keys stay in the panel. Esc clears it and returns them to Codex. */
   keys?: boolean;
-  /** A label, once arrived, stands where the agent's name is shown. The panel sets it from settings. */
-  labelAsName?: boolean;
   cardStallMinutes?: number;
-  /**
-   * The last render drew the delegation view, so `tree.selectedId` is one of its row keys. A reconcile that has no view
-   * model to check it against (`reconcileMonitor` without one) leaves the selection alone instead of resetting it
-   * against the empty legacy tree. `renderMonitor` sets it with a view model and removes the key without one: it is
-   * present or absent, never false (rulings B10B-s3 Q6).
-   */
-  delegating?: true;
 }
-export type PanelStyle = 'rich' | 'compact';
-/** A click target on a row; `x` counts from the row's start. */
 export interface RowControl {
   kind: MonitorControl['kind'];
   item?: string;
   x: number;
   width: number;
 }
-/**
- * `item` is what a click selects. `key` names the block a row belongs to, so a scrolled view can
- * keep its place; `controls` are click targets on the row.
- */
 export interface MonitorRow {
   text: string;
-  /** Retained layout rows format a card only when its cells enter the viewport. */
   paint?: () => string;
   item?: string;
   key?: string;
   controls?: RowControl[];
-  /** On the agents' heading: its counts in each form, for the title row to say as much as fits. */
-  counts?: CountsText;
-  /** A row pinned above the agents' heading (the delegation view's parent row, design §4.6). */
-  lead?: boolean;
-  /** The item this row is a part of, when it has an item of its own: a sub-row's line in its card (B10B-s3). */
-  of?: string;
-  /** Files the row stands for, which `⏎` opens in the Inspector. */
   files?: string[];
 }
 export interface MonitorRect {
@@ -154,24 +85,12 @@ export interface MonitorRect {
   offset: number;
   contentLength: number;
   rows: MonitorRow[];
-  /** Rows above the content: 1 for a pane's band, 0 for Agents (its band is its pinned summary). */
   edge?: number;
-  /** Leading rows that stay put while the rest scrolls: Agents' summary line. */
   pinned?: number;
-  /** Content rows drawn, pinned ones included, when fewer than the frame holds: the rest is the scroll hint. */
   visible?: number;
 }
 export interface MonitorControl {
-  /**
-   * `switch` (a card's name) selects it and arms a double-click switch to
-   * Codex, `level` (the status card's band) changes how
-   * much the card shows. `tab` (a pane's button on the control bar) opens
-   * or closes that pane; `zoom` (a pane's band) zooms or restores it;
-   * `older` shows or hides what the linger window put away; `help` opens
-   * the keys.
-   */
   kind:
-    | 'main'
     | 'board-home'
     | 'board-project'
     | 'board-back'
@@ -179,22 +98,9 @@ export interface MonitorControl {
     | 'board-activate'
     | 'board-inspect'
     | 'settings'
-    | 'tab'
-    | 'older'
     | 'help'
-    | 'brief'
-    | 'log'
-    | 'switch'
-    | 'zoom'
-    | 'keys'
-    | 'open-session'
-    | 'delegation-open'
-    | 'delegation-recover';
-  pane?: MonitorPane;
-  /** The agent a log line belongs to: a click selects it. */
+    | 'brief';
   item?: string;
-  /** A greyed button (the delegation view's `⇢` when its gate fails): a click on it does nothing. */
-  disabled?: boolean;
   x: number;
   y: number;
   width: number;
@@ -211,16 +117,12 @@ export interface MonitorFrame {
   controls: MonitorControl[];
   state: MonitorState;
   helpPage?: { count: number; total: number };
-  /** The delegation view this frame drew (its plan, its rows), what a key or a click is resolved against. */
-  delegation?: DelegationView;
 }
 export interface MonitorData {
-  /** The HUD's data; `delegation`, when non-null, draws the agents view from the delegation view model. */
   hud?: HudData & HudDelegationData;
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
   project?: ProjectSnapshot;
-  /** The tmux prefix as the help writes it ("Ctrl+\"). */
   prefix?: string;
   state: MonitorState;
   width: number;
@@ -229,45 +131,17 @@ export interface MonitorData {
   nowMs?: number;
   notice?: string | null;
   error?: string | null;
-  /** Worker publication health is independent of read-only collection notices. */
   publicationNotice?: string | null;
-  /**
-   * The brief, when one is configured; `paused` puts the model calls on hold.
-   */
-  brief?: Brief & { paused?: boolean };
   modelEnabled?: boolean;
-  /**
-   * Each agent's log, oldest entry first, by agent id: shown under the brief
-   * for the agents the tree shows, and whole in the Inspector.
-   */
-  agentLog?: ReadonlyMap<string, readonly AgentLogEntry[]>;
-  /** Per-agent progress request state, collected without rendering I/O. */
-  progress?: ReadonlyMap<string, ProgressState>;
-  progressContext?: ProgressContext;
-  /**
-   * Model-written readings, each shown marked as such: the pending approval's
-   * command in plain words, and what the current diff does (`current` false
-   * once the diff has moved on since it was written).
-   */
-  notes?: { approval?: string };
-  /** The session has not been read yet: an empty tree is not news. */
   loading?: boolean;
-  /**
-   * Underline an agent's name, the click that switches to it. False when the
-   * Codex pane is too narrow to show agent ids. Absent means yes.
-   */
   linkNames?: boolean;
-  /** The mouse is on: the help says what a click does. */
   mouse?: boolean;
-  /** The panel is Codex's own, so keys reach it only after the prefix. */
   embedded?: boolean;
 }
 export interface MonitorContext {
   tree: SubagentTree;
-  /** The clock the frame was drawn with, so a click resolves against the rows it saw. */
   nowMs?: number;
   frame?: MonitorFrame;
-  /** Leaving a modal via a navigation tab selects/opens its pane instead of toggling it shut. */
   navigationOverlay?: boolean;
   standalone?: boolean;
 }
@@ -277,12 +151,8 @@ export interface MonitorOutcome {
   action?:
     | { type: 'settings' }
     | { type: 'open-files'; files: string[] }
-    | { type: 'switch'; id: string }
-    | { type: 'pick'; id: string }
-    | { type: 'brief-toggle' }
-    | Exclude<DelegationAction, { type: 'switch' }>;
+    | { type: 'brief-toggle' };
 }
-
 export function initialMonitorState(): MonitorState {
   return {
     mainTab: 'home',
@@ -294,350 +164,47 @@ export function initialMonitorState(): MonitorState {
     help: false,
     zoom: false,
     helpScroll: 0,
-    expanded: false,
   };
 }
-/** Agents is the page itself: always there, whatever an older settings file says. */
 export function monitorModes(settings: HudSettings): MonitorModes {
-  return {
-    agents: settings.agentsPane,
-    changes: settings.changesPane,
-    details: settings.detailsPane,
-  };
+  return { agents: 'open', changes: settings.changesPane, details: settings.detailsPane };
 }
-/** What the settings say about how the panel shows things, as its state. */
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
-  const cardVisibility = defaultCardVisibility();
-  const copy = <K extends keyof CardVisibility>(key: K) => {
-    if (key !== 'cardClock')
-      Object.assign(cardVisibility, { [key]: settings[key as Exclude<keyof CardVisibility, 'cardClock'>] });
-  };
-  (Object.keys(cardVisibility) as Array<keyof CardVisibility>).forEach(copy);
-  return {
-    style: 'rich',
-    labelAsName: true,
-    cardStallMinutes: settings.cardStallMinutes,
-    cardVisibility,
-  };
-}
-/**
- * The agents the agents view lists, in its order: in rich style the L1s
- * alone, a card each, their subtasks counted and the ones that matter named
- * on it; compact, the whole tree.
- */
-export function listedAgents(nodes: SubagentTree['nodes'], state: MonitorState, nowMs: number): PanelRow[] {
-  const rows = visibleRows(nodes, state.tree, nowMs);
-  return state.style === 'rich' ? rows.filter((row) => row.depth === 0) : rows;
+  return { cardStallMinutes: settings.cardStallMinutes };
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
-  return {
-    agentsPane: state.modes.agents,
-    changesPane: state.modes.changes,
-    detailsPane: state.modes.details,
-  };
+  return { changesPane: state.modes.changes, detailsPane: state.modes.details };
 }
-/** The plan options a state asks for (the fold, the history, the order). */
-function planOptions(state: MonitorState, nowMs: number): PlanOptions {
-  return {
-    nowMs,
-    collapsed: state.tree.collapsed,
-    showHistory: state.tree.showAll,
-  };
-}
-
-/**
- * Keeps the cursors on what exists. `delegation` is the view model the frame is drawn from: with one the agents'
- * selection is checked against its plan (`resolveSelection`) and the state is marked `delegating`; `null` (a render
- * with none) clears the mark and reconciles as always; absent (the page's own calls, which have no view model to ask)
- * leaves the selection of a marked state alone, since the legacy tree it would be checked against is empty then.
- */
 export function reconcileMonitor(
   state: MonitorState,
-  tree: SubagentTree,
-  nowMs: number = Date.now(),
-  delegation?: DelegationViewModel | null
+  _tree: SubagentTree,
+  _nowMs?: number,
+  _delegation?: DelegationViewModel | null
 ): MonitorState {
-  if (nativeCallsOnly(delegation)) delegation = null;
-  if (delegation === null && state.delegating) {
-    const { delegating: _mark, ...unmarked } = state;
-    state = unmarked;
-  }
-  if (delegation)
-    rememberMixedDestinations(
-      delegation,
-      listedAgents(mixedOrdinaryNodes(tree.nodes, delegation), state, nowMs).map((row) => row.node.id)
-    );
-  const view = delegation
-    ? delegationView(delegation, { ...planOptions(state, nowMs), style: state.style === 'rich' ? 'rich' : 'compact' })
-    : null;
-  let selected: PanelState;
-  if (view) {
-    const key = resolveSelection(state.tree.selectedId, view.proj, view.plan, view.dest);
-    selected =
-      key === state.tree.selectedId
-        ? state.tree
-        : { ...state.tree, selectedId: key, view: state.tree.view === 'detail' && !key ? 'tree' : state.tree.view };
-  } else if (delegation === undefined && state.delegating) selected = state.tree;
-  else selected = reconcileSelection(state.tree, tree.nodes, listedAgents(tree.nodes, state, nowMs));
-  const focus =
-    state.modes[state.focus] !== 'closed'
-      ? state.focus
-      : (MONITOR_PANES.find((id) => state.modes[id] !== 'closed') ?? 'agents');
-  const changed = selected.selectedId !== state.tree.selectedId;
-  // A selection the panel made for itself (the first agent, or a stand-in
-  // for one that left) is not the reader moving: the view stays put.
-  const revealed = selected.selectedId !== state.tree.selectedId ? selected.selectedId : state.revealed;
-  return {
-    ...state,
-    ...(view ? { delegating: true as const } : {}),
-    tree: selected,
-    focus,
-    revealed,
-    scroll: { ...state.scroll, details: changed ? 0 : state.scroll.details },
-  };
+  return { ...state, tree: { ...state.tree }, scroll: { ...state.scroll }, modes: { ...state.modes } };
 }
-
-/** An agents view shorter than this drops its blank lines rather than scroll past most of what it holds. */
-const DENSE_BELOW = 12;
-/** Rows from which a blank row parts the panel's sections. */
-const PARTED_FROM = 30;
-
-/** Whether a pane is open, and so worth reading for. */
 export function paneShown(state: MonitorState, id: MonitorPane): boolean {
-  return state.modes[id] === 'open';
+  return state.focus === id && !state.help;
 }
-
-/** The control bar's `⇢` and `↻` for the selected row of a delegation view. */
-export function rowButtons(view: DelegationView, selected: string | null): RowButtons {
-  const actions = selectedActions(view.plan, view.proj, selected);
-  return { open: actions?.open ?? null, recover: actions?.recover ?? null };
-}
-
 export function renderMonitor(input: MonitorData): MonitorFrame {
-  const width = Math.max(0, Math.floor(input.width));
-  const height = Math.max(0, Math.floor(input.height));
   const now = input.nowMs ?? Date.now();
-  const delegation = nativeCallsOnly(input.hud?.delegation) ? null : (input.hud?.delegation ?? null);
-  const state = reconcileMonitor(input.state, input.tree, now, delegation);
-  const frame: MonitorFrame = { lines: [], panes: [], controls: [], state };
-  // Secondary views keep the board context so prefix 1 returns to Home.
-  if (input.workboard)
-    frame.workboard = { snapshot: input.workboard, targets: new Map(), selected: state.homeTarget, rows: [] };
-  if (delegation)
-    frame.delegation = delegationView(delegation, {
-      ...planOptions(state, now),
-      style: state.style === 'rich' ? 'rich' : 'compact',
-    });
-  if (!width || !height) return frame;
-  if (state.help)
-    return renderWorkboardFrame(
-      input,
-      state,
-      input.workboard ?? {
-        revision: '',
+  const board =
+    input.workboard ??
+    buildWorkboard(
+      '',
+      {
+        revision: 0,
         lanes: [],
-        workers: [],
-        decisions: [],
         coverage: { incomplete: false, diagnostics: [], workspace: null },
+        cost: { entries: 0, files: 0, bytes: 0, probes: 0, enumerations: 0, parses: 0, elapsedMs: 0 },
       },
-      now
+      {
+        generation: 0,
+        root: null,
+        jobs: [],
+        coverage: { entries: 0, files: 0, bytes: 0, incomplete: false, omitted: null, diagnostics: [] },
+      },
+      input.tree
     );
-  // P2 sidecar seam (q4): production always supplies the workboard sidecar, so the live panel
-  // never reaches the no-sidecar path below. It is retained only for legacy/secondary callers
-  // and fixtures, draws the same compact work card, and its removal is scheduled after P2.
-  if (
-    input.workboard &&
-    (state.focus === 'agents' || state.focus === 'changes' || (state.focus === 'details' && state.boardInspect))
-  ) {
-    return renderWorkboardFrame(input, state, input.workboard, now);
-  }
-  // A pane is drawn as the status card is: a title naming it, then its rows
-  // behind a gutter on the left only. Under 24 columns the gutter is its rule
-  // alone, without the space after it. In the frame look the rows sit
-  // between the frame's sides instead, `cw` wide, and the side is the gutter.
-  const framed = look(width) === 'frame';
-  const cw = framed ? width - 4 : width;
-  const gutter = framed ? '' : width >= 24 ? '│ ' : '│';
-  const inner = Math.max(0, cw - gutter.length);
-  const notice = input.notice || input.error;
-  const noticeRows =
-    height >= 6
-      ? [
-          ...(input.publicationNotice ? wrapped(input.publicationNotice, Math.max(1, cw - 2)).slice(0, 2) : []),
-          ...(notice ? wrapped(notice, Math.max(1, cw - 2)).slice(0, 2) : []),
-        ].slice(0, Math.max(0, height - 2))
-      : [];
-  // Every control the panel has is on its first rows; nothing else is a button.
-  const dview = frame.delegation;
-  const bar = controlBar(
-    state,
-    dview
-      ? {
-          modelEnabled: input.modelEnabled,
-          expired: delegationPutAway(dview.vm, planOptions(state, now)),
-          buttons: rowButtons(dview, state.tree.selectedId),
-        }
-      : { modelEnabled: input.modelEnabled, expired: putAwayCount(input.tree.nodes, state, now) },
-    width
-  );
-  const top = Math.min(height, bar.lines.length);
-  let budget = Math.max(0, height - top - noticeRows.length);
-  // A closed pane takes no row at all; in the tabs layout only the one shown
-  // has rows, all of them, and there is nothing to zoom.
-  const zoom = state.zoom;
-  const ids = MONITOR_PANES.filter((id) => state.modes[id] !== 'closed' && (!zoom || id === state.focus));
-  // Where the panel is tall enough a blank row parts its sections: under the
-  // bar, between two panes and above the status card. Not in the frame look,
-  // whose edges part them already, and never at a pane's expense: short of
-  // a title and a row for each pane besides, there are none.
-  const footed = noticeRows.length > 0;
-  let gaps = !framed && height >= PARTED_FROM && ids.length ? ids.length + (footed ? 1 : 0) : 0;
-  if (budget - gaps < 2 * ids.length) gaps = 0;
-  budget -= gaps;
-  // Agents has no band of its own: its summary line, pinned at its top, is
-  // painted as one. The other panes have a band row above their rows.
-  const edgeOf = (id: MonitorPane) => (id === 'agents' ? 0 : 1);
-  const content = new Map(
-    ids.map((id) => [
-      id,
-      id === 'agents'
-        ? agentsView(input, state, cw, now, true)
-        : paneRows(id, input, state, inner, now, frame.delegation),
-    ])
-  );
-  const sizes = new Map<MonitorPane, number>();
-  for (const id of ids) {
-    sizes.set(id, budget > 0 ? 1 : 0);
-    if (budget > 0) budget--;
-  }
-  const order = [state.focus, ...ids.filter((id) => id !== state.focus)].filter((id) => ids.includes(id));
-  while (budget > 0) {
-    let grew = false;
-    for (const id of order) {
-      if (!budget) break;
-      const rows = content.get(id)?.length ?? 0;
-      const target = zoom ? height : rows + edgeOf(id);
-      const size = sizes.get(id) ?? 0;
-      if (size && size < target) {
-        sizes.set(id, size + 1);
-        budget--;
-        grew = true;
-      }
-    }
-    if (!grew) break;
-  }
-  // Spare rows go to the focused Inspector, else the agents view.
-  const fillable = order.filter((id) => (sizes.get(id) ?? 0) > 0);
-  const fill =
-    state.focus === 'details' && fillable.includes('details')
-      ? 'details'
-      : fillable.includes('agents')
-        ? 'agents'
-        : fillable[0];
-  if (fill) {
-    sizes.set(fill, (sizes.get(fill) ?? 0) + budget);
-    budget = 0;
-  }
-  // Spacing gives way to scrolling, not the other way round, except where the
-  // view is so short that blank lines would hide most of what it could show.
-  const agentsHeight = sizes.get('agents') ?? 0;
-  if (ids.includes('agents') && agentsHeight < DENSE_BELOW && (content.get('agents')?.length ?? 0) > agentsHeight)
-    content.set('agents', agentsView(input, state, cw, now, false));
-  // The delegation view's rich cards fold to the pane they were given (design §3.5's accordion).
-  if (
-    ids.includes('agents') &&
-    input.hud?.delegation &&
-    state.style === 'rich' &&
-    (content.get('agents')?.length ?? 0) > agentsHeight
-  )
-    content.set('agents', agentsView(input, state, cw, now, false, agentsHeight));
-  // In the frame look a row no pane draws on is blank between the frame's sides, `cw` wide.
-  frame.lines = Array.from({ length: height }, () => fit('', cw));
-  bar.lines.slice(0, top).forEach((line, i) => {
-    frame.lines[i] = fit(line, width);
-  });
-  frame.controls.push(...bar.controls.filter((control) => control.y < top));
-  // The rows that are titles: in the frame look they are its edges, not rows between its sides.
-  const titles = new Set<number>();
-  let y = top + (gaps ? 1 : 0);
-  for (const id of ids) {
-    const h = sizes.get(id) ?? 0;
-    if (!h) continue;
-    // The blank row after the pane before (the last one's is above the card).
-    if (gaps && y > top + 1) y++;
-    const rows = content.get(id) ?? [];
-    const focused = id === state.focus;
-    const zoomed = zoom && focused;
-    if (id === 'agents') {
-      // Its title, then the counts the summary row has; where its rows are on the right.
-      // In the tabs layout the tab above names the pane: its title is its counts and where its rows are.
-      drawAgentsView(
-        frame,
-        state,
-        rows,
-        y,
-        cw,
-        h,
-        (counts, range) =>
-          paneHead(id, width, {
-            info: counts,
-            right: range && colors.dim(range),
-            focused,
-            zoomed,
-          }),
-        framed ? 2 : 0
-      );
-      // The title row is the frame's edge; a pinned parent row above it is a body row, between the sides like the rest.
-      if (rows.length) titles.add(y + agentsTitleAt(rows, h));
-      y += h;
-      continue;
-    }
-    const edge = edgeOf(id);
-    const count = Math.max(0, h - edge);
-    let offset = Math.max(0, Math.min(state.scroll[id], Math.max(0, rows.length - count)));
-    state.scroll[id] = offset;
-    const pane = {
-      id,
-      x: framed ? 2 : 0,
-      y,
-      width: cw,
-      height: h,
-      rows,
-      offset,
-      contentLength: rows.length,
-      edge,
-      pinned: 0,
-    };
-    frame.panes.push(pane);
-    // The title: the pane's icon and name on the left, where its rows are or
-    // how many there are on the right, as the look draws it; a click anywhere
-    // on it zooms or restores the pane.
-    const range =
-      rows.length > count && count ? `${offset + 1}–${Math.min(rows.length, offset + count)}/${rows.length}` : '';
-    frame.lines[y] = paneHead(id, width, { right: range && colors.dim(range), focused, zoomed });
-    titles.add(y);
-    frame.controls.push({ kind: 'zoom', pane: id, x: 0, y, width });
-    // The gutter in the pane's state colour: the accent where the keys go.
-    const rule = focused ? theme.accent : colors.dim;
-    for (let i = 0; i < count; i++) {
-      const row = rows[offset + i];
-      const clipped = truncateAnsi(row?.text ?? '', inner);
-      const body = clipped + ' '.repeat(Math.max(0, inner - visualLength(clipped)));
-      frame.lines[y + 1 + i] = truncateAnsi(rule(gutter) + body, cw);
-    }
-    y += h;
-  }
-  const foot = height;
-  for (let i = 0; i < noticeRows.length; i++)
-    frame.lines[foot - noticeRows.length + i] = theme.warning(fit(noticeRows[i], cw));
-  if (framed) {
-    // Between the frame's sides: the left one in the accent beside the pane the keys go to.
-    const shown = frame.panes.find((pane) => pane.id === state.focus);
-    for (let row = top; row < foot; row++) {
-      if (titles.has(row)) continue;
-      const side = shown && row >= shown.y && row < shown.y + shown.height ? theme.accent : theme.frame;
-      frame.lines[row] = `${side('│')} ${fit(frame.lines[row], cw)} ${theme.frame('│')}`;
-    }
-  }
-  return frame;
+  return renderWorkboardFrame(input, reconcileMonitor(input.state, input.tree), board, now);
 }

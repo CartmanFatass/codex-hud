@@ -87,30 +87,30 @@ export function laneRows(
       : 'done';
     lane = { ...lane, phase };
   }
-  const label = `${monitorText(lane.label)}${lane.phase ? '  ' + workPhaseText(lane.phase) : ''}`;
+  const label = `${monitorText(lane.identity.kind === 'native' ? lane.label.replace('this session', t('this session')) : lane.label)}${lane.phase ? '  ' + workPhaseText(lane.phase) : ''}`;
   const strip = laneStrip(lane, state, now, Math.max(Math.floor(width / 3), width - visualLength(label) - 1));
   const header = pair(label, strip, width);
   const rows = [
     boardRow(lane.workers.every((w) => !currentWorker(w, now)) ? theme.board.muted(stripAnsi(header)) : header, target),
   ];
   if (state.boardFolded?.has(lane.id)) return rows;
-  const workers = state.tree.showAll
-    ? lane.workers
-    : [...lane.workers].sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
+  const workers =
+    state.tree.showAll || lane.identity.kind === 'native'
+      ? lane.workers
+      : [...lane.workers].sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
   for (const worker of workers) {
     const card = projectWorkCard(worker, now, state.cardStallMinutes);
-    const logs = worker.nodeId ? input.agentLog?.get(worker.nodeId) : undefined;
-    const sentence = worker.id.startsWith('thin-job:')
-      ? (card.reason ?? '')
-      : ([...(logs ?? [])].reverse().find((e) => ['note', 'digest', 'cause'].includes(e.kind))?.text ?? '');
+    const sentence = card.reason ? t(card.reason) : '';
+    const indent = worker.nativeDepth === 2 ? '  ' : '';
+    const room = Math.max(1, width - indent.length);
     const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: worker.id });
     // Home's asking card is a title-only pointer back to the complete slab.
     let lines =
       worker.homeNeedsHuman && !worker.modelSentence
-        ? renderWorkCard(card, state, width, '').slice(0, 1)
-        : renderWorkCard(card, state, width, sentence);
+        ? renderWorkCard(card, state, room, '').slice(0, 1)
+        : renderWorkCard(card, state, room, sentence);
     if (!currentWorker(worker, now) && !state.boardExpanded?.has(key)) lines = [theme.board.muted(stripAnsi(lines[0]))];
-    rows.push(...lines.map((text) => ({ text, item: key, key })));
+    rows.push(...lines.map((text) => ({ text: indent + text, item: key, key })));
   }
   rows.push(boardRow(''));
   return rows;

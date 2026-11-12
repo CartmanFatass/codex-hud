@@ -111,7 +111,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (!target || !boardFrame || next.boardAnchor) return;
     const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
     const worker = target.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
-    next.boardInspect = worker?.nodeId ? undefined : target;
+    next.boardInspect = target;
     if (worker?.nodeId) next.tree.selectedId = worker.nodeId;
     next.preview = 'agent';
     next.focus = 'details';
@@ -148,10 +148,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   };
   const jobFiles = (): MonitorOutcome['action'] => {
     const target = selected();
-    if (!target || !target.laneId.startsWith('thin-job:')) return;
+    if (!target) return;
     const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
-    if (lane?.identity.kind !== 'invocation') return;
-    const worker = target.kind === 'worker' ? lane.workers.find((w) => w.id === target.workerId) : undefined;
+    const worker = target.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
+    if (worker?.nativeDepth !== undefined) return { type: 'open-files', files: worker.files?.[0]?.paths ?? [] };
+    if (!target.laneId.startsWith('thin-job:') || lane?.identity.kind !== 'invocation') return;
     // A job card with no question open opens its report, else its brief.
     const evidence =
       target.kind === 'decision'

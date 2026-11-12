@@ -26,7 +26,7 @@ export function visibleWorkboard(
   const workerIds = new Set(workers.map((w) => w.id)), decisionIds = new Set(decisions.map((d) => d.id));
   const lanes = board.lanes.map((lane) => ({
     ...lane,
-    workers: lane.workers.filter((w) => workerIds.has(w.id)).sort((a, b) => all ? jobTime(b) - jobTime(a) : 0),
+    workers: lane.workers.filter((w) => workerIds.has(w.id)).sort((a, b) => all && lane.identity.kind !== 'native' ? jobTime(b) - jobTime(a) : 0),
     decisions: lane.decisions.filter((d) => decisionIds.has(d.id)),
   })).filter((lane) => lane.workers.length || lane.decisions.length);
   if (all) lanes.sort((a, b) => Math.max(0, ...b.workers.map(jobTime)) - Math.max(0, ...a.workers.map(jobTime)));

@@ -92,27 +92,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   },
   { key: 'mouse', group: 'Panel', label: 'Mouse', values: [true, false], help: 'Click and scroll the panel' },
   {
-    key: 'agentLog',
-    group: 'Panel',
-    label: 'Agent log',
-    values: [false, true],
-    help: 'Observed log in compact view and Inspector with no backend',
-  },
-  {
-    key: 'cardLabel',
-    group: 'Panel',
-    label: 'Task label',
-    values: [true, false],
-    help: 'Show the model-written task label; no generation',
-  },
-  {
-    key: 'cardSummary',
-    group: 'Panel',
-    label: 'Agent summary',
-    values: [true, false],
-    help: 'Show the newest stored model summary, even when paused',
-  },
-  {
     key: 'modelEnabled',
     group: 'Models',
     label: 'Model text',
@@ -187,16 +166,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: [
-    'cardStallMinutes',
-    'notify',
-    'notifyDesktop',
-    'refreshMs',
-    'mouse',
-    'agentLog',
-    'cardLabel',
-    'cardSummary',
-  ],
+  Panel: ['cardStallMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
   Models: ['modelEnabled'],
   Codex: ['treeWidth', 'prefixKey', 'statusline'],
 };

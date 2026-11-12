@@ -11,16 +11,12 @@ import {
   type IconMode,
 } from './render/hud-config.js';
 import { getHudHome } from './hud-home.js';
-import { defaultCardVisibility, type CardVisibility } from './card-visibility.js';
 import { PREFIX_KEYS, type PrefixKey } from './utils/panel-command.js';
 
 /** The prefix before Ctrl+\ was the default, kept by settings files saved without one. */
 export const LEGACY_PREFIX_KEY: PrefixKey = 'C-]';
 
-export interface HudSettings
-  extends
-    Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'>,
-    Omit<CardVisibility, 'cardClock'> {
+export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'> {
   statusline: boolean;
   mouse: boolean;
   tasks: boolean;
@@ -28,7 +24,6 @@ export interface HudSettings
   refreshMs: number;
   treeWidth: number;
   // Monitor visibility is independent of legacy boolean panel preferences.
-  agentsPane: 'open' | 'closed';
   changesPane: 'open' | 'closed';
   detailsPane: 'open' | 'closed';
   worktreeRoot: string;
@@ -38,8 +33,6 @@ export interface HudSettings
   /** `api` brief: the endpoint's base URL, up to `/v1`; empty is Mistral's. */
   briefingApiBase: string;
   model: string;
-  /** Show each agent's log under the tree even with the model backend off (observed entries only). */
-  agentLog: boolean;
   /** Display-only inactivity threshold, never an execution deadline. */
   cardStallMinutes: number;
   /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
@@ -60,9 +53,7 @@ export interface HudSettings
 
 /** Built-in defaults; callers apply environment or runtime display overrides. */
 export function defaultSettings(): HudSettings {
-  const { cardClock: _clock, ...visibility } = defaultCardVisibility();
   return {
-    ...visibility,
     theme: 'terminal',
     barStyle: 'line',
     barFields: [...DEFAULT_BAR_FIELDS],
@@ -72,7 +63,6 @@ export function defaultSettings(): HudSettings {
     details: true,
     refreshMs: 1000,
     treeWidth: 48,
-    agentsPane: 'open',
     changesPane: 'closed',
     detailsPane: 'closed',
     worktreeRoot: '',
@@ -88,7 +78,6 @@ export function defaultSettings(): HudSettings {
     briefingApiBase: 'https://api.mistral.ai/v1',
     model: 'deepseek-v4-1-flash-1017',
     modelCallsPerHour: 60,
-    agentLog: false,
     cardStallMinutes: 10,
     notify: false,
     notifyDesktop: false,
@@ -122,7 +111,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   details: isBoolean,
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
-  agentsPane: oneOf('open', 'closed'),
   changesPane: oneOf('open', 'closed'),
   detailsPane: oneOf('open', 'closed'),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
@@ -130,21 +118,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   language: oneOf('auto', 'en', 'zh'),
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
   model: isText(200),
-  agentLog: isBoolean,
   cardStallMinutes: (value) => isIntegerBetween(value, 1, 120),
-  cardRoleCounts: isBoolean,
-  cardLabel: isBoolean,
-  cardOriginalName: isBoolean,
-  cardSummary: isBoolean,
-  cardRelations: isBoolean,
-  cardAction: isBoolean,
-  cardSubagents: isBoolean,
-  cardSubagentSummary: isBoolean,
-  cardSubagentScope: oneOf('live', 'important', 'all'),
-  cardModel: isBoolean,
-  cardReviews: isBoolean,
-  cardRate: isBoolean,
-  cardContext: isBoolean,
   notify: isBoolean,
   notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
@@ -152,7 +126,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   icons: oneOf('unicode', 'text'),
 };
 
-const PANE_KEYS = ['agentsPane', 'changesPane', 'detailsPane'] as const;
+const PANE_KEYS = ['changesPane', 'detailsPane'] as const;
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
   const result = { ...base };

@@ -15,21 +15,15 @@
 export const PANEL_COMMAND_TAG = 'codex-hud:';
 
 export const PANEL_COMMANDS = [
-  'main',
   'brief',
   'older',
   'settings',
   'help',
-  'level',
   'pane-1',
   'pane-3',
   'pane-4',
-  'close-pane',
   'next-pane',
   'previous-pane',
-  'zoom',
-  'filter',
-  'order',
   'quit',
   'switch',
   'inspect',
@@ -45,8 +39,6 @@ export const PANEL_COMMANDS = [
   'right',
   'next-trouble',
   'previous-trouble',
-  'log',
-  'resume-reconcile',
 ] as const;
 export type PanelCommand = (typeof PANEL_COMMANDS)[number];
 
@@ -56,21 +48,15 @@ export function isPanelCommand(value: string): value is PanelCommand {
 
 /** The monitor's own name for what each command does (handleMonitorInput's keys). */
 const MONITOR_KEYS: Record<PanelCommand, string> = {
-  main: 'main',
   brief: 'brief-toggle',
   older: 'show-all',
   settings: 'settings',
   help: 'help',
-  level: 'reset',
   'pane-1': 'home-tab',
   'pane-3': 'changes',
   'pane-4': 'details',
-  'close-pane': 'pane-close',
   'next-pane': 'tab',
   'previous-pane': 'shift-tab',
-  zoom: 'zoom',
-  filter: 'filter',
-  order: 'sort',
   quit: 'close',
   switch: 'open-session',
   inspect: 'inspect',
@@ -86,8 +72,6 @@ const MONITOR_KEYS: Record<PanelCommand, string> = {
   right: 'right',
   'next-trouble': 'next-trouble',
   'previous-trouble': 'previous-trouble',
-  log: 'log',
-  'resume-reconcile': 'resume-reconcile',
 };
 export function monitorKey(command: PanelCommand): string {
   return MONITOR_KEYS[command];
@@ -144,8 +128,6 @@ export function needsOpenPanel(command: PanelCommand): boolean {
     'right',
     'next-trouble',
     'previous-trouble',
-    'log',
-    'resume-reconcile',
   ].includes(command);
 }
 

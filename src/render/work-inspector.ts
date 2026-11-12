@@ -20,6 +20,7 @@ import { monitorText, fit } from './monitor-text.js';
 import { providerMark } from './providers.js';
 import { laneStrip } from './work-lanes.js';
 import { t } from './i18n.js';
+import { formatTokenCount } from './lines/activity-line.js';
 export function localTime(at: number | null, now: number): string {
   if (at === null) return '';
   const date = new Date(at),
@@ -71,8 +72,25 @@ export function workInspectorRows(
       [
         ['role', [worker.role, worker.harness].filter(Boolean).join(' · ')],
         ['model', [model ? `${glyph ? glyph + ' ' : ''}${model}` : '', worker.effort].filter(Boolean).join(' · ')],
-        ['package', worker.laneId.replace(/^thin-job:package:/, '')],
+        [
+          worker.nativeDepth !== undefined ? 'parent' : 'package',
+          worker.nativeDepth !== undefined
+            ? (worker.parentName ?? t('this session'))
+            : worker.laneId.replace(/^thin-job:package:/, ''),
+        ],
         ['state', [t(worker.state), worker.phase ? workPhaseText(worker.phase) : ''].filter(Boolean).join(' · ')],
+        [
+          'resources',
+          [
+            worker.resources?.context === undefined ? '' : `${worker.resources.context}%`,
+            worker.resources?.rate ? `~${Math.round(worker.resources.rate.tokensPerSecond)} tok/s` : '',
+            worker.resources?.spent
+              ? `${formatTokenCount(worker.resources.spent.input + worker.resources.spent.output)} ${t('tokens spent')}`
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        ],
         ['started', stamp(worker.startedAt)],
         [
           worker.homeNeedsHuman ? 'asked' : worker.settledAt !== null ? 'ended' : 'activity',

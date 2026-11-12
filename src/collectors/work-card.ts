@@ -52,7 +52,7 @@ export const workMinute = (at: number | null | undefined, now: number): number |
   typeof at === 'number' && Number.isFinite(at) ? Math.max(0, Math.floor((now - at) / 60000)) : null;
 export function projectWorkCard(worker: OwnerWorker, now: number, stallMinutes = 10): WorkCard {
   const w = worker.work;
-  if (worker.id.startsWith('thin-job:')) {
+  if (worker.id.startsWith('thin-job:') || worker.nativeDepth !== undefined) {
     const result = worker.settledAt !== null;
     const inactive = workMinute(w?.activityAt, now);
     const state: WorkState =
@@ -62,7 +62,7 @@ export function projectWorkCard(worker: OwnerWorker, now: number, stallMinutes =
           ? w?.facadeClosed
             ? 'done'
             : 'awaiting-acceptance'
-          : inactive !== null && inactive >= stallMinutes
+          : worker.stale || (inactive !== null && inactive >= stallMinutes)
             ? 'stalled'
             : 'in-progress';
     return {
@@ -146,9 +146,28 @@ export function nativeWorker(node: SubagentTreeNode, laneId = `native:${node.id}
     task: node.label || node.name,
     model: node.model ?? null,
     effort: node.effort ?? null,
-    state: node.status,
+    resources: { context: node.contextUsage?.percent, rate: node.outputRate, spent: node.tokensSpent },
+    nativeDepth: node.depth,
+    state:
+      node.status === 'completed'
+        ? 'done'
+        : node.status === 'error'
+          ? 'failed'
+          : node.status === 'unknown'
+            ? 'unknown'
+            : 'working',
     startedAt: start,
-    settledAt: node.statusAt?.getTime() ?? null,
+    settledAt: ['completed', 'error'].includes(node.status) ? (node.statusAt?.getTime() ?? null) : null,
+    files: node.rolloutPath
+      ? [
+          {
+            rel: node.rolloutPath.split('/').at(-1)!,
+            kind: 'report',
+            at: node.lastEventAt?.getTime() ?? 0,
+            paths: [node.rolloutPath],
+          },
+        ]
+      : [],
     phase: null,
     homeNeedsHuman: false,
     humanEndedAt: null,
@@ -163,6 +182,13 @@ export function nativeWorker(node: SubagentTreeNode, laneId = `native:${node.id}
       request: false,
       failed: node.status === 'error',
       result: node.status === 'completed',
+      facadeClosed: ['completed', 'error'].includes(node.status),
+      reason:
+        node.status === 'completed'
+          ? 'Result ready'
+          : node.status === 'error'
+            ? 'Work failed; inspect the job'
+            : node.action?.text,
     },
   };
 }
