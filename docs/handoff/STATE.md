@@ -29,15 +29,22 @@ Milestone: M4 · Project view
   Live check 22:04: the old watcher stopped, the next hud_create started one on 2d0fed42 over the real job tree
   (four `.dispatch/current.json` jobs): alive, no error lines. Round 7 on 2d0fed42: **both accept** (m4-close 05 done). DS optional
   follow-ups (SESSION.txt guard, rate-limited reap/preservation lines, BASELINE counts, CI calling removed scripts)
-  → M4-FIX7. Architect (Astra) whole-project review running in parallel (M4-ARCH, on 62809b78).
+  → M4-FIX7. Architect (Astra) whole-project review (docs/reviews/2026-11-12-m4-architect.md): **Release:
+  blocked** by one point — the Codex bar (`src/collectors/git.ts`) and the pi footer (`p10k-footer.ts`) let a
+  repository's clean/process filter (and, in pi, core.fsmonitor) run (spec §4) → GIT-SAFE. Advice taken for the
+  release: archive inventory + extraction rehearsal (m4-close 06), stale hud-mcp README / historical activation
+  text in reference.md / ARCHITECTURE (RELEASE-DOCS after FIX7). Advice deferred to the next milestone: job-dir
+  listing and pi session totals grow with history; no deadline on MCP child processes. Then a focused round 8 (Sol
+  + DS) on FIX7, GIT-SAFE and RELEASE-DOCS.
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
   finding 1); delete that part of the command or keep it?
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
   `--session-dir <job>/sessions`, so those jobs keep real session files in the job dir; run
   `python3 tmp/bin/migrate-sessions.py apply` before they turn one day old (pi-roles 27e2006 guards the self-link).
   Since RETENTION-SAFE the watcher moves them itself before deleting; the script stays a manual shortcut.
-- Architect (Astra) review of the whole project before the release is running (owner 2026-11-12); I decide what
-  blocks.
+- Waiting for the owner (shelved): `cx-continue/` (types "continue" into stalled Codex panes; Python, with its own
+  CI job) is in the repo but in neither the spec nor the installer: keep or remove? Not shipped in the archive
+  until decided.
 - Then m4-close 06 release: a clean-built archive (stale dist files from deleted sources must not ship) + ./install,
   temp-HOME install/uninstall, merge to main, tag.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
@@ -122,7 +129,8 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX6 · 2d0fed42 · session housekeeping errors no longer hide an open job; watch retry only on the timer; log rate limit
 - done · M4 · M4-REVIEW7 · Sol accept, DS accept (4 optional) · docs/reviews/2026-11-12-m4-review7-*.md
 - working · M4 · M4-FIX7 · round-7 optional follow-ups + CI workflow (imp)
-- working · M4 · M4-ARCH · architect whole-project review before the release (Astra)
+- done · M4 · M4-ARCH · Release: blocked (1: repo Git filters run from the Codex bar and pi footer) · docs/reviews/2026-11-12-m4-architect.md
+- working · M4 · GIT-SAFE · one safe Git policy for every bar's status read (imp)
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
 - try · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (71801be1; existing 99 pi sessions moved to ~/.pi/agent/sessions and linked first, toktrack totals unchanged)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
