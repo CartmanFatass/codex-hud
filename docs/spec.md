@@ -20,7 +20,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    status lines are always on (Claude's statusline, pi's footer; Codex's tmux bar comes with `codexH`); only the side panel is opt-in: it opens only with
    `/hud` (in Codex with F12, as before) (owner, 2026-11-11). The delegation tools stay registered either way (owner,
    2026-11-11). Each client keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
-   (taking in p10k-footer), Codex's existing tmux bar. The panel and status lines can use external models with the
+   (taking in p10k-footer; its ribbon stays at the right end of the editor's top border and other extensions' statuses
+   stay visible, owner, 2026-11-12), Codex's existing tmux bar. The panel and status lines can use external models with the
    owner's own keys (`$HUD_HOME/credentials.env`, through the Decisions API) for job summaries, recaps and sentences.
    These features only read job files and write display text; they never prompt, brief or steer a worker. No consent
    or authority layer. A job may carry an optional package label (given to `hud_create`, else taken from the brief's
