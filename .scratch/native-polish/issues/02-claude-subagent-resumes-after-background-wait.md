@@ -7,8 +7,8 @@ from its real last reply. Found in the owner's live test: a Haiku agent showed d
 
 **Blocked by:** 01 (uses 01's forward reading to see the messages after the pause)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A subagent whose transcript grows after it was marked finished shows running again
-- [ ] Its final sentence is regenerated once for the new settlement (same 2-minute spacing and cap), not frozen on the interim text
-- [ ] An agent that really finished stays done; no extra model calls for unchanged transcripts
+- [x] A subagent whose transcript grows after it was marked finished shows running again
+- [x] Its final sentence is regenerated once for the new settlement (same 2-minute spacing and cap), not frozen on the interim text
+- [x] An agent that really finished stays done; no extra model calls for unchanged transcripts

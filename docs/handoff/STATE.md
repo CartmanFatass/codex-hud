@@ -7,7 +7,7 @@ Milestone: M4 · Project view
 
 ## Next
 
-- native-polish (.scratch/native-polish): 01, 03, 04 landed; 02 running; 05 live check (CLAUDE-BIND landed). M4 review after.
+- native-polish (.scratch/native-polish): 01–04 landed; 05 live check passed, pi-roles fixes in progress. M4 review after.
 
 ## Slices
 
@@ -51,7 +51,7 @@ board counts these; update at every landing or decision. -->
 - accepted · — · PI-STOP · hud_close stops a working pi job in seconds, not after a 30 s wait (Fishpref 38447ef)
 - accepted · — · LEGACY-SKILLS · herdr-delegate, herdr-delegate-codex, pi-subagent retired to Fishpref (6bd0ef8)
 - try · M4 · NP-01 · native-polish 01: nested Claude subagents always sit under their parent (e295a0a9)
-- working · M4 · NP-02 · native-polish 02: a resumed Claude subagent shows running again and gets a fresh result
+- try · M4 · NP-02 · native-polish 02: a resumed Claude subagent shows running again and gets a fresh result (a5a3e6a4)
 - try · M4 · NP-03 · native-polish 03: Chinese keyword marks colour instead of showing brackets (746971eb)
 - try · M4 · NP-04 · native-polish 04: HUD job cards show a short title (eb3e5558)
 - working · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers
