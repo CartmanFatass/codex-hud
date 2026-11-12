@@ -99,7 +99,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX · m4-close 05: the review's behaviour findings (brief independence, statusline default, bounded job scan, settings guards, TZ, docs) (8cd38f1e)
 - try · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime, dead modules and the historical installer chain (769cfa3d)
 - try · M4 · SESSION-LINK · owner: pi session history stays in pi's default place; job directories only link to it (23a9782d; Fishpref 45d93a1)
-- working · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (done on wt/JOB-RETENTION 290a9fe5; held until SESSION-LINK lands and existing sessions are moved, else the first watcher run deletes real pi sessions)
+- try · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (71801be1; existing 99 pi sessions moved to ~/.pi/agent/sessions and linked first, toktrack totals unchanged)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
 - try · M4 · M4-FIX2 · re-review fixes: reload keeps place and width in bound panels; brief persists across sentence changes (152db34b)
 - try · M4 · M4-PRUNE2 · re-review: delete the remaining retired runtime exports and host/bridge; docs and READMEs that describe deleted things (0871f74d)
