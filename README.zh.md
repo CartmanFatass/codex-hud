@@ -206,11 +206,9 @@ npm install && npm run build   # 构建
 npm run dev                    # 监听模式
 node dist/index.js             # 直接运行 HUD
 npm test                       # 单元测试：解析回放、宽度安全、渲染开销
-npm run test:visual            # 校验已审阅的终端单元格文本基线
-npm run test:visual:update     # 审阅后显式本地更新（CI 中拒绝）
 ```
 
-代码结构（进程、采集、渲染及修改规则）见 **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**。视觉测试只用固定时间与合成数据的**终端单元格文本**，不是字体/像素截图，也不读取真实会话。覆盖中英双语、五种外观、32/40/48/56/80 列和三种卡片预设，另含当前设置 Tab、保存宽度后的重排、离开确认/保存失败、详情的模型总结状态与时间。基线保留行尾空格并校验精确显示列宽。用 `npm run test:visual` 校验；只有有意更新时才运行 `npm run test:visual:update`，检查并提交审阅后的基线差异。只要设置了 `CI`（即使为 `CI=false`）就拒绝更新，常规测试只校验不改写基线。
+代码结构（进程、采集、渲染及修改规则）见 **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)**。视觉测试只用固定时间与合成数据的**终端单元格文本**，不是字体/像素截图，也不读取真实会话。覆盖中英双语、五种外观、32/40/48/56/80 列和三种卡片预设，另含当前设置 Tab、保存宽度后的重排、离开确认/保存失败、详情的模型总结状态与时间。基线保留行尾空格并校验精确显示列宽。用 `npm test` 校验；只有有意更新时才运行 `npm run snapshots:update`，检查并提交审阅后的基线差异。常规测试只校验不改写基线。
 
 在 Windows PowerShell 中，如果 `npm.ps1` 被 ExecutionPolicy 阻止，请使用 `npm.cmd run build`。
 

@@ -49,7 +49,7 @@ fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
     let stderr = '';
     child.stderr.on('data', (data) => { stderr += data; });
     children.push({ child, exited, stderr: () => stderr });
-    return { child, exited };
+    return { child, exited, stderr: () => stderr };
   }
   return { home, jobs, pi, defaultPi, job, start, log: () => fs.readFileSync(join(home, 'watch.log'), 'utf8') };
 }
@@ -171,6 +171,152 @@ syncBuiltinESMExports();` : '';
     assert.equal(fs.existsSync(join(f.home, 'reaps')), false);
     if (failure === 'existing target') assert.equal(fs.readFileSync(target, 'utf8'), 'Existing synthetic history.\n');
     if (failure === 'dangling target') assert.equal(fs.readlinkSync(target), join(f.pi, 'absent.jsonl'));
+  });
+}
+
+for (const layout of ['sessions', '.dispatch/helper/sessions']) {
+  for (const count of [1, 2]) {
+    test(`watcher removes a ${count}-link loop in ${layout} and still scans expired jobs`, { timeout: 10000 }, async (t) => {
+      const f = fixture(t), open = f.job({ state: 'working' }), old = f.job(expired());
+      const folder = join(open, layout);
+      fs.mkdirSync(folder, { recursive: true });
+      const links = Array.from({ length: count }, (_, i) => join(folder, `${i}.jsonl`));
+      links.forEach((link, i) => fs.symlinkSync(links[(i + 1) % count], link));
+      const dangling = join(folder, 'dangling.jsonl');
+      fs.symlinkSync(join(folder, 'absent.jsonl'), dangling);
+      const { child, exited } = f.start();
+      await until(() => child.exitCode !== null || (!fs.existsSync(old) && links.every((link) =>
+        !fs.lstatSync(link, { throwIfNoEntry: false }))));
+      assert.equal(child.exitCode, null, 'watcher survives startup with an open job');
+      assert.equal(fs.existsSync(old), false);
+      assert.ok(links.every((link) => !fs.lstatSync(link, { throwIfNoEntry: false })));
+      assert.ok(fs.lstatSync(dangling).isSymbolicLink(), 'ordinary dangling links are not loops');
+      for (const link of links) assert.equal(f.log().split('\n').filter((line) => line.includes(`unlink loop ${link}`)).length, 1);
+      fs.writeFileSync(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+      await exited;
+      assert.equal(child.exitCode, 0);
+      assert.match(f.log(), /watch error: .*ELOOP/);
+    });
+  }
+}
+
+const permanentWatchFailure = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+fs.watch = () => { throw Error('synthetic permanent watch failure'); };
+syncBuiltinESMExports();`;
+
+test('permanent watch failure still scans and exits with no open jobs', { timeout: 10000 }, async (t) => {
+  const f = fixture(t), dir = f.job(expired());
+  const { child, exited } = f.start(permanentWatchFailure);
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.equal(fs.existsSync(dir), false);
+  assert.match(f.log(), /watch error: synthetic permanent watch failure/);
+  assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+});
+
+for (const fault of ['permanent startup failure', 'later error']) {
+  test(`watcher polls after ${fault}, handles a newly settled job and exits`, { timeout: 10000 }, async (t) => {
+    const f = fixture(t), dir = f.job({ state: 'working' }, {}, true);
+    const probe = fault === 'permanent startup failure' ? permanentWatchFailure : `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const watch = fs.watch;
+fs.watch = (...args) => {
+  const watcher = watch(...args);
+  if (args[1]?.recursive) setTimeout(() => watcher.emit('error', Error('synthetic later watch error')), 100);
+  return watcher;
+};
+syncBuiltinESMExports();`;
+    const { child, exited, stderr } = f.start(probe);
+    await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch.log')) &&
+      f.log().includes(fault === 'later error' ? 'synthetic later watch error' : 'using file events only')));
+    assert.equal(child.exitCode, null, f.log() + stderr());
+    const settled = Date.now();
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(expired()));
+    await until(() => child.exitCode !== null);
+    await exited;
+    assert.equal(child.exitCode, 0);
+    assert.ok(Date.now() - settled <= 5000, 'settlement handled within the fallback interval');
+    assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');
+    assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).reaped_at);
+    assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+    if (fault === 'permanent startup failure') {
+      assert.equal(f.log().split('\n').filter((line) => line.includes('watch error: synthetic permanent')).length, 2,
+        'one startup attempt and one retry after the first scan');
+    }
+  });
+}
+
+for (const layout of ['sessions', '.dispatch/helper/sessions']) {
+  test(`retention skips a symlinked ${layout} folder without moving target files`, async (t) => {
+    const f = fixture(t), dir = f.job(expired());
+    const outside = join(f.home, 'outside');
+    fs.mkdirSync(outside);
+    const { source, bytes } = realSession(outside);
+    const before = fs.statSync(source);
+    const folder = join(dir, layout);
+    fs.mkdirSync(resolve(folder, '..'), { recursive: true });
+    fs.symlinkSync(join(outside, 'sessions'), folder, 'dir');
+    const { child, exited } = f.start();
+    await exited;
+    assert.equal(child.exitCode, 0);
+    assert.equal(fs.existsSync(dir), false);
+    assert.deepEqual(fs.readFileSync(source), bytes);
+    assert.equal(fs.statSync(source).ino, before.ino);
+    assert.equal(fs.statSync(source).mtimeMs, before.mtimeMs);
+    assert.equal(fs.existsSync(destination(f.pi)), false);
+  });
+}
+
+test('retention uses pi cwd encoding for colons and backslashes', async (t) => {
+  const f = fixture(t), dir = f.job(expired());
+  const { bytes } = realSession(dir, 'sessions', { type: 'session', cwd: '/synthetic/work:space/repo\\part' });
+  const { child, exited } = f.start();
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.deepEqual(fs.readFileSync(join(f.pi, 'sessions', '--synthetic-work-space-repo-part--', 'synthetic-session.jsonl')), bytes);
+  assert.equal(fs.existsSync(dir), false);
+});
+
+for (const oversized of [false, true]) {
+  test(`retention reads only a 1 MiB prefix and ${oversized ? 'keeps a header beyond the bound' : 'moves a large transcript'}`, async (t) => {
+    const f = fixture(t), dir = f.job(expired());
+    const { source } = realSession(dir, 'sessions', oversized
+      ? { type: 'session', padding: 'x'.repeat(1024 * 1024), cwd: '/synthetic/work.space/repo' }
+      : { type: 'session', cwd: '/synthetic/work.space/repo' });
+    fs.appendFileSync(source, 'x'.repeat(2 * 1024 * 1024));
+    const bytes = fs.readFileSync(source);
+    const { child, exited } = f.start(`
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import { syncBuiltinESMExports } from 'node:module';
+const source = ${JSON.stringify(source)}, readFile = fs.readFileSync, open = fs.openSync, read = fs.readSync;
+let sessionFd, total = 0;
+fs.readFileSync = (file, ...args) => {
+  if (${!oversized}) assert.notEqual(file, source, 'must not read the whole session file');
+  return readFile(file, ...args);
+};
+fs.openSync = (file, ...args) => {
+  const fd = open(file, ...args);
+  if (file === source) sessionFd = fd;
+  return fd;
+};
+fs.readSync = (fd, buffer, offset, length, position) => {
+  if (fd === sessionFd) {
+    total += length;
+    assert.ok(total <= 1024 * 1024, 'bounded session header read');
+    assert.ok(position === null || position === 0, 'read the prefix');
+  }
+  return read(fd, buffer, offset, length, position);
+};
+syncBuiltinESMExports();`);
+    await exited;
+    assert.equal(child.exitCode, 0);
+    assert.equal(fs.existsSync(dir), oversized);
+    assert.deepEqual(fs.readFileSync(oversized ? source : destination(f.pi)), bytes);
+    if (oversized) assert.match(f.log(), /session preservation:/);
   });
 }
 

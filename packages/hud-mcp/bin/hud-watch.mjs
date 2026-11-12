@@ -47,7 +47,7 @@ fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\
 const log = (message) => fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`);
 fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
 log(`start pid=${process.pid}`);
-let timer,
+let watcher, timer,
   socket,
   subscribed = false,
   queued = false,
@@ -96,26 +96,31 @@ function subscribe() {
 }
 function stop() {
   stopped = true;
-  watcher.close();
+  watcher?.close();
   socket?.destroy();
   clearTimeout(timer);
   if (read(pidFile)?.trim() === String(process.pid)) fs.unlinkSync(pidFile);
   log(`exit pid=${process.pid}: no open jobs or failed deadlines`);
 }
+function sessionFolders(dir) {
+  const dispatch = join(dir, '.dispatch');
+  return [join(dir, 'sessions'), ...(fs.existsSync(dispatch)
+    ? fs.readdirSync(dispatch).map((id) => join(dispatch, id, 'sessions')) : [])]
+    .filter((folder) => fs.lstatSync(folder, { throwIfNoEntry: false })?.isDirectory());
+}
 function preserveSessions(dir) {
   try {
-    const dispatch = join(dir, '.dispatch');
-    const folders = [join(dir, 'sessions'), ...(fs.existsSync(dispatch)
-      ? fs.readdirSync(dispatch).map((id) => join(dispatch, id, 'sessions')) : [])];
-    for (const folder of folders) {
-      if (!fs.existsSync(folder)) continue;
+    for (const folder of sessionFolders(dir)) {
       for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
         const source = join(folder, entry.name);
-        const cwd = JSON.parse(fs.readFileSync(source, 'utf8').split('\n', 1)[0]).cwd;
+        const fd = fs.openSync(source, 'r'), buffer = Buffer.alloc(1024 * 1024);
+        let cwd;
+        try { cwd = JSON.parse(buffer.subarray(0, fs.readSync(fd, buffer, 0, buffer.length, 0)).toString('utf8').split('\n', 1)[0]).cwd; }
+        finally { fs.closeSync(fd); }
         if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw Error('session cwd missing or invalid');
         const store = join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'),
-          'sessions', `--${cwd.slice(1).replaceAll('/', '-')}--`);
+          'sessions', `--${cwd.slice(1).replace(/[/\\:]/g, '-')}--`);
         fs.mkdirSync(store, { recursive: true, mode: 0o700 });
         const target = join(store, entry.name);
         if (fs.lstatSync(target, { throwIfNoEntry: false })) throw Error('session target exists');
@@ -144,6 +149,14 @@ function scan() {
       if (error.code === 'ENOENT') continue;
       throw error;
     }
+    const loops = sessionFolders(dir).flatMap((folder) => fs.readdirSync(folder, { withFileTypes: true })
+      .filter((entry) => entry.isSymbolicLink() && entry.name.endsWith('.jsonl'))
+      .map((entry) => join(folder, entry.name)))
+      .filter((link) => {
+        try { fs.statSync(link); } catch (error) { return error.code === 'ELOOP'; }
+        return false;
+      });
+    for (const link of loops) { fs.unlinkSync(link); log(`unlink loop ${link}`); }
     const jobFile = join(dir, 'job.json'),
       job = json(jobFile);
     const statusFile = join(dir, 'STATUS.json');
@@ -202,6 +215,7 @@ function scan() {
   }
   for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);
   if (open) subscribe();
+  if (open && !watcher) nearest = Math.min(nearest, Date.now() + 1000);
   if (nearest !== Infinity) timer = setTimeout(scan, Math.max(1, Math.ceil(nearest - Date.now())));
   else if (!open) stop();
 }
@@ -212,15 +226,18 @@ function schedule() {
   }
 }
 // Watch before catch-up, so a STATUS rename during the initial scan is not missed.
-const watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
-  const path = filename?.toString();
-  if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json|SESSION\.txt|job\.json)$/.test(path)) schedule();
-});
-watcher.on('error', (error) => {
-  log(`watch error: ${error.message}`);
-  process.exitCode = 1;
-  watcher.close();
-  socket?.destroy();
-  clearTimeout(timer);
-});
+function startWatch() {
+  try {
+    watcher = fs.watch(jobs, { recursive: true }, (_event, filename) => {
+      const path = filename?.toString();
+      if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json|SESSION\.txt|job\.json)$/.test(path)) schedule();
+    }).on('error', (error) => {
+      log(`watch error: ${error.message}`);
+      watcher?.close(); watcher = undefined;
+      schedule();
+    });
+  } catch (error) { log(`watch error: ${error.message}`); }
+}
+startWatch();
 scan();
+if (!watcher && !stopped) startWatch();

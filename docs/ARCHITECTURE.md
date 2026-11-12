@@ -76,7 +76,7 @@ prepends them to the lanes, workers and decisions. Only files the thin layer and
 (role, cwd, `created_at`), `brief.md` (task = its first heading, else its first line), `STATUS.json` (state, model,
 `thinking`, `started_at`, `settled_at`/`ended_at`), `qa/qN.md` and `qN.answer.md` (through `answerRecord`, so `≠` and
 `instead:` appear only when the answer is a different option from the worker's `Default if unanswered`). Unchanged
-files cost one `lstat` per refresh. Pi session history lives in pi's default `~/.pi/agent/sessions/<cwd-dir>/`; each job's `sessions/` contains links to the primary/helper files, so deleting the job does not delete history. Working jobs select the newest regular JSONL target (including symlinks; dangling links ignored) in the bounded (400-entry) `sessions/` listing and retain its target mtime/path: activity is the newest of creation, STATUS, report, review and session mtimes, even with model text off. Sentence material reuses that selection for its existing bounded tail read; stall detection adds no transcript body read. States are shown as the owner's words: `working` (also `waiting_*` and no STATUS),
+files cost one `lstat` per refresh. Pi session history lives in pi's default `~/.pi/agent/sessions/<cwd-dir>/`; each job's `sessions/` contains links to the primary/helper files, so deleting the job does not delete history; before deleting a legacy job, the watcher moves real session files from `sessions/` and `.dispatch/*/sessions/` into pi's store, keeping the job if preservation fails. Working jobs select the newest regular JSONL target (including symlinks; dangling links ignored) in the bounded (400-entry) `sessions/` listing and retain its target mtime/path: activity is the newest of creation, STATUS, report, review and session mtimes, even with model text off. Sentence material reuses that selection for its existing bounded tail read; stall detection adds no transcript body read. States are shown as the owner's words: `working` (also `waiting_*` and no STATUS),
 `idle` (`idle_grace`), `done` (`closed`) and `failed` (also a non-zero `dispatch_exit_code` with no STATUS). A job
 that is working and has an unanswered question is **need you** (the question's first line, minutes since it was
 asked); a question left on a finished job was settled by its default and is not shown. Jobs group by their display-only package labels. Lifetimes live together in `render/work-visibility.ts`: running/asking jobs stay; a settled job or native card **folds** after `cardFoldMinutes` (default 5; `foldedWorker`: one title row in `laneRows`, Enter opens it) and **hides** after `cardHideMinutes` (default 15, never below the fold time; failed/stopped at least 30 minutes; `currentWorker`). Both ride `MonitorState` (`monitorSettings`), so a saved change applies on the next frame; `HomeRecommendation` receives them through `configure`. Decisions stay fixed: hide after 30 minutes, departures after 2 hours.
@@ -1021,9 +1021,6 @@ npm run build            # tsc: src → dist/
 npm test                 # build + build:test (tsconfig.test.json → dist-test/)
                          #   then node --test dist-test/tests/unit/*.test.js
                          #   then node --test tests/unit/*.mjs   (these import dist/)
-npm run test:integration # tests/run-integration.sh: tmux shell suites, exit 77 = skip
-npm run test:visual      # fixed synthetic terminal-cell frames + semantic checks
-npm run test:visual:update # explicit local-only baseline update; refused in CI
 npm run snapshots:update # rewrite every tests/fixtures/*frames*.json and bar-themes.json from the build;
                          #   name files to limit it; review the diff: an unintended change is a regression
 ```

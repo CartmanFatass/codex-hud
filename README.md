@@ -205,8 +205,6 @@ npm install && npm run build   # Build
 npm run dev                    # Watch mode
 node dist/index.js             # Run HUD directly
 npm test                       # Unit tests: parser replay, width safety, render cost
-npm run test:visual            # Verify reviewed terminal-cell baselines
-npm run test:visual:update     # Explicit local update after review (refused in CI)
 ```
 
 How the code fits together (processes, collection, rendering, the rules a change keeps) is in
@@ -216,7 +214,7 @@ How the code fits together (processes, collection, rendering, the rules a change
 recorded rollouts in `tests/fixtures/rollouts`. `docs/BASELINE.md` records the
 layout and render-cost baseline those tests defend.
 
-Visual tests use fixed-time, synthetic **terminal-cell text**, not pixel/font screenshots or live session data. They cover EN/ZH, all five looks, widths 32/40/48/56/80 and the three card presets, plus active Settings, saved-width reflow, leave confirmations/save errors and Inspector summary status/timestamps. Baselines retain trailing cells and check exact display widths. Verify with `npm run test:visual`; regenerate only intentionally with `npm run test:visual:update`, inspect the baseline diff, and commit the reviewed change. Updates are refused whenever `CI` is set (even `CI=false`); normal tests verify rather than rewrite baselines.
+Visual tests use fixed-time, synthetic **terminal-cell text**, not pixel/font screenshots or live session data. They cover EN/ZH, all five looks, widths 32/40/48/56/80 and the three card presets, plus active Settings, saved-width reflow, leave confirmations/save errors and Inspector summary status/timestamps. Baselines retain trailing cells and check exact display widths. Verify with `npm test`; regenerate only intentionally with `npm run snapshots:update`, inspect the baseline diff, and commit the reviewed change. Normal tests verify rather than rewrite baselines.
 
 On Windows PowerShell, use `npm.cmd run build` if `npm.ps1` is blocked by ExecutionPolicy.
 
