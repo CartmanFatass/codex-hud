@@ -30,10 +30,13 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    title); the panel groups jobs by it into lanes. The label is display only: the MCP does not interpret it.
    The panel also shows the main session's native subagents (Claude Code's Agent subagents incl. custom ones, Codex
    subagents, pi's), read from the client's own transcripts, each with an external-model summary of what it is doing.
+   On Home each main session gets one lane beside the package lanes, one card per subagent with the same hide rules;
+   a subagent's own subagents indent one level, deeper ones are flat with `↳ parent`. Their model text follows the one
+   master switch; the agent log, card label and card summary settings go (owner, 2026-11-12).
    A Project tab shows the project at a glance: the control plane (roles in effect with their models,
    the convention and its source, which keys and the browser are available), the working tree (branch, changes,
    which job is editing it, last commit), docs (spec milestone, STATE's items waiting for the owner, the newest
-   review) and the tickets from Matt's `to-tickets` (status, blocked-by, linked to the package lanes). The control
+   review; STATE.md carries a `## Waiting for the owner` list and a `Milestone:` line, owner, 2026-11-12) and the tickets from Matt's `to-tickets` (status, blocked-by, linked to the package lanes). The control
    plane shows each role's assignment (role, harness, model and thinking, source file) and lists its files: HUD role files, pi-roles role definitions (model, thinking), the clients' native custom
    agents (`~/.claude/agents`, a project's `.claude/agents`, `~/.codex/agents`), the convention in effect and the
    instruction files (CLAUDE.md, AGENTS.md). Enter opens the item's file in `$EDITOR` (default `vim`) in a herdr pane
