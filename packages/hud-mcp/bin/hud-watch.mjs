@@ -102,6 +102,32 @@ function stop() {
   if (read(pidFile)?.trim() === String(process.pid)) fs.unlinkSync(pidFile);
   log(`exit pid=${process.pid}: no open jobs or failed deadlines`);
 }
+function preserveSessions(dir) {
+  try {
+    const dispatch = join(dir, '.dispatch');
+    const folders = [join(dir, 'sessions'), ...(fs.existsSync(dispatch)
+      ? fs.readdirSync(dispatch).map((id) => join(dispatch, id, 'sessions')) : [])];
+    for (const folder of folders) {
+      if (!fs.existsSync(folder)) continue;
+      for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue;
+        const source = join(folder, entry.name);
+        const cwd = JSON.parse(fs.readFileSync(source, 'utf8').split('\n', 1)[0]).cwd;
+        if (typeof cwd !== 'string' || !cwd.startsWith('/')) throw Error('session cwd missing or invalid');
+        const store = join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'),
+          'sessions', `--${cwd.slice(1).replaceAll('/', '-')}--`);
+        fs.mkdirSync(store, { recursive: true, mode: 0o700 });
+        const target = join(store, entry.name);
+        if (fs.lstatSync(target, { throwIfNoEntry: false })) throw Error('session target exists');
+        fs.renameSync(source, target);
+      }
+    }
+    return true;
+  } catch (error) {
+    log(`keep ${dir.split('/').at(-1)} session preservation: ${error.message}`);
+    return false;
+  }
+}
 function scan() {
   if (stopped) return;
   queued = false;
@@ -146,6 +172,7 @@ function scan() {
     const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
     const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
     if (expires < Date.now()) {
+      if (!preserveSessions(dir)) continue;
       fs.rmSync(dir, { recursive: true, force: true });
       log(`delete ${id} state=${status.state}`);
       continue;

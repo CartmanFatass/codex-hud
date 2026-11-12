@@ -11,6 +11,7 @@ const watcher = resolve('packages/hud-mcp/bin/hud-watch.mjs');
 function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'job-retention-'));
   const home = join(root, 'hud'), bin = join(root, 'bin'), jobs = join(home, 'jobs');
+  const pi = join(root, 'pi'), defaultPi = join(root, 'home', '.pi', 'agent');
   fs.mkdirSync(jobs, { recursive: true });
   fs.mkdirSync(bin);
   fs.mkdirSync(join(root, 'home'));
@@ -37,10 +38,10 @@ fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
     fs.writeFileSync(join(dir, 'report.md'), 'Synthetic report.');
     return dir;
   }
-  function start(probe = '') {
+  function start(probe = '', agentDir = pi) {
     const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
     const child = spawn(process.execPath, [...preload, watcher], {
-      env: { ...process.env, HOME: join(root, 'home'), HUD_HOME: home,
+      env: { ...process.env, HOME: join(root, 'home'), HUD_HOME: home, PI_CODING_AGENT_DIR: agentDir,
         HERDR_SOCKET_PATH: join(root, 'absent.sock'), PATH: `${bin}:${process.env.PATH}` },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -50,8 +51,90 @@ fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
     children.push({ child, exited, stderr: () => stderr });
     return { child, exited };
   }
-  return { home, jobs, job, start, log: () => fs.readFileSync(join(home, 'watch.log'), 'utf8') };
+  return { home, jobs, pi, defaultPi, job, start, log: () => fs.readFileSync(join(home, 'watch.log'), 'utf8') };
 }
+function realSession(dir, layout = 'sessions', header = { type: 'session', cwd: '/synthetic/work.space/repo' }) {
+  const sessions = join(dir, layout);
+  fs.mkdirSync(sessions, { recursive: true });
+  const source = join(sessions, 'synthetic-session.jsonl');
+  const bytes = Buffer.from(JSON.stringify(header) + '\r\n{"type":"message","text":"合成 session"}\n');
+  fs.writeFileSync(source, bytes);
+  return { source, bytes };
+}
+const expired = () => ({ state: 'closed', ended_at: new Date(Date.now() - 25 * hour).toISOString() });
+const destination = (pi) => join(pi, 'sessions', '--synthetic-work.space-repo--', 'synthetic-session.jsonl');
+
+for (const layout of ['sessions', '.dispatch/helper/sessions']) {
+  test(`retention moves real ${layout} history byte-for-byte before deleting the job`, async (t) => {
+    const f = fixture(t), dir = f.job(expired());
+    const { bytes } = realSession(dir, layout);
+    const { child, exited } = f.start();
+    await exited;
+    assert.equal(child.exitCode, 0);
+    assert.deepEqual(fs.readFileSync(destination(f.pi)), bytes);
+    assert.equal(fs.existsSync(dir), false);
+  });
+}
+
+test('retention uses the default pi agent directory when PI_CODING_AGENT_DIR is empty', async (t) => {
+  const f = fixture(t), dir = f.job(expired());
+  const { bytes } = realSession(dir);
+  const { child, exited } = f.start('', '');
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.deepEqual(fs.readFileSync(destination(f.defaultPi)), bytes);
+  assert.equal(fs.existsSync(dir), false);
+});
+
+test('retention deletes session links in both layouts without touching their target', async (t) => {
+  const f = fixture(t), dir = f.job(expired());
+  const target = join(f.pi, 'synthetic-history.jsonl'), bytes = Buffer.from('Synthetic history.\n');
+  fs.mkdirSync(f.pi);
+  fs.writeFileSync(target, bytes);
+  const before = fs.statSync(target);
+  for (const layout of ['sessions', '.dispatch/helper/sessions']) {
+    fs.mkdirSync(join(dir, layout), { recursive: true });
+    fs.symlinkSync(target, join(dir, layout, 'synthetic-link.jsonl'));
+  }
+  const { child, exited } = f.start();
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.equal(fs.existsSync(dir), false);
+  assert.deepEqual(fs.readFileSync(target), bytes);
+  assert.equal(fs.statSync(target).ino, before.ino);
+  assert.equal(fs.statSync(target).mtimeMs, before.mtimeMs);
+});
+
+for (const failure of ['missing cwd', 'relative cwd', 'existing target', 'dangling target', 'rename EXDEV']) {
+  test(`retention keeps the whole job and logs once on ${failure}`, async (t) => {
+    const f = fixture(t), dir = f.job(expired(), {}, true);
+    const header = failure === 'missing cwd' ? { type: 'session' }
+      : { type: 'session', cwd: failure === 'relative cwd' ? 'relative/repo' : '/synthetic/work.space/repo' };
+    const { source, bytes } = realSession(dir, '.dispatch/helper/sessions', header);
+    const target = destination(f.pi);
+    if (failure === 'existing target' || failure === 'dangling target') {
+      fs.mkdirSync(join(f.pi, 'sessions', '--synthetic-work.space-repo--'), { recursive: true });
+      if (failure === 'existing target') fs.writeFileSync(target, 'Existing synthetic history.\n');
+      else fs.symlinkSync(join(f.pi, 'absent.jsonl'), target);
+    }
+    const probe = failure === 'rename EXDEV' ? `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+fs.renameSync = () => { throw Object.assign(Error('synthetic EXDEV'), { code: 'EXDEV' }); };
+syncBuiltinESMExports();` : '';
+    const { child, exited } = f.start(probe);
+    await exited;
+    assert.equal(child.exitCode, 0);
+    assert.ok(fs.existsSync(join(dir, 'report.md')), 'the whole job must stay');
+    assert.deepEqual(fs.readFileSync(source), bytes);
+    assert.equal(f.log().split('\n').filter((line) => line.includes(`keep ${dir.split('/').at(-1)} `)).length, 1);
+    assert.equal(f.log().includes('delete '), false);
+    assert.equal(fs.existsSync(join(f.home, 'reaps')), false);
+    if (failure === 'existing target') assert.equal(fs.readFileSync(target, 'utf8'), 'Existing synthetic history.\n');
+    if (failure === 'dangling target') assert.equal(fs.readlinkSync(target), join(f.pi, 'absent.jsonl'));
+  });
+}
+
 async function until(check) {
   const end = Date.now() + 5000;
   while (!check()) {
