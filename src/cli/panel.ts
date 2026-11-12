@@ -16,7 +16,7 @@ export const PANEL_HELP = `Usage: hud panel [--width N] [--here] [--root <namesp
 
 Open the interactive HUD panel beside the caller in herdr, otherwise here.
 --here renders in the current terminal without splitting.
---width sets the new panel width in columns (default 56).
+--width overrides saved Settings → Panel → Width for this open (default 56).
 --root selects observations only, never execution/control identity.
 Without --root the existing all-delegations view is unchanged.
 Presentation aliases: HUD_THEME, HUD_DENSITY, HUD_GLYPHS, HUD_ICONS, HUD_LOOK,
@@ -67,7 +67,7 @@ export function panelRoot(args: readonly string[]): string | null {
 export async function panelCommand(io: HudIO, args: readonly string[] = []): Promise<number> {
   const rest = [...args];
   const at = rest.indexOf('--width');
-  let width = 56;
+  let width: number | undefined;
   if (at >= 0) {
     if (!/^[1-9]\d*$/.test(rest[at + 1] ?? '')) throw new CliError('invalid_arguments');
     width = Number(rest[at + 1]);

@@ -14,6 +14,7 @@ import {
 } from './render/hud-config.js';
 import { getHudHome } from './hud-home.js';
 import { PREFIX_KEYS, type PrefixKey } from './utils/panel-command.js';
+import { DEFAULT_WIDTH } from './utils/pane-width.js';
 
 /** The prefix before Ctrl+\ was the default, kept by settings files saved without one. */
 export const LEGACY_PREFIX_KEY: PrefixKey = 'C-]';
@@ -69,7 +70,7 @@ export function defaultSettings(): HudSettings {
     tasks: false,
     details: true,
     refreshMs: 1000,
-    treeWidth: 48,
+    treeWidth: DEFAULT_WIDTH,
     changesPane: 'closed',
     detailsPane: 'closed',
     worktreeRoot: '',
@@ -168,8 +169,8 @@ export function importableSettings(raw: unknown): Partial<HudSettings> {
   );
 }
 
-export function settingsPath(): string {
-  return resolveHudEnv(process.env, 'HUD_SETTINGS_PATH') || path.join(getHudHome(), 'hud-settings.json');
+export function settingsPath(env = process.env): string {
+  return resolveHudEnv(env, 'HUD_SETTINGS_PATH') || path.join(getHudHome(env), 'hud-settings.json');
 }
 
 function readSettings(file: string): HudSettings {
@@ -203,8 +204,8 @@ function readSettings(file: string): HudSettings {
 }
 
 /** Missing files use defaults. Malformed JSON and I/O failures belong to the caller. */
-export function loadSettings(): HudSettings {
-  return { ...readSettings(settingsPath()), decisionApi: resolveDecisions(readHudConfig(path.join(getHudHome(), 'config.json'))).primary };
+export function loadSettings(env = process.env): HudSettings {
+  return { ...readSettings(settingsPath(env)), decisionApi: resolveDecisions(readHudConfig(path.join(getHudHome(env), 'config.json'))).primary };
 }
 
 /** Validate a patch against existing preferences and atomically replace the file. */

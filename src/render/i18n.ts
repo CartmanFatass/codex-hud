@@ -246,7 +246,7 @@ const ZH: Record<string, string> = {
   api: 'API',
   '+{n} more': '另 {n} 个',
   Width: '宽度',
-  'Panel columns; Codex keeps 41': '侧栏列数；Codex 至少留 41 列',
+  'Panel columns for every client; the agent pane keeps 41': '所有客户端的侧栏列数；智能体窗格至少留 41 列',
   '{n} cols': '{n} 列',
   Mouse: '鼠标',
   'Click and scroll the panel': '在侧栏中点击和滚动',

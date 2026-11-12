@@ -68,6 +68,14 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'homeMode', group: 'Panel', label: 'Home mode', values: ['default', 'recommended'],
     help: 'Rank Home cards and show a progress brief through models', format: (value) => t(value === 'recommended' ? 'Recommended' : 'Default') },
   {
+    key: 'treeWidth',
+    group: 'Panel',
+    label: 'Width',
+    values: PANEL_WIDTHS,
+    help: 'Panel columns for every client; the agent pane keeps 41',
+    format: (value) => (Number(value) === 0 ? 'auto' : t('{n} cols', { n: Number(value) })),
+  },
+  {
     key: 'cardStallMinutes',
     group: 'Panel',
     label: 'Stall threshold',
@@ -127,14 +135,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'summaryIntervalMinutes', group: 'Models', label: 'Summary interval', values: [2, 5, 10, 15, 30],
     help: "How often a running job's sentence and Home's brief may refresh", format: (value) => t('{n}m', { n: Number(value) }) },
   {
-    key: 'treeWidth',
-    group: 'Codex',
-    label: 'Width',
-    values: PANEL_WIDTHS,
-    help: 'Panel columns; Codex keeps 41',
-    format: (value) => (Number(value) === 0 ? 'auto' : t('{n} cols', { n: Number(value) })),
-  },
-  {
     key: 'prefixKey',
     group: 'Codex',
     label: 'Prefix key',
@@ -179,9 +179,9 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['homeMode', 'cardStallMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
+  Panel: ['homeMode', 'treeWidth', 'cardStallMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
   Models: ['modelEnabled', 'decisionCallsPerHour', 'summaryIntervalMinutes'],
-  Codex: ['treeWidth', 'prefixKey', 'statusline'],
+  Codex: ['prefixKey', 'statusline'],
 };
 export function resetSettingsGroup(draft: HudSettings, group: string): HudSettings {
   if (!Object.hasOwn(RESET_FIELDS, group)) return draft;

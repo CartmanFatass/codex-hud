@@ -49,5 +49,6 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
     assert.deepEqual(result, { code: 0, signal: null }, stderr);
     assert.deepEqual(calls().filter((a) => ['get', 'close'].includes(a[1])).at(-1), ['pane', 'close', 'w4E:p2']);
     assert.ok(calls().filter((a) => a[0] === 'pane').every((a) =>
-      (a[1] === 'get' && a[2] === 'w4E:p1') || (a[1] === 'close' && a[2] === 'w4E:p2')));
+      (a[1] === 'get' && a[2] === 'w4E:p1') || (a[1] === 'close' && a[2] === 'w4E:p2') ||
+      (a[1] === 'layout' && a[2] === '--pane' && a[3] === 'w4E:p2')));
   });

@@ -252,7 +252,7 @@ test('pi on/off/toggle/status uses the caller pane without native ancestry and r
   assert.deepEqual(p.calls()[0], ['pane', 'layout', '--pane', 'w4E:p1']);
   assert.equal(
     p.calls()[1].join('|'),
-    `pane|split|w4E:p1|--direction|right|--ratio|${1 - 56 / 120}|--no-focus|--cwd|${f.cwd}|--env|HUD_PANEL_CALLER_PANE=w4E:p1`
+    `pane|split|w4E:p1|--direction|right|--ratio|${1 - 56 / 120}|--no-focus|--cwd|${f.cwd}|--env|HUD_PANEL_CALLER_PANE=w4E:p1|--env|HUD_PANEL_WIDTH=56`
   );
   assert.ok(run[3].includes(`'${f.binding.release}/bin/hud' 'panel' '--here' '--harness' 'pi'`));
   assert.ok(run[3].endsWith(`'--session' 'session-a' '--source' '${c.source}'`));

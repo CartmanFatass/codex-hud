@@ -574,9 +574,9 @@ Settings is one page with four open groups, in this order:
 | Group | Rows |
 |-------|------|
 | Display | Theme, Bar style, Icons, Language |
-| Panel | Home mode (`homeMode`: `default` / `recommended`, saved in `hud-settings.json`), Stall threshold, Notifications, Refresh, Mouse |
+| Panel | Home mode (`homeMode`: `default` / `recommended`, saved in `hud-settings.json`), Width, Stall threshold, Notifications, Refresh, Mouse |
 | Models | Model text, Model, Decision API, Call cap (LLM only), Decision cap, Summary interval; separate calls-this-hour counters and Test API ([LLM](#llm)) |
-| Codex | Width, Prefix key, Bar on launch |
+| Codex | Prefix key, Bar on launch |
 
 Bar style cycles the shared `BAR_STYLES` (`line`, `p10k`, `gauge`, `tide`, `micro`, `stacked`, `headline`, `triptych`) and saves `barStyle` for the bottom bars.
 
@@ -602,7 +602,7 @@ The page is a draft: Theme and Icons paint in the draft value, so it is its own 
 
 Resetting the Models group turns generation off (`modelEnabled: false`) and preserves the connection, model and call cap. Calls this hour is real SmallModel usage, including a known zero while the master is off; there is no per-feature breakdown, and telemetry is deleted by CLEANUP-VIEWS. Test API is one summary row, not a per-tier block.
 
-Settings → Codex → Width offers the widths the panel is laid out for: 32, 40, 48 columns (the default) and 56; ←/→ step between them and come round past either end. Another width, from the settings file or a dragged border, still draws, and ←/→ step on from where it falls. Save applies it at once, and Codex keeps at least 41 columns, so in a narrow window the panel gets less than it asks for. A 0 from an older settings file reads as the default width, 48. The width is applied again whenever the tmux window changes size, as when a session started detached is attached from a wider terminal; dragging the border by hand is left alone. `CODEX_HUD_TREE_WIDTH` remains an initial override when no saved settings exist.
+Settings → Panel → Width applies to every client: Claude, pi and Codex. Presets are 40, 48, 56 (default), 64, 80 and 100 columns; ←/→ cycle through them. Other saved widths still load (16–200, including the old 32); 0 means the default, 56. Saving a changed Width resizes this panel immediately, keeping at least 41 columns for the agent when space permits; narrow windows give the panel less. The keeper reapplies the policy when the containing split/window changes size, not when someone drags the border. Saving unrelated settings also leaves a dragged border alone. `CODEX_HUD_TREE_WIDTH` remains an initial tmux override when no saved settings exist.
 
 Related notification preferences share one row: Notifications (off, tmux, or tmux and the desktop).
 
@@ -1001,7 +1001,7 @@ Build with `npm run build && npm run build:hud-mcp` (Node 22.x ≥22.13 or Node 
 `hud codex ...` and `hud codex-hud ...` invoke the existing tmux-bar launcher.
 
 `hud panel [--width N]` opens the interactive panel beside the caller in herdr;
-`--here` renders in the current terminal. The default width is 56 columns.
+`--here` renders in the current terminal. The new split uses saved Settings → Panel → Width (default 56 columns); explicit `--width N` overrides it for this open only, until a changed Width is saved.
 It reads jobs from `$HUD_HOME/jobs` and the clients' transcripts, not a ledger.
 Claude and pi open it with `/hud`; Codex uses F12. See `hud panel --help` for syntax.
 

@@ -600,7 +600,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let readingAgentContext = false;
   let escapeTimer: ReturnType<typeof setTimeout> | undefined;
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
-  const widthKeeper = STANDALONE_PANEL ? null : treeWidthKeeper(() => settings.treeWidth);
+  let widthOverride = Number(process.env.HUD_PANEL_WIDTH) || undefined;
+  const widthKeeper = STANDALONE_PANEL && !process.env.HUD_PANEL_CALLER_PANE
+    ? null : treeWidthKeeper(() => widthOverride ?? settings.treeWidth);
   // Every model call of the panel goes through one service: one queue, one
   // cache, one hourly cap. Its cache and call log live beside the HUD's state.
   let modelOn = false;
@@ -1103,8 +1105,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const page = settingsPage;
     if (!page) return false;
     try {
-      const previousPrefix = settings.prefixKey;
+      const previousPrefix = settings.prefixKey, previousWidth = settings.treeWidth;
       settings = saveSettings(page.draft);
+      if (settings.treeWidth !== previousWidth) widthOverride = undefined;
       settingsError = '';
       error = null;
       applyDisplaySettings(settings);
@@ -1126,9 +1129,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       page.message = t('Saved');
       page.original = { ...settings };
       process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
-      void widthKeeper
-        ?.apply()
-        .then(() => {
+      void (settings.treeWidth !== previousWidth ? widthKeeper?.apply() : undefined)
+        ?.then(() => {
           lastPaint = null;
           render();
         })

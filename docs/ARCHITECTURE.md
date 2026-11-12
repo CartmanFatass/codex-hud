@@ -251,13 +251,13 @@ Codex writes to disk.
  |                         | tree-    |        | %hud: node dist/index.js (1 line) |
  |                         | page.js  |        +-----------------------------------+
  +-------------------------+----------+
-   panel is 48 cols by default; Codex keeps >= 41 columns
+   panel is 56 cols by default; the agent keeps >= 41 columns
 ```
 
 | | The bar | The panel |
 |---|---|---|
 | Entry | `src/index.ts` | `src/tree-page.ts` |
-| Size | 1 line (`HUD_PANE_HEIGHT`) | a column, usually 32–56 wide, 48 unless a width is asked for |
+| Size | 1 line (`HUD_PANE_HEIGHT`) | a column, 56 by default; saved Width applies to every client |
 | Loop | 1 s tick + chokidar watchers | `settings.refreshMs` collect (default 1 s), no watcher |
 | Renders with | `render/header.ts` → `layout/` engine | `render/monitor.ts` `renderMonitor` |
 | Writes | `display/state/<session>.json` snapshot, notifications | the same snapshot and notifications, on its collect tick; scan cache, agent logs, model cache, settings |
@@ -960,9 +960,9 @@ against Codex 0.154 and 0.157.
 - `HudSettings` holds the type, `defaultSettings()` the defaults, a per-key
   validator table the checks, and `loadSettings` / `saveSettings` the I/O.
 - The page has four open groups, in this order: Display (Theme, Bar style, Icons, Language),
-  Panel (Stall threshold, Notifications, Refresh, Mouse), Models (Model
+  Panel (Width, Stall threshold, Notifications, Refresh, Mouse), Models (Model
   text, Model, Call cap, Decision cap, Summary interval, both read-only calls-this-hour counters and Test API)
-  and Codex (Width, Prefix key, Bar on launch). There is no accordion, no header
+  and Codex (Prefix key, Bar on launch). There is no accordion, no header
   buttons and no Reset all: `SETTING_ROWS` is one flat list and every group is
   open. The page is a draft; Theme and Icons paint in the draft value, so the
   page is its own preview. The selected row's help is a `┃` stem under it; a
@@ -976,6 +976,7 @@ against Codex 0.154 and 0.157.
   align at the actual terminal width's right edge; saving a new width reflows
   the rows. Width applies on Save, followed by a repaint as well as the stdout
   resize event; no draft-only resize.
+  `utils/pane-width.ts` shares `panelWidth` and `TreeWidthKeeper` across tmux and herdr. The herdr keeper reads the caller/panel split's layout and sends one `pane resize --pane <own-id>` with a fractional `--amount` delta (left grows the right panel, right shrinks it). Only a changed Width or changed containing width reapplies policy; manual border drags and unrelated saves stay untouched. `openPanelPane` reads saved settings for Claude/CLI/pi, clamps through `panelWidth`, and carries the opening width to the panel until Width changes. Presets are 40/48/56/64/80/100; default 56, legacy 0 means default and 16–200 remain valid.
 - `card-presets.ts` retains legacy combinations for fixture/compatibility
   callers only. There is no preset row on the current page; it cannot restore
   retired rich-card contents. `agentLog`, `cardLabel` and `cardSummary` are retired by NATIVE-TREE.
