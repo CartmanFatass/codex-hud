@@ -115,7 +115,7 @@ import fs from 'node:fs';
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.OPEN_LOG, JSON.stringify(args) + '\\n');
 const operation = args.slice(0, 2).join(' ');
-console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace_id: 'fake-workspace'}} : {root_pane: {pane_id: 'fake-editor'}}}));
+console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace_id: 'w4E'}} : {root_pane: {pane_id: 'w4E:p3'}}}));
 `, { mode: 0o700 });
   const frame = f.render(120), decoder = new WorkbenchInputDecoder('workboard');
   frame.state.projectCursor = frame.workboard.rows.find((r) => r.files?.[0] === f.paths.working).item;
@@ -123,13 +123,13 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
     const input = decoder.push(Buffer.from(raw))[0];
     const result = handleMonitorInput(frame.state, input, { tree: TREE, frame, nowMs: NOW, standalone: true });
     assert.deepEqual(result.action, { type: 'open-files', files: [f.paths.working] });
-    await openEditorPane(result.action.files, { ...f.env, PATH: `${bin}:${dirname(process.execPath)}`, HERDR_PANE_ID: 'fake-panel', OPEN_LOG: log });
+    await openEditorPane(result.action.files, { ...f.env, PATH: `${bin}:${dirname(process.execPath)}`, HERDR_PANE_ID: 'w4E:p2', OPEN_LOG: log });
   }
   const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(calls.slice(0, 3), [
-    ['pane', 'get', 'fake-panel'],
-    ['tab', 'create', '--workspace', 'fake-workspace', '--cwd', process.cwd(), '--label', '02-home-lanes.md', '--focus'],
-    ['pane', 'run', 'fake-editor', `vim '${f.paths.working}'; exit`],
+    ['pane', 'get', 'w4E:p2'],
+    ['tab', 'create', '--workspace', 'w4E', '--cwd', process.cwd(), '--label', '02-home-lanes.md', '--focus'],
+    ['pane', 'run', 'w4E:p3', `vim '${f.paths.working}'; exit`],
   ]);
   assert.deepEqual(calls.slice(3), calls.slice(0, 3));
 });

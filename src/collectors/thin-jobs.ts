@@ -1,6 +1,7 @@
 /** Read-only thin jobs. Package labels are display grouping, never execution identity. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
+import { herdrId } from '../roles/herdr-run.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
 import type { DecisionRecord, EvidenceRef, OwnerWorker, WorkLane } from './workboard-types.js';
 
@@ -94,7 +95,7 @@ export function readThinJobs(
   options?: { settledBefore: number },
   observation?: { complete: boolean }
 ): WorkLane[] {
-  complete = Boolean(scope.pane);
+  complete = herdrId(scope.pane);
   seen.clear();
   const root = join(home, 'jobs');
   const jobs = entries(root)
@@ -116,7 +117,7 @@ export function readThinJobs(
         !job ||
         job.job !== id ||
         typeof job.role !== 'string' ||
-        !scope.pane ||
+        !herdrId(scope.pane) ||
         job.herdr_pane !== scope.pane
       )
         return [];

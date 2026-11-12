@@ -15,8 +15,8 @@ import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
 import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
 import { collectionObservation, jobPanelObservation } from '../../dist-test/src/utils/collection-observation.js';
 import { recordAdaptivePoll, createAdaptivePollState } from '../../dist-test/src/collectors/adaptive-poll.js';
-import { rememberClaudePane, claudePaneSession } from '../../dist-test/src/collectors/claude-pane-session.js';
-import { panelSelection } from '../../dist-test/src/cli/panel.js';
+import { claudeCallerSession } from '../../dist-test/src/collectors/claude-caller-session.js';
+import { panelCommand, panelSelection } from '../../dist-test/src/cli/panel.js';
 const tick = async () => {
   for (let i = 0; i < 15; i++) await new Promise(setImmediate);
 };
@@ -320,63 +320,107 @@ test('Claude reader bounds/unchanged reads, incremental tails, nesting and uncer
   f.claude();
   assert.equal(f.collector.complete, false, 'discovery stops at its directory bound');
 });
-test('statusline pane binding writes only on semantic change; exact pane/session selection and stale fallback', async (t) => {
-  const f = fixture(t),
-    env = { HOME: f.home, HUD_HOME: f.home, HERDR_PANE_ID: 'synthetic-pane' };
-  const input = { session_id: f.session, transcript_path: join(f.source, f.session + '.jsonl'), cwd: f.home };
-  const statusline = () =>
-    spawnSync(process.execPath, [resolve('bin/hud'), 'statusline', '--width', '80'], {
-      env: { PATH: process.env.PATH, ...env },
-      input: JSON.stringify(input),
-      encoding: 'utf8',
-      timeout: 10000,
-    });
-  assert.equal(statusline().status, 0);
-  const record = join(f.home, 'panes/synthetic-pane.json'),
-    first = fs.statSync(record);
-  assert.equal(first.mode & 0o777, 0o600);
-  assert.equal(statusline().status, 0);
-  assert.equal(fs.statSync(record).ino, first.ino, 'unchanged input does not atomically replace/write the record');
-  assert.deepEqual(claudePaneSession(env), { session: f.session, source: f.source });
-  assert.equal(claudePaneSession({ ...env, HERDR_PANE_ID: 'other-pane' }), undefined);
-  const bound = claudePaneSession(env),
-    selected = panelSelection(['--harness', 'claude', '--session', bound.session, '--source', bound.source]);
-  assert.equal(selected.harness, 'claude');
-  assert.equal(selected.source, f.source);
-  // Run the real foreground panel command + runLivePage with the implicit pane binding, synthetic HOME only.
+function callerFixture(t) {
+  const f = fixture(t), session = '12345678-1234-1234-1234-123456789abc';
+  const cwd = join(f.home, 'repo.with.dots');
+  const config = join(f.home, '.claude'), projects = join(config, 'projects');
+  const source = join(projects, cwd.replace(/[/.]/g, '-'));
+  fs.mkdirSync(projects, { recursive: true });
+  fs.renameSync(f.source, source);
+  fs.renameSync(join(source, f.session), join(source, session));
+  fs.renameSync(join(source, f.session + '.jsonl'), join(source, session + '.jsonl'));
+  const bin = join(f.home, 'bin'), log = join(f.home, 'herdr.log'), reply = join(f.home, 'reply.json');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}
+const fs = require('node:fs'), args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
+if (args[1] === 'current') {
+  const reply = JSON.parse(fs.readFileSync(${JSON.stringify(reply)}, 'utf8'));
+  if (reply.fail) process.exit(1);
+  else if (reply.hang) setInterval(() => {}, 10000);
+  else console.log(JSON.stringify(reply));
+} else console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p2'}}}));
+`, { mode: 0o700 });
+  const pane = { agent: 'claude', agent_session: { agent: 'claude', kind: 'id', source: 'herdr:claude', value: session }, cwd, pane_id: 'w4E:p1' };
+  const setReply = (value = { result: { type: 'pane_current', pane } }) => fs.writeFileSync(reply, JSON.stringify(value));
+  setReply();
+  const env = { HOME: f.home, HUD_HOME: join(f.home, 'hud'), HERDR_PANE_ID: 'w4E:p1',
+    CLAUDE_CONFIG_DIR: config, CODEX_HOME: join(f.home, 'codex'), PI_CODING_AGENT_DIR: join(f.home, 'pi'),
+    PATH: `${bin}:${process.env.PATH}`, COLUMNS: '120', HUD_SETTINGS_PATH: join(f.home, 'settings.json') };
+  const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
+  return { ...f, session, source, projects, env, pane, setReply, calls };
+}
+async function foregroundCaller(t, f, args = ['--here'], ready = 'Nothing needs you') {
   const runner = join(f.home, 'runner.mjs');
-  fs.writeFileSync(
-    runner,
-    `import {panelCommand} from ${JSON.stringify(pathToFileURL(resolve('dist-test/src/cli/panel.js')).href)};await panelCommand({env:process.env,stdout:s=>process.stdout.write(s),stderr:s=>process.stderr.write(s)},['--here']);`
-  );
-  const child = spawn(process.execPath, [runner], {
-    cwd: f.home,
-    env: {
-      PATH: process.env.PATH,
-      ...env,
-      CODEX_HOME: join(f.home, 'codex'),
-      CLAUDE_CONFIG_DIR: join(f.home, 'empty-claude'),
-      PI_CODING_AGENT_DIR: join(f.home, 'pi'),
-      HUD_SETTINGS_PATH: join(f.home, 'settings.json'),
-    },
-    stdio: ['pipe', 'pipe', 'pipe'],
+  fs.writeFileSync(runner, `import {panelCommand} from ${JSON.stringify(pathToFileURL(resolve('dist-test/src/cli/panel.js')).href)};process.exitCode=await panelCommand({env:process.env,stdout:s=>process.stdout.write(s),stderr:s=>process.stderr.write(s)},${JSON.stringify(args)});`);
+  const child = spawn(process.execPath, [runner], { cwd: f.home, env: f.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  let output = '', errors = '';
+  child.stdout.on('data', b => output += b);
+  child.stderr.on('data', b => errors += b);
+  const exited = new Promise(r => child.once('exit', r));
+  t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+  const until = Date.now() + 10000;
+  while (!stripAnsi(output).includes(ready) && Date.now() < until && child.exitCode === null)
+    await new Promise(r => setTimeout(r, 20));
+  assert.match(stripAnsi(output), /Home/, errors);
+  child.stdin.end();
+  assert.equal(await exited, 0, errors);
+  return stripAnsi(output);
+}
+test('current w4E:p1 binds before splitting; real foreground panel shows the Claude lane; statusline writes no binding', async t => {
+  const f = callerFixture(t);
+  const input = { session_id: f.session, transcript_path: join(f.source, f.session + '.jsonl'), cwd: f.home };
+  for (const pane of ['w4E:p1', 'old-valid-pane']) {
+    const result = spawnSync(process.execPath, [resolve('bin/hud'), 'statusline', '--width', '80'], {
+      env: { ...f.env, HERDR_PANE_ID: pane }, input: JSON.stringify(input), encoding: 'utf8', timeout: 10000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+  }
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'panes')), false);
+  const bound = await claudeCallerSession(f.env);
+  assert.deepEqual(bound, { session: f.session, source: f.source });
+  assert.equal(panelSelection(['--harness', 'claude', '--session', bound.session, '--source', bound.source]).source, f.source);
+  assert.match(await foregroundCaller(t, f, ['--here'], 'Claude'), /Claude/);
+  await panelCommand({ env: f.env, stdout: () => {}, stderr: () => {} });
+  const calls = f.calls(), split = calls.findIndex(c => c[1] === 'split');
+  assert.deepEqual(calls[split - 1], ['pane', 'current']);
+  assert.equal(calls[split][2], 'w4E:p1');
+  assert.match(calls.at(-1)[3], new RegExp(`'--session' '${f.session}'`));
+  assert.ok(calls.at(-1)[3].includes(`'--source' '${f.source}'`));
+});
+test('slug miss scans only 256 immediate projects; default HOME config is supported', async t => {
+  const f = callerFixture(t);
+  for (let n = 0; n < 260; n++) fs.mkdirSync(join(f.projects, `project-${n}`));
+  const directory = fs.opendirSync(f.projects), names = [];
+  try { let entry; while ((entry = directory.readSync())) names.push(entry.name); } finally { directory.closeSync(); }
+  const within = names[0], beyond = names[256];
+  const target = join(f.projects, beyond);
+  fs.renameSync(join(f.source, f.session + '.jsonl'), join(target, f.session + '.jsonl'));
+  f.pane.cwd = '/slug/missing'; f.setReply();
+  assert.equal(await claudeCallerSession(f.env), undefined, 'the 257th directory is not probed');
+  fs.renameSync(join(target, f.session + '.jsonl'), join(f.projects, within, f.session + '.jsonl'));
+  const env = { ...f.env }; delete env.CLAUDE_CONFIG_DIR;
+  assert.deepEqual(await claudeCallerSession(env), { session: f.session, source: join(f.projects, within) });
+});
+for (const reason of ['other agent', 'no agent', 'path session', 'invalid uuid', 'missing transcript', 'herdr failure', 'timeout', 'outside herdr'])
+  test(`caller lookup ${reason}: real foreground panel stays unbound`, async t => {
+    const f = callerFixture(t);
+    if (reason === 'other agent') f.pane.agent = 'pi';
+    if (reason === 'no agent') delete f.pane.agent;
+    if (reason === 'path session') f.pane.agent_session.kind = 'path';
+    if (reason === 'invalid uuid') f.pane.agent_session.value = '../../invalid';
+    if (reason === 'missing transcript') fs.unlinkSync(join(f.source, f.session + '.jsonl'));
+    if (reason === 'outside herdr') delete f.env.HERDR_PANE_ID;
+    f.setReply(reason === 'herdr failure' ? { fail: true } : reason === 'timeout' ? { hang: true } : undefined);
+    assert.equal(await claudeCallerSession(f.env), undefined);
+    assert.doesNotMatch(await foregroundCaller(t, f), /Claude/);
+    if (reason === 'outside herdr') assert.deepEqual(f.calls(), [], 'never query the focused pane');
   });
-  let output = '',
-    errors = '';
-  child.stdout.on('data', (b) => (output += b));
-  child.stderr.on('data', (b) => (errors += b));
-  t.after(async () => {
-    if (child.exitCode === null) {
-      child.stdin.end();
-      await new Promise((r) => child.once('exit', r));
-    }
-  });
-  const until = Date.now() + 6000;
-  while (!stripAnsi(output).includes('Claude') && Date.now() < until && child.exitCode === null)
-    await new Promise((r) => setTimeout(r, 20));
-  assert.match(stripAnsi(output), /Claude/, errors);
-  rememberClaudePane({ ...input, session_id: 'replacement' }, env);
-  assert.notEqual(fs.statSync(record).ino, first.ino);
-  fs.unlinkSync(input.transcript_path);
-  assert.equal(claudePaneSession(env), undefined);
+test('explicit --root and harness/session/source win without querying current pane', async t => {
+  const f = callerFixture(t);
+  for (const selection of [['--root', 'synthetic/explicit'], ['--harness', 'claude', '--session', f.session, '--source', f.source]]) {
+    await panelCommand({ env: f.env, stdout: () => {}, stderr: () => {} }, selection);
+    assert.ok(f.calls().at(-1)[3].includes(selection.map(s => `'${s}'`).join(' ')));
+  }
+  assert.equal(f.calls().some(c => c[1] === 'current'), false);
 });

@@ -118,7 +118,7 @@ function scan() {
     const statusFile = join(dir, 'STATUS.json');
     let status = json(statusFile);
     const session = read(join(dir, 'SESSION.txt'));
-    const tab = session?.match(/^TAB=(.+)$/m)?.[1]?.trim();
+    const tab = session?.match(/^TAB=([^\r\n]+)$/m)?.[1];
     if (tab && closedTabs.has(tab) && !['closed', 'failed', 'stopped'].includes(status?.state)) {
       status = { ...status, state: 'failed', exit_reason: 'tab closed', ended_at: new Date().toISOString() };
       fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });

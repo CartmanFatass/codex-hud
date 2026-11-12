@@ -267,10 +267,10 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
       for (let n = 0; n < 300; n++) {
         const job = `j${n.toString(16).padStart(16, '0')}`, dir = join(f.env.HUD_HOME!, 'jobs', job);
         fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job, role: 'imp', herdr_pane: 'synthetic', created_at: new Date(0).toISOString() }));
+        fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job, role: 'imp', herdr_pane: 'w4E:p1', created_at: new Date(0).toISOString() }));
         fs.writeFileSync(join(dir, 'STATUS.json'), '{"state":"closed","settled_at":"2000-01-01T00:00:00Z"}');
       }
-      const cold = run([], { NO_COLOR: '1', HERDR_PANE_ID: 'synthetic' });
+      const cold = run([], { NO_COLOR: '1', HERDR_PANE_ID: 'w4E:p1' });
       assert.equal(cold.status, 0); assert.equal(cold.stdout, plain);
       assert.equal(cold.stderr.trim(), '{"credentials":0,"jobs":0}', 'cold process opens no old receipts or credentials');
     },

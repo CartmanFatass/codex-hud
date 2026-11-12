@@ -1,7 +1,7 @@
 /** Lightweight receipt/SESSION codecs. Legacy ownership is observation-only. */
 import * as fs from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
-import { isRecord } from './herdr-run.js';
+import { isRecord, herdrId } from './herdr-run.js';
 
 export type DispatchRole = 'implementer' | 'sonic' | 'reviewer' | 'architect';
 export interface LegacyDispatchV1 {
@@ -142,9 +142,8 @@ export function readDispatchSession(directory: string): DispatchSession | null {
   }
   if (!SESSION_KEYS.every((key) => Object.hasOwn(data, key)) || data.TASK !== basename(directory) || data.ORCH !== '')
     return null;
-  for (const key of ['TAB', 'LEFT', 'PRIMARY'])
-    if (!/^[A-Za-z0-9][A-Za-z0-9:_./-]{0,100}$/.test(data[key]!)) return null;
-  if (data.RIGHT && !/^[A-Za-z0-9][A-Za-z0-9:_./-]{0,100}$/.test(data.RIGHT)) return null;
+  for (const key of ['TAB', 'LEFT', 'PRIMARY']) if (!herdrId(data[key])) return null;
+  if (data.RIGHT && !herdrId(data.RIGHT)) return null;
   if (!data.TAB_NAME || !data.BASE || /[\u0000-\u001f]/.test(data.TAB_NAME + data.BASE)) return null;
   // SAFETY: all eight required keys and their value constraints were checked above.
   return data as unknown as DispatchSession;

@@ -107,11 +107,11 @@ export function createHerdr({
     const mode = state.mode ?? {};
     if (command === 'tab create') {
       const n = ++state.n;
-      const workspace = option('workspace') ?? 'workspace-1';
+      const workspace = option('workspace') ?? 'w4E';
       if (!state.workspaces.includes(workspace)) state.workspaces.push(workspace);
-      const created = { tab_id: `tab${n}`, label: option('label'), workspace_id: workspace };
+      const created = { tab_id: `w4E:t${n + 1}`, label: option('label'), workspace_id: workspace };
       const root = {
-        pane_id: `pane${profile === 'owned' ? ++state.n : n}`,
+        pane_id: `w4E:p${(profile === 'owned' ? ++state.n : n) + 1}`,
         tab_id: created.tab_id,
         workspace_id: workspace,
       };
@@ -157,7 +157,7 @@ export function createHerdr({
         }
       const n = ++state.n;
       const created = {
-        pane_id: profile === 'panel' ? `panel-${n}` : `pane${n}`,
+        pane_id: `w4E:p${n + 1}`,
         tab_id: pane.tab_id,
         workspace_id: pane.workspace_id,
         terminal_id: `terminal${n}`,

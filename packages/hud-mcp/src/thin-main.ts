@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+import { herdrId } from '../../../src/roles/herdr-run.js';
 import { roleRegistry, executable, piSwitches, type Role } from '../../../src/roles/roster.js';
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobsRoot = join(hudHome, 'jobs');
@@ -70,7 +71,7 @@ const tools = [
         type: 'array',
         items: { ...text, maxLength: 4096 },
         maxItems: 128,
-        description: 'Append pi arguments after -- verbatim, never through a shell.',
+        description: 'Append pi arguments after -- verbatim, never through a shell; --orchestrator and --notify are reserved for the inherited caller binding.',
       },
     },
     ['role', 'request_key', 'task']
@@ -186,7 +187,7 @@ async function workspaceArgs(job: Job): Promise<string[]> {
   if (result.exit_code !== 0) return [];
   try {
     const workspace = JSON.parse(result.stdout).result.pane.workspace_id;
-    return workspace ? ['--workspace', workspace] : [];
+    return herdrId(workspace) ? ['--workspace', workspace] : [];
   } catch {
     return [];
   } // An unavailable caller lookup keeps herdr's default workspace.
@@ -288,7 +289,7 @@ async function dispatchPi(job: Job, role: Role) {
     if (result.exit_code !== 0) return result;
     const { tab, root_pane } = JSON.parse(result.stdout).result;
     const left = root_pane.pane_id;
-    if (!tab.tab_id || !left) throw new Error('tab create did not return tab/root pane ids');
+    if (!herdrId(tab.tab_id) || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
     let right = '';
     const record = () => {
       const fields = {
@@ -326,6 +327,7 @@ async function dispatchPi(job: Job, role: Role) {
       ]);
       if (split.exit_code !== 0) return split;
       right = JSON.parse(split.stdout).result.pane.pane_id;
+      if (!herdrId(right)) throw new Error('split did not return a pane id');
       record();
     }
     const started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
@@ -379,6 +381,7 @@ async function dispatchJev(job: Job) {
     return { ...result, exit_code: 1, stderr: `herdr tab create: ${String(error)}` };
   }
   const { tab, root_pane } = created;
+  if (!herdrId(tab?.tab_id) || !herdrId(root_pane?.pane_id)) throw new Error('tab create missing ids');
   fs.writeFileSync(
     join(dir, 'SESSION.txt'),
     `TASK=${job.job}\nTAB=${tab.tab_id}\nTAB_NAME=${tabName}\nLEFT=${root_pane.pane_id}\nORCH=${job.herdr_pane}\n`,
@@ -441,7 +444,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       ensureWatcher();
       return created(existing);
     }
-    if (!process.env.HERDR_PANE_ID) return { ok: false, code: 'herdr_required' };
+    if (!herdrId(process.env.HERDR_PANE_ID)) return { ok: false, code: 'herdr_required' };
     const task = required(args, 'task');
     if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
     for (const key of ['model', 'thinking'] as const) {
@@ -464,6 +467,8 @@ async function call(name: string, args: Args): Promise<unknown> {
         args.pi_args.some((value) => typeof value !== 'string' || value.length > 4096)
       )
         return { ok: false, code: 'invalid_arguments' };
+      if (args.pi_args.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
+        return { ok: false, code: 'invalid_arguments', error: 'pi_args cannot override --orchestrator or --notify caller binding' };
       options.pi_args = args.pi_args;
     }
     const effective = definition.harness === 'pi' ? assignment(definition) : null;

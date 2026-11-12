@@ -29,7 +29,7 @@ function fixture(t, count = 1) {
     CODEX_HUD_CWD: join(root, 'project'),
     CODEX_HUD_STANDALONE_PANEL: '1',
     CODEX_HUD_PANEL_ALL_DELEGATIONS: '1',
-    HUD_PANEL_CALLER_PANE: 'synthetic-main',
+    HUD_PANEL_CALLER_PANE: 'w4E:p1',
   };
   for (const k of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'CODEX_HUD_CWD'])
     mkdirSync(env[k], { recursive: true });
@@ -46,7 +46,7 @@ function fixture(t, count = 1) {
     put(join(d, 'job.json'), {
       job: id,
       role: 'imp',
-      herdr_pane: 'synthetic-main',
+      herdr_pane: 'w4E:p1',
       created_at: new Date(1000 + i).toISOString(),
     });
     put(join(d, 'STATUS.json'), { state: 'done', settled_at: new Date().toISOString() });
@@ -54,7 +54,7 @@ function fixture(t, count = 1) {
   }
   const pipeline = new PanelJobPipeline(env.HUD_HOME, null, { live: false }, null, {
     project: null,
-    pane: 'synthetic-main',
+    pane: 'w4E:p1',
   });
   t.after(() => {
     pipeline.dispose();
@@ -68,7 +68,7 @@ function fixture(t, count = 1) {
     let state = createAdaptivePollState(1000);
     for (let i = 0; i < 12; i++)
       state = recordAdaptivePoll(state, {
-        scopeKey: 'synthetic-main',
+        scopeKey: 'w4E:p1',
         nowMs: i * 5000,
         ...(await observe(nativeQuiet)),
       });
@@ -82,13 +82,13 @@ test('completely observed empty and settled job scopes reach the existing 5s max
     const f = fixture(t, count);
     const state = await f.cadence();
     assert.equal(state.intervalMs, 5000);
-    assert.equal(adaptivePollDue(state, 'synthetic-main', state.nextDueAt - 1), false);
-    assert.equal(adaptivePollDue(state, 'synthetic-main', state.nextDueAt), true);
+    assert.equal(adaptivePollDue(state, 'w4E:p1', state.nextDueAt - 1), false);
+    assert.equal(adaptivePollDue(state, 'w4E:p1', state.nextDueAt), true);
     assert.equal(forceAdaptivePoll(state).intervalMs, 1000);
     if (count) {
       f.put(join(f.dir, 'STATUS.json'), { state: 'closed', settled_at: new Date(100000).toISOString() });
       assert.equal(
-        recordAdaptivePoll(state, { scopeKey: 'synthetic-main', nowMs: state.nextDueAt, ...(await f.observe()) })
+        recordAdaptivePoll(state, { scopeKey: 'w4E:p1', nowMs: state.nextDueAt, ...(await f.observe()) })
           .intervalMs,
         1000
       );

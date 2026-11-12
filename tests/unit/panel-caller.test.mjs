@@ -20,7 +20,7 @@ if (args[1] === 'get' && fs.existsSync(${JSON.stringify(missing)})) {
   console.error(JSON.stringify({error: {code: 'not_found', message: 'pane not found: caller'}}));
   process.exit(1);
 }
-console.log(JSON.stringify({result: {pane: {pane_id: 'caller'}}}));
+console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
 `, { mode: 0o700 });
     if (initiallyMissing) fs.writeFileSync(missing, '');
     const child = spawn(process.execPath, [resolve('dist/tree-page.js')], {
@@ -29,7 +29,7 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'caller'}}}));
         HOME: join(dir, 'home'), HUD_HOME: join(dir, 'hud'), CODEX_HOME: join(dir, 'codex'),
         CLAUDE_CONFIG_DIR: join(dir, 'claude'), PI_CODING_AGENT_DIR: join(dir, 'pi'),
         HERDR_SOCKET_PATH: join(dir, 'synthetic.sock'), PATH: `${bin}:${dirname(process.execPath)}`,
-        HUD_PANEL_CALLER_PANE: 'caller', HERDR_PANE_ID: 'panel', CODEX_HUD_STANDALONE_PANEL: '1',
+        HUD_PANEL_CALLER_PANE: 'w4E:p1', HERDR_PANE_ID: 'w4E:p2', CODEX_HUD_STANDALONE_PANEL: '1',
       },
     });
     t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
@@ -47,7 +47,7 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'caller'}}}));
     }
     const result = await exited;
     assert.deepEqual(result, { code: 0, signal: null }, stderr);
-    assert.deepEqual(calls().filter((a) => ['get', 'close'].includes(a[1])).at(-1), ['pane', 'close', 'panel']);
+    assert.deepEqual(calls().filter((a) => ['get', 'close'].includes(a[1])).at(-1), ['pane', 'close', 'w4E:p2']);
     assert.ok(calls().filter((a) => a[0] === 'pane').every((a) =>
-      (a[1] === 'get' && a[2] === 'caller') || (a[1] === 'close' && a[2] === 'panel')));
+      (a[1] === 'get' && a[2] === 'w4E:p1') || (a[1] === 'close' && a[2] === 'w4E:p2')));
   });

@@ -23,7 +23,7 @@ export function pageFixture(home) {
       dir = join(home, 'jobs', id);
     put(
       join(dir, 'job.json'),
-      { job: id, role, package: pkg, herdr_pane: 'synthetic-main', created_at: ago(started).toISOString() },
+      { job: id, role, package: pkg, herdr_pane: 'w4E:p1', created_at: ago(started).toISOString() },
       started
     );
     put(join(dir, 'brief.md'), '# ' + title, started);
@@ -84,7 +84,7 @@ export function pageFixture(home) {
   );
   qa(ux, 'q3', 'Keep the v1 shim for one more release?', 'keep it for one more release', null, 3);
   put(join(api, 'review-1.md'), 'Verdict: changes-required\n\n2 major · 1 minor', 9);
-  const lanes = readThinJobs(home, { project: '/synthetic/repo', pane: 'synthetic-main' });
+  const lanes = readThinJobs(home, { project: '/synthetic/repo', pane: 'w4E:p1' });
   // The overlay is the stored model result, not a model fake on a render path.
   for (const lane of lanes) {
     lane.workers = lane.workers.map((w) =>

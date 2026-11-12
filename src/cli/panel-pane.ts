@@ -1,7 +1,7 @@
 /** Simple local herdr pane operations shared by the CLI and pi package. */
 import { basename } from 'node:path';
 import { truncateAnsi } from '../render/colors.js';
-import { runHerdr, herdrResult, isRecord } from '../roles/herdr-run.js';
+import { runHerdr, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
 
 async function command(argv: string[], env: NodeJS.ProcessEnv) {
   const result = await runHerdr(argv, env);
@@ -11,10 +11,10 @@ async function command(argv: string[], env: NodeJS.ProcessEnv) {
 
 export async function openEditorPane(files: string[], env: NodeJS.ProcessEnv): Promise<void> {
   if (!files.length) return;
-  if (!env.HERDR_PANE_ID) throw Error('panel_requires_herdr');
+  if (!herdrId(env.HERDR_PANE_ID)) throw Error('panel_requires_herdr');
   const panel = await command(['pane', 'get', env.HERDR_PANE_ID], env).catch(() => null);
   const workspace = isRecord(panel?.pane) ? panel.pane.workspace_id : undefined;
-  const inTab = typeof workspace === 'string' && workspace.length > 0;
+  const inTab = herdrId(workspace);
   const result = await command(
     inTab
       ? [
@@ -26,7 +26,7 @@ export async function openEditorPane(files: string[], env: NodeJS.ProcessEnv): P
   );
   const root = inTab ? result?.root_pane : result?.pane;
   const pane = isRecord(root) ? root.pane_id : undefined;
-  if (typeof pane !== 'string' || !pane) throw Error(inTab ? 'panel_tab_unknown' : 'panel_split_unknown');
+  if (!herdrId(pane)) throw Error(inTab ? 'panel_tab_unknown' : 'panel_split_unknown');
   const paths = files.map((file) => `'${file.replaceAll("'", "'\\''")}'`).join(' ');
   await command(['pane', 'run', pane, `${env.EDITOR || 'vim'} ${paths}; exit`], env);
 }
@@ -43,7 +43,7 @@ export async function panelPaneExists(pane: string, env: NodeJS.ProcessEnv): Pro
 /** Only an authoritative missing-pane reply ends the panel, not a failed transport. */
 export function watchPanelCaller(env: NodeJS.ProcessEnv, onMissing: () => void): () => void {
   const caller = env.HUD_PANEL_CALLER_PANE;
-  if (!caller || !env.HERDR_PANE_ID || caller === env.HERDR_PANE_ID) return () => {};
+  if (!herdrId(caller) || !herdrId(env.HERDR_PANE_ID) || caller === env.HERDR_PANE_ID) return () => {};
   const abort = new AbortController();
   let busy = false;
   const timer = setInterval(() => {
@@ -74,7 +74,7 @@ export async function openPanelPane(
   width = 56,
   columns = process.stdout.isTTY ? process.stdout.columns : Number(env.COLUMNS)
 ): Promise<string> {
-  if (!env.HERDR_PANE_ID) throw Error('panel_requires_herdr');
+  if (!herdrId(env.HERDR_PANE_ID)) throw Error('panel_requires_herdr');
   if (!Number.isFinite(columns) || columns <= 0) {
     const layout = await command(['pane', 'layout', '--pane', env.HERDR_PANE_ID], env).catch(() => null);
     const panes = isRecord(layout?.layout) ? layout.layout.panes : null;
@@ -100,7 +100,7 @@ export async function openPanelPane(
     env
   );
   const pane = isRecord(result?.pane) ? result.pane.pane_id : undefined;
-  if (typeof pane !== 'string' || !pane) throw Error('panel_split_unknown');
+  if (!herdrId(pane)) throw Error('panel_split_unknown');
   try {
     await command(['pane', 'rename', pane, 'hud panel'], env);
     const text = argv.map((value) => `'${value.replaceAll("'", "'\\''")}'`).join(' ');

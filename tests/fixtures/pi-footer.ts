@@ -32,7 +32,7 @@ export interface ParityRow {
 }
 export function parityFixture(row: ParityRow, host = parityHost) {
   const home = mkdtempSync(join(tmpdir(), 'hud-footer-'));
-  const env = { HOME: home, HUD_HOME: home, HERDR_PANE_ID: 'synthetic-main', ...row.env };
+  const env = { HOME: home, HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1', ...row.env };
   writeFileSync(join(home, 'config.json'), JSON.stringify({ piFooter: row.settings ?? {} }), { mode: 0o600 });
   const statuses = new Map([['other', 'other status']]);
   const bus = new Map<string, (data: unknown) => void>();

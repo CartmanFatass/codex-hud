@@ -16,7 +16,8 @@ export function readHerdrConfig(env = process.env) {
     env.HERDR_ENV !== '1' ||
     env.CODEX_HUD_HERDR_BRIDGE === '0' ||
     !env.HERDR_SOCKET_PATH?.trim() ||
-    !env.HERDR_PANE_ID?.trim()
+    typeof env.HERDR_PANE_ID !== 'string' ||
+    !env.HERDR_PANE_ID || /[\x00-\x1f\x7f-\x9f]/.test(env.HERDR_PANE_ID)
   )
     return null;
   // Capture the outer pane identity before entering the nested tmux session.

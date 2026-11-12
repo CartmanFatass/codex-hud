@@ -7,7 +7,7 @@ import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 test('300 jobs: unchanged scan parses no receipts; a changed job appears next scan', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-scan-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const scope = { project: null, pane: 'synthetic' };
+  const scope = { project: null, pane: 'w4E:p1' };
   let parses = 0;
   const parse = (text) => {
     const value = JSON.parse(text);
@@ -59,7 +59,7 @@ test('300 jobs: unchanged scan parses no receipts; a changed job appears next sc
 test('a job stopped after writing its report shows as done; one stopped without it stays stopped', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-stop-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const scope = { project: null, pane: 'synthetic' };
+  const scope = { project: null, pane: 'w4E:p1' };
   for (const [n, written] of [[1, true], [2, false]]) {
     const job = `j${n.toString(16).padStart(16, '0')}`, dir = join(home, 'jobs', job);
     fs.mkdirSync(dir, { recursive: true });

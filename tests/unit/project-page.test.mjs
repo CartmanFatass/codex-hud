@@ -184,14 +184,14 @@ fs.appendFileSync(process.env.EDITOR_LOG, JSON.stringify(args) + '\\n');
 const operation = args.slice(0, 2).join(' ');
 if (operation === 'pane get' && process.env.EDITOR_LOOKUP === 'fail') process.exit(1);
 const result = operation === 'pane get'
-  ? {pane: {pane_id: 'synthetic-panel', workspace_id: process.env.EDITOR_LOOKUP === 'missing' ? undefined : 'synthetic-workspace'}}
+  ? {pane: {pane_id: 'w4E:p2', workspace_id: process.env.EDITOR_LOOKUP === 'missing' ? undefined : 'w4E'}}
   : operation === 'tab create'
-    ? {type: 'tab_created', tab: {tab_id: 'synthetic-tab'}, root_pane: {pane_id: 'synthetic-editor'}}
-    : {pane: {pane_id: 'synthetic-split'}};
+    ? {type: 'tab_created', tab: {tab_id: 'w4E:t2'}, root_pane: {pane_id: 'w4E:p3'}}
+    : {pane: {pane_id: 'w4E:p4'}};
 console.log(JSON.stringify({result}));
 `, { mode: 0o700 });
   return {
-    env: { ...f.env, PATH: `${bin}:${dirname(process.execPath)}`, HERDR_PANE_ID: 'synthetic-panel', EDITOR_LOG: log },
+    env: { ...f.env, PATH: `${bin}:${dirname(process.execPath)}`, HERDR_PANE_ID: 'w4E:p2', EDITOR_LOG: log },
     calls: () => fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse),
   };
 }
@@ -207,14 +207,14 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
   frame.state.projectCursor = file.item;
   await openEditorPane(press(frame, 'enter').action.files, env);
   assert.deepEqual(calls(), [
-    ['pane', 'get', 'synthetic-panel'],
-    ['tab', 'create', '--workspace', 'synthetic-workspace', '--cwd', process.cwd(), '--label', 'report.md', '--focus'],
-    ['pane', 'run', 'synthetic-editor', `vim '${file.files[0]}'; exit`],
+    ['pane', 'get', 'w4E:p2'],
+    ['tab', 'create', '--workspace', 'w4E', '--cwd', process.cwd(), '--label', 'report.md', '--focus'],
+    ['pane', 'run', 'w4E:p3', `vim '${file.files[0]}'; exit`],
   ]);
   await openEditorPane([join(f.root, "a file's name.md"), join(f.root, 'second file.md')], { ...env, EDITOR: 'synthetic-editor --wait' });
   assert.deepEqual(calls().slice(-2), [
-    ['tab', 'create', '--workspace', 'synthetic-workspace', '--cwd', process.cwd(), '--label', "a file's name.md", '--focus'],
-    ['pane', 'run', 'synthetic-editor', `synthetic-editor --wait '${f.root}/a file'\\''s name.md' '${f.root}/second file.md'; exit`],
+    ['tab', 'create', '--workspace', 'w4E', '--cwd', process.cwd(), '--label', "a file's name.md", '--focus'],
+    ['pane', 'run', 'w4E:p3', `synthetic-editor --wait '${f.root}/a file'\\''s name.md' '${f.root}/second file.md'; exit`],
   ]);
 });
 test('empty editor file lists are inert even without a herdr pane', async () => {
@@ -234,9 +234,9 @@ for (const mode of ['fail', 'missing']) test(`Editor falls back to a split when 
   const f = await fixture(t), { env, calls } = editorHerdr(f);
   await openEditorPane([join(f.root, 'report.md')], { ...env, EDITOR_LOOKUP: mode });
   assert.deepEqual(calls(), [
-    ['pane', 'get', 'synthetic-panel'],
-    ['pane', 'split', 'synthetic-panel', '--direction', 'right', '--focus', '--cwd', process.cwd()],
-    ['pane', 'run', 'synthetic-split', `vim '${f.root}/report.md'; exit`],
+    ['pane', 'get', 'w4E:p2'],
+    ['pane', 'split', 'w4E:p2', '--direction', 'right', '--focus', '--cwd', process.cwd()],
+    ['pane', 'run', 'w4E:p4', `vim '${f.root}/report.md'; exit`],
   ]);
 });
 test('Home and overlays collect nothing; warm Project uses signatures and git waits five seconds', async (t) => {

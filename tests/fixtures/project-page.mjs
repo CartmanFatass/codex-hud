@@ -36,10 +36,10 @@ export async function projectFixture(root) {
   put(join(hud, 'credentials.env'), '# Synthetic names and values only\nMISTRAL_API_KEY=NEVER_RENDER_MISTRAL_VALUE\nOPENAI_API_KEY=""\nTYPESAFE_API_KEY=NEVER_RENDER_TYPESAFE_VALUE\nexport SYNTHETIC_KEY=NEVER_RENDER_OTHER_VALUE\n');
   put(join(hud, 'jev-runtime/runtime.json'), { endpoint: 'synthetic-not-contacted' });
   const id = 'j0000000000000001', job = join(hud, 'jobs', id);
-  put(join(job, 'job.json'), { job: id, role: 'imp', cwd, herdr_pane: 'synthetic-main', package: 'M4-PROJECT', created_at: new Date(NOW - 20 * 60000).toISOString() });
+  put(join(job, 'job.json'), { job: id, role: 'imp', cwd, herdr_pane: 'w4E:p1', package: 'M4-PROJECT', created_at: new Date(NOW - 20 * 60000).toISOString() });
   put(join(job, 'STATUS.json'), { state: 'working', started_at: new Date(NOW - 20 * 60000).toISOString() });
   put(join(job, 'brief.md'), '# Build the Project tab');
-  const lanes = readThinJobs(hud, { project: cwd, pane: 'synthetic-main' });
+  const lanes = readThinJobs(hud, { project: cwd, pane: 'w4E:p1' });
   const board = { revision: 'synthetic', lanes, workers: lanes.flatMap((l) => l.workers), decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: cwd } };
   // A real, entirely synthetic Git repository; no git commit command or user config.
   const object = (kind, text) => {
@@ -62,12 +62,12 @@ export async function projectFixture(root) {
     return path;
   });
   const sliceJob = join(hud, 'jobs/j0000000000000002');
-  put(join(sliceJob, 'job.json'), { job: 'j0000000000000002', role: 'imp', cwd: linked[0], herdr_pane: 'synthetic-main', created_at: new Date(NOW - 12 * 60000).toISOString() });
+  put(join(sliceJob, 'job.json'), { job: 'j0000000000000002', role: 'imp', cwd: linked[0], herdr_pane: 'w4E:p1', created_at: new Date(NOW - 12 * 60000).toISOString() });
   put(join(sliceJob, 'STATUS.json'), { state: 'working', started_at: new Date(NOW - 12 * 60000).toISOString() });
   put(join(sliceJob, 'qa/q1.md'), 'Question: Which synthetic option?');
   put(join(sliceJob, 'brief.md'), '# NATIVE-TREE: synthetic subagents');
   put(join(sliceJob, 'report.md'), '# Synthetic progress report');
-  board.lanes = readThinJobs(hud, { project: cwd, pane: 'synthetic-main' });
+  board.lanes = readThinJobs(hud, { project: cwd, pane: 'w4E:p1' });
   board.workers = board.lanes.flatMap((l) => l.workers);
   const collector = new ProjectCollector(cwd, hud, env, home);
   const data = await collector.collect(true, board, NOW);

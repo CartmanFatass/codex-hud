@@ -25,7 +25,7 @@ export function r5Fixture(t: TestContext) {
   fs.chmodSync(home, 0o700);
   let now = FIXED_R5_NOW;
   let listing = JSON.stringify({
-    result: { agents: [{ name: 'synthetic-agent', tab_id: 'tab-1', pane_id: 'pane-1', agent_status: 'working' }] },
+    result: { agents: [{ name: 'synthetic-agent', tab_id: 'w4E:t1', pane_id: 'w4E:p1', agent_status: 'working' }] },
   });
   let calls = 0;
   const observers: JobObservationCollector[] = [];
@@ -78,7 +78,7 @@ export function r5Fixture(t: TestContext) {
         env_profile: null,
         recipe: 'pi-role',
       },
-      herdr: { tab_id: 'tab-1', pane_id: 'pane-1', agent: 'synthetic-agent', workspace_id: null },
+      herdr: { tab_id: 'w4E:t1', pane_id: 'w4E:p1', agent: 'synthetic-agent', workspace_id: null },
       report_path: join(home, 'jobs', idR5(n), 'report.md'),
       closed: false,
       ...patch,

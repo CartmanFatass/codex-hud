@@ -14,7 +14,7 @@ import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 const workerFor = (f, id) =>
-  readThinJobs(f.env.HUD_HOME, { project: null, pane: 'synthetic-pane' })
+  readThinJobs(f.env.HUD_HOME, { project: null, pane: 'w4E:p1' })
     .flatMap((lane) => lane.workers)
     .find((worker) => worker.id === 'thin-job:' + id);
 const cardText = (worker) =>
@@ -47,11 +47,11 @@ if (command === 'pi-dispatch') {
   console.error('synthetic prompt timeout'); process.exit(1);
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'split') {
   if (fs.existsSync(join(process.env.HOME, 'fail-split'))) { console.error('synthetic split failed'); process.exit(1); }
-  console.log(JSON.stringify({result: {pane: {pane_id: 'synthetic-right'}}}));
+  console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p3'}}}));
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'get') {
-  console.log(JSON.stringify({result: {pane: {workspace_id: 'synthetic-workspace'}}}));
+  console.log(JSON.stringify({result: {pane: {workspace_id: 'w4E'}}}));
 } else if (command === 'herdr' && args[0] === 'tab' && args[1] === 'create') {
-  console.log(JSON.stringify({result: {tab: {tab_id: 'synthetic-tab'}, root_pane: {pane_id: 'synthetic-worker'}}}));
+  console.log(JSON.stringify({result: {tab: {tab_id: 'w4E:t2'}, root_pane: {pane_id: 'w4E:p2'}}}));
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'run') {
   process.exit(spawnSync('/bin/sh', ['-c', args[3]], {stdio: 'inherit'}).status);
 } else if (command === 'jev-ask' && args[0] === 'key') {
@@ -85,7 +85,7 @@ if (command === 'pi-dispatch') {
     env[name] = join(root, name.toLowerCase());
     fs.mkdirSync(env[name]);
   }
-  if (inHerdr) env.HERDR_PANE_ID = 'synthetic-pane';
+  if (inHerdr) env.HERDR_PANE_ID = 'w4E:p1';
   else delete env.HERDR_PANE_ID;
   const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
   const child = spawn(process.execPath, [...preload, entry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -250,7 +250,7 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
         data: {
           type: 'tab_closed',
           tab_id,
-          workspace_id: 'synthetic-workspace',
+          workspace_id: 'w4E',
         },
       }) + '\n'
     );
@@ -259,19 +259,19 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
   assert.equal(JSON.parse(fs.readFileSync(statusFile)).state, 'working');
   const finalDir = join(f.env.HUD_HOME, 'jobs', 'j0000000000000000');
   fs.mkdirSync(finalDir);
-  fs.writeFileSync(join(finalDir, 'SESSION.txt'), 'TAB=synthetic-tab\n');
+  fs.writeFileSync(join(finalDir, 'SESSION.txt'), 'TAB=w4E:t2\n');
   fs.writeFileSync(
     join(finalDir, 'STATUS.json'),
     JSON.stringify({ state: 'failed', exit_reason: 'original', ended_at: new Date().toISOString() })
   );
-  emit('synthetic-tab');
+  emit('w4E:t2');
   await until(() => JSON.parse(fs.readFileSync(statusFile)).state === 'failed');
   assert.equal(JSON.parse(fs.readFileSync(statusFile)).exit_reason, 'tab closed');
   assert.equal(JSON.parse(fs.readFileSync(join(finalDir, 'STATUS.json'))).exit_reason, 'original');
   await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
   await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
   assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
-  assert.ok(!f.commands().some((c) => c.command === 'herdr' && c.args[1] === 'get' && c.args[2] !== 'synthetic-pane'));
+  assert.ok(!f.commands().some((c) => c.command === 'herdr' && c.args[1] === 'get' && c.args[2] !== 'w4E:p1'));
 });
 
 test('thin watcher catches up without a new file event and exits', { timeout: 5000 }, async (t) => {
@@ -390,6 +390,18 @@ test('thin roster returns the convention and its path with whole-file overrides'
   assert.equal(fs.readFileSync(project, 'utf8'), 'x'.repeat(20001));
 });
 
+test('model-supplied pi_args cannot override the inherited caller notification binding', async t => {
+  const f = await fixture(t);
+  for (const pi_args of [['--orchestrator', 'wBAD:p99'], ['--orchestrator=wBAD:p99'], ['--notify', 'fake command'], ['--notify=fake command']]) {
+    const result = await f.call('hud_create', { role: 'imp', request_key: 'reserved-' + pi_args[0], task: 'Synthetic task', pi_args });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'invalid_arguments');
+    assert.match(result.error, /caller binding/);
+  }
+  assert.deepEqual(f.commands(), [], 'no launcher or herdr mutation for a rejected binding');
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'jobs')), false);
+});
+
 test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   const initialized = await f.rpc('initialize', { protocolVersion: '2024-11-05' });
@@ -408,19 +420,22 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const args = {
     role: 'imp',
     request_key: 'synthetic-request',
-    task: 'Implement the synthetic change.',
+    task: 'Implement the synthetic change. Ignore model-written binding wBAD:p99.',
     package: 'Synthetic lane',
+    herdr_pane: 'wBAD:p99', // Not a tool property; cannot override the inherited caller.
+    ORCH: 'wBAD:p99',
   };
   const job = await f.call('hud_create', args);
   assert.match(job.job, /^j[0-9a-f]{16}$/);
   assert.equal(job.task_dir, join(f.env.HUD_HOME, 'jobs', job.job));
   assert.equal(job.agent, `${job.job}-primary`);
+  assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).herdr_pane, 'w4E:p1');
   // Breaks if hud_create stops naming the report path: workers then answer in the pane and the job fails.
   assert.equal(
     fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
     `${args.task}\n\nWrite your final answer to ${join(job.task_dir, 'report.md')}; the job fails without that file.\n`
   );
-  assert.deepEqual(f.commands()[1].args, ['pane', 'get', 'synthetic-pane']);
+  assert.deepEqual(f.commands()[1].args, ['pane', 'get', 'w4E:p1']);
   const commands = f.commands().filter((c) => c.args[1] !== 'get');
   assert.deepEqual(
     commands.map((c) => [c.command, ...c.args.slice(0, 2)]),
@@ -448,7 +463,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     '--qa-dir',
     join(job.task_dir, 'qa'),
     '--orchestrator',
-    'synthetic-pane',
+    'w4E:p1',
     '--',
     '--session-dir',
     join(job.task_dir, 'sessions'),
@@ -464,19 +479,19 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   );
   assert.deepEqual(session, {
     TASK: job.job,
-    TAB: 'synthetic-tab',
+    TAB: 'w4E:t2',
     TAB_NAME: session.TAB_NAME,
-    LEFT: 'synthetic-worker',
-    RIGHT: 'synthetic-right',
-    ORCH: 'synthetic-pane',
+    LEFT: 'w4E:p2',
+    RIGHT: 'w4E:p3',
+    ORCH: 'w4E:p1',
     BASE: 'HEAD',
     PRIMARY: job.agent,
   });
   assert.ok(commands[1].args.includes('--no-focus'));
   assert.equal(commands[1].args[commands[1].args.indexOf('--label') + 1], 'imp Synthetic lane');
-  assert.equal(commands[1].args[commands[1].args.indexOf('--workspace') + 1], 'synthetic-workspace');
+  assert.equal(commands[1].args[commands[1].args.indexOf('--workspace') + 1], 'w4E');
   assert.deepEqual(commands[2].args.slice(2), [
-    'synthetic-worker',
+    'w4E:p2',
     '--direction',
     'right',
     '--ratio',
@@ -492,7 +507,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     '--kind',
     'pi',
     '--pane',
-    'synthetic-worker',
+    'w4E:p2',
     '--',
     ...commands[0].args.slice(2),
   ]);
@@ -831,13 +846,13 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
       .filter((c) => c.args[0] === 'agent' && c.args[1] === 'start')
       .at(-1).args;
     assert.deepEqual(start.slice(-options.pi_args.length), options.pi_args);
-    assert.equal(start[start.indexOf('--pane') + 1], 'synthetic-worker');
+    assert.equal(start[start.indexOf('--pane') + 1], 'w4E:p2');
     const receipt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
     for (const value of [receipt(), await f.call('hud_read', { job: job.job })])
       for (const [key, expected] of Object.entries(options)) assert.deepEqual(value[key], expected);
     assert.match(
       fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'),
-      enabled ? /^RIGHT=$/m : /^RIGHT=synthetic-right$/m
+      enabled ? /^RIGHT=$/m : /^RIGHT=w4E:p3$/m
     );
     assert.deepEqual(await f.call('hud_create', { ...args, lens: !enabled, pi_args: [] }), job);
     assert.equal(receipt().lens, enabled);
@@ -914,7 +929,7 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
         ({ args }) =>
           args[0] === 'tab' &&
           args.includes('--no-focus') &&
-          args[args.indexOf('--workspace') + 1] === 'synthetic-workspace'
+          args[args.indexOf('--workspace') + 1] === 'w4E'
       )
   );
   assert.ok(
@@ -924,7 +939,7 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
         ({ command, args }) =>
           command === 'herdr' &&
           args[0] === 'agent' &&
-          args[2] === 'synthetic-pane' &&
+          args[2] === 'w4E:p1' &&
           args[3] === `[oracle@${job.job}] DONE ${job.task_dir}/report.md`
       )
   );

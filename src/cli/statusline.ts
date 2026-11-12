@@ -1,5 +1,4 @@
 import { getHudHome } from '../hud-home.js';
-import { rememberClaudePane } from '../collectors/claude-pane-session.js';
 import { readThinJobs } from '../collectors/thin-jobs.js';
 import { renderWorkSummary, workSignals } from '../render/work-summary.js';
 import { fileURLToPath } from 'node:url';
@@ -133,7 +132,6 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
     },
     stderr: io.stderr,
     render: async (value, width) => {
-      rememberClaudePane(value, io.env);
       const now = Date.now();
       const lanes = readThinJobs(getHudHome(io.env), { project: null, pane: io.env.HERDR_PANE_ID ?? null }, undefined,
         parity && !options.details ? { settledBefore: now - NOTICE_MS } : undefined);

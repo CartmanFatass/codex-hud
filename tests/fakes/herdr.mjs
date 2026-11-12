@@ -176,8 +176,8 @@ async function panelCall(argv, env) {
       return { stdout: 'Run a command in a pane\nUsage: herdr pane run <PANE_ID> <COMMAND>...\n', exit: 0 };
     const state = load(env.PANEL_FAKE_LOG + '.state');
     if (!state.panes.length) {
-      state.tabs.push({ tab_id: 'main-tab' });
-      state.panes.push({ pane_id: 'main', tab_id: 'main-tab', workspace_id: 'workspace-1' });
+      state.tabs.push({ tab_id: 'w4E:t1' });
+      state.panes.push({ pane_id: 'w4E:p1', tab_id: 'w4E:t1', workspace_id: 'w4E' });
     }
     return createHerdr({ profile: 'panel', state, save: (s) => persist(env.PANEL_FAKE_LOG + '.state', s) }).invoke(
       argv
@@ -195,8 +195,8 @@ async function panelCall(argv, env) {
   if (!['preflight', 'split', 'start', 'close'].includes(operation)) return refused('unknown_command');
   const state = load(log + '.state');
   if (!state.tabs.length) {
-    state.tabs.push({ tab_id: 'main-tab' });
-    state.panes.push({ pane_id: 'main', tab_id: 'main-tab', workspace_id: 'workspace-1' });
+    state.tabs.push({ tab_id: 'w4E:t1' });
+    state.panes.push({ pane_id: 'w4E:p1', tab_id: 'w4E:t1', workspace_id: 'w4E' });
   }
   const model = createHerdr({ profile: 'panel', state, save: (s) => persist(log + '.state', s) });
   if (operation === 'preflight') return { stdout: '{}', exit: 0 };
@@ -204,7 +204,7 @@ async function panelCall(argv, env) {
     const receipt = JSON.parse(fs.readFileSync(args[0], 'utf8'));
     if (receipt.phase !== 'opening') return refused('intent_missing');
     state.receipts.push(receipt);
-    const out = await model.invoke(['pane', 'split', 'main', '--env', args[1] ?? '{}']);
+    const out = await model.invoke(['pane', 'split', 'w4E:p1', '--env', args[1] ?? '{}']);
     return out.exit ? out : { stdout: JSON.stringify({ pane: JSON.parse(out.stdout).result.pane.pane_id }), exit: 0 };
   }
   return model.invoke(['pane', operation === 'start' ? 'run' : 'close', ...args]);

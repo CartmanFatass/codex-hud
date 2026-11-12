@@ -35,7 +35,7 @@ function fixture(t) {
     CODEX_HOME: join(home, 'codex'),
     CLAUDE_CONFIG_DIR: join(home, 'claude'),
     PI_CODING_AGENT_DIR: join(home, 'pi'),
-    HERDR_PANE_ID: 'main',
+    HERDR_PANE_ID: 'w4E:p1',
   };
   for (const key of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR'])
     mkdirSync(env[key], { recursive: true });
@@ -51,7 +51,7 @@ function fixture(t) {
     options = ['a) separate model line', 'b) beside the phase strip']
   ) =>
     `# Question\n\n${ask}\n\nOptions:\n${options.map((o) => '- ' + o).join('\n')}\n\nDefault if unanswered: ${fallback}\n\nContext: ${blocked}\n`;
-  const job = (n, pkg, title, state, age, settled = null, pane = 'main', extra = {}) => {
+  const job = (n, pkg, title, state, age, settled = null, pane = 'w4E:p1', extra = {}) => {
     const id = `j${String(n).padStart(16, '0')}`,
       dir = join(env.HUD_HOME, 'jobs', id);
     put(
@@ -96,10 +96,10 @@ function fixture(t) {
   job(3, 'TEST-CUT', 'list the slowest tests', 'failed', 9, 9);
   const ready = job(4, 'TEST-CUT', 'check the cut list', 'idle_grace', 20, 5);
   put(join(ready, 'report.md'), 'Accepts the cuts; all tests pass', 2);
-  job(5, 'PANEL-THIN', 'width flag', 'working', 1, null, 'main', { harness: 'codex' });
+  job(5, 'PANEL-THIN', 'width flag', 'working', 1, null, 'w4E:p1', { harness: 'codex' });
   job(6, 'TEST-CUT', 'Folded old success', 'closed', 15, 15);
-  job(7, 'WRONG-PANE', 'Never show another session', 'working', 1, null, 'elsewhere');
-  const pipeline = new PanelJobPipeline(env.HUD_HOME, null, { live: false }, null, { project: home, pane: 'main' });
+  job(7, 'WRONG-PANE', 'Never show another session', 'working', 1, null, 'w4E:p9');
+  const pipeline = new PanelJobPipeline(env.HUD_HOME, null, { live: false }, null, { project: home, pane: 'w4E:p1' });
   const display = setDisplayConfig({ theme: 'none', icons: 'unicode', glyphs: 'glyph' }),
     language = setLanguage('en');
   t.after(() => {
@@ -399,7 +399,7 @@ test('a lane row ends in one glyph per job, oldest first, then the role of the n
     const id = `j${String(n).padStart(16, '0')}`,
       dir = join(f.env.HUD_HOME, 'jobs', id),
       at = (m) => new Date(now - m * 60000).toISOString();
-    f.put(join(dir, 'job.json'), { job: id, role: 'imp', package: pkg, herdr_pane: 'main', created_at: at(started) });
+    f.put(join(dir, 'job.json'), { job: id, role: 'imp', package: pkg, herdr_pane: 'w4E:p1', created_at: at(started) });
     f.put(join(dir, 'brief.md'), `# ${pkg} job ${n}`);
     f.put(join(dir, 'STATUS.json'), {
       state,

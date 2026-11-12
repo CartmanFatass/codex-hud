@@ -193,7 +193,7 @@ function ports(f) {
   );
   const log = path.join(f.home, 'herdr.jsonl');
   fs.writeFileSync(log, '');
-  Object.assign(f.env, { PATH: `${bin}:${path.dirname(node)}`, HERDR_PANE_ID: 'main', PANEL_FAKE_LOG: log });
+  Object.assign(f.env, { PATH: `${bin}:${path.dirname(node)}`, HERDR_PANE_ID: 'w4E:p1', PANEL_FAKE_LOG: log });
   const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   const options = {
     env: f.env,
@@ -249,10 +249,10 @@ test('pi on/off/toggle/status uses the caller pane without native ancestry and r
   assert.equal(p.counts().splits, 1);
   const run = p.calls().find((argv) => argv[1] === 'run');
   const pane = run[2];
-  assert.deepEqual(p.calls()[0], ['pane', 'layout', '--pane', 'main']);
+  assert.deepEqual(p.calls()[0], ['pane', 'layout', '--pane', 'w4E:p1']);
   assert.equal(
     p.calls()[1].join('|'),
-    `pane|split|main|--direction|right|--ratio|${1 - 56 / 120}|--no-focus|--cwd|${f.cwd}|--env|HUD_PANEL_CALLER_PANE=main`
+    `pane|split|w4E:p1|--direction|right|--ratio|${1 - 56 / 120}|--no-focus|--cwd|${f.cwd}|--env|HUD_PANEL_CALLER_PANE=w4E:p1`
   );
   assert.ok(run[3].includes(`'${f.binding.release}/bin/hud' 'panel' '--here' '--harness' 'pi'`));
   assert.ok(run[3].endsWith(`'--session' 'session-a' '--source' '${c.source}'`));

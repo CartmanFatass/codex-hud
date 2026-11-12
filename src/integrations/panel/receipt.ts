@@ -7,6 +7,7 @@ import { makeSourceId } from '../../core/identity.js';
 import type { Harness, SessionRef } from '../../core/types/identity.js';
 import type { ProcessStamp } from '../../core/types/supervision.js';
 import { formatRosterRoot, parseRosterRoot } from '../../roles/selection.js';
+import { herdrId } from '../../roles/herdr-run.js';
 
 export type PanelPhase = 'opening' | 'open' | 'closing' | 'closed' | 'uncertain';
 export interface DisplayTarget {
@@ -62,10 +63,10 @@ export function validPane(s: unknown): s is PaneIdentity {
   if (!s || typeof s !== 'object') return false;
   const p = s as PaneIdentity;
   return (
-    [p.pane, p.tab, p.terminal].every((v) => clean(v, 256)) &&
+    [p.pane, p.tab, p.terminal].every(herdrId) &&
     validStamp(p.process) &&
     (p.shell === undefined || validStamp(p.shell)) &&
-    (p.workspace === undefined || clean(p.workspace, 256))
+    (p.workspace === undefined || herdrId(p.workspace))
   );
 }
 export function displayTarget(harness: Harness, session: string, source: string): DisplayTarget {
@@ -100,12 +101,12 @@ export function decodeReceipt(raw: unknown): PanelReceipt {
     !(r.panel === null || validPane(r.panel)) ||
     r.panel?.pane === r.origin.pane ||
     (r.createdPane !== undefined &&
-      (!clean(r.createdPane, 256) ||
+      (!herdrId(r.createdPane) ||
         r.createdPane === r.origin.pane ||
         (r.panel !== null && r.panel.pane !== r.createdPane))) ||
     (r.createdWorkspace !== undefined &&
       (!r.createdPane ||
-        !clean(r.createdWorkspace, 256) ||
+        !herdrId(r.createdWorkspace) ||
         (r.panel !== null && r.panel.workspace !== r.createdWorkspace))) ||
     (r.reason !== undefined && r.reason !== 'split_reply_lost')
   )

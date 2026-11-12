@@ -20,7 +20,7 @@ function checkPanel(t, width, columns, layoutWidth, ratio) {
 import fs from 'node:fs';
 if (process.argv[3] === 'layout') {
   fs.appendFileSync(process.env.PANEL_FAKE_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');
-  console.log(JSON.stringify({result: {layout: {panes: [{pane_id: 'other', rect: {width: 80}}, {pane_id: 'main', rect: {width: Number(process.env.PANEL_LAYOUT_WIDTH)}}]}}}));
+  console.log(JSON.stringify({result: {layout: {panes: [{pane_id: 'w4E:p9', rect: {width: 80}}, {pane_id: 'w4E:p1', rect: {width: Number(process.env.PANEL_LAYOUT_WIDTH)}}]}}}));
 } else await import(${JSON.stringify(pathToFileURL(resolve('tests/fakes/panel-herdr.mjs')).href)});
 `,
     { mode: 0o700 }
@@ -41,7 +41,7 @@ if (process.argv[3] === 'layout') {
         PANEL_LAYOUT_WIDTH: layoutWidth,
         HERDR_SOCKET_PATH: join(dir, 'synthetic.sock'),
         PATH: `${bin}:${dirname(process.execPath)}`,
-        HERDR_PANE_ID: 'main',
+        HERDR_PANE_ID: 'w4E:p1',
         PANEL_FAKE_LOG: log,
       },
       encoding: 'utf8',
@@ -50,10 +50,10 @@ if (process.argv[3] === 'layout') {
   );
   assert.equal(result.status, 0, result.stderr);
   const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
-  if (!columns) assert.deepEqual(calls.shift(), ['pane', 'layout', '--pane', 'main']);
+  if (!columns) assert.deepEqual(calls.shift(), ['pane', 'layout', '--pane', 'w4E:p1']);
   assert.equal(
     calls[0].join('|'),
-    `pane|split|main|--direction|right|--ratio|${ratio}|--no-focus|--cwd|${cwd}|--env|HUD_PANEL_CALLER_PANE=main`
+    `pane|split|w4E:p1|--direction|right|--ratio|${ratio}|--no-focus|--cwd|${cwd}|--env|HUD_PANEL_CALLER_PANE=w4E:p1`
   );
   assert.equal(calls.length, 3, 'one split, rename and run after optional geometry lookup');
   const pane = result.stdout.trim();

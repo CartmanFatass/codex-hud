@@ -138,13 +138,14 @@ export function herdrResult(stdout: string): Record<string, unknown> | null {
   }
 }
 
-const ID = /^[A-Za-z0-9][A-Za-z0-9:_./-]{0,80}$/;
+export const herdrId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && !/[\x00-\x1f\x7f-\x9f]/.test(value);
 
 export function tabIds(stdout: string): { tabId: string; paneId: string } | null {
   const result = herdrResult(stdout);
   const tab = result && isRecord(result.tab) ? result.tab.tab_id : undefined;
   const pane = result && isRecord(result.root_pane) ? result.root_pane.pane_id : undefined;
-  if (typeof tab !== 'string' || typeof pane !== 'string' || !ID.test(tab) || !ID.test(pane)) return null;
+  if (!herdrId(tab) || !herdrId(pane)) return null;
   return { tabId: tab, paneId: pane };
 }
 
@@ -169,8 +170,8 @@ export function listedAgents(stdout: string): ListedAgent[] | null {
     if (typeof entry.name !== 'string' || entry.name.length === 0) continue;
     agents.push({
       name: entry.name,
-      tabId: typeof entry.tab_id === 'string' ? entry.tab_id : null,
-      paneId: typeof entry.pane_id === 'string' ? entry.pane_id : null,
+      tabId: herdrId(entry.tab_id) ? entry.tab_id : null,
+      paneId: herdrId(entry.pane_id) ? entry.pane_id : null,
       status: typeof entry.agent_status === 'string' ? entry.agent_status : null,
     });
   }
@@ -189,11 +190,11 @@ export function listedTabs(stdout: string): ListedTab[] | null {
   if (!result || !Array.isArray(result.tabs)) return null;
   const tabs: ListedTab[] = [];
   for (const entry of result.tabs) {
-    if (!isRecord(entry) || typeof entry.tab_id !== 'string' || !ID.test(entry.tab_id)) return null;
+    if (!isRecord(entry) || !herdrId(entry.tab_id)) return null;
     tabs.push({
       label: typeof entry.label === 'string' ? entry.label : null,
       tabId: entry.tab_id,
-      workspaceId: typeof entry.workspace_id === 'string' ? entry.workspace_id : null,
+      workspaceId: herdrId(entry.workspace_id) ? entry.workspace_id : null,
     });
   }
   return tabs;
@@ -206,11 +207,11 @@ export function listedTabs(stdout: string): ListedTab[] | null {
 export function tabInfo(stdout: string): ListedTab | null {
   const result = herdrResult(stdout);
   const tab = result && isRecord(result.tab) ? result.tab : null;
-  if (!tab || typeof tab.tab_id !== 'string' || !ID.test(tab.tab_id)) return null;
+  if (!tab || !herdrId(tab.tab_id)) return null;
   return {
     label: typeof tab.label === 'string' ? tab.label : null,
     tabId: tab.tab_id,
-    workspaceId: typeof tab.workspace_id === 'string' ? tab.workspace_id : null,
+    workspaceId: herdrId(tab.workspace_id) ? tab.workspace_id : null,
   };
 }
 
@@ -225,8 +226,8 @@ export function listedPanes(stdout: string): ListedPane[] | null {
   if (!result || !Array.isArray(result.panes)) return null;
   const panes: ListedPane[] = [];
   for (const entry of result.panes) {
-    if (!isRecord(entry) || typeof entry.pane_id !== 'string' || !ID.test(entry.pane_id)) return null;
-    const tabId = typeof entry.tab_id === 'string' && ID.test(entry.tab_id) ? entry.tab_id : null;
+    if (!isRecord(entry) || !herdrId(entry.pane_id)) return null;
+    const tabId = herdrId(entry.tab_id) ? entry.tab_id : null;
     panes.push({ paneId: entry.pane_id, tabId });
   }
   return panes;

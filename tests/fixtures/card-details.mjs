@@ -12,7 +12,7 @@ export function cardFixture(home) {
   const dir = join(home, 'jobs', 'j0123456789abcdef');
   fs.mkdirSync(dir, { recursive: true });
   for (const [file, body] of Object.entries({
-    'job.json': JSON.stringify({ job: 'j0123456789abcdef', herdr_pane: 'synthetic-main', role: 'imp', package: 'SYNTHETIC', created_at: new Date(NOW - 240_000).toISOString() }),
+    'job.json': JSON.stringify({ job: 'j0123456789abcdef', herdr_pane: 'w4E:p1', role: 'imp', package: 'SYNTHETIC', created_at: new Date(NOW - 240_000).toISOString() }),
     'brief.md': '# SYNTHETIC: keyword colours',
     'STATUS.json': JSON.stringify({ state: 'working' }),
     'report.md': 'Factual details from report.md with enough words to wrap at a narrow width.',
@@ -20,7 +20,7 @@ export function cardFixture(home) {
     fs.writeFileSync(join(dir, file), body);
     fs.utimesSync(join(dir, file), new Date(NOW - 240_000), new Date(NOW - 240_000));
   }
-  const jobs = readThinJobs(home, { pane: 'synthetic-main', project: null });
+  const jobs = readThinJobs(home, { pane: 'w4E:p1', project: null });
   const native = f.board(tree);
   const lanes = [...jobs, ...native.lanes];
   const board = { ...native, lanes, workers: lanes.flatMap((l) => l.workers), decisions: [] };

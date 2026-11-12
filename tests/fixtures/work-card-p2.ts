@@ -21,7 +21,7 @@ export function p2Fixture(t: TestContext, corroborated: () => boolean = () => tr
         JSON.stringify({
           result: {
             agents: corroborated()
-              ? [{ name: 'synthetic-agent', tab_id: 'tab-1', pane_id: 'pane-1', agent_status: 'working' }]
+              ? [{ name: 'synthetic-agent', tab_id: 'w4E:t1', pane_id: 'w4E:p1', agent_status: 'working' }]
               : [],
           },
         }),

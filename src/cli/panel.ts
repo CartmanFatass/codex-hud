@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { realpathSync, statSync } from 'node:fs';
-import { claudePaneSession } from '../collectors/claude-pane-session.js';
+import { claudeCallerSession } from '../collectors/claude-caller-session.js';
 import { displayTarget } from '../integrations/panel/receipt.js';
 import { getHudHome } from '../hud-home.js';
 import { resolveHudEnv } from '../utils/hud-env.js';
@@ -75,7 +75,7 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
   }
   const here = rest[0] === '--here';
   const selection = here ? rest.slice(1) : rest;
-  const bound = selection.length ? undefined : claudePaneSession(io.env);
+  const bound = selection.length ? undefined : await claudeCallerSession(io.env);
   const selected = bound ? ['--harness', 'claude', '--session', bound.session, '--source', bound.source] : selection;
   const { root, source, harness } = panelSelection(selected);
   if (!here && io.env.HERDR_PANE_ID) {

@@ -123,7 +123,7 @@ export const PI_ROLE_TOOLS = [
         type: 'array',
         items: { ...text, maxLength: 4096 },
         maxItems: 128,
-        description: 'Append pi arguments after -- verbatim, never through a shell.',
+        description: 'Append pi arguments after -- verbatim, never through a shell; --orchestrator and --notify are reserved for the inherited caller binding.',
       },
     },
     ['role', 'request_key', 'task']
