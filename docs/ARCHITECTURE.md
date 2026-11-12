@@ -3,7 +3,8 @@
 The HUD serves Claude Code, Codex and pi on Linux/WSL inside herdr.
 [The spec](./spec.md) defines the product; [the reference](./reference.md) describes
 its controls. This page describes the current code, not an execution platform.
-Earlier designs remain in git history and [dated reviews](./reviews/).
+Earlier designs remain in git history and
+[dated reviews](https://github.com/CartmanFatass/codex-hud/tree/universal-hud/docs/reviews).
 
 ## 1. The mental model in one screen
 
@@ -64,20 +65,22 @@ files, uses official registration commands where available, and never edits shel
 rc files. `hud uninstall` invokes `./install --uninstall`, removes owned bindings
 and command links, and retains HUD data. See [installer extensions](../install.d/README.md).
 
-**Node floor: 22.x ≥22.13.0 or ≥24.0.0; 23 remains unsupported.** The package engine
-range and installer use that same supported-family policy. Evidence:
+**Node floor: ≥24.0.0. Node 24 is the tested supported line.** Root/MCP package
+engines, installer and command launchers share this floor. Earlier Node versions
+are not supported, even if individual APIs or dependencies work there.
 
-- [Node's SQLite history](https://nodejs.org/docs/latest-v22.x/api/sqlite.html#sqlite)
-  says SQLite became available without `--experimental-sqlite` in **22.13.0**.
-  `collectors/daemon-binding.ts` loads `DatabaseSync` for best-effort read-only
-  Codex session binding. Its absence must not silently become the advertised full runtime.
-- [Node's process history](https://nodejs.org/docs/latest-v22.x/api/process.html#processexecvefile-args-env)
-  adds `process.execve` in **22.15.0**. `utils/panel-reload.ts` feature-detects it;
-  without it a single signal-forwarding supervisor handles subsequent replacements.
-  Therefore reload does **not** raise the floor to 22.15.
-- The locked runtime dependencies `chokidar` 5 and `readdirp` 5 require
-  **≥20.19.0** in their `engines` (see `package-lock.json`), below the SQLite floor.
-  The locked build tools require no higher version.
+- The full suite on Node 22.13.0 failed five watcher tests: four link-loop cases
+  depend on Node 24's `watch error: ELOOP` behavior, and the unreadable-sessions
+  working-tab case did not settle. Node 22's watcher behavior is not qualified;
+  a SQLite-only API floor is insufficient for the shipped product.
+- [Node 24's filesystem documentation](https://nodejs.org/docs/latest-v24.x/api/fs.html#fswatchfilename-options-listener)
+  describes the watcher API. The release is rehearsed on Node 24 with an isolated
+  offline build and client stand-ins, not a claim of real-client validation.
+- `collectors/daemon-binding.ts` uses `node:sqlite` for best-effort read-only Codex
+  binding. `utils/panel-reload.ts` still feature-detects `process.execve` and keeps
+  its signal-forwarding fallback; neither lowers the supported product floor.
+- Locked runtime dependencies `chokidar` 5 and `readdirp` 5 require **≥20.19.0**;
+  the locked build tools need no higher floor than the product (see `package-lock.json`).
 
 `hud codex` runs the existing `bin/codex-hud` tmux launcher. It creates a session
 for the cwd and selected `CODEX_HOME`, starts Codex unchanged, and opens the bar.

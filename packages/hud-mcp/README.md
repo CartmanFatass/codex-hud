@@ -7,7 +7,7 @@ The main session decides what to do next. The implementation is
 
 ## Prerequisites and setup
 
-- Node **22.x ≥22.13.0 or ≥24.0.0** (23 is unsupported); see the
+- Node **≥24.0.0** (Node 24 is the tested supported line); see the
   [runtime evidence](../../docs/ARCHITECTURE.md#3-launch-and-installation).
 - herdr, with the caller's `HERDR_PANE_ID` available for job creation.
 - For pi roles: the pi coding-agent CLI and the separately installed **pi-roles**

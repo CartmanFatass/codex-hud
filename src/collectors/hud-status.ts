@@ -9,7 +9,7 @@
  *
  * Git runs off the frame: `build` starts a refresh at most every few seconds
  * and always returns the last snapshot, so a slow `git status` (WSL /mnt/c)
- * never delays a repaint. `onChange` fires when a refresh lands.
+ * never delays a repaint. `onChange` runs when a refresh lands.
  */
 import * as path from 'node:path';
 import { readCodexConfig } from './codex-config.js';

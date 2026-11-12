@@ -212,7 +212,7 @@ export function initRenderer(): void {
 
   // Handle resize
   process.stdout.on('resize', () => {
-    // A non-TTY stdout never fires this, so the one-shot tmux answer only
+    // A non-TTY stdout never emits this, so the one-shot tmux answer only
     // needs refreshing for the TTY case, where stdout is authoritative anyway.
     tmuxPaneSize = {};
     tmuxQueryStarted = false;

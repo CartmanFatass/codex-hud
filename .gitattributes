@@ -1,2 +1,23 @@
 # Fixed-width frame fixtures compare their trailing cells byte for byte.
 tests/fixtures/workboard-frames/*.txt whitespace=-blank-at-eol
+
+# Source release: runtime/build inputs and current user documentation only.
+/tests export-ignore
+/docs/* export-ignore
+/docs/ARCHITECTURE.md -export-ignore
+/docs/reference.md -export-ignore
+/docs/reference.zh.md -export-ignore
+/docs/spec.md -export-ignore
+/.scratch export-ignore
+/.github export-ignore
+/.codegraph export-ignore
+/cx-continue export-ignore
+/AGENTS.md export-ignore
+/CLAUDE.md export-ignore
+**/CLAUDE.md export-ignore
+/ISSUES.md export-ignore
+/impl-notes.md export-ignore
+/scripts/update-snapshots.mjs export-ignore
+/tsconfig.test.json export-ignore
+/.prettierignore export-ignore
+/.prettierrc.json export-ignore

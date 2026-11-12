@@ -12,6 +12,8 @@
 </claude-mem-context>
 # Project guide
 
+Runtime: **Node >=24.0.0**. Node 24 is the tested supported line; Node 22's watcher behavior is not qualified.
+
 Read `docs/ARCHITECTURE.md` before changing code: the two processes (bar `src/index.ts`, panel `src/tree-page.ts`), data collection, the optional model features, rendering, the rules every change keeps (§8), recipes and gotchas. What users see is in `docs/reference.md`.
 
 # Universal HUD effort (branch `universal-hud`)

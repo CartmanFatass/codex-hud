@@ -37,7 +37,7 @@ test('Node floor is checked before extension hooks, builds or filesystem changes
     for (const version of ['18.20.0', '20.19.0', '22.12.0', '23.11.0', '22.13.0', '22.15.0', '24.0.0', '26.0.0']) {
       const home = path.join(temp, version);
       const hudHome = path.join(home, '.hud');
-      const supported = ['22.13.0', '22.15.0', '24.0.0', '26.0.0'].includes(version);
+      const supported = ['24.0.0', '26.0.0'].includes(version);
       const result = spawnSync('./install', [supported ? '--skip-build' : '--with', ...(supported ? [] : ['probe'])], {
         cwd: repo,
         env: {
@@ -58,7 +58,33 @@ test('Node floor is checked before extension hooks, builds or filesystem changes
       } else {
         assert.equal(fs.existsSync(home), false, `${version}: no extension hook, npm, home, config or symlink changes`);
         assert.equal(result.stdout, '', `${version}: only the refusal line should print`);
-        assert.equal(result.stderr, 'Error: Node 22.x >=22.13.0 or Node >=24.0.0 required (23 unsupported)\n');
+        assert.equal(result.stderr, 'Error: Node >=24.0.0 required\n');
+      }
+    }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('public launchers refuse Node below 24 before imports, uninstall or Codex launch', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-launcher-node-'));
+  try {
+    const preload = path.join(temp, 'version.cjs');
+    fs.writeFileSync(preload, "Object.defineProperty(process.versions, 'node', { value: process.env.SYNTHETIC_NODE });\n");
+    for (const version of ['18.20.0', '22.13.0', '22.15.0', '23.11.0']) {
+      for (const [entry, args, code, message] of [
+        ['bin/hud', ['--help'], 5, 'runtime_unavailable: Node >=24.0.0 required\n'],
+        ['bin/hud', ['uninstall'], 5, 'runtime_unavailable: Node >=24.0.0 required\n'],
+        ['bin/hud', ['codex'], 5, 'runtime_unavailable: Node >=24.0.0 required\n'],
+        ['packages/hud-mcp/bin/hud-mcp.mjs', [], 1, `hud-mcp requires Node >=24.0.0 (running ${version}).\n`],
+      ]) {
+        const result = spawnSync(process.execPath, ['--require', preload, path.join(root, entry), ...args], {
+          env: { HOME: temp, HUD_HOME: path.join(temp, 'unused-hud'), SYNTHETIC_NODE: version }, encoding: 'utf8',
+        });
+        assert.equal(result.status, code, `${entry} (${version}): ${result.stderr}`);
+        assert.equal(result.stdout, '');
+        assert.equal(result.stderr, message);
+        assert.equal(fs.existsSync(path.join(temp, 'unused-hud')), false);
       }
     }
   } finally {

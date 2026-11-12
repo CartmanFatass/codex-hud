@@ -191,7 +191,7 @@ export class Notifier {
     if (!previous) {
       return true;
     }
-    // The same occurrence never fires twice. A different one waits out the
+    // The same occurrence never notifies twice. A different one waits out the
     // cooldown, so a flapping condition cannot turn into a stream of pop-ups.
     if (previous.fingerprint === event.fingerprint) {
       return false;

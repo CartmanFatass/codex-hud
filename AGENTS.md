@@ -51,7 +51,7 @@ After merging, push and update STATE.md. Never touch `main`, never force-push, n
   - anything touching a real `~/.hud`, `~/.claude`, `~/.codex*` or `~/.pi`.
 - `docs/delegation.md`, `tmp/tasks/` and Herdr pane names in older docs describe the former local setup.
 - `.codegraph/` is not available. Search with grep.
-- **Runtime:** Node 22 ≥ 22.13 or Node 24 (`node:sqlite`). Run `npm ci` if `tsc` or `prettier` is missing.
+- **Runtime:** Node >=24.0.0; Node 24 is the tested supported line (watcher behavior on Node 22 is not qualified). Run `npm ci` if `tsc` or `prettier` is missing.
 - **Tests:** they use a temporary `HOME` and `HUD_HOME`. Performance numbers name the host and report the range over
   at least three runs; they are design evidence, not the formal WSL qualification.
 - **Public repo:** fixtures, docs and logs use synthetic data only.

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-const [major, minor] = process.versions.node.split('.').map(Number);
-if (!((major === 22 && minor >= 13) || major >= 24)) {
+const major = Number(process.versions.node.split('.')[0]);
+if (major < 24) {
   process.stderr.write(
-    `hud-mcp requires Node 22.x >=22.13.0 or Node >=24 (Node 23 is unsupported) (running ${process.versions.node}); the HUD bar supports Node >=18.\n`
+    `hud-mcp requires Node >=24.0.0 (running ${process.versions.node}).\n`
   );
   process.exit(1);
 }

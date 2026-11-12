@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-const [major, minor] = process.versions.node.split('.').map(Number);
-if (!((major === 22 && minor >= 13) || major >= 24) &&
-    !['codex', 'codex-hud'].includes(process.argv[2])) {
-  process.stderr.write('runtime_unavailable: Node 22.x >=22.13 or Node >=24 required (23 unsupported)\n');
+const major = Number(process.versions.node.split('.')[0]);
+if (major < 24) {
+  process.stderr.write('runtime_unavailable: Node >=24.0.0 required\n');
   process.exit(5);
 }
 if (process.argv[2] === 'uninstall') {

@@ -14,16 +14,21 @@ Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud).
 
 ## Quick Start
 
-Requires **Node 22.x ≥22.13.0 or ≥24.0.0** (23 is unsupported), npm, and the clients
+Requires **Node ≥24.0.0** (Node 24 is the tested supported line), npm, and the clients
 you select. Codex's bar also needs tmux. Jobs need herdr, pi and separately installed
 **pi-roles** on PATH; browser roles need their external **jev-*** CLIs configured.
 The installer does not install/authenticate those tools. See the
 [Node floor evidence](./docs/ARCHITECTURE.md#3-launch-and-installation).
 
+Download `hud-<version>.tar.gz` from the project's
+[releases](https://github.com/CartmanFatass/codex-hud/releases), then extract it
+(the example uses version 0.1.0):
+
 ```sh
-git clone https://github.com/CartmanFatass/codex-hud.git
-cd codex-hud
-./install --with claude,pi,codex
+tar -xzf hud-0.1.0.tar.gz
+cd hud-0.1.0
+./install                         # core only
+./install --with claude,pi,codex   # core plus selected extensions
 
 # Add the printed Codex function to your shell, then launch:
 codexH() { hud codex "$@"; }
@@ -32,9 +37,17 @@ codexH
 
 Choose any of `claude,pi,codex,browser,herdr`; core is always included. Browser/herdr
 extensions check external prerequisites, not install them. Default installation
-builds the HUD and MCP (`npm ci` if dependencies are absent); `--skip-build` uses
-existing outputs. Commands in `~/.local/bin` and client bindings point into this
-checkout/extraction: **keep that directory**. The installer never edits shell rc files.
+builds the HUD and MCP. The source archive includes tracked build dependencies,
+including TypeScript, so `./install` builds without network access (`npm ci` is
+only needed in a checkout without dependencies). `--skip-build` uses existing
+outputs. Commands in `~/.local/bin` and client bindings point into this
+checkout/extraction: **keep the extracted directory in its installed location**.
+The installer never edits shell rc files.
+
+**Moving from a checkout install:** first run that checkout's `./install --uninstall`
+(with each extra `CODEX_HOME` as described in the extension guide). `$HUD_HOME`
+data is kept. Then run the extracted archive's `./install --with` command above.
+Do not delete unrelated colliding commands to make an installation succeed.
 
 Ordinary `claude` uses the HUD statusline; an existing owner-defined non-HUD
 statusline is preserved. Ordinary `pi` loads the HUD footer. `codexH` starts Codex
@@ -172,7 +185,12 @@ Tests use synthetic data and temporary homes. Frame tests compare terminal cells
 not font pixels. Normal tests verify, never rewrite snapshots. `CODEX_HUD_PROFILE=1`
 writes stage timings under `$HUD_HOME/display/profile.log`.
 
-Earlier designs and screenshots remain in git history and [dated reviews](./docs/reviews/).
+Maintainers create the source archive from a clean, committed HEAD with
+`npm run release` (writes `hud-<version>.tar.gz`). `npm run test:release` rehearses
+that archive's offline build, isolated client registration, MCP and uninstall.
+Tests and historical documents are not shipped. Earlier designs, screenshots and
+[dated reviews](https://github.com/CartmanFatass/codex-hud/tree/universal-hud/docs/reviews)
+remain in the repository history.
 
 ## License and credits
 

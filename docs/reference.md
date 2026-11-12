@@ -14,11 +14,12 @@ Current controls for Claude Code, Codex and pi. [中文](./reference.zh.md) ·
 - [Configuration](#configuration)
 
 Earlier activation, bootstrap and owned-worker designs live in git history and
-[dated reviews](./reviews/), not in the current setup instructions.
+[dated reviews](https://github.com/CartmanFatass/codex-hud/tree/universal-hud/docs/reviews),
+not in the current setup instructions.
 
 ## Installing
 
-Use **Node 22.x ≥22.13.0 or ≥24.0.0** (23 is unsupported; see
+Use **Node ≥24.0.0** (Node 24 is the tested supported line; see
 [runtime evidence](./ARCHITECTURE.md#3-launch-and-installation)). From the checkout:
 
 ```sh

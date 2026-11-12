@@ -51,6 +51,7 @@ dist-test/
 # Review patches and archives dropped in the repo root
 /*.patch
 /*.zip
+/hud-*.tar.gz
 
 # Windows alternate data streams copied through WSL
 *:Zone.Identifier

@@ -13,11 +13,11 @@ Claude Code、Codex 与 pi 的当前操作说明。[English](./reference.md) ·
 - [机器可读状态](#机器可读状态)
 - [配置](#配置)
 
-早期激活、bootstrap 与自有工作者设计保存在 git 历史和[历次评审](./reviews/)中，不属于当前安装步骤。
+早期激活、bootstrap 与自有工作者设计保存在 git 历史和[历次评审](https://github.com/CartmanFatass/codex-hud/tree/universal-hud/docs/reviews)中，不属于当前安装步骤。
 
 ## 安装
 
-需要 **Node 22.x ≥22.13.0 或 ≥24.0.0**（不支持 23；见[运行时依据](./ARCHITECTURE.md#3-launch-and-installation)）。在检出目录运行：
+需要 **Node ≥24.0.0**（Node 24 为经过测试的支持版本线；见[运行时依据](./ARCHITECTURE.md#3-launch-and-installation)）。在检出目录运行：
 
 ```sh
 ./install --with claude,pi,codex,browser,herdr

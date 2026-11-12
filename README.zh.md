@@ -13,15 +13,19 @@
 
 ## 快速开始
 
-需要 **Node 22.x ≥22.13.0 或 ≥24.0.0**（不支持 23）、npm 及所选客户端。
+需要 **Node ≥24.0.0**（Node 24 为经过测试的支持版本线）、npm 及所选客户端。
 Codex 状态行还需 tmux。任务另需 PATH 中的 herdr、pi 与单独安装的 **pi-roles**；
 浏览器角色需已配置的外部 **jev-*** CLI。安装器不安装这些工具、不代为鉴权。
 见 [Node 下限依据](./docs/ARCHITECTURE.md#3-launch-and-installation)。
 
+从项目的[发布页](https://github.com/CartmanFatass/codex-hud/releases)下载
+`hud-<version>.tar.gz`，然后解压（以下以 0.1.0 为例）：
+
 ```sh
-git clone https://github.com/CartmanFatass/codex-hud.git
-cd codex-hud
-./install --with claude,pi,codex
+tar -xzf hud-0.1.0.tar.gz
+cd hud-0.1.0
+./install                         # 只安装核心
+./install --with claude,pi,codex   # 核心及所选扩展
 
 # 将打印的 Codex 函数加入 shell，再启动：
 codexH() { hud codex "$@"; }
@@ -29,8 +33,12 @@ codexH
 ```
 
 可任选 `claude,pi,codex,browser,herdr`，核心始终安装。browser/herdr 只检查外部工具，不安装。
-默认构建 HUD 和 MCP，缺少依赖时运行 `npm ci`；`--skip-build` 使用已有输出。
-`~/.local/bin` 中的命令和客户端绑定指向检出／解压目录，**请保留该目录**。不修改 shell rc。
+默认构建 HUD 和 MCP；源码包包含 TypeScript 等构建依赖，可离线安装。
+只有缺少依赖的检出才运行 `npm ci`；`--skip-build` 使用已有输出。
+`~/.local/bin` 中的命令和客户端绑定指向检出／解压目录，**请在安装位置保留该目录**。不修改 shell rc。
+
+从检出安装迁移时，先在旧检出中运行 `./install --uninstall`（额外的 `CODEX_HOME`
+见扩展说明），`$HUD_HOME` 数据保留；再在解压目录中运行上述安装命令。不要删除无关的冲突命令。
 
 直接启动 `claude` 用 HUD 状态行，已有非 HUD 自定义状态行保留；直接启动 `pi` 加载 HUD 页脚。
 `codexH` 启动带 tmux 状态行的 Codex。只有侧面板按需打开：Claude/pi 用 `/hud`，Codex 用 F12，启动时不打开。
@@ -146,7 +154,9 @@ npm run snapshots:update
 测试使用合成数据和临时 home，帧测试比较终端单元格而非字体像素。
 常规测试只校验，不改快照。`CODEX_HUD_PROFILE=1` 将阶段计时写到 `$HUD_HOME/display/profile.log`。
 
-早期设计与截图保存在 git 历史和[历次评审](./docs/reviews/)。
+维护者在干净且已提交的工作树运行 `npm run release` 生成 `hud-<version>.tar.gz`；
+`npm run test:release` 排练离线构建、隔离注册、MCP 和卸载。测试和历史文档不随包发布。
+早期设计与截图保存在 git 历史和[历次评审](https://github.com/CartmanFatass/codex-hud/tree/universal-hud/docs/reviews)。
 
 ## 许可证与致谢
 
