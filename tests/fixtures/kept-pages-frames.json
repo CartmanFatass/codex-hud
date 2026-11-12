@@ -1,6 +1,6 @@
 {
   "home-80-en": [
-    " Home 1                                                                models on",
+    " Home 1  Project                                                       models on",
     "",
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -42,7 +42,7 @@
     "✓ 3 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "home-80-zh": [
-    " 首页 1                                                                  模型 开",
+    " 首页 1  项目                                                            模型 开",
     "",
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -81,10 +81,10 @@
     "",
     "",
     "",
-    "✓ 3 今日完成             ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助"
+    "✓ 3 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "older-80-en": [
-    " Home 1                                                                models on",
+    " Home 1  Project                                                       models on",
     "",
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -126,7 +126,7 @@
     "✓ 3 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "older-80-zh": [
-    " 首页 1                                                                  模型 开",
+    " 首页 1  项目                                                            模型 开",
     "",
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -165,7 +165,7 @@
     "",
     "",
     "",
-    "✓ 3 今日完成             ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助"
+    "✓ 3 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "job-80-en": [
     "‹ Home › R5-API · imp",
@@ -381,13 +381,14 @@
     "‹ Help",
     "",
     "Keys ─────────────────────────────────    Marks ────────────────────────────────",
-    "1       Home                              ✓ done      ◉ running   ? asking you",
-    "3       Changes                           ✗ failed    − stopped   ◷ stalled",
-    "↑ ↓     move                              ◆ answer differs from the default",
-    "⏎       expand / collapse in place        ◇ answer as proposed",
-    "o       open the file in $EDITOR          ┃ body of a card",
-    "v       inspect: details and files        dim rows are older ones, shown with a",
-    "a       show / hide older jobs and        lavender words are marked by the model",
+    "1 2     Home · Project                    ✓ done      ◉ running   ? asking you",
+    "← → Tab next / previous tab               ✗ failed    − stopped   ◷ stalled",
+    "3       Changes                           ◆ answer differs from the default",
+    "↑ ↓     move                              ◇ answer as proposed",
+    "⏎       expand / collapse in place        ┃ body of a card",
+    "o       open the file in $EDITOR          dim rows are older ones, shown with a",
+    "v       inspect: details and files        lavender words are marked by the model",
+    "a       show / hide older jobs and",
     "        decisions (Home)",
     "n N     next / previous trouble (Home)",
     "b       models on / off",
@@ -395,10 +396,9 @@
     "?       this page",
     "Esc     back",
     "",
-    "In the Inspector ⏎ opens the file",
+    "In Project and the Inspector ⏎ opens the file",
     "click selects · again expands · wheel scrolls",
     "In Codex's own panel press Ctrl+\\ first",
-    "",
     "",
     "",
     "",
@@ -462,7 +462,7 @@
     "                                                             ↑↓ scroll  esc back"
   ],
   "home-120-en": [
-    " Home 1                                                                                                        models on",
+    " Home 1  Project                                                                                               models on",
     "",
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -501,10 +501,10 @@
     "",
     "",
     "",
-    "✓ 3 done today                                           ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
+    "✓ 3 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "home-120-zh": [
-    " 首页 1                                                                                                          模型 开",
+    " 首页 1  项目                                                                                                    模型 开",
     "",
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -543,10 +543,10 @@
     "",
     "",
     "",
-    "✓ 3 今日完成                                                     ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助"
+    "✓ 3 今日完成                                            ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "older-120-en": [
-    " Home 1                                                                                                        models on",
+    " Home 1  Project                                                                                               models on",
     "",
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -585,10 +585,10 @@
     "",
     "",
     "",
-    "✓ 3 done today                                           ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
+    "✓ 3 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "older-120-zh": [
-    " 首页 1                                                                                                          模型 开",
+    " 首页 1  项目                                                                                                    模型 开",
     "",
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -627,7 +627,7 @@
     "",
     "",
     "",
-    "✓ 3 今日完成                                                     ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助"
+    "✓ 3 今日完成                                            ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "job-120-en": [
     "‹ Home › R5-API · imp",
@@ -843,23 +843,23 @@
     "‹ Help",
     "",
     "Keys ─────────────────────────────────────────────────────    Marks ────────────────────────────────────────────────────",
-    "1       Home                                                  ✓ done      ◉ running   ? asking you",
-    "3       Changes                                               ✗ failed    − stopped   ◷ stalled",
-    "↑ ↓     move                                                  ◆ answer differs from the default",
-    "⏎       expand / collapse in place                            ◇ answer as proposed",
-    "o       open the file in $EDITOR                              ┃ body of a card",
-    "v       inspect: details and files                            dim rows are older ones, shown with a",
-    "a       show / hide older jobs and decisions (Home)           lavender words are marked by the model",
+    "1 2     Home · Project                                        ✓ done      ◉ running   ? asking you",
+    "← → Tab next / previous tab                                   ✗ failed    − stopped   ◷ stalled",
+    "3       Changes                                               ◆ answer differs from the default",
+    "↑ ↓     move                                                  ◇ answer as proposed",
+    "⏎       expand / collapse in place                            ┃ body of a card",
+    "o       open the file in $EDITOR                              dim rows are older ones, shown with a",
+    "v       inspect: details and files                            lavender words are marked by the model",
+    "a       show / hide older jobs and decisions (Home)",
     "n N     next / previous trouble (Home)",
     "b       models on / off",
     ",       Settings",
     "?       this page",
     "Esc     back",
     "",
-    "In the Inspector ⏎ opens the file",
+    "In Project and the Inspector ⏎ opens the file",
     "click selects · again expands · wheel scrolls",
     "In Codex's own panel press Ctrl+\\ first",
-    "",
     "",
     "",
     "",

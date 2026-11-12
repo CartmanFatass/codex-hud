@@ -3,116 +3,17 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+import { roleRegistry, executable, piSwitches, type Role } from '../../../src/roles/roster.js';
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobsRoot = join(hudHome, 'jobs');
-interface Role {
-  role: string;
-  harness: 'pi' | 'jev';
-  pi_role?: string;
-  split?: boolean;
-  can_continue?: boolean;
-  model?: string;
-  thinking?: string;
-  tool?: 'jev-ask' | 'jev-aistudio' | 'jev-flow';
-  provider?: 'chatgpt' | 'gemini';
-  effort?: string;
-  kind?: 'image' | 'video';
-  source_file: string;
-}
-function roles(): Map<string, Role> {
-  const result = new Map<string, Role>();
-  // The compiled server lives at dist/packages/hud-mcp/src/ within this package.
-  for (const root of [fileURLToPath(new URL('../../../../roles/', import.meta.url)), join(hudHome, 'roles')]) {
-    for (const file of entries(root).filter((file) => file.endsWith('.json'))) {
-      const role = json<Partial<Role>>(join(root, file));
-      if (
-        !role ||
-        typeof role.role !== 'string' ||
-        !role.role.trim() ||
-        (role.harness !== 'pi' && role.harness !== 'jev') ||
-        (role.harness === 'pi' &&
-          (typeof role.pi_role !== 'string' ||
-            !role.pi_role.trim() ||
-            typeof role.split !== 'boolean' ||
-            typeof role.can_continue !== 'boolean')) ||
-        (role.harness === 'jev' &&
-          (!['jev-ask', 'jev-aistudio', 'jev-flow'].includes(role.tool ?? '') ||
-            (role.tool === 'jev-ask' && !['chatgpt', 'gemini'].includes(role.provider ?? '')) ||
-            (role.tool === 'jev-flow' && !['image', 'video'].includes(role.kind ?? '')))) ||
-        ['model', 'thinking', 'effort'].some(
-          (key) => role[key as keyof Role] !== undefined && typeof role[key as keyof Role] !== 'string'
-        )
-      )
-        throw new Error(`invalid_role: ${join(root, file)}`);
-      result.set(role.role, {
-        ...role,
-        source_file: join(root, file),
-        ...(role.harness === 'jev' ? { can_continue: false } : {}),
-      } as Role);
-    }
-  }
-  return result;
-}
-function executable(command: string): string | null {
-  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
-    const path = resolve(dir, command);
-    try {
-      fs.accessSync(path, fs.constants.X_OK);
-      return fs.realpathSync(path);
-    } catch {
-      /* Try the next PATH entry. */
-    }
-  }
-  return null;
-}
-function assignment(role: Role) {
-  let pi_role_file: string | null = null;
-  if (role.harness === 'pi') {
-    for (const command of ['pi-role', 'pi-dispatch']) {
-      const bin = executable(command);
-      const path = bin && join(dirname(dirname(bin)), 'roles', `${role.pi_role}.md`);
-      if (path && fs.existsSync(path)) {
-        pi_role_file = path;
-        break;
-      }
-    }
-  }
-  const frontmatter = pi_role_file && slice(pi_role_file, 16384)?.text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
-  const effective = (key: 'model' | 'thinking') => {
-    if (role[key] !== undefined) return { value: role[key], source: role.source_file };
-    const value = frontmatter && frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim();
-    return { value: value ? value.replace(/^(['"])(.*)\1$/, '$2') : null, source: value ? pi_role_file : null };
-  };
-  const model = effective('model'),
-    thinking = effective('thinking');
-  return {
-    ...role,
-    model: model.value,
-    thinking: thinking.value,
-    model_source: model.source,
-    thinking_source: thinking.source,
-    pi_role_file,
-    accepts_options: role.harness === 'pi' ? ['model', 'thinking', ...piSwitches, 'pi_args'] : [],
-    available: true,
-  };
-}
-function convention() {
-  for (const path of [
-    join(process.cwd(), 'hud-convention.md'),
-    join(hudHome, 'hud-convention.md'),
-    fileURLToPath(new URL('../../../../hud-convention.md', import.meta.url)),
-  ]) {
-    const file = slice(path, 80000);
-    if (file) return { path, text: file.text.slice(0, 20000), truncated: file.truncated || file.text.length > 20000 };
-  }
-  throw new Error('convention_not_found');
-}
-const piSwitches = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split'] as const;
+const { roles, assignment, convention } = roleRegistry(
+  hudHome, process.cwd(), process.env, undefined, undefined, fileURLToPath(new URL('../../../../', import.meta.url))
+);
 type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
 interface Job extends PiOptions {
   job: string;

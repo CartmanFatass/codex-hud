@@ -4,6 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { boardInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
+import { projectRows } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
@@ -16,7 +17,8 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const keys = [
     section(t('Keys'), half),
     ...[
-      ['1', 'Home'],
+      ['1 2', 'Home · Project'],
+      ['← → Tab', 'next / previous tab'],
       ['3', 'Changes'],
       ['↑ ↓', 'move'],
       ['⏎', 'expand / collapse in place'],
@@ -51,7 +53,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
           boardRow(fit(keys[i]?.text ?? '', half) + '    ' + fit(marks[i]?.text ?? '', width - half - 4))
         );
   const notes = [
-    'In the Inspector ⏎ opens the file',
+    'In Project and the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
   rows.push(boardRow(''), ...notes.flatMap((s) => flowLines(t(s), width).map((s) => boardRow(theme.board.muted(s)))));
@@ -82,6 +84,7 @@ export function renderWorkboardFrame(
     inspector = !help && state.focus === 'details',
     changes = !help && state.focus === 'changes';
   const sub = inspector || help || changes;
+  const project = !sub && state.mainTab === 'project';
   const board = inspector ? source : visibleWorkboard(input, source, state, now);
   const target = state.boardInspect;
   const lane = board.lanes.find((l) => l.id === target?.laneId);
@@ -101,13 +104,17 @@ export function renderWorkboardFrame(
   } else {
     const count = board.workers.filter((w) => w.homeNeedsHuman).length;
     const title = ` ${t('Home')}${count ? ' ' + theme.board.attention(String(count)) : ''} `;
+    const waiting = input.project?.waiting.length ?? 0;
+    const projectTitle = ` ${t('Project')}${waiting ? ' ' + theme.board.attention(String(waiting)) : ''} `;
     const models = t(input.modelEnabled === false ? 'models off' : 'models on');
     frame.lines[0] = pair(
-      theme.board.title(title),
+      (project ? theme.board.muted : theme.board.title)(title) +
+        (project ? theme.board.title : theme.board.muted)(projectTitle),
       (input.modelEnabled === false ? theme.board.attention : theme.board.muted)(models),
       width
     );
     frame.controls.push({ kind: 'board-home', x: 0, y: 0, width: visualLength(title) });
+    frame.controls.push({ kind: 'board-project', x: visualLength(title), y: 0, width: visualLength(projectTitle) });
     frame.controls.push({
       kind: 'brief',
       x: Math.max(0, width - visualLength(models)),
@@ -121,7 +128,9 @@ export function renderWorkboardFrame(
       ? [boardRow(''), ...changesRows(input, state, width, now)]
       : inspector
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
-        : homeRows(board, state, width, now, input);
+        : project
+          ? projectRows(input.project, state, width, now)
+          : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   const targets = new Map<string, WorkTarget>();
@@ -134,7 +143,7 @@ export function renderWorkboardFrame(
     for (const target of all) targets.set(targetKey(target), target);
   }
   let selected = state.homeTarget;
-  if (!sub && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
+  if (!sub && !project && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
     const order = source.lanes.flatMap((l) => [
       { kind: 'lane' as const, laneId: l.id },
       ...l.workers.map((w) => ({ kind: 'worker' as const, laneId: l.id, workerId: w.id })),
@@ -152,7 +161,8 @@ export function renderWorkboardFrame(
     state.inspectCursor =
       files.find((r) => r.files?.[0].endsWith(worker?.work?.requestInfo?.evidence?.relativePath ?? '/report.md'))
         ?.item ?? files[0]?.item;
-  const key = inspector ? state.inspectCursor : selected ? targetKey(selected) : '';
+  if (project && !rows.some((r) => r.item === state.projectCursor)) state.projectCursor = rows.find((r) => r.item)?.item;
+  const key = project ? state.projectCursor : inspector ? state.inspectCursor : selected ? targetKey(selected) : '';
   const cursorAt = rows.findIndex((r) => r.item === key),
     room = Math.max(0, height - 2),
     max = Math.max(0, rows.length - room);
@@ -160,7 +170,7 @@ export function renderWorkboardFrame(
     ? (state.helpScroll ?? 0)
     : sub
       ? state.scroll[changes ? 'changes' : 'details']
-      : (state.homeScroll ?? 0);
+      : project ? (state.projectScroll ?? 0) : (state.homeScroll ?? 0);
   let offset = Math.max(0, Math.min(max, scroll));
   if (!help && !changes && key && state.boardRevealed !== key && room) {
     if (cursorAt < offset) offset = cursorAt;
@@ -171,6 +181,7 @@ export function renderWorkboardFrame(
     state.helpScroll = offset;
     frame.helpPage = { count: room, total: rows.length };
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
+  else if (project) state.projectScroll = offset;
   else state.homeScroll = offset;
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
@@ -192,10 +203,11 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help';
+        : project ? '↑↓ move  ⏎ open  ←→ tab  ? help'
+        : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
   if (height > 1)
     frame.lines[height - 1] = footRow(
-      sub ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
+      sub || project ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
       t(hints),
       width
     );

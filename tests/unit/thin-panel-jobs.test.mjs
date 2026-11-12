@@ -215,7 +215,7 @@ test('Home shows questions, lanes with cards, then decisions; Enter reveals the 
     const decided = home.findIndex((l) => l.startsWith('Decided for you'));
     assert.ok(at < lane && lane < decided);
     assert.match(home[lane + 1], /thin job cards/);
-    assert.match(home[0], /^ Home 1\s+models on$/);
+    assert.match(home[0], /^ Home 1\s+Project\s+models on$/);
     assert.match(home[decided + 1], /^◆ PANEL-THIN · imp q2 .*…/);
     assert.match(home[decided + 1], /\d+m\s*$/);
     assert.equal(home[decided + 2].trim(), '');
@@ -248,8 +248,8 @@ test('`o` opens a job card file on Home, footer hints never cut a word', async (
     return handleMonitorInput(state, { type: 'key', key }, { tree: f.tree, frame });
   };
   const jobs = join(f.env.HUD_HOME, 'jobs', 'j');
-  assert.deepEqual(open(4).action, { type: 'job-files', files: [join(f.ready, 'report.md')] });
-  assert.deepEqual(open(3).action, { type: 'job-files', files: [jobs + '0000000000000003/brief.md'] });
+  assert.deepEqual(open(4).action, { type: 'open-files', files: [join(f.ready, 'report.md')] });
+  assert.deepEqual(open(3).action, { type: 'open-files', files: [jobs + '0000000000000003/brief.md'] });
   assert.equal(open(4, 'enter').action, undefined, 'Enter opens no file');
   const foot = (width) =>
     plain(renderMonitor({ tree: f.tree, workboard: board, state: frame.state, width, height: 40, nowMs: now }))
@@ -265,7 +265,7 @@ test('`o` opens a job card file on Home, footer hints never cut a word', async (
   const painted = frameDiff(null, ['abc']);
   assert.ok(painted.indexOf('\x1b[K') < painted.indexOf('abc') && !painted.endsWith('\x1b[K'));
 });
-test('Home Enter toggles cards, decisions and lanes; reserved navigation is inert; a reveals older decisions', async (t) => {
+test('Home Enter toggles cards, decisions and lanes; navigation opens Project; a reveals older decisions', async (t) => {
   const f = fixture(t);
   f.put(join(f.askDir, 'qa/q0.md'), '# Question\n\nOlder choice?\n\nDefault if unanswered: yes', 1500);
   f.put(join(f.askDir, 'qa/q0.answer.md'), 'yes', 1500);
@@ -295,7 +295,10 @@ test('Home Enter toggles cards, decisions and lanes; reserved navigation is iner
   assert.doesNotMatch(text(folded), /thin job cards/);
   assert.match(text(press(folded, '\r')), /thin job cards/);
   const before = rendered(card).state;
-  for (const key of ['2', '\x1b[D', '\x1b[C', '\t', '\x1b[Z']) assert.deepEqual(press(before, key), before);
+  for (const key of ['2', '\x1b[D', '\x1b[C', '\t', '\x1b[Z']) {
+    assert.equal(press(before, key).mainTab, 'project');
+    assert.deepEqual(press(before, key).homeTarget, before.homeTarget);
+  }
   assert.equal(press(before, '1').mainTab, 'home');
   assert.equal(press(before, 'n').mainTab, 'home');
   assert.equal(press(before, 'N').mainTab, 'home');

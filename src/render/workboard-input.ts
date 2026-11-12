@@ -41,11 +41,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         row = pane && monitorRowAt(pane, input.x, input.y);
       if (row?.files?.length) {
         next.inspectCursor = row.item;
-        return result({ type: 'job-files', files: row.files });
+        return result({ type: 'open-files', files: row.files });
       }
     }
     if (['enter', 'activate', 'open-session'].includes(key))
-      return result(rows[at] ? { type: 'job-files', files: rows[at].files! } : undefined);
+      return result(rows[at] ? { type: 'open-files', files: rows[at].files! } : undefined);
     if (['up', 'down', 'home', 'end', 'page-up', 'page-down'].includes(key)) {
       const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
       next.inspectCursor =
@@ -59,8 +59,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     home();
     return result();
   }
-  // Project is reserved; Changes remains a factual repository summary.
-  if (key === 'project-tab') return result();
+  const tab = input.type === 'mouse' && input.button === 'left'
+    ? frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : '';
+  if (key === 'project-tab' || tab === 'board-project' || tab === 'board-home' ||
+    (main && ['left', 'right', 'tab', 'shift-tab'].includes(key))) {
+    const project = tab === 'board-project' || key === 'project-tab' || (tab !== 'board-home' && next.mainTab !== 'project');
+    home();
+    if (project) next.mainTab = 'project';
+    return result();
+  }
   if (key === 'changes') {
     next.focus = 'changes';
     next.boardInspect = undefined;
@@ -68,7 +75,37 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.zoom = true;
     return result();
   }
-  if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
+  if (key === 'brief-toggle' || tab === 'brief') return result({ type: 'brief-toggle' });
+  if (main && next.mainTab === 'project') {
+    const rows = boardFrame.rows.filter((r) => r.item), at = rows.findIndex((r) => r.item === next.projectCursor);
+    const activate = (row = rows[at]) => {
+      if (row?.item?.startsWith('project:fold:')) {
+        const folded = new Set(next.projectFolded ?? ['control', 'agents']), id = row.item.slice(13);
+        if (!folded.delete(id)) folded.add(id);
+        next.projectFolded = folded;
+      } else if (row?.files) return { type: 'open-files' as const, files: row.files };
+    };
+    if (input.type === 'mouse') {
+      const pane = frame?.panes.find((p) => p.id === 'agents');
+      if (input.button !== 'left') next.projectScroll = Math.max(0, (next.projectScroll ?? 0) + (input.button === 'wheel-down' ? 3 : -3));
+      else {
+        const row = pane && monitorRowAt(pane, input.x, input.y);
+        if (row?.item) {
+          const again = row.item === next.projectCursor;
+          next.projectCursor = row.item;
+          return result(again ? activate(row) : undefined);
+        }
+      }
+      return result();
+    }
+    if (['enter', 'activate', 'open-session'].includes(key)) return result(activate());
+    if (['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
+      const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
+      next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
+      return result();
+    }
+    if (!['help', 'settings', 'escape'].includes(key)) return result();
+  }
   const inspect = () => {
     const target = next.homeTarget;
     if (!target || !boardFrame || next.boardAnchor) return;
@@ -122,10 +159,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         : (worker?.work?.requestInfo?.evidence ?? worker?.evidence.at(-1));
     if (!evidence || !/^j[0-9a-f]{16}$/.test(evidence.sourceId)) return;
     const file = join(lane.identity.home, 'jobs', evidence.sourceId, evidence.relativePath);
-    if (/^(report|brief)\.md$/.test(evidence.relativePath)) return { type: 'job-files', files: [file] };
+    if (/^(report|brief)\.md$/.test(evidence.relativePath)) return { type: 'open-files', files: [file] };
     if (/^qa\/q\d+\.md$/.test(evidence.relativePath))
       return {
-        type: 'job-files',
+        type: 'open-files',
         files: worker?.work?.requestInfo?.evidence === evidence ? [file] : [file, file.replace(/\.md$/, '.answer.md')],
       };
   };

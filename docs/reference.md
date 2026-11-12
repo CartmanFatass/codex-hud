@@ -250,26 +250,48 @@ A shim supplies its installed HUD_HOME only when the caller's HUD_HOME is unset 
 replacement, automatic client reload or removal of old releases. Client settings/statusline pins need their own
 later-package confirmation; changing the public selector does not rewrite them.
 
+## Project
+
+Project shows **Waiting for you** (the bullet list under `## Waiting for the owner` in
+`docs/handoff/STATE.md`, falling back to root `STATE.md`), **Working tree** (branch and change counts,
+working HUD jobs whose cwd is this tree, last commit), **Docs** (STATE's `Milestone:` value and the newest
+of up to twelve reviews), then **Control plane**. No milestone is guessed when the line is absent.
+There is no Tickets section yet; to-tickets integration is a later slice.
+
+Control plane starts folded. It lists the same effective role registry as `hud_roster`, each role's
+harness/model/thinking, HUD and pi-roles source files, the project/user/default convention in effect,
+CLAUDE.md and AGENTS.md. Native custom agents (Claude user/project and Codex user) have their own fold.
+Keys show names and ✓/− only (empty declarations count as unavailable); no credential value is kept or displayed,
+and that row cannot be opened. Browser ✓ means only that the browser runtime's `runtime.json` file exists,
+not that a browser is running or logged in. Nothing starts the MCP, browser or a model.
+
+Up/Down move over file rows and section headers; Enter or `o` folds a header or opens the selected file
+in `$EDITOR` (default `vim`) in a herdr pane beside the panel. Project keeps its cursor and scroll separate
+from Home. Collection runs only while Project is shown (not behind Help, Settings, Changes or the Inspector),
+uses stat-signature caches and 64 KiB file reads, and probes git at most once per five seconds through the
+existing safe git helper. Rendering only consumes the retained snapshot.
+
 ## Home (ONE-PAGE)
 
 > **This section supersedes the stacked-pane description under [The panel](#the-panel)** for the main tabs, their
 > keys and their content. The older text stays as the historical/secondary renderer description; the live panel
 > follows this section.
 
-The panel has one passive page, **Home**: needs-you questions (or `✓ Nothing needs you · N running`), package lanes with job cards, then **Decided for you**. Project comes with M4; there is no Work tab.
+The panel has two passive tabs: **Home** (needs-you questions or `✓ Nothing needs you · N running`, package lanes with job cards, then **Decided for you**) and **Project** (the project at a glance). There is no Work tab.
 
 | `Ctrl+\`, then | Opens |
 |---|---|
 | `1` | Home |
+| `2` | Project |
 | `3` | Changes summary |
 | `4` or `v` | Inspector |
 
-**Keys on Home.** `1` returns Home; `3` opens Changes; `2`, Tab/Shift-Tab and Left/Right (`h`/`l`) do nothing on the page. Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection; `n`/`N` select the next/previous trouble without leaving Home. Enter, or a click on the selected item, expands/collapses in place. Cards and decisions start collapsed (display only, not saved). On a lane header Enter folds or
+**Keys on Home.** `1` returns Home; `2` opens Project; `3` opens Changes. Tab/Shift-Tab and Left/Right (`h`/`l`) switch Home ⇄ Project. Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection; `n`/`N` select the next/previous trouble without leaving Home. Enter, or a click on the selected item, expands/collapses in place. Cards and decisions start collapsed (display only, not saved). On a lane header Enter folds or
 unfolds the lane. `o` opens the selected item's file in `$EDITOR` beside the panel: a job's open question with its
 answer file, else its `report.md`, else its `brief.md`; a decision's `qa` file. `v` or Space inspects. Esc returns from
 the Inspector, and standalone Esc on the main page exits as before. The footer
-keeps whole hints only (`↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help`): at a narrow width the hints
-on the right are dropped, never cut. Help lists `1` and `3` only, with no tabs.
+keeps whole hints only (`↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab`): at a narrow width the hints
+on the right are dropped, never cut. Help lists both tabs and the Changes shortcut.
 
 **What Home shows.** Its badge and needs-you items count only terminal runtime jobs that ended needing a human. A
 worker's QA result, a normal failure, a blocked job and a timeout never count. Partial coverage never reads as
@@ -286,7 +308,7 @@ asking, `✗` failed, `−` stopped (`+ @ ? x -` in text glyphs), then the role 
 asking. When the jobs do not fit, the newest keep their glyphs and `+N` counts the older ones. There is no progress
 track: a lane's phase is the word, not a percentage or an unobserved earlier stage.
 
-The top row is titled Home with the asking count when there are questions, and the models on/off word on the right, which a click or `b` toggles. Lanes are observation navigation, not execution ownership; unknown phases stay unknown.
+The top row has Home and Project tabs, with their asking/waiting counts, and the models on/off word on the right, which a click or `b` toggles. Lanes are observation navigation, not execution ownership; unknown phases stay unknown.
 
 **The work card.** Home and the retained secondary renderer share one compact card: role and short task, state and minute age, then one deterministic line — the reason, the reported test and
 file counts, or the optional model sentence for a thin job or eligible native agent. The four active states
@@ -366,6 +388,7 @@ Every key below follows the prefix: `Ctrl+\`, then the key (or the prefix chosen
 | `Ctrl+\`, then | Action |
 |-----|--------|
 | `1` | Home |
+| `2` | Project |
 | `3` | Changes summary |
 | `4` or `v` | Inspector on the selected item |
 | `↑` / `↓` (`j` / `k`) | Move the selection; repeats without the prefix for half a second (`Ctrl+\` `j` `j` `j`) |
@@ -382,7 +405,7 @@ Every key below follows the prefix: `Ctrl+\`, then the key (or the prefix chosen
 | `q` | Close the panel |
 | `Ctrl+\` | Send `Ctrl+\` itself to the pane with the cursor |
 
-`2` is reserved for Project and does nothing until M4. On Home, Tab/Shift-Tab and Left/Right do nothing.
+`2` opens Project. On Home or Project, Tab/Shift-Tab and Left/Right switch between them. The Inspector keeps its own keys.
 
 In Settings, ↑/↓ select, ←/→ or Enter change a value, `s` saves, `r` resets the selected group, `t` runs the Models Test API, and Esc leaves. In the Inspector, ↑/↓ select a file, Enter or `o` opens it, and Esc returns to Home. Help scrolls with ↑/↓ and PgUp/PgDn; Esc returns.
 

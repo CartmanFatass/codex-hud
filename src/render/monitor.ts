@@ -26,6 +26,7 @@ import { resolveSelection } from './delegation/selection.js';
 import { selectedActions, type DelegationAction } from './delegation/actions.js';
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { renderWorkboardFrame } from './work-view.js';
+import type { ProjectSnapshot } from '../collectors/project-board.js';
 
 // The panel is drawn by the modules beside this one; what they export is
 // exported here too, so a caller imports the monitor from one place.
@@ -62,7 +63,10 @@ export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
   /** Home is the main page; focus tracks retained secondary views separately. */
-  mainTab?: 'home';
+  mainTab?: 'home' | 'project';
+  projectCursor?: string;
+  projectScroll?: number;
+  projectFolded?: ReadonlySet<string>;
   homeTarget?: WorkTarget;
   homeScroll?: number;
   boardExpanded?: ReadonlySet<string>;
@@ -169,6 +173,7 @@ export interface MonitorControl {
   kind:
     | 'main'
     | 'board-home'
+    | 'board-project'
     | 'board-back'
     | 'board-pick'
     | 'board-activate'
@@ -214,6 +219,7 @@ export interface MonitorData {
   hud?: HudData & HudDelegationData;
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
+  project?: ProjectSnapshot;
   /** The tmux prefix as the help writes it ("Ctrl+\"). */
   prefix?: string;
   state: MonitorState;
@@ -270,7 +276,7 @@ export interface MonitorOutcome {
   close: boolean;
   action?:
     | { type: 'settings' }
-    | { type: 'job-files'; files: string[] }
+    | { type: 'open-files'; files: string[] }
     | { type: 'switch'; id: string }
     | { type: 'pick'; id: string }
     | { type: 'brief-toggle' }

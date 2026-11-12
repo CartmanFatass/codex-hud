@@ -1,5 +1,6 @@
 import { nativeCallsOnly } from './core/link/view-model.js';
 import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pane.js';
+import { ProjectCollector, projectShown, type ProjectSnapshot } from './collectors/project-board.js';
 import { pathToFileURL } from 'node:url';
 import { makeSourceId } from './core/identity.js';
 import { externalRootHash } from './roles/external-association.js';
@@ -569,6 +570,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
   const parser = new RolloutParser(40);
   const worktreeCollector = new WorktreeCollector();
+  const projectCollector = new ProjectCollector(HUD_CWD_REAL, jobPipeline.home);
+  let project: ProjectSnapshot | undefined;
   // Typing here goes to Codex; with no Codex pane to give it to (the panel
   // run on its own), the keys drive the panel as they used to.
   const mainPane = STANDALONE_PANEL ? undefined : resolveMainPane();
@@ -798,6 +801,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           embedded: !STANDALONE_PANEL,
           state,
           worktrees,
+          project,
           error,
           nowMs,
           hud: hud ? { ...hud, delegation: panelDelegation } : hud,
@@ -1119,6 +1123,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         /* A state file nobody can write is not a reason to stop drawing. */
       }
     }
+    const projectFacts = await projectCollector.collect(projectShown(state, Boolean(settingsPage)), jobPipeline.workboard(tree, panelDelegation), Date.now());
+    if (projectFacts) project = projectFacts;
     // Collection owns publication. Paint only consumes the same cached workboard.
     syncPanelView();
     render();
@@ -1422,6 +1428,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       state = result.state;
       syncPanelView();
       if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
+      if (!projectShown(previous) && projectShown(state)) void collect(true);
       if (result.close) {
         finish(true);
         break;
@@ -1434,7 +1441,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           error = settingsError;
         }
       }
-      if (result.action?.type === 'job-files') {
+      if (result.action?.type === 'open-files') {
         void openEditorPane(result.action.files, process.env).catch((err) => {
           error = String(err);
           render();

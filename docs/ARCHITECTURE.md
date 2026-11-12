@@ -14,7 +14,7 @@ be worth keeping. To find one, search for the symbol, or run
 
 ## R5UX-P1 update: passive Home and Work
 
-> **ONE-PAGE update: Home and Work are merged into Home; Project comes with M4.** This section supersedes the older stacked-monitor description of
+> **ONE-PAGE / M4 update: Home and Work are merged into Home; Project is the second tab.** This section supersedes the older stacked-monitor description of
 the panel's job and agent panes wherever the two disagree: §4.5, §6.2 and the `renderMonitor` note under
 "Off the live path". Those passages remain as the historical and secondary renderer description, not as the live
 behaviour.
@@ -69,7 +69,7 @@ asked); a question left on a finished job was settled by its default and is not 
 
 **Home display and keys** (`render/workboard-input.ts`). The top band is titled Home with the asking count when there are questions, and the models on/off word on the right, which a click or `b` toggles. Rows are needs-you question cards (or `✓ Nothing needs you · N running`), package lanes with cards, then current **Decided for you** rows. Lanes require visible jobs, the decisions section requires visible decisions. `+N older · a` names hidden items (translated); while they are shown it reads `N older shown · a hide`. `a` toggles them in place, newest first: older items are wholly muted, bandless one-row titles with no older prefix, and a lane whose jobs are all old has a muted header too. It uses `tree.showAll`; there is no History tab. The scan bounds the data to its newest 200 jobs.
 Enter/click toggles cards and decisions through `boardExpanded` (collapsed by default), and lane headers through `boardFolded`. These sets are display-only, not saved. Expanded cards retain complete model sentences, keywords and factual detail; expanded questions retain context/options, and decisions retain question/alternative.
-`1` returns Home; `3` opens the repository/worktree Changes summary; `2`, Left/Right and Tab/Shift-Tab do nothing on the page (`2` is reserved for Project and inert until M4). Up/Down move, `n`/`N` select trouble without leaving Home, `o` opens job files and `v` inspects. Footer: `↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help` (whole hints drop from the right when narrow). Help lists `1` and `3` only. The top-row models word and `b` toggle the model master switch; `S` is removed.
+`1` returns Home; `2` opens Project; Left/Right and Tab/Shift-Tab switch Home ⇄ Project. `3` opens the repository/worktree Changes summary. Up/Down move, `n`/`N` select trouble without leaving Home, `o` opens job files and `v` inspects. Footer: `↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab` (whole hints drop from the right when narrow). Help lists both tabs and Changes. The top-row models word and `b` toggle the model master switch; `S` is removed.
 There is no Work tab, target, scroll, control or row path; only `homeTarget`/`homeScroll` remain. The Inspector and retained secondary views keep their own focus/scroll.
 
 **Facade closure.** The additive facade closure is separate from the Pi dispatcher closure. Helpers are not owners:
@@ -134,6 +134,31 @@ Check logs end in `exit=<code>`; reviewers never rerun full suites. Round 1 repo
 evidence as a finding; round 2+ notes expected stale full-suite logs after fixes without rerunning them. Reviewers
 rerun missing/failing/stale focused checks and run the round's focused tests (plus earlier-finding regressions on
 re-checks). The main session still owns the full acceptance gate and chaining.
+
+## Project tab (M4)
+
+`ProjectCollector` (`collectors/project-board.ts`, separate from the bar's existing `project.ts`)
+collects only when `projectShown` says Project is the visible main page, with no modal. `tree-page.ts`
+retains its snapshot and passes `MonitorData.project` into the pure `render/project-view.ts` rows and
+shared `renderWorkboardFrame` viewport. Project has separate cursor/scroll/fold state; Control plane
+and native agents start folded. File rows emit `open-files`, the generalised former `job-files` action;
+the existing `openEditorPane` opens `$EDITOR` (default vim) in a right-hand herdr pane.
+
+Sources: STATE.md's `## Waiting for the owner` bullets and `Milestone:` line (docs/handoff first,
+root fallback), docs/spec.md, up to twelve review candidates, current-tree working thin jobs from the
+existing workboard, role assignments, convention and instruction files, and native Claude/Codex agent
+files. `roles/roster.ts` is extracted from the thin MCP's registry: `hud_roster` and Project use the
+same role validation/override/assignment/convention logic without starting the MCP. Project supplies
+cached, bounded readers; the MCP keeps its original reader semantics. Missing milestone means no spec
+row. There is no Tickets section in this slice.
+
+Files and directory membership use stat-signature caches, reads stop at 64 KiB, directory discovery
+stops at 128 names per source, and obsolete cache entries are pruned. Git uses `worktreeGit` and its
+filter neutralisation, at most every five seconds; failure is unknown, not a fabricated clean tree.
+Credentials are reduced immediately to name/presence booleans (empty RHS is absent), never cached as
+text or exposed as openable files. Known provider names match the credential loader (Mistral, OpenAI,
+TypeSafe); other declared names are included. Browser setup is only a cheap `jev-runtime/runtime.json`
+file check, not a live-health claim. This collector makes no model requests, starts nothing and writes nothing.
 
 ## 1. The mental model in one screen
 

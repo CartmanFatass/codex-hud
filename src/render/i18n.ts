@@ -294,7 +294,7 @@ const ZH: Record<string, string> = {
   Agents: 'Agent',
   'Panel and everything a model writes': '侧栏和模型写的全部内容',
   'agents + main': 'agent + 主会话',
-  agents: 'agent',
+  agents: '代理',
   main: '主会话',
   'Approvals, failures: tmux, or desktop too': '待批准、失败时提示：tmux，或同时桌面',
   'tmux + desktop': 'tmux + 桌面',

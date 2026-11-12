@@ -171,7 +171,7 @@ export function parseWorktreeStatus(text: string): WorktreeStatus {
   return out;
 }
 
-async function neutralizeFilters(run: WorktreeGit, cwd: string): Promise<string[]> {
+export async function neutralizeFilters(run: WorktreeGit, cwd: string): Promise<string[]> {
   let text: string;
   try {
     text = await run(cwd, [
