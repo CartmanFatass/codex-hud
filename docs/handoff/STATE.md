@@ -21,7 +21,10 @@ Milestone: M4 · Project view
   header read); DS changes-required: a self-referential session link (from the failed first PANEL-SCOPE dispatch,
   before the pi-roles guard) made the watcher's recursive fs.watch throw ELOOP at startup, so no watcher had run
   since 20:10 (tabs not closed, no retention). Live tree unblocked by hand (link removed, job reaped); M4-FIX4 8dd1703a makes
-  the watcher survive it. Round 5 (Sol xhigh + DS max on 8dd1703a) running.
+  the watcher survive it. Round 5 on 8dd1703a: Sol changes-required (the normal `.dispatch/current.json` receipt
+  makes every scan throw ENOTDIR; degraded polling stops while only a failed-tab deadline is pending) → M4-FIX5;
+  DS still reviewing. Until FIX5 lands, a watcher restarted on 8dd1703a dies on the four real jobs with that receipt;
+  the running one (pid 2920296) predates it.
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
   finding 1); delete that part of the command or keep it?
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
@@ -108,7 +111,8 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX3 · 6a27a421 · round-3 leftovers: dead Claude facade modules, font env row, reap before delete, doc drift
 - done · M4 · M4-REVIEW4 · Sol accept, DS changes-required (watcher dies on a link loop) · docs/reviews/2026-11-12-m4-review4-*.md
 - try · M4 · M4-FIX4 · 8dd1703a · watcher survives a session link loop and a failed fs.watch; retention optional notes
-- working · M4 · M4-REVIEW5 · fifth review round (Sol xhigh + DS max on 8dd1703a)
+- working · M4 · M4-REVIEW5 · fifth review round (Sol changes-required: 2 watcher bugs; DS running)
+- working · M4 · M4-FIX5 · watcher: .dispatch receipt file, per-job containment, degraded polling with a pending deadline (imp)
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
 - try · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (71801be1; existing 99 pi sessions moved to ~/.pi/agent/sessions and linked first, toktrack totals unchanged)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
