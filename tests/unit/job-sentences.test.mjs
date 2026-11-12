@@ -244,7 +244,7 @@ test('unnamed thin job: pending, plain and blank-name replies keep the first lin
     f.put('report.md', 'Changed factual progress');
   }
 });
-test('ordinary cards expand the whole marked sentence and factual detail, then collapse on Home', async (t) => {
+test('ordinary cards start collapsed, expand the whole marked sentence and factual detail, then collapse on Home', async (t) => {
   const f = fixture(t);
   f.reply = 'Checking «parser boundaries» while preserving the complete sentence through its very last word.';
   const board = await f.update(),
@@ -262,9 +262,7 @@ test('ordinary cards expand the whole marked sentence and factual detail, then c
       render()
         .lines.map((line) => stripAnsi(line).replace(/^┃ /, ''))
         .join(' ');
-    assert.match(text().replace(/\s+/g, ' '), /very last word\./);
-    enter();
-    assert.doesNotMatch(text(), /last word|Factual progress/);
+    assert.doesNotMatch(text(), /last word|Factual progress/, 'a running card starts collapsed');
     enter();
     assert.match(text().replace(/\s+/g, ' '), /very last word\./);
     assert.match(text(), /Factual progress/);

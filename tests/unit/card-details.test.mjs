@@ -22,7 +22,7 @@ function enter(f, frame, worker) {
   return handleMonitorInput({ ...frame.state, homeTarget: { kind: 'worker', laneId: worker.laneId, workerId: worker.id } },
     { type: 'key', key: 'enter' }, { frame, tree: f.tree, nowMs: NOW }).state;
 }
-test('Home chooses activity/settlement newest across native and job cards; owner choices survive newer arrivals', (t) => {
+test('Home opens only the newest current result by itself; running cards stay two rows; owner choices survive', (t) => {
   const f = fixture(t), [job, native] = f.board.workers;
   assert.match(job.id, /^thin-job:/);
   assert.equal(native.nativeDepth, 1);
@@ -31,36 +31,32 @@ test('Home chooses activity/settlement newest across native and job cards; owner
     w.work.activityAt = NOW - 5000;
     if (w.settledAt !== null) w.settledAt = NOW - 5000;
   }
-  native.work.activityAt = NOW - 2000;
+  native.work.activityAt = NOW - 1000; // the most recent activity is a running card: it must not open
   let frame = f.render(initialMonitorState(), 32);
-  const body = (w) => frame.workboard.rows.filter((r) => r.item === key(w)).map((r) => stripAnsi(r.text)).join(' ');
-  assert.match(body(native), /final word/);
-  assert.doesNotMatch(body(job), /final word/);
-  assert.equal(frame.state.boardNewest, key(native));
-  assert.deepEqual(f.board.workers.filter((w) => cardExpanded(frame.state, key(w))), [native]);
-  let state = enter(f, frame, native); // explicitly fold the newest
-  job.work.activityAt = NOW - 1000;
-  frame = f.render(state);
+  const rows = (w) => frame.workboard.rows.filter((r) => r.item === key(w));
+  const running = f.board.workers.filter((w) => w.settledAt === null);
+  assert.ok(running.length >= 2);
+  for (const w of running) {
+    assert.ok(!cardExpanded(frame.state, key(w)), w.id);
+    assert.equal(rows(w).length, 2, `${w.id}: a collapsed card is two rows`);
+  }
+  const newest = f.board.workers.find((w) => key(w) === frame.state.boardNewest);
+  assert.ok(newest && newest.settledAt !== null, 'the newest result opens');
+  job.settledAt = NOW - 500; // the job settles: it is now the newest result
+  frame = f.render(frame.state);
   assert.equal(frame.state.boardNewest, key(job));
   assert.ok(cardExpanded(frame.state, key(job)));
-  assert.ok(!cardExpanded(frame.state, key(native)));
-  state = enter(f, frame, native); // explicitly open the older native
-  frame = f.render(state);
-  state = enter(f, frame, job); // explicitly fold the newest job
+  assert.match(rows(job).map((r) => stripAnsi(r.text)).join(' '), /final word/);
+  let state = enter(f, frame, job); // explicitly fold the newest
   frame = f.render(state);
   assert.ok(!cardExpanded(frame.state, key(job)));
-  const added = { ...native, id: 'synthetic-new-native', task: 'New native', work: { ...native.work, activityAt: NOW } };
-  const lane = f.board.lanes.find((l) => l.id === native.laneId);
-  lane.workers.push(added); f.board.workers.push(added);
-  frame = f.render(frame.state);
-  assert.equal(frame.state.boardNewest, key(added));
-  assert.deepEqual(f.board.workers.filter((w) => cardExpanded(frame.state, key(w))), [native, added]);
-  job.settledAt = NOW + 1; // settlement can make an older job newest; explicit fold still wins
-  frame = f.render(frame.state);
-  assert.equal(frame.state.boardNewest, key(job));
-  assert.ok(!cardExpanded(frame.state, key(job)));
-  assert.ok(!cardExpanded(frame.state, key(added)));
+  state = enter(f, frame, native); // explicitly open a running card
+  frame = f.render(state);
   assert.ok(cardExpanded(frame.state, key(native)));
+  native.work.activityAt = NOW; // activity alone changes nothing
+  frame = f.render(frame.state);
+  assert.ok(cardExpanded(frame.state, key(native)));
+  assert.ok(!cardExpanded(frame.state, key(job)));
   // No default expansion for the separate question slab.
   job.homeNeedsHuman = true;
   job.ask = 'Synthetic question?';

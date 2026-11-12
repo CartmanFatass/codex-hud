@@ -16,12 +16,11 @@ export function homeRows(
   now: number,
   input?: MonitorData
 ): MonitorRow[] {
+  // Only the newest result opens by itself: running cards change activity constantly and would make Home jump.
   const newest = board.workers
-    .filter((w) => !state.boardFolded?.has(w.laneId))
+    .filter((w) => !state.boardFolded?.has(w.laneId) && w.settledAt !== null && currentWorker(w, now))
     .reduce<(typeof board.workers)[number] | undefined>(
-      (a, w) =>
-        !a || Math.max(w.work?.activityAt ?? w.startedAt ?? 0, w.settledAt ?? 0) >
-          Math.max(a.work?.activityAt ?? a.startedAt ?? 0, a.settledAt ?? 0) ? w : a,
+      (a, w) => (!a || (w.settledAt ?? 0) > (a.settledAt ?? 0) ? w : a),
       undefined
     );
   state.boardNewest = newest ? targetKey({ kind: 'worker', laneId: newest.laneId, workerId: newest.id }) : undefined;

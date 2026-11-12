@@ -189,5 +189,7 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
   if (generated) rows.push(...jobSentenceRows(generated, width, ink, Boolean(open)));
   for (const part of generated && !open ? [] : [workCardDetail(card, sentence)])
     if (part) rows.push(...stemLines(part, width, ink, open ? Infinity : 1));
+  // A collapsed card is always two rows, so a sentence arriving later does not move the cards below it.
+  if (!open && rows.length === 1) rows.push(fit(`${ink(mark('┃', '|'))} ${theme.board.muted('…')}`, width));
   return rows.map((line, i) => (i ? (failed(card) ? theme.board.failedBody : theme.board.body)(line) : line));
 }
