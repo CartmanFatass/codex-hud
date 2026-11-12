@@ -111,7 +111,6 @@ hud statusline --help
 
 检出目录中的 `bin/codex-hud --list`、`--attach`、`--kill`、`--self-check`、`--json` 可用。
 `--kill` 关闭当前目录的 HUD 会话，`--json` 打印活跃 Codex 快照。
-`codex-hud brief --dry-run` 只报告旧定期简报／回顾已删除，不再预览输入。
 
 ## 配置
 

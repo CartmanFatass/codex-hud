@@ -131,8 +131,7 @@ hud statusline --help
 
 From the checkout, `bin/codex-hud --list`, `--attach`, `--kill`, `--self-check`
 and `--json` are available. `--kill` closes this directory's HUD sessions;
-`--json` prints the active Codex snapshot. `codex-hud brief --dry-run` only reports
-that old periodic briefs/recaps were removed; it no longer previews input.
+`--json` prints the active Codex snapshot.
 
 ## Configuration
 

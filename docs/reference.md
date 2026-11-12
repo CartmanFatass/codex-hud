@@ -248,6 +248,8 @@ omitted, with no extra model request. No stage/log history or switch controls re
 counts and one row per worktree with path/branch/dirty state. No file lists, diffs,
 previews, staging, commits or checkout actions. Collection runs only while focused;
 failed/stale Git status stays unknown, with repository filters and lazy fetching disabled.
+Edits inside a submodule's working tree do not mark the Codex bar, pi footer or
+Project dirty; a moved submodule commit does.
 
 ### Settings
 
@@ -356,8 +358,7 @@ against the client's compaction window when known. Claude/Codex show only their
 own tightest quota window, blue then magenta from 75%, red from 90%; pi has session
 cost instead (in its top-right editor ribbon, not duplicated below). Missing facts
 are absent. Agent/job start/done/failure and Claude skill-load notices stay three
-minutes; two rotate every five seconds when space permits. Open approvals/questions
-are pinned. No clock, rate, task count, hooks count, tool-at-work or idle fallback.
+minutes. Open approvals/questions are pinned. No clock, rate, task count, hooks count, tool-at-work or idle fallback.
 
 Settings Bar style: `line`, `p10k`, `gauge` (Gauge Plates), `tide`, `micro`, `stacked`,
 `headline`, `triptych`. Stacked is two rows in Claude/pi; Codex falls back to line.
@@ -367,14 +368,42 @@ When narrow, optional loaded text/meters/reset/project detail give way before mo
 notices cut at words, and the model is never dropped. pi's ribbon follows the look;
 other extensions' statuses remain visible. The bars stay English-only.
 
+### pi controls
+
+These controls affect the current pi session, not saved panel preferences:
+
+| Command | Action |
+|---|---|
+| `/hud`, `/hud toggle` | Toggle the panel (it never opens automatically) |
+| `/hud on`, `/hud off` | Open/close the panel, independently of the footer |
+| `/hud status` | Report panel state |
+| `/hud reconnect` | Rebind after a canceled session transition; preserves this session's footer on/off choice |
+| `/hud help` | Show panel/footer command help |
+| `/hud footer on`, `/hud footer off` | Restore/hide the entire HUD footer and editor ribbon, session-local |
+
+Segment/group changes below persist to `$HUD_HOME/config.json` → `piFooter`;
+if saving fails, the change applies only to this session and a warning is shown.
+`/hud footer` or `/hud footer list` lists enabled segments by group and the config path.
+`/hud footer reset` restores all segments to on. `/hud footer band on|off` switches
+the ribbon group; `/hud footer footer on|off` switches the bottom group.
+`/hud footer on|off|toggle <segment...>` changes named segments, or use `all`
+(for example, `/hud footer off lens viz`, `/hud footer on all`). Bare
+`/hud footer on|off` is the session-local whole-frame switch, not a persisted group change.
+
+Bottom-group ids: `model thinking path git mcp skill lens viz statuses context`.
+Ribbon-group ids: `session cache tokens tps ttft cost time`. These are segment
+visibility controls, not a way to enable unavailable facts. Context is in the bottom
+group but is stored as `piFooter.band.context`; the other ids use `piFooter.footer`
+or `piFooter.band` according to their group.
+
 ## Machine-readable state
 
 The active Codex bar/panel writes private atomic snapshots to
 `$HUD_HOME/display/state/<tmux-session>.json` when facts change (at most once/second).
-`codex-hud --json` reads this directory's session snapshot:
+`hud codex --json` reads this directory's session snapshot:
 
 ```sh
-codex-hud --json | jq '.context.percent, .agents.active, .attention[].label'
+hud codex --json | jq '.context.percent, .agents.active, .attention[].label'
 ```
 
 Version 2 carries session/project/context/quota/tokens/agents/attention, optional
@@ -397,7 +426,7 @@ are needed; unchanged counters do not refresh it. Old samples say last, not live
 |---|---|
 | `HUD_BAR_STYLE`, `HUD_BAR_FIELDS` | Bar defaults (also `CODEX_HUD_BAR_STYLE`, `CODEX_HUD_BAR_FIELDS`) |
 | `CODEX_HUD_THEME`, `CODEX_HUD_ICONS` | Theme/icon defaults |
-| `NO_COLOR` | Any value disables colour, even with saved settings |
+| `NO_COLOR` | Any non-empty value disables colour, even with saved settings |
 | `CODEX_HUD_STATUSLINE` | 1 default; 0 disables Codex bar on new HUD sessions, wins over Bar on launch |
 | `CODEX_HUD_TREE_WIDTH` | Initial tmux panel width when no saved settings |
 | `CODEX_HUD_CWD`, `CODEX_SESSIONS_PATH` | Explicit workspace/session directory |

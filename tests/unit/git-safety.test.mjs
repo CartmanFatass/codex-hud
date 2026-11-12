@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import childProcess, { execFileSync } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
 import { collectParityGit } from '../../dist/statusline-parity/git.js';
 import { collectGitStatus } from '../../dist/collectors/git.js';
@@ -18,7 +19,7 @@ function fixture(t, mode) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const cwd = join(root, 'repo');
   fs.mkdirSync(cwd);
-  const git = (args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.invalid', ...args], { cwd, stdio: 'pipe' });
+  const git = (args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], { cwd, stdio: 'pipe' });
   git(['init', '-b', 'synthetic-safe']);
   const clean = unsafe ? 'unsafe=name' : 'repo-clean';
   fs.writeFileSync(join(cwd, '.gitattributes'), `clean.txt filter=${clean}\nprocess.txt filter=repo-process\n`);
@@ -54,7 +55,18 @@ function fixture(t, mode) {
 }
 
 async function piFacts(cwd) {
-  let component, rendered = false;
+  let component, pending = 0, started = false;
+  // Observe completion without replacing the real Git subprocess or its result.
+  const execFile = childProcess.execFile;
+  childProcess.execFile = (...args) => {
+    const done = args.pop();
+    started = true;
+    pending++;
+    return execFile(...args, (...result) => {
+      try { done(...result); } finally { pending--; }
+    });
+  };
+  syncBuiltinESMExports();
   const host = {
     CustomEditor: class { render() { return []; } renderTopBorder() { return ''; } },
     visibleWidth: (text) => stripAnsi(text).length,
@@ -72,15 +84,21 @@ async function piFacts(cwd) {
       ui: {
         theme: { fg: (_token, text) => text }, notify() {}, setEditorComponent() {},
         setFooter(factory) {
-          component = factory?.({ requestRender() { rendered = true; } }, {}, { getExtensionStatuses: () => new Map() });
+          component = factory?.({ requestRender() {} }, {}, { getExtensionStatuses: () => new Map() });
         },
       },
     });
     const deadline = Date.now() + 4000;
-    // Failed Git reads do not request a repaint; allow their bounded execution to finish too.
-    while (!rendered && Date.now() < deadline) await delay(20);
+    // Callback promise continuations (including filter rejection) settle between polls.
+    // Failed reads request no repaint, so wait for the actual Git work instead.
+    while ((!started || pending > 0) && Date.now() < deadline) await delay(20);
+    assert.ok(started && pending === 0, 'real footer Git read completed');
     return stripAnsi(component.render(1000).join('\n'));
-  } finally { footer.stop(); }
+  } finally {
+    footer.stop();
+    childProcess.execFile = execFile;
+    syncBuiltinESMExports();
+  }
 }
 
 const paths = {

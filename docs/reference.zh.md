@@ -191,6 +191,7 @@ F12 关闭／打开 Codex 面板，Shift-F12 打开并聚焦。鼠标单击选�
 
 `3` 显示分支／HEAD、领先／落后（无上游证据则未知）、改动计数及每工作树路径／分支／脏状态一行。
 没有文件列表、diff、预览、暂存、提交或 checkout。仅聚焦时采集，失败／过时状态保持未知，禁用仓库过滤器及惰性下载。
+子模块工作树内的未提交改动不会让 Codex 状态行、pi 页脚或项目显示为脏；子模块提交指针移动则会。
 
 ### 设置
 
@@ -280,7 +281,7 @@ model effort │ context %/window │ repo branch(dirty) │ quota │ notices �
 
 上下文十格，70% 前绿、70% 起黄、85% 起红，有数据时对齐客户端压缩窗口。
 Claude/Codex 只显示各自最紧额度窗口，蓝、75% 起品红、90% 起红；pi 用会话费用，位于编辑器右上条带，不在底部重复。
-缺失事实省略。代理／任务开始、完成、失败及 Claude 技能加载事件保留三分钟；空间允许两项每五秒轮换。
+缺失事实省略。代理／任务开始、完成、失败及 Claude 技能加载事件保留三分钟。
 待批准／待答问题固定显示。没有时钟、速率、任务数、hooks 数、当前工具或空闲回退文字。
 
 设置样式：`line`、`p10k`、`gauge`、`tide`、`micro`、`stacked`、`headline`、`triptych`。
@@ -289,13 +290,39 @@ Stacked 在 Claude/pi 为两行，Codex 回退 line；Tide 底色需 truecolor�
 变窄先丢加载详情、表条、重置时间、项目细节，再考虑模型；通知按词截断，模型永不丢弃。
 pi 顶条跟随样式，其它扩展状态保留。状态行仅英文。
 
+### pi 控制
+
+以下控制只影响当前 pi 会话，不保存为面板偏好：
+
+| 命令 | 作用 |
+|---|---|
+| `/hud`、`/hud toggle` | 切换面板（不会自动打开） |
+| `/hud on`、`/hud off` | 打开／关闭面板，与页脚独立 |
+| `/hud status` | 报告面板状态 |
+| `/hud reconnect` | 取消会话切换后重新绑定，保留本会话的页脚开关选择 |
+| `/hud help` | 显示面板／页脚命令帮助 |
+| `/hud footer on`、`/hud footer off` | 恢复／隐藏整个 HUD 页脚及编辑器顶条，仅本会话有效 |
+
+以下字段／分组修改保存到 `$HUD_HOME/config.json` → `piFooter`；保存失败时只在本会话生效并警告。
+`/hud footer` 或 `/hud footer list` 按组列出已启用字段及配置路径。
+`/hud footer reset` 将全部字段恢复为开启。`/hud footer band on|off` 切换顶条组，
+`/hud footer footer on|off` 切换底部组。
+`/hud footer on|off|toggle <segment...>` 修改指定字段，或用 `all` 代表全部
+（例如 `/hud footer off lens viz`、`/hud footer on all`）。不带字段的
+`/hud footer on|off` 是会话内整个框架的开关，不是持久化的分组修改。
+
+底部组 id：`model thinking path git mcp skill lens viz statuses context`。
+顶条组 id：`session cache tokens tps ttft cost time`。这些开关只控制字段可见性，不会产生缺失事实。
+context 属于底部组，但存为 `piFooter.band.context`；其它 id 按分组存到
+`piFooter.footer` 或 `piFooter.band`。
+
 ## 机器可读状态
 
 活跃 Codex 状态行／面板在事实变化时每秒最多一次，私有原子写入
-`$HUD_HOME/display/state/<tmux-session>.json`。`codex-hud --json` 读取当前目录会话快照：
+`$HUD_HOME/display/state/<tmux-session>.json`。`hud codex --json` 读取当前目录会话快照：
 
 ```sh
-codex-hud --json | jq '.context.percent, .agents.active, .attention[].label'
+hud codex --json | jq '.context.percent, .agents.active, .attention[].label'
 ```
 
 Version 2 含会话、项目、上下文、额度、tokens、代理、注意事项，可选健康／速率证据及状态行字段列位置
@@ -314,7 +341,7 @@ Version 2 含会话、项目、上下文、额度、tokens、代理、注意事�
 |---|---|
 | `HUD_BAR_STYLE`、`HUD_BAR_FIELDS` | 状态行默认值，也支持 `CODEX_HUD_BAR_STYLE`、`CODEX_HUD_BAR_FIELDS` |
 | `CODEX_HUD_THEME`、`CODEX_HUD_ICONS` | 主题／图标默认值 |
-| `NO_COLOR` | 任何值禁用颜色，优先于保存值 |
+| `NO_COLOR` | 任何非空值禁用颜色，优先于保存值 |
 | `CODEX_HUD_STATUSLINE` | 默认 1，0 禁用新 HUD 会话的 Codex 状态行，优先于设置 |
 | `CODEX_HUD_TREE_WIDTH` | 无保存值时 tmux 面板初始宽度 |
 | `CODEX_HUD_CWD`、`CODEX_SESSIONS_PATH` | 显式工作区／会话目录 |
