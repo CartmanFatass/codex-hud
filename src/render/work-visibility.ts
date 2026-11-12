@@ -1,100 +1,34 @@
-/** Pure display projection of the existing finished/native linger policy.
- * P2 q18: Home overview/footer and Work share this projection, so Home never
- * hands off to an expired Work target. Counts are visible-worker counts.
- * Decisions (including daily one-way records), coverage, human-needed workers
- * and successful unclosed facade output are retained. Zero linger is identity;
- * the existing show-all reveal bypasses expiry on both tabs. No source mutation.
- */
-import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
-import type { SubagentTreeNode } from '../types.js';
+/** Fixed Home lifetimes; show-all reveals expired items in place. No source mutation. */
+import type { DecisionRecord, OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
+import { callTime } from '../collectors/workboard.js';
 import type { MonitorData, MonitorState } from './monitor.js';
-import { isExpired } from './panel-state.js';
-import { effectiveStatus, jobSettledAt } from './job-details.js';
 
-const cache = new WeakMap<
-  WorkboardSnapshot,
-  {
-    tree: MonitorData['tree'];
-    key: string;
-    at: number;
-    until: number;
-    board: WorkboardSnapshot;
-  }
->();
+const HOME_MS = { done: 10 * 60000, failed: 30 * 60000, decision: 30 * 60000, departure: 2 * 60 * 60000 };
+const jobTime = (w: OwnerWorker) => w.settledAt ?? w.startedAt ?? 0;
+export function currentWorker(w: OwnerWorker, now: number): boolean {
+  if (w.homeNeedsHuman || w.settledAt === null) return true;
+  const failed = w.work?.failed || ['failed', 'error', 'stopped'].includes(w.state);
+  return now - w.settledAt < (failed ? HOME_MS.failed : HOME_MS.done);
+}
+export function currentDecision(d: DecisionRecord, now: number): boolean {
+  const at = callTime(d);
+  return at !== null && now - at < (d.departure ? HOME_MS.departure : HOME_MS.decision);
+}
 export function visibleWorkboard(
-  input: MonitorData,
+  _input: MonitorData,
   board: WorkboardSnapshot,
   state: MonitorState,
   now: number
 ): WorkboardSnapshot {
-  const policy = state.tree;
-  const linger = policy.lingerMs;
-  if (!linger || linger <= 0 || policy.showAll || policy.filter !== 'all') return board;
-  const key = JSON.stringify([linger, policy.showAll, policy.filter]);
-  const prior = cache.get(board);
-  if (prior && prior.tree === input.tree && prior.key === key && prior.at <= now && now < prior.until)
-    return prior.board;
-  const nodes = new Map<string, SubagentTreeNode>();
-  const walk = (items: readonly SubagentTreeNode[]) => {
-    for (const node of items) {
-      nodes.set(node.id, node);
-      walk(node.children);
-    }
-  };
-  walk(input.tree.nodes);
-  let until = Infinity;
-  const visible = (worker: OwnerWorker, invocation: boolean) => {
-    if (worker.id.startsWith('thin-job:')) return true; // Thin history is already capped at the newest 20.
-    // Current attention and successful unclosed facade output are not finished history.
-    if (
-      worker.homeNeedsHuman ||
-      worker.work?.request ||
-      worker.work?.failed ||
-      (worker.work?.result && worker.work.facadeClosed === false)
-    )
-      return true;
-    const node = worker.nodeId ? nodes.get(worker.nodeId) : undefined;
-    if (node) {
-      const status = effectiveStatus(node);
-      const native = status === 'completed' ? (node.statusAt ?? node.lastEventAt) : (node.lastEventAt ?? node.statusAt);
-      const at = ((node.job ? jobSettledAt(node) : undefined) ?? native)?.getTime();
-      if ((status === 'completed' || status === 'unknown') && at !== undefined && Number.isFinite(at)) {
-        const edge = at + linger + 1;
-        if (edge > now) until = Math.min(until, edge);
-      }
-      return !isExpired(node, policy, now);
-    }
-    const completed =
-      worker.work?.result === true ||
-      ['closed', 'idle_grace', 'completed', 'done', 'awaiting-acceptance'].includes(worker.state);
-    const unknown = worker.state === 'unknown';
-    if (!completed && !unknown) return true;
-    // An open invocation of unknown outcome is not known to have finished.
-    if (unknown && invocation && worker.work?.facadeClosed !== true) return true;
-    const at = completed ? worker.settledAt : (worker.work?.activityAt ?? worker.settledAt ?? worker.startedAt);
-    if (at === null || at === undefined || !Number.isFinite(at)) return false;
-    const edge = at + linger + 1;
-    if (edge > now) until = Math.min(until, edge);
-    return now - at <= linger;
-  };
-  let changed = false;
-  const lanes = board.lanes.flatMap((lane) => {
-    const workers = lane.workers.filter((worker) => visible(worker, lane.identity.kind === 'invocation'));
-    if (workers.length === lane.workers.length) return [lane];
-    changed = true;
-    // Keep genuine decision-only/source-only scopes, not an empty expired-worker shell.
-    return workers.length || lane.decisions.length ? [{ ...lane, workers }] : [];
-  });
-  let result = changed ? { ...board, lanes, workers: lanes.flatMap((lane) => lane.workers) } : board;
-  if (
-    prior &&
-    changed &&
-    result.workers.length === prior.board.workers.length &&
-    result.workers.every((worker, index) => worker === prior.board.workers[index]) &&
-    result.lanes.length === prior.board.lanes.length &&
-    result.lanes.every((lane, index) => lane.id === prior.board.lanes[index].id)
-  )
-    result = prior.board;
-  cache.set(board, { tree: input.tree, key, at: now, until, board: result });
-  return result;
+  const all = state.tree.showAll;
+  const workers = board.workers.filter((w) => all || currentWorker(w, now));
+  const decisions = board.decisions.filter((d) => all || currentDecision(d, now));
+  const workerIds = new Set(workers.map((w) => w.id)), decisionIds = new Set(decisions.map((d) => d.id));
+  const lanes = board.lanes.map((lane) => ({
+    ...lane,
+    workers: lane.workers.filter((w) => workerIds.has(w.id)).sort((a, b) => all ? jobTime(b) - jobTime(a) : 0),
+    decisions: lane.decisions.filter((d) => decisionIds.has(d.id)),
+  })).filter((lane) => lane.workers.length || lane.decisions.length);
+  if (all) lanes.sort((a, b) => Math.max(0, ...b.workers.map(jobTime)) - Math.max(0, ...a.workers.map(jobTime)));
+  return { ...board, lanes, workers, decisions };
 }

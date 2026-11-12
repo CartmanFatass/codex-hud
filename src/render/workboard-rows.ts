@@ -2,13 +2,14 @@
 import type { DecisionRecord, OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-types.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
-import { callTime, isLocalDay } from '../collectors/workboard.js';
+import { callTime } from '../collectors/workboard.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
 import { theme, visualLength } from './colors.js';
 import { displayConfig } from './hud-config.js';
 import { pair, monitorText } from './monitor-text.js';
 import { ageText, stemLines } from './work-card.js';
 import { t } from './i18n.js';
+import { currentDecision } from './work-visibility.js';
 export const asciiBoard = () => displayConfig().icons === 'text';
 export const mark = (unicode: string, ascii: string) => (asciiBoard() ? ascii : unicode);
 export const boardCursor = (text: string) =>
@@ -36,7 +37,7 @@ export function workerRow(worker: OwnerWorker, width: number, now: number): Moni
 }
 export const decisionTitle = (record: DecisionRecord) =>
   monitorText(record.modelTitle ?? record.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? record.title);
-/** Collapsed, one row (title cut to fit); expanded (Enter), the whole title, question and `instead of`. Same on both tabs. */
+/** Collapsed, one row (title cut to fit); expanded (Enter), the whole title, question and `instead of`. Display only. */
 export function decisionRows(
   record: DecisionRecord,
   lane: WorkLane,
@@ -50,7 +51,7 @@ export function decisionRows(
   const q = record.evidence[0]?.relativePath.match(/(?:^|\/)(q\d+)\.md$/)?.[1] ?? '';
   const ink = record.departure ? theme.board.attention : theme.board.muted;
   const age = minuteAge(callTime(record), now);
-  const left = `${ink(mark(record.departure ? '◆' : '◇', record.departure ? '*' : 'o'))} ${[`${monitorText(lane.label)} · ${roleWord(worker?.role ?? null)}`, q].filter(Boolean).join(' ')}`;
+  const left = `${ink(mark(record.departure ? '◆' : '◇', record.departure ? '*' : 'o'))} ${[`${monitorText(lane.label)} · ${roleWord(worker?.role ?? null)}`, q, currentDecision(record, now) ? '' : t('older item')].filter(Boolean).join(' ')}`;
   if (!state.boardExpanded?.has(targetKey(target))) {
     // `worth a look` gives way to the age alone when it would leave the title under ten cells.
     const long = `${t('worth a look')} · ${age}`;
@@ -66,12 +67,10 @@ export function decisionRows(
   ];
   return [...rows.map((text, i) => boardRow(i ? theme.board.body(text) : text, target)), boardRow('')];
 }
-/** "Decided for you": the header and a row or block per decision, departures first, then the newest. Home shows today's. */
-export function decisionBlock(board: WorkboardSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
-  const home = state.mainTab !== 'work';
+/** "Decided for you": current decisions, with older ones revealed by show-all. */
+export function decisionBlock(board: WorkboardSnapshot, state: MonitorState, width: number, now: number, source = board): MonitorRow[] {
   const decisions = board.decisions
-    .filter((d) => !home || isLocalDay(callTime(d), now))
-    .sort((a, b) => Number(b.departure) - Number(a.departure) || (callTime(b) ?? 0) - (callTime(a) ?? 0));
+    .slice().sort((a, b) => (state.tree.showAll ? 0 : Number(b.departure) - Number(a.departure)) || (callTime(b) ?? 0) - (callTime(a) ?? 0));
   if (!decisions.length) return [];
   const rows = [
     boardRow(
@@ -80,7 +79,7 @@ export function decisionBlock(board: WorkboardSnapshot, state: MonitorState, wid
   ];
   for (let i = 0; i < decisions.length; i++) {
     if (i && decisions[i - 1].departure && !decisions[i].departure && rows.at(-1)?.text) rows.push(boardRow(''));
-    const lane = board.lanes.find((l) => l.id === decisions[i].laneId);
+    const lane = source.lanes.find((l) => l.id === decisions[i].laneId);
     if (lane) rows.push(...decisionRows(decisions[i], lane, state, width, now));
   }
   return rows;

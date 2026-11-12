@@ -8,7 +8,7 @@ import { PanelJobPipeline } from '../../dist/tree-page.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
-import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
+import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { Notifier } from '../../dist/notify.js';
 import { frameDiff } from '../../dist/render/frame-diff.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -109,8 +109,8 @@ function fixture(t) {
     rmSync(home, { recursive: true, force: true });
   });
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(now) };
-  const render = (board, tab, height = 180, width = 56, from = initialMonitorState()) =>
-    renderMonitor({ tree, workboard: board, state: { ...from, mainTab: tab }, width, height, nowMs: now });
+  const render = (board, height = 180, width = 56, state = initialMonitorState()) =>
+    renderMonitor({ tree, workboard: board, state, width, height, nowMs: now });
   return { env, pipeline, tree, render, put, askDir, ready };
 }
 const plain = (frame) => frame.lines.map(stripAnsi);
@@ -127,15 +127,15 @@ const joined = (frame) =>
     .map((l) => l.replace(/^[┃|]\s?/, '').trim())
     .join(' ')
     .replace(/\s+/g, ' ');
-test('v7 expanded Work: whole Tier-1 text, Home: exact EN/ZH cells, attention lanes, decision order and ten-minute fold', async (t) => {
+test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes, decision order and ten-minute fold', async (t) => {
   const f = fixture(t);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree);
   assert.equal(board.workers.length, 6, 'pane, not project, selects the jobs');
   for (const lang of ['en', 'zh']) {
     setLanguage(lang);
-    const frame = f.render(board, 'home');
-    const text = joined(f.render(board, 'work', 180, 56, expandAll(board)));
+    const frame = f.render(board);
+    const text = joined(f.render(board, 180, 56, expandAll(board)));
     for (const full of [
       question,
       blocked,
@@ -155,20 +155,14 @@ test('v7 expanded Work: whole Tier-1 text, Home: exact EN/ZH cells, attention la
     assert.ok(text.indexOf(chosen.slice(3)) < text.indexOf('yes'));
     assert.ok(!text.includes('Folded old success'));
     assert.ok(!text.includes('WRONG-PANE'));
-    assert.match(text, lang === 'en' ? /3 done today/ : /3 今日完成/);
     for (const title of ['thin job cards', 'review card renderer', 'list the slowest', 'check the cut', 'width flag']) {
       const band = plain(frame).find((l) => l.includes(title));
       assert.match(band, lang === 'en' ? /\d+m\s*$/ : /\d+分钟\s*$/);
     }
-    assert.ok(!text.includes('…'), 'Work cuts nothing');
     if (process.env.PANEL_DUMPS)
-      for (const tab of ['home', 'work'])
-        writeFileSync(
-          join(process.env.PANEL_DUMPS, `${tab}-${lang}.txt`),
-          plain(f.render(board, tab, 64)).join('\n') + '\n'
-        );
+      writeFileSync(join(process.env.PANEL_DUMPS, `home-${lang}.txt`), plain(f.render(board, 64)).join('\n') + '\n');
   }
-  const home = f.render(board, 'home');
+  const home = f.render(board);
   const decision = board.decisions.find((d) => d.departure);
   const target = { kind: 'decision', laneId: decision.laneId, decisionId: decision.id };
   const state = { ...home.state, homeTarget: target };
@@ -176,12 +170,9 @@ test('v7 expanded Work: whole Tier-1 text, Home: exact EN/ZH cells, attention la
   const opened = handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame: home });
   assert.equal(opened.action, undefined);
   assert.equal(opened.state.mainTab, 'home');
-  const work = f.render(board, 'work', 24, 56, { ...opened.state, workTarget: target });
-  assert.ok(
-    plain(work).some((l) => l.startsWith('◆ PANEL-THIN · imp q2')),
-    'the decision is on screen'
-  );
-  const enter = handleMonitorInput(work.state, { type: 'key', key: 'open-session' }, { tree: f.tree, frame: work });
+  const expanded = f.render(board, 24, 56, opened.state);
+  assert.ok(plain(expanded).some((l) => l.startsWith('◆ PANEL-THIN · imp q2')), 'the decision is on screen');
+  const enter = handleMonitorInput(expanded.state, { type: 'key', key: 'open-session' }, { tree: f.tree, frame: expanded });
   assert.deepEqual(enter.action.files, [join(f.askDir, 'qa/q2.md'), join(f.askDir, 'qa/q2.answer.md')]);
   const notifier = new Notifier({ enabled: true, cooldownMs: 0, deliver() {} });
   assert.deepEqual(notifier.update({}, now, board), [], 'existing questions and settled jobs are the baseline');
@@ -194,7 +185,7 @@ test('v7 expanded Work: whole Tier-1 text, Home: exact EN/ZH cells, attention la
   assert.ok(sent[0].message.includes(question));
   assert.deepEqual(notifier.update({}, now + 2, changed), []);
 });
-test('Home is a scannable summary: a short question card and one row per decision; Work has the whole', async (t) => {
+test('Home shows questions, lanes with cards, then decisions; Enter reveals the whole question', async (t) => {
   const f = fixture(t);
   f.put(
     join(f.askDir, 'qa/q3.md'),
@@ -204,7 +195,7 @@ test('Home is a scannable summary: a short question card and one row per decisio
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree);
   for (const width of [40, 56]) {
-    const home = plain(f.render(board, 'home', 180, width));
+    const home = plain(f.render(board, 180, width));
     for (const line of home) assert.equal(visualLength(line), width, line);
     const at = home.findIndex((l) => l.startsWith('? imp · PANEL-THIN')),
       card = home.slice(at, home.findIndex((l, i) => i > at && l.includes('⏎ expand')) + 1);
@@ -213,14 +204,18 @@ test('Home is a scannable summary: a short question card and one row per decisio
     assert.match(card.at(-1), /┃ qa\/q3\.md\s+⏎ expand  o open$/);
     assert.doesNotMatch(card.join('\n'), /blocked|b\) beside/);
     if (width === 40) assert.match(card.at(-3), /…\s*$/, 'a long question is cut with an ellipsis');
+    const lane = home.findIndex((l) => l.startsWith('PANEL-THIN  '));
     const decided = home.findIndex((l) => l.startsWith('Decided for you'));
+    assert.ok(at < lane && lane < decided);
+    assert.match(home[lane + 1], /thin job cards/);
+    assert.match(home[0], /^ Home\s*$/);
     assert.match(home[decided + 1], /^◆ PANEL-THIN · imp q2 .*…/);
     assert.match(home[decided + 1], /\d+m\s*$/);
     assert.equal(home[decided + 2].trim(), '');
     assert.match(home[decided + 3], /^◇ PANEL-THIN · imp q1  yes\s+\d+m\s*$/);
     assert.doesNotMatch(home.join('\n'), /asked|instead of/);
   }
-  const work = joined(f.render(board, 'work', 180, 56, expandAll(board))).replace(/\s/g, '');
+  const expanded = joined(f.render(board, 180, 56, expandAll(board))).replace(/\s/g, '');
   for (const full of [
     question,
     'blocked ' + blocked,
@@ -232,119 +227,103 @@ test('Home is a scannable summary: a short question card and one row per decisio
     chosen.slice(3),
     'instead of ' + instead,
   ])
-    assert.ok(work.includes(full.replace(/\s/g, '')), full);
+    assert.ok(expanded.includes(full.replace(/\s/g, '')), full);
 });
-test('v7 Work: file-derived phase chain and vendor/model/full effort chips', async (t) => {
+test('`o` opens a job card file on Home, footer hints never cut a word', async (t) => {
   const f = fixture(t);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree),
-    frame = f.render(board, 'work');
-  const text = joined(frame);
-  assert.match(text, /build ✓ › review r1 2 major › ▸asking/);
-  assert.match(text, /◎ gpt-6\.1-sol high/);
-  assert.doesNotMatch(text, /openai\/|zhipu\//);
-  assert.match(text, /ℤ glm-5\.3 max/);
-  assert.match(text, /glm-5\.3 max codex/);
-  assert.doesNotMatch(text, /high pi|max pi/);
-  assert.ok(!text.includes('Folded old success'), 'Work folds read/finished history, not unread reports');
-  for (const line of plain(frame)) assert.equal(visualLength(line), 56);
-  setDisplayConfig({ theme: 'none', icons: 'text', glyphs: 'text' });
-  const ascii = joined(f.render(board, 'work'));
-  assert.match(ascii, /OAI gpt-6\.1-sol high/);
-  assert.match(ascii, /GLM glm-5\.3 max/);
-  f.put(join(f.ready, 'review-1.md'), 'Verdict: changes-required\n2 major', 5);
-  f.put(join(f.ready, 'review-2.md'), 'Verdict: accept', 1);
-  await f.pipeline.refresh();
-  setDisplayConfig({ theme: 'terminal', icons: 'unicode', glyphs: 'glyph' });
-  const painted = f.render(f.pipeline.workboard(f.tree), 'work');
-  assert.match(joined(painted), /build ✓ › review r1 2 major › review r2 accept › done/);
-  assert.ok(painted.lines.some((line) => line.includes(theme.board.askTitle('a'))));
-  for (const line of plain(painted)) {
-    assert.equal(visualLength(line), 56);
-    assert.doesNotMatch(line, /\x1b|\[38;2;/);
-  }
-});
-test('`o` opens a job card file on both tabs, footer hints never cut a word', async (t) => {
-  const f = fixture(t);
-  await f.pipeline.refresh();
-  const board = f.pipeline.workboard(f.tree),
-    frame = f.render(board, 'work');
-  const open = (id, mainTab = 'work', key = 'open-session') => {
+    frame = f.render(board);
+  const open = (id, key = 'open-session') => {
     const worker = board.workers.find((w) => w.id === 'thin-job:j' + String(id).padStart(16, '0'));
     const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-    const state = { ...frame.state, mainTab, workTarget: target, homeTarget: target };
+    const state = { ...frame.state, homeTarget: target };
     return handleMonitorInput(state, { type: 'key', key }, { tree: f.tree, frame });
   };
   const jobs = join(f.env.HUD_HOME, 'jobs', 'j');
   assert.deepEqual(open(4).action, { type: 'job-files', files: [join(f.ready, 'report.md')] });
   assert.deepEqual(open(3).action, { type: 'job-files', files: [jobs + '0000000000000003/brief.md'] });
-  assert.deepEqual(open(4, 'home').action, open(4).action, 'the same on Home');
-  assert.equal(open(4, 'home', 'enter').action, undefined, 'Enter opens no file and stays on its tab');
-  assert.equal(open(4, 'home', 'enter').state.mainTab, 'home');
+  assert.equal(open(4, 'enter').action, undefined, 'Enter opens no file');
   const foot = (width) =>
     plain(renderMonitor({ tree: f.tree, workboard: board, state: frame.state, width, height: 40, nowMs: now }))
-      .at(-1)
-      .replace(/^✓ 3 done today\s*/, '>');
+      .at(-1).trimEnd();
   assert.deepEqual([56, 40, 30, 20].map(foot), [
-    '>1 2 tab  ↑↓ move  ⏎ expand  o open',
-    '>1 2 tab  ↑↓ move',
-    '>1 2 tab',
-    '>',
+    '↑↓ move  ⏎ expand  o open  a all',
+    '↑↓ move  ⏎ expand  o open  a all',
+    '↑↓ move  ⏎ expand  o open',
+    '↑↓ move  ⏎ expand',
   ]);
   // The row is erased before it is written: a full-width row would lose its last cell to an erase after it.
   const painted = frameDiff(null, ['abc']);
   assert.ok(painted.indexOf('\x1b[K') < painted.indexOf('abc') && !painted.endsWith('\x1b[K'));
 });
-test('Enter expands and collapses in place on both tabs, 1 2 pick the tab, 3 does nothing, arrows move', async (t) => {
+test('Home Enter toggles cards, decisions and lanes; reserved navigation is inert; a reveals older decisions', async (t) => {
   const f = fixture(t);
+  f.put(join(f.askDir, 'qa/q0.md'), '# Question\n\nOlder choice?\n\nDefault if unanswered: yes', 1500);
+  f.put(join(f.askDir, 'qa/q0.answer.md'), 'yes', 1500);
   await f.pipeline.refresh();
-  const board = f.pipeline.workboard(f.tree);
-  const departure = board.decisions.find((d) => d.departure);
-  const asking = board.workers.find((w) => w.homeNeedsHuman);
-  const targets = {
-    decision: { kind: 'decision', laneId: departure.laneId, decisionId: departure.id },
-    card: { kind: 'worker', laneId: asking.laneId, workerId: asking.id },
-    lane: { kind: 'lane', laneId: departure.laneId },
-  };
-  const rendered = (state) => f.render(board, state.mainTab, 180, 56, state);
+  const board = f.pipeline.workboard(f.tree), d = board.decisions.find((d) => d.departure), w = board.workers[0];
+  const rendered = (state) => f.render(board, 180, 56, state);
   const text = (state) => plain(rendered(state)).join('\n');
   const press = (state, bytes) => {
-    const frame = rendered(state);
-    const [input] = new WorkbenchInputDecoder('workboard').push(Buffer.from(bytes));
-    return handleMonitorInput(frame.state, input, { tree: f.tree, frame });
+    const frame = rendered(state), [input] = new WorkbenchInputDecoder('workboard').push(Buffer.from(bytes));
+    return handleMonitorInput(frame.state, input, { tree: f.tree, frame, nowMs: now }).state;
   };
-  const at = (tab, target) => ({ ...initialMonitorState(), mainTab: tab, [tab + 'Target']: target });
-  for (const tab of ['home', 'work']) {
-    const toggles = (target, shown) => {
-      let state = at(tab, target);
-      assert.doesNotMatch(text(state), shown, `${tab} starts collapsed`);
-      state = press(state, '\r').state;
-      assert.match(text(state), shown, `${tab}: Enter expands`);
-      state = press(state, '\r').state;
-      assert.doesNotMatch(text(state), shown, `${tab}: Enter again collapses`);
-      assert.equal(state.mainTab, tab, 'the tab stays');
-    };
-    toggles(targets.decision, /^┃ instead of /m);
-    toggles(targets.card, /cannot be finished/);
-    // A lane header folds its cards; Enter again unfolds them.
-    const folded = press(at(tab, targets.lane), '\r').state;
-    assert.doesNotMatch(text(folded), /thin job cards/);
-    assert.equal(folded.mainTab, tab);
-    assert.match(text(press(folded, '\r').state), /thin job cards/);
+  const at = (target) => ({ ...initialMonitorState(), mainTab: 'home', homeTarget: target });
+  const card = at({ kind: 'worker', laneId: w.laneId, workerId: w.id });
+  for (const [state, shown] of [[card, /cannot be finished/], [at({ kind: 'decision', laneId: d.laneId, decisionId: d.id }), /^┃ instead of /m]]) {
+    assert.doesNotMatch(text(state), shown);
+    assert.match(text(press(state, '\r')), shown);
+    assert.doesNotMatch(text(press(press(state, '\r'), '\r')), shown);
   }
-  assert.match(text(press(at('home', targets.card), '\r').state), /⏎ collapse  o open/);
-  // 1 and 2 pick the tab; 3 is the Project tab (M4): nothing happens, and the hidden Changes view stays hidden.
-  for (const tab of ['home', 'work']) {
-    const before = rendered(at(tab, targets.card)).state;
-    assert.deepEqual(press(before, '3').state, before);
-    assert.equal(press(before, tab === 'home' ? '2' : '1').state.mainTab, tab === 'home' ? 'work' : 'home');
-    assert.equal(press(before, tab === 'home' ? '1' : '2').state.mainTab, tab);
+  const lane = at({ kind: 'lane', laneId: w.laneId }), folded = press(lane, '\r');
+  assert.doesNotMatch(text(folded), /thin job cards/);
+  assert.match(text(press(folded, '\r')), /thin job cards/);
+  const before = rendered(card).state;
+  for (const key of ['2', '3', '\x1b[D', '\x1b[C', '\t', '\x1b[Z', '\x1b_codex-hud:pane-2\x1b\\']) assert.deepEqual(press(before, key), before);
+  assert.equal(press(before, '1').mainTab, 'home');
+  assert.equal(press(before, 'n').mainTab, 'home');
+  assert.equal(press(before, 'N').mainTab, 'home');
+  assert.doesNotMatch(text(before), /imp q0/);
+  assert.match(text(press(before, 'a')), /imp q0/);
+  assert.match(text(press(before, 'a')), /Folded old success/);
+});
+test('Home expiry thresholds and show-all use the real render/input path', async (t) => {
+  const f = fixture(t);
+  f.put(join(f.env.HUD_HOME, 'jobs/j0000000000000006/STATUS.json'), { state: 'stopped', settled_at: new Date(now - 15 * 60000).toISOString() });
+  await f.pipeline.refresh();
+  const board = f.pipeline.workboard(f.tree), worker = (n) => board.workers.find((w) => w.id.endsWith(String(n)));
+  const decision = (q) => board.decisions.find((d) => d.evidence[0].relativePath === `qa/${q}.md`);
+  for (const [kind, item, minutes] of [['workers', worker(4), 5], ['workers', worker(3), 21], ['workers', worker(6), 15], ['decisions', decision('q1'), 22], ['decisions', decision('q2'), 114]]) {
+    const draw = (at, state = initialMonitorState()) => renderMonitor({ tree: f.tree, workboard: board, state, width: 56, height: 180, nowMs: at });
+    const edge = now + minutes * 60000, has = (frame) => frame.workboard.snapshot[kind].some((v) => v.id === item.id);
+    assert.ok(has(draw(edge - 1)), `${kind} visible before threshold`);
+    const hidden = draw(edge);
+    assert.ok(!has(hidden), `${kind} hidden at threshold`);
+    assert.match(plain(hidden).join('\n'), /\+\d+ older · a/);
+    const toggle = (frame) => handleMonitorInput(frame.state, { type: 'key', key: 'show-all' }, { tree: f.tree, frame }).state;
+    const shown = draw(edge, toggle(hidden));
+    assert.ok(has(shown), `${kind} revealed by a`);
+    const target = kind === 'workers' ? { kind: 'worker', laneId: item.laneId, workerId: item.id } : { kind: 'decision', laneId: item.laneId, decisionId: item.id };
+    const rows = shown.workboard.rows.filter((r) => r.item === targetKey(target));
+    assert.equal(rows.length, 1, 'old items start as one row');
+    assert.match(stripAnsi(rows[0].text), /older/);
+    const state = { ...shown.state, homeTarget: target };
+    const expanded = handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame: shown }).state;
+    assert.ok(expanded.boardExpanded.has(targetKey(target)));
+    if (item !== worker(6)) assert.ok(draw(edge, expanded).workboard.rows.filter((r) => r.item === targetKey(target)).length > 1, item.id);
+    assert.ok(!has(draw(edge, toggle(shown))), `${kind} hidden again by a`);
   }
-  // Left and Right switch tabs and never fold, even with a lane selected.
-  const work = at('work', targets.lane);
-  assert.equal(press(work, '\x1b[D').state.mainTab, 'home');
-  assert.equal(press(at('home', targets.lane), '\x1b[C').state.mainTab, 'work');
-  assert.equal(press(work, '\x1b[D').state.boardFolded, undefined);
+});
+test('a current decision keeps its author after the finished job hides', async (t) => {
+  const f = fixture(t);
+  f.put(join(f.ready, 'qa/q1.md'), '# Question\n\nKeep this choice?\n\nDefault if unanswered: yes', 5);
+  f.put(join(f.ready, 'qa/q1.answer.md'), 'yes', 5);
+  await f.pipeline.refresh();
+  const board = f.pipeline.workboard(f.tree);
+  const frame = renderMonitor({ tree: f.tree, workboard: board, state: initialMonitorState(), width: 56, height: 180, nowMs: now + 5 * 60000 });
+  assert.ok(!frame.workboard.snapshot.workers.some((w) => w.id.endsWith('4')));
+  assert.match(plain(frame).join('\n'), /TEST-CUT · imp q1/);
 });
 test('model button uses the master preference; b matches it, S and secondary 3 are inert', async (t) => {
   const f = fixture(t);
@@ -402,23 +381,21 @@ test('a lane row ends in one glyph per job, oldest first, then the role of the n
   for (let n = 0; n < 12; n++) dispatch(40 + n, 'MANY', 'closed', 25 - n, 2);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree);
-  const row = (tab, label, width = 40) => {
-    const lines = plain(f.render(board, tab, 180, width));
+  const row = (label, width = 40) => {
+    const lines = plain(f.render(board, 180, width));
     for (const line of lines) assert.equal(visualLength(line), width, line);
     return lines.find((l) => l.startsWith(label + ' '));
   };
-  for (const tab of ['home', 'work']) {
-    assert.match(row(tab, 'STRIP'), /^STRIP  build\s+− ✓ ◉ imp$/);
-    assert.match(row(tab, 'PANEL-THIN'), /\s\? ◉ imp$/, 'asking, then running: the newest of the two names the role');
-    assert.match(row(tab, 'BAD'), /^BAD .*\s✗$/, 'no role when nothing runs or asks');
-    assert.match(row(tab, 'MANY', 24), /^MANY  done\s+\+7 ✓ ✓ ✓ ✓ ✓$/, 'the newest keep their glyphs');
-  }
-  const work = plain(f.render(board, 'work'));
-  const next = work[work.findIndex((l) => l.startsWith('STRIP  build')) + 1];
+  assert.match(row('STRIP'), /^STRIP  build\s+− ✓ ◉ imp$/);
+  assert.match(row('PANEL-THIN'), /\s\? ◉ imp$/, 'asking, then running: the newest of the two names the role');
+  assert.match(row('BAD'), /^BAD .*\s✗$/, 'no role when nothing runs or asks');
+  assert.match(row('MANY', 24), /^MANY  done\s+\+7 ✓ ✓ ✓ ✓ ✓$/, 'the newest keep their glyphs');
+  const home = plain(f.render(board));
+  const next = home[home.findIndex((l) => l.startsWith('STRIP  build')) + 1];
   assert.match(next, /^\S imp  STRIP job/, 'cards follow the row');
   setDisplayConfig({ theme: 'none', icons: 'text', glyphs: 'text' });
-  assert.match(row('home', 'STRIP'), /^STRIP  build\s+- \+ @ imp$/);
-  assert.match(row('work', 'BAD'), /^BAD .*\s+x$/);
+  assert.match(row('STRIP'), /^STRIP  build\s+- \+ @ imp$/);
+  assert.match(row('BAD'), /^BAD .*\s+x$/);
 });
 test('statusline Work count reads job folders with no role-summary cache', (t) => {
   const f = fixture(t);

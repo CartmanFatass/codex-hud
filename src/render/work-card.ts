@@ -6,7 +6,6 @@ import { theme, visualLength, truncateAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { displayConfig } from './hud-config.js';
-import { providerMark } from './providers.js';
 import { mark } from './workboard-rows.js';
 export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
 export const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
@@ -152,60 +151,13 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
   const rows = [
     theme.board.title(pair(`${ink(workStateGlyph(card))} ${name.role}  ${name.text}`, ink(name.right), width)),
   ];
-  if (state.mainTab === 'work') {
-    const w = card.worker,
-      model = w.model ?? '';
-    const vendor = providerMark(
-      { id: model, provider: w.provider },
-      displayConfig().icons === 'text' || displayConfig().glyphs === 'text'
-    );
-    const chip = [
-      vendor?.glyph,
-      model.replace(/^[^/]+\//, ''),
-      w.effort,
-      w.harness !== 'pi' ? w.harness : '',
-      w.nodeId ? t('native') : '',
-    ]
-      .filter(Boolean)
-      .join(' ');
-    if (chip) rows.push(...stemLines(chip, width, ink));
-    if (card.phases.length) {
-      // Wrap plain history, then paint each phase (including its continuation lines).
-      const inks = card.phases.map((p) =>
-        /major/.test(p)
-          ? theme.board.attention
-          : /minor/.test(p)
-            ? theme.board.muted
-            : /accept/.test(p)
-              ? theme.board.success
-              : theme.value
-      );
-      let phase = 0;
-      for (const line of flowLines(phaseChain(card), Math.max(1, width - 3))) {
-        const painted = line
-          .split(/(›|(?<!\S)>(?!\S))/u)
-          .map((part) => {
-            if (part === mark('›', '>')) {
-              phase++;
-              return part;
-            }
-            return inks[phase](part);
-          })
-          .join('');
-        rows.push(fit(`${ink(mark('┃', '|'))} ${painted}`, width));
-      }
-    }
-  }
-  // Work prints an open question and its default, and with the card expanded (Enter) the context and every option;
-  // Home's card is the short one in home-view.
+  // Open questions have their complete expandable slab above the lanes on Home.
   const generated = card.worker.modelSentence;
   const open = state.boardExpanded?.has(
     targetKey({ kind: 'worker', laneId: card.worker.laneId, workerId: card.worker.id })
   );
-  const asking = state.mainTab === 'work' && card.worker.homeNeedsHuman ? requestLines(card, open) : [];
-  // The model sentence replaces the factual line, never an open question Work prints.
   if (generated) rows.push(...jobSentenceRows(generated, width, ink, Boolean(open)));
-  for (const part of asking.length ? asking : generated && !open ? [] : [workCardDetail(card, sentence)])
+  for (const part of generated && !open ? [] : [workCardDetail(card, sentence)])
     if (part) rows.push(...stemLines(part, width, ink));
   return rows.map((line, i) => (i ? (failed(card) ? theme.board.failedBody : theme.board.body)(line) : line));
 }

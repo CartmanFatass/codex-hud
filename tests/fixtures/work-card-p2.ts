@@ -76,7 +76,7 @@ export function p2Fixture(t: TestContext, corroborated: () => boolean = () => tr
     };
   };
   const draw = async (
-    state: MonitorState = { ...initialMonitorState(), mainTab: 'work' },
+    state: MonitorState = { ...initialMonitorState(), mainTab: 'home' },
     width = 56,
     height = 40,
     nodes: SubagentTreeNode[] = []

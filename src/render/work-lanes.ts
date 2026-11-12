@@ -1,22 +1,14 @@
-/** Shared package lanes on Home and Work. */
+/** Shared package lanes on Home. */
 import type { WorkboardSnapshot, WorkLane, OwnerWorker } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { failed, renderWorkCard, workPhaseText } from './work-card.js';
 import { boardRow, mark } from './workboard-rows.js';
-import { pair, monitorText } from './monitor-text.js';
+import { pair, monitorText, fit } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
-export const FINISHED_LINGER_MS = 10 * 60000;
-export function retainedWorker(w: OwnerWorker, now: number, showAll = false): boolean {
-  return (
-    showAll ||
-    !w.id.startsWith('thin-job:') ||
-    w.settledAt === null ||
-    w.work?.facadeClosed === false ||
-    now - Math.max(w.settledAt, w.work?.facadeClosedAt ?? 0) <= FINISHED_LINGER_MS
-  );
-}
+import { currentWorker } from './work-visibility.js';
+import { t } from './i18n.js';
 export function workerPriority(w: OwnerWorker, now: number): number {
   const card = projectWorkCard(w, now);
   return w.homeNeedsHuman
@@ -43,8 +35,7 @@ export function orderedLanes(board: WorkboardSnapshot, now: number): WorkLane[] 
  * stopped), then the role of the newest job running or asking. Older jobs that do not fit `room` are `+N`.
  */
 export function laneStrip(lane: WorkLane, state: MonitorState, now: number, room: number): string {
-  const cards = lane.workers
-    .filter((w) => retainedWorker(w, now, state.tree.showAll))
+  const cards = [...lane.workers]
     .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
     .map((w) => projectWorkCard(w, now, state.cardStallMinutes));
   const glyph = {
@@ -81,8 +72,7 @@ export function laneRows(
   width: number,
   now: number
 ): MonitorRow[] {
-  const work = state.mainTab === 'work',
-    target = { kind: 'lane' as const, laneId: lane.id };
+  const target = { kind: 'lane' as const, laneId: lane.id };
   if (lane.id.startsWith('thin-job:')) {
     const active = [...lane.workers]
       .filter((w) => w.settledAt === null)
@@ -101,9 +91,7 @@ export function laneRows(
   const strip = laneStrip(lane, state, now, Math.max(Math.floor(width / 3), width - visualLength(label) - 1));
   const rows = [boardRow(pair(label, strip, width), target)];
   if (state.boardFolded?.has(lane.id)) return rows;
-  const workers = [...lane.workers]
-    .filter((w) => retainedWorker(w, now, state.tree.showAll))
-    .sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
+  const workers = state.tree.showAll ? lane.workers : [...lane.workers].sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
   for (const worker of workers) {
     const card = projectWorkCard(worker, now, state.cardStallMinutes);
     const logs = worker.nodeId ? input.agentLog?.get(worker.nodeId) : undefined;
@@ -112,13 +100,14 @@ export function laneRows(
       : ([...(logs ?? [])].reverse().find((e) => ['note', 'digest', 'cause'].includes(e.kind))?.text ?? '');
     const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: worker.id });
     // Home's asking card is a title-only pointer back to the complete slab.
-    const lines =
-      !work && worker.homeNeedsHuman && !worker.modelSentence
+    let lines =
+      worker.homeNeedsHuman && !worker.modelSentence
         ? renderWorkCard(card, state, width, '').slice(0, 1)
         : renderWorkCard(card, state, width, sentence);
+    if (!currentWorker(worker, now) && !state.boardExpanded?.has(key))
+      lines = [fit(`${t('older item')} · ${lines[0]}`, width)];
     rows.push(...lines.map((text) => ({ text, item: key, key })));
-    if (work) rows.push(boardRow(''));
   }
-  if (!work) rows.push(boardRow(''));
+  rows.push(boardRow(''));
   return rows;
 }

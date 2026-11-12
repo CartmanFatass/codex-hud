@@ -250,31 +250,26 @@ A shim supplies its installed HUD_HOME only when the caller's HUD_HOME is unset 
 replacement, automatic client reload or removal of old releases. Client settings/statusline pins need their own
 later-package confirmation; changing the public selector does not rewrite them.
 
-## Home and Work (R5UX-P2)
+## Home (ONE-PAGE)
 
 > **This section supersedes the stacked-pane description under [The panel](#the-panel)** for the main tabs, their
 > keys and their content. The older text stays as the historical/secondary renderer description; the live panel
 > follows this section.
 
-The panel's main tabs are **Home** and **Work**. Both are passive: they display what the workflow already wrote to
-disk and steer nothing.
+The panel has one passive page, **Home**: needs-you questions (or `✓ Nothing needs you · N running`), package lanes with job cards, then **Decided for you**. Project comes with M4; there is no Work tab.
 
 | `Ctrl+\`, then | Opens |
 |---|---|
 | `1` | Home |
-| `2` | Work |
-| `3` | Nothing yet: kept for the Project tab |
+| `2` / `3` | Nothing yet: kept for the Project tab |
 | `4` or `v` | Inspector |
 | `t` | Timeline |
 
-**Keys on Home and Work.** `1` Home, `2` Work (`3` is kept for the Project tab and does nothing yet); Tab and
-Shift-Tab, or Left/Right (`h`/`l`), switch tab; Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection. Enter, or a
-click on the selected item, expands it in place and collapses it again; it never changes tab. Everything starts
-collapsed, and one expanded set is shared by both tabs (display only, not saved). On a lane header Enter folds or
+**Keys on Home.** `1` returns Home; `2`, `3`, Tab/Shift-Tab and Left/Right (`h`/`l`) do nothing on the page. Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection; `n`/`N` select the next/previous trouble without leaving Home. Enter, or a click on the selected item, expands/collapses in place. Cards and decisions start collapsed (display only, not saved). On a lane header Enter folds or
 unfolds the lane. `o` opens the selected item's file in `$EDITOR` beside the panel: a job's open question with its
 answer file, else its `report.md`, else its `brief.md`; a decision's `qa` file. `v` or Space inspects. Esc returns from
 the Inspector, and standalone Esc on the main page exits as before. The footer keeps whole hints only
-(`1 2 tab  ↑↓ move  ⏎ expand  o open`): at a narrow width the hints on the right are dropped, never cut.
+(`↑↓ move  ⏎ expand  o open  a all`): at a narrow width the hints on the right are dropped, never cut.
 
 **What Home shows.** Its badge and needs-you items count only terminal runtime jobs that ended needing a human. A
 worker's QA result, a normal failure, a blocked job and a timeout never count. Partial coverage never reads as
@@ -283,36 +278,17 @@ worker's QA result, a normal failure, a blocked job and a timeout never count. P
 **Recorded calls are read-only.** A review counts only when its first line is exactly `Verdict: accept` or
 `Verdict: changes-required`. A recommendation is labelled as a recommendation, explicitly not as an adoption. An
 answer that leaves an explicit option is shown as `≠` with `instead`; an ambiguous answer or free text stays
-routine. Only an explicit `One-way: true` line is pinned red; a prose mention is not. Routine and departure items
-are capped at three with `+N earlier`, older than two hours fold, and the list rolls over at local midnight. There
-is no seen state. Home labels its routine tier **decided for you** and shows each answer as one row: mark, lane, role
-and question ID (`◇ AI-THIN · imp q1`), the answer cut to fit, the age (`worth a look` only where it leaves room). Work
-shows the answer, its source question and, for a departure, `instead of`, whole. On both tabs a decision is the one
-row until Enter expands it to that block. Home's question card is short: the question in at most three lines, one
+routine. Only an explicit `One-way: true` line is pinned red; a prose mention is not. Current decisions appear under **Decided for you**, departures first, newest first within each group. Decisions hide after 30 minutes, ◆ departures after 2 hours. `a` shows/hides older decisions as well as finished jobs in place; there is no History tab. Each answer is one row: mark, lane, role and question ID (`◇ AI-THIN · imp q1`), title and age. Enter expands its whole answer, question and departure alternative. Home's question card is short: the question in at most three lines, one
 `N options · default: …` line, the evidence file with `⏎ expand  o open`; Enter expands it to the question whole, the
-`blocked` context and every option (`⏎ collapse`). Work's card of an open question shows the question and its default
-the same way, and Enter adds the context and every option. A lane's row (the same one row on Home and Work) has the package label and
+`blocked` context and every option (`⏎ collapse`). A lane's row has the package label and
 its phase word on the left and, on the right, one glyph per job, oldest dispatch first: `✓` done, `◉` running, `?`
 asking, `✗` failed, `−` stopped (`+ @ ? x -` in text glyphs), then the role of the newest job that is running or
 asking. When the jobs do not fit, the newest keep their glyphs and `+N` counts the older ones. There is no progress
 track: a lane's phase is the word, not a percentage or an unobserved earlier stage.
 
-The one visible cursor belongs to one physical row. Worker lists align glyph, harness, role, task, model·effort and
-right-hand minute age; unknown harness/age cells stay blank. The tab row carries the prefix hint and clickable
-Inspector/Settings/Help controls (compact `v`, `,`, `?` labels where needed), using a second header row only when
-necessary on narrower screens.
+The top row is titled Home, with the model toggle when configured. Lanes are observation navigation, not execution ownership; unknown phases stay unknown.
 
-**What Work shows.** Lanes plus the shared compact work cards: one lane per observed package, invocation or native
-session, its worker cards inside it and its recorded calls beside them. Navigation is logical rather than a cursor
-over painted cells — lane, then its workers, then its decisions. Enter folds or unfolds the selected lane, and expands
-or collapses the selected card or decision (see Keys). At 110 columns Home's peek draws the selected lane (the
-first when none is selected) through the same lane/card renderer, not a second interpretation. Lanes are observation
-navigation, not execution ownership; an unknown phase or order is shown as unknown. Wide Work reserves a written-title
-column; browser cards use recorded phases, not role-inferred build/design.
-
-**The work card.** One compact card is shared by Work and Home's peek, and the retained secondary renderer draws the
-same card. Collapsed, it is at most three physical lines: the role and short task with the state word and elapsed
-minutes; the observed phase chain when there is one; and one deterministic line — the reason, the reported test and
+**The work card.** Home and the retained secondary renderer share one compact card: role and short task, state and minute age, then one deterministic line — the reason, the reported test and
 file counts, or the optional model sentence for a thin job or eligible native agent. The four active states
 are needs you, working, to accept and stalled; done is the settled fifth. There is no blank sentence slot, no
 task/report/helper prose, no telemetry, context meter, tok/s, model badge, child rows, relations or footer. The
@@ -322,7 +298,7 @@ output written; a helper's exit alone is not a verdict. Current helper progress/
 primary/helper starts and file times; reused or unconfirmed slots show unknown helper state, never a current failure.
 Readable current QA shows its question/default locally, with options and evidence in expanded detail and Inspector;
 unavailable details use the generic inspect instruction. Native/facade Inspectors retain their original details and action
-fences alongside the full Work state/history/evidence. A changes-required round shows `fixing` only once the primary
+fences alongside the full job state/history/evidence. A changes-required round shows `fixing` only once the primary
 resumes, never merely because the review ended. A direct task cannot infer acceptance or a merge, and a pi STATUS
 auto-close is not facade closure.
 
@@ -331,20 +307,18 @@ stale, unknown or no observed activity, or the stall threshold (default 10 minut
 progress; then working. This is presentation only: it changes no execution status, wait semantics, acceptance or
 source. A model call, a counter or heartbeat, or an identical file touch does not advance activity. A worker's QA
 result or ordinary failure never becomes Home's needs-you. A facade result stays pinned at to accept until facade
-closure. Home and Work share the existing finished-agent linger policy, including Home's overview/footer: counts are
-of visible workers. Zero keeps every agent unchanged; `a` reveals/hides finished history on both tabs. Expiry never
+closure. Running/asking jobs stay; done jobs hide after 10 minutes, failed/stopped jobs after 30 minutes. Lanes show only with visible jobs, and **Decided for you** only with visible decisions. `+N older · a` at the end counts hidden jobs and decisions. `a` reveals them newest first, marked older, one row each until Enter expands; `a` again hides them. These fixed lifetimes have no settings, and the scan bounds history to its newest 200 jobs. Expiry never
 hides terminal human-needed workers, admitted daily one-way decisions, partial coverage or unclosed facade output.
 
 **Retained secondary renderer.** Production always supplies the workboard sidecar. The no-sidecar stacked renderer is
 retained only for fixture and legacy callers, is never reached by the live panel, and is scheduled for removal after
 P2 (q4). It uses the same compact work card, not the old rich cards, and gains no new features.
 
-**What Home and Work do not have.** No old status-control footer, recovery, Resume, Reconcile or status-level controls.
+**What Home does not have.** No old status-control footer, recovery, Resume, Reconcile or status-level controls.
 The top-row `ǁ`/`▶` button and `b` toggle the same Model text master switch; the three LLM settings are described
 under [LLM](#llm). Nothing fakes a queue position, a merged age or the publish job's login blocker. `S` has no binding.
 
-**Colour.** Role inks colour role words only: imp cyan, reviewer pink, sonic coral, oracle violet, Jev teal. Ages on
-Home and Work are minute-valued. Their local attention ink is the approved mockup's #efc15a; state colours elsewhere
+**Colour.** Role inks colour role words only: imp cyan, reviewer pink, sonic coral, oracle violet, Jev teal. Ages on Home are minute-valued. Their local attention ink is the approved mockup's #efc15a; state colours elsewhere
 are unchanged. Light/terminal palettes retain their legible equivalents. Mono and ASCII output keep their meaning.
 
 ## The panel
@@ -355,10 +329,10 @@ There are four panes: **1 Agents** (the cards in rich, the tree in compact), **2
 
 ### Layouts
 
-**Two layouts** (Settings → Panel → Layout). These are the retained secondary renderer: only fixture and legacy callers reach them, never the live panel, which follows [Home and Work](#home-and-work-r5ux-p2) above. They keep their secondary chrome, footer and keys; their cards are the same compact work card the live pages draw, so there is no second card renderer and no switch that brings the old rich body back. Their removal is scheduled after P2.
+**Two layouts** (Settings → Panel → Layout). These are the retained secondary renderer: only fixture and legacy callers reach them, never the live panel, which follows [Home](#home-one-page) above. They keep their secondary chrome, footer and keys; their cards are the same compact work card the live pages draw, so there is no second card renderer and no switch that brings the old rich body back. Their removal is scheduled after P2.
 
-- **rich** (the default): one compact work card for every visible agent the main session started (an **L1**), active or idle, under the fixed summary row in one scrolling list, with the same order, filter and finished-agent linger window. There is no card expand/collapse state and no expansion arrow. Descendants remain in the owner's aggregate counts and Inspector, not separate cards or child rows. The summary row counts L1s by status (`!1 failed  ✓3 done  ▸3 run`), counts an L1 as running while a subtask runs, and includes guardian reviews (`◈N`, error colour if one failed); where room permits it adds the subtasks and their failures (`· 17 subtasks, 1 failed`) and the combined output rate of every running thread (`· ~186 tok/s`; the main session's rate is in the status band). The card itself is the three-line work card described under [Home and Work](#home-and-work-r5ux-p2): role, task, state and minutes, the observed phase chain, and one detail line, with no telemetry or child rows.
-  - **Selection (fixture only):** a click on the card selects it; a second click on its name within 400 ms switches the Codex conversation, the name underlined when the Codex pane is at least 63 columns or its width is not yet known. `Ctrl+\` `Enter`, Space or `v` opens the Inspector on the selection and never expands a card. The selected card is on a lighter band. The live Home and Work pages have their own selection and no native switch.
+- **rich** (the default): one compact work card for every visible agent the main session started (an **L1**), active or idle, under the fixed summary row in one scrolling list, with the same order, filter and finished-agent linger window. There is no card expand/collapse state and no expansion arrow. Descendants remain in the owner's aggregate counts and Inspector, not separate cards or child rows. The summary row counts L1s by status (`!1 failed  ✓3 done  ▸3 run`), counts an L1 as running while a subtask runs, and includes guardian reviews (`◈N`, error colour if one failed); where room permits it adds the subtasks and their failures (`· 17 subtasks, 1 failed`) and the combined output rate of every running thread (`· ~186 tok/s`; the main session's rate is in the status band). The card itself is the compact work card described under [Home](#home-one-page): role, task, state and minutes, and one detail line, with no telemetry or child rows.
+  - **Selection (fixture only):** a click on the card selects it; a second click on its name within 400 ms switches the Codex conversation, the name underlined when the Codex pane is at least 63 columns or its width is not yet known. `Ctrl+\` `Enter`, Space or `v` opens the Inspector on the selection and never expands a card. The selected card is on a lighter band. The live Home page has its own selection and no native switch.
 - **compact**: the Agents pane (the tree, one row per agent and subtask, by Codex's own name, under the same title row as rich) with observed session details and the agent log under it; no brief or recap is generated.
 
 Every view counts alike: an **agent** is one the main session started, a **subtask** an agent under one, at any depth, and a **review** a guardian approval review, wherever it sits. The Agents pane's title row and cards, the status card's alert and notifications, which say the failures as one phrase (`! 1 agent · 1 subtask · 1 review failed`), the bar's Agents field and alert, and `codex-hud --json` all count the three apart, and an agent counts as running while a subtask of it runs. Those aggregate counters are unchanged; compact work cards do not repeat subtask/review counters.

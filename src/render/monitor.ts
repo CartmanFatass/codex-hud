@@ -99,12 +99,10 @@ export type MonitorPane = (typeof MONITOR_PANES)[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
-  /** Home/Work are main pages; focus tracks retained secondary views separately. */
-  mainTab?: 'home' | 'work';
+  /** Home is the main page; focus tracks retained secondary views separately. */
+  mainTab?: 'home';
   homeTarget?: WorkTarget;
-  workTarget?: WorkTarget;
   homeScroll?: number;
-  workScroll?: number;
   boardExpanded?: ReadonlySet<string>;
   boardFolded?: ReadonlySet<string>;
   boardRevealed?: string;
@@ -240,7 +238,6 @@ export interface MonitorControl {
   kind:
     | 'main'
     | 'board-home'
-    | 'board-work'
     | 'board-pick'
     | 'board-activate'
     | 'board-inspect'
@@ -597,8 +594,8 @@ function helpText(
       '{p} u  inbox, updates and history',
       '{p} p  find and pin agents',
       '{p} c  sources, model calls and export',
-      '{p} 1 Home  {p} 2 Work',
-      '{p} ← →  tab  {p} ↑ ↓  move',
+      '{p} 1 Home',
+      '{p} ↑ ↓  move',
       '{p} o  open  {p} v  inspect',
       '{p} PgUp PgDn  scroll  {p} g G  first / last',
       '{p} ⏎  expand / collapse',
@@ -649,8 +646,8 @@ function helpText(
     ].map((line) => t(line)),
     head('Legend', 'legend'),
     ...[
-      '1 Home  2 Work',
-      '←→ tab  ↑↓ move  ⏎ expand/collapse  o open  v inspect',
+      '1 Home',
+      '↑↓ move  ⏎ expand/collapse  o open  v inspect',
       '✓ = turn completed',
       '? = no status evidence',
       '! = needs a look',
@@ -696,9 +693,9 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const delegation = nativeCallsOnly(input.hud?.delegation) ? null : (input.hud?.delegation ?? null);
   const state = reconcileMonitor(input.state, input.tree, input.git, input.worktrees, now, delegation);
   const frame: MonitorFrame = { lines: [], panes: [], controls: [], state };
-  // Secondary views keep the board context so prefix 1/2 always returns to the live main tabs.
+  // Secondary views keep the board context so prefix 1 returns to Home.
   if (input.workboard)
-    frame.workboard = { snapshot: input.workboard, targets: new Map(), selected: state.workTarget, rows: [] };
+    frame.workboard = { snapshot: input.workboard, targets: new Map(), selected: state.homeTarget, rows: [] };
   if (delegation)
     frame.delegation = delegationView(delegation, {
       ...planOptions(state, now),

@@ -144,7 +144,7 @@ export class WorkbenchInputDecoder {
             ? ((
                 {
                   '1': 'home-tab',
-                  '2': 'work-tab',
+                  '2': 'project-tab',
                   '4': 'inspect',
                   t: 'timeline',
                   v: 'inspect',

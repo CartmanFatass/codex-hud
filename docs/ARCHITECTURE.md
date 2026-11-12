@@ -14,14 +14,13 @@ be worth keeping. To find one, search for the symbol, or run
 
 ## R5UX-P1 update: passive Home and Work
 
-> **Current for the panel's Home and Work tabs.** This section supersedes the older stacked-monitor description of
+> **ONE-PAGE update: Home and Work are merged into Home; Project comes with M4.** This section supersedes the older stacked-monitor description of
 the panel's job and agent panes wherever the two disagree: §4.5, §6.2 and the `renderMonitor` note under
 "Off the live path". Those passages remain as the historical and secondary renderer description, not as the live
 behaviour.
 
 The panel's live path is one passive pipeline: `TaskObservationCollector` reads task artifacts, `buildWorkboard`
-(`collectors/workboard.ts`) turns them into a `WorkboardSnapshot` (`workboard-types.ts`), and the Home and Work
-views (`render/home-view.ts`, `render/work-view.ts`, shared rows in `render/workboard-rows.ts`) render it.
+(`collectors/workboard.ts`) turns them into a `WorkboardSnapshot` (`workboard-types.ts`), and Home (`render/home-view.ts`, viewport `render/work-view.ts`, shared rows in `render/workboard-rows.ts`) renders it.
 `tree-page.ts` builds the snapshot in `PanelJobPipeline.workboard` and always passes an explicit
 `MonitorData.workboard` to `renderMonitor`, in standalone and embedded mode alike. There is no second, implicit
 source for those tabs.
@@ -66,23 +65,12 @@ prepends them to the lanes, workers and decisions. Only files the thin layer and
 files cost one `lstat` per refresh. States are shown as the owner's words: `working` (also `waiting_*` and no STATUS),
 `idle` (`idle_grace`), `done` (`closed`) and `failed` (also a non-zero `dispatch_exit_code` with no STATUS). A job
 that is working and has an unanswered question is **need you** (the question's first line, minutes since it was
-asked); a question left on a finished job was settled by its default and is not shown. Thin jobs have no packages or
-phases, so Home draws no work section for them (and at 100+ columns no right pane) unless a package lane exists.
-A job that has settled (`ended_at`, else `settled_at`, else the file's mtime) leaves Home's workers list after 10
-minutes (`FINISHED_LINGER_MS` in `home-view.ts`; the `a` reveal shows it again) and stays in the `today` line as
-`N done · M failed`; Work keeps all retained jobs. Model and thinking show only at 100+ columns.
+asked); a question left on a finished job was settled by its default and is not shown. Jobs group by their display-only package labels. Fixed lifetimes live together in `render/work-visibility.ts`: running/asking jobs stay; done jobs hide after 10 minutes, failed/stopped jobs after 30 minutes. Decisions hide after 30 minutes, departures after 2 hours. There are no lifetime settings.
 
-**Keys and display state on Home and Work** (`render/workboard-input.ts`). Enter, or a click on the selected item,
-toggles it in place and never changes tab: a lane header flips its id in `state.boardFolded`, any other target flips
-its `targetKey` in `state.boardExpanded`. Both sets are display only and not persisted, and both tabs share them.
-Ordinary cards expand to the whole wrapped model sentence (marks hidden, keywords coloured) and the whole factual
-line underneath, or just the whole factual line without model text; collapsing restores the single sentence row.
-`decisionRows` draws a decision as one row collapsed and as the whole block expanded; Home's question card
-(`homeRows`) and Work's card (`renderWorkCard`) draw an open question short collapsed and with `requestLines(card,
-true)` expanded. `1`/`2` pick the tab, `3` is inert (the Project tab, M4; its prefix twin `Ctrl+\ 3` decodes to
-`changes` and is swallowed here), Left/Right switch tab, and `o` (decoded as `open-session`, also `Ctrl+\ o`) returns
-the `job-files` action that Enter used to on Work, on both tabs. `S` and its prefix command are removed. The top-row
-`ǁ`/`▶` button and `b` toggle `modelEnabled` directly, independently of the removed overview rows.
+**Home display and keys** (`render/workboard-input.ts`). The top row is titled Home. Rows are needs-you question cards (or `✓ Nothing needs you · N running`), package lanes with cards, then current **Decided for you** rows. Lanes require visible jobs, the decisions section requires visible decisions. `+N older · a` names hidden items (translated); `a` toggles them in place, newest first, marked older and collapsed to one row until Enter expands. It uses `tree.showAll`; there is no History tab. The scan bounds the data to its newest 200 jobs.
+Enter/click toggles cards and decisions through `boardExpanded` (collapsed by default), and lane headers through `boardFolded`. These sets are display-only, not saved. Expanded cards retain complete model sentences, keywords and factual detail; expanded questions retain context/options, and decisions retain question/alternative.
+`1` returns Home; `2`, `3`, Left/Right and Tab/Shift-Tab do nothing on the page. Up/Down move, `n`/`N` select trouble without leaving Home, `o` opens job files and `v` inspects. Footer: `↑↓ move  ⏎ expand  o open  a all` (whole hints drop from the right when narrow). The top-row `ǁ`/`▶` and `b` still toggle the model master switch; `S` is removed.
+There is no Work tab, target, scroll, control or row path; only `homeTarget`/`homeScroll` remain. The Inspector and retained secondary views keep their own focus/scroll.
 
 **Facade closure.** The additive facade closure is separate from the Pi dispatcher closure. Helpers are not owners:
 a helper's records never become a task's or a job's authority.
@@ -93,8 +81,7 @@ the live panel never reaches this path. It keeps its secondary chrome, footer an
 compact work card the live pages draw — no old rich-card body, no second card renderer and no flag that brings the
 old content back. It gets no new features; its removal is scheduled after P2.
 
-**Scope of P2.** Work is the approved lanes and compact work cards, and Home's 110-column peek draws the selected
-lane through the same lane/card renderer. The four active card states, their precedence, the stall threshold and the
+**Scope of P2 / ONE-PAGE.** Home draws the approved lanes and compact work cards through the shared lane/card renderer. The four active card states, their precedence, the stall threshold and the
 facade-close rule are presentation only: execution status, wait semantics, acceptance and sources are unchanged. The
 snapshot publisher, Timeline, factual Changes data and diagnostics remain. Model generation now follows §5;
 no recap, overview or facade-only sentence generator is wired into this pipeline.
@@ -766,8 +753,7 @@ selection by item id, so it survives reordering.
 
 ### 6.3 Cards (`render/cards.ts`)
 
-Home's peek, Work and the retained secondary renderer share the compact work
-card described in the opening panel update. It shows role/task, deterministic
+Home and the retained secondary renderer share the compact work card described in the opening panel update. It shows role/task, deterministic
 state and minute age, an observed phase chain when known, and one detail line:
 reason, reported test/file counts or an eligible native model sentence. It has
 no rich-card telemetry, child rows, relations, model badge or footer. Full native

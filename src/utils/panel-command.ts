@@ -73,7 +73,7 @@ const MONITOR_KEYS: Record<PanelCommand, string> = {
   help: 'help',
   level: 'reset',
   'pane-1': 'home-tab',
-  'pane-2': 'work-tab',
+  'pane-2': 'project-tab',
   'pane-3': 'changes',
   'pane-4': 'details',
   'close-pane': 'pane-close',

@@ -933,7 +933,7 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   assert.equal(state.harness, 'jev');
   assert.equal(state.provider, 'openai');
   assert.equal(workerFor(f, job.job).harness, 'jev');
-  assert.match(cardText(workerFor(f, job.job)), /◎.*jev/);
+  assert.match(cardText(workerFor(f, job.job)), /oracle.*Synthetic question/);
   assert.equal(state.output_written, true);
   assert.equal(state.exit_reason, 'settled');
   assert.equal((await f.call('hud_read', { job: job.job })).report, 'Synthetic Jev answer.');

@@ -14,8 +14,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   let key = input.type === 'key' ? input.key : '';
   const main = next.focus === 'agents';
   const inspector = next.focus === 'details';
-  const tab = (home: boolean) => {
-    next.mainTab = home ? 'home' : 'work';
+  const home = () => {
+    next.mainTab = 'home';
     next.focus = 'agents';
     next.modes.agents = 'open';
     next.zoom = false;
@@ -23,15 +23,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.boardRevealed = undefined;
     next.boardAnchor = undefined;
   };
-  if (key === 'home-tab' || key === 'work-tab') {
-    tab(key === 'home-tab');
+  if (key === 'home-tab') {
+    home();
     return result();
   }
-  // 3 (and Ctrl+\ 3) is kept for the Project tab (M4), not built: it does nothing, not even open the hidden Changes view.
-  if (key === 'changes') return result();
+  // Reserved Project keys must not reach hidden secondary views.
+  if (key === 'project-tab' || key === 'changes') return result();
   if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
   const inspect = () => {
-    const target = next.mainTab === 'work' ? next.workTarget : next.homeTarget;
+    const target = next.homeTarget;
     if (!target || !boardFrame || next.boardAnchor) return;
     const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
     const worker = target.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
@@ -57,11 +57,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (!boardFrame || (!main && !next.boardInspect)) return null;
-  const selected = () => (next.mainTab === 'work' ? next.workTarget : next.homeTarget);
+  const selected = () => next.homeTarget;
   const setTarget = (target: WorkTarget) => {
     next.boardAnchor = undefined;
-    if (next.mainTab === 'work') next.workTarget = target;
-    else next.homeTarget = target;
+    next.homeTarget = target;
   };
   const toggle = (item: string, open?: boolean) => {
     const set = new Set(next.boardExpanded);
@@ -75,7 +74,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
     if (lane?.identity.kind !== 'invocation') return;
     const worker = target.kind === 'worker' ? lane.workers.find((w) => w.id === target.workerId) : undefined;
-    // A job card with no question open opens its report, else its brief; the same on both tabs.
+    // A job card with no question open opens its report, else its brief.
     const evidence =
       target.kind === 'decision'
         ? lane.decisions.find((d) => d.id === target.decisionId)?.evidence[0]
@@ -104,8 +103,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       input.button === 'left'
         ? frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)
         : undefined;
-    if (control?.kind === 'board-home' || control?.kind === 'board-work') {
-      tab(control.kind === 'board-home');
+    if (control?.kind === 'board-home') {
+      home();
       return result();
     }
     if (control?.kind === 'board-inspect') {
@@ -131,7 +130,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (input.button !== 'left') {
       const delta = input.button === 'wheel-down' ? 3 : -3;
       if (inspector) next.scroll.details = Math.max(0, next.scroll.details + delta);
-      else if (next.mainTab === 'work') next.workScroll = Math.max(0, (next.workScroll ?? 0) + delta);
       else next.homeScroll = Math.max(0, (next.homeScroll ?? 0) + delta);
       return result();
     }
@@ -154,9 +152,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (main) activate();
     return result();
   }
-  // `o` (decoded as open-session, which is also Ctrl+\ o) opens the selected job's file in $EDITOR, on both tabs.
+  // `o` (also Ctrl+\ o) opens the selected job's file in $EDITOR.
   if (key === 'open-session' && main) return result(jobFiles());
-  // Existing reveal is display-only and must apply to both main tabs (P2 q18).
   if (key === 'show-all' && main) {
     next.tree.showAll = !next.tree.showAll;
     return result();
@@ -172,21 +169,16 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     ].map((w) => ({ kind: 'worker' as const, laneId: w.laneId, workerId: w.id }));
     if (targets.length) {
       const at = targets.findIndex((t) => selected() && targetKey(t) === targetKey(selected()!));
-      next.mainTab = 'work';
-      next.workTarget =
-        targets[(at + (key === 'previous-trouble' ? targets.length - 1 : 1) + targets.length) % targets.length];
+      const target = targets[(at + (key === 'previous-trouble' ? targets.length - 1 : 1) + targets.length) % targets.length];
+      setTarget(target);
       const folded = new Set(next.boardFolded);
-      folded.delete(next.workTarget.laneId);
+      folded.delete(target.laneId);
       next.boardFolded = folded;
       next.boardRevealed = undefined;
     }
     return result();
   }
-  // Left and Right only move between the tabs (Home, Work; the Project tab comes with M4); they never fold or expand.
-  if ((key === 'left' || key === 'right') && main) {
-    tab(key === 'left');
-    return result();
-  }
+  if (main && ['left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
   if (main && ['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
     const rows = boardFrame.rows,
       items: string[] = [];
@@ -208,10 +200,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     const target = boardFrame.targets.get(item);
     if (target) setTarget(target);
-    return result();
-  }
-  if (key === 'tab' || key === 'shift-tab') {
-    tab(next.mainTab === 'work');
     return result();
   }
   return null;

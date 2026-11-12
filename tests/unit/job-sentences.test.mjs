@@ -103,7 +103,7 @@ function fixture(t, mode = 'on', language = 'en') {
     return f.service.apply(f.board());
   };
   f.render = (board, width = 56) =>
-    renderWorkCard(projectWorkCard(board.workers[0], f.now), { ...initialMonitorState(), mainTab: 'work' }, width).join(
+    renderWorkCard(projectWorkCard(board.workers[0], f.now), { ...initialMonitorState(), mainTab: 'home' }, width).join(
       '\n'
     );
   const previous = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
@@ -165,15 +165,15 @@ test('thin job: real file collection, keyword card, coalescing, cached reopen, a
   await f.update();
   assert.equal(f.calls.length, 3);
 });
-test('ordinary cards expand the whole marked sentence and factual detail, then collapse on both tabs', async (t) => {
+test('ordinary cards expand the whole marked sentence and factual detail, then collapse on Home', async (t) => {
   const f = fixture(t);
   f.reply = 'Checking «parser boundaries» while preserving the complete sentence through its very last word.';
   const board = await f.update(),
     worker = board.workers[0];
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) };
   const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
-  for (const mainTab of ['home', 'work']) {
-    let state = { ...initialMonitorState(), mainTab, [mainTab + 'Target']: target };
+  {
+    let state = { ...initialMonitorState(), mainTab: 'home', homeTarget: target };
     const render = () => renderMonitor({ tree, workboard: board, state, width: 32, height: 40, nowMs: f.now });
     const enter = () => {
       const frame = render();

@@ -1,17 +1,13 @@
 /** Home: the ask, package lanes, then decisions made for the owner. */
 import { targetKey, type WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
-import { isLocalDay } from '../collectors/workboard.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { boardRow, minuteAge, decisionBlock, mark } from './workboard-rows.js';
-import { laneRows, orderedLanes, retainedWorker } from './work-lanes.js';
+import { laneRows, orderedLanes } from './work-lanes.js';
 import { requestLines, stemLines } from './work-card.js';
 import { theme } from './colors.js';
 import { fit, pair, monitorText } from './monitor-text.js';
 import { t } from './i18n.js';
-export function doneToday(board: WorkboardSnapshot, now: number): number {
-  return board.workers.filter((w) => isLocalDay(w.settledAt, now)).length;
-}
 export function homeRows(
   board: WorkboardSnapshot,
   state: MonitorState,
@@ -74,17 +70,20 @@ export function homeRows(
     rows.push(
       boardRow(
         theme.board.success(
-          pair(`${mark('✓', '+')} ${t('Nothing needs you')}`, running ? t('{n} running', { n: running }) : '', width)
+          fit(`${mark('✓', '+')} ${t('Nothing needs you')} · ${t('{n} running', { n: running })}`, width)
         )
       ),
       boardRow('')
     );
   }
   if (input)
-    for (const lane of orderedLanes(board, now)) {
-      if (lane.workers.every((w) => !retainedWorker(w, now, state.tree.showAll))) continue;
+    for (const lane of state.tree.showAll ? board.lanes : orderedLanes(board, now)) {
+      if (!lane.workers.length) continue;
       rows.push(...laneRows(input, lane, state, width, now));
     }
-  rows.push(...decisionBlock(board, state, width, now));
+  rows.push(...decisionBlock(board, state, width, now, input?.workboard));
+  const source = input?.workboard;
+  const hidden = source ? source.workers.length - board.workers.length + source.decisions.length - board.decisions.length : 0;
+  if (hidden) rows.push(boardRow(theme.dim(t('+{n} older · a', { n: hidden }))));
   return rows;
 }

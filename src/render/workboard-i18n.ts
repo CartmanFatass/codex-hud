@@ -1,7 +1,6 @@
-/** Words of the passive Home/Work pages, kept separate from the retained legacy vocabulary. */
+/** Words of the passive Home page, kept separate from the retained legacy vocabulary. */
 export const WORKBOARD_ZH: Record<string, string> = {
   Home: '首页',
-  Work: '作业',
   'Decided for you': '已替你决定',
   'Nothing needs you': '没有需要你处理的事',
   '{n} running': '{n} 运行中',
@@ -16,7 +15,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'o open': 'o 打开',
   '{n} option': '{n} 个选项',
   '{n} options': '{n} 个选项',
-  '1 2 tab  ↑↓ move  ⏎ expand  o open': '1 2 切页  ↑↓ 移动  ⏎ 展开  o 打开',
+  '↑↓ move  ⏎ expand  o open  a all': '↑↓ 移动  ⏎ 展开  o 打开  a 全部',
   '✓ {n} done today': '✓ {n} 今日完成',
   '{h}h{m}m': '{h}小时{m}分',
   major: '个重要',
@@ -38,7 +37,9 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '{n} call': '决定 {n}',
   '+{n} earlier': '另有 {n} 条较早',
   '{n} older today': '今日更早 {n} 条',
-  'a: reveal/hide finished agents · display only': 'a：显示/收起已完成代理 · 仅影响显示',
+  'a: show/hide older jobs and decisions': 'a：显示/收起较早的作业和决定',
+  '+{n} older · a': '+{n} 条较早 · a',
+  'older item': '较早',
   recommendation: '建议（非采纳记录）',
   answer: '答复',
   review: '评审',
@@ -119,6 +120,11 @@ export const WORKBOARD_ZH: Record<string, string> = {
   mixed: '混合',
   '<1m': '<1分',
   '{n}m': '{n}分钟',
-  '←→ tab · ↑↓ move · ⏎ expand/collapse · o open · v inspect': '←→ 切页 · ↑↓ 移动 · ⏎ 展开/收起 · o 打开 · v 详情',
+  '1 Home · , Settings · ? Help': '1 首页 · , 设置 · ? 帮助',
+  '↑↓ move · ⏎ expand/collapse · o open · v inspect': '↑↓ 移动 · ⏎ 展开/收起 · o 打开 · v 详情',
+  '1 Home': '1 首页',
+  '{p} 1 Home': '{p} 1 首页',
+  '{p} ↑ ↓  move': '{p} ↑ ↓  移动',
+  '↑↓ move  ⏎ expand/collapse  o open  v inspect': '↑↓ 移动  ⏎ 展开/收起  o 打开  v 详情',
   'b: pause / resume models': 'b：暂停 / 恢复模型',
 };
