@@ -1,6 +1,6 @@
 ---
 name: hud-delegate
-description: Hand work to a local HUD role in its own herdr tab - imp (implementer), reviewer, sonic (small chores), and any other role hud_roster lists. Use whenever the user delegates in plain words ("交给 imp", "让 implementer 做", "派个 sonic", "让 sonic 查一下", "review 一下", "起个 reviewer", "问 architect", "delegate this", "dispatch a sonic") or a project's docs route work to a role. The main session writes the brief, dispatches with hud_create, waits for the DONE line, reads the report and decides the next step.
+description: Hand work to a local HUD role in its own herdr tab - imp (implementer), reviewer, sonic (small chores), and any other role hud_roster lists. Use whenever the user delegates in plain words ("交给 imp", "让 implementer 做", "派个 sonic", "让 sonic 查一下", "review 一下", "起个 reviewer", "问 architect", "delegate this", "dispatch a sonic") or a project's docs route work to a role. The main session writes the brief, dispatches with hud_create, waits for the job to settle, reads the report and decides the next step.
 ---
 
 # Delegate through HUD
@@ -12,9 +12,11 @@ The user names a role and a task in plain words; you do the rest. Never ask them
    ask the user's own sentence plus those limits is enough. Do not name a report file; HUD adds it.
 3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`; optional `model`/`thinking` run the pi role on another model for this job only. Pi-only launch switches: boolean `lens`, `mcp`, `tps`, `ui_ext` (false disables UI extensions; true keeps defaults), `skills` (true includes personal skills; false keeps them excluded), `split` (reserve a right helper pane; defaults to the role file). Omitted switches keep pi-role defaults. `pi_args` appends up to 128 strings (4096 characters each) verbatim after pi-role's `--`, without a shell. `hud_roster` lists accepted options; `hud_read` shows the recorded launch options. A retry returns the original job unchanged even if options differ; use a new key for a different launch.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
-5. Wait for the `[role@job] DONE` or `FAILED` line in your pane; do not poll. `hud_read` with `wait_ms` is the backup.
+5. Wait for the job to settle: no DONE line is pushed into your pane. Where the client can watch a shell command in
+   the background (Claude Code's Monitor), watch the job's `STATUS.json` state and its `qa/` dir; otherwise call
+   `hud_read` with `wait_ms`. A worker's question still arrives as a `QUESTION` line; answer it within 20 minutes.
 6. Read the report (`hud_read`), check it (for code: the diff and the named checks), then decide: accept, repair, review
-   or stop. DONE means settled, not accepted.
+   or stop. Settled means finished, not accepted.
 
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role when a job finishes. A review verdict is information for you, not permission to continue.
 
