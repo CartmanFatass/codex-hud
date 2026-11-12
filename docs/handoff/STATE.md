@@ -7,7 +7,8 @@ Milestone: M4 · Project view
 
 ## Next
 
-- native-polish (.scratch/native-polish): 01–04 landed; 05 live check passed, pi-roles fixes in progress. M4 review after.
+- native-polish (.scratch/native-polish): all five landed; owner tries them. M4 review next.
+- GEMINI-DECIDE running (owner: Google Decisions API first, OpenAI if the rate is not enough).
 
 ## Slices
 
@@ -54,7 +55,8 @@ board counts these; update at every landing or decision. -->
 - try · M4 · NP-02 · native-polish 02: a resumed Claude subagent shows running again and gets a fresh result (a5a3e6a4)
 - try · M4 · NP-03 · native-polish 03: Chinese keyword marks colour instead of showing brackets (746971eb)
 - try · M4 · NP-04 · native-polish 04: HUD job cards show a short title (eb3e5558)
-- working · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers
+- try · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers (live check passed; Fishpref pi-roles fixed)
+- working · M4 · GEMINI-DECIDE · Google Gemini Decisions API is Jev's primary decision provider; OpenAI fallback (TypeSafe credits expiring)
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
 ## Now (2026-11-12, evening): M3b closed after its second review; M4 Project tab complete with progress board and tickets
