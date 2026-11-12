@@ -12,12 +12,16 @@ import { eachThread } from './subagent-tree.js';
 import { labelSource, finalAnswer, errorMaterial, headTail } from './model-jobs.js';
 
 const INTERVAL = 120_000;
-type Reading = { text: string; stamp: string };
+type Reading = { text: string; stamp: string; at?: number };
+const readings = new Map<string, Reading>();
 function read(file: string, limit = 4096, tail = false): Reading {
   let fd: number | undefined;
   try {
     const before = fs.lstatSync(file);
     if (fs.realpathSync(file) !== file || !before.isFile()) throw new Error('unsafe');
+    const key = `${file}:${limit}:${tail}`, stamp = `${before.ino}:${before.size}:${before.mtimeMs}`;
+    const hit = readings.get(key);
+    if (hit?.stamp === stamp) return hit;
     fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
     const s = fs.fstatSync(fd),
       buffer = Buffer.alloc(Math.min(limit, s.size));
@@ -26,7 +30,10 @@ function read(file: string, limit = 4096, tail = false): Reading {
     const n = fs.readSync(fd, buffer, 0, buffer.length, start);
     if (fs.realpathSync(file) !== file || fs.statSync(file).ino !== s.ino) throw new Error('changed');
     const text = buffer.subarray(0, n).toString('utf8');
-    return { text: start ? text.slice(text.indexOf('\n') + 1) : text, stamp: `${s.ino}:${s.size}:${s.mtimeMs}` };
+    const result = { text: start ? text.slice(text.indexOf('\n') + 1) : text, stamp, at: s.mtimeMs };
+    readings.set(key, result);
+    if (readings.size > 1000) readings.delete(readings.keys().next().value!);
+    return result;
   } catch {
     return { text: '', stamp: '' };
   } finally {
@@ -40,6 +47,31 @@ function names(directory: string): string[] {
   } catch {
     return [];
   }
+}
+export function jobActivity(home: string, w: OwnerWorker, node?: SubagentTreeNode) {
+  if (node && !node.rolloutPath) return { text: '', stamp: '', at: 0, items: [] };
+  const dir = resolve(home, 'jobs', w.id.slice(9), 'sessions');
+  const file = node?.rolloutPath ?? names(dir).filter((n) => n.endsWith('.jsonl'))
+    .map((n) => ({ file: join(dir, n), at: (() => { try { return fs.lstatSync(join(dir, n)).mtimeMs; } catch { return 0; } })() }))
+    .sort((a, b) => b.at - a.at)[0]?.file;
+  const activity = file ? read(file, 32768, true) : { text: '', stamp: '', at: 0 };
+  const items: { id?: string; text: string }[] = [];
+  const result = (id: string, text: unknown) => {
+    const call = items.find((p) => p.id === id);
+    if (call) call.text += ' → ' + JSON.stringify(text).slice(0, 600);
+  };
+  for (const line of activity.text.split('\n')) try {
+    const v = JSON.parse(line), m = v.message ?? v.payload ?? v;
+    if (m.channel && !['final', 'commentary'].includes(m.channel)) continue;
+    if (m.phase && !['final_answer', 'commentary'].includes(m.phase)) continue;
+    if (m.role === 'toolResult' || m.type === 'function_call_output') result(m.toolCallId ?? m.call_id, m.content ?? m.output);
+    for (const p of Array.isArray(m.content) ? m.content : []) {
+      if (['toolCall', 'tool_use'].includes(p.type)) items.push({ id: p.id, text: (p.name + ' ' + JSON.stringify(p.arguments ?? p.input ?? {})).slice(0, 600) });
+      if (p.type === 'tool_result') result(p.tool_use_id, p.content);
+    }
+    if (m.type === 'function_call') items.push({ id: m.call_id, text: (m.name + ' ' + m.arguments).slice(0, 600) });
+  } catch { /* partial or private records supply no public evidence */ }
+  return { ...activity, items: items.slice(-12).map((p) => p.text) };
 }
 function material(home: string, w: OwnerWorker, answers: unknown) {
   const dir = resolve(home, 'jobs', w.id.slice('thin-job:'.length));
@@ -56,23 +88,7 @@ function material(home: string, w: OwnerWorker, answers: unknown) {
   const reviewed = review ? read(join(dir, review)) : { text: '', stamp: '' };
   const report = read(join(dir, 'report.md'));
   const question = w.work?.requestInfo?.evidence?.relativePath ?? '';
-  const session =
-    w.settledAt === null
-      ? names(join(dir, 'sessions'))
-          .filter((n) => n.endsWith('.jsonl'))
-          .map((n) => ({
-            n,
-            at: (() => {
-              try {
-                return fs.lstatSync(join(dir, 'sessions', n)).mtimeMs;
-              } catch {
-                return 0;
-              }
-            })(),
-          }))
-          .sort((a, b) => b.at - a.at)[0]?.n
-      : undefined;
-  const activity = session ? read(join(dir, 'sessions', session), 32768, true) : { text: '', stamp: '' };
+  const activity = w.settledAt === null ? jobActivity(home, w) : { text: '', stamp: '', items: [] };
   const messages = activity.text
     .split('\n')
     .flatMap((line) => {
@@ -111,6 +127,7 @@ function material(home: string, w: OwnerWorker, answers: unknown) {
     review: reviewed.text.split(/\r?\n/, 1)[0],
     report: w.settledAt !== null ? report.text.split(/\r?\n/).slice(0, 4).join('\n') : '',
     messages,
+    activity: activity.items,
     changes: [question, reviewed.stamp, report.stamp, activity.stamp, answers],
   };
 }
@@ -133,6 +150,7 @@ function nativeMaterial(n: SubagentTreeNode, w: OwnerWorker) {
           )
         : '',
     error: errorMaterial(text),
+    activity: w.settledAt === null ? jobActivity('', w, n).items : [],
   };
 }
 interface Saved {

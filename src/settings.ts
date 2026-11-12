@@ -72,7 +72,7 @@ export function defaultSettings(): HudSettings {
     modelEnabled: (() => {
       try {
         const c = readHudCredentials();
-        return !!(c.mistralApiKey?.trim() || c.openaiApiKey?.trim());
+        return !!(c.mistralApiKey?.trim() || c.openaiApiKey?.trim() || c.geminiApiKey?.trim());
       } catch {
         return false;
       }

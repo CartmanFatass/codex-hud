@@ -68,18 +68,20 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
 });
 test('Control plane and native agents start folded and Enter unfolds/folds through real input', async (t) => {
   const f = await fixture(t);
-  let frame = f.render(80, 'en', { ...initialMonitorState(), mainTab: 'project' });
+  // Model fit adds six rows; retain room for the fully expanded control plane.
+  const render = (state) => f.render(80, 'en', state, 64);
+  let frame = render({ ...initialMonitorState(), mainTab: 'project' });
   assert.match(plain(frame).join('\n'), /▸ Control plane/);
   assert.doesNotMatch(plain(frame).join('\n'), /synthetic\/model/);
   frame.state.projectCursor = 'project:fold:control';
-  frame = f.render(80, 'en', press(frame, 'enter').state);
+  frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /synthetic\/model/);
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
   frame.state.projectCursor = 'project:fold:agents';
-  frame = f.render(80, 'en', press(frame, 'enter').state);
+  frame = render(press(frame, 'enter').state);
   for (const name of ['user-agent.md', 'project-agent.md', 'codex-agent.toml']) assert.match(plain(frame).join('\n'), new RegExp(name));
   frame.state.projectCursor = 'project:fold:control';
-  frame = f.render(80, 'en', press(frame, 'enter').state);
+  frame = render(press(frame, 'enter').state);
   assert.doesNotMatch(plain(frame).join('\n'), /synthetic\/model/);
 });
 test('2 and arrows/Tab switch Home ⇄ Project with independent cursor/scroll; 3 stays Changes', async (t) => {

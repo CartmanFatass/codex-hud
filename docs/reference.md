@@ -583,12 +583,12 @@ The Models group has exactly three preference rows. There is one chat-completion
 | Setting | JSON key | Default | Meaning |
 |---|---|---|---|
 | Model text | `modelEnabled` | Key-aware | Master switch for new model text; off sends nothing |
-| Model | `model` | `deepseek-v4-1-flash-1017` | Model ID for all retained features; edit the settings file for a different ID |
+| Model | `model` | `deepseek-v4-1-flash-1017` | Model ID for chat-completions text; Decision labels use their providers' own models |
 | Call cap | `modelCallsPerHour` | `60` | Hourly provider-call limit shared across panels using the same `$HUD_HOME` |
 
-Without a saved master preference, Model text defaults on when a Mistral or OpenAI key is available from the HUD credential reader, otherwise off. A saved boolean wins. Even when on, the panel makes no request without a matching key for its configured endpoint. `b` and the top-row models word toggle this same master preference; there is no separate pause setting. Turning it off hides stored model text and falls back to native names and factual state without deleting caches or logs.
+Without a saved master preference, Model text defaults on when a Mistral, OpenAI or Gemini key is available from the HUD credential reader, otherwise off. A saved boolean wins. Even when on, text needs a matching key for its configured chat endpoint; Decision labels separately need a Gemini or OpenAI key. `b` and the top-row models word toggle this same master preference; there is no separate pause setting. Turning it off hides stored model text and falls back to native names and factual state without deleting caches or logs.
 
-Model text covers **job/native card sentences and native task names**, and **decision titles**. They follow the master switch together; none has its own LLM setting. Model text is display text, not observed fact or a verdict; its keywords use the same painting on Home, Project and in the Inspector.
+Model text covers **job/native card sentences and native task names**, **decision titles**, and the **Decision labels** below. They follow the master switch together; none has its own LLM setting. Model text is display text, not observed fact or a verdict; its keywords use the same painting on Home, Project and in the Inspector.
 
 **Keyword grammar.** Sentences can carry up to four marks: `«keyword»` keeps the original identifier colour (lavender on dark themes); `«+approve»` / `«+批准»` is success green; `«-reject»` / `«-拒绝»` is error red; `«!recommends X»` / `«!认为更简单»` is opinion cyan, distinct from identifiers, success, error and attention. Prefixes and delimiters never display. Stance prefixes express approve/accept/agree/pass (批准、同意、通过、接受) or reject/object/oppose/fail/block (拒绝、反对、驳回、失败、阻塞). Filenames with extensions (`report.md`) and paths (`src/tree-page.ts`) always use identifier ink, even unmarked or inside another mark. Malformed/nested, empty/prefix-only or more-than-four marks lose keyword emphasis and display as plain text; deterministic file painting remains. Prompts require `«…»` in every language, including Chinese. Short `「…」` keyword marks (including stance/opinion prefixes) paint identically without brackets and count toward the same four-mark limit. Only balanced, non-nested payloads of 1–24 Unicode characters, excluding an optional prefix, qualify: no whitespace or sentence/clause punctuation (`。！？!?，,；;：:` or a final period); internal filename dots are allowed. Other corner quotations stay literal, without keyword emphasis, so a quoted sentence is not coloured wholesale. Old cached `«…»` still works. With text icons, opinions are plain; theme none emits no colour.
 
@@ -596,9 +596,43 @@ Model text covers **job/native card sentences and native task names**, and **dec
 - **Decision titles:** Each thin-job “Decided for you” row gets what was decided in at most eight words, in the panel language, from only its question and answer files (4096 bytes each). Titles may mark up to two keywords with the same grammar/painting; delimiters and prefixes do not count toward the eight-word cap, and a capped mark is closed. The same title leads the expanded text; Enter, the question and the alternative are unchanged. Until it arrives, or off/without a key, the original option/title stays. Titles persist in `display/model-cache/decision-titles.json` (200 records), keyed by decision id, answer revision and language: a second render or reopened panel makes no call; a changed answer revision gets a new title. Visible decisions go first, with at most three pending requests on the shared queue/cap; failures retry after two minutes.
 - **Native names and sentences:** The same `JobSentences` queue/cache generates a short task name and one sentence about current work, a settled result or failure cause. Requests are at least two minutes apart per agent across languages, with a successful final sentence frozen to its settlement; the shared service admits at most three pending handles. Native input reuses the collected name/role (80 chars each), public task/pre-create charge (400), latest public report (600), tool/action (200), latest stage/public final result (8,000 head/tail) and recorded error output (2,000). A settled Codex agent may need one safe 32 KiB transcript tail; Claude uses its already-collected public text. Sealed tasks, reasoning/private/unknown channels and legacy job-only nodes stay excluded. No separate labels/digests/causes/progress schedulers or agent-log writer remain. Off/no key restores the native name and factual line without deleting old caches.
 
+#### Decision labels
+
+With Model text on and `GEMINI_API_KEY` or `OPENAI_API_KEY` available, the panel adds:
+
+- **Outcome:** settled Home cards show `[done / partial / failed / blocked]` beside the factual state. The
+  Inspector adds confidence; Project's progress slice shows the same mark. One request reads the final
+  state and first 12 report lines (4096-byte head), once per settlement. Later report edits do not
+  relabel that settlement; continuation and resettlement allow a new label.
+- **Kind:** the Inspector shows any of ui, bug fix, feature, refactor, review, research, docs, chore.
+  One request per job reads only the first two brief paragraphs (1500-byte head). Settled, unlabelled
+  jobs from the last 30 days backfill newest first within the ordinary cap.
+- **Model fit (Project):** groups the observed jobs by kind and role · model · thinking, with run counts,
+  done/partial/failed/blocked split, unlabelled count and median completed duration. Missing labels stay
+  as “unlabelled”, and running/unknown durations do not enter the median. It makes no model call.
+- **Looping:** after three quiet minutes a running HUD or native card can show `⚠ looping`; the Inspector
+  adds confidence. Input is only the last 12 public tool calls and matching result summaries, each
+  bounded to 600 characters, from the same 32 KiB session tail used for its sentence. At most once per
+  five minutes, never for unchanged activity; new different activity clears the mark immediately.
+- **Question category:** pending questions and Decided for you rows carry design trade-off, clarification,
+  owner authorisation or blocked chips. Authorisation questions sort first. Only the question file's
+  first 4096 bytes are sent, once per revision (up to 100 questions per observed job).
+- **Review findings:** the Inspector and progress slice show must fix / should fix / optional counts.
+  One request per newest review revision classifies up to 24 Markdown list items, 400 characters each,
+  from a 32 KiB review head (or a settled reviewer job's report). Headings need no special spelling;
+  non-finding/check bullets are excluded. No findings means no counts.
+
+Labels are display only: they never alter job status, send work, answer a question or delay its handling.
+They use **Gemini first, OpenAI fallback**, with the same quota cooldown as browser decisions, regardless
+of Settings → Decision API (that row configures browser jobs only). Every HTTP attempt, including fallback,
+shares the text service's hourly cap across panels. Cached successes and failed attempts survive reopen
+in private `display/model-cache/decision-labels/` records. Master off/no decision key hides labels and sends
+nothing; language changes translate cached enums locally without a call. No new setting, watcher or
+process is added. All labels are available in English/Chinese at 80 and 120 columns.
+
 Reasoning and private channels are excluded. Only the thin-job inputs listed above are newly admitted; legacy facade-only jobs and task directories remain excluded. There is no job-content consent flow. Periodic overviews, main recaps, session titles, approval wording and change summaries are no longer generated or loaded. Hidden/secondary views receive factual state only, not generated overview text. The old `codex-hud brief --dry-run` command now reports that periodic briefs and recaps were removed; it is not an input preview.
 
-**Language and storage.** Retained features write in Settings → Display → Language. Off-language stored entries step aside; replies plainly in the wrong language are rejected and not cached. Names and short quotes may contain another language. Model cache and call-log files under `$HUD_HOME/display/model-cache/` are private (0600). Native and thin-job sentence failures wait at least two minutes. All requests share the single-flight queue, cache and cap; cache identity includes input, endpoint and actual model, never the key. Settings shows calls made this hour.
+**Language and storage.** Retained features write in Settings → Display → Language. Off-language stored entries step aside; replies plainly in the wrong language are rejected and not cached. Names and short quotes may contain another language. Model cache and call-log files under `$HUD_HOME/display/model-cache/` are private (0600). Native and thin-job sentence failures wait at least two minutes. Text requests share their single-flight queue/cache; Decision labels have one separate in-flight request and per-source revision records, but share the exact same call cap/log. Text cache identity includes input, endpoint and actual model, never the key. Settings shows calls made this hour.
 
 **Connection.** Configure the endpoint in the settings file (`$HUD_HOME/hud-settings.json`, or `HUD_SETTINGS_PATH`); there is no connection editor in the panel:
 

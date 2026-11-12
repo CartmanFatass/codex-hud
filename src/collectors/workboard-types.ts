@@ -16,6 +16,7 @@ export interface EvidenceRef {
   readonly timeBasis: 'producer' | 'file-mtime' | 'unknown';
 }
 export interface DecisionRecord {
+  readonly category?: string;
   readonly modelTitle?: string;
   readonly id: string;
   readonly laneId: string;
@@ -35,6 +36,7 @@ export interface DecisionRecord {
   readonly evidence: readonly EvidenceRef[];
 }
 export interface OwnerWorker {
+  readonly labels?: import('./decision-labels.js').DisplayLabels;
   readonly resources?: {
     context?: number;
     rate?: import('./token-rate.js').TokenRateSnapshot;

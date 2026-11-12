@@ -553,14 +553,14 @@ thin-job sentences use a separate bounded job-local collector (§5.6), not a fac
 
 ## 5. The optional model features
 
-The display-text service uses three preferences in Models (beside Jev's Decision API): `modelEnabled` (Model text),
+The display-text service and Decision labels (§5.7) use three preferences in Models (beside Jev's Decision API): `modelEnabled` (Model text),
 `model` (default `deepseek-v4-1-flash-1017`) and `modelCallsPerHour` (default 60).
 There is no backend selector, per-feature switch, pacing control, tier model,
 effort preference or consent flow. Old keys are ignored, not migrated, and are
 omitted on the next settings save; user caches and state are not deleted.
 
 Without a saved master preference, `defaultSettings()` enables model text when
-the HUD credential reader finds a Mistral or OpenAI key; otherwise it defaults
+the HUD credential reader finds a Mistral, OpenAI or Gemini key; otherwise it defaults
 off. A saved boolean wins. `tree-page.ts` also checks `modelHttpRequest` before
 configuring the service: without a key for the configured endpoint the effective
 service is off even if the preference is on. Off sends no model requests.
@@ -664,6 +664,12 @@ job using the same key. Retry cooldowns do not carry across languages.
 | Feature | What can leave the machine when the master is effectively on |
 |---|---|
 | Decision titles | that thin job's question and answer files only, ≤4096 bytes each (§5.6) |
+| Outcome label | settled thin job's factual final state and first 12 report lines from a ≤4096-byte head; one attempt per settlement (§5.7) |
+| Job kind | brief title/goal: first two paragraphs of a ≤1500-byte head; one attempt per job |
+| Looping label | latest 12 public tool calls (≤600 chars each) and matching result summaries (≤600 chars each), from the same safe ≤32 KiB session tail used by sentences; no reasoning/private channels |
+| Question category | that job's question file only, ≤4096 bytes; at most 100 question files per observed job |
+| Review severities | first 24 Markdown list items, ≤400 chars each, split from a ≤32 KiB newest review (or settled reviewer report); no surrounding prose |
+| Model fit | nothing: pure aggregation of observed jobs and stored outcome/kind labels |
 | Native-agent sentences (`nativeMaterial`) | public name/role (80 characters each), task/pre-create charge (400), state/turn, report (600), action (200), final result (8,000 head/tail) and error output (2,000); settled non-Claude agents may read one safe 32 KiB transcript tail |
 | Visible progress | bounded public current-turn evidence in §5.5 |
 | Result/stage digest | public final answer, head and tail, ≤8000 characters |
@@ -732,6 +738,42 @@ The private `model-cache/job-sentences.json` retains up to 200 language-keyed jo
 `utils/keyword-marks.ts` parses up to four spans: `«keyword»` (legacy identifier ink), `«+stance»` (approve/accept/agree/pass, 批准/同意/通过/接受; `theme.board.success`), `«-stance»` (reject/object/oppose/fail/block, 拒绝/反对/驳回/失败/阻塞; `theme.board.danger`), and `«!opinion»` (judgement/recommendation; `theme.board.opinion`, the palette's info cyan). Opinion ink is distinct from identifier/success/danger/attention and is plain with text icons; theme none stays uncoloured. Delimiters/prefixes are stripped even for malformed, nested, empty/prefix-only or excess marks, which lose keyword emphasis. The shared prompt explicitly requires `«…»` in every language, including Chinese. Before span parsing, short `「…」` marks normalize to the same grammar and four-mark total: balanced, non-nested, 1–24 Unicode payload characters after an optional prefix, with no whitespace or sentence/clause punctuation (`。！？!?，,；;：:` or a final period); internal filename dots are allowed. Other corner quotations remain literal and unmarked. This applies equally to stored job/native sentences and `markedTitle` decision titles, without cache migration. Old plain-mark caches remain valid. `render/work-card.ts` shares painting with decision rows/Inspector: the deterministic `identifiers()` rule includes filenames with extensions as well as paths/code/flags, and file spans override mark ink even when unmarked. No model scheduling, cap, queue, spacing or input changes. Collapsed, one row cuts at a word with `…`, including width-safe CJK fallback; Enter wraps the complete sentence and shows the whole factual detail underneath. Missing text/key or master off leaves the existing factual rendering unchanged. A sentence is display text, never a workflow verdict.
 
 `DecisionTitles` (`collectors/decision-titles.ts`) overlays `DecisionRecord.modelTitle` in both collapsed and expanded rows, leaving the question/alternative and Enter behavior intact. Collection reads only that thin job's question and answer (4096 bytes each), through the shared safe reader. Titles state what was decided in the panel language, with up to two keyword marks using the shared sentence grammar/painting. `markedTitle` counts visible words with `Intl.Segmenter` (including Chinese), cuts to eight words without counting prefixes/delimiters, and closes a mark that crosses the cap. The private adjacent `decision-titles.json` retains 200 records keyed by decision id, answer revision and language; reopen reuses them, and a changed answer revision requests anew. Up to three pending handles use the shared queue/cap, current viewport decisions first; failures wait two minutes before retrying. Master/key off hides titles and cancels requests without deleting records; missing/pending text leaves the original option/title.
+
+### 5.7 Decision labels (`collectors/decision-labels.ts`)
+
+`DecisionLabels.update` runs on the existing panel collection tick, never during painting. One in-flight
+label request uses the landed `GeminiDecisionProvider` first and `OpenAIDecisionProvider` as the only fallback,
+via the existing `FailoverDecisionProvider` and its process-wide Gemini quota cooldown. It deliberately ignores
+Settings → Decision API and browser-job routing configuration. Both keys come from `readHudCredentials`;
+TypeSafe-only credentials do not enable display labels. The model-text master gates calls and overlays,
+independently of the chat endpoint's key. Disabling/root changes/exit abort pending labels. No watcher,
+worker message, question answer/delay, lifecycle write or process is introduced.
+
+Each actual HTTP attempt reserves against the same `ModelRuntimeStore` directory/calls.json as `SmallModel`,
+including a fallback attempt; cache/coincident-input claims use its existing coordination too. Thus text,
+all five label purposes and every panel share `modelCallsPerHour`. Cap refusal leaves work pending for a
+later tick/hour. Successful and failed attempts persist private per-source revision records in
+`display/model-cache/decision-labels/<identity-hash>.json`; no raw input or credentials are stored there.
+Only current observed sources (the existing newest-200 job scope, plus native cards) are resident. Reopening
+reuses records without a call. Outcome freezes the first report snapshot for that settlement; kind freezes
+per job. Questions and the newest review are keyed by file revision. Label IDs are language-neutral enums;
+EN/ZH rendering is local, so changing language makes no label call. Painting reads only memory.
+
+Kinds backfill settled jobs from the last 30 days, newest first, under the same cap; older/unlabelled
+records are not silently excluded from Model fit. A running HUD/native card is judged only after three
+minutes without activity, at most once per five minutes, and never again for unchanged activity. The
+shared sentence tail reader is signature-cached (1000 bounded slices); both sentences and labels reuse
+`jobActivity`'s public tool/result pairs. A changed activity fingerprint immediately removes an obsolete
+looping mark, even within the five-minute floor. No transcript-referenced path is followed.
+
+`apply` attaches display-only outcomes/confidence, kinds, looping confidence, question categories and
+severity counts. Home's settled mark and quiet warning, the Inspector and Project's slice counts are
+pure overlays. Pending/decided authorisation questions sort first without changing execution order.
+Review heads need no naming convention: list items are individually classified, including a non-finding
+choice for check/summary bullets; zero findings draws no counts. `collectors/model-fit.ts` purely groups
+all observed thin jobs by kind and role · model · thinking. Missing kind/outcome counts as unlabelled;
+running/unknown durations are excluded from the median, not from runs. Even medians average the two
+middle completed durations. Groups/rows reuse Project's fold and width-safe wrapping.
 
 ## 6. Rendering
 

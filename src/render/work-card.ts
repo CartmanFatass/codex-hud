@@ -151,8 +151,14 @@ export function phaseChain(card: WorkCard): string {
     })
     .join(mark(' › ', ' > '));
 }
+export function labelSummary(labels: WorkCard['worker']['labels']): string {
+  return [labels?.outcome ? `[${t(labels.outcome.value)}]` : '',
+    ...(labels?.severity ?? []).map((n, i) => n ? `${n} ${t(['must fix', 'should fix', 'optional'][i])}` : '')].filter(Boolean).join(' · ');
+}
 export function workCardName(card: WorkCard, _state: MonitorState, width: number) {
-  const right = [workStateWord(card), ageText(card.elapsedMinutes ?? 0)].filter(Boolean).join(' ');
+  const labels = card.worker.labels;
+  const right = [labels?.looping !== undefined ? `${mark('⚠', '!')} ${t('looping')}` : '',
+    labels?.outcome ? `[${t(labels.outcome.value)}]` : '', workStateWord(card), ageText(card.elapsedMinutes ?? 0)].filter(Boolean).join(' ');
   const role = monitorText(card.role),
     x = 2 + visualLength(role) + 2;
   return {

@@ -75,6 +75,7 @@ import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js
 import { SmallModel, modelHttpRequest } from './collectors/small-model.js';
 import { ModelProbe, apiSettings } from './collectors/model-probe.js';
 import { JobSentences } from './collectors/job-sentences.js';
+import { DecisionLabels } from './collectors/decision-labels.js';
 import { DecisionTitles } from './collectors/decision-titles.js';
 import { hudProblems } from './render/hud-diagnostics.js';
 import { createAdaptivePollState, forceAdaptivePoll, recordAdaptivePoll } from './collectors/adaptive-poll.js';
@@ -615,6 +616,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     path.join(getHudDisplayHome(), 'model-cache', 'decision-titles.json'),
     () => render()
   );
+  const decisionLabels = new DecisionLabels(path.join(getHudDisplayHome(), 'model-cache'), () => render());
   const claudeNative = new ClaudeNativeTree();
   const configureModel = () => {
     modelOn =
@@ -628,6 +630,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       },
       hourlyCap: settings.modelCallsPerHour,
     });
+    decisionLabels.configure(settings.modelEnabled, settings.modelCallsPerHour);
     jobSentences.configure(modelOn, resolveLanguage(settings.language));
     decisionTitles.configure(modelOn, resolveLanguage(settings.language));
   };
@@ -693,7 +696,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const jobRender = panelJobRenderState(jobComposition, !collected || treeBuiltFor !== tree.rootId);
         frame = renderMonitor({
           tree,
-          workboard: decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree, panelDelegation))),
+          workboard: decisionLabels.apply(decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree, panelDelegation)))),
           modelEnabled: settings.modelEnabled,
           mouse: settings.mouse,
           embedded: !STANDALONE_PANEL,
@@ -941,6 +944,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         state = configuredState();
         worktrees = null;
         // Cancel old-root writers before loading the next root's model log.
+        decisionLabels.stop();
         jobSentences.stop();
         agentContext.clear();
         agentContextReadAt.clear();
@@ -979,6 +983,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         (frame?.panes ?? []).flatMap((p) => p.rows.slice(p.offset, p.offset + (p.visible ?? 0)).map((r) => r.item!))
       );
       decisionTitles.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, visibleDecisions);
+      decisionLabels.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       const projectFacts = await projectCollector.collect(
         projectShown(state, Boolean(settingsPage)) ? true
@@ -1057,6 +1062,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
 
     jobSentences.stop();
     decisionTitles.stop();
+    decisionLabels.stop();
     model.cancelAll();
     probe.cancel();
     flushTreeScans();

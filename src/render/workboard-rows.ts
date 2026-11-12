@@ -73,7 +73,7 @@ export function decisionRows(
   const ink = record.departure ? theme.board.attention : theme.board.muted;
   const age = minuteAge(callTime(record), now);
   const old = !currentDecision(record, now);
-  const left = `${ink(mark(record.departure ? '◆' : '◇', record.departure ? '*' : 'o'))} ${[`${monitorText(lane.label)} · ${roleWord(worker?.role ?? null)}`, q].filter(Boolean).join(' ')}`;
+  const left = `${ink(mark(record.departure ? '◆' : '◇', record.departure ? '*' : 'o'))} ${[record.category ? `[${t(record.category)}]` : '', `${monitorText(lane.label)} · ${roleWord(worker?.role ?? null)}`, q].filter(Boolean).join(' ')}`;
   if (!state.boardExpanded?.has(targetKey(target))) {
     // `worth a look` gives way to the age alone when it would leave the title under ten cells.
     const long = `${t('worth a look')} · ${age}`;
@@ -103,6 +103,7 @@ export function decisionBlock(
     .slice()
     .sort(
       (a, b) =>
+        Number(b.category === 'owner authorisation') - Number(a.category === 'owner authorisation') ||
         (state.tree.showAll ? 0 : Number(b.departure) - Number(a.departure)) || (callTime(b) ?? 0) - (callTime(a) ?? 0)
     );
   if (!decisions.length) return [];

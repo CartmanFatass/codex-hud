@@ -3,7 +3,7 @@ import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
-import { renderWorkCard, requestLines, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk } from './work-card.js';
+import { renderWorkCard, requestLines, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary } from './work-card.js';
 import {
   kvRows,
   section,
@@ -91,6 +91,11 @@ export function workInspectorRows(
             .filter(Boolean)
             .join(' · '),
         ],
+        ['outcome', worker.labels?.outcome ? `${t(worker.labels.outcome.value)} ${Math.round(worker.labels.outcome.confidence * 100)}%` : ''],
+        ['kind', worker.labels?.kinds?.map((k) => t(k)).join(' · ') ?? ''],
+        ['looping', worker.labels?.looping !== undefined ? `${Math.round(worker.labels.looping * 100)}%` : ''],
+        ['category', t(worker.labels?.category ?? '')],
+        ['findings', labelSummary({ severity: worker.labels?.severity })],
         ['started', stamp(worker.startedAt)],
         [
           worker.homeNeedsHuman ? 'asked' : worker.settledAt !== null ? 'ended' : 'activity',

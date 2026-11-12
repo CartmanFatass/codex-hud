@@ -26,7 +26,8 @@ export function homeRows(
     );
   state.boardNewest = newest ? targetKey({ kind: 'worker', laneId: newest.laneId, workerId: newest.id }) : undefined;
   const rows: MonitorRow[] = [boardRow('')];
-  const needs = board.workers.filter((w) => w.homeNeedsHuman);
+  const needs = board.workers.filter((w) => w.homeNeedsHuman)
+    .sort((a, b) => Number(b.labels?.category === 'owner authorisation') - Number(a.labels?.category === 'owner authorisation'));
   for (const worker of needs) {
     const card = projectWorkCard(worker, now),
       r = worker.work?.requestInfo;
@@ -39,7 +40,7 @@ export function homeRows(
       boardRow(
         theme.board.askTitle(
           pair(
-            `? ${monitorText(worker.role ?? '')} · ${monitorText(lane?.label ?? '')}`,
+            `? ${worker.labels?.category ? `[${t(worker.labels.category)}] ` : ''}${monitorText(worker.role ?? '')} · ${monitorText(lane?.label ?? '')}`,
             `${t('asking')} ${minuteAge(worker.humanEndedAt, now)}`,
             width
           )
