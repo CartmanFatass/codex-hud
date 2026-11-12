@@ -249,7 +249,7 @@ counts and one row per worktree with path/branch/dirty state. No file lists, dif
 previews, staging, commits or checkout actions. Collection runs only while focused;
 failed/stale Git status stays unknown, with repository filters and lazy fetching disabled.
 Edits inside a submodule's working tree do not mark the Codex bar, pi footer or
-Project dirty; a moved submodule commit does.
+Project dirty; a moved submodule commit does. The Changes view ignores submodules entirely.
 
 ### Settings
 

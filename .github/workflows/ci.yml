@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Supports node:sqlite without flags and the execve panel-reload tests.
+        # The only supported line (engines >=24); Node 22.13 failed watcher tests (2026-11-12).
         node: [24]
         no_color: ['', '1']
     env:

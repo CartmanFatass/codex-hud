@@ -4,12 +4,11 @@
 `extensions/hud.mjs` and a symlink to the canonical `skills/hud-delegate` under
 `$HUD_HOME/pi-package/`, then registers it with `pi install`: the delegation
 package, always loaded, holding the six role tools and the skill. It also
-prepares `$HUD_HOME/pi-display/` (same binding files, `extensions/hud-display.mjs`),
-which is never registered: load it per launch with
-`pi -e "$HUD_HOME/pi-display"` for the owned footer, the Work segment and `/hud`.
-The binding names
-this repo checkout, HUD home and Node executable directly; there is no release
-manifest, digest or version pin. Build the checkout before loading either package.
+prepares `$HUD_HOME/pi-display/` (same binding files, `extensions/hud-display.mjs`)
+and registers it too: the footer, the Work segment and `/hud`. Do not also load it
+with `pi -e`, or two footers run. The binding names the installed tree (checkout or
+extracted release), HUD home and Node executable directly; there is no release
+manifest, digest or version pin. `./install` builds the tree before registering.
 Each manifest selects only its own extension (plus the skill in the delegation
 package), never `hud-footer.ts`,
 managed `hud-delegate.ts` or the worker-only `integrations/pi/worker.ts`.
@@ -108,9 +107,8 @@ Status strings are bounded to 160 columns; the port's original width/drop priori
 ./install --uninstall --with pi
 ```
 
-Only `$HUD_HOME/pi-package` is registered with `pi install`; `$HUD_HOME/pi-display`
-is prepared but never registered. Load the display per launch with
-`pi -e "$HUD_HOME/pi-display"` (workers run plain with `pi-role -ne` and load neither).
+Both `$HUD_HOME/pi-package` and `$HUD_HOME/pi-display` are registered with `pi install`
+(workers run plain with `pi-role -ne` and load neither).
 The installer backs up `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/settings.json`
 once to `settings.json.hud-backup` before changing it or running pi registration.
 It adds `-extensions/p10k-footer.ts` to the top-level `extensions` array, preserving
