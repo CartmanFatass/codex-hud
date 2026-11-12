@@ -25,3 +25,17 @@ This clone of codex-hud is being turned into one HUD for Claude Code, Codex and 
 `docs/universal-hud-concept.md` (§15 decision log) and `docs/universal-hud-engineering-plan.md` are history; `docs/spec.md` wins on any conflict.
 
 Reviews live in `docs/reviews/`. Task scratch lives in `tmp/tasks/<WP>/` (git-ignored). Fixtures and docs use synthetic data only: the repo is public.
+
+## Agent skills
+
+### Issue tracker
+
+Local markdown under `.scratch/<feature>/` (committed). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context (`GLOSSARY.md` and `docs/adr/` at the root, created lazily). See `docs/agents/domain.md`.

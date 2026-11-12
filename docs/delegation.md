@@ -14,6 +14,9 @@ agent proposes.
    "done" are clear, and updates `docs/spec.md`. No code before this.
 2. **Slice.** The orchestrator splits the milestone into small vertical slices: each runs end to end, can be shown
    working on its own, and fits one implementer session. The owner approves the list (size, order, dependencies).
+   Since 2026-11-12 (owner) a multi-slice feature is sliced with Matt Pocock's `to-tickets` skill into
+   `.scratch/<slug>/issues/` (docs/agents/issue-tracker.md); the Project tab tracks those tickets, and STATE.md's
+   `## Slices` ledger keeps one line per work package. A one-slice change needs no tickets.
 3. **Build.** One fresh implementer per slice, in parallel only where slices touch different files. No reviewer per
    slice. The implementer runs the main-path tests for what it changed, once, at the end.
 4. **Integrate.** The orchestrator reads each diff, tries the slice, and merges it into the milestone branch. No
