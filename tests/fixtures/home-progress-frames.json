@@ -19,6 +19,7 @@
     "Decided for you ────────────────────────────────── 1",
     "◇ M4-PROJECT · imp q1  compact                    0m",
     "",
+    "",
     "Progress ───────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in wo…",
     "  ████████████████████▓▓▓▓▓▓▓░░░░░░░██████░░░░░░░",
@@ -31,7 +32,6 @@
     "  06 Polish                                    ready",
     "  10 Vocabulary needs-triage                   ready",
     "  +5 more",
-    "",
     "✓ 0 done today  ↑↓ move  ⏎ expand  o open  v inspect"
   ],
   "home-52-en-tickets-short": [
@@ -159,6 +159,7 @@
     "已替你决定 ─────────────────────────────────────── 1",
     "◇ M4-PROJECT · imp q1  compact                 0分钟",
     "",
+    "",
     "进度 ──────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in wo…",
     "  ██████████████████▓▓▓▓▓▓░░░░░░██████░░░░░░",
@@ -171,7 +172,6 @@
     "  06 Polish                                     就绪",
     "  10 Vocabulary needs-triage                    就绪",
     "  另 5 个",
-    "",
     "✓ 0 今日完成         ↑↓ 移动  ⏎ 展开  o 打开  v 详情"
   ],
   "home-52-zh-tickets-short": [
@@ -299,6 +299,7 @@
     "Decided for you ────────────────────────────────────────────────────────────── 1",
     "◇ M4-PROJECT · imp q1  compact                                                0m",
     "",
+    "",
     "Progress ───────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
     "  ████████████████████▓▓▓▓▓▓▓░░░░░░░██████░░░░░░░",
@@ -311,7 +312,6 @@
     "  06 Polish                                                                ready",
     "  10 Vocabulary needs-triage                                               ready",
     "  +5 more",
-    "",
     "✓ 0 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "home-80-en-tickets-short": [
@@ -439,6 +439,7 @@
     "已替你决定 ─────────────────────────────────────────────────────────────────── 1",
     "◇ M4-PROJECT · imp q1  compact                                             0分钟",
     "",
+    "",
     "进度 ──────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
     "  ██████████████████▓▓▓▓▓▓░░░░░░██████░░░░░░",
@@ -451,7 +452,6 @@
     "  06 Polish                                                                 就绪",
     "  10 Vocabulary needs-triage                                                就绪",
     "  另 5 个",
-    "",
     "✓ 0 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-80-zh-tickets-short": [
@@ -579,6 +579,7 @@
     "Decided for you ────────────────────────────────────────────────────────────────────────────────────────────────────── 1",
     "◇ M4-PROJECT · imp q1  compact                                                                                        0m",
     "",
+    "",
     "Progress ───────────────────────────────────────────────────────────────────────────────────────────────── Milestone M3b",
     "  Synthetic milestone closing; pages building in worktrees",
     "  ████████████████████▓▓▓▓▓▓▓░░░░░░░██████░░░░░░░",
@@ -591,7 +592,6 @@
     "  06 Polish                                                                                                        ready",
     "  10 Vocabulary needs-triage                                                                                       ready",
     "  +5 more",
-    "",
     "✓ 0 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "home-120-en-tickets-short": [
@@ -719,6 +719,7 @@
     "已替你决定 ─────────────────────────────────────────────────────────────────────────────────────────────────────────── 1",
     "◇ M4-PROJECT · imp q1  compact                                                                                     0分钟",
     "",
+    "",
     "进度 ──────────────────────────────────────────────────────────────────────────────────────────────────────── 里程碑 M3b",
     "  Synthetic milestone closing; pages building in worktrees",
     "  ██████████████████▓▓▓▓▓▓░░░░░░██████░░░░░░",
@@ -731,7 +732,6 @@
     "  06 Polish                                                                                                         就绪",
     "  10 Vocabulary needs-triage                                                                                        就绪",
     "  另 5 个",
-    "",
     "✓ 0 今日完成                                            ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-120-zh-tickets-short": [

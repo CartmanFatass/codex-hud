@@ -673,7 +673,6 @@ job using the same key. Retry cooldowns do not carry across languages.
 | Looping label | latest 12 public tool calls (≤600 chars each) and matching result summaries (≤600 chars each), from the same safe ≤32 KiB session tail used by sentences; no reasoning/private channels |
 | Question category | that job's question file only, ≤4096 bytes; at most 100 question files per observed job |
 | Review severities | first 24 Markdown list items, ≤400 chars each, split from a ≤32 KiB newest review (or settled reviewer report); no surrounding prose |
-| Model fit | nothing: pure aggregation of observed jobs and stored outcome/kind labels |
 | Native-agent sentences (`nativeMaterial`) | public name/role (80 characters each), task/pre-create charge (400), state/turn, report (600), action (200), final result (8,000 head/tail) and error output (2,000); settled non-Claude agents may read one safe 32 KiB transcript tail |
 | Visible progress | bounded public current-turn evidence in §5.5 |
 | Result/stage digest | public final answer, head and tail, ≤8000 characters |
@@ -763,8 +762,7 @@ reuses records without a call. Outcome freezes the first report snapshot for tha
 per job. Questions and the newest review are keyed by file revision. Label IDs are language-neutral enums;
 EN/ZH rendering is local, so changing language makes no label call. Painting reads only memory.
 
-Kinds backfill settled jobs from the last 30 days, newest first, under the same cap; older/unlabelled
-records are not silently excluded from Model fit. A running HUD/native card is judged only after three
+Kinds backfill settled jobs from the last 30 days, newest first, under the same cap. A running HUD/native card is judged only after three
 minutes without activity, at most once per five minutes, and never again for unchanged activity. The
 shared sentence tail reader is signature-cached (1000 bounded slices); both sentences and labels reuse
 `jobActivity`'s public tool/result pairs. A changed activity fingerprint immediately removes an obsolete
@@ -774,10 +772,7 @@ looping mark, even within the five-minute floor. No transcript-referenced path i
 severity counts. Home's settled mark and quiet warning, the Inspector and Project's slice counts are
 pure overlays. Pending/decided authorisation questions sort first without changing execution order.
 Review heads need no naming convention: list items are individually classified, including a non-finding
-choice for check/summary bullets; zero findings draws no counts. `collectors/model-fit.ts` purely groups
-all observed thin jobs by kind and role · model · thinking. Missing kind/outcome counts as unlabelled;
-running/unknown durations are excluded from the median, not from runs. Even medians average the two
-middle completed durations. Groups/rows reuse Project's fold and width-safe wrapping.
+choice for check/summary bullets; zero findings draws no counts.
 
 ## 6. Rendering
 

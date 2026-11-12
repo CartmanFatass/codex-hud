@@ -68,7 +68,6 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
 });
 test('Control plane and native agents start folded and Enter unfolds/folds through real input', async (t) => {
   const f = await fixture(t);
-  // Model fit adds six rows; retain room for the fully expanded control plane.
   const render = (state) => f.render(80, 'en', state, 64);
   let frame = render({ ...initialMonitorState(), mainTab: 'project' });
   assert.match(plain(frame).join('\n'), /▸ Control plane/);

@@ -133,8 +133,12 @@ export function renderWorkboardFrame(
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
-  if (!sub && !project)
-    rows.push(...homeProgressRows(input.project, width, height - 2 - rows.length, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim()));
+  if (!sub && !project) {
+    // Progress sits at the bottom of the spare rows (owner): the work above keeps the room next to it.
+    const spare = height - 2 - rows.length,
+      progress = homeProgressRows(input.project, width, spare, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim());
+    if (progress.length) rows.push(...Array.from({ length: spare - progress.length }, () => boardRow('')), ...progress);
+  }
   if (state.boardAnchor?.startsWith('home-progress:') && !rows.some((r) => r.item === state.boardAnchor))
     state.boardAnchor = undefined;
   const targets = new Map<string, WorkTarget>();

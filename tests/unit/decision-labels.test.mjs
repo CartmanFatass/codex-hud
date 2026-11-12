@@ -5,7 +5,6 @@ import fsMutable from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DecisionLabels, reviewFindings } from '../../dist-test/src/collectors/decision-labels.js';
-import { modelFit } from '../../dist-test/src/collectors/model-fit.js';
 import { SmallModel } from '../../dist-test/src/collectors/small-model.js';
 import { readThinJobs } from '../../dist-test/src/collectors/thin-jobs.js';
 import { jobActivity, JobSentences } from '../../dist-test/src/collectors/job-sentences.js';
@@ -114,15 +113,6 @@ test('02: multi-kind once, bounded title/goal, newest-first 30-day backfill insi
   await f.pump(); assert.equal(f.calls.length, 3, 'kind is frozen per job');
 });
 
-test('03: model-fit groups assignments, exact splits, even median, and unlabelled jobs', () => {
-  const worker = (n, duration, outcome, kinds = ['feature'], effort = 'high') => ({ id: `thin-job:j${n}`, role: 'imp', model: 'model-a', effort,
-    startedAt: 1000, settledAt: 1000 + duration, labels: { kinds, outcome: outcome ? { value: outcome, confidence: 0.9 } : undefined } });
-  const rows = modelFit([worker(1, 10000, 'done'), worker(2, 30000, 'partial'), worker(3, 20000, 'failed'), worker(4, 40000, 'blocked'), worker(5, 9000, undefined, [], 'low')]);
-  assert.equal(rows.length, 2);
-  assert.deepEqual(rows[0].outcomes, [1, 1, 1, 1]); assert.equal(rows[0].runs, 4); assert.equal(rows[0].median, 25000);
-  assert.equal(rows[1].kind, 'unlabelled'); assert.equal(rows[1].unlabelled, 1); assert.equal(rows[1].median, 9000);
-});
-
 function transcript(command, n = 12, format = 'pi') {
   return Array.from({ length: n }, (_, i) => {
     const id = `call-${i}`;
@@ -213,7 +203,7 @@ test('06: a reviewer job classifies findings from its own report', async (t) => 
   const board = await f.pump(); assert.equal(f.calls.length, 2); assert.deepEqual(board.workers[0].labels.severity, [1, 0, 0]);
 });
 
-for (const lang of ['en', 'zh']) for (const width of [80, 120]) test(`01–06: Home, Inspector, progress and Model fit rows ${lang}/${width}`, async (t) => {
+for (const lang of ['en', 'zh']) for (const width of [80, 120]) test(`01–06: Home, Inspector and progress rows ${lang}/${width}`, async (t) => {
   const f = fixture(t), id = f.job();
   f.put(id, 'brief.md', '# Synthetic UI feature\n\nGoal: build interface');
   f.put(id, 'report.md', 'Live validation not run');
@@ -234,10 +224,8 @@ for (const lang of ['en', 'zh']) for (const width of [80, 120]) test(`01–06: H
   for (const label of ['kind', 'feature', 'ui', 'partial', 'must fix', 'should fix', 'optional']) assert.ok(inspectText.includes(tr(label)), inspectText);
   assert.match(inspectText, /90%/);
   const projectText = progress.map((r) => stripAnsi(r.text)).join('\n');
-  for (const label of ['Model fit', 'partial', 'must fix', 'unlabelled', 'median']) assert.ok(projectText.includes(tr(label)), projectText);
-  const fitRows = progress.filter((r) => stripAnsi(r.text).includes('imp · synthetic-model · high'));
-  assert.equal(fitRows.length, 2, 'one assignment row for each of the two kinds');
-  for (const r of fitRows) assert.match(stripAnsi(r.text), /1 · 0\/1\/0\/0 · 0 · 120s/);
+  for (const label of ['partial', 'must fix']) assert.ok(projectText.includes(tr(label)), projectText);
+  assert.doesNotMatch(projectText, /Model fit|模型适配/, 'Model fit was removed (owner, 2026-11-12)');
   // Pending/decided category and looping marks use the same translated bounded rows.
   const running = { ...w, settledAt: null, homeNeedsHuman: true, labels: { ...w.labels, looping: 0.9, category: 'owner authorisation' } };
   const d = { id: 'q1', laneId: w.laneId, title: 'Synthetic choice', option: 'Keep fixture', departure: false, category: 'owner authorisation', evidence: [], kind: 'answer', stale: false };
@@ -281,11 +269,6 @@ test('06: a review with only non-finding check bullets shows no severity counts'
   assert.deepEqual(board.workers[0].labels.severity, [0, 0, 0]);
   const text = workInspectorRows(board.workers[0], initialMonitorState(), 80, f.now).map((r) => stripAnsi(r.text)).join('\n');
   assert.doesNotMatch(text, /must fix|should fix|optional/);
-});
-
-test('03: running unlabelled jobs count as runs but never invent a duration', () => {
-  const rows = modelFit([{ id: 'thin-job:j0123456789abcdef', role: 'imp', model: null, effort: null, startedAt: 1000, settledAt: null }]);
-  assert.equal(rows[0].runs, 1); assert.equal(rows[0].unlabelled, 1); assert.equal(rows[0].median, null);
 });
 
 test('master off aborts an in-flight label and excludes its late result', async (t) => {

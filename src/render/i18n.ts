@@ -38,14 +38,10 @@ export function language(): Language {
 
 const ZH: Record<string, string> = {
   ...WORKBOARD_ZH,
-  'Model fit': '模型适配',
   outcome: '结果',
   kind: '类型',
   category: '类别',
   findings: '发现',
-  runs: '次数',
-  median: '中位耗时',
-  unlabelled: '未标注',
   partial: '部分完成',
   looping: '反复失败',
   ui: '界面',

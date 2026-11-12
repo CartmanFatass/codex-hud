@@ -641,9 +641,6 @@ With Model text on and `GEMINI_API_KEY`, `OPENAI_API_KEY` or `TYPESAFE_API_KEY` 
 - **Kind:** the Inspector shows any of ui, bug fix, feature, refactor, review, research, docs, chore.
   One request per job reads only the first two brief paragraphs (1500-byte head). Settled, unlabelled
   jobs from the last 30 days backfill newest first within the ordinary cap.
-- **Model fit (Project):** groups the observed jobs by kind and role · model · thinking, with run counts,
-  done/partial/failed/blocked split, unlabelled count and median completed duration. Missing labels stay
-  as “unlabelled”, and running/unknown durations do not enter the median. It makes no model call.
 - **Looping:** after three quiet minutes a running HUD or native card can show `⚠ looping`; the Inspector
   adds confidence. Input is only the last 12 public tool calls and matching result summaries, each
   bounded to 600 characters, from the same 32 KiB session tail used for its sentence. At most once per

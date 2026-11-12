@@ -3,7 +3,6 @@ import { SLICE_STATES, type SliceState, type ProjectSnapshot, type ProjectItem }
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { jobSentenceLine, workCardDetail, labelSummary } from './work-card.js';
-import { modelFit } from '../collectors/model-fit.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
 import { basename } from 'node:path';
 import { boardRow, itemRow, section, mark, minuteAge, kvRows } from './workboard-rows.js';
@@ -186,17 +185,6 @@ export function projectRows(
     }
     rows.push(boardRow(''));
   }
-  if (header('fit', 'Model fit')) {
-    let kind = '';
-    const groups = modelFit(board?.workers ?? []);
-    if (groups.length) rows.push(boardRow(fit('  ' + [t('runs'), ['done', 'partial', 'failed', 'blocked'].map((s) => t(s)).join('/'), t('unlabelled'), t('median')].join(' · '), width)));
-    for (const r of groups) {
-      if (kind !== r.kind) { kind = r.kind; rows.push(boardRow(fit('  ' + t(kind), width))); }
-      const values = `${r.runs} · ${r.outcomes.join('/')} · ${r.unlabelled} · ${r.median === null ? '—' : Math.round(r.median / 1000) + 's'}`;
-      rows.push(boardRow(pair('    ' + monitorText(r.assignment), theme.board.muted(values), width)));
-    }
-  }
-  rows.push(boardRow(''));
   if (header('tree', 'Working tree')) {
     if (data.git) item({ label: 'branch', value: [
       data.git.branch, t('{n} changed', { n: data.git.changed }),
