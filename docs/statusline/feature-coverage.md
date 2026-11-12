@@ -12,7 +12,7 @@ agent and todo rows) is replaced by:
 | model | the short name from stdin `model.id` (`opus-5.5`; the `display_name` only when there is no id), `effort` (or the transcript's ultracode/`/effort`); provider mark from the model id and environment |
 | context | stdin `context_window.used_percentage` and size, with the bounded context cache and the compact-boundary guard; the window is Claude's `autoCompactWindow` (the model's, else the top-level one, from `settings.json` in `$CLAUDE_CONFIG_DIR` or `~/.claude`, read only, unless `autoCompactEnabled` is `false`, and only when below `context_window_size`) |
 | project | stdin `cwd` basename and the local Git branch with dirty marker and ahead/behind (`statusline-parity/git.ts`) |
-| quota | stdin `rate_limits` only, no OAuth or usage call: claude-hud's bar for the 5h window (`5h █░░░░░░░░░ 8% (1h19m)`), and the 7d window only from 80% (or when it is the only one) |
+| quota | stdin `rate_limits` only, no OAuth or usage call: claude-hud's bar for one window, the one with the least left (`5h █░░░░░░░░░ 8% (1h19m)`, or `7d …` when the week is tighter) |
 | notice zone | events only, each for three minutes, one per subject: a subagent started/finished/failed (transcript Task/Agent calls and results), as `◐ type [model · effort]` (the effort from the type's `agents/<type>.md` frontmatter, read only), a HUD job started/finished/failed, a skill loaded (the time of its latest transcript `Skill` call; conversation records only, never a request echo); what needs the owner is pinned while open. Two items at once where there is room. Empty when idle |
 | loaded | `MCP n` (settings and `.mcp.json`, from the MCP count while `showConfigCounts` is on) and `skills n` (transcript Skill calls) |
 

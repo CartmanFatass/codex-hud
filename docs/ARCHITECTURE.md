@@ -647,7 +647,7 @@ and the `[1m]` tag and turns version hyphens into dots.
 **Context and quota bars** are claude-hud's (`colors.ts` `coloredBar`/`quotaBar`): `cells()` draws ten cells, `█` in the
 reading's colour and `░` dim. The context's colours are `contextRole` (green, yellow from 70, red from 85), the quota's
 `quotaRole` (bright blue, bright magenta from 75, red from 90; plain ANSI like claude-hud's, no colour with theme `none`).
-`quotaSeg` shows the first window always and the others only from `WEEKLY_AT` (80 %), for Claude and Codex alike; its
+`quotaSeg` shows one window, the one with the least left (the first wins a tie), for Claude and Codex alike; its
 forms are bars with reset, bars, percent only. The capsule look leaves `bar` pieces of a `Form` out, so a p10k capsule
 has the percentage only. Each client supplies only its own quota: Claude's `rate_limits`, Codex's windows, pi's cost.
 

@@ -22,8 +22,6 @@ import { providerMark, shortModel } from '../providers.js';
  */
 export const NOTICE_MS = 180_000;
 const CELLS = 10;
-/** The weekly window shows beside the 5 h one from here on (or alone, when it is the only one). */
-const WEEKLY_AT = 80;
 
 export type VariantLevel = 'full' | 'short' | 'min';
 export interface BarSegment {
@@ -226,8 +224,8 @@ function quotaSeg(q: NonNullable<BarFacts['quota']>): Seg {
     // The same three times: the segment goes only at the ladder's last quota step, as the windows' does.
     return { id: 'quota', forms: [form, form, form], ink: P10K.quota, at: 0 };
   }
-  // The 5 h window always; the weekly one only from 80 % (the first window shows whatever it is).
-  const shown = q.windows.filter((w, i) => !i || w.percent >= WEEKLY_AT);
+  // One window only, the one with the least left (owner, 2026-11-11); the first wins a tie.
+  const shown = q.windows.length ? [q.windows.reduce((a, b) => (b.percent > a.percent ? b : a))] : [];
   const reading = (bars: boolean, reset: boolean): Form =>
     shown.flatMap((w, i) => [
       ...(i ? ([['  ']] as Form) : []),

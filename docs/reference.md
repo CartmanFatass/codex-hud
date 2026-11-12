@@ -856,8 +856,8 @@ model effort │ context %/window │ repo branch(dirty) │ quota │ notice zo
 - **project**: the repository and its branch with its state (`example main*↑2`; pi: `main +1 *1 ?1`).
 - **quota**: each client shows only its own. Claude: the `rate_limits` in its statusline input; Codex: its account's
   windows; either as claude-hud draws them, `5h █░░░░░░░░░ 8% (1h19m)` (the bar and percentage bright blue, bright
-  magenta from 75%, red from 90%; the reset in parentheses). The 5 h window always shows; the 7 d window only from 80%
-  (or when it is the only one). Codex's credits that carry the account on show as `credits 6.8K`. pi has no window: its
+  magenta from 75%, red from 90%; the reset in parentheses). One window only: the one with the least left (`7d …`
+  when the week is tighter than the 5 h window). Codex's credits that carry the account on show as `credits 6.8K`. pi has no window: its
   session cost, `$0.420` as pi reports it, `~$0.420` when the list price estimates it. No client reads another's usage.
 - **notice zone**: events only. A subagent or HUD job that started, finished or failed, and a skill that was loaded,
   each show for three minutes. A subagent or job is claude-hud's agents line, its name, model and effort and nothing

@@ -182,7 +182,7 @@ test('context is measured against where Claude and Codex compact, when their set
   assert.match(stripAnsi(fitStatusBar(data, DEFAULT_LAYOUT, 120, FOOTER_NOW).line), /\/150K/);
 });
 
-test('context and quota bars as claude-hud draws them: cells, colours, the weekly window from 80 %, the shrink order', (t) => {
+test('context and quota bars as claude-hud draws them: cells, colours, one window (the tightest), the shrink order', (t) => {
   noColour(t);
   const win = (label: string, percent: number, reset = '') => ({ label, percent, reset });
   const draw = (facts: BarFacts, width = 160) => renderBar({ model: { name: 'M' }, ...facts }, width, NOW).line;
@@ -190,10 +190,12 @@ test('context and quota bars as claude-hud draws them: cells, colours, the weekl
   const quota = { windows: [win('5h', 8, '1h19m')] };
   assert.equal(stripAnsi(draw({ context })), 'M │ ████░░░░░░ 40%/400K');
   assert.equal(stripAnsi(draw({ quota })), 'M │ 5h █░░░░░░░░░ 8% (1h19m)');
-  // The weekly window shows beside the 5 h one from 80 %, and alone when it is the only one.
+  // One window: the one with the least left; the first wins a tie.
   const both = (n: number) => stripAnsi(draw({ quota: { windows: [...quota.windows, win('7d', n, '2d')] } }));
-  assert.doesNotMatch(both(79), /7d/);
-  assert.match(both(80), /5h █░░░░░░░░░ 8% \(1h19m\)  7d ████████░░ 80% \(2d\)$/);
+  assert.match(both(5), /5h █░░░░░░░░░ 8% \(1h19m\)$/);
+  assert.match(both(80), /│ 7d ████████░░ 80% \(2d\)$/);
+  assert.doesNotMatch(both(80), /5h/);
+  assert.match(both(8), /5h █░░░░░░░░░ 8% \(1h19m\)$/);
   assert.equal(stripAnsi(draw({ quota: { windows: [win('7d', 31, '2d')] } })), 'M │ 7d ███░░░░░░░ 31% (2d)');
   // Narrower: the context's bar goes, then the quota's reset, then its bar (leaving `5h 8%`), then the segments.
   const shrunk = [39, 31, 20, 12].map((w) => stripAnsi(draw({ context, quota }, w)).replace('M │ 40%/400K', '·'));
