@@ -33,7 +33,7 @@ Milestone: M4 · Project view
   blocked** by one point — the Codex bar (`src/collectors/git.ts`) and the pi footer (`p10k-footer.ts`) let a
   repository's clean/process filter (and, in pi, core.fsmonitor) run (spec §4) → GIT-SAFE. Advice taken for the
   release: archive inventory + extraction rehearsal (m4-close 06), stale hud-mcp README / historical activation
-  text in reference.md / ARCHITECTURE (RELEASE-DOCS after FIX7). Advice deferred to the next milestone: job-dir
+  text in reference.md / ARCHITECTURE (RELEASE-DOCS, with the real Node floor in engines + install preflight). Advice deferred to the next milestone: job-dir
   listing and pi session totals grow with history; no deadline on MCP child processes. Then a focused round 8 (Sol
   + DS) on FIX7, GIT-SAFE and RELEASE-DOCS.
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
@@ -128,7 +128,8 @@ board counts these; update at every landing or decision. -->
 - done · M4 · M4-REVIEW6 · both changes-required (open job lost on a housekeeping error) · docs/reviews/2026-11-12-m4-review6-*.md
 - try · M4 · M4-FIX6 · 2d0fed42 · session housekeeping errors no longer hide an open job; watch retry only on the timer; log rate limit
 - done · M4 · M4-REVIEW7 · Sol accept, DS accept (4 optional) · docs/reviews/2026-11-12-m4-review7-*.md
-- working · M4 · M4-FIX7 · round-7 optional follow-ups + CI workflow (imp)
+- try · M4 · M4-FIX7 · 77500308 · round-7 follow-ups; CI runs only existing scripts on Node 24; fixture idents
+- working · M4 · RELEASE-DOCS · shipped docs describe today's HUD; real Node floor (imp)
 - done · M4 · M4-ARCH · Release: blocked (1: repo Git filters run from the Codex bar and pi footer) · docs/reviews/2026-11-12-m4-architect.md
 - working · M4 · GIT-SAFE · one safe Git policy for every bar's status read (imp)
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
