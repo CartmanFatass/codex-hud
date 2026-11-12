@@ -39,6 +39,7 @@ export function language(): Language {
 
 const ZH: Record<string, string> = {
   ...WORKBOARD_ZH,
+  stopped: '已停止',
   'Job content consent': '任务内容授权',
   'Job consent': '任务授权',
   'Sends facade job content only with consent; Enter grants/revokes the applied recipient':

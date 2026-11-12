@@ -107,7 +107,7 @@ function scan() {
     let status = json(statusFile);
     const session = read(join(dir, 'SESSION.txt'));
     const tab = session?.match(/^TAB=(.+)$/m)?.[1]?.trim();
-    if (tab && closedTabs.has(tab) && !['closed', 'failed'].includes(status?.state)) {
+    if (tab && closedTabs.has(tab) && !['closed', 'failed', 'stopped'].includes(status?.state)) {
       status = { ...status, state: 'failed', exit_reason: 'tab closed', ended_at: new Date().toISOString() };
       fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
       fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
@@ -125,7 +125,7 @@ function scan() {
       open = true;
       continue;
     }
-    if (!['closed', 'failed'].includes(status.state)) continue;
+    if (!['closed', 'failed', 'stopped'].includes(status.state)) continue;
     if (!tab) continue;
     if (status.state === 'failed') {
       const ended = Date.parse(status.ended_at);

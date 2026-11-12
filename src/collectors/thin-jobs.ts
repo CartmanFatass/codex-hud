@@ -90,7 +90,7 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
     const directory = join(root, id),
       status = json(join(directory, 'STATUS.json')),
       s = status?.v ?? {};
-    const state =
+    const state = s.state === 'stopped' ? 'stopped' :
       s.state === 'failed' || (!status && typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0)
         ? 'failed'
         : ['closed', 'idle_grace', 'done'].includes(String(s.state))
@@ -157,7 +157,7 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
       phaseAt = review.at;
       lastResult = first(review.text);
     }
-    const phase = waiting
+    const phase = state === 'stopped' ? 'stopped' : waiting
       ? 'asking'
       : state === 'failed'
         ? 'failed'
@@ -206,7 +206,7 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
         request: !!waiting,
         failed: state === 'failed',
         result: settledAt !== null,
-        facadeClosed: !!job.read_at || !report,
+        facadeClosed: state === 'stopped' || !!job.read_at || !report,
         facadeClosedAt: when(job.read_at) ?? settledAt,
         reason: sentence,
         ...(waiting

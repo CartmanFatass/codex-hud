@@ -9,8 +9,9 @@ import { providerMark } from './providers.js';
 import { mark } from './workboard-rows.js';
 export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
 const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
-export const workStateWord = (card: WorkCard) =>
-  t(
+export const workStateWord = (card: WorkCard) => {
+  if (card.worker.state === 'stopped') return t('stopped');
+  return t(
     failed(card)
       ? 'failed'
       : card.state === 'needs-you'
@@ -21,8 +22,10 @@ export const workStateWord = (card: WorkCard) =>
             ? 'report ready'
             : card.state
   );
-export const workStateGlyph = (card: WorkCard) =>
-  failed(card)
+};
+export const workStateGlyph = (card: WorkCard) => {
+  if (card.worker.state === 'stopped') return mark('−', '-');
+  return failed(card)
     ? mark('✗', 'x')
     : card.state === 'needs-you'
       ? '?'
@@ -31,8 +34,10 @@ export const workStateGlyph = (card: WorkCard) =>
         : card.state === 'in-progress'
           ? mark('●', '*')
           : mark('✓', '+');
-export const workStateInk = (card: WorkCard) =>
-  failed(card)
+};
+export const workStateInk = (card: WorkCard) => {
+  if (card.worker.state === 'stopped') return theme.board.muted;
+  return failed(card)
     ? theme.board.danger
     : card.state === 'needs-you'
       ? theme.board.attention
@@ -41,6 +46,7 @@ export const workStateInk = (card: WorkCard) =>
         : card.state === 'in-progress'
           ? theme.board.active
           : theme.board.success;
+};
 export function ageText(minutes: number): string {
   return minutes < 60 ? t('{n}m', { n: minutes }) : t('{h}h{m}m', { h: Math.floor(minutes / 60), m: minutes % 60 });
 }
@@ -67,7 +73,7 @@ export function workCardDetail(card: WorkCard, sentence = ''): string {
   return sentence || card.worker.ask || card.worker.work?.reason || (card.reason ? t(card.reason) : '');
 }
 export function workPhaseText(phase: string): string {
-  return monitorText(phase).replace(/build|review|accept|done|fixing|asking|failed|major|minor/g, (word) => t(word));
+  return monitorText(phase).replace(/build|review|accept|done|fixing|asking|failed|stopped|major|minor/g, (word) => t(word));
 }
 export function phaseChain(card: WorkCard): string {
   return card.phases

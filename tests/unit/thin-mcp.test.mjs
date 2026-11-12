@@ -9,9 +9,9 @@ import test from 'node:test';
 import { createServer } from 'node:net';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
-import { renderWorkCard } from '../../dist/render/work-card.js';
+import { renderWorkCard, workStateInk } from '../../dist/render/work-card.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
-import { stripAnsi } from '../../dist/render/colors.js';
+import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 import { retainedWorker } from '../../dist/render/work-lanes.js';
 const workerFor = (f, id) =>
@@ -186,6 +186,21 @@ test('dispatch failure writes a reason for the panel and is reaped', { timeout: 
   assert.match(cardText(workerFor(f, job.job)), /synthetic start failed/);
   await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
   assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
+  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+});
+
+test('stopped jobs read immediately, render neutral and are terminal to the watcher', { timeout: 7000 }, async (t) => {
+  const f = await fixture(t);
+  const job = await f.call('hud_create', { role: 'imp', request_key: 'stopped', task: 'Synthetic stop.' });
+  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'stopped', ended_at: new Date().toISOString() }));
+  assert.equal((await f.call('hud_read', { job: job.job, wait_ms: 120000 })).state, 'stopped');
+  const worker = workerFor(f, job.job);
+  assert.equal(worker.state, 'stopped');
+  assert.equal(worker.work.failed, false);
+  assert.equal(projectWorkCard(worker, Date.now()).state, 'done');
+  assert.equal(workStateInk(projectWorkCard(worker, Date.now())), theme.board.muted);
+  assert.match(cardText(worker), /stopped/);
+  await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
   await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
 });
 

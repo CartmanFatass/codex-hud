@@ -595,11 +595,11 @@ async function call(name: string, args: Args): Promise<unknown> {
     while (true) {
       const result = observation(job);
       if (
-        ['idle_grace', 'closed', 'failed'].includes(result.state ?? '') ||
+        ['idle_grace', 'closed', 'failed', 'stopped'].includes(result.state ?? '') ||
         result.questions.length ||
         Date.now() >= end
       ) {
-        if (result.report_exists && ['idle_grace', 'closed', 'failed'].includes(result.state ?? '')) {
+        if (result.report_exists && ['idle_grace', 'closed', 'failed', 'stopped'].includes(result.state ?? '')) {
           const latest = json<Job>(join(dir, 'job.json'))!;
           if (!latest.read_at) {
             latest.read_at = new Date().toISOString();
