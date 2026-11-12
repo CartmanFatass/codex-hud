@@ -455,6 +455,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     PRIMARY: job.agent,
   });
   assert.ok(commands[1].args.includes('--no-focus'));
+  assert.equal(commands[1].args[commands[1].args.indexOf('--label') + 1], 'imp Synthetic lane');
   assert.equal(commands[1].args[commands[1].args.indexOf('--workspace') + 1], 'synthetic-workspace');
   assert.deepEqual(commands[2].args.slice(2), [
     'synthetic-worker',
@@ -791,6 +792,34 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
     assert.equal((await f.call('hud_read', { job: other.job })).state, 'closed');
   }
 });
+
+test(
+  'worker tab labels read as role and title on one line, with a suffix only on a clash',
+  { timeout: 15000 },
+  async (t) => {
+    const f = await fixture(t);
+    const create = (request_key, task) => f.call('hud_create', { role: 'sonic', request_key, task });
+    const task = '# Fix the panel footer\n\nA longer description.';
+    const [first, second] = [await create('a', task), await create('b', task)];
+    const cjk = await create('c', '大型任务：请把面板底部的按键提示改成不会被截断的版本，并且保持中文宽度正确');
+    const labels = f
+      .commands()
+      .filter((c) => c.command === 'herdr' && c.args[0] === 'tab' && c.args[1] === 'create')
+      .map((c) => c.args[c.args.indexOf('--label') + 1]);
+    assert.equal(labels[0], 'sonic Fix the panel footer');
+    assert.match(labels[1], /^sonic Fix the panel \S+ [0-9a-f]{4}$/);
+    assert.ok(labels[1].endsWith(second.job.slice(-4)));
+    assert.match(labels[2], /^sonic 大型任务.*…$/);
+    for (const label of labels) assert.ok(label.replace(/[\u2e80-\ua4cf\uff00-\uff60]/g, 'xx').length <= 28, label);
+    // pi-role-reap compares the recorded name with the tab, so it must be the same single line.
+    for (const [job, label] of [
+      [first, labels[0]],
+      [second, labels[1]],
+      [cjk, labels[2]],
+    ])
+      assert.match(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'), new RegExp(`^TAB_NAME=${label}$`, 'm'));
+  }
+);
 
 test('thin Flow video confirms only a stated credit cost', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);

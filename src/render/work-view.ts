@@ -58,6 +58,12 @@ export function boardInspectorRows(
   }
   return rows;
 }
+/** Key hints are separated by two spaces; whole hints are dropped from the right until the rest fits `room`. */
+export function footHints(hints: string, room: number): string {
+  const parts = hints.split('  ');
+  while (parts.length && visualLength(parts.join('  ')) > room) parts.pop();
+  return parts.join('  ');
+}
 export function renderWorkboardHelp(
   input: MonitorData,
   state: MonitorState,
@@ -155,13 +161,9 @@ export function renderWorkboardFrame(
     frame.lines[i + 1] = !inspector && offset + i === cursorAt ? boardCursor(text) : text;
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 });
   }
-  const foot = inspector ? t('Esc: back') : t('←→ tab  ↑↓ move  ⏎ open');
-  if (height > 1)
-    frame.lines[height - 1] = pair(
-      theme.board.success(t('✓ {n} done today', { n: doneToday(board, now) })),
-      theme.dim(foot),
-      width
-    );
+  const done = theme.board.success(t('✓ {n} done today', { n: doneToday(board, now) }));
+  const foot = footHints(inspector ? t('Esc: back') : t('←→ tab  ↑↓ move  ⏎ open'), width - visualLength(done) - 1);
+  if (height > 1) frame.lines[height - 1] = pair(done, foot && theme.dim(foot), width);
   frame.lines = frame.lines.map((line) => fit(line, width));
   frame.panes.push({
     id: inspector ? 'details' : 'agents',

@@ -14,3 +14,13 @@ Adjustments to the drawn design:
 7. Model text marks (`[[k:…]]` key phrase, `[[i:…]]` identifier) come with AI-THIN. Until then the fallback:
    identifiers (backticks, paths, `--flags`) lavender, nothing bold inside sentences.
 8. Width: `hud panel --width N`, default 56; the design holds at 56.
+
+Polish after the first acceptance run (PANEL-POLISH, 2026-11-11):
+9. Enter on a Work job card opens its `report.md`, else `brief.md`, in `$EDITOR` beside the panel (Home's Enter still
+   goes to Work; a card with an open question still opens its `qa` files).
+10. The footer shows whole key hints only; at a narrow width hints are dropped from the right. Every painted row is
+    erased before it is written, so a full-width row keeps its last cell (`⏎ open`, `done 2m`).
+11. A job lane's line map has only the stops it has: build and done, plus review and accept once a job in it has a
+    review round. The Work stop names follow the map.
+12. A worker's herdr tab is `<role> <package or brief title>` cut to about 28 columns, with a four-character job
+    suffix only when another open job's tab has the same label.

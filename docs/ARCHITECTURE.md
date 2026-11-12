@@ -1213,7 +1213,9 @@ The credits field (commit `44ce0a7`) is a complete example.
 `render/frame-diff.ts` compares panel rows and writes only changed rows with
 absolute cursor positioning. Initial paint and resize invalidate all rows.
 Shortened or removed rows are erased, and updates do not emit scrolling
-newlines. This reduces nested tmux/Herdr traffic for clock-only repaints.
+newlines. This reduces nested tmux/Herdr traffic for clock-only repaints. Each row is erased *before* it is written:
+after a full-width row the cursor is still on the last cell, so an erase-to-end-of-line written afterwards would wipe
+that cell in Herdr's terminal (every right-aligned row lost its last character, `⏎ open` read `⏎ ope`).
 
 ### Operational diagnostics and explicit probes
 

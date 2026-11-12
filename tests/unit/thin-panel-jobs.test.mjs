@@ -10,6 +10,7 @@ import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
 import { Notifier } from '../../dist/notify.js';
+import { frameDiff } from '../../dist/render/frame-diff.js';
 const now = new Date().setHours(12, 0, 0, 0);
 const question =
   'Where should the model chip go on a card whose phase strip is longer than one complete line at 56 columns, without hiding any of the important results?';
@@ -196,6 +197,35 @@ test('v7 Work: file-derived phase chain and vendor/model/full effort chips', asy
     assert.equal(visualLength(line), 56);
     assert.doesNotMatch(line, /\x1b|\[38;2;/);
   }
+});
+test('Work: Enter opens a job card file, a lane without review ends at done, footer hints never cut a word', async (t) => {
+  const f = fixture(t);
+  await f.pipeline.refresh();
+  const board = f.pipeline.workboard(f.tree),
+    frame = f.render(board, 'work');
+  const enter = (id, mainTab = 'work') => {
+    const worker = board.workers.find((w) => w.id === 'thin-job:j' + String(id).padStart(16, '0'));
+    const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
+    const state = { ...frame.state, mainTab, workTarget: target, homeTarget: target };
+    return handleMonitorInput(state, { type: 'key', key: 'enter' }, { tree: f.tree, frame });
+  };
+  const jobs = join(f.env.HUD_HOME, 'jobs', 'j');
+  assert.deepEqual(enter(4).action, { type: 'job-files', files: [join(f.ready, 'report.md')] });
+  assert.deepEqual(enter(3).action, { type: 'job-files', files: [jobs + '0000000000000003/brief.md'] });
+  assert.equal(enter(4, 'home').action, undefined, 'on Home, Enter still goes to the Work tab');
+  assert.equal(enter(4, 'home').state.mainTab, 'work');
+  // Only PANEL-THIN has a review round; TEST-CUT holds a sonic-like one-shot and stops at done.
+  const names = (label) => plain(frame)[plain(frame).findIndex((l) => l.startsWith(label)) + 1];
+  assert.match(names('PANEL-THIN'), /^\s+build\s+review\s+accept\s+done\s*$/);
+  assert.match(names('TEST-CUT'), /^\s+build\s+done\s*$/);
+  const foot = (width) =>
+    plain(renderMonitor({ tree: f.tree, workboard: board, state: frame.state, width, height: 40, nowMs: now }))
+      .at(-1)
+      .replace(/^✓ 3 done today\s*/, '>');
+  assert.deepEqual([56, 30, 28, 20].map(foot), ['>←→ tab  ↑↓ move  ⏎ open', '>←→ tab  ↑↓ move', '>←→ tab', '>']);
+  // The row is erased before it is written: a full-width row would lose its last cell to an erase after it.
+  const painted = frameDiff(null, ['abc']);
+  assert.ok(painted.indexOf('\x1b[K') < painted.indexOf('abc') && !painted.endsWith('\x1b[K'));
 });
 test('statusline Work count reads job folders with no role-summary cache', (t) => {
   const f = fixture(t);

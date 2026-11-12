@@ -98,7 +98,8 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
           : 'working';
     const at = status?.at ?? jobAt;
     const settledAt = state === 'working' ? null : (when(s.ended_at) ?? when(s.settled_at) ?? at);
-    const brief = read(join(directory, 'brief.md'))?.text ?? '';
+    const briefFile = read(join(directory, 'brief.md')),
+      brief = briefFile?.text ?? '';
     const title =
       first(brief.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? brief) || word(job.title) || id.slice(-6);
     const label = word(job.package) ?? (title.includes(':') ? title.split(':', 1)[0] : title);
@@ -191,7 +192,11 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
       humanEndedAt: waiting?.evidence.at ?? null,
       ...(waiting ? { ask: waiting.fields.question } : {}),
       stale: false,
-      evidence: [ref('job.json', { text: '', at: jobAt, whole: true })],
+      // The last ref is the file Enter opens: the report, else the brief.
+      evidence: [
+        ref('job.json', { text: '', at: jobAt, whole: true }),
+        ...(report ? [ref('report.md', report)] : briefFile ? [ref('brief.md', briefFile)] : []),
+      ],
       work: {
         episode: id,
         signature: String(at),

@@ -284,6 +284,35 @@ function ensureWatcher(): void {
   fs.writeFileSync(join(hudHome, 'watch.pid'), `${child.pid}\n`, { mode: 0o600 });
   child.unref();
 }
+const wideChar = /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\uff00-\uff60\uffe0-\uffe6\u{20000}-\u{3fffd}]/u;
+function cut(text: string, max: number): string {
+  const chars = [...text],
+    wide = (char: string) => (wideChar.test(char) ? 2 : 1);
+  let columns = chars.reduce((sum, char) => sum + wide(char), 0);
+  if (columns <= max) return text;
+  while (chars.length && columns > max - 1) columns -= wide(chars.pop()!);
+  return chars.join('').trimEnd() + '…';
+}
+/**
+ * The worker's herdr tab label: `<role> <package or brief title>` in about 28 columns, on one line (it is recorded as
+ * TAB_NAME and pi-role-reap compares it with the tab). A short job suffix is added only when another open job's tab
+ * already has the same label.
+ */
+function tabLabel(job: Job): string {
+  const lines = (slice(join(directory(job.job), 'brief.md'), 4096)?.text ?? '').split(/\r?\n/);
+  const title =
+    job.package?.trim() || (lines.find((line) => /^#{1,6}\s/.test(line)) ?? lines.find((line) => line.trim()) ?? '');
+  const label = cut(
+    `${job.role} ${title.replace(/^#{1,6}\s+/, '')}`.replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim(),
+    28
+  );
+  const taken = jobs().flatMap((other) =>
+    other.job === job.job || other.reaped_at
+      ? []
+      : [slice(join(directory(other.job), 'SESSION.txt'), 4096)?.text.match(/^TAB_NAME=(.*)$/m)?.[1]]
+  );
+  return taken.includes(label) ? `${cut(label, 23)} ${job.job.slice(-4)}` : label;
+}
 async function dispatchPi(job: Job, role: Role) {
   try {
     const launcher = executable('pi-role');
@@ -317,7 +346,7 @@ async function dispatchPi(job: Job, role: Role) {
     fs.mkdirSync(join(dir, 'qa'), { recursive: true });
     const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
     const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
-    const tabName = `${job.job}-${Date.now().toString(36)}`,
+    const tabName = tabLabel(job),
       name = `${job.job}-primary`;
     const result = await run('herdr', [
       'tab',
@@ -404,7 +433,7 @@ async function dispatchPi(job: Job, role: Role) {
 const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 async function dispatchJev(job: Job) {
   const dir = directory(job.job),
-    tabName = `${job.job}-${Date.now().toString(36)}`;
+    tabName = tabLabel(job);
   const result = await run('herdr', [
     'tab',
     'create',

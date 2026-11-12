@@ -78,16 +78,17 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (!target || !target.laneId.startsWith('thin-job:')) return;
     const lane = boardFrame.snapshot.lanes.find((l) => l.id === target.laneId);
     if (lane?.identity.kind !== 'invocation') return;
+    const worker = target.kind === 'worker' ? lane.workers.find((w) => w.id === target.workerId) : undefined;
+    // A job card with no question open opens its report, else its brief (Work tab; Home's Enter goes to Work).
     const evidence =
       target.kind === 'decision'
         ? lane.decisions.find((d) => d.id === target.decisionId)?.evidence[0]
-        : target.kind === 'worker'
-          ? lane.workers.find((w) => w.id === target.workerId)?.work?.requestInfo?.evidence
-          : undefined;
-    if (!evidence || !/^j[0-9a-f]{16}$/.test(evidence.sourceId) || !/^qa\/q\d+\.md$/.test(evidence.relativePath))
-      return;
-    const q = join(lane.identity.home, 'jobs', evidence.sourceId, evidence.relativePath);
-    return { type: 'job-files', files: [q, q.replace(/\.md$/, '.answer.md')] };
+        : (worker?.work?.requestInfo?.evidence ?? (next.mainTab === 'work' ? worker?.evidence.at(-1) : undefined));
+    if (!evidence || !/^j[0-9a-f]{16}$/.test(evidence.sourceId)) return;
+    const file = join(lane.identity.home, 'jobs', evidence.sourceId, evidence.relativePath);
+    if (/^(report|brief)\.md$/.test(evidence.relativePath)) return { type: 'job-files', files: [file] };
+    if (/^qa\/q\d+\.md$/.test(evidence.relativePath))
+      return { type: 'job-files', files: [file, file.replace(/\.md$/, '.answer.md')] };
   };
   const activate = () => {
     if (next.boardAnchor) {

@@ -39,17 +39,23 @@ export function orderedLanes(board: WorkboardSnapshot, now: number): WorkLane[] 
       Math.min(...b.workers.map((w) => workerPriority(w, now)))
   );
 }
+/** A thin-job lane has review and accept stops only once one of its jobs has a review round; a sonic or oracle job goes build to done. */
+export function laneStages(lane: WorkLane): string[] {
+  const reviewed =
+    !lane.id.startsWith('thin-job:') || lane.workers.some((w) => w.work?.phases.some((p) => p.startsWith('review')));
+  return reviewed ? ['build', 'review', 'accept', 'done'] : ['build', 'done'];
+}
 export function lineMap(lane: WorkLane, width: number): string {
-  const stages = ['build', 'review', 'accept', 'done'];
+  const stages = laneStages(lane),
+    last = stages.length - 1;
   // Fixing is the observed substage between review and acceptance, not a percentage.
-  const stage = lane.phase?.includes('fixing')
-    ? 1.6
-    : Math.max(0, stages.indexOf(lane.phase?.startsWith('review') ? 'review' : (lane.phase ?? 'build')));
-  const at = Math.round((stage * (width - 1)) / 3);
+  const phase = lane.phase?.startsWith('review') ? 'review' : (lane.phase ?? 'build');
+  const stage = lane.phase?.includes('fixing') ? 1.6 : Math.max(0, stages.indexOf(phase));
+  const at = Math.round((stage * (width - 1)) / last);
   return Array.from({ length: width }, (_, i) =>
     i === at
       ? theme.value(mark('◉', '@'))
-      : stages.some((_, n) => Math.round((n * (width - 1)) / 3) === i)
+      : stages.some((_, n) => Math.round((n * (width - 1)) / last) === i)
         ? i < at
           ? theme.board.active(mark('●', 'o'))
           : theme.board.frame(mark('○', 'o'))
@@ -92,9 +98,11 @@ export function laneRows(
       boardRow(
         fit(
           '  ' +
-            fit(names[0], step) +
-            fit(names[1], step) +
-            pair(names[2], names[3], Math.max(0, width - 3 - 2 * step)),
+            (laneStages(lane).length === 2
+              ? pair(names[0], names[3], width - 3)
+              : fit(names[0], step) +
+                fit(names[1], step) +
+                pair(names[2], names[3], Math.max(0, width - 3 - 2 * step))),
           width
         )
       )

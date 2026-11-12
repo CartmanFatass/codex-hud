@@ -197,6 +197,8 @@ Successful implementers remain available for same-session continuation during fi
 TTL means zero). Unused successful grace expiry and successful one-shots may make one finite post-exit tab cleanup
 attempt. Quitting during grace, failure, a used continuation, or `HUD_KEEP_TAB=1` keeps the tab for inspection.
 Completion and confirmed resource closure remain separate; explicit close uses the same conservative reaper.
+A worker's herdr tab is labelled `<role> <package or brief title>` in about 28 columns (a short job suffix only when
+another open job's tab has the same label); that one-line label is recorded as `TAB_NAME` and checked by `pi-role-reap`.
 
 QA waits up to 1200 seconds. A timeout instructs the proposed default, but is neither a human answer nor proof that
 it was followed. Implementers run focused tests while working and full checks twice, before first review and final
@@ -267,8 +269,10 @@ disk and steer nothing.
 | `S` | Main summary, in the Inspector |
 
 **Keys on Home and Work.** Up/Down or `j`/`k` selects; Left/Right or `h`/`l` folds and expands; `v` inspects. Enter
-on Home opens the corresponding Work lane, card or decision; Enter in Work is inert. Esc returns from the Inspector,
-and standalone Esc on the main page exits as before.
+on Home opens the corresponding Work lane, card or decision; Enter in Work is inert, except on a job card: it opens
+that job's `report.md` (else `brief.md`) in `$EDITOR` beside the panel, as Enter on a decision opens its `qa` file. Esc
+returns from the Inspector, and standalone Esc on the main page exits as before. The footer keeps whole hints only
+(`←→ tab  ↑↓ move  ⏎ open`): at a narrow width the hints on the right are dropped, never cut.
 
 **What Home shows.** Its badge and needs-you items count only terminal runtime jobs that ended needing a human. A
 worker's QA result, a normal failure, a blocked job and a timeout never count. Partial coverage never reads as
@@ -292,11 +296,14 @@ necessary on narrower screens.
 **What Work shows.** Lanes plus the shared compact work cards: one lane per observed package, invocation or native
 session, its worker cards inside it and its recorded calls beside them. Navigation is logical rather than a cursor
 over painted cells — lane, then its workers, then its decisions. Left folds the selected lane and collapses the
-selected card; Right unfolds the lane and expands the selected card; Enter in Work is inert. Enter on Home hands the
+selected card; Right unfolds the lane and expands the selected card; Enter in Work is inert (a job card opens its
+file, see Keys). Enter on Home hands the
 selected lane, card or decision to Work and unfolds its lane. At 110 columns Home's peek draws the selected lane (the
 first when none is selected) through the same lane/card renderer, not a second interpretation. Lanes are observation
 navigation, not execution ownership; an unknown phase or order is shown as unknown. Wide Work reserves a written-title
-column and a shared ordinal stage axis; browser cards use recorded phases, not role-inferred build/design.
+column and a shared ordinal stage axis; browser cards use recorded phases, not role-inferred build/design. A lane of
+jobs has the build, review, accept and done stops only once one of its jobs has a review round; until then (a sonic or
+oracle job never gets one) its line map is build to done.
 
 **The work card.** One compact card is shared by Work and Home's peek, and the retained secondary renderer draws the
 same card. Collapsed, it is at most three physical lines: the role and short task with the state word and elapsed
