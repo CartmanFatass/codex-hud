@@ -14,6 +14,43 @@ Milestone: M3b · AI-THIN
 - Open: `hud_close` cannot stop a working pi job; panel-open notification burst; panel self-close with its caller;
   retiring legacy skills (list features first); to-tickets for the Project tickets section.
 
+## Slices
+
+<!-- One line per slice: `- <state> · <milestone> · <ID> · <what it is> (<commit>)`. States: working, blocked,
+try (landed, the owner has not tried it), accepted (the owner tried it), todo, dropped. The Project tab's progress
+board counts these; update at every landing or decision. -->
+
+- accepted · M3 · BAR-UNIFY · one-line bars on all three clients (d8945e22, 6f641d82)
+- accepted · M3 · PANEL-POLISH · Enter opens a report, whole key hints, readable tab labels (e60d5bb7)
+- try · M3b · AI-CORE-THIN · one master switch, one model, the call cap; consent layer gone (76bbf4c0)
+- try · M3b · JOB-SENTENCE · a job card's line is one model sentence with coloured keywords (a89b220f)
+- try · M3b · DECISION-RESULT · decision titles of at most 8 words from the model (b3fdd830)
+- try · M3b · ENTER-TOGGLE · Enter expands in place; o opens the job's file (3a4d3114)
+- try · M3b · CREATE-OPTS · hud_create takes pi launch switches (76a16393)
+- try · M3b · STOP-CLEAN · a job stopped on purpose shows stopped and settles (f7671624)
+- try · M3b · PANEL-OPEN · no notification burst on open; the panel closes with its caller (a020f254)
+- try · M3b · M3B-FIX · milestone review findings (26d8adcb)
+- try · M3b · HUD-SEND · hud_send queues a message for a working pi job (0fb4c042)
+- try · M3b · JOB-SCAN · job scans reuse each file's parse (aa47181b)
+- try · M3b · PERF-MCP · hud_read reads only STATUS and receipts (5ac1ee5c)
+- try · M3b · PERF-BARS · statusline and pi footer skip needless work (476bed9f)
+- try · M3b · ONE-PAGE · Home and Work on one page; a shows hidden cards (9e54af8b)
+- accepted · M3b · PI-BAND · the p10k ribbon back in pi's top border (75519c63)
+- try · M3b · CLEANUP-VIEWS · Timeline, Activity, Summary, diagnostics gone; Changes summary only (a0357f7e)
+- try · M3b · PAGES-BUILD · Inspector, Settings, Help, Changes in Home's look; Bar style row (8a042817)
+- try · M3b · BAR-THEMES · six bar themes on all bars and the pi ribbon (26eccfa7)
+- try · M3b · SETTINGS-TRIM · four Settings rows deleted (34e10e0e)
+- try · M3b · BAR-TIMES · same-name subagent notices collapse into ×n (25a74bb4)
+- try · M3b · PANEL-BACKOFF · a quiet job-only panel backs off to 5 s (42d27f06)
+- working · M3b · NATIVE-TREE · native subagents on Home, one lane per main session; old Agents pane goes
+- try · M4 · M4-PROJECT · the Project tab (841cc06f)
+- working · M4 · PROGRESS-BOARD · the Project tab's progress board
+- todo · M4 · TICKETS · to-tickets in the Project tab's tickets section
+- todo · M3b · M3B-REVIEW · the M3b two-axis milestone review
+- todo · — · PI-STOP · hud_close stops a working pi job
+- todo · — · LEGACY-SKILLS · retire legacy skills (features listed first)
+- dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
+
 ## Now (2026-11-12): M3b closing; themes and pages building in worktrees
 
 Landed today: hud_read/list perf (`5ac1ee5c`), bar perf (`476bed9f`), ONE-PAGE Home (`9e54af8b`), stopped-after-report
