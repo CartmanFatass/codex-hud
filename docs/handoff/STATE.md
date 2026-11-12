@@ -41,6 +41,8 @@ board counts these; update at every landing or decision. -->
 - accepted · M4 · M4-PROJECT · the Project tab (841cc06f)
 - accepted · M4 · PROGRESS-BOARD · the Project tab's progress board: ledger bar, chips, slices in flight, drift marks (8716dcc5)
 - accepted · M3b · OPEN-TAB · opening a file from the panel uses its own herdr tab, not a split pane (c3d49420)
+- working · M3b · CLAUDE-BIND · hud panel finds the caller's Claude session via herdr pane current at open time;
+  nothing stored per pane (owner: pane ids are dynamic)
 - try · M3b · CARD-DETAILS · newest card expanded, others folded; keywords colour files, stances (approve, object,
   reject) and opinions (6c9cb40b)
 - try · M4 · TICKETS · the Project tab's Tickets section from to-tickets' .scratch tracker (6364ddad)
