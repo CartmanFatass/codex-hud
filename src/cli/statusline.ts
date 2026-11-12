@@ -4,11 +4,11 @@ import { renderWorkSummary, workSignals } from '../render/work-summary.js';
 import { fileURLToPath } from 'node:url';
 import { visualLength } from '../render/colors.js';
 import { statuslinePreview } from '../statusline-preview.js';
-import { statuslineSettings } from '../statusline-settings.js';
-import { applyBarSettings } from '../settings-runtime.js';
+import { applyBarSettings } from '../bar-settings.js';
+import { NOTICE_MS } from '../render/layout/bar-fields.js';
 import { renderStatuslineSession, type StatuslineSessionOptions } from '../render/statusline-session.js';
 import type { HudIO } from './hud.js';
-import { loadParitySettings, importStatusline } from '../statusline-parity/settings.js';
+import { loadParitySettings } from '../statusline-parity/settings.js';
 import { collectAndRenderParity } from '../statusline-parity/collect.js';
 import { forwardInput } from '../statusline-parity/forward.js';
 
@@ -40,6 +40,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
   }
   if (args[0] === 'import') {
     try {
+      const { importStatusline } = await import('../statusline-parity/import.js');
       await io.stdout(JSON.stringify(importStatusline(args.slice(1), io.env), null, 2) + '\n');
       return 0;
     } catch (e) {
@@ -52,6 +53,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
   }
   if (args[0] === 'settings') {
     try {
+      const { statuslineSettings } = await import('../statusline-settings.js');
       const result = statuslineSettings(
         args.slice(1),
         io.env.HOME ?? '',
@@ -131,7 +133,8 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
     stderr: io.stderr,
     render: async (value, width) => {
       const now = Date.now();
-      const lanes = readThinJobs(getHudHome(io.env), { project: null, pane: io.env.HERDR_PANE_ID ?? null });
+      const lanes = readThinJobs(getHudHome(io.env), { project: null, pane: io.env.HERDR_PANE_ID ?? null }, undefined,
+        parity && !options.details ? { settledBefore: now - NOTICE_MS } : undefined);
       // The bar is one line: what the jobs ask and just did are events of its notice zone, not a row below.
       if (parity && !options.details) {
         applyBarSettings();

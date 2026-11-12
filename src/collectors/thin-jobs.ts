@@ -80,12 +80,17 @@ export function runningVerb(role: string, harness: string): string {
   if (harness === 'jev') return /^flow/.test(role) ? 'generating' : 'asking web';
   return 'working';
 }
-export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.parse): WorkLane[] {
+export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.parse,
+  options?: { settledBefore: number }): WorkLane[] {
   seen.clear();
   const root = join(home, 'jobs');
   const jobs = entries(root)
     .filter((id) => /^j[0-9a-f]{16}$/.test(id))
     .flatMap((id) => {
+      // Bars have no history view. Keep active/unknown jobs for pinned questions, regardless of age.
+      const status = options ? json(join(root, id, 'STATUS.json'), parse) : null;
+      if (status && ['done', 'closed', 'idle_grace', 'failed', 'stopped'].includes(String(status.v.state)) &&
+        (when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at) < options!.settledBefore) return [];
       const file = json(join(root, id, 'job.json'), parse),
         job = file?.v;
       if (
@@ -98,14 +103,14 @@ export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.par
       )
         return [];
       const created = when(job.created_at);
-      return created === null ? [] : [{ id, job, created, jobAt: file.at }];
+      return created === null ? [] : [{ id, job, created, jobAt: file.at, status }];
     })
     .sort((a, b) => b.created - a.created || a.id.localeCompare(b.id))
     .slice(0, 200);
   const lanes = new Map<string, WorkLane>();
-  for (const { id, job, created, jobAt } of jobs) {
+  for (const { id, job, created, jobAt, status: checkedStatus } of jobs) {
     const directory = join(root, id),
-      status = json(join(directory, 'STATUS.json'), parse),
+      status = checkedStatus ?? json(join(directory, 'STATUS.json'), parse),
       s = status?.v ?? {};
     const state = s.state === 'stopped' ? 'stopped' :
       s.state === 'failed' || (!status && typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0)

@@ -231,9 +231,9 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
         clock,
         `const Original=Date;globalThis.Date=class extends Original{constructor(...a){super(...(a.length?a:[${NOW}]))}static now(){return ${NOW}}};`
       );
-      const run = (args: string[]) =>
+      const run = (args: string[], extraEnv: NodeJS.ProcessEnv = {}) =>
         spawnSync(process.execPath, ['--import', clock, resolve('bin/hud-statusline'), ...args], {
-          env: { ...f.env, COLUMNS: '40' },
+          env: { ...f.env, COLUMNS: '40', ...extraEnv },
           input: JSON.stringify(f.input),
           encoding: 'utf8',
           timeout: 5000,
@@ -245,6 +245,34 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
       const details = run(['--details']);
       assert.equal(details.status, 0, details.stderr);
       assert.doesNotMatch(details.stdout, /Explore/);
+      fs.appendFileSync(clock, `
+        const {default:fs}=await import('node:fs'); const {syncBuiltinESMExports}=await import('node:module');
+        let credentials=0,jobs=0; for(const key of ['existsSync','openSync','statSync','lstatSync','readFileSync']) {
+          const original=fs[key]; fs[key]=function(file,...args){if(String(file).endsWith('/credentials.env')) credentials++;
+            if(key==='openSync' && String(file).endsWith('/job.json')) jobs++; return original.call(this,file,...args)};
+        } syncBuiltinESMExports(); process.on('exit',()=>console.error(JSON.stringify({credentials,jobs})));
+      `);
+      const settings = join(f.env.HUD_HOME!, 'hud-settings.json');
+      const plain = run([], { NO_COLOR: '1' }).stdout;
+      for (const value of ['{}', '{"barStyle":"bad","barFields":["bad"]}', '{']) {
+        fs.writeFileSync(settings, value);
+        const result = run([], { NO_COLOR: '1' });
+        assert.equal(result.stdout, plain); assert.equal(result.stderr.trim(), '{"credentials":0,"jobs":0}');
+      }
+      fs.writeFileSync(settings, '{"barStyle":"p10k","barFields":["model"]}');
+      const modelOnly = run([], { NO_COLOR: '1' }).stdout;
+      assert.notEqual(modelOnly, plain); assert.doesNotMatch(modelOnly.replace(/\x1b\[0m/g, ''), /\x1b\[/);
+      fs.unlinkSync(settings);
+      assert.equal(run([], { NO_COLOR: '1', HUD_BAR_FIELDS: 'model', HUD_BAR_STYLE: 'p10k' }).stdout, modelOnly);
+      for (let n = 0; n < 300; n++) {
+        const job = `j${n.toString(16).padStart(16, '0')}`, dir = join(f.env.HUD_HOME!, 'jobs', job);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job, role: 'imp', herdr_pane: 'synthetic', created_at: new Date(0).toISOString() }));
+        fs.writeFileSync(join(dir, 'STATUS.json'), '{"state":"closed","settled_at":"2000-01-01T00:00:00Z"}');
+      }
+      const cold = run([], { NO_COLOR: '1', HERDR_PANE_ID: 'synthetic' });
+      assert.equal(cold.status, 0); assert.equal(cold.stdout, plain);
+      assert.equal(cold.stderr.trim(), '{"credentials":0,"jobs":0}', 'cold process opens no old receipts or credentials');
     },
   },
 ];

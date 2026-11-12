@@ -307,6 +307,18 @@ test('combined pi packages retain delegation after canceled navigation and displ
   assert.equal(p.counts().splits, 0);
 });
 
+test('agent_end updates the mounted footer exactly once', async (t) => {
+  const f = setup(t), h = host(), c = context(f, h), p = ports(f);
+  let scans = 0;
+  c.ctx.sessionManager.getBranch = () => { scans++; return []; };
+  await load(f, h, p, 'hud-display.mjs');
+  await h.emit('session_start', c.ctx);
+  scans = 0;
+  await h.emit('agent_end', c.ctx);
+  assert.equal(scans, 1);
+  await h.emit('session_shutdown', c.ctx);
+});
+
 test('the delegation-only package registers the tools but no footer, no /hud and no panel', async (t) => {
   const f = setup(t),
     h = host(),

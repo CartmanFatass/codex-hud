@@ -15,7 +15,7 @@ import { execFile } from 'node:child_process';
 import * as bar from '../../render/layout/bar-fields.js';
 import { shortModel } from '../../render/providers.js';
 import type { WorkSignals } from '../../render/work-summary.js';
-import { applyBarSettings } from '../../settings-runtime.js';
+import { applyBarSettings } from '../../bar-settings.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
 import { HUD_STATUS_KEY } from './segment.js';
 import type { FooterAPI, FooterContext, FooterHost } from './footer-host.js';

@@ -36,12 +36,4 @@ export function withDisplaySettings<T>(settings: HudSettings, draw: () => T): T 
     setDisplayConfig(previous);
   }
 }
-/** The bar's own two keys, for the processes that draw only the bar (Claude's statusline, pi's footer). */
-export function applyBarSettings(): void {
-  try {
-    const { barStyle, barFields } = runtimeSettings();
-    setDisplayConfig({ barStyle, barFields });
-  } catch {
-    /* an unreadable settings file leaves the bar as it was */
-  }
-}
+export { applyBarSettings } from './bar-settings.js';

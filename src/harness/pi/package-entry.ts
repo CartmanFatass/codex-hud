@@ -163,7 +163,6 @@ export function installPiPackage(
     'model_select',
     'thinking_level_select',
     'agent_start',
-    'agent_end',
     'agent_settled',
     'message_end',
     // message_end runs before native persistence. context runs after persistence,
@@ -177,7 +176,10 @@ export function installPiPackage(
       segment.refresh();
       footer?.update();
     });
-  onDisplay('agent_end', () => footer?.settled());
+  onDisplay('agent_end', () => {
+    segment.refresh();
+    footer?.settled();
+  });
   registerHud?.('hud', {
     description: 'Local HUD panel: on|off|toggle|status|reconnect|help; footer on|off or footer <segment options>',
     async handler(args, ctx) {

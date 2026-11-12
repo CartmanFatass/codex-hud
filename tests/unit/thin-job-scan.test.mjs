@@ -47,4 +47,11 @@ test('300 jobs: unchanged scan parses no receipts; a changed job appears next sc
   fs.renameSync(file + '.tmp', file);
   assert.equal(workers()[0].model, changed.model);
   assert.equal(parses, 1);
+  const cutoff = Date.now() + 60000;
+  assert.deepEqual(readThinJobs(home, scope, parse, { settledBefore: cutoff }), []);
+  for (const [suffix, status] of [['012b', '{"state":"working"}'], ['012a', '{}'], ['0129', '{"state":"closed","settled_at":"2999-01-01"}']])
+    fs.writeFileSync(join(home, 'jobs', `j000000000000${suffix}`, 'STATUS.json'), status);
+  const retained = readThinJobs(home, scope, parse, { settledBefore: cutoff }).flatMap(l => l.workers);
+  assert.equal(retained.length, 3, 'old working and unknown jobs plus recent settlement remain');
+  assert.equal(retained.filter(w => w.state === 'working').length, 2);
 });
