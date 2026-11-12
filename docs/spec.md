@@ -10,7 +10,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
 ## 2. What it must do
 
 1. **Delegate through one MCP.** From any of the three main sessions, start and use roles with six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`, `hud_respond`,
-   `hud_close`. CLI roles run through herdr and pi-roles; browser jobs run through Jev. Roles are defined by files; the HUD ships defaults. `hud_create` may override a role's model and thinking for one job (owner, 2026-11-11), and, for pi roles, the common launch options as named switches (pi-lens, MCP adapter, tokens/s, UI extensions, the helper pane, personal skills) plus a free list of pi arguments passed through as given (owner, 2026-11-11). The MCP knows no particular role and no workflow. The main session decides every next step; the HUD never chains roles itself. Workers are neutral: each does only its own job and never
+   `hud_close`. CLI roles run through herdr and pi-roles; browser tasks (ChatGPT, Gemini, AI Studio, Flow) run through the shared browser. **Jev** and the **Decision API** name the structured-output decision model (choice/predicate answers with probabilities), not the browser (owner, 2026-11-11). Roles are defined by files; the HUD ships defaults. `hud_create` may override a role's model and thinking for one job (owner, 2026-11-11), and, for pi roles, the common launch options as named switches (pi-lens, MCP adapter, tokens/s, UI extensions, the helper pane, personal skills) plus a free list of pi arguments passed through as given (owner, 2026-11-11). The MCP knows no particular role and no workflow. The main session decides every next step; the HUD never chains roles itself. Workers are neutral: each does only its own job and never
    starts another role unless the brief asks. The HUD ships a short default dispatch convention; a project's or the owner's own file replaces it whole. `hud_roster` returns the roles and the convention in effect. The six
    tools are a thin layer over the locally installed pi-roles (its pi package, `STATUS.json`, `qN.answer.md`,
    `pi-role-reap`); the MCP opens each job's herdr tab itself; jobs are plain JSON under `$HUD_HOME/jobs`. pi-roles
@@ -28,20 +28,20 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    The panel also shows the main session's native subagents (Claude Code's Agent subagents incl. custom ones, Codex
    subagents, pi's), read from the client's own transcripts, each with an external-model summary of what it is doing.
    A Project tab shows the project at a glance: the control plane (roles in effect with their models,
-   the convention and its source, which keys and the Jev browser are available), the working tree (branch, changes,
+   the convention and its source, which keys and the browser are available), the working tree (branch, changes,
    which job is editing it, last commit), docs (spec milestone, STATE's items waiting for the owner, the newest
    review) and the tickets from Matt's `to-tickets` (status, blocked-by, linked to the package lanes). The control
    plane shows each role's assignment (role, harness, model and thinking, source file) and lists its files: HUD role files, pi-roles role definitions (model, thinking), the clients' native custom
    agents (`~/.claude/agents`, a project's `.claude/agents`, `~/.codex/agents`), the convention in effect and the
    instruction files (CLAUDE.md, AGENTS.md). Enter opens the item's file in `$EDITOR` (default `vim`) in a herdr pane
    beside the panel.
-3. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, Jev,
+3. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, browser,
    herdr); `hud uninstall` removes them. Registration uses each client's official commands where they exist.
 
 ## 3. What it does not do
 
 - No own execution platform: no ledger database, process supervisor, native host or bridge, no SDK-driven sessions.
-  herdr, pi-roles and Jev already do execution.
+  herdr, pi-roles and the browser runtime already do execution.
 - No workflow engine and no automatic role chaining.
 - No multi-user or adversarial security model; no identity proofs between local processes.
 - No transactional installer: no plan IDs, receipts or byte-exact restore. A plain backup of each edited client file
@@ -69,7 +69,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   and sonic through herdr; Claude statusline at claude-hud parity; pi footer replacing p10k-footer. The owner
   installs and uses it.
 - **M2, clean** (right after M1): delete the retired execution stack (R6b slice L), the old role facade and its identity/release checks (replaced by the thin layer), the old hud-mcp surfaces (the default managed surface and role-main), and their tests.
-- **M3, extend:** Jev and oracle jobs.
+- **M3, extend:** browser tasks and oracle jobs.
 - **M3b, AI-THIN** (owner, 2026-11-11): the panel's words for HUD jobs come from an external small model with the
   owner's key; it only reads job files and only writes display text.
   - Where: the third line of a thin-job card (one sentence on what it is doing now); decision titles (≤ 8 words,
