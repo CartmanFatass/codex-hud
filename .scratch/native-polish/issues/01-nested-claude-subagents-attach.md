@@ -8,9 +8,9 @@ the last read stopped, remembering every subagent-starting call, with a per-pass
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] A child whose starting call is far (> 64 KB) from the end of a long parent transcript is attached to its parent
-- [ ] Reads stay incremental and bounded per pass; an unchanged transcript costs no body read
-- [ ] A truncated/rotated parent transcript is re-read from the start, not misattributed
-- [ ] Home frames at 80 and 120 columns, EN and ZH, show the nested child indented under its parent
+- [x] A child whose starting call is far (> 64 KB) from the end of a long parent transcript is attached to its parent
+- [x] Reads stay incremental and bounded per pass; an unchanged transcript costs no body read
+- [x] A truncated/rotated parent transcript is re-read from the start, not misattributed
+- [x] Home frames at 80 and 120 columns, EN and ZH, show the nested child indented under its parent
