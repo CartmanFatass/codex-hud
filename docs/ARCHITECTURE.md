@@ -524,7 +524,7 @@ Nothing calls a model while rendering. Results are stored, and then
 
 ### 5.2 Native text only; no overview generator
 
-Thin-job card sentences (§5.6) join the retained native-agent labels, visible
+Thin-job card sentences and decision titles (§5.6) join the retained native-agent labels, visible
 progress sentences, result digests and failure causes. `tree-page.ts` derives the internal
 `JobSwitches` from the effective master state: all three background jobs on,
 or `NO_JOBS`; these are not independent user settings. Progress additionally
@@ -574,6 +574,7 @@ job using the same key. Retry cooldowns do not carry across languages.
 
 | Feature | What can leave the machine when the master is effectively on |
 |---|---|
+| Decision titles | that thin job's question and answer files only, ≤4096 bytes each (§5.6) |
 | Visible progress | bounded public current-turn evidence in §5.5 |
 | Result/stage digest | public final answer, head and tail, ≤8000 characters |
 | Agent labels | parent's pre-create public plaintext with path/role, else plaintext task; ≤400 characters per item, up to 8 items |
@@ -634,11 +635,13 @@ progress jobs, sharing `SmallModel`'s single-flight queue and hourly cap.
 
 ### 5.6 Thin-job card sentences (`collectors/job-sentences.ts`)
 
-`JobSentences.update` runs on collection, after the deterministic workboard is built; `apply` only overlays `OwnerWorker.modelSentence` for painting. Master/key and language gates are shared with the existing service. Native cards, bars, decisions and result lines are unchanged.
+`JobSentences.update` runs on collection, after the deterministic workboard is built; `apply` only overlays `OwnerWorker.modelSentence` for painting. Master/key and language gates are shared with the existing service. Native cards and bars are unchanged; the settled card's final sentence is its one-line result (no second line).
 Input is read-only under the exact job directory: brief title/goal (1500-byte prefix), STATUS state/phase, open question (2 KiB), newest review's verdict line, four report lines once settled, and four public assistant-text/tool-call blocks from the newest working-session JSONL's 32 KiB tail. Symlinks/nonregular files refuse; reasoning/private channels and paths referenced by messages are never read.
 State/phase, question/answer revisions, report/review revisions and working-session activity fingerprint the request. One queued/running handle per job and a two-minute floor after settlement coalesce changes. A successful final sentence freezes a settled job; failed final requests retry no sooner than two minutes after failure. Requests use `SmallModel.submit`, visible priority, the shared hourly cap and input cache.
 The private `model-cache/job-sentences.json` retains up to 200 language-keyed job records: last sentence, successful fingerprint, rate timestamp and final-success bit. Reopen restores text without a call; unchanged input stays quiet. Disabling hides the overlay and cancels pending work without deleting records. Model text changes no deterministic state or activity timestamp.
 `render/work-card.ts` removes `«…»` keyword marks and uses `theme.board.identifier` for 1–3 valid spans; malformed/unmarked replies stay plain. One row cuts at a word with `…`, including width-safe CJK fallback. Missing text/key or master off leaves the existing factual rendering unchanged. A sentence is display text, never a workflow verdict.
+
+`DecisionTitles` (`collectors/decision-titles.ts`) overlays `DecisionRecord.modelTitle` in both collapsed and expanded rows, leaving the question/alternative and Enter behavior intact. Collection reads only that thin job's question and answer (4096 bytes each), through the shared safe reader. Titles state what was decided in the panel language, cut to eight words with `Intl.Segmenter` (including Chinese). The private adjacent `decision-titles.json` retains 200 records keyed by decision id, answer revision and language; reopen reuses them, and a changed answer revision requests anew. Up to three pending handles use the shared queue/cap, current viewport decisions first; failures wait two minutes before retrying. Master/key off hides titles and cancels requests without deleting records; missing/pending text leaves the original option/title.
 
 ## 6. Rendering
 

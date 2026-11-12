@@ -16,6 +16,7 @@ export interface EvidenceRef {
   readonly timeBasis: 'producer' | 'file-mtime' | 'unknown';
 }
 export interface DecisionRecord {
+  readonly modelTitle?: string;
   readonly id: string;
   readonly laneId: string;
   readonly kind: 'answer' | 'review' | 'recommendation';

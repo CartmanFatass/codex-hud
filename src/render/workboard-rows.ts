@@ -35,7 +35,7 @@ export function workerRow(worker: OwnerWorker, width: number, now: number): Moni
   );
 }
 export const decisionTitle = (record: DecisionRecord) =>
-  monitorText(record.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? record.title);
+  monitorText(record.modelTitle ?? record.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? record.title);
 /** Collapsed, one row (title cut to fit); expanded (Enter), the whole title, question and `instead of`. Same on both tabs. */
 export function decisionRows(
   record: DecisionRecord,

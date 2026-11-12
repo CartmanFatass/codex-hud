@@ -29,6 +29,7 @@ function read(file: string, limit = 4096, tail = false): Reading {
     if (fd !== undefined) fs.closeSync(fd);
   }
 }
+export { read as readJobFile };
 function names(directory: string): string[] {
   try {
     return fs.realpathSync(directory) === directory ? fs.readdirSync(directory).slice(0, 400) : [];

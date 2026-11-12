@@ -4,6 +4,9 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { JobSentences } from '../../dist/collectors/job-sentences.js';
+import { DecisionTitles } from '../../dist/collectors/decision-titles.js';
+import { decisionRows, decisionTitle } from '../../dist/render/workboard-rows.js';
+import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { SmallModel, modelHttpRequest } from '../../dist/collectors/small-model.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
@@ -38,9 +41,11 @@ function fixture(t, mode = 'on', language = 'en') {
               choices: [
                 {
                   message: {
-                    content: f.calls.at(-1).messages[0].content.includes('Simplified Chinese')
-                      ? '正在检查«解析器»边界。'
-                      : 'Checking «parser» boundaries.',
+                    content:
+                      f.reply ??
+                      (f.calls.at(-1).messages[0].content.includes('Simplified Chinese')
+                        ? '正在检查«解析器»边界。'
+                        : 'Checking «parser» boundaries.'),
                   },
                 },
               ],
@@ -86,7 +91,7 @@ function fixture(t, mode = 'on', language = 'en') {
     return {
       lanes,
       workers: lanes.flatMap((l) => l.workers),
-      decisions: [],
+      decisions: lanes.flatMap((l) => l.decisions),
       revision: '1',
       coverage: { incomplete: false, diagnostics: [], workspace: null },
     };
@@ -146,6 +151,7 @@ test('thin job: real file collection, keyword card, coalescing, cached reopen, a
   await f.update();
   assert.equal(f.calls.length, 3);
   assert.match(f.calls[2].messages[1].content, /Parser fixed/);
+  assert.match(stripAnsi(f.render(f.service.apply(f.board()))), /Checking parser boundaries\./);
   f.now += 240_000;
   f.put('report.md', 'A later report edit');
   f.service = new JobSentences(
@@ -248,3 +254,60 @@ test('single line word cut, malformed/unmarked text, and job-local symlink refus
   f.service.configure(false, 'en');
   assert.match(stripAnsi(f.render(f.service.apply(f.board()))), /Factual progress/);
 });
+function decisionFixture(t, mode = 'on') {
+  const f = fixture(t, mode);
+  f.file = join(f.home, 'display/model-cache/decision-titles.json');
+  f.service = new DecisionTitles(f.model, f.file);
+  f.service.configure(f.on, 'en');
+  f.put(
+    'qa/q1.md',
+    '# Question\n\nWhich parser?\n\nOptions:\nA) fast parser\nB) durable parser\n\nDefault if unanswered: A'
+  );
+  f.put('qa/q1.answer.md', 'B');
+  f.reply = 'Use the durable parser for all future input processing tasks';
+  return f;
+}
+test('decision title: eight words, row and expanded block, dedupe, persisted reopen, new answer and Chinese', async (t) => {
+  const f = decisionFixture(t),
+    factual = decisionTitle(f.board().decisions[0]);
+  assert.equal(decisionTitle(f.service.apply(f.board()).decisions[0]), factual);
+  let b = await f.update();
+  const title = 'Use the durable parser for all future input',
+    d = b.decisions[0],
+    state = initialMonitorState();
+  assert.equal(decisionTitle(d), title);
+  const row = () =>
+    decisionRows(d, b.lanes[0], state, 160, f.now)
+      .map((r) => stripAnsi(r.text))
+      .join('\n');
+  assert.match(row(), /Use the durable parser for all future input/);
+  state.boardExpanded = new Set([targetKey({ kind: 'decision', laneId: d.laneId, decisionId: d.id })]);
+  assert.match(row(), /Use the durable parser for all future input[\s\S]*asked Which parser\?[\s\S]*instead of A/);
+  await f.update();
+  f.service = new DecisionTitles(f.model, f.file);
+  f.service.configure(true, 'en');
+  b = await f.update();
+  assert.equal(f.calls.length, 1);
+  assert.equal(decisionTitle(b.decisions[0]), title);
+  assert.match(f.calls[0].messages[1].content, /Which parser/);
+  assert.match(f.calls[0].messages[1].content, /"answer":"B"/);
+  f.put('qa/q1.answer.md', 'A');
+  fs.utimesSync(join(f.dir, 'qa/q1.answer.md'), new Date(), new Date(Date.now() + 1000));
+  await f.update();
+  assert.equal(f.calls.length, 2);
+  f.reply = '选择耐用解析器。';
+  f.service.configure(true, 'zh');
+  b = await f.update();
+  assert.match(f.calls[2].messages[0].content, /Simplified Chinese/);
+  assert.equal(decisionTitle(b.decisions[0]), f.reply);
+  f.service.configure(false, 'zh');
+  assert.equal(decisionTitle(f.service.apply(f.board()).decisions[0]), 'fast parser');
+});
+for (const mode of ['off', 'no-key'])
+  test(`decision factual fallback: ${mode}`, async (t) => {
+    const f = decisionFixture(t, mode),
+      before = decisionTitle(f.board().decisions[0]),
+      b = await f.update();
+    assert.equal(f.calls.length, 0);
+    assert.equal(decisionTitle(b.decisions[0]), before);
+  });
