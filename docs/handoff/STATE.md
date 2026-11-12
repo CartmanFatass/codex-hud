@@ -45,7 +45,7 @@ board counts these; update at every landing or decision. -->
   nothing stored per pane (owner: pane ids are dynamic)
 - accepted · M3b · CARD-DETAILS · newest card expanded, others folded; keywords colour files, stances (approve, object,
   reject) and opinions (6c9cb40b)
-- try · M4 · TICKETS · the Project tab's Tickets section from to-tickets' .scratch tracker (6364ddad)
+- accepted · M4 · TICKETS · the Project tab's Tickets section from to-tickets' .scratch tracker (6364ddad)
 - accepted · M3b · M3B-REVIEW2 · the closing M3b two-axis milestone review (Sol xhigh + DS max): changes-required, 2 blocking keys (docs/reviews/2026-11-12-m3b-review2-*)
 - accepted · M3b · M3B-FIX2 · the closing review's fixes: Codex Ctrl+\ 2, Settings s/t, dead code, docs (c283e7ea)
 - accepted · — · PI-STOP · hud_close stops a working pi job in seconds, not after a 30 s wait (Fishpref 38447ef)
