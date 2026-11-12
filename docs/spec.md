@@ -21,7 +21,9 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    `/hud` (in Codex with F12, as before) (owner, 2026-11-11). The delegation tools stay registered either way (owner,
    2026-11-11). Each client keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
    (taking in p10k-footer; its ribbon stays at the right end of the editor's top border and other extensions' statuses
-   stay visible, owner, 2026-11-12), Codex's existing tmux bar. The panel and status lines can use external models with the
+   stay visible, owner, 2026-11-12), Codex's existing tmux bar. Bar themes (owner, 2026-11-12): Gauge Plates, Tide, Micro
+   Glyphs, Stacked (two rows, the one opt-in exception), Headline and Triptych from the BAR-THEMES concepts join as
+   choices on all three bars, the pi ribbon included; the default stays today's look. The panel and status lines can use external models with the
    owner's own keys (`$HUD_HOME/credentials.env`, through the Decisions API) for job summaries, recaps and sentences.
    These features only read job files and write display text; they never prompt, brief or steer a worker. No consent
    or authority layer. A job may carry an optional package label (given to `hud_create`, else taken from the brief's
@@ -93,7 +95,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
     the motion switch, the stack/tabs layouts, the foot status card and the rows only they used (owner, 2026-11-11).
   - Done: the owner runs real jobs on the real panel; card, decision and result lines are one sentence each, not a
     wall of text, and the keywords scan at a glance.
-- **M4, project view:** the Project tab, after Matt's skills are installed (tickets) and the package label works.
+- **M4, project view:** the Project tab, after the other open items. It does not wait for Matt's skills: the tickets
+  section stays empty until a later slice adapts to-tickets (owner, 2026-11-12).
 
 ## 6. How work is done
 
