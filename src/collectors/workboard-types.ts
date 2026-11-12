@@ -18,6 +18,11 @@ export interface EvidenceRef {
 export interface DecisionRecord {
   readonly category?: string;
   readonly modelTitle?: string;
+  /** Display-only language adaptation; original decision/evidence remains authoritative. */
+  readonly modelQuestion?: string;
+  readonly modelAnswer?: string;
+  readonly modelInstead?: string;
+  readonly modelWhy?: string;
   readonly id: string;
   readonly laneId: string;
   readonly kind: 'answer' | 'review' | 'recommendation';

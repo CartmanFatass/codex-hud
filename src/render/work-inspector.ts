@@ -204,10 +204,10 @@ export function boardInspectorRows(
     ...(d.modelTitle ? jobSentenceRows(d.modelTitle, width, theme.board.muted, true) : stemLines(decisionTitle(d), width)).map((text) => boardRow(theme.board.body(text))),
     boardRow(''),
     ...[
-      ['asked', d.question],
-      [d.verdict ? 'verdict' : 'answer', d.verdict ?? d.option],
-      ['instead of', d.instead],
-      ['why', d.rationale ?? d.context],
+      ['asked', d.modelQuestion ?? d.question],
+      [d.verdict ? 'verdict' : 'answer', d.modelAnswer ?? d.verdict ?? d.option ?? (d.kind === 'answer' ? d.title : undefined)],
+      ['instead of', d.modelInstead ?? d.instead],
+      ['why', d.modelWhy ?? d.rationale ?? d.context],
     ].flatMap(([label, value]) =>
       value ? kvRows(label!, value, width, label === 'instead of' ? theme.board.attention : undefined) : []
     ),

@@ -58,7 +58,7 @@ export function footRow(left: string, hints: string, width: number): string {
 }
 export const decisionTitle = (record: DecisionRecord) =>
   keywordMarks(monitorText(record.modelTitle ?? record.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? record.title)).plain;
-/** Collapsed, one row (title cut to fit); expanded (Enter), the whole title, question and `instead of`. Display only. */
+/** Collapsed title; expanded (Enter), title and localized decision detail. Display only. */
 export function decisionRows(
   record: DecisionRecord,
   lane: WorkLane,
@@ -86,8 +86,12 @@ export function decisionRows(
   const rows = [
     theme.board.title(pair(left, ink(right), width)),
     ...(record.modelTitle ? jobSentenceRows(record.modelTitle, width, ink, true) : stemLines(decisionTitle(record), width, ink)),
-    ...(record.question ? stemLines(`${t('asked')} ${record.question}`, width, ink) : []),
-    ...(record.departure && record.instead ? stemLines(`${t('instead of')} ${record.instead}`, width, ink) : []),
+    ...[
+      ['asked', record.modelQuestion ?? record.question],
+      [record.verdict ? 'verdict' : 'answer', record.modelAnswer ?? record.verdict ?? record.option ?? (record.kind === 'answer' ? record.title : undefined)],
+      ['instead of', record.modelInstead ?? record.instead],
+      ['why', record.modelWhy ?? record.rationale ?? record.context],
+    ].flatMap(([label, value]) => value ? stemLines(`${t(label!)} ${value}`, width, ink) : []),
   ];
   return [...rows.map((text, i) => boardRow(i ? theme.board.body(text) : text, target)), boardRow('')];
 }
