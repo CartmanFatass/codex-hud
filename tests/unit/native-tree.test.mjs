@@ -74,12 +74,12 @@ for (const finished of [undefined, false]) test(`Claude real-shaped running meta
   assert.equal(f.collector.bytes, 0);
 });
 
-test('native hide rules: done 10m, failed/stopped 30m; a reveals in place and native Inspector opens transcript', (t) => {
+test('native hide rules: done 15m, failed/stopped 30m; a reveals in place and native Inspector opens transcript', (t) => {
   const f = fixture(t),
     tree = f.combined();
   const n = tree.nodes[1];
   n.status = 'completed';
-  n.statusAt = new Date(NOW - 11 * 60_000);
+  n.statusAt = new Date(NOW - 16 * 60_000);
   n.children[0].children[0].status = 'error';
   n.children[0].children[0].statusAt = new Date(NOW - 31 * 60_000);
   let frame = f.render(120, 'en', initialMonitorState(), tree);
@@ -112,8 +112,8 @@ test('native hide rules: done 10m, failed/stopped 30m; a reveals in place and na
   assert.equal(handleMonitorInput(frame.state, { type: 'key', key: 'escape' }, ctx(frame)).state.focus, 'agents');
   // Exact expiry boundaries, including stopped, use the same projector as jobs.
   for (const [state, minutes, visible] of [
-    ['done', 9, true],
-    ['done', 10, false],
+    ['done', 14, true],
+    ['done', 15, false],
     ['failed', 29, true],
     ['failed', 30, false],
     ['stopped', 29, true],

@@ -1,16 +1,26 @@
-/** Fixed Home lifetimes; show-all reveals expired items in place. No source mutation. */
+/** Home lifetimes: a settled card folds, then hides (Settings); decisions are fixed. Show-all reveals hidden items in place. No source mutation. */
 import type { DecisionRecord, OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { callTime } from '../collectors/workboard.js';
 import type { MonitorData, MonitorState } from './monitor.js';
 
-const HOME_MS = { done: 10 * 60000, failed: 30 * 60000, decision: 30 * 60000, departure: 2 * 60 * 60000 };
+const HOME_MS = { failed: 30 * 60000, decision: 30 * 60000, departure: 2 * 60 * 60000 };
+export type CardTimes = Pick<MonitorState, 'cardFoldMinutes' | 'cardHideMinutes'>;
+/** Fold and hide times in ms; a hide time before the fold time is the fold time. */
+function cardTimes(times?: CardTimes) {
+  const fold = (times?.cardFoldMinutes ?? 5) * 60000;
+  return { fold, hide: Math.max(fold, (times?.cardHideMinutes ?? 15) * 60000) };
+}
+/** A settled card past its fold time, not asking the owner: one row until Enter opens it. */
+export const foldedWorker = (w: OwnerWorker, now: number, times?: CardTimes): boolean =>
+  w.settledAt !== null && !w.homeNeedsHuman && w.homeRank !== 100 && now - w.settledAt >= cardTimes(times).fold;
 const jobTime = (w: OwnerWorker) => w.settledAt ?? w.startedAt ?? 0;
-export function currentWorker(w: OwnerWorker, now: number): boolean {
+export function currentWorker(w: OwnerWorker, now: number, times?: CardTimes): boolean {
   if (w.homeRank === 100) return true;
   if (w.homeFolded) return false;
   if (w.homeNeedsHuman || w.settledAt === null) return true;
   const failed = w.work?.failed || ['failed', 'error', 'stopped'].includes(w.state);
-  return now - w.settledAt < (failed ? HOME_MS.failed : HOME_MS.done);
+  const { hide } = cardTimes(times);
+  return now - w.settledAt < (failed ? Math.max(hide, HOME_MS.failed) : hide);
 }
 export function currentDecision(d: DecisionRecord, now: number): boolean {
   const at = callTime(d);
@@ -23,7 +33,7 @@ export function visibleWorkboard(
   now: number
 ): WorkboardSnapshot {
   const all = state.tree.showAll;
-  const workers = board.workers.filter((w) => all || currentWorker(w, now));
+  const workers = board.workers.filter((w) => all || currentWorker(w, now, state));
   const decisions = board.decisions.filter((d) => all || currentDecision(d, now));
   const workerIds = new Set(workers.map((w) => w.id)), decisionIds = new Set(decisions.map((d) => d.id));
   const lanes = board.lanes.map((lane) => ({

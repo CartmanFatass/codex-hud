@@ -8,7 +8,7 @@ import { requestLines, stemLines } from './work-card.js';
 import { theme } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
-import { currentWorker, currentDecision } from './work-visibility.js';
+import { currentWorker, currentDecision, foldedWorker } from './work-visibility.js';
 export function homeRows(
   board: WorkboardSnapshot,
   state: MonitorState,
@@ -16,9 +16,9 @@ export function homeRows(
   now: number,
   input?: MonitorData
 ): MonitorRow[] {
-  // Only the newest result opens by itself: running cards change activity constantly and would make Home jump.
+  // Only the newest result opens by itself, and only before its fold time: running cards change activity constantly and would make Home jump.
   const newest = board.workers
-    .filter((w) => !state.boardFolded?.has(w.laneId) && w.settledAt !== null && currentWorker(w, now))
+    .filter((w) => !state.boardFolded?.has(w.laneId) && w.settledAt !== null && currentWorker(w, now, state) && !foldedWorker(w, now, state))
     .reduce<(typeof board.workers)[number] | undefined>(
       (a, w) => (!a || (w.settledAt ?? 0) > (a.settledAt ?? 0) ? w : a),
       undefined
@@ -95,7 +95,7 @@ export function homeRows(
   rows.push(...decisionBlock(board, state, width, now, input?.workboard));
   const source = input?.workboard;
   const hidden = source
-    ? source.workers.filter((w) => !currentWorker(w, now)).length +
+    ? source.workers.filter((w) => !currentWorker(w, now, state)).length +
       source.decisions.filter((d) => !currentDecision(d, now)).length
     : 0;
   if (hidden)

@@ -7,7 +7,7 @@ import { cardExpanded, failed, renderWorkCard, workPhaseText } from './work-card
 import { boardRow, mark } from './workboard-rows.js';
 import { pair, monitorText, fit } from './monitor-text.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
-import { currentWorker } from './work-visibility.js';
+import { currentWorker, foldedWorker } from './work-visibility.js';
 import { t } from './i18n.js';
 export function workerPriority(w: OwnerWorker, now: number): number {
   if (w.homeRank !== undefined) return -w.homeRank;
@@ -92,7 +92,7 @@ export function laneRows(
   const strip = laneStrip(lane, state, now, Math.max(Math.floor(width / 3), width - visualLength(label) - 1));
   const header = pair(label, strip, width);
   const rows = [
-    boardRow(lane.workers.every((w) => !currentWorker(w, now)) ? theme.board.muted(stripAnsi(header)) : header, target),
+    boardRow(lane.workers.every((w) => !currentWorker(w, now, state)) ? theme.board.muted(stripAnsi(header)) : header, target),
   ];
   if (state.boardFolded?.has(lane.id)) return rows;
   const workers =
@@ -110,7 +110,10 @@ export function laneRows(
       worker.homeNeedsHuman && !worker.modelSentence
         ? renderWorkCard(card, state, room, '').slice(0, 1)
         : renderWorkCard(card, state, room, sentence);
-    if (!currentWorker(worker, now) && !cardExpanded(state, key)) lines = [theme.board.muted(stripAnsi(lines[0]))];
+    // Past its fold time a settled card is its title row (muted once hidden, in show-all) until Enter opens it.
+    const hidden = !currentWorker(worker, now, state);
+    if (!cardExpanded(state, key) && (hidden || foldedWorker(worker, now, state)))
+      lines = [hidden ? theme.board.muted(stripAnsi(lines[0])) : lines[0]];
     rows.push(...lines.map((text) => ({ text: indent + text, item: key, key })));
   }
   rows.push(boardRow(''));

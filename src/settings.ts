@@ -41,6 +41,9 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   model: string;
   /** Display-only inactivity threshold, never an execution deadline. */
   cardStallMinutes: number;
+  /** A settled job or native agent folds to one Home row after this many minutes, and leaves Home (show-all keeps it) after the hide time. */
+  cardFoldMinutes: number;
+  cardHideMinutes: number;
   /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
   modelCallsPerHour: number;
   decisionCallsPerHour: number;
@@ -91,6 +94,8 @@ export function defaultSettings(): HudSettings {
     decisionCallsPerHour: 0,
     summaryIntervalMinutes: 5,
     cardStallMinutes: 10,
+    cardFoldMinutes: 5,
+    cardHideMinutes: 15,
     notify: false,
     notifyDesktop: false,
     prefixKey: 'C-\\',
@@ -133,6 +138,8 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
   model: isText(200),
   cardStallMinutes: (value) => isIntegerBetween(value, 1, 120),
+  cardFoldMinutes: (value) => isIntegerBetween(value, 1, 1440),
+  cardHideMinutes: (value) => isIntegerBetween(value, 1, 1440),
   notify: isBoolean,
   notifyDesktop: isBoolean,
   modelCallsPerHour: (value) => isIntegerBetween(value, 0, 1000),

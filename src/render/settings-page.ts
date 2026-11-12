@@ -83,6 +83,10 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Minutes without new evidence; presentation only',
     format: (value) => t('{n}m', { n: Number(value) }),
   },
+  { key: 'cardFoldMinutes', group: 'Panel', label: 'Fold after', values: [1, 2, 5, 10, 15, 30],
+    help: 'Finished jobs and agents shrink to one row after this long; Enter opens one', format: (value) => t('{n}m', { n: Number(value) }) },
+  { key: 'cardHideMinutes', group: 'Panel', label: 'Hide after', values: [5, 10, 15, 30, 60, 120],
+    help: 'Finished jobs and agents leave Home after this long (a shows them); failed ones stay 30m at least', format: (value) => t('{n}m', { n: Number(value) }) },
   {
     key: 'notify',
     group: 'Panel',
@@ -179,7 +183,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['homeMode', 'treeWidth', 'cardStallMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
+  Panel: ['homeMode', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
   Models: ['modelEnabled', 'decisionCallsPerHour', 'summaryIntervalMinutes'],
   Codex: ['prefixKey', 'statusline'],
 };

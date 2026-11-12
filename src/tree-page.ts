@@ -636,7 +636,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       hourlyCap: settings.modelCallsPerHour,
     });
     decisionLabels.configure(settings.modelEnabled, settings.decisionCallsPerHour);
-    homeRecommendation.configure(settings.homeMode === 'recommended' && settings.modelEnabled, resolveLanguage(settings.language), settings.decisionCallsPerHour, settings.decisionApi, settings.summaryIntervalMinutes);
+    homeRecommendation.configure(settings.homeMode === 'recommended' && settings.modelEnabled, resolveLanguage(settings.language), settings.decisionCallsPerHour, settings.decisionApi, settings.summaryIntervalMinutes, settings);
     jobSentences.configure(modelOn, resolveLanguage(settings.language), settings.summaryIntervalMinutes);
     decisionTitles.configure(modelOn, resolveLanguage(settings.language));
   };

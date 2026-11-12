@@ -317,7 +317,7 @@ test('Home expiry thresholds and show-all use the real render/input path', async
     worker = (n) => board.workers.find((w) => w.id.endsWith(String(n)));
   const decision = (q) => board.decisions.find((d) => d.evidence[0].relativePath === `qa/${q}.md`);
   for (const [kind, item, minutes] of [
-    ['workers', worker(4), 5],
+    ['workers', worker(4), 10],
     ['workers', worker(3), 21],
     ['workers', worker(6), 15],
     ['decisions', decision('q1'), 22],
@@ -363,7 +363,7 @@ test('a current decision keeps its author after the finished job hides', async (
     state: initialMonitorState(),
     width: 56,
     height: 180,
-    nowMs: now + 5 * 60000,
+    nowMs: now + 10 * 60000,
   });
   assert.ok(!frame.workboard.snapshot.workers.some((w) => w.id.endsWith('4')));
   assert.match(plain(frame).join('\n'), /TEST-CUT · imp q1/);

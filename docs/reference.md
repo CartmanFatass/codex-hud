@@ -369,7 +369,7 @@ ticket-job scans.
 | `3` | Changes summary |
 | `4` or `v` | Inspector |
 
-**Keys on Home.** `1` returns Home; `2` opens Project; `3` opens Changes. Tab/Shift-Tab and Left/Right (`h`/`l`) switch Home ⇄ Project. Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection; `n`/`N` select the next/previous trouble without leaving Home. Enter, or a click on the selected item, expands/collapses in place. The card with the newest activity or settlement starts expanded; every other card, decision and question slab starts folded. HUD jobs and native agents compete together. Enter's choice for a card wins for the rest of the panel's life, even when another card becomes newest (display only, not saved). On a lane header Enter folds or
+**Keys on Home.** `1` returns Home; `2` opens Project; `3` opens Changes. Tab/Shift-Tab and Left/Right (`h`/`l`) switch Home ⇄ Project. Up/Down (`j`/`k`, PgUp/PgDn, Home/End) move the selection; `n`/`N` select the next/previous trouble without leaving Home. Enter, or a click on the selected item, expands/collapses in place. The newest settled result starts expanded until its fold time (see Card lifetimes); every other card, decision and question slab starts collapsed. HUD jobs and native agents compete together. Enter's choice for a card wins for the rest of the panel's life, even when another card becomes newest (display only, not saved). On a lane header Enter folds or
 unfolds the lane. `o` opens the selected item's file in `$EDITOR` in its own herdr tab: a job's open question with its
 answer file, else its `report.md`, else its `brief.md`; a decision's `qa` file. `v` or Space inspects. Esc returns from
 the Inspector, and standalone Esc on the main page exits as before. The footer
@@ -411,8 +411,10 @@ stale, unknown or no observed activity, or the stall threshold (default 10 minut
 progress; then working. This is presentation only: it changes no execution status, wait semantics, acceptance or
 source. Thin HUD jobs count the newest observed creation/STATUS/report/review/session-file mtime as activity: a working session's fresh writes prevent a false stall even if STATUS is old, with model text on or off and no extra transcript body read. A model call or counter alone does not advance activity. A worker's QA
 result or ordinary failure never becomes Home's needs-you. A facade result stays pinned at to accept until facade
-closure. Running/asking jobs stay; done jobs hide after 10 minutes, failed/stopped jobs after 30 minutes. Lanes show only with visible jobs, and **Decided for you** only with visible decisions. `+N older · a` at the end counts hidden jobs and decisions; while they are shown it reads `N older shown · a hide`. `a` reveals them newest first as muted, bandless one-row titles (no older prefix), one row each until Enter expands; `a` again hides them. These fixed lifetimes have no settings, and the scan bounds history to its newest 200 jobs. Expiry never
+closure. Running/asking jobs stay; a settled job or native agent folds, then hides (**Card lifetimes** below). Lanes show only with visible jobs, and **Decided for you** only with visible decisions. `+N older · a` at the end counts hidden jobs and decisions; while they are shown it reads `N older shown · a hide`. `a` reveals them newest first as muted, bandless one-row titles (no older prefix), one row each until Enter expands; `a` again hides them. Decisions keep fixed lifetimes (30 minutes, ◆ departures 2 hours), and the scan bounds history to its newest 200 jobs. Expiry never
 hides terminal human-needed workers, admitted daily one-way decisions, partial coverage or unclosed facade output.
+
+**Card lifetimes.** A settled HUD job or native agent has two stages, both counted from its settlement. After **Fold after** (default 5 minutes) it is one row, like a **Decided for you** row: state mark, role, title, outcome tag, state word and age. Enter opens it in full, Enter again folds it, and a folded card never opens by itself (the newest result opens by itself only before its fold time). After **Hide after** (default 15 minutes) it leaves Home for `a`; a failed or stopped card stays at least 30 minutes. A hide time shorter than the fold time counts as the fold time. Both are Settings → Panel rows, apply without a restart, and never touch running cards, cards asking the owner or decisions.
 
 **One renderer.** Home, Project and the kept passive pages share the workboard renderer. Callers without a sidecar project their native tree into the same Home lanes.
 
@@ -503,7 +505,7 @@ blocks keep their short ledger ID and description, not the raw dispatch text.
 
 ### Native agents on Home
 
-Each main session has one lane (`Claude · this session`, `Codex · this session`) beside the package lanes, with one card per native subagent, including custom Claude agents. Children indent one level; deeper descendants are flat and say `↳ parent`. Native cards use the job grammar: done hides after 10 minutes, failed/stopped after 30; `a` reveals them in place. A hidden parent never hides a live descendant. pi has no native subagents; its HUD helpers already appear as job cards.
+Each main session has one lane (`Claude · this session`, `Codex · this session`) beside the package lanes, with one card per native subagent, including custom Claude agents. Children indent one level; deeper descendants are flat and say `↳ parent`. Native cards use the job grammar and lifetimes: done folds after 5 minutes (Fold after) and hides after 15 (Hide after), failed/stopped hide after 30 at least; `a` reveals them in place. A hidden parent never hides a live descendant. pi has no native subagents; its HUD helpers already appear as job cards.
 
 Ordinary `hud panel` resolves the caller through `herdr pane current` at open time, only with `HERDR_PANE_ID` set (never the focused-pane fallback). A Claude session UUID binds its existing transcript under `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`: the cwd slug first, then at most 256 immediate project entries. Explicit `--root` or `--harness claude --session ID --source <project transcript directory>` wins. Missing evidence, herdr errors or a one-second timeout retain the unbound jobs view. The statusline writes no binding; no pane-keyed file is used.
 
@@ -574,7 +576,7 @@ Settings is one page with four open groups, in this order:
 | Group | Rows |
 |-------|------|
 | Display | Theme, Bar style, Icons, Language |
-| Panel | Home mode (`homeMode`: `default` / `recommended`, saved in `hud-settings.json`), Width, Stall threshold, Notifications, Refresh, Mouse |
+| Panel | Home mode (`homeMode`: `default` / `recommended`, saved in `hud-settings.json`), Width, Stall threshold, Fold after, Hide after, Notifications, Refresh, Mouse |
 | Models | Model text, Model, Decision API, Call cap (LLM only), Decision cap, Summary interval; separate calls-this-hour counters and Test API ([LLM](#llm)) |
 | Codex | Prefix key, Bar on launch |
 
@@ -603,6 +605,8 @@ The page is a draft: Theme and Icons paint in the draft value, so it is its own 
 Resetting the Models group turns generation off (`modelEnabled: false`) and preserves the connection, model and call cap. Calls this hour is real SmallModel usage, including a known zero while the master is off; there is no per-feature breakdown, and telemetry is deleted by CLEANUP-VIEWS. Test API is one summary row, not a per-tier block.
 
 Settings → Panel → Width applies to every client: Claude, pi and Codex. Presets are 40, 48, 56 (default), 64, 80 and 100 columns; ←/→ cycle through them. Other saved widths still load (16–200, including the old 32); 0 means the default, 56. Saving a changed Width resizes this panel immediately, keeping at least 41 columns for the agent when space permits; narrow windows give the panel less. The keeper reapplies the policy when the containing split/window changes size, not when someone drags the border. Saving unrelated settings also leaves a dragged border alone. `CODEX_HUD_TREE_WIDTH` remains an initial tmux override when no saved settings exist.
+
+Fold after (`cardFoldMinutes`, default 5: 1 / 2 / 5 / 10 / 15 / 30 minutes) and Hide after (`cardHideMinutes`, default 15: 5 / 10 / 15 / 30 / 60 / 120 minutes) set when a finished job or native agent shrinks to one row and when it leaves Home (Card lifetimes under Home); stored integers 1–1440, and a hide time below the fold time counts as the fold time. They apply to finished jobs and agents only, not to running cards, cards asking you or decisions.
 
 Related notification preferences share one row: Notifications (off, tmux, or tmux and the desktop).
 

@@ -7,7 +7,7 @@ import { validateChoice } from '../jev/model.js';
 import { ModelRuntimeStore } from './model-runtime-store.js';
 import type { SmallModel, ModelHandle } from './small-model.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
-import { currentWorker } from '../render/work-visibility.js';
+import { currentWorker, type CardTimes } from '../render/work-visibility.js';
 import type { Language } from '../render/i18n.js';
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const protectedCard = (w: OwnerWorker) => w.homeNeedsHuman || w.work?.request || w.work?.failed || ['failed', 'error'].includes(w.state);
@@ -24,10 +24,12 @@ export class HomeRecommendation {
   private rows = new Map<string, Ranking | undefined>();
   private active?: AbortController;
   private brief?: ModelHandle;
+  private life?: CardTimes;
   private store: ModelRuntimeStore;
   constructor(dir: string, private model: SmallModel, private changed = () => {}, private env = process.env,
     private fetcher: typeof fetch = fetch, private clock = Date.now) { this.store = new ModelRuntimeStore(join(dir, 'decision-api')); }
-  configure(on: boolean, language: Language, cap: number, provider: DecisionProviderId, summaryMinutes = 5): void {
+  configure(on: boolean, language: Language, cap: number, provider: DecisionProviderId, summaryMinutes = 5, life?: CardTimes): void {
+    this.life = life;
     let keyed = false;
     try { const c = readHudCredentials(this.env); keyed = !!(c.openaiApiKey || c.geminiApiKey || c.typesafeApiKey); } catch { /* off */ }
     if (!on || !keyed || language !== this.language || provider !== this.provider) this.stop();
@@ -36,7 +38,7 @@ export class HomeRecommendation {
   }
   stop(): void { this.active?.abort(); this.brief?.cancel(); this.brief = undefined; this.key = ''; }
   private workers(board: WorkboardSnapshot): OwnerWorker[] {
-    return board.workers.filter((w) => currentWorker(w, this.clock()) || protectedCard(w)).slice(0, 200).sort((a, b) => a.id.localeCompare(b.id));
+    return board.workers.filter((w) => currentWorker(w, this.clock(), this.life) || protectedCard(w)).slice(0, 200).sort((a, b) => a.id.localeCompare(b.id));
   }
   private fingerprint(workers: OwnerWorker[]): string {
     return hash(JSON.stringify([this.language, this.provider, workers.map((w) => [w.id, w.laneId, w.state, w.settledAt, !!protectedCard(w), w.work?.requestId, w.ask])]));
