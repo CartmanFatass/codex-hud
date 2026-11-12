@@ -1,6 +1,23 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
-## Now (2026-11-11, night): bottom bars and panel polish done, pushed; theme concepts running
+## Now (2026-11-12): M3b closing; themes and pages building in worktrees
+
+Landed today: hud_read/list perf (`5ac1ee5c`), bar perf (`476bed9f`), ONE-PAGE Home (`9e54af8b`), stopped-after-report
+shows done (`979414c6`), pi ribbon back in the editor's top border (`75519c63`, owner checked), CLEANUP-VIEWS
+(`a0357f7e`: Timeline, Activity hub, Summary, diagnostics deleted; Changes keeps only the git/worktree summary).
+pi-roles retries `agent_pane_busy` on a fresh split (Fishpref `798cc6b`).
+
+Running, each in its own worktree (`../MyHUD-wt/<WP>`, docs/delegation.md Conventions): PAGES-BUILD (Inspector,
+Settings, Help, Changes in Home's look) and BAR-THEMES-BUILD (Gauge Plates, Tide, Micro Glyphs, Stacked, Headline,
+Triptych; default unchanged).
+
+Next: perf finding 3 (standalone panel backoff) and a panel re-measure; the owner tries M3b; NATIVE-TREE; M4 Project
+(no to-tickets dependency). Open: `hud_close` cannot stop a working pi job (match the STATUS pid in pi-roles); panel
+open notification burst; panel self-close with its caller; retiring legacy skills (list features first); a Jev
+"did it finish" verdict only if rule-ambiguous stopped jobs show up. The Codex credits notice was already removed
+(`72d971ca`).
+
+## 2026-11-11, night: bottom bars and panel polish done, pushed; theme concepts running
 
 The owner is satisfied with the bars (pushed through `6f641d82`). The three bottom bars (Claude statusline, pi
 footer, Codex tmux bar) show one field set on one line:
