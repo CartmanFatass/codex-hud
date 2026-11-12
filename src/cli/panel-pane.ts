@@ -28,6 +28,33 @@ export async function panelPaneExists(pane: string, env: NodeJS.ProcessEnv): Pro
   return result.ok && isRecord(herdrResult(result.stdout)?.pane);
 }
 
+/** Only an authoritative missing-pane reply ends the panel, not a failed transport. */
+export function watchPanelCaller(env: NodeJS.ProcessEnv, onMissing: () => void): () => void {
+  const caller = env.HUD_PANEL_CALLER_PANE;
+  if (!caller || !env.HERDR_PANE_ID || caller === env.HERDR_PANE_ID) return () => {};
+  const abort = new AbortController();
+  let busy = false;
+  const timer = setInterval(() => {
+    if (busy) return;
+    busy = true;
+    void runHerdr(['pane', 'get', caller], env, { budgetMs: 1000, signal: abort.signal })
+      .then((result) => {
+        if (abort.signal.aborted) return;
+        if (result.reason === 'unavailable') clearInterval(timer);
+        const error = herdrResult(result.stderr)?.error;
+        if (result.reason === 'failed' && isRecord(error) && error.code === 'not_found') {
+          clearInterval(timer);
+          onMissing();
+        }
+      })
+      .finally(() => { busy = false; });
+  }, 3000);
+  return () => {
+    clearInterval(timer);
+    abort.abort();
+  };
+}
+
 export async function openPanelPane(
   argv: string[],
   cwd: string,

@@ -133,6 +133,7 @@ export class Notifier {
   private readonly lastFired = new Map<string, { fingerprint: string; at: number }>();
   private lastActiveAgents: number | null = null;
   private lastCompletedAgents = 0;
+  private initialized = false;
 
   constructor(private options: NotifierOptions) {}
 
@@ -159,9 +160,14 @@ export class Notifier {
       ...this.agentEvents(data),
       ...thin,
     ];
-    if (!this.options.enabled) {
-      // Still advance the agent baseline, so enabling mid-session does not
-      // immediately replay everything that already happened.
+    if (!this.initialized || !this.options.enabled) {
+      // Opening (or enabling) the panel must not replay existing events.
+      this.initialized = true;
+      for (const event of candidates)
+        this.lastFired.set(event.kind, {
+          fingerprint: event.fingerprint,
+          at: this.lastFired.get(event.kind)?.at ?? -Infinity,
+        });
       return [];
     }
 

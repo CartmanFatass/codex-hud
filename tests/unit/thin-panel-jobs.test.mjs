@@ -184,7 +184,15 @@ test('v7 expanded Work: whole Tier-1 text, Home: exact EN/ZH cells, attention la
   const enter = handleMonitorInput(work.state, { type: 'key', key: 'open-session' }, { tree: f.tree, frame: work });
   assert.deepEqual(enter.action.files, [join(f.askDir, 'qa/q2.md'), join(f.askDir, 'qa/q2.answer.md')]);
   const notifier = new Notifier({ enabled: true, cooldownMs: 0, deliver() {} });
-  assert.ok(notifier.update({}, now, board).some((e) => e.message.includes(question)));
+  assert.deepEqual(notifier.update({}, now, board), [], 'existing questions and settled jobs are the baseline');
+  f.put(join(f.askDir, 'qa/q3.answer.md'), 'a) separate model line', 0);
+  f.put(join(f.askDir, 'qa/q4.md'), `# Question\n\n${question}\n\nDefault if unanswered: yes\n`, 0);
+  await f.pipeline.refresh();
+  const changed = f.pipeline.workboard(f.tree);
+  const sent = notifier.update({}, now + 1, changed);
+  assert.equal(sent.length, 1, 'only the later question notifies');
+  assert.ok(sent[0].message.includes(question));
+  assert.deepEqual(notifier.update({}, now + 2, changed), []);
 });
 test('Home is a scannable summary: a short question card and one row per decision; Work has the whole', async (t) => {
   const f = fixture(t);

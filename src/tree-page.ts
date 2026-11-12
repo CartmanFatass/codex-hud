@@ -1,5 +1,5 @@
 import { nativeCallsOnly } from './core/link/view-model.js';
-import { openEditorPane } from './cli/panel-pane.js';
+import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pane.js';
 import { pathToFileURL } from 'node:url';
 import { makeSourceId } from './core/identity.js';
 import { externalRootHash } from './roles/external-association.js';
@@ -593,6 +593,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     pane: process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null,
   });
   let disposeLifetime: (() => void) | undefined;
+  let disposeCaller: (() => void) | undefined;
   let nativeTree: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };
   let boundJobRoot = '';
   let jobComposition: JobTreeResult | null = null;
@@ -1463,10 +1464,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       }
     }
   };
-  const finish = (user = false) => {
+  const finish = (user = false, callerGone = false) => {
     if (closed) return;
     closed = true;
     disposeLifetime?.();
+    disposeCaller?.();
     const clipboardClosing = clipboard.close();
     jobPipeline.dispose();
     jobs.stop();
@@ -1496,7 +1498,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     snapshotWriter.remove();
     if (user) requestEnsureSingle();
     // Settle bounded local telemetry writes before the terminal process exits.
-    void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing]).finally(resolveDone);
+    void Promise.all([model.flushTelemetry().catch(() => {}), clipboardClosing]).finally(async () => {
+      if (callerGone) await closePanelPane(process.env.HERDR_PANE_ID!, process.env).catch(() => {});
+      resolveDone();
+    });
   };
   const switchNativeSession = (id: string) => {
     if (STANDALONE_PANEL) {
@@ -2044,6 +2049,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   await new Promise<void>((resolve) => {
     resolveDone = resolve;
     disposeLifetime = options.installCleanup?.(onFinish);
+    disposeCaller = watchPanelCaller(process.env, () => finish(false, true));
     process.once('SIGINT', onFinish);
     process.once('SIGTERM', onFinish);
     process.once('SIGHUP', onFinish);
