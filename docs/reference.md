@@ -1026,6 +1026,9 @@ Claude and pi open it with `/hud`; Codex uses F12. See `hud panel --help` for sy
 The MCP exposes six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`,
 `hud_respond` and `hud_close`. Roles and the dispatch convention come from files;
 job records and reports are plain files under `$HUD_HOME/jobs`.
+Pi history stays in pi's default `~/.pi/agent/sessions/<cwd-dir>/`; `<job>/sessions/`
+contains links to primary/helper sessions, not history copies. Deleting a job leaves history intact;
+`pi --session <session_id>` resumes it from pi's default storage.
 `hud_create` accepts `role`, `request_key`, `task`, optional `cwd` and display-only `package`.
 For pi roles only, override `model`/`thinking` or set boolean `lens`, `mcp`, `tps`, `ui_ext`,
 `skills`, `split`; omitted switches keep pi-role defaults, and `split` defaults to the role file.

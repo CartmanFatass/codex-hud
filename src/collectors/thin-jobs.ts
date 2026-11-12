@@ -117,8 +117,8 @@ function latestSession(directory: string): OwnerWorker['sessionFile'] {
       .filter((n) => n.endsWith('.jsonl'))
       .flatMap((n) => {
         try {
-          const path = join(root, n), st = fs.lstatSync(path);
-          return st.isFile() ? [{ path, at: st.mtimeMs }] : [];
+          const path = fs.realpathSync(join(root, n)), st = fs.statSync(path);
+          return path.endsWith('.jsonl') && st.isFile() ? [{ path, at: st.mtimeMs }] : [];
         } catch {
           return [];
         }

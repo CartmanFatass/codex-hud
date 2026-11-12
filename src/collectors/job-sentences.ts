@@ -51,7 +51,10 @@ export function jobActivity(home: string, w: OwnerWorker, node?: SubagentTreeNod
   if (node && !node.rolloutPath) return { text: '', stamp: '', at: 0, items: [] };
   const dir = resolve(home, 'jobs', w.id.slice(9), 'sessions');
   const file = node?.rolloutPath ?? w.sessionFile?.path ?? names(dir).filter((n) => n.endsWith('.jsonl'))
-    .map((n) => ({ file: join(dir, n), at: (() => { try { return fs.lstatSync(join(dir, n)).mtimeMs; } catch { return 0; } })() }))
+    .flatMap((n) => {
+      try { const file = fs.realpathSync(join(dir, n)), st = fs.statSync(file); return file.endsWith('.jsonl') && st.isFile() ? [{ file, at: st.mtimeMs }] : []; }
+      catch { return []; }
+    })
     .sort((a, b) => b.at - a.at)[0]?.file;
   const activity = file ? read(file, 32768, true) : { text: '', stamp: '', at: 0 };
   const items: { id?: string; text: string }[] = [];

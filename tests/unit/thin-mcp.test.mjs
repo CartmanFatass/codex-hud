@@ -465,11 +465,10 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     '--orchestrator',
     'w4E:p1',
     '--',
-    '--session-dir',
-    join(job.task_dir, 'sessions'),
     '--tui-mode',
     'regular',
   ]);
+  assert.equal(commands.find((c) => c.args[1] === 'start').args.includes('--session-dir'), false);
   const session = Object.fromEntries(
     fs
       .readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8')
@@ -817,6 +816,13 @@ test(
   }
 );
 
+test('thin resume forwards the session ID without overriding pi default lookup', { timeout: 10000 }, async (t) => {
+  const f=await fixture(t);
+  await f.call('hud_create',{role:'imp',request_key:'synthetic-resume',task:'Continue synthetic history',pi_args:['--session','11111111-2222-4333-8444-555555555555']});
+  const start=f.commands().find((c)=>c.args[0]==='agent' && c.args[1]==='start').args;
+  assert.deepEqual(start.slice(-2),['--session','11111111-2222-4333-8444-555555555555']);
+  assert.equal(start.includes('--session-dir'),false);
+});
 test('thin pi launch switches and verbatim arguments reach argv, receipts and reads', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   for (const enabled of [false, true]) {

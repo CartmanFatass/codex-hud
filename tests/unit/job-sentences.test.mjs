@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import fsMutable from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { JobSentences } from '../../dist/collectors/job-sentences.js';
+import { JobSentences, jobActivity } from '../../dist/collectors/job-sentences.js';
 import { DecisionTitles } from '../../dist/collectors/decision-titles.js';
 import { decisionRows, decisionTitle } from '../../dist/render/workboard-rows.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
@@ -288,6 +288,29 @@ test('ordinary cards start collapsed, expand the whole marked sentence and factu
     assert.match(text(), /Factual progress/);
     board.workers[0].modelSentence = f.reply;
   }
+});
+test('linked sessions select target mtime, ignore dangling/nonregular targets and survive job deletion', async (t) => {
+  const f=fixture(t), sessions=join(f.dir,'sessions'), storage=join(f.home,'pi/agent/sessions/synthetic-cwd');
+  fs.mkdirSync(sessions);fs.mkdirSync(storage,{recursive:true});
+  const old=join(storage,'old.jsonl'), newest=join(storage,'new.jsonl');
+  fs.writeFileSync(old,'old history\n');
+  fs.writeFileSync(newest,JSON.stringify({type:'message',message:{role:'assistant',content:[{type:'text',text:'Linked synthetic activity'},{type:'toolCall',id:'read-1',name:'read',arguments:{path:'linked.ts'}}]}})+'\n');
+  const fresh=f.now-1000;
+  fs.utimesSync(old,new Date(f.now-10000),new Date(f.now-10000));
+  fs.utimesSync(newest,new Date(fresh),new Date(fresh));
+  fs.symlinkSync(newest,join(sessions,'a-new.jsonl'));
+  fs.symlinkSync(old,join(sessions,'z-old.jsonl')); // Link creation order must not supply freshness.
+  fs.symlinkSync(join(storage,'missing.jsonl'),join(sessions,'dangling.jsonl'));
+  fs.symlinkSync(storage,join(sessions,'directory.jsonl'));
+  const worker=f.board().workers[0];
+  assert.deepEqual(worker.sessionFile,{path:newest,at:fresh});
+  assert.match(jobActivity(f.home,worker).text,/Linked synthetic activity/);
+  assert.match(jobActivity(f.home,{...worker,sessionFile:undefined}).text,/Linked synthetic activity/,'fallback reader follows links too');
+  await f.update();
+  assert.match(f.calls[0].messages[1].content,/Linked synthetic activity/,'sentence input reads real linked history');
+  fs.rmSync(f.dir,{recursive:true});
+  assert.match(fs.readFileSync(newest,'utf8'),/Linked synthetic activity/);
+  assert.equal(fs.readFileSync(old,'utf8'),'old history\n');
 });
 for (const mode of ['on', 'off'])
   test(`working job stall age uses newest session mtime without body reads: ${mode}`, (t) => {

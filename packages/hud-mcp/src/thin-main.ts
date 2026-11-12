@@ -264,13 +264,12 @@ async function dispatchPi(job: Job, role: Role) {
       if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
     if (job.ui_ext === false) argv.push('--no-ui-ext');
     if (job.skills === true) argv.push('--skills');
-    argv.push('--', '--session-dir', join(dir, 'sessions'), '--tui-mode', 'regular');
+    argv.push('--', '--tui-mode', 'regular');
     for (const key of ['model', 'thinking'] as const) if (role[key] !== undefined) argv.push(`--${key}`, role[key]);
     argv.push(...(job.pi_args ?? []));
     const built = await run(launcher, argv, job.cwd);
     if (built.exit_code !== 0) return built;
     const piArgs: string[] = JSON.parse(built.stdout);
-    fs.mkdirSync(join(dir, 'sessions'), { recursive: true });
     fs.mkdirSync(join(dir, 'qa'), { recursive: true });
     const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
     const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';

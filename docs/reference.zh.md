@@ -572,6 +572,12 @@ codex-hud --json | jq '.context.percent, .agents.active, .attention[].label'
 `lastError`（`source`、`message`、`at`）是最近一次失败的采集。两者在发生之前都不出现。
 单纯又一次成功读取不会触发重写，所以 `lastReadAt` 和 `updatedAt` 一样，是“截至上次写入”的值。
 
+### pi 任务目录与会话历史
+
+任务记录和报告位于 `$HUD_HOME/jobs/<job>/`；pi 会话历史保存在 pi 默认的
+`~/.pi/agent/sessions/<cwd-dir>/`，任务的 `sessions/` 仅链接到主代理／助手的真实文件。
+删除任务目录不会删除历史；用 `pi --session <session_id>` 从 pi 默认目录恢复会话。
+
 ## 配置
 
 ### 环境变量
