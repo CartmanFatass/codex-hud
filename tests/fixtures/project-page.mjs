@@ -52,7 +52,7 @@ export async function projectFixture(root) {
     return hash;
   };
   const tree = object('tree', ''), stamp = NOW / 1000 - 7200;
-  const hash = object('commit', `tree ${tree}\nauthor Synthetic <synthetic@example.invalid> ${stamp} +0000\ncommitter Synthetic <synthetic@example.invalid> ${stamp} +0000\n\nSynthetic Project baseline\n`);
+  const hash = object('commit', `tree ${tree}\nauthor Synthetic <synthetic@invalid> ${stamp} +0000\ncommitter Synthetic <synthetic@invalid> ${stamp} +0000\n\nSynthetic Project baseline\n`);
   put(join(cwd, '.git/HEAD'), 'ref: refs/heads/synthetic-project\n');
   put(join(cwd, '.git/refs/heads/synthetic-project'), hash + '\n');
   const linked = ['NATIVE-TREE', 'NO-JOB'].map((name) => {

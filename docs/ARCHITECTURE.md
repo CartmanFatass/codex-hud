@@ -259,7 +259,6 @@ src/render/          pure rendering: bar modules, panel panes, cards, theme, i18
 src/utils/           tmux input, key forwarding, session navigation, profiling …
 tests/unit/          node:test suites (*.test.ts compiled; *.mjs run against dist/)
 tests/fixtures/      synthetic HudData builders, recorded rollouts, README demo scenes
-tests/integration/   tmux shell suites (tests/run-integration.sh)
 docs/                reference (EN/ZH), fixed issues, reviews, this file
 ```
 
@@ -1025,9 +1024,8 @@ npm run snapshots:update # rewrite every tests/fixtures/*frames*.json and bar-th
                          #   name files to limit it; review the diff: an unintended change is a regression
 ```
 
-**Continuous integration.** CI (`.github/workflows/ci.yml`) runs `npm test` on
-Node 18, 20 and 22 with both empty `NO_COLOR` and `NO_COLOR=1`, and the
-integration suite with tmux on Node 20.
+**Continuous integration.** CI (`.github/workflows/ci.yml`) runs `npm test` and
+`check:fixtures` on Node 24 with both empty `NO_COLOR` and `NO_COLOR=1`, plus the Python cx-continue unit tests.
 
 **Fixtures** (`tests/fixtures/`):
 
@@ -1047,10 +1045,6 @@ integration suite with tmux on Node 20.
   remove `NO_COLOR` globally to make colour assertions pass. No-colour expectations
   choose `theme: 'none'` explicitly; `narrow-modes.test.ts` also checks the real
   environment override for saved settings and navigation at narrow widths.
-- `test-narrow-panel-real-tmux.sh` drives a private tmux client with actual mouse
-  input, reads the resulting screen, and checks modal return and input forwarding
-  at 32/40/48/56 columns, in EN/ZH and both colour modes. Its session fixtures use
-  the local date for the rollout directory, matching the session finder.
 
 **Visual regressions.** `tests/fixtures/visual-baselines.ts` creates fixed-time
 EN/ZH frames across five widths and the shared presets, plus

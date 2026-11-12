@@ -137,7 +137,7 @@ function preserveSessions(dir) {
     }
     return true;
   } catch (error) {
-    log(`keep ${dir.split('/').at(-1)} session preservation: ${error.message}`);
+    warn(`keep ${dir} session preservation`, `keep ${dir.split('/').at(-1)} session preservation: ${error.message}`);
     return false;
   }
 }
@@ -165,10 +165,10 @@ function scan(retryWatch = false) {
         for (const link of loops) { fs.unlinkSync(link); log(`unlink loop ${link}`); }
       } catch (error) { warn(`keep ${id} scan`, `keep ${id} scan: ${error.message}`); }
       const jobFile = join(dir, 'job.json'), statusFile = join(dir, 'STATUS.json');
-      let job, status;
-      try { job = json(jobFile); status = json(statusFile); }
+      let job, status, session;
+      try { job = json(jobFile); status = json(statusFile); session = read(join(dir, 'SESSION.txt')); }
+      // Unreadable lifecycle or tab evidence may still belong to an open job.
       catch (error) { if (error.code !== 'ENOENT') open = true; throw error; }
-      const session = read(join(dir, 'SESSION.txt'));
       const tab = session?.match(/^TAB=([^\r\n]+)$/m)?.[1];
       if (tab && closedTabs.has(tab) && !['closed', 'failed', 'stopped'].includes(status?.state)) {
         status = { ...status, state: 'failed', exit_reason: 'tab closed', ended_at: new Date().toISOString() };
@@ -207,7 +207,9 @@ function scan(retryWatch = false) {
         }
       }
       const result = spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000 });
-      log(`reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}`);
+      const message = `reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}`;
+      if (result.status === 0) log(message);
+      else warn(`reap ${id}`, message);
       if (result.status === 0 && job) {
         // Read again: hud_read/send/create may have updated the receipt during reap.
         const latest = json(jobFile);

@@ -180,7 +180,7 @@ test('an expired terminal job with unreadable sessions is kept but does not keep
   assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
 });
 
-for (const file of ['job.json', 'STATUS.json']) {
+for (const file of ['job.json', 'STATUS.json', 'SESSION.txt']) {
   test(`an unreadable ${file} counts as possibly open until it can be read`, {
     timeout: 10000, skip: process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
   }, async (t) => {
@@ -341,6 +341,45 @@ test('permanent watch failure still scans and exits with no open jobs', { timeou
   assert.match(f.log(), /watch error: synthetic permanent watch failure/);
   assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
 });
+
+for (const kind of ['session preservation', 'reap']) {
+  test(`permanently failing ${kind} warns once per minute per job, not per scan`, { timeout: 15000 }, async (t) => {
+    const f = fixture(t), open = f.job({ state: 'working' });
+    const bad = [f.job(expired(), {}, kind === 'reap'), f.job(expired(), {}, kind === 'reap')];
+    if (kind === 'session preservation') {
+      for (const dir of bad) realSession(dir, 'sessions', { type: 'session' });
+    } else {
+      fs.appendFileSync(join(f.home, '..', 'bin', 'pi-role-reap'), 'process.exitCode = 1;\n');
+    }
+    const clock = join(f.home, 'clock'), now = Date.now();
+    fs.writeFileSync(clock, String(now));
+    const { child, exited } = f.start(scanProbe + `
+fs.watch = () => { throw Error('synthetic permanent watch failure'); };
+syncBuiltinESMExports();
+Date.now = () => Number(fs.readFileSync(${JSON.stringify(clock)}, 'utf8'));`);
+    const warnings = (dir) => f.log().split('\n').filter((line) => line.includes(
+      kind === 'reap' ? `reap ${dir.split('/').at(-1)} ` : `keep ${dir.split('/').at(-1)} session preservation:`));
+    await until(() => fs.existsSync(join(f.home, 'scans')) && bad.every((dir) => warnings(dir).length >= 1));
+    await new Promise((done) => setTimeout(done, 2200));
+    assert.equal(child.exitCode, null, 'working job keeps degraded scans running');
+    assert.ok(fs.readFileSync(join(f.home, 'scans'), 'utf8').trim().split('\n').length >= 3);
+    for (const dir of bad) assert.equal(warnings(dir).length, 1, 'repeated failures within a minute are suppressed');
+    fs.writeFileSync(clock, String(now + 59999));
+    await new Promise((done) => setTimeout(done, 1200));
+    for (const dir of bad) assert.equal(warnings(dir).length, 1, 'still suppressed just before one minute');
+    fs.writeFileSync(clock, String(now + 60000));
+    await until(() => bad.every((dir) => warnings(dir).length >= 2));
+    for (const dir of bad) assert.equal(warnings(dir).length, 2, 'each job warns again at one minute');
+    if (kind === 'reap') {
+      assert.ok(fs.readFileSync(join(f.home, 'reaps'), 'utf8').trim().split('\n').length >= 8, 'reap keeps retrying despite throttled logs');
+      for (const dir of bad) assert.equal(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).reaped_at, undefined);
+    }
+    fs.writeFileSync(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+    await exited;
+    assert.equal(child.exitCode, 0);
+    assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+  });
+}
 
 test('degraded watching polls for new jobs while a failed tab deadline keeps it alive', { timeout: 10000 }, async (t) => {
   const f = fixture(t), failed = f.job({ state: 'failed', ended_at: new Date().toISOString() }, {}, true);

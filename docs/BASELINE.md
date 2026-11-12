@@ -122,18 +122,10 @@ four frames a second. The cost buys the fitting pass, which renders each
 field's variants before choosing between them, and now also measures the
 grouped and right-aligned joins.
 
-## Test counts
+## Unit suites
 
-`npm test` builds `dist/` and `dist-test/`, then runs both unit suites: the
-TypeScript tests compiled into `dist-test/`, and the `.mjs` tests that import
-from `dist/` directly. Three of those `.mjs` suites had drifted out of date and
-now run again, which is why they are counted here.
-
-| Suite | Command | Count |
-|---|---|---|
-| Unit, TypeScript | `npm run test:unit` | 285 tests |
-| Unit, `.mjs` | `npm run test:mjs` | 16 suites |
-| Full baseline | `npm test` | Both unit suites above |
+`npm test` builds the HUD and MCP, then runs the current TypeScript unit tests
+(`npm run test:unit`) and `.mjs` tests (`npm run test:mjs`); its output reports the counts.
 
 The historical tmux integration suites were removed.
 
