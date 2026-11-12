@@ -1,6 +1,8 @@
 import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pane.js';
 import { ProjectCollector, projectShown, type ProjectSnapshot } from './collectors/project-board.js';
 import { pathToFileURL } from 'node:url';
+import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
+import { theme } from './render/colors.js';
 import { makeSourceId } from './core/identity.js';
 import { externalRootHash } from './roles/external-association.js';
 import { parseRosterRoot, formatRosterRoot } from './roles/selection.js';
@@ -54,6 +56,7 @@ import { TreeScanStore } from './collectors/tree-scan-store.js';
 import { WorktreeCollector, worktreeSources, type WorktreesSnapshot } from './collectors/worktrees.js';
 import {
   renderMonitor,
+  fit,
   initialMonitorState,
   reconcileMonitor,
   handleMonitorInput,
@@ -499,6 +502,8 @@ function requestEnsureSingle(): void {
 }
 
 export async function runLivePage(options: { installCleanup?: (end: () => void) => () => void } = {}): Promise<void> {
+  const reload = new PanelReload(), place = readPanelPlace();
+  let restarting: Promise<void> | undefined;
   startProfiling('panel');
   if (STANDALONE_PANEL)
     for (const key of [
@@ -567,8 +572,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     next.modes = monitorModes(settings);
     return { ...next, ...monitorSettings(settings) };
   };
-  let state = configuredState();
-  let settingsPage: SettingsPageState | null = null;
+  let state = place?.state ?? configuredState();
+  let settingsPage: SettingsPageState | null = place?.settings
+    ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: decisionKeys(readHudCredentials()), message: '' } : null;
   let settingsFrame: SettingsFrame | undefined;
   let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
   let confirmationFrame: SettingsConfirmationFrame | undefined;
@@ -669,7 +675,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let resolveDone = () => {};
 
   const render = () => {
-    if (closed) return;
+    if (closed || (place && !collected)) return;
     syncPanelView();
     const output = time('render', () => {
       let lines: string[];
@@ -724,6 +730,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       }
       return lines;
     });
+    if (reload.failed) output[output.length - 1] = fit(theme.dim(t('new build failed to load')), process.stdout.columns || 30);
     const update = frameDiff(lastPaint, output);
     lastPaint = output;
     if (update) time('write', () => process.stdout.write(update));
@@ -862,6 +869,14 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       collectionEpoch++;
     }
     if (closed || collecting) return;
+    const ready = await reload.poll(() => Boolean(settingsPage && settingsDirty(settingsPage)));
+    if (closed) return;
+    if (ready) {
+      restarting = reload.restart({ state, settings: settingsPage && { selected: settingsPage.selected, offset: settingsPage.offset } }, () => finish());
+      await restarting;
+      return;
+    }
+    if (collecting) return;
     const epoch = collectionEpoch;
     await timeAsync('collect', collectNow);
     if (epoch === collectionEpoch) {
@@ -1325,7 +1340,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const initialCommand = process.env.CODEX_HUD_INITIAL_COMMAND;
   delete process.env.CODEX_HUD_INITIAL_COMMAND;
   const runInitialCommand = () => {
-    if (initialCommand && isPanelCommand(initialCommand)) dispatch([{ type: 'command', command: initialCommand }]);
+    if (!place && initialCommand && isPanelCommand(initialCommand)) dispatch([{ type: 'command', command: initialCommand }]);
   };
   const onData = (chunk: Buffer) => {
     if (escapeTimer) clearTimeout(escapeTimer);
@@ -1364,6 +1379,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     scheduleRepaint();
     timers.push(setInterval(() => void refreshGit(), 3000));
   });
+  await restarting;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)

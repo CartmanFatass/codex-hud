@@ -427,6 +427,10 @@ are unchanged. Light/terminal palettes retain their legible equivalents. Mono an
 
 ## The panel
 
+### Automatic build reload
+
+The panel checks its own installed `dist/tree-page.js` on each refresh. After a change is quiet for two seconds, it checks that the new entry and its imports load, then restarts in the same pane with the same arguments and environment (Codex, Claude and pi alike). Home/Project, selection, scroll, expanded/folded cards, show-all and open Inspector/Settings/Help are retained through private restart state. Settings drafts are never carried: unsaved edits delay the restart until saved or discarded. A bad build leaves the old panel running with a dim “new build failed to load” notice until the next good build. Statusline bars are separate and unchanged.
+
 ### Panes
 
 Home and Project are the two tabs. Changes (repository/worktree summary), the Inspector, Settings and Help remain. There is no Agents pane, compact-tree layout, pane zoom, agent log, native session-switch control, Timeline, activity hub, Summary or diagnostics page.

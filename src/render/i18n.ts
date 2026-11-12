@@ -222,6 +222,7 @@ const ZH: Record<string, string> = {
   'Refresh: {reason}': '刷新：{reason}',
   'Panel preferences could not be saved: {reason}': '面板偏好无法保存：{reason}',
   Saved: '已保存',
+  'new build failed to load': '新构建加载失败',
   'Save failed: {reason}': '保存失败：{reason}',
 
   // Settings page: whether the panel's reads go through

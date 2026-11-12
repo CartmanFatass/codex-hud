@@ -285,6 +285,10 @@ Data flows one way:
 Collection does all the I/O. Rendering is pure: given the same data, `nowMs`
 and settings, it returns the same lines.
 
+### Panel lifecycle: build reload
+
+`tree-page.ts` uses `utils/panel-reload.ts` to stat its release-relative entry once per collection (no watcher). A changed signature must stay quiet for two seconds; a bounded child import validates the entry and dependencies before replacement. A failed generation is tried only once and leaves a dim notice; another change permits a fresh attempt. Dirty Settings block replacement, including edits made during validation. Private environment state carries only display state and Settings cursor, with Sets revived and the handoff consumed before the first collected frame; the initial opening command is not replayed. Replacement preserves startup argv/env via `execve`; older Node uses one signal-forwarding supervisor and restart-exit handoffs, never nested waiting parents. This lifecycle is shared by tmux and herdr panels, not bars.
+
 ---
 
 ## 2. Repository map
