@@ -84,7 +84,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · SETTLE-FIX · closing an idle job no longer resets its 完成 age and re-asks its outcome label (8ada150e)
 - try · M4 · CARD-FOLD · owner: settled cards fold to one line after 5 min, hide into `a` after 15 min; both in Settings (frontend-implementer) (b9597884)
 - try · M4 · SNAPSHOTS · `npm run snapshots:update` rewrites every frame snapshot (51d16a29)
-- working · M4 · PANEL-RELOAD · owner: the panel restarts itself after a new build, keeping its place (imp)
+- try · M4 · PANEL-RELOAD · owner: the panel restarts itself after a new build, keeping its place (0d160038)
 - try · M4 · CALL-BREAKDOWN · owner: Settings shows this hour's calls per feature, LLM and Decision (209d2c58)
 - working · M4 · M4-REVIEW · m4-close 04–05: whole-project two-reviewer review and its fixes (Sol xhigh + DS max on 3b17f7a0)
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
