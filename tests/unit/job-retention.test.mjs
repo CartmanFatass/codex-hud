@@ -56,6 +56,7 @@ fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
 function realSession(dir, layout = 'sessions', header = { type: 'session', cwd: '/synthetic/work.space/repo' }) {
   const sessions = join(dir, layout);
   fs.mkdirSync(sessions, { recursive: true });
+  if (layout.startsWith('.dispatch/')) fs.writeFileSync(join(dir, '.dispatch', 'current.json'), '{}\n');
   const source = join(sessions, 'synthetic-session.jsonl');
   const bytes = Buffer.from(JSON.stringify(header) + '\r\n{"type":"message","text":"合成 session"}\n');
   fs.writeFileSync(source, bytes);
@@ -73,6 +74,56 @@ for (const layout of ['sessions', '.dispatch/helper/sessions']) {
     assert.equal(child.exitCode, 0);
     assert.deepEqual(fs.readFileSync(destination(f.pi)), bytes);
     assert.equal(fs.existsSync(dir), false);
+  });
+}
+
+test('helper receipt beside sonic sessions keeps the watcher alive and preserves expired history', { timeout: 10000 }, async (t) => {
+  const f = fixture(t), open = f.job({ state: 'working' }), old = f.job(expired());
+  const active = realSession(open, '.dispatch/sonic-1/sessions');
+  const settled = realSession(old, '.dispatch/sonic-1/sessions');
+  const { child, exited, stderr } = f.start();
+  await until(() => child.exitCode !== null || !fs.existsSync(old));
+  assert.equal(child.exitCode, null, stderr());
+  assert.equal(fs.existsSync(old), false);
+  assert.deepEqual(fs.readFileSync(destination(f.pi)), settled.bytes);
+  assert.deepEqual(fs.readFileSync(active.source), active.bytes, 'active sessions stay in the job');
+  fs.writeFileSync(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.deepEqual(fs.readFileSync(active.source), active.bytes);
+});
+
+for (const odd of ['dispatch file', 'linked helper file', 'unreadable sessions']) {
+  test(`an odd ${odd} does not block deletion and reaping of other jobs`, {
+    timeout: 10000, skip: odd === 'unreadable sessions' && process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
+  }, async (t) => {
+    let unreadable;
+    t.after(() => { if (unreadable) fs.chmodSync(unreadable, 0o700); });
+    const f = fixture(t), bad = f.job(expired()), old = f.job(expired());
+    const tabbed = f.job({ state: 'closed', ended_at: new Date().toISOString() }, {}, true);
+    const { source, bytes } = realSession(bad);
+    if (odd === 'dispatch file') fs.writeFileSync(join(bad, '.dispatch'), 'Synthetic incomplete helper layout.\n');
+    if (odd === 'linked helper file') {
+      fs.mkdirSync(join(bad, '.dispatch'));
+      fs.symlinkSync(join(bad, 'report.md'), join(bad, '.dispatch', 'linked'));
+    }
+    if (odd === 'unreadable sessions') {
+      unreadable = join(bad, 'sessions');
+      fs.chmodSync(unreadable, 0);
+    }
+    const { child, exited } = f.start();
+    await exited;
+    if (unreadable) fs.chmodSync(unreadable, 0o700);
+    assert.equal(child.exitCode, 0);
+    const kept = odd !== 'linked helper file';
+    assert.deepEqual(fs.readFileSync(kept ? source : destination(f.pi)), bytes);
+    assert.equal(fs.existsSync(bad), kept, 'uncertain session discovery retains the job; linked helpers are ignored');
+    assert.equal(fs.existsSync(old), false);
+    assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), tabbed + '\n');
+    assert.ok(JSON.parse(fs.readFileSync(join(tabbed, 'job.json'), 'utf8')).reaped_at);
+    const errors = f.log().split('\n').filter((line) => line.includes(`keep ${bad.split('/').at(-1)} `));
+    assert.equal(errors.length, kept ? 1 : 0, 'one diagnostic for each bad job in this scan');
+    if (kept) assert.match(errors[0], odd === 'dispatch file' ? /ENOTDIR/ : /EACCES/);
   });
 }
 
@@ -216,6 +267,31 @@ test('permanent watch failure still scans and exits with no open jobs', { timeou
   assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
 });
 
+test('degraded watching polls for new jobs while a failed tab deadline keeps it alive', { timeout: 10000 }, async (t) => {
+  const f = fixture(t), failed = f.job({ state: 'failed', ended_at: new Date().toISOString() }, {}, true);
+  const { child, exited, stderr } = f.start(permanentWatchFailure + `
+const timeout = globalThis.setTimeout;
+globalThis.setTimeout = (callback, delay, ...args) => {
+  fs.appendFileSync(process.env.HUD_HOME + '/timers', delay + '\\n');
+  return timeout(callback, delay, ...args);
+};`);
+  await until(() => child.exitCode !== null || fs.existsSync(join(f.home, 'timers')));
+  assert.equal(child.exitCode, null, stderr());
+  const second = f.job({ state: 'working' }, {}, true);
+  fs.writeFileSync(join(second, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  const settled = Date.now();
+  await until(() => child.exitCode !== null || JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at);
+  assert.equal(child.exitCode, null, 'the first failed deadline is still pending');
+  assert.ok(Date.now() - settled <= 4000, 'new job reaped within a few fallback intervals');
+  assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), second + '\n');
+  assert.equal(JSON.parse(fs.readFileSync(join(failed, 'job.json'), 'utf8')).reaped_at, undefined);
+  fs.writeFileSync(join(failed, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), second + '\n' + failed + '\n');
+  assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+});
+
 for (const fault of ['permanent startup failure', 'later error']) {
   test(`watcher polls after ${fault}, handles a newly settled job and exits`, { timeout: 10000 }, async (t) => {
     const f = fixture(t), dir = f.job({ state: 'working' }, {}, true);
@@ -244,8 +320,74 @@ syncBuiltinESMExports();`;
     assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
     if (fault === 'permanent startup failure') {
       assert.equal(f.log().split('\n').filter((line) => line.includes('watch error: synthetic permanent')).length, 2,
-        'one startup attempt and one retry after the first scan');
+        'startup and first catch-up retry; final scan exits without retrying');
     }
+  });
+}
+
+const scanProbe = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const readdir = fs.readdirSync;
+fs.readdirSync = (path, ...args) => {
+  if (path === process.env.HUD_HOME + '/jobs' && args.length === 0)
+    fs.appendFileSync(process.env.HUD_HOME + '/scans', Date.now() + '\\n');
+  return readdir(path, ...args);
+};
+syncBuiltinESMExports();`;
+
+test('watch recovery catches settlement between the degraded scan and watch registration', { timeout: 10000 }, async (t) => {
+  const f = fixture(t), dir = f.job({ state: 'working' }, {}, true);
+  const { child, exited } = f.start(`
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const watch = fs.watch;
+let attempts = 0;
+fs.watch = (...args) => {
+  if (!args[1]?.recursive) return watch(...args);
+  if (++attempts <= 2) throw Error('synthetic transient watch failure');
+  fs.writeFileSync(${JSON.stringify(join(dir, 'STATUS.json'))}, JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  return watch(...args);
+};
+syncBuiltinESMExports();`);
+  await until(() => child.exitCode !== null);
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');
+});
+
+for (const fault of ['healthy watch', 'transient startup failure', 'transient later error']) {
+  test(`${fault}: a working watch does not poll after recovery`, { timeout: 10000 }, async (t) => {
+    const f = fixture(t), dir = f.job({ state: 'working' }, {}, true);
+    const { child, exited, stderr } = f.start(scanProbe + `
+const watch = fs.watch;
+let attempts = 0;
+fs.watch = (...args) => {
+  if (!args[1]?.recursive) return watch(...args);
+  attempts++;
+  if (${fault === 'transient startup failure'} && attempts <= 2) throw Error('synthetic transient startup failure');
+  const watcher = watch(...args);
+  if (${fault === 'transient later error'} && attempts === 1) {
+    setTimeout(() => watcher.emit('error', Error('synthetic transient later error')), 100);
+  } else fs.writeFileSync(process.env.HUD_HOME + '/watch-ready', String(attempts));
+  return watcher;
+};
+syncBuiltinESMExports();`);
+    await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch-ready')) &&
+      fs.existsSync(join(f.home, 'scans'))));
+    assert.equal(child.exitCode, null, stderr());
+    const scans = () => fs.readFileSync(join(f.home, 'scans'), 'utf8').trim().split('\n').length;
+    const before = scans();
+    assert.equal(Number(fs.readFileSync(join(f.home, 'watch-ready'), 'utf8')),
+      fault === 'healthy watch' ? 1 : fault === 'transient startup failure' ? 3 : 2);
+    await new Promise((done) => setTimeout(done, 2200));
+    assert.equal(scans(), before, 'no periodic scans with a working watch');
+    if (fault === 'healthy watch') assert.equal(before, 1, 'exactly the initial catch-up scan');
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+    await until(() => child.exitCode !== null);
+    await exited;
+    assert.equal(child.exitCode, 0);
+    assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');
   });
 }
 

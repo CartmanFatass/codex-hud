@@ -133,9 +133,9 @@ now run again, which is why they are counted here.
 |---|---|---|
 | Unit, TypeScript | `npm run test:unit` | 285 tests |
 | Unit, `.mjs` | `npm run test:mjs` | 16 suites |
-| Integration | `npm run test:integration` | 16 suites |
+| Full baseline | `npm test` | Both unit suites above |
 
-The integration suites need a real tmux (3.4 here); each skips rather than
+The historical integration suites need a real tmux (3.4 here); each skips rather than
 fails where its dependency is missing.
 
 ---

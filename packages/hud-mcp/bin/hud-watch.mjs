@@ -105,7 +105,8 @@ function stop() {
 function sessionFolders(dir) {
   const dispatch = join(dir, '.dispatch');
   return [join(dir, 'sessions'), ...(fs.existsSync(dispatch)
-    ? fs.readdirSync(dispatch).map((id) => join(dispatch, id, 'sessions')) : [])]
+    ? fs.readdirSync(dispatch, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+      .map((entry) => join(dispatch, entry.name, 'sessions')) : [])]
     .filter((folder) => fs.lstatSync(folder, { throwIfNoEntry: false })?.isDirectory());
 }
 function preserveSessions(dir) {
@@ -144,11 +145,7 @@ function scan() {
     if (!/^j[a-f0-9]{16}$/.test(id)) continue;
     const dir = join(jobs, id);
     try {
-      if (!fs.lstatSync(dir).isDirectory()) continue;
-    } catch (error) {
-      if (error.code === 'ENOENT') continue;
-      throw error;
-    }
+    if (!fs.lstatSync(dir).isDirectory()) continue;
     const loops = sessionFolders(dir).flatMap((folder) => fs.readdirSync(folder, { withFileTypes: true })
       .filter((entry) => entry.isSymbolicLink() && entry.name.endsWith('.jsonl'))
       .map((entry) => join(folder, entry.name)))
@@ -212,10 +209,17 @@ function scan() {
         fs.renameSync(temp, jobFile);
       }
     }
+    } catch (error) {
+      if (error.code !== 'ENOENT') log(`keep ${id} scan: ${error.message}`);
+    }
   }
   for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);
   if (open) subscribe();
-  if (open && !watcher) nearest = Math.min(nearest, Date.now() + 1000);
+  if (!watcher && (open || nearest !== Infinity)) {
+    startWatch();
+    if (watcher) schedule(); // Catch changes made before the recovered watch was installed.
+  }
+  if ((open || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + 1000);
   if (nearest !== Infinity) timer = setTimeout(scan, Math.max(1, Math.ceil(nearest - Date.now())));
   else if (!open) stop();
 }
@@ -240,4 +244,3 @@ function startWatch() {
 }
 startWatch();
 scan();
-if (!watcher && !stopped) startWatch();
