@@ -7,7 +7,7 @@ Milestone: M4 · Project view
 
 ## Next
 
-- M4: slice the next feature with to-tickets so the Tickets section has real data; M4 review after.
+- native-polish (.scratch/native-polish): 01, 03, 04 running; 02 after 01; 05 after CLAUDE-BIND. M4 review after.
 
 ## Slices
 
@@ -50,6 +50,11 @@ board counts these; update at every landing or decision. -->
 - accepted · M3b · M3B-FIX2 · the closing review's fixes: Codex Ctrl+\ 2, Settings s/t, dead code, docs (c283e7ea)
 - accepted · — · PI-STOP · hud_close stops a working pi job in seconds, not after a 30 s wait (Fishpref 38447ef)
 - accepted · — · LEGACY-SKILLS · herdr-delegate, herdr-delegate-codex, pi-subagent retired to Fishpref (6bd0ef8)
+- working · M4 · NP-01 · native-polish 01: nested Claude subagents always sit under their parent
+- todo · M4 · NP-02 · native-polish 02: a resumed Claude subagent shows running again and gets a fresh result
+- working · M4 · NP-03 · native-polish 03: Chinese keyword marks colour instead of showing brackets
+- working · M4 · NP-04 · native-polish 04: HUD job cards show a short title
+- todo · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
 ## Now (2026-11-12, evening): M3b closed after its second review; M4 Project tab complete with progress board and tickets
