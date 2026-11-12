@@ -7,9 +7,9 @@ plain keyword marks.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `「x」` marks in a model sentence paint like `«x»` and the brackets are not shown
-- [ ] Ordinary quoted Chinese text that is not a mark pattern stays as written (no false colouring of a whole sentence)
-- [ ] The sentence prompt states the `«…»` grammar for Chinese output too
-- [ ] EN and ZH tests for job, native and decision-title sentences
+- [x] `「x」` marks in a model sentence paint like `«x»` and the brackets are not shown
+- [x] Ordinary quoted Chinese text that is not a mark pattern stays as written (no false colouring of a whole sentence)
+- [x] The sentence prompt states the `«…»` grammar for Chinese output too
+- [x] EN and ZH tests for job, native and decision-title sentences
