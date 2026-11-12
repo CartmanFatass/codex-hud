@@ -23,8 +23,8 @@ Milestone: M4 · Project view
   since 20:10 (tabs not closed, no retention). Live tree unblocked by hand (link removed, job reaped); M4-FIX4 8dd1703a makes
   the watcher survive it. Round 5 on 8dd1703a: Sol changes-required (the normal `.dispatch/current.json` receipt
   makes every scan throw ENOTDIR; degraded polling stops while only a failed-tab deadline is pending) → M4-FIX5;
-  DS changes-required on the same receipt bug (plus optional: retry the watch, BASELINE.md drift; added to FIX5). Until FIX5 lands, a watcher restarted on 8dd1703a dies on the four real jobs with that receipt;
-  the running one (pid 2920296) predates it.
+  DS changes-required on the same receipt bug (plus optional: retry the watch, BASELINE.md drift; added to FIX5). Fixed by M4-FIX5 88c048da. Round 6 (Sol xhigh + DS max on 88c048da)
+  running.
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
   finding 1); delete that part of the command or keep it?
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
@@ -112,7 +112,8 @@ board counts these; update at every landing or decision. -->
 - done · M4 · M4-REVIEW4 · Sol accept, DS changes-required (watcher dies on a link loop) · docs/reviews/2026-11-12-m4-review4-*.md
 - try · M4 · M4-FIX4 · 8dd1703a · watcher survives a session link loop and a failed fs.watch; retention optional notes
 - done · M4 · M4-REVIEW5 · Sol and DS changes-required (watcher dies on the normal .dispatch/current.json receipt) · docs/reviews/2026-11-12-m4-review5-*.md
-- working · M4 · M4-FIX5 · watcher: .dispatch receipt file, per-job containment, degraded polling with a pending deadline (imp)
+- try · M4 · M4-FIX5 · 88c048da · watcher: .dispatch receipt file, per-job containment, degraded polling with a pending deadline, watch retry
+- working · M4 · M4-REVIEW6 · sixth review round (Sol xhigh + DS max on 88c048da)
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
 - try · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (71801be1; existing 99 pi sessions moved to ~/.pi/agent/sessions and linked first, toktrack totals unchanged)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
