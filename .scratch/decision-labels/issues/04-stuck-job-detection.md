@@ -8,9 +8,9 @@ Display only: nothing is sent to the worker.
 
 **Blocked by:** 01
 
-**Status:** claimed (DL)
+**Status:** resolved
 
-- [ ] No call for a card that has new activity or was judged less than 5 minutes ago
-- [ ] A synthetic session repeating one failing command is marked; a progressing one is not
-- [ ] The mark clears when new, different activity arrives
-- [ ] EN and ZH, 80 and 120 columns
+- [x] No call for a card that has new activity or was judged less than 5 minutes ago
+- [x] A synthetic session repeating one failing command is marked; a progressing one is not
+- [x] The mark clears when new, different activity arrives
+- [x] EN and ZH, 80 and 120 columns

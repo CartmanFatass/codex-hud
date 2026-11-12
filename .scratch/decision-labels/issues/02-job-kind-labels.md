@@ -6,8 +6,8 @@ that have no label yet get one in the background, inside the shared hourly cap, 
 
 **Blocked by:** 01
 
-**Status:** claimed (DL)
+**Status:** resolved
 
-- [ ] One call per job, input bounded to the brief's title and goal; cached, so a job is labelled once
-- [ ] Inspector shows the kind, EN and ZH
-- [ ] Background backfill of the last 30 days, newest first, never above the hourly cap
+- [x] One call per job, input bounded to the brief's title and goal; cached, so a job is labelled once
+- [x] Inspector shows the kind, EN and ZH
+- [x] Background backfill of the last 30 days, newest first, never above the hourly cap

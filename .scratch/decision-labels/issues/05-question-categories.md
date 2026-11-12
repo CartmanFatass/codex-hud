@@ -6,8 +6,8 @@ that need the owner's authorisation are listed first. Display only: the category
 
 **Blocked by:** 01
 
-**Status:** claimed (DL)
+**Status:** resolved
 
-- [ ] One call per question, input bounded to the question file; cached by its revision
-- [ ] Category chip on pending questions and decided rows; authorisation questions sort first
-- [ ] EN and ZH, 80 and 120 columns
+- [x] One call per question, input bounded to the question file; cached by its revision
+- [x] Category chip on pending questions and decided rows; authorisation questions sort first
+- [x] EN and ZH, 80 and 120 columns

@@ -6,8 +6,8 @@ One call per review revision.
 
 **Blocked by:** 01
 
-**Status:** claimed (DL)
+**Status:** resolved
 
-- [ ] Findings are split from the review's list items, bounded in count and length; one call per review revision
-- [ ] Counts on the progress board and in the Inspector; a review with no findings shows none
-- [ ] EN and ZH, 80 and 120 columns
+- [x] Findings are split from the review's list items, bounded in count and length; one call per review revision
+- [x] Counts on the progress board and in the Inspector; a review with no findings shows none
+- [x] EN and ZH, 80 and 120 columns

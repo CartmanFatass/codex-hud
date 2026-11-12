@@ -10,9 +10,9 @@ changes a job's state or steers a worker.
 
 **Blocked by:** None (GEMINI-DECIDE landed fe3aed6c)
 
-**Status:** claimed (DL)
+**Status:** resolved
 
-- [ ] One decision call per settlement, input bounded to the report's head and the status; reopening the panel or an unchanged report makes no call
-- [ ] Outcome mark on Home, in the Inspector and on the progress board, EN and ZH, 80 and 120 columns
-- [ ] Master switch off or no decision key: no mark, no call
-- [ ] Gemini 429 falls over to OpenAI; the hourly cap holds; tests with a fake decision endpoint
+- [x] One decision call per settlement, input bounded to the report's head and the status; reopening the panel or an unchanged report makes no call
+- [x] Outcome mark on Home, in the Inspector and on the progress board, EN and ZH, 80 and 120 columns
+- [x] Master switch off or no decision key: no mark, no call
+- [x] Gemini 429 falls over to OpenAI; the hourly cap holds; tests with a fake decision endpoint

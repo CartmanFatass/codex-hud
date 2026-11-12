@@ -6,9 +6,9 @@ from the labels of 01 and 02 and the jobs' own records; no model call of its own
 
 **Blocked by:** 01, 02
 
-**Status:** claimed (DL)
+**Status:** resolved
 
-- [ ] Section on the Project tab with kinds as groups and one row per role · model · thinking
-- [ ] Counts and median duration match the labelled jobs in a synthetic fixture
-- [ ] Unlabelled jobs are counted as "unlabelled", not dropped
-- [ ] EN and ZH, 80 and 120 columns
+- [x] Section on the Project tab with kinds as groups and one row per role · model · thinking
+- [x] Counts and median duration match the labelled jobs in a synthetic fixture
+- [x] Unlabelled jobs are counted as "unlabelled", not dropped
+- [x] EN and ZH, 80 and 120 columns

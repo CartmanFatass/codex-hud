@@ -4,17 +4,18 @@ Milestone: M4 · Project view
 
 ## Waiting for the owner
 
-- Try (8 landed): reopen `/hud` in a Claude pane → Home shows `Claude · 本次会话` with nested subagents indented
+- Try (9 landed): reopen `/hud` in a Claude pane → Home shows `Claude · 本次会话` with nested subagents indented
   (CLAUDE-BIND, NP-01, NP-05); a subagent waiting on background work turns ◉ again when it resumes (NP-02); job cards
   show the brief's heading as title (NP-04); Chinese 「」 keywords are coloured (NP-03); Home's spare rows show progress
   and open tickets, Enter jumps to Project (HOME-PROGRESS); Settings → Models → Decision API switches Jev's provider
-  (GEMINI-DECIDE).
+  (GEMINI-DECIDE); settled cards show an outcome mark, the Inspector shows kind/outcome/review counts, Project has a
+  Model fit table, questions show a category (DL; needs a working Gemini or OpenAI key).
 - Gemini key: Google answers 402 "prepayment credits depleted"; check the project's billing in AI Studio or make a
   key in a project without prepaid billing. Until then Gemini calls fail over to OpenAI.
 
 ## Next
 
-- DL (decision-labels 01–06, one imp) and LIVE-FIX running in parallel.
+- DL landed; LIVE-FIX running.
 - When both land: the M4 milestone review (two reviewers, brief ready in tmp/tasks/M4-REVIEW), then its fixes.
 - Small leftovers for me: pi-roles' pi-dispatch test still uses synthetic ids (its fake herdr generates them).
 
@@ -65,7 +66,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · NP-04 · native-polish 04: HUD job cards show a short title (eb3e5558)
 - try · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers (live check passed; Fishpref pi-roles fixed)
 - try · M4 · GEMINI-DECIDE · Gemini Decisions API provider + Settings switch; default primary OpenAI (Jev pages too heavy for the free tier), 429 cooldown (fe3aed6c)
-- working · M4 · DL · decision-labels 01–06 in one slice (owner): outcome, kind, model fit, looping mark, question category, review severity
+- try · M4 · DL · decision-labels 01–06 in one slice (owner): outcome, kind, model fit, looping mark, question category, review severity (f52c4106)
 - try · M4 · HOME-PROGRESS · Home shows a compact progress board and open tickets in its spare rows (owner) (2de1e8a7)
 - working · M4 · LIVE-FIX · live-check bugs: active job shown stalled; finished subagents briefly running on open; «--flag» read as reject
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
