@@ -23,7 +23,7 @@ const cardText = (worker) =>
     .join('\n');
 
 const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
-async function fixture(t, inHerdr = true) {
+async function fixture(t, inHerdr = true, probe = '') {
   const root = fs.mkdtempSync(join(tmpdir(), 'thin-mcp-'));
   const bin = join(root, 'bin');
   fs.mkdirSync(bin);
@@ -87,7 +87,8 @@ if (command === 'pi-dispatch') {
   }
   if (inHerdr) env.HERDR_PANE_ID = 'synthetic-pane';
   else delete env.HERDR_PANE_ID;
-  const child = spawn(process.execPath, [entry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
+  const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
+  const child = spawn(process.execPath, [...preload, entry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
   let next = 0,
     stderr = '';
@@ -545,6 +546,57 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   assert.equal(fs.readFileSync(join(job.task_dir, 'qa', 'q1.answer.md'), 'utf8'), answer.answer);
   assert.deepEqual(await f.call('hud_close', { job: job.job }), { exit_code: 0, last_line: 'Synthetic reap complete' });
   assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
+});
+
+test('thin read lists and waits without opening discarded bodies, preserving observations', async (t) => {
+  const f = await fixture(t, true, `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const open = fs.openSync;
+fs.openSync = function(path, ...args) {
+  if (/\\/(report\\.md|qa\\/q\\d+\\.md)$/.test(String(path)))
+    fs.appendFileSync(process.env.HOME + '/reads', String(path) + '\\n');
+  return open.call(this, path, ...args);
+};
+syncBuiltinESMExports();`);
+  const job = 'j0000000000000001', dir = join(f.env.HUD_HOME, 'jobs', job);
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  const receipt = { job, role: 'imp', created_at: '2026-01-01', dispatch_exit_code: 0, stderr_tail: '' };
+  const save = () => fs.writeFileSync(join(dir, 'job.json'), JSON.stringify(receipt));
+  const status = (state) => fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, exit_reason: null }));
+  const reads = () => fs.existsSync(join(f.env.HOME, 'reads')) ? fs.readFileSync(join(f.env.HOME, 'reads'), 'utf8').trim().split('\n') : [];
+  const read = (wait_ms = 0) => f.call('hud_read', { job, wait_ms });
+  save(); status('working');
+  fs.writeFileSync(join(dir, 'report.md'), 'r'.repeat(65537));
+  fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Synthetic question.');
+  assert.equal((await f.call('hud_read')).jobs[0].state, 'working');
+  assert.deepEqual(reads(), []);
+  const question = await read();
+  assert.deepEqual(question.questions, [{ id: 'q1', text: 'Synthetic question.' }]);
+  await f.call('hud_respond', { job, request_id: 'q1', answer: 'Synthetic answer.' });
+  const before = reads().length, waiting = read(1100);
+  await new Promise((done) => setTimeout(done, 600));
+  assert.equal(reads().length, before);
+  const timeout = await waiting;
+  assert.deepEqual(timeout, { ...question, questions: [] });
+  assert.equal(reads().length, before + 1);
+  assert.equal(timeout.report.length, 65536);
+  assert.equal(timeout.report_truncated, true);
+  assert.equal(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at, undefined);
+  const newQuestion = read(3000);
+  setTimeout(() => fs.writeFileSync(join(dir, 'qa', 'q2.md'), 'New question.'), 100);
+  assert.deepEqual(await newQuestion, { ...timeout, questions: [{ id: 'q2', text: 'New question.' }] });
+  await f.call('hud_respond', { job, request_id: 'q2', answer: 'Answered.' });
+  for (const state of ['idle_grace', 'closed', 'failed', 'stopped', null]) {
+    save(); status('working');
+    const pending = read(700);
+    const timer = setTimeout(() => state === null ? fs.unlinkSync(join(dir, 'STATUS.json')) : status(state), 100);
+    t.after(() => clearTimeout(timer));
+    assert.deepEqual(await pending, { ...timeout, state });
+    assert.equal(Boolean(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at), state !== null);
+  }
+  receipt.dispatch_exit_code = 1; save();
+  assert.deepEqual(await read(), { ...timeout, state: 'failed', dispatch_exit_code: 1 });
 });
 
 test('thin send queues a message for a working pi job and refuses a finished one', { timeout: 10000 }, async (t) => {

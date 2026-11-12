@@ -486,16 +486,28 @@ async function dispatchJev(job: Job) {
   const script = fileURLToPath(new URL('../../../../bin/hud-jev.mjs', import.meta.url));
   return run('herdr', ['pane', 'run', root_pane.pane_id, [process.execPath, script, dir].map(quote).join(' ')]);
 }
-function observation(job: Job) {
-  const dir = directory(job.job);
-  const status = json<{ state?: string; exit_reason?: string | null }>(join(dir, 'STATUS.json'));
-  const report = slice(join(dir, 'report.md'), 65536);
+function jobStatus(job: Job) {
+  const status = json<{ state?: string; exit_reason?: string | null }>(join(directory(job.job), 'STATUS.json'));
+  return {
+    state: status?.state ?? (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 ? 'failed' : null),
+    exit_reason: status?.exit_reason ?? null,
+  };
+}
+function openQuestions(dir: string): string[] {
   const qa = join(dir, 'qa');
-  const questions = entries(qa)
+  return entries(qa)
     .filter((name) => /^q\d+\.md$/.test(name))
     .filter((name) => !fs.existsSync(join(qa, name.replace('.md', '.answer.md'))))
-    .sort()
-    .map((name) => ({ id: name.slice(0, -3), text: slice(join(qa, name), 2048)?.text ?? '' }));
+    .sort();
+}
+function observation(job: Job) {
+  const dir = directory(job.job);
+  const status = jobStatus(job);
+  const report = slice(join(dir, 'report.md'), 65536);
+  const questions = openQuestions(dir).map((name) => ({
+    id: name.slice(0, -3),
+    text: slice(join(dir, 'qa', name), 2048)?.text ?? '',
+  }));
   return {
     job: job.job,
     role: job.role,
@@ -503,10 +515,9 @@ function observation(job: Job) {
     thinking: job.thinking,
     model_source: job.model_source,
     ...Object.fromEntries([...piSwitches, 'pi_args' as const].map((key) => [key, job[key]])),
-    state: status?.state ?? (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 ? 'failed' : null),
+    ...status,
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
-    exit_reason: status?.exit_reason ?? null,
     report_exists: report !== null,
     report: report?.text ?? null,
     report_truncated: report?.truncated ?? false,
@@ -626,7 +637,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       jobs: jobs()
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .slice(0, 20)
-        .map((job) => ({ job: job.job, role: job.role, state: observation(job).state, created_at: job.created_at })),
+        .map((job) => ({ job: job.job, role: job.role, state: jobStatus(job).state, created_at: job.created_at })),
     };
   if (!tools.some((tool) => tool.name === name)) throw new Error('unknown_tool');
   const id = required(args, 'job');
@@ -637,14 +648,14 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
       throw new Error('invalid_arguments: wait_ms');
     const end = Date.now() + Math.max(0, Math.min(120000, (args.wait_ms as number | undefined) ?? 0));
+    const settled = (state: string | null) => ['idle_grace', 'closed', 'failed', 'stopped'].includes(state ?? '');
+    const ready = (state: string | null, questions: number) => settled(state) || questions > 0 || Date.now() >= end;
     while (true) {
-      const result = observation(job);
-      if (
-        ['idle_grace', 'closed', 'failed', 'stopped'].includes(result.state ?? '') ||
-        result.questions.length ||
-        Date.now() >= end
-      ) {
-        if (result.report_exists && ['idle_grace', 'closed', 'failed', 'stopped'].includes(result.state ?? '')) {
+      if (Date.now() >= end || ready(jobStatus(job).state, openQuestions(dir).length)) {
+        const result = observation(job);
+        // A question may have been answered or a settled job continued since the lightweight poll.
+        if (!ready(result.state, result.questions.length)) continue;
+        if (result.report_exists && settled(result.state)) {
           const latest = json<Job>(join(dir, 'job.json'))!;
           if (!latest.read_at) {
             latest.read_at = new Date().toISOString();
