@@ -174,6 +174,8 @@ export function workCardName(card: WorkCard, _state: MonitorState, width: number
     role,
   };
 }
+/** Rows a collapsed card's sentence may use; the sentence prompt's length limit is sized for it. */
+export const SENTENCE_ROWS = 2;
 export function renderWorkCard(card: WorkCard, state: MonitorState, width: number, sentence = ''): readonly string[] {
   const ink = workStateInk(card),
     name = workCardName(card, state, width);
@@ -186,10 +188,15 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
     state,
     targetKey({ kind: 'worker', laneId: card.worker.laneId, workerId: card.worker.id })
   );
-  if (generated) rows.push(...jobSentenceRows(generated, width, ink, Boolean(open)));
+  // Collapsed: the sentence on at most two rows (the prompt keeps it that short). Open: everything.
+  if (generated) {
+    const lines = jobSentenceRows(generated, width, ink, true);
+    rows.push(...(open || lines.length <= SENTENCE_ROWS ? lines : [lines[0], fit(truncateAnsi(lines[1].trimEnd(), width - 1) + '…', width)]));
+  }
   for (const part of generated && !open ? [] : [workCardDetail(card, sentence)])
-    if (part) rows.push(...stemLines(part, width, ink, open ? Infinity : 1));
-  // A collapsed card is always two rows, so a sentence arriving later does not move the cards below it.
+    if (part) rows.push(...stemLines(part, width, ink, open ? Infinity : SENTENCE_ROWS));
+  // A collapsed card keeps a fixed height, so a sentence arriving or growing does not move the cards below it.
   if (!open && rows.length === 1) rows.push(fit(`${ink(mark('┃', '|'))} ${theme.board.muted('…')}`, width));
+  while (!open && rows.length < 1 + SENTENCE_ROWS) rows.push(fit(ink(mark('┃', '|')), width));
   return rows.map((line, i) => (i ? (failed(card) ? theme.board.failedBody : theme.board.body)(line) : line));
 }

@@ -38,7 +38,7 @@ test('Home opens only the newest current result by itself; running cards stay tw
   assert.ok(running.length >= 2);
   for (const w of running) {
     assert.ok(!cardExpanded(frame.state, key(w)), w.id);
-    assert.equal(rows(w).length, 2, `${w.id}: a collapsed card is two rows`);
+    assert.equal(rows(w).length, 3, `${w.id}: a collapsed card is its title plus two sentence rows`);
   }
   const newest = f.board.workers.find((w) => key(w) === frame.state.boardNewest);
   assert.ok(newest && newest.settledAt !== null, 'the newest result opens');
