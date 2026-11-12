@@ -10,7 +10,7 @@
 #   macOS   ~/Library/Fonts
 #   WSL     the terminal that draws the text runs on Windows, so the font
 #           belongs there: this says whether Windows has it and how to
-#           install it (codex-hud-install.ps1 does), and writes nothing.
+#           install it, and writes nothing.
 #
 # The files come from one commit of romkatv/powerlevel10k-media, from GitHub
 # or else jsDelivr's copy of it, and each must have the SHA-256 listed here.
@@ -120,7 +120,6 @@ if is_wsl && [[ -z "${CODEX_HUD_FONT_DIR:-}" ]]; then
     [[ $CHECK -eq 1 ]] && { echo "$FAMILY is not installed on Windows."; exit 1; }
     cat <<EOF
 The panel is drawn by the Windows terminal, so $FAMILY belongs on Windows.
-Install it with codex-hud-install.ps1 (it installs the font for your user), or by hand:
   1. Download the four faces:
 $(for face in "${FACES[@]}"; do printf '       %s/%s\n' "${SOURCES[0]}" "$(url_name "$FAMILY $face.ttf")"; done)
   2. Select them in Explorer, right-click, Install.

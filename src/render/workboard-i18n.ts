@@ -109,8 +109,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'testing…': '测试中…',
   'at the cap: sentences wait': '已达上限：句子暂不更新',
   'Icons, or words (text)': '图标或纯文字',
-  'Model calls per hour, all features; at the cap, sentences wait':
-    '每小时调用次数，所有功能合计；达到上限时句子暂不更新',
   'Keys: $HUD_HOME/credentials.env': '密钥：$HUD_HOME/credentials.env',
   Marks: '图例',
   move: '移动',

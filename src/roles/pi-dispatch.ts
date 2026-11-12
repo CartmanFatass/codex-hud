@@ -1,7 +1,7 @@
 /** Lightweight receipt/SESSION codecs. Legacy ownership is observation-only. */
 import * as fs from 'node:fs';
-import { basename, isAbsolute, join, resolve } from 'node:path';
-import { isRecord, herdrId } from './herdr-run.js';
+import { isAbsolute, join, resolve } from 'node:path';
+import { isRecord } from './herdr-run.js';
 
 export type DispatchRole = 'implementer' | 'sonic' | 'reviewer' | 'architect';
 export interface LegacyDispatchV1 {
@@ -112,39 +112,4 @@ export function dispatchText(file: string, maxBytes: number): string | null {
   } catch {
     return null;
   }
-}
-
-export interface DispatchSession {
-  TASK: string;
-  TAB: string;
-  TAB_NAME: string;
-  LEFT: string;
-  RIGHT: string;
-  ORCH: string;
-  BASE: string;
-  PRIMARY: string;
-}
-const SESSION_KEYS = ['TASK', 'TAB', 'TAB_NAME', 'LEFT', 'RIGHT', 'ORCH', 'BASE', 'PRIMARY'] as const;
-export function readDispatchSession(directory: string): DispatchSession | null {
-  const text = dispatchText(join(directory, 'SESSION.txt'), 16 * 1024);
-  if (!text) return null;
-  const data: Record<string, string> = {};
-  for (const line of text.split('\n')) {
-    if (!line) continue;
-    const at = line.indexOf('=');
-    if (at < 1 || /[\r\0]/.test(line) || line.length > 4096) return null;
-    const key = line.slice(0, at);
-    if (!(SESSION_KEYS as readonly string[]).includes(key)) continue;
-    // pi-role-call appends RIGHT when replacing a vanished helper pane.
-    // Other ownership keys are immutable and duplicates are ambiguous.
-    if (Object.hasOwn(data, key) && key !== 'RIGHT') return null;
-    data[key] = line.slice(at + 1);
-  }
-  if (!SESSION_KEYS.every((key) => Object.hasOwn(data, key)) || data.TASK !== basename(directory) || data.ORCH !== '')
-    return null;
-  for (const key of ['TAB', 'LEFT', 'PRIMARY']) if (!herdrId(data[key])) return null;
-  if (data.RIGHT && !herdrId(data.RIGHT)) return null;
-  if (!data.TAB_NAME || !data.BASE || /[\u0000-\u001f]/.test(data.TAB_NAME + data.BASE)) return null;
-  // SAFETY: all eight required keys and their value constraints were checked above.
-  return data as unknown as DispatchSession;
 }

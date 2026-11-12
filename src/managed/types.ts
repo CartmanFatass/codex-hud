@@ -58,13 +58,3 @@ export interface ManagedAdapterFactory {
   readonly harness: ManagedHarness;
   create(request: AdapterCreate, callbacks: AdapterCallbacks): Promise<ManagedAdapterSession>;
 }
-/** Submission ambiguity is a transport fact, never a task state or automatic retry instruction. */
-export class AdapterDispatchError extends Error {
-  constructor(
-    readonly code: string,
-    readonly certainty: 'not_sent' | 'uncertain',
-    options?: ErrorOptions
-  ) {
-    super(code, options);
-  }
-}

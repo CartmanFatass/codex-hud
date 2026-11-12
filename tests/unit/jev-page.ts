@@ -1,6 +1,5 @@
 // Synthetic page shared by the Jev port tests. No secrets.
 
-import { fingerprint } from '../../src/jev/browser.js';
 import type { Answer } from '../../src/jev/decide.js';
 import type { PageState } from '../../src/jev/model.js';
 
@@ -22,7 +21,6 @@ export function searchPage(): PageState {
       { id: 'wait', kind: 'wait', label: 'Wait' },
     ],
   };
-  state.fingerprint = fingerprint(state);
   return state;
 }
 

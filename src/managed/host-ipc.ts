@@ -1,110 +1,15 @@
-import { createConnection, createServer, type Server } from 'node:net';
-import { chmodSync, lstatSync, unlinkSync, writeFileSync, readFileSync, openSync, closeSync, constants } from 'node:fs';
+import { createConnection } from 'node:net';
+import { lstatSync, unlinkSync, writeFileSync, readFileSync, openSync, closeSync, constants } from 'node:fs';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ownerKey, privateDirectory, type NativeOwner } from './relations.js';
-import type { NativeSessionHost } from './host.js';
-export function nativeError(error: unknown): Record<string, unknown> {
-  const value = error as Error & {
-    code?: unknown;
-    certainty?: unknown;
-    rpcError?: unknown;
-    cause?: { rpcError?: unknown };
-  };
-  return {
-    message: value?.message ?? String(error),
-    ...(value?.code !== undefined ? { code: value.code } : {}),
-    ...(value?.certainty ? { certainty: value.certainty } : {}),
-    ...(value?.rpcError !== undefined || value?.cause?.rpcError !== undefined
-      ? { native: value.rpcError ?? value.cause?.rpcError }
-      : {}),
-  };
-}
 export interface NativeHostPort {
   invoke(owner: NativeOwner, method: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>;
 }
 export function hostSocket(home: string, owner: NativeOwner): string {
   const directory = join(home, 'native-hosts');
   return join(directory, `${ownerKey(owner).slice(0, 32)}.sock`);
-}
-/** Release only the listener's event-loop reference after an explicit final close.
- * No timer, process.exit, backend close, signal or native-idle inference occurs here.
- * Initial wake-only hosts stay referenced across the separate wake-register/create IPC calls.
- */
-export function updateNativeHostReference(
-  server: { ref(): unknown; unref(): unknown },
-  host: Pick<NativeSessionHost, 'hasRetainedHandles'>,
-  inFlightRequests: number,
-  explicitCloseRequested: boolean,
-  startingMethod?: string
-): boolean {
-  // Request entry order matters: a later wake/create must supersede an older pending close.
-  if (startingMethod === 'close' || startingMethod === 'jev_close') explicitCloseRequested = true;
-  if (startingMethod === 'create' || startingMethod === 'jev_create' || startingMethod === 'wake_register')
-    explicitCloseRequested = false;
-  if (explicitCloseRequested && inFlightRequests === 0 && !host.hasRetainedHandles()) server.unref();
-  else server.ref();
-  return explicitCloseRequested;
-}
-/** IPC disconnect only ends that observer. It never closes the host or a native connection. */
-export async function serveNativeHost(home: string, host: NativeSessionHost): Promise<Server> {
-  privateDirectory(home);
-  privateDirectory(join(home, 'native-hosts'));
-  const path = hostSocket(home, host.owner);
-  let inFlightRequests = 0;
-  let explicitCloseRequested = false;
-  const server = createServer((socket) => {
-    socket.setEncoding('utf8');
-    let buffer = '';
-    let submitted = false;
-    const controller = new AbortController();
-    socket.on('error', () => {});
-    socket.on('close', () => controller.abort());
-    socket.on('data', (chunk) => {
-      if (submitted) return;
-      buffer += chunk.toString('utf8');
-      if (Buffer.byteLength(buffer) > 1_048_576) {
-        socket.destroy();
-        return;
-      }
-      const newline = buffer.indexOf('\n');
-      if (newline < 0) return;
-      submitted = true;
-      inFlightRequests++;
-      server.ref();
-      void (async () => {
-        try {
-          const input = JSON.parse(buffer.slice(0, newline));
-          // Only the bound native owner can change this listener's explicit-close intent.
-          if (ownerKey(input.owner) === ownerKey(host.owner))
-            explicitCloseRequested = updateNativeHostReference(
-              server,
-              host,
-              inFlightRequests,
-              explicitCloseRequested,
-              input.method
-            );
-          const value = await host.invoke(input.owner, input.method, input.args, controller.signal);
-          if (!socket.destroyed) socket.end(JSON.stringify({ ok: true, value }) + '\n');
-        } catch (error) {
-          if (!socket.destroyed) socket.end(JSON.stringify({ ok: false, error: nativeError(error) }) + '\n');
-        } finally {
-          inFlightRequests--;
-          updateNativeHostReference(server, host, inFlightRequests, explicitCloseRequested);
-        }
-      })();
-    });
-  });
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(path, () => {
-      server.off('error', reject);
-      chmodSync(path, 0o600);
-      resolve();
-    });
-  });
-  return server;
 }
 /** Detached lifetime is intentional: the parent owns only its own IPC observer. */
 export function spawnDetachedHost(entry: string, home: string, owner: NativeOwner) {

@@ -100,55 +100,6 @@ facade-close rule are presentation only: execution status, wait semantics, accep
 snapshot publisher remains. CLEANUP-VIEWS removes Timeline, activity/history and diagnostic pages and their producers; Changes remains as repository/worktree summary only (owner correction). Model generation now follows §5;
 no recap, overview or facade-only sentence generator is wired into this pipeline.
 
-## Owned pi workers (PIROLE PR3; not selected for new jobs until PR4)
-
-`integrations/pi/worker.ts` composes only `harness/pi/role-extension`. It does not load the ordinary HUD package,
-register the general facade tools, open a panel, or install a footer. Herdr's separately loaded reporter owns only
-Herdr state. Worker resources, helpers and the finite reaper are pinned to A1's manifest digest. The worker and
-reaper derive that inventory from their own release-relative modules and verify the staged bundle; source-checkout
-execution fails closed. Task-serialized hashes are never an inventory trust root.
-
-Private job layout (`J = $HUD_HOME/jobs/<id>`, directories 0700, files 0600):
-
-- `brief.md`, `report.md`, `impl-notes.md`, `checks/<name>.log`, `SESSION.txt`, `STATUS.json`, `sessions/`, `qa/qN{,.answer}.md`;
-- `.dispatch/runtime.json`: launcher-authored, write-once under resource admission before agent start; only the
-  endpoint/process stamp and caller-tab protection, never secrets or model arguments. Helpers and the reaper load
-  this same bounded binding and verify the endpoint; no environment fallback;
-- `.dispatch/<slot>/{contract,launch,owner}.json`, each helper's `STATUS.json`, and the single helper reservation
-  `.dispatch/current.json`; a helper reviewer's sonic has a child reservation under its review slot.
-
-The actual model, effort, session and role file must match before startup evidence permits a first prompt. Pi 1.5.0
-persists new sessions lazily: the worker records the native header's type/id/cwd without writing a native session.
-Before prompt submission only, an absent exact session file is accepted with that header, process argv and exact
-Herdr session reference. A specifically stalled first prompt may use the same header plus complete editor evidence
-for one journalled Enter; acknowledgment then requires that exact prompt in the exact persisted session. Unknown,
-unreadable or mismatched evidence never authorizes Enter or another start.
-
-Only `agent_settled`, deferred and generation/idle/queue/helper/QA/output guarded, completes a run. `agent_end`
-may precede a retry. STATUS v1 is single-writer and semantic-change-only. Successful implementers publish DONE in
-fixed cache-TTL grace (unknown TTL zero); continuation cancels the old timer, model TTL can shorten but never extend
-it, and warming never renews it. Clean one-shots and **unused successful implementer grace expiry** are eligible for
-one finite detached post-exit reaper attempt. Implementer expiry uses `idle_grace_expired`; quit/shutdown in grace,
-failure, a used continuation and `HUD_KEEP_TAB=1` keep the tab. Normal reap remains the only tab cleanup authority;
-automatic and explicit close are idempotent, and helpers never close the parent's tab.
-
-Every non-sonic role can call blocking sonic; only the implementer can call the fresh closing reviewer. Sonic has
-no helper tools. Calls share numbering and limits (10 sonic, 3 reviews, failed reservations count). Implementer
-helpers use the recorded right pane. Other callers split down from their own pane in the owned tab; split intent
-lives in the nested journal before dispatch, a lost reply remains unresolved, and cleanup/reap covers the pane.
-A helper reviewer's sonic borrows its held reservation with a child mutex, never the job mutex or right pane.
-When that reviewer ends, its reserved child is cleaned first using the same remaining cleanup budget. An unknown
-child outcome keeps the outer reservation held and returns `helper_unresolved` with the child slot; only explicit
-reap may resolve the remaining resources, and neither helper kind can allocate another slot.
-Read-only callers pass a report-only write grant, with inherited QA/scratch exceptions; the guard is not a sandbox.
-
-QA uses exclusive q1–q9999 allocation across slots, bounded answer reads, a 2-second abortable cadence only while
-outstanding, and the inherited 1200-second deadline. Timeout records “default instructed”, never “default acted on”.
-Check logs end in `exit=<code>`; reviewers never rerun full suites. Round 1 reports missing/failing/stale full-suite
-evidence as a finding; round 2+ notes expected stale full-suite logs after fixes without rerunning them. Reviewers
-rerun missing/failing/stale focused checks and run the round's focused tests (plus earlier-finding regressions on
-re-checks). The main session still owns the full acceptance gate and chaining.
-
 ## Project tab (M4)
 
 `ProjectCollector` (`collectors/project-board.ts`, separate from the bar's existing `project.ts`)
@@ -294,7 +245,7 @@ and settings, it returns the same lines.
 ## 2. Repository map
 
 ```
-bin/                 bash launcher and tmux helper scripts (+ Windows .ps1 wrappers)
+bin/                 bash launcher and tmux helper scripts
 src/index.ts         the bar process
 src/tree-page.ts     the panel process (collect → render → paint, input routing)
 src/types.ts         shared types: HudData, SubagentTree(Node), RolloutState …
@@ -320,7 +271,6 @@ check that no test uses it.
 | File | Status |
 |---|---|
 | `render/workbench.ts`, `render/subagent-tree-view.ts`, `render/sparkline.ts` | The old panel renderer. Only tests import them (`workbench.test`, `panel.test`, `resources.test`, `subagent-status.test`, `test-subagent-tree.mjs`). |
-| `render/lines/*` | The old multi-line bar. Live code uses only `formatTokenCount` (from `lines/activity-line.ts`). A few `.mjs` tests import the line renderers. |
 | `src/test-render.ts` | A standalone mock renderer that nothing runs. `npm run test:render` runs `dist/index.js`. |
 | `bin/codex-hud-tree` | Runs `dist/tree-page.js`. Its comment says tmux display-popup uses it, but nothing in the repo calls it. |
 | `dist/utils/tmux-copy.js` | A stale build output with no source file. `tsc` never cleans `dist/`. |
@@ -385,8 +335,6 @@ The bar and panel get their context from environment variables:
 | `codex-hud-paste` | Pastes from the system clipboard, falling back to the tmux buffer. |
 | `codex-hud-resize` | Keeps the bar's height through window resizes. |
 | `codex-hud-fonts` | Install MesloLGS NF. |
-| `install.sh`, `uninstall.sh` | Write and remove the marked `# codex-hud alias` lines in shell rc files. |
-| `*.ps1`, `bin/windows/` | Windows: route to WSL Ubuntu, install, and set up profile shims. |
 
 ### tmux user options
 
@@ -465,7 +413,6 @@ a file is read at all.
 - `codex-config.ts` (`config.toml`, re-read every 30 s in the panel);
 - `project.ts` and `git.ts` (`git status --porcelain=v2`, cached, refreshed
   every 3 s and kept off the frame path);
-- `codex-goal.ts` (`goals_1.sqlite`);
 - `context-usage.ts` (`BASELINE_TOKENS` = 12000);
 - `token-rate.ts`: a turn-level wallclock proxy, with TTFT/stalls included and
   the union of known tool waits excluded; not exact per-request telemetry.
@@ -638,8 +585,7 @@ Periodic agent overviews, main recaps, session titles, approval descriptions,
 change summaries and legacy facade-only job sentences have been removed. The panel
 and bar neither load old recap/title files nor write new ones. Hidden and
 secondary views receive factual state, not generated overview text.
-`collectors/briefing.ts` and `collectors/recap.ts` retain renderer DTO types
-only. `codex-hud brief --dry-run` reports the removal; it no longer previews
+`codex-hud brief --dry-run` reports the removal; it no longer previews
 outbound material.
 
 ### 5.3 Background jobs (`collectors/model-jobs.ts`)
@@ -1015,7 +961,7 @@ titles, "ago", the bar's activity and cache marks
 (`iconSet()`, `iconic()`). It is `unicode` or `text`; there is no look selector.
 
 **Read from `$CODEX_HOME`, never written:** `config.toml`, `sessions/`,
-`shell_snapshots/`, `logs_2.sqlite`, `goals_1.sqlite`.
+`shell_snapshots/`, `logs_2.sqlite`.
 
 ---
 
@@ -1080,7 +1026,6 @@ npm test                 # build + build:test (tsconfig.test.json → dist-test/
 npm run test:integration # tests/run-integration.sh: tmux shell suites, exit 77 = skip
 npm run test:visual      # fixed synthetic terminal-cell frames + semantic checks
 npm run test:visual:update # explicit local-only baseline update; refused in CI
-npm run test:windows     # PowerShell entry points, with fake binaries
 npm run snapshots:update # rewrite every tests/fixtures/*frames*.json and bar-themes.json from the build;
                          #   name files to limit it; review the diff: an unintended change is a regression
 ```
@@ -1088,10 +1033,6 @@ npm run snapshots:update # rewrite every tests/fixtures/*frames*.json and bar-th
 **Continuous integration.** CI (`.github/workflows/ci.yml`) runs `npm test` on
 Node 18, 20 and 22 with both empty `NO_COLOR` and `NO_COLOR=1`, and the
 integration suite with tmux on Node 20.
-
-**Node before 22.** Node 18 and 20 have no `node:sqlite`, so on them daemon
-binding and the goal reader switch themselves off. Only the Node 22 CI job
-runs them.
 
 **Fixtures** (`tests/fixtures/`):
 
@@ -1303,8 +1244,6 @@ All three bars share `layout/bar-fields.ts`; a field is added once.
 - Does the bar's chokidar watcher, bound to today's `sessions/YYYY/MM/DD` at
   startup, re-root after midnight? The 1 s tick and the 5 s finder poll cover
   for it either way.
-- Can anything still reach the native-Windows tmux branch in `bin/codex-hud`?
-  `codex-hud.ps1` routes only to WSL or plain Codex.
 
 ### Incremental terminal painting
 
@@ -1410,8 +1349,4 @@ independent identity, issuance window and uniqueness required by contracts 01/03
 Old scan versions are ignored and rebuilt; user state is not migrated or deleted.
 
 `core/interfaces/session-evidence.ts` adds native evidence beside A5, reusing a
-single `ObservationView`. `core/interfaces/snapshot-v3.ts` is only the additive
-public v3 type draft: the `universal` slots reuse core identities, metrics,
-workspace, status, lifecycle and observation stamps. Any future v3 outlet must be
-selected explicitly and use a separate path. `snapshot.ts`, its version 2 writer
-and the existing `--json` path retain their fields, units and output bytes.
+single `ObservationView`.

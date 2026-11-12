@@ -2,10 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { herdrId, tabIds, listedTabs, tabInfo, listedPanes, listedAgents } from '../../dist-test/src/roles/herdr-run.js';
 import { validPane, validStamp } from '../../dist-test/src/integrations/panel/receipt.js';
-import { readDispatchSession } from '../../dist-test/src/roles/pi-dispatch.js';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { join, basename } from 'node:path';
-import { tmpdir } from 'node:os';
 import { readHerdrConfig } from '../../bin/codex-hud-herdr.mjs';
 
 for (const id of ['w4E:p1', 'workspace / unicode 窗:tab?', ' '.repeat(300)])
@@ -21,10 +17,6 @@ for (const id of ['w4E:p1', 'workspace / unicode 窗:tab?', ' '.repeat(300)])
     const process = { pid: 42, proc_start: '123', boot_id: 'synthetic', pid_domain: 'synthetic' };
     assert.equal(validStamp(process), true);
     assert.equal(validPane({ pane: id, tab: id, terminal: id, workspace: id, process }), true);
-    const dir = mkdtempSync(join(tmpdir(), 'herdr-session-'));
-    t.after(() => rmSync(dir, { recursive: true, force: true }));
-    writeFileSync(join(dir, 'SESSION.txt'), `TASK=${basename(dir)}\nTAB=${id}\nTAB_NAME=owned\nLEFT=${id}\nRIGHT=${id}\nORCH=\nBASE=HEAD\nPRIMARY=owned-agent\n`);
-    assert.equal(readDispatchSession(dir).LEFT, id);
   });
 
 test('empty and control-bearing herdr identities are refused, without changing a legal id', () => {
