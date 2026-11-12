@@ -16,7 +16,7 @@ Milestone: M4 · Project view
 ## Next
 
 - m4-close (.scratch/m4-close, 7 tickets): 01 HOME-LAYOUT, 02 THEMES, 07 BAR-FIDELITY (frontend-implementer) and
-  03 in LIVE-FIX run now; then 04 whole-project review (Sol xhigh + DS max), 05 fixes until both accept, 06 release
+  03 landed (LIVE-FIX); then 04 whole-project review (Sol xhigh + DS max), 05 fixes until both accept, 06 release
   archive + merge to main + tag.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
@@ -69,7 +69,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · GEMINI-DECIDE · Gemini Decisions API provider + Settings switch; default primary OpenAI (Jev pages too heavy for the free tier), 429 cooldown (fe3aed6c)
 - try · M4 · DL · decision-labels 01–06 in one slice (owner): outcome, kind, model fit, looping mark, question category, review severity (f52c4106)
 - try · M4 · HOME-PROGRESS · Home shows a compact progress board and open tickets in its spare rows (owner) (2de1e8a7)
-- working · M4 · LIVE-FIX · live-check bugs: active job shown stalled; finished subagents briefly running on open; «--flag» read as reject
+- try · M4 · LIVE-FIX · live-check bugs: active job shown stalled; finished subagents briefly running on open; «--flag» read as reject (445689e9)
 - working · M4 · HOME-LAYOUT · m4-close 01: Home's progress block layout (frontend-implementer)
 - working · M4 · THEMES · m4-close 02: distinct themes, refined default, 3–4 new themes (frontend-implementer)
 - working · M4 · BAR-FIDELITY · m4-close 07: bar themes match their approved concepts (frontend-implementer)

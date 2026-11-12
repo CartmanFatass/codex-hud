@@ -6,7 +6,7 @@ and cost no model call until replay catches up.
 
 **Blocked by:** None (in LIVE-FIX, running)
 
-**Status:** claimed (LIVE-FIX)
+**Status:** resolved
 
-- [ ] A finished agent whose transcript needs several passes is never shown running/unknown/blocked
-- [ ] No model call for a card whose replay has not caught up
+- [x] A finished agent whose transcript needs several passes is never shown running/unknown/blocked
+- [x] No model call for a card whose replay has not caught up
