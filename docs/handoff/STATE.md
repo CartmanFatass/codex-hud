@@ -74,7 +74,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · HOME-LAYOUT · m4-close 01: Home's progress block layout (frontend-implementer) (426dbc02)
 - try · M4 · THEMES · m4-close 02: each theme its own board inks; refined terminal; new arctic, ember, contrast, paper (frontend-implementer) (6f9a079f)
 - try · M4 · ROW-FIX · native rows keep one order; a growing transcript counts as activity (no false 停滞); running cards drop the flipping tool name (66f37e57)
-- try · M4 · CARD-HEIGHT · owner: Home cards keep two rows; only the newest current result opens by itself (c1647299)
+- try · M4 · CARD-HEIGHT · owner: Home cards are title + two fixed sentence rows (sentence ≤30 zh chars / 16 words); only the newest current result opens by itself (c1647299, aca06c54)
 - working · M4 · HOME-RECOMMEND · m4-close 08: Settings Home mode Default | Recommended (Decision-API ranking) + progress brief on top; addendum: Decision API own ledger + cap row (default unlimited), unlimited LLM cap option, 5-min summary floor, no kind backfill (owner) + Summary interval setting (imp)
 - working · M4 · PANEL-WIDTH · owner: Settings Width applies to Claude/pi herdr panels too (open at it, live resize), row moves to Panel (imp)
 - working · M4 · DECIDED-LOCALE · owner: Decided for you shows question/answer/instead/why in the Settings language (one lite DS call, effort none) (imp)
