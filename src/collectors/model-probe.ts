@@ -120,6 +120,7 @@ export class ModelProbe {
       const handle = (this.handle = model.submit({
         ...question,
         feature: ROUTES[i].feature,
+        callFeature: 'probe',
       }));
       const result: ModelResult = await handle.result;
       if (generation !== this.generation) return;

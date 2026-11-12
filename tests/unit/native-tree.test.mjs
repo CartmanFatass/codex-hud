@@ -376,6 +376,7 @@ test('Claude resumes after background wait: running card, fresh last-reply final
   f.append([{ type: 'text', text: 'Another completed result.' }], now, 'end_turn');
   await update();
   assert.equal(calls.length, 2, 'a further settlement cannot bypass the shared hourly cap');
+  assert.deepEqual(model.usage().byFeature, { 'native-sentence': 2 });
 });
 test('Claude resumed settlement needs the last public end_turn and no open tools; fresh metadata also settles', (t) => {
   const f = resumedFixture(t);

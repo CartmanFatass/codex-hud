@@ -105,6 +105,7 @@ test('02: multi-kind once, bounded title/goal, newest-first within one day; no t
   assert.match(JSON.stringify(f.calls[0].body.input), /newest/); assert.match(JSON.stringify(f.calls[1].body.input), /older/);
   assert.doesNotMatch(JSON.stringify(f.calls), /NOT-OUTBOUND|expired/);
   assert.deepEqual(board.workers[0].labels.kinds, ['ui', 'feature']);
+  assert.deepEqual(f.service.usage().byFeature, { kind: 2 });
   f.open(); await f.pump(); assert.equal(f.calls.length, 2);
   f.now += 3600001; board = await f.pump(); assert.equal(f.calls.length, 2);
   assert.doesNotMatch(JSON.stringify(f.calls), /oldest|expired/, 'no kind call for a job settled two days ago');
@@ -137,6 +138,7 @@ for (const format of ['pi', 'claude', 'codex']) test(`04: quiet ${format} loop, 
   await f.pump(board, tree); assert.equal(f.calls.length, 0, 'fresh activity is not judged');
   f.now += 180001;
   let labelled = await f.pump(board, tree); assert.equal(f.calls.length, 1); assert.equal(labelled.workers[0].labels.looping, 0.9);
+  assert.deepEqual(f.service.usage().byFeature, { looping: 1 });
   assert.equal(jobActivity(f.home, w, native).items.length, 12);
   assert.doesNotMatch(JSON.stringify(f.calls), /PRIVATE-REASONING/);
   assert.match(JSON.stringify(f.calls), /exit=1/);
@@ -168,6 +170,7 @@ test('05: question revisions, pending and decided chips, permission first withou
   f.put(b, 'qa/q2.md', 'Question: authorise a synthetic change?\nDefault if unanswered: A\nOptions:\nA: keep\nB: change');
   f.put(b, 'qa/q2.answer.md', 'B: change');
   let board = await f.pump(); assert.equal(f.calls.length, 3);
+  assert.deepEqual(f.service.usage().byFeature, { 'question-category': 3 });
   assert.equal(board.workers.find((w) => w.id.endsWith(b)).labels.category, 'owner authorisation');
   assert.equal(board.decisions[0].category, 'owner authorisation');
   assert.doesNotMatch(JSON.stringify(f.calls), /NOT-OUTBOUND/);
@@ -186,6 +189,7 @@ test('06: findings split independently of headings, bounded, revision cached, em
   f.put(id, 'review-1.md', '# Unusual headings\n' + Array.from({ length: 30 }, (_, i) => `${i + 1}. finding ${i} ${'x'.repeat(500)}`).join('\n') + '\nNOT-OUTBOUND');
   let board = await f.pump(); assert.equal(f.calls.length, 1);
   assert.deepEqual(board.workers[0].labels.severity, [8, 8, 8]);
+  assert.deepEqual(f.service.usage().byFeature, { 'review-severity': 1 });
   assert.equal(f.calls[0].body.questions.length, 24);
   assert.ok(f.calls[0].body.input[0].content[1].data.page.text.length <= 24 * 410);
   assert.doesNotMatch(JSON.stringify(f.calls), /Unusual headings|NOT-OUTBOUND/);
@@ -349,6 +353,8 @@ test('01: Gemini 429 and fallback share the separate Decision cap, never the LLM
   text.configure({ backend: 'api', hourlyCap: 3 });
   const result = await text.submit({ feature: 'job-sentence', system: 'test', prompt: 'synthetic' }).result;
   assert.equal(result.ok, true); assert.equal(text.usage().lastHour, 1); assert.equal(f.service.usage().lastHour, 3);
+  assert.deepEqual(f.service.usage().byFeature, { outcome: 3 }, 'fallback retains its original feature');
+  assert.deepEqual(text.usage().byFeature, { 'job-sentence': 1 });
   assert.equal(JSON.parse(fs.readFileSync(join(f.dir, 'calls.json'))).length, 1);
   assert.equal(JSON.parse(fs.readFileSync(join(f.dir, 'decision-api/calls.json'))).length, 3); text.cancelAll();
   f.open(); await f.pump(); assert.equal(f.calls.length, 3);

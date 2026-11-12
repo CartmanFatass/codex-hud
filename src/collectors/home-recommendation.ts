@@ -61,12 +61,12 @@ export class HomeRecommendation {
     const abort = new AbortController(), id = randomUUID();
     this.active = abort;
     try {
-      const r = await this.store.reserve(null, id, this.cap, this.clock, () => abort.signal.aborted);
+      const r = await this.store.reserve(null, id, this.cap, this.clock, () => abort.signal.aborted, undefined, 'home-ranking');
       if (r.kind !== 'reserved') return;
       let first = true;
       const cappedFetch: typeof fetch = async (url, init) => {
         abort.signal.throwIfAborted();
-        if (!first && (await this.store.reserve(null, randomUUID(), this.cap, this.clock, () => abort.signal.aborted)).kind !== 'reserved') throw new Error('cap');
+        if (!first && (await this.store.reserve(null, randomUUID(), this.cap, this.clock, () => abort.signal.aborted, undefined, 'home-ranking')).kind !== 'reserved') throw new Error('cap');
         first = false; return this.fetcher(url, init);
       };
       const provider = await selectDecisionProvider(this.provider, this.env, cappedFetch);

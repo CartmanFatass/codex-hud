@@ -163,7 +163,10 @@ test('ranking keeps its two-minute floor; brief defaults to five minutes and int
 test('Home ranking uses its Decision ledger; zero cap is unlimited with or without a disk store', async (t) => {
   const f = fixture(t); f.job(1); await f.pump();
   assert.equal(JSON.parse(fs.readFileSync(join(f.home, 'display/model-cache/calls.json'))).length, 1);
-  assert.equal(JSON.parse(fs.readFileSync(join(f.home, 'display/model-cache/decision-api/calls.json'))).length, 1);
+  const rankingCalls = JSON.parse(fs.readFileSync(join(f.home, 'display/model-cache/decision-api/calls.json')));
+  assert.equal(rankingCalls.length, 1);
+  assert.equal(rankingCalls[0].feature, 'home-ranking');
+  assert.deepEqual(f.model.usage().byFeature, { 'home-brief': 1 });
   for (let n = 2; n <= 4; n++) { f.now += 120000; f.job(n); await f.pump(); }
   assert.equal(f.calls.length, 4, 'unlimited Decision cap never refuses');
   for (const disk of [true, false]) {
@@ -172,7 +175,7 @@ test('Home ranking uses its Decision ledger; zero cap is unlimited with or witho
     assert.equal((await model.submit({ feature: 'title', system: '', prompt: 'first' }).result).ok, true);
     model.configure({ hourlyCap: 0 });
     for (let n = 0; n < 3; n++) assert.equal((await model.submit({ feature: 'title', system: '', prompt: 'next' + n }).result).ok, true);
-    assert.deepEqual(model.usage(), { today: 4, lastHour: 4, cap: 0 }); model.cancelAll();
+    assert.deepEqual(model.usage(), { today: 4, lastHour: 4, cap: 0, byFeature: { title: 4 } }); model.cancelAll();
   }
 });
 test('a failed separate brief keeps a valid ranking, without Home errors', async (t) => {

@@ -12,6 +12,11 @@ import { section, subTopRow, footRow, mark } from './workboard-rows.js';
 import { stemLines } from './work-card.js';
 
 type SettingValue = string | number | boolean;
+const CALL_FEATURES: Record<string, string> = {
+  'job-sentence': 'Job sentence', 'native-sentence': 'Native sentence', title: 'Decision title',
+  'home-brief': 'Home brief', probe: 'Probe', outcome: 'outcome', kind: 'kind', looping: 'looping',
+  'question-category': 'Question category', 'review-severity': 'Review severity', 'home-ranking': 'Home ranking',
+};
 const PROBE_FAILURES: Record<string, string> = {
   auth: 'Authentication failed',
   'model-not-found': 'Model not found',
@@ -215,8 +220,8 @@ export function renderSettingsPage(
   health?: {
     state: HudHealthState | undefined;
     nowMs?: number;
-    modelCalls?: { today: number; lastHour: number; cap: number };
-    decisionCalls?: { lastHour: number; cap: number };
+    modelCalls?: { today: number; lastHour: number; cap: number; byFeature?: Record<string, number> };
+    decisionCalls?: { lastHour: number; cap: number; byFeature?: Record<string, number> };
     probe?: ModelProbeState;
     settingsFile?: string;
   }
@@ -266,6 +271,11 @@ export function renderSettingsPage(
             fit('  ' + t(decision ? 'Decision calls this hour' : 'Calls this hour'), Math.max(0, width - visualLength(value))) +
             (atCap ? theme.board.danger(value) : theme.board.muted(value)),
         });
+        if (n > 0 && usage?.byFeature) {
+          const parts = Object.entries(usage.byFeature).filter(([, count]) => count > 0)
+            .sort((a, b) => b[1] - a[1]).map(([feature, count]) => `${t(CALL_FEATURES[feature] ?? 'Earlier format')} ${count}`);
+          if (parts.length) content.push({ text: theme.board.muted(truncateAnsi('  ' + parts.join(' · '), width)) });
+        }
         if (atCap) content.push(...stemLines(t(decision ? 'at the cap: labels wait' : 'at the cap: sentences wait'), width).map((text) => ({ text })));
       }
       if (decision) continue;

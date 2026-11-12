@@ -6,7 +6,7 @@ import { selectDecisionProvider } from '../jev/decide.js';
 import { validateChoice } from '../jev/model.js';
 import type { JudgmentChoice } from '../jev/judge.js';
 import type { Answer } from '../jev/decide.js';
-import { ModelRuntimeStore } from './model-runtime-store.js';
+import { ModelRuntimeStore, callsByFeature } from './model-runtime-store.js';
 import { readJobFile, jobActivity } from './job-sentences.js';
 import { writePrivateFile } from './small-model.js';
 import { eachThread } from './subagent-tree.js';
@@ -52,8 +52,8 @@ export class DecisionLabels {
     this.cap = cap;
     if (!this.enabled) this.stop();
   }
-  usage(): { lastHour: number; cap: number } | undefined {
-    try { return { lastHour: this.store.calls().filter((at) => at > this.clock() - 3600000).length, cap: this.cap }; } catch { return undefined; }
+  usage(): { lastHour: number; cap: number; byFeature: Record<string, number> } | undefined {
+    try { const byFeature = callsByFeature(this.store.calls(), this.clock()); return { lastHour: Object.values(byFeature).reduce((a, b) => a + b, 0), cap: this.cap, byFeature }; } catch { return undefined; }
   }
   stop(): void { this.active?.abort(); this.active = undefined; }
   private file(key: string): string { return join(this.dir, 'decision-labels', hash(key) + '.json'); }
@@ -120,9 +120,11 @@ export class DecisionLabels {
   private async run(p: Plan): Promise<void> {
     const abort = new AbortController(), id = randomUUID(), digest = hash('decision-label-v1:' + p.key + ':' + p.revision);
     this.active = abort;
+    const feature = p.key.endsWith(':outcome') ? 'outcome' : p.key.endsWith(':kind') ? 'kind'
+      : p.key.endsWith(':loop') ? 'looping' : p.key.endsWith(':severity') ? 'review-severity' : 'question-category';
     let reserved = false;
     try {
-      const r = await this.store.reserve(digest, id, this.cap, this.clock, () => abort.signal.aborted);
+      const r = await this.store.reserve(digest, id, this.cap, this.clock, () => abort.signal.aborted, undefined, feature);
       if (r.kind === 'waiting' || r.kind === 'refused') return;
       let answers: Answer[] = [];
       if (r.kind === 'cached') answers = JSON.parse(r.entry.text);
@@ -131,7 +133,7 @@ export class DecisionLabels {
         let first = true;
         const cappedFetch: typeof fetch = async (url, init) => {
           abort.signal.throwIfAborted();
-          if (!first && (await this.store.reserve(null, randomUUID(), this.cap, this.clock, () => abort.signal.aborted)).kind !== 'reserved') throw new Error('cap');
+          if (!first && (await this.store.reserve(null, randomUUID(), this.cap, this.clock, () => abort.signal.aborted, undefined, feature)).kind !== 'reserved') throw new Error('cap');
           first = false;
           return this.fetcher(url, init);
         };

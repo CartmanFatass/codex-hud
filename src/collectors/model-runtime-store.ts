@@ -5,6 +5,17 @@ import * as os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
+export interface ModelCall {
+  at: number;
+  feature: string;
+}
+export function callsByFeature(calls: readonly ModelCall[], now: number): Record<string, number> {
+  const counts: Record<string, number> = Object.create(null);
+  for (const { at, feature } of calls)
+    if (at > now - HOUR_MS && at <= now) counts[feature] = (counts[feature] ?? 0) + 1;
+  return { ...counts };
+}
+
 export interface CachedModelReply {
   text: string;
   at: number;
@@ -155,12 +166,16 @@ export class ModelRuntimeStore {
     }
   }
 
-  calls(): number[] {
+  calls(): ModelCall[] {
     const value = read(path.join(this.dir, 'calls.json'));
     if (value === undefined) return [];
-    if (!Array.isArray(value) || value.some((at) => typeof at !== 'number' || !Number.isFinite(at)))
-      throw new Error('model call log unavailable');
-    return value as number[];
+    if (!Array.isArray(value)) throw new Error('model call log unavailable');
+    return value.map((item) => {
+      const call = typeof item === 'number' ? { at: item, feature: 'earlier-format' } : item;
+      if (!call || !Number.isFinite(call.at) || typeof call.feature !== 'string')
+        throw new Error('model call log unavailable');
+      return { at: call.at, feature: call.feature };
+    });
   }
 
   cache(): Map<string, CachedModelReply> {
@@ -208,7 +223,8 @@ export class ModelRuntimeStore {
     cap: number,
     clock: () => number,
     cancelled: () => boolean,
-    accept?: (text: string) => boolean
+    accept?: (text: string) => boolean,
+    feature = 'earlier-format'
   ): Promise<{ kind: 'cached'; entry: CachedModelReply } | { kind: 'waiting' | 'refused' | 'reserved' }> {
     return this.transaction(() => {
       const now = clock();
@@ -236,15 +252,15 @@ export class ModelRuntimeStore {
       const midnight = new Date(now);
       midnight.setHours(0, 0, 0, 0);
       const retainAfter = Math.min(midnight.getTime(), now - HOUR_MS);
-      const calls = this.calls().filter((at) => at >= retainAfter);
+      const calls = this.calls().filter(({ at }) => at >= retainAfter);
       // Count future reservations conservatively as well: clock rollback
       // must not reopen budget already spent by another panel.
-      if (cap > 0 && calls.filter((at) => at > now - HOUR_MS).length >= cap) return { kind: 'refused' };
+      if (cap > 0 && calls.filter(({ at }) => at > now - HOUR_MS).length >= cap) return { kind: 'refused' };
       // Persist the reservation before sending. A crash can conservatively
       // spend a slot, but cannot send an uncounted request.
       try {
         if (digest) atomicWrite(this.activeFile(id), OWNER);
-        atomicWrite(path.join(this.dir, 'calls.json'), [...calls, now]);
+        atomicWrite(path.join(this.dir, 'calls.json'), [...calls, { at: now, feature }]);
         if (digest) {
           claims[digest] = { ...OWNER, id };
           atomicWrite(path.join(this.dir, 'claims.json'), claims);

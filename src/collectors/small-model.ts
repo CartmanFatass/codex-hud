@@ -13,7 +13,7 @@
  *   answers to the same input (in memory and, when a directory is given, on
  *   disk), so the same input is never sent twice;
  * - an hourly cap on calls. A request past it is refused with a reason the
- *   owner shows, never silently dropped. Calls are logged (timestamps only)
+ *   owner shows, never silently dropped. Calls are logged (time and feature)
  *   so the cap and "calls today" hold across panel restarts.
  *
  */
@@ -24,7 +24,7 @@ import * as path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { t, type Language } from '../render/i18n.js';
 import { wrongLanguage } from './reply-language.js';
-import { ModelRuntimeStore } from './model-runtime-store.js';
+import { ModelRuntimeStore, callsByFeature, type ModelCall } from './model-runtime-store.js';
 
 export type ModelBackend = 'off' | 'api';
 /** minimal/medium are advanced typed-only compatibility values, never inferred. */
@@ -48,6 +48,8 @@ export interface ModelRequest {
   materialUnchanged?: true;
   /** Who is asking; selects an API model route, but is never sent. */
   feature: string;
+  /** Accounting name when routing/cache identity must stay unchanged (native sentences and probes). */
+  callFeature?: string;
   system: string;
   prompt: string;
   /** Defaults to `low`, what every feature used before levels were a choice. */
@@ -129,6 +131,7 @@ export interface ModelUsage {
   today: number;
   /** Calls in the last hour, which is what the cap counts. */
   lastHour: number;
+  byFeature: Record<string, number>;
   cap: number;
 }
 
@@ -290,18 +293,24 @@ function validFormat(request: ModelRequest, text: string): boolean {
 }
 
 /** Calls within `windowMs` before `now`. */
-export function callsWithin(calls: readonly number[], now: number, windowMs: number): number {
+export function callsWithin(calls: readonly (number | ModelCall)[], now: number, windowMs: number): number {
   let count = 0;
-  for (const at of calls) if (at > now - windowMs && at <= now) count++;
+  for (const call of calls) {
+    const at = typeof call === 'number' ? call : call.at;
+    if (at > now - windowMs && at <= now) count++;
+  }
   return count;
 }
 
 /** Calls since local midnight of `now`'s day. */
-export function callsToday(calls: readonly number[], now: number): number {
+export function callsToday(calls: readonly (number | ModelCall)[], now: number): number {
   const midnight = new Date(now);
   midnight.setHours(0, 0, 0, 0);
   let count = 0;
-  for (const at of calls) if (at >= midnight.getTime() && at <= now) count++;
+  for (const call of calls) {
+    const at = typeof call === 'number' ? call : call.at;
+    if (at >= midnight.getTime() && at <= now) count++;
+  }
   return count;
 }
 
@@ -395,7 +404,7 @@ export class SmallModel {
   private readonly queue: Job[] = [];
   private active: Job | null = null;
   private cache = new Map<string, { text: string; at: number }>();
-  private calls: number[] = [];
+  private calls: ModelCall[] = [];
   private priorityBurst = 0;
   private nextOrder = 0;
   private wakeTimer?: ReturnType<typeof setTimeout>;
@@ -424,7 +433,12 @@ export class SmallModel {
 
   usage(now: number = this.clock()): ModelUsage {
     this.reloadCalls();
-    return { today: callsToday(this.calls, now), lastHour: callsWithin(this.calls, now, HOUR_MS), cap: this.cap };
+    return {
+      today: callsToday(this.calls, now),
+      lastHour: callsWithin(this.calls, now, HOUR_MS),
+      byFeature: callsByFeature(this.calls, now),
+      cap: this.cap,
+    };
   }
 
   diagnostics(): ModelDiagnostics {
@@ -660,7 +674,8 @@ export class SmallModel {
         this.cap,
         this.clock,
         () => job.settled,
-        (text) => acceptable(job.request, text)
+        (text) => acceptable(job.request, text),
+        job.request.callFeature ?? job.request.feature
       );
       if (job.settled) {
         if (reservation.kind === 'reserved' && job.digest) await store.finish(job.digest, job.id);
@@ -691,7 +706,7 @@ export class SmallModel {
         if (hit) this.cache.delete(job.digest);
       }
       if (this.cap > 0 && callsWithin(this.calls, now, HOUR_MS) >= this.cap) return this.capResult();
-      this.calls.push(now);
+      this.calls.push({ at: now, feature: job.request.callFeature ?? job.request.feature });
     }
     let outcome: ModelResult;
     try {
