@@ -3,7 +3,7 @@ import type { WorkboardSnapshot, WorkLane, OwnerWorker } from '../collectors/wor
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { failed, renderWorkCard, workPhaseText } from './work-card.js';
+import { cardExpanded, failed, renderWorkCard, workPhaseText } from './work-card.js';
 import { boardRow, mark } from './workboard-rows.js';
 import { pair, monitorText, fit } from './monitor-text.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
@@ -109,7 +109,7 @@ export function laneRows(
       worker.homeNeedsHuman && !worker.modelSentence
         ? renderWorkCard(card, state, room, '').slice(0, 1)
         : renderWorkCard(card, state, room, sentence);
-    if (!currentWorker(worker, now) && !state.boardExpanded?.has(key)) lines = [theme.board.muted(stripAnsi(lines[0]))];
+    if (!currentWorker(worker, now) && !cardExpanded(state, key)) lines = [theme.board.muted(stripAnsi(lines[0]))];
     rows.push(...lines.map((text) => ({ text: indent + text, item: key, key })));
   }
   rows.push(boardRow(''));

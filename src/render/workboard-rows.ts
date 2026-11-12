@@ -7,7 +7,8 @@ import type { MonitorRow, MonitorState } from './monitor.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
 import { displayConfig } from './hud-config.js';
 import { pair, monitorText, fit, flowLines } from './monitor-text.js';
-import { ageText, stemLines } from './work-card.js';
+import { ageText, stemLines, paintSentence, jobSentenceRows } from './work-card.js';
+import { keywordMarks } from '../utils/keyword-marks.js';
 import { t } from './i18n.js';
 import { currentDecision } from './work-visibility.js';
 export const asciiBoard = () => displayConfig().icons === 'text';
@@ -56,7 +57,7 @@ export function footRow(left: string, hints: string, width: number): string {
   return pair(left, theme.board.muted(footHints(hints, width - visualLength(left) - (left ? 2 : 0))), width);
 }
 export const decisionTitle = (record: DecisionRecord) =>
-  monitorText(record.modelTitle ?? record.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? record.title);
+  keywordMarks(monitorText(record.modelTitle ?? record.option?.replace(/^[a-z0-9]+:\s*/i, '') ?? record.title)).plain;
 /** Collapsed, one row (title cut to fit); expanded (Enter), the whole title, question and `instead of`. Display only. */
 export function decisionRows(
   record: DecisionRecord,
@@ -77,13 +78,14 @@ export function decisionRows(
     // `worth a look` gives way to the age alone when it would leave the title under ten cells.
     const long = `${t('worth a look')} · ${age}`;
     const right = !old && record.departure && width - visualLength(left) - visualLength(long) - 3 >= 10 ? long : age;
-    const row = pair(`${left}  ${ink(decisionTitle(record))}`, ink(right), width);
+    const title = record.modelTitle ? paintSentence(record.modelTitle) : ink(decisionTitle(record));
+    const row = pair(`${left}  ${title}`, ink(right), width);
     return [boardRow(old ? theme.board.muted(stripAnsi(row)) : theme.board.title(row), target)];
   }
   const right = `${record.departure ? t('worth a look') + ' · ' : ''}${age}`;
   const rows = [
     theme.board.title(pair(left, ink(right), width)),
-    ...stemLines(decisionTitle(record), width, ink),
+    ...(record.modelTitle ? jobSentenceRows(record.modelTitle, width, ink, true) : stemLines(decisionTitle(record), width, ink)),
     ...(record.question ? stemLines(`${t('asked')} ${record.question}`, width, ink) : []),
     ...(record.departure && record.instead ? stemLines(`${t('instead of')} ${record.instead}`, width, ink) : []),
   ];

@@ -140,8 +140,8 @@ for (const mode of ['off', 'no-key', 'on'])
                   message: {
                     content: JSON.stringify(
                       language === 'zh'
-                        ? { name: '解析器修复', sentence: '正在检查«解析器»边界。' }
-                        : { name: 'Parser repair', sentence: 'Checking «parser» boundaries.' }
+                        ? { name: '解析器修复', sentence: '检查«解析器»和report.md，«+批准»或«-拒绝»，«!认为更简单»。' }
+                        : { name: 'Parser repair', sentence: 'Checking «parser» and report.md, «+accept» or «-reject» with «!simpler design».' }
                     ),
                   },
                 },
@@ -192,7 +192,14 @@ for (const mode of ['off', 'no-key', 'on'])
         height: 28,
         nowMs: now,
       });
-      assert.ok(frame.lines.join('\n').includes(theme.board.identifier(language === 'en' ? 'parser' : '解析器')));
+      const checkPaint = (board) => {
+        const ansi = renderMonitor({ tree, workboard: board, state: initialMonitorState(), width: 120, height: 28, nowMs: now }).lines.join('\n');
+        for (const span of [theme.board.identifier(language === 'en' ? 'parser' : '解析器'), theme.board.identifier('report.md'),
+          theme.board.success(language === 'en' ? 'accept' : '批准'), theme.board.danger(language === 'en' ? 'reject' : '拒绝'),
+          theme.board.opinion(language === 'en' ? 'simpler design' : '认为更简单')]) assert.ok(ansi.includes(span));
+      };
+      checkPaint(board);
+      assert.match(calls[0].messages[0].content, /up to 4 keywords/);
       now += 119999;
       tree.nodes[0].status = 'completed';
       tree.nodes[0].statusAt = new Date(now);
@@ -202,6 +209,7 @@ for (const mode of ['off', 'no-key', 'on'])
       board = await update();
       assert.equal(calls.length, 2);
       assert.match(calls[1].messages[1].content, /"state":"done"/);
+      checkPaint(board);
       now += 300000;
       await update();
       assert.equal(calls.length, 2, 'successful final freezes only that settlement');
@@ -218,7 +226,8 @@ for (const mode of ['off', 'no-key', 'on'])
       reopened.stop();
       tree.nodes[0].status = 'error';
       tree.nodes[0].statusAt = new Date(now);
-      await update();
+      board = await update();
+      checkPaint(board);
       assert.equal(calls.length, 3);
       assert.match(calls[2].messages[1].content, /"state":"failed"/);
       service.configure(false, language);

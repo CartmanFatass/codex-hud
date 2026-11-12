@@ -4,6 +4,7 @@ import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js'
 import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
 import { monitorRowAt } from './monitor-input.js';
 import { projectWorkCard } from '../collectors/work-card.js';
+import { cardExpanded } from './work-card.js';
 import { join } from 'node:path';
 export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
@@ -142,9 +143,14 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   };
   const toggle = (item: string, open?: boolean) => {
     const set = new Set(next.boardExpanded);
-    if (open === false || (open === undefined && set.has(item))) set.delete(item);
+    const worker = boardFrame.snapshot.workers.find(
+      (w) => targetKey({ kind: 'worker', laneId: w.laneId, workerId: w.id }) === item
+    );
+    const expanded = worker && !worker.homeNeedsHuman ? cardExpanded(next, item) : set.has(item);
+    if (open === false || (open === undefined && expanded)) set.delete(item);
     else set.add(item);
     next.boardExpanded = set;
+    if (worker) next.boardToggled = new Set([...(next.boardToggled ?? []), item]);
   };
   const jobFiles = (): MonitorOutcome['action'] => {
     const target = selected();

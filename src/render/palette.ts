@@ -409,6 +409,7 @@ const boardFrom = (p: Palette) => ({
   askTitle: p.chip,
   stalled: p.warning,
   identifier: p.model,
+  opinion: p.info,
   roleInk: p.roleInk,
 });
 const BOARD_NONE = boardFrom(NONE),

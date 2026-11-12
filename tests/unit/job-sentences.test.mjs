@@ -182,6 +182,8 @@ test('ordinary cards expand the whole marked sentence and factual detail, then c
       render()
         .lines.map((line) => stripAnsi(line).replace(/^┃ /, ''))
         .join(' ');
+    assert.match(text().replace(/\s+/g, ' '), /very last word\./);
+    enter();
     assert.doesNotMatch(text(), /last word|Factual progress/);
     enter();
     assert.match(text().replace(/\s+/g, ' '), /very last word\./);
@@ -350,6 +352,7 @@ test('decision title: eight words, row and expanded block, dedupe, persisted reo
   b = await f.update();
   assert.equal(f.calls.length, 1);
   assert.equal(decisionTitle(b.decisions[0]), title);
+  assert.match(f.calls[0].messages[0].content, /up to 2 keywords/);
   assert.match(f.calls[0].messages[1].content, /Which parser/);
   assert.match(f.calls[0].messages[1].content, /"answer":"B"/);
   f.put('qa/q1.answer.md', 'A');
@@ -364,6 +367,42 @@ test('decision title: eight words, row and expanded block, dedupe, persisted reo
   f.service.configure(false, 'zh');
   assert.equal(decisionTitle(f.service.apply(f.board()).decisions[0]), 'fast parser');
 });
+for (const language of ['en', 'zh']) {
+  test(`typed job current/result/cause and persisted old grammar: ${language}`, async (t) => {
+    const f = fixture(t, 'on', language);
+    for (const state of ['working', 'closed', 'failed']) {
+      f.now += 120_001;
+      f.put('STATUS.json', { state, settled_at: state === 'working' ? undefined : new Date(f.now).toISOString() });
+      f.reply = language === 'en'
+        ? 'Review «+accepts» or «-rejects» report.md and «!recommends simplicity».'
+        : '评审«+批准»或«-拒绝»report.md并«!认为更简单»。';
+      const board = await f.update(), ansi = f.render(board, 120);
+      assert.ok(ansi.includes(theme.board.success(language === 'en' ? 'accepts' : '批准')));
+      assert.ok(ansi.includes(theme.board.danger(language === 'en' ? 'rejects' : '拒绝')));
+      assert.ok(ansi.includes(theme.board.opinion(language === 'en' ? 'recommends simplicity' : '认为更简单')));
+      assert.ok(ansi.includes(theme.board.identifier('report.md')));
+      assert.doesNotMatch(stripAnsi(ansi), /[«»!+]/);
+    }
+    assert.equal(f.calls.length, 3);
+    assert.match(f.calls[0].messages[0].content, /up to 4 keywords/);
+  });
+  test(`typed decision model response survives word cap, painting and cache: ${language}`, async (t) => {
+    const f = decisionFixture(t);
+    f.service.configure(true, language);
+    f.reply = language === 'en' ? '«+Accept» the «!simpler report.md»' : '«+批准»使用«!更简单的report.md»。';
+    let board = await f.update();
+    const paint = () => decisionRows(board.decisions[0], board.lanes[0], initialMonitorState(), 160, f.now).map((r) => r.text).join('\n');
+    assert.ok(paint().includes(theme.board.success(language === 'en' ? 'Accept' : '批准')));
+    assert.ok(paint().includes(theme.board.identifier('report.md')));
+    assert.doesNotMatch(stripAnsi(paint()), /[«»!+]/);
+    assert.match(f.calls[0].messages[0].content, /up to 2 keywords/);
+    f.service = new DecisionTitles(f.model, f.file);
+    f.service.configure(true, language);
+    board = await f.update();
+    assert.equal(f.calls.length, 1);
+    assert.ok(paint().includes(theme.board.success(language === 'en' ? 'Accept' : '批准')));
+  });
+}
 for (const mode of ['off', 'no-key'])
   test(`decision factual fallback: ${mode}`, async (t) => {
     const f = decisionFixture(t, mode),

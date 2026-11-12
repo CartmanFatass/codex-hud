@@ -3,7 +3,7 @@ import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
-import { renderWorkCard, requestLines, stemLines, workPhaseText, workStateGlyph, workStateInk } from './work-card.js';
+import { renderWorkCard, requestLines, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk } from './work-card.js';
 import {
   kvRows,
   section,
@@ -196,7 +196,7 @@ export function boardInspectorRows(
   const rows = [
     boardRow(''),
     decisionRows(d, lane, { ...state, boardExpanded: new Set([targetKey(target)]) }, width, now)[0],
-    ...stemLines(decisionTitle(d), width).map((text) => boardRow(theme.board.body(text))),
+    ...(d.modelTitle ? jobSentenceRows(d.modelTitle, width, theme.board.muted, true) : stemLines(decisionTitle(d), width)).map((text) => boardRow(theme.board.body(text))),
     boardRow(''),
     ...[
       ['asked', d.question],

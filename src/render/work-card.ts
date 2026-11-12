@@ -7,6 +7,7 @@ import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { displayConfig } from './hud-config.js';
 import { mark } from './workboard-rows.js';
+import { keywordMarks } from '../utils/keyword-marks.js';
 export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
 export const failed = (card: WorkCard) => card.worker.work?.failed || ['failed', 'error'].includes(card.worker.state);
 export const workStateWord = (card: WorkCard) => {
@@ -50,10 +51,13 @@ export const workStateInk = (card: WorkCard) => {
 export function ageText(minutes: number): string {
   return minutes < 60 ? t('{n}m', { n: minutes }) : t('{h}h{m}m', { h: Math.floor(minutes / 60), m: minutes % 60 });
 }
-/** Only syntactic identifiers get emphasis until AI-THIN. */
+/** Paths, filenames, code and flags share the deterministic identifier ink. */
+const identifierPattern = /`[^`]+`|(?:\.?\.?\/|~\/)[^\s,;，。；]+|\b[\w.-]+\/[\w/.-]+|\b[\w.-]+\.[a-zA-Z][\w-]*\b|--[\w-]+/g;
+export const cardExpanded = (state: MonitorState, key: string) =>
+  state.boardExpanded?.has(key) || (state.boardNewest === key && !state.boardToggled?.has(key));
 export function identifiers(text: string): string {
   return monitorText(text)
-    .replace(/`[^`]+`|(?:\.?\.?\/|~\/)[^\s,;]+|\b[\w.-]+\/[\w/.-]+|--[\w-]+/g, (s) => theme.board.identifier(s))
+    .replace(identifierPattern, (s) => theme.board.identifier(s))
     .replace(
       new RegExp(`(${t('default')}: )([a-zA-Z])([).,:])`),
       (_match, before, letter, after) => before + theme.board.askTitle(letter) + after
@@ -73,37 +77,46 @@ export function jobSentenceLine(raw: string, width: number, ink = theme.board.mu
 export function jobSentenceRows(raw: string, width: number, ink: (s: string) => string, full: boolean): string[] {
   const safe = monitorText(raw).replace(/\s+/g, ' ').trim(),
     room = Math.max(1, width - 3);
-  const spans = [...safe.matchAll(/«([^«»]+)»/g)];
-  const valid = spans.length > 0 && spans.length <= 3 && !/[«»]/.test(safe.replace(/«[^«»]+»/g, ''));
-  const plain = safe.replace(/[«»]/g, '');
+  const { plain, valid } = keywordMarks(safe);
   let text = truncateAnsi(plain, room);
   if (text !== plain) {
     const head = text.slice(0, -1),
       space = head.lastIndexOf(' ');
     text = (space > 0 ? head.slice(0, space) : head) + '…';
   }
-  const ranges = valid
-    ? spans.map((s) => {
-        const start = safe.slice(0, s.index).replace(/[«»]/g, '').length;
-        return [start, start + s[1].length];
-      })
-    : [];
   let offset = 0;
-  return (full ? flowLines(plain, room) : [text]).map((line) => {
-    const start = full ? plain.indexOf(line, offset) : 0;
-    let painted = '',
-      cursor = 0;
-    for (const [a, b] of ranges) {
-      const from = Math.max(cursor, a - start),
-        to = Math.min(line.length, b - start);
-      if (from >= to) continue;
-      painted += line.slice(cursor, from) + theme.board.identifier(line.slice(from, to));
-      cursor = to;
-    }
-    painted += line.slice(cursor);
+  return (full && valid ? flowLines(plain, room) : [text]).map((line) => {
+    const start = full && valid ? plain.indexOf(line, offset) : 0;
+    const painted = paintSentence(safe, line, start);
     offset = start + line.length;
     return fit(`${ink(mark('┃', '|'))} ${painted}`, width);
   });
+}
+/** Paint visible text after cutting/wrapping; file spans override model categories. */
+export function paintSentence(raw: string, line?: string, start = 0): string {
+  const { plain, spans } = keywordMarks(monitorText(raw));
+  line ??= plain;
+  const unpainted = (s: string) => s;
+  const inks = Array.from({ length: line.length }, () => unpainted);
+  for (const span of spans) {
+    const ink =
+      span.type === '+' ? theme.board.success :
+      span.type === '-' ? theme.board.danger :
+      span.type === '!' ? (displayConfig().icons === 'text' ? unpainted : theme.board.opinion) :
+      theme.board.identifier;
+    for (let i = Math.max(0, span.start - start); i < Math.min(line.length, span.end - start); i++) inks[i] = ink;
+  }
+  for (const m of plain.matchAll(identifierPattern))
+    for (let i = Math.max(0, m.index! - start); i < Math.min(line.length, m.index! + m[0].length - start); i++)
+      inks[i] = theme.board.identifier;
+  let painted = '';
+  for (let i = 0; i < line.length; ) {
+    let end = i + 1;
+    while (end < line.length && inks[end] === inks[i]) end++;
+    painted += inks[i](line.slice(i, end));
+    i = end;
+  }
+  return painted;
 }
 /** An open question as its paragraphs; the context and every option only when `full`. */
 export function requestLines(card: WorkCard, full = false): string[] {
@@ -163,11 +176,12 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
   ];
   // Open questions have their complete expandable slab above the lanes on Home.
   const generated = card.worker.modelSentence;
-  const open = state.boardExpanded?.has(
+  const open = cardExpanded(
+    state,
     targetKey({ kind: 'worker', laneId: card.worker.laneId, workerId: card.worker.id })
   );
   if (generated) rows.push(...jobSentenceRows(generated, width, ink, Boolean(open)));
   for (const part of generated && !open ? [] : [workCardDetail(card, sentence)])
-    if (part) rows.push(...stemLines(part, width, ink));
+    if (part) rows.push(...stemLines(part, width, ink, open ? Infinity : 1));
   return rows.map((line, i) => (i ? (failed(card) ? theme.board.failedBody : theme.board.body)(line) : line));
 }

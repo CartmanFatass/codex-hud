@@ -46,6 +46,8 @@ export interface MonitorState {
   homeTarget?: WorkTarget;
   homeScroll?: number;
   boardExpanded?: ReadonlySet<string>;
+  boardToggled?: ReadonlySet<string>;
+  boardNewest?: string;
   boardFolded?: ReadonlySet<string>;
   boardRevealed?: string;
   boardAnchor?: string;
