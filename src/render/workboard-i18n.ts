@@ -6,6 +6,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   resources: '用量',
   'tokens spent': '已用 token',
   Project: '项目',
+  Milestone: '里程碑',
   'Decided for you': '已替你决定',
   'Nothing needs you': '没有需要你处理的事',
   '{n} running': '{n} 运行中',

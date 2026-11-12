@@ -124,7 +124,7 @@ export class ProjectCollector {
     }
     return features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
   }
-  async collect(shown: boolean, board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
+  async collect(shown: boolean | 'home', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
@@ -158,9 +158,13 @@ export class ProjectCollector {
       });
     }
     const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
+    out.ladder.current = milestone?.split(/\s+/)[0];
+    if (shown === 'home') {
+      for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
+      return out;
+    }
     const spec = this.read(join(this.cwd, 'docs/spec.md'))?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
     out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M[^,\s*]+),/gm)].map((m) => m[1]);
-    out.ladder.current = milestone?.split(/\s+/)[0];
     if (milestone) out.docs.push({ label: 'spec', value: milestone, path: join(this.cwd, 'docs/spec.md') });
     const reviews = join(this.cwd, 'docs/reviews');
     const review = this.names(reviews).filter((n) => n.endsWith('.md')).reverse().slice(0, 12)

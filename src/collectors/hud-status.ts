@@ -63,6 +63,8 @@ export interface HudStatusInput {
   sessionId?: string;
   /** The latest collection failed; the values shown are the last good ones. */
   stale: boolean;
+  /** The panel has its own on-demand Project/Changes git collectors. */
+  skipGit?: boolean;
   runtimeSession?: Partial<SessionInfo>;
   /**
    * The panel's tree, when this build is the second one on a tick. Passed
@@ -110,7 +112,7 @@ export class HudStatus {
     return time('status.build', () => this.buildNow(input));
   }
 
-  private buildNow({ rollout, sessionId, stale, runtimeSession, tree }: HudStatusInput): HudData {
+  private buildNow({ rollout, sessionId, stale, runtimeSession, tree, skipGit }: HudStatusInput): HudData {
     const now = Date.now();
     if (this.config === null || this.configStale || now - this.configAt >= this.configMaxAgeMs) {
       this.config = readCodexConfig();
@@ -120,7 +122,7 @@ export class HudStatus {
     if (!this.project || now - this.lastSyncAt >= SYNC_REFRESH_MS) {
       this.project = collectProjectInfo(this.cwd, this.config);
       this.lastSyncAt = now;
-      this.refreshGit(rollout);
+      if (!skipGit) this.refreshGit(rollout);
     }
 
     // Matches Codex's "context window left", from last_token_usage.

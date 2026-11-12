@@ -4,7 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { boardInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
-import { projectRows } from './project-view.js';
+import { projectRows, homeProgressRows } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
@@ -133,6 +133,9 @@ export function renderWorkboardFrame(
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
+  if (!sub && !project) rows.push(...homeProgressRows(input.project, width, height - 2 - rows.length));
+  if (state.boardAnchor?.startsWith('home-progress:') && !rows.some((r) => r.item === state.boardAnchor))
+    state.boardAnchor = undefined;
   const targets = new Map<string, WorkTarget>();
   for (const lane of board.lanes) {
     const all: WorkTarget[] = [
@@ -156,13 +159,15 @@ export function renderWorkboardFrame(
       .sort((a, b) => a.distance - b.distance)[0]?.target;
     state.homeTarget = selected;
   }
+  if (!sub && !project && !selected && !state.boardAnchor)
+    state.boardAnchor = rows.find((r) => r.item?.startsWith('home-progress:'))?.item;
   const files = rows.filter((r) => r.files?.length);
   if (inspector && !files.some((r) => r.item === state.inspectCursor))
     state.inspectCursor =
       files.find((r) => r.files?.[0].endsWith(worker?.work?.requestInfo?.evidence?.relativePath ?? '/report.md'))
         ?.item ?? files[0]?.item;
   if (project && !rows.some((r) => r.item === state.projectCursor)) state.projectCursor = rows.find((r) => r.item)?.item;
-  const key = project ? state.projectCursor : inspector ? state.inspectCursor : selected ? targetKey(selected) : '';
+  const key = project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
   const cursorAt = rows.findIndex((r) => r.item === key),
     room = Math.max(0, height - 2),
     max = Math.max(0, rows.length - room);

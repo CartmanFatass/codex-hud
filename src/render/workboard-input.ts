@@ -176,9 +176,18 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         files: worker?.work?.requestInfo?.evidence === evidence ? [file] : [file, file.replace(/\.md$/, '.answer.md')],
       };
   };
-  // Enter, or a click on the selected item: a lane folds or unfolds, any other item expands or collapses in place.
-  // It never changes tab.
+  const openProgress = (item: string) => {
+    const id = item.slice('home-progress:'.length);
+    home();
+    next.mainTab = 'project';
+    next.projectCursor = `project:fold:${id}`;
+    next.projectScroll = 0;
+    next.projectFolded = new Set([...(next.projectFolded ?? ['control', 'agents'])]
+      .filter((key) => key !== id && key !== (id === 'progress' ? 'progress' : 'tickets')));
+  };
+  // Cards expand in place; the compact progress block opens its Project destination.
   const activate = (target = selected()) => {
+    if (next.boardAnchor?.startsWith('home-progress:')) return openProgress(next.boardAnchor);
     if (next.boardAnchor) {
       toggle(next.boardAnchor);
       return;
@@ -226,6 +235,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     const row = monitorRowAt(pane, input.x, input.y),
       item = control?.kind === 'board-pick' ? control.item : row?.item;
+    if (item?.startsWith('home-progress:')) {
+      openProgress(item);
+      return result();
+    }
     if (item?.startsWith('fold:')) {
       next.boardAnchor = item;
       toggle(item);
@@ -284,6 +297,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const index =
       key === 'home' ? 0 : key === 'end' ? items.length - 1 : Math.max(0, Math.min(items.length - 1, at + step));
     const item = items[index];
+    if (item?.startsWith('home-progress:')) {
+      next.boardAnchor = item;
+      next.boardRevealed = undefined;
+      return result();
+    }
     if (item?.startsWith('fold:')) {
       next.boardAnchor = item;
       toggle(item, true);

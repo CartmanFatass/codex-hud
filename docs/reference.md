@@ -324,9 +324,10 @@ Up/Down move over file rows and section headers; Enter or `o` folds a header or 
 in `$EDITOR` (default `vim`) in its own focused herdr tab in the panel's workspace. The tab is labelled with
 the first file's basename (at most 24 cells) and closes when the editor exits. If the workspace lookup fails,
 a split beside the panel is used instead. Project keeps its cursor and scroll separate
-from Home. Collection runs only while Project is shown (not behind Help, Settings, Changes or the Inspector),
+from Home. Full collection runs only while Project is shown (not behind Help, Settings, Changes or the Inspector),
 uses stat-signature caches and 64 KiB file reads, and probes git at most once per five seconds through the
-existing safe git helper. Rendering only consumes the retained snapshot.
+existing safe git helper. Home reads only STATE and local tickets through the same caches; unchanged files need
+no body reread. Rendering only consumes the retained snapshot.
 
 ## Home (ONE-PAGE)
 
@@ -335,6 +336,13 @@ existing safe git helper. Rendering only consumes the retained snapshot.
 > follows this section.
 
 The panel has two passive tabs: **Home** (needs-you questions or `✓ Nothing needs you · N running`, package lanes with job cards, then **Decided for you**) and **Project** (the project at a glance). There is no Work tab.
+
+**Spare-row progress.** After the cards and decisions, Home uses only otherwise unused rows for STATE's one-line
+`## Now` summary, the current milestone, the shared stacked bar and legend counts, then open tickets grouped by
+feature (done/total; ready, working or blocked ticket numbers and short titles). Completed/dropped tickets and
+slices in flight are not repeated. As the pane shortens, tickets shrink first, then the legend disappears, then
+the whole block goes before it can displace a card. Up/Down selects it; Enter or a click opens Project at Progress
+or the ticket's feature, unfolded. Home does not trigger git, control-plane, custom-agent or ticket-job scans.
 
 | `Ctrl+\`, then | Opens |
 |---|---|

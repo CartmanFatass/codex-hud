@@ -152,8 +152,10 @@ re-checks). The main session still owns the full acceptance gate and chaining.
 ## Project tab (M4)
 
 `ProjectCollector` (`collectors/project-board.ts`, separate from the bar's existing `project.ts`)
-collects only when `projectShown` says Project is the visible main page, with no modal. `tree-page.ts`
-retains its snapshot and passes `MonitorData.project` into the pure `render/project-view.ts` rows and
+collects full facts only when `projectShown` says Project is the visible main page, with no modal. On Home,
+`collect('home', …)` returns after the same cached STATE/ticket reads, before spec, roles, keys, custom agents,
+git and job scans. The panel disables `HudStatus`'s legacy bar git refresh; Project and Changes own their
+on-demand git probes. `tree-page.ts` retains the snapshot and passes `MonitorData.project` into the pure `render/project-view.ts` rows and
 shared `renderWorkboardFrame` viewport. Project has separate cursor/scroll/fold state; Control plane
 and native agents start folded. File rows emit `open-files`, the generalised former `job-files` action;
 the existing `openEditorPane` opens `$EDITOR` (default vim) in a focused herdr tab in the panel's workspace,
@@ -210,7 +212,15 @@ candidates read a brief body; without tickets the progress-board lookup remains 
 matching job by `created_at` supplies role, recorded STATUS state and age (settlement, else start/creation).
 This is a display join, never ticket completion evidence. It adds no job-directory scan, git probe, model
 call or write. Nothing is drawn when there are no valid local tickets; the existing `projectShown` gate
-also prevents ticket I/O on Home or behind a modal.
+prevents full ticket/job collection behind a modal; Home reads tickets without the job overlay.
+
+**Home spare rows** use `homeProgressRows` from the same Project row kit and `progressBarRows`/`progressSegments`.
+`renderWorkboardFrame` first builds all question, job/native card, decision, older-item and notice rows, then
+budgets the compact block against `height - 2 - rows.length` (not the scroll window). It appends summary,
+current milestone and bar only with at least three spare rows; the shared legend gets space before feature
+counts/open tickets. Tickets shrink first, then the legend drops, then the block disappears. No slice-in-flight
+rows are copied. Non-card selection reuses `boardAnchor`; Enter/click routes to Project's progress or feature
+fold row and unfolds the destination. A resize removing the block clears its anchor, preserving card navigation.
 
 Files and directory membership use stat-signature caches, reads stop at 64 KiB, directory discovery
 stops at 128 names per source (job directory membership is enumerated to rank the newest 64), and obsolete

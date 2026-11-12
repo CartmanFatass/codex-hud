@@ -23,6 +23,45 @@ export function progressSegments(counts: ProjectSnapshot['counts'], width: numbe
     return segment;
   });
 }
+function pack(parts: string[], width: number, max = Infinity): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const part of parts) {
+    if (line && visualLength(line + '  ' + part) > width) { lines.push(line); line = ''; }
+    line += '  ' + part;
+  }
+  if (line) lines.push(line);
+  return lines.slice(0, max);
+}
+function progressBarRows(data: ProjectSnapshot, width: number): MonitorRow[] {
+  const segments = progressSegments(data.counts, width), rows: MonitorRow[] = [];
+  if (segments.some((s) => s.width)) rows.push(boardRow(segments.map(({ state, width: cells }) =>
+    sliceInk(state)(mark(state === 'todo' || state === 'dropped' ? '░' : state === 'try' ? '▓' : '█', '#').repeat(cells))).join('')));
+  return [...rows, ...pack(SLICE_STATES.map((s) => sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${data.counts[s]}`)), width)
+    .map((line) => boardRow(fit(line, width)))];
+}
+/** Only whole spare rows; cards and decisions have already claimed their space. */
+export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number): MonitorRow[] {
+  if (!data || spare < 3 || (!data.summary && !data.ladder.current && !data.tickets.length)) return [];
+  const link = (text: string, id = 'progress'): MonitorRow => ({ text: fit(text, width), item: `home-progress:${id}` });
+  const bars = progressBarRows(data, width), hasBar = SLICE_STATES.some((s) => data.counts[s]);
+  const legend = bars.slice(hasBar ? 1 : 0);
+  const rows = [link(theme.board.title(t('Progress')) + (data.summary ? ` · ${monitorText(data.summary)}` : '')),
+    ...(data.ladder.current ? [link(`${t('Milestone')}: ${monitorText(data.ladder.current)}`)] : []),
+    ...(hasBar ? [link(bars[0].text)] : [])];
+  if (rows.length + legend.length > spare) return rows;
+  rows.push(...legend.map((r) => link(r.text)));
+  for (const feature of data.tickets) {
+    const open = feature.tickets.filter((r) => ['ready', 'working', 'blocked'].includes(r.state));
+    if (!open.length || spare - rows.length < 2) continue;
+    const id = `tickets:${feature.slug}`, done = feature.tickets.filter((r) => r.state === 'done').length;
+    rows.push(link(pair(`${t('Tickets')} · ${monitorText(feature.slug)}`,
+      t('{done}/{total} done', { done, total: feature.tickets.length }), width), id));
+    for (const ticket of open.slice(0, spare - rows.length)) rows.push(link(pair(
+      `  ${monitorText(ticket.number + ' ' + ticket.title)}`, theme.board.muted(t(ticket.state)), width), id));
+  }
+  return rows;
+}
 export function projectRows(
   data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,
   board?: WorkboardSnapshot, modelEnabled = false
@@ -64,27 +103,13 @@ export function projectRows(
       text: fit(text, width), ...(path ? { item: `project:file:${path}:${key}`, files: [path] } : {}),
     });
     if (data.summary) fileRow(`  ${monitorText(data.summary)}`, 'summary');
-    const segments = progressSegments(data.counts, width);
-    if (segments.some((s) => s.width)) rows.push(boardRow(segments.map(({ state, width: cells }) =>
-      sliceInk(state)(mark(state === 'todo' || state === 'dropped' ? '░' : state === 'try' ? '▓' : '█', '#').repeat(cells))).join('')));
-    const pack = (parts: string[], max = Infinity) => {
-      const lines: string[] = [];
-      let line = '';
-      for (const part of parts) {
-        if (line && visualLength(line + '  ' + part) > width) { lines.push(line); line = ''; }
-        line += '  ' + part;
-      }
-      if (line) lines.push(line);
-      return lines.slice(0, max);
-    };
-    for (const line of pack(SLICE_STATES.map((s) => sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${data.counts[s]}`))))
-      rows.push(boardRow(fit(line, width)));
+    rows.push(...progressBarRows(data, width));
     const { ids, current } = data.ladder, index = ids.indexOf(current ?? '');
     for (const [i, line] of pack(ids.map((id, i) => {
       const safe = monitorText(id);
       return index < 0 ? safe : i < index ? theme.board.success(`[${safe}]`)
         : i === index ? theme.board.title(`(${safe})`) : theme.board.muted(safe);
-    }), 2).entries()) fileRow(line, `chips:${i}`);
+    }), width, 2).entries()) fileRow(line, `chips:${i}`);
     for (const [i, r] of data.slices.entries()) {
       const path = r.path ?? data.statePath;
       const reason = r.drift === 'ledger' ? t('ledger: {state}', { state: monitorText(t(r.ledgerState ?? '')) })

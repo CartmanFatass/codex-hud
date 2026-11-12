@@ -981,7 +981,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       decisionTitles.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, visibleDecisions);
       jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       const projectFacts = await projectCollector.collect(
-        projectShown(state, Boolean(settingsPage)),
+        projectShown(state, Boolean(settingsPage)) ? true
+          : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
         jobPipeline.workboard(tree, panelDelegation),
         Date.now()
       );
@@ -996,7 +997,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
     let built: ReturnType<HudStatus['build']> | null = null;
     try {
-      built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree });
+      built = hudStatus.build({ rollout: main, sessionId: session?.sessionId, stale, tree, skipGit: true });
       if (delegation) Object.assign(built, { delegation });
     } catch (err) {
       hudStatus.health.fail('status', err); /* The foot keeps its last good rows. */
