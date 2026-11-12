@@ -15,11 +15,10 @@ Milestone: M4 · Project view
 
 ## Next
 
-- m4-close 05: M4-FIX (review behaviour findings, imp) and M4-PRUNE (delete the unreachable retired stack and dead
-  modules, imp; owner approved the deletion 2026-11-12) run in parallel; then both reviewers re-check until accept.
-- Then m4-close 06 release: archive + ./install, temp-HOME install/uninstall, merge to main, tag.
-- Owner 2026-11-12: delete the historical installer chain (added to M4-PRUNE) and complete the installer with the
-  browser and herdr extensions (INSTALL-EXT, imp), both before the release.
+- m4-close 05: M4-FIX, M4-PRUNE and INSTALL-EXT landed; M4-REVIEW2 (Sol xhigh + DS max on 3280cc02) re-checks the
+  earlier findings and the new work; fixes until both accept.
+- Then m4-close 06 release: a clean-built archive (stale dist files from deleted sources must not ship) + ./install,
+  temp-HOME install/uninstall, merge to main, tag.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
@@ -90,11 +89,12 @@ board counts these; update at every landing or decision. -->
 - accepted · M4 · M4-REVIEW · m4-close 04: whole-project review (Sol xhigh + DS max on 3b17f7a0): changes-required, Sol 4 major, DS 2 major + 4 minor (docs/reviews/2026-11-12-m4-review-*)
 - try · M4 · M4-FIX · m4-close 05: the review's behaviour findings (brief independence, statusline default, bounded job scan, settings guards, TZ, docs) (8cd38f1e)
 - try · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime, dead modules and the historical installer chain (769cfa3d)
+- working · M4 · M4-REVIEW2 · m4-close 05: re-review after the fix round (Sol xhigh + DS max on 3280cc02)
 - try · M4 · INSTALL-EXT · owner: ./install gets the browser and herdr extensions of spec §2.3 (96deabe9)
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
-## Now (2026-11-12, night): M4 fix round: M4-FIX and M4-PRUNE running; PANEL-RELOAD, CALL-BREAKDOWN, CARD-FOLD, SNAPSHOTS landed
+## Now (2026-11-12, night): M4 re-review running; fix round (M4-FIX, M4-PRUNE, INSTALL-EXT) landed
 
 Landed since noon: NATIVE-TREE, PROGRESS-BOARD, OPEN-TAB, CARD-DETAILS, TICKETS, PI-STOP (Fishpref), legacy skills
 retired, Matt Pocock skills installed (to-tickets slices multi-slice features), closing M3b review + M3B-FIX2.
