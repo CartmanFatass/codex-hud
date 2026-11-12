@@ -7,8 +7,8 @@ owner saw "small layout problems"; the frontend implementer judges and fixes the
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Home frames at 80 and 120 columns, EN and ZH, tall and short panes, saved and checked cell-exact
-- [ ] The block shrinks and disappears before any card is cut (unchanged rule)
-- [ ] Enter/click still opens Project at the right place
+- [x] Home frames at 80 and 120 columns, EN and ZH, tall and short panes, saved and checked cell-exact
+- [x] The block shrinks and disappears before any card is cut (unchanged rule)
+- [x] Enter/click still opens Project at the right place
