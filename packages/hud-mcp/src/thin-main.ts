@@ -97,6 +97,7 @@ function assignment(role: Role) {
     model_source: model.source,
     thinking_source: thinking.source,
     pi_role_file,
+    accepts_options: role.harness === 'pi' ? ['model', 'thinking', ...piSwitches, 'pi_args'] : [],
     available: true,
   };
 }
@@ -111,7 +112,9 @@ function convention() {
   }
   throw new Error('convention_not_found');
 }
-interface Job {
+const piSwitches = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split'] as const;
+type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
+interface Job extends PiOptions {
   job: string;
   role: string;
   request_key: string;
@@ -141,7 +144,7 @@ const tools = [
   tool('hud_roster', 'List local roles, their availability, and the dispatch convention in effect.', {}),
   tool(
     'hud_create',
-    'Dispatch a local role; request_key deduplicates jobs and optional package is a display-only label.',
+    'Dispatch a local role; request_key returns the existing job unchanged on retry. Optional package is a display-only label. Launch options are pi-only; omitted switches keep pi-role defaults (split uses the role file).',
     {
       role: text,
       request_key: text,
@@ -150,6 +153,24 @@ const tools = [
       package: { ...text, description: 'Display-only package label.' },
       model: { ...text, description: 'Override the pi role model for this job only.' },
       thinking: { ...text, description: 'Override the pi role thinking for this job only.' },
+      lens: { type: 'boolean', description: 'Load pi-lens (--lens / --no-lens).' },
+      mcp: { type: 'boolean', description: 'Load MCP adapter (--mcp / --no-mcp).' },
+      tps: { type: 'boolean', description: 'Load tokens/s telemetry (--tps / --no-tps).' },
+      ui_ext: {
+        type: 'boolean',
+        description: 'False: --no-ui-ext; true: keep pi-role default UI extensions (no flag).',
+      },
+      skills: {
+        type: 'boolean',
+        description: 'True: --skills (personal skills); false: keep pi-role default exclusion (no flag).',
+      },
+      split: { type: 'boolean', description: 'Reserve a helper pane on the right; primary worker stays left.' },
+      pi_args: {
+        type: 'array',
+        items: { ...text, maxLength: 4096 },
+        maxItems: 128,
+        description: 'Append pi arguments after -- verbatim, never through a shell.',
+      },
     },
     ['role', 'request_key', 'task']
   ),
@@ -337,8 +358,13 @@ async function dispatchPi(job: Job, role: Role) {
     ];
     if (job.herdr_pane) argv.push('--orchestrator', job.herdr_pane);
     if (role.thinking !== undefined) argv.push('--dispatch-effort-source', 'orchestrator');
+    for (const key of ['lens', 'mcp', 'tps'] as const)
+      if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
+    if (job.ui_ext === false) argv.push('--no-ui-ext');
+    if (job.skills === true) argv.push('--skills');
     argv.push('--', '--session-dir', join(dir, 'sessions'), '--tui-mode', 'regular');
     for (const key of ['model', 'thinking'] as const) if (role[key] !== undefined) argv.push(`--${key}`, role[key]);
+    argv.push(...(job.pi_args ?? []));
     const built = await run(launcher, argv, job.cwd);
     if (built.exit_code !== 0) return built;
     const piArgs: string[] = JSON.parse(built.stdout);
@@ -384,7 +410,7 @@ async function dispatchPi(job: Job, role: Role) {
       );
     };
     record();
-    if (role.split) {
+    if (job.split) {
       const split = await run('herdr', [
         'pane',
         'split',
@@ -476,6 +502,7 @@ function observation(job: Job) {
     model: job.model,
     thinking: job.thinking,
     model_source: job.model_source,
+    ...Object.fromEntries([...piSwitches, 'pi_args' as const].map((key) => [key, job[key]])),
     state: status?.state ?? (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 ? 'failed' : null),
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
@@ -510,6 +537,23 @@ async function call(name: string, args: Args): Promise<unknown> {
       if (definition.harness !== 'pi') return { ok: false, code: 'invalid_arguments' };
       definition = { ...definition, [key]: required(args, key) };
     }
+    const options: PiOptions = definition.harness === 'pi' ? { split: definition.split ?? false, pi_args: [] } : {};
+    for (const key of piSwitches) {
+      const value = args[key];
+      if (value === undefined) continue;
+      if (definition.harness !== 'pi' || typeof value !== 'boolean') return { ok: false, code: 'invalid_arguments' };
+      options[key] = value;
+    }
+    if (args.pi_args !== undefined) {
+      if (
+        definition.harness !== 'pi' ||
+        !Array.isArray(args.pi_args) ||
+        args.pi_args.length > 128 ||
+        args.pi_args.some((value) => typeof value !== 'string' || value.length > 4096)
+      )
+        return { ok: false, code: 'invalid_arguments' };
+      options.pi_args = args.pi_args;
+    }
     const effective = definition.harness === 'pi' ? assignment(definition) : null;
     const cwd = resolve(args.cwd === undefined ? process.cwd() : required(args, 'cwd'));
     const job: Job = {
@@ -519,6 +563,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       cwd,
       herdr_pane: process.env.HERDR_PANE_ID,
       created_at: new Date().toISOString(),
+      ...options,
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(definition.harness === 'jev' ? { jev: definition } : {}),
       ...(effective

@@ -1030,5 +1030,15 @@ Claude and pi open it with `/hud`; Codex uses F12. See `hud panel --help` for sy
 The MCP exposes six tools: `hud_roster`, `hud_create`, `hud_read`, `hud_send`,
 `hud_respond` and `hud_close`. Roles and the dispatch convention come from files;
 job records and reports are plain files under `$HUD_HOME/jobs`.
+`hud_create` accepts `role`, `request_key`, `task`, optional `cwd` and display-only `package`.
+For pi roles only, override `model`/`thinking` or set boolean `lens`, `mcp`, `tps`, `ui_ext`,
+`skills`, `split`; omitted switches keep pi-role defaults, and `split` defaults to the role file.
+`ui_ext: false` passes `--no-ui-ext`; true keeps the default UI extensions (no flag).
+`skills: true` passes `--skills`; false keeps personal skills excluded (no flag).
+`split: true` reserves a right helper pane beside the left worker. `pi_args` is a string array
+(maximum 128 strings, 4096 characters each), appended verbatim after pi-role's `--`, never through a shell.
+`hud_roster` lists accepted options; job.json and `hud_read` expose the supplied switches, effective split
+and pi arguments (omitted switches still mean pi-role defaults). A repeated `request_key` returns the
+original job unchanged, even with different options. Jev roles reject these launch options.
 `hud_read` reads a report (and stamps `read_at` in the job record). The panel does not
 wait for that: a settled HUD job is done whether or not its report was read.

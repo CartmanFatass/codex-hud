@@ -98,7 +98,7 @@ export const PI_ROLE_TOOLS = [
   tool('hud_roster', 'List local roles, their availability, and the dispatch convention in effect.', {}),
   tool(
     'hud_create',
-    'Dispatch a local role; request_key deduplicates jobs and optional package is a display-only label.',
+    'Dispatch a local role; request_key returns the existing job unchanged on retry. Optional package is a display-only label. Launch options are pi-only; omitted switches keep pi-role defaults (split uses the role file).',
     {
       role: text,
       request_key: text,
@@ -107,6 +107,24 @@ export const PI_ROLE_TOOLS = [
       package: { ...text, description: 'Display-only package label.' },
       model: { ...text, description: 'Override the pi role model for this job only.' },
       thinking: { ...text, description: 'Override the pi role thinking for this job only.' },
+      lens: { type: 'boolean', description: 'Load pi-lens (--lens / --no-lens).' },
+      mcp: { type: 'boolean', description: 'Load MCP adapter (--mcp / --no-mcp).' },
+      tps: { type: 'boolean', description: 'Load tokens/s telemetry (--tps / --no-tps).' },
+      ui_ext: {
+        type: 'boolean',
+        description: 'False: --no-ui-ext; true: keep pi-role default UI extensions (no flag).',
+      },
+      skills: {
+        type: 'boolean',
+        description: 'True: --skills (personal skills); false: keep pi-role default exclusion (no flag).',
+      },
+      split: { type: 'boolean', description: 'Reserve a helper pane on the right; primary worker stays left.' },
+      pi_args: {
+        type: 'array',
+        items: { ...text, maxLength: 4096 },
+        maxItems: 128,
+        description: 'Append pi arguments after -- verbatim, never through a shell.',
+      },
     },
     ['role', 'request_key', 'task']
   ),

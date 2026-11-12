@@ -627,6 +627,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
     roster.roles.find((entry) => entry.role === role.role),
     {
       ...role,
+      accepts_options: ['model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
       available: true,
       source_file: join(f.env.HUD_HOME, 'roles', 'writer.json'),
       model_source: join(f.env.HUD_HOME, 'roles', 'writer.json'),
@@ -649,6 +650,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
       model_source: null,
       thinking_source: null,
       pi_role_file: null,
+      accepts_options: ['model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
       harness: 'pi',
       pi_role: 'architect',
       split: false,
@@ -730,6 +732,56 @@ test(
     }
   }
 );
+
+test('thin pi launch switches and verbatim arguments reach argv, receipts and reads', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  for (const enabled of [false, true]) {
+    const options = { lens: enabled, mcp: !enabled, tps: enabled, ui_ext: enabled, skills: !enabled, split: !enabled,
+      pi_args: ['--tools', 'read', 'literal space;$(not-a-command)'] };
+    const args = { role: 'imp', request_key: `launch-${enabled}`, task: 'Synthetic task.', ...options };
+    const job = await f.call('hud_create', args);
+    const argv = f.commands().filter((c) => c.command === 'pi-role').at(-1).args;
+    const before = argv.slice(0, argv.indexOf('--'));
+    for (const key of ['lens', 'mcp', 'tps']) assert.ok(before.includes(`--${options[key] ? '' : 'no-'}${key}`));
+    assert.equal(before.includes('--no-ui-ext'), !enabled);
+    assert.equal(before.includes('--skills'), !enabled);
+    assert.deepEqual(argv.slice(-options.pi_args.length), options.pi_args);
+    assert.ok(argv.indexOf('--tools') > argv.indexOf('--'));
+    const start = f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'start').at(-1).args;
+    assert.deepEqual(start.slice(-options.pi_args.length), options.pi_args);
+    assert.equal(start[start.indexOf('--pane') + 1], 'synthetic-worker');
+    const receipt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+    for (const value of [receipt(), await f.call('hud_read', { job: job.job })])
+      for (const [key, expected] of Object.entries(options)) assert.deepEqual(value[key], expected);
+    assert.match(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'), enabled ? /^RIGHT=$/m : /^RIGHT=synthetic-right$/m);
+    assert.deepEqual(await f.call('hud_create', { ...args, lens: !enabled, pi_args: [] }), job);
+    assert.equal(receipt().lens, enabled);
+    assert.deepEqual(receipt().pi_args, options.pi_args);
+  }
+  assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 2);
+  const defaults = await f.call('hud_create', { role: 'imp', request_key: 'launch-default', task: 'Synthetic task.' });
+  const original = await f.call('hud_read', { job: defaults.job });
+  assert.equal(original.split, false);
+  assert.equal(original.lens, undefined);
+  assert.deepEqual(original.pi_args, []);
+});
+
+test('thin launch options reject Jev roles and invalid pi values before dispatch', async (t) => {
+  const f = await fixture(t);
+  const keys = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'];
+  assert.deepEqual((await f.call('hud_roster')).roles.find((r) => r.role === 'oracle').accepts_options, []);
+  for (const key of keys) {
+    const value = key === 'pi_args' ? ['--tools', 'read'] : false;
+    assert.deepEqual(await f.call('hud_create', { role: 'oracle', request_key: 'jev-launch', task: 'Synthetic.', [key]: value }),
+      { ok: false, code: 'invalid_arguments' });
+    assert.deepEqual(await f.call('hud_create', { role: 'imp', request_key: 'bad-launch', task: 'Synthetic.', [key]: 'invalid' }),
+      { ok: false, code: 'invalid_arguments' });
+  }
+  for (const pi_args of [[1], Array(129).fill('a'), ['a'.repeat(4097)], null])
+    assert.deepEqual(await f.call('hud_create', { role: 'imp', request_key: 'bad-args', task: 'Synthetic.', pi_args }),
+      { ok: false, code: 'invalid_arguments' });
+  assert.deepEqual(f.commands(), []);
+});
 
 test('thin create rejects model or thinking overrides for Jev roles', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
