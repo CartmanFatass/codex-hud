@@ -8,11 +8,11 @@ or when a call fails, Home falls back to Default silently.
 
 **Blocked by:** None (can start immediately). Blocks 04 (the review covers it).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Settings row Home mode: Default | Recommended (EN/ZH), saved; Default unchanged byte for byte
-- [ ] Recommended: one batched ranking call per change of the card set/states, at most once per 2 minutes, cached
-- [ ] Brief at the top of Home, 1–2 sentences, refreshed with the ranking; never invents facts beyond the cards
-- [ ] Needs-you cards stay first and visible whatever the ranking
-- [ ] No key / failure / models off → Default, no error text on Home
-- [ ] EN and ZH, 80 and 120 columns
+- [x] Settings row Home mode: Default | Recommended (EN/ZH), saved; Default unchanged byte for byte
+- [x] Recommended: one batched ranking call per change of the card set/states, at most once per 2 minutes, cached
+- [x] Brief at the top of Home, 1–2 sentences, refreshed with the ranking; never invents facts beyond the cards
+- [x] Needs-you cards stay first and visible whatever the ranking
+- [x] No key / failure / models off → Default, no error text on Home
+- [x] EN and ZH, 80 and 120 columns
