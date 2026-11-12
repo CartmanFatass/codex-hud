@@ -70,6 +70,23 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   installs and uses it.
 - **M2, clean** (right after M1): delete the retired execution stack (R6b slice L), the old role facade and its identity/release checks (replaced by the thin layer), the old hud-mcp surfaces (the default managed surface and role-main), and their tests.
 - **M3, extend:** Jev and oracle jobs.
+- **M3b, AI-THIN** (owner, 2026-11-11): the panel's words for HUD jobs come from an external small model with the
+  owner's key; it only reads job files and only writes display text.
+  - Where: the third line of a thin-job card (one sentence on what it is doing now); decision titles (≤ 8 words,
+    what was decided, from question and answer); a finished job's one-line result. The model marks 1–3 keywords in
+    its sentence and the panel colours them.
+  - When: on a job's state change, at least 2 minutes apart per job, in the panel's language. Without a key, or
+    with the switch off, the factual line shows as today.
+  - Settings: one master switch (on when a key exists), the model, the call cap. No per-feature switches.
+  - Deleted: the consent setting and authority layer (`src/core/materials`), "Job consent denied"; card progress
+    used only by the removed facade jobs; model text seen only in hidden views (main recap, approval words, change
+    summary, session title, the `S` overview).
+  - Kept for NATIVE-TREE: model text on native agent cards (agent names, progress, result digest, failure cause),
+    redone there the same way.
+  - Not here: the hidden old views (Timeline, Changes, old Inspector, Summary, Activity hub); a separate cleanup
+    slice, to be discussed.
+  - Done: the owner runs real jobs on the real panel; card, decision and result lines are one sentence each, not a
+    wall of text, and the keywords scan at a glance.
 - **M4, project view:** the Project tab, after Matt's skills are installed (tickets) and the package label works.
 
 ## 6. How work is done
