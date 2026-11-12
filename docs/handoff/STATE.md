@@ -71,7 +71,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · HOME-LAYOUT · m4-close 01: Home's progress block layout (frontend-implementer) (426dbc02)
 - working · M4 · THEMES · m4-close 02: distinct themes, refined default, 3–4 new themes (frontend-implementer)
 - working · M4 · BAR-FIDELITY · m4-close 07: bar themes match their approved concepts (frontend-implementer)
-- working · M4 · OAI-RUNNING · decision labels follow the Settings choice (default OpenAI, owner); running Claude subagents visible again (meta without finished)
+- try · M4 · OAI-RUNNING · decision labels follow the Settings choice (default OpenAI, owner); running Claude subagents visible again (meta without finished) (5d0e54aa)
 - todo · M4 · M4-REVIEW · m4-close 04–05: whole-project two-reviewer review and its fixes
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
