@@ -15,9 +15,10 @@ Milestone: M4 · Project view
 
 ## Next
 
-- DL landed; LIVE-FIX running.
-- When both land: the M4 milestone review (two reviewers, brief ready in tmp/tasks/M4-REVIEW), then its fixes.
-- Small leftovers for me: pi-roles' pi-dispatch test still uses synthetic ids (its fake herdr generates them).
+- m4-close (.scratch/m4-close, owner-approved 6 tickets): 01 HOME-LAYOUT and 02 THEMES (frontend-implementer) and
+  03 in LIVE-FIX run now; then 04 whole-project review (Sol xhigh + DS max), 05 fixes until both accept, 06 release
+  archive + merge to main + tag.
+- Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
 
@@ -69,6 +70,10 @@ board counts these; update at every landing or decision. -->
 - try · M4 · DL · decision-labels 01–06 in one slice (owner): outcome, kind, model fit, looping mark, question category, review severity (f52c4106)
 - try · M4 · HOME-PROGRESS · Home shows a compact progress board and open tickets in its spare rows (owner) (2de1e8a7)
 - working · M4 · LIVE-FIX · live-check bugs: active job shown stalled; finished subagents briefly running on open; «--flag» read as reject
+- working · M4 · HOME-LAYOUT · m4-close 01: Home's progress block layout (frontend-implementer)
+- working · M4 · THEMES · m4-close 02: distinct themes, refined default, 3–4 new themes (frontend-implementer)
+- todo · M4 · M4-REVIEW · m4-close 04–05: whole-project two-reviewer review and its fixes
+- todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
 ## Now (2026-11-12, night): M4 closing: native-polish, CLAUDE-BIND, GEMINI-DECIDE, HOME-PROGRESS landed; DL and LIVE-FIX running; then the M4 review
