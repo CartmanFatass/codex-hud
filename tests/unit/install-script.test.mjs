@@ -8,6 +8,64 @@ import test from 'node:test';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
+test('Node floor is checked before extension hooks, builds or filesystem changes', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-node-'));
+  try {
+    const repo = path.join(temp, 'checkout');
+    const tools = path.join(temp, 'tools');
+    fs.mkdirSync(path.join(repo, 'install.d'), { recursive: true });
+    fs.mkdirSync(tools);
+    fs.copyFileSync(path.join(root, 'install'), path.join(repo, 'install'));
+    for (const name of ['bash', 'dirname', 'readlink', 'mkdir', 'ln', 'rm'])
+      fs.symlinkSync(`/usr/bin/${name}`, path.join(tools, name));
+    // Run the installer's real JS predicate, changing only its observed Node version.
+    const preload = path.join(temp, 'version.cjs');
+    fs.writeFileSync(
+      preload,
+      "Object.defineProperty(process.versions, 'node', { value: process.env.SYNTHETIC_NODE });\n"
+    );
+    fs.writeFileSync(
+      path.join(tools, 'node'),
+      `#!/bin/bash\nexec '${process.execPath}' --require '${preload}' "$@"\n`,
+      { mode: 0o755 }
+    );
+    fs.writeFileSync(
+      path.join(repo, 'install.d/probe.sh'),
+      'hud_ext_check() { mkdir -p "$HUD_HOME"; printf checked > "$HUD_HOME/hook"; }\n' + 'hud_ext_install() { :; }\n'
+    );
+    fs.writeFileSync(path.join(tools, 'npm'), '#!/bin/bash\nprintf called > "$HOME/npm-called"\n', { mode: 0o755 });
+    for (const version of ['18.20.0', '20.19.0', '22.12.0', '23.11.0', '22.13.0', '22.15.0', '24.0.0', '26.0.0']) {
+      const home = path.join(temp, version);
+      const hudHome = path.join(home, '.hud');
+      const supported = ['22.13.0', '22.15.0', '24.0.0', '26.0.0'].includes(version);
+      const result = spawnSync('./install', [supported ? '--skip-build' : '--with', ...(supported ? [] : ['probe'])], {
+        cwd: repo,
+        env: {
+          ...process.env,
+          HOME: home,
+          HUD_HOME: hudHome,
+          PATH: tools,
+          SYNTHETIC_NODE: version,
+          CODEX_HOME: path.join(home, '.codex'),
+          CLAUDE_CONFIG_DIR: path.join(home, '.claude'),
+          PI_CODING_AGENT_DIR: path.join(home, '.pi'),
+        },
+        encoding: 'utf8',
+      });
+      assert.equal(result.status, supported ? 0 : 1, `${version}: ${result.stdout}\n${result.stderr}`);
+      if (supported) {
+        assert.equal(fs.readlinkSync(path.join(home, '.local/bin/hud')), path.join(repo, 'bin/hud'));
+      } else {
+        assert.equal(fs.existsSync(home), false, `${version}: no extension hook, npm, home, config or symlink changes`);
+        assert.equal(result.stdout, '', `${version}: only the refusal line should print`);
+        assert.equal(result.stderr, 'Error: Node 22.x >=22.13.0 or Node >=24.0.0 required (23 unsupported)\n');
+      }
+    }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 // Breaks if install removes the explicit "Command already exists" refusal, even if ln itself still fails safely.
 test('core installer refuses an existing regular hud command without changing its content', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-install-existing-'));

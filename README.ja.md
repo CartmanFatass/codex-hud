@@ -41,6 +41,8 @@
 
 ## クイックスタート
 
+Node **22.x ≥22.13.0 または ≥24.0.0** が必要です（23 は非対応）。[根拠](./docs/ARCHITECTURE.md#3-launch-and-installation)。
+
 ```bash
 git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
@@ -75,7 +77,7 @@ Dir: ~/my-project | Session: abc12345 | CLI: 0.4.2
 codex                        # HUD 付きで起動
 codex --model gpt-5          # Codex CLI 引数を渡す
 codex "help me debug this"   # プロンプト付き
-codex-resume                 # 前回のセッションを再開
+codexH resume                # HUD 付きで Codex の再開ピッカーを開く
 ```
 
 <details>

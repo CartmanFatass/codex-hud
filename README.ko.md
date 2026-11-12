@@ -41,6 +41,8 @@
 
 ## 빠른 시작
 
+Node **22.x ≥22.13.0 또는 ≥24.0.0**가 필요합니다(23 미지원). [근거](./docs/ARCHITECTURE.md#3-launch-and-installation).
+
 ```bash
 git clone https://github.com/CartmanFatass/codex-hud.git
 cd codex-hud
@@ -75,7 +77,7 @@ Dir: ~/my-project | Session: abc12345 | CLI: 0.4.2
 codex                        # HUD와 함께 실행
 codex --model gpt-5          # Codex CLI 인수 전달
 codex "help me debug this"   # 프롬프트 포함
-codex-resume                 # 이전 세션 재개
+codexH resume                # HUD에서 Codex 재개 선택기 열기
 ```
 
 <details>
