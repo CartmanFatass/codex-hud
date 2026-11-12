@@ -21,7 +21,13 @@ export function keywordMarks(raw: string) {
   const spans: { start: number; end: number; type: string }[] = [];
   let plain = '', cursor = 0;
   const matches = [...raw.matchAll(/«([+!-]?)([^«»]*)»/g)];
+  const code = [...raw.matchAll(/(`+)[\s\S]*?\1/g)];
   for (const m of matches) {
+    // Repeated prefix characters and code-span flags are identifiers, not stances.
+    if (m[1] && m[2] && (/^[+!-]/.test(m[2]) || code.some((c) => c.index! < m.index! && m.index! < c.index! + c[0].length))) {
+      m[2] = m[1] + m[2];
+      m[1] = '';
+    }
     plain += raw.slice(cursor, m.index).replace(/«[+!-]?|»/g, '');
     const start = plain.length;
     plain += m[2];

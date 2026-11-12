@@ -278,6 +278,30 @@ test('ordinary cards expand the whole marked sentence and factual detail, then c
     board.workers[0].modelSentence = f.reply;
   }
 });
+for (const mode of ['on', 'off'])
+  test(`working job stall age uses newest session mtime without body reads: ${mode}`, (t) => {
+    const f = fixture(t, mode), old = f.now - 22 * 60_000, fresh = f.now - 14_000;
+    f.put('job.json', { job: 'j0123456789abcdef', role: 'imp', created_at: new Date(old).toISOString(), herdr_pane: 'w4E:p1' });
+    for (const name of ['STATUS.json', 'report.md']) fs.utimesSync(join(f.dir, name), new Date(old), new Date(old));
+    f.activity('Still working');
+    const session = join(f.dir, 'sessions/session.jsonl');
+    fs.utimesSync(session, new Date(fresh), new Date(fresh));
+    const previous = join(f.dir, 'sessions/previous.jsonl');
+    fs.writeFileSync(previous, 'Older session\n');
+    fs.utimesSync(previous, new Date(old), new Date(old));
+    let board = f.board();
+    assert.equal(board.workers[0].sessionFile.path, session);
+    assert.equal(board.workers[0].work.activityAt, fresh);
+    assert.equal(projectWorkCard(board.workers[0], f.now).state, 'in-progress');
+    assert.doesNotMatch(stripAnsi(f.render(board)), /stalled/);
+    const reads = t.mock.method(fsMutable, 'readSync');
+    fs.utimesSync(session, new Date(old), new Date(old));
+    board = f.board();
+    assert.equal(reads.mock.callCount(), 0, 'session freshness is metadata-only, independent of model generation');
+    assert.equal(projectWorkCard(board.workers[0], f.now).state, 'stalled');
+    assert.equal(projectWorkCard(board.workers[0], f.now).inactivityMinutes, 22);
+    assert.equal(f.calls.length, 0);
+  });
 test('a second settlement gets a fresh final sentence after the shared floor', async (t) => {
   const f = fixture(t);
   f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });

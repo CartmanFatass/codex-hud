@@ -86,6 +86,38 @@ for (const language of ['en', 'zh']) test(`all mark inks and deterministic unmar
     assert.doesNotMatch(rows.map(stripAnsi).join(''), /[«»!+]/);
   }
 });
+for (const language of ['en', 'zh']) test(`flag marks retain prefixes as identifiers, stance marks still work: ${language}`, (t) => {
+  const f = fixture(t), lead = language === 'en' ? 'Use ' : '使用';
+  for (const [raw, plain] of [
+    ['«--orchestrator»', '--orchestrator'], ['«--notify»', '--notify'],
+    ['`«-x»`', '`-x`'], ['«`-x`»', '`-x`'],
+    ['«++value»', '++value'], ['«!!value»', '!!value'], ['«!-value»', '!-value'],
+  ]) {
+    const parsed = keywordMarks(lead + raw);
+    assert.equal(parsed.valid, true, raw);
+    assert.equal(parsed.plain, lead + plain, raw);
+    assert.equal(parsed.spans[0].type, '', raw);
+    const painted = paintSentence(lead + raw);
+    assert.equal(stripAnsi(painted), lead + plain);
+    assert.equal(painted, lead + theme.board.identifier(plain));
+    const title = markedTitle(lead + raw, language);
+    assert.equal(keywordMarks(title).plain, lead + plain);
+    assert.equal(paintSentence(title), painted);
+    const lane = f.board.lanes[0];
+    const d = { id: 'flag-decision', laneId: lane.id, title: 'Fallback', modelTitle: title,
+      departure: false, evidence: [{ at: NOW, relativePath: 'qa/q1.md', sourceId: 'j0123456789abcdef' }], at: NOW };
+    for (const expanded of [false, true]) {
+      const state = initialMonitorState();
+      if (expanded) state.boardExpanded = new Set([targetKey({ kind: 'decision', laneId: lane.id, decisionId: d.id })]);
+      const row = decisionRows(d, lane, state, 120, NOW).map((r) => r.text).join('\n');
+      assert.ok(row.includes(theme.board.identifier(plain)), row);
+      assert.ok(stripAnsi(row).includes(plain));
+    }
+  }
+  const words = language === 'en' ? ['reject', 'approve', 'recommends simplicity'] : ['拒绝', '批准', '认为更简单'];
+  const raw = `«-${words[0]}» «+${words[1]}» «!${words[2]}»`;
+  assert.equal(paintSentence(raw), [theme.board.danger(words[0]), theme.board.success(words[1]), theme.board.opinion(words[2])].join(' '));
+});
 test('malformed, prefix-only, five marks and nesting strip syntax without colouring keywords; old grammar still paints', (t) => {
   fixture(t);
   for (const raw of ['«+»', '«-»', '«!»', '«»', '«+accept', '«+outer «!inner»»', '«a» «+b» «-c» «!d» «e»']) {

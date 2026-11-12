@@ -73,6 +73,26 @@ const first = (text: string) =>
     ?.replace(/^#{1,6}\s+/, '')
     .trim() ?? '';
 const number = (name: string) => Number.parseInt(name.match(/\d+/)?.[0] ?? '0', 10);
+/** Share the existing session selection/stat with sentence material; never read its body here. */
+function latestSession(directory: string): OwnerWorker['sessionFile'] {
+  const root = join(directory, 'sessions');
+  try {
+    if (fs.realpathSync(root) !== root) return undefined;
+    return fs.readdirSync(root).slice(0, 400)
+      .filter((n) => n.endsWith('.jsonl'))
+      .flatMap((n) => {
+        try {
+          const path = join(root, n), st = fs.lstatSync(path);
+          return st.isFile() ? [{ path, at: st.mtimeMs }] : [];
+        } catch {
+          return [];
+        }
+      })
+      .sort((a, b) => b.at - a.at)[0];
+  } catch {
+    return undefined;
+  }
+}
 export interface ThinJobScope {
   project: string | null;
   pane: string | null;
@@ -244,7 +264,8 @@ export function readThinJobs(
                 ? 'fixing'
                 : verb;
     phases.push(phase);
-    const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt);
+    const sessionFile = state === 'working' ? latestSession(directory) : undefined;
+    const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, sessionFile?.at ?? 0);
     const sentence =
       waiting?.fields.question ||
       (state === 'failed' ? (word(s.exit_reason) ?? word(s.reason)) : null) ||
@@ -253,6 +274,7 @@ export function readThinJobs(
     addFile('report.md', 'report', report);
     const worker: OwnerWorker = {
       files,
+      sessionFile,
       id: workerId,
       laneId,
       role: String(job.role),

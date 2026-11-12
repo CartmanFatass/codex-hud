@@ -387,6 +387,53 @@ test('Claude resumed settlement needs the last public end_turn and no open tools
   f.append([{ type: 'text', text: 'Settled without another metadata write.' }], NOW + 9000, 'end_turn');
   assert.equal(f.claude().nodes[0].status, 'completed');
 });
+test('finished Claude metadata survives multi-pass replay, hides by settlement age and makes no premature model call', async (t) => {
+  const f = resumedFixture(t), settledAt = NOW - 9 * 60 * 60_000;
+  f.metadata(true, settledAt);
+  f.put(f.file, [0, 1, 2].map((i) => f.record(
+    [{ type: 'text', text: 'x'.repeat(800_000) + (i === 2 ? 'FINAL-REPLAY-RESULT' : 'Historical progress') }],
+    settledAt - (2 - i) * 1000, 'end_turn'
+  )).join(''));
+  fs.utimesSync(f.file, new Date(settledAt), new Date(settledAt));
+  const calls = [];
+  const model = new SmallModel({
+    env: { HOME: f.home, HUD_HOME: f.home, MISTRAL_API_KEY: 'synthetic-key' }, clock: () => NOW,
+    fetch: async (_url, init) => {
+      calls.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'Replay completed.' } }] }));
+    },
+  });
+  model.configure({ backend: 'api' });
+  const service = new JobSentences(model, join(f.home, 'sentences.json'), () => {}, () => NOW);
+  service.configure(true, 'en');
+  t.after(() => { service.stop(); model.cancelAll(); });
+  let passes = 0, tree;
+  do {
+    tree = f.claude();
+    const node = tree.nodes[0], board = f.board(tree);
+    assert.equal(node.status, 'completed', 'replay does not reopen metadata completion');
+    assert.equal(node.statusAt.getTime(), settledAt);
+    assert.equal(board.workers[0].state, 'done');
+    assert.equal(board.workers[0].settledAt, settledAt);
+    const frame = f.render(120, 'en', initialMonitorState(), tree);
+    assert.equal(frame.workboard.snapshot.workers.length, 0, 'normal ten-minute expiry applies during replay');
+    assert.doesNotMatch(frame.lines.map(stripAnsi).join('\n'), /Wait for background work|stalled/);
+    service.update(board, f.home, tree);
+    await tick();
+    passes++;
+    if (tree.incomplete) {
+      assert.equal(node.replaying, true);
+      assert.equal(calls.length, 0);
+    }
+    assert.ok(passes <= 4);
+  } while (tree.incomplete);
+  assert.equal(passes, 3);
+  assert.equal(calls.length, 1, 'caught-up material can use the existing final-sentence path');
+  assert.match(calls[0].messages[1].content, /FINAL-REPLAY-RESULT/);
+  assert.equal(tree.nodes[0].replaying, false);
+  assert.equal(f.claude().nodes[0].status, 'completed');
+  assert.equal(f.collector.bytes, 0);
+});
 test('Claude resumed end_turn waits for bounded transcript catch-up', (t) => {
   const f = resumedFixture(t);
   f.claude();

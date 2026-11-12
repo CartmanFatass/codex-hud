@@ -88,7 +88,7 @@ export class ClaudeNativeTree {
           if (reads >= 8) {
             replaying = true;
             this.complete = false;
-            if (row) nodes.push({ ...row.node, status: 'unknown', children: [] });
+            if (row) nodes.push({ ...row.node, replaying: true, children: [] });
             continue;
           }
           reads += 2;
@@ -226,7 +226,7 @@ export class ClaudeNativeTree {
       if (row)
         nodes.push({
           ...row.node,
-          status: row.offset < row.size || row.pending.length || row.skipping ? 'unknown' : row.node.status,
+          replaying: row.offset < row.size || !!row.pending.length || row.skipping,
           children: [],
         });
     }

@@ -56,6 +56,8 @@ export interface OwnerWorker {
   }[];
   /** Display-only model sentence; never state or execution evidence. */
   readonly modelSentence?: string;
+  /** Newest working session, selected/stat'ed once by the thin-job collector. */
+  readonly sessionFile?: { readonly path: string; readonly at: number };
   readonly work?: import('./work-card.js').WorkFacts;
   readonly id: string;
   readonly laneId: string;

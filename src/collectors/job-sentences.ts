@@ -51,7 +51,7 @@ function names(directory: string): string[] {
 export function jobActivity(home: string, w: OwnerWorker, node?: SubagentTreeNode) {
   if (node && !node.rolloutPath) return { text: '', stamp: '', at: 0, items: [] };
   const dir = resolve(home, 'jobs', w.id.slice(9), 'sessions');
-  const file = node?.rolloutPath ?? names(dir).filter((n) => n.endsWith('.jsonl'))
+  const file = node?.rolloutPath ?? w.sessionFile?.path ?? names(dir).filter((n) => n.endsWith('.jsonl'))
     .map((n) => ({ file: join(dir, n), at: (() => { try { return fs.lstatSync(join(dir, n)).mtimeMs; } catch { return 0; } })() }))
     .sort((a, b) => b.at - a.at)[0]?.file;
   const activity = file ? read(file, 32768, true) : { text: '', stamp: '', at: 0 };
@@ -216,7 +216,7 @@ export class JobSentences {
     for (const lane of board.lanes)
       for (const w of lane.workers) {
         const node = w.nativeDepth !== undefined ? native.get(w.id) : undefined;
-        if (!node && !/^thin-job:j[0-9a-f]{16}$/.test(w.id)) continue;
+        if (node?.replaying || (!node && !/^thin-job:j[0-9a-f]{16}$/.test(w.id))) continue;
         if (this.active.size >= 3) return;
         const key = `${w.id}:${this.language}`,
           old = this.rows.get(key),
