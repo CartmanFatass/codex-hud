@@ -50,8 +50,8 @@ import { t, language } from './i18n.js';
 
 /** What the bar needs to know besides the panel's state. */
 export interface BarInput {
-  /** The brief, when one is configured. */
-  brief?: { paused?: boolean };
+  /** The master model-text preference, independent of legacy brief content. */
+  modelEnabled?: boolean;
   /** Agents the linger window put away; 0 hides the button. */
   expired: number;
   /** Settings is the active navigation tab while its modal is open. */
@@ -296,8 +296,8 @@ function specs(state: MonitorState, input: BarInput, keep: number, width: number
         });
     }
   }
-  if (input.brief && keep >= 2) {
-    const paused = Boolean(input.brief.paused);
+  if (input.modelEnabled !== undefined && keep >= 2) {
+    const paused = !input.modelEnabled;
     actions.push({
       kind: 'brief',
       glyph: icon(paused ? 'resume' : 'pause'),

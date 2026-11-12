@@ -219,7 +219,7 @@ test('Home is a scannable summary: a short question card and one row per decisio
     'a) separate model line',
     'b) beside the phase strip',
     'c) drop the chip',
-    'default a) separate model line',
+    'default: a) separate model line',
     asked,
     chosen.slice(3),
     'instead of ' + instead,
@@ -250,6 +250,7 @@ test('v7 Work: file-derived phase chain and vendor/model/full effort chips', asy
   setDisplayConfig({ theme: 'terminal', icons: 'unicode', glyphs: 'glyph' });
   const painted = f.render(f.pipeline.workboard(f.tree), 'work');
   assert.match(joined(painted), /build ✓ › review r1 2 major › review r2 accept › done/);
+  assert.ok(painted.lines.some((line) => line.includes(theme.board.askTitle('a'))));
   for (const line of plain(painted)) {
     assert.equal(visualLength(line), 56);
     assert.doesNotMatch(line, /\x1b|\[38;2;/);
@@ -336,6 +337,41 @@ test('Enter expands and collapses in place on both tabs, 1 2 pick the tab, 3 doe
   assert.equal(press(work, '\x1b[D').state.mainTab, 'home');
   assert.equal(press(at('home', targets.lane), '\x1b[C').state.mainTab, 'work');
   assert.equal(press(work, '\x1b[D').state.boardFolded, undefined);
+});
+test('model button uses the master preference; b matches it, S and secondary 3 are inert', async (t) => {
+  const f = fixture(t);
+  await f.pipeline.refresh();
+  const board = f.pipeline.workboard(f.tree);
+  let modelEnabled = true;
+  const state = initialMonitorState();
+  for (const enabled of [true, false]) {
+    const frame = renderMonitor({ tree: f.tree, workboard: board, state, modelEnabled, width: 56, height: 40 });
+    assert.equal(modelEnabled, enabled);
+    assert.match(stripAnsi(frame.lines[0]), enabled ? /ǁ/ : /▶/);
+    const control = frame.controls.find((c) => c.kind === 'brief');
+    const ctx = { tree: f.tree, frame };
+    const clicked = handleMonitorInput(
+      frame.state,
+      { type: 'mouse', button: 'left', x: control.x + 1, y: control.y },
+      ctx
+    );
+    assert.equal(clicked.action.type, 'brief-toggle');
+    assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'brief-toggle' }, ctx).action, clicked.action);
+    modelEnabled = !modelEnabled;
+    const [input] = new WorkbenchInputDecoder('workboard', { forward: true }).push(Buffer.from('S'));
+    assert.deepEqual(handleMonitorInput(frame.state, input, ctx).state, frame.state);
+  }
+  assert.deepEqual(new WorkbenchInputDecoder('workboard').push(Buffer.from('\x1b_codex-hud:summary\x1b\\')), []);
+  const frame = renderMonitor({
+    tree: f.tree,
+    state: { ...initialMonitorState(), focus: 'timeline' },
+    width: 56,
+    height: 40,
+  });
+  assert.deepEqual(
+    handleMonitorInput(frame.state, { type: 'key', key: 'changes' }, { tree: f.tree, frame }).state,
+    frame.state
+  );
 });
 test('a lane row ends in one glyph per job, oldest first, then the role of the newest running or asking one', async (t) => {
   const f = fixture(t);

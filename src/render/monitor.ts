@@ -110,7 +110,7 @@ export interface MonitorState {
   boardRevealed?: string;
   /** Display-only fold cursor; never a workflow identity or native selection. */
   boardAnchor?: string;
-  boardInspect?: WorkTarget | 'summary';
+  boardInspect?: WorkTarget;
   tree: PanelState;
   focus: MonitorPane;
   modes: MonitorModes;
@@ -202,8 +202,6 @@ export interface MonitorRow {
   text: string;
   /** Retained layout rows format a card only when its cells enter the viewport. */
   paint?: () => string;
-  /** Owner cards occupying this physical row; shared Work/peek scheduling projection. */
-  sentenceWorkers?: readonly string[];
   item?: string;
   key?: string;
   controls?: RowControl[];
@@ -246,7 +244,6 @@ export interface MonitorControl {
     | 'board-pick'
     | 'board-activate'
     | 'board-inspect'
-    | 'board-summary'
     | 'settings'
     | 'tab'
     | 'older'
@@ -274,7 +271,6 @@ export interface MonitorControl {
 export interface MonitorFrame {
   workboard?: {
     snapshot: WorkboardSnapshot;
-    sentenceTargets?: ReadonlySet<string>;
     targets: ReadonlyMap<string, WorkTarget>;
     selected?: WorkTarget;
     rows: MonitorRow[];
@@ -311,6 +307,7 @@ export interface MonitorData {
    * The brief, when one is configured; `paused` puts the model calls on hold.
    */
   brief?: Brief & { paused?: boolean };
+  modelEnabled?: boolean;
   /**
    * The status bar's fields for the card at the foot of the panel (while the
    * panel is open it replaces the bar), as parts the monitor fits to the
@@ -544,12 +541,16 @@ export function reconcileMonitor(
  * three rows and the page holds still while the looks are stepped through.
  */
 export function panelTop(
-  input: Pick<MonitorData, 'tree' | 'brief' | 'nowMs'>,
+  input: Pick<MonitorData, 'tree' | 'modelEnabled' | 'nowMs'>,
   state: MonitorState,
   width: number
 ): string[] {
   const now = input.nowMs ?? Date.now();
-  const bar = controlBar(state, { brief: input.brief, expired: putAwayCount(input.tree.nodes, state, now) }, width);
+  const bar = controlBar(
+    state,
+    { modelEnabled: input.modelEnabled, expired: putAwayCount(input.tree.nodes, state, now) },
+    width
+  );
   const info = state.focus === 'agents' ? summaryRow(input).row.counts : undefined;
   return [
     ...bar.lines,
@@ -596,14 +597,11 @@ function helpText(
       '{p} u  inbox, updates and history',
       '{p} p  find and pin agents',
       '{p} c  sources, model calls and export',
-      '{p} m  main session  {p} o  switch to selected',
-      // The tabs layout shows one pane at a time: nothing to close or zoom.
-      ...(tabbed
-        ? ['{p} 1–4  show a pane  {p} Tab  next']
-        : ['{p} 1–4  open / close a pane  {p} Tab  next', '{p} x  close pane']),
-      '{p} j k ↑ ↓  select, repeats',
+      '{p} 1 Home  {p} 2 Work',
+      '{p} ← →  tab  {p} ↑ ↓  move',
+      '{p} o  open  {p} v  inspect',
       '{p} PgUp PgDn  scroll  {p} g G  first / last',
-      tabbed ? '{p} Enter / Space / v  inspect' : '{p} Enter / Space / v  inspect  {p} z  zoom',
+      '{p} ⏎  expand / collapse',
       "Timeline: ↑ ↓ an agent's entry, Enter inspects",
       ...(rich ? [] : ['{p} h l  fold / unfold agent']),
       '{p} f  filter  {p} s  order',
@@ -651,8 +649,8 @@ function helpText(
     ].map((line) => t(line)),
     head('Legend', 'legend'),
     ...[
-      '1 Cards  2 Timeline',
-      '3 Changes  4 Inspector',
+      '1 Home  2 Work',
+      '←→ tab  ↑↓ move  ⏎ expand/collapse  o open  v inspect',
       '✓ = turn completed',
       '? = no status evidence',
       '! = needs a look',
@@ -665,7 +663,6 @@ function helpText(
     ...(rich && cardSummary ? [t('Latest note: written by a model')] : []),
     ...[
       '~ = written by a model',
-      'Brief: ! needs  ◎ goal  ▸ now  ✓ done  ⚑ approve',
       'status card gutter colour = main session state',
       '┃ = auto-compact point',
       '◈N = guardian reviews  +N = folded agents',
@@ -699,7 +696,7 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
   const delegation = nativeCallsOnly(input.hud?.delegation) ? null : (input.hud?.delegation ?? null);
   const state = reconcileMonitor(input.state, input.tree, input.git, input.worktrees, now, delegation);
   const frame: MonitorFrame = { lines: [], panes: [], controls: [], state };
-  // Secondary views keep the board context so prefix 1/2/S always returns to the live main tabs.
+  // Secondary views keep the board context so prefix 1/2 always returns to the live main tabs.
   if (input.workboard)
     frame.workboard = { snapshot: input.workboard, targets: new Map(), selected: state.workTarget, rows: [] };
   if (delegation)
@@ -859,11 +856,11 @@ export function renderMonitor(input: MonitorData): MonitorFrame {
     state,
     dview
       ? {
-          brief: input.brief,
+          modelEnabled: input.modelEnabled,
           expired: delegationPutAway(dview.vm, planOptions(state, now)),
           buttons: rowButtons(dview, state.tree.selectedId),
         }
-      : { brief: input.brief, expired: putAwayCount(input.tree.nodes, state, now) },
+      : { modelEnabled: input.modelEnabled, expired: putAwayCount(input.tree.nodes, state, now) },
     width
   );
   const top = Math.min(height, bar.lines.length);

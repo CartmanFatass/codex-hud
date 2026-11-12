@@ -115,6 +115,7 @@ interface Saved {
   at: number;
   text?: string;
   final?: boolean;
+  settledAt?: number | null;
 }
 export class JobSentences {
   private rows = new Map<string, Saved>();
@@ -175,7 +176,8 @@ export class JobSentences {
         const last = Math.max(
           ...(['en', 'zh'] as const).map((lang) => this.rows.get(`${w.id}:${lang}`)?.at ?? -Infinity)
         );
-        if (this.active.has(key) || (final && old?.final) || now - last < INTERVAL) continue;
+        if (this.active.has(key) || (final && old?.final && old.settledAt === w.settledAt) || now - last < INTERVAL)
+          continue;
         const input = material(
           home,
           w,
@@ -185,8 +187,15 @@ export class JobSentences {
         );
         const prompt = `<job>\n${JSON.stringify(input)}\n</job>`;
         const fingerprint = createHash('sha256').update(prompt).digest('hex');
-        if (!final && old?.fingerprint === fingerprint && old.text) continue;
+        if (!final && old?.fingerprint === fingerprint && old.text) {
+          old.at = now;
+          this.rows.delete(key);
+          this.rows.set(key, old);
+          this.save();
+          continue;
+        }
         const row: Saved = { fingerprint: old?.fingerprint ?? '', at: now, text: old?.text };
+        this.rows.delete(key);
         this.rows.set(key, row);
         this.save();
         const h = this.model.submit({
@@ -208,9 +217,12 @@ export class JobSentences {
             if (text) {
               row.text = text;
               row.final = final;
+              row.settledAt = w.settledAt;
               row.fingerprint = fingerprint;
             }
           }
+          this.rows.delete(key);
+          this.rows.set(key, row);
           this.save();
           this.changed();
         });

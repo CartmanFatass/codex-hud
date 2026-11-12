@@ -149,7 +149,6 @@ export class WorkbenchInputDecoder {
                   t: 'timeline',
                   v: 'inspect',
                   ' ': 'inspect',
-                  S: 'summary',
                 } as Record<string, string>
               )[ch] ?? KEYS[ch])
             : this.profile === 'monitor' && ch === '2'

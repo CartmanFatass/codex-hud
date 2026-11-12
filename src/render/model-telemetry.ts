@@ -4,16 +4,13 @@ import { t } from './i18n.js';
 import { flowLines, monitorText } from './monitor-text.js';
 
 const FEATURE_LABELS: Record<TelemetryFeature, string> = {
-  approval: 'Approval explanations',
   probe: 'Connection probes',
   progress: 'Progress summaries',
   labels: 'Agent labels',
-  title: 'Session titles',
-  recap: 'Session recaps',
+  title: 'Decision titles',
+  'job-sentence': 'Job sentences',
   cause: 'Failure explanations',
-  brief: 'Agent briefs',
   digest: 'Result digests',
-  changes: 'Change summaries',
   other: 'Other model features',
 };
 const PERSISTENCE_LABELS = {

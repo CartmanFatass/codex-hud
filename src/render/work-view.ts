@@ -2,7 +2,7 @@
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
-import { briefFields } from './cards.js';
+import { icon } from './control-bar.js';
 import { laneRows, orderedLanes, retainedWorker } from './work-lanes.js';
 import { workInspectorRows } from './work-inspector.js';
 import { homeRows, doneToday } from './home-view.js';
@@ -34,8 +34,6 @@ export function boardInspectorRows(
   state: MonitorState,
   width: number
 ): MonitorRow[] {
-  if (state.boardInspect === 'summary')
-    return briefFields(input, width).flatMap((field) => field.lines.map((text) => ({ text })));
   const target = state.boardInspect;
   if (!target) return [];
   const lane = board.lanes.find((l) => l.id === target.laneId);
@@ -75,7 +73,8 @@ export function renderWorkboardHelp(
   const words = [
     'Help — Shortcuts',
     '1 Home · 2 Work · , Settings · ? Help',
-    '←→ tab · ↑↓ move · Enter expands or collapses · o opens the file',
+    '←→ tab · ↑↓ move · ⏎ expand/collapse · o open · v inspect',
+    'b: pause / resume models',
     'a: reveal/hide finished agents · display only',
     'Esc: back',
   ];
@@ -105,17 +104,17 @@ export function renderWorkboardFrame(
     alive = board.workers.filter((w) => retainedWorker(w, now, state.tree.showAll)).length;
   const labels = [t('Home') + (needs ? ' ' + needs : ''), t('Work') + (alive ? ' ' + alive : '')];
   let x = 0;
-  frame.lines[0] = fit(
-    labels
-      .map((label, i) => {
-        const text = ` ${label} `;
-        frame.controls.push({ kind: i ? 'board-work' : 'board-home', x, y: 0, width: visualLength(text) });
-        x += visualLength(text);
-        return i === (home ? 0 : 1) && !inspector ? theme.board.title(text) : theme.dim(text);
-      })
-      .join(''),
-    width
-  );
+  const tabs = labels
+    .map((label, i) => {
+      const text = ` ${label} `;
+      frame.controls.push({ kind: i ? 'board-work' : 'board-home', x, y: 0, width: visualLength(text) });
+      x += visualLength(text);
+      return i === (home ? 0 : 1) && !inspector ? theme.board.title(text) : theme.dim(text);
+    })
+    .join('');
+  const models = input.modelEnabled !== undefined && x + 3 <= width;
+  frame.lines[0] = fit(tabs + (models ? ` ${icon(input.modelEnabled ? 'pause' : 'resume')} ` : ''), width);
+  if (models) frame.controls.push({ kind: 'brief', x, y: 0, width: 3 });
   let rows = inspector
     ? boardInspectorRows(input, board, state, width)
     : home
@@ -153,11 +152,9 @@ export function renderWorkboardFrame(
   if (inspector) state.scroll.details = offset;
   else if (home) state.homeScroll = offset;
   else state.workScroll = offset;
-  const sentenceTargets = new Set<string>();
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
     if (!row) continue;
-    for (const id of row.sentenceWorkers ?? []) sentenceTargets.add(id);
     const text = fit(row.paint?.() ?? row.text, width);
     frame.lines[i + 1] = !inspector && offset + i === cursorAt ? boardCursor(text) : text;
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 });
@@ -181,6 +178,6 @@ export function renderWorkboardFrame(
     edge: 0,
     visible: room,
   });
-  frame.workboard = { snapshot: board, targets, selected, rows, sentenceTargets };
+  frame.workboard = { snapshot: board, targets, selected, rows };
   return frame;
 }

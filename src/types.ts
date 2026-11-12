@@ -628,8 +628,6 @@ export interface HudData {
 
   /** A recorded approval request that nothing has answered yet. */
   pendingApproval?: PendingApproval;
-  /** The session's title, from the recap's goal or its first prompt, model-written; only when the labels feature is on. */
-  sessionTitle?: string;
 
   // Context/token usage
   contextUsage?: ContextUsage;

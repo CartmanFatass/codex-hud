@@ -29,13 +29,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   // 3 (and Ctrl+\ 3) is kept for the Project tab (M4), not built: it does nothing, not even open the hidden Changes view.
   if (key === 'changes') return result();
-  if (key === 'summary') {
-    next.boardInspect = 'summary';
-    next.focus = 'details';
-    next.modes.details = 'open';
-    next.scroll.details = 0;
-    return result();
-  }
+  if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
   const inspect = () => {
     const target = next.mainTab === 'work' ? next.workTarget : next.homeTarget;
     if (!target || !boardFrame || next.boardAnchor) return;
@@ -126,12 +120,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       }
       return result();
     }
-    if (control?.kind === 'board-summary') {
-      next.boardInspect = 'summary';
-      next.focus = 'details';
-      next.scroll.details = 0;
-      return result();
-    }
+    if (control?.kind === 'brief') return result({ type: 'brief-toggle' });
     if (control?.kind === 'settings') return result({ type: 'settings' });
     if (control?.kind === 'help') {
       next.help = true;
@@ -173,9 +162,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   // Removed controls cannot act through hidden legacy shortcuts either.
-  if (
-    ['resume-reconcile', 'reset', 'brief-toggle', 'filter', 'sort', 'main', 'log', 'pane-close', 'zoom'].includes(key)
-  )
+  if (['resume-reconcile', 'reset', 'filter', 'sort', 'main', 'log', 'pane-close', 'zoom'].includes(key))
     return result();
   if (key === 'next-trouble' || key === 'previous-trouble') {
     const workers = boardFrame.snapshot.workers;

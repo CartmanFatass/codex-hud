@@ -30,14 +30,7 @@ const MAX_PENDING = 3;
 const MAX_TRACKED = 200;
 
 export type ProgressReason =
-  | 'off'
-  | 'summary-hidden'
-  | 'not-live'
-  | 'no-evidence'
-  | 'cooldown'
-  | 'retry'
-  | 'concurrency-cap'
-  | 'hourly-cap';
+  'off' | 'summary-hidden' | 'not-live' | 'no-evidence' | 'cooldown' | 'retry' | 'concurrency-cap' | 'hourly-cap';
 /** Display gates use the exact visible subjects, before live-agent narrowing. */
 export interface ProgressContext {
   backendOn: boolean;
@@ -65,7 +58,6 @@ export function progressReason(node: SubagentTreeNode, context: ProgressContext)
 }
 export interface ProgressSummaryInput {
   tree: SubagentTree;
-  rootRolloutPath?: string;
   targets: ReadonlySet<string>;
   /** Backend enabled and not paused. Off/pause cancels even queued work. */
   on: boolean;

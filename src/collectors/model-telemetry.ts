@@ -1,15 +1,12 @@
 /** Bounded, content-free model lifecycle accounting. No prompts, replies or routes. */
 export const MODEL_FEATURES = [
-  'approval',
   'probe',
   'progress',
   'labels',
   'title',
-  'recap',
+  'job-sentence',
   'cause',
-  'brief',
   'digest',
-  'changes',
   'other',
 ] as const;
 export type TelemetryFeature = (typeof MODEL_FEATURES)[number];

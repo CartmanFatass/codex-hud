@@ -1115,9 +1115,6 @@ Options:
   --json              Print this directory's HUD state as JSON
   --attach            Attach to latest existing session in this directory
   --new-session       Always create a new session for this launch
-  brief --dry-run [FILE]
-                      Print (or write to FILE) the brief the panel would send
-                      to the model now for this directory's session; nothing is sent
 
 Environment Variables (Linux/Bash/tmux):
   Neutral aliases: HUD_POSITION, HUD_HEIGHT, HUD_HEIGHT_AUTO, HUD_HEIGHT_MIN,

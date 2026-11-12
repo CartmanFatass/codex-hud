@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import fsMutable from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { JobSentences } from '../../dist/collectors/job-sentences.js';
@@ -12,7 +13,7 @@ import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { renderWorkCard, jobSentenceLine } from '../../dist/render/work-card.js';
 import { laneRows } from '../../dist/render/work-lanes.js';
-import { initialMonitorState } from '../../dist/render/monitor.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { stripAnsi, theme, visualLength } from '../../dist/render/colors.js';
 const settle = async () => {
@@ -163,6 +164,67 @@ test('thin job: real file collection, keyword card, coalescing, cached reopen, a
   f.service.configure(true, 'en');
   await f.update();
   assert.equal(f.calls.length, 3);
+});
+test('ordinary cards expand the whole marked sentence and factual detail, then collapse on both tabs', async (t) => {
+  const f = fixture(t);
+  f.reply = 'Checking «parser boundaries» while preserving the complete sentence through its very last word.';
+  const board = await f.update(),
+    worker = board.workers[0];
+  const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) };
+  const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
+  for (const mainTab of ['home', 'work']) {
+    let state = { ...initialMonitorState(), mainTab, [mainTab + 'Target']: target };
+    const render = () => renderMonitor({ tree, workboard: board, state, width: 32, height: 40, nowMs: f.now });
+    const enter = () => {
+      const frame = render();
+      state = handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { tree, frame }).state;
+    };
+    const text = () =>
+      render()
+        .lines.map((line) => stripAnsi(line).replace(/^┃ /, ''))
+        .join(' ');
+    assert.doesNotMatch(text(), /last word|Factual progress/);
+    enter();
+    assert.match(text().replace(/\s+/g, ' '), /very last word\./);
+    assert.match(text(), /Factual progress/);
+    assert.doesNotMatch(text(), /[«»]/);
+    assert.ok(render().lines.some((line) => line.includes(theme.board.identifier('parser boundaries'))));
+    enter();
+    assert.doesNotMatch(text(), /last word|Factual progress/);
+    board.workers[0].modelSentence = undefined;
+    enter();
+    assert.match(text(), /Factual progress/);
+    board.workers[0].modelSentence = f.reply;
+  }
+});
+test('a second settlement gets a fresh final sentence after the shared floor', async (t) => {
+  const f = fixture(t);
+  f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
+  await f.update();
+  f.now += 10_000;
+  f.put('STATUS.json', { state: 'working' });
+  await f.update();
+  f.now += 10_000;
+  f.put('STATUS.json', { state: 'failed', settled_at: new Date(f.now).toISOString() });
+  f.put('report.md', 'Correction failed');
+  await f.update();
+  assert.equal(f.calls.length, 1);
+  f.now += 100_001;
+  await f.update();
+  assert.equal(f.calls.length, 2);
+  assert.match(f.calls[1].messages[1].content, /Correction failed/);
+});
+test('unchanged running material renews the read window without another call', async (t) => {
+  const f = fixture(t);
+  await f.update();
+  const board = f.board();
+  f.now += 120_001;
+  f.service.update(board, f.home);
+  const reads = t.mock.method(fsMutable, 'readSync');
+  f.now += 1_000;
+  f.service.update(board, f.home);
+  assert.equal(reads.mock.callCount(), 0);
+  assert.equal(f.calls.length, 1);
 });
 test('language changes share the same per-job two-minute floor', async (t) => {
   const f = fixture(t);

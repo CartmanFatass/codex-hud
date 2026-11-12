@@ -53,9 +53,12 @@ export function ageText(minutes: number): string {
 }
 /** Only syntactic identifiers get emphasis until AI-THIN. */
 export function identifiers(text: string): string {
-  return monitorText(text).replace(/`[^`]+`|(?:\.?\.?\/|~\/)[^\s,;]+|\b[\w.-]+\/[\w/.-]+|--[\w-]+/g, (s) =>
-    theme.board.identifier(s)
-  );
+  return monitorText(text)
+    .replace(/`[^`]+`|(?:\.?\.?\/|~\/)[^\s,;]+|\b[\w.-]+\/[\w/.-]+|--[\w-]+/g, (s) => theme.board.identifier(s))
+    .replace(
+      new RegExp(`(${t('default')}: )([a-zA-Z])([).,:])`),
+      (_match, before, letter, after) => before + theme.board.askTitle(letter) + after
+    );
 }
 /** `max` keeps the first lines and cuts the rest into the last one with `…`. */
 export function stemLines(text: string, width: number, ink = theme.board.muted, max = Infinity): string[] {
@@ -66,6 +69,9 @@ export function stemLines(text: string, width: number, ink = theme.board.muted, 
 }
 /** Model marks are presentation only; malformed marks leave a plain single line. */
 export function jobSentenceLine(raw: string, width: number, ink = theme.board.muted): string {
+  return jobSentenceRows(raw, width, ink, false)[0];
+}
+function jobSentenceRows(raw: string, width: number, ink: (s: string) => string, full: boolean): string[] {
   const safe = monitorText(raw).replace(/\s+/g, ' ').trim(),
     room = Math.max(1, width - 3);
   const spans = [...safe.matchAll(/«([^«»]+)»/g)];
@@ -77,11 +83,28 @@ export function jobSentenceLine(raw: string, width: number, ink = theme.board.mu
       space = head.lastIndexOf(' ');
     text = (space > 0 ? head.slice(0, space) : head) + '…';
   }
-  if (valid) {
-    const keywords = spans.map((s) => s[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-    text = text.replace(new RegExp(keywords, 'g'), (word) => theme.board.identifier(word));
-  }
-  return fit(`${ink(mark('┃', '|'))} ${text}`, width);
+  const ranges = valid
+    ? spans.map((s) => {
+        const start = safe.slice(0, s.index).replace(/[«»]/g, '').length;
+        return [start, start + s[1].length];
+      })
+    : [];
+  let offset = 0;
+  return (full ? flowLines(plain, room) : [text]).map((line) => {
+    const start = full ? plain.indexOf(line, offset) : 0;
+    let painted = '',
+      cursor = 0;
+    for (const [a, b] of ranges) {
+      const from = Math.max(cursor, a - start),
+        to = Math.min(line.length, b - start);
+      if (from >= to) continue;
+      painted += line.slice(cursor, from) + theme.board.identifier(line.slice(from, to));
+      cursor = to;
+    }
+    painted += line.slice(cursor);
+    offset = start + line.length;
+    return fit(`${ink(mark('┃', '|'))} ${painted}`, width);
+  });
 }
 /** An open question as its paragraphs; the context and every option only when `full`. */
 export function requestLines(card: WorkCard, full = false): string[] {
@@ -90,7 +113,7 @@ export function requestLines(card: WorkCard, full = false): string[] {
     ? [
         r.question,
         ...(full ? [r.context ? `${t('blocked')} ${r.context}` : '', ...r.options] : []),
-        r.suggested ? `${t('default')} ${r.suggested}` : '',
+        r.suggested ? `${t('default')}: ${r.suggested}` : '',
       ].filter(Boolean)
     : [];
 }
@@ -181,8 +204,8 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
   );
   const asking = state.mainTab === 'work' && card.worker.homeNeedsHuman ? requestLines(card, open) : [];
   // The model sentence replaces the factual line, never an open question Work prints.
-  if (generated) rows.push(jobSentenceLine(generated, width, ink));
-  for (const part of asking.length ? asking : generated ? [] : [workCardDetail(card, sentence)])
+  if (generated) rows.push(...jobSentenceRows(generated, width, ink, Boolean(open)));
+  for (const part of asking.length ? asking : generated && !open ? [] : [workCardDetail(card, sentence)])
     if (part) rows.push(...stemLines(part, width, ink));
   return rows.map((line, i) => (i ? (failed(card) ? theme.board.failedBody : theme.board.body)(line) : line));
 }

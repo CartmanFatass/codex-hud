@@ -56,16 +56,13 @@ export const DIAGNOSTIC_ZH: Record<string, string> = {
   'History is at capacity; counts may omit earlier requests in this window.':
     '历史已达容量；统计可能遗漏此时间窗口内较早的请求。',
   'No model requests observed in this window': '此时间窗口内未观察到模型请求',
-  'Approval explanations': '审批解释',
   'Connection probes': '连接测试',
   'Progress summaries': '进度摘要',
   'Agent labels': 'Agent 标签',
-  'Session titles': '会话标题',
-  'Session recaps': '会话回顾',
+  'Decision titles': '决策标题',
+  'Job sentences': '任务进展句',
   'Failure explanations': '失败解释',
-  'Agent briefs': 'Agent 简报',
   'Result digests': '结果摘要',
-  'Change summaries': '改动摘要',
   'Other model features': '其他模型功能',
   'Requests {requests} · pending {pending} · generated {successes} · failed {failures}':
     '请求 {requests} · 待处理 {pending} · 生成 {successes} · 失败 {failures}',

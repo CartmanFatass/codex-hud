@@ -48,19 +48,13 @@ export function homeRows(
     ]
       .filter(Boolean)
       .join(' · ');
-    const lines = (
+    const lines =
       open && r
         ? requestLines(card, true).flatMap((part) => stemLines(part, width, theme.board.attention))
         : [
             ...stemLines(r?.question ?? worker.ask ?? card.reason ?? '', width, theme.board.attention, 3),
             ...(choices ? stemLines(choices, width, theme.board.attention, 1) : []),
-          ]
-    ).map((line) =>
-      line.replace(
-        new RegExp(`(${t('default')}: )([a-zA-Z])([).,:])`),
-        (_match, before, letter, after) => before + theme.board.askTitle(letter) + after
-      )
-    );
+          ];
     rows.push(...lines.map((line) => boardRow(theme.board.slab(line), target)));
     rows.push(
       boardRow(

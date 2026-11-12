@@ -55,6 +55,7 @@ export class DecisionTitles {
       const question = readJobFile(resolve(dir, q.relativePath), 4096).text;
       const answer = readJobFile(resolve(dir, a.relativePath), 4096).text;
       if (!question || !answer) continue;
+      this.rows.delete(key);
       this.rows.set(key, { at: Date.now() });
       const h = this.model.submit({
         feature: 'title',
@@ -72,6 +73,7 @@ export class DecisionTitles {
         const text = result.ok ? summarySentence(result.text, 600) : '';
         const segments = new Intl.Segmenter(this.language, { granularity: 'word' });
         const words = [...segments.segment(text)].filter((s) => s.isWordLike);
+        this.rows.delete(key);
         this.rows.set(key, { at: Date.now(), text: text.slice(0, words[8]?.index ?? text.length).trim() });
         while (this.rows.size > 200) this.rows.delete(this.rows.keys().next().value!);
         try {

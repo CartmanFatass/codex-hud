@@ -317,6 +317,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     }
   }
   if (key === 'settings') return result({ type: 'settings' });
+  if (key === 'changes') return result(); // 3 is reserved for Project (M4).
   if (key === 'diagnostics') {
     next.preview = 'diagnostics';
     next = openPane(next, 'details');

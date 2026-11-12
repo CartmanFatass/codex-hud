@@ -116,7 +116,7 @@ export function laneRows(
       !work && worker.homeNeedsHuman && !worker.modelSentence
         ? renderWorkCard(card, state, width, '').slice(0, 1)
         : renderWorkCard(card, state, width, sentence);
-    rows.push(...lines.map((text) => ({ text, item: key, key, sentenceWorkers: [worker.id] })));
+    rows.push(...lines.map((text) => ({ text, item: key, key })));
     if (work) rows.push(boardRow(''));
   }
   if (!work) rows.push(boardRow(''));

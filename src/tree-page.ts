@@ -995,6 +995,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         frame = renderMonitor({
           tree,
           workboard: decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree, panelDelegation))),
+          modelEnabled: settings.modelEnabled,
           state,
           git,
           worktrees,
