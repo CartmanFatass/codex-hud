@@ -74,7 +74,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · HOME-LAYOUT · m4-close 01: Home's progress block layout (frontend-implementer) (426dbc02)
 - try · M4 · THEMES · m4-close 02: each theme its own board inks; refined terminal; new arctic, ember, contrast, paper (frontend-implementer) (6f9a079f)
 - try · M4 · ROW-FIX · native rows keep one order; a growing transcript counts as activity (no false 停滞); running cards drop the flipping tool name (66f37e57)
-- working · M4 · HOME-RECOMMEND · m4-close 08: Settings Home mode Default | Recommended (Decision-API ranking) + progress brief on top (owner) (imp)
+- working · M4 · HOME-RECOMMEND · m4-close 08: Settings Home mode Default | Recommended (Decision-API ranking) + progress brief on top; addendum: Decision API own ledger + cap row (default unlimited), unlimited LLM cap option, 5-min summary floor, no kind backfill (owner) (imp)
 - try · M4 · BAR-FIDELITY · m4-close 07: the six bar looks match their approved concepts (inks, spacing, idioms) (frontend-implementer) (2e2b2650)
 - try · M4 · HOME-TIDY · owner: Model fit removed from Project; Home's progress block sits at the bottom of the spare rows (42e8bcc5)
 - try · M4 · OAI-RUNNING · decision labels follow the Settings choice (default OpenAI, owner); running Claude subagents visible again (meta without finished) (5d0e54aa)
