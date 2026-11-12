@@ -10,6 +10,7 @@ import { theme, visualLength, stripAnsi } from './colors.js';
 import { currentWorker } from './work-visibility.js';
 import { t } from './i18n.js';
 export function workerPriority(w: OwnerWorker, now: number): number {
+  if (w.homeRank !== undefined) return -w.homeRank;
   const card = projectWorkCard(w, now);
   return w.homeNeedsHuman
     ? 0

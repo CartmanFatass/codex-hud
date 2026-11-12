@@ -172,7 +172,7 @@ export function pageFixture(home) {
             },
             width,
             height,
-            { state: undefined, modelCalls: { today: 14, lastHour: 14, cap: 60 } }
+            { state: undefined, modelCalls: { today: 14, lastHour: 14, cap: 60 }, decisionCalls: { lastHour: 140, cap: 0 } }
           )
         );
       }

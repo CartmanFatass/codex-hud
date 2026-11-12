@@ -30,6 +30,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   detailsPane: 'open' | 'closed';
   worktreeRoot: string;
   modelEnabled: boolean;
+  homeMode: 'default' | 'recommended';
   /** Draft-only; persisted solely as config.json decisions.primary. */
   decisionApi: DecisionProviderId;
   /** The tree panel's and the brief's language; auto follows the locale. */
@@ -41,6 +42,8 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   cardStallMinutes: number;
   /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
   modelCallsPerHour: number;
+  decisionCallsPerHour: number;
+  summaryIntervalMinutes: number;
   /** Notifications in tmux on approvals, failures and finished agents. CODEX_HUD_NOTIFY, when set, wins. */
   notify: boolean;
   /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
@@ -78,11 +81,14 @@ export function defaultSettings(): HudSettings {
         return false;
       }
     })(),
+    homeMode: 'default',
     language: 'auto',
     briefingApiBase: 'https://api.mistral.ai/v1',
     model: 'deepseek-v4-1-flash-1017',
     decisionApi: 'openai',
     modelCallsPerHour: 60,
+    decisionCallsPerHour: 0,
+    summaryIntervalMinutes: 5,
     cardStallMinutes: 10,
     notify: false,
     notifyDesktop: false,
@@ -120,6 +126,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   detailsPane: oneOf('open', 'closed'),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   modelEnabled: isBoolean,
+  homeMode: oneOf('default', 'recommended'),
   decisionApi: oneOf('gemini', 'openai', 'typesafe'),
   language: oneOf('auto', 'en', 'zh'),
   briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
@@ -127,7 +134,9 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   cardStallMinutes: (value) => isIntegerBetween(value, 1, 120),
   notify: isBoolean,
   notifyDesktop: isBoolean,
-  modelCallsPerHour: (value) => isIntegerBetween(value, 1, 1000),
+  modelCallsPerHour: (value) => isIntegerBetween(value, 0, 1000),
+  decisionCallsPerHour: (value) => isIntegerBetween(value, 0, 2000),
+  summaryIntervalMinutes: (value) => isIntegerBetween(value, 1, 120),
   prefixKey: oneOf(...PREFIX_KEYS),
   icons: oneOf('unicode', 'text'),
 };

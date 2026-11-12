@@ -157,7 +157,7 @@ export const DEFAULT_API_MODELS: Readonly<Record<ApiModelTier, string>> = {
 
 export function apiModelTier(feature: string): ApiModelTier {
   if (['labels', 'title', 'approval'].includes(feature)) return 'lite';
-  if (['recap', 'cause'].includes(feature)) return 'medium';
+  if (['recap', 'cause', 'home-brief'].includes(feature)) return 'medium';
   return 'low';
 }
 
@@ -418,7 +418,7 @@ export class SmallModel {
     if (changed) this.cancelAll();
     this.backend = backend;
     this.api = api;
-    if (patch.hourlyCap !== undefined && Number.isFinite(patch.hourlyCap) && patch.hourlyCap > 0)
+    if (patch.hourlyCap !== undefined && Number.isFinite(patch.hourlyCap) && patch.hourlyCap >= 0)
       this.cap = Math.floor(patch.hourlyCap);
   }
 
@@ -690,7 +690,7 @@ export class SmallModel {
         }
         if (hit) this.cache.delete(job.digest);
       }
-      if (callsWithin(this.calls, now, HOUR_MS) >= this.cap) return this.capResult();
+      if (this.cap > 0 && callsWithin(this.calls, now, HOUR_MS) >= this.cap) return this.capResult();
       this.calls.push(now);
     }
     let outcome: ModelResult;

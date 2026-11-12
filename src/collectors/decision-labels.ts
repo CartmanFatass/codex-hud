@@ -36,14 +36,14 @@ export function reviewFindings(text: string): string[] {
 }
 export class DecisionLabels {
   private enabled = false;
-  private cap = 60;
+  private cap = 0;
   private rows = new Map<string, Row>();
   private plans = new Map<string, Plan>();
   private active?: AbortController;
   private readonly store: ModelRuntimeStore;
   constructor(private dir: string, private changed = () => {}, private env = process.env,
     private fetcher: typeof fetch = fetch, private clock = Date.now) {
-    this.store = new ModelRuntimeStore(dir, join(dir, 'decision-labels'));
+    this.store = new ModelRuntimeStore(join(dir, 'decision-api'), join(dir, 'decision-labels'));
   }
   configure(on: boolean, cap: number): void {
     let keyed = false;
@@ -51,6 +51,9 @@ export class DecisionLabels {
     this.enabled = on && keyed;
     this.cap = cap;
     if (!this.enabled) this.stop();
+  }
+  usage(): { lastHour: number; cap: number } | undefined {
+    try { return { lastHour: this.store.calls().filter((at) => at > this.clock() - 3600000).length, cap: this.cap }; } catch { return undefined; }
   }
   stop(): void { this.active?.abort(); this.active = undefined; }
   private file(key: string): string { return join(this.dir, 'decision-labels', hash(key) + '.json'); }
@@ -81,7 +84,7 @@ export class DecisionLabels {
         const report = w.settledAt !== null ? readJobFile(join(dir, 'report.md')) : undefined;
         if (report?.text) add(w.id + ':outcome', { status: w.state, report: report.text.split(/\r?\n/).slice(0, 12).join('\n') },
           [question('outcome', 'Classify the actual outcome, not just process exit. Missing required validation or incomplete work is partial.', OUTCOMES)], String(w.settledAt));
-        if (w.settledAt === null || w.settledAt >= this.clock() - 30 * 86400000) {
+        if (w.settledAt === null || w.settledAt >= this.clock() - 86400000) {
           const brief = readJobFile(join(dir, 'brief.md'), 1500).text.split(/\r?\n\s*\r?\n/).slice(0, 2).join('\n');
           if (brief) add(w.id + ':kind', brief, JOB_KINDS.map((kind) => question(kind, `Does this job's title and goal describe ${kind} work?`, ['included', 'excluded'])), 'once');
         }

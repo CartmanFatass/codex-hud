@@ -239,7 +239,7 @@ export class ModelRuntimeStore {
       const calls = this.calls().filter((at) => at >= retainAfter);
       // Count future reservations conservatively as well: clock rollback
       // must not reopen budget already spent by another panel.
-      if (calls.filter((at) => at > now - HOUR_MS).length >= cap) return { kind: 'refused' };
+      if (cap > 0 && calls.filter((at) => at > now - HOUR_MS).length >= cap) return { kind: 'refused' };
       // Persist the reservation before sending. A crash can conservatively
       // spend a slot, but cannot send an uncounted request.
       try {

@@ -6,6 +6,8 @@ import type { MonitorData, MonitorState } from './monitor.js';
 const HOME_MS = { done: 10 * 60000, failed: 30 * 60000, decision: 30 * 60000, departure: 2 * 60 * 60000 };
 const jobTime = (w: OwnerWorker) => w.settledAt ?? w.startedAt ?? 0;
 export function currentWorker(w: OwnerWorker, now: number): boolean {
+  if (w.homeRank === 100) return true;
+  if (w.homeFolded) return false;
   if (w.homeNeedsHuman || w.settledAt === null) return true;
   const failed = w.work?.failed || ['failed', 'error', 'stopped'].includes(w.state);
   return now - w.settledAt < (failed ? HOME_MS.failed : HOME_MS.done);
@@ -26,9 +28,9 @@ export function visibleWorkboard(
   const workerIds = new Set(workers.map((w) => w.id)), decisionIds = new Set(decisions.map((d) => d.id));
   const lanes = board.lanes.map((lane) => ({
     ...lane,
-    workers: lane.workers.filter((w) => workerIds.has(w.id)).sort((a, b) => all && lane.identity.kind !== 'native' ? jobTime(b) - jobTime(a) : 0),
+    workers: lane.workers.filter((w) => workerIds.has(w.id)).sort((a, b) => all && lane.identity.kind !== 'native' && a.homeRank === undefined ? jobTime(b) - jobTime(a) : 0),
     decisions: lane.decisions.filter((d) => decisionIds.has(d.id)),
   })).filter((lane) => lane.workers.length || lane.decisions.length);
-  if (all) lanes.sort((a, b) => Math.max(0, ...b.workers.map(jobTime)) - Math.max(0, ...a.workers.map(jobTime)));
+  if (all && !board.workers.some((w) => w.homeRank !== undefined)) lanes.sort((a, b) => Math.max(0, ...b.workers.map(jobTime)) - Math.max(0, ...a.workers.map(jobTime)));
   return { ...board, lanes, workers, decisions };
 }

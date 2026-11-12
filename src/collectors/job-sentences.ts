@@ -11,7 +11,6 @@ import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import { eachThread } from './subagent-tree.js';
 import { labelSource, finalAnswer, errorMaterial, headTail } from './model-jobs.js';
 
-const INTERVAL = 120_000;
 type Reading = { text: string; stamp: string; at?: number };
 const readings = new Map<string, Reading>();
 function read(file: string, limit = 4096, tail = false): Reading {
@@ -166,6 +165,7 @@ export class JobSentences {
   private active = new Map<string, ModelHandle>();
   private enabled = false;
   private language: Language = 'en';
+  private intervalMs = 300000;
   constructor(
     private model: SmallModel,
     private file: string,
@@ -186,10 +186,11 @@ export class JobSentences {
       /* A missing cache leaves the factual card. */
     }
   }
-  configure(on: boolean, language: Language): void {
+  configure(on: boolean, language: Language, summaryMinutes = 5): void {
     if (on !== this.enabled || language !== this.language) this.stop();
     this.enabled = on;
     this.language = language;
+    this.intervalMs = summaryMinutes * 60000;
   }
   stop(): void {
     for (const h of this.active.values()) h.cancel();
@@ -225,7 +226,7 @@ export class JobSentences {
         const last = Math.max(
           ...(['en', 'zh'] as const).map((lang) => this.rows.get(`${w.id}:${lang}`)?.at ?? -Infinity)
         );
-        if (this.active.has(key) || (final && old?.final && old.settledAt === w.settledAt) || now - last < INTERVAL)
+        if (this.active.has(key) || (final && old?.final && old.settledAt === w.settledAt) || now - last < (final ? 120000 : this.intervalMs))
           continue;
         const input = node
           ? nativeMaterial(node, w)
@@ -239,10 +240,6 @@ export class JobSentences {
         const prompt = `<job>\n${JSON.stringify(input)}\n</job>`;
         const fingerprint = createHash('sha256').update(prompt).digest('hex');
         if (!final && old?.fingerprint === fingerprint && old.text) {
-          old.at = now;
-          this.rows.delete(key);
-          this.rows.set(key, old);
-          this.save();
           continue;
         }
         const row: Saved = { fingerprint: old?.fingerprint ?? '', at: now, text: old?.text, name: old?.name };

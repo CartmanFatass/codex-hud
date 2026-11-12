@@ -22,7 +22,7 @@ Codex collection remains incremental and bounded. `ClaudeNativeTree` reads the s
 
 Claude completion is provisional: growth after a completed transcript reopens it as running, clearing its settlement time. A fresh metadata signature with `finished: true` or, after catch-up, the last public assistant `message.stop_reason: end_turn` with no unmatched tool calls settles it again. Open tool ids and the last public stop survive bounded read steps; private records cannot settle an agent. During bounded replay, metadata lifecycle and settlement time remain intact (so old finished cards still expire); replay is separate incomplete-coverage evidence and blocks sentence requests until catch-up. Only observed transcript growth after completion reopens the agent; partial/replaying records cannot supply a new final reply. Settlements from transcript evidence retain their own timestamp across warm and metadata-unchanged reads. The last public reply retains at most 8,000 head/tail characters for final-result input (the report input remains 600); it requires no second tail read. A new settlement is eligible for one fresh successful final sentence under the existing per-agent floor and shared cap; unchanged settlements remain frozen.
 
-`JobSentences` now owns native names and current/result/cause sentences too, using the same master/key/language gates, per-agent two-minute floor, three pending handles and `SmallModel` queue/cap/cache. It reuses `ModelJobs`' public material reducers (`labelSource`, `finalAnswer`, `errorMaterial`, `headTail`), not its old schedulers. Native input is bounded collected public task/charge (400), name/role (80 each), report (600), action (200), final result (8,000 head/tail) and error output (2,000); a settled Codex agent can read one safe 32 KiB tail. The response carries a short name and one keyword-marked sentence, stored with job sentences; output never changes lifecycle/activity evidence. Existing caches/logs are not deleted.
+`JobSentences` now owns native names and current/result/cause sentences too, using the same master/key/language gates, per-agent Summary interval (default five minutes running; two minutes final), three pending handles and `SmallModel` queue/cap/cache. It reuses `ModelJobs`' public material reducers (`labelSource`, `finalAnswer`, `errorMaterial`, `headTail`), not its old schedulers. Native input is bounded collected public task/charge (400), name/role (80 each), report (600), action (200), final result (8,000 head/tail) and error output (2,000); a settled Codex agent can read one safe 32 KiB tail. The response carries a short name and one keyword-marked sentence, stored with job sentences; output never changes lifecycle/activity evidence. Existing caches/logs are not deleted.
 
 Deleted: the old Agents layout, its control bar/cards/Inspector histories and session-switch controls, `AgentLog`, `ProgressSummarizer`, separate `ModelJobs` scheduling, and `card-visibility`. Settings `agentLog`, `cardLabel`, `cardSummary`, `agentsPane` and other old card-only preferences load as ignored keys and disappear on save. All `renderMonitor` callers now use the workboard frame; without a sidecar the native tree is projected into Home. This update supersedes the historical renderer/model descriptions below.
 
@@ -557,9 +557,8 @@ thin-job sentences use a separate bounded job-local collector (§5.6), not a fac
 
 ## 5. The optional model features
 
-The display-text service and Decision labels (§5.7) use three preferences in Models (beside Jev's Decision API): `modelEnabled` (Model text),
-`model` (default `deepseek-v4-1-flash-1017`) and `modelCallsPerHour` (default 60).
-There is no backend selector, per-feature switch, pacing control, tier model,
+Models has `modelEnabled` (Model text), `model` (default `deepseek-v4-1-flash-1017`), `modelCallsPerHour` (LLM-only, default 60), `decisionCallsPerHour` (Decision API only, default 0 = unlimited), and `summaryIntervalMinutes` (default 5; choices 2/5/10/15/30, validated 1–120). The interval applies live to running job/native sentences and Home briefs; final settlement and Home ranking retain two-minute floors.
+There is no backend selector, per-feature switch, tier model,
 effort preference or consent flow. Old keys are ignored, not migrated, and are
 omitted on the next settings save; user caches and state are not deleted.
 
@@ -570,6 +569,8 @@ configuring the service: without a key for the configured endpoint the effective
 service is off even if the preference is on. Off sends no model requests.
 The retained `brief-toggle` shortcut toggles this same master preference, not a
 separate pause state.
+
+Home mode (`homeMode`, default `default`, in `hud-settings.json`) optionally enables `collectors/home-recommendation.ts`: one bounded Decision-API score batch per card-set/state fingerprint, with a two-minute floor and in-memory result/failed-attempt cache (20 boards). It shares the hourly budget and provider selection/fallback with labels; frames only apply stored scores. Questions, failures and human-ended cards are protected; native parent/child groups stay intact. Settled scores below 2 use the older fold. A successful ranking queues a one/two-sentence EN/ZH brief at the Summary interval (default five minutes) through `SmallModel.submit`, since Decision providers return enums/probabilities, not free text; the same digest is quoted data, never instructions. Missing decision keys, master off and invalid rankings retain Default order without Home errors; a failed/unavailable chat brief alone does not discard valid scores.
 
 ### 5.1 One service: `collectors/small-model.ts`
 
@@ -583,8 +584,8 @@ Every request goes through `SmallModel.submit`, which provides:
   exact HTTPS origins `api.mistral.ai` and `api.openai.com` receive only their
   matching provider key, with environment precedence. Custom endpoints receive
   neither key. Missing keys disable requests; userinfo URLs and redirects refuse.
-  Internal per-purpose efforts remain `none` for labels, `low` for progress and
-  digests, `high` for causes. Bounded reasoning requests add 512 tokens; there is
+  Internal per-purpose efforts are `none` for titles, `low` for job/native sentences,
+  and `high` for Home briefs and causes. Bounded reasoning requests add 512 tokens; there is
   no fallback to another model/effort. A queued request retains its submitted
   configuration. Cache identity includes endpoint and actual model, never the key.
 - **Queue.** One request in flight at a time. `cancelAll()` runs when the panel
@@ -602,8 +603,7 @@ Every request goes through `SmallModel.submit`, which provides:
   an `invalid-response` failure and is not cached; a cached one that fails
   is dropped and asked again. Han alone cannot tell Chinese from Japanese,
   which is why the stored `lang` stamp is not enough.
-- **Hourly cap.** `modelCallsPerHour`, default 60. The call log
-  `display/model-cache/calls.json` is shared by every panel on the same `$HUD_HOME`.
+- **Hourly caps.** LLM calls use `modelCallsPerHour` (30/60/120/240/unlimited; default 60) and `display/model-cache/calls.json`. Labels and Home ranking use `decisionCallsPerHour` (600/2000/unlimited; default unlimited) and their own `display/model-cache/decision-api/calls.json`. Both aggregate across panels on the same `$HUD_HOME`; 0 means unlimited but still logs calls. Settings shows each count; unlimited renders `n/∞` without a bar or cap warning.
 - **Private files.** `writePrivateFile`: directories 0700, files 0600, written
   to a temp file and renamed into place. The panel's state files (scan cache,
   agent log and model cache) use it. `settings.ts` and `snapshot.ts` do
@@ -611,6 +611,13 @@ Every request goes through `SmallModel.submit`, which provides:
   Snapshot ownership follows the atomically renamed file's device/inode, so
   an outgoing writer leaves a replacement snapshot alone; no separate owner
   sidecar is involved.
+
+| Model feature | Chat tier / default effort |
+|---|---|
+| Job/native sentences and names | low / low |
+| Decision titles | lite / none |
+| Home progress brief | medium / high; 4096 output-token allowance plus reasoning allowance, 90 s timeout |
+| Decision labels and Home ranking | Decision API judgments, not chat tiers |
 
 Nothing calls a model while rendering. Results are stored, and then
 `onChange` triggers a repaint.
@@ -668,6 +675,7 @@ job using the same key. Retry cooldowns do not carry across languages.
 | Feature | What can leave the machine when the master is effectively on |
 |---|---|
 | Decision titles + localized detail | Input unchanged: that thin job's question and answer files only, ≤4096 bytes each (§5.6). Output: JSON title, question, answer, instead, why (absent fields omitted); display-only Settings-language text. |
+| Home ranking / progress brief | up to 200 current cards: id, lane, state, role (80 chars), title (160), age, current sentence/reason (240), question flag and outcome; no file bodies; ranking via Decisions, brief via SmallModel |
 | Outcome label | settled thin job's factual final state and first 12 report lines from a ≤4096-byte head; one attempt per settlement (§5.7) |
 | Job kind | brief title/goal: first two paragraphs of a ≤1500-byte head; one attempt per job |
 | Looping label | latest 12 public tool calls (≤600 chars each) and matching result summaries (≤600 chars each), from the same safe ≤32 KiB session tail used by sentences; no reasoning/private channels |
@@ -736,7 +744,7 @@ progress jobs, sharing `SmallModel`'s single-flight queue and hourly cap.
 
 `JobSentences.update` runs on collection, after the deterministic workboard is built; `apply` overlays `OwnerWorker.modelSentence` and the short task name for painting. Thin jobs retain `briefTitle` from the existing bounded, signature-cached brief read: that first heading wins over a generated name, else the first task line remains the fallback. Names come in the same JSON response as the sentence, with no extra model call or referenced-file read; old plain-sentence responses/caches still work. Home and the Inspector share this title and their existing width cut. Project slice titles remain the ledger ID/description, never raw dispatch text. Master/key and language gates are shared with the existing service. Native cards and bars are unchanged; the settled card's final sentence is its one-line result (no second line).
 Input is read-only under the exact job directory: brief title/goal (1500-byte prefix), STATUS state/phase, open question (2 KiB), newest review's verdict line, four report lines once settled, and four public assistant-text/tool-call blocks from the newest working-session JSONL's 32 KiB tail. Symlinks/nonregular files refuse; reasoning/private channels and paths referenced by messages are never read.
-State/phase, question/answer revisions, report/review revisions and working-session activity fingerprint the request. One queued/running handle per job and a two-minute floor after settlement coalesce changes. A successful final sentence freezes only its `settledAt`; a continuation that settles again becomes eligible after the shared two-minute floor. Failed final requests retry no sooner than two minutes after failure. An unchanged running fingerprint advances the rate timestamp too, avoiding body re-reads on every following tick. Requests use `SmallModel.submit`, visible priority, the shared hourly cap and input cache.
+State/phase, question/answer revisions, report/review revisions and working-session activity fingerprint the request. One queued/running handle per job and Summary interval (default five minutes for running text) coalesce changed material; final settlements retain a fixed two-minute floor. A successful final sentence freezes only its `settledAt`; a continuation that settles again becomes eligible after the shared two-minute floor. Failed final requests retry no sooner than two minutes after failure. Unchanged running fingerprints make no request; signature-cached material avoids body re-reads. Requests use `SmallModel.submit`, visible priority, the shared hourly cap and input cache.
 The private `model-cache/job-sentences.json` retains up to 200 language-keyed job records: last sentence, successful fingerprint, rate timestamp, final-success bit and settlement timestamp. Updates re-insert rows so eviction drops the least recently written row. Reopen restores text without a call; unchanged input stays quiet. Disabling hides the overlay and cancels pending work without deleting records. Model text changes no deterministic state or activity timestamp.
 `utils/keyword-marks.ts` parses up to four spans: `«keyword»` (legacy identifier ink), `«+stance»` (approve/accept/agree/pass, 批准/同意/通过/接受; `theme.board.success`), `«-stance»` (reject/object/oppose/fail/block, 拒绝/反对/驳回/失败/阻塞; `theme.board.danger`), and `«!opinion»` (judgement/recommendation; `theme.board.opinion`, the palette's info cyan). Opinion ink is distinct from identifier/success/danger/attention and is plain with text icons; theme none stays uncoloured. Stance prefixes require a following non-prefix character; repeated prefixes such as `«--orchestrator»` and code-span flags such as `` `«-x»` `` retain their full text as plain identifiers, while `«-拒绝»`, `«+批准»` and `«!认为更简单»` keep their stance/opinion colours. Recognised prefixes/delimiters are stripped even for malformed, nested, empty/prefix-only or excess marks, which lose keyword emphasis. The shared prompt explicitly requires `«…»` in every language, including Chinese. Before span parsing, short `「…」` marks normalize to the same grammar and four-mark total: balanced, non-nested, 1–24 Unicode payload characters after an optional prefix, with no whitespace or sentence/clause punctuation (`。！？!?，,；;：:` or a final period); internal filename dots are allowed. Other corner quotations remain literal and unmarked. This applies equally to stored job/native sentences and `markedTitle` decision titles, without cache migration. Old plain-mark caches remain valid. `render/work-card.ts` shares painting with decision rows/Inspector: the deterministic `identifiers()` rule includes filenames with extensions as well as paths/code/flags, and file spans override mark ink even when unmarked. No model scheduling, cap, queue, spacing or input changes. Collapsed, one row cuts at a word with `…`, including width-safe CJK fallback; Enter wraps the complete sentence and shows the whole factual detail underneath. Missing text/key or master off leaves the existing factual rendering unchanged. A sentence is display text, never a workflow verdict.
 
@@ -752,9 +760,7 @@ Provider failures store empty answers, never raw HTTP text, under the existing p
 independently of the chat endpoint's key. Disabling/root changes/exit abort pending labels. No watcher,
 worker message, question answer/delay, lifecycle write or process is introduced.
 
-Each actual HTTP attempt reserves against the same `ModelRuntimeStore` directory/calls.json as `SmallModel`,
-including a fallback attempt; cache/coincident-input claims use its existing coordination too. Thus text,
-all five label purposes and every panel share `modelCallsPerHour`. Cap refusal leaves work pending for a
+Each actual HTTP attempt, including fallback, reserves in the separate `ModelRuntimeStore` directory `display/model-cache/decision-api` shared with Home ranking, never SmallModel's LLM calls.json; cache/coincident-input claims retain existing coordination. All label purposes and Home ranking share `decisionCallsPerHour` across panels. Cap refusal leaves work pending for a
 later tick/hour. Successful and failed attempts persist private per-source revision records in
 `display/model-cache/decision-labels/<identity-hash>.json`; no raw input or credentials are stored there.
 Only current observed sources (the existing newest-200 job scope, plus native cards) are resident. Reopening
@@ -762,7 +768,7 @@ reuses records without a call. Outcome freezes the first report snapshot for tha
 per job. Questions and the newest review are keyed by file revision. Label IDs are language-neutral enums;
 EN/ZH rendering is local, so changing language makes no label call. Painting reads only memory.
 
-Kinds backfill settled jobs from the last 30 days, newest first, under the same cap. A running HUD/native card is judged only after three
+Kinds are requested only while a job runs or within one day of settlement, newest first; there is no older settled-job backfill. A running HUD/native card is judged only after three
 minutes without activity, at most once per five minutes, and never again for unchanged activity. The
 shared sentence tail reader is signature-cached (1000 bounded slices); both sentences and labels reuse
 `jobActivity`'s public tool/result pairs. A changed activity fingerprint immediately removes an obsolete
@@ -955,7 +961,7 @@ against Codex 0.154 and 0.157.
   validator table the checks, and `loadSettings` / `saveSettings` the I/O.
 - The page has four open groups, in this order: Display (Theme, Bar style, Icons, Language),
   Panel (Stall threshold, Notifications, Refresh, Mouse), Models (Model
-  text, Model, Call cap, plus the read-only calls-this-hour gauge and Test API)
+  text, Model, Call cap, Decision cap, Summary interval, both read-only calls-this-hour counters and Test API)
   and Codex (Width, Prefix key, Bar on launch). There is no accordion, no header
   buttons and no Reset all: `SETTING_ROWS` is one flat list and every group is
   open. The page is a draft; Theme and Icons paint in the draft value, so the

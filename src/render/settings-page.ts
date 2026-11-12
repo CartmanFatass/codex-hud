@@ -39,6 +39,7 @@ export interface SettingRow {
   set?: (value: SettingValue, settings: HudSettings) => Partial<HudSettings>;
 }
 const seconds = (value: SettingValue) => `${Number(value) / 1000}s`;
+const callCap = (value: SettingValue) => Number(value) === 0 ? t('unlimited') : `${value}/h`;
 const NOTIFY_WORDS: Record<string, string> = { off: 'off', tmux: 'tmux', desktop: 'tmux + desktop' };
 export const SETTING_ROWS: readonly SettingRow[] = [
   {
@@ -64,6 +65,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     values: ['auto', 'en', 'zh'],
     help: 'Panel and everything a model writes',
   },
+  { key: 'homeMode', group: 'Panel', label: 'Home mode', values: ['default', 'recommended'],
+    help: 'Rank Home cards and show a progress brief through models', format: (value) => t(value === 'recommended' ? 'Recommended' : 'Default') },
   {
     key: 'cardStallMinutes',
     group: 'Panel',
@@ -115,10 +118,14 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     key: 'modelCallsPerHour',
     group: 'Models',
     label: 'Call cap',
-    values: [30, 60, 120, 240],
-    help: 'Model calls per hour, all features; at the cap, sentences wait',
-    format: (value) => `${value}/h`,
+    values: [30, 60, 120, 240, 0],
+    help: 'LLM calls per hour (sentences, titles, brief)',
+    format: callCap,
   },
+  { key: 'decisionCallsPerHour', group: 'Models', label: 'Decision cap', values: [600, 2000, 0],
+    help: 'Decision-API calls per hour (labels, Home ranking)', format: callCap },
+  { key: 'summaryIntervalMinutes', group: 'Models', label: 'Summary interval', values: [2, 5, 10, 15, 30],
+    help: "How often a running job's sentence and Home's brief may refresh", format: (value) => t('{n}m', { n: Number(value) }) },
   {
     key: 'treeWidth',
     group: 'Codex',
@@ -172,8 +179,8 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['cardStallMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
-  Models: ['modelEnabled'],
+  Panel: ['homeMode', 'cardStallMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
+  Models: ['modelEnabled', 'decisionCallsPerHour', 'summaryIntervalMinutes'],
   Codex: ['treeWidth', 'prefixKey', 'statusline'],
 };
 export function resetSettingsGroup(draft: HudSettings, group: string): HudSettings {
@@ -205,6 +212,7 @@ export function renderSettingsPage(
     state: HudHealthState | undefined;
     nowMs?: number;
     modelCalls?: { today: number; lastHour: number; cap: number };
+    decisionCalls?: { lastHour: number; cap: number };
     probe?: ModelProbeState;
     settingsFile?: string;
   }
@@ -241,20 +249,22 @@ export function renderSettingsPage(
         width
       ))
         content.push({ text });
-    if (row.key === 'modelCallsPerHour') {
-      const usage = health?.modelCalls,
-        cap = usage?.cap ?? state.draft.modelCallsPerHour,
+    if (row.key === 'modelCallsPerHour' || row.key === 'decisionCallsPerHour') {
+      const decision = row.key === 'decisionCallsPerHour';
+      const usage = decision ? health?.decisionCalls : health?.modelCalls,
+        cap = usage?.cap ?? state.draft[row.key],
         n = usage?.lastHour;
       if (n !== undefined) {
-        const atCap = n >= cap,
-          value = `${coloredBar(Math.min(100, (n * 100) / cap), 10)} ${n}/${cap}`;
+        const atCap = cap > 0 && n >= cap,
+          value = cap === 0 ? `${n}/∞` : `${coloredBar(Math.min(100, (n * 100) / cap), 10)} ${n}/${cap}`;
         content.push({
           text:
-            fit('  ' + t('Calls this hour'), Math.max(0, width - visualLength(value))) +
+            fit('  ' + t(decision ? 'Decision calls this hour' : 'Calls this hour'), Math.max(0, width - visualLength(value))) +
             (atCap ? theme.board.danger(value) : theme.board.muted(value)),
         });
-        if (atCap) content.push(...stemLines(t('at the cap: sentences wait'), width).map((text) => ({ text })));
+        if (atCap) content.push(...stemLines(t(decision ? 'at the cap: labels wait' : 'at the cap: sentences wait'), width).map((text) => ({ text })));
       }
+      if (decision) continue;
       const probe = health?.probe,
         failed = probe?.rows.find((r) => r.status === 'failed');
       const label = probe?.running

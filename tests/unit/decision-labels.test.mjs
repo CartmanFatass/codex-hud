@@ -95,7 +95,7 @@ for (const mode of ['off', 'no-key']) test(`01: ${mode} hides labels and sends n
   const board = await f.pump(); assert.equal(f.calls.length, 0); assert.equal(board.workers[0].labels, undefined);
 });
 
-test('02: multi-kind once, bounded title/goal, newest-first 30-day backfill inside the cap', async (t) => {
+test('02: multi-kind once, bounded title/goal, newest-first within one day; no two-day backfill', async (t) => {
   const f = fixture(t); f.cap = 2; f.open();
   const newest = f.job(1), older = f.job(2, 'done', 86400000), oldest = f.job(3, 'done', 2 * 86400000), expired = f.job(4, 'done', 31 * 86400000);
   for (const [id, title] of [[newest, 'newest'], [older, 'older'], [oldest, 'oldest'], [expired, 'expired']])
@@ -106,11 +106,11 @@ test('02: multi-kind once, bounded title/goal, newest-first 30-day backfill insi
   assert.doesNotMatch(JSON.stringify(f.calls), /NOT-OUTBOUND|expired/);
   assert.deepEqual(board.workers[0].labels.kinds, ['ui', 'feature']);
   f.open(); await f.pump(); assert.equal(f.calls.length, 2);
-  f.now += 3600001; board = await f.pump(); assert.equal(f.calls.length, 3);
-  assert.match(JSON.stringify(f.calls[2].body.input), /oldest/);
+  f.now += 3600001; board = await f.pump(); assert.equal(f.calls.length, 2);
+  assert.doesNotMatch(JSON.stringify(f.calls), /oldest|expired/, 'no kind call for a job settled two days ago');
   assert.equal(board.workers.find((w) => w.id.endsWith(expired)).labels.kinds.length, 0);
   f.now += 3600001; f.put(newest, 'brief.md', '# Changed title\n\nNew goal');
-  await f.pump(); assert.equal(f.calls.length, 3, 'kind is frozen per job');
+  await f.pump(); assert.equal(f.calls.length, 2, 'kind is frozen per job');
 });
 
 function transcript(command, n = 12, format = 'pi') {
@@ -337,16 +337,19 @@ for (const primary of ['openai', 'gemini']) test(`failed ${primary} label hides 
   assert.equal(board.workers[0].labels.outcome.value, 'partial');
 });
 
-test('01: Gemini 429 reuses cooldown and OpenAI failover; every HTTP attempt shares the text hourly cap', async (t) => {
+test('01: Gemini 429 and fallback share the separate Decision cap, never the LLM ledger', async (t) => {
   const f = fixture(t); f.config({ primary: 'gemini' }); f.quota = true; f.cap = 3; f.open();
   const id = f.job(); f.put(id, 'report.md', 'Partial synthetic work');
   let board = await f.pump(); assert.equal(f.calls.length, 2); assert.match(f.calls[0].url, /googleapis/); assert.match(f.calls[1].url, /api.openai.com/);
   assert.equal(board.workers[0].labels.outcome.value, 'partial');
   const b = f.job(2); f.put(b, 'report.md', 'Partial second job');
   board = await f.pump(); assert.equal(f.calls.length, 3); assert.match(f.calls[2].url, /api.openai.com/, 'cooldown skips Gemini');
-  const text = new SmallModel({ dir: f.dir, env: { HUD_HOME: f.home, MISTRAL_API_KEY: 'synthetic' }, clock: () => f.now, fetch: async () => { throw new Error('cap must prevent fetch'); } });
+  const text = new SmallModel({ dir: f.dir, env: { HUD_HOME: f.home, MISTRAL_API_KEY: 'synthetic' }, clock: () => f.now,
+    fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: 'Synthetic sentence.' } }] })) });
   text.configure({ backend: 'api', hourlyCap: 3 });
   const result = await text.submit({ feature: 'job-sentence', system: 'test', prompt: 'synthetic' }).result;
-  assert.equal(result.ok, false); assert.equal(result.reason, 'hourly-cap'); assert.equal(text.usage().lastHour, 3); text.cancelAll();
+  assert.equal(result.ok, true); assert.equal(text.usage().lastHour, 1); assert.equal(f.service.usage().lastHour, 3);
+  assert.equal(JSON.parse(fs.readFileSync(join(f.dir, 'calls.json'))).length, 1);
+  assert.equal(JSON.parse(fs.readFileSync(join(f.dir, 'decision-api/calls.json'))).length, 3); text.cancelAll();
   f.open(); await f.pump(); assert.equal(f.calls.length, 3);
 });

@@ -7,7 +7,7 @@ import { defaultSettings, loadSettings, saveSettings } from '../../src/settings.
 import { SETTING_ROWS, renderSettingsPage } from '../../src/render/settings-page.js';
 import { stripAnsi } from '../../src/render/colors.js';
 
-test('LLM has only switch, model and cap; key defaults on and retired settings load but never save', () => {
+test('Models exposes master, provider, separate budgets and summary interval; retired settings never save', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-thin-'));
   const saved = { ...process.env };
   try {
@@ -46,7 +46,7 @@ test('LLM has only switch, model and cap; key defaults on and retired settings l
     );
     assert.deepEqual(
       SETTING_ROWS.filter((r) => r.group === 'Models').map((r) => r.key),
-      ['modelEnabled', 'model', 'decisionApi', 'modelCallsPerHour']
+      ['modelEnabled', 'model', 'decisionApi', 'modelCallsPerHour', 'decisionCallsPerHour', 'summaryIntervalMinutes']
     );
     const text = stripAnsi(
       renderSettingsPage(
@@ -57,6 +57,8 @@ test('LLM has only switch, model and cap; key defaults on and retired settings l
     );
     assert.match(text, /Model text/);
     assert.match(text, /Call cap/);
+    assert.match(text, /Decision cap/);
+    assert.match(text, /Summary interval/);
     assert.doesNotMatch(text, /consent|Backend|AGY/);
     fs.unlinkSync(path.join(home, 'credentials.env'));
     assert.equal(loadSettings().modelEnabled, true, 'a saved master boolean wins over the key-aware default');

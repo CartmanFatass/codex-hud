@@ -29,7 +29,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    Decision-API labels (owner, 2026-11-12): a settled job's outcome, a job's kind, a quiet running card that repeats
    the same failure, a worker question's category and a review's findings by severity, through the Decision API chosen in Settings
    (default OpenAI). Display only, like the rest. No consent
-   or authority layer. A job may carry an optional package label (given to `hud_create`, else taken from the brief's
+   or authority layer. Home mode (owner, 2026-11-12): Default or Recommended; Recommended orders and folds Home's cards by a Decision-API ranking and shows a short progress brief; cards that need the owner are never hidden. A job may carry an optional package label (given to `hud_create`, else taken from the brief's
    title); the panel groups jobs by it into lanes. The label is display only: the MCP does not interpret it.
    The panel also shows the main session's native subagents (Claude Code's Agent subagents incl. custom ones, Codex
    subagents, pi's), read from the client's own transcripts, each with an external-model summary of what it is doing.

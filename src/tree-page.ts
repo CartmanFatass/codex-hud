@@ -76,6 +76,7 @@ import { SmallModel, modelHttpRequest } from './collectors/small-model.js';
 import { ModelProbe, apiSettings } from './collectors/model-probe.js';
 import { JobSentences } from './collectors/job-sentences.js';
 import { DecisionLabels } from './collectors/decision-labels.js';
+import { HomeRecommendation } from './collectors/home-recommendation.js';
 import { DecisionTitles } from './collectors/decision-titles.js';
 import { hudProblems } from './render/hud-diagnostics.js';
 import { createAdaptivePollState, forceAdaptivePoll, recordAdaptivePoll } from './collectors/adaptive-poll.js';
@@ -617,6 +618,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     () => render()
   );
   const decisionLabels = new DecisionLabels(path.join(getHudDisplayHome(), 'model-cache'), () => render());
+  const homeRecommendation = new HomeRecommendation(path.join(getHudDisplayHome(), 'model-cache'), model, () => render());
+  const displayBoard = () => decisionLabels.apply(decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree, panelDelegation))));
   const claudeNative = new ClaudeNativeTree();
   const configureModel = () => {
     modelOn =
@@ -630,8 +633,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       },
       hourlyCap: settings.modelCallsPerHour,
     });
-    decisionLabels.configure(settings.modelEnabled, settings.modelCallsPerHour);
-    jobSentences.configure(modelOn, resolveLanguage(settings.language));
+    decisionLabels.configure(settings.modelEnabled, settings.decisionCallsPerHour);
+    homeRecommendation.configure(settings.homeMode === 'recommended' && settings.modelEnabled, resolveLanguage(settings.language), settings.decisionCallsPerHour, settings.decisionApi, settings.summaryIntervalMinutes);
+    jobSentences.configure(modelOn, resolveLanguage(settings.language), settings.summaryIntervalMinutes);
     decisionTitles.configure(modelOn, resolveLanguage(settings.language));
   };
   configureModel();
@@ -672,6 +676,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           renderSettingsPage(settingsPage!, process.stdout.columns || 30, process.stdout.rows || 24, {
             state: hudStatus.health.current(),
             modelCalls: model.usage(),
+            decisionCalls: decisionLabels.usage(),
             probe: probe.current(),
             settingsFile: shortPath(settingsPath()),
           })
@@ -696,7 +701,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const jobRender = panelJobRenderState(jobComposition, !collected || treeBuiltFor !== tree.rootId);
         frame = renderMonitor({
           tree,
-          workboard: decisionLabels.apply(decisionTitles.apply(jobSentences.apply(jobPipeline.workboard(tree, panelDelegation)))),
+          workboard: state.mainTab === 'home' && state.focus === 'agents' && !state.help ? homeRecommendation.apply(displayBoard()) : displayBoard(),
           modelEnabled: settings.modelEnabled,
           mouse: settings.mouse,
           embedded: !STANDALONE_PANEL,
@@ -945,6 +950,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         worktrees = null;
         // Cancel old-root writers before loading the next root's model log.
         decisionLabels.stop();
+        homeRecommendation.stop();
         jobSentences.stop();
         agentContext.clear();
         agentContextReadAt.clear();
@@ -985,6 +991,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       decisionTitles.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, visibleDecisions);
       decisionLabels.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
+      homeRecommendation.update(displayBoard());
       const projectFacts = await projectCollector.collect(
         projectShown(state, Boolean(settingsPage)) ? true
           : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
@@ -1063,6 +1070,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     jobSentences.stop();
     decisionTitles.stop();
     decisionLabels.stop();
+    homeRecommendation.stop();
     model.cancelAll();
     probe.cancel();
     flushTreeScans();

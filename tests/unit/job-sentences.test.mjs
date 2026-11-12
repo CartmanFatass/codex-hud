@@ -131,7 +131,9 @@ test('thin job: real file collection, keyword card, coalescing, cached reopen, a
   f.activity('Testing parser');
   await f.update();
   assert.equal(f.calls.length, 1);
-  f.now += 60_001;
+  f.now += 239_999;
+  await f.update(); assert.equal(f.calls.length, 1, 'running sentence waits five full minutes');
+  f.now++;
   await f.update();
   assert.equal(f.calls.length, 2);
   assert.match(f.calls[1].messages[1].content, /Testing parser/);
@@ -164,6 +166,17 @@ test('thin job: real file collection, keyword card, coalescing, cached reopen, a
   f.service.configure(true, 'en');
   await f.update();
   assert.equal(f.calls.length, 3);
+});
+test('Summary interval changes running refreshes live, unchanged material is free, final floor stays two minutes', async (t) => {
+  const f = fixture(t); f.activity('Initial work'); await f.update();
+  f.now += 120000; f.activity('Changed work'); await f.update(); assert.equal(f.calls.length, 1);
+  f.service.configure(true, 'en', 2); await f.update(); assert.equal(f.calls.length, 2);
+  f.service.configure(true, 'en', 10); f.now += 300000; await f.update(); assert.equal(f.calls.length, 2);
+  f.activity('More work'); await f.update(); assert.equal(f.calls.length, 2);
+  f.service.configure(true, 'en', 5); await f.update(); assert.equal(f.calls.length, 3);
+  f.now += 120000; f.put('STATUS.json', { state: 'closed', settled_at: new Date(f.now).toISOString() });
+  await f.update(); assert.equal(f.calls.length, 4, 'settled result uses the fixed two-minute floor');
+  f.now += 600000; f.put('report.md', 'Later report edit'); await f.update(); assert.equal(f.calls.length, 4);
 });
 for (const language of ['en', 'zh']) {
   test(`short job titles: heading, same-call name, fallback, Home/Inspector/Project frames (${language})`, async (t) => {
@@ -317,7 +330,7 @@ test('a second settlement gets a fresh final sentence after the shared floor', a
   assert.equal(f.calls.length, 2);
   assert.match(f.calls[1].messages[1].content, /Correction failed/);
 });
-test('unchanged running material renews the read window without another call', async (t) => {
+test('unchanged running material makes no request or body read inside the interval', async (t) => {
   const f = fixture(t);
   await f.update();
   const board = f.board();
@@ -329,7 +342,7 @@ test('unchanged running material renews the read window without another call', a
   assert.equal(reads.mock.callCount(), 0);
   assert.equal(f.calls.length, 1);
 });
-test('language changes share the same per-job two-minute floor', async (t) => {
+test('language changes share the same per-job five-minute running floor', async (t) => {
   const f = fixture(t);
   await f.update();
   f.service.configure(true, 'zh');
@@ -337,7 +350,7 @@ test('language changes share the same per-job two-minute floor', async (t) => {
   f.activity('New activity');
   await f.update();
   assert.equal(f.calls.length, 1);
-  f.now += 60_001;
+  f.now += 240_001;
   const board = await f.update();
   assert.equal(f.calls.length, 2);
   assert.match(f.calls[1].messages[0].content, /Simplified Chinese/);
@@ -372,7 +385,7 @@ test('Chinese request, question/review/answer changes, one request per job in fl
   f.hold = null;
   await settle();
   assert.match(f.calls[0].messages[0].content, /Simplified Chinese/);
-  f.now += 120_001;
+  f.now += 300_001;
   const asking = await f.update();
   assert.equal(f.calls.length, 2);
   assert.match(f.calls[1].messages[1].content, /Use parser B/);
@@ -383,7 +396,7 @@ test('Chinese request, question/review/answer changes, one request per job in fl
   assert.doesNotMatch(home, /[«»]/);
   f.put('qa/q1.answer.md', 'yes');
   f.put('review-1.md', 'Verdict: changes-required\nSynthetic finding');
-  f.now += 120_001;
+  f.now += 300_001;
   await f.update();
   assert.equal(f.calls.length, 3);
   assert.match(f.calls[2].messages[1].content, /changes-required/);

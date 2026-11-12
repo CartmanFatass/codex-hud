@@ -6,7 +6,7 @@ import { boardRow, minuteAge, decisionBlock, mark } from './workboard-rows.js';
 import { laneRows, orderedLanes } from './work-lanes.js';
 import { requestLines, stemLines } from './work-card.js';
 import { theme } from './colors.js';
-import { fit, pair, monitorText } from './monitor-text.js';
+import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { currentWorker, currentDecision } from './work-visibility.js';
 export function homeRows(
@@ -86,8 +86,9 @@ export function homeRows(
       boardRow('')
     );
   }
+  if (board.homeBrief) rows.push(...flowLines(monitorText(board.homeBrief), width).map((s) => boardRow(theme.board.text(s))), boardRow(''));
   if (input)
-    for (const lane of state.tree.showAll ? board.lanes : orderedLanes(board, now)) {
+    for (const lane of state.tree.showAll && !board.workers.some((w) => w.homeRank !== undefined) ? board.lanes : orderedLanes(board, now)) {
       if (!lane.workers.length) continue;
       rows.push(...laneRows(input, lane, state, width, now));
     }

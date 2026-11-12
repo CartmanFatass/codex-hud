@@ -41,6 +41,8 @@ export interface DecisionRecord {
   readonly evidence: readonly EvidenceRef[];
 }
 export interface OwnerWorker {
+  readonly homeRank?: number;
+  readonly homeFolded?: boolean;
   readonly labels?: import('./decision-labels.js').DisplayLabels;
   readonly resources?: {
     context?: number;
@@ -120,6 +122,7 @@ export interface TaskSnapshot {
   readonly cost: Readonly<ObservationCost>;
 }
 export interface WorkboardSnapshot {
+  readonly homeBrief?: string;
   readonly revision: string;
   readonly lanes: readonly WorkLane[];
   readonly workers: readonly OwnerWorker[];
