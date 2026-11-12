@@ -165,7 +165,8 @@ export function readThinJobs(
             ? 'done'
             : 'working';
     const at = status?.at ?? jobAt;
-    const settledAt = state === 'working' ? null : (when(s.ended_at) ?? when(s.settled_at) ?? at);
+    // When the work settled, not when the process later exited: closing an idle job must not reset its age or outcome label.
+    const settledAt = state === 'working' ? null : (when(s.settled_at) ?? when(s.ended_at) ?? at);
     const briefFile = read(join(directory, 'brief.md')),
       brief = briefFile?.text ?? '';
     const briefTitle = first(brief.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? '');

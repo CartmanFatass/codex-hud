@@ -353,3 +353,20 @@ test('01: Gemini 429 and fallback share the separate Decision cap, never the LLM
   assert.equal(JSON.parse(fs.readFileSync(join(f.dir, 'decision-api/calls.json'))).length, 3); text.cancelAll();
   f.open(); await f.pump(); assert.equal(f.calls.length, 3);
 });
+
+test('closing an idle job keeps its settlement time, so its age and outcome label do not reset', (t) => {
+  const home = fsMutable.mkdtempSync(join(tmpdir(), 'settle-close-'));
+  t.after(() => fsMutable.rmSync(home, { recursive: true, force: true }));
+  const dir = join(home, 'jobs', 'j0123456789abcdef');
+  fsMutable.mkdirSync(dir, { recursive: true });
+  fsMutable.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: 'j0123456789abcdef', herdr_pane: 'w4E:p1', role: 'imp', created_at: '2026-11-12T10:00:00Z' }));
+  const settled = '2026-11-12T10:10:00.000Z';
+  const read = (status) => {
+    fsMutable.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(status));
+    return readThinJobs(home, { pane: 'w4E:p1', project: null }).flatMap((l) => l.workers)[0].settledAt;
+  };
+  const idle = read({ state: 'idle_grace', settled_at: settled, output_written: true });
+  const closed = read({ state: 'closed', settled_at: settled, ended_at: '2026-11-12T10:40:00.000Z', output_written: true });
+  assert.equal(idle, Date.parse(settled));
+  assert.equal(closed, idle);
+});
