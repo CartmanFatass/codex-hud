@@ -7,8 +7,8 @@ by the first attempt is removed.
 
 **Blocked by:** CLAUDE-BIND landing (outside this feature)
 
-**Status:** needs-info
+**Status:** in-progress
 
 - [ ] Live check: `/hud` in a Claude pane binds that session; a nested Haiku test shows on Home
 - [ ] pi-roles bindings from the audit fixed in Fishpref
-- [ ] No binding records left under the HUD home
+- [x] No binding records left under the HUD home

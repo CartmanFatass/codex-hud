@@ -7,7 +7,7 @@ Milestone: M4 · Project view
 
 ## Next
 
-- native-polish (.scratch/native-polish): 01, 03, 04 landed; 02 running; 05 after CLAUDE-BIND. M4 review after.
+- native-polish (.scratch/native-polish): 01, 03, 04 landed; 02 running; 05 live check (CLAUDE-BIND landed). M4 review after.
 
 ## Slices
 
@@ -41,8 +41,8 @@ board counts these; update at every landing or decision. -->
 - accepted · M4 · M4-PROJECT · the Project tab (841cc06f)
 - accepted · M4 · PROGRESS-BOARD · the Project tab's progress board: ledger bar, chips, slices in flight, drift marks (8716dcc5)
 - accepted · M3b · OPEN-TAB · opening a file from the panel uses its own herdr tab, not a split pane (c3d49420)
-- working · M3b · CLAUDE-BIND · hud panel finds the caller's Claude session via herdr pane current at open time;
-  nothing stored per pane (owner: pane ids are dynamic)
+- try · M3b · CLAUDE-BIND · hud panel finds the caller's Claude session via herdr pane current at open time;
+  nothing stored per pane (owner: pane ids are dynamic) (968b0f27)
 - accepted · M3b · CARD-DETAILS · newest card expanded, others folded; keywords colour files, stances (approve, object,
   reject) and opinions (6c9cb40b)
 - accepted · M4 · TICKETS · the Project tab's Tickets section from to-tickets' .scratch tracker (6364ddad)
@@ -54,7 +54,7 @@ board counts these; update at every landing or decision. -->
 - working · M4 · NP-02 · native-polish 02: a resumed Claude subagent shows running again and gets a fresh result
 - try · M4 · NP-03 · native-polish 03: Chinese keyword marks colour instead of showing brackets (746971eb)
 - try · M4 · NP-04 · native-polish 04: HUD job cards show a short title (eb3e5558)
-- todo · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers
+- working · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
 ## Now (2026-11-12, evening): M3b closed after its second review; M4 Project tab complete with progress board and tickets
