@@ -8,6 +8,12 @@ type Row = {
   stamp: string;
   metaStamp: string;
   ino: number;
+  size: number;
+  mtime: number;
+  offset: number;
+  pending: Buffer;
+  skipping: boolean;
+  omitted: boolean;
   meta: Record<string, unknown>;
   node: SubagentTreeNode;
   calls: Set<string>;
@@ -52,7 +58,8 @@ export class ClaudeNativeTree {
     }
     const live = new Set(this.names);
     for (const key of this.rows.keys()) if (!live.has(key)) this.rows.delete(key);
-    let reads = 0;
+    let reads = 0,
+      replaying = false;
     for (let i = 0; i < this.names.length; i++) {
       const name = this.names[(this.cursor + i) % this.names.length];
       const file = join(directory, name.replace('.meta.json', '.jsonl'));
@@ -63,28 +70,45 @@ export class ClaudeNativeTree {
         if (!metaStat.isFile() || !stat.isFile() || fs.realpathSync(file) !== file) throw Error('unsafe');
         const metaStamp = `${directory}:${metaStat.ino}:${metaStat.size}:${metaStat.mtimeMs}`;
         const stamp = `${metaStamp}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
-        if (row?.stamp !== stamp) {
+        if (
+          row &&
+          (row.ino !== stat.ino ||
+            row.node.rolloutPath !== file ||
+            stat.size < row.size ||
+            (stat.size === row.size && stat.mtimeMs !== row.mtime))
+        ) {
+          this.rows.delete(name);
+          row = undefined;
+        }
+        if (row?.stamp !== stamp || row.offset < stat.size) {
           if (reads >= 8) {
+            replaying = true;
             this.complete = false;
             if (row) nodes.push({ ...row.node, status: 'unknown', children: [] });
             continue;
           }
           reads += 2;
-          const metadata = metaStamp === row?.metaStamp ? undefined : readJobFile(join(directory, name), 8192),
-            transcript = readJobFile(file, 32768, true);
-          this.bytes += Buffer.byteLength(metadata?.text ?? '') + Buffer.byteLength(transcript.text);
-          if ((metadata && !metadata.stamp) || !transcript.stamp) throw Error('unreadable');
+          const metadata = metaStamp === row?.metaStamp ? undefined : readJobFile(join(directory, name), 8192);
+          this.bytes += Buffer.byteLength(metadata?.text ?? '');
+          if (metadata && !metadata.stamp) throw Error('unreadable');
           const meta = metadata ? JSON.parse(metadata.text) : row!.meta;
           if (!meta || typeof meta.finished !== 'boolean') throw Error('invalid_meta');
           const id = name.slice(6, -10);
+          const previous = row;
           row = {
             stamp,
             metaStamp,
             ino: stat.ino,
+            size: stat.size,
+            mtime: stat.mtimeMs,
+            offset: previous?.offset ?? 0,
+            pending: previous?.pending ?? Buffer.alloc(0),
+            skipping: previous?.skipping ?? false,
+            omitted: previous?.omitted ?? false,
             meta,
-            calls: new Set(row?.ino === stat.ino ? row.calls : []),
+            calls: new Set(previous?.calls),
             node: {
-              ...(row?.ino === stat.ino ? row.node : {}),
+              ...previous?.node,
               id: `claude:${session}:${id}`,
               name: safe(meta.description) || safe(meta.agentType) || id,
               role: safe(meta.agentType) || 'agent',
@@ -97,14 +121,38 @@ export class ClaudeNativeTree {
               children: [],
             },
           };
+          let fd: number | undefined;
+          let chunk: Buffer;
+          try {
+            fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+            const opened = fs.fstatSync(fd);
+            if (!opened.isFile() || opened.ino !== stat.ino || opened.dev !== stat.dev || opened.size < stat.size)
+              throw Error('changed');
+            chunk = Buffer.alloc(Math.min(1048576, stat.size - row.offset));
+            const n = chunk.length ? fs.readSync(fd, chunk, 0, chunk.length, row.offset) : 0;
+            this.bytes += n;
+            chunk = chunk.subarray(0, n);
+            if (fs.lstatSync(file).ino !== stat.ino) throw Error('changed');
+            row.offset += n;
+          } finally {
+            if (fd !== undefined) fs.closeSync(fd);
+          }
+          const body = Buffer.concat([row.pending, chunk]);
+          let start = 0;
           let call = '';
-          for (const line of transcript.text.split('\n')) {
+          for (let end; (end = body.indexOf(10, start)) !== -1; start = end + 1) {
+            const line = body.subarray(start, end);
+            if (row.skipping || line.length > 4194304) {
+              row.skipping = false;
+              row.omitted = true;
+              continue;
+            }
             try {
-              const e = JSON.parse(line),
+              const e = JSON.parse(line.toString('utf8')),
                 m = e.message;
               const at = new Date(e.timestamp);
               if (!Number.isFinite(at.getTime()) || !m || !Array.isArray(m.content)) continue;
-              if (stat.size <= 32768) row.node.startedAt ??= at;
+              row.node.startedAt ??= at;
               row.node.lastEventAt = at;
               for (const b of m.content)
                 if (b.type === 'tool_result' && b.tool_use_id === call) row.node.action = undefined;
@@ -119,7 +167,7 @@ export class ClaudeNativeTree {
               for (const b of m.content) {
                 if (b.type === 'tool_use') {
                   call = b.id;
-                  if (typeof b.id === 'string' && row.calls.size < 200) row.calls.add(b.id);
+                  if (typeof b.id === 'string' && ['Agent', 'Task'].includes(b.name)) row.calls.add(b.id);
                   row.node.action = { name: safe(b.name, 200), text: safe(b.name, 200), at };
                 } else if (b.type === 'text' && typeof b.text === 'string') {
                   row.node.lastReport = { text: safe(b.text), at, kind: meta.finished ? 'reply' : 'update' };
@@ -129,11 +177,21 @@ export class ClaudeNativeTree {
               /* Partial JSONL lines are not public evidence. */
             }
           }
+          row.pending = Buffer.from(body.subarray(start));
+          if (row.pending.length > 4194304) {
+            row.pending = Buffer.alloc(0);
+            row.skipping = row.omitted = true;
+          }
           this.rows.set(name, row);
         }
+        if (row && row.offset < stat.size) replaying = true;
+        if (row && (row.offset < stat.size || row.pending.length || row.skipping || row.omitted)) this.complete = false;
       } catch {
         this.complete = false;
-        if (row) row = { ...row, node: { ...row.node, status: 'unknown' } };
+        if (row) {
+          row = { ...row, stamp: '', node: { ...row.node, status: 'unknown' } };
+          this.rows.set(name, row);
+        }
       }
       if (row) nodes.push({ ...row.node, children: [] });
     }
@@ -148,7 +206,10 @@ export class ClaudeNativeTree {
         parent.children.push(n);
         return false;
       }
-      if (Number(meta.spawnDepth) > 1) this.complete = false;
+      if (Number(meta.spawnDepth) > 1) {
+        this.complete = false;
+        if (replaying) return false;
+      }
       return true;
     });
     const seen = new Set<string>();

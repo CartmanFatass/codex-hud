@@ -283,7 +283,7 @@ test('Claude reader bounds/unchanged reads, incremental tails, nesting and uncer
   );
   const tree = f.claude();
   assert.equal(tree.nodes[0].lastReport.text, 'New public evidence.');
-  assert.ok(f.collector.bytes <= 4 * (32768 + 8192));
+  assert.ok(f.collector.bytes <= 4 * (1048576 + 8192));
   const board = f.board(tree);
   assert.equal(board.workers[0].state, 'working');
   let poll = createAdaptivePollState(1000);
@@ -312,7 +312,7 @@ test('Claude reader bounds/unchanged reads, incremental tails, nesting and uncer
   assert.equal(f.collector.complete, false, 'deferred changed files do not count as complete');
   for (let i = 0; i < 8; i++) {
     f.claude();
-    assert.ok(f.collector.bytes <= 4 * (32768 + 8192));
+    assert.ok(f.collector.bytes <= 4 * (1048576 + 8192));
   }
   f.claude();
   assert.equal(f.collector.bytes, 0, 'rotation finishes all changed bodies');
