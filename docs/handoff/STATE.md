@@ -8,7 +8,7 @@ Milestone: M4 · Project view
 ## Next
 
 - native-polish (.scratch/native-polish): all five landed; owner tries them. M4 review next.
-- GEMINI-DECIDE running. Then decision-labels (.scratch/decision-labels, 6 tickets): 01 first, then 02, 04, 05, 06; 03 after 02. Replaces RUN-LABEL-GEMINI.
+- GEMINI-DECIDE running. Then DL: decision-labels (.scratch/decision-labels) 01–06 by one imp in order (owner). Replaces RUN-LABEL-GEMINI.
 
 ## Slices
 
@@ -57,12 +57,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · NP-04 · native-polish 04: HUD job cards show a short title (eb3e5558)
 - try · M4 · NP-05 · native-polish 05: live /hud binding check and CLAUDE-BIND leftovers (live check passed; Fishpref pi-roles fixed)
 - working · M4 · GEMINI-DECIDE · Gemini Decisions API provider + Settings switch; default primary OpenAI (Jev pages too heavy for the free tier), 429 cooldown
-- todo · M4 · DL-01 · decision-labels 01: settled job cards show their outcome
-- todo · M4 · DL-02 · decision-labels 02: jobs labelled by kind
-- todo · M4 · DL-03 · decision-labels 03: Project tab model fit
-- todo · M4 · DL-04 · decision-labels 04: quiet looping job marked
-- todo · M4 · DL-05 · decision-labels 05: worker questions sorted by category
-- todo · M4 · DL-06 · decision-labels 06: review findings counted by severity
+- todo · M4 · DL · decision-labels 01–06 in one slice (owner): outcome, kind, model fit, looping mark, question category, review severity
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
 ## Now (2026-11-12, evening): M3b closed after its second review; M4 Project tab complete with progress board and tickets
