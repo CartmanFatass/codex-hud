@@ -1,4 +1,0 @@
-[Opus 4.5 ◑ high] ██░░ 42% | project
-⏱️  4m
-◐ Explore [haiku-4.5]: Inspect sy...
-▸ Implement synthetic feature (1/2)

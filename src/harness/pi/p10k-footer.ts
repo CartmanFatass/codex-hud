@@ -1,69 +1,24 @@
-import { providerMark } from '../../render/providers.js';
 /**
- * p10k-band — a Powerlevel10k-style status band embedded in the input box.
+ * The pi footer: one line below the editor, in the grammar of the Codex bar and Claude's statusline
+ * (`render/layout/bar-fields.ts`): the same segments in the same order, with the same separators, glyphs and colours,
+ * fitted by dropping whole segments, lowest priority first.
  *
- * The band is not a row of its own: it occupies the left part of the editor's
- * top border, the border rule continues to the right edge and the working
- * spinner sits at the end. One row, one frame:
+ *   DeepSeek V4.1 Flash 1017 max │ ━━━━────── 42%/200K │ example main +1 *1 ?3 │ 57 tok/s │ cache 73% │ $0.420
  *
- *   ────────────────────────── ⠋ Thinking… ▐ ctx 42% ▶ cache 99% ▶ 12.3 t/s ▶ 5.2s ▶ $0.42 ▶─
- *     the message being typed
- *   ────────────────────────────────────────────────────────────────────────────────────────
- *   DeepSeek V4.1 Flash 1017 · max · ~/projects/example · main +1 ?3 · mcp 2 · skill 5
- *
- * The layout is omp's `claude` composer (packages/tui/src/components/composer/
- * claude.ts), with our coloured band in place of its plain status chip:
- *
- *   - top rule, with the band docked at its RIGHT end and one dash after it,
- *   - the input rows,
- *   - a full-width bottom rule (the composer's underline),
- *   - the bottom-left bar: model, thinking level, path and git as dim text.
- *
- * Real powerline rendering, not "colored text with an arrow between it":
- * every segment paints its own background, and the separator is drawn with the
- * previous segment's background as *foreground* on the next segment's
- * background, so the band reads as one continuous ribbon. The last arrow is
- * drawn on the terminal background, so the ribbon fades into the border rule.
- *
- * The rule uses the theme's `borderMuted` and the identity line the theme's
- * `muted`, so the band reads as a neutral frame around a colored ribbon instead
- * of a p10k band floating above a thinking-level-colored box.
- *
- * Colors are ANSI indices from the source p10k prompt, not fixed hex, so the band inherits
- * the terminal palette exactly like the zsh prompt does. They live in
- * `PALETTES`; select one with PI_HUD_PALETTE=<name>.
- *
- * The model name is prefixed with its provider's mark in the provider's own
- * colour (`PROVIDERS`), the way toktrack marks a subscription. Marks that only
- * exist in newer Nerd Fonts are avoided; PI_HUD_MARKS=ascii falls back to the
- * provider's initial for a terminal without icon glyphs.
- *
- * Layout (left → right), dropped from the right as the terminal narrows:
- *   model · thinking · path · git · context% · cache% · tokens · t/s · TTFT · cost
- *
- * The dim identity line under the input carries model · thinking · path · git ·
- * mcp · skill · lens. The `lens` chip is pi-lens's analysis verdict: it takes
- * the place of the widget line pi-lens would otherwise draw below the editor,
- * so the footer stays one row.
- *
- * The band's own order is session name · context% · cache% · tokens · t/s ·
- * TTFT · cost · time. The name comes from the session-title extension (or
- * /rename) and leads the ribbon, so the band says what the session is about
- * before it says how it is doing.
- *
- * TPS and TTFT come from the `tps` entries @monotykamary/pi-tps appends to the
- * session; the measurement stays in that package. They are read from the
- * session, not only from its `tps:telemetry` event, so a missed event or a
- * resumed session cannot leave them empty. The cache hit rate is derived from
- * the usage pi attaches to messages: cached reads against every prompt token.
- *
- * The rate segments are always present — the last measurement, or a placeholder
- * before the first one — so a burst delivery cannot reflow the band.
+ * It replaces p10k-footer's band in the editor's top border and its identity row; pi's own editor, with its working
+ * indicator, stays as it is. Other extensions' statuses (pi-lens, pi-viz, the HUD's Work counts) are read through the
+ * footer data provider. TPS and TTFT come from the `tps` entries @monotykamary/pi-tps appends to the session, read from
+ * the session so a missed event or a resumed session cannot leave them empty. A reading with no data is left out.
  */
 
 import { execFile } from 'node:child_process';
+import { colors, theme, truncate } from '../../render/colors.js';
+import { formatTokenCount } from '../../render/lines/activity-line.js';
+import * as bar from '../../render/layout/bar-fields.js';
+import type { BarModule } from '../../render/layout/engine.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
-import type { FooterAPI, FooterContext, FooterHost, FooterTui } from './footer-host.js';
+import { HUD_STATUS_KEY } from './segment.js';
+import type { FooterAPI, FooterContext, FooterHost } from './footer-host.js';
 export type { FooterHost } from './footer-host.js';
 
 /** One ordinary package instance; no process-global state or host SDK dependency. */
@@ -75,211 +30,14 @@ export function createP10kFooter(
     gitStatus?: (cwd: string, done: (error: Error | null, stdout: string) => void) => void;
   } = {}
 ) {
-  const { CustomEditor, visibleWidth, truncateToWidth } = host;
-  // ─── Glyphs ─────────────────────────────────────────────────────────────────
-
-  const ARROW = '\ue0b0'; // right-pointing triangle: previous bg → next bg
-  const CAP_LEFT = '\ue0b6'; // left half circle: soft cap on the terminal background
-  const RULE = '\u2500'; // box-drawing horizontal: the rest of the top border
-  /** Narrowest band worth drawing: cap, one block, fading arrow. */
-  const MIN_BAND = 6;
-
-  const ICON = {
-    model: '\uec19',
-    path: '\uf115',
-    git: '\uf126',
-    tps: '\uf0e7',
-    ttft: '\uf017',
-    time: '\uf252',
-    cost: '\uf155',
-  };
-
-  // ─── Palettes (ANSI indices, mirroring the source p10k prompt) ─────────────────────────
-
-  interface Paint {
-    /** 256-color background index. */
-    bg: number;
-    /** 256-color foreground index. */
-    fg: number;
-  }
-
-  interface Palette {
-    label: string;
-    segments: {
-      model: Paint;
-      thinking: Paint;
-      path: Paint;
-      gitClean: Paint;
-      gitDirty: Paint;
-      /** The generated session name: the band's leftmost block. */
-      title: Paint;
-      context: Paint;
-      contextWarn: Paint;
-      contextError: Paint;
-      cache: Paint;
-      tokens: Paint;
-      tps: Paint;
-      ttft: Paint;
-      time: Paint;
-      cost: Paint;
-    };
-  }
-
-  /** The palette currently in use, kept verbatim from the source p10k prompt. */
-  const P10K: Palette = {
-    label: 'p10k (zsh prompt)',
-    segments: {
-      /** POWERLEVEL9K_OS_ICON_BACKGROUND=7 / _FOREGROUND=232 */
-      model: { bg: 7, fg: 232 },
-      /** Light block + dark text: white on a dark magenta was unreadable. */
-      thinking: { bg: 175, fg: 235 },
-      /** POWERLEVEL9K_DIR_BACKGROUND=4, lightened so the block reads on black. */
-      path: { bg: 110, fg: 235 },
-      /** POWERLEVEL9K_VCS_CLEAN_BACKGROUND=2, lightened */
-      gitClean: { bg: 108, fg: 235 },
-      /** POWERLEVEL9K_VCS_MODIFIED_BACKGROUND=3, amber */
-      gitDirty: { bg: 179, fg: 235 },
-      /** No p10k counterpart: pale lavender, so the name reads before the gauges. */
-      title: { bg: 183, fg: 235 },
-      /** POWERLEVEL9K_ASDF_POSTGRES_BACKGROUND=6, lightened */
-      context: { bg: 116, fg: 235 },
-      /** POWERLEVEL9K_COMMAND_EXECUTION_TIME_BACKGROUND=3, amber */
-      contextWarn: { bg: 179, fg: 235 },
-      /** POWERLEVEL9K_STATUS_ERROR_BACKGROUND=1, lightened */
-      contextError: { bg: 204, fg: 235 },
-      /** No p10k counterpart: a pale blue-grey between the cyan and orange. */
-      cache: { bg: 152, fg: 235 },
-      /** No p10k counterpart: pale periwinkle for the session token total. */
-      tokens: { bg: 146, fg: 235 },
-      /** ASDF_RUST_BACKGROUND=208, but 208 is glare: 173 keeps the hue, calmer. */
-      tps: { bg: 173, fg: 235 },
-      /** VCS_LOADING_BACKGROUND=8 with fg 0 is unreadable: light grey, dark text. */
-      ttft: { bg: 250, fg: 235 },
-      /** Session working time: pale khaki, the quietest block. */
-      time: { bg: 187, fg: 235 },
-      /** POWERLEVEL9K_COMMAND_EXECUTION_TIME_BACKGROUND=3, amber */
-      cost: { bg: 179, fg: 235 },
-    },
-  };
-
-  /** Warm, low-saturation: olive/sage blocks on a dark terminal. */
-  const GRUGBOX: Palette = {
-    label: 'gruvbox',
-    segments: {
-      model: { bg: 223, fg: 235 },
-      thinking: { bg: 108, fg: 235 },
-      path: { bg: 66, fg: 230 },
-      gitClean: { bg: 100, fg: 235 },
-      gitDirty: { bg: 172, fg: 235 },
-      title: { bg: 181, fg: 235 },
-      context: { bg: 109, fg: 235 },
-      contextWarn: { bg: 172, fg: 235 },
-      contextError: { bg: 124, fg: 230 },
-      cache: { bg: 24, fg: 230 },
-      tokens: { bg: 175, fg: 235 },
-      tps: { bg: 137, fg: 230 },
-      time: { bg: 180, fg: 235 },
-      ttft: { bg: 239, fg: 223 },
-      cost: { bg: 172, fg: 235 },
-    },
-  };
-
-  /** Cool and desaturated: frost blues with aurora accents. */
-  const NORD: Palette = {
-    label: 'nord',
-    segments: {
-      model: { bg: 223, fg: 236 },
-      thinking: { bg: 175, fg: 236 },
-      path: { bg: 110, fg: 236 },
-      gitClean: { bg: 108, fg: 236 },
-      gitDirty: { bg: 179, fg: 236 },
-      title: { bg: 181, fg: 236 },
-      context: { bg: 109, fg: 236 },
-      contextWarn: { bg: 179, fg: 236 },
-      contextError: { bg: 131, fg: 223 },
-      cache: { bg: 66, fg: 230 },
-      tokens: { bg: 139, fg: 230 },
-      tps: { bg: 173, fg: 236 },
-      time: { bg: 187, fg: 236 },
-      ttft: { bg: 238, fg: 223 },
-      cost: { bg: 179, fg: 236 },
-    },
-  };
-
-  /** Blue-violet: indigo blocks with a peach rate segment. */
-  const TOKYO: Palette = {
-    label: 'tokyo-night',
-    segments: {
-      model: { bg: 189, fg: 235 },
-      thinking: { bg: 141, fg: 235 },
-      path: { bg: 111, fg: 235 },
-      gitClean: { bg: 114, fg: 235 },
-      gitDirty: { bg: 179, fg: 235 },
-      title: { bg: 183, fg: 235 },
-      context: { bg: 117, fg: 235 },
-      contextWarn: { bg: 179, fg: 235 },
-      contextError: { bg: 204, fg: 235 },
-      cache: { bg: 68, fg: 235 },
-      tokens: { bg: 152, fg: 235 },
-      tps: { bg: 215, fg: 235 },
-      time: { bg: 187, fg: 235 },
-      ttft: { bg: 238, fg: 223 },
-      cost: { bg: 179, fg: 235 },
-    },
-  };
-
-  const PALETTES: Record<string, Palette> = {
-    p10k: P10K,
-    gruvbox: GRUGBOX,
-    nord: NORD,
-    'tokyo-night': TOKYO,
-  };
-
-  const PALETTE = PALETTES[env.PI_HUD_PALETTE ?? ''] ?? P10K;
-  const PAINT = PALETTE.segments;
-
-  const RESET = '\x1b[0m';
-
-  function fgAnsi(index: number): string {
-    return `\x1b[38;5;${index}m`;
-  }
-
-  function bgAnsi(index: number): string {
-    return `\x1b[48;5;${index}m`;
-  }
-
-  // ─── Segments ───────────────────────────────────────────────────────────────
-
-  /** Where a segment is drawn: the coloured band, or the dim identity line. */
-  type Group = 'band' | 'footer';
-
-  interface Segment extends Paint {
-    text: string;
-    /** Higher survives narrow terminals longer. */
-    priority: number;
-    /** Narrower replacements, consumed in order before the segment is dropped. */
-    variants: string[];
-    group: Group;
-    /** Identity line only: paint this segment in a 256-colour index. */
-    color?: number;
-    /** Identity line only: sit tight against the previous segment, no separator. */
-    glue?: boolean;
-  }
-
   // ─── Which segments exist, and which are on ────────────────────────────────
 
-  /**
-   * Every toggleable segment. `group` says which zone it belongs to: `band` is
-   * the ribbon docked at the right end of the editor's top rule, `footer` is the
-   * dim identity line under the input.
-   *
-   * The order here is the order `/hud` lists them and the order the config file
-   * writes them, not the drawing order — that still comes from the `add()` calls
-   * in `buildSegments`.
-   */
+  /** The config groups kept from p10k-footer, so an imported `piFooter` section still applies; both are one line now. */
+  type Group = 'band' | 'footer';
+
+  /** Every toggleable segment, in the order `/hud footer` lists them and the config file writes them. */
   const SEGMENT_SPECS = {
-    // Bottom-left identity line.
-    model: { group: 'footer', label: 'model name + provider mark', on: true },
+    model: { group: 'footer', label: 'model name', on: true },
     thinking: { group: 'footer', label: 'thinking level', on: true },
     path: { group: 'footer', label: 'working directory', on: true },
     git: { group: 'footer', label: 'git branch + dirty marks', on: true },
@@ -288,7 +46,6 @@ export function createP10kFooter(
     lens: { group: 'footer', label: 'pi-lens verdict', on: true },
     viz: { group: 'footer', label: 'pi-viz diagram mode', on: true },
     statuses: { group: 'footer', label: 'other extensions setStatus() values', on: true },
-    // Top-right band.
     session: { group: 'band', label: 'session name', on: true },
     context: { group: 'band', label: 'context window usage', on: true },
     cache: { group: 'band', label: 'prompt cache hit rate', on: true },
@@ -328,114 +85,6 @@ export function createP10kFooter(
   /** Whether `id` is drawn. An unknown id is on, so a typo cannot hide a segment. */
   function enabled(id: SegmentId): boolean {
     return config[id] !== false;
-  }
-
-  /** One block: a space, the text, a space. */
-  function blockWidth(text: string): number {
-    return visibleWidth(text) + 2;
-  }
-
-  /** A soft cap on the left, one arrow between neighbours, one fading arrow last. */
-  function bandWidth(segments: Segment[]): number {
-    if (segments.length === 0) return 0;
-    return 1 + segments.reduce((sum, s) => sum + blockWidth(s.text), 0) + segments.length;
-  }
-
-  /**
-   * Consume shorter variants, then drop the lowest-priority segments, until the
-   * band fits. Never drops the last remaining segment: it is truncated instead.
-   */
-  function fitSegments(segments: Segment[], width: number): Segment[] {
-    const kept = segments.map((segment) => ({ ...segment, variants: [...segment.variants] }));
-
-    while (kept.length > 1 && bandWidth(kept) > width) {
-      let variantIndex = -1;
-      for (let i = 0; i < kept.length; i++) {
-        const segment = kept[i]!;
-        const next = segment.variants[0];
-        if (next === undefined || visibleWidth(next) >= visibleWidth(segment.text)) continue;
-        if (variantIndex < 0 || segment.priority < kept[variantIndex]!.priority) variantIndex = i;
-      }
-      if (variantIndex >= 0) {
-        const segment = kept[variantIndex]!;
-        segment.text = segment.variants.shift()!;
-        continue;
-      }
-
-      let drop = -1;
-      for (let i = 0; i < kept.length; i++) {
-        if (drop < 0 || kept[i]!.priority < kept[drop]!.priority) drop = i;
-      }
-      kept.splice(drop, 1);
-    }
-
-    return kept;
-  }
-
-  /** Paint the ribbon. Every escape is closed, so the line never leaks state. */
-  function paintBand(fitted: Segment[], width: number): string {
-    if (fitted.length === 0) return '';
-
-    // The last block may still overflow on a very narrow terminal.
-    const overflow = bandWidth(fitted) - width;
-    if (overflow > 0) {
-      const last = fitted[fitted.length - 1]!;
-      const room = Math.max(1, visibleWidth(last.text) - overflow);
-      last.text = truncateToWidth(last.text, room, '…');
-    }
-
-    let out = RESET + fgAnsi(fitted[0]!.bg) + CAP_LEFT;
-    for (let i = 0; i < fitted.length; i++) {
-      const segment = fitted[i]!;
-      out += bgAnsi(segment.bg) + fgAnsi(segment.fg) + ` ${segment.text} `;
-      const next = fitted[i + 1];
-      // The last arrow is drawn on the terminal background, so the ribbon fades
-      // into the border rule that follows it.
-      out += next ? bgAnsi(next.bg) + fgAnsi(segment.bg) + ARROW : RESET + fgAnsi(segment.bg) + ARROW;
-    }
-    return out + RESET;
-  }
-
-  const IDENTITY_SEP = ' \u00b7 '; // " · "
-
-  /**
-   * The identity line under the input: model, thinking level, path and git as
-   * plain muted text. Same idea as omp's `claude` composer, which docks its left
-   * segments at the bottom-left instead of crowding the status band.
-   */
-  function paintIdentity(segments: Segment[], width: number, frame: Frame): string {
-    const kept = [...segments];
-    const joined = (list: Segment[]) =>
-      list.map((segment, i) => (i === 0 || segment.glue ? '' : IDENTITY_SEP) + segment.text).join('');
-
-    while (kept.length > 1 && visibleWidth(joined(kept)) > width) {
-      let drop = 0;
-      for (let i = 1; i < kept.length; i++) {
-        if (kept[i]!.priority < kept[drop]!.priority) drop = i;
-      }
-      kept.splice(drop, 1);
-    }
-
-    // Painted segment by segment, so a provider mark keeps its own colour while
-    // the rest of the line stays dim.
-    let out = '';
-    let used = 0;
-    for (let i = 0; i < kept.length; i++) {
-      const segment = kept[i]!;
-      const room = width - used;
-      if (room <= 0) break;
-      const sep = i === 0 || segment.glue ? '' : IDENTITY_SEP;
-      const sepText = visibleWidth(sep) <= room ? sep : '';
-      const textRoom = room - visibleWidth(sepText);
-      const text =
-        visibleWidth(segment.text) <= textRoom ? segment.text : truncateToWidth(segment.text, textRoom, '\u2026');
-      out += frame.fg('muted', sepText);
-      out += segment.color === undefined ? frame.fg('muted', text) : `${fgAnsi(segment.color)}${text}${RESET}`;
-      used += visibleWidth(sepText) + visibleWidth(text);
-      if (text !== segment.text) break;
-    }
-
-    return out + ' '.repeat(Math.max(0, width - used));
   }
 
   // ─── Session data ───────────────────────────────────────────────────────────
@@ -573,23 +222,6 @@ export function createP10kFooter(
       totals,
       activeMs,
     };
-  }
-
-  /** `1M`, `1.5M`, `200k`, `37.6M`: one decimal only when it carries information. */
-  function formatTokens(count: number): string {
-    if (count < 1000) return count.toString();
-    if (count < 10000) return `${Number((count / 1000).toFixed(1))}k`;
-    if (count < 1000000) return `${Math.round(count / 1000)}k`;
-    if (count < 100000000) return `${Number((count / 1000000).toFixed(1))}M`;
-    return `${Math.round(count / 1000000)}M`;
-  }
-
-  function cwdDisplay(cwd: string): string {
-    const home = env.HOME ?? env.USERPROFILE;
-    if (!home) return cwd;
-    if (cwd === home) return '~';
-    if (cwd.startsWith(home + '/')) return `~${cwd.slice(home.length)}`;
-    return cwd;
   }
 
   function basename(path: string): string {
@@ -772,11 +404,6 @@ export function createP10kFooter(
   /** False until the session has analyzed something; the chip stays absent. */
   let lensAnalyzed = false;
 
-  /** Identity-line colours: the palette's own green, amber and red. */
-  const LENS_CLEAN_COLOR = 108;
-  const LENS_WARN_COLOR = 179;
-  const LENS_ERROR_COLOR = 204;
-
   function countLensSeverities(diagnostics: unknown): { errors: number; warnings: number } {
     let errors = 0;
     let warnings = 0;
@@ -805,13 +432,6 @@ export function createP10kFooter(
       warnings += file.warnings;
     }
     return { errors, warnings };
-  }
-
-  /** Red as soon as anything is an error, amber for warnings alone, else green. */
-  function lensColor(errors: number, warnings: number): number {
-    if (errors > 0) return LENS_ERROR_COLOR;
-    if (warnings > 0) return LENS_WARN_COLOR;
-    return LENS_CLEAN_COLOR;
   }
 
   // ─── pi-viz mode (the `viz` chip) ───────────────────────────────────────────
@@ -887,312 +507,103 @@ export function createP10kFooter(
   /**
    * setStatus() keys that only repeat a segment we already draw. `mcp` is
    * pi-mcp-adapter's chip for the same server count, and pi-lens publishes its
-   * verdict under `pi-lens-lsp` (older builds: `pi-lens`/`lens`). Letting them
-   * through `statuses` would double the line for no information.
+   * verdict under `pi-lens-lsp` (older builds: `pi-lens`/`lens`). The HUD's own
+   * key is the Work segment.
    */
-  const DUPLICATE_STATUS_KEYS = new Set(['mcp', 'lens', 'pi-lens', 'pi-lens-lsp']);
+  const DUPLICATE_STATUS_KEYS = new Set(['mcp', 'lens', 'pi-lens', 'pi-lens-lsp', HUD_STATUS_KEY]);
 
-  function buildSegments(
-    ctx: FooterContext,
-    pi: FooterAPI,
-    stats: Stats,
-    _repaint: () => void,
-    withIcons: boolean
-  ): Segment[] {
-    const segments: Segment[] = [];
-    const icon = (glyph: string) => (withIcons ? `${glyph} ` : '');
-    // The id names the segment in the config; the zone comes from the spec, so a
-    // segment cannot be filed under the wrong group by a call site.
-    const add = (
-      id: SegmentId,
-      paint: Paint,
-      text: string,
-      priority: number,
-      variants: string[] = [],
-      extra: { color?: number; glue?: boolean } = {}
-    ) => {
-      if (!enabled(id)) return;
-      if (!text || visibleWidth(text) === 0) return;
-      segments.push({ ...paint, text, priority, variants, group: SEGMENT_SPECS[id].group, ...extra });
+  /** The bar's fields in the shared order; a switched-off or empty field is simply not there. */
+  function buildModules(ctx: FooterContext, pi: FooterAPI, stats: Stats): BarModule[] {
+    const modules: BarModule[] = [];
+    const add = (id: SegmentId, module: BarModule) => {
+      if (enabled(id)) modules.push(module);
     };
-    const shorten = (text: string, max: number) => truncateToWidth(text, max, '…');
-
-    // Model: the provider's mark in its own colour, glued to the name. The
-    // parenthetical is dropped and the name is truncated last.
     const model = ctx.model;
-    if (model) {
-      const mark = providerMark(model, env.PI_HUD_MARKS === 'ascii');
-      const name = compactModelName(model.name || model.id);
-      // The mark keeps a space of its own, so an emoji mark does not touch the name.
-      add('model', PAINT.model, mark ? `${mark.glyph} ` : icon(ICON.model), 8, [], {
-        color: mark?.color,
-      });
-      add(
-        'model',
-        PAINT.model,
-        name,
-        9,
-        [shorten(name, 16), shorten(model.id, 12)].filter((variant) => visibleWidth(variant) < visibleWidth(name)),
-        { glue: true }
-      );
-    } else {
-      add('model', PAINT.model, `${icon(ICON.model)}no-model`, 9);
-    }
-
-    // Thinking level, only when the active model reasons.
     const thinking = model?.reasoning ? pi.getThinkingLevel?.() : undefined;
-    if (thinking && thinking !== 'off') {
-      add('thinking', PAINT.thinking, thinking, 8);
-    }
-
-    // Working directory: full path, then basename.
-    const cwd = ctx.sessionManager.getCwd();
-    const display = cwdDisplay(cwd);
-    const shortPath = basename(display);
     add(
-      'path',
-      PAINT.path,
-      `${icon(ICON.path)}${display}`,
-      7,
-      [`${icon(ICON.path)}${shortPath}`].filter(
-        (variant) => visibleWidth(variant) < visibleWidth(`${icon(ICON.path)}${display}`)
+      'model',
+      bar.identityModule(
+        model ? compactModelName(model.name || model.id) : 'no-model',
+        enabled('thinking') && thinking && thinking !== 'off' ? thinking : undefined
       )
     );
 
-    // Git branch plus dirty markers, colored when the tree is not clean.
-    const git = readGit(cwd);
-    if (git?.branch) {
-      const marks: string[] = [];
-      if (git.staged) marks.push(`+${git.staged}`);
-      if (git.unstaged) marks.push(`*${git.unstaged}`);
-      if (git.untracked) marks.push(`?${git.untracked}`);
-      const dirty = marks.length > 0;
-      const label = `${git.branch}${dirty ? ` ${marks.join(' ')}` : ''}`;
-      add(
-        'git',
-        dirty ? PAINT.gitDirty : PAINT.gitClean,
-        `${icon(ICON.git)}${label}`,
-        6,
-        [`${icon(ICON.git)}${shorten(label, 16)}`].filter(
-          (variant) => visibleWidth(variant) < visibleWidth(`${icon(ICON.git)}${label}`)
-        )
-      );
-    }
-
-    // Loaded MCP servers and skills, on the dim bottom-left bar after git.
-    const loaded = capturedLoaded;
-    add('mcp', PAINT.model, `mcp ${loaded.mcp}`, 5);
-    add('skill', PAINT.model, `skill ${loaded.skills}`, 4);
-
-    // pi-lens's verdict, where its own widget line used to sit: `lens ✓` when
-    // every analyzed file is clean, `lens 2E 1W` when it is not. Absent until
-    // the session has analyzed something, so a session that never touches a file
-    // does not advertise an analyzer with nothing to say.
-    if (lensAnalyzed) {
-      const { errors, warnings } = lensTotals();
-      const marks: string[] = [];
-      if (errors > 0) marks.push(`${errors}E`);
-      if (warnings > 0) marks.push(`${warnings}W`);
-      const verdict = marks.length === 0 ? '\u2713' : marks.join(' ');
-      add('lens', PAINT.model, `lens ${verdict}`, 3, [], { color: lensColor(errors, warnings) });
-    }
-
-    // pi-viz's mode, read from the session so the chip survives a resume. It
-    // replaces the widget line pi-viz would otherwise draw below the editor.
-    const vizMode = capturedViz;
-    if (vizMode) {
-      add('viz', PAINT.model, `viz ${vizMode}`, 3);
-    }
-
-    // Everything else an extension published with setStatus(). Keys that only
-    // repeat a segment above are skipped, so a status cannot double the line.
-    if (footerStatuses && footerStatuses.size > 0) {
-      const others = [...footerStatuses.entries()]
-        .filter(([key]) => !DUPLICATE_STATUS_KEYS.has(key))
-        .map(([, value]) => value.trim())
-        .filter((value) => value.length > 0);
-      if (others.length > 0) {
-        add(
-          'statuses',
-          PAINT.model,
-          others.join(' '),
-          2,
-          [others.slice(0, 2).join(' ')].filter((variant) => visibleWidth(variant) < visibleWidth(others.join(' ')))
-        );
-      }
-    }
-
-    // Session name: generated by the session-title extension, or set with
-    // /rename. It leads the ribbon, so the band answers "what is this session"
-    // before it answers "how is it doing".
-    const sessionName = readSessionName(ctx);
-    if (sessionName) {
-      add(
-        'session',
-        PAINT.title,
-        sessionName,
-        7,
-        [shorten(sessionName, 18), shorten(sessionName, 12)].filter(
-          (variant) => visibleWidth(variant) < visibleWidth(sessionName)
-        )
-      );
-    }
-
-    // Context pressure: cyan, amber above 70%, red above 90%.
+    // Context pressure against the window; `?` while pi has no reading yet.
     const usage = ctx.getContextUsage();
     const window = usage?.contextWindow ?? model?.contextWindow ?? 0;
-    // Two adjacent percentages need words, not icons: a gauge and a database are
-    // indistinguishable at a glance. Both drop the label on narrow terminals.
-    if (usage && usage.percent !== null) {
-      const paint = usage.percent > 90 ? PAINT.contextError : usage.percent > 70 ? PAINT.contextWarn : PAINT.context;
-      const percent = `${usage.percent.toFixed(1)}%`;
-      // `1.1%/1M`: the share used and the window it is a share of.
-      add('context', paint, window > 0 ? `${percent}/${formatTokens(window)}` : percent, 9, [percent]);
-    } else if (window > 0) {
-      add('context', PAINT.context, `?/${formatTokens(window)}`, 9, ['?']);
-    }
+    const percent = usage && usage.percent !== null ? Math.round(usage.percent) : null;
+    if (percent !== null || window > 0)
+      add('context', bar.contextModule(percent ?? 0, percent === null ? '?' : `${percent}%`, window, 10));
 
-    // Prompt-cache hit rate over the whole session: cached reads against every
-    // prompt token the model saw (uncached input + cache reads + cache writes).
+    // The directory's name, then the branch with its staged `+`, unstaged `*` and untracked `?` counts.
+    const cwd = ctx.sessionManager.getCwd();
+    const git = enabled('git') ? readGit(cwd) : null;
+    const marks = git
+      ? [
+          ['+', git.staged],
+          ['*', git.unstaged],
+          ['?', git.untracked],
+        ].filter(([, n]) => n)
+      : [];
+    const place = enabled('path') ? basename(cwd) || cwd : '';
+    add(
+      'path',
+      bar.projectModule(
+        place || git?.branch || '',
+        place ? (git?.branch ?? null) : null,
+        marks.map(([m, n]) => ` ${m}${n}`).join('')
+      )
+    );
+
+    if (rates.tps !== null) add('tps', bar.speedModule(rates.tps, turnStartedAt !== null));
+
+    // Prompt-cache hit rate over the whole session: cached reads against every prompt token the model saw.
     const { totals } = stats;
     const promptTokens = totals.input + totals.cacheRead + totals.cacheWrite;
-    const cacheText = promptTokens > 0 ? `${Math.round((totals.cacheRead / promptTokens) * 100)}%` : '-';
-    add('cache', PAINT.cache, `cache ${cacheText}`, 7, [cacheText]);
-
-    // Session token total: every prompt and completion token, cache included.
-    const totalTokens = promptTokens + totals.output;
-    const tokensText = totalTokens > 0 ? formatTokens(totalTokens) : '-';
-    add('tokens', PAINT.tokens, `tok ${tokensText}`, 7, [tokensText]);
-
-    // Live rates. Both segments are always present: the last measurement, or a
-    // placeholder before the first one, so the band never reflows mid-stream.
-    const tpsText = rates.tps === null ? '-' : `${rates.tps.toFixed(1)} t/s`;
-    add('tps', PAINT.tps, `${icon(ICON.tps)}${tpsText}`, 8, [tpsText]);
-    const ttftText = rates.ttftMs === null ? '-' : formatMs(rates.ttftMs);
-    add('ttft', PAINT.ttft, `${icon(ICON.ttft)}${ttftText}`, 5, [ttftText]);
-
-    // Session cost: what the provider reported, else our list price for the
-    // models the session ran on. Always present, so the band keeps its width.
-    const costText = totals.priced ? `$${formatCost(totals.cost)}` : '-';
-    add('cost', PAINT.cost, `${icon(ICON.cost)}${costText}`, 4, [costText]);
-
-    // Session working time: the wall clock spent inside turns, plus the turn that
-    // is running right now.
+    if (promptTokens > 0)
+      add('cache', bar.readingModule('cache', 'cache', `${Math.round((totals.cacheRead / promptTokens) * 100)}%`));
+    if (rates.ttftMs !== null) add('ttft', bar.readingModule('ttft', 'ttft', formatMs(rates.ttftMs)));
+    // What the provider reported, else our list price for the models the session ran on.
+    if (totals.priced) add('cost', bar.readingModule('cost', '', `$${formatCost(totals.cost)}`));
+    // Wall clock spent inside turns, plus the turn that is running right now.
     const elapsed = stats.activeMs + (turnStartedAt === null ? 0 : Math.max(0, Date.now() - turnStartedAt));
-    const duration = formatDuration(elapsed);
-    add('time', PAINT.time, `${icon(ICON.time)}${duration}`, 4, [duration]);
+    if (elapsed > 0) add('time', bar.readingModule('active', 'active', formatDuration(elapsed)));
 
-    return segments;
-  }
-
-  // ─── Editor ─────────────────────────────────────────────────────────────────
-
-  interface Frame {
-    fg(token: string, text: string): string;
-  }
-
-  interface StatusLike {
-    renderInBorder(width: number): string;
-  }
-
-  /**
-   * The stock editor with the band painted into its top border. Everything else —
-   * keybindings, autocomplete, paste handling, focus, cursor — is inherited, so
-   * the app's editor features keep working.
-   */
-  class BandEditor extends CustomEditor {
-    private readonly band: (width: number) => string;
-    private readonly identity: (width: number) => string;
-    private readonly frame: Frame;
-    private status: StatusLike | null = null;
-
-    constructor(
-      tui: FooterTui,
-      theme: unknown,
-      keybindings: unknown,
-      options: { embedWorkingStatus: boolean },
-      band: (width: number) => string,
-      identity: (width: number) => string,
-      frame: Frame
-    ) {
-      super(tui, theme, keybindings, options);
-      this.band = band;
-      this.identity = identity;
-      this.frame = frame;
+    // The HUD's Work counts arrive as an extension status; pi-lens's verdict and pi-viz's mode, and every other
+    // extension's words, share one low-priority field. `lens ✓` when every analyzed file is clean, `lens 2E 1W` when not.
+    const statuses = footerStatuses ?? new Map<string, string>();
+    modules.push(bar.workModule(statuses.get(HUD_STATUS_KEY)?.trim() ?? ''));
+    const words: string[] = [];
+    if (lensAnalyzed && enabled('lens')) {
+      const { errors, warnings } = lensTotals();
+      const verdict = [errors > 0 ? `${errors}E` : '', warnings > 0 ? `${warnings}W` : ''].filter(Boolean).join(' ');
+      const paint = errors > 0 ? theme.error : warnings > 0 ? theme.warning : theme.success;
+      words.push(`${colors.dim('lens')} ${paint(verdict || '\u2713')}`);
     }
+    if (capturedViz && enabled('viz')) words.push(`${colors.dim('viz')} ${theme.value(capturedViz)}`);
+    if (enabled('statuses'))
+      for (const [key, value] of statuses)
+        if (!DUPLICATE_STATUS_KEYS.has(key) && value.trim()) words.push(theme.value(value.trim()));
+    if (words.length)
+      modules.push({
+        id: 'extensions',
+        priority: bar.MODULE_PRIORITY.extensions,
+        group: 'extensions',
+        variants: { full: words.join('  '), short: words[0] },
+      });
 
-    override setWorkingStatusIndicator(
-      indicator: Parameters<InstanceType<FooterHost['CustomEditor']>['setWorkingStatusIndicator']>[0]
-    ): void {
-      super.setWorkingStatusIndicator(indicator);
-      this.status = (indicator as StatusLike | undefined) ?? null;
-    }
-
-    override renderTopBorder(width: number, hiddenLineCount: number): string {
-      if (width <= 0) return '';
-      // The working indicator keeps pi's own place: `── ⠋ Working…` at the left
-      // end of the top border. Only the band moved to the right end.
-      const status = this.leftSlot(width);
-      const statusWidth = status ? visibleWidth(status) + 4 : 0;
-      const right = this.rightSlot(width, hiddenLineCount);
-      const rightWidth = right ? visibleWidth(right) + 1 : 0;
-      // One column is reserved for the dash that closes the rule after the band.
-      const room = Math.max(1, width - statusWidth - rightWidth - 1);
-      // Below the width of a single block there is no band left to draw.
-      const band = room >= MIN_BAND ? this.band(room) : '';
-      const tail = band ? 1 : 0;
-      const ruleWidth = Math.max(0, width - statusWidth - rightWidth - visibleWidth(band) - tail);
-      const rule = ruleWidth > 0 ? this.frame.fg('borderMuted', RULE.repeat(ruleWidth)) : '';
-      const tailRule = tail ? this.frame.fg('borderMuted', RULE) : '';
-      const head = status ? `${this.frame.fg('borderMuted', `${RULE}${RULE} `)}${status} ` : '';
-      return head + rule + (right ? `${right} ` : '') + band + tailRule;
-    }
-
-    /**
-     * The editor's bottom border becomes the composer's underline, and the dim
-     * bottom-left bar goes under it — omp's `claude` composer puts its left
-     * segments there.
-     */
-    override render(width: number): string[] {
-      const lines = super.render(width);
-      if (width <= 0 || lines.length === 0) return lines;
-
-      // Set by the base render pass; without it the row layout is unknown.
-      // SAFETY: pi's base Editor sets this internal layout count during super.render.
-      const visible = (this as unknown as { renderedVisibleLineCount?: number }).renderedVisibleLineCount;
-      if (typeof visible !== 'number') return lines;
-
-      // The bottom border follows the visible rows; autocomplete rows come after.
-      const bottom = 1 + visible;
-      if (bottom <= 0 || bottom >= lines.length) return lines;
-      // The composer's underline, then the dim bottom-left bar.
-      const underline = this.frame.fg('borderMuted', RULE.repeat(width));
-      return [...lines.slice(0, bottom), underline, this.identity(width), ...lines.slice(bottom + 1)];
-    }
-
-    /** The working spinner while a turn runs, else the scroll hint. */
-    /** `⠋ Working…`, or nothing when it does not fit next to the band. */
-    private leftSlot(width: number): string {
-      if (!this.status) return '';
-      try {
-        const status = this.status.renderInBorder(Math.max(1, Math.min(width - 8, 48)));
-        if (!status) return '';
-        // `── ` before it and a space after it, as pi's own editor draws it.
-        return visibleWidth(status) + 4 <= width ? status : '';
-      } catch {
-        // A disposed indicator must not take the border down with it.
-        return '';
-      }
-    }
-
-    /** The scroll hint, docked just left of the band. */
-    private rightSlot(width: number, hiddenLineCount: number): string {
-      if (hiddenLineCount > 0 && width >= 16) {
-        const hint = truncateToWidth(`↑ ${hiddenLineCount} more`, width - 2, '');
-        return this.frame.fg('borderMuted', hint);
-      }
-      return '';
-    }
+    // What pi loaded, then the session's token total and its name.
+    modules.push(
+      bar.configModule([
+        ['MCP', enabled('mcp') ? capturedLoaded.mcp : 0],
+        ['skills', enabled('skill') ? capturedLoaded.skills : 0],
+      ])
+    );
+    const total = promptTokens + totals.output;
+    if (total > 0) add('tokens', bar.tokensModule(formatTokenCount(total)));
+    const name = readSessionName(ctx);
+    if (name) add('session', bar.metaModule('session', theme.value(truncate(name, 28))));
+    return modules;
   }
 
   let current: FooterContext | null = null;
@@ -1202,7 +613,6 @@ export function createP10kFooter(
   let capturedLoaded: LoadedCounts = { mcp: 0, skills: 0 };
   let repaint: (() => void) | null = null;
   let mounted = false;
-  let widget = false;
   let live = true;
   const removers: (() => void)[] = [];
   pi.registerEntryRenderer?.('tps', () => undefined);
@@ -1255,22 +665,11 @@ export function createP10kFooter(
     });
     repaint?.();
   }
-  function band(width: number): string {
-    if (!view || !stats || !mounted) return '';
-    const segments = (icons: boolean) =>
-      buildSegments(view!, pi, stats!, () => {}, icons).filter((s) => s.group === 'band');
-    const withIcons = segments(true),
-      fitted = fitSegments(withIcons, width);
-    const kept = bandWidth(fitted) <= width ? withIcons : segments(false);
-    return paintBand(fitSegments(kept, width), width);
-  }
-  function identity(width: number): string {
-    if (!view || !stats || !mounted) return '';
-    return paintIdentity(
-      buildSegments(view, pi, stats, () => {}, true).filter((s) => s.group === 'footer'),
-      width,
-      current!.ui.theme
-    );
+  /** The one line, fitted to `width`; pi's own width measure has the last word, so the host never gets a wider row. */
+  function line(width: number): string {
+    if (!view || !stats || !mounted || width <= 0) return '';
+    const text = bar.fitBar(buildModules(view, pi, stats), width).line;
+    return host.visibleWidth(text) > width ? host.truncateToWidth(text, width, '') : text;
   }
   function stop() {
     const ctx = current;
@@ -1280,15 +679,7 @@ export function createP10kFooter(
     repaint = null;
     stats = undefined;
     footerStatuses = null;
-    if (!ctx) return;
-    try {
-      ctx.ui.setEditorComponent(undefined);
-    } catch {
-      /* TUI may be gone. */
-    }
-    if (widget) ctx.ui.setWidget('hud-pi-footer', undefined);
-    widget = false;
-    ctx.ui.setFooter(undefined);
+    ctx?.ui.setFooter(undefined);
   }
   function start(ctx: FooterContext) {
     stop();
@@ -1302,23 +693,8 @@ export function createP10kFooter(
     lensFiles.clear();
     lensAnalyzed = false;
     update();
-    try {
-      ctx.ui.setEditorComponent((tui, theme, keybindings) => {
-        repaint = () => tui.requestRender();
-        return new BandEditor(tui, theme, keybindings, { embedWorkingStatus: true }, band, identity, ctx.ui.theme);
-      });
-    } catch {
-      widget = true;
-      ctx.ui.setWidget(
-        'hud-pi-footer',
-        (tui) => {
-          repaint = () => tui.requestRender();
-          return { render: (width) => (width > 0 ? [band(width), identity(width)] : ['']), invalidate() {} };
-        },
-        { placement: 'aboveEditor' }
-      );
-    }
-    ctx.ui.setFooter((_tui, _theme, data) => {
+    ctx.ui.setFooter((tui, _theme, data) => {
+      repaint = () => tui.requestRender();
       const statuses = () => {
         try {
           footerStatuses = data.getExtensionStatuses();
@@ -1328,9 +704,10 @@ export function createP10kFooter(
       };
       statuses();
       return {
-        render() {
+        render(width) {
           statuses();
-          return [];
+          const text = line(width);
+          return text ? [text] : [];
         },
         invalidate() {},
         dispose() {
@@ -1359,8 +736,8 @@ export function createP10kFooter(
 
       if (words.length === 0 || words[0] === 'list') {
         const lines = [
-          `footer (bottom-left): ${SEGMENT_IDS.filter((id) => SEGMENT_SPECS[id].group === 'footer' && enabled(id)).join(' ') || '(empty)'}`,
-          `band (top-right):     ${SEGMENT_IDS.filter((id) => SEGMENT_SPECS[id].group === 'band' && enabled(id)).join(' ') || '(empty)'}`,
+          `footer: ${SEGMENT_IDS.filter((id) => SEGMENT_SPECS[id].group === 'footer' && enabled(id)).join(' ') || '(empty)'}`,
+          `band:   ${SEGMENT_IDS.filter((id) => SEGMENT_SPECS[id].group === 'band' && enabled(id)).join(' ') || '(empty)'}`,
           `config: ${configPath()}`,
         ];
         ctx.ui.notify(lines.join('\n'), 'info');

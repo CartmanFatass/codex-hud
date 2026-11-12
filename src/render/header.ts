@@ -11,9 +11,10 @@
 import type { HudData, RenderOptions, LayoutConfig, SubagentTree } from '../types.js';
 import { DEFAULT_LAYOUT } from '../types.js';
 import type { HudDelegationData } from '../core/link/view-model.js';
-import { colors, theme, visualLength, truncateAnsi, padEnd } from './colors.js';
+import { colors, visualLength, truncateAnsi, padEnd } from './colors.js';
 import { buildBarModules } from './layout/bar-modules.js';
-import { fitModules, type FitResult } from './layout/engine.js';
+import { fitBar } from './layout/bar-fields.js';
+import type { FitResult } from './layout/engine.js';
 import { renderSubagentChip } from './subagent-chip.js';
 import { collectActiveTreeLineages, type SubagentTreeEntry } from '../collectors/subagent-tree.js';
 
@@ -35,13 +36,7 @@ export function fitStatusBar(
     width,
     ...(nowMs === undefined ? {} : { nowMs }),
   });
-  // A dimmed rule between clusters and a plain double space inside one: the
-  // bar reads as a few groups rather than a list of equally spaced fields.
-  return fitModules(modules, {
-    width,
-    separator: theme.separator(' │ '),
-    groupSeparator: '  ',
-  });
+  return fitBar(modules, width);
 }
 
 function renderStatusHeader(data: HudData & HudDelegationData, layout: LayoutConfig, width: number): string {

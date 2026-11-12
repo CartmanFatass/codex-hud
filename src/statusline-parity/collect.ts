@@ -16,7 +16,8 @@ export function collectAndRenderParity(
   width: number,
   settings: ParitySettings,
   env: NodeJS.ProcessEnv,
-  now = Date.now()
+  now = Date.now(),
+  work = ''
 ): string {
   const value = record(input),
     file =
@@ -67,5 +68,5 @@ export function collectAndRenderParity(
     ? collectConfigCounts(cwd, env)
     : { claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 };
   const git = cwd && settings.gitStatus.enabled ? collectParityGit(cwd, env, now) : null;
-  return renderParity(native, width, settings, { transcript, counts, git }, now, env);
+  return renderParity(native, width, settings, { transcript, counts, git }, now, env, work);
 }

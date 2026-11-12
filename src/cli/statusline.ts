@@ -2,6 +2,7 @@ import { getHudHome } from '../hud-home.js';
 import { readThinJobs } from '../collectors/thin-jobs.js';
 import { renderWorkSummary } from '../render/work-summary.js';
 import { fileURLToPath } from 'node:url';
+import { visualLength } from '../render/colors.js';
 import { statuslinePreview } from '../statusline-preview.js';
 import { statuslineSettings } from '../statusline-settings.js';
 import { renderStatuslineSession, type StatuslineSessionOptions } from '../render/statusline-session.js';
@@ -128,19 +129,16 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
     },
     stderr: io.stderr,
     render: async (value, width) => {
-      const first =
-        parity && !options.details
-          ? collectAndRenderParity(value, width, parity, io.env)
-          : renderStatuslineSession(value, width, options);
-      const work = renderWorkSummary(
-        readThinJobs(getHudHome(io.env), {
-          project: null,
-          pane: io.env.HERDR_PANE_ID ?? null,
-        }),
-        width,
-        Date.now()
-      );
-      return [first, work].filter(Boolean).join('\n');
+      const now = Date.now();
+      const lanes = readThinJobs(getHudHome(io.env), { project: null, pane: io.env.HERDR_PANE_ID ?? null });
+      // The bar is one line: the Work counts are a segment of it, not a row below.
+      if (parity && !options.details)
+        return collectAndRenderParity(value, width, parity, io.env, now, renderWorkSummary(lanes, 500, now));
+      const first = renderStatuslineSession(value, width, options);
+      const work = renderWorkSummary(lanes, width, now);
+      if (options.details) return [first, work].filter(Boolean).join('\n');
+      const line = [first, work].filter(Boolean).join(' │ ');
+      return visualLength(line) <= width ? line : first;
     },
   });
 }

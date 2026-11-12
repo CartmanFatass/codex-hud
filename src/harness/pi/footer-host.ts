@@ -10,17 +10,7 @@ export interface FooterTui {
 export interface FooterFrame {
   fg(token: string, text: string): string;
 }
-export interface FooterEditor extends FooterComponent {
-  setWorkingStatusIndicator(indicator: { renderInBorder(width: number): string } | undefined): void;
-  renderTopBorder(width: number, hiddenLineCount: number): string;
-}
 export interface FooterHost {
-  CustomEditor: new (
-    tui: FooterTui,
-    theme: unknown,
-    keybindings: unknown,
-    options: { embedWorkingStatus: boolean }
-  ) => FooterEditor;
   visibleWidth(text: string): number;
   truncateToWidth(text: string, width: number, ellipsis?: string): string;
 }
@@ -62,9 +52,6 @@ export interface FooterContext {
   ui: {
     theme: FooterFrame;
     notify(message: string, type?: 'info' | 'error' | 'warning'): void;
-    setEditorComponent(
-      factory: ((tui: FooterTui, theme: unknown, keybindings: unknown) => FooterComponent) | undefined
-    ): void;
     setFooter(
       factory:
         | ((
@@ -73,11 +60,6 @@ export interface FooterContext {
             data: { getExtensionStatuses(): ReadonlyMap<string, string> }
           ) => FooterComponent)
         | undefined
-    ): void;
-    setWidget(
-      key: string,
-      factory: ((tui: FooterTui) => FooterComponent) | undefined,
-      options?: { placement: 'aboveEditor' }
     ): void;
   };
 }

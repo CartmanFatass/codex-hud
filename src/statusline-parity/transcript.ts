@@ -133,7 +133,10 @@ function reduce(s: State, raw: string, pos: number): void {
       s.effortPos = pos;
     }
   }
-  const blocks = Array.isArray(message.content) ? message.content : [];
+  // Only conversation records carry tool calls: Claude Code's `api-request-blob` lines echo them without a timestamp
+  // and would reset an agent's start to 0 or reopen a finished one.
+  const conversation = e.type === 'assistant' || e.type === 'user';
+  const blocks = conversation && Array.isArray(message.content) ? message.content : [];
   for (const item of blocks) {
     const b = record(item),
       input = record(b.input),
