@@ -9,7 +9,6 @@ Milestone: M3b · AI-THIN
 ## Next
 
 - NATIVE-TREE: native subagents on Home, one lane per main session; the old Agents pane goes.
-- PROGRESS-BOARD: the Project tab's progress board.
 - The owner tries M3b, then the M3b milestone review.
 - Open: `hud_close` cannot stop a working pi job; panel-open notification burst; panel self-close with its caller;
   retiring legacy skills (list features first); to-tickets for the Project tickets section.
@@ -44,7 +43,7 @@ board counts these; update at every landing or decision. -->
 - try · M3b · PANEL-BACKOFF · a quiet job-only panel backs off to 5 s (42d27f06)
 - working · M3b · NATIVE-TREE · native subagents on Home, one lane per main session; old Agents pane goes
 - try · M4 · M4-PROJECT · the Project tab (841cc06f)
-- working · M4 · PROGRESS-BOARD · the Project tab's progress board
+- try · M4 · PROGRESS-BOARD · the Project tab's progress board: ledger bar, chips, slices in flight, drift marks (8716dcc5)
 - todo · M4 · TICKETS · to-tickets in the Project tab's tickets section
 - todo · M3b · M3B-REVIEW · the M3b two-axis milestone review
 - todo · — · PI-STOP · hud_close stops a working pi job
