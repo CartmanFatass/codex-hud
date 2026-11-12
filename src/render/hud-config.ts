@@ -14,7 +14,15 @@ export type GlyphMode = 'glyph' | 'text' | 'both';
 export type MotionMode = 'full' | 'reduced';
 export type ContextMode = 'used' | 'remaining';
 /** The bottom bars (Claude, pi, Codex), all three at once: `│` separators (`line`) or powerline capsules (`p10k`). */
-export type BarStyle = 'line' | 'p10k';
+export const BAR_STYLES = ['line', 'p10k', 'gauge', 'tide', 'micro', 'stacked', 'headline', 'triptych'] as const;
+export type BarStyle = (typeof BAR_STYLES)[number];
+/** A coloured look cannot communicate its idiom without colour. Unknown settings keep today's look. */
+export function barStyleOf(value: unknown): BarStyle {
+  return BAR_STYLES.includes(value as BarStyle) ? (value as BarStyle) : 'line';
+}
+export function activeBarStyle(): BarStyle {
+  return active.theme === 'none' ? 'line' : barStyleOf(active.barStyle);
+}
 /** The bar's fields in their fixed order; `loaded` is the right cluster (MCP, skills, pi's extension words). */
 export const BAR_FIELDS = ['model', 'context', 'project', 'quota', 'notice', 'loaded'] as const;
 export type BarField = (typeof BAR_FIELDS)[number];
@@ -89,7 +97,7 @@ export function resolveDisplayConfig(env: NodeJS.ProcessEnv = process.env): HudD
     look: pick(resolveHudEnv(env, 'HUD_LOOK'), [...LOOKS], 'tab'),
     motion: resolveHudEnv(env, 'HUD_REDUCED_MOTION') === '1' ? 'reduced' : 'full',
     context: pick(resolveHudEnv(env, 'HUD_CONTEXT'), ['used', 'remaining'], 'used'),
-    barStyle: pick(resolveHudEnv(env, 'HUD_BAR_STYLE'), ['line', 'p10k'], 'line'),
+    barStyle: pick(resolveHudEnv(env, 'HUD_BAR_STYLE'), [...BAR_STYLES], 'line'),
     barFields: barFieldsOf(resolveHudEnv(env, 'HUD_BAR_FIELDS')),
     agentColors: 'name',
   };

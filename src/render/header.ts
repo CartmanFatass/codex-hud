@@ -13,6 +13,7 @@ import { DEFAULT_LAYOUT } from '../types.js';
 import type { HudDelegationData } from '../core/link/view-model.js';
 import { colors, visualLength, truncateAnsi, padEnd } from './colors.js';
 import { barFacts } from './layout/bar-modules.js';
+import { activeBarStyle } from './hud-config.js';
 import { renderBar, type FitResult } from './layout/bar-fields.js';
 import { renderSubagentChip } from './subagent-chip.js';
 import { collectActiveTreeLineages, type SubagentTreeEntry } from '../collectors/subagent-tree.js';
@@ -24,7 +25,8 @@ export function fitStatusBar(
   width: number,
   nowMs: number = Date.now()
 ): FitResult {
-  return renderBar(barFacts(data, nowMs), width, nowMs);
+  // The compact tmux pane is fixed at one row; do not alter launcher/resize policy for a display preference.
+  return renderBar(barFacts(data, nowMs), width, nowMs, activeBarStyle() === 'stacked' ? 'line' : activeBarStyle());
 }
 
 function renderStatusHeader(data: HudData & HudDelegationData, layout: LayoutConfig, width: number): string {

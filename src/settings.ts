@@ -3,7 +3,14 @@ import { resolveHudEnv } from './utils/hud-env.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BAR_FIELDS, DEFAULT_BAR_FIELDS, LOOKS, type HudDisplayConfig, type IconMode } from './render/hud-config.js';
+import {
+  BAR_FIELDS,
+  BAR_STYLES,
+  DEFAULT_BAR_FIELDS,
+  LOOKS,
+  type HudDisplayConfig,
+  type IconMode,
+} from './render/hud-config.js';
 import { getHudHome } from './hud-home.js';
 import { defaultCardVisibility, type CardVisibility } from './card-visibility.js';
 import { PREFIX_KEYS, type PrefixKey } from './utils/panel-command.js';
@@ -160,7 +167,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   glyphs: oneOf('glyph', 'text', 'both'),
   motion: oneOf('full', 'reduced'),
   context: oneOf('used', 'remaining'),
-  barStyle: oneOf('line', 'p10k'),
+  barStyle: oneOf(...BAR_STYLES),
   barFields: (value) =>
     Array.isArray(value) && value.every((field) => (BAR_FIELDS as readonly unknown[]).includes(field)),
   agentColors: oneOf('name', 'mark', 'off'),

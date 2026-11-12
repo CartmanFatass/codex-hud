@@ -13,6 +13,7 @@ import { execFile } from 'node:child_process';
 import * as bar from '../../render/layout/bar-fields.js';
 import { shortModel } from '../../render/providers.js';
 import { stripAnsi } from '../../render/colors.js';
+import { activeBarStyle, displayConfig } from '../../render/hud-config.js';
 import { monitorText } from '../../render/monitor-text.js';
 import { formatTokenCount } from '../../render/lines/activity-line.js';
 import type { WorkSignals } from '../../render/work-summary.js';
@@ -563,8 +564,14 @@ export function createP10kFooter(
   /** The one line, fitted to `width`; pi's own width measure has the last word, so the host never gets a wider row. */
   function line(width: number): string {
     if (!view || !stats || !mounted || width <= 0) return '';
-    const text = bar.renderBar(buildFacts(view, pi), width).line;
-    return host.visibleWidth(text) > width ? host.truncateToWidth(text, width, '') : text;
+    const text = bar.renderBar(buildFacts(view, pi), width, Date.now(), noColor() ? 'line' : activeBarStyle()).line;
+    return text
+      .split('\n')
+      .map((row) => {
+        const plain = noColor() ? stripAnsi(row) : row;
+        return host.visibleWidth(plain) > width ? host.truncateToWidth(plain, width, '') : plain;
+      })
+      .join('\n');
   }
   /** Original p10k palette: terminal indices, not fixed RGB; every arrow bridges neighbouring backgrounds. */
   function band(width: number, nowMs: number): string {
@@ -593,6 +600,8 @@ export function createP10kFooter(
     );
     add('cost', totals.priced ? `${totals.estimated ? '~' : ''}$${formatCost(totals.cost)}` : '$-', 179);
     add('time', duration, 187);
+    if (!noColor() && !['line', 'p10k'].includes(activeBarStyle()))
+      return bar.renderThemedRibbon(segments, width, view.getContextUsage()?.percent ?? 0);
     const size = () => 1 + segments.reduce((n, s) => n + host.visibleWidth(s.text) + 3, 0);
     // Drop whole segments from the right; only the final block is ever cut.
     while (segments.length > 1 && size() > width) segments.pop();
@@ -610,7 +619,7 @@ export function createP10kFooter(
     }
     return out + reset;
   }
-  const noColor = () => Boolean(env.NO_COLOR ?? process.env.NO_COLOR);
+  const noColor = () => displayConfig().theme === 'none' || Boolean(env.NO_COLOR ?? process.env.NO_COLOR);
   function statuses(): string {
     if (!enabled('statuses')) return '';
     try {
@@ -677,7 +686,7 @@ export function createP10kFooter(
       return {
         render(width) {
           const text = line(width);
-          return text ? [text] : [];
+          return text ? text.split('\n') : [];
         },
         invalidate() {},
         dispose() {

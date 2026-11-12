@@ -739,7 +739,7 @@ Status glyphs use semantic colors: cyan `▸` working, green `✓` turn complete
 
 ### The bottom bars
 
-Claude's statusline, pi's footer and Codex's tmux bar are one line each, built by one function
+Claude's statusline, pi's footer and Codex's tmux bar are one line each (except the opt-in Stacked look), built by one function
 (`src/render/layout/bar-fields.ts`) from facts each client collects. They show the same fields in the same order, at
 every width, and a field a client cannot supply is left out, never shown as zero:
 
@@ -797,8 +797,25 @@ for them, and a saved key wins over the environment like the other display setti
 
 | Key | Environment | Values |
 |-----|-------------|--------|
-| `barStyle` | `HUD_BAR_STYLE` (`CODEX_HUD_BAR_STYLE`) | `line` (default: `│` separators), or `p10k` (powerline capsules: each field on its own colour with a space either side and a powerline arrow into the next, flat without arrows when `icons` is `text`; theme `none` has no colours, so it stays `line`) |
+| `barStyle` | `HUD_BAR_STYLE` (`CODEX_HUD_BAR_STYLE`) | `line` (default), `p10k`, `gauge`, `tide`, `micro`, `stacked`, `headline`, `triptych`; unknown values fall back to `line`. |
 | `barFields` | `HUD_BAR_FIELDS` (`CODEX_HUD_BAR_FIELDS`, comma separated) | A list from `model, context, project, quota, notice, loaded`; the default is all of them. The order stays fixed; the key only switches fields off. |
+
+The looks (same facts, fuller forms first as width allows):
+
+- `line` — today's look: coloured text with `│` separators; the default is unchanged.
+- `p10k` — powerline capsules, each field on its own colour; flat without arrows with `icons: text`.
+- `gauge` — **Gauge Plates**: context and quota numbers sit on backgrounds filled to their readings; raised event tags.
+- `tide` — **Tide**: the whole row is tinted to the context percentage (teal, amber from 70%, red from 85%); requires `COLORTERM=truecolor` or `24bit` for tints, with tier-coloured numbers and no tint on 256-colour terminals.
+- `micro` — **Micro Glyphs**: eighth-block meters unfold when there is room, one-cell level glyphs when tight.
+- `stacked` — **Stacked**: values over their details in two aligned rows in Claude's statusline and pi's footer; Codex's fixed one-row tmux pane falls back to `line` (no pane-height policy changes).
+- `headline` — **Headline**: warning tags and events lead; model, project and other vitals follow.
+- `triptych` — **Triptych**: identity on the left, notices between leader rules, pressure and loaded counts on the right.
+
+`NO_COLOR` and theme `none` fall back to `line`. The pi editor's top-right ribbon follows the chosen look too;
+under `line` and `p10k` it keeps today's powerline ribbon. Its border remains one row even under Stacked, using
+compact muted fields. Other extensions' statuses keep their place before it. pi's cost stays only in that ribbon,
+not duplicated on the bottom bar. Gauge Plates, Micro Glyphs, Stacked, Headline and Triptych use 256 colours;
+Tide alone adds truecolor tints. No new font is required (block and line glyphs are standard Unicode).
 
 With the `text` icon set (`CODEX_HUD_ICONS=text`) the provider mark in the p10k look is the provider's initials.
 
