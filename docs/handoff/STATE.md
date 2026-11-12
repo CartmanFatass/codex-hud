@@ -34,8 +34,9 @@ Milestone: M4 · Project view
   repository's clean/process filter (and, in pi, core.fsmonitor) run (spec §4) → GIT-SAFE. Advice taken for the
   release: archive inventory + extraction rehearsal (m4-close 06), stale hud-mcp README / historical activation
   text in reference.md / ARCHITECTURE (RELEASE-DOCS, with the real Node floor in engines + install preflight). Advice deferred to the next milestone: job-dir
-  listing and pi session totals grow with history; no deadline on MCP child processes. Then a focused round 8 (Sol
-  + DS) on FIX7, GIT-SAFE and RELEASE-DOCS.
+  listing and pi session totals grow with history; no deadline on MCP child processes. Round 8 (Sol xhigh + DS max on
+  1ec6e0ef) on FIX7, GIT-SAFE and RELEASE-DOCS running; then m4-close 06 (archive via git archive of tracked files
+  minus dev-only dirs, extraction rehearsal in a temp HOME), then stop for the owner before merge/tag.
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
   finding 1); delete that part of the command or keep it?
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
@@ -129,7 +130,8 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX6 · 2d0fed42 · session housekeeping errors no longer hide an open job; watch retry only on the timer; log rate limit
 - done · M4 · M4-REVIEW7 · Sol accept, DS accept (4 optional) · docs/reviews/2026-11-12-m4-review7-*.md
 - try · M4 · M4-FIX7 · 77500308 · round-7 follow-ups; CI runs only existing scripts on Node 24; fixture idents
-- working · M4 · RELEASE-DOCS · shipped docs describe today's HUD; real Node floor (imp)
+- try · M4 · RELEASE-DOCS · 1ec6e0ef · shipped docs describe today's HUD; Node ^22.13.0 || >=24 in engines + install preflight
+- working · M4 · M4-REVIEW8 · release-gate review round (Sol xhigh + DS max on 1ec6e0ef)
 - done · M4 · M4-ARCH · Release: blocked (1: repo Git filters run from the Codex bar and pi footer) · docs/reviews/2026-11-12-m4-architect.md
 - try · M4 · GIT-SAFE · 76e2ba8b · one safe Git policy (src/utils/git-safety.ts) for Claude, Codex, pi footer, Project, Changes; submodule working trees not probed
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
