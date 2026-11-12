@@ -42,3 +42,21 @@ export function providerMark(
     (/localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]/.test(model.baseUrl ?? '') ? PROVIDERS.litellm : null);
   return mark ? { ...mark, glyph: ascii ? mark.ascii : mark.glyph } : null;
 }
+/** Route and vendor words a model id leads with; the provider mark says the vendor, the route says nothing. */
+const VENDOR_WORDS = /^(?:(?:claude|gpt|zai|glm|gemini|deepseek|openai|anthropic|mistral)[-/])+/i;
+/**
+ * A model id in a few columns: the route and vendor words, the date or build and the `[1m]` window tag go, and version
+ * hyphens become dots (`claude-opus-5-5[1m]` is `opus-5.5`, `gpt-6.1-sol` is `6.1-sol`, `zai-glm-5-3-flash` is
+ * `5.3-flash`, `deepseek-v4-1-flash-1017` is `v4.1-flash`). An id it does not know is kept, less those.
+ */
+export function shortModel(id: string | null | undefined): string {
+  const whole = (id ?? '').trim();
+  const slug = whole
+    .replace(/\[[^\]]*\]$/, '')
+    .replace(/^.*\//, '')
+    .replace(/^(?:[a-z]{2}\.)?anthropic\./i, '')
+    .replace(/-v\d+:\d+$/, '')
+    .replace(/-\d{4,8}$/, '')
+    .replace(VENDOR_WORDS, '');
+  return slug.replace(/(\d)-(\d+)(?=-|$)/g, '$1.$2') || whole;
+}

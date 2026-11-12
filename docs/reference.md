@@ -858,36 +858,50 @@ every width, and a field a client cannot supply is left out, never shown as zero
 model effort │ context %/window │ repo branch(dirty) │ quota │ notice zone ········ MCP n  skills n
 ```
 
-- **model**: the model and its effort (`gpt-5.6-astra xhigh`); in the p10k style a provider mark leads it (`text`
-  icons: the provider's initials).
-- **context**: a meter and the percentage against the window (`━━━━────── 40%/400K`, the same on all three; plain below
-  70%, yellow past 70%, red past 85%). The window is where the client compacts when it says so: Claude's `autoCompactWindow` (the model's
+- **model**: the model and its effort, the name short and taken from the model id (`opus-5.5 high`, `5.6-astra xhigh`,
+  `v4.1-flash max`: the route and vendor words, the date or build and the `[1m]` tag go, version hyphens become dots);
+  the provider's mark leads it in both styles (`✻ opus-5.5 high`; `text` icons: the provider's initials).
+- **context**: claude-hud's bar and the percentage against the window (`████░░░░░░ 40%/400K`, the same on all three:
+  ten cells, `█` filled and `░` empty in dim, the filled cells and the percentage green below 70%, yellow from 70%, red
+  from 85%; in the p10k style the capsule has the percentage only). The window is where the client compacts when it
+  says so: Claude's `autoCompactWindow` (the model's
   own entry under `modelSettings`, else the top-level one, in `settings.json` under `$CLAUDE_CONFIG_DIR` or `~/.claude`;
   a `[1m]` suffix on the model id is ignored; used only when `autoCompactEnabled` is not `false` and the value is below
   the model's window) and Codex's `model_auto_compact_token_limit` from `config.toml`; otherwise the model's whole
   window. pi has no such setting. The files are read, never written.
 - **project**: the repository and its branch with its state (`example main*↑2`; pi: `main +1 *1 ?1`).
-- **quota** (off by default): the tightest usage window and its reset (`5h 8% reset 1h19m`), or the credits that carry
-  the account on (`credits 6.8K`); in pi the session's cost (`$0.420`).
+- **quota**: each client shows only its own. Claude: the `rate_limits` in its statusline input; Codex: its account's
+  windows; either as claude-hud draws them, `5h █░░░░░░░░░ 8% (1h19m)` (the bar and percentage bright blue, bright
+  magenta from 75%, red from 90%; the reset in parentheses). The 5 h window always shows; the 7 d window only from 80%
+  (or when it is the only one). Codex's credits that carry the account on show as `credits 6.8K`. pi has no window: its
+  session cost, `$0.420` as pi reports it, `~$0.420` when the list price estimates it. No client reads another's usage.
 - **notice zone**: events only. A subagent or HUD job that started, finished or failed, and a skill that was loaded,
-  each show for three minutes (`◐ started explorer · 20s ago`, `✓ finished explorer · 1m ago`, `✗ explorer failed`,
-  `✦ skill hud-delegate · 30s ago`). Each subagent or job has one item, its latest event, so `finished` replaces
-  `started`. The zone shows two items side by side where there is room for both (each at least in its short form: no
-  model or detail, then no age), the pair advancing every five seconds (`k = floor(now / 5 s) % ceil(n / 2)`, items
-  2k and 2k+1); with room for one it shows one and the current ones take turns; nothing rotates when everything fits.
+  each show for three minutes. A subagent or job is claude-hud's agents line, its name, model and effort and nothing
+  else (`◐ frontend-implementer [sonnet-5.5 · xhigh]` while it starts or runs, `✓ …` finished, `✗ …` failed; the name in
+  magenta, the brackets dim; a part that is unknown is left out, so `[haiku-4.5]` or no brackets at all). The name is
+  the Claude subagent's type, the HUD job's role or the Codex agent's role (else its nickname); the model is the
+  call's (else the result's, else the type's definition) and the effort is the type's definition's `effort:`, read
+  from the frontmatter of `.claude/agents/<type>.md` in the project, else of `agents/<type>.md` in `$CLAUDE_CONFIG_DIR`
+  or `~/.claude` (built-in types have none); a HUD job's are its own model and thinking. A skill load keeps its age
+  (`✦ skill hud-delegate · 30s ago`). Each subagent or job has one item, its latest event, so `✓` replaces `◐`. The
+  zone shows two items side by side where there is room for both (each at least as its name alone), the pair advancing
+  every five seconds (`k = floor(now / 5 s) % ceil(n / 2)`, items 2k and 2k+1); with room for one it shows one and the
+  current ones take turns; nothing rotates when everything fits.
   What needs you (an approval, a HUD job's question) is pinned on the alert colour in the first slot for as long as it
   is open, and the second slot rotates through the events. There is no running line, no tool at work, no turn-done
   notice and no last-event fallback: an idle session leaves the zone empty. A notice shows in full: when it is in the
-  way the whole `loaded` cluster goes first, then the other fields shorten in the order below, and only as a last
-  resort is the notice cut at a word with `…`. Skill loads come from Claude's transcript only; pi and Codex expose none.
+  way the whole `loaded` cluster goes first, then the other fields shorten in the order below, and when that is not
+  enough it is cut at a word with `…` (a bracket goes whole or not at all) before the effort goes. Skill loads come
+  from Claude's transcript only; pi and Codex expose none.
 - **loaded**, at the right edge: MCP servers and skills (`MCP 2  skills 10`), and in pi the other extensions' words.
 
 Gone from the bars: tasks, output rate, cache percentage, time to first token, the turn's clock, active time, turn-done
 notices, hooks, CLAUDE.md and rules counts, sandbox/approval mode and session age. The panel keeps its own band.
 
 Narrow, the line gives up in this order, cheapest loss first, and the model is never dropped: the loaded cluster (to
-counts only, or at once when a notice is showing); the context meter; the effort; the quota's reset; the project's short
-form; the loaded cluster; the project's name only; the quota; the project; the context.
+counts only, or at once when a notice is showing); the context bar (the numbers stay); the quota's reset; the quota's
+bar (`5h 8%` stays); the project's short form; the loaded cluster; a notice is cut at a word; the effort; the
+project's name only; the quota; the project; the context.
 
 Two keys in `$HUD_HOME/hud-settings.json` (or the environment) apply to all three bars at once; there is no settings page
 for them, and a saved key wins over the environment like the other display settings:
@@ -895,7 +909,7 @@ for them, and a saved key wins over the environment like the other display setti
 | Key | Environment | Values |
 |-----|-------------|--------|
 | `barStyle` | `HUD_BAR_STYLE` (`CODEX_HUD_BAR_STYLE`) | `line` (default: `│` separators), or `p10k` (powerline capsules: each field on its own colour with a space either side and a powerline arrow into the next, flat without arrows when `icons` is `text`; theme `none` has no colours, so it stays `line`) |
-| `barFields` | `HUD_BAR_FIELDS` (`CODEX_HUD_BAR_FIELDS`, comma separated) | A list from `model, context, project, quota, notice, loaded`; the default is all but `quota`. The order stays fixed; the key only switches fields off. |
+| `barFields` | `HUD_BAR_FIELDS` (`CODEX_HUD_BAR_FIELDS`, comma separated) | A list from `model, context, project, quota, notice, loaded`; the default is all of them. The order stays fixed; the key only switches fields off. |
 
 With the `text` icon set (`CODEX_HUD_ICONS=text`) the provider mark in the p10k look is the provider's initials.
 

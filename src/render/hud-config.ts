@@ -18,8 +18,8 @@ export type BarStyle = 'line' | 'p10k';
 /** The bar's fields in their fixed order; `loaded` is the right cluster (MCP, skills, pi's extension words). */
 export const BAR_FIELDS = ['model', 'context', 'project', 'quota', 'notice', 'loaded'] as const;
 export type BarField = (typeof BAR_FIELDS)[number];
-/** Shown unless the settings say otherwise: all but the quota, which is switched on by naming it. */
-export const DEFAULT_BAR_FIELDS: readonly BarField[] = BAR_FIELDS.filter((field) => field !== 'quota');
+/** Shown unless the settings say otherwise: all of them. */
+export const DEFAULT_BAR_FIELDS: readonly BarField[] = BAR_FIELDS;
 /** The panel's buttons and titles: Unicode icons, Nerd Font icons, emoji for the panes, or words alone. */
 export type IconMode = 'unicode' | 'nerd' | 'emoji' | 'text';
 /**
@@ -40,7 +40,7 @@ export interface HudDisplayConfig {
   motion: MotionMode;
   context: ContextMode;
   barStyle: BarStyle;
-  /** Which bar fields show (all but the quota by default); the order is fixed. */
+  /** Which bar fields show (all by default); the order is fixed. */
   barFields: BarField[];
   /**
    * Where an agent's colour shows (its direction's on the timeline and the

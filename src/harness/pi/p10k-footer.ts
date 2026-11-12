@@ -13,6 +13,7 @@
 
 import { execFile } from 'node:child_process';
 import * as bar from '../../render/layout/bar-fields.js';
+import { shortModel } from '../../render/providers.js';
 import type { WorkSignals } from '../../render/work-summary.js';
 import { applyBarSettings } from '../../settings-runtime.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
@@ -90,6 +91,8 @@ export function createP10kFooter(
     cost: number;
     /** False while no usage in the session could be priced at all. */
     priced: boolean;
+    /** True when some of the cost is our list price, not what the provider reported. */
+    estimated: boolean;
   }
 
   /** The usage block pi attaches to assistant messages, tool results and summaries. */
@@ -148,19 +151,19 @@ export function createP10kFooter(
     return match === null ? null : PRICES_PER_M[match]!;
   }
 
-  /** Provider-reported cost when there is one, else our own list price. */
-  function entryCost(usage: EntryUsage, modelId: string | undefined): number | null {
+  /** Provider-reported cost when there is one, else our own list price (`estimated`). */
+  function entryCost(usage: EntryUsage, modelId: string | undefined): { cost: number; estimated: boolean } | null {
     const reported = usage.cost?.total;
-    if (typeof reported === 'number' && reported > 0) return reported;
+    if (typeof reported === 'number' && reported > 0) return { cost: reported, estimated: false };
     const price = priceFor(modelId);
     if (!price) return null;
     const rate = (value: number | undefined) => (value ?? 0) / 1_000_000;
-    return (
+    const cost =
       usage.input * rate(price.input) +
       usage.output * rate(price.output) +
       usage.cacheRead * rate(price.cacheRead ?? price.input) +
-      usage.cacheWrite * rate(price.input)
-    );
+      usage.cacheWrite * rate(price.input);
+    return { cost, estimated: true };
   }
 
   interface Stats {
@@ -171,7 +174,15 @@ export function createP10kFooter(
 
   /** Cumulative usage over the whole session, rescanned only when the leaf moves. */
   function computeStats(ctx: FooterContext): Stats {
-    const totals: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, priced: false };
+    const totals: UsageTotals = {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      cost: 0,
+      priced: false,
+      estimated: false,
+    };
     // Entries after a message inherit its model: `usage` entries and summaries
     // carry no model of their own.
     let modelId: string | undefined = ctx.model?.id;
@@ -193,10 +204,11 @@ export function createP10kFooter(
       totals.output += usage.output;
       totals.cacheRead += usage.cacheRead;
       totals.cacheWrite += usage.cacheWrite;
-      const cost = entryCost(usage, modelId);
-      if (cost !== null) {
-        totals.cost += cost;
+      const priced = entryCost(usage, modelId);
+      if (priced !== null) {
+        totals.cost += priced.cost;
         totals.priced = true;
+        totals.estimated ||= priced.estimated;
       }
     }
     return {
@@ -210,11 +222,6 @@ export function createP10kFooter(
     const trimmed = path.replace(/\/+$/, '');
     const index = trimmed.lastIndexOf('/');
     return index < 0 ? trimmed : trimmed.slice(index + 1);
-  }
-
-  /** `DeepSeek V4.1 Flash 1017 (Mistral)` → `DeepSeek V4.1 Flash 1017`. */
-  function compactModelName(name: string): string {
-    return name.replace(/\s*\([^)]*\)\s*$/, '').trim() || name;
   }
 
   // ─── Git (branch + dirty counts in one cached call) ─────────────────────────
@@ -450,7 +457,7 @@ export function createP10kFooter(
     return {
       model: model
         ? {
-            name: compactModelName(model.name || model.id),
+            name: shortModel(model.id) || model.name || model.id,
             effort: enabled('thinking') && thinking && thinking !== 'off' ? thinking : undefined,
             id: model.id,
             provider: model.provider,
@@ -467,8 +474,12 @@ export function createP10kFooter(
         marks: marks.join(''),
         dirty: marks.length > 0,
       },
-      // pi has no usage window: what the provider reported, else our list price for the models the session ran on.
-      quota: enabled('cost') && stats.totals.priced ? { text: `$${formatCost(stats.totals.cost)}` } : undefined,
+      // pi has no usage window: what the provider reported (`$0.420`), else our list price for the models the session ran
+      // on (`~$0.420`).
+      quota:
+        enabled('cost') && stats.totals.priced
+          ? { text: `${stats.totals.estimated ? '~' : ''}$${formatCost(stats.totals.cost)}` }
+          : undefined,
       needs: work.needs,
       events: work.events,
       loaded: {

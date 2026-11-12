@@ -15,12 +15,14 @@ import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLen
 import { formatTokenCount } from '../lines/activity-line.js';
 import { displayConfig, iconSet, type BarField } from '../hud-config.js';
 import { age } from '../monitor-labels.js';
-import { providerMark } from '../providers.js';
+import { providerMark, shortModel } from '../providers.js';
 
 /** How long an event stays in the notice zone; the items it cannot show together take turns every `ROTATE_MS`. */
 export const NOTICE_MS = 180_000;
 const ROTATE_MS = 5000;
 const CELLS = 10;
+/** The weekly window shows beside the 5 h one from here on (or alone, when it is the only one). */
+const WEEKLY_AT = 80;
 
 export type VariantLevel = 'full' | 'short' | 'min';
 export interface BarSegment {
@@ -49,10 +51,12 @@ type Role =
   | 'warn'
   | 'bad'
   | 'info'
-  | 'tick'
-  | 'track'
+  | 'agent'
+  | 'usage'
+  | 'usageHigh'
   | 'lead';
-export type Form = ReadonlyArray<readonly [text: string, role?: Role]>;
+/** A piece of text and its role; `bar` pieces are a meter's cells, which the capsule look leaves out. */
+export type Form = ReadonlyArray<readonly [text: string, role?: Role, bar?: true]>;
 
 /** Something that happened: a subagent or job started, finished or failed, a skill was loaded. */
 export interface BarEvent {
@@ -61,6 +65,8 @@ export interface BarEvent {
   at: number;
   /** The words when the zone is short of room (no model, no detail). */
   short?: string;
+  /** An agent's name, the start of `text`: such an item is the name in the agent colour and the rest dim, with no age. */
+  name?: string;
   /** Who it is about: only its latest event shows, so `finished` replaces `started`. Defaults to the text. */
   key?: string;
 }
@@ -92,23 +98,28 @@ export function gitSync(ahead: number, behind: number): string {
   return [ahead > 0 ? `${icons.ahead}${ahead}` : '', behind > 0 ? `${icons.behind}${behind}` : ''].join('');
 }
 
-/** A subagent's or job's event, in the words every client uses. */
+/** A subagent's or job's event, as claude-hud's agents line has it: `frontend-implementer [sonnet-5.5 · xhigh]`. */
 export function agentEvent(
   kind: 'started' | 'done' | 'failed',
-  who: { id?: string; name: string; model?: string; detail?: string },
+  who: { id?: string; name: string; model?: string; effort?: string },
   at: number
 ): BarEvent {
-  const short = `${{ started: 'started', done: 'finished', failed: 'failed' }[kind]} ${who.name}`;
+  const meta = [shortModel(who.model), who.effort].filter(Boolean).join(' · ');
   return {
     kind,
     at,
-    text: `${short}${who.model ? ` [${who.model}]` : ''}${who.detail ? `: ${who.detail}` : ''}`,
-    short,
+    text: `${who.name}${meta ? ` [${meta}]` : ''}`,
+    short: who.name,
+    name: who.name,
     key: who.id ?? who.name,
   };
 }
 
 // ─── Painting ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** claude-hud's own inks, plain ANSI so they follow the terminal's colours; no colour at all with theme `none`. */
+const plain = (code: number) => (text: string) =>
+  displayConfig().theme === 'none' ? text : `\x1b[${code}m${text}\x1b[0m`;
 
 const INK: Record<Role, (text: string) => string> = {
   dim: colors.dim,
@@ -120,14 +131,27 @@ const INK: Record<Role, (text: string) => string> = {
   warn: theme.warning,
   bad: theme.error,
   info: theme.info,
-  tick: theme.tick,
-  track: theme.track,
+  agent: plain(35),
+  usage: plain(94),
+  usageHigh: plain(95),
   lead: (text) => text,
   alert: theme.alert,
 };
 
-type Level = 'value' | 'warn' | 'bad';
-const level = (percent: number): Level => (percent >= METER_DANGER ? 'bad' : percent >= METER_WARN ? 'warn' : 'value');
+/** claude-hud's colours: the context is green, yellow from 70 and red from 85; the quota blue, magenta from 75, red from 90. */
+const contextRole = (percent: number): Role =>
+  percent >= METER_DANGER ? 'bad' : percent >= METER_WARN ? 'warn' : 'ok';
+const quotaRole = (percent: number): Role => (percent >= 90 ? 'bad' : percent >= 75 ? 'usageHigh' : 'usage');
+
+/** claude-hud's bar: `█` for the filled share in the reading's colour, `░` for the rest, dim; then a space. */
+const cells = (percent: number, role: Role): Form => {
+  const filled = Math.round((Math.min(100, Math.max(0, percent)) / 100) * CELLS);
+  return [
+    ['█'.repeat(filled), role, true],
+    ['░'.repeat(CELLS - filled), 'dim', true],
+    [' ', undefined, true],
+  ];
+};
 
 /** p10k: ANSI indices from the old pi footer, light backgrounds with dark text; (background, text). */
 type Ink = readonly [bg: number, fg: number];
@@ -160,8 +184,9 @@ interface Seg {
 
 const text = (form: Form | undefined): string => (form ?? []).map(([part]) => part).join('');
 
-function modelSeg(model: NonNullable<BarFacts['model']>, p10k: boolean, ascii: boolean): Seg {
-  const mark = p10k ? providerMark(model, ascii) : null;
+function modelSeg(model: NonNullable<BarFacts['model']>, ascii: boolean): Seg {
+  // The vendor's mark leads the short name in both looks (owner, 2026-11-11): `✻ opus-5.5 high`.
+  const mark = providerMark(model, ascii);
   const lead: Form = mark ? [[`${mark.glyph} `, 'lead']] : [];
   const name: Form = [...lead, [model.name, 'name']];
   return {
@@ -174,20 +199,13 @@ function modelSeg(model: NonNullable<BarFacts['model']>, p10k: boolean, ascii: b
 }
 
 function contextSeg(c: NonNullable<BarFacts['context']>): Seg {
-  const role = level(c.percent);
+  const role = contextRole(c.percent);
   const numbers: Form = [
     [c.shown, role],
     ...(c.window > 0 ? ([[`/${formatTokenCount(c.window)}`, 'dim']] as Form) : []),
   ];
-  const halves = c.percent > 0 ? Math.max(1, Math.round((c.percent / 100) * CELLS * 2)) : 0;
-  const fill = '━'.repeat(Math.floor(halves / 2)) + (halves % 2 ? '╸' : '');
-  const meter: Form = [
-    [fill, role === 'value' ? 'tick' : role],
-    ['─'.repeat(Math.max(0, CELLS - visualLength(fill))), 'track'],
-    [' ', 'track'],
-  ];
-  const ink = role === 'value' ? P10K.context : P10K[role];
-  return { id: 'context', forms: [[...meter, ...numbers], numbers], ink, at: 0 };
+  const ink = role === 'ok' ? P10K.context : P10K[role as 'warn' | 'bad'];
+  return { id: 'context', forms: [[...cells(c.percent, role), ...numbers], numbers], ink, at: 0 };
 }
 
 function projectSeg(p: NonNullable<BarFacts['project']>): Seg {
@@ -204,25 +222,25 @@ function projectSeg(p: NonNullable<BarFacts['project']>): Seg {
 function quotaSeg(q: NonNullable<BarFacts['quota']>): Seg {
   if ('text' in q) {
     const form: Form = [...(q.label ? ([[q.label, 'dim'], [' ']] as Form) : []), [q.text, 'value']];
-    return { id: 'quota', forms: [form, form], ink: P10K.quota, at: 0 };
+    // The same three times: the segment goes only at the ladder's last quota step, as the windows' does.
+    return { id: 'quota', forms: [form, form, form], ink: P10K.quota, at: 0 };
   }
-  const reading = (reset: boolean): Form =>
-    q.windows.flatMap((w, i) => [
+  // The 5 h window always; the weekly one only from 80 % (the first window shows whatever it is).
+  const shown = q.windows.filter((w, i) => !i || w.percent >= WEEKLY_AT);
+  const reading = (bars: boolean, reset: boolean): Form =>
+    shown.flatMap((w, i) => [
       ...(i ? ([['  ']] as Form) : []),
       ...(w.label ? ([[w.label, 'dim'], [' ']] as Form) : []),
-      [`${w.percent}%`, level(w.percent)] as const,
-      ...(reset && w.reset
-        ? ([
-            [' reset ', 'dim'],
-            [w.reset, 'value'],
-          ] as Form)
-        : []),
+      ...(bars ? cells(w.percent, quotaRole(w.percent)) : []),
+      [`${w.percent}%`, quotaRole(w.percent)] as const,
+      ...(reset && w.reset ? ([[` (${w.reset})`, 'value']] as Form) : []),
     ]);
-  const worst = level(Math.max(...q.windows.map((w) => w.percent)));
+  const worst = quotaRole(Math.max(...shown.map((w) => w.percent)));
   return {
     id: 'quota',
-    forms: [reading(true), reading(false)],
-    ink: worst === 'value' ? P10K.quota : P10K[worst],
+    // The reset goes first, then the bar.
+    forms: [reading(true, true), reading(true, false), reading(false, false)],
+    ink: worst === 'usage' ? P10K.quota : P10K[worst === 'usageHigh' ? 'warn' : (worst as 'bad')],
     at: 0,
   };
 }
@@ -252,6 +270,8 @@ interface Notice {
   words: string;
   /** The words with no model and no detail. */
   short: string;
+  /** An agent's name, the start of `words`. */
+  name?: string;
   tail: string;
 }
 
@@ -272,7 +292,9 @@ function noticeOf(event: BarEvent, now: number): Notice {
     tone,
     words: clean(event.text),
     short: clean(event.short ?? event.text),
-    tail: ` · ${age(new Date(event.at), now)} ago`,
+    name: event.name && clean(event.name),
+    // An agent's item says who, not when.
+    tail: event.name === undefined ? ` · ${age(new Date(event.at), now)} ago` : '',
   };
 }
 
@@ -316,14 +338,23 @@ function cutWords(words: string, room: number): string {
  */
 function noticeSeg(notice: Notice, room: number, pad: string, form = 0): Seg | null {
   const tail = form > 1 ? '' : notice.tail;
-  const words = cutWords(form ? notice.short : notice.words, room - visualLength(`${notice.mark} ${tail}${pad}${pad}`));
+  const space = room - visualLength(`${notice.mark} ${tail}${pad}${pad}`);
+  // An agent's `[model · effort]` stays whole or goes: it is never cut.
+  const whole = !form && (!notice.name || visualLength(notice.words) <= space);
+  const words = cutWords(whole ? notice.words : notice.short, space);
   if (!words) return null;
   const alert = notice.tone === 'alert';
+  const named = Math.min(words.length, notice.name?.length ?? 0);
   const parts: Form = alert
     ? [[`${pad}${notice.mark} ${words}${pad}`, pad ? 'alert' : 'warn']]
     : [
         [`${notice.mark} `, notice.tone],
-        [words, 'value'],
+        ...(notice.name
+          ? ([
+              [words.slice(0, named), 'agent'],
+              [words.slice(named), 'dim'],
+            ] as Form)
+          : ([[words, 'value']] as Form)),
         [tail, 'dim'],
       ];
   return { id: 'notice', forms: [parts], ink: P10K[notice.tone], at: 0 };
@@ -346,14 +377,20 @@ function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
 
 // ─── Fit and layout ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Who gives up the next form when the line is too wide, cheapest loss first; the model alone is never dropped. */
+/**
+ * Who gives up the next form when the line is too wide, cheapest loss first. The effort goes after the context bar, the
+ * quota's reset and bar and the project's short form, and a notice is cut at a word (`notice`) before it goes; the
+ * model alone is never dropped.
+ */
 const LADDER: BarField[] = [
   'loaded',
   'context',
-  'model',
+  'quota',
   'quota',
   'project',
   'loaded',
+  'notice',
+  'model',
   'project',
   'quota',
   'project',
@@ -376,7 +413,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
   // An alert is a badge on its own colour, with a space inside it; capsules and plain text have none.
   const pad = p10k || themeName === 'none' ? '' : ' ';
   const left = [
-    on.has('model') && facts.model ? modelSeg(facts.model, p10k, ascii) : null,
+    on.has('model') && facts.model ? modelSeg(facts.model, ascii) : null,
     on.has('context') && facts.context ? contextSeg(facts.context) : null,
     on.has('project') && facts.project?.name ? projectSeg(facts.project) : null,
     on.has('quota') && facts.quota ? quotaSeg(facts.quota) : null,
@@ -386,9 +423,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
   const all = right ? [...left, right] : left;
   // The capsule look draws a segment's text between two spaces, on its own background, and nothing between capsules.
   const form = (seg: Seg): Form =>
-    p10k
-      ? (seg.forms[seg.at] ?? []).filter(([, role]) => role !== 'tick' && role !== 'track')
-      : (seg.forms[seg.at] ?? []);
+    p10k ? (seg.forms[seg.at] ?? []).filter(([, , bar]) => !bar) : (seg.forms[seg.at] ?? []);
   const alive = (seg: Seg) => text(form(seg)).length > 0;
   const size = (seg: Seg) => visualLength(text(form(seg)));
   const leftWidth = (sizes: number[]) =>
@@ -408,6 +443,11 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
   const total = () => leftWidth([...fields().map(size), ...wanted]) + gap() + rightWidth();
   for (const id of LADDER) {
     if (total() <= width || wide()) break;
+    // The notice gives way here, before the effort: cut at a word to what room is left, if a word fits.
+    if (id === 'notice') {
+      if (lone && noticeSeg(lone, room(1), pad)) break;
+      continue;
+    }
     const seg = all.find((candidate) => candidate.id === id);
     if (seg && seg.at < seg.forms.length) seg.at = zone && id === 'loaded' ? seg.forms.length : seg.at + 1;
   }
@@ -433,6 +473,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now()): Fit
     form(seg)
       .map(([part, role]) => {
         if (p10k) return role === 'lead' && seg.lead !== undefined ? `${fg(seg.lead)}${part}${fg(seg.ink[1])}` : part;
+        if (role === 'lead' && seg.lead !== undefined && themeName !== 'none') return `${fg(seg.lead)}${part}${RESET}`;
         return role ? INK[role](part) : part;
       })
       .join('');

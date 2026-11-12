@@ -40,13 +40,20 @@ export class BarNoticeTracker {
 
     const agents = topAgents(data);
     for (const node of agents) {
+      // Its role, else its nickname, as the type of a Claude subagent is named.
+      const who = {
+        subject: node.role || node.nickname || node.name,
+        id: node.id,
+        model: node.model,
+        effort: node.effort,
+      };
       const before = this.agents.get(node.id);
       // Dated by its own start: an agent the tree only now lists is old news to the bar.
       if (!fresh && before === undefined && (node.status === 'running' || node.status === 'starting'))
-        found.push({ kind: 'agent-started', subject: node.name, at: node.startedAt ?? at });
+        found.push({ kind: 'agent-started', ...who, at: node.startedAt ?? at });
       if (!fresh && (before === 'running' || before === 'starting')) {
-        if (node.status === 'completed') found.push({ kind: 'agent-done', subject: node.name, at });
-        else if (node.status === 'error') found.push({ kind: 'agent-failed', subject: node.name, at });
+        if (node.status === 'completed') found.push({ kind: 'agent-done', ...who, at });
+        else if (node.status === 'error') found.push({ kind: 'agent-failed', ...who, at });
       }
     }
     this.agents = new Map(agents.map((node) => [node.id, node.status]));

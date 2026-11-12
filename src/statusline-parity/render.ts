@@ -2,6 +2,7 @@
  * bar builder (`render/layout/bar-fields.ts`). Pure: all disk/process evidence and clocks are supplied. */
 import { monitorText } from '../render/monitor-text.js';
 import * as bar from '../render/layout/bar-fields.js';
+import { shortModel } from '../render/providers.js';
 import type { WorkSignals } from '../render/work-summary.js';
 import { record } from './storage.js';
 import type { ParitySettings } from './settings.js';
@@ -30,7 +31,7 @@ function contextReading(value: unknown, compact: number | null): { percent: numb
     ? { percent: Math.min(100, Math.round((percent * size) / compact)), window: compact }
     : { percent, window: size };
 }
-/** The 5 h window, and the weekly one once it passes 80 % (or when it is the only one), as claude-hud showed them. */
+/** The 5 h and the weekly window as Claude reports them; the bar shows the weekly one only from 80 % (`bar-fields.ts`). */
 function usageWindows(value: Record<string, unknown>, now: number) {
   const limits = record(value.rate_limits);
   const window = (label: string, w: Record<string, unknown>) => {
@@ -42,26 +43,19 @@ function usageWindows(value: Record<string, unknown>, now: number) {
   };
   const [five] = window('5h', record(limits.five_hour)),
     [seven] = window('7d', record(limits.seven_day));
-  return [five, seven && (!five || seven.percent >= 80) ? seven : undefined].filter((w) => w !== undefined);
-}
-/** `sonnet-4.5` from `claude-sonnet-4-5-20250929`; an id this does not know is shown as it is. */
-function agentModel(model: string | undefined): string {
-  if (!model) return '';
-  const candidate = model.replace(/\[[^\]]*\]$/, '');
-  const match = /^claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?(?:-\d{8})?$/i.exec(candidate);
-  if (match) return `${match[1].toLowerCase()}-${match[2]}${match[3] ? '.' + match[3] : ''}`;
-  const legacy = /^claude-(\d+)(?:-(\d+))?-(opus|sonnet|haiku)(?:-\d{8})?$/i.exec(candidate);
-  return legacy ? `${legacy[3].toLowerCase()}-${legacy[1]}${legacy[2] ? '.' + legacy[2] : ''}` : safe(model);
+  return [five, seven].filter((w) => w !== undefined);
 }
 /** What the transcript says just happened: a subagent started or finished, a skill was loaded. */
-function events(t: TranscriptView, showAgents: boolean, showSkills: boolean): bar.BarEvent[] {
+function events(t: TranscriptView, defs: AgentDefinitions, showAgents: boolean, showSkills: boolean): bar.BarEvent[] {
   const found: bar.BarEvent[] = [];
   for (const a of showAgents ? t.agents : []) {
+    const def = defs[a.type];
+    // The call's model, else the result's, else the definition's; the effort is the definition's.
     const who = {
       id: a.id,
       name: safe(a.type, 24) || 'agent',
-      model: agentModel(a.model),
-      detail: safe(a.description, 200),
+      model: a.model || def?.model,
+      effort: def?.effort,
     };
     found.push(bar.agentEvent('started', who, a.start));
     if (a.end !== undefined) found.push(bar.agentEvent('done', who, a.end));
@@ -70,12 +64,16 @@ function events(t: TranscriptView, showAgents: boolean, showSkills: boolean): ba
     found.push({ kind: 'skill', at: load.at, text: `skill ${load.name}`, key: `skill ${load.name}` });
   return found;
 }
+/** What a subagent type's definition (`agents/<type>.md`) says about its model and effort, by type. */
+export type AgentDefinitions = Record<string, { model?: string; effort?: string }>;
 export interface ParityEvidence {
   transcript: TranscriptView;
   counts: ConfigCounts;
   git: GitView | null;
   /** Where Claude compacts on its own, in tokens, from its settings; null when it does not say. */
   compact?: number | null;
+  /** The recent subagents' definitions, read by the collector; a type with none (a built-in one) is not in it. */
+  definitions?: AgentDefinitions;
 }
 export function renderParity(
   input: unknown,
@@ -110,7 +108,7 @@ export function renderParity(
       : usageWindows(v, now);
   const facts: bar.BarFacts = {
     model: {
-      name: model,
+      name: shortModel(safe(m.id)) || model,
       id: safe(m.id) || model,
       effort: d.showEffortLevel && effort ? (t.ultracode ? `ultracode(${effort})` : effort) : undefined,
     },
@@ -125,7 +123,7 @@ export function renderParity(
     },
     quota: windows.length ? { windows } : undefined,
     needs: work.needs,
-    events: [...events(t, d.showAgents, d.showSkills), ...work.events],
+    events: [...events(t, evidence.definitions ?? {}, d.showAgents, d.showSkills), ...work.events],
     loaded: {
       counts: [
         ['MCP', c.mcpCount],

@@ -9,11 +9,12 @@ import type { BarNotice, HudData } from '../../types.js';
 import { icons } from '../colors.js';
 import { alertParts, collectAttention } from '../attention.js';
 import { formatCredits, quotaState, readQuotaWindows } from '../quota.js';
+import { shortModel } from '../providers.js';
 import { agentEvent, gitSync, span, type BarEvent, type BarFacts } from './bar-fields.js';
 
 function eventOf(notice: BarNotice): BarEvent {
   const at = notice.at.getTime();
-  const who = { name: notice.subject ?? 'agent' };
+  const who = { id: notice.id, name: notice.subject ?? 'agent', model: notice.model, effort: notice.effort };
   switch (notice.kind) {
     case 'agent-started':
       return agentEvent('started', who, at);
@@ -40,12 +41,10 @@ export function barFacts(data: HudData, nowMs: number): BarFacts {
   const windows = readQuotaWindows(data.rateLimits, nowMs);
   const tightest = windows.length ? windows.reduce((a, b) => (b.percent > a.percent ? b : a)) : null;
   const credits = tightest && tightest.percent >= 100 ? quotaState(data.rateLimits, windows).credits : null;
-  const reset =
-    tightest?.resetsAt && !tightest.resetDue ? span(Math.ceil((tightest.resetsAt.getTime() - nowMs) / 60000)) : '';
   return {
     model: model
       ? {
-          name: model,
+          name: shortModel(model),
           effort: data.session?.reasoningEffort ?? data.config.model_reasoning_effort,
           id: model,
           provider: data.session?.modelProvider ?? data.config.model_provider,
@@ -62,7 +61,13 @@ export function barFacts(data: HudData, nowMs: number): BarFacts {
       ? undefined
       : credits
         ? { label: 'credits', text: formatCredits(credits) }
-        : { windows: [{ label: tightest.label, percent: tightest.percent, reset }] },
+        : {
+            windows: windows.map((w) => ({
+              label: w.label,
+              percent: w.percent,
+              reset: w.resetsAt && !w.resetDue ? span(Math.ceil((w.resetsAt.getTime() - nowMs) / 60000)) : '',
+            })),
+          },
     needs: [
       ...alertParts(
         collectAttention(data, nowMs).filter((item) => item.kind === 'approval'),

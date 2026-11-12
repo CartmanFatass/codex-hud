@@ -27,7 +27,12 @@ export function workSignals(lanes: readonly WorkLane[], now: number): WorkSignal
   const asking = workers.filter((worker) => wordOf(worker, now) === 'needs you').length;
   const events: BarEvent[] = [];
   for (const worker of workers) {
-    const who = { id: worker.id, name: worker.role || 'job', detail: worker.task };
+    const who = {
+      id: worker.id,
+      name: worker.role || 'job',
+      model: worker.model ?? undefined,
+      effort: worker.effort ?? undefined,
+    };
     if (worker.startedAt !== null && now - worker.startedAt < NOTICE_MS)
       events.push(agentEvent('started', who, worker.startedAt));
     if (worker.settledAt !== null && now - worker.settledAt < NOTICE_MS)

@@ -14,7 +14,8 @@ import { fitStatusBar } from '../../src/render/header.js';
 import { setDisplayConfig } from '../../src/render/hud-config.js';
 import { stripAnsi, visualWidth } from '../../src/render/colors.js';
 import { renderParity } from '../../src/statusline-parity/render.js';
-import { compactWindow } from '../../src/statusline-parity/collect.js';
+import { agentDefinitions, compactWindow } from '../../src/statusline-parity/collect.js';
+import { shortModel } from '../../src/render/providers.js';
 import { paritySettings } from '../../src/statusline-parity/settings.js';
 import { DEFAULT_LAYOUT } from '../../src/types.js';
 import { makeHudData } from '../fixtures/hud-data.js';
@@ -22,7 +23,10 @@ import { NOW, OWNER_CONFIG } from '../fixtures/claude-hud-parity/fixture.js';
 import { parityFixture, FOOTER_NOW } from '../fixtures/pi-footer.js';
 
 const noColour = (t: test.TestContext) => {
-  const previous = setDisplayConfig({ theme: 'none', barFields: ['model', 'context', 'project', 'notice', 'loaded'] });
+  const previous = setDisplayConfig({
+    theme: 'none',
+    barFields: ['model', 'context', 'project', 'quota', 'notice', 'loaded'],
+  });
   t.after(() => setDisplayConfig(previous));
 };
 
@@ -50,12 +54,12 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
     { transcript, counts: { mcpCount: 4 }, git: { branch: 'main', dirty: true, ahead: 0, behind: 0 } },
     NOW
   );
-  const f = parityFixture({ name: 'main', width: 120 });
+  const f = parityFixture({ name: 'main', width: 120, settings: { band: { cost: false } } });
   t.after(() => f.dispose());
   f.statuses.clear();
   f.controller.setWork({
     needs: [],
-    events: [agentEvent('started', { name: 'Explore', detail: 'Audit' }, FOOTER_NOW - 20_000)],
+    events: [agentEvent('started', { name: 'Explore' }, FOOTER_NOW - 20_000)],
   });
   const codex = fitStatusBar(
     makeHudData({
@@ -66,10 +70,10 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
     120,
     FOOTER_NOW
   ).line;
-  // model [effort] │ context (its meter is the first thing to go) │ repo branch │ notice, then what was loaded (which
-  // gives way to a long notice).
+  // model [effort] │ context (its meter is the first thing to go) │ repo branch │ [quota] │ notice (an agent's name, no
+  // age), then what was loaded (which gives way to a long notice). pi's session cost is switched off here.
   const shape =
-    /^[^│]+ │ (?:[━╸─]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ ◐ started Explore[^·]*· \d+s ago(?: +MCP \d+  skills \d+)?$/;
+    /^[^│]+ │ (?:[█░]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ (?:\d+[hd] (?:[█░]+ )?\d+%[^│]* │ )?◐ Explore(?: +MCP \d+  skills \d+)?$/;
   for (const row of [claude, f.render()[0], codex]) {
     assert.match(stripAnsi(row), shape);
     assert.ok(visualWidth(row) <= 120 && !row.includes('\n'), 'one row that fits');
@@ -162,6 +166,7 @@ test('context is measured against where Claude and Codex compact, when their set
     model: { id: 'claude-opus-5-5[1m]', display_name: 'Opus' },
     cwd: '/p',
     context_window: { used_percentage: 16, context_window_size: 1_000_000 },
+    rate_limits: { five_hour: { used_percentage: 8, resets_at: (NOW + 79 * 60_000) / 1000 } },
   };
   const transcript = { agents: [], todos: [], skills: [], ultracode: false, bytesRead: 0, pendingHistory: false };
   const draw = (compact: number | null) =>
@@ -178,4 +183,79 @@ test('context is measured against where Claude and Codex compact, when their set
   assert.match(draw(null), /16%\/1M/);
   const data = makeHudData({ config: { ...makeHudData().config, model_auto_compact_token_limit: 150_000 } });
   assert.match(stripAnsi(fitStatusBar(data, DEFAULT_LAYOUT, 120, FOOTER_NOW).line), /\/150K/);
+});
+
+test('context and quota bars as claude-hud draws them: cells, colours, the weekly window from 80 %, the shrink order', (t) => {
+  noColour(t);
+  const win = (label: string, percent: number, reset = '') => ({ label, percent, reset });
+  const draw = (facts: BarFacts, width = 160) => renderBar({ model: { name: 'M' }, ...facts }, width, NOW).line;
+  const context = { percent: 40, shown: '40%', window: 400_000 };
+  const quota = { windows: [win('5h', 8, '1h19m')] };
+  assert.equal(stripAnsi(draw({ context })), 'M │ ████░░░░░░ 40%/400K');
+  assert.equal(stripAnsi(draw({ quota })), 'M │ 5h █░░░░░░░░░ 8% (1h19m)');
+  // The weekly window shows beside the 5 h one from 80 %, and alone when it is the only one.
+  const both = (n: number) => stripAnsi(draw({ quota: { windows: [...quota.windows, win('7d', n, '2d')] } }));
+  assert.doesNotMatch(both(79), /7d/);
+  assert.match(both(80), /5h █░░░░░░░░░ 8% \(1h19m\)  7d ████████░░ 80% \(2d\)$/);
+  assert.equal(stripAnsi(draw({ quota: { windows: [win('7d', 31, '2d')] } })), 'M │ 7d ███░░░░░░░ 31% (2d)');
+  // Narrower: the context's bar goes, then the quota's reset, then its bar (leaving `5h 8%`), then the segments.
+  const shrunk = [39, 31, 20, 12].map((w) => stripAnsi(draw({ context, quota }, w)).replace('M │ 40%/400K', '·'));
+  assert.deepEqual(shrunk, ['· │ 5h █░░░░░░░░░ 8% (1h19m)', '· │ 5h █░░░░░░░░░ 8%', '· │ 5h 8%', '·']);
+  // Colours (the terminal theme): the context green; the quota bright magenta from 75 (bright blue below, red from 90).
+  setDisplayConfig({ theme: 'terminal' });
+  const has = (facts: BarFacts, ...codes: string[]) => codes.every((code) => draw(facts).includes(code));
+  assert.ok(has({ context }, '\x1b[32m████\x1b[0m', '\x1b[32m40%\x1b[0m'));
+  assert.ok(has({ quota: { windows: [win('5h', 80)] } }, '\x1b[95m████████\x1b[0m', '\x1b[95m80%\x1b[0m'));
+});
+
+test('subagent notices: name, model, effort from the agent definition; the main effort outlives a long notice', (t) => {
+  noColour(t);
+  const dir = fs.mkdtempSync(join(tmpdir(), 'bar-agents-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(join(dir, 'agents'));
+  const definition = '---\nname: frontend-implementer\nmodel: sonnet\neffort: xhigh\n---\nBody\n';
+  fs.writeFileSync(join(dir, 'agents', 'frontend-implementer.md'), definition);
+  const base = { description: 'd', startPos: 1, background: false };
+  const agents = [
+    { ...base, id: 'a', type: 'frontend-implementer', model: 'claude-sonnet-5-5', start: NOW - 20_000 },
+    { ...base, id: 'b', type: 'Explore', model: 'claude-haiku-4-5-20251001', start: NOW - 90_000, end: NOW - 60_000 },
+  ];
+  const definitions = agentDefinitions(agents, undefined, { CLAUDE_CONFIG_DIR: dir }, NOW);
+  assert.deepEqual(definitions, { 'frontend-implementer': { model: 'sonnet', effort: 'xhigh' } });
+  const input = {
+    model: { id: 'claude-opus-5-5[1m]', display_name: 'Opus 5.5' },
+    effort: 'high',
+    cwd: '/p/example',
+    context_window: { used_percentage: 16, context_window_size: 1_000_000 },
+    rate_limits: { five_hour: { used_percentage: 8, resets_at: (NOW + 79 * 60_000) / 1000 } },
+  };
+  const draw = (width: number, rest = {}) => {
+    const transcript = { agents, todos: [], skills: [], ultracode: false, bytesRead: 0, pendingHistory: false };
+    const evidence = {
+      transcript: { ...transcript, ...rest },
+      counts: { mcpCount: 4 },
+      git: { branch: 'main', dirty: true, ahead: 0, behind: 0 },
+      definitions,
+    };
+    return stripAnsi(renderParity(input, width, paritySettings(OWNER_CONFIG), evidence, NOW));
+  };
+  assert.match(
+    draw(160),
+    /^✻ opus-5\.5 high │ .* │ ◐ frontend-implementer \[sonnet-5\.5 · xhigh\] │ ✓ Explore \[haiku-4\.5\]/
+  );
+  // No effort: the model alone in the brackets.
+  const events = [agentEvent('done', { name: 'reviewer', model: 'claude-haiku-4-5' }, NOW)];
+  assert.equal(stripAnsi(renderBar({ model: { name: 'M' }, events }, 80, NOW).line), 'M │ ✓ reviewer [haiku-4.5]');
+  // A long notice at 120 columns is cut at a word before the main model's effort goes.
+  const skillLoads = [{ name: 'a-skill-with-a-very-long-name-that-cannot-fit-on-the-bar-at-all', at: NOW - 30_000 }];
+  assert.match(draw(120, { agents: [], skillLoads }), /^✻ opus-5\.5 high │ .*✦ skill… · 30s ago$/);
+});
+
+test('model names are short: route, vendor, date, build and window words go, version hyphens become dots', () => {
+  const pairs =
+    'claude-opus-5-5[1m]=opus-5.5 claude-haiku-4-5-20251001=haiku-4.5 gpt-6.1-sol=6.1-sol x/custom-2=custom-2';
+  for (const pair of `${pairs} zai-glm-5-3-flash=5.3-flash deepseek-v4-1-flash-1017=v4.1-flash gemini-4-argon=4-argon`.split(
+    ' '
+  ))
+    assert.equal(shortModel(pair.split('=')[0]), pair.split('=')[1]);
 });

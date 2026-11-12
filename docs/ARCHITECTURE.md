@@ -687,13 +687,22 @@ Codex call chain: `index.ts` `renderToStdout` → `composeStdoutFrame` → `rend
 `fitStatusBar` → `barFacts` + `renderBar`.
 
 **Facts.** `BarFacts` holds the optional `model`, `context`, `project`, `quota`, `needs` (what waits on the owner),
-`events` (`BarEvent`: `started | done | failed | warn | skill`, text, short text, subject key, time) and `loaded` (counts
-and extra words). A client leaves out what it cannot supply; a missing fact is never shown as zero. Words that carry
-meaning (`started`, `finished`, `failed`, an age via `span`) come from shared helpers (`agentEvent`, `span`) so the
-three clients say the same thing.
+`events` (`BarEvent`: `started | done | failed | warn | skill`, text, short text, subject key, time; an agent's carries
+its `name`) and `loaded` (counts and extra words). A client leaves out what it cannot supply; a missing fact is never
+shown as zero. Words that carry meaning (an agent's `name [model · effort]`, an age via `span`) come from shared helpers
+(`agentEvent`, `span`; the model name from `render/providers.ts` `shortModel`, next to `providerMark`) so the three
+clients say the same thing. The clients name models by id: `shortModel(id)` drops route and vendor words, dates, builds
+and the `[1m]` tag and turns version hyphens into dots.
+
+**Context and quota bars** are claude-hud's (`colors.ts` `coloredBar`/`quotaBar`): `cells()` draws ten cells, `█` in the
+reading's colour and `░` dim. The context's colours are `contextRole` (green, yellow from 70, red from 85), the quota's
+`quotaRole` (bright blue, bright magenta from 75, red from 90; plain ANSI like claude-hud's, no colour with theme `none`).
+`quotaSeg` shows the first window always and the others only from `WEEKLY_AT` (80 %), for Claude and Codex alike; its
+forms are bars with reset, bars, percent only. The capsule look leaves `bar` pieces of a `Form` out, so a p10k capsule
+has the percentage only. Each client supplies only its own quota: Claude's `rate_limits`, Codex's windows, pi's cost.
 
 **Fields, fixed order.** `model effort │ context %/window │ repo branch(dirty) │ quota │ notice zone ···· MCP n
-skills n`. The fields shown are the `barFields` display setting (default all but `quota`; no UI); `barStyle` picks
+skills n`. The fields shown are the `barFields` display setting (default all; no UI); `barStyle` picks
 `line` (`│` separators, roles painted with theme inks) or `p10k` (powerline capsules on the old p10k-footer palette
 indices: a space either side of each field and a powerline arrow (``) in its colour into the next, flat without
 arrows when icons are `text`; it needs a theme, so `none` stays `line`; the
@@ -706,7 +715,11 @@ arrows when icons are `text`; it needs a theme, so `none` stays `line`; the
 client says so: Claude's `autoCompactWindow` (`statusline-parity/collect.ts` `compactWindow`, read-only from
 `settings.json` in `$CLAUDE_CONFIG_DIR` or `~/.claude`) and Codex's `model_auto_compact_token_limit`. pi supplies none.
 
-**The notice zone is events, not states.** A subagent or HUD job started, finished or failed, and a skill load, each
+**The notice zone is events, not states.** (An agent's item is claude-hud's agents line: mark, name, dim `[model ·
+effort]`, no words and no age; `noticeSeg` keeps the bracket whole or drops it. Claude's effort and fallback model come
+from the type's definition, `statusline-parity/collect.ts` `agentDefinitions`: frontmatter of the first
+`agents/<type>.md` in the project's `.claude`, else in `$CLAUDE_CONFIG_DIR`/`~/.claude`, first 8 KB, only for agents
+with an event in the last three minutes.) A subagent or HUD job started, finished or failed, and a skill load, each
 stay `NOTICE_MS` (3 minutes) after they happened, dated by the event, not by when a collector saw it. An agent or job
 has one item, its latest (`BarEvent.key`: `finished` replaces `started`). The zone shows two items at once where there
 is room for both at their short forms (`BarEvent.short`, then without the age): items 2k and 2k+1 with
@@ -723,10 +736,11 @@ pi's footer host and the Codex collectors expose no skill loads, so those client
 
 **Fitting.** The line is always one row. When it is too wide, one form or segment at a time gives up in the order of
 `LADDER` (cheapest loss first): the loaded cluster to counts only (the whole cluster at once while a notice shows: the
-notice is shown in full, not abbreviated to save it), the context meter, the model's effort, the quota's reset, the
-project's short form, the loaded cluster, the project's name only, the quota, the project, the context. The loop stops
-as soon as the notice fits whole or two events fit side by side. The model is never dropped (`truncateAnsi` is the last
-resort); the notice is cut at a word with `…` only when every field has already given way. A pinned needs-you notice
+notice is shown in full, not abbreviated to save it), the context bar, the quota's reset, the quota's bar, the
+project's short form, the loaded cluster, then the `notice` step (the notice is cut at a word, if a word fits, and the
+loop stops: the main session's effort is not spent on a notice), the model's effort, the project's name only, the quota,
+the project, the context. The loop stops as soon as the notice fits whole or two events fit side by side. The model is
+never dropped (`truncateAnsi` is the last resort). A pinned needs-you notice
 is a segment of its own, in full. `FitResult.segments` lets the snapshot save placements, so a click maps to a field
 (`utils/click-map.ts`: the notice zone focuses, the context and quota open the panel).
 

@@ -2,10 +2,11 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { WorkSignals } from '../render/work-summary.js';
-import { collectTranscript } from './transcript.js';
+import { NOTICE_MS } from '../render/layout/bar-fields.js';
+import { collectTranscript, type Agent } from './transcript.js';
 import { collectConfigCounts } from './config-counts.js';
 import { collectParityGit } from './git.js';
-import { renderParity } from './render.js';
+import { renderParity, type AgentDefinitions } from './render.js';
 import type { ParitySettings } from './settings.js';
 import { cachePath, cached, record, saveJson, signature } from './storage.js';
 interface ContextCache {
@@ -29,6 +30,48 @@ export function compactWindow(env: NodeJS.ProcessEnv, modelId: string): number |
   } catch {
     return null;
   }
+}
+/** The first 8 KB of a file, for its frontmatter; empty when it is not there or is not a regular file. */
+function head(file: string): string {
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+    const buffer = Buffer.alloc(8192);
+    return fs.fstatSync(fd).isFile() ? buffer.toString('utf8', 0, fs.readSync(fd, buffer, 0, buffer.length, 0)) : '';
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+/**
+ * What the definitions of the subagents that just ran say about their model and effort: the first `agents/<type>.md`
+ * of the project's `.claude` and the user's config directory, its frontmatter only. Read only. A type with no file (a
+ * built-in one) has none; `inherit` is no model.
+ */
+export function agentDefinitions(
+  agents: readonly Agent[],
+  cwd: string | undefined,
+  env: NodeJS.ProcessEnv,
+  now: number
+): AgentDefinitions {
+  const user = join(env.CLAUDE_CONFIG_DIR || join(env.HOME ?? '', '.claude'), 'agents');
+  const dirs = cwd ? [join(cwd, '.claude', 'agents'), user] : [user];
+  const recent = (at: number | undefined) => at !== undefined && now - at < NOTICE_MS;
+  const types = new Set(agents.filter((a) => recent(a.start) || recent(a.end)).map((a) => a.type));
+  const found: AgentDefinitions = {};
+  for (const type of [...types].filter((t) => /^\w[\w.-]{0,63}$/.test(t)).slice(0, 6)) {
+    let text = '';
+    for (const dir of dirs) {
+      text = head(join(dir, `${type}.md`));
+      if (text) break;
+    }
+    const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1] ?? '';
+    const field = (key: string) => new RegExp(`^${key}:[ \\t]*["']?([\\w.-]+)`, 'm').exec(front)?.[1];
+    const model = field('model');
+    if (front) found[type] = { model: model === 'inherit' ? undefined : model, effort: field('effort') };
+  }
+  return found;
 }
 export function collectAndRenderParity(
   input: unknown,
@@ -89,5 +132,6 @@ export function collectAndRenderParity(
     env,
     typeof record(value.model).id === 'string' ? (record(value.model).id as string) : ''
   );
-  return renderParity(native, width, settings, { transcript, counts, git, compact }, now, env, work);
+  const definitions = settings.display.showAgents ? agentDefinitions(transcript.agents, cwd, env, now) : {};
+  return renderParity(native, width, settings, { transcript, counts, git, compact, definitions }, now, env, work);
 }
