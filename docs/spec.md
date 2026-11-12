@@ -83,8 +83,10 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
     summary, session title, the `S` overview).
   - Kept for NATIVE-TREE: model text on native agent cards (agent names, progress, result digest, failure cause),
     redone there the same way.
-  - Old views (owner, 2026-11-11): keep the Inspector (`v`), Settings and Help; delete Timeline, Changes, the
-    Activity hub, Summary and the diagnostics pages, keeping only the model-call count (in Settings → LLM); the old
+  - Old views (owner, 2026-11-11): keep the Inspector (`v`), Settings and Help; delete Timeline, the
+    Activity hub, Summary and the diagnostics pages, keeping only the model-call count (in Settings → LLM). Changes
+    keeps only the git and worktree summary (branch, ahead/behind, change counts, one row per worktree), no file lists,
+    diffs or previews (owner, 2026-11-12). The old
     Agents pane goes after NATIVE-TREE redoes native agents on Home. A separate cleanup slice after ONE-PAGE. The kept
     pages are redrawn in Home's look; Settings drops the panel picture, Look presets, the Nerd Font and emoji icon sets,
     the motion switch, the stack/tabs layouts, the foot status card and the rows only they used (owner, 2026-11-11).
