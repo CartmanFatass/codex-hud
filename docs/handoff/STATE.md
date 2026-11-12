@@ -7,7 +7,7 @@ Milestone: M3b · AI-THIN
 
 ## Next
 
-- CARD-DETAILS; then the M3b milestone review.
+- M3B-REVIEW: the M3b two-axis milestone review (Sol xhigh + DS max).
 - TICKETS: the Project tab's tickets section from to-tickets.
 
 ## Slices
@@ -42,10 +42,10 @@ board counts these; update at every landing or decision. -->
 - accepted · M4 · M4-PROJECT · the Project tab (841cc06f)
 - accepted · M4 · PROGRESS-BOARD · the Project tab's progress board: ledger bar, chips, slices in flight, drift marks (8716dcc5)
 - accepted · M3b · OPEN-TAB · opening a file from the panel uses its own herdr tab, not a split pane (c3d49420)
-- working · M3b · CARD-DETAILS · newest card expanded, others folded; keywords colour files, stances (approve, object,
-  reject) and opinions (owner); after NATIVE-TREE
+- try · M3b · CARD-DETAILS · newest card expanded, others folded; keywords colour files, stances (approve, object,
+  reject) and opinions (6c9cb40b)
 - working · M4 · TICKETS · to-tickets in the Project tab's tickets section
-- todo · M3b · M3B-REVIEW · the M3b two-axis milestone review
+- working · M3b · M3B-REVIEW · the M3b two-axis milestone review
 - try · — · PI-STOP · hud_close stops a working pi job in seconds, not after a 30 s wait (Fishpref 38447ef)
 - try · — · LEGACY-SKILLS · herdr-delegate, herdr-delegate-codex, pi-subagent retired to Fishpref (6bd0ef8)
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
