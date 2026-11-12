@@ -6,7 +6,7 @@ import { t } from './i18n.js';
 import { fit, monitorText } from './monitor-text.js';
 import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
 import { PANEL_WIDTHS } from '../utils/pane-width.js';
-import { BAR_STYLES } from './hud-config.js';
+import { BAR_STYLES, THEMES } from './hud-config.js';
 import type { ModelProbeState } from '../collectors/model-probe.js';
 import { section, subTopRow, footRow, mark } from './workboard-rows.js';
 import { stemLines } from './work-card.js';
@@ -45,7 +45,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     key: 'theme',
     group: 'Display',
     label: 'Theme',
-    values: ['terminal', 'titanium', 'mocha', 'latte', 'none'],
+    values: THEMES,
     help: 'Colours of bar and panel',
   },
   {

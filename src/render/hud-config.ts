@@ -9,7 +9,11 @@
 import { resolveHudEnv } from '../utils/hud-env.js';
 
 export type Density = 'focus' | 'balanced' | 'full';
-export type ThemeName = 'terminal' | 'mocha' | 'latte' | 'titanium' | 'none';
+/** Every theme in Settings' order: the dark ones, then the light ones, then no colour. */
+export const THEMES = [
+  'terminal', 'titanium', 'mocha', 'arctic', 'ember', 'contrast', 'latte', 'paper', 'none',
+] as const;
+export type ThemeName = (typeof THEMES)[number];
 export type GlyphMode = 'glyph' | 'text' | 'both';
 export type MotionMode = 'full' | 'reduced';
 export type ContextMode = 'used' | 'remaining';
@@ -19,6 +23,10 @@ export type BarStyle = (typeof BAR_STYLES)[number];
 /** A coloured look cannot communicate its idiom without colour. Unknown settings keep today's look. */
 export function barStyleOf(value: unknown): BarStyle {
   return BAR_STYLES.includes(value as BarStyle) ? (value as BarStyle) : 'line';
+}
+/** The themes made for a light terminal: the bars' greys and tints turn light with them. */
+export function isLightTheme(): boolean {
+  return active.theme === 'latte' || active.theme === 'paper';
 }
 export function activeBarStyle(): BarStyle {
   return active.theme === 'none' ? 'line' : barStyleOf(active.barStyle);
@@ -53,7 +61,6 @@ export interface HudDisplayConfig {
 }
 
 const DENSITIES: Density[] = ['focus', 'balanced', 'full'];
-const THEMES: ThemeName[] = ['terminal', 'mocha', 'latte', 'titanium', 'none'];
 const GLYPH_MODES: GlyphMode[] = ['glyph', 'text', 'both'];
 
 function pick<T extends string>(raw: string | undefined, allowed: T[], fallback: T): T {
@@ -69,7 +76,7 @@ function resolveTheme(env: NodeJS.ProcessEnv): ThemeName {
   if (env.NO_COLOR !== undefined && env.NO_COLOR !== '') {
     return 'none';
   }
-  return pick(resolveHudEnv(env, 'HUD_THEME'), THEMES, 'terminal');
+  return pick(resolveHudEnv(env, 'HUD_THEME'), [...THEMES], 'terminal');
 }
 
 /** The fields named in a comma or space separated list, in their fixed order; no valid name means the default ones. */

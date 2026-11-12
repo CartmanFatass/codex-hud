@@ -4,11 +4,13 @@
  * Components ask for meaning ("this is a warning"), never for a colour, so a
  * palette swap repaints the whole HUD consistently. `terminal` keeps the
  * original basic-ANSI look and inherits whatever the user's terminal theme
- * maps those codes to; the Catppuccin palettes and omp's titanium pin exact
- * colours; `none` emits no escape sequences at all.
+ * maps those codes to; the Catppuccin palettes, omp's titanium and the four
+ * schemes (arctic, ember, contrast, paper) pin exact colours; `none` emits no
+ * escape sequences at all. Home, Project and the Inspector paint with a
+ * board of their own per theme (`workboardPalette`, below).
  */
 
-import { displayConfig, type ThemeName } from './hud-config.js';
+import { displayConfig, THEMES, type ThemeName } from './hud-config.js';
 
 export type Paint = (text: string) => string;
 
@@ -145,10 +147,16 @@ function highlight(code: string): Paint {
   return (text) => start + text.replaceAll(RESET, RESET + start) + RESET;
 }
 
-/** A background in exact colour, kept across the resets inside it. */
-function surface(hex: string): Paint {
-  return highlight(`48;2;${hexParts(hex).join(';')}`);
+/** A background in exact colour, with an optional text colour on it, kept across the resets inside it. */
+function surface(hex: string, ink?: string): Paint {
+  return highlight(`48;2;${hexParts(hex).join(';')}${ink ? `;38;2;${hexParts(ink).join(';')}` : ''}`);
 }
+
+/** Moves `hex` toward `to` by `k`; `shade` scales it toward black, which keeps the hue of a tint. */
+const hexOf = (parts: number[]) => '#' + parts.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+const mix = (hex: string, to: string, k: number) =>
+  hexOf(hexParts(hex).map((v, i) => v + (hexParts(to)[i] - v) * k));
+const shade = (hex: string, k: number) => hexOf(hexParts(hex).map((v) => v * k));
 
 const identity: Paint = (text: string) => text;
 
@@ -217,6 +225,22 @@ const TERMINAL: Palette = withSelectedInk({
   chipEdge: ansi256(238),
 });
 
+/** The role inks for a dark ground (`DARK_ROLES`) and the dark end of each family for a light one. */
+const DARK_ROLES: RoleInk = {
+  imp: rgb('#4cc3ea'),
+  reviewer: rgb('#e26fce'),
+  sonic: rgb('#ff8f72'),
+  oracle: rgb('#a99df2'),
+  jev: rgb('#3fd9b0'),
+};
+const LIGHT_ROLES: RoleInk = {
+  imp: rgb('#087f9c'),
+  reviewer: rgb('#a63c91'),
+  sonic: rgb('#a84329'),
+  oracle: rgb('#6556ae'),
+  jev: rgb('#087a5d'),
+};
+
 // Catppuccin Mocha and Latte, from the published palettes.
 const MOCHA: Palette = withSelectedInk({
   name: 'mocha',
@@ -228,13 +252,7 @@ const MOCHA: Palette = withSelectedInk({
   danger: rgb('#F38BA8'),
   info: rgb('#89DCEB'),
   model: rgb('#CBA6F7'),
-  roleInk: {
-    imp: rgb('#4cc3ea'),
-    reviewer: rgb('#e26fce'),
-    sonic: rgb('#ff8f72'),
-    oracle: rgb('#a99df2'),
-    jev: rgb('#3fd9b0'),
-  },
+  roleInk: DARK_ROLES,
   branch: rgb('#F5C2E7'),
   project: rgb('#B4BEFE'),
   strong: rgb('#B4BEFE'),
@@ -265,14 +283,7 @@ const LATTE_ROLES: Omit<Palette, 'onSelectedBand'> = {
   danger: rgb('#D20F39'),
   info: rgb('#04A5E5'),
   model: rgb('#8839EF'),
-  // The dark end of each role's family: the truecolor inks are too light to read on a light ground.
-  roleInk: {
-    imp: rgb('#087f9c'),
-    reviewer: rgb('#a63c91'),
-    sonic: rgb('#a84329'),
-    oracle: rgb('#6556ae'),
-    jev: rgb('#087a5d'),
-  },
+  roleInk: LIGHT_ROLES,
   branch: rgb('#EA76CB'),
   project: rgb('#7287FD'),
   strong: rgb('#7287FD'),
@@ -325,13 +336,7 @@ const TITANIUM: Palette = withSelectedInk({
   danger: rgb('#FF4757'),
   info: rgb('#00B4FF'),
   model: rgb('#D4C090'),
-  roleInk: {
-    imp: rgb('#4cc3ea'),
-    reviewer: rgb('#e26fce'),
-    sonic: rgb('#ff8f72'),
-    oracle: rgb('#a99df2'),
-    jev: rgb('#3fd9b0'),
-  },
+  roleInk: DARK_ROLES,
   branch: rgb('#D06FED'),
   project: rgbBold('#E8ECF4'),
   strong: rgbBold('#E8ECF4'),
@@ -381,11 +386,77 @@ const NONE: Palette = withSelectedInk({
   chipEdge: identity,
 });
 
+/**
+ * A theme in a few inks. `fromScheme` turns one into a palette (bars, Settings, anything not on the board) and its
+ * `title`, `body` and `selected` surfaces are the board's too (`makeBoard`).
+ */
+interface Scheme extends BoardSpec {
+  text: string;
+  branch: string;
+  /** Eight colours, neighbours far apart on the wheel; the first six tell the agents apart. */
+  hues: string[];
+  track: string;
+  tick: string;
+}
+
+const sgr = (hex: string) => hexParts(hex).join(';');
+function fromScheme(name: ThemeName, s: Scheme): Palette {
+  // The text on the focused tab (the accent) and the alert badge (the danger): the ground, or white on a light theme.
+  const on = sgr(s.light ? '#FFFFFF' : s.body);
+  return withSelectedInk({
+    name, text: rgb(s.text), muted: rgb(s.muted), accent: rgb(s.accent), success: rgb(s.success),
+    warning: rgb(s.attention), danger: rgb(s.danger), info: rgb(s.info), model: rgb(s.identifier),
+    roleInk: s.light ? LIGHT_ROLES : DARK_ROLES,
+    branch: rgb(s.branch), project: rgbBold(s.text), strong: rgbBold(s.text), selected: surface(s.selected),
+    agents: s.hues.slice(0, 6).map(rgb), directions: s.hues.map(rgb),
+    band: surface(s.body), bar: surface(s.title), selectedBand: surface(s.selected), chip: surface(s.selected),
+    tab: highlight(`48;2;${sgr(s.accent)};38;2;${on}`), alert: highlight(`1;48;2;${sgr(s.danger)};38;2;${on}`),
+    track: rgb(s.track), tick: rgb(s.tick), frame: rgb(s.frame), tabEdge: rgb(s.accent), chipEdge: rgb(s.selected),
+  });
+}
+
+/** After the Nord palette: cool slate, frost and muted aurora inks, for a dark terminal. */
+const ARCTIC_SCHEME: Scheme = {
+  text: '#D8DEE9', muted: '#AAB5C9', frame: '#566178', attention: '#EBCB8B', danger: '#EE9AA2', success: '#A3BE8C',
+  accent: '#88C0D0', info: '#8FBCBB', identifier: '#CDA7C6', stalled: '#EBA68C', branch: '#81A1C1',
+  title: '#3B4252', body: '#2A303B', selected: '#434C5E', ask: '#EBCB8B', track: '#3F485A', tick: '#6F8FB0',
+  hues: ['#88C0D0', '#CDA7C6', '#A3BE8C', '#EBCB8B', '#81A1C1', '#EBA68C', '#8FBCBB', '#EE9AA2'],
+};
+
+/** Warm brown-greys with cream text and earthy inks, after gruvbox, for a dark terminal. */
+const EMBER_SCHEME: Scheme = {
+  text: '#EBDBB2', muted: '#B8A892', frame: '#665C54', attention: '#FABD2F', danger: '#FF7E6E', success: '#9CCB5D',
+  accent: '#8DB8D8', info: '#7ACBC0', identifier: '#E19BAF', stalled: '#FE8019', branch: '#D8BC8C',
+  title: '#3C3836', body: '#1D2021', selected: '#504945', ask: '#FABD2F', track: '#3A3631', tick: '#8A7F6C',
+  hues: ['#8DB8D8', '#E19BAF', '#9CCB5D', '#FABD2F', '#B58FD0', '#FE8019', '#7ACBC0', '#FF7E6E'],
+};
+
+/** True black and white with bright inks and loud rules: the theme for a bright room or a tired eye. */
+const CONTRAST_SCHEME: Scheme = {
+  text: '#FFFFFF', muted: '#BDC1C9', frame: '#8A8F99', attention: '#FFD633', danger: '#FF7B7B', success: '#5CFF8A',
+  accent: '#5CB8FF', info: '#4DE8F5', identifier: '#D7A8FF', stalled: '#FF9F40', branch: '#FF8AD8',
+  title: '#1E1E1E', body: '#050505', selected: '#383838', ask: '#FFD633', track: '#3A3A3A', tick: '#7F9BBF',
+  hues: ['#5CB8FF', '#D7A8FF', '#4DE8F5', '#FFD633', '#FF8AD8', '#5CFF8A', '#FF9F40', '#FF7B7B'],
+};
+
+/** Warm cream with ink-dark text, for a light terminal: latte's cool pastels turned to ink on paper. */
+const PAPER_SCHEME: Scheme = {
+  light: true,
+  text: '#3B342B', muted: '#594E3C', frame: '#A89C82', attention: '#7A4600', danger: '#A21F18', success: '#25591A',
+  accent: '#164E93', info: '#08566A', identifier: '#5B3590', stalled: '#8A3805', branch: '#8A3F7A',
+  title: '#EDE5D1', body: '#E4DAC2', selected: '#DBD0B4', ask: '#E9A83A', track: '#CBBE9E', tick: '#3B7A8C',
+  hues: ['#164E93', '#5B3590', '#0B7A75', '#B05A00', '#8A3F7A', '#25591A', '#A21F18', '#6B5A1E'],
+};
+
 const PALETTES: Record<ThemeName, Palette> = {
   terminal: TERMINAL,
-  mocha: MOCHA,
-  latte: LATTE,
   titanium: TITANIUM,
+  mocha: MOCHA,
+  arctic: fromScheme('arctic', ARCTIC_SCHEME),
+  ember: fromScheme('ember', EMBER_SCHEME),
+  contrast: fromScheme('contrast', CONTRAST_SCHEME),
+  latte: LATTE,
+  paper: fromScheme('paper', PAPER_SCHEME),
   none: NONE,
 };
 
@@ -393,53 +464,84 @@ export function palette(): Palette {
   return PALETTES[displayConfig().theme] ?? TERMINAL;
 }
 
-/** The approved Home/Work mockup inks are local roles, not changes to global state colours. */
-const boardFrom = (p: Palette) => ({
-  attention: p.warning,
-  danger: p.danger,
-  success: p.success,
-  active: p.accent,
-  muted: p.muted,
-  frame: p.frame,
-  selected: p.selected,
-  title: p.band,
-  body: p.bar,
-  failedBody: p.bar,
-  slab: p.bar,
-  askTitle: p.chip,
-  stalled: p.warning,
-  identifier: p.model,
-  opinion: p.info,
-  roleInk: p.roleInk,
-});
-const BOARD_NONE = boardFrom(NONE),
-  BOARD_LIGHT = boardFrom(LATTE);
-const BOARD_DARK = {
-  ...boardFrom(TITANIUM),
-  attention: rgb('#efc15a'),
-  danger: rgb('#f4727e'),
-  success: rgb('#8fd073'),
-  active: rgb('#6fa8ff'),
-  muted: rgb('#6c7789'),
-  frame: rgb('#363f4d'),
-  selected: surface('#303a4b'),
-  title: surface('#1e2531'),
-  body: surface('#141b26'),
-  failedBody: surface('#2c1821'),
-  slab: surface('#2d2411'),
-  askTitle: (text: string) => `\x1b[48;2;255;193;58m\x1b[38;2;25;21;13m${text}\x1b[0m`,
-  stalled: rgb('#f29958'),
-  identifier: rgb('#b4a6df'),
+/**
+ * What Home, Project and the Inspector are painted with: the approved Home/Work mockup inks, a set per theme, local
+ * roles rather than changes to the global state colours. Colour means demand on the owner: `attention` (what waits
+ * for an answer), `danger`, `success`; `active` is work in motion; the rest recedes (`muted`, `frame`).
+ */
+interface BoardSpec {
+  /** On a light ground: the tints are pastels mixed into the body, not dark shades of the ink. */
+  light?: boolean;
+  /** Pinned as the text colour of every board row; absent, the terminal's own. */
+  text?: string;
+  /** Inks; `identifier` is for words the model marked and file names, `info` for its opinion (`«!…»`). */
+  muted: string; frame: string; attention: string; danger: string; success: string; accent: string;
+  stalled: string; identifier: string; info: string;
+  /** A card's header, its body and the selected row; `ask` is the question's header, under a dark ink. */
+  title: string; body: string; selected: string; ask: string;
+}
+
+/** The ink on the question's header, dark on every theme; `boardCursor` strips it again on a selected row. */
+const ASK_INK = '#19150d';
+
+function makeBoard(s: BoardSpec, roleInk: RoleInk) {
+  const face = (hex: string) => surface(hex, s.text);
+  // A failed card (the danger) and a question's body (the ask colour): the body turned toward the ink. On a dark
+  // ground that is a dark shade of the ink, which keeps its hue; on a light one a pastel mixed into the body.
+  const tint = (ink: string, k: number) => face(s.light ? mix(s.body, ink, k) : shade(ink, 0.17));
+  return {
+    text: s.text ? highlight(`38;2;${sgr(s.text)}`) : identity,
+    attention: rgb(s.attention), danger: rgb(s.danger), success: rgb(s.success), active: rgb(s.accent),
+    muted: rgb(s.muted), frame: rgb(s.frame), stalled: rgb(s.stalled), identifier: rgb(s.identifier),
+    opinion: rgb(s.info), roleInk,
+    selected: face(s.selected), title: face(s.title), body: face(s.body),
+    failedBody: tint(s.danger, 0.12), slab: tint(s.ask, 0.3), askTitle: surface(s.ask, ASK_INK),
+  };
+}
+export type Board = ReturnType<typeof makeBoard>;
+
+const BOARD_SPECS: Record<Exclude<ThemeName, 'none'>, BoardSpec> = {
+  // The default: a deep navy board that keeps the terminal's own text colour.
+  terminal: {
+    muted: '#9aa5b8', frame: '#3b4556', attention: '#efc15a', danger: '#f4727e', success: '#8fd073', accent: '#6fa8ff',
+    stalled: '#f29958', identifier: '#b4a6df', info: '#52c7f0',
+    title: '#1e2531', body: '#141b26', selected: '#303a4b', ask: '#ffc13a',
+  },
+  // Electric blue, readout green and steel greys, as omp paints them.
+  titanium: {
+    text: '#E8ECF4', muted: '#A3ACB9', frame: '#4A5260', attention: '#FFB347', danger: '#FF5A68', success: '#00FF88',
+    accent: '#00B4FF', stalled: '#FF9A3C', identifier: '#B79CFF', info: '#52E0E0',
+    title: '#272D36', body: '#181C22', selected: '#343C48', ask: '#FFB347',
+  },
+  mocha: {
+    text: '#CDD6F4', muted: '#A6ADC8', frame: '#585B70', attention: '#F9E2AF', danger: '#F38BA8', success: '#A6E3A1',
+    accent: '#89B4FA', stalled: '#FAB387', identifier: '#CBA6F7', info: '#89DCEB',
+    title: '#313244', body: '#181825', selected: '#45475A', ask: '#F9E2AF',
+  },
+  arctic: ARCTIC_SCHEME,
+  ember: EMBER_SCHEME,
+  contrast: CONTRAST_SCHEME,
+  // Latte's own colours, darkened to read on its light surfaces.
+  latte: {
+    light: true,
+    text: '#4C4F69', muted: '#555870', frame: '#9CA0B0', attention: '#824800', danger: '#B30D30', success: '#26661A',
+    accent: '#1648C0', stalled: '#963A04', identifier: '#6F27CF', info: '#06617F',
+    title: '#E6E9EF', body: '#DCE0E8', selected: '#CCD0DA', ask: '#E9A83A',
+  },
+  paper: PAPER_SCHEME,
 };
-export function workboardPalette(): typeof BOARD_DARK {
-  const theme = displayConfig().theme;
-  return theme === 'none'
-    ? BOARD_NONE
-    : theme === 'terminal'
-      ? BOARD_DARK
-      : theme === 'latte'
-        ? BOARD_LIGHT
-        : BOARD_DARK;
+
+// No colour: every ink the identity.
+const BOARD_NONE = {
+  ...Object.fromEntries(Object.keys(makeBoard(BOARD_SPECS.terminal, NONE.roleInk)).map((key) => [key, identity])),
+  roleInk: NONE.roleInk,
+} as Board;
+const BOARDS = Object.fromEntries(
+  THEMES.map((name) => [name, name === 'none' ? BOARD_NONE : makeBoard(BOARD_SPECS[name], PALETTES[name].roleInk)])
+) as Record<ThemeName, Board>;
+
+export function workboardPalette(): Board {
+  return BOARDS[displayConfig().theme] ?? BOARDS.terminal;
 }
 
 export function paletteNames(): ThemeName[] {

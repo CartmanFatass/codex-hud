@@ -1030,6 +1030,7 @@ Check this list before every change to `src/render/` or `src/collectors/`.
   English, and there is a ZH table. The bar stays English.
 - [ ] Colours come from `theme.*` roles (`palette.ts`), never raw escapes.
   `colors.bold` and `underline` still emit escapes under the `none` theme.
+  Home, Project and the Inspector use `theme.board` (`workboardPalette()`: one board per theme, surfaces and inks).
 - [ ] Controls show words or icons, never shortcut letters. Every glyph has a word next to it.
 - [ ] When space is short, drop a field before cutting one. Do not add
   placeholder lines, or hints that repeat what a count already says. Show
@@ -1177,6 +1178,17 @@ through `monitorSettings`. The obsolete `cardNotes` option is no longer used.
      may need to grow;
    - a render test covers the effect.
 6. `docs/reference.md` and `reference.zh.md`: add it to the settings list.
+
+### Add or change a theme
+
+1. `src/render/hud-config.ts`: add the name to `THEMES` (Settings' order; the dark ones, then the light ones, then `none`), and to
+   `isLightTheme()` if it is made for a light terminal.
+2. `src/render/palette.ts`: a `Scheme` (about twenty hex inks and surfaces; `fromScheme` makes the palette, `makeBoard` the
+   board) in `PALETTES`, and an entry in `BOARD_SPECS` (a scheme is its own board spec). Keep the floors in
+   `tests/unit/themes.test.mjs`: 4.5:1 on a card's header and body, 4:1 on a failed card and a question, 3:1 on the selected row.
+3. `src/render/i18n.ts`: the Chinese name. `docs/reference.md` and `reference.zh.md`: the Themes table and the env row.
+
+`renderWorkView` paints the theme's text colour under every line it returns (`theme.board.text`); `terminal` and `none` pin nothing.
 
 ### Add or change a bar field
 

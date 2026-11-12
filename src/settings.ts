@@ -8,6 +8,7 @@ import {
   BAR_FIELDS,
   BAR_STYLES,
   DEFAULT_BAR_FIELDS,
+  THEMES,
   type HudDisplayConfig,
   type IconMode,
 } from './render/hud-config.js';
@@ -106,7 +107,7 @@ const isText =
 
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusline: isBoolean,
-  theme: oneOf('terminal', 'mocha', 'latte', 'titanium', 'none'),
+  theme: oneOf(...THEMES),
   barStyle: oneOf(...BAR_STYLES),
   barFields: (value) =>
     Array.isArray(value) && value.every((field) => (BAR_FIELDS as readonly unknown[]).includes(field)),

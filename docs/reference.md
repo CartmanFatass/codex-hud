@@ -578,6 +578,24 @@ Settings is one page with four open groups, in this order:
 
 Bar style cycles the shared `BAR_STYLES` (`line`, `p10k`, `gauge`, `tide`, `micro`, `stacked`, `headline`, `triptych`) and saves `barStyle` for the bottom bars.
 
+#### Themes
+
+Theme paints the bars and, with its own board inks, Home, Project and the Inspector: every theme has its own surfaces (a card's header, its body, the selected row, a failed card, a question) and its own inks, so switching shows on every page. Colour still means demand on the owner: the ask colour and `attention` for what waits for an answer, `danger`, `success`; role colours stay on role words; `none` (and `NO_COLOR`) emits no escape. Dark themes pin their text colour under every row; `terminal` keeps the terminal's own.
+
+| Theme | ZH | Made for | Look |
+|-------|----|----------|------|
+| `terminal` (default) | 终端 | any dark terminal | deep navy cards, the terminal's own text, soft amber, green and blue; muted and rules lifted for contrast |
+| `titanium` | 钛金 | dark | omp's steel greys with electric blue, readout green and amber |
+| `mocha` | 摩卡 | dark | Catppuccin Mocha: purple-tinted surfaces, pastel inks |
+| `arctic` | 极地 | dark | cool slate with frost and muted aurora inks (after Nord) |
+| `ember` | 余烬 | dark | warm brown-greys, cream text, earthy inks (after gruvbox) |
+| `contrast` | 高对比 | dark, bright rooms | true black, white text, bright inks, loud rules |
+| `latte` | 拿铁 | light | Catppuccin Latte, its inks darkened to read on the surfaces |
+| `paper` | 纸白 | light | warm cream with ink-dark text and earthy inks |
+| `none` | 无 | any | no colour |
+
+The bars follow the theme through the palette (a light theme also gets light greys and tints in the gauge and tide looks). Every board ink reads on its surfaces: 4.5:1 on a card's header and body, 4:1 on a failed card and a question, 3:1 on the selected row (`tests/unit/themes.test.mjs`).
+
 The page is a draft: Theme and Icons paint in the draft value, so it is its own preview, and there is no separate Preview block. The selected row's help sits under it as a `┃` stem. A non-default value is in the accent, and a changed row is marked `*`. The top band reads `‹ Settings` and, when the draft is dirty, `unsaved` at the right; a click on that word saves. `s` saves, `r` resets only the selected group, and `t` runs the Models Test API. Esc with a dirty draft opens **Save and leave**, **Discard changes**, **Continue editing** (the default; Esc also continues editing). There are no Reset all or header buttons, no accordion and no read-health dump. ↑/↓ select rows; PgUp/PgDn jump groups. Short panes scroll and retain the selected row's help.
 
 Resetting the Models group turns generation off (`modelEnabled: false`) and preserves the connection, model and call cap. Calls this hour is real SmallModel usage, including a known zero while the master is off; there is no per-feature breakdown, and telemetry is deleted by CLEANUP-VIEWS. Test API is one summary row, not a per-tier block.
@@ -758,7 +776,7 @@ happens. Another successful read alone does not rewrite the file, so
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CODEX_HUD_THEME` | `terminal` | Palette (`terminal` / `titanium` / `mocha` / `latte` / `none`) |
+| `CODEX_HUD_THEME` | `terminal` | Theme (`terminal` / `titanium` / `mocha` / `arctic` / `ember` / `contrast` / `latte` / `paper` / `none`; [Themes](#themes)) |
 | `CODEX_HUD_ICONS` | `unicode` | The panel's icons (`unicode` / `text`); old `nerd` and `emoji` values load as `unicode` |
 | `CODEX_HUD_STATUSLINE` | `1` | Bottom bar enabled by default; `0` disables for new HUD sessions, overriding Settings → Bar on launch |
 | `CODEX_HUD_POSITION` | `bottom` | HUD pane position (`top` / `bottom`) |

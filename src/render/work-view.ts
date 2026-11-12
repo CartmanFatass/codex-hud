@@ -217,7 +217,8 @@ export function renderWorkboardFrame(
       t(hints),
       width
     );
-  frame.lines = frame.lines.map((line) => fit(line, width));
+  // The theme's own text colour under every row, so a row with no ink of its own is not the terminal's.
+  frame.lines = frame.lines.map((line) => theme.board.text(fit(line, width)));
   frame.panes.push({
     id: inspector ? 'details' : changes ? 'changes' : 'agents',
     x: 0,

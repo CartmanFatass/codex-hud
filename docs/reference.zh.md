@@ -346,6 +346,8 @@ Inspector 按以下顺序显示：
 | 状态栏 | 启动时显示状态栏、密度、上下文、通知 |
 | 输入 | 鼠标、前缀键、刷新 |
 
+每个主题都有自己的面板配色：首页、项目和检查页的卡片标题、卡片底、选中行、失败卡片和提问各用该主题的底色与墨色，切换主题每一页都看得出来。颜色仍只表示需要你处理的事（待回答用提问色和 `attention`、危险、成功）；`none` 和 `NO_COLOR` 不输出任何转义。深色主题把自己的文字色铺在每一行之下，`terminal` 沿用终端自己的文字色；`latte` 和 `paper` 是给浅色终端用的。
+
 只能一起用的设置合成一行：简报节奏（两个间隔成对选择）、Agent 名称（替换名字、写在名字下或关闭）和通知（关闭、tmux，或 tmux 加桌面）。2–4 号区域没有设置行：它们由控制栏打开和关闭，并记住状态。
 
 **移动**
@@ -515,7 +517,7 @@ codex-hud --json | jq '.context.percent, .agents.active, .attention[].label'
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `CODEX_HUD_DENSITY` | `balanced` | 状态栏显示密度（`focus` / `balanced` / `full`） |
-| `CODEX_HUD_THEME` | `terminal` | 配色（`terminal` / `titanium` / `mocha` / `latte` / `none`） |
+| `CODEX_HUD_THEME` | `terminal` | 配色（`terminal` / `titanium` / `mocha` / `arctic` / `ember` / `contrast` / `latte` / `paper` / `none`，中文名：终端、钛金、摩卡、极地、余烬、高对比、拿铁、纸白、无） |
 | `CODEX_HUD_LOOK` | `tab` | 面板控制栏和区域标题的外观（`tab` / `band` / `tile` / `frame` / `pill`） |
 | `CODEX_HUD_ICONS` | `unicode` | 面板图标（`unicode` / `nerd` / `emoji` / `text`） |
 | `CODEX_HUD_GLYPHS` | `both` | 模型标记样式（`glyph` / `text` / `both`） |

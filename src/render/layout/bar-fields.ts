@@ -13,7 +13,7 @@
 
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
 import { formatTokenCount } from '../lines/activity-line.js';
-import { activeBarStyle, displayConfig, iconSet, type BarField, type BarStyle } from '../hud-config.js';
+import { activeBarStyle, displayConfig, iconSet, isLightTheme, type BarField, type BarStyle } from '../hud-config.js';
 import { providerMark, shortModel } from '../providers.js';
 
 /**
@@ -387,7 +387,7 @@ function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
 // ─── The six opt-in looks ──────────────────────────────────────────────────────────────────────────────────────────
 
 const clamp = (p: number) => Math.min(100, Math.max(0, p));
-const light = () => displayConfig().theme === 'latte';
+const light = isLightTheme;
 const track = () => (light() ? 252 : 236);
 const raised = () => (light() ? 254 : 235);
 const LEVEL_INKS: Partial<Record<Role, number>> = { ok: 71, warn: 179, bad: 167, usage: 69, usageHigh: 170 };
