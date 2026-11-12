@@ -19,6 +19,8 @@ Milestone: M4 · Project view
   earlier findings and the new work; fixes until both accept.
 - JOB-RETENTION (owner 2026-11-12, chose 1 day over immediate deletion) lands before the release; it also bounds
   the job-directory scan the re-review questioned.
+- Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
+  finding 1); delete that part of the command or keep it?
 - After both reviewers accept: an architect (Astra) review of the whole project before the release (owner
   2026-11-12); I decide what blocks.
 - Then m4-close 06 release: a clean-built archive (stale dist files from deleted sources must not ship) + ./install,
@@ -94,12 +96,14 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX · m4-close 05: the review's behaviour findings (brief independence, statusline default, bounded job scan, settings guards, TZ, docs) (8cd38f1e)
 - try · M4 · M4-PRUNE · m4-close 05: delete the unreachable retired ledger/supervision/runtime, dead modules and the historical installer chain (769cfa3d)
 - working · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (imp)
-- working · M4 · M4-REVIEW2 · m4-close 05: re-review after the fix round (Sol xhigh + DS max on 3280cc02)
+- accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
+- working · M4 · M4-FIX2 · re-review fixes: reload keeps place and width in bound panels; brief persists across sentence changes (imp)
+- working · M4 · M4-PRUNE2 · re-review: delete the remaining retired runtime exports and host/bridge; docs and READMEs that describe deleted things (imp)
 - try · M4 · INSTALL-EXT · owner: ./install gets the browser and herdr extensions of spec §2.3 (96deabe9)
 - todo · M4 · RELEASE · m4-close 06: one release archive with ./install; merge to main, tag
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
-## Now (2026-11-12, night): M4 re-review running; fix round (M4-FIX, M4-PRUNE, INSTALL-EXT) landed
+## Now (2026-11-12, night): fix round 2 (M4-FIX2, M4-PRUNE2) and JOB-RETENTION running; then re-review 3; owner away
 
 Landed since noon: NATIVE-TREE, PROGRESS-BOARD, OPEN-TAB, CARD-DETAILS, TICKETS, PI-STOP (Fishpref), legacy skills
 retired, Matt Pocock skills installed (to-tickets slices multi-slice features), closing M3b review + M3B-FIX2.
