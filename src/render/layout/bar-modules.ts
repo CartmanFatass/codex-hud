@@ -22,8 +22,6 @@ function eventOf(notice: BarNotice): BarEvent {
       return agentEvent('done', who, at);
     case 'agent-failed':
       return agentEvent('failed', who, at);
-    case 'credits':
-      return { kind: 'warn', at, text: 'window spent, on credits now' };
   }
 }
 

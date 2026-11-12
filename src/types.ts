@@ -580,7 +580,7 @@ export interface SessionInfo {
 
 /** Something that just happened in the main session, for the bar's notice zone. */
 export interface BarNotice {
-  kind: 'agent-started' | 'agent-done' | 'agent-failed' | 'credits';
+  kind: 'agent-started' | 'agent-done' | 'agent-failed';
   /** The agent's name (its role, else its nickname), for the agent notices. */
   subject?: string;
   /** Who it is, the model and the effort it runs at: the agent notices. */

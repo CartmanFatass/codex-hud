@@ -1,13 +1,13 @@
 /**
  * What just happened in the main session, for the bar's notice zone: an agent
- * it started finished or failed, the account went on to its credits. Each is
+ * it started, finished or failed. (Credits are not a notice: the quota field
+ * shows them while the account runs on them, owner 2026-11-11.) Each is
  * a change between two collections, so the tracker keeps what the last one
  * saw; the first collection of a session only sets that baseline, and
  * nothing that happened before the HUD looked is replayed.
  */
 
 import type { BarNotice, HudData, SubagentTreeNode } from '../types.js';
-import { readQuotaWindows, quotaState } from '../render/quota.js';
 
 /** Notices kept, newest first. The bar shows one; the rest are for whoever reads the snapshot. */
 const KEPT = 5;
@@ -16,15 +16,9 @@ function topAgents(data: HudData): SubagentTreeNode[] {
   return (data.subagentTree?.nodes ?? []).filter((node) => node.kind !== 'guardian');
 }
 
-function onCredits(data: HudData, nowMs: number): boolean {
-  const windows = readQuotaWindows(data.rateLimits, nowMs);
-  return windows.some((window) => window.percent >= 100) && quotaState(data.rateLimits, windows).credits !== null;
-}
-
 export class BarNoticeTracker {
   private root: string | null = null;
   private agents = new Map<string, SubagentTreeNode['status']>();
-  private credits = false;
   private notices: BarNotice[] = [];
 
   /** Compares this collection with the last and returns the notices so far, newest first. */
@@ -57,10 +51,6 @@ export class BarNoticeTracker {
       }
     }
     this.agents = new Map(agents.map((node) => [node.id, node.status]));
-
-    const credits = onCredits(data, nowMs);
-    if (!fresh && credits && !this.credits) found.push({ kind: 'credits', at });
-    this.credits = credits;
 
     if (found.length) this.notices = [...found.reverse(), ...this.notices].slice(0, KEPT);
     return this.notices;
