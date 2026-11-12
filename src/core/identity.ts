@@ -23,6 +23,3 @@ export function sessionRefKey(ref: SessionRef): string {
   validateSessionRef(ref);
   return JSON.stringify([ref.harness, ref.sourceId, ref.sessionId, ref.threadId === '' ? null : ref.threadId]);
 }
-export function sameSessionRef(a: SessionRef, b: SessionRef): boolean {
-  return sessionRefKey(a) === sessionRefKey(b);
-}

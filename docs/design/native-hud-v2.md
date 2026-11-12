@@ -794,7 +794,7 @@ export interface MainTranscript {
   activity?: { state: 'working' | 'idle' | 'waiting'; updatedAt: Date; turnStartedAt?: Date };
   lastUserMessageAt?: Date; lastReplyAt?: Date; lastEventTime?: Date;
   pendingApproval?: { callId?: string; since: Date; kind: string; command?: string };
-  planProgress?: PlanProgress;          // Codex plan; Claude todos via harness/claude/todos.ts; Pi: none
+  planProgress?: PlanProgress;          // Codex plan; Pi: none
   compactCount: number;
 }
 export function codexMainTranscript(parse: RolloutParseResult): MainTranscript;   // memoised per parse object (WeakMap), so recordStamp is stable across ticks
@@ -1267,8 +1267,7 @@ Process-start module loads: `hud run wait` 119 modules / 31 592 lines (37 histor
 `src/index.ts` 149 / 44 646 (36 historical / 11 420); panel `src/tree-page.ts` 193 / 63 945 (46 / 13 887);
 statusline 44 / 13 192 (2 historical); hud-mcp `main` 39 / 7 606 (0); `host-entry` 16 / 3 340 (0).
 
-"KEEP?" groups and their v2.2 fate: cli-pi 11 modules / 4 655 lines (Claude/Pi transcript readers, `core/checkpoint.ts`,
-`harness/claude/background|todos`) → readers kept for roots (§2.3, §4.2), `hud pi inspect` deleted; pi-footer 6 / 966 →
+"KEEP?" groups and their v2.2 fate: cli-pi 11 modules / 4 655 lines (Claude/Pi transcript readers, `core/checkpoint.ts`) → readers kept for roots (§2.3, §4.2), `hud pi inspect` deleted; pi-footer 6 / 966 →
 kept, data source changed (§2.4); cli-cache 2 / 595, cli-migrate 4 / 556, cli-launch 3 / 351 → deleted; brief-dry-run
 2 / 119 → kept and extended (§4.3).
 

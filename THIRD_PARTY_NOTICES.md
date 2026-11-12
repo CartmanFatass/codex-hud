@@ -55,13 +55,10 @@ The browser-action core under `src/jev/` is a TypeScript port of Jev Ultrafast.
 
 Ported files:
 
-- `jev_ultrafast/agent.py` → `src/jev/agent.ts`
-- `jev_ultrafast/browser.py` → `src/jev/browser.ts`
 - `jev_ultrafast/model.py` → `src/jev/model.ts`
 - `jev_ultrafast/questions.py` → `src/jev/questions.ts`
-- `jev_ultrafast/snapshot.js` → `src/jev/snapshot.js` (one leading comment; the body is the upstream file, byte for byte)
 
-`src/jev/cdp.ts`, `src/jev/decide.ts`, and `src/jev/providers/` are new code written for this port. They are not copies of the upstream sources. Deviations are listed in `src/jev/UPSTREAM.md`.
+`src/jev/decide.ts` and `src/jev/providers/` are new code written for this port. They are not copies of the upstream sources. Deviations are listed in `src/jev/UPSTREAM.md`.
 
 ```
 MIT License

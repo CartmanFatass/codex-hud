@@ -156,9 +156,9 @@ silently displaced. Real herdr/tmux probes stay local and separate.
 The shared module exports owned-worker and package-host profiles, not one executable
 pretending these boundaries are the same protocol. `pi-owned-worker.mjs` and
 `fixtures/pi-package-host.mjs` are thin compatibility adapters. R6B-1 removed the dead
-external `pi-role.mjs` / `pi-dispatch.mjs` adapters and their shared launcher/dispatch profiles,
-including their two protocol-only cases and two prerequisite-refusal rows in the mixed
-`test-stand-ins.test.ts`; owned-worker/package-host and all herdr cases remain. Consumer-local API/context stand-ins migrate in their owning
+external `pi-role.mjs` / `pi-dispatch.mjs` adapters, their shared launcher/dispatch profiles
+and the associated protocol-only and prerequisite-refusal cases; owned-worker/package-host
+and all herdr cases remain. Consumer-local API/context stand-ins migrate in their owning
 area slices; no consumer assertions are replaced here.
 `tests/fakes/pi-package.mjs` is **not a fake protocol**: it re-exports the unchanged real
 installed-package and loader discovery as a separate prerequisite; package availability

@@ -76,6 +76,45 @@ for (const layout of ['sessions', '.dispatch/helper/sessions']) {
   });
 }
 
+for (const state of ['closed', 'failed', 'stopped']) {
+  test(`expired ${state} job reaps its tab before retention, then keeps a full day after reap`, async (t) => {
+    const f = fixture(t), dir = f.job({ ...expired(), state }, {}, true);
+    const { source, bytes } = realSession(dir);
+    const first = f.start();
+    await first.exited;
+    assert.equal(first.child.exitCode, 0);
+    assert.ok(fs.existsSync(join(dir, 'STATUS.json')));
+    assert.equal(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8'), 'TAB=synthetic-tab\n');
+    assert.deepEqual(fs.readFileSync(source), bytes, 'no session move before tab reap');
+    assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');
+    assert.equal(f.log().includes('delete '), false);
+    const reaped = Date.parse(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).reaped_at);
+    assert.ok(Math.abs(reaped - Date.now()) < 5000, 'reaped_at records the actual close time');
+    const second = f.start(`Date.now = () => ${reaped + 23 * hour};`);
+    await second.exited;
+    assert.equal(second.child.exitCode, 0);
+    assert.deepEqual(fs.readFileSync(source), bytes);
+    assert.equal(fs.existsSync(destination(f.pi)), false);
+    const third = f.start(`
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+Date.now = () => ${reaped + 25 * hour};
+const rm = fs.rmSync;
+fs.rmSync = (path, options) => {
+  assert.equal(fs.existsSync(${JSON.stringify(source)}), false, 'move sessions before delete');
+  assert.deepEqual(fs.readFileSync(${JSON.stringify(destination(f.pi))}), Buffer.from(${JSON.stringify([...bytes])}));
+  return rm(path, options);
+};
+syncBuiltinESMExports();`);
+    await third.exited;
+    assert.equal(third.child.exitCode, 0);
+    assert.equal(fs.existsSync(dir), false);
+    assert.deepEqual(fs.readFileSync(destination(f.pi)), bytes);
+    assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n', 'reap only once');
+  });
+}
+
 test('retention uses the default pi agent directory when PI_CODING_AGENT_DIR is empty', async (t) => {
   const f = fixture(t), dir = f.job(expired());
   const { bytes } = realSession(dir);
@@ -107,7 +146,7 @@ test('retention deletes session links in both layouts without touching their tar
 
 for (const failure of ['missing cwd', 'relative cwd', 'existing target', 'dangling target', 'rename EXDEV']) {
   test(`retention keeps the whole job and logs once on ${failure}`, async (t) => {
-    const f = fixture(t), dir = f.job(expired(), {}, true);
+    const f = fixture(t), dir = f.job(expired(), { reaped_at: expired().ended_at }, true);
     const header = failure === 'missing cwd' ? { type: 'session' }
       : { type: 'session', cwd: failure === 'relative cwd' ? 'relative/repo' : '/synthetic/work.space/repo' };
     const { source, bytes } = realSession(dir, '.dispatch/helper/sessions', header);
@@ -147,8 +186,8 @@ test('watcher deletes only terminal job directories older than one day, using en
   const f = fixture(t), now = Date.now();
   const ago = (hours) => new Date(now - hours * hour).toISOString();
   const deleted = [
-    f.job({ state: 'closed', ended_at: ago(25) }, {}, true),
-    f.job({ state: 'failed', ended_at: ago(25) }, {}, true),
+    f.job({ state: 'closed', ended_at: ago(25) }, { reaped_at: ago(25) }, true),
+    f.job({ state: 'failed', ended_at: ago(25) }, { reaped_at: ago(25) }, true),
     f.job({ state: 'stopped', ended_at: ago(25) }),
     f.job({ state: 'closed', ended_at: ago(1) }, { reaped_at: ago(25) }, true),
     f.job({ state: 'closed', settled_at: ago(25), ended_at: ago(1) }),
@@ -195,7 +234,7 @@ syncBuiltinESMExports();`);
   assert.ok(removals.every((r) => r.options.recursive === true && r.options.force === true));
   for (const dir of deleted) assert.equal(f.log().split('\n').filter((line) => line.includes(`delete ${dir.split('/').at(-1)} `)).length, 1);
   assert.deepEqual(fs.readFileSync(join(f.home, 'reaps'), 'utf8').trim().split('\n'), [kept[0]],
-    'expired jobs delete directly; active, non-job and symlink directories are never reaped');
+    'expired tabless/already-reaped jobs delete directly; active, non-job and symlink directories are never reaped');
 });
 
 test('watcher exits without expiry timers and deletes tabless and already-reaped jobs on next catch-up', { timeout: 10000 }, async (t) => {

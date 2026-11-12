@@ -207,7 +207,6 @@ node dist/index.js             # Run HUD directly
 npm test                       # Unit tests: parser replay, width safety, render cost
 npm run test:visual            # Verify reviewed terminal-cell baselines
 npm run test:visual:update     # Explicit local update after review (refused in CI)
-npm run test:integration       # Shell suites: wrapper, tmux toggling, installer
 ```
 
 How the code fits together (processes, collection, rendering, the rules a change keeps) is in

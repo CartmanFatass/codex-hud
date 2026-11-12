@@ -171,7 +171,7 @@ function scan() {
     if (!['closed', 'failed', 'stopped'].includes(status.state)) continue;
     const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
     const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
-    if (expires < Date.now()) {
+    if (expires < Date.now() && (!tab || job?.reaped_at)) {
       if (!preserveSessions(dir)) continue;
       fs.rmSync(dir, { recursive: true, force: true });
       log(`delete ${id} state=${status.state}`);
