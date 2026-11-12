@@ -122,8 +122,83 @@ for (const odd of ['dispatch file', 'linked helper file', 'unreadable sessions']
     assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), tabbed + '\n');
     assert.ok(JSON.parse(fs.readFileSync(join(tabbed, 'job.json'), 'utf8')).reaped_at);
     const errors = f.log().split('\n').filter((line) => line.includes(`keep ${bad.split('/').at(-1)} `));
-    assert.equal(errors.length, kept ? 1 : 0, 'one diagnostic for each bad job in this scan');
+    assert.equal(errors.length, kept ? 2 : 0, 'housekeeping and preservation each report their failure');
     if (kept) assert.match(errors[0], odd === 'dispatch file' ? /ENOTDIR/ : /EACCES/);
+  });
+}
+
+for (const fault of ['unreadable sessions', 'dispatch file']) {
+  test(`working tabbed job with ${fault} stays open through housekeeping errors and is reaped`, {
+    timeout: 10000, skip: fault === 'unreadable sessions' && process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
+  }, async (t) => {
+    let unreadable;
+    t.after(() => { if (unreadable) fs.chmodSync(unreadable, 0o700); });
+    const f = fixture(t), first = f.job({ state: 'working' }, {}, true);
+    const second = fault === 'unreadable sessions' ? f.job({ state: 'working' }, {}, true) : null;
+    if (second) {
+      unreadable = join(first, 'sessions');
+      fs.mkdirSync(unreadable);
+      fs.chmodSync(unreadable, 0);
+    } else fs.writeFileSync(join(first, '.dispatch'), 'Synthetic incomplete dispatch.\n');
+    const { child, exited } = f.start();
+    await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch.log')) && f.log().includes('keep ')));
+    assert.equal(child.exitCode, null, 'housekeeping does not erase the only open job');
+    if (second) {
+      fs.writeFileSync(join(second, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+      await until(() => child.exitCode !== null || JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at);
+      assert.ok(JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at, 'the second tab is reaped');
+    }
+    await new Promise((done) => setTimeout(done, 1200));
+    assert.equal(child.exitCode, null, 'the first job still keeps the watcher alive after the second settles');
+    if (unreadable) fs.chmodSync(unreadable, 0o700);
+    fs.writeFileSync(join(first, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+    await until(() => child.exitCode !== null);
+    await exited;
+    assert.equal(child.exitCode, 0);
+    assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), (second ? second + '\n' : '') + first + '\n');
+    assert.ok(JSON.parse(fs.readFileSync(join(first, 'job.json'), 'utf8')).reaped_at);
+    assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+  });
+}
+
+test('an expired terminal job with unreadable sessions is kept but does not keep the watcher alive', {
+  timeout: 10000, skip: process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
+}, async (t) => {
+  let unreadable;
+  t.after(() => { if (unreadable) fs.chmodSync(unreadable, 0o700); });
+  const f = fixture(t), dir = f.job(expired());
+  const { source, bytes } = realSession(dir);
+  unreadable = join(dir, 'sessions');
+  fs.chmodSync(unreadable, 0);
+  const { child, exited } = f.start();
+  await until(() => child.exitCode !== null);
+  await exited;
+  fs.chmodSync(unreadable, 0o700);
+  assert.equal(child.exitCode, 0);
+  assert.deepEqual(fs.readFileSync(source), bytes);
+  assert.match(f.log(), /session preservation: .*EACCES/);
+  assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
+});
+
+for (const file of ['job.json', 'STATUS.json']) {
+  test(`an unreadable ${file} counts as possibly open until it can be read`, {
+    timeout: 10000, skip: process.getuid?.() === 0 ? 'root bypasses chmod 000' : false,
+  }, async (t) => {
+    let unreadable;
+    t.after(() => { if (unreadable) fs.chmodSync(unreadable, 0o600); });
+    const f = fixture(t), dir = f.job({ state: 'working' }, {}, true);
+    unreadable = join(dir, file);
+    fs.chmodSync(unreadable, 0);
+    const { child, exited, stderr } = f.start();
+    await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch.log')) && f.log().includes('keep ')));
+    await new Promise((done) => setTimeout(done, 100));
+    assert.equal(child.exitCode, null, 'uncertain lifecycle evidence must not mean nothing open');
+    fs.chmodSync(unreadable, 0o600);
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+    await until(() => child.exitCode !== null);
+    await exited;
+    assert.equal(child.exitCode, 0, stderr());
+    assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');
   });
 }
 
@@ -319,8 +394,8 @@ syncBuiltinESMExports();`;
     assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).reaped_at);
     assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
     if (fault === 'permanent startup failure') {
-      assert.equal(f.log().split('\n').filter((line) => line.includes('watch error: synthetic permanent')).length, 2,
-        'startup and first catch-up retry; final scan exits without retrying');
+      assert.equal(f.log().split('\n').filter((line) => line.includes('watch error: synthetic permanent')).length, 1,
+        'repeated watch errors are throttled for a minute');
     }
   });
 }
@@ -335,6 +410,41 @@ fs.readdirSync = (path, ...args) => {
   return readdir(path, ...args);
 };
 syncBuiltinESMExports();`;
+
+test('persistent asynchronous watch errors stay at one scan per second and throttle diagnostics', { timeout: 10000 }, async (t) => {
+  const f = fixture(t), bad = f.job({ state: 'working' }), dir = f.job({ state: 'working' }, {}, true);
+  const badFile = join(bad, 'STATUS.json');
+  fs.unlinkSync(badFile);
+  fs.mkdirSync(badFile);
+  const { child, exited } = f.start(scanProbe + `
+import { EventEmitter } from 'node:events';
+let attempts = 0;
+fs.watch = () => {
+  fs.appendFileSync(process.env.HUD_HOME + '/attempts', Date.now() + '\\n');
+  const watcher = new EventEmitter();
+  watcher.close = () => {};
+  process.nextTick(() => watcher.emit('error', Error('synthetic async watch failure ' + (++attempts))));
+  return watcher;
+};
+syncBuiltinESMExports();`);
+  await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'scans')) && f.log().includes('watch error:')));
+  assert.equal(child.exitCode, null);
+  await new Promise((done) => setTimeout(done, 3200));
+  const stamps = (name) => fs.readFileSync(join(f.home, name), 'utf8').trim().split('\n').map(Number);
+  const scans = stamps('scans'), attempts = stamps('attempts');
+  assert.ok(scans.length >= 3 && scans.length <= 5, `expected about 1 scan/s, got ${scans.length}`);
+  for (let i = 1; i < scans.length; i++) assert.ok(scans[i] - scans[i - 1] >= 900, 'no error-handler scan loop');
+  assert.equal(attempts.length, scans.length, 'watch installs only at startup and timer scans');
+  assert.equal(f.log().split('\n').filter((line) => line.includes('watch error:')).length, 1, 'one warning even when error text changes');
+  assert.equal(f.log().split('\n').filter((line) => line.includes(`keep ${bad.split('/').at(-1)} scan:`)).length, 1);
+  fs.rmdirSync(badFile);
+  fs.writeFileSync(badFile, JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  await until(() => child.exitCode !== null);
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');
+});
 
 test('watch recovery catches settlement between the degraded scan and watch registration', { timeout: 10000 }, async (t) => {
   const f = fixture(t), dir = f.job({ state: 'working' }, {}, true);

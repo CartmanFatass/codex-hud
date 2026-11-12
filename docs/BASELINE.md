@@ -135,8 +135,7 @@ now run again, which is why they are counted here.
 | Unit, `.mjs` | `npm run test:mjs` | 16 suites |
 | Full baseline | `npm test` | Both unit suites above |
 
-The historical integration suites need a real tmux (3.4 here); each skips rather than
-fails where its dependency is missing.
+The historical tmux integration suites were removed.
 
 ---
 

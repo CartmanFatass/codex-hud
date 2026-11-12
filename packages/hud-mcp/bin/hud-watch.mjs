@@ -45,6 +45,13 @@ fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\
   mode: 0o600,
 });
 const log = (message) => fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`);
+const warnings = new Map();
+function warn(kind, message) {
+  const now = Date.now();
+  if (now - (warnings.get(kind) ?? -Infinity) < 60000) return;
+  warnings.set(kind, now);
+  log(message);
+}
 fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
 log(`start pid=${process.pid}`);
 let watcher, timer,
@@ -134,10 +141,11 @@ function preserveSessions(dir) {
     return false;
   }
 }
-function scan() {
+function scan(retryWatch = false) {
   if (stopped) return;
   queued = false;
   clearTimeout(timer);
+  if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
   seen.clear();
   let open = false,
     nearest = Infinity;
@@ -145,82 +153,80 @@ function scan() {
     if (!/^j[a-f0-9]{16}$/.test(id)) continue;
     const dir = join(jobs, id);
     try {
-    if (!fs.lstatSync(dir).isDirectory()) continue;
-    const loops = sessionFolders(dir).flatMap((folder) => fs.readdirSync(folder, { withFileTypes: true })
-      .filter((entry) => entry.isSymbolicLink() && entry.name.endsWith('.jsonl'))
-      .map((entry) => join(folder, entry.name)))
-      .filter((link) => {
-        try { fs.statSync(link); } catch (error) { return error.code === 'ELOOP'; }
-        return false;
-      });
-    for (const link of loops) { fs.unlinkSync(link); log(`unlink loop ${link}`); }
-    const jobFile = join(dir, 'job.json'),
-      job = json(jobFile);
-    const statusFile = join(dir, 'STATUS.json');
-    let status = json(statusFile);
-    const session = read(join(dir, 'SESSION.txt'));
-    const tab = session?.match(/^TAB=([^\r\n]+)$/m)?.[1];
-    if (tab && closedTabs.has(tab) && !['closed', 'failed', 'stopped'].includes(status?.state)) {
-      status = { ...status, state: 'failed', exit_reason: 'tab closed', ended_at: new Date().toISOString() };
-      fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
-      fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
-    }
-    // A persisted launch without STATUS is still open until dispatch returns.
-    if (!status) {
-      if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) open = true;
-      continue;
-    }
-    if (status.state === 'idle_grace') {
-      open = true;
-      continue;
-    }
-    if (status.state === 'working' || status.state?.startsWith('waiting')) {
-      open = true;
-      continue;
-    }
-    if (!['closed', 'failed', 'stopped'].includes(status.state)) continue;
-    const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
-    const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
-    if (expires < Date.now() && (!tab || job?.reaped_at)) {
-      if (!preserveSessions(dir)) continue;
-      fs.rmSync(dir, { recursive: true, force: true });
-      log(`delete ${id} state=${status.state}`);
-      continue;
-    }
-    if (job?.reaped_at || !tab) continue;
-    if (status.state === 'failed') {
-      const ended = Date.parse(status.ended_at);
-      const deadline = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + retention;
-      if (deadline > Date.now()) {
-        nearest = Math.min(nearest, deadline);
+      if (!fs.lstatSync(dir).isDirectory()) continue;
+      try {
+        const loops = sessionFolders(dir).flatMap((folder) => fs.readdirSync(folder, { withFileTypes: true })
+          .filter((entry) => entry.isSymbolicLink() && entry.name.endsWith('.jsonl'))
+          .map((entry) => join(folder, entry.name)))
+          .filter((link) => {
+            try { fs.statSync(link); } catch (error) { return error.code === 'ELOOP'; }
+            return false;
+          });
+        for (const link of loops) { fs.unlinkSync(link); log(`unlink loop ${link}`); }
+      } catch (error) { warn(`keep ${id} scan`, `keep ${id} scan: ${error.message}`); }
+      const jobFile = join(dir, 'job.json'), statusFile = join(dir, 'STATUS.json');
+      let job, status;
+      try { job = json(jobFile); status = json(statusFile); }
+      catch (error) { if (error.code !== 'ENOENT') open = true; throw error; }
+      const session = read(join(dir, 'SESSION.txt'));
+      const tab = session?.match(/^TAB=([^\r\n]+)$/m)?.[1];
+      if (tab && closedTabs.has(tab) && !['closed', 'failed', 'stopped'].includes(status?.state)) {
+        status = { ...status, state: 'failed', exit_reason: 'tab closed', ended_at: new Date().toISOString() };
+        fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
+        fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+      }
+      // A persisted launch without STATUS is still open until dispatch returns.
+      if (!status) {
+        if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) open = true;
         continue;
       }
-    }
-    const result = spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000 });
-    log(`reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}`);
-    if (result.status === 0 && job) {
-      // Read again: hud_read/send/create may have updated the receipt during reap.
-      const latest = json(jobFile);
-      if (latest) {
-        const temp = `${jobFile}.${process.pid}.tmp`;
-        fs.writeFileSync(temp, JSON.stringify({ ...latest, reaped_at: new Date().toISOString() }, null, 2) + '\n', {
-          mode: 0o600,
-        });
-        fs.renameSync(temp, jobFile);
+      if (status.state === 'idle_grace') {
+        open = true;
+        continue;
       }
-    }
+      if (status.state === 'working' || status.state?.startsWith('waiting')) {
+        open = true;
+        continue;
+      }
+      if (!['closed', 'failed', 'stopped'].includes(status.state)) continue;
+      const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
+      const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
+      if (expires < Date.now() && (!tab || job?.reaped_at)) {
+        if (!preserveSessions(dir)) continue;
+        fs.rmSync(dir, { recursive: true, force: true });
+        log(`delete ${id} state=${status.state}`);
+        continue;
+      }
+      if (job?.reaped_at || !tab) continue;
+      if (status.state === 'failed') {
+        const ended = Date.parse(status.ended_at);
+        const deadline = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + retention;
+        if (deadline > Date.now()) {
+          nearest = Math.min(nearest, deadline);
+          continue;
+        }
+      }
+      const result = spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000 });
+      log(`reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}`);
+      if (result.status === 0 && job) {
+        // Read again: hud_read/send/create may have updated the receipt during reap.
+        const latest = json(jobFile);
+        if (latest) {
+          const temp = `${jobFile}.${process.pid}.tmp`;
+          fs.writeFileSync(temp, JSON.stringify({ ...latest, reaped_at: new Date().toISOString() }, null, 2) + '\n', {
+            mode: 0o600,
+          });
+          fs.renameSync(temp, jobFile);
+        }
+      }
     } catch (error) {
-      if (error.code !== 'ENOENT') log(`keep ${id} scan: ${error.message}`);
+      if (error.code !== 'ENOENT') warn(`keep ${id} scan`, `keep ${id} scan: ${error.message}`);
     }
   }
   for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);
   if (open) subscribe();
-  if (!watcher && (open || nearest !== Infinity)) {
-    startWatch();
-    if (watcher) schedule(); // Catch changes made before the recovered watch was installed.
-  }
   if ((open || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + 1000);
-  if (nearest !== Infinity) timer = setTimeout(scan, Math.max(1, Math.ceil(nearest - Date.now())));
+  if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.ceil(nearest - Date.now())));
   else if (!open) stop();
 }
 function schedule() {
@@ -236,11 +242,12 @@ function startWatch() {
       const path = filename?.toString();
       if (!path || !path.includes('/') || /^[^/]+\/(STATUS\.json|SESSION\.txt|job\.json)$/.test(path)) schedule();
     }).on('error', (error) => {
-      log(`watch error: ${error.message}`);
+      warn('watch error', `watch error: ${error.message}`);
       watcher?.close(); watcher = undefined;
-      schedule();
+      clearTimeout(timer);
+      timer = setTimeout(() => scan(true), 1000);
     });
-  } catch (error) { log(`watch error: ${error.message}`); }
+  } catch (error) { warn('watch error', `watch error: ${error.message}`); }
 }
 startWatch();
 scan();
