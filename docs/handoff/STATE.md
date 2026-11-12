@@ -8,8 +8,7 @@ Milestone: M3b · AI-THIN
 ## Next
 
 - CARD-DETAILS; then the M3b milestone review.
-- Open: `hud_close` cannot stop a working pi job; panel-open notification burst; panel self-close with its caller;
-  retiring legacy skills (list features first); to-tickets for the Project tickets section.
+- TICKETS: the Project tab's tickets section from to-tickets.
 
 ## Slices
 
@@ -45,10 +44,10 @@ board counts these; update at every landing or decision. -->
 - accepted · M3b · OPEN-TAB · opening a file from the panel uses its own herdr tab, not a split pane (c3d49420)
 - working · M3b · CARD-DETAILS · newest card expanded, others folded; keywords colour files, stances (approve, object,
   reject) and opinions (owner); after NATIVE-TREE
-- todo · M4 · TICKETS · to-tickets in the Project tab's tickets section
+- working · M4 · TICKETS · to-tickets in the Project tab's tickets section
 - todo · M3b · M3B-REVIEW · the M3b two-axis milestone review
-- todo · — · PI-STOP · hud_close stops a working pi job
-- todo · — · LEGACY-SKILLS · retire legacy skills (features listed first)
+- try · — · PI-STOP · hud_close stops a working pi job in seconds, not after a 30 s wait (Fishpref 38447ef)
+- try · — · LEGACY-SKILLS · herdr-delegate, herdr-delegate-codex, pi-subagent retired to Fishpref (6bd0ef8)
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 
 ## Now (2026-11-12): M3b closing; themes and pages building in worktrees
