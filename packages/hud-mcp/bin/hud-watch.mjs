@@ -13,21 +13,32 @@ const jobs = join(home, 'jobs'),
   logFile = join(home, 'watch.log');
 const retention = Number(process.env.HUD_WATCH_FAILED_RETENTION_MS ?? 7200000);
 fs.mkdirSync(jobs, { recursive: true, mode: 0o700 });
-function read(file) {
+const cache = new Map();
+const seen = new Set();
+function read(file, parse = (text) => text) {
   try {
-    return fs.readFileSync(file, 'utf8');
+    const st = fs.statSync(file);
+    seen.add(file);
+    const stamp = `${st.mtimeMs}:${st.size}:${st.ino}`;
+    const hit = cache.get(file);
+    if (hit?.stamp === stamp) return hit.value;
+    const value = parse(fs.readFileSync(file, 'utf8'));
+    cache.set(file, { stamp, value });
+    return value;
   } catch (error) {
     if (error.code === 'ENOENT') return null;
     throw error;
   }
 }
 function json(file) {
-  try {
-    return JSON.parse(read(file) ?? 'null');
-  } catch (error) {
-    if (error instanceof SyntaxError) return null;
-    throw error;
-  }
+  return read(file, (text) => {
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      if (error instanceof SyntaxError) return null;
+      throw error;
+    }
+  });
 }
 const oldLog = read(logFile) ?? '';
 fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), {
@@ -95,6 +106,7 @@ function scan() {
   if (stopped) return;
   queued = false;
   clearTimeout(timer);
+  seen.clear();
   let open = false,
     nearest = Infinity;
   for (const id of fs.readdirSync(jobs)) {
@@ -149,6 +161,7 @@ function scan() {
       }
     }
   }
+  for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);
   if (open) subscribe();
   if (nearest !== Infinity) timer = setTimeout(scan, Math.max(1, Math.ceil(nearest - Date.now())));
   else if (!open) stop();

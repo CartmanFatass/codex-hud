@@ -15,13 +15,16 @@ interface Snap {
   text: string;
   at: number;
   whole: boolean;
+  json?: Record<string, unknown> | null;
 }
 const cache = new Map<string, { stamp: string; snap: Snap }>();
+const seen = new Set<string>();
 function read(path: string, max = 65536): Snap | null {
   let fd: number | undefined;
   try {
     const st = fs.lstatSync(path);
     if (!st.isFile()) return null;
+    seen.add(path);
     const stamp = `${st.mtimeMs}:${st.size}:${st.ino}`;
     const hit = cache.get(path);
     if (hit?.stamp === stamp) return hit.snap;
@@ -29,7 +32,6 @@ function read(path: string, max = 65536): Snap | null {
     const buffer = Buffer.alloc(max + 1);
     const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
     const snap = { text: buffer.subarray(0, Math.min(size, max)).toString('utf8'), at: st.mtimeMs, whole: size <= max };
-    if (cache.size > 800) cache.clear();
     cache.set(path, { stamp, snap });
     return snap;
   } catch {
@@ -38,15 +40,18 @@ function read(path: string, max = 65536): Snap | null {
     if (fd !== undefined) fs.closeSync(fd);
   }
 }
-function json(path: string): { v: Record<string, unknown>; at: number } | null {
+function json(path: string, parse: (text: string) => unknown): { v: Record<string, unknown>; at: number } | null {
   const file = read(path);
   if (!file?.whole) return null;
-  try {
-    const v = JSON.parse(file.text);
-    return v && typeof v === 'object' ? { v, at: file.at } : null;
-  } catch {
-    return null;
+  if (file.json === undefined) {
+    try {
+      const v = parse(file.text);
+      file.json = v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+    } catch {
+      file.json = null;
+    }
   }
+  return file.json ? { v: file.json, at: file.at } : null;
 }
 const when = (v: unknown): number | null => {
   const at = typeof v === 'string' ? Date.parse(v) : NaN;
@@ -75,12 +80,13 @@ export function runningVerb(role: string, harness: string): string {
   if (harness === 'jev') return /^flow/.test(role) ? 'generating' : 'asking web';
   return 'working';
 }
-export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
+export function readThinJobs(home: string, scope: ThinJobScope, parse = JSON.parse): WorkLane[] {
+  seen.clear();
   const root = join(home, 'jobs');
   const jobs = entries(root)
     .filter((id) => /^j[0-9a-f]{16}$/.test(id))
     .flatMap((id) => {
-      const file = json(join(root, id, 'job.json')),
+      const file = json(join(root, id, 'job.json'), parse),
         job = file?.v;
       if (
         !file ||
@@ -99,7 +105,7 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
   const lanes = new Map<string, WorkLane>();
   for (const { id, job, created, jobAt } of jobs) {
     const directory = join(root, id),
-      status = json(join(directory, 'STATUS.json')),
+      status = json(join(directory, 'STATUS.json'), parse),
       s = status?.v ?? {};
     const state = s.state === 'stopped' ? 'stopped' :
       s.state === 'failed' || (!status && typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0)
@@ -248,5 +254,7 @@ export function readThinJobs(home: string, scope: ThinJobScope): WorkLane[] {
       evidence: [],
     });
   }
+  // Keep all receipt signatures, but only artifacts used by the retained lanes (no clear-all churn).
+  for (const path of cache.keys()) if (!seen.has(path)) cache.delete(path);
   return [...lanes.values()];
 }
