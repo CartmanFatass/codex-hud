@@ -63,6 +63,25 @@ export function stemLines(text: string, width: number, ink = theme.board.muted, 
   if (lines.length > max) lines = [...lines.slice(0, max - 1), truncateAnsi(lines.slice(max - 1).join(' '), room)];
   return lines.map((line) => fit(`${ink(mark('┃', '|'))} ${identifiers(line)}`, width));
 }
+/** Model marks are presentation only; malformed marks leave a plain single line. */
+export function jobSentenceLine(raw: string, width: number, ink = theme.board.muted): string {
+  const safe = monitorText(raw).replace(/\s+/g, ' ').trim(),
+    room = Math.max(1, width - 3);
+  const spans = [...safe.matchAll(/«([^«»]+)»/g)];
+  const valid = spans.length > 0 && spans.length <= 3 && !/[«»]/.test(safe.replace(/«[^«»]+»/g, ''));
+  const plain = safe.replace(/[«»]/g, '');
+  let text = truncateAnsi(plain, room);
+  if (text !== plain) {
+    const head = text.slice(0, -1),
+      space = head.lastIndexOf(' ');
+    text = (space > 0 ? head.slice(0, space) : head) + '…';
+  }
+  if (valid) {
+    const keywords = spans.map((s) => s[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    text = text.replace(new RegExp(keywords, 'g'), (word) => theme.board.identifier(word));
+  }
+  return fit(`${ink(mark('┃', '|'))} ${text}`, width);
+}
 /** An open question as its paragraphs; the context and every option only when `full`. */
 export function requestLines(card: WorkCard, full = false): string[] {
   const r = card.worker.work?.requestInfo;
@@ -79,7 +98,10 @@ export function workCardDetail(card: WorkCard, sentence = ''): string {
   return sentence || card.worker.ask || card.worker.work?.reason || (card.reason ? t(card.reason) : '');
 }
 export function workPhaseText(phase: string): string {
-  return monitorText(phase).replace(/reviewing|researching|working|generating|asking web|build|review|accept|done|fixing|asking|failed|stopped|major|minor/g, (word) => t(word));
+  return monitorText(phase).replace(
+    /reviewing|researching|working|generating|asking web|build|review|accept|done|fixing|asking|failed|stopped|major|minor/g,
+    (word) => t(word)
+  );
 }
 export function phaseChain(card: WorkCard): string {
   return card.phases
@@ -151,8 +173,11 @@ export function renderWorkCard(card: WorkCard, state: MonitorState, width: numbe
     }
   }
   // Work prints an open question whole; Home's card is the short one in home-view.
+  const generated = card.worker.modelSentence;
   const asking = state.mainTab === 'work' && card.worker.homeNeedsHuman ? requestLines(card, true) : [];
-  for (const part of asking.length ? asking : [workCardDetail(card, sentence)])
+  // The model sentence replaces the factual line, never an open question Work prints whole.
+  if (generated) rows.push(jobSentenceLine(generated, width, ink));
+  for (const part of asking.length ? asking : generated ? [] : [workCardDetail(card, sentence)])
     if (part) rows.push(...stemLines(part, width, ink));
   return rows.map((line, i) => (i ? (failed(card) ? theme.board.failedBody : theme.board.body)(line) : line));
 }

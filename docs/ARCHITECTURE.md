@@ -438,10 +438,9 @@ projection uncertainty is retained across publication and feeds the existing `tr
 `not loaded` notice; it suppresses the affirmative empty-state text until coverage is known.
 
 There is no job-material bridge. Job-only branches are excluded before native label,
-cause, digest or progress prompts are built. Local task labels, reports and questions
-are not model inputs. Native nodes enriched with `job` keep the existing native
-eligibility/SmallModel/cache path. The deleted job-sentence collector and authority
-layer have no replacement; job cards stay deterministic.
+cause, digest or progress prompts are built. Native nodes enriched with `job` keep
+that native eligibility/SmallModel/cache path. The authority layer stays deleted;
+thin-job sentences use a separate bounded job-local collector (§5.6), not a facade-material bridge.
 
 ### 4.6 Per-agent data the panel adds
 
@@ -516,14 +515,14 @@ Nothing calls a model while rendering. Results are stored, and then
 
 ### 5.2 Native text only; no overview generator
 
-The retained features are native-agent labels, visible progress sentences,
-result digests and failure causes. `tree-page.ts` derives the internal
+Thin-job card sentences (§5.6) join the retained native-agent labels, visible
+progress sentences, result digests and failure causes. `tree-page.ts` derives the internal
 `JobSwitches` from the effective master state: all three background jobs on,
 or `NO_JOBS`; these are not independent user settings. Progress additionally
 follows the existing card-visibility and native-eligibility gates (§5.5).
 
 Periodic agent overviews, main recaps, session titles, approval descriptions,
-change summaries and facade-only job sentences have been removed. The panel
+change summaries and legacy facade-only job sentences have been removed. The panel
 and bar neither load old recap/title files nor write new ones. Hidden and
 secondary views receive factual state, not generated overview text.
 `collectors/briefing.ts` and `collectors/recap.ts` retain renderer DTO types
@@ -573,7 +572,7 @@ job using the same key. Retry cooldowns do not carry across languages.
 
 Callers build these bounded prompts and submit directly to `SmallModel`; the
 former `core/materials` authority/consent layer and job-report adapters are gone.
-Facade-only labels, questions and reports are not outbound inputs. Model output
+Legacy facade-only inputs stay excluded; thin-job input is bounded separately in §5.6. Model output
 is display text, never lifecycle, acceptance or execution evidence.
 
 Reasoning and private channels are excluded. Pre-create charge collection uses
@@ -623,6 +622,14 @@ later refresh can cover the new evidence. There are at most three pending
 progress jobs, sharing `SmallModel`'s single-flight queue and hourly cap.
 
 ---
+
+### 5.6 Thin-job card sentences (`collectors/job-sentences.ts`)
+
+`JobSentences.update` runs on collection, after the deterministic workboard is built; `apply` only overlays `OwnerWorker.modelSentence` for painting. Master/key and language gates are shared with the existing service. Native cards, bars, decisions and result lines are unchanged.
+Input is read-only under the exact job directory: brief title/goal (1500-byte prefix), STATUS state/phase, open question (2 KiB), newest review's verdict line, four report lines once settled, and four public assistant-text/tool-call blocks from the newest working-session JSONL's 32 KiB tail. Symlinks/nonregular files refuse; reasoning/private channels and paths referenced by messages are never read.
+State/phase, question/answer revisions, report/review revisions and working-session activity fingerprint the request. One queued/running handle per job and a two-minute floor after settlement coalesce changes. A successful final sentence freezes a settled job; failed final requests retry no sooner than two minutes after failure. Requests use `SmallModel.submit`, visible priority, the shared hourly cap and input cache.
+The private `model-cache/job-sentences.json` retains up to 200 language-keyed job records: last sentence, successful fingerprint, rate timestamp and final-success bit. Reopen restores text without a call; unchanged input stays quiet. Disabling hides the overlay and cancels pending work without deleting records. Model text changes no deterministic state or activity timestamp.
+`render/work-card.ts` removes `«…»` keyword marks and uses `theme.board.identifier` for 1–3 valid spans; malformed/unmarked replies stay plain. One row cuts at a word with `…`, including width-safe CJK fallback. Missing text/key or master off leaves the existing factual rendering unchanged. A sentence is display text, never a workflow verdict.
 
 ## 6. Rendering
 
@@ -761,7 +768,7 @@ native eligibility, but do not restore the retired rich-card body or controls.
 never from rendering. Model requests still need the effective master state.
 
 Raw native task/charge, reports and older notes remain in the Inspector. A
-facade-only card uses deterministic observations, not a generated job sentence.
+legacy facade-only card stays deterministic; thin jobs can overlay the §5.6 sentence.
 Compact logs and the Inspector mark model-written text with a dim `~`.
 
 ### 6.4 Input

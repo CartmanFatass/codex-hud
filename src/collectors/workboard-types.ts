@@ -34,6 +34,8 @@ export interface DecisionRecord {
   readonly evidence: readonly EvidenceRef[];
 }
 export interface OwnerWorker {
+  /** Display-only model sentence; never state or execution evidence. */
+  readonly modelSentence?: string;
   readonly work?: import('./work-card.js').WorkFacts;
   readonly id: string;
   readonly laneId: string;

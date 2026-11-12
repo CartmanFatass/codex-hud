@@ -191,7 +191,10 @@ test('dispatch failure writes a reason for the panel and is reaped', { timeout: 
 test('stopped jobs read immediately, render neutral and are terminal to the watcher', { timeout: 7000 }, async (t) => {
   const f = await fixture(t);
   const job = await f.call('hud_create', { role: 'imp', request_key: 'stopped', task: 'Synthetic stop.' });
-  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'stopped', ended_at: new Date().toISOString() }));
+  fs.writeFileSync(
+    join(job.task_dir, 'STATUS.json'),
+    JSON.stringify({ state: 'stopped', ended_at: new Date().toISOString() })
+  );
   assert.equal((await f.call('hud_read', { job: job.job, wait_ms: 120000 })).state, 'stopped');
   const worker = workerFor(f, job.job);
   assert.equal(worker.state, 'stopped');
@@ -736,24 +739,40 @@ test(
 test('thin pi launch switches and verbatim arguments reach argv, receipts and reads', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   for (const enabled of [false, true]) {
-    const options = { lens: enabled, mcp: !enabled, tps: enabled, ui_ext: enabled, skills: !enabled, split: !enabled,
-      pi_args: ['--tools', 'read', 'literal space;$(not-a-command)'] };
+    const options = {
+      lens: enabled,
+      mcp: !enabled,
+      tps: enabled,
+      ui_ext: enabled,
+      skills: !enabled,
+      split: !enabled,
+      pi_args: ['--tools', 'read', 'literal space;$(not-a-command)'],
+    };
     const args = { role: 'imp', request_key: `launch-${enabled}`, task: 'Synthetic task.', ...options };
     const job = await f.call('hud_create', args);
-    const argv = f.commands().filter((c) => c.command === 'pi-role').at(-1).args;
+    const argv = f
+      .commands()
+      .filter((c) => c.command === 'pi-role')
+      .at(-1).args;
     const before = argv.slice(0, argv.indexOf('--'));
     for (const key of ['lens', 'mcp', 'tps']) assert.ok(before.includes(`--${options[key] ? '' : 'no-'}${key}`));
     assert.equal(before.includes('--no-ui-ext'), !enabled);
     assert.equal(before.includes('--skills'), !enabled);
     assert.deepEqual(argv.slice(-options.pi_args.length), options.pi_args);
     assert.ok(argv.indexOf('--tools') > argv.indexOf('--'));
-    const start = f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'start').at(-1).args;
+    const start = f
+      .commands()
+      .filter((c) => c.args[0] === 'agent' && c.args[1] === 'start')
+      .at(-1).args;
     assert.deepEqual(start.slice(-options.pi_args.length), options.pi_args);
     assert.equal(start[start.indexOf('--pane') + 1], 'synthetic-worker');
     const receipt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
     for (const value of [receipt(), await f.call('hud_read', { job: job.job })])
       for (const [key, expected] of Object.entries(options)) assert.deepEqual(value[key], expected);
-    assert.match(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'), enabled ? /^RIGHT=$/m : /^RIGHT=synthetic-right$/m);
+    assert.match(
+      fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'),
+      enabled ? /^RIGHT=$/m : /^RIGHT=synthetic-right$/m
+    );
     assert.deepEqual(await f.call('hud_create', { ...args, lens: !enabled, pi_args: [] }), job);
     assert.equal(receipt().lens, enabled);
     assert.deepEqual(receipt().pi_args, options.pi_args);
@@ -772,14 +791,20 @@ test('thin launch options reject Jev roles and invalid pi values before dispatch
   assert.deepEqual((await f.call('hud_roster')).roles.find((r) => r.role === 'oracle').accepts_options, []);
   for (const key of keys) {
     const value = key === 'pi_args' ? ['--tools', 'read'] : false;
-    assert.deepEqual(await f.call('hud_create', { role: 'oracle', request_key: 'jev-launch', task: 'Synthetic.', [key]: value }),
-      { ok: false, code: 'invalid_arguments' });
-    assert.deepEqual(await f.call('hud_create', { role: 'imp', request_key: 'bad-launch', task: 'Synthetic.', [key]: 'invalid' }),
-      { ok: false, code: 'invalid_arguments' });
+    assert.deepEqual(
+      await f.call('hud_create', { role: 'oracle', request_key: 'jev-launch', task: 'Synthetic.', [key]: value }),
+      { ok: false, code: 'invalid_arguments' }
+    );
+    assert.deepEqual(
+      await f.call('hud_create', { role: 'imp', request_key: 'bad-launch', task: 'Synthetic.', [key]: 'invalid' }),
+      { ok: false, code: 'invalid_arguments' }
+    );
   }
   for (const pi_args of [[1], Array(129).fill('a'), ['a'.repeat(4097)], null])
-    assert.deepEqual(await f.call('hud_create', { role: 'imp', request_key: 'bad-args', task: 'Synthetic.', pi_args }),
-      { ok: false, code: 'invalid_arguments' });
+    assert.deepEqual(
+      await f.call('hud_create', { role: 'imp', request_key: 'bad-args', task: 'Synthetic.', pi_args }),
+      { ok: false, code: 'invalid_arguments' }
+    );
   assert.deepEqual(f.commands(), []);
 });
 

@@ -92,6 +92,7 @@ import { fileSignature } from './utils/file-signature.js';
 import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js';
 import { SmallModel, modelHttpRequest } from './collectors/small-model.js';
 import { ModelProbe, apiSettings } from './collectors/model-probe.js';
+import { JobSentences } from './collectors/job-sentences.js';
 import { hudProblems, diagnosticLines } from './render/hud-diagnostics.js';
 import { ActivityJournal } from './collectors/activity-journal.js';
 import {
@@ -702,6 +703,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let modelChanged = () => {};
   const model = new SmallModel({ dir: path.join(getHudDisplayHome(), 'model-cache'), onChange: () => modelChanged() });
   const probe = new ModelProbe({ dir: path.join(getHudDisplayHome(), 'model-cache') }, () => render());
+  const jobSentences = new JobSentences(
+    model,
+    path.join(getHudDisplayHome(), 'model-cache', 'job-sentences.json'),
+    () => render()
+  );
   // Each subagent's log: observed changes and model notes, kept per session.
   const agentLog = new AgentLog(path.join(getHudDisplayHome(), 'agent-log'));
   // The Timeline pane's events: the rollout's and the agent log's, one list.
@@ -796,6 +802,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       },
       hourlyCap: settings.modelCallsPerHour,
     });
+    jobSentences.configure(modelOn, resolveLanguage(settings.language));
   };
   configureModel();
   // The bar's fields, for the foot of the panel: the panel replaces the bar
@@ -980,7 +987,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         );
         frame = renderMonitor({
           tree,
-          workboard: jobPipeline.workboard(tree, panelDelegation),
+          workboard: jobSentences.apply(jobPipeline.workboard(tree, panelDelegation)),
           state,
           git,
           worktrees,
@@ -1332,6 +1339,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       state = reconcileMonitor(state, tree, git, worktrees, Date.now(), delegation);
       updateProgress();
       updateJobs();
+      jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home);
       error = settingsError || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });
@@ -1451,6 +1459,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     jobPipeline.dispose();
     jobs.stop();
     progress.stop();
+    jobSentences.stop();
     model.cancelAll();
     probe.cancel();
     agentLog.flush();

@@ -113,7 +113,7 @@ export function laneRows(
     const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: worker.id });
     // Home's asking card is a title-only pointer back to the complete slab.
     const lines =
-      !work && worker.homeNeedsHuman
+      !work && worker.homeNeedsHuman && !worker.modelSentence
         ? renderWorkCard(card, state, width, '').slice(0, 1)
         : renderWorkCard(card, state, width, sentence);
     rows.push(...lines.map((text) => ({ text, item: key, key, sentenceWorkers: [worker.id] })));
