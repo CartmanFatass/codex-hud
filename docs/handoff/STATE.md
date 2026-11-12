@@ -6,6 +6,14 @@ Milestone: M3b · AI-THIN
 
 - Try M3b on the real panel: one sentence per card, decision and result; keywords scan at a glance.
 
+## Next
+
+- NATIVE-TREE: native subagents on Home, one lane per main session; the old Agents pane goes.
+- PROGRESS-BOARD: the Project tab's progress board.
+- The owner tries M3b, then the M3b milestone review.
+- Open: `hud_close` cannot stop a working pi job; panel-open notification burst; panel self-close with its caller;
+  retiring legacy skills (list features first); to-tickets for the Project tickets section.
+
 ## Now (2026-11-12): M3b closing; themes and pages building in worktrees
 
 Landed today: hud_read/list perf (`5ac1ee5c`), bar perf (`476bed9f`), ONE-PAGE Home (`9e54af8b`), stopped-after-report
