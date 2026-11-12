@@ -27,15 +27,17 @@ Milestone: M4 · Project view
   the same defect (a job whose session housekeeping throws is not counted open, so the watcher can exit while it
   works) → M4-FIX6 2d0fed42 (plus DS optional: no async error retry loop, rate-limited log lines).
   Live check 22:04: the old watcher stopped, the next hud_create started one on 2d0fed42 over the real job tree
-  (four `.dispatch/current.json` jobs): alive, no error lines. Round 7 (Sol xhigh + DS max on 2d0fed42) running.
+  (four `.dispatch/current.json` jobs): alive, no error lines. Round 7 on 2d0fed42: **both accept** (m4-close 05 done). DS optional
+  follow-ups (SESSION.txt guard, rate-limited reap/preservation lines, BASELINE counts, CI calling removed scripts)
+  → M4-FIX7. Architect (Astra) whole-project review running in parallel (M4-ARCH, on 62809b78).
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
   finding 1); delete that part of the command or keep it?
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
   `--session-dir <job>/sessions`, so those jobs keep real session files in the job dir; run
   `python3 tmp/bin/migrate-sessions.py apply` before they turn one day old (pi-roles 27e2006 guards the self-link).
   Since RETENTION-SAFE the watcher moves them itself before deleting; the script stays a manual shortcut.
-- After both reviewers accept: an architect (Astra) review of the whole project before the release (owner
-  2026-11-12); I decide what blocks.
+- Architect (Astra) review of the whole project before the release is running (owner 2026-11-12); I decide what
+  blocks.
 - Then m4-close 06 release: a clean-built archive (stale dist files from deleted sources must not ship) + ./install,
   temp-HOME install/uninstall, merge to main, tag.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
@@ -118,7 +120,9 @@ board counts these; update at every landing or decision. -->
 - try · M4 · M4-FIX5 · 88c048da · watcher: .dispatch receipt file, per-job containment, degraded polling with a pending deadline, watch retry
 - done · M4 · M4-REVIEW6 · both changes-required (open job lost on a housekeeping error) · docs/reviews/2026-11-12-m4-review6-*.md
 - try · M4 · M4-FIX6 · 2d0fed42 · session housekeeping errors no longer hide an open job; watch retry only on the timer; log rate limit
-- working · M4 · M4-REVIEW7 · seventh review round (Sol xhigh + DS max on 2d0fed42)
+- done · M4 · M4-REVIEW7 · Sol accept, DS accept (4 optional) · docs/reviews/2026-11-12-m4-review7-*.md
+- working · M4 · M4-FIX7 · round-7 optional follow-ups + CI workflow (imp)
+- working · M4 · M4-ARCH · architect whole-project review before the release (Astra)
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
 - try · M4 · JOB-RETENTION · owner: the job watcher deletes a settled job directory one day after it closes (71801be1; existing 99 pi sessions moved to ~/.pi/agent/sessions and linked first, toktrack totals unchanged)
 - accepted · M4 · M4-REVIEW2 · re-review on 3280cc02: changes-required; Sol 3 major (reload place, reload width, retired host/bridge left), DS 1 major + 3 minor (docs/reviews/2026-11-12-m4-review2-*)
