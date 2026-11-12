@@ -9,13 +9,15 @@ Milestone: M4 · Project view
   show the brief's heading as title (NP-04); Chinese 「」 keywords are coloured (NP-03); Home's spare rows show progress
   and open tickets, Enter jumps to Project (HOME-PROGRESS); Settings → Models → Decision API switches Jev's provider
   (GEMINI-DECIDE); settled cards show an outcome mark, the Inspector shows kind/outcome/review counts, Project has a
-  Model fit table, questions show a category (DL; needs a working Gemini or OpenAI key).
+  Model fit table, questions show a category (DL; needs a working Gemini or OpenAI key); Settings → Theme offers
+  terminal, titanium, mocha, arctic, ember, contrast, latte, paper and each changes Home/Project/Inspector (THEMES).
 
 ## Next
 
 - m4-close (.scratch/m4-close, 7 tickets): 01 HOME-LAYOUT, 02 THEMES, 07 BAR-FIDELITY (frontend-implementer) and
   03 landed (LIVE-FIX); then 04 whole-project review (Sol xhigh + DS max), 05 fixes until both accept, 06 release
   archive + merge to main + tag.
+- m4-close 08 HOME-RECOMMEND (owner, 2026-11-12) added; 04 now also waits for it.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
@@ -69,7 +71,9 @@ board counts these; update at every landing or decision. -->
 - try · M4 · HOME-PROGRESS · Home shows a compact progress board and open tickets in its spare rows (owner) (2de1e8a7)
 - try · M4 · LIVE-FIX · live-check bugs: active job shown stalled; finished subagents briefly running on open; «--flag» read as reject (445689e9)
 - try · M4 · HOME-LAYOUT · m4-close 01: Home's progress block layout (frontend-implementer) (426dbc02)
-- working · M4 · THEMES · m4-close 02: distinct themes, refined default, 3–4 new themes (frontend-implementer)
+- try · M4 · THEMES · m4-close 02: each theme its own board inks; refined terminal; new arctic, ember, contrast, paper (frontend-implementer) (6f9a079f)
+- try · M4 · ROW-FIX · native rows keep one order; a growing transcript counts as activity (no false 停滞); running cards drop the flipping tool name (66f37e57)
+- working · M4 · HOME-RECOMMEND · m4-close 08: Settings Home mode Default | Recommended (Decision-API ranking) + progress brief on top (owner) (imp)
 - working · M4 · BAR-FIDELITY · m4-close 07: bar themes match their approved concepts (frontend-implementer)
 - try · M4 · OAI-RUNNING · decision labels follow the Settings choice (default OpenAI, owner); running Claude subagents visible again (meta without finished) (5d0e54aa)
 - todo · M4 · M4-REVIEW · m4-close 04–05: whole-project two-reviewer review and its fixes

@@ -4,7 +4,7 @@
 only the last diff: spec conformance (incl. scope creep) and simplicity/quality/cost (spec §4), with the delegation
 finding bar.
 
-**Blocked by:** 01, 02, 03, 07
+**Blocked by:** 01, 02, 03, 07, 08
 
 **Status:** ready-for-agent
 

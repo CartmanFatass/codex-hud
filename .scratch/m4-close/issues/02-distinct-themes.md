@@ -7,8 +7,8 @@ owner (attention, danger, success), role colours stay on role words, and `none` 
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Every theme visibly differs on Home, Project and the Inspector (frames per theme)
-- [ ] Default refined; 3–4 new themes selectable in Settings, EN and ZH names
-- [ ] Contrast stays readable on dark and light terminals as each theme intends; `none` has no escapes
+- [x] Every theme visibly differs on Home, Project and the Inspector (frames per theme)
+- [x] Default refined; 3–4 new themes selectable in Settings, EN and ZH names
+- [x] Contrast stays readable on dark and light terminals as each theme intends; `none` has no escapes
