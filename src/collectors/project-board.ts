@@ -13,7 +13,14 @@ export interface ProjectItem {
 }
 export const SLICE_STATES = ['working', 'blocked', 'try', 'todo', 'accepted', 'dropped'] as const;
 export type SliceState = typeof SLICE_STATES[number];
+export interface ProjectTicket {
+  number: string; title: string; path: string; at: number; status: string;
+  checked: number; total: number; blockers: string[]; state: 'done' | 'dropped' | 'working' | 'blocked' | 'ready';
+  job?: { role: string; state: string; at?: number; created: number };
+}
+export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[] }
 export interface ProjectSnapshot {
+  tickets: TicketFeature[];
   waiting: ProjectItem[];
   docs: ProjectItem[];
   control: ProjectItem[];
@@ -77,12 +84,52 @@ export class ProjectCollector {
     const file = this.body(path, (b, truncated) => ({ text: b.toString('utf8'), truncated }));
     return file && { text: file.text.slice(0, limit), truncated: file.truncated || Buffer.byteLength(file.text) > limit };
   };
+  private tickets(): TicketFeature[] {
+    const root = join(this.cwd, '.scratch'), features: TicketFeature[] = [];
+    for (const slug of this.names(root).slice(0, 16)) {
+      const issues = join(root, slug, 'issues'), tickets: ProjectTicket[] = [];
+      for (const name of this.names(issues).filter((n) => /^\d+-[^/]+\.md$/.test(n)).slice(0, 64)) {
+        const path = join(issues, name);
+        const ticket = this.body(path, (buffer, truncated): ProjectTicket | null => {
+          if (truncated) return null;
+          const text = buffer.toString('utf8'), heading = text.match(/^# (\d+):[ \t]*(\S[^\r\n]*)/m);
+          const field = (key: string) => text.match(new RegExp(`^\\*\\*${key}:\\*\\*[ \\t]*([^\\r\\n]*)`, 'mi'))?.[1]?.trim();
+          const status = field('Status'), blocked = field('Blocked by');
+          if (!heading || !heading[2].trim() || Number(heading[1]) !== Number(name.split('-')[0]) || !status || blocked === undefined) return null;
+          const boxes = [...text.matchAll(/^[ \t]*[-*] \[([ xX])\]/gm)];
+          const checked = boxes.filter((b) => b[1].toLowerCase() === 'x').length;
+          return { number: heading[1], title: heading[2].trim(), path, at: fs.lstatSync(path).mtimeMs, status,
+            checked, total: boxes.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
+            state: /^wontfix$/i.test(status) ? 'dropped'
+              : /^(done|closed|complete|resolved)$/i.test(status) || (boxes.length > 0 && checked === boxes.length) ? 'done'
+              : /^claimed$/i.test(status) ? 'working' : 'ready' };
+        });
+        // Clone: dependency/job overlays must not mutate the signature-cached parse.
+        if (ticket) tickets.push({ ...ticket, blockers: [...ticket.blockers] });
+      }
+      tickets.sort((a, b) => Number(a.number) - Number(b.number) || a.path.localeCompare(b.path));
+      for (const ticket of tickets) {
+        const references = ticket.blockers[0] ?? '';
+        const title = (value: string) => value.trim().toLowerCase();
+        const refs = tickets.some((t) => title(t.title) === title(references)) ? [references] : references.split(/[,;]|\s+and\s+/i);
+        ticket.blockers = refs.filter((ref) => ref.trim()).flatMap((ref) => {
+          const number = ref.trim().match(/^#?(\d+)\b/)?.[1];
+          const target = (number ? tickets.find((t) => Number(t.number) === Number(number)) : undefined)
+            ?? tickets.find((t) => title(t.title) === title(ref));
+          return target && ['done', 'dropped'].includes(target.state) ? [] : [target?.number ?? ref.trim()];
+        });
+        if (ticket.state === 'ready' && ticket.blockers.length) ticket.state = 'blocked';
+      }
+      if (tickets.length) features.push({ slug, at: Math.max(...tickets.map((t) => t.at)), tickets });
+    }
+    return features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
+  }
   async collect(shown: boolean, board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
       waiting: [], docs: [], control: [], agents: [], keys: [], browser: false, roleCount: 0, editing: [],
-      ladder: { ids: [] }, slices: [], next: [], summary: '',
+      ladder: { ids: [] }, slices: [], next: [], summary: '', tickets: this.tickets(),
       counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
     };
     const statePath = [join(this.cwd, 'docs/handoff/STATE.md'), join(this.cwd, 'STATE.md')].find((p) => this.read(p));
@@ -226,10 +273,24 @@ export class ProjectCollector {
       if (!job || typeof job.cwd !== 'string') continue;
       const cwd = canonical(job.cwd);
       const created = Date.parse(job.created_at) || 0;
-      if ((byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
+      const feature = out.tickets.find((f) => f.slug === job.package);
+      if (!feature && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const s = json(join(dir, 'STATUS.json')) ?? {};
       const report = join(dir, 'report.md'), brief = join(dir, 'brief.md');
-      const path = [report, brief].find((p) => this.cached(p, (st) => st.isFile()));
+      if (feature) {
+        const worker = board.workers.find((w) => w.evidence[0]?.sourceId === id);
+        const material = [job.task, job.brief_path, worker?.task, this.read(brief)?.text].filter((v) => typeof v === 'string').join('\n');
+        for (const ticket of feature.tickets) {
+          if ((ticket.job?.created ?? -Infinity) >= created) continue;
+          const mentions = material.includes(basename(ticket.path)) || new RegExp(`(^|[^\\w])${ticket.number}(?![\\w])`).test(material);
+          if (!mentions) continue;
+          const at = Date.parse(s.settled_at ?? s.ended_at ?? s.started_at ?? job.created_at);
+          ticket.job = { role: typeof job.role === 'string' ? job.role : '', state: typeof s.state === 'string' ? s.state : 'working',
+            created, ...(Number.isFinite(at) ? { at } : {}) };
+        }
+      }
+      if ((byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
+      const path = [report, brief].find((p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } });
       const at = Date.parse(s.started_at ?? job.created_at);
       byTree.set(cwd, { jobId: id, role: typeof job.role === 'string' ? job.role : '', created,
         asking: s.state === 'waiting_orchestrator', path, ...(Number.isFinite(at) ? { at } : {}) });

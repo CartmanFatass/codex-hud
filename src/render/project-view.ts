@@ -110,6 +110,34 @@ export function projectRows(
     if (data.next.length > 4) rows.push(boardRow(fit(`${' '.repeat(13)}+${data.next.length - 4}`, width)));
   }
   rows.push(boardRow(''));
+  if (data.tickets?.length) {
+    if (header('tickets', 'Tickets', t('{features} features · {tickets} tickets', {
+      features: data.tickets.length, tickets: data.tickets.reduce((n, f) => n + f.tickets.length, 0),
+    }))) for (const feature of data.tickets) {
+      const done = feature.tickets.filter((r) => r.state === 'done').length, id = `tickets:${feature.slug}`;
+      // Membership toggles the default: completed features start folded, others open.
+      const closed = folded.has(id) !== (done === feature.tickets.length);
+      rows.push({ text: pair(`  ${closed ? mark('▸', '>') + ' ' : ''}${monitorText(feature.slug)}`,
+        theme.board.muted(t('{done}/{total} done', { done, total: feature.tickets.length })), width), item: `project:fold:${id}` });
+      if (closed) continue;
+      for (const ticket of feature.tickets) {
+        const job = ticket.job, working = job && !['done', 'closed', 'complete', 'failed', 'stopped', 'idle_grace'].includes(job.state);
+        const dropped = ticket.state === 'dropped', literal = /^(needs-triage|needs-info|ready-for-human)$/i.test(ticket.status);
+        const ink = ticket.state === 'done' ? theme.board.success : dropped || ticket.state === 'blocked' ? theme.board.muted : theme.board.active;
+        const glyph = ticket.state === 'done' ? mark('✓', '+') : dropped ? mark('–', '-') : ticket.state === 'blocked' ? mark('○', 'o') : ticket.state === 'working' || working ? mark('◐', '@') : mark('●', '*');
+        const status = ticket.state === 'blocked' ? t('blocked by {tickets}', { tickets: monitorText(ticket.blockers.join(', ')) })
+          : literal ? monitorText(ticket.status) : t(ticket.state);
+        const unknown = !/^(done|closed|complete|resolved|wontfix|claimed|needs-triage|needs-info|ready-for-human|ready-for-agent)$/i.test(ticket.status);
+        const jobText = job ? [monitorText(job.role), monitorText(t(job.state)), minuteAge(job.at ?? null, now)].filter(Boolean).join(' ') : '';
+        const detail = [status, unknown ? monitorText(ticket.status) : '', jobText && width >= 64 ? jobText : ''].filter(Boolean).join(' · ');
+        const count = `${ticket.checked}/${ticket.total}`, room = Math.max(1, width - visualLength(count) - 2);
+        rows.push({ text: pair(pair(`    ${ink(glyph)} ${dropped ? theme.board.muted(monitorText(ticket.number + ' ' + ticket.title)) : monitorText(ticket.number + ' ' + ticket.title)}`,
+          theme.board.muted(detail), room), theme.board.muted(count), width),
+          item: `project:file:${ticket.path}:ticket`, files: [ticket.path] });
+      }
+    }
+    rows.push(boardRow(''));
+  }
   if (header('tree', 'Working tree')) {
     if (data.git) item({ label: 'branch', value: [
       data.git.branch, t('{n} changed', { n: data.git.changed }),

@@ -253,10 +253,10 @@ later-package confirmation; changing the public selector does not rewrite them.
 ## Project
 
 Project shows **Waiting for you** (the bullet list under `## Waiting for the owner` in
-`docs/handoff/STATE.md`, falling back to root `STATE.md`), **Progress**, **Working tree** (branch and change counts,
+`docs/handoff/STATE.md`, falling back to root `STATE.md`), **Progress**, **Tickets** when present, **Working tree** (branch and change counts,
 working HUD jobs whose cwd is this tree, last commit), **Docs** (STATE's `Milestone:` value and the newest
 of up to twelve reviews), then **Control plane**. No milestone is guessed when the line is absent.
-There is no Tickets section yet; to-tickets integration is a later slice.
+Tickets come from Matt's `to-tickets` local-file tracker, not GitHub or Linear.
 
 Progress is a read-only board from the project files, not a model estimate:
 
@@ -281,6 +281,37 @@ Progress folds like the other sections. The last commit stays in Working tree be
 separate landed-commit list. Linked worktree discovery shares the five-second git gate. Job lookup reads only
 `job.json` and `STATUS.json` in the newest 64 job directories by mtime; report/brief existence is checked without
 reading their bodies. Card text comes from the already-collected workboard, including jobs hidden on Home.
+
+**Tickets** groups `.scratch/<feature-slug>/issues/<NN>-<slug>.md` by feature, newest ticket change first;
+tickets are ordered by number. The header counts features and tickets; each feature shows done/total and
+starts folded if every ticket is done. Enter or `o` toggles a feature or opens a ticket file in its own tab.
+No local tickets means no section. Collection is limited to 16 features × 64 files, 64 KiB per file, with
+signature reuse and no extra git/model calls or writes.
+
+The local format used is:
+
+```markdown
+# 01: Ticket title
+**What to build:** The end-to-end behaviour.
+**Blocked by:** None (can start immediately)
+**Status:** ready-for-agent
+- [ ] Acceptance criterion
+- [x] Completed criterion
+```
+
+The heading number must match the filename; missing heading, Blocked by or Status fields and oversized
+files are skipped. **Done** (`✓`) means status done/closed/complete (any case), or all checkboxes checked
+with at least one box. Otherwise **blocked** (`○`) means an unfinished dependency from Blocked by, matched
+within the feature by number, else title; **ready** (`●`) means no unfinished blocker. Dependencies can be
+comma/semicolon/`and` separated numbers or titles; `None …` means no blockers. An unresolved reference stays
+blocked. Unknown status words show as written, dim; `0/0` is not completion. The right column is checked/total
+acceptance criteria, not a model estimate.
+
+A matching HUD job adds role, state and age (`◐` while active). Its explicit package label must equal the
+feature slug, and its task or brief must mention the ticket filename or standalone number (`02`, not `102`).
+The existing newest-64 job-directory lookup is reused; only matching-package briefs need bounded body reads.
+The newest matching dispatch wins, with age from settlement, else start/creation. Jobs do not change a ticket's
+file-derived state. Below 64 columns the job text drops to leave room for the ticket and acceptance count.
 
 Control plane starts folded. It lists the same effective role registry as `hud_roster`, each role's
 harness/model/thinking, HUD and pi-roles source files, the project/user/default convention in effect,

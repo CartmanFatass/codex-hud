@@ -164,7 +164,7 @@ existing workboard, role assignments, convention and instruction files, and nati
 files. `roles/roster.ts` is extracted from the thin MCP's registry: `hud_roster` and Project use the
 same role validation/override/assignment/convention logic without starting the MCP. Project supplies
 cached, bounded readers; the MCP keeps its original reader semantics. Missing milestone means no spec
-row. There is no Tickets section in this slice.
+row. The local to-tickets adapter supplies Tickets after Progress (see below).
 
 **Progress** sits between Waiting for you and Working tree. STATE's mtime dates the header; the Now heading
 supplies the summary. The Slices ledger (`- state · milestone · ID · description (optional commit)`) counts only
@@ -187,6 +187,28 @@ remainder count. The latest commit remains under Working tree, since there is no
 Drift is display-only: a working ledger entry without a linked worktree (not blocked), an unlisted worktree,
 or a worktree with a non-active ledger state gets an attention `!` and reason. The Progress header counts marks;
 no ledger, job or worktree is modified. All Progress rows use the existing Project fold/file actions.
+
+**Tickets** uses only `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, as published by Matt's local-file
+`to-tickets` skill; no GitHub/Linear API is used. Discovery takes at most 16 feature names and 64 ticket
+files per feature, using the same bounded directory/signature cache and 64 KiB reader. Oversized or malformed
+tickets are skipped. Each file needs `# <NN>: <title>` (number matching the filename), `**Blocked by:**`
+and nonempty `**Status:**` lines. `**What to build:**` is prose, not state. Acceptance counts come from
+`- [ ]` / `- [x]` (also uppercase X) checkboxes. Status done/closed/complete is case-insensitive; otherwise
+at least one box with all checked means done. Dependencies resolve within the feature, by number first,
+else case-insensitive title; comma/semicolon/`and` lists and `None (can start immediately)` are supported.
+Any unfinished or unresolved dependency blocks an unfinished ticket; otherwise it is ready. Unknown status
+words remain dim beside that derived state. A completed ticket stays done even if it names a blocker.
+
+Features sort by their newest valid ticket mtime, tickets by number; completed features start folded. Their
+existing Project fold keys toggle that default, with no saved setting or render-time state mutation. Ticket
+rows use the existing `open-files` action. Counts stay right-aligned; linked-job text drops below 64 columns.
+The newest-64 job loop above also matches an exact `job.package` to the feature and a filename or standalone
+`<NN>` token in task/brief-path/collected task text or the job's bounded `brief.md`. Only matching-package
+candidates read a brief body; without tickets the progress-board lookup remains metadata-only. The newest
+matching job by `created_at` supplies role, recorded STATUS state and age (settlement, else start/creation).
+This is a display join, never ticket completion evidence. It adds no job-directory scan, git probe, model
+call or write. Nothing is drawn when there are no valid local tickets; the existing `projectShown` gate
+also prevents ticket I/O on Home or behind a modal.
 
 Files and directory membership use stat-signature caches, reads stop at 64 KiB, directory discovery
 stops at 128 names per source (job directory membership is enumerated to rank the newest 64), and obsolete
