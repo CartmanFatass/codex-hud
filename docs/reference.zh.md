@@ -363,7 +363,7 @@ Version 2 含会话、项目、上下文、额度、tokens、代理、注意事�
 
 **显式导入。** `hud import preview`／`apply` 只读指定旧文件（及已有 HUD `jev.env`），不猜 Codex home。
 已有值优先，apply 私有备份修改目标，输出只有名称没有值。`--pi-footer` 导入明确指定的 p10k-footer JSON。
-导入的旧 jev/aistudio 位置段不配置浏览器任务。
+来源只能是旧 `hud-settings.json` 与 `.env` 文件；旧 jev-ask TOML 会被拒绝（浏览器 CLI 自管配置）。
 
 ```sh
 hud import preview --from /tmp/synthetic-old/hud-settings.json

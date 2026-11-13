@@ -60,11 +60,11 @@ test('import help and retired setup do not write or inspect another tools config
   assert.match(f.output(), /hud import/);
   assert.equal(tree(f.root), before);
 });
-test('preview is byte/tree read-only; apply imports settings, env and TOML existing-wins with backups and idempotence', async (t) => {
+test('preview is byte/tree read-only; apply imports settings and env existing-wins with backups and idempotence', async (t) => {
   const f = fixture(t),
     settings = join(f.root, 'hud-settings.json'),
     toml = join(f.root, 'source.toml');
-  const secrets = ['unique-env-secret-517', 'unique-old-settings-secret-518', 'unique-toml-value-519'];
+  const secrets = ['unique-env-secret-517', 'unique-old-settings-secret-518'];
   fs.writeFileSync(
     settings,
     JSON.stringify({ theme: 'mocha', language: 'en', briefingApiKey: secrets[1], briefingApiReasoning: true })
@@ -81,14 +81,19 @@ test('preview is byte/tree read-only; apply imports settings, env and TOML exist
   );
   fs.writeFileSync(
     toml,
-    `[jev]\ncdp_url="http://127.0.0.1:9333"\nchrome="/synthetic/chrome"\nprofile="/synthetic/profile"\nstate_dir="/synthetic/state"\nuser_agent="${secrets[2]}"\nprovider_root="https://example.invalid/"\ngemini_root="https://gemini.invalid/"\nmodel="Synthetic"\neffort_word="Pro"\ngemini_effort_label="High"\n[aistudio]\nstate_dir="/synthetic/studio"\ncdp_url="http://127.0.0.1:9444"\nmodels=["gemini-test"]\ndefault_model="gemini-test"\ndefault_thinking="High"\n`
+    `[jev]\ncdp_url="http://127.0.0.1:9333"\nchrome="/synthetic/chrome"\nprofile="/synthetic/profile"\nstate_dir="/synthetic/state"\nuser_agent="unique-toml-value-519"\nprovider_root="https://example.invalid/"\ngemini_root="https://gemini.invalid/"\nmodel="Synthetic"\neffort_word="Pro"\ngemini_effort_label="High"\n[aistudio]\nstate_dir="/synthetic/studio"\ncdp_url="http://127.0.0.1:9444"\nmodels=["gemini-test"]\ndefault_model="gemini-test"\ndefault_thinking="High"\n`
   );
   fs.writeFileSync(
     join(f.hud, 'config.json'),
     JSON.stringify({ jev: { profile: '/existing/profile' }, decisions: { primary: 'openai' } })
   );
-  const args = ['--from', settings, '--from', toml];
+  const args = ['--from', settings];
   const before = tree(f.root);
+  // Old jev-ask TOML is no longer an import source: refused, nothing written, no value echoed.
+  assert.equal(await main(['import', 'apply', ...args, '--from', toml], f.io), 1);
+  assert.equal(tree(f.root), before);
+  assert.ok(!f.output().includes('unique-toml-value-519'));
+  f.reset();
   assert.equal(await main(['import', 'preview', ...args], f.io), 0, f.output());
   assert.equal(tree(f.root), before);
   for (const secret of [
@@ -101,15 +106,7 @@ test('preview is byte/tree read-only; apply imports settings, env and TOML exist
     'existing-wins-524',
   ])
     assert.ok(!f.output().includes(secret), 'preview leaked a value');
-  for (const name of [
-    'OPENAI_API_KEY',
-    'GEMINI_API_KEY',
-    'TYPESAFE_API_KEY',
-    'jev.cdpUrl',
-    'aistudio.stateDir',
-    'skip existing: theme',
-    'skip existing: jev.profile',
-  ])
+  for (const name of ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'skip existing: theme'])
     assert.ok(f.output().includes(name), name);
   f.reset();
   assert.equal(await main(['import', 'apply', ...args], f.io), 0, f.output());
@@ -124,13 +121,9 @@ test('preview is byte/tree read-only; apply imports settings, env and TOML exist
   assert.equal(creds.textModel.TEXT_MODEL_FOO, 'literal-522');
   assert.match(fs.readFileSync(join(f.hud, 'credentials.env'), 'utf8'), /CUSTOM=" literal \$\{UNEXPANDED\} "/);
   const config = JSON.parse(fs.readFileSync(join(f.hud, 'config.json'), 'utf8'));
-  assert.equal(config.jev.cdpUrl, 'http://127.0.0.1:9333');
-  assert.equal(config.jev.profile, '/existing/profile');
-  assert.equal(config.jev.userAgent, secrets[2]);
-  assert.equal(config.aistudio.model, 'gemini-test');
-  assert.deepEqual(config.decisions, { primary: 'openai' });
+  assert.deepEqual(config, { jev: { profile: '/existing/profile' }, decisions: { primary: 'openai' } });
   const backups = fs.readdirSync(f.hud).filter((n) => n.includes('.bak.'));
-  assert.equal(backups.length, 3);
+  assert.equal(backups.length, 2);
   for (const name of backups) assert.equal(fs.statSync(join(f.hud, name)).mode & 0o777, 0o600);
   assert.equal(
     fs.readFileSync(

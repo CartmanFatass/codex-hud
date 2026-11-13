@@ -454,8 +454,9 @@ server delay or 60 seconds. Browser CLIs own their own configuration independent
 **Explicit import.** `hud import preview`/`apply` reads only named old files (plus
 legacy HUD `jev.env` when present), never guesses a Codex home. Existing values win;
 apply backs up changed targets privately and output lists names, never values.
-`--pi-footer` imports an explicitly named p10k-footer JSON. Legacy imported
-jev/aistudio location sections do not configure browser jobs.
+`--pi-footer` imports an explicitly named p10k-footer JSON. Sources are old
+`hud-settings.json` and `.env` files; old jev-ask TOML is refused (browser CLIs keep
+their own configuration).
 
 ```sh
 hud import preview --from /tmp/synthetic-old/hud-settings.json

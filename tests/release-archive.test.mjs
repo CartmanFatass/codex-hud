@@ -9,7 +9,7 @@ import test from 'node:test';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).version;
 const archive = `hud-${version}.tar.gz`;
-const excluded = ['tests', 'docs/reviews', 'docs/handoff', '.scratch', '.github', '.codegraph', 'cx-continue',
+const excluded = ['tests', 'docs/reviews', 'docs/handoff', '.scratch', '.github', '.codegraph',
   '.git', 'dist', 'dist-test', 'packages/hud-mcp/dist', 'tmp', 'AGENTS.md', 'CLAUDE.md'];
 
 // Only external client registration is simulated; archive, build, launchers and MCP are real.

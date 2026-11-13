@@ -2,7 +2,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import * as TOML from '@iarna/toml';
 import { getHudHome } from '../hud-home.js';
 import { resolveHudEnv } from '../utils/hud-env.js';
 import { importableSettings } from '../settings.js';
@@ -12,7 +11,7 @@ import { CliError } from './private-home.js';
 import { validateFooterSettings } from '../harness/pi/footer-settings.js';
 
 export const IMPORT_HELP = `Usage: hud import preview|apply [--from <file>]...
-Explicitly name each old hud-settings.json or jev-ask TOML. No Codex home is guessed.
+Explicitly name each old hud-settings.json or .env file. No Codex home is guessed.
 For p10k settings: hud import preview|apply --pi-footer --from ABS (only config.json.piFooter).
 Also merges $HUD_HOME/jev.env into credentials.env when present.
 An explicitly named .env may be imported too (replaces the old setup command).
@@ -99,10 +98,7 @@ export async function importCommand(args: readonly string[], io: HudIO): Promise
       } else if (source.endsWith('.json')) {
         const imported = importableSettings(jsonObject(bytes.toString('utf8')));
         plan(source, resolveHudEnv(io.env, 'HUD_SETTINGS_PATH') || path.join(home, 'hud-settings.json'), imported);
-      } else {
-        const raw = TOML.parse(bytes.toString('utf8')) as Record<string, unknown>;
-        plan(source, path.join(home, 'config.json'), tomlConfiguration(raw));
-      }
+      } else throw new Error();
     }
     const lines: string[] = [];
     for (const item of plans) {
@@ -111,7 +107,7 @@ export async function importCommand(args: readonly string[], io: HudIO): Promise
       for (const name of item.skipped) lines.push(`skip existing: ${name}`);
     }
     if (!sources.length)
-      lines.push('No sources; name old settings/TOML with --from. No Codex settings source guessed.');
+      lines.push('No sources; name old settings/.env files with --from. No Codex settings source guessed.');
     // Validate the complete plan before changing anything. Each destination is written once.
     if (mode === 'apply') {
       const touched = new Set<string>();
@@ -199,12 +195,6 @@ function jsonObject(text: string): Record<string, unknown> {
     throw new Error('invalid_import_json');
   }
 }
-const STUDIO_ALIASES: Readonly<Record<string, string>> = {
-  stateDir: 'state_dir',
-  model: 'default_model',
-  thinking: 'default_thinking',
-  cdpUrl: 'cdp_url',
-};
 function mergeMissing(
   current: Record<string, unknown>,
   incoming: Record<string, unknown>,
@@ -215,13 +205,6 @@ function mergeMissing(
   for (const [key, value] of Object.entries(incoming)) {
     if (['__proto__', 'constructor', 'prototype'].includes(key)) continue;
     const name = prefix + key;
-    // These HUD JSON aliases remain runtime-supported; a canonical imported key
-    // must not take precedence over an existing logical value under its alias.
-    const alias = prefix === 'aistudio.' ? STUDIO_ALIASES[key] : undefined;
-    if (alias && Object.hasOwn(current, alias)) {
-      skipped.push(name);
-      continue;
-    }
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       if (!Object.hasOwn(current, key)) current[key] = {};
       const existing = current[key];
@@ -234,49 +217,4 @@ function mergeMissing(
       added.push(name);
     }
   }
-}
-function tomlConfiguration(raw: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const mapping = {
-    cdp_url: 'cdpUrl',
-    chrome: 'chrome',
-    profile: 'profile',
-    state_dir: 'stateDir',
-    user_agent: 'userAgent',
-    provider_root: 'providerRoot',
-    gemini_root: 'geminiRoot',
-    model: 'model',
-    effort_word: 'effortWord',
-    gemini_effort_label: 'geminiEffortLabel',
-    gemini_keepalive_seconds: 'keepaliveSeconds',
-  };
-  for (const section of ['jev', 'aistudio'] as const) {
-    const source = raw[section];
-    if (source === undefined) continue;
-    if (!source || typeof source !== 'object' || Array.isArray(source)) throw new Error();
-    const out: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(source)) {
-      const dest =
-        section === 'jev'
-          ? mapping[key as keyof typeof mapping]
-          : (
-              {
-                cdp_url: 'cdpUrl',
-                state_dir: 'stateDir',
-                models: 'models',
-                default_model: 'model',
-                default_thinking: 'thinking',
-              } as Record<string, string>
-            )[key];
-      if (dest) out[dest] = value;
-      if (section === 'jev' && key === 'jev_cdp_seconds' && typeof value === 'number') out.cdpTimeoutMs = value * 1000;
-      if (section === 'jev' && (key === 'proxy_server' || key === 'proxy_bypass')) {
-        const proxy = (out.proxy ??= {}) as Record<string, unknown>;
-        proxy[key === 'proxy_server' ? 'server' : 'bypass'] = value;
-      }
-    }
-    result[section] = out;
-  }
-  if (!Object.keys(result).length) throw new Error();
-  return result;
 }

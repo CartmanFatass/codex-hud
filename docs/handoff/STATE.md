@@ -51,15 +51,12 @@ Milestone: M4 · Project view
   d764c336cbf722ea6482df90b43d543ff3d506f340b3f2e8a4c7e3c47f241da1. Stopped for the owner: merge universal-hud to
   main, tag, publish. git archive embeds the commit id, so a tag on a later STATE-only commit needs one
   `npm run release` there (same members).
-- Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
-  finding 1); delete that part of the command or keep it?
+- Owner 2026-11-12: `hud import` no longer takes jev-ask TOML (refused; nothing read those sections) and `cx-continue/`
+  is removed from the repo with its CI job (IMPORT-TOML-CUT, CX-CONTINUE-CUT).
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
   `--session-dir <job>/sessions`, so those jobs keep real session files in the job dir; run
   `python3 tmp/bin/migrate-sessions.py apply` before they turn one day old (pi-roles 27e2006 guards the self-link).
   Since RETENTION-SAFE the watcher moves them itself before deleting; the script stays a manual shortcut.
-- Waiting for the owner (shelved): `cx-continue/` (types "continue" into stalled Codex panes; Python, with its own
-  CI job) is in the repo but in neither the spec nor the installer: keep or remove? Not shipped in the archive
-  until decided.
 - Then m4-close 06 release: a clean-built archive (stale dist files from deleted sources must not ship) + ./install,
   temp-HOME install/uninstall, merge to main, tag.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
@@ -148,6 +145,8 @@ board counts these; update at every landing or decision. -->
 - done · M4 · M4-REVIEW8 · Sol changes-required (2 doc), DS accept · docs/reviews/2026-11-12-m4-review8-*.md
 - try · M4 · RELEASE-DOCS2 · b622a7ba · round-8 doc fixes, short ja/ko READMEs
 - done · M4 · M4-REVIEW9 · Sol accept, DS accept · docs/reviews/2026-11-12-m4-review9-*.md
+- accepted · M4 · IMPORT-TOML-CUT · owner: `hud import` refuses old jev-ask TOML; only settings JSON and .env sources
+- accepted · M4 · CX-CONTINUE-CUT · owner: cx-continue/ and its CI job removed (never shipped)
 - try · M4 · RELEASE-ARCHIVE · c00936e4 · npm run release + offline install rehearsal (test:release); Node floor 24
 - try · M4 · REVIEW10-OPT · 4995d308 · round 10 both accept; optionals fixed; release candidate built (sha256 d764c336…)
 - done · M4 · M4-ARCH · Release: blocked (1: repo Git filters run from the Codex bar and pi footer) · docs/reviews/2026-11-12-m4-architect.md
