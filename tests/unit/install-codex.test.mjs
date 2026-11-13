@@ -17,9 +17,12 @@ test('Codex registers roles, backs up config before rewrites, warns on comment l
     const fakeBin = path.join(temp, 'fake-bin');
     const log = path.join(temp, 'codex-argv.jsonl');
     const target = path.join(repo, 'integrations/skills/hud-delegate');
+    const setupTarget = path.join(repo, 'integrations/skills/hud-setup');
     const skill = path.join(codexHome, 'skills/hud-delegate');
+    const setupSkill = path.join(codexHome, 'skills/hud-setup');
     fs.mkdirSync(path.join(repo, 'install.d'), { recursive: true });
     fs.mkdirSync(target, { recursive: true });
+    fs.mkdirSync(setupTarget, { recursive: true });
     fs.mkdirSync(fakeBin);
     fs.mkdirSync(codexHome);
     const config = path.join(codexHome, 'config.toml');
@@ -77,6 +80,7 @@ if (process.argv[3] === 'remove') {
       assert.equal(fs.readFileSync(backup, 'utf8'), original);
       assert.equal(fs.readFileSync(config, 'utf8'), 'model = "synthetic"\n');
       assert.equal(fs.readlinkSync(skill), target);
+      assert.equal(fs.readlinkSync(setupSkill), setupTarget);
       if (content === 'Owner prompt.\n') assert.equal(fs.readFileSync(prompt, 'utf8'), content);
       else assert.equal(fs.existsSync(prompt), false);
     }
@@ -86,6 +90,7 @@ if (process.argv[3] === 'remove') {
     assert.ok(removed.stderr.includes(backup));
     assert.equal(fs.readFileSync(backup, 'utf8'), original);
     assert.throws(() => fs.lstatSync(skill), { code: 'ENOENT' });
+    assert.throws(() => fs.lstatSync(setupSkill), { code: 'ENOENT' });
     assert.equal(fs.readFileSync(prompt, 'utf8'), 'Owner prompt.\n');
     fs.writeFileSync(prompt, promptLine);
     run('--uninstall', '--with', 'codex');

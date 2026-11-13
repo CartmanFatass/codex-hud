@@ -26,8 +26,8 @@ From the repository root:
 ```
 
 Select `browser,herdr` too for their prerequisite checks; those extensions install
-no external tools. The installer builds both output trees and registers the MCP
-and delegation skill in the chosen clients. Keep the checkout/extraction directory:
+no external tools. The installer builds both output trees and registers the MCP,
+the delegation skill and the hud-setup skill in the chosen clients. Keep the checkout/extraction directory:
 installed commands and client bindings point into it. See
 [installer extensions](../../install.d/README.md).
 
@@ -42,8 +42,8 @@ than assuming a role's model or workflow.
 
 | Tool | Arguments and behaviour |
 |---|---|
-| `hud_roster` | No arguments. Returns role definitions, model/thinking assignments, accepted options and the dispatch convention with its source path. |
-| `hud_create` | Required `role`, `request_key`, `task`; optional `cwd`, display-only `package`, and `model`/`thinking` for a pi or CLI role. Pi launch switches are below. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. Repeating a request key returns the original job unchanged, even if options differ; it does not relaunch an uncertain attempt. |
+| `hud_roster` | Optional `cwd` (default: the server's cwd). Returns role definitions, model/thinking assignments, accepted options, invalid role files, the dispatch convention with its source path, and `project` (`root`, `registered`). |
+| `hud_create` | Required `role`, `request_key`, `task`; optional `cwd` (roles resolve against that project; default: the server's cwd), display-only `package`, and `model`/`thinking` for a pi or CLI role. Pi launch switches are below. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. Repeating a request key returns the original job unchanged, even if options differ; it does not relaunch an uncertain attempt. |
 | `hud_read` | Optional `job`, `wait_ms` (0–120000). Without a job, lists the newest 20. With one, reads STATUS, report (up to 64 KiB) and unanswered questions; waiting stops at settlement, a question or the deadline. A settled report read stamps `read_at`; it is not acceptance. |
 | `hud_send` | Required `job`, `message_key`, `text`. Queues a message while a pi or CLI job works, or continues it during `idle_grace` if its role allows. The message key deduplicates attempts, including failed/uncertain ones. Browser roles cannot continue. |
 | `hud_respond` | Required `job`, `request_id` (`qN`), `answer`. Writes `qa/qN.answer.md` once; an existing answer is not overwritten. |
@@ -62,8 +62,21 @@ options. CLI roles accept only `model` and `thinking`.
 ## Roles and convention
 
 Bundled JSON files in `roles/` supply defaults. `$HUD_HOME/roles/*.json` overrides
-by role name. A pi definition names `pi_role`, `split`, `can_continue`, and optional
+by role name. A project registered in `$HUD_HOME/projects.json` may add
+`<root>/.hud/roles/*.json` after those (project wins by name; pi only) and hide
+roles with `.hud/project.json`. An unregistered `.hud/` is ignored
+(`project_config_ignored`). A registered project's `.hud/hud-convention.md` is
+the first convention file. A pi definition names `pi_role`, `split`,
+`can_continue`, optional `skills` (non-empty strings), and optional
 `model`/`thinking`; absent model/thinking comes from the pi-roles role file.
+Each skill name resolves to `<root>/.hud/skills/<name>` (a symlink apply made);
+an absolute path is used as given. Each resolved directory is passed as `--skill`
+after pi-role's `--`. A missing or broken link is skipped and recorded on the job;
+the launch continues. When `.hud/agents/<role>.md` exists, it is passed as
+`--append-system-prompt`. `hud_read` shows `role_skills`, `skipped_skills` and
+`worker_prompt` for that job. A CLI or browser role file that names `skills` is
+invalid and skipped.
+
 A browser definition names its `tool` and applicable `provider`, `kind`, `model`,
 `thinking` or `effort`. `hud_roster` reports configured assignments, not proof that
 an external tool is installed or logged in.
@@ -72,7 +85,8 @@ A CLI definition sets `harness` to `cli` and names `agent` (`grok`, `agy`, `clau
 or `codex`), required `can_continue`, optional `model` and `thinking` (omitted: that
 CLI's own default), optional `idle_grace_s` (default 600) and optional `args`
 (extra CLI arguments appended verbatim, never a shell string). An invalid file is
-refused (`invalid_role`), same as any other role file. Shipped roles, all able to
+skipped and listed (`invalid`: path and a short reason). It does not hide the other
+roles or remove an earlier valid role of the same name. Shipped roles, all able to
 continue, grace 600 seconds:
 
 | Role | Agent | Model | Thinking |
@@ -109,8 +123,8 @@ Sessions stay in each CLI's own store; nothing is copied into the job directory.
 starts the CLI through the interactive shell, so shell functions in that shell
 (for example one that selects a Codex account) apply as usual.
 
-The first `hud-convention.md` found in the working directory, HUD home, then this
-package replaces the convention whole. The MCP interprets neither package labels
+The first `hud-convention.md` found in a registered project's `.hud/`, the working
+directory, HUD home, then this package replaces the convention whole. The MCP interprets neither package labels
 nor a particular role's responsibilities.
 
 ## Jobs and watcher

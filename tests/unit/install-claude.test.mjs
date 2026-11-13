@@ -72,7 +72,9 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       ['mcp', 'add', '-s', 'user', 'hud', '-e', 'HUD_MCP_SURFACE=roles', '--', path.join(bin, 'hud-mcp')],
     ]);
     const skill = path.join(config, 'skills/hud-delegate');
+    const setup = path.join(config, 'skills/hud-setup');
     assert.equal(fs.readlinkSync(skill), path.join(root, 'integrations/skills/hud-delegate'));
+    assert.equal(fs.readlinkSync(setup), path.join(root, 'integrations/skills/hud-setup'));
     assert.equal(fs.readlinkSync(path.join(bin, 'hud-statusline')), path.join(root, 'bin/hud-statusline'));
     assert.equal(fs.readFileSync(path.join(config, 'commands/hud.md'), 'utf8'), commandLine);
     const imported = json(path.join(hudHome, 'config.json')).statusline;
@@ -105,6 +107,7 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     assert.deepEqual(calls().at(-1), ['mcp', 'remove', '-s', 'user', 'hud']);
     for (const file of [
       skill,
+      setup,
       path.join(bin, 'hud-statusline'),
       path.join(config, 'commands/hud.md'),
       path.join(hudHome, 'claude.json'),

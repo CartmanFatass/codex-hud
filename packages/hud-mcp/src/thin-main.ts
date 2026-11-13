@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -13,9 +13,13 @@ import { herdrId } from '../../../src/roles/herdr-run.js';
 import { roleRegistry, executable, piSwitches, type Role } from '../../../src/roles/roster.js';
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobsRoot = join(hudHome, 'jobs');
-const { roles, assignment, convention } = roleRegistry(
-  hudHome, process.cwd(), process.env, undefined, undefined, fileURLToPath(new URL('../../../../', import.meta.url))
-);
+const bundled = fileURLToPath(new URL('../../../../', import.meta.url));
+function registry(cwd: string) {
+  return roleRegistry(hudHome, cwd, process.env, undefined, undefined, bundled);
+}
+function jobCwd(args: Args): string {
+  return resolve(args.cwd === undefined ? process.cwd() : required(args, 'cwd'));
+}
 type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
 interface Job extends PiOptions {
   job: string;
@@ -36,6 +40,9 @@ interface Job extends PiOptions {
   stderr_tail: string;
   message_keys: string[];
   send_outcomes?: { key: string; exit_code: number | null; stderr_tail: string }[];
+  role_skills?: { name: string; path: string }[];
+  skipped_skills?: { name: string; reason: string }[];
+  worker_prompt?: string | null;
 }
 type Args = Record<string, unknown>;
 const text = { type: 'string' };
@@ -45,15 +52,19 @@ const tool = (name: string, description: string, properties: Args, required: str
   inputSchema: { type: 'object', properties, required, additionalProperties: false },
 });
 const tools = [
-  tool('hud_roster', 'List local roles, their availability, and the dispatch convention in effect.', {}),
+  tool(
+    'hud_roster',
+    "List local roles, their availability, and the dispatch convention in effect. Optional cwd selects the project (default: this server's cwd).",
+    { cwd: { ...text, description: "Project directory. Default: the server's cwd." } }
+  ),
   tool(
     'hud_create',
-    'Dispatch a local role; request_key returns the existing job unchanged on retry. Optional package is a display-only label. model and thinking override a pi or CLI role for this job; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the role file).',
+    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Optional package is a display-only label. model and thinking override a pi or CLI role for this job; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the role file).",
     {
       role: text,
       request_key: text,
       task: text,
-      cwd: text,
+      cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
       model: { ...text, description: 'Override the pi or cli role model for this job only.' },
       thinking: { ...text, description: 'Override the pi or cli role thinking for this job only.' },
@@ -73,7 +84,8 @@ const tools = [
         type: 'array',
         items: { ...text, maxLength: 4096 },
         maxItems: 128,
-        description: 'Append pi arguments after -- verbatim, never through a shell; --orchestrator and --notify are reserved for the inherited caller binding.',
+        description:
+          'Append pi arguments after -- verbatim, never through a shell; --orchestrator and --notify are reserved for the inherited caller binding.',
       },
     },
     ['role', 'request_key', 'task']
@@ -238,8 +250,71 @@ function tabLabel(job: Job): string {
   );
   return taken.includes(label) ? `${cut(label, 23)} ${job.job.slice(-4)}` : label;
 }
+/** A skill name is one path segment under `.hud/skills`. Anything else is not a link we made. */
+function plainSkillName(name: string): boolean {
+  return name.length > 0 && name !== '.' && name !== '..' && !name.includes('/') && !name.includes('\0');
+}
+function skillReason(path: string): string | null {
+  let link = false;
+  try {
+    link = fs.lstatSync(path).isSymbolicLink();
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'unreadable';
+  }
+  try {
+    return fs.statSync(path).isDirectory() ? null : 'not_directory';
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return link && (code === 'ENOENT' || code === 'ENOTDIR') ? 'broken' : 'unreadable';
+  }
+}
+/** Role skill dirs and the worker prompt, after `--` and before the caller's `pi_args`. */
+function piSkillArgs(job: Job, role: Role): string[] {
+  const gate = registry(job.cwd).project();
+  const role_skills: { name: string; path: string }[] = [];
+  const skipped_skills: { name: string; reason: string }[] = [];
+  const args: string[] = [];
+  for (const name of role.skills ?? []) {
+    if (!isAbsolute(name)) {
+      if (!gate.registered) {
+        skipped_skills.push({ name, reason: 'unresolved' });
+        continue;
+      }
+      if (!plainSkillName(name)) {
+        skipped_skills.push({ name, reason: 'invalid' });
+        continue;
+      }
+    }
+    const path = isAbsolute(name) ? name : join(gate.root, '.hud', 'skills', name);
+    const reason = skillReason(path);
+    if (reason) {
+      skipped_skills.push({ name, reason });
+      continue;
+    }
+    role_skills.push({ name, path });
+    args.push('--skill', path);
+  }
+  let worker_prompt: string | null = null;
+  if (gate.registered) {
+    const agents = join(gate.root, '.hud', 'agents');
+    const prompt = join(agents, `${role.role}.md`);
+    try {
+      if (dirname(prompt) === agents && fs.statSync(prompt).isFile()) {
+        worker_prompt = prompt;
+        args.push('--append-system-prompt', prompt);
+      }
+    } catch {
+      /* Missing or broken prompt: no flag, launch continues. */
+    }
+  }
+  job.role_skills = role_skills;
+  job.skipped_skills = skipped_skills;
+  job.worker_prompt = worker_prompt;
+  return args;
+}
 async function dispatchPi(job: Job, role: Role) {
   try {
+    const resources = piSkillArgs(job, role);
     const launcher = executable('pi-role');
     if (!launcher) throw new Error('pi-role not found on PATH');
     const dir = directory(job.job),
@@ -268,7 +343,7 @@ async function dispatchPi(job: Job, role: Role) {
     if (job.skills === true) argv.push('--skills');
     argv.push('--', '--tui-mode', 'regular');
     for (const key of ['model', 'thinking'] as const) if (role[key] !== undefined) argv.push(`--${key}`, role[key]);
-    argv.push(...(job.pi_args ?? []));
+    argv.push(...resources, ...(job.pi_args ?? []));
     const built = await run(launcher, argv, job.cwd);
     if (built.exit_code !== 0) return built;
     const piArgs: string[] = JSON.parse(built.stdout);
@@ -469,14 +544,38 @@ async function dispatchCli(job: Job, role: Role) {
     const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
     const tabName = tabLabel(job),
       name = `${job.job}-primary`;
-    const result = await run('herdr', ['tab', 'create', ...(await workspaceArgs(job)), '--cwd', job.cwd, '--label', tabName, '--no-focus']);
+    const result = await run('herdr', [
+      'tab',
+      'create',
+      ...(await workspaceArgs(job)),
+      '--cwd',
+      job.cwd,
+      '--label',
+      tabName,
+      '--no-focus',
+    ]);
     if (result.exit_code !== 0) return result;
     const { tab, root_pane } = JSON.parse(result.stdout).result;
     const left = root_pane.pane_id;
     if (!herdrId(tab.tab_id) || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
-    const fields = { TASK: job.job, TAB: tab.tab_id, TAB_NAME: tabName, LEFT: left, RIGHT: '', ORCH: job.herdr_pane, BASE: base, PRIMARY: name };
+    const fields = {
+      TASK: job.job,
+      TAB: tab.tab_id,
+      TAB_NAME: tabName,
+      LEFT: left,
+      RIGHT: '',
+      ORCH: job.herdr_pane,
+      BASE: base,
+      PRIMARY: name,
+    };
     if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
-    fs.writeFileSync(join(dir, 'SESSION.txt'), Object.entries(fields).map(([k, v]) => `${k}=${v}\n`).join(''), { mode: 0o600 });
+    fs.writeFileSync(
+      join(dir, 'SESSION.txt'),
+      Object.entries(fields)
+        .map(([k, v]) => `${k}=${v}\n`)
+        .join(''),
+      { mode: 0o600 }
+    );
     const argv = ['agent', 'start', name, '--kind', role.agent!, '--pane', left];
     if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
     argv.push(
@@ -504,9 +603,23 @@ async function dispatchCli(job: Job, role: Role) {
       const settled = await settlePhantomWorking(name);
       if (settled) return settled;
     }
-    const instructions = join(fileURLToPath(new URL('../../../../', import.meta.url)), 'instructions', 'implementer.md');
+    const instructions = join(
+      fileURLToPath(new URL('../../../../', import.meta.url)),
+      'instructions',
+      'implementer.md'
+    );
     const prompt = `Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`;
-    const submitted = await run('herdr', ['agent', 'prompt', name, prompt, '--wait', '--until', 'working', '--timeout', '30000']);
+    const submitted = await run('herdr', [
+      'agent',
+      'prompt',
+      name,
+      prompt,
+      '--wait',
+      '--until',
+      'working',
+      '--timeout',
+      '30000',
+    ]);
     if (submitted.exit_code !== 0) return submitted;
     // After the prompt is accepted as working, so a startup done (agy) is not a finished turn.
     const script = fileURLToPath(new URL('../../../../bin/hud-cli.mjs', import.meta.url));
@@ -548,6 +661,13 @@ function observation(job: Job) {
     thinking: job.thinking,
     model_source: job.model_source,
     ...Object.fromEntries([...piSwitches, 'pi_args' as const].map((key) => [key, job[key]])),
+    ...(job.role_skills !== undefined
+      ? {
+          role_skills: job.role_skills,
+          skipped_skills: job.skipped_skills ?? [],
+          worker_prompt: job.worker_prompt ?? null,
+        }
+      : {}),
     ...status,
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
@@ -558,15 +678,27 @@ function observation(job: Job) {
   };
 }
 async function call(name: string, args: Args): Promise<unknown> {
-  if (name === 'hud_roster')
+  if (name === 'hud_roster') {
+    const found = registry(jobCwd(args));
+    const gate = found.project();
+    const ignored = found.projectConfigIgnored();
     return {
-      roles: [...roles().values()].map(assignment),
-      convention: convention(),
+      roles: [...found.roles().values()].map(found.assignment),
+      invalid: found.invalid(),
+      convention: found.convention(),
+      project: { root: gate.root, registered: gate.registered },
+      ...(ignored ? { project_config_ignored: ignored } : {}),
     };
+  }
   if (name === 'hud_create') {
     const role = required(args, 'role');
-    let definition = roles().get(role);
-    if (!definition) return { ok: false, code: 'role_unavailable' };
+    const cwd = jobCwd(args);
+    const found = registry(cwd);
+    let definition = found.roles().get(role);
+    if (!definition) {
+      const path = found.invalidPath(role);
+      return path ? { ok: false, code: 'role_unavailable', path } : { ok: false, code: 'role_unavailable' };
+    }
     const request_key = required(args, 'request_key');
     const existing = jobs().find((job) => job.request_key === request_key);
     if (existing) {
@@ -597,11 +729,14 @@ async function call(name: string, args: Args): Promise<unknown> {
       )
         return { ok: false, code: 'invalid_arguments' };
       if (args.pi_args.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
-        return { ok: false, code: 'invalid_arguments', error: 'pi_args cannot override --orchestrator or --notify caller binding' };
+        return {
+          ok: false,
+          code: 'invalid_arguments',
+          error: 'pi_args cannot override --orchestrator or --notify caller binding',
+        };
       options.pi_args = args.pi_args;
     }
-    const effective = definition.harness === 'pi' || definition.harness === 'cli' ? assignment(definition) : null;
-    const cwd = resolve(args.cwd === undefined ? process.cwd() : required(args, 'cwd'));
+    const effective = definition.harness === 'pi' || definition.harness === 'cli' ? found.assignment(definition) : null;
     const job: Job = {
       job: 'j' + randomBytes(8).toString('hex'),
       role,
@@ -729,7 +864,11 @@ async function call(name: string, args: Args): Promise<unknown> {
     // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
     // continues in its idle grace when the role allows (owner, 2026-11-11).
     const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
-    if (job.jev || !agent || !(queued || (state === 'idle_grace' && roles().get(job.role)?.can_continue)))
+    if (
+      job.jev ||
+      !agent ||
+      !(queued || (state === 'idle_grace' && registry(job.cwd).roles().get(job.role)?.can_continue))
+    )
       return { ok: false, code: 'not_continuable' };
     // Record the attempt first, so a lost reply cannot cause a duplicate prompt.
     job.message_keys.push(key);

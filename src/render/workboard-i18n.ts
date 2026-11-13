@@ -154,6 +154,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   last: '最近提交',
   spec: 'spec',
   convention: '约定',
+  invalid: '无效',
+  ignored: '已忽略',
   files: '文件',
   agents: '代理',
   keys: '密钥',

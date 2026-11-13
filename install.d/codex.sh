@@ -22,6 +22,22 @@ hud_codex_mcp() {
   return "$status"
 }
 
+hud_codex_skill() {
+  local name="$1" skill="${CODEX_HOME:-$HOME/.codex}/skills/$1"
+  if [[ -L "$skill" ]]; then
+    if [[ "$(readlink -m "$skill")" != "$REPO/"* ]]; then
+      printf 'Warning: %s is a foreign symlink; skipping Codex skill.\n' "$skill" >&2
+      return 0
+    fi
+    rm -- "$skill"
+  elif [[ -e "$skill" ]]; then
+    printf 'Warning: %s is not a symlink; skipping Codex skill.\n' "$skill" >&2
+    return 0
+  fi
+  mkdir -p -- "$(dirname "$skill")"
+  ln -s -- "$REPO/integrations/skills/$name" "$skill"
+}
+
 hud_ext_install() {
   local prompt="${CODEX_HOME:-$HOME/.codex}/prompts/hud.md"
   # Codex opens the panel with F12; remove only the legacy prompt we wrote.
@@ -39,19 +55,8 @@ hud_ext_install() {
     printf 'Warning: codex is not on PATH; skipping Codex MCP registration.\n' >&2
   fi
 
-  local skill="${CODEX_HOME:-$HOME/.codex}/skills/hud-delegate"
-  if [[ -L "$skill" ]]; then
-    if [[ "$(readlink -m "$skill")" != "$REPO/"* ]]; then
-      printf 'Warning: %s is a foreign symlink; skipping Codex skill.\n' "$skill" >&2
-      return 0
-    fi
-    rm -- "$skill"
-  elif [[ -e "$skill" ]]; then
-    printf 'Warning: %s is not a symlink; skipping Codex skill.\n' "$skill" >&2
-    return 0
-  fi
-  mkdir -p -- "$(dirname "$skill")"
-  ln -s -- "$REPO/integrations/skills/hud-delegate" "$skill"
+  hud_codex_skill hud-delegate
+  hud_codex_skill hud-setup
 }
 
 hud_ext_uninstall() {
@@ -61,10 +66,13 @@ hud_ext_uninstall() {
     printf 'Warning: codex is not on PATH; skipping Codex MCP removal.\n' >&2
   fi
 
-  local skill="${CODEX_HOME:-$HOME/.codex}/skills/hud-delegate"
-  if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
-    rm -- "$skill"
-  fi
+  local name skill
+  for name in hud-delegate hud-setup; do
+    skill="${CODEX_HOME:-$HOME/.codex}/skills/$name"
+    if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
+      rm -- "$skill"
+    fi
+  done
   local prompt="${CODEX_HOME:-$HOME/.codex}/prompts/hud.md"
   if [[ -f "$prompt" && "$(cat -- "$prompt")" == "$hud_codex_prompt_line" ]]; then
     rm -- "$prompt"

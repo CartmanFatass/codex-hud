@@ -1,9 +1,9 @@
 # Pi packages `hud` and `hud-display`
 
 `./install --with pi` materializes `package.json`, `binding.json`, `binding.mjs`,
-`extensions/hud.mjs` and a symlink to the canonical `skills/hud-delegate` under
-`$HUD_HOME/pi-package/`, then registers it with `pi install`: the delegation
-package, always loaded, holding the six role tools and the skill. It also
+`extensions/hud.mjs` and symlinks to the canonical `skills/hud-delegate` and
+`skills/hud-setup` under `$HUD_HOME/pi-package/`, then registers it with `pi install`:
+the delegation package, always loaded, holding the six role tools and those skills. It also
 prepares `$HUD_HOME/pi-display/` (same binding files, `extensions/hud-display.mjs`)
 and registers it too: the footer, the Work segment and `/hud`. Do not also load it
 with `pi -e`, or two footers run. The binding names the installed tree (checkout or

@@ -1,7 +1,7 @@
 {
   "name": "hud",
   "version": "0.0.0",
-  "description": "Universal HUD delegation: six role tools and the hud-delegate skill",
+  "description": "Universal HUD delegation: six role tools and the hud-delegate and hud-setup skills",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -12,6 +12,6 @@
   },
   "pi": {
     "extensions": ["./extensions/hud.mjs"],
-    "skills": ["./skills/hud-delegate/SKILL.md"]
+    "skills": ["./skills/hud-delegate/SKILL.md", "./skills/hud-setup/SKILL.md"]
   }
 }

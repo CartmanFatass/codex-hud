@@ -178,7 +178,9 @@ export class ProjectCollector {
     if (review) out.docs.push({ label: 'review', value: basename(review.path), ...review });
     const registry = roleRegistry(this.hudHome, this.cwd, this.env, this.read, this.names, undefined, (path) => {
       const file = this.read(path);
-      return file && !file.truncated ? JSON.parse(file.text) : null;
+      if (!file) throw Object.assign(new Error('unreadable'), { code: 'EACCES' });
+      if (file.truncated) throw new SyntaxError('truncated');
+      return JSON.parse(file.text);
     });
     try {
       for (const role of registry.roles().values()) {
@@ -189,8 +191,12 @@ export class ProjectCollector {
         if (a.pi_role_file) out.control.push({ label: '', value: basename(a.pi_role_file), path: a.pi_role_file });
         out.roleCount++;
       }
+      for (const bad of registry.invalid()) out.control.push({ label: 'invalid', value: bad.reason, path: bad.path });
+      const ignored = registry.projectConfigIgnored();
+      if (ignored) out.control.push({ label: 'ignored', value: '.hud', path: join(ignored, '.hud') });
       const c = registry.convention();
-      const source = c.path === join(this.cwd, 'hud-convention.md') ? 'project'
+      const root = registry.project().root;
+      const source = c.path === join(root, '.hud', 'hud-convention.md') || c.path === join(this.cwd, 'hud-convention.md') ? 'project'
         : c.path === join(this.hudHome, 'hud-convention.md') ? 'yours' : 'default';
       out.control.push({ label: 'convention', value: source, path: c.path });
     } catch { /* Invalid/unavailable registry is not an invented assignment. */ }

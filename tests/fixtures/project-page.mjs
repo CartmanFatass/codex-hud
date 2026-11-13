@@ -24,9 +24,14 @@ export async function projectFixture(root) {
   put(join(cwd, 'docs/reviews/2026-11-11-review.md'), '# Older review', 120);
   put(join(cwd, 'docs/reviews/2026-11-12-review.md'), 'Verdict: accept', 30);
   put(join(cwd, 'hud-convention.md'), '# Project convention');
+  // Unregistered `.hud/` must not load. The control plane only notes that it was ignored.
+  put(join(cwd, '.hud/roles/secret.json'), { role: 'secret', harness: 'pi', pi_role: 'implementer', split: false, can_continue: true, model: 'NEVER_RENDER_PROJECT_ROLE' });
+  put(join(cwd, '.hud/project.json'), { version: 1, roles: ['secret'] });
+  put(join(cwd, '.hud/hud-convention.md'), 'NEVER_RENDER_PROJECT_CONVENTION');
   put(join(cwd, 'CLAUDE.md'), '# Claude instructions');
   put(join(cwd, 'AGENTS.md'), '# Agent instructions');
   put(join(hud, 'roles/imp.json'), { role: 'imp', harness: 'pi', pi_role: 'implementer', split: true, can_continue: true });
+  put(join(hud, 'roles/bad.json'), '{ NEVER_RENDER_ROLE_FILE');
   put(join(root, 'roles/implementer.md'), '---\nmodel: synthetic/model\nthinking: high\n---\nRole text\n');
   put(join(bin, 'pi-role'), '#!/bin/sh\nexit 99\n');
   fs.chmodSync(join(bin, 'pi-role'), 0o700);
@@ -55,6 +60,7 @@ export async function projectFixture(root) {
   const hash = object('commit', `tree ${tree}\nauthor Synthetic <synthetic@invalid> ${stamp} +0000\ncommitter Synthetic <synthetic@invalid> ${stamp} +0000\n\nSynthetic Project baseline\n`);
   put(join(cwd, '.git/HEAD'), 'ref: refs/heads/synthetic-project\n');
   put(join(cwd, '.git/refs/heads/synthetic-project'), hash + '\n');
+  put(join(cwd, '.git/info/exclude'), '.hud/\n');
   const linked = ['NATIVE-TREE', 'NO-JOB'].map((name) => {
     const path = join(root, name), admin = join(cwd, '.git/worktrees', name);
     put(join(path, '.git'), `gitdir: ${admin}\n`);

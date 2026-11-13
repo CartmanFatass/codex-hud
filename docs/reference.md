@@ -5,6 +5,7 @@ Current controls for Claude Code, Codex and pi. [中文](./reference.zh.md) ·
 
 - [Installing](#installing)
 - [Universal CLI and MCP](#universal-cli-and-mcp)
+- [Project workers](#project-workers)
 - [Home](#home)
 - [Project](#project)
 - [The panel](#the-panel): [Keys](#keys), [Inspector](#inspector), [Changes summary](#changes-summary), [Settings](#settings)
@@ -67,6 +68,9 @@ hud panel --width 64      # this open only, until a changed Width is saved
 hud statusline --help
 hud import --help
 hud trust <dir>           # add the directory to grok, agy and claude trust lists
+hud setup --detect        # print this project's worker setup as JSON
+hud setup --apply PLAN    # write .hud/ from a plan
+hud setup --remove        # drop project registration; leave .hud/
 hud codex --model gpt-5    # Codex arguments pass through to the tmux launcher
 ```
 
@@ -80,8 +84,10 @@ Unavailable evidence leaves the jobs view unbound to a native session.
 The MCP has exactly six tools: **hud_roster**, **hud_create**, **hud_read**,
 **hud_send**, **hud_respond**, **hud_close**. Call `hud_roster` first for effective
 roles, model/thinking sources, accepted options and the convention. Bundled
-role JSON is overridden by `$HUD_HOME/roles/*.json` by role name. The first
-`hud-convention.md` in the cwd, HUD home, then package wins whole.
+role JSON is overridden by `$HUD_HOME/roles/*.json` by role name, then by a
+registered project's `.hud/roles`. The first `hud-convention.md` in a registered
+project's `.hud/`, the cwd, HUD home, then the package wins whole.
+See [Project workers](#project-workers).
 
 `hud_create` takes `role`, `request_key`, `task`, optional `cwd` and display-only
 `package`. A repeated key returns the original job unchanged, not a second launch.
@@ -135,6 +141,53 @@ create, not a dedicated expiry timer. Before deleting a legacy pi job it moves r
 JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
 Invalid cwd, destination conflicts or failed moves retain the job. Removing session
 links never removes their targets.
+
+## Project workers
+
+```sh
+hud setup --detect [--cwd DIR]
+hud setup --apply PLAN.json [--cwd DIR]
+hud setup --remove [--cwd DIR]
+```
+
+Non-interactive. The `hud-setup` skill, installed beside `hud-delegate` for Claude,
+Codex and pi, asks; these commands only read or write.
+
+`--detect` prints one JSON document and writes nothing. It names the git root of
+`--cwd` (or `--cwd` itself), whether that root is registered, reference roles
+(shipped and `$HUD_HOME/roles`), project roles, the enabled set, invalid role files,
+skills and worker-skill links. Skill roots come from `$HUD_HOME/setup.json`
+`skill_roots`, defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and
+`~/.agents/skills`. A skill is a directory with `SKILL.md`; its name is the
+frontmatter `name`. Each skill includes `model_invocable`: false when that
+frontmatter has `disable-model-invocation: true`. Pi still loads such a skill, but
+leaves it out of the model's skill list, so a worker will not pick it by itself.
+
+`--apply` reads a plan and writes under the project's `.hud/`, which is meant to
+be committed:
+
+```
+.hud/project.json          enabled roles, and the links, role files and prompts apply made
+.hud/roles/<name>.json     only a pi role that differs from its reference
+.hud/skills/<name>         symlink to the skill directory (workers only)
+.hud/agents/<role>.md      optional worker-only prompt
+.hud/hud-convention.md     optional copy of the shipped convention
+```
+
+The plan is version 1: `roles` (enabled names), `pi_roles` (pi tuning only: `from`,
+`pi_role`, `model`, `thinking`, `split`, `can_continue`, `skills`), `skills` (name
+to an absolute skill directory), `agents` (role to markdown) and `convention`
+(`keep` or `copy-default`). It prints `removed`, `wrote`, `linked`,
+`skipped (exists)`, `registered`, or `no changes`. The same plan again changes
+nothing. A file or link apply did not make is left in place and reported as skipped.
+
+Applying records the root in `$HUD_HOME/projects.json`. Project config loads only
+after that. `--remove` drops the registration and leaves `.hud/` alone. A clone's
+`.hud/` does nothing until the owner runs setup there.
+
+Tuning is pi only. Other harnesses' roles can be shown or hidden; their files are
+not edited. This command does not run `hud trust`. If a chosen CLI role's directory
+is untrusted, run `hud trust <dir>` yourself.
 
 ## Home
 

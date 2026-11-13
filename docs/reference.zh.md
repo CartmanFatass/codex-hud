@@ -5,6 +5,7 @@ Claude Code、Codex 与 pi 的当前操作说明。[English](./reference.md) ·
 
 - [安装](#安装)
 - [通用 CLI 与 MCP](#通用-cli-与-mcp)
+- [项目工作者](#项目工作者)
 - [首页](#首页)
 - [项目](#项目)
 - [面板](#面板)：[按键](#按键)、[详情](#详情)、[改动摘要](#改动摘要)、[设置](#设置)
@@ -57,6 +58,9 @@ hud panel --width 64      # 本次覆盖，直到保存修改后的宽度
 hud statusline --help
 hud import --help
 hud trust <dir>           # 把该目录加入 grok、agy 和 claude 的信任列表
+hud setup --detect        # 打印本项目的工作者配置 JSON
+hud setup --apply PLAN    # 按计划写入 .hud/
+hud setup --remove        # 去掉项目注册，留下 .hud/
 hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 ```
 
@@ -67,8 +71,9 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 
 MCP 恰有六个工具：**hud_roster**、**hud_create**、**hud_read**、**hud_send**、**hud_respond**、**hud_close**。
 先调用 `hud_roster` 获取生效的角色、模型／推理强度来源、可接受选项和约定。
-`$HUD_HOME/roles/*.json` 按角色名覆盖内置 JSON。cwd、HUD 主目录、包目录中第一个
-`hud-convention.md` 整体替换默认约定。
+`$HUD_HOME/roles/*.json` 按角色名覆盖内置 JSON，已注册项目的 `.hud/roles` 再覆盖。
+已注册项目的 `.hud/`、cwd、HUD 主目录、包目录中第一个 `hud-convention.md` 整体替换默认约定。
+见[项目工作者](#项目工作者)。
 
 `hud_create` 接收 `role`、`request_key`、`task`，可选 `cwd` 和仅用于显示的 `package`。
 重复键返回原任务，不再次启动。`model` 和 `thinking` 可覆盖本次 pi 或 CLI 角色。
@@ -107,6 +112,47 @@ herdr 的 `idle` 或 `unknown` 只有代理已离开才算退出。按需 watche
 `HUD_WATCH_CLI_CHECK_MS`（默认 30000）是该间隔。监督进程已死则任务失败。已结算目录在**关闭一天后**的
 后续扫描或下次创建时清理，不设专门到期定时器；包括报告及 `hud_read` 访问。删除旧 pi 任务前先将真实 JSONL
 会话移至 pi 存储；CLI 和浏览器会话留在各自存储。cwd 无效、目标冲突或移动失败则保留任务。删除会话链接不删除目标。
+
+## 项目工作者
+
+```sh
+hud setup --detect [--cwd DIR]
+hud setup --apply PLAN.json [--cwd DIR]
+hud setup --remove [--cwd DIR]
+```
+
+命令本身不提问。`hud-setup` 技能与 `hud-delegate` 一样，为 Claude、Codex 和 pi 安装；
+它负责询问，这些命令只读或只写。
+
+`--detect` 打印一份 JSON，不写任何文件。它给出 `--cwd` 的 git 顶层（否则就是 `--cwd`）、
+该根是否已注册、参考角色（内置与 `$HUD_HOME/roles`）、项目角色、启用集合、无效角色文件、
+技能，以及工作者技能链接。技能根目录来自 `$HUD_HOME/setup.json` 的 `skill_roots`，
+默认 `~/.pi/agent/skills`、`~/.claude/skills` 和 `~/.agents/skills`。技能是含 `SKILL.md`
+的目录，名字取 frontmatter 的 `name`。每项带 `model_invocable`：frontmatter 有
+`disable-model-invocation: true` 时为 false。pi 仍加载该技能，但不放进模型的技能列表，
+所以工作者不会自己选用它。
+
+`--apply` 按计划写入项目的 `.hud/`（应提交）：
+
+```
+.hud/project.json          启用的角色，以及 apply 自己创建的链接、角色文件和提示
+.hud/roles/<name>.json     仅当 pi 角色与参考角色不同
+.hud/skills/<name>         指向技能目录的符号链接（仅工作者）
+.hud/agents/<role>.md      可选的仅工作者提示
+.hud/hud-convention.md     可选，内置约定的副本
+```
+
+计划为 version 1：`roles`（启用的名字）、`pi_roles`（只调 pi：`from`、`pi_role`、`model`、
+`thinking`、`split`、`can_continue`、`skills`）、`skills`（名字到技能目录的绝对路径）、
+`agents`（角色到 markdown）和 `convention`（`keep` 或 `copy-default`）。打印 `removed`、
+`wrote`、`linked`、`skipped (exists)`、`registered`，或 `no changes`。同一计划再跑一次不会改任何东西。
+不是本命令创建的文件或链接会留下，并报 `skipped (exists)`。
+
+apply 把项目根记入 `$HUD_HOME/projects.json`。项目配置只有注册之后才加载。
+`--remove` 去掉注册，留下 `.hud/`。克隆来的 `.hud/` 在该克隆里跑过 setup 之前不起作用。
+
+只调 pi。其他 harness 的角色只能显示或隐藏，不改它们的文件。本命令不运行 `hud trust`。
+若所选 CLI 角色的目录未被信任，请自行运行 `hud trust <dir>`。
 
 ## 首页
 

@@ -9,6 +9,6 @@ in a few lines, runs `--apply`, reports. Install and uninstall handle it exactly
 
 **Status:** ready-for-agent
 
-- [ ] Skill installed/removed with hud-delegate's mechanism (tests)
-- [ ] Docs describe today's behaviour; synthetic examples
+- [x] Skill installed/removed with hud-delegate's mechanism (tests)
+- [x] Docs describe today's behaviour; synthetic examples
 - [ ] Owner runs `/hud-setup` in a real project

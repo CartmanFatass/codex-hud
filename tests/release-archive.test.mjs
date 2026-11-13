@@ -244,7 +244,8 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
     assert.equal(fs.readFileSync(codexConfig, 'utf8'), codexOriginal);
     assert.deepEqual(json(piSettings), { packages: ['npm:synthetic'], extensions: ['private.ts'], theme: 'synthetic' });
     for (const file of [...packages, path.join(env.CLAUDE_CONFIG_DIR, 'skills/hud-delegate'),
-      path.join(env.CLAUDE_CONFIG_DIR, 'commands/hud.md'), path.join(env.CODEX_HOME, 'skills/hud-delegate')]) {
+      path.join(env.CLAUDE_CONFIG_DIR, 'skills/hud-setup'), path.join(env.CLAUDE_CONFIG_DIR, 'commands/hud.md'),
+      path.join(env.CODEX_HOME, 'skills/hud-delegate'), path.join(env.CODEX_HOME, 'skills/hud-setup')]) {
       assert.equal(fs.lstatSync(file, { throwIfNoEntry: false }), undefined, file);
     }
     for (const [file, text] of keep) assert.equal(fs.readFileSync(file, 'utf8'), text, `retained: ${file}`);

@@ -52,7 +52,7 @@ NODE
 }
 
 hud_ext_install() {
-  local config="${CLAUDE_CONFIG_DIR:-$HOME/.claude}" skill link source_settings command_file
+  local config="${CLAUDE_CONFIG_DIR:-$HOME/.claude}" skill name link source_settings command_file
   if command -v claude >/dev/null; then
     claude mcp remove -s user hud 2>/dev/null || true
     claude mcp add -s user hud -e HUD_MCP_SURFACE=roles -- "$BIN_DIR/hud-mcp"
@@ -60,13 +60,15 @@ hud_ext_install() {
     printf 'Warning: claude is not on PATH; skipping MCP registration.\n' >&2
   fi
 
-  skill="$config/skills/hud-delegate"
   mkdir -p -- "$config/skills" "$BIN_DIR"
-  if [[ -L "$skill" || ! -e "$skill" ]]; then
-    ln -sfn -- "$REPO/integrations/skills/hud-delegate" "$skill"
-  else
-    printf 'Warning: keeping existing non-symlink skill: %s\n' "$skill" >&2
-  fi
+  for name in hud-delegate hud-setup; do
+    skill="$config/skills/$name"
+    if [[ -L "$skill" || ! -e "$skill" ]]; then
+      ln -sfn -- "$REPO/integrations/skills/$name" "$skill"
+    else
+      printf 'Warning: keeping existing non-symlink skill: %s\n' "$skill" >&2
+    fi
+  done
   link="$BIN_DIR/hud-statusline"
   if [[ ! -L "$link" && -e "$link" ]]; then
     printf 'Error: command already exists: %s\n' "$link" >&2
@@ -99,7 +101,8 @@ hud_ext_uninstall() {
   if [[ -f "$command_file" && "$(cat -- "$command_file")" == "$hud_claude_command_line" ]]; then
     rm -- "$command_file"
   fi
-  for link in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-delegate" "$BIN_DIR/hud-statusline"; do
+  for link in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-delegate" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-setup" "$BIN_DIR/hud-statusline"; do
     if [[ -L "$link" && "$(readlink -m "$link")" == "$REPO/"* ]]; then
       rm -- "$link"
     fi

@@ -43,6 +43,7 @@ hud_ext_install() {
   cp -- "$REPO/integrations/pi/package/binding.mjs" "$package/binding.mjs"
   cp -- "$REPO/integrations/pi/package/extensions/hud.mjs" "$package/extensions/hud.mjs"
   ln -sfn -- "$REPO/integrations/skills/hud-delegate" "$package/skills/hud-delegate"
+  ln -sfn -- "$REPO/integrations/skills/hud-setup" "$package/skills/hud-setup"
   cp -- "$REPO/integrations/pi/package/display.template.json" "$display/package.json"
   cp -- "$REPO/integrations/pi/package/binding.mjs" "$display/binding.mjs"
   cp -- "$REPO/integrations/pi/package/extensions/hud-display.mjs" "$display/extensions/hud-display.mjs"

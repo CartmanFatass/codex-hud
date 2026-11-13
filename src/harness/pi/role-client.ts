@@ -95,15 +95,19 @@ const tool = (name: string, description: string, properties: Record<string, unkn
   inputSchema: { type: 'object', properties, required, additionalProperties: false },
 });
 export const PI_ROLE_TOOLS = [
-  tool('hud_roster', 'List local roles, their availability, and the dispatch convention in effect.', {}),
+  tool(
+    'hud_roster',
+    "List local roles, their availability, and the dispatch convention in effect. Optional cwd selects the project (default: this server's cwd).",
+    { cwd: { ...text, description: "Project directory. Default: the server's cwd." } }
+  ),
   tool(
     'hud_create',
-    'Dispatch a local role; request_key returns the existing job unchanged on retry. Optional package is a display-only label. model and thinking override a pi or CLI role for this job; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the role file).',
+    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Optional package is a display-only label. model and thinking override a pi or CLI role for this job; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the role file).",
     {
       role: text,
       request_key: text,
       task: text,
-      cwd: text,
+      cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
       model: { ...text, description: 'Override the pi or cli role model for this job only.' },
       thinking: { ...text, description: 'Override the pi or cli role thinking for this job only.' },

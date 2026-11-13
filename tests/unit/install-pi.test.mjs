@@ -80,13 +80,15 @@ fs.writeFileSync(file, JSON.stringify(settings));
     packages: original.packages,
   });
   const manifest = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json')));
-  assert.deepEqual(manifest.pi, { extensions: ['./extensions/hud.mjs'], skills: ['./skills/hud-delegate/SKILL.md'] });
+  assert.deepEqual(manifest.pi, {
+    extensions: ['./extensions/hud.mjs'],
+    skills: ['./skills/hud-delegate/SKILL.md', './skills/hud-setup/SKILL.md'],
+  });
   assert.ok(fs.statSync(path.join(pkg, 'extensions/hud.mjs')).isFile());
-  assert.equal(
-    fs.readlinkSync(path.join(pkg, 'skills/hud-delegate')),
-    path.join(repo, 'integrations/skills/hud-delegate')
-  );
-  assert.ok(fs.statSync(path.join(pkg, 'skills/hud-delegate/SKILL.md')).isFile());
+  for (const name of ['hud-delegate', 'hud-setup']) {
+    assert.equal(fs.readlinkSync(path.join(pkg, 'skills', name)), path.join(repo, 'integrations/skills', name));
+    assert.ok(fs.statSync(path.join(pkg, 'skills', name, 'SKILL.md')).isFile());
+  }
   const { loadBinding } = await import(pathToFileURL(path.join(pkg, 'binding.mjs')));
   assert.deepEqual(loadBinding(pathToFileURL(path.join(pkg, 'binding.json'))), {
     release: repo,
