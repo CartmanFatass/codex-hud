@@ -48,17 +48,15 @@ Milestone: M4 · Project view
   README dev note, stale standardwebhooks notice removed, audit no longer flags the OS login as a word).
   **Release candidate:** built from 4995d308 in a clean detached worktree; offline test:release passes (12.3 s);
   `tmp/release/hud-0.1.0.tar.gz` (git-ignored), 5,461,378 bytes, 636 members, sha256
-  d764c336cbf722ea6482df90b43d543ff3d506f340b3f2e8a4c7e3c47f241da1. Stopped for the owner: merge universal-hud to
-  main, tag, publish. git archive embeds the commit id, so a tag on a later STATE-only commit needs one
-  `npm run release` there (same members).
+  d764c336cbf722ea6482df90b43d543ff3d506f340b3f2e8a4c7e3c47f241da1 (superseded). Owner 2026-11-12: merge, tag, publish;
+  the two shelved questions decided (cuts below). v0.1.0 = this commit, fast-forwarded onto main; the archive is
+  rebuilt at the tag.
 - Owner 2026-11-12: `hud import` no longer takes jev-ask TOML (refused; nothing read those sections) and `cx-continue/`
   is removed from the repo with its CI job (IMPORT-TOML-CUT, CX-CONTINUE-CUT).
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
   `--session-dir <job>/sessions`, so those jobs keep real session files in the job dir; run
   `python3 tmp/bin/migrate-sessions.py apply` before they turn one day old (pi-roles 27e2006 guards the self-link).
   Since RETENTION-SAFE the watcher moves them itself before deleting; the script stays a manual shortcut.
-- Then m4-close 06 release: a clean-built archive (stale dist files from deleted sources must not ship) + ./install,
-  temp-HOME install/uninstall, merge to main, tag.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
