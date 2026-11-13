@@ -53,10 +53,10 @@ Milestone: M4 · Project view
   rebuilt at the tag.
 - Owner 2026-11-12: `hud import` no longer takes jev-ask TOML (refused; nothing read those sections) and `cx-continue/`
   is removed from the repo with its CI job (IMPORT-TOML-CUT, CX-CONTINUE-CUT).
-- Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
-  `--session-dir <job>/sessions`, so those jobs keep real session files in the job dir; run
-  `python3 tmp/bin/migrate-sessions.py apply` before they turn one day old (pi-roles 27e2006 guards the self-link).
-  Since RETENTION-SAFE the watcher moves them itself before deleting; the script stays a manual shortcut.
+- 2026-11-12 after v0.1.0: Claude and new Codex sessions reconnected to the current hud MCP; two Codex sessions
+  from 2026-11-11 (pts/5, pts/6) still run the old server (`--session-dir <job>/sessions`) until they close; the
+  watcher moves any such files to pi's store before deleting a job. Leftover files migrated; toktrack
+  `pi_session_dirs` no longer lists ~/.hud/jobs; nvm Node 22.13.0 removed. CI on main (ccc447be) green.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
