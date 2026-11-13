@@ -1,7 +1,7 @@
 # Fixed-width frame fixtures compare their trailing cells byte for byte.
 tests/fixtures/workboard-frames/*.txt whitespace=-blank-at-eol
 
-# Source release: runtime/build inputs and current user documentation only.
+# Source release: runtime/build inputs, current user documentation and the docs it links to.
 /tests export-ignore
 /docs/* export-ignore
 /docs/ARCHITECTURE.md -export-ignore

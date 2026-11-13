@@ -1,6 +1,6 @@
 # Finite opt-in synthetic statusline observation
 
-Run explicitly from a built checkout on Linux with Node 22.13+ (22.x) or Node 24+:
+Run explicitly from a built checkout on Linux with Node 24+:
 
 ```sh
 npm run build

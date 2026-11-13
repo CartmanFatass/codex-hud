@@ -204,7 +204,7 @@ behavioral tests, formatting, live Claude, visual and performance validation wer
 compilation or functionality. Existing historical observer evidence does not
 cover this new mode.
 
-On a complete checkout with supported Node 22.13+ or 24 and the proper existing
+On a complete checkout with supported Node 24+ and the proper existing
 dependencies, run:
 
 ```sh

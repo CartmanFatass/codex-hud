@@ -140,6 +140,8 @@ hud statusline --help
 
 ## 开发
 
+开发命令需要 git 仓库；发布包不含测试。
+
 ```sh
 npm ci
 npm run build

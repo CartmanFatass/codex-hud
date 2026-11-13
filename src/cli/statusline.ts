@@ -29,8 +29,7 @@ Preview before apply; keep the returned backup path for exact restore.
 USD is the provider's estimated session cost, not an invoice.
 --details opts into native facts and a context bar; --lang en|zh requires --details (default en).
 Compact output remains the default; presentation options do not change settings.
-See docs/statusline/native-details.md for fields, widths and validation limits.
-See docs/statusline/product-settings.md for safety and recovery limits.
+See docs/reference.md (Claude statusline and shared facts) for fields, settings and recovery.
 `;
 
 export async function statuslineCommand(args: readonly string[], io: HudIO): Promise<number> {

@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+if (Number(process.versions.node.split('.')[0]) < 24) {
+  process.stderr.write('runtime_unavailable: Node >=24.0.0 required\n');
+  process.exit(5);
+}
 import('../dist/statusline-preview.js')
   .then(async ({ statuslinePreview }) => {
     process.exitCode = await statuslinePreview(process.argv.slice(2), process.stdin, {

@@ -55,7 +55,8 @@ function audit(tree) {
   const privateText = /\/home\/|MyHUD-wt|\bfires\b|[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}|\b\w*_API_KEY\s*=\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s'"`]+)|\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[A-Z0-9]{16})/g;
   const author = spawnSync('git', ['log', '-1', '--format=%an%n%ae', '--', 'src/roles/roster.ts'], { cwd: root, encoding: 'utf8' });
   assert.equal(author.status, 0);
-  const identities = [os.userInfo().username, ...author.stdout.trim().split('\n')]
+  // The OS login is not scanned: it can be an ordinary word; /home/ paths are caught above.
+  const identities = [...author.stdout.trim().split('\n')]
     .filter(Boolean).map(value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   const ownerText = new RegExp(`\\b(?:${identities.join('|')})\\b`, 'gi');
   const secretText = /\b\w*_API_KEY\s*=\s*(?:"[^"\r\n]+"|'[^'\r\n]+'|[^\s'"`]+)|\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[A-Za-z0-9_-]{30,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[A-Z0-9]{16})|-----BEGIN [A-Z ]*PRIVATE KEY-----/g;

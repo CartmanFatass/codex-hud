@@ -360,7 +360,7 @@ check_dependencies() {
     if ! command_exists node; then
         error "Node.js is required but not installed.
 
-Install Node.js 18+ from: https://nodejs.org/"
+Install Node.js 24+ from: https://nodejs.org/"
     fi
 }
 
@@ -1140,7 +1140,7 @@ Legacy names (still supported):
 
 Requirements:
   - tmux (auto-installed if missing)
-  - Node.js 18+
+  - Node.js 24+
   - Codex CLI
 
 Examples:

@@ -170,6 +170,8 @@ supported; macOS is not a qualified current product profile.
 
 ## Development
 
+Development commands need the git repository; the release archive does not ship tests.
+
 ```sh
 npm ci
 npm run build
