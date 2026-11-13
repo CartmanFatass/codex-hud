@@ -43,8 +43,14 @@ Milestone: M4 · Project view
   `npm run release` (clean worktree only) writes hud-<version>.tar.gz by git archive (tests, docs history, .scratch,
   .github, cx-continue, agent guides export-ignored); `npm run test:release` rehearses offline extract (path with a
   space) → ./install core + all extensions → hud / panel / MCP six tools + roster → both uninstall paths with data
-  kept; first-party audit clean. Round 10 (Sol xhigh + DS max) on b622a7ba..7dfc5aeb running; when both accept, the
-  final archive is built from the reviewed HEAD in a clean worktree, then stop for the owner before merge/tag.
+  kept; first-party audit clean. Round 10 (Sol xhigh + DS max) on b622a7ba..7dfc5aeb: **both accept**; their
+  optionals fixed directly in 4995d308 (statusline launchers share the Node 24 gate, help points at shipped docs,
+  README dev note, stale standardwebhooks notice removed, audit no longer flags the OS login as a word).
+  **Release candidate:** built from 4995d308 in a clean detached worktree; offline test:release passes (12.3 s);
+  `tmp/release/hud-0.1.0.tar.gz` (git-ignored), 5,461,378 bytes, 636 members, sha256
+  d764c336cbf722ea6482df90b43d543ff3d506f340b3f2e8a4c7e3c47f241da1. Stopped for the owner: merge universal-hud to
+  main, tag, publish. git archive embeds the commit id, so a tag on a later STATE-only commit needs one
+  `npm run release` there (same members).
 - Waiting for the owner (shelved): `hud import` still merges jev/aistudio TOML sections nothing reads now (DS review2
   finding 1); delete that part of the command or keep it?
 - Until each client restarts its hud MCP server (Claude `/mcp` reconnect, pi/Codex restart), old servers still pass
@@ -143,6 +149,7 @@ board counts these; update at every landing or decision. -->
 - try · M4 · RELEASE-DOCS2 · b622a7ba · round-8 doc fixes, short ja/ko READMEs
 - done · M4 · M4-REVIEW9 · Sol accept, DS accept · docs/reviews/2026-11-12-m4-review9-*.md
 - try · M4 · RELEASE-ARCHIVE · c00936e4 · npm run release + offline install rehearsal (test:release); Node floor 24
+- try · M4 · REVIEW10-OPT · 4995d308 · round 10 both accept; optionals fixed; release candidate built (sha256 d764c336…)
 - done · M4 · M4-ARCH · Release: blocked (1: repo Git filters run from the Codex bar and pi footer) · docs/reviews/2026-11-12-m4-architect.md
 - try · M4 · GIT-SAFE · 76e2ba8b · one safe Git policy (src/utils/git-safety.ts) for Claude, Codex, pi footer, Project, Changes; submodule working trees not probed
 - try · M4 · PANEL-SCOPE · owner: a panel shows only HUD jobs that settle while it is open; the open time survives reloads (9b9ea418)
