@@ -56,6 +56,7 @@ hud panel --here          # 不分割窗格
 hud panel --width 64      # 本次覆盖，直到保存修改后的宽度
 hud statusline --help
 hud import --help
+hud trust <dir>           # 把该目录加入 grok、agy 和 claude 的信任列表
 hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 ```
 
@@ -83,9 +84,12 @@ CLI 角色文件设 `harness` 为 `cli`，`agent` 为 `grok`、`agy`、`claude` 
 `agy-imp`、`claude-imp`、`codex-imp`。另写 `$HUD_HOME/roles/<name>.json` 注册自己的，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、
 `agy models`、`claude --help` 或 `codex -m`。HUD 只传模型标志、强度标志、该 CLI 的权限绕过标志
-和 `args`。不传 home、会话或配置标志，也不设这些环境变量，也从不替 CLI 点击信任。
-出现目录信任对话框时拒绝并失败启动，原因中写明目录。会话留在各 CLI 自己的存储里。
+和 `args`。不传 home、会话或配置标志，也不设这些环境变量，分发时也不替 CLI 信任目录：
+出现信任对话框则拒绝，失败原因写明 `hud trust <cwd>`。会话留在各 CLI 自己的存储里。
 herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
+
+`hud trust <dir>` 把该目录加入 grok、agy 和 claude 的信任文件（先在 `$HUD_HOME` 下备份）。
+文件不存在则不创建。codex 跳过。
 
 `hud_read` 不带任务列最新 20 个；带任务读取 STATUS、报告（最多 64 KiB）与待答问题。
 `wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。读取已结束报告记录 `read_at`，不代表验收。

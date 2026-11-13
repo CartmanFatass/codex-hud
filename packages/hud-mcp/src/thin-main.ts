@@ -496,7 +496,7 @@ async function dispatchCli(job: Job, role: Role) {
         const declined = await run('herdr', ['pane', 'send-keys', left, ...kind.trust.decline]);
         if (declined.exit_code !== 0) return declined;
         await run('herdr', ['agent', 'wait', name, '--until', 'idle', '--until', 'unknown', '--timeout', '15000']);
-        return failCli(dir, job, role, `${role.agent} has not trusted ${job.cwd}; run ${role.agent} there once and trust it`);
+        return failCli(dir, job, role, `${role.agent} has not trusted ${job.cwd}; run hud trust ${job.cwd}`);
       }
     }
     if (notReady) return started;

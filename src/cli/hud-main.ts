@@ -3,6 +3,7 @@ import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 import { codexCommand } from './compat.js';
 import { panelCommand, PANEL_HELP } from './panel.js';
+import { trustCommand } from './trust.js';
 
 export async function main(args: readonly string[], io: HudIO): Promise<number> {
   try {
@@ -15,17 +16,19 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
       return await panelCommand(io, args.slice(1));
     }
     if (args[0] === 'codex' || args[0] === 'codex-hud') return await codexCommand(args.slice(1), io);
+    if (args[0] === 'trust') return await trustCommand(args.slice(1), io);
     if (args.length === 1 && args[0] === '--help') {
       await io.stdout(
         'Usage: hud panel --help          Open the interactive panel\n' +
           '       hud statusline --help     Render stdin or manage statusline settings\n' +
           '       hud import --help         Import settings and credentials\n' +
+          '       hud trust <dir>           Add a directory to grok, agy and claude trust lists\n' +
           '       hud codex [ARG ...]        Existing codex-hud launcher (alias: codex-hud)\n' +
           '       hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n'
       );
       return 0;
     }
-    io.stderr('invalid_command: hud panel|statusline|import|codex|codex-hud|uninstall\n');
+    io.stderr('invalid_command: hud panel|statusline|import|trust|codex|codex-hud|uninstall\n');
     return 2;
   } catch (error) {
     if (error instanceof CliError) {

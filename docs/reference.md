@@ -66,6 +66,7 @@ hud panel --here          # no split
 hud panel --width 64      # this open only, until a changed Width is saved
 hud statusline --help
 hud import --help
+hud trust <dir>           # add the directory to grok, agy and claude trust lists
 hud codex --model gpt-5    # Codex arguments pass through to the tmux launcher
 ```
 
@@ -101,9 +102,12 @@ design role with `"agent": "claude"` and a Claude model alias. List models with
 `grok models`, `agy models`, `claude --help` or `codex -m`. The HUD passes only
 the model flag, the effort flag, that CLI's permission-bypass flag and `args`.
 It never passes a home, session or config flag, never sets those environments,
-and never trusts a directory for the CLI: a trust dialog is declined and the
-launch fails, naming the directory. Sessions stay in each CLI's own store.
+and never trusts a directory while dispatching: a trust dialog is declined and the
+launch fails, naming `hud trust <cwd>`. Sessions stay in each CLI's own store.
 herdr starts the CLI through the interactive shell, so that shell's functions apply.
+
+`hud trust <dir>` adds that directory to the trust files of grok, agy and claude
+after a backup under `$HUD_HOME`. A missing CLI file is not created. Codex is skipped.
 
 `hud_read` without a job lists the newest 20; with a job it reads STATUS, report
 (up to 64 KiB) and open questions. `wait_ms` waits at most 120000 ms, stopping at

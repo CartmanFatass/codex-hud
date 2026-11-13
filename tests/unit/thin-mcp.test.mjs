@@ -1369,7 +1369,7 @@ test('a grok trust dialog is declined and the job fails naming the directory', {
   const cwd = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).cwd;
   assertCliStatus(status, job.task_dir);
   assert.equal(status.state, 'failed');
-  assert.equal(status.error, `grok has not trusted ${cwd}; run grok there once and trust it`);
+  assert.equal(status.error, `grok has not trusted ${cwd}; run hud trust ${cwd}`);
   assert.equal(status.exit_reason, status.error);
   const commands = f.commands();
   const decline = commands.find((c) => c.args[1] === 'send-keys');
@@ -1636,7 +1636,7 @@ test('agent_not_ready runs the trust check for any kind, and a start error witho
   const agyStatus = cliState(agy.task_dir);
   const cwd = JSON.parse(fs.readFileSync(join(agy.task_dir, 'job.json'), 'utf8')).cwd;
   assert.equal(agyStatus.state, 'failed');
-  assert.equal(agyStatus.error, `agy has not trusted ${cwd}; run agy there once and trust it`);
+  assert.equal(agyStatus.error, `agy has not trusted ${cwd}; run hud trust ${cwd}`);
   assert.deepEqual(f.commands().find((c) => c.args[1] === 'send-keys').args.slice(3), ['down', 'enter']);
   assert.equal(f.commands().some((c) => c.args[1] === 'prompt'), false);
   assert.equal(fs.existsSync(join(agy.task_dir, 'supervisor.pid')), false);
@@ -1679,7 +1679,7 @@ test('a claude trust dialog is declined with enter and the launch fails with the
   const status = cliState(job.task_dir);
   const cwd = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).cwd;
   assert.equal(status.state, 'failed');
-  assert.equal(status.error, `claude has not trusted ${cwd}; run claude there once and trust it`);
+  assert.equal(status.error, `claude has not trusted ${cwd}; run hud trust ${cwd}`);
   assert.deepEqual(f.commands().find((c) => c.args[1] === 'send-keys').args.slice(3), ['enter']);
   assert.equal(f.commands().some((c) => c.args[1] === 'prompt'), false);
   assert.equal(fs.existsSync(join(job.task_dir, 'supervisor.pid')), false);

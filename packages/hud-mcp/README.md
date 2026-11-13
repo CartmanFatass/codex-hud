@@ -103,8 +103,9 @@ List models with `grok models`, `agy models`, `claude --help` (model aliases) or
 permission-bypass flag, and `args`. It never passes a home, session, config-dir,
 profile or settings flag, never sets those environments, and never answers a
 directory-trust dialog with trust. If one is shown, the launch declines it and
-fails, telling you to open that CLI in the directory once and trust it. Sessions
-stay in each CLI's own store; nothing is copied into the job directory. herdr
+fails, naming `hud trust <cwd>`. `hud trust <dir>` adds that directory to the grok,
+agy and claude trust files after a backup; codex is skipped. Dispatch never trusts.
+Sessions stay in each CLI's own store; nothing is copied into the job directory. herdr
 starts the CLI through the interactive shell, so shell functions in that shell
 (for example one that selects a Codex account) apply as usual.
 
