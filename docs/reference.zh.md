@@ -65,29 +65,44 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 不猜聚焦窗格、不读取状态行写下的绑定。证据不可用时，仅保留未绑定原生会话的任务视图。
 
 MCP 恰有六个工具：**hud_roster**、**hud_create**、**hud_read**、**hud_send**、**hud_respond**、**hud_close**。
-先调用 `hud_roster` 获取生效的角色、模型／推理强度来源、pi 选项和约定。
+先调用 `hud_roster` 获取生效的角色、模型／推理强度来源、可接受选项和约定。
 `$HUD_HOME/roles/*.json` 按角色名覆盖内置 JSON。cwd、HUD 主目录、包目录中第一个
 `hud-convention.md` 整体替换默认约定。
 
 `hud_create` 接收 `role`、`request_key`、`task`，可选 `cwd` 和仅用于显示的 `package`。
-重复键返回原任务，不再次启动。仅 pi 可覆盖 `model`、`thinking`，布尔项 `lens`、`mcp`、`tps`、
-`ui_ext`、`skills`、`split`，以及 `pi_args`（最多 128 项，每项 4096 字符，原样传递，不经 shell）。
-省略的开关沿用 pi-role 默认值；split 默认取角色文件。`ui_ext: false` 禁用 UI 扩展；
-`skills: true` 加载个人技能；split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。
-浏览器角色拒绝这些 pi 选项，运行外部 Jev CLI。
+重复键返回原任务，不再次启动。`model` 和 `thinking` 可覆盖本次 pi 或 CLI 角色。
+仅 pi 可覆盖布尔项 `lens`、`mcp`、`tps`、`ui_ext`、`skills`、`split`，以及 `pi_args`
+（最多 128 项，每项 4096 字符，原样传递，不经 shell）。省略的开关沿用 pi-role 默认值；
+split 默认取角色文件。`ui_ext: false` 禁用 UI 扩展；`skills: true` 加载个人技能；
+split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。
+浏览器角色拒绝这些 pi 选项。CLI 角色只接受 `model` 和 `thinking`。
+
+CLI 角色文件设 `harness` 为 `cli`，`agent` 为 `grok`、`agy`、`claude` 或 `codex`，
+并写 `can_continue`，可选 `model`／`thinking`（省略则用该 CLI 自己的默认）、可选 `idle_grace_s`
+（默认 600）和可选 `args`（原样追加的 CLI 参数，不是 shell 字符串）。内置角色：`grok-imp`、
+`agy-imp`、`claude-imp`、`codex-imp`。另写 `$HUD_HOME/roles/<name>.json` 注册自己的，
+例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、
+`agy models`、`claude --help` 或 `codex -m`。HUD 只传模型标志、强度标志、该 CLI 的权限绕过标志
+和 `args`。不传 home、会话或配置标志，也不设这些环境变量，也从不替 CLI 点击信任。
+出现目录信任对话框时拒绝并失败启动，原因中写明目录。会话留在各 CLI 自己的存储里。
+herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 
 `hud_read` 不带任务列最新 20 个；带任务读取 STATUS、报告（最多 64 KiB）与待答问题。
 `wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。读取已结束报告记录 `read_at`，不代表验收。
-`hud_send` 给工作中的 pi 排队消息，或在允许继续的角色的空闲宽限期内续写；`message_key` 去重。
+`hud_send` 给工作中的 pi 或 CLI 任务排队消息，或在允许继续的角色的空闲宽限期内续写；`message_key` 去重。
+CLI 工作者用同一条 `QUESTION` 和 `hud_respond` 流程提问（`hud-ask`，20 分钟后用默认）。
+CLI 受阻时任务显示为需要你，并向编排窗格发一行通知，写明任务和窗格。
 `hud_respond` 只写一次 `qN.answer.md`。`hud_close` 提前回收，正常清理由 watcher 负责。
 主会话决定所有下一步，MCP 不知道工作流。工具参数见 [MCP README](../packages/hud-mcp/README.md)。
 
 任务是 `$HUD_HOME/jobs/<job>/` 中的普通文件。pi 历史保存在
 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`，任务的 `sessions/` 链接到主代理／助手文件。
-按需 watcher 在创建时启动，经 `pi-role-reap` 回收已结束任务，失败标签页保留两小时；
-没有未结束任务或待到期失败任务时退出。已结算目录在**关闭一天后**的后续扫描或下次创建时清理，
-不设专门到期定时器；包括报告及 `hud_read` 访问。删除旧任务前先将真实 JSONL 会话移至 pi 存储；
-cwd 无效、目标冲突或移动失败则保留任务。删除会话链接不删除目标。
+CLI 任务由监督进程写 STATUS：工作、空闲宽限、宽限未用则 `/quit`，然后以 `settled` 关闭。
+herdr 的 `idle` 或 `unknown` 只有代理已离开才算退出。按需 watcher 在创建时启动，经 `pi-role-reap` 回收已结束任务，
+失败标签页保留两小时；没有未结束任务或待到期失败任务时退出。CLI 任务开着时还会检查监督进程是否还活着；
+`HUD_WATCH_CLI_CHECK_MS`（默认 30000）是该间隔。监督进程已死则任务失败。已结算目录在**关闭一天后**的
+后续扫描或下次创建时清理，不设专门到期定时器；包括报告及 `hud_read` 访问。删除旧 pi 任务前先将真实 JSONL
+会话移至 pi 存储；CLI 和浏览器会话留在各自存储。cwd 无效、目标冲突或移动失败则保留任务。删除会话链接不删除目标。
 
 ## 首页
 

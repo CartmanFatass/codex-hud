@@ -12,6 +12,7 @@ const jobs = join(home, 'jobs'),
   pidFile = join(home, 'watch.pid'),
   logFile = join(home, 'watch.log');
 const retention = Number(process.env.HUD_WATCH_FAILED_RETENTION_MS ?? 7200000);
+const cliCheck = Number(process.env.HUD_WATCH_CLI_CHECK_MS ?? 30000);
 fs.mkdirSync(jobs, { recursive: true, mode: 0o700 });
 const cache = new Map();
 const seen = new Set();
@@ -141,6 +142,19 @@ function preserveSessions(dir) {
     return false;
   }
 }
+function supervisorPid(dir, status) {
+  const fromFile = Number(read(join(dir, 'supervisor.pid'))?.trim());
+  if (Number.isInteger(fromFile) && fromFile > 1) return fromFile;
+  return Number.isInteger(status?.supervisor_pid) && status.supervisor_pid > 1 ? status.supervisor_pid : null;
+}
+function supervisorAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+}
 function scan(retryWatch = false) {
   if (stopped) return;
   queued = false;
@@ -148,6 +162,7 @@ function scan(retryWatch = false) {
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
   seen.clear();
   let open = false,
+    cliPoll = false,
     nearest = Infinity;
   for (const id of fs.readdirSync(jobs)) {
     if (!/^j[a-f0-9]{16}$/.test(id)) continue;
@@ -175,6 +190,21 @@ function scan(retryWatch = false) {
         fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
         fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
       }
+      if (job?.cli && status && !['closed', 'failed', 'stopped'].includes(status.state)) {
+        cliPoll = true;
+        const pid = supervisorPid(dir, status);
+        if (pid && !supervisorAlive(pid)) {
+          status = {
+            ...status,
+            state: 'failed',
+            exit_reason: 'supervisor exited',
+            error: 'supervisor exited',
+            ended_at: new Date().toISOString(),
+          };
+          fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
+          fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+        }
+      }
       // A persisted launch without STATUS is still open until dispatch returns.
       if (!status) {
         if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) open = true;
@@ -192,7 +222,8 @@ function scan(retryWatch = false) {
       const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
       const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
       if (expires < Date.now() && (!tab || job?.reaped_at)) {
-        if (!preserveSessions(dir)) continue;
+        // Pi sessions live in the job dir. CLI and Jev keep theirs in their own default place.
+        if (!(job?.cli || job?.jev) && !preserveSessions(dir)) continue;
         fs.rmSync(dir, { recursive: true, force: true });
         log(`delete ${id} state=${status.state}`);
         continue;
@@ -227,6 +258,8 @@ function scan(retryWatch = false) {
   }
   for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);
   if (open) subscribe();
+  // A dead supervisor is rare; a slow check keeps the watcher light while CLI jobs are open.
+  if (cliPoll) nearest = Math.min(nearest, Date.now() + cliCheck);
   if ((open || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + 1000);
   if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.ceil(nearest - Date.now())));
   else if (!open) stop();

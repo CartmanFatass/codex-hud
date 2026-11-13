@@ -42,7 +42,7 @@ fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
     const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
     const child = spawn(process.execPath, [...preload, watcher], {
       env: { ...process.env, HOME: join(root, 'home'), HUD_HOME: home, PI_CODING_AGENT_DIR: agentDir,
-        HERDR_SOCKET_PATH: join(root, 'absent.sock'), PATH: `${bin}:${process.env.PATH}` },
+        HERDR_SOCKET_PATH: join(root, 'absent.sock'), PATH: `${bin}:${process.env.PATH}`, HUD_WATCH_CLI_CHECK_MS: '1000' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const exited = once(child, 'exit');
@@ -618,6 +618,43 @@ async function until(check) {
     await new Promise((done) => setTimeout(done, 20));
   }
 }
+
+test('a dead CLI supervisor fails on the next scan; a live one and a pi job do not', { timeout: 10000 }, async (t) => {
+  const f = fixture(t);
+  const ended = spawn(process.execPath, ['-e', '']);
+  await once(ended, 'exit');
+  const dead = f.job({ state: 'working', harness: 'cli' }, { cli: { agent: 'grok' } });
+  fs.writeFileSync(join(dead, 'supervisor.pid'), `${ended.pid}\n`);
+  const liveChild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1e9)']);
+  t.after(() => liveChild.kill());
+  const live = f.job({ state: 'working', harness: 'cli' }, { cli: { agent: 'grok' } });
+  fs.writeFileSync(join(live, 'supervisor.pid'), `${liveChild.pid}\n`);
+  const pi = f.job({ state: 'working' });
+  fs.writeFileSync(join(pi, 'supervisor.pid'), `${ended.pid}\n`);
+  f.start();
+  await until(() => JSON.parse(fs.readFileSync(join(dead, 'STATUS.json'), 'utf8')).exit_reason === 'supervisor exited');
+  assert.equal(JSON.parse(fs.readFileSync(join(dead, 'STATUS.json'), 'utf8')).state, 'failed');
+  assert.equal(JSON.parse(fs.readFileSync(join(live, 'STATUS.json'), 'utf8')).state, 'working');
+  assert.equal(JSON.parse(fs.readFileSync(join(pi, 'STATUS.json'), 'utf8')).state, 'working');
+  liveChild.kill();
+  await once(liveChild, 'exit');
+  await until(() => JSON.parse(fs.readFileSync(join(live, 'STATUS.json'), 'utf8')).exit_reason === 'supervisor exited');
+  assert.equal(JSON.parse(fs.readFileSync(join(pi, 'STATUS.json'), 'utf8')).state, 'working');
+});
+
+test('retention deletes CLI and Jev jobs without moving their session files into pi', async (t) => {
+  const f = fixture(t);
+  const cli = f.job(expired(), { cli: { agent: 'grok' } });
+  const jev = f.job(expired(), { jev: { harness: 'jev' } });
+  realSession(cli);
+  realSession(jev);
+  const { child, exited } = f.start();
+  await exited;
+  assert.equal(child.exitCode, 0);
+  assert.equal(fs.existsSync(cli), false);
+  assert.equal(fs.existsSync(jev), false);
+  assert.equal(fs.existsSync(destination(f.pi)), false);
+});
 
 test('watcher deletes only terminal job directories older than one day, using end-time precedence', { timeout: 10000 }, async (t) => {
   const f = fixture(t), now = Date.now();

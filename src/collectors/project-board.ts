@@ -184,7 +184,7 @@ export class ProjectCollector {
       for (const role of registry.roles().values()) {
         const a = registry.assignment(role);
         out.control.push({
-          label: a.role, value: [a.harness, a.model, a.thinking ?? a.effort].filter(Boolean).join('  '), path: a.source_file,
+          label: a.role, value: [a.harness, a.agent, a.model, a.thinking ?? a.effort].filter(Boolean).join('  '), path: a.source_file,
         });
         if (a.pi_role_file) out.control.push({ label: '', value: basename(a.pi_role_file), path: a.pi_role_file });
         out.roleCount++;

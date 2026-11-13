@@ -46,6 +46,10 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.next[0].value, 'NATIVE-TREE: native subagents on Home beside package lanes');
   assert.match(f.data.docs[1].path, /2026-11-12-review.md$/);
   assert.ok(f.data.control.some((r) => r.label === 'imp' && r.value === 'pi  synthetic/model  high'));
+  assert.equal(f.data.control.find((r) => r.label === 'grok-imp').value, 'cli  grok  grok-4.7  high');
+  assert.equal(f.data.control.find((r) => r.label === 'agy-imp').value, 'cli  agy  gemini-4-argon-high');
+  assert.equal(f.data.control.find((r) => r.label === 'claude-imp').value, 'cli  claude  opus  high');
+  assert.equal(f.data.control.find((r) => r.label === 'codex-imp').value, 'cli  codex  gpt-6.1-sol  high');
   assert.equal(f.data.agents.length, 3);
   assert.equal(f.data.browser, true);
   for (const width of [32, 40, 56, 80, 120]) for (const lang of ['en', 'zh']) {

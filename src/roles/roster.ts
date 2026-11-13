@@ -2,9 +2,10 @@
 import * as fs from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cliAgents, type CliAgent } from './cli-kinds.js';
 export interface Role {
   role: string;
-  harness: 'pi' | 'jev';
+  harness: 'pi' | 'jev' | 'cli';
   pi_role?: string;
   split?: boolean;
   can_continue?: boolean;
@@ -14,6 +15,9 @@ export interface Role {
   provider?: 'chatgpt' | 'gemini';
   effort?: string;
   kind?: 'image' | 'video';
+  agent?: CliAgent;
+  idle_grace_s?: number;
+  args?: string[];
   source_file: string;
 }
 export const piSwitches = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split'] as const;
@@ -44,6 +48,15 @@ function entries(directory: string): string[] {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
+}
+function invalidCli(role: Partial<Role>): boolean {
+  const agent = role.agent;
+  if (typeof agent !== 'string' || !(cliAgents as readonly string[]).includes(agent)) return true;
+  if (typeof role.can_continue !== 'boolean') return true;
+  if (role.idle_grace_s !== undefined && (!Number.isInteger(role.idle_grace_s) || role.idle_grace_s < 0)) return true;
+  if (role.args !== undefined && (!Array.isArray(role.args) || role.args.some((arg) => typeof arg !== 'string')))
+    return true;
+  return false;
 }
 function slice(file: string, limit: number): { text: string; truncated: boolean } | null {
   let fd: number;
@@ -80,7 +93,8 @@ export function roleRegistry(
           !role ||
           typeof role.role !== 'string' ||
           !role.role.trim() ||
-          (role.harness !== 'pi' && role.harness !== 'jev') ||
+          (role.harness !== 'pi' && role.harness !== 'jev' && role.harness !== 'cli') ||
+          (role.harness === 'cli' && invalidCli(role)) ||
           (role.harness === 'pi' &&
             (typeof role.pi_role !== 'string' ||
               !role.pi_role.trim() ||
@@ -131,7 +145,13 @@ export function roleRegistry(
       model_source: model.source,
       thinking_source: thinking.source,
       pi_role_file,
-      accepts_options: role.harness === 'pi' ? ['model', 'thinking', ...piSwitches, 'pi_args'] : [],
+      agent: role.harness === 'cli' ? role.agent : undefined,
+      accepts_options:
+        role.harness === 'pi'
+          ? ['model', 'thinking', ...piSwitches, 'pi_args']
+          : role.harness === 'cli'
+            ? ['model', 'thinking']
+            : [],
       available: true,
     };
   }

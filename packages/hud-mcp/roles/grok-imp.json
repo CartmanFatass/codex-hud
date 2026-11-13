@@ -1,0 +1,10 @@
+{
+  "role": "grok-imp",
+  "harness": "cli",
+  "agent": "grok",
+  "model": "grok-4.7",
+  "thinking": "high",
+  "can_continue": true,
+  "idle_grace_s": 600,
+  "args": []
+}

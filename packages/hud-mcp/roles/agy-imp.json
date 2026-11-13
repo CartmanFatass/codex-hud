@@ -1,0 +1,9 @@
+{
+  "role": "agy-imp",
+  "harness": "cli",
+  "agent": "agy",
+  "model": "gemini-4-argon-high",
+  "can_continue": true,
+  "idle_grace_s": 600,
+  "args": []
+}

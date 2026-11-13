@@ -1,0 +1,10 @@
+{
+  "role": "codex-imp",
+  "harness": "cli",
+  "agent": "codex",
+  "model": "gpt-6.1-sol",
+  "thinking": "high",
+  "can_continue": true,
+  "idle_grace_s": 600,
+  "args": []
+}

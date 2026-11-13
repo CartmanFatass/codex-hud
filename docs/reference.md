@@ -78,37 +78,59 @@ Unavailable evidence leaves the jobs view unbound to a native session.
 
 The MCP has exactly six tools: **hud_roster**, **hud_create**, **hud_read**,
 **hud_send**, **hud_respond**, **hud_close**. Call `hud_roster` first for effective
-roles, model/thinking sources, accepted pi options and the convention. Bundled
+roles, model/thinking sources, accepted options and the convention. Bundled
 role JSON is overridden by `$HUD_HOME/roles/*.json` by role name. The first
 `hud-convention.md` in the cwd, HUD home, then package wins whole.
 
 `hud_create` takes `role`, `request_key`, `task`, optional `cwd` and display-only
 `package`. A repeated key returns the original job unchanged, not a second launch.
-Pi-only overrides: `model`, `thinking`, boolean `lens`, `mcp`, `tps`, `ui_ext`,
-`skills`, `split`, plus `pi_args` (≤128 strings, ≤4096 chars each, verbatim, no shell).
-Omitted switches keep pi-role defaults; split defaults to the role file. `ui_ext:
-false` disables UI extensions; `skills: true` includes personal skills. A true split
-reserves a right helper pane. `--orchestrator`/`--notify` pi-argument overrides refuse.
-Browser roles reject these pi options and use external Jev CLIs.
+`model` and `thinking` override a pi or CLI role for this job. Pi-only overrides:
+boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, plus `pi_args` (≤128
+strings, ≤4096 chars each, verbatim, no shell). Omitted switches keep pi-role
+defaults; split defaults to the role file. `ui_ext: false` disables UI extensions;
+`skills: true` includes personal skills. A true split reserves a right helper pane.
+`--orchestrator`/`--notify` pi-argument overrides refuse. Browser roles reject pi
+options. CLI roles accept only `model` and `thinking`.
+
+A CLI role file sets `harness` to `cli` and `agent` to `grok`, `agy`, `claude` or
+`codex`, plus `can_continue`, optional `model`/`thinking` (omitted: the CLI's
+default), optional `idle_grace_s` (default 600) and optional `args` (verbatim CLI
+arguments, not a shell string). Shipped roles: `grok-imp`, `agy-imp`, `claude-imp`,
+`codex-imp`. Register another as `$HUD_HOME/roles/<name>.json`, for example a
+design role with `"agent": "claude"` and a Claude model alias. List models with
+`grok models`, `agy models`, `claude --help` or `codex -m`. The HUD passes only
+the model flag, the effort flag, that CLI's permission-bypass flag and `args`.
+It never passes a home, session or config flag, never sets those environments,
+and never trusts a directory for the CLI: a trust dialog is declined and the
+launch fails, naming the directory. Sessions stay in each CLI's own store.
+herdr starts the CLI through the interactive shell, so that shell's functions apply.
 
 `hud_read` without a job lists the newest 20; with a job it reads STATUS, report
 (up to 64 KiB) and open questions. `wait_ms` waits at most 120000 ms, stopping at
 settlement, a question or timeout. Reading a settled report stamps `read_at`, not
-acceptance. `hud_send` queues a message for working pi jobs or continues an eligible
-role during idle grace; `message_key` deduplicates attempts. `hud_respond` writes a
+acceptance. `hud_send` queues a message for a working pi or CLI job, or continues
+an eligible role during idle grace; `message_key` deduplicates attempts. CLI
+workers ask through the same `QUESTION` line and `hud_respond` flow (`hud-ask`,
+20 minutes, then the default). A blocked CLI marks the job as needing the owner
+and sends one notice naming the job and pane. `hud_respond` writes a
 `qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher.
 The main session chooses all next steps; the MCP knows no workflow.
 See [the MCP README](../packages/hud-mcp/README.md) for the tool arguments.
 
 Jobs are plain files in `$HUD_HOME/jobs/<job>/`. Pi history stays in
 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to
-primary/helper files. The on-demand watcher starts on create, reaps finished jobs
-through `pi-role-reap`, keeps failed tabs for two hours, and exits with no open job
-or pending failed-job deadline. Settled directories, including reports and
+primary/helper files. A CLI job's supervisor drives STATUS: working, idle grace,
+`/quit` when grace ends unused, then closed with `settled`. Herdr `idle` or
+`unknown` is an exit only when the agent is gone. The on-demand watcher starts on
+create, reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours,
+and exits with no open job or pending failed-job deadline. While a CLI job is open
+it also checks the supervisor; `HUD_WATCH_CLI_CHECK_MS` (default 30000) is that
+interval. A dead supervisor fails the job. Settled directories, including reports and
 `hud_read` access, expire **one day after closure** on a later watcher scan or next
-create, not a dedicated expiry timer. Before deleting a legacy job it moves real
-JSONL sessions to pi's store; invalid cwd, destination conflicts or failed moves
-retain the job. Removing session links never removes their targets.
+create, not a dedicated expiry timer. Before deleting a legacy pi job it moves real
+JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
+Invalid cwd, destination conflicts or failed moves retain the job. Removing session
+links never removes their targets.
 
 ## Home
 

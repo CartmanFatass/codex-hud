@@ -6,7 +6,9 @@ import { sessionParentId } from '../utils/session-parent.js';
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { getHudHome } from '../hud-home.js';
 import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
+import { fileSignature } from '../utils/file-signature.js';
 import { time } from '../utils/profile.js';
 import { DaemonBinding } from './daemon-binding.js';
 
@@ -513,6 +515,71 @@ export async function findRolloutsInDaysYielding(
   return results;
 }
 
+const workerSessionCache = new Map<string, { signature: string; id: string | null }>();
+let workerSessionsHome = '';
+
+function cachedCodexSessionId(file: string): string | null {
+  const signature = fileSignature(file);
+  const cached = workerSessionCache.get(file);
+  if (signature !== null && cached && cached.signature === signature) {
+    return cached.id;
+  }
+  let id: string | null = null;
+  try {
+    const status = JSON.parse(fs.readFileSync(file, 'utf8')) as { agent?: unknown; agent_session_id?: unknown };
+    if (status.agent === 'codex' && typeof status.agent_session_id === 'string' && status.agent_session_id) {
+      id = status.agent_session_id;
+    }
+  } catch {
+    id = null;
+  }
+  if (signature !== null) {
+    cachePut(workerSessionCache, file, { signature, id });
+  } else {
+    workerSessionCache.delete(file);
+  }
+  return id;
+}
+
+/**
+ * Codex CLI job session ids under `$HUD_HOME/jobs` (the open and recent set the HUD keeps).
+ * A closed job still counts: its rollout must not become the bar's main session.
+ * Each STATUS.json is re-read only when its signature changes.
+ */
+function codexWorkerSessionIds(): Set<string> {
+  const ids = new Set<string>();
+  const home = getHudHome();
+  if (home !== workerSessionsHome) {
+    workerSessionCache.clear();
+    workerSessionsHome = home;
+  }
+  const root = path.join(home, 'jobs');
+  let names: string[];
+  try {
+    names = fs.readdirSync(root);
+  } catch {
+    return ids;
+  }
+  const seen = new Set<string>();
+  for (const name of names) {
+    if (!/^j[0-9a-f]{16}$/.test(name)) {
+      continue;
+    }
+    const file = path.join(root, name, 'STATUS.json');
+    seen.add(file);
+    const id = cachedCodexSessionId(file);
+    if (id) {
+      ids.add(id);
+    }
+  }
+  for (const file of workerSessionCache.keys()) {
+    if (!seen.has(file)) {
+      workerSessionCache.delete(file);
+    }
+  }
+  return ids;
+}
+
 /**
  * Find the most recent rollout file
  * Searches backwards from today's date
@@ -553,6 +620,14 @@ export function findMostRecentRollout(
 
   if (allSessions.length === 0) {
     return null;
+  }
+
+  const workers = codexWorkerSessionIds();
+  if (workers.size > 0) {
+    allSessions = allSessions.filter((session) => !workers.has(session.sessionId));
+    if (allSessions.length === 0) {
+      return null;
+    }
   }
 
   // Sort by modification time (most recent first)
@@ -960,7 +1035,9 @@ export class SessionFinder {
     // would drop the session, wait for the deep scan to find it again, and
     // drop it two seconds later.
     const kept = this.refreshCurrentSession();
-    if (kept && (!recent || kept.modifiedAt.getTime() >= recent.modifiedAt.getTime())) {
+    // Drop a worker adopted before its job published agent_session_id. Its newer mtime must not win.
+    const keptIsWorker = kept !== null && codexWorkerSessionIds().has(kept.sessionId);
+    if (kept && !keptIsWorker && (!recent || kept.modifiedAt.getTime() >= recent.modifiedAt.getTime())) {
       recent = kept;
     }
     if (!recent && Date.now() - this.lastDeepScanMs >= DEEP_RESCAN_MS) {

@@ -25,7 +25,7 @@ const seen = new Set<string>();
 let cacheHome = '', saved = '';
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
 const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'dispatch_exit_code',
-  'state', 'started_at', 'settled_at', 'ended_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'reason']);
+  'state', 'started_at', 'settled_at', 'ended_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'reason', 'blocked', 'agent']);
 function restore(home: string): void {
   if (cacheHome === home) return;
   cacheHome = home; cache.clear(); saved = '';
@@ -270,7 +270,20 @@ export function readThinJobs(
         }
       }
     }
-    const waiting = state === 'working' ? pending : undefined;
+    const cliJob = word(s.harness) === 'cli' || (job.cli !== null && typeof job.cli === 'object');
+    const paneAsk =
+      !pending && state === 'working' && s.blocked === true && cliJob
+        ? `${word(s.agent) ?? word(job.cli && typeof job.cli === 'object' ? (job.cli as { agent?: unknown }).agent : null) ?? 'CLI'} needs input in its pane`
+        : '';
+    const waiting = state === 'working'
+      ? pending ?? (paneAsk
+        ? {
+            fields: { question: paneAsk, options: [] as string[], suggested: '' },
+            evidence: ref('STATUS.json', { text: '', at: status?.at ?? at, whole: true }),
+            id: 'blocked',
+          }
+        : undefined)
+      : undefined;
     const report = read(join(directory, 'report.md'));
     const reviews = entries(directory)
       .filter((n) => /^review-\d+\.md$/.test(n))

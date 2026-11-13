@@ -98,15 +98,15 @@ export const PI_ROLE_TOOLS = [
   tool('hud_roster', 'List local roles, their availability, and the dispatch convention in effect.', {}),
   tool(
     'hud_create',
-    'Dispatch a local role; request_key returns the existing job unchanged on retry. Optional package is a display-only label. Launch options are pi-only; omitted switches keep pi-role defaults (split uses the role file).',
+    'Dispatch a local role; request_key returns the existing job unchanged on retry. Optional package is a display-only label. model and thinking override a pi or CLI role for this job; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the role file).',
     {
       role: text,
       request_key: text,
       task: text,
       cwd: text,
       package: { ...text, description: 'Display-only package label.' },
-      model: { ...text, description: 'Override the pi role model for this job only.' },
-      thinking: { ...text, description: 'Override the pi role thinking for this job only.' },
+      model: { ...text, description: 'Override the pi or cli role model for this job only.' },
+      thinking: { ...text, description: 'Override the pi or cli role thinking for this job only.' },
       lens: { type: 'boolean', description: 'Load pi-lens (--lens / --no-lens).' },
       mcp: { type: 'boolean', description: 'Load MCP adapter (--mcp / --no-mcp).' },
       tps: { type: 'boolean', description: 'Load tokens/s telemetry (--tps / --no-tps).' },
@@ -134,7 +134,7 @@ export const PI_ROLE_TOOLS = [
   }),
   tool(
     'hud_send',
-    'Send a message to a pi job: queued while it works, a continuation during idle_grace (roles that can continue); message_key deduplicates sends.',
+    'Send a message to a pi or CLI job: queued while it works, a continuation during idle_grace (roles that can continue); message_key deduplicates sends.',
     { job: text, message_key: text, text },
     ['job', 'message_key', 'text']
   ),

@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
 import { herdrId } from '../../../src/roles/herdr-run.js';
 import { roleRegistry, executable, piSwitches, type Role } from '../../../src/roles/roster.js';
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
@@ -30,6 +31,7 @@ interface Job extends PiOptions {
   read_at?: string;
   reaped_at?: string;
   jev?: Role;
+  cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number };
   dispatch_exit_code: number | null;
   stderr_tail: string;
   message_keys: string[];
@@ -46,15 +48,15 @@ const tools = [
   tool('hud_roster', 'List local roles, their availability, and the dispatch convention in effect.', {}),
   tool(
     'hud_create',
-    'Dispatch a local role; request_key returns the existing job unchanged on retry. Optional package is a display-only label. Launch options are pi-only; omitted switches keep pi-role defaults (split uses the role file).',
+    'Dispatch a local role; request_key returns the existing job unchanged on retry. Optional package is a display-only label. model and thinking override a pi or CLI role for this job; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the role file).',
     {
       role: text,
       request_key: text,
       task: text,
       cwd: text,
       package: { ...text, description: 'Display-only package label.' },
-      model: { ...text, description: 'Override the pi role model for this job only.' },
-      thinking: { ...text, description: 'Override the pi role thinking for this job only.' },
+      model: { ...text, description: 'Override the pi or cli role model for this job only.' },
+      thinking: { ...text, description: 'Override the pi or cli role thinking for this job only.' },
       lens: { type: 'boolean', description: 'Load pi-lens (--lens / --no-lens).' },
       mcp: { type: 'boolean', description: 'Load MCP adapter (--mcp / --no-mcp).' },
       tps: { type: 'boolean', description: 'Load tokens/s telemetry (--tps / --no-tps).' },
@@ -82,7 +84,7 @@ const tools = [
   }),
   tool(
     'hud_send',
-    'Send a message to a pi job: queued while it works, a continuation during idle_grace (roles that can continue); message_key deduplicates sends.',
+    'Send a message to a pi or CLI job: queued while it works, a continuation during idle_grace (roles that can continue); message_key deduplicates sends.',
     { job: text, message_key: text, text },
     ['job', 'message_key', 'text']
   ),
@@ -389,6 +391,134 @@ async function dispatchJev(job: Job) {
   const script = fileURLToPath(new URL('../../../../bin/hud-jev.mjs', import.meta.url));
   return run('herdr', ['pane', 'run', root_pane.pane_id, [process.execPath, script, dir].map(quote).join(' ')]);
 }
+function paneText(stdout: string): string {
+  try {
+    const result = JSON.parse(stdout).result;
+    if (typeof result?.read?.text === 'string') return result.read.text;
+    if (typeof result?.text === 'string') return result.text;
+  } catch {
+    /* A plain-text screen is the text itself. */
+  }
+  return stdout;
+}
+function agentStatus(stdout: string): string | null {
+  try {
+    const status = JSON.parse(stdout).result?.agent?.agent_status;
+    return typeof status === 'string' ? status : null;
+  } catch {
+    return null;
+  }
+}
+/**
+ * A startup spinner is `working`, then `done`, with no prompt. Prompting while it is still
+ * working would accept that working; the following done must not be taken as a finished turn.
+ * Returns a failed herdr result, or null when there is nothing to wait for or the wait settled.
+ */
+async function settlePhantomWorking(name: string) {
+  const got = await run('herdr', ['agent', 'get', name]);
+  if (agentStatus(got.stdout) !== 'working') return null;
+  const waited = await run('herdr', [
+    'agent',
+    'wait',
+    name,
+    '--until',
+    'done',
+    '--until',
+    'idle',
+    '--timeout',
+    '60000',
+  ]);
+  return waited.exit_code === 0 ? null : waited;
+}
+/** Trust refusal is the one STATUS write before the supervisor starts. Same keys as hud-cli.mjs. */
+function failCli(dir: string, job: Job, role: Role, reason: string) {
+  const now = new Date().toISOString();
+  const status = {
+    version: 1,
+    task_dir: fs.realpathSync(dir),
+    slot: 'primary',
+    harness: 'cli',
+    agent: role.agent,
+    role: job.role,
+    model: job.model ?? null,
+    thinking: job.thinking ?? null,
+    state: 'failed',
+    output_path: join(dir, 'report.md'),
+    output_written: false,
+    pid: null,
+    pid_start_time: null,
+    agent_session_id: null,
+    started_at: now,
+    settled_at: now,
+    idle_deadline_at: null,
+    ended_at: now,
+    exit_reason: reason,
+    error: reason,
+    updated_at: now,
+  };
+  const file = join(dir, 'STATUS.json');
+  fs.writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
+  fs.renameSync(`${file}.${process.pid}.tmp`, file);
+  return { exit_code: 1, stdout: '', stderr: reason };
+}
+async function dispatchCli(job: Job, role: Role) {
+  try {
+    const kind = cliKinds[role.agent as CliAgent];
+    const dir = directory(job.job);
+    const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
+    const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
+    const tabName = tabLabel(job),
+      name = `${job.job}-primary`;
+    const result = await run('herdr', ['tab', 'create', ...(await workspaceArgs(job)), '--cwd', job.cwd, '--label', tabName, '--no-focus']);
+    if (result.exit_code !== 0) return result;
+    const { tab, root_pane } = JSON.parse(result.stdout).result;
+    const left = root_pane.pane_id;
+    if (!herdrId(tab.tab_id) || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
+    const fields = { TASK: job.job, TAB: tab.tab_id, TAB_NAME: tabName, LEFT: left, RIGHT: '', ORCH: job.herdr_pane, BASE: base, PRIMARY: name };
+    if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
+    fs.writeFileSync(join(dir, 'SESSION.txt'), Object.entries(fields).map(([k, v]) => `${k}=${v}\n`).join(''), { mode: 0o600 });
+    const argv = ['agent', 'start', name, '--kind', role.agent!, '--pane', left];
+    if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
+    argv.push(
+      '--',
+      ...(role.model ? kind.model(role.model) : []),
+      ...(role.thinking ? kind.effort(role.thinking) : []),
+      ...kind.bypass,
+      ...(role.args ?? [])
+    );
+    const started = await run('herdr', argv);
+    const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
+    if (started.exit_code !== 0 && !notReady) return started;
+    if (kind.trust?.text) {
+      const read = await run('herdr', ['pane', 'read', left, '--source', 'recent']);
+      if (read.exit_code !== 0) return notReady ? started : read;
+      if (paneText(read.stdout).includes(kind.trust.text)) {
+        const declined = await run('herdr', ['pane', 'send-keys', left, ...kind.trust.decline]);
+        if (declined.exit_code !== 0) return declined;
+        await run('herdr', ['agent', 'wait', name, '--until', 'idle', '--until', 'unknown', '--timeout', '15000']);
+        return failCli(dir, job, role, `${role.agent} has not trusted ${job.cwd}; run ${role.agent} there once and trust it`);
+      }
+    }
+    if (notReady) return started;
+    if (kind.startupQuirk === 'phantom-working') {
+      const settled = await settlePhantomWorking(name);
+      if (settled) return settled;
+    }
+    const instructions = join(fileURLToPath(new URL('../../../../', import.meta.url)), 'instructions', 'implementer.md');
+    const prompt = `Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`;
+    const submitted = await run('herdr', ['agent', 'prompt', name, prompt, '--wait', '--until', 'working', '--timeout', '30000']);
+    if (submitted.exit_code !== 0) return submitted;
+    // After the prompt is accepted as working, so a startup done (agy) is not a finished turn.
+    const script = fileURLToPath(new URL('../../../../bin/hud-cli.mjs', import.meta.url));
+    const child = spawn(process.execPath, [script, dir], { detached: true, stdio: 'ignore' });
+    child.on('error', (error) => console.error(`hud-cli: ${error.message}`));
+    child.unref();
+    if (!child.pid) return { exit_code: 1, stdout: '', stderr: 'hud-cli did not start' };
+    return { exit_code: 0, stdout: '', stderr: '' };
+  } catch (error) {
+    return { exit_code: 1, stdout: '', stderr: String(error) };
+  }
+}
 function jobStatus(job: Job) {
   const status = json<{ state?: string; exit_reason?: string | null }>(join(directory(job.job), 'STATUS.json'));
   return {
@@ -448,7 +578,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
     for (const key of ['model', 'thinking'] as const) {
       if (args[key] === undefined) continue;
-      if (definition.harness !== 'pi') return { ok: false, code: 'invalid_arguments' };
+      if (definition.harness !== 'pi' && definition.harness !== 'cli') return { ok: false, code: 'invalid_arguments' };
       definition = { ...definition, [key]: required(args, key) };
     }
     const options: PiOptions = definition.harness === 'pi' ? { split: definition.split ?? false, pi_args: [] } : {};
@@ -470,7 +600,7 @@ async function call(name: string, args: Args): Promise<unknown> {
         return { ok: false, code: 'invalid_arguments', error: 'pi_args cannot override --orchestrator or --notify caller binding' };
       options.pi_args = args.pi_args;
     }
-    const effective = definition.harness === 'pi' ? assignment(definition) : null;
+    const effective = definition.harness === 'pi' || definition.harness === 'cli' ? assignment(definition) : null;
     const cwd = resolve(args.cwd === undefined ? process.cwd() : required(args, 'cwd'));
     const job: Job = {
       job: 'j' + randomBytes(8).toString('hex'),
@@ -482,6 +612,15 @@ async function call(name: string, args: Args): Promise<unknown> {
       ...options,
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(definition.harness === 'jev' ? { jev: definition } : {}),
+      ...(definition.harness === 'cli'
+        ? {
+            cli: {
+              agent: definition.agent as CliAgent,
+              can_continue: definition.can_continue === true,
+              idle_grace_s: definition.idle_grace_s ?? 600,
+            },
+          }
+        : {}),
       ...(effective
         ? {
             model: effective.model,
@@ -495,11 +634,14 @@ async function call(name: string, args: Args): Promise<unknown> {
     };
     const dir = directory(job.job);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    // Pi writes the report itself; the Jev CLI saves the browser's answer locally.
+    // Pi and CLI workers write the report; the Jev CLI saves the browser's answer locally.
+    const hudAsk = fileURLToPath(new URL('../../../../bin/hud-ask.mjs', import.meta.url));
     const brief =
       definition.harness === 'jev'
         ? `${task}\n`
-        : `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
+        : definition.harness === 'cli'
+          ? `${task}\n\nWrite your report to ${join(dir, 'report.md')}.\nAsk the orchestrator with: node ${JSON.stringify(hudAsk)} --dir ${JSON.stringify(dir)} --question "..." --default "..."\n`
+          : `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
     fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
     // Persist before dispatch: an interrupted launch must not dispatch again on retry.
     save(job);
@@ -507,6 +649,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     let result;
     try {
       if (definition.harness === 'jev') result = await dispatchJev(job);
+      else if (definition.harness === 'cli') result = await dispatchCli(job, definition);
       else result = await dispatchPi(job, definition);
     } catch (error) {
       result = { exit_code: 1, stdout: '', stderr: String(error) };
@@ -583,8 +726,8 @@ async function call(name: string, args: Args): Promise<unknown> {
     }
     const agent = primary(dir);
     const state = observation(job).state ?? '';
-    // A working pi job queues the message (pi takes it after its current step); a settled one continues in its
-    // idle grace when the role allows (owner, 2026-11-11).
+    // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
+    // continues in its idle grace when the role allows (owner, 2026-11-11).
     const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
     if (job.jev || !agent || !(queued || (state === 'idle_grace' && roles().get(job.role)?.can_continue)))
       return { ok: false, code: 'not_continuable' };
@@ -618,6 +761,14 @@ async function call(name: string, args: Args): Promise<unknown> {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       return { ok: true, written: false };
+    }
+  }
+  // Idle grace already finished: reap quits and the supervisor closes. A working job is stop-requested and SIGTERMed.
+  if (job.cli && jobStatus(job).state === 'idle_grace') {
+    try {
+      fs.writeFileSync(join(dir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
   }
   const result = await run('pi-role-reap', [dir]);

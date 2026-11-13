@@ -485,3 +485,35 @@ test('statusline notices and explicit detail counts read job folders with no rol
   // A settled job is done, read or not: no "report ready" count.
   assert.match(details.stdout, /Work: 1 needs you · 1 stalled · 1 failed · 1 running/);
 });
+
+test('a blocked CLI job asks the owner for input in its pane', async (t) => {
+  const f = fixture(t);
+  const id = 'j0000000000000099', dir = join(f.env.HUD_HOME, 'jobs', id);
+  f.put(join(dir, 'job.json'), {
+    job: id, role: 'grok-imp', cwd: '/synthetic/repo', package: 'CLI-ASK', herdr_pane: 'w4E:p1',
+    created_at: new Date(now - 60000).toISOString(), cli: { agent: 'grok' },
+  }, 1);
+  f.put(join(dir, 'brief.md'), '# Synthetic blocked CLI', 1);
+  f.put(join(dir, 'STATUS.json'), {
+    state: 'waiting_orchestrator', blocked: true, harness: 'cli', agent: 'grok',
+    started_at: new Date(now - 60000).toISOString(),
+  }, 0);
+  await f.pipeline.refresh();
+  const board = f.pipeline.workboard(f.tree);
+  const worker = board.workers.find((w) => w.id.endsWith('99'));
+  assert.equal(worker.homeNeedsHuman, true);
+  assert.equal(worker.phase, 'asking');
+  assert.equal(worker.ask, 'grok needs input in its pane');
+  assert.equal(worker.work.request, true);
+  const home = plain(f.render(board));
+  assert.ok(home.some((line) => line.includes('grok needs input in its pane')));
+  assert.ok(home.some((line) => line.startsWith('? grok-imp')));
+  f.put(join(dir, 'STATUS.json'), {
+    state: 'working', blocked: false, harness: 'cli', agent: 'grok',
+    started_at: new Date(now - 60000).toISOString(),
+  }, 0);
+  await f.pipeline.refresh();
+  const resumed = f.pipeline.workboard(f.tree).workers.find((w) => w.id.endsWith('99'));
+  assert.equal(resumed.homeNeedsHuman, false);
+  assert.equal(resumed.ask, undefined);
+});

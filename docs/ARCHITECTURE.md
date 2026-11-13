@@ -21,6 +21,7 @@ client transcripts + HUD job files + project files
 
 main session ─► six-tool MCP ─► job files + herdr tab
   ├─► external pi-roles + pi
+  ├─► interactive CLI (grok / agy / claude / codex) + per-job supervisor
   └─► external jev-* browser CLIs
 job-file / herdr events ─► on-demand watcher ─► pi-role-reap
 ```
@@ -29,6 +30,12 @@ The panel observes; it does not brief workers, answer questions, accept work or
 chain roles. The main session makes those decisions through the MCP. Models write
 only display text. There is no ledger database, resident execution host or owned
 browser runtime.
+
+CLI dispatch is `dispatchCli` in `packages/hud-mcp/src/thin-main.ts`. Kind flags,
+trust-dialog text and decline keys, and startup quirks are the table in
+`src/roles/cli-kinds.ts`. `packages/hud-mcp/bin/hud-cli.mjs` is the per-job
+supervisor; `hud-ask.mjs` writes the question. The HUD passes only model, effort,
+the bypass flag and role `args`. Harness behaviour and session places are untouched.
 
 Claude's statusline and pi's footer are client integrations. Codex's tmux display
 has two entries: `src/index.ts` (bar) and `src/tree-page.ts` (panel). In that tmux
@@ -43,7 +50,7 @@ No panel opens at launch: `/hud` opens it in Claude/pi, F12 in Codex.
 | `bin/` | Public launchers and Codex tmux helpers |
 | `install`, `install.d/` | Core installer and selected client/prerequisite extensions |
 | `packages/hud-mcp/src/thin-main.ts` | Six stdio MCP tools and job dispatch |
-| `packages/hud-mcp/bin/hud-watch.mjs`, `packages/hud-mcp/bin/hud-jev.mjs` | On-demand reaper and external browser-CLI wrapper |
+| `packages/hud-mcp/bin/hud-watch.mjs`, `hud-cli.mjs`, `hud-ask.mjs`, `hud-jev.mjs` | On-demand reaper, CLI supervisor, CLI questions, browser-CLI wrapper |
 | `src/roles/roster.ts` | Role definitions, assignments and convention, shared by MCP/Project |
 | `src/cli/` | Panel, statusline, import and Codex compatibility commands |
 | `src/index.ts`, `src/tree-page.ts` | Codex bar and shared panel loops |
@@ -284,7 +291,7 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 
 | Path under HUD home | Contents / writer |
 |---|---|
-| `jobs/<job>/` | Plain job/brief/STATUS/report/QA and session links; MCP, pi-roles/browser wrapper |
+| `jobs/<job>/` | Plain job/brief/STATUS/report/QA and session links; MCP, pi-roles, CLI supervisor or browser wrapper |
 | `roles/`, `hud-convention.md` | Owner overrides; read by roster |
 | `credentials.env`, `config.json` | Owner keys and Decision API/configuration |
 | `display/state/<session>.json` | Active Codex bar/panel snapshot; atomic inode ownership prevents outgoing writers deleting replacements |
@@ -297,7 +304,9 @@ Pi history lives in pi's own session store; job directories contain links. The w
 reaps finished tabs, keeps failed tabs for two hours, and deletes settled job directories
 one day after closure on a later scan, not a dedicated expiry timer. Before deletion
 it moves legacy real JSONL sessions to pi's store; failures retain the job. No session-link
-target is deleted. It exits with no open job or failed deadline; a later create restarts it.
+target is deleted. CLI sessions stay in that CLI's store. An open CLI job is also checked
+on `HUD_WATCH_CLI_CHECK_MS` (default 30 s); a dead supervisor fails the job. It exits
+with no open job or failed deadline; a later create restarts it.
 No HUD collection writes into Codex's transcripts/configuration; explicit installer
 registration and `hud import` are separate user actions.
 
