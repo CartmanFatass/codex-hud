@@ -1,6 +1,7 @@
-# hud setup: design draft for the owner
+# hud setup: feature spec
 
-Status: **draft 2, 2026-11-13, owner answers folded in; not yet approved.**
+Status: **approved by the owner, 2026-11-13** (docs/spec.md §2.1, §2.3, §5 carry it).
+
 
 Owner direction (2026-11-13):
 
