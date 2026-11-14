@@ -18,6 +18,8 @@ export interface LedgerSlice {
 }
 export interface ActiveJob {
   jobId: string; role: string; state: string; package?: string; title?: string; at?: number; asking: boolean;
+  /** The report, else the brief: what Enter opens on the job's row. */
+  path?: string;
 }
 export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
@@ -51,7 +53,8 @@ export interface ProjectSnapshot {
   next: ProjectItem[];
   editing: ProjectItem[];
 }
-const SETTLED_JOB_STATES = new Set(['done', 'closed', 'idle_grace', 'failed', 'stopped']);
+/** A job in one of these has ended; Project shows only the others as running (the view reads the same list for tickets). */
+export const SETTLED_JOB_STATES: ReadonlySet<string> = new Set(['done', 'closed', 'complete', 'failed', 'stopped', 'idle_grace']);
 const canonicalPath = (path: string) => { try { return fs.realpathSync(path); } catch { return resolve(path); } };
 export const insideRoot = (root: string, path: string) => {
   const rel = relative(root, path);
@@ -60,6 +63,7 @@ export const insideRoot = (root: string, path: string) => {
 /** A job's state from its STATUS.json; without one, a failed dispatch is failed and anything else is working. */
 const jobState = (job: { dispatch_exit_code?: unknown }, s: { state?: unknown }) => typeof s.state === 'string' && s.state ? s.state
   : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
+const firstFile = (...paths: string[]) => paths.find((p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } });
 export const projectShown = (state: { mainTab?: string; focus: string; help: boolean }, modal = false) =>
   state.mainTab === 'project' && state.focus === 'agents' && !state.help && !modal;
 export class ProjectCollector {
@@ -160,6 +164,13 @@ export class ProjectCollector {
         return st.isDirectory() ? [{ id, at: st.mtimeMs }] : [];
       } catch { return []; }
     }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id)).slice(0, 64);
+  }
+  /** A job's short factual title: its brief's first heading, else its first line, on one line. Signature-cached, size-bounded. */
+  private briefTitle(path: string): string | undefined {
+    const lines = (this.read(path, 4096)?.text ?? '').split(/\r?\n/);
+    const line = lines.find((l) => /^#{1,6}\s/.test(l)) ?? lines.find((l) => l.trim()) ?? '';
+    const title = line.replace(/^#{1,6}\s+/, '').replace(/\s+/g, ' ').trim();
+    return title ? (title.length > 120 ? title.slice(0, 119) + '…' : title) : undefined;
   }
   private json = (path: string) => {
     const file = this.read(path);
@@ -361,16 +372,19 @@ export class ProjectCollector {
       const worker = board.workers.find((w) => w.evidence[0]?.sourceId === id);
       if (inside && !SETTLED_JOB_STATES.has(state) && !job.reaped_at) {
         const at = Date.parse(s.started_at ?? job.created_at);
+        // The workboard's description, the job's own title or task; a job of another pane has neither, so its brief says.
         const title = [
           worker?.task && worker.task !== id.slice(-6) ? worker.task : undefined,
           job.title, job.task,
-        ].find((v): v is string => typeof v === 'string' && v.trim().length > 0)?.replace(/\s+/g, ' ').trim();
+        ].find((v): v is string => typeof v === 'string' && v.trim().length > 0)?.replace(/\s+/g, ' ').trim()
+          ?? this.briefTitle(join(dir, 'brief.md'));
+        const file = firstFile(join(dir, 'report.md'), join(dir, 'brief.md'));
         active.push({
           created,
           entry: {
             jobId: id, role: typeof job.role === 'string' ? job.role : '', state,
             ...(typeof job.package === 'string' && job.package ? { package: job.package } : {}),
-            ...(title ? { title } : {}), ...(Number.isFinite(at) ? { at } : {}),
+            ...(title ? { title } : {}), ...(Number.isFinite(at) ? { at } : {}), ...(file ? { path: file } : {}),
             asking: state === 'waiting_orchestrator',
           },
         });
@@ -388,7 +402,7 @@ export class ProjectCollector {
         }
       }
       if ((byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
-      const path = [report, brief].find((p) => { try { return fs.lstatSync(p).isFile(); } catch { return false; } });
+      const path = firstFile(report, brief);
       const at = Date.parse(s.started_at ?? job.created_at);
       byTree.set(cwd, { jobId: id, role: typeof job.role === 'string' ? job.role : '', created,
         asking: s.state === 'waiting_orchestrator', path, ...(Number.isFinite(at) ? { at } : {}) });

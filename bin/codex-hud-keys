@@ -84,6 +84,9 @@ bind_command 0 l right
 bind_command 0 n next-trouble
 bind_command 0 N previous-trouble
 bind_command 0 Escape back
+# Project tab: previous and next project.
+bind_command 0 '[' project-prev
+bind_command 0 ']' project-next
 # Within repeat-time the next of these needs no prefix: prefix j j j.
 bind_command 1 j down
 bind_command 1 k up

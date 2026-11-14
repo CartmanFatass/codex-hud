@@ -69,6 +69,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   fixing: '修复中',
   done: '完成',
   '{n}m': '{n}分钟',
+  '{n}h': '{n}小时',
+  '{n}d': '{n}天',
   '{n} older shown · a hide': '已显示 {n} 项较早 · a 收起',
   '{n} changed': '{n} 项修改',
   branch: '分支',

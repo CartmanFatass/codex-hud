@@ -195,7 +195,10 @@ survives the self-reload, and Home reads the panel's own collector only. While t
 Projects list is open (`MonitorState.projectList`) the shown project's full collection
 pauses and `ProjectOverviews` reads every listed root lightly: one Home-mode collector
 per root (file signatures, no Git, no roles) and one `liveCwds()` pass over the newest-64
-job lookup, counted per root; the panel attaches each result to its `ProjectChoice`.
+job lookup, counted per root, at most once per five seconds while the list stays open;
+the panel attaches each result to its `ProjectChoice`. A root just switched to has no
+snapshot until its first collection: `ProjectVisits.shown` then gives the previous one,
+with its root, so the first frame is the old page and never a blank one.
 
 Project and `WorktreeCollector` use gated asynchronous Git reads; Changes runs only
 when focused and probes worktrees round-robin. Repository commands/filters and lazy

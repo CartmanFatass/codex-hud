@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
-import { projectFixture, projectFrames, plain, onPage, PAGES, NOW, TREE } from '../fixtures/project-page.mjs';
+import { projectFixture, projectFrames, plain, onPage, PAGES, PROJECTS, NOW, TREE } from '../fixtures/project-page.mjs';
 import { progressSegments } from '../../dist/render/project-view.js';
 import { renderWorkCard } from '../../dist/render/work-card.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
@@ -16,7 +16,7 @@ import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { openEditorPane } from '../../dist/cli/panel-pane.js';
 import { readPanelPlace } from '../../dist/utils/panel-reload.js';
-import { commandSequence, monitorKey, needsOpenPanel } from '../../dist/utils/panel-command.js';
+import { PANEL_COMMANDS, commandSequence, monitorKey, needsOpenPanel, overlayKey } from '../../dist/utils/panel-command.js';
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/project-frames.json', import.meta.url), 'utf8'));
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'project-page-'));
@@ -260,6 +260,72 @@ if (args.includes('@codex_hud_main_pane')) console.log('%1');
   const sent = calls().at(-1);
   assert.deepEqual(sent.slice(0, 4), ['send-keys', '-t', '%2', '-H']);
   assert.equal(Buffer.from(sent.slice(4).map((s) => parseInt(s, 16))).toString(), commandSequence('pane-2'));
+});
+
+test('Codex prefix [ and ] bind project-prev and project-next for both prefixes, step the Project tab, and a closed panel ignores them', async (t) => {
+  const f = await fixture(t),
+    bin = join(f.root, 'bin'),
+    log = join(f.root, 'tmux.jsonl');
+  fs.writeFileSync(
+    join(bin, 'tmux'),
+    `#!${process.execPath}
+import fs from 'node:fs';
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.TMUX_TEST_LOG, JSON.stringify(args) + '\\n');
+if (args[0] === 'display-message') console.log(process.env.TMUX_TEST_PANEL || '');
+if (args.includes('@codex_hud_main_pane')) console.log('%1');
+`,
+    { mode: 0o700 }
+  );
+  const env = { ...process.env, ...f.env, PATH: `${bin}:${process.env.PATH}`, TMUX_TEST_LOG: log };
+  const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
+  for (const prefix of ['C-\\', 'C-]']) {
+    fs.writeFileSync(log, '');
+    const keys = spawnSync('bash', ['bin/codex-hud-keys', 'synthetic-session', prefix], { env, encoding: 'utf8' });
+    assert.equal(keys.status, 0, keys.stderr);
+    for (const [key, name] of [['[', 'project-prev'], [']', 'project-next']]) {
+      const bound = calls().filter((a) => a[0] === 'bind-key' && a[3] === key);
+      assert.equal(bound.length, 1, `${prefix} ${key}`);
+      assert.deepEqual(bound[0].slice(0, 3), ['bind-key', '-T', 'codex-hud-prefix']);
+      assert.ok(bound[0].at(-1).endsWith(` ${name}`), bound[0].at(-1));
+    }
+  }
+  // The panel decodes what the carrier sends and the monitor steps the tab, in the order pressed, wrapping round.
+  const decoder = new WorkbenchInputDecoder('workboard', { forward: true });
+  const inputs = decoder.push(Buffer.from(commandSequence('project-next') + commandSequence('project-next') + commandSequence('project-prev')));
+  assert.deepEqual(inputs.map((i) => i.command), ['project-next', 'project-next', 'project-prev']);
+  const view = (state) => f.render(40, 'en', state, 24, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'demo-project' });
+  let frame = view(onPage());
+  const roots = [];
+  for (const input of inputs) {
+    frame = view(press(frame, monitorKey(input.command)).state);
+    roots.push(frame.state.projectRoot);
+  }
+  assert.deepEqual(roots, [PROJECTS[1].root, PROJECTS[2].root, PROJECTS[1].root]);
+  // An open Help or Settings is closed by them and the command then runs, as with the other panel commands.
+  for (const overlay of ['help', 'settings']) for (const command of ['project-prev', 'project-next']) assert.equal(overlayKey(command, overlay), null);
+  // The real carrier: an open panel gets the APC string; a closed one ignores them, exactly where needsOpenPanel says so.
+  fs.copyFileSync('bin/codex-hud-command', join(bin, 'codex-hud-command'));
+  fs.writeFileSync(join(bin, 'codex-hud-toggle'), 'printf "%s\\n" "$@" > "$TOGGLE_TEST_LOG"\n');
+  const toggled = join(f.root, 'toggle.txt');
+  for (const command of PANEL_COMMANDS) {
+    const closed = spawnSync('bash', [join(bin, 'codex-hud-command'), 'synthetic-session', command], {
+      env: { ...env, TOGGLE_TEST_LOG: toggled },
+      encoding: 'utf8',
+    });
+    assert.equal(closed.status, 0, closed.stderr);
+    assert.equal(fs.existsSync(toggled), needsOpenPanel(command), `${command}: the shell and needsOpenPanel agree`);
+    fs.rmSync(toggled, { force: true });
+  }
+  assert.equal(needsOpenPanel('project-next'), false);
+  const open = spawnSync('bash', ['bin/codex-hud-command', 'synthetic-session', 'project-next'], {
+    env: { ...env, TMUX_TEST_PANEL: '%2' },
+    encoding: 'utf8',
+  });
+  assert.equal(open.status, 0, open.stderr);
+  const sent = calls().at(-1);
+  assert.deepEqual(sent.slice(0, 4), ['send-keys', '-t', '%2', '-H']);
+  assert.equal(Buffer.from(sent.slice(4).map((x) => parseInt(x, 16))).toString(), commandSequence('project-next'));
 });
 
 test('Project collection failure is caught and the live panel re-arms collection', async (t) => {

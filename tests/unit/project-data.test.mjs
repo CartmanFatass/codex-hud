@@ -97,6 +97,65 @@ test('active lists only unsettled jobs under project root; settled and other-roo
   ]);
 });
 
+test('an active job with no workboard description is titled from its brief.md, through the cached bounded read, in full collection only', async (t) => {
+  const f = makeTemp(t);
+  const add = (n, brief, job = {}, extra = {}) => {
+    const id = `j${String(n).padStart(16, '0')}`, dir = join(f.hud, 'jobs', id);
+    // Another pane's job: normal MCP job.json has no title or task.
+    f.put(join(dir, 'job.json'), { job: id, role: 'imp', cwd: f.cwd, herdr_pane: 'w4E:p9', created_at: new Date(NOW - n * 60000).toISOString(), ...job });
+    f.put(join(dir, 'STATUS.json'), { state: 'working', started_at: new Date(NOW - n * 60000).toISOString() });
+    if (brief !== undefined) f.put(join(dir, 'brief.md'), brief);
+    for (const [name, text] of Object.entries(extra)) f.put(join(dir, name), text);
+    return id;
+  };
+  const heading = add(1, '# Build   the Project tab\n\nSecond paragraph that is not the title.');
+  const late = add(2, 'Some context first.\n\n## The real heading\ntext');
+  const line = add(3, '\n  \n  Fix   the flaky test\nmore text');
+  const long = add(4, `# ${'w'.repeat(300)}`);
+  const none = add(5, undefined);
+  const empty = add(6, '\n\n  \n');
+  const explicit = add(7, '# Brief heading', { title: 'Explicit title' });
+  const reported = add(8, '# Reported job', {}, { 'report.md': '# Report' });
+  const big = add(9, `# Heading of a large brief\n${'x'.repeat(300000)}`);
+  const board = { ...EMPTY_BOARD, workers: [{ id: 'w', laneId: 'l', task: 'Workboard description', evidence: [{ sourceId: heading }] }] };
+  const opened = [];
+  const origOpen = fs.openSync;
+  fs.openSync = (path, ...args) => { opened.push(String(path)); return origOpen(path, ...args); };
+  syncBuiltinESMExports();
+  t.after(() => { fs.openSync = origOpen; syncBuiltinESMExports(); });
+  const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
+  await collector.collect('home', board, NOW);
+  assert.equal(opened.some((p) => p.endsWith('/brief.md')), false, 'Home never looks at a brief');
+  const data = await collector.collect(true, { ...board, workers: [] }, NOW);
+  const by = (id) => data.active.find((a) => a.jobId === id);
+  assert.equal(by(heading).title, 'Build the Project tab');
+  assert.equal(by(late).title, 'The real heading', 'the first heading wins over an earlier line');
+  assert.equal(by(line).title, 'Fix the flaky test', 'no heading: the first non-empty line');
+  assert.equal(by(long).title.length, 120);
+  assert.ok(by(long).title.endsWith('…'));
+  assert.equal('title' in by(none), false);
+  assert.equal('title' in by(empty), false);
+  assert.equal(by(explicit).title, 'Explicit title', 'the job record\'s own title is not replaced');
+  assert.equal(by(big).title, 'Heading of a large brief');
+  // The row opens the report when there is one, else the brief; a job with neither opens nothing.
+  assert.equal(by(heading).path, join(f.hud, 'jobs', heading, 'brief.md'));
+  assert.equal(by(reported).path, join(f.hud, 'jobs', reported, 'report.md'));
+  assert.equal('path' in by(none), false);
+  // An unchanged brief is not opened again; a changed one is.
+  const cold = opened.filter((p) => p.endsWith('/brief.md')).length;
+  assert.equal(cold, 7, 'every brief that titles a job was read once (not the one whose job.json has a title)');
+  await collector.collect(true, { ...board, workers: [] }, NOW + 1);
+  assert.equal(opened.filter((p) => p.endsWith('/brief.md')).length, cold, 'signature-cached: nothing re-read');
+  fs.writeFileSync(join(f.hud, 'jobs', heading, 'brief.md'), '# Renamed later\n');
+  fs.utimesSync(join(f.hud, 'jobs', heading, 'brief.md'), new Date(NOW + 9000), new Date(NOW + 9000));
+  const changed = await collector.collect(true, { ...board, workers: [] }, NOW + 2);
+  assert.equal(changed.active.find((a) => a.jobId === heading).title, 'Renamed later');
+  assert.equal(opened.filter((p) => p.endsWith('/brief.md')).length, cold + 1, 'only the changed brief');
+  // The workboard's description still wins over the brief.
+  const described = await collector.collect(true, board, NOW + 3);
+  assert.equal(described.active.find((a) => a.jobId === heading).title, 'Workboard description');
+});
+
 test('ticket items and latest ## Comments bullet parsed; absent comments omitted and >600 chars capped', async (t) => {
   const f = makeTemp(t);
   const longText = 'x'.repeat(650);

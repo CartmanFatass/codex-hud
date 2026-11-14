@@ -40,6 +40,8 @@ export const PANEL_COMMANDS = [
   'right',
   'next-trouble',
   'previous-trouble',
+  'project-prev',
+  'project-next',
 ] as const;
 export type PanelCommand = (typeof PANEL_COMMANDS)[number];
 
@@ -74,6 +76,8 @@ const MONITOR_KEYS: Record<PanelCommand, string> = {
   right: 'right',
   'next-trouble': 'next-trouble',
   'previous-trouble': 'previous-trouble',
+  'project-prev': 'project-prev',
+  'project-next': 'project-next',
 };
 export function monitorKey(command: PanelCommand): string {
   return MONITOR_KEYS[command];
@@ -114,7 +118,8 @@ export function overlayKey(command: PanelCommand, overlay: 'settings' | 'help'):
 
 /**
  * What runs when the panel is closed: these do nothing, the rest open it first. The delegation view's four keys move
- * or act inside the panel on a row that is not there yet, so a closed panel ignores them.
+ * or act inside the panel on a row that is not there yet, and the project keys step the Project tab through its
+ * projects while it shows one, so a closed panel ignores them.
  */
 export function needsOpenPanel(command: PanelCommand): boolean {
   return ![
@@ -130,6 +135,8 @@ export function needsOpenPanel(command: PanelCommand): boolean {
     'right',
     'next-trouble',
     'previous-trouble',
+    'project-prev',
+    'project-next',
   ].includes(command);
 }
 

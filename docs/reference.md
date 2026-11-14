@@ -254,7 +254,7 @@ Tickets page, at that feature.
 
 ## Project
 
-Project is a hub with one page per section. The hub's top row names the project
+Project is a hub with one page per section. The hub's first row names the project
 (the panel's directory name; see Switching projects below), then Waiting for you (STATE's waiting items, folds with
 Enter), then one row per page with a one-line summary: **Progress** (milestone,
 working, to try, blocked; a stacked bar under it), **Tickets** (done/total, working,
@@ -281,7 +281,10 @@ for two rows: the oldest give way, never the current one. Then four sections:
 - **Now**: ledger slices in `working`/`blocked` (drift marks mean a missing or unlisted
   worktree or a non-active ledger state, never a write back to STATE), each with its
   job's line from Home's card text, then the project's HUD jobs that have not settled
-  and no slice shows (role, title, age).
+  and no slice shows (role, title, age). A job's title is the workboard's description, else its
+  `job.json` title, else the first heading (or line) of its `brief.md`, from the collector's
+  signature-cached, size-bounded read (full collection only). Each such row is a stop of its own: Enter or `o`
+  opens its report, else its brief, and a long list pages by keyboard.
 - **Next**: STATE's `## Next`, a bullet at most two rows; Enter on a cut one (`…`) shows
   all of it, again folds it. A bullet that fits opens STATE.md.
 - **To try**: `try` rows by milestone, newest milestone first and open, the others
@@ -327,8 +330,10 @@ that hub goes back to the list; on a hub not reached from the list Esc does what
 always did, so keys can still be handed back to Codex). The cursor marks both rows of an
 entry. The list is read only while it is visible: for each listed project STATE and
 tickets as Home reads them (cached by file signature) and, in one pass over the newest
-64 job directories, the unsettled jobs per root. No Git, no roles, no full collection;
-the shown project's own full collection pauses while the list is open.
+64 job directories, the unsettled jobs per root, at most once every five seconds while
+the list stays open (opening it again reads at once). No Git, no roles, no full collection;
+the shown project's own full collection pauses while the list is open. The last-touched
+time reads `12m`, `3h`, `4d` (`12分钟`, `3小时`, `4天` in Chinese).
 A project without STATE.md says `no STATE.md` on Progress; its other pages work.
 
 On a page Enter folds a header, shows a ticket's detail or opens a row's file, and `o`
@@ -364,7 +369,7 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 |---|---|
 | `1`, `2`, `3` | Home, Project, Changes summary |
 | Tab/Shift-Tab, Left/Right | Home ⇄ Project |
-| `[`, `]` | Project: previous/next project (not on the Projects list) |
+| `[`, `]` | Project: previous/next project (not on the Projects list); in Codex the prefix then `[` or `]`, ignored while the panel is closed |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |

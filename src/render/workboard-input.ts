@@ -42,6 +42,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const useProject = (root?: string) => {
     if (root === next.projectRoot) return;
     next.projectRoot = root;
+    // Esc goes back to the list only from a hub opened out of it, not from one stepped to with `[` and `]`.
+    next.projectBack = undefined;
     next.projectSaved = {};
     // Resting on the name row, `[` and `]` keep it there.
     if (next.projectCursor !== 'project:switch') next.projectCursor = undefined;

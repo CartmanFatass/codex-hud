@@ -53,7 +53,11 @@ test('Projects list: the panel project first, then waiting, running, then the mo
   assert.match(entry('old-project')[1], /^  █{14} +40d$/);
   // No STATE.md says so where the bar would be; the open tickets are its key count and the newest ticket its age.
   assert.match(entry('bare-project')[1], /^  no STATE\.md {5}1 open +2d$/);
-  assert.match(text(l.list(40, 'zh')), /^  无 STATE\.md {5}1 未完成 +2d$/m);
+  // The last-activity column goes through t(): minutes, hours and days in Chinese too.
+  assert.match(text(l.list(40, 'zh')), /^  无 STATE\.md {5}1 未完成 +2天$/m);
+  const zh = text(l.list(40, 'zh'));
+  for (const age of ['0分钟', '5小时', '20分钟', '3天', '40天']) assert.match(zh, new RegExp(`${age}$`, 'm'));
+  assert.doesNotMatch(zh, /\b\d+[mhd]$/m, 'no English unit left in the Chinese list');
   assert.match(plain(l.list(40, 'zh'))[0], /^‹ 项目列表/);
   assert.match(plain(frame)[0], /^‹ Projects/);
   assert.match(plain(frame).at(-1), /esc back/);
@@ -85,6 +89,10 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   assert.equal(frame.state.projectRoot, byName('busy-project'));
   assert.deepEqual([frame.state.projectList, frame.state.projectPage], [undefined, undefined]);
   assert.match(text(frame), /^busy-project ─+ ▾ 4\/6$/m, 'the hub of that project, numbered by the switch order');
+  // Stepping on with ] leaves that hub: Esc no longer goes back to the list it was opened from.
+  const stepped = view(send(frame, ']').state);
+  assert.equal(stepped.state.projectBack, undefined);
+  assert.equal(esc(stepped).state.projectList, undefined);
   // Esc on a hub reached from the list goes back to it, with the cursor on that project; Esc on the list returns to the hub.
   frame = view(esc(frame).state);
   assert.equal(frame.state.projectList, true);
@@ -206,6 +214,12 @@ await runLivePage();
   await until(() => others.every((root) => collects().some((c) => c.cwd === root && c.shown === 'home')), 'an overview of every other listed project');
   assert.ok(collects().some((c) => c.cwd === own && c.shown === 'home'), 'the panel own project is listed too');
   assert.ok(collects().every((c) => c.shown !== true), 'with the list open no project is fully collected (no Git)');
+  // Open for a while at a 100 ms refresh, the overviews are still read once, not on every refresh.
+  await pause(150);
+  const overviewReads = () => collects().filter((c) => c.shown === 'home' && c.cwd === others[0]).length;
+  const settled = overviewReads();
+  await pause(700);
+  assert.equal(overviewReads(), settled, 'no re-read inside five seconds');
   // Esc goes back to the hub: the shown project is collected in full, the overviews stop.
   const before = collects().length;
   child.stdin.write('\x1b');

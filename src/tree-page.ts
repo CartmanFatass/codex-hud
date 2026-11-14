@@ -557,6 +557,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   // The Projects list reads every listed project lightly, and only while it is open.
   const overviews = new ProjectOverviews((root) => new ProjectCollector(root, jobPipeline.home), HUD_CWD_REAL);
   let overview = new Map<string, ProjectOverview>();
+  let overviewAt = -Infinity;
   const listing = (s: MonitorState) => projectShown(s) && projectListOpen(s, projects);
   const shownRoot = () => projects.find((p) => p.root === state.projectRoot)?.root ?? HUD_CWD_REAL;
   // Typing here goes to Codex; with no Codex pane to give it to (the panel
@@ -721,6 +722,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const nowMs = Date.now();
         const hud = currentHud();
         const jobRender = panelJobRenderState(jobComposition, !collected || treeBuiltFor !== tree.rootId);
+        // The Project tab keeps the previous project's page until a project just switched to has been read once.
+        const shown = state.mainTab === 'project' ? visits.shown(shownRoot()) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
         frame = renderMonitor({
           tree,
           workboard: state.mainTab === 'home' && state.focus === 'agents' && !state.help ? homeRecommendation.apply(displayBoard()) : displayBoard(),
@@ -729,8 +732,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           embedded: !STANDALONE_PANEL,
           state,
           worktrees,
-          project: visits.snapshot(state.mainTab === 'project' ? shownRoot() : HUD_CWD_REAL),
-          projectName: projects.find((p) => p.root === shownRoot())?.name ?? path.basename(HUD_CWD_REAL),
+          project: shown.snapshot,
+          projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
           projects: listing(state) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
           error,
           nowMs,
@@ -1032,8 +1035,14 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         projectsAt = Date.now();
         projects = projectList(jobPipeline.home, HUD_CWD_REAL);
       }
-      // The open list reads the light overviews instead of the shown project's full collection (Git included).
-      if (shown && listing(state)) overview = await overviews.read(projects.map((p) => p.root), jobPipeline.workboard(tree, panelDelegation), Date.now());
+      // The open list reads the light overviews instead of the shown project's full collection (Git included), at most once
+      // per five seconds; opening it again reads at once.
+      if (shown && listing(state)) {
+        if (Date.now() - overviewAt >= 5000) {
+          overviewAt = Date.now();
+          overview = await overviews.read(projects.map((p) => p.root), jobPipeline.workboard(tree, panelDelegation), Date.now());
+        }
+      } else overviewAt = -Infinity;
       const visit = visits.visit(shown ? shownRoot() : HUD_CWD_REAL);
       const projectFacts = await visit.collector.collect(
         shown ? !listing(state) : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,

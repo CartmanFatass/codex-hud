@@ -22,6 +22,16 @@ export class ProjectVisits {
   snapshot(root: string): ProjectSnapshot | undefined {
     return this.seen.get(root)?.snapshot;
   }
+  private last?: { root: string; snapshot: ProjectSnapshot };
+  /**
+   * What the Project tab paints for a root: its own snapshot, or while a root just switched to has none yet, the one the
+   * tab showed before, with the root it belongs to, so the first frame of a switch is the old page, never a blank one.
+   */
+  shown(root: string): { root: string; snapshot?: ProjectSnapshot } {
+    const snapshot = this.snapshot(root);
+    if (snapshot) this.last = { root, snapshot };
+    return snapshot ? { root, snapshot } : (this.last ?? { root });
+  }
   get roots(): string[] {
     return [...this.seen.keys()];
   }

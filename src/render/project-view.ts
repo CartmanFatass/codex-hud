@@ -1,5 +1,5 @@
 /** Pure Project rows, using the same kit as Home and the Inspector. */
-import { SLICE_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type LedgerSlice } from '../collectors/project-board.js';
+import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type LedgerSlice } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { jobSentenceLine, workCardDetail, labelSummary } from './work-card.js';
@@ -91,9 +91,8 @@ const PAGE_WORD: Record<ProjectPage, string> = {
 export const projectPageOf = (state: MonitorState) => PROJECT_PAGES.find((p) => p === state.projectPage);
 /** Only the native-agents list starts folded: a page's own header is its crumb. */
 export const projectFoldedSet = (state: MonitorState): ReadonlySet<string> => state.projectFolded ?? new Set(['agents']);
-const SETTLED = ['done', 'closed', 'complete', 'failed', 'stopped', 'idle_grace'];
 const ticketWorking = (r: ProjectTicket) => !['done', 'dropped', 'blocked'].includes(r.state)
-  && (r.state === 'working' || (!!r.job && !SETTLED.includes(r.job.state)));
+  && (r.state === 'working' || (!!r.job && !SETTLED_JOB_STATES.has(r.job.state)));
 const parts = (...p: (string | number | false | null | undefined)[]) =>
   p.filter((s): s is string => typeof s === 'string' && s !== '');
 function updatedText(data: ProjectSnapshot, now: number): string {
@@ -187,10 +186,10 @@ export function projectOrder(projects: ProjectChoice[]): ProjectChoice[] {
   const rank = (p: ProjectChoice) => p.overview?.waiting ? 0 : p.overview?.running ? 1 : 2;
   return [projects[0], ...projects.slice(1).sort((a, b) => rank(a) - rank(b) || (b.overview?.at ?? 0) - (a.overview?.at ?? 0))];
 }
-/** `12m`, `3h`, `4d`: how long since a project was touched. */
+/** `12m`, `3h`, `4d` (`12分钟`, `3小时`, `4天`): how long since a project was touched. */
 function sinceText(at: number | undefined, now: number): string {
   const minutes = at === undefined ? -1 : Math.max(0, Math.floor((now - at) / 60000));
-  return minutes < 0 ? '' : minutes < 60 ? `${minutes}m` : minutes < 1440 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / 1440)}d`;
+  return minutes < 0 ? '' : minutes < 60 ? t('{n}m', { n: minutes }) : minutes < 1440 ? t('{n}h', { n: Math.floor(minutes / 60) }) : t('{n}d', { n: Math.floor(minutes / 1440) });
 }
 /** Two rows a project: its name, milestone and what needs you (`?`) or runs (`◉`); then its bar, one key count and the last activity. */
 function listRows(projects: ProjectChoice[], width: number, now: number): MonitorRow[] {
@@ -239,7 +238,11 @@ function dateText(at: number, now: number): string {
 }
 /** `text` wrapped to `room` columns and cut to `max` rows, the last ending in an ellipsis; `more` says it was cut. */
 function clampLines(text: string, room: number, max: number) {
-  const lines = flowLines(monitorText(text), Math.max(1, room)), more = lines.length > max;
+  return clampClean(monitorText(text), room, max);
+}
+/** `clampLines` for text already through `monitorText`. */
+function clampClean(body: string, room: number, max: number) {
+  const lines = flowLines(body, Math.max(1, room)), more = lines.length > max;
   return { more, lines: more ? [...lines.slice(0, max - 1), fit(lines.slice(max - 1).join(' '), Math.max(1, room))] : lines };
 }
 /** `head` and `text` on one row when they fit beside `right` (and `one`); else `head` with `right`, and the text wrapped under it at `indent`. */
@@ -247,7 +250,7 @@ function stacked(head: string, text: string, right: string, width: number, inden
   const body = monitorText(text);
   if (!body) return [pair(head, right, width)];
   if (one && visualLength(head) + 2 + visualLength(body) + (right ? visualLength(right) + 1 : 0) <= width) return [pair(`${head}  ${body}`, right, width)];
-  return [pair(head, right, width), ...clampLines(body, width - indent, max).lines.map((line) => ' '.repeat(indent) + line)];
+  return [pair(head, right, width), ...clampClean(body, width - indent, max).lines.map((line) => ' '.repeat(indent) + line)];
 }
 /** A done/total meter `cells` wide, as thin as the panel's other meters; a started one shows at least a cell, an unfinished one never looks full. */
 function meter(done: number, total: number, cells: number): string {
@@ -307,11 +310,14 @@ function pageRows(
       const labels = labelSummary(worker?.labels);
       if (labels) fileRow('    ' + labels, `slice:${i}:labels`, path);
     }
-    // Jobs of this project that no slice shows: an imp working in the main checkout, say.
+    // Jobs of this project that no slice shows: an imp working in the main checkout, say. Each row is a stop of its own
+    // (so a long list pages by keyboard); Enter or `o` opens its report, else its brief.
     for (const job of jobs) {
       const right = [job.asking ? `${t('asking')} ?` : minuteAge(job.at ?? null, now)].filter(Boolean).join(' ');
       for (const line of stacked(`  ${sliceInk('working')(mark('◉', '@'))} ${monitorText(job.role || job.jobId.slice(-6))}`,
-        job.title ?? job.package ?? '', theme.board.muted(right), width, 4)) rows.push(boardRow(fit(line, width)));
+        job.title ?? job.package ?? '', theme.board.muted(right), width, 4)) rows.push({
+        text: fit(line, width), item: `project:job:${job.jobId}`, ...(job.path ? { files: [job.path] } : {}),
+      });
     }
     if (data.next.length) head('Next', data.next.length);
     data.next.forEach((r, i) => {
