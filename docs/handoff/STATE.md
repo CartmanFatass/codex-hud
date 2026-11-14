@@ -1,11 +1,17 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
-Milestone: 0.1.3 · Project hub
+Milestone: 0.1.4 · Roles apart from harnesses
 
 ## Waiting for the owner
 
+- Try 0.1.4 (review accepted): Control plane opens on what needs you; switch a role's place (provider → model
+  picker; owner: picker ok 2026-11-14), add/reorder a fallback, clear an exhausted mark; the next hud_create uses it.
+  CLI jobs end only on facts; `hud watch` under Monitor hears every change (orchestrator live-checked dispatch
+  failure, two turns, supervisor kill + hud_send respawn on agy, 2026-11-14).
+- Try 0.1.3 PROJECT-HUB + PROJECT-UX: Project tab is a timeline hub (waits for you, Now, Latest, pages); Progress
+  last 7 days; Tickets lanes; `[` `]` switch projects, Enter on the name opens the Projects list.
 - Try 0.1.2 HUD-SETUP: run `/hud-setup` in a real project; its pi workers get the chosen skills and prompt.
-- Try 0.1.1 CLI-WORKERS: dispatch grok-imp, agy-imp, claude-imp or codex-imp; the card shows on Home and the tab
+- Try 0.1.1 CLI-WORKERS: dispatch imp on a cli place (agy, grok, claude or codex; `on` or the Control plane); the card shows on Home and the tab
   closes after grace. `hud trust <dir>` first for a new directory.
 
 - Try M4 (9 landed): reopen `/hud` in a Claude pane → Home shows `Claude · 本次会话` with nested subagents indented
@@ -159,7 +165,7 @@ board counts these; update at every landing or decision. -->
 - try · 0.1.4 · QUIET-DECIDE · 2117e2b5 · cli-workers 10 (real run passed): a quiet CLI job without a report gets one Decision API choice among fixed actions
 - accepted · 0.1.4 · REVIEW-014 · grok + DS changes-required (0d24ed0f), fixed a2b2b033, 7bd5e175, 86007c37; re-review accept · docs/reviews/2026-11-14-014-*.md
 
-## Now (2026-11-14): 0.1.3 Project hub started; 0.1.1 and 0.1.2 wait for the owner's try
+## Now (2026-11-14): 0.1.4 to the owner's try; 0.1.1–0.1.3 wait for the owner's try
 
 Owner 2026-11-14: Project becomes a hub with progress, tickets, working tree, docs and control-plane pages and a
 project switch (spec §2, .scratch/project-hub/). Routing for this package: frontend work to frontend-implementer, data work to agy-imp (gemini-4-hydrogen-high),
