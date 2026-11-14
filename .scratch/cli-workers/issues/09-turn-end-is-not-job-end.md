@@ -39,3 +39,6 @@ whether the agent is busy.
 - 2026-11-14 orchestrator: landed as 6f4afa7c. The first imp-on-agy job (j8874939f037d8c0f) was itself quit by this bug while agy
   ran the tests in the background; the orchestrator ran them (65 pass) and reviewed the diff. Full suite 533 green.
   Real check with a 150 s command: see below.
+- 2026-11-14 orchestrator, real check (jc9a2737d675a10e8, imp on agy, /tmp synthetic repo): a 150 s command; herdr
+  reported the turn done while it slept, the job showed "turn ended, no report yet" instead of failing, agy woke
+  when the command finished, wrote "42" and the job went to idle_grace.
