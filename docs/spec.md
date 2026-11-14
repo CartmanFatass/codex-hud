@@ -44,7 +44,12 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    plane shows each role's assignment (role, harness, model and thinking, source file) and lists its files: HUD role files, pi-roles role definitions (model, thinking), the clients' native custom
    agents (`~/.claude/agents`, a project's `.claude/agents`, `~/.codex/agents`), the convention in effect and the
    instruction files (CLAUDE.md, AGENTS.md). Enter opens the item's file in `$EDITOR` (default `vim`) in a herdr pane
-   beside the panel.
+   beside the panel. Project hub (owner, 2026-11-14): Project is a hub with one summary row per page (progress,
+   tickets, working tree, docs, control plane) and each of those is its own page. The progress page shows what is in
+   flight now (ledger slices and the project's running HUD jobs), Next, the slices landed to try and the accepted
+   ones grouped by milestone (older milestones folded); the tickets page shows each ticket's checklist and latest
+   comment in the panel. Project switches between the panel's own project and the projects set up with `hud setup`;
+   Home stays on the panel's project.
 3. **Set up a project's workers in one conversation** (owner, 2026-11-13). `hud setup --detect | --apply PLAN | --remove` writes a project's `.hud/` and is driven by a `hud-setup` skill that asks the owner, as claude-hud's setup does. Customisation is on pi workers only: main sessions and the official harnesses (Claude Code, Codex, Grok Build, Antigravity) keep their behaviour, and their roles are only shown or hidden. A project's `.hud/` loads only once the owner has set that project up (`$HUD_HOME/projects.json`); a cloned repo's `.hud/` does nothing on its own.
 4. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, browser,
    herdr); `hud uninstall` removes them. Registration uses each client's official commands where they exist.
@@ -108,7 +113,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
   - Frozen (owner, 2026-11-12): M4 closes with the whole-project review, its fixes, three last slices (the panel
     reloads itself after a new build; Settings shows model calls per feature; one command updates the test
     snapshots) and the release. New ideas go to the M5 candidates below, not into M4.
-- **0.1.x** (owner, 2026-11-13): 0.1.1 CLI workers and `hud trust`; 0.1.2 `hud setup` (`.scratch/hud-setup/spec.md`).
+- **0.1.x** (owner, 2026-11-13): 0.1.1 CLI workers and `hud trust`; 0.1.2 `hud setup` (`.scratch/hud-setup/spec.md`); 0.1.3 the Project hub
+  (`.scratch/project-hub/spec.md`, owner 2026-11-14).
 - **M5 candidates (not scheduled; the owner picks):** job directories and model caches get a retention period
   (the owner sees the deletion list first); a transcript is read tail-first on open so status shows at once, with the
   nesting filled in behind; rarely changed Settings rows fold under "Advanced".

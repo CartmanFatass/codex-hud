@@ -1,10 +1,14 @@
 # State of the universal-hud effort (handoff to remote orchestration, 2026-11-03)
 
-Milestone: M4 · Project view
+Milestone: 0.1.3 · Project hub
 
 ## Waiting for the owner
 
-- Try (9 landed): reopen `/hud` in a Claude pane → Home shows `Claude · 本次会话` with nested subagents indented
+- Try 0.1.2 HUD-SETUP: run `/hud-setup` in a real project; its pi workers get the chosen skills and prompt.
+- Try 0.1.1 CLI-WORKERS: dispatch grok-imp, agy-imp, claude-imp or codex-imp; the card shows on Home and the tab
+  closes after grace. `hud trust <dir>` first for a new directory.
+
+- Try M4 (9 landed): reopen `/hud` in a Claude pane → Home shows `Claude · 本次会话` with nested subagents indented
   (CLAUDE-BIND, NP-01, NP-05); a subagent waiting on background work turns ◉ again when it resumes (NP-02); job cards
   show the brief's heading as title (NP-04); Chinese 「」 keywords are coloured (NP-03); Home's spare rows show progress
   and open tickets, Enter jumps to Project (HOME-PROGRESS); Settings → Models → Decision API switches Jev's provider
@@ -15,48 +19,9 @@ Milestone: M4 · Project view
 
 ## Next
 
-- m4-close 05: review round 3 (Sol xhigh + DS max on 2a0f8735). Sol: changes-required, one finding (retention
-  deleted legacy real sessions in old job dirs), fixed by RETENTION-SAFE 377ecb69. DS: accept, two minors (dead
-  Claude facade modules, stale CODEX_HUD_SKIP_FONTS row), fixed by M4-FIX3 6a27a421. Round 4 on 6a27a421: Sol accept (optional: bounded
-  header read); DS changes-required: a self-referential session link (from the failed first PANEL-SCOPE dispatch,
-  before the pi-roles guard) made the watcher's recursive fs.watch throw ELOOP at startup, so no watcher had run
-  since 20:10 (tabs not closed, no retention). Live tree unblocked by hand (link removed, job reaped); M4-FIX4 8dd1703a makes
-  the watcher survive it. Round 5 on 8dd1703a: Sol changes-required (the normal `.dispatch/current.json` receipt
-  makes every scan throw ENOTDIR; degraded polling stops while only a failed-tab deadline is pending) → M4-FIX5;
-  DS changes-required on the same receipt bug (plus optional: retry the watch, BASELINE.md drift; added to FIX5). Fixed by M4-FIX5 88c048da. Round 6 on 88c048da: both changes-required on
-  the same defect (a job whose session housekeeping throws is not counted open, so the watcher can exit while it
-  works) → M4-FIX6 2d0fed42 (plus DS optional: no async error retry loop, rate-limited log lines).
-  Live check 22:04: the old watcher stopped, the next hud_create started one on 2d0fed42 over the real job tree
-  (four `.dispatch/current.json` jobs): alive, no error lines. Round 7 on 2d0fed42: **both accept** (m4-close 05 done). DS optional
-  follow-ups (SESSION.txt guard, rate-limited reap/preservation lines, BASELINE counts, CI calling removed scripts)
-  → M4-FIX7. Architect (Astra) whole-project review (docs/reviews/2026-11-12-m4-architect.md): **Release:
-  blocked** by one point — the Codex bar (`src/collectors/git.ts`) and the pi footer (`p10k-footer.ts`) let a
-  repository's clean/process filter (and, in pi, core.fsmonitor) run (spec §4) → GIT-SAFE. Advice taken for the
-  release: archive inventory + extraction rehearsal (m4-close 06), stale hud-mcp README / historical activation
-  text in reference.md / ARCHITECTURE (RELEASE-DOCS, with the real Node floor in engines + install preflight). Advice deferred to the next milestone: job-dir
-  listing and pi session totals grow with history; no deadline on MCP child processes. Round 8 on 1ec6e0ef: Sol changes-required (docs
-  only: live pi /hud controls and piFooter cut from the reference; `codex-hud` examples name a command the installer
-  does not install), DS accept (one false rotation sentence + optional notes); GIT-SAFE and FIX7 confirmed fixed by
-  both → RELEASE-DOCS2 b622a7ba (+ short ja/ko READMEs). Round 9 on b622a7ba: **both accept**; their small optional notes fixed directly (Changes view
-  ignores submodules; pi display package is registered, never `pi -e`). The full suite on Node 22.13.0 fails 5
-  watcher tests, so the Node floor becomes 24 (only tested line; owner runs 24). RELEASE-ARCHIVE c00936e4:
-  `npm run release` (clean worktree only) writes hud-<version>.tar.gz by git archive (tests, docs history, .scratch,
-  .github, cx-continue, agent guides export-ignored); `npm run test:release` rehearses offline extract (path with a
-  space) → ./install core + all extensions → hud / panel / MCP six tools + roster → both uninstall paths with data
-  kept; first-party audit clean. Round 10 (Sol xhigh + DS max) on b622a7ba..7dfc5aeb: **both accept**; their
-  optionals fixed directly in 4995d308 (statusline launchers share the Node 24 gate, help points at shipped docs,
-  README dev note, stale standardwebhooks notice removed, audit no longer flags the OS login as a word).
-  **Release candidate:** built from 4995d308 in a clean detached worktree; offline test:release passes (12.3 s);
-  `tmp/release/hud-0.1.0.tar.gz` (git-ignored), 5,461,378 bytes, 636 members, sha256
-  d764c336cbf722ea6482df90b43d543ff3d506f340b3f2e8a4c7e3c47f241da1 (superseded). Owner 2026-11-12: merge, tag, publish;
-  the two shelved questions decided (cuts below). v0.1.0 = this commit, fast-forwarded onto main; the archive is
-  rebuilt at the tag.
-- Owner 2026-11-12: `hud import` no longer takes jev-ask TOML (refused; nothing read those sections) and `cx-continue/`
-  is removed from the repo with its CI job (IMPORT-TOML-CUT, CX-CONTINUE-CUT).
-- 2026-11-12 after v0.1.0: Claude and new Codex sessions reconnected to the current hud MCP; two Codex sessions
-  from 2026-11-11 (pts/5, pts/6) still run the old server (`--session-dir <job>/sessions`) until they close; the
-  watcher moves any such files to pi's store before deleting a job. Leftover files migrated; toktrack
-  `pi_session_dirs` no longer lists ~/.hud/jobs; nvm Node 22.13.0 removed. CI on main (ccc447be) green.
+- PROJECT-HUB (0.1.3, .scratch/project-hub/): 01 hub and sub-pages (frontend-implementer) and 02 project data
+  (agy-imp on gemini-4-hydrogen-high) in parallel; then 03 progress page, ticket detail, project switch (frontend).
+- 0.1.3 milestone review: reviewer Sol xhigh; when its quota runs out, the same role on arena/gpt-6.1-sol xhigh.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
@@ -159,8 +124,62 @@ board counts these; update at every landing or decision. -->
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 - try · 0.1.1 · CLI-WORKERS · owner 2026-11-13: roles on interactive CLIs (grok, agy, claude, codex) through herdr, held to pi imp's lifecycle; harness behaviour and session places untouched (.scratch/cli-workers/, 7 tickets all done with grok-4.7 high; real E2E passed on all four CLIs) (cbe059a7)
 - try · 0.1.2 · HUD-SETUP · owner 2026-11-13: `hud setup` (skill asks, command writes) deploys a project's pi workers: roles shown/hidden, pi role tuning, worker skills linked under .hud/skills, worker prompts; other harnesses unchanged (.scratch/hud-setup/, 6 tickets all done with grok-4.7 high; real pi job in a set-up project got its skill and worker prompt; owner to try /hud-setup) (fca81428)
+- todo · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch (.scratch/project-hub/, 3 tickets)
 
-## Now (2026-11-12, night): review round 3 running; fix round 2, SESSION-LINK, JOB-RETENTION, PANEL-SCOPE landed; owner away
+## Now (2026-11-14): 0.1.3 Project hub started; 0.1.1 and 0.1.2 wait for the owner's try
+
+Owner 2026-11-14: Project becomes a hub with progress, tickets, working tree, docs and control-plane pages and a
+project switch (spec §2, .scratch/project-hub/). Routing for this package: frontend work to frontend-implementer, data work to agy-imp (gemini-4-hydrogen-high),
+review only at the milestone by Sol xhigh (arena provider when quota runs out), sonic unchanged.
+
+### M4 close log (2026-11-12)
+
+
+- m4-close 05: review round 3 (Sol xhigh + DS max on 2a0f8735). Sol: changes-required, one finding (retention
+  deleted legacy real sessions in old job dirs), fixed by RETENTION-SAFE 377ecb69. DS: accept, two minors (dead
+  Claude facade modules, stale CODEX_HUD_SKIP_FONTS row), fixed by M4-FIX3 6a27a421. Round 4 on 6a27a421: Sol accept (optional: bounded
+  header read); DS changes-required: a self-referential session link (from the failed first PANEL-SCOPE dispatch,
+  before the pi-roles guard) made the watcher's recursive fs.watch throw ELOOP at startup, so no watcher had run
+  since 20:10 (tabs not closed, no retention). Live tree unblocked by hand (link removed, job reaped); M4-FIX4 8dd1703a makes
+  the watcher survive it. Round 5 on 8dd1703a: Sol changes-required (the normal `.dispatch/current.json` receipt
+  makes every scan throw ENOTDIR; degraded polling stops while only a failed-tab deadline is pending) → M4-FIX5;
+  DS changes-required on the same receipt bug (plus optional: retry the watch, BASELINE.md drift; added to FIX5). Fixed by M4-FIX5 88c048da. Round 6 on 88c048da: both changes-required on
+  the same defect (a job whose session housekeeping throws is not counted open, so the watcher can exit while it
+  works) → M4-FIX6 2d0fed42 (plus DS optional: no async error retry loop, rate-limited log lines).
+  Live check 22:04: the old watcher stopped, the next hud_create started one on 2d0fed42 over the real job tree
+  (four `.dispatch/current.json` jobs): alive, no error lines. Round 7 on 2d0fed42: **both accept** (m4-close 05 done). DS optional
+  follow-ups (SESSION.txt guard, rate-limited reap/preservation lines, BASELINE counts, CI calling removed scripts)
+  → M4-FIX7. Architect (Astra) whole-project review (docs/reviews/2026-11-12-m4-architect.md): **Release:
+  blocked** by one point — the Codex bar (`src/collectors/git.ts`) and the pi footer (`p10k-footer.ts`) let a
+  repository's clean/process filter (and, in pi, core.fsmonitor) run (spec §4) → GIT-SAFE. Advice taken for the
+  release: archive inventory + extraction rehearsal (m4-close 06), stale hud-mcp README / historical activation
+  text in reference.md / ARCHITECTURE (RELEASE-DOCS, with the real Node floor in engines + install preflight). Advice deferred to the next milestone: job-dir
+  listing and pi session totals grow with history; no deadline on MCP child processes. Round 8 on 1ec6e0ef: Sol changes-required (docs
+  only: live pi /hud controls and piFooter cut from the reference; `codex-hud` examples name a command the installer
+  does not install), DS accept (one false rotation sentence + optional notes); GIT-SAFE and FIX7 confirmed fixed by
+  both → RELEASE-DOCS2 b622a7ba (+ short ja/ko READMEs). Round 9 on b622a7ba: **both accept**; their small optional notes fixed directly (Changes view
+  ignores submodules; pi display package is registered, never `pi -e`). The full suite on Node 22.13.0 fails 5
+  watcher tests, so the Node floor becomes 24 (only tested line; owner runs 24). RELEASE-ARCHIVE c00936e4:
+  `npm run release` (clean worktree only) writes hud-<version>.tar.gz by git archive (tests, docs history, .scratch,
+  .github, cx-continue, agent guides export-ignored); `npm run test:release` rehearses offline extract (path with a
+  space) → ./install core + all extensions → hud / panel / MCP six tools + roster → both uninstall paths with data
+  kept; first-party audit clean. Round 10 (Sol xhigh + DS max) on b622a7ba..7dfc5aeb: **both accept**; their
+  optionals fixed directly in 4995d308 (statusline launchers share the Node 24 gate, help points at shipped docs,
+  README dev note, stale standardwebhooks notice removed, audit no longer flags the OS login as a word).
+  **Release candidate:** built from 4995d308 in a clean detached worktree; offline test:release passes (12.3 s);
+  `tmp/release/hud-0.1.0.tar.gz` (git-ignored), 5,461,378 bytes, 636 members, sha256
+  d764c336cbf722ea6482df90b43d543ff3d506f340b3f2e8a4c7e3c47f241da1 (superseded). Owner 2026-11-12: merge, tag, publish;
+  the two shelved questions decided (cuts below). v0.1.0 = this commit, fast-forwarded onto main; the archive is
+  rebuilt at the tag.
+- Owner 2026-11-12: `hud import` no longer takes jev-ask TOML (refused; nothing read those sections) and `cx-continue/`
+  is removed from the repo with its CI job (IMPORT-TOML-CUT, CX-CONTINUE-CUT).
+- 2026-11-12 after v0.1.0: Claude and new Codex sessions reconnected to the current hud MCP; two Codex sessions
+  from 2026-11-11 (pts/5, pts/6) still run the old server (`--session-dir <job>/sessions`) until they close; the
+  watcher moves any such files to pi's store before deleting a job. Leftover files migrated; toktrack
+  `pi_session_dirs` no longer lists ~/.hud/jobs; nvm Node 22.13.0 removed. CI on main (ccc447be) green.
+- Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
+
+## 2026-11-12, night: review round 3 running; fix round 2, SESSION-LINK, JOB-RETENTION, PANEL-SCOPE landed; owner away
 
 Landed since noon: NATIVE-TREE, PROGRESS-BOARD, OPEN-TAB, CARD-DETAILS, TICKETS, PI-STOP (Fishpref), legacy skills
 retired, Matt Pocock skills installed (to-tickets slices multi-slice features), closing M3b review + M3B-FIX2.
