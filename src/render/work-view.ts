@@ -27,6 +27,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['p m e', 'place: harness, model, thinking (capitals go back)'],
       ['+ - K J', 'place: add, remove, move up, move down'],
       ['x', 'place: clear its exhausted mark'],
+      ['r', 'place: refresh model lists'],
       ['v', 'inspect: details and files'],
       ['a', 'show / hide older jobs and decisions (Home)'],
       ['n N', 'next / previous trouble (Home)'],
@@ -58,7 +59,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
         );
   const notes = [
     'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
-    'On the Control plane p m e + - K J x change the place under the cursor: written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
+    'On the Control plane p m e + - K J x change the place under the cursor (r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
     'In the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
@@ -228,7 +229,8 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : project ? (page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear'
+        : project ? (page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
+          : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
           : page || list ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
   if (height > 1)

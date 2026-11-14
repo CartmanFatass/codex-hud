@@ -326,8 +326,12 @@ default model from `harnesses.json`; `m`/`M` model from the catalog (a Flow plac
 `e`/`E` thinking. Each cycle passes through "unset" (the role's or harness's own default) before it
 wraps. `+` adds a fallback at the end (the first harness not yet listed, else another model of the
 same one); `-` removes the place (one always stays); `K`/`J` move it earlier/later; `x` clears its
-exhausted mark. The catalog is shipped `catalog.json` plus the `catalog` key of
-`$HUD_HOME/harnesses.json`. A change writes `$HUD_HOME/roles/<role>.json` (atomic, 0600, seeded from
+exhausted mark; `r` refreshes model lists from `pi`, `agy` and `grok`. For `pi`, `agy` and `grok`,
+models come first from each harness's own list command (`pi --list-models`, `agy models`,
+`grok models`), run only when the Control plane page opens or on `r` (never on the refresh tick)
+and cached under `$HUD_HOME/display` for a day (failed or missing commands fall back silently);
+next come shipped `catalog.json` and `$HUD_HOME/harnesses.json`'s `catalog` key (which `claude`
+and `codex` always use), then any models set in `$HUD_HOME/roles/*.json`. A change writes `$HUD_HOME/roles/<role>.json` (atomic, 0600, seeded from
 the shipped role, other fields and place keys kept) or `$HUD_HOME/exhausted.json`; the next `hud_roster`
 and `hud_create` read them, so the page shows what the next job uses. A role from the project's file
 cannot be changed here, and a harness switch refuses a place whose file sets launch options
@@ -398,7 +402,7 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 | `1`, `2`, `3` | Home, Project, Changes summary |
 | Tab/Shift-Tab, Left/Right | Home ⇄ Project |
 | `[`, `]` | Project: previous/next project (not on the Projects list); in Codex the prefix then `[` or `]`, ignored while the panel is closed |
-| `p` `m` `e` (capitals back), `+` `-` `K` `J`, `x` | Control plane: harness / model / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark. Panel focused (in Codex), no prefix commands |
+| `p` `m` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / model / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`). Panel focused (in Codex), no prefix commands |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |

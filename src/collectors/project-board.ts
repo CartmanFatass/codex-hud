@@ -190,7 +190,7 @@ export class ProjectCollector {
   /** The roles and harnesses again at once (signature-cached reads): a Control plane key shows its result before the next full collection. */
   refreshRoles(snapshot: ProjectSnapshot, now: number): void {
     try {
-      const facts = controlFacts(this.registry(), this.hudHome, this.env, now, this.readJson);
+      const facts = controlFacts(this.registry(), this.hudHome, this.env, now, this.readJson, this.names);
       Object.assign(snapshot, { roles: facts.roles, harnesses: facts.harnesses, roleCount: facts.roles.length });
     } catch { /* The next collection reads them again. */ }
   }
@@ -263,7 +263,7 @@ export class ProjectCollector {
     if (review) out.docs.push({ label: 'review', value: basename(review.path), ...review });
     const registry = this.registry();
     try {
-      const facts = controlFacts(registry, this.hudHome, this.env, now, this.readJson);
+      const facts = controlFacts(registry, this.hudHome, this.env, now, this.readJson, this.names);
       out.roles = facts.roles;
       out.harnesses = facts.harnesses;
       out.roleCount = facts.roles.length;

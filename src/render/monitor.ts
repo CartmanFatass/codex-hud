@@ -179,6 +179,7 @@ export interface MonitorOutcome {
     | { type: 'open-files'; files: string[] }
     /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
     | ({ type: 'role-edit' } & PlaceEdit)
+    | { type: 'refresh-models' }
     | { type: 'brief-toggle' };
 }
 export function initialMonitorState(): MonitorState {

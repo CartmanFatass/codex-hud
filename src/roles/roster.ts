@@ -15,6 +15,7 @@ import {
   type RolePlace,
 } from './exhausted.js';
 import { registeredProject } from './projects.js';
+import { readModelListCache } from './model-discovery.js';
 
 export {
   clearExhausted,
@@ -583,16 +584,56 @@ function mergeStrings<T extends string>(base: T[], extra: unknown, allow?: reado
   }
   return out;
 }
-function mergeModelMap(base: Record<string, unknown>, extra: unknown, keys: readonly string[]): Record<string, string[]> {
-  const ext = asRecord(extra);
-  const out: Record<string, string[]> = {};
-  for (const key of keys) out[key] = mergeStrings(mergeStrings<string>([], base[key]), ext[key]);
+function mergeLists<T extends string>(sources: unknown[], allow?: readonly T[]): T[] {
+  let out: T[] = [];
+  for (const source of sources) out = mergeStrings(out, source, allow);
   return out;
+}
+function mergeModelMaps(sources: Record<string, unknown>[], keys: readonly string[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const key of keys) out[key] = mergeLists(sources.map((s) => s[key]));
+  return out;
+}
+function typedRoleModels(
+  hudHome: string,
+  safe: (file: string) => Record<string, unknown>,
+  list: (directory: string) => string[]
+): { pi: string[]; cli: Record<string, string[]>; bro: Record<string, string[]> } {
+  const pi: string[] = [];
+  const cli: Record<string, string[]> = {};
+  const bro: Record<string, string[]> = {};
+  const rolesDir = join(hudHome, 'roles');
+  let names: string[] = [];
+  try {
+    names = list(rolesDir).filter((n) => n.endsWith('.json')).sort();
+  } catch {
+    return { pi, cli, bro };
+  }
+  for (const name of names) {
+    const parsed = safe(join(rolesDir, name));
+    const places = Array.isArray(parsed.run) ? parsed.run : [parsed];
+    for (const item of places) {
+      const place = asRecord(item);
+      const model = typeof place.model === 'string' ? place.model.trim() : '';
+      if (!model) continue;
+      const harness = normalizeHarness(place.harness);
+      if (harness === 'pi') pi.push(model);
+      else if (harness === 'cli' && typeof place.agent === 'string' && (cliAgents as readonly string[]).includes(place.agent)) {
+        (cli[place.agent] ??= []).push(model);
+      } else if (harness === 'bro') {
+        const key = place.tool === 'jev-ask' ? place.provider : place.tool;
+        if (typeof key === 'string' && key) (bro[key] ??= []).push(model);
+      }
+    }
+  }
+  return { pi, cli, bro };
 }
 export function placeCatalog(
   hudHome: string,
   bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url)),
-  readJson: (file: string) => unknown = json
+  readJson: (file: string) => unknown = json,
+  now = Date.now(),
+  list: (directory: string) => string[] = entries
 ): PlaceCatalog {
   const safe = (file: string) => {
     try {
@@ -601,32 +642,37 @@ export function placeCatalog(
       return {};
     }
   };
+  const discovered = readModelListCache(hudHome, now, readJson);
   const shipped = safe(join(bundled, 'catalog.json'));
   const extra = asRecord(safe(join(hudHome, 'harnesses.json')).catalog);
+  const typed = typedRoleModels(hudHome, safe, list);
   const sPi = asRecord(shipped.pi),
     ePi = asRecord(extra.pi);
   const sCli = asRecord(shipped.cli),
     eCli = asRecord(extra.cli);
   const sBro = asRecord(shipped.bro),
     eBro = asRecord(extra.bro);
+  const sCliModels = asRecord(sCli.models),
+    eCliModels = asRecord(eCli.models);
+  const dCliModels = asRecord(discovered?.cli);
   const sBroModels = asRecord(sBro.models),
     eBroModels = asRecord(eBro.models);
-  const broModelKeys = [...new Set([...Object.keys(sBroModels), ...Object.keys(eBroModels)])];
+  const broModelKeys = [...new Set([...Object.keys(sBroModels), ...Object.keys(eBroModels), ...Object.keys(typed.bro)])];
   return {
     pi: {
-      models: mergeStrings(mergeStrings<string>([], sPi.models), ePi.models),
-      thinking: mergeStrings(mergeStrings<string>([], sPi.thinking), ePi.thinking),
+      models: mergeLists([discovered?.pi, sPi.models, ePi.models, typed.pi]),
+      thinking: mergeLists([sPi.thinking, ePi.thinking]),
     },
     cli: {
-      agents: mergeStrings(mergeStrings<CliAgent>([], sCli.agents, cliAgents), eCli.agents, cliAgents),
-      models: mergeModelMap(asRecord(sCli.models), eCli.models, cliAgents) as Record<CliAgent, string[]>,
-      thinking: mergeStrings(mergeStrings<string>([], sCli.thinking), eCli.thinking),
+      agents: mergeLists<CliAgent>([sCli.agents, eCli.agents], cliAgents),
+      models: mergeModelMaps([dCliModels, sCliModels, eCliModels, typed.cli], cliAgents) as Record<CliAgent, string[]>,
+      thinking: mergeLists([sCli.thinking, eCli.thinking]),
     },
     bro: {
-      tools: mergeStrings(mergeStrings([], sBro.tools, BRO_TOOLS), eBro.tools, BRO_TOOLS),
-      providers: mergeStrings(mergeStrings([], sBro.providers, BRO_PROVIDERS), eBro.providers, BRO_PROVIDERS),
-      kinds: mergeStrings(mergeStrings([], sBro.kinds, BRO_KINDS), eBro.kinds, BRO_KINDS),
-      models: mergeModelMap(sBroModels, eBroModels, broModelKeys),
+      tools: mergeLists([sBro.tools, eBro.tools], BRO_TOOLS),
+      providers: mergeLists([sBro.providers, eBro.providers], BRO_PROVIDERS),
+      kinds: mergeLists([sBro.kinds, eBro.kinds], BRO_KINDS),
+      models: mergeModelMaps([sBroModels, eBroModels, typed.bro], broModelKeys),
     },
   };
 }

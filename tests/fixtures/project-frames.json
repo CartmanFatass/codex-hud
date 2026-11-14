@@ -411,7 +411,7 @@
     "",
     "",
     "",
-    "                                          ↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear"
+    "                               ↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh"
   ],
   "hub-40-zh": [
     " 首页 1  项目 2                  模型 开",
@@ -825,7 +825,7 @@
     "",
     "",
     "",
-    "                                                       ↑↓ 移动  ⏎ 打开  ? 帮助  p 宿主  m 模型  e 思考  + - 备选  x 清除"
+    "                                               ↑↓ 移动  ⏎ 打开  ? 帮助  p 宿主  m 模型  e 思考  + - 备选  x 清除  r 刷新"
   ],
   "progress-rich-40-en": [
     "‹ Project › Progress       updated 12:35",
@@ -1403,7 +1403,7 @@
     "",
     "",
     "",
-    "                                          ↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear"
+    "                               ↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh"
   ],
   "control-rich-40-zh": [
     "‹ 项目 › 控制面          7 角色 · 3 代理",
@@ -1503,7 +1503,7 @@
     "",
     "",
     "",
-    "                                                       ↑↓ 移动  ⏎ 打开  ? 帮助  p 宿主  m 模型  e 思考  + - 备选  x 清除"
+    "                                               ↑↓ 移动  ⏎ 打开  ? 帮助  p 宿主  m 模型  e 思考  + - 备选  x 清除  r 刷新"
   ],
   "control-rich-40-text": [
     "< Project > Control plane        7 roles",

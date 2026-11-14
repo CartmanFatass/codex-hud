@@ -79,7 +79,8 @@ export function controlFacts(
   hudHome: string,
   env: NodeJS.ProcessEnv,
   now: number,
-  readJson?: (file: string) => unknown
+  readJson?: (file: string) => unknown,
+  list?: (directory: string) => string[]
 ): ControlFacts {
   const roles: RoleFact[] = [];
   const piRoleFiles = new Set<string>();
@@ -117,7 +118,7 @@ export function controlFacts(
     });
   }
   roles.sort((a, b) => rank(a.role) - rank(b.role) || a.role.localeCompare(b.role));
-  const catalog = placeCatalog(hudHome, BUNDLED, readJson);
+  const catalog = placeCatalog(hudHome, BUNDLED, readJson, now, list);
   const has = (place: RolePlace) => placeAvailable(place, env, none, null);
   return {
     roles,
@@ -231,7 +232,7 @@ export function editPlaces(
     if (projectPinned(registry, role)) return refuse('the project file is in force: o opens it');
     const run = workingRun(role, hudHome), here = run[i];
     if (!here) return refuse('role not found');
-    const catalog = placeCatalog(hudHome, bundled);
+    const catalog = placeCatalog(hudHome, bundled, undefined, now);
     const table = harnessDefaults(hudHome, bundled);
     let index = i;
     if (edit.op === 'harness') {

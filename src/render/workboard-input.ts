@@ -184,7 +184,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
       return result();
     }
-    // A place row is `project:role:<role>:<index>`; the panel applies the edit to the role files and shows the result next frame.
+    // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
+    if (key === 'reset' && projectPageOf(next) === 'control') return result({ type: 'refresh-models' });
     const place = PLACE_KEYS[key], onPlace = /^project:role:(.+):(\d+)$/.exec(next.projectCursor ?? '');
     if (place && onPlace && projectPageOf(next) === 'control')
       return result({ type: 'role-edit', role: onPlace[1], index: Number(onPlace[2]), ...place });

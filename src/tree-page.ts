@@ -3,6 +3,7 @@ import { ProjectCollector, projectShown } from './collectors/project-board.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
 import { editPlaces, placeItem } from './roles/role-control.js';
+import { discoverModelLists, readModelListCache } from './roles/model-discovery.js';
 import { pathToFileURL } from 'node:url';
 import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
 import { theme } from './render/colors.js';
@@ -74,7 +75,7 @@ import {
   type MonitorFrame,
   type MonitorState,
 } from './render/monitor.js';
-import { projectListOpen } from './render/project-view.js';
+import { projectListOpen, projectPageOf } from './render/project-view.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
@@ -561,6 +562,22 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let overviewAt = -Infinity;
   const listing = (s: MonitorState) => projectShown(s) && projectListOpen(s, projects);
   const shownRoot = () => projects.find((p) => p.root === state.projectRoot)?.root ?? HUD_CWD_REAL;
+  let lastControlShown = false;
+  let modelListRefresh: Promise<void> | null = null;
+  let modelListAbort: AbortController | null = null;
+  const refreshModelLists = (force: boolean) => {
+    if (closed) return;
+    if (!force && readModelListCache(jobPipeline.home, Date.now())) return;
+    if (modelListRefresh) return;
+    const controller = new AbortController();
+    modelListAbort = controller;
+    modelListRefresh = discoverModelLists(jobPipeline.home, process.env, Date.now(), { signal: controller.signal })
+      .then(() => undefined, () => undefined)
+      .finally(() => {
+        if (modelListAbort === controller) modelListAbort = null;
+        modelListRefresh = null;
+      });
+  };
   // Typing here goes to Codex; with no Codex pane to give it to (the panel
   // run on its own), the keys drive the panel as they used to.
   const mainPane = STANDALONE_PANEL ? undefined : resolveMainPane();
@@ -593,6 +610,12 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let settingsFrame: SettingsFrame | undefined;
   let settingsLeave: (SettingsConfirmationState & { destination?: string }) | null = null;
   let confirmationFrame: SettingsConfirmationFrame | undefined;
+  const controlShown = (s: MonitorState) => projectShown(s, Boolean(settingsPage)) && projectPageOf(s) === 'control' && !listing(s);
+  const syncModelListDiscovery = () => {
+    const shown = controlShown(state);
+    if (shown && !lastControlShown) refreshModelLists(false);
+    lastControlShown = shown;
+  };
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
   let panelDelegation: DelegationViewModel | null = null;
@@ -1126,6 +1149,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     decisionLabels.stop();
     homeRecommendation.stop();
     model.cancelAll();
+    modelListAbort?.abort();
     probe.cancel();
     flushTreeScans();
     timers.forEach(clearInterval);
@@ -1342,6 +1366,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           render();
         });
       }
+      if (result.action?.type === 'refresh-models') refreshModelLists(true);
       if (result.action?.type === 'role-edit') {
         const { type: _type, ...edit } = result.action;
         const done = editPlaces(jobPipeline.home, shownRoot(), process.env, edit);
@@ -1378,6 +1403,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (previous.keys && !state.keys) focusMain();
       render();
     }
+    syncModelListDiscovery();
     if (!STANDALONE_PANEL && forward.length) void forwarder.send(forward);
     if (!settingsPage) probe.cancel();
     if (!closed && !overlayBefore && (settingsPage || state.help)) focusPanel();
@@ -1427,6 +1453,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     process.stdin.resume();
     process.stdin.on('data', onData);
     render();
+    syncModelListDiscovery();
     void collect().then(runInitialCommand);
     void refreshGit();
     armCollect();
