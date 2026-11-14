@@ -10,9 +10,15 @@ the choice survives reload; Home unchanged. Help, reference (en/zh) and docs/rel
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Progress shows what is in flight, what to try and what was done at 40/80/120 EN/ZH
-- [ ] Ticket detail shows checklist and comment; `o` opens the file
-- [ ] Switching projects changes every page; Home stays on the panel's project; a project without STATE.md works
-- [ ] The choice survives reload; collection only for the shown project
+- [x] Progress shows what is in flight, what to try and what was done at 40/80/120 EN/ZH
+- [x] Ticket detail shows checklist and comment; `o` opens the file
+- [x] Switching projects changes every page; Home stays on the panel's project; a project without STATE.md works
+- [x] The choice survives reload; collection only for the shown project
+
+## Comments
+
+- 2026-11-14 orchestrator: implemented by frontend-implementer, landed as 162e8b1c; job-sentences test got the new
+  snapshot fields. Full suite green (514). Chips follow the ledger milestones; switching keeps the open page but
+  resets cursor/folds; `o` opens the file where Enter folds.

@@ -199,7 +199,7 @@ for (const language of ['en', 'zh']) {
         waiting: [], docs: [], control: [], agents: [], keys: [], editing: [], roleCount: 0,
         ladder: { ids: [] }, counts: { working: 1, blocked: 0, try: 0, accepted: 0, todo: 0, dropped: 0 },
         slices: [{ label: 'CLAUDE-BIND', value: 'bind the caller', jobId: worker.evidence[0].sourceId }],
-        next: [], summary: '',
+        next: [], summary: '', ledger: [], active: [],
       };
       for (const width of [80, 120]) {
         const home = renderMonitor({ tree, workboard: board, state: initialMonitorState(), width, height: 30, nowMs: f.now });
