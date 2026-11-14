@@ -10,6 +10,7 @@ import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ProjectPage } from './project-view.js';
+import type { PlaceEdit } from '../roles/role-control.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
   iconic,
@@ -176,6 +177,8 @@ export interface MonitorOutcome {
   action?:
     | { type: 'settings' }
     | { type: 'open-files'; files: string[] }
+    /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
+    | ({ type: 'role-edit' } & PlaceEdit)
     | { type: 'brief-toggle' };
 }
 export function initialMonitorState(): MonitorState {

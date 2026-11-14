@@ -137,6 +137,18 @@ export class WorkbenchInputDecoder {
                   '4': 'inspect',
                   '[': 'project-prev',
                   ']': 'project-next',
+                  // Control plane: the place under the cursor (capitals go back).
+                  p: 'place-harness',
+                  P: 'place-harness-prev',
+                  m: 'place-model',
+                  M: 'place-model-prev',
+                  e: 'place-thinking',
+                  E: 'place-thinking-prev',
+                  '+': 'place-add',
+                  '-': 'place-remove',
+                  K: 'place-up',
+                  J: 'place-down',
+                  x: 'place-clear',
                   v: 'inspect',
                   ' ': 'inspect',
                 } as Record<string, string>

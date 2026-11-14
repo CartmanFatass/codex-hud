@@ -327,7 +327,7 @@ function frontmatterValue(frontmatter: string | undefined, key: 'model' | 'think
   const value = frontmatter?.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim();
   return value ? value.replace(/^(['"])(.*)\1$/, '$2') : null;
 }
-function placeAvailable(
+export function placeAvailable(
   place: RolePlace,
   env: NodeJS.ProcessEnv,
   exhausted: Map<string, ExhaustedMark>,
@@ -564,6 +564,10 @@ export interface PlaceCatalog {
 const BRO_TOOLS = ['jev-ask', 'jev-aistudio', 'jev-flow'] as const;
 const BRO_PROVIDERS = ['chatgpt', 'gemini'] as const;
 const BRO_KINDS = ['image', 'video'] as const;
+const LEGACY_PLACE_KEYS = [
+  'harness', 'pi_role', 'split', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'pi_args', 'agent', 'args', 'tool', 'provider',
+  'effort', 'kind', 'model', 'thinking',
+];
 const VALID_ROLE = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -662,6 +666,15 @@ export function writeRolePlaces(
     : readRoleRecord(join(bundled, 'roles', `${role}.json`), `shipped/${role}.json`);
   const nextRun = run.map((place) => (place && typeof place === 'object' && !Array.isArray(place) ? { ...place } : place));
   const next: Record<string, unknown> = { ...base, role, run: nextRun };
+  if (!Array.isArray(base.run) && base.harness !== undefined) {
+    // A single-place file becomes a run list: its instructions stay (the loader derived them from that place) and its
+    // place keys live in `run` now, not twice.
+    if (next.instructions === undefined && roleReason(base) === null) {
+      const derived = normalizeRole(base, target).instructions;
+      if (derived !== undefined) next.instructions = derived;
+    }
+    for (const key of LEGACY_PLACE_KEYS) delete next[key];
+  }
   if (next.can_continue === undefined && nextRun.some((p) => p && (p.harness === 'pi' || p.harness === 'cli'))) {
     next.can_continue = false;
   }

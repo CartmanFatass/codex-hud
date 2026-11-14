@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { executable, roleRegistry } from '../roles/roster.js';
+import { controlFacts, type HarnessFact, type RoleFact } from '../roles/role-control.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 export interface ProjectItem {
@@ -34,6 +35,9 @@ export interface ProjectSnapshot {
   waiting: ProjectItem[];
   docs: ProjectItem[];
   control: ProjectItem[];
+  /** Each role's places, and the harnesses this machine has: what the Control plane switches. Full collection only. */
+  roles: RoleFact[];
+  harnesses: HarnessFact[];
   agents: ProjectItem[];
   keys: [string, boolean][];
   browser: boolean;
@@ -176,6 +180,20 @@ export class ProjectCollector {
     const file = this.read(path);
     try { return file && !file.truncated ? JSON.parse(file.text) : null; } catch { return null; }
   };
+  private readJson = (path: string) => {
+    const file = this.read(path);
+    if (!file) throw Object.assign(new Error('unreadable'), { code: 'EACCES' });
+    if (file.truncated) throw new SyntaxError('truncated');
+    return JSON.parse(file.text);
+  };
+  private registry = () => roleRegistry(this.hudHome, this.cwd, this.env, this.read, this.names, undefined, this.readJson);
+  /** The roles and harnesses again at once (signature-cached reads): a Control plane key shows its result before the next full collection. */
+  refreshRoles(snapshot: ProjectSnapshot, now: number): void {
+    try {
+      const facts = controlFacts(this.registry(), this.hudHome, this.env, now, this.readJson);
+      Object.assign(snapshot, { roles: facts.roles, harnesses: facts.harnesses, roleCount: facts.roles.length });
+    } catch { /* The next collection reads them again. */ }
+  }
   /** Where each unsettled job of that lookup works (canonical paths), for the Projects list's per-root counts: no Git, no board. */
   liveCwds(): string[] {
     this.seen.clear();
@@ -191,7 +209,7 @@ export class ProjectCollector {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
-      waiting: [], docs: [], control: [], agents: [], keys: [], browser: false, roleCount: 0, editing: [],
+      waiting: [], docs: [], control: [], roles: [], harnesses: [], agents: [], keys: [], browser: false, roleCount: 0, editing: [],
       ladder: { ids: [] }, slices: [], ledger: [], active: [], next: [], summary: '', tickets: this.tickets(),
       counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
     };
@@ -243,21 +261,12 @@ export class ProjectCollector {
         } catch { return []; }
       }).sort((a, b) => b.at - a.at)[0];
     if (review) out.docs.push({ label: 'review', value: basename(review.path), ...review });
-    const registry = roleRegistry(this.hudHome, this.cwd, this.env, this.read, this.names, undefined, (path) => {
-      const file = this.read(path);
-      if (!file) throw Object.assign(new Error('unreadable'), { code: 'EACCES' });
-      if (file.truncated) throw new SyntaxError('truncated');
-      return JSON.parse(file.text);
-    });
+    const registry = this.registry();
     try {
-      for (const role of registry.roles().values()) {
-        const a = registry.assignment(role);
-        out.control.push({
-          label: a.role, value: [a.harness, a.agent, a.model, a.thinking ?? a.effort].filter(Boolean).join('  '), path: a.source_file,
-        });
-        if (a.pi_role_file) out.control.push({ label: '', value: basename(a.pi_role_file), path: a.pi_role_file });
-        out.roleCount++;
-      }
+      const facts = controlFacts(registry, this.hudHome, this.env, now, this.readJson);
+      out.roles = facts.roles;
+      out.harnesses = facts.harnesses;
+      out.roleCount = facts.roles.length;
       for (const bad of registry.invalid()) out.control.push({ label: 'invalid', value: bad.reason, path: bad.path });
       const ignored = registry.projectConfigIgnored();
       if (ignored) out.control.push({ label: 'ignored', value: '.hud', path: join(ignored, '.hud') });
@@ -266,6 +275,7 @@ export class ProjectCollector {
       const source = c.path === join(root, '.hud', 'hud-convention.md') || c.path === join(this.cwd, 'hud-convention.md') ? 'project'
         : c.path === join(this.hudHome, 'hud-convention.md') ? 'yours' : 'default';
       out.control.push({ label: 'convention', value: source, path: c.path });
+      for (const path of facts.piRoleFiles) out.control.push({ label: 'pi role', value: basename(path, '.md'), path });
     } catch { /* Invalid/unavailable registry is not an invented assignment. */ }
     for (const name of ['CLAUDE.md', 'AGENTS.md']) {
       const path = join(this.cwd, name);

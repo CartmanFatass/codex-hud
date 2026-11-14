@@ -44,6 +44,17 @@ export function kvRows(
     )
   );
 }
+/** `parts` flowed into rows of at most `width`, two spaces between them and two in front. */
+export function pack(parts: string[], width: number, max = Infinity): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const part of parts) {
+    if (line && visualLength(line + '  ' + part) > width) { lines.push(line); line = ''; }
+    line += '  ' + part;
+  }
+  if (line) lines.push(line);
+  return lines.slice(0, max);
+}
 export const itemRow = (glyph: string, left: string, right: string, width: number): MonitorRow =>
   boardRow(pair(`${glyph || ' '} ${left}`, theme.board.muted(right), width));
 export const subTopRow = (crumb: string, right: string, width: number): string =>

@@ -2,6 +2,7 @@ import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pa
 import { ProjectCollector, projectShown } from './collectors/project-board.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
+import { editPlaces, placeItem } from './roles/role-control.js';
 import { pathToFileURL } from 'node:url';
 import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
 import { theme } from './render/colors.js';
@@ -609,6 +610,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let collectingGit = false;
   let gitAgain = false;
   let error: string | null = settingsError || null;
+  // What the last Control plane key could not do; shown until the next key.
+  let roleNotice = '';
   let frame: MonitorFrame | undefined;
   let lastPaint: string[] | null = null;
   let closed = false;
@@ -1050,7 +1053,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         Date.now()
       );
       if (projectFacts) visit.snapshot = projectFacts;
-      error = settingsError || null;
+      error = settingsError || roleNotice || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });
       stale = true;
@@ -1216,6 +1219,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const overlayBefore = Boolean(settingsPage || state.help);
     // What goes to Codex, in order, sent once the whole read is through.
     const forward: ForwardItem[] = [];
+    if (roleNotice && inputs.length) {
+      if (error === roleNotice) error = settingsError || null;
+      roleNotice = '';
+    }
     for (let input of inputs) {
       if (closed) break;
       if (input.type === 'mouse' && !settings.mouse) continue;
@@ -1334,6 +1341,17 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           error = String(err);
           render();
         });
+      }
+      if (result.action?.type === 'role-edit') {
+        const { type: _type, ...edit } = result.action;
+        const done = editPlaces(jobPipeline.home, shownRoot(), process.env, edit);
+        if (done.ok && done.index !== undefined) state = { ...state, projectCursor: placeItem(edit.role, done.index), boardRevealed: undefined };
+        // Read the roles again now, so this frame (and a cursor on a new row) show what the next job will use; the
+        // collection after every key reads everything else.
+        const visit = visits.visit(shownRoot());
+        if (visit.snapshot) visit.collector.refreshRoles(visit.snapshot, Date.now());
+        roleNotice = done.ok ? '' : t(done.message ?? 'could not save the change') + (done.reason ? `: ${done.reason}` : '');
+        error = roleNotice || settingsError || null;
       }
       if (result.action?.type === 'brief-toggle') {
         try {

@@ -27,8 +27,8 @@ job-file / herdr events ─► on-demand watcher ─► pi-role-reap
 ```
 
 The panel observes; it does not brief workers, answer questions, accept work or
-chain roles. The main session makes those decisions through the MCP. Models write
-only display text. There is no ledger database, resident execution host or owned
+chain roles. The main session makes those decisions through the MCP. Its one write
+is the Control plane's role places (§4.6). Models write only display text. There is no ledger database, resident execution host or owned
 browser runtime.
 
 CLI dispatch is `dispatchCli` in `packages/hud-mcp/src/thin-main.ts`. Kind flags,
@@ -203,7 +203,17 @@ with its root, so the first frame is the old page and never a blank one.
 Project and `WorktreeCollector` use gated asynchronous Git reads; Changes runs only
 when focused and probes worktrees round-robin. Repository commands/filters and lazy
 fetching must not execute just to draw status. Git failure is unknown, never clean.
-Project opens files through the existing `$EDITOR` herdr-tab action. Keys are reduced
+Project opens files through the existing `$EDITOR` herdr-tab action.
+The Control plane page is where the owner switches where each role runs.
+`roles/role-control.ts` has both halves: `controlFacts` (read-only, called by the collector:
+each role's places with in-use/standby/exhausted/missing and the harnesses on PATH) and
+`editPlaces` (the panel's only write). A key on a place row becomes a `role-edit` action
+from the pure input handler; `tree-page.ts` applies it with `editPlaces`, which edits the
+places with the shipped catalog and `harnesses.json`, then writes through
+`writeRolePlaces`/`clearExhausted` (`$HUD_HOME/roles/<role>.json`, `exhausted.json`).
+A role file under the project's `.hud/roles` wins in the roster, so it is shown apart and
+refused, and a harness switch refuses a place with launch options it would lose.
+The next `hud_create` reads the same files. Keys are reduced
 to name/presence booleans, never retained as values. Browser availability is only a
 PATH check for Chrome and `jev-ask`, not a login/health claim.
 
@@ -304,7 +314,8 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | Path under HUD home | Contents / writer |
 |---|---|
 | `jobs/<job>/` | Plain job/brief/STATUS/report/QA and session links; MCP, pi-roles, CLI supervisor or browser wrapper |
-| `roles/`, `hud-convention.md` | Owner overrides; read by roster |
+| `roles/`, `hud-convention.md` | Owner overrides; read by roster; `roles/<role>.json` places are also written by the Control plane page |
+| `exhausted.json` | One-hour quota marks on places; written when a job fails on a quota, cleared by the Control plane page |
 | `credentials.env`, `config.json` | Owner keys and Decision API/configuration |
 | `display/state/<session>.json` | Active Codex bar/panel snapshot; atomic inode ownership prevents outgoing writers deleting replacements |
 | `display/scan/`, `display/thin-jobs.json` | Rebuildable observation caches |

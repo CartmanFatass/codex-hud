@@ -6,7 +6,16 @@ import { monitorRowAt } from './monitor-input.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { cardExpanded } from './work-card.js';
 import { projectFoldedSet, projectPageOf, projectListOpen, type ProjectPage } from './project-view.js';
+import type { PlaceOp } from '../roles/role-control.js';
 import { join } from 'node:path';
+/** The Control plane's keys (named by the decoder) and what each asks of the place under the cursor. */
+const PLACE_KEYS: Record<string, { op: PlaceOp; step?: 1 | -1 }> = {
+  'place-harness': { op: 'harness' }, 'place-harness-prev': { op: 'harness', step: -1 },
+  'place-model': { op: 'model' }, 'place-model-prev': { op: 'model', step: -1 },
+  'place-thinking': { op: 'thinking' }, 'place-thinking-prev': { op: 'thinking', step: -1 },
+  'place-add': { op: 'add' }, 'place-remove': { op: 'remove' },
+  'place-up': { op: 'up' }, 'place-down': { op: 'down' }, 'place-clear': { op: 'clear' },
+};
 export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
   const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
@@ -175,6 +184,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
       return result();
     }
+    // A place row is `project:role:<role>:<index>`; the panel applies the edit to the role files and shows the result next frame.
+    const place = PLACE_KEYS[key], onPlace = /^project:role:(.+):(\d+)$/.exec(next.projectCursor ?? '');
+    if (place && onPlace && projectPageOf(next) === 'control')
+      return result({ type: 'role-edit', role: onPlace[1], index: Number(onPlace[2]), ...place });
     if (key === 'escape' && (projectPageOf(next) || listed || (next.projectBack && frame?.projects))) {
       if (listed) showList(false);
       else if (projectPageOf(next)) goProject();

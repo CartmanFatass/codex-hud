@@ -307,6 +307,34 @@ never completion. The newest-64-directory job lookup is shared with slice blocks
 Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under
 `## Comments`) under it, a second Enter folds it; `o` opens the ticket file.
 
+**Control plane page.** Four groups, then the files as before (invalid or ignored role files, the
+convention, pi role definitions, instruction files, native agents, keys, browser): **Roles** (imp,
+reviewer, sonic, architect and any other role), **Project roles** (roles whose file comes from the
+project's own `.hud/roles`, which wins), **Browser tasks** (roles that run only on browser places:
+oracle, flow) and **Harnesses** (which of `pi`, `agy`, `claude`, `codex`, `grok`, `jev-ask`,
+`jev-aistudio`, `jev-flow` this machine has, with the mark legend). A role is one row per place on one
+line: the first is the primary, `↳` rows are its fallbacks in order. A row reads mark, role,
+harness, model, thinking; marks are `◉` in use (where the next `hud_create` runs: the first place
+that is installed and not exhausted), `○` standby, `✗` exhausted (rows of 56+ columns add the time
+left) and `−` harness not installed. Rows of 80+ columns end with whose file is in force:
+`default` (shipped), `yours` (`$HUD_HOME/roles/<role>.json`) or `project`. Enter and `o` open that
+role file.
+
+On a place row (Control plane only): `p`/`P` next/previous harness (`pi`, then each CLI agent for a
+role that has CLI instructions; a browser role walks chatgpt, gemini, aistudio) with that harness's
+default model from `harnesses.json`; `m`/`M` model from the catalog (a Flow place: image/video);
+`e`/`E` thinking. Each cycle passes through "unset" (the role's or harness's own default) before it
+wraps. `+` adds a fallback at the end (the first harness not yet listed, else another model of the
+same one); `-` removes the place (one always stays); `K`/`J` move it earlier/later; `x` clears its
+exhausted mark. The catalog is shipped `catalog.json` plus the `catalog` key of
+`$HUD_HOME/harnesses.json`. A change writes `$HUD_HOME/roles/<role>.json` (atomic, 0600, seeded from
+the shipped role, other fields and place keys kept) or `$HUD_HOME/exhausted.json`; the next `hud_roster`
+and `hud_create` read them, so the page shows what the next job uses. A role from the project's file
+cannot be changed here, and a harness switch refuses a place whose file sets launch options
+(`split`, `skills`, `args`...), since it would rebuild them: both say so in a line at the top
+until the next key, and `o` opens the file. In Codex, focus the panel first (click the gutter
+or Shift-F12); these keys have no prefix commands.
+
 **Switching projects.** With more than one project the hub's name row reads `name ▾ i/n`
 and `[` and `]` step through the panel's own project and the existing roots in
 `$HUD_HOME/projects.json` (deduplicated, at most 16). Enter or a click on the name row
@@ -370,6 +398,7 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 | `1`, `2`, `3` | Home, Project, Changes summary |
 | Tab/Shift-Tab, Left/Right | Home ⇄ Project |
 | `[`, `]` | Project: previous/next project (not on the Projects list); in Codex the prefix then `[` or `]`, ignored while the panel is closed |
+| `p` `m` `e` (capitals back), `+` `-` `K` `J`, `x` | Control plane: harness / model / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark. Panel focused (in Codex), no prefix commands |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |

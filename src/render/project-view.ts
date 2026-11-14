@@ -5,7 +5,8 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import { jobSentenceLine, workCardDetail, labelSummary } from './work-card.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { basename } from 'node:path';
-import { boardRow, itemRow, section, mark, minuteAge, kvRows } from './workboard-rows.js';
+import { boardRow, itemRow, section, mark, minuteAge, kvRows, pack } from './workboard-rows.js';
+import { controlRows } from './control-view.js';
 import { monitorText, fit, pair, flowLines } from './monitor-text.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { t } from './i18n.js';
@@ -22,16 +23,6 @@ export function progressSegments(counts: ProjectSnapshot['counts'], width: numbe
     edge = end;
     return segment;
   });
-}
-function pack(parts: string[], width: number, max = Infinity): string[] {
-  const lines: string[] = [];
-  let line = '';
-  for (const part of parts) {
-    if (line && visualLength(line + '  ' + part) > width) { lines.push(line); line = ''; }
-    line += '  ' + part;
-  }
-  if (line) lines.push(line);
-  return lines.slice(0, max);
 }
 const legendItem = (data: ProjectSnapshot, s: SliceState) =>
   sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${data.counts[s]}`);
@@ -397,6 +388,8 @@ function pageRows(
     if (data.last) item({ label: 'last', value: data.last.text, at: data.last.at }, 0);
   } else if (page === 'docs') data.docs.forEach((r, i) => item(r, i));
   else {
+    rows.push(...controlRows(data, width, now));
+    if (rows.length > 1 && data.control.length) rows.push(boardRow(''));
     data.control.forEach((r, i) => item(r.label === 'convention'
       ? { ...r, value: t(r.value) + ' · ' + basename(r.path!) } : r, i));
     rows.push(foldRow(folded, 'agents', 'agents', width, String(data.agents.length)));

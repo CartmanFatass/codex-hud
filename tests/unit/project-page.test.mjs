@@ -52,7 +52,8 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.next.length, 5);
   assert.equal(f.data.next[0].value, 'NATIVE-TREE: native subagents on Home beside package lanes');
   assert.match(f.data.docs[1].path, /2026-11-12-review.md$/);
-  assert.ok(f.data.control.some((r) => r.label === 'imp' && r.value === 'pi  synthetic/model  high'));
+  const first = (name) => f.data.roles.find((r) => r.role === name);
+  assert.deepEqual(first('imp').places, [{ harness: 'pi', label: 'pi', model: 'synthetic/model', thinking: 'high', state: 'active' }]);
   assert.deepEqual(
     f.data.control.find((r) => r.label === 'invalid'),
     {
@@ -74,9 +75,17 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
     false
   );
   assert.equal(f.data.control.find((r) => r.label === 'convention').path, join(f.cwd, 'hud-convention.md'));
-  assert.equal(f.data.control.find((r) => r.label === 'oracle').value, 'bro  6 Pro  6 Pro');
-  assert.equal(f.data.control.find((r) => r.label === 'flow').value, 'bro');
-  assert.equal(f.data.control.find((r) => r.label === 'imp').value, 'pi  synthetic/model  high');
+  // Roles live on `roles` now, grouped for the page: browser tasks apart, the project's own files marked.
+  assert.deepEqual(f.data.roles.map((r) => [r.role, r.group]), [['imp', 'roles'], ['reviewer', 'roles'], ['sonic', 'roles'],
+    ['architect', 'roles'], ['oracle', 'browser'], ['flow', 'browser']]);
+  assert.deepEqual(first('oracle').places.map((p) => [p.label, p.model, p.state]),
+    [['chatgpt', '6 Pro', 'active'], ['gemini', null, 'standby'], ['aistudio', 'gemini-4-argon', 'missing']]);
+  assert.deepEqual([first('flow').places[0].label, first('flow').places[0].kind, first('flow').places[0].state], ['flow', 'image', 'missing']);
+  assert.deepEqual([first('imp').path, first('imp').source, first('sonic').source], [join(f.hud, 'roles/imp.json'), 'yours', 'default']);
+  assert.equal(f.data.roleCount, 6);
+  assert.deepEqual(f.data.harnesses.map((h) => [h.name, h.ok]), [['pi', true], ['agy', false], ['claude', false], ['codex', false],
+    ['grok', false], ['jev-ask', true], ['jev-aistudio', false], ['jev-flow', false]]);
+  assert.deepEqual(f.data.control.find((r) => r.label === 'pi role'), { label: 'pi role', value: 'implementer', path: join(f.root, 'roles/implementer.md') });
   assert.equal(f.data.agents.length, 3);
   assert.equal(f.data.browser, true);
   for (const width of [32, 40, 56, 80, 120])
@@ -148,14 +157,12 @@ test('a registered project shows its roles, hides the rest and uses its conventi
   f.put(join(f.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'missing'] });
   f.put(join(f.cwd, '.hud/hud-convention.md'), '# Registered project convention');
   const data = await f.collector.collect(true, f.board, NOW + 1);
-  assert.equal(data.control.find((r) => r.label === 'frontend').value, 'pi  project/model  high');
-  assert.equal(data.control.find((r) => r.label === 'frontend').path, join(root, '.hud/roles/frontend.json'));
-  assert.equal(data.control.find((r) => r.label === 'imp').value, 'pi  project/imp  high');
-  assert.equal(data.control.find((r) => r.label === 'imp').path, join(root, '.hud/roles/imp.json'));
-  assert.equal(
-    data.control.some((r) => r.label === 'oracle' || r.label === 'secret' || r.label === 'ignored'),
-    false
-  );
+  const role = (name) => data.roles.find((r) => r.role === name);
+  assert.deepEqual([role('frontend').group, role('frontend').path, role('frontend').places[0].model, role('frontend').places[0].thinking],
+    ['project', join(root, '.hud/roles/frontend.json'), 'project/model', 'high']);
+  assert.deepEqual([role('imp').group, role('imp').source, role('imp').path, role('imp').places[0].model], ['project', 'project', join(root, '.hud/roles/imp.json'), 'project/imp']);
+  assert.equal(data.roles.some((r) => r.role === 'oracle' || r.role === 'secret'), false);
+  assert.equal(data.control.some((r) => r.label === 'ignored'), false);
   assert.equal(data.control.find((r) => r.label === 'convention').value, 'project');
   assert.equal(data.control.find((r) => r.label === 'convention').path, join(root, '.hud/hud-convention.md'));
   assert.ok(
@@ -804,5 +811,5 @@ test('changed/oversized sources, missing milestone and source fallback never inv
     thinking: 'low',
   });
   data = await f.collector.collect(true, f.board, NOW + 3);
-  assert.equal(data.control.find((i) => i.label === 'imp').value, 'pi  override/model  low');
+  assert.deepEqual(data.roles.find((r) => r.role === 'imp').places.map((p) => [p.model, p.thinking]), [['override/model', 'low']]);
 });

@@ -119,6 +119,23 @@ export function richProgress(data) {
     active: [{ jobId: 'j00000000000000aa', role: 'imp', state: 'working', title: 'Tidy the synthetic docs in the main checkout', at: NOW - 5 * 60000, asking: false }],
     next: ['A short bullet', long, 'Another short bullet that still fits in two rows at forty columns', 'Last: ' + long].map((value) => ({ label: '', value, path })) };
 }
+/** Control plane material the base fixture has too little of, all synthetic: fallbacks, every mark, a project role, a long model. */
+export function richControl(data) {
+  const place = (harness, label, model, thinking, state, extra = {}) => ({ harness, label, model, thinking, state, ...extra });
+  const role = (name, group, source, places) => ({ role: name, group, source, path: `/synthetic/${source}/roles/${name}.json`, places });
+  const roles = [
+    role('imp', 'roles', 'yours', [place('pi', 'pi', 'openai/gpt-6.1-sol', 'high', 'exhausted', { until: NOW + 42 * 60000 }),
+      place('cli', 'agy', 'gemini-4-hydrogen-high', 'xhigh', 'active'), place('cli', 'claude', 'opus', 'high', 'standby')]),
+    role('reviewer', 'roles', 'default', [place('pi', 'pi', 'mistral/deepseek-v4-1-flash-1017', 'xhigh', 'active'), place('cli', 'codex', 'gpt-6.1-sol', 'high', 'missing')]),
+    role('sonic', 'roles', 'default', [place('pi', 'pi', null, null, 'active')]),
+    role('architect', 'roles', 'default', [place('pi', 'pi', 'openai/gpt-6.1-sol', 'max', 'active')]),
+    role('frontend', 'project', 'project', [place('pi', 'pi', 'project/model', 'high', 'active')]),
+    role('oracle', 'browser', 'default', [place('bro', 'chatgpt', '6 Pro', null, 'exhausted', { until: NOW + 5 * 60000 }),
+      place('bro', 'gemini', null, null, 'active'), place('bro', 'aistudio', 'gemini-4-argon', null, 'standby')]),
+    role('flow', 'browser', 'default', [place('bro', 'flow', null, null, 'missing', { kind: 'video' })]),
+  ];
+  return { ...data, roles, roleCount: roles.length };
+}
 /** The projects a panel can switch between, for the hub's switch row. */
 export const PROJECTS = [{ root: '/synthetic/demo-project', name: 'demo-project' }, { root: '/synthetic/second-project', name: 'second-project' }, { root: '/synthetic/third', name: 'third' }];
 /** A Project tab state: the hub, or one page of it. */
@@ -140,6 +157,9 @@ export function projectFrames(f) {
   const second = { projects: PROJECTS, projectName: PROJECTS[1].name };
   for (const lang of ['en', 'zh']) frames[`hub-switch-40-${lang}`] = plain(f.render(40, lang, onPage(undefined, { projectRoot: PROJECTS[1].root }), 24, f.data, true, 'unicode', 'none', second));
   frames['progress-switch-40-en'] = plain(f.render(40, 'en', onPage('progress', { projectRoot: PROJECTS[1].root }), 12, f.data, true, 'unicode', 'none', second));
+  const control = richControl(f.data);
+  for (const lang of ['en', 'zh']) for (const width of [40, 120]) frames[`control-rich-${width}-${lang}`] = plain(f.render(width, lang, 'control', 48, control));
+  frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
   frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
   frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
   return frames;
