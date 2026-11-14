@@ -20,7 +20,7 @@ Milestone: 0.1.3 · Project hub
 ## Next
 
 - PROJECT-HUB (0.1.3, .scratch/project-hub/): 01 hub and sub-pages (frontend-implementer) and 02 project data
-  (agy-imp on gemini-4-hydrogen-high) in parallel; then 03 progress page, ticket detail, project switch (frontend).
+  (agy-imp on gemini-4-hydrogen-high) in parallel; then 03 progress page, ticket detail, project switch (frontend); then 04 projects list (frontend).
 - 0.1.3 milestone review: both reviewers (owner 2026-11-14), Sol xhigh (arena/gpt-6.1-sol xhigh when its quota runs
   out) and DS max.
 - ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
@@ -128,7 +128,7 @@ board counts these; update at every landing or decision. -->
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 - try · 0.1.1 · CLI-WORKERS · owner 2026-11-13: roles on interactive CLIs (grok, agy, claude, codex) through herdr, held to pi imp's lifecycle; harness behaviour and session places untouched (.scratch/cli-workers/, 7 tickets all done with grok-4.7 high; real E2E passed on all four CLIs) (cbe059a7)
 - try · 0.1.2 · HUD-SETUP · owner 2026-11-13: `hud setup` (skill asks, command writes) deploys a project's pi workers: roles shown/hidden, pi role tuning, worker skills linked under .hud/skills, worker prompts; other harnesses unchanged (.scratch/hud-setup/, 6 tickets all done with grok-4.7 high; real pi job in a set-up project got its skill and worker prompt; owner to try /hud-setup) (fca81428)
-- working · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch (.scratch/project-hub/, 3 tickets); 02 landed 5951a489, 01 landed 682dec52
+- working · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch and projects list (.scratch/project-hub/, 4 tickets); 02 landed 5951a489, 01 landed 682dec52
 - working · 0.1.4 · ROLE-BIND · owner 2026-11-14: a role is the work; places and fallbacks switched in the control plane; bro harness; grok/agy/claude/codex-imp, argon, gemini, flow-video deleted (.scratch/role-bind/, 3 tickets)
 
 ## Now (2026-11-14): 0.1.3 Project hub started; 0.1.1 and 0.1.2 wait for the owner's try

@@ -32,6 +32,15 @@ being done, and has to open STATE.md and the ticket files. One long page mixes s
    STATE.md shows "no STATE.md" in Progress; its other pages work.
 6. **Home.** Enter on Home's progress block opens the Progress page; on a ticket row, the Tickets page.
 
+7. **Projects list (owner 2026-11-14).** With one project nothing changes. With several, `2` opens the hub of the
+   project shown last; its name row reads `name ▾ i/n`; Enter or a click on it opens the Projects list, `[` / `]`
+   still cycle. The list has two rows per project: name, current milestone, waiting count (`?`), running HUD jobs
+   (`◉`); then the bar, one key count and the last activity. Order: the panel's project first, then waiting, then
+   running, then most recent activity. Enter opens that project's hub; Esc or `‹` returns to the list. The list reads
+   each project lightly (STATE and tickets by file signature, active jobs from the shared job lookup; no Git, no
+   roles); full collection stays for the shown project only. Switching starts at the project's hub. Home is unchanged;
+   other projects' questions show only as `?` on the list.
+
 ## Out of scope
 
 No model calls, no writes to STATE or tickets, no new settings, no new collectors outside the Project tab, no
@@ -45,4 +54,5 @@ per five seconds per project; exact-width rows; EN/ZH; unicode and text icons; 4
 ## Tickets
 
 01 hub and sub-pages (frontend-implementer) · 02 project data (agy-imp, gemini-4-hydrogen-high), parallel with 01 ·
-03 progress page, tickets page and project switch (frontend-implementer), after 01 and 02.
+03 progress page, tickets page and project switch (frontend-implementer), after 01 and 02 · 04 projects list
+(frontend-implementer), after 03.
