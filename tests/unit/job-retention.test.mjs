@@ -619,7 +619,7 @@ async function until(check) {
   }
 }
 
-test('a dead CLI supervisor fails on the next scan; a live one and a pi job do not', { timeout: 10000 }, async (t) => {
+test('a dead CLI supervisor hands its job to the orchestrator on the next scan; a live one and a pi job do not', { timeout: 10000 }, async (t) => {
   const f = fixture(t);
   const ended = spawn(process.execPath, ['-e', '']);
   await once(ended, 'exit');
@@ -632,13 +632,14 @@ test('a dead CLI supervisor fails on the next scan; a live one and a pi job do n
   const pi = f.job({ state: 'working' });
   fs.writeFileSync(join(pi, 'supervisor.pid'), `${ended.pid}\n`);
   f.start();
-  await until(() => JSON.parse(fs.readFileSync(join(dead, 'STATUS.json'), 'utf8')).exit_reason === 'supervisor exited');
-  assert.equal(JSON.parse(fs.readFileSync(join(dead, 'STATUS.json'), 'utf8')).state, 'failed');
+  // No worker pid is known, so its liveness is unknown: the job waits for the orchestrator instead of failing (SUPERVISOR 08).
+  await until(() => /^supervisor exited/.test(JSON.parse(fs.readFileSync(join(dead, 'STATUS.json'), 'utf8')).reason ?? ''));
+  assert.equal(JSON.parse(fs.readFileSync(join(dead, 'STATUS.json'), 'utf8')).state, 'waiting_orchestrator');
   assert.equal(JSON.parse(fs.readFileSync(join(live, 'STATUS.json'), 'utf8')).state, 'working');
   assert.equal(JSON.parse(fs.readFileSync(join(pi, 'STATUS.json'), 'utf8')).state, 'working');
   liveChild.kill();
   await once(liveChild, 'exit');
-  await until(() => JSON.parse(fs.readFileSync(join(live, 'STATUS.json'), 'utf8')).exit_reason === 'supervisor exited');
+  await until(() => JSON.parse(fs.readFileSync(join(live, 'STATUS.json'), 'utf8')).state === 'waiting_orchestrator');
   assert.equal(JSON.parse(fs.readFileSync(join(pi, 'STATUS.json'), 'utf8')).state, 'working');
 });
 

@@ -202,10 +202,8 @@ test('imp falls back to agy when pi-role is missing on PATH', { timeout: 10000 }
   });
 
   const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-missing', task: 'Synthetic task.' });
-  await until(() => {
-    const statusFile = join(job.task_dir, 'STATUS.json');
-    return fs.existsSync(statusFile) && JSON.parse(fs.readFileSync(statusFile, 'utf8')).state === 'idle_grace';
-  });
+  // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
+  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job)));
   const start = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start');
   assert.equal(start.args[3], '--kind');
   assert.equal(start.args[4], 'agy');
@@ -241,10 +239,8 @@ test('quota failure marks pi exhausted for 1h, names next place, and falls back 
 
   fs.unlinkSync(join(f.env.HOME, 'pi-quota-fail'));
   const second = await f.call('hud_create', { role: 'imp', request_key: 'pi-quota-2', task: 'Synthetic task 2.' });
-  await until(() => {
-    const statusFile = join(second.task_dir, 'STATUS.json');
-    return fs.existsSync(statusFile) && JSON.parse(fs.readFileSync(statusFile, 'utf8')).state === 'idle_grace';
-  });
+  // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
+  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(second.job)));
   const agyStart = f.commands().find((c) => c.command === 'herdr' && c.args[2] === `${second.job}-primary`);
   assert.equal(agyStart.args[4], 'agy');
 
@@ -346,10 +342,8 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   assert.equal(pro.run.length, 3);
 
   const job = await f.call('hud_create', { role: 'oracle', request_key: 'ora-cli', task: 'Design question?' });
-  await until(() => {
-    const statusFile = join(job.task_dir, 'STATUS.json');
-    return fs.existsSync(statusFile) && JSON.parse(fs.readFileSync(statusFile, 'utf8')).state === 'closed';
-  });
+  // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
+  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job)));
   const start = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start');
   assert.equal(start.args[4], 'claude');
   assert.deepEqual(start.args.slice(start.args.indexOf('--model'), start.args.indexOf('--model') + 2), ['--model', 'fable']);
@@ -368,10 +362,8 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
 test('reviewer uses reviewer.md on CLI; sonic and architect return unsupported_harness', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, { withPi: false });
   const rev = await f.call('hud_create', { role: 'reviewer', on: 'claude', request_key: 'rev-cli', task: 'Review diff.' });
-  await until(() => {
-    const statusFile = join(rev.task_dir, 'STATUS.json');
-    return fs.existsSync(statusFile) && JSON.parse(fs.readFileSync(statusFile, 'utf8')).state === 'closed';
-  });
+  // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
+  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(rev.job)));
   const prompt = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt');
   assert.match(prompt.args[3], /packages\/hud-mcp\/instructions\/reviewer\.md/);
 
