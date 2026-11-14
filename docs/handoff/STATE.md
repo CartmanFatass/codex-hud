@@ -26,6 +26,10 @@ Milestone: 0.1.3 · Project hub
 - ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
   `bro` replaces `jev`, browser work is oracle + flow, the control plane switches places, `on` kept. 01 and 02 (agy-imp)
   after PROJECT-HUB 02; 03 (frontend) after 02 and PROJECT-HUB 03.
+- CLI-NOREPORT (bug, 2026-11-14): `hud-cli.mjs` fails a CLI job as soon as herdr reports `done` without a report,
+  but agy reports done while it waits on a background command; ROLE-BIND 01's first agy job was quit mid-test after
+  31 files of work. Fix after ROLE-BIND 01 lands (same file and test file): on done without a report, wait for the
+  agent to resume, then one nudge to write the report, then fail.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
@@ -130,6 +134,7 @@ board counts these; update at every landing or decision. -->
 - try · 0.1.2 · HUD-SETUP · owner 2026-11-13: `hud setup` (skill asks, command writes) deploys a project's pi workers: roles shown/hidden, pi role tuning, worker skills linked under .hud/skills, worker prompts; other harnesses unchanged (.scratch/hud-setup/, 6 tickets all done with grok-4.7 high; real pi job in a set-up project got its skill and worker prompt; owner to try /hud-setup) (fca81428)
 - working · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch and projects list (.scratch/project-hub/, 4 tickets); 02 landed 5951a489, 01 landed 682dec52
 - working · 0.1.4 · ROLE-BIND · owner 2026-11-14: a role is the work; places and fallbacks switched in the control plane; bro harness; grok/agy/claude/codex-imp, argon, gemini, flow-video deleted (.scratch/role-bind/, 3 tickets)
+- todo · 0.1.4 · CLI-NOREPORT · a CLI turn that ends without a report waits for the agent to resume, then nudges once, then fails
 
 ## Now (2026-11-14): 0.1.3 Project hub started; 0.1.1 and 0.1.2 wait for the owner's try
 
