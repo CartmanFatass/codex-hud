@@ -26,10 +26,11 @@ Milestone: 0.1.3 · Project hub
   never hears). Fable design opinion in: facts-only `failed`, one shared job-row reader for display + MCP, `hud_create`
   returns dispatch failures, `changes` in every MCP response, `hud watch`. Owner answered (spec §2 amended 130a8eb1;
   no typing into the main pane; ticket 10's decided fail needs a quota line). .scratch/supervisor/ 7 tickets:
-  01 running (agy imp jd9c3c796257584b1, MyHUD-wt/SUPERVISOR), 02–03 continue in that job; 04–07 after QUIET-DECIDE.
-- PROJECT-UX (owner 2026-11-14): after ROLE-BIND 03 lands (Project's basic pages complete), one frontend-implementer
-  pass proposes a UI/UX optimisation of the Project hub: rendered mockups first, the owner settles them, then build.
-- ROLE-BIND 03 (control plane switches places) running: frontend-implementer in MyHUD-wt/ROLE-BIND-03.
+  01 8c79ad88 and 02 af6d5448 done in MyHUD-wt/SUPERVISOR (agy imp jd9c3c796257584b1), 03 running; 04–07 after QUIET-DECIDE.
+- PROJECT-UX (owner 2026-11-14): phase 1 running: frontend-implementer renders 2–3 mockup directions of the Project
+  section (docs/design/project-ux/, worktree MyHUD-wt/PROJECT-UX); the owner settles one, then a build brief.
+- ROLE-BIND 03 landed 19333df8 (480/480): the Control plane switches places. ROLE-BIND 04 (model lists from the
+  harnesses, catalog fallback, typed model) ready; dispatch when the owner has no objection.
 - ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
   `bro` replaces `jev`, browser work is oracle + flow, the control plane switches places, `on` kept. 01 and 02 (agy-imp)
   after PROJECT-HUB 02; 03 (frontend) after 02 and PROJECT-HUB 03.
@@ -144,7 +145,7 @@ board counts these; update at every landing or decision. -->
 - try · 0.1.1 · CLI-WORKERS · owner 2026-11-13: roles on interactive CLIs (grok, agy, claude, codex) through herdr, held to pi imp's lifecycle; harness behaviour and session places untouched (.scratch/cli-workers/, 7 tickets all done with grok-4.7 high; real E2E passed on all four CLIs) (cbe059a7)
 - try · 0.1.2 · HUD-SETUP · owner 2026-11-13: `hud setup` (skill asks, command writes) deploys a project's pi workers: roles shown/hidden, pi role tuning, worker skills linked under .hud/skills, worker prompts; other harnesses unchanged (.scratch/hud-setup/, 6 tickets all done with grok-4.7 high; real pi job in a set-up project got its skill and worker prompt; owner to try /hud-setup) (fca81428)
 - try · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch and projects list (.scratch/project-hub/, 4 tickets); landed 5951a489, 682dec52, 162e8b1c, a20019d4; review b0e6d0f2 → FIX-013 6359b958; re-review accepted by both
-- working · 0.1.4 · ROLE-BIND · 01 5b0d5b37, 02 de4dce7a · owner 2026-11-14: a role is the work; places and fallbacks switched in the control plane; bro harness; grok/agy/claude/codex-imp, argon, gemini, flow-video deleted (.scratch/role-bind/, 3 tickets; 03 running)
+- working · 0.1.4 · ROLE-BIND · 01 5b0d5b37, 02 de4dce7a · owner 2026-11-14: a role is the work; places and fallbacks switched in the control plane; bro harness; grok/agy/claude/codex-imp, argon, gemini, flow-video deleted (.scratch/role-bind/, 4 tickets; 03 landed 19333df8; 04 ready)
 - try · 0.1.4 · CLI-NOREPORT · 6f4afa7c · cli-workers 09: the report, not herdr's done, ends a CLI turn; no report → ask the main session; observe only, never prompt or quit for it
 - working · 0.1.4 · SUPERVISOR · owner 2026-11-14: only facts end a CLI job; the session hears what the panel shows (.scratch/supervisor/, 7 tickets; 01 running)
 - try · 0.1.4 · QUIET-DECIDE · 2117e2b5 · cli-workers 10 (real run passed): a quiet CLI job without a report gets one Decision API choice among fixed actions
