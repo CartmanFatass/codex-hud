@@ -8,3 +8,4 @@ prompt was submitted starts the supervisor; only a rejection before any input fa
 
 - [ ] Kill the fake supervisor with the worker alive → waiting_orchestrator; both gone → failed
 - [ ] `agent_prompt_stalled` after submit → job working under a supervisor
+- [ ] A dispatch that fails before input (e.g. trust declined) closes the tab it opened (2026-11-14: an `imp QUIET-DECIDE-check` tab stayed open with agy never started)
