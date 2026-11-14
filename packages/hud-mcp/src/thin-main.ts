@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { jobRow } from '../../../src/collectors/thin-jobs.js';
+import { jobChanges, jobRow, type JobRow } from '../../../src/collectors/thin-jobs.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
 import { herdrId } from '../../../src/roles/herdr-run.js';
 import {
@@ -901,6 +901,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
     // Persist before dispatch: an interrupted launch must not dispatch again on retry.
     save(job);
+    createdJobs.add(job.job);
     ensureWatcher();
     let result;
     try {
@@ -935,7 +936,9 @@ async function call(name: string, args: Args): Promise<unknown> {
       fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
     }
     save(job);
-    return created(job);
+    const out = created(job);
+    cursor.set(job.job, readRow(job).row);
+    return out;
   }
   if (name === 'hud_read' && args.job === undefined)
     return {
@@ -967,13 +970,25 @@ async function call(name: string, args: Args): Promise<unknown> {
       throw new Error('invalid_arguments: wait_ms');
     const end = Date.now() + Math.max(0, Math.min(120000, (args.wait_ms as number | undefined) ?? 0));
     const settled = (state: string | null) => ['idle_grace', 'closed', 'failed', 'stopped'].includes(state ?? '');
-    const ready = (state: string | null, questions: number) => settled(state) || questions > 0 || Date.now() >= end;
+    const initial = readRow(job).row;
+    const ready = (row: JobRow) =>
+      settled(row.state) ||
+      row.state === 'waiting_orchestrator' ||
+      row.blocked ||
+      row.open_questions > 0 ||
+      jobChanges([initial], [row]).length > 0 ||
+      Date.now() >= end;
     while (true) {
       const { row } = readRow(job);
-      if (Date.now() >= end || ready(row.state, row.open_questions)) {
+      if (Date.now() >= end || ready(row)) {
         const result = observation(job);
         // A question may have been answered or a settled job continued since the lightweight poll.
-        if (!ready(result.state, result.questions.length)) continue;
+        const currentRow = jobRow(job, json<Record<string, unknown>>(join(dir, 'STATUS.json')), {
+          dir,
+          openQuestions: result.questions.length,
+          reportPresent: result.report_exists,
+        });
+        if (!ready(currentRow)) continue;
         if (result.report_exists && settled(result.state)) {
           const latest = json<Job>(join(dir, 'job.json'))!;
           if (!latest.read_at) {
@@ -1054,6 +1069,25 @@ async function call(name: string, args: Args): Promise<unknown> {
   };
 }
 
+const callerPane = herdrId(process.env.HERDR_PANE_ID) ? process.env.HERDR_PANE_ID! : null;
+const createdJobs = new Set<string>();
+const isSessionJob = (job: Job) => (callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job));
+function sessionRows(): JobRow[] {
+  return jobs()
+    .filter(isSessionJob)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.job.localeCompare(b.job))
+    .slice(0, 200)
+    .map((job) => readRow(job).row);
+}
+let cursor = new Map<string, JobRow>(sessionRows().map((row) => [row.job, row]));
+function withChanges(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const rows = sessionRows();
+  const changes = jobChanges(cursor, rows);
+  cursor = new Map(rows.map((row) => [row.job, row]));
+  return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
+}
+
 // Serialize mutations within this server; waiting reads do not block answers or other calls.
 let mutations: Promise<unknown> = Promise.resolve();
 const write = (value: unknown) => process.stdout.write(JSON.stringify(value) + '\n');
@@ -1106,7 +1140,7 @@ async function receive(line: string): Promise<void> {
           name === 'hud_read' || name === 'hud_roster'
             ? await invoke()
             : await (mutations = mutations.then(invoke, invoke));
-        result = { content: [{ type: 'text', text: JSON.stringify(value) }] };
+        result = { content: [{ type: 'text', text: JSON.stringify(withChanges(value)) }] };
       } catch (error) {
         result = {
           content: [

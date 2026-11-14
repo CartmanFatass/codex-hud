@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { jobRow, readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { jobChanges, jobRow, readThinJobs } from '../../dist/collectors/thin-jobs.js';
 test('newest 200 jobs: unchanged scan parses no receipts; a changed job appears next scan', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-scan-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -204,4 +204,38 @@ test('jobRow derives raw state, display state, reason, blocked, open questions a
     open_questions: 1,
     report_present: true,
   });
+});
+
+test('jobChanges emits concise lines only for (state, reason, report_present, open_questions) changes', () => {
+  const base = {
+    job: 'j0000000000000001',
+    role: 'imp',
+    package: '02-changes',
+    state: null,
+    display_state: 'working',
+    reason: null,
+    blocked: false,
+    open_questions: 0,
+    report_present: false,
+  };
+  const sameWorking = { ...base, state: 'working' };
+  assert.deepEqual(jobChanges([base], [sameWorking]), []);
+
+  const waiting = {
+    ...sameWorking,
+    state: 'waiting_orchestrator',
+    reason: 'claude   needs\ninput',
+    blocked: true,
+    open_questions: 1,
+    report_present: true,
+  };
+  assert.deepEqual(jobChanges([sameWorking], [waiting]), [
+    'j0000000000000001 imp 02-changes: waiting_orchestrator | claude needs input | report | QUESTION',
+  ]);
+  assert.deepEqual(jobChanges([waiting], [waiting]), []);
+
+  const multiQ = { ...waiting, open_questions: 2, state: 'done', display_state: 'done', reason: null, blocked: false };
+  assert.deepEqual(jobChanges([waiting], [multiQ]), [
+    'j0000000000000001 imp 02-changes: done | report | QUESTION (2)',
+  ]);
 });

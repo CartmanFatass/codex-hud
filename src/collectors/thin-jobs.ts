@@ -225,6 +225,41 @@ export function jobRow(
     report_present: reportPresent,
   };
 }
+const rowState = (row: JobRow) => row.state ?? row.display_state;
+function formatJobChange(row: JobRow): string {
+  const head = [row.job, row.role, row.package].filter(Boolean).join(' ');
+  const reason = row.reason ? row.reason.replace(/\s+/g, ' ').trim() : null;
+  const parts = [
+    rowState(row),
+    ...(reason ? [reason] : []),
+    ...(row.report_present ? ['report'] : []),
+    ...(row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
+  ];
+  return `${head}: ${parts.join(' | ')}`;
+}
+/**
+ * Format one concise line per job whose `(state, reason, report_present, open_questions)` changed since `prev`.
+ */
+export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[], rows: readonly JobRow[]): string[] {
+  const prior = Array.isArray(prev)
+    ? new Map((prev as readonly JobRow[]).map((row) => [row.job, row]))
+    : (prev as ReadonlyMap<string, JobRow>);
+  const lines: string[] = [];
+  for (const row of rows) {
+    const old = prior.get(row.job);
+    if (
+      old &&
+      rowState(old) === rowState(row) &&
+      old.reason === row.reason &&
+      old.report_present === row.report_present &&
+      old.open_questions === row.open_questions
+    ) {
+      continue;
+    }
+    lines.push(formatJobChange(row));
+  }
+  return lines;
+}
 /**
  * What a running job is doing, by role (owner, 2026-11-11): only an implementer builds; read-only roles review,
  * research or ask. An unknown role is just working.

@@ -2692,6 +2692,87 @@ test('STATUS table matches across the panel reader and hud_read', async (t) => {
   }
 });
 
+test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride once per response', async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
+  const created = await f.call('hud_create', {
+    role: 'imp',
+    on: 'grok',
+    request_key: 'wait-seed',
+    task: 'Seed session cursor without self-reporting create.',
+  });
+  assert.equal('changes' in created, false);
+  const createdStatus = join(created.task_dir, 'STATUS.json');
+  for (let i = 0; i < 40; i++) {
+    if (fs.existsSync(createdStatus) && JSON.parse(fs.readFileSync(createdStatus, 'utf8')).state === 'working') break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  await f.call('hud_close', { job: created.job });
+  for (let i = 0; i < 40; i++) {
+    if (fs.existsSync(createdStatus) && JSON.parse(fs.readFileSync(createdStatus, 'utf8')).state === 'stopped') break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  const writeSyntheticJob = (id, pane, pkg, state) => {
+    const dir = join(f.env.HUD_HOME, 'jobs', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      join(dir, 'job.json'),
+      JSON.stringify({
+        job: id,
+        role: 'imp',
+        package: pkg,
+        herdr_pane: pane,
+        created_at: new Date().toISOString(),
+        cli: { agent: 'grok' },
+        dispatch_exit_code: 0,
+        stderr_tail: '',
+      })
+    );
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, exit_reason: null }));
+    return dir;
+  };
+
+  const w1Dir = writeSyntheticJob('j00000000000001a1', 'w4E:p1', '02-wait', 'working');
+  await f.call('hud_roster');
+  const settledSeed = await f.call('hud_roster');
+  assert.equal('changes' in settledSeed, false);
+
+  const waitPromise = f.call('hud_read', { job: 'j00000000000001a1', wait_ms: 5000 });
+  await new Promise((r) => setTimeout(r, 80));
+  fs.writeFileSync(
+    join(w1Dir, 'STATUS.json'),
+    JSON.stringify({ state: 'waiting_orchestrator', blocked: false, reason: 'quiet', harness: 'cli' })
+  );
+  const waited = await waitPromise;
+  assert.equal(waited.state, 'waiting_orchestrator');
+  assert.equal(waited.blocked, false);
+  assert.equal(waited.changes?.length, 1);
+  assert.match(waited.changes[0], /^j00000000000001a1 imp 02-wait: waiting_orchestrator \| quiet$/);
+
+  const afterWait = await f.call('hud_roster');
+  assert.equal('changes' in afterWait, false);
+
+  const w2Dir = writeSyntheticJob('j00000000000001a2', 'w4E:p1', '02-roster', 'working');
+  const foreignDir = writeSyntheticJob('j00000000000001f9', 'w4E:p9', 'foreign-pane', 'working');
+  const baseline = await f.call('hud_roster');
+  assert.equal(baseline.changes?.length, 1);
+  assert.match(baseline.changes[0], /^j00000000000001a2 imp 02-roster: working$/);
+
+  fs.writeFileSync(join(w2Dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator', exit_reason: null }));
+  fs.writeFileSync(
+    join(foreignDir, 'STATUS.json'),
+    JSON.stringify({ state: 'waiting_orchestrator', exit_reason: null })
+  );
+
+  const roster1 = await f.call('hud_roster');
+  assert.equal(roster1.changes?.length, 1);
+  assert.match(roster1.changes[0], /^j00000000000001a2 imp 02-roster: waiting_orchestrator\b/);
+
+  const roster2 = await f.call('hud_roster');
+  assert.equal('changes' in roster2, false);
+});
+
 test('unregistered skill names are skipped and a CLI role is not given skill flags', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   const absolute = join(f.root, 'abs-skill');
