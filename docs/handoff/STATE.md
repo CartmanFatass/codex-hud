@@ -33,7 +33,8 @@ Milestone: 0.1.4 · Roles apart from harnesses
   clock is written atomically (a torn read gave Date.now() 0 and a TimeoutOverflowWarning); pi-roles' dispatch test
   uses real-shaped herdr ids (Fishpref 1f91417). The panel-reload width flake did not reproduce (6/6, full suite
   564/564).
-- The owner decides how universal-hud reaches main (main is v0.1.0 and an ancestor: fast-forward possible).
+- 2026-11-14: main fast-forwarded to universal-hud (owner chose fast-forward + tag); tag and GitHub release v0.1.4
+  with `hud-0.1.4.tar.gz` (sha256 33f0c04f…). Keep main fast-forwarded to this branch at each release.
 - After the tries: the owner picks from the M5 candidates (docs/spec.md §5).
 
 ## Slices
