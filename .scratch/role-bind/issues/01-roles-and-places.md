@@ -19,7 +19,7 @@ docs/releases/0.1.4.md and the tests that named them.
 - [x] oracle's places reach jev-ask / jev-aistudio; flow `kind: video` reaches jev-flow video
 - [x] Old role files (incl. `harness: "jev"`) and `$HUD_HOME/roles` files load; deleted names are gone
 - [x] Tests with a fake herdr and fake tools, no real model calls
-- [ ] Real runs by the orchestrator: `imp` on agy, `reviewer` on claude, an oracle question; recorded below
+- [x] Real runs by the orchestrator: `imp` on agy, `reviewer` on claude, an oracle question; recorded below
 
 ## Comments
 
@@ -28,3 +28,7 @@ docs/releases/0.1.4.md and the tests that named them.
   `reviewer` run on pi only (fallbacks are the owner's, under `$HUD_HOME/roles`), agy's shipped default is
   gemini-4-argon-high; tests adjusted. Full suite green (527), release rehearsal passes. Real runs wait for every
   client's hud MCP to reconnect: older servers read the new role files as invalid.
+- 2026-11-14 orchestrator, real runs after the MCP reconnect (synthetic repo /tmp/hud-realrun-0114): `imp` with `on: agy`
+  ran gemini-4-hydrogen-high from `$HUD_HOME/harnesses.json`, fixed the file, report, idle_grace (j61707701a17ba497);
+  `reviewer` with `on: claude` (haiku, low) got reviewer.md and returned a two-axis read-only review, closed
+  (j7acb233aff8921fa); `oracle` went to ChatGPT Pro through jev-ask and answered, closed (jb58cdca5cab816e1).
