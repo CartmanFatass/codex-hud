@@ -49,7 +49,12 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    flight now (ledger slices and the project's running HUD jobs), Next, the slices landed to try and the accepted
    ones grouped by milestone (older milestones folded); the tickets page shows each ticket's checklist and latest
    comment in the panel. Project switches between the panel's own project and the projects set up with `hud setup`;
-   Home stays on the panel's project.
+   Home stays on the panel's project. Timeline layout (owner, 2026-11-14, PROJECT-UX direction A): the hub also shows
+   Now (who is on which slice, for how long) and Latest (the last landed slices, their age and whether they wait for a
+   try) above the page rows, and when the panel is short Latest folds first; the hub's bar is the current milestone's;
+   Progress is a dated feed of the last 7 days with older work one row per milestone; Tickets are lanes by state with
+   a For-you lane; the control plane opens with what needs attention and the place the next job will use, healthy
+   roles folded.
 3. **Set up a project's workers in one conversation** (owner, 2026-11-13). `hud setup --detect | --apply PLAN | --remove` writes a project's `.hud/` and is driven by a `hud-setup` skill that asks the owner, as claude-hud's setup does. Customisation is on pi workers only: main sessions and the official harnesses (Claude Code, Codex, Grok Build, Antigravity) keep their behaviour, and their roles are only shown or hidden. A project's `.hud/` loads only once the owner has set that project up (`$HUD_HOME/projects.json`); a cloned repo's `.hud/` does nothing on its own.
 4. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, browser,
    herdr); `hud uninstall` removes them. Registration uses each client's official commands where they exist.
