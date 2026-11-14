@@ -30,7 +30,7 @@ Milestone: 0.1.3 · Project hub
   loop, one pure judge; supersedes 06–07) on pi imp in MyHUD-wt/SUPERVISOR-08; 04–07 after QUIET-DECIDE.
 - PROJECT-UX (owner 2026-11-14): try. Landed 891556a1: timeline hub (A + 2 transplants, Latest folded first,
   Progress last 7 days), ticket lanes, attention-first Control plane, provider → model picker with curated pi
-  list (arena, mistral deepseek, anthropic opus, openai gpt-6; newest per family). Open: trim page rows on short panels?
+  list (arena, mistral deepseek, anthropic opus, openai gpt-6; newest per family). Page rows scroll, never trimmed (owner).
 - ROLE-BIND 03 landed 19333df8 (480/480): the Control plane switches places. ROLE-BIND 04 (model lists from the
   harnesses, catalog fallback, typed model) running: agy imp j8a87fdd732834890 in MyHUD-wt/ROLE-BIND-04.
 - ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
