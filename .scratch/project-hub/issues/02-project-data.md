@@ -18,10 +18,16 @@ The collector already takes a cwd; keep it usable for any listed root. Today's f
 
 **Blocked by:** none
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Ledger rows with milestone, commit and date on a synthetic git repo; a row without a hash has no date
-- [ ] Active jobs: only unsettled jobs under the root; settled and other-root jobs excluded
-- [ ] Ticket items and latest comment parsed; no comment section → no `comment`
-- [ ] projectList: order, dedupe, missing dirs dropped, bad file tolerated
-- [ ] Home-mode collection reads nothing new; Git still gated
+- [x] Ledger rows with milestone, commit and date on a synthetic git repo; a row without a hash has no date
+- [x] Active jobs: only unsettled jobs under the root; settled and other-root jobs excluded
+- [x] Ticket items and latest comment parsed; no comment section → no `comment`
+- [x] projectList: order, dedupe, missing dirs dropped, bad file tolerated
+- [x] Home-mode collection reads nothing new; Git still gated
+
+## Comments
+
+- 2026-11-14 orchestrator: implemented by agy-imp on gemini-4-hydrogen-high (job j440537c2d59f3ffa), landed as 5951a489;
+  5 tests in tests/unit/project-data.test.mjs; full suite green (507). Rows without a known state are skipped from
+  `ledger` as from the counts; jobs in idle_grace count as settled.

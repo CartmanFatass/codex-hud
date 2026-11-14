@@ -22,7 +22,7 @@ runs means asking the main session to pass overrides on every dispatch.
 3. **Browser work is two roles, not one per site:** `oracle` asks a strong web model (places: ChatGPT Pro, Gemini,
    AI Studio Argon); `flow` generates in Google Flow, and the job says image or video (`kind`, default image).
 4. **The MCP shows logical roles.** `hud_roster` lists each role with its current place, its fallbacks and the
-   harnesses it can run on. `hud_create(role, task, ...)` runs on the first available place. Per-job overrides stay
+   harnesses it can run on. `hud_create(role, task, ...)` runs on the role's setting: its first available place as set on the control plane. Per-job overrides stay
    for flexibility: `on` (a harness, with its default model from a shipped table, overridable in
    `$HUD_HOME/harnesses.json`), `model`, `thinking` and today's pi switches.
 5. **Fallback.** A place is unavailable when its harness or tool is missing, or it is marked exhausted. A job that

@@ -10,7 +10,7 @@ docs/releases/0.1.4.md and the tests that named them.
 
 **Who:** agy-imp (gemini-4-hydrogen-high) · **Size:** about 350 source lines
 
-**Blocked by:** PROJECT-HUB 02 (it edits the collector's control-plane reads)
+**Blocked by:** none (PROJECT-HUB 02 landed)
 
 **Status:** ready-for-agent
 
