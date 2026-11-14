@@ -4,7 +4,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { boardRow, minuteAge, decisionBlock, mark } from './workboard-rows.js';
 import { laneRows, orderedLanes } from './work-lanes.js';
-import { requestLines, stemLines } from './work-card.js';
+import { quietDecisionSummary, requestLines, stemLines } from './work-card.js';
 import { theme } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
@@ -48,15 +48,17 @@ export function homeRows(
       )
     );
     const n = r?.options.length ?? 0;
+    const quiet = quietDecisionSummary(worker.quietDecision);
     const choices = [
       n ? t(n === 1 ? '{n} option' : '{n} options', { n }) : '',
       r?.suggested ? `${t('default')}: ${r.suggested}` : '',
+      quiet,
     ]
       .filter(Boolean)
       .join(' · ');
     const lines =
       open && r
-        ? requestLines(card, true).flatMap((part) => stemLines(part, width, theme.board.attention))
+        ? [...requestLines(card, true), quiet].filter(Boolean).flatMap((part) => stemLines(part, width, theme.board.attention))
         : [
             ...stemLines(r?.question ?? worker.ask ?? card.reason ?? '', width, theme.board.attention, 3),
             ...(choices ? stemLines(choices, width, theme.board.attention, 1) : []),

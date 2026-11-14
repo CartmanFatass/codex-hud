@@ -130,12 +130,29 @@ export function requestLines(card: WorkCard, full = false): string[] {
     : [];
 }
 export const workRequestDetail = (card: WorkCard, full = false): string => requestLines(card, full).join('\n');
+const QUIET_REASONS: Record<string, string> = {
+  'no-key': 'no key',
+  cap: 'cap',
+  error: 'error',
+  'max-questions': 'max questions',
+  'prompt-failed': 'prompt failed',
+};
+export function quietDecisionSummary(q: WorkCard['worker']['quietDecision']): string {
+  if (!q) return '';
+  const action = t(q.action);
+  if (q.choice !== null && q.probability !== null) {
+    return `${t(q.choice)} ${Math.round(q.probability * 100)}% ${mark('→', '->')} ${action}`;
+  }
+  const detail = q.reason ? t(QUIET_REASONS[q.reason] ?? q.reason) : '';
+  return detail ? `${action} (${detail})` : action;
+}
 export function workCardDetail(card: WorkCard, sentence = ''): string {
-  return (
+  const quiet = quietDecisionSummary(card.worker.quietDecision);
+  const detail =
     sentence ||
     card.worker.ask ||
-    (card.worker.work?.reason ? t(card.worker.work.reason) : card.reason ? t(card.reason) : '')
-  );
+    (card.worker.work?.reason ? t(card.worker.work.reason) : card.reason ? t(card.reason) : '');
+  return [quiet, detail].filter(Boolean).join(' · ');
 }
 export function workPhaseText(phase: string): string {
   return monitorText(phase).replace(

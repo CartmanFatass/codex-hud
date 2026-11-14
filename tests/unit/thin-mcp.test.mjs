@@ -6,11 +6,13 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { readThinJobs, runningVerb } from '../../dist/collectors/thin-jobs.js';
 import { cliKinds } from '../../dist/roles/cli-kinds.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { renderWorkCard, workStateInk } from '../../dist/render/work-card.js';
+import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
@@ -52,10 +54,13 @@ if (command === 'pi-dispatch') {
     fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
   }
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'read') {
+  const paneFile = join(process.env.HOME, 'pane-read');
   const dialog = join(process.env.HOME, 'trust-dialog');
-  const text = fs.existsSync(dialog)
-    ? (fs.readFileSync(dialog, 'utf8').trim() || 'Do you trust the contents of this directory?') + '\\n'
-    : 'synthetic grok ready\\n';
+  const text = fs.existsSync(paneFile)
+    ? fs.readFileSync(paneFile, 'utf8')
+    : fs.existsSync(dialog)
+      ? (fs.readFileSync(dialog, 'utf8').trim() || 'Do you trust the contents of this directory?') + '\\n'
+      : 'synthetic grok ready\\n';
   console.log(JSON.stringify({ result: { type: 'pane_read', read: { text, pane_id: args[2], workspace_id: 'w4E', tab_id: 'w4E:t2', source: 'recent', format: 'text', revision: 1, truncated: false } } }));
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'process-info') {
   const pidFile = join(process.env.HOME, 'cli-pid');
@@ -185,6 +190,9 @@ if (command === 'pi-dispatch') {
   } else if (until.includes('idle') || until.includes('unknown')) matched('idle');
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && args[3] === '/quit' && fs.existsSync(join(process.env.HOME, 'late-session'))) {
   fs.writeFileSync(join(process.env.HOME, 'late-session-gone'), '');
+} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && String(args[3]).startsWith('Write your report to ') && fs.existsSync(join(process.env.HOME, 'write-on-report-prompt'))) {
+  const reportPath = String(args[3]).slice('Write your report to '.length).split(' now;')[0];
+  fs.writeFileSync(reportPath, 'Synthetic report after prompt.\\n');
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && fs.existsSync(join(process.env.HOME, 'fail-prompt'))) {
   console.error('synthetic prompt timeout'); process.exit(1);
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'split') {
@@ -230,6 +238,9 @@ if (command === 'pi-dispatch') {
     FAKE_LOG: log,
     HERDR_SOCKET_PATH: join(root, 'events.sock'),
   };
+  for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'MISTRAL_API_KEY']) {
+    delete env[key];
+  }
   for (const name of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR']) {
     env[name] = join(root, name.toLowerCase());
     fs.mkdirSync(env[name]);
@@ -2653,4 +2664,234 @@ test('unregistered skill names are skipped and a CLI role is not given skill fla
   assert.equal(Object.hasOwn(cliRead, 'role_skills'), false);
   assert.equal(Object.hasOwn(cliRead, 'skipped_skills'), false);
   assert.equal(Object.hasOwn(cliRead, 'worker_prompt'), false);
+});
+
+async function fakeDecisionServer(t, handler) {
+  const requests = [];
+  const server = createHttpServer((req, res) => {
+    let raw = '';
+    req.setEncoding('utf8');
+    req.on('data', (chunk) => { raw += chunk; });
+    req.on('end', () => {
+      const body = JSON.parse(raw);
+      requests.push(body);
+      const reply = handler(body, requests.length, req);
+      if (reply?.status && reply.status !== 200) {
+        res.writeHead(reply.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(reply.body ?? { error: 'synthetic error' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(reply));
+    });
+  });
+  await new Promise((done) => server.listen(0, '127.0.0.1', done));
+  t.after(() => new Promise((done) => server.close(done)));
+  const port = server.address().port;
+  return { baseUrl: `http://127.0.0.1:${port}`, requests };
+}
+
+function decisionAnswer(choice, probability, rest = 0.02) {
+  const choices = ['still-working', 'finished-no-report', 'failed', 'needs-human'];
+  const remainder = Math.max(0, 1 - probability);
+  const perOther = remainder / (choices.length - 1);
+  return {
+    answers: [
+      {
+        name: 'quiet_job',
+        type: 'choice',
+        choice,
+        probabilities: choices.map((value) => ({ value, probability: value === choice ? probability : perOther })),
+        confidence: Math.max(0, probability - rest),
+      },
+    ],
+  };
+}
+
+function configureFakeDecision(f, baseUrl, cap = 0) {
+  fs.writeFileSync(
+    join(f.env.HUD_HOME, 'credentials.env'),
+    `OPENAI_API_KEY=synthetic-openai-key\nOPENAI_BASE_URL=${baseUrl}\n`,
+    { mode: 0o600 }
+  );
+  fs.writeFileSync(
+    join(f.env.HUD_HOME, 'config.json'),
+    JSON.stringify({ decisions: { primary: 'openai', openai: { baseUrl } } }),
+    { mode: 0o600 }
+  );
+  if (cap > 0) {
+    fs.writeFileSync(
+      join(f.env.HUD_HOME, 'hud-settings.json'),
+      JSON.stringify({ decisionCallsPerHour: cap }),
+      { mode: 0o600 }
+    );
+  }
+}
+
+test('quiet decision still-working keeps waiting up to 3 questions then escalates, showing on card and Inspector', { timeout: 20000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'qd-wait', 1, false);
+  fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
+  fs.writeFileSync(
+    join(f.env.HOME, 'pane-read'),
+    Array.from({ length: 70 }, (_, i) => `line ${i + 1}: waiting on background build`).join('\n') + '\n'
+  );
+  const server = await fakeDecisionServer(t, () => decisionAnswer('still-working', 0.91));
+  configureFakeDecision(f, server.baseUrl);
+  const job = await f.call('hud_create', { role: 'qd-wait', request_key: 'qd-wait', task: 'Synthetic quiet wait.' });
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 12000);
+  assert.equal(server.requests.length, 3);
+  const sentBody = server.requests[0];
+  const pageText = sentBody.input[0].content[1].data.page.text;
+  assert.equal(pageText.split('\n').length, 60);
+  assert.ok(pageText.startsWith('line 11:'));
+  const facts = sentBody.input[0].content[2].data.facts;
+  assert.equal(facts.background_child_alive, false);
+  assert.equal(typeof facts.minutes_quiet, 'number');
+  assert.equal(facts.job_state, 'working');
+  const status = cliState(job.task_dir);
+  assert.equal(status.quiet_decision.action, 'needs-human');
+  assert.equal(status.quiet_decision.reason, 'max-questions');
+  const calls = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'display/model-cache/decision-api/calls.json'), 'utf8'));
+  assert.equal(calls.length, 3);
+  assert.ok(calls.every((c) => c.feature === 'quiet-job'));
+  const worker = workerFor(f, job.job);
+  assert.equal(worker.quietDecision.action, 'needs-human');
+  assert.match(cardText(worker), /needs-human \(max questions\)/);
+  const inspectText = workInspectorRows(worker, initialMonitorState(), 80, Date.now()).map((r) => stripAnsi(r.text)).join('\n');
+  assert.match(inspectText, /quiet\s+needs-human \(max questions\)/);
+});
+
+test('quiet decision finished-no-report sends fixed prompt once per job and settles; second never sends twice', { timeout: 20000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'qd-prompt', 1, false);
+  fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
+  fs.writeFileSync(join(f.env.HOME, 'write-on-report-prompt'), '');
+  const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.93));
+  configureFakeDecision(f, server.baseUrl);
+  const job = await f.call('hud_create', { role: 'qd-prompt', request_key: 'qd-prompt-1', task: 'Synthetic report prompt.' });
+  await until(() => cliState(job.task_dir)?.state === 'closed', 10000);
+  const expectedPrompt = `Write your report to ${join(job.task_dir, 'report.md')} now; if work remains, finish it first.`;
+  const prompts = f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3] === expectedPrompt);
+  assert.equal(prompts.length, 1);
+  assert.equal(cliState(job.task_dir).quiet_decision.choice, 'finished-no-report');
+  assert.equal(cliState(job.task_dir).quiet_decision.probability, 0.93);
+  assert.equal(cliState(job.task_dir).quiet_decision.action, 'prompt-report');
+
+  // Second finished-no-report in the same job must NOT send the prompt twice -> needs-human.
+  const f2 = await fixture(t);
+  writeCliRole(f2, 'qd-prompt2', 1, false);
+  fs.writeFileSync(join(f2.env.HOME, 'missing-report'), '');
+  const server2 = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.94));
+  configureFakeDecision(f2, server2.baseUrl);
+  const job2 = await f2.call('hud_create', { role: 'qd-prompt2', request_key: 'qd-prompt-2', task: 'Synthetic no repeat.' });
+  await until(() => cliState(job2.task_dir)?.state === 'waiting_orchestrator', 10000);
+  const expectedPrompt2 = `Write your report to ${join(job2.task_dir, 'report.md')} now; if work remains, finish it first.`;
+  const prompts2 = f2.commands().filter((c) => c.args[1] === 'prompt' && c.args[3] === expectedPrompt2);
+  assert.equal(prompts2.length, 1);
+  assert.equal(server2.requests.length, 2);
+  const status2 = cliState(job2.task_dir);
+  assert.equal(status2.quiet_decision.choice, 'finished-no-report');
+  assert.equal(status2.quiet_decision.probability, 0.94);
+  assert.equal(status2.quiet_decision.action, 'needs-human');
+  const worker2 = workerFor(f2, job2.job);
+  assert.match(cardText(worker2), /finished-no-report 94%/);
+  const inspect2 = workInspectorRows(worker2, initialMonitorState(), 110, Date.now()).map((r) => stripAnsi(r.text)).join('\n');
+  assert.match(inspect2, /finished-no-report 94% → needs-human/);
+});
+
+test('quiet decision failed uses screen line and quota marks place exhausted', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
+  fs.writeFileSync(
+    join(f.env.HUD_HOME, 'roles', 'qd-fail.json'),
+    JSON.stringify({
+      role: 'qd-fail',
+      instructions: 'implementer',
+      can_continue: false,
+      idle_grace_s: 1,
+      run: [
+        { harness: 'cli', agent: 'grok', model: 'grok-4.7' },
+        { harness: 'cli', agent: 'claude', model: 'opus-5.5' },
+      ],
+    })
+  );
+  fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
+  fs.writeFileSync(join(f.env.HOME, 'pane-read'), 'working...\nError: 429 rate limit exceeded for grok-4.7\n> \n');
+  const server = await fakeDecisionServer(t, () => decisionAnswer('failed', 0.96));
+  configureFakeDecision(f, server.baseUrl);
+  const job = await f.call('hud_create', { role: 'qd-fail', request_key: 'qd-fail', task: 'Synthetic quota fail.' });
+  await until(() => cliState(job.task_dir)?.state === 'failed', 8000);
+  const status = cliState(job.task_dir);
+  assert.match(status.exit_reason, /429 rate limit exceeded/);
+  assert.match(status.exit_reason, /next dispatch will use cli\/claude \(opus-5\.5\)/);
+  assert.equal(status.quiet_decision.choice, 'failed');
+  assert.equal(status.quiet_decision.probability, 0.96);
+  assert.equal(status.quiet_decision.action, 'fail');
+  const exhausted = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'exhausted.json'), 'utf8'));
+  assert.ok(exhausted.places['cli:grok:grok-4.7']);
+  const worker = workerFor(f, job.job);
+  assert.match(cardText(worker), /failed 96% → fail/);
+});
+
+test('quiet decision failed without quota regex falls back to needs-human without exhausting', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'qd-nonquota', 1, false);
+  fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
+  fs.writeFileSync(join(f.env.HOME, 'pane-read'), 'working...\nError: segmentation fault in worker\n> \n');
+  const server = await fakeDecisionServer(t, () => decisionAnswer('failed', 0.95));
+  configureFakeDecision(f, server.baseUrl);
+  const job = await f.call('hud_create', { role: 'qd-nonquota', request_key: 'qd-nonquota', task: 'Synthetic non-quota error.' });
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 8000);
+  const status = cliState(job.task_dir);
+  assert.equal(status.reason, 'quiet without a report; hud_send to continue or hud_close to stop');
+  assert.equal(status.quiet_decision.choice, 'failed');
+  assert.equal(status.quiet_decision.probability, 0.95);
+  assert.equal(status.quiet_decision.action, 'needs-human');
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
+  assert.equal(f.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
+});
+
+test('low probability, cap reached, and provider error all fall back to needs-human without prompting worker', { timeout: 20000 }, async (t) => {
+  // 1. Low probability (< 0.8)
+  const fLow = await fixture(t);
+  writeCliRole(fLow, 'qd-low', 1, false);
+  fs.writeFileSync(join(fLow.env.HOME, 'missing-report'), '');
+  const sLow = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.79));
+  configureFakeDecision(fLow, sLow.baseUrl);
+  const jLow = await fLow.call('hud_create', { role: 'qd-low', request_key: 'qd-low', task: 'Synthetic low prob.' });
+  await until(() => cliState(jLow.task_dir)?.state === 'waiting_orchestrator', 8000);
+  assert.equal(cliState(jLow.task_dir).quiet_decision.choice, 'finished-no-report');
+  assert.equal(cliState(jLow.task_dir).quiet_decision.probability, 0.79);
+  assert.equal(cliState(jLow.task_dir).quiet_decision.action, 'needs-human');
+  assert.equal(fLow.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
+
+  // 2. Cap reached
+  const fCap = await fixture(t);
+  writeCliRole(fCap, 'qd-cap', 1, false);
+  fs.writeFileSync(join(fCap.env.HOME, 'missing-report'), '');
+  const sCap = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
+  configureFakeDecision(fCap, sCap.baseUrl, 1);
+  const apiDir = join(fCap.env.HUD_HOME, 'display/model-cache/decision-api');
+  fs.mkdirSync(apiDir, { recursive: true });
+  fs.writeFileSync(join(apiDir, 'calls.json'), JSON.stringify([{ at: Date.now(), feature: 'outcome' }]));
+  const jCap = await fCap.call('hud_create', { role: 'qd-cap', request_key: 'qd-cap', task: 'Synthetic cap.' });
+  await until(() => cliState(jCap.task_dir)?.state === 'waiting_orchestrator', 8000);
+  assert.equal(sCap.requests.length, 0);
+  assert.equal(cliState(jCap.task_dir).quiet_decision.action, 'needs-human');
+  assert.equal(cliState(jCap.task_dir).quiet_decision.reason, 'cap');
+  assert.equal(fCap.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
+
+  // 3. Provider error (HTTP 500)
+  const fErr = await fixture(t);
+  writeCliRole(fErr, 'qd-err', 1, false);
+  fs.writeFileSync(join(fErr.env.HOME, 'missing-report'), '');
+  const sErr = await fakeDecisionServer(t, () => ({ status: 500, body: { error: 'boom' } }));
+  configureFakeDecision(fErr, sErr.baseUrl);
+  const jErr = await fErr.call('hud_create', { role: 'qd-err', request_key: 'qd-err', task: 'Synthetic error.' });
+  await until(() => cliState(jErr.task_dir)?.state === 'waiting_orchestrator', 8000);
+  assert.equal(sErr.requests.length, 1);
+  assert.equal(cliState(jErr.task_dir).quiet_decision.action, 'needs-human');
+  assert.equal(cliState(jErr.task_dir).quiet_decision.reason, 'error');
+  assert.equal(fErr.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
 });

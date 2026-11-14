@@ -44,6 +44,12 @@ export interface OwnerWorker {
   readonly homeRank?: number;
   readonly homeFolded?: boolean;
   readonly labels?: import('./decision-labels.js').DisplayLabels;
+  readonly quietDecision?: {
+    readonly choice: string | null;
+    readonly probability: number | null;
+    readonly action: string;
+    readonly reason?: string;
+  };
   readonly resources?: {
     context?: number;
     rate?: import('./token-rate.js').TokenRateSnapshot;

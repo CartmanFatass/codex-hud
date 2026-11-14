@@ -16,6 +16,7 @@ const CALL_FEATURES: Record<string, string> = {
   'job-sentence': 'Job sentence', 'native-sentence': 'Native sentence', title: 'Decision title',
   'home-brief': 'Home brief', probe: 'Probe', outcome: 'outcome', kind: 'kind', looping: 'looping',
   'question-category': 'Question category', 'review-severity': 'Review severity', 'home-ranking': 'Home ranking',
+  'quiet-job': 'Quiet job',
 };
 const PROBE_FAILURES: Record<string, string> = {
   auth: 'Authentication failed',

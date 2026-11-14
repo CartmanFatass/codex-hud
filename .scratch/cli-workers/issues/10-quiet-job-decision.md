@@ -28,10 +28,15 @@ decision provider (no real calls)
 
 **Blocked by:** 09
 
-**Status:** ready-for-agent
+**Status:** in-review
 
-- [ ] Each option leads to its action; a second `finished-no-report` never sends the prompt twice
-- [ ] Low probability, no key, cap reached or provider error → needs-human, nothing sent to the worker
-- [ ] `quiet_decision` in STATUS, on the card and in the Inspector; Settings breakdown counts `quiet-job`
-- [ ] Mistral DeepSeek provider: added or the reason recorded
+- [x] Each option leads to its action; a second `finished-no-report` never sends the prompt twice
+- [x] Low probability, no key, cap reached or provider error → needs-human, nothing sent to the worker
+- [x] `quiet_decision` in STATUS, on the card and in the Inspector; Settings breakdown counts `quiet-job`
+- [x] Mistral DeepSeek provider: added or the reason recorded
 - [ ] One real run by the orchestrator: an agy job told to start a long background command and stop; recorded below
+
+## Comments
+
+- **Mistral DeepSeek check (`deepseek-v4-1-flash-1017`, reasoning off):** Tested live against `https://api.mistral.ai/v1` using `MISTRAL_API_KEY` from `~/.hud/credentials.env`. `POST /v1/decisions` returned `404` (`no Route matched with those values`). `POST /v1/chat/completions` with `model: "deepseek-v4-1-flash-1017"`, `reasoning_effort: "none"`, and `response_format: { type: "json_schema", strict: true, ... }` returned `200` (`reasoning_tokens: 0`, valid JSON `{"choice": "failed"}`), but adding `logprobs: true, top_logprobs: 5` returned `400` (`code: "3051"`, `"Logprobs are not enabled for this model"`). Structured output works, option probabilities do not, so Decision API providers remain unchanged (`gemini`, `openai`, `typesafe`).
+- **2026-11-14 owner ruling:** A `failed` choice only fails the job (and marks the place exhausted via `recordFailureExhaustion`) when `extractFailureScreenLine` matches `isQuotaFailure` (`src/roles/exhausted.ts`); otherwise `failed` falls back to `needs-human`.

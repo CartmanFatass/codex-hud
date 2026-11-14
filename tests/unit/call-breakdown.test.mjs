@@ -99,7 +99,7 @@ for (const lang of ['en', 'zh']) for (const width of [80, 120])
     const dir = fixture(t), decisionDir = join(dir, 'decision-api'); fs.mkdirSync(decisionDir);
     const llm = [NOW, ...Array.from({ length: 40 }, () => ({ at: NOW, feature: 'job-sentence' })),
       ...Array.from({ length: 3 }, () => ({ at: NOW, feature: 'title' })), { at: NOW, feature: 'home-brief' }];
-    const decisions = ['outcome', 'kind', 'looping', 'question-category', 'review-severity', 'home-ranking']
+    const decisions = ['outcome', 'kind', 'looping', 'question-category', 'review-severity', 'home-ranking', 'quiet-job']
       .flatMap((feature, i) => Array.from({ length: i + 1 }, () => ({ at: NOW, feature })));
     fs.writeFileSync(join(dir, 'calls.json'), JSON.stringify(llm));
     fs.writeFileSync(join(decisionDir, 'calls.json'), JSON.stringify(decisions));
@@ -119,7 +119,7 @@ for (const lang of ['en', 'zh']) for (const width of [80, 120])
     assert.equal(lines[modelAt + 1].trim(), lang === 'en'
       ? 'Job sentence 40 · Decision title 3 · Earlier format 1 · Home brief 1'
       : '任务句子 40 · 决定标题 3 · 早期格式 1 · 首页简报 1');
-    assert.ok(lines[decisionAt + 1].trim().startsWith(lang === 'en' ? 'Home ranking 6 · Review severity 5' : '首页排序 6 · 评审严重度 5'));
+    assert.ok(lines[decisionAt + 1].trim().startsWith(lang === 'en' ? 'Quiet job 7 · Home ranking 6' : '静默任务 7 · 首页排序 6'));
     assert.equal(lines.filter((line) => line.includes(' · ')).length, 2, 'exactly one breakdown per counter');
     const zero = renderSettingsPage(state, width, 60, { state: undefined,
       modelCalls: { today: 0, lastHour: 0, cap: 60, byFeature: {} }, decisionCalls: { lastHour: 0, cap: 0, byFeature: {} } });

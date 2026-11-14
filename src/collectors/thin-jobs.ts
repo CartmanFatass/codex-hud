@@ -25,7 +25,7 @@ const seen = new Set<string>();
 let cacheHome = '', saved = '';
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
 const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'dispatch_exit_code',
-  'state', 'started_at', 'settled_at', 'ended_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'reason', 'blocked', 'agent']);
+  'state', 'started_at', 'settled_at', 'ended_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string): void {
   if (cacheHome === home) return;
   cacheHome = home; cache.clear(); saved = '';
@@ -336,6 +336,22 @@ export function readThinJobs(
       (state === 'working' ? word(s.reason) : null) ||
       '';
     addFile('report.md', 'report', report);
+    const qd = s.quiet_decision && typeof s.quiet_decision === 'object' && !Array.isArray(s.quiet_decision)
+      ? (s.quiet_decision as Record<string, unknown>)
+      : null;
+    const quietDecision: OwnerWorker['quietDecision'] =
+      qd &&
+      (qd.choice === null || typeof qd.choice === 'string') &&
+      (qd.probability === null || (typeof qd.probability === 'number' && Number.isFinite(qd.probability))) &&
+      typeof qd.action === 'string' &&
+      qd.action.trim()
+        ? {
+            choice: typeof qd.choice === 'string' ? qd.choice : null,
+            probability: typeof qd.probability === 'number' ? qd.probability : null,
+            action: qd.action.trim(),
+            ...(typeof qd.reason === 'string' && qd.reason.trim() ? { reason: qd.reason.trim() } : {}),
+          }
+        : undefined;
     const worker: OwnerWorker = {
       files,
       sessionFile,
@@ -345,6 +361,7 @@ export function readThinJobs(
       harness: word(s.harness) ?? word(job.harness) ?? 'pi',
       task: title,
       ...(briefTitle ? { briefTitle } : {}),
+      ...(quietDecision ? { quietDecision } : {}),
       state,
       startedAt: when(s.started_at) ?? created,
       settledAt,

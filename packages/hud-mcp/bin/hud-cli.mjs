@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
+import { decideQuietJob, extractFailureScreenLine } from '../dist/packages/hud-mcp/src/quiet-decision.js';
 
 const dir = fs.realpathSync(process.argv[2]);
 const bundled = fileURLToPath(new URL('..', import.meta.url));
@@ -231,6 +232,14 @@ try {
   let quietSince = null;
   let quietNoticed = false;
   let skipQuiet = false;
+  let quietQuestions = 0;
+  let reportPromptSent = false;
+  const escalateQuiet = (quietDecision) => {
+    if (!write({ state: 'waiting_orchestrator', blocked: false, reason: 'quiet without a report; hud_send to continue or hud_close to stop', quiet_decision: quietDecision })) return false;
+    notify('quiet without a report; hud_send to continue or hud_close to stop');
+    quietNoticed = true;
+    return true;
+  };
   const pollMs = graceMs < 5000 ? Math.max(50, Math.min(200, graceMs || 50)) : 5000;
   for (;;) {
     if (watcherSettled() || stopped()) {
@@ -246,11 +255,77 @@ try {
         const remaining = busy ? Infinity : quietSince + graceMs - Date.now();
         if (remaining <= 0) {
           if (!quietNoticed) {
-            if (!write({ state: 'waiting_orchestrator', blocked: false, reason: 'quiet without a report; hud_send to continue or hud_close to stop' })) break;
-            notify('quiet without a report; hud_send to continue or hud_close to stop');
-            quietNoticed = true;
+            const paneRead = herdr(['pane', 'read', pane, '--source', 'recent']).body?.result?.read?.text;
+            const paneText = typeof paneRead === 'string' ? paneRead : '';
+            const minutesQuiet = Math.max(0, Math.round((Date.now() - quietSince) / 60000));
+            const decision =
+              quietQuestions >= 3
+                ? { choice: null, probability: null, action: 'needs-human', reason: 'max-questions', asked: false }
+                : await decideQuietJob({
+                    hudHome,
+                    jobId: job.job,
+                    role: job.role,
+                    agent: cli.agent,
+                    jobState: current.state,
+                    backgroundChildAlive: hasNewDescendant(turnDescendants),
+                    minutesQuiet,
+                    paneText,
+                    reportPromptSent,
+                    questionIndex: quietQuestions + 1,
+                  });
+            if (decision.asked) quietQuestions += 1;
+            if (watcherSettled() || stopped()) {
+              if (stopped()) leave();
+              break;
+            }
+            if (hasReport()) continue;
+            const quietDecision = {
+              choice: decision.choice,
+              probability: decision.probability,
+              action: decision.action,
+              ...(decision.reason ? { reason: decision.reason } : {}),
+              at: new Date().toISOString(),
+            };
+            if (decision.action === 'wait') {
+              quietSince = Date.now();
+              if (!write({ state: 'working', blocked: false, reason: 'turn ended, no report yet', quiet_decision: quietDecision })) break;
+              timeout = Math.min(graceMs || 1, graceMs < 5000 ? pollMs : 5000);
+            } else if (decision.action === 'prompt-report') {
+              reportPromptSent = true;
+              const prompt = `Write your report to ${output} now; if work remains, finish it first.`;
+              const sent = herdr(['agent', 'prompt', name, prompt]);
+              if (sent.code !== 0) {
+                if (agentMissing()) {
+                  leave();
+                  break;
+                }
+                if (!escalateQuiet({ ...quietDecision, action: 'needs-human', reason: 'prompt-failed' })) break;
+              } else {
+                turnDescendants = descendants(current.pid);
+                turnEnded = false;
+                quietSince = null;
+                quietNoticed = false;
+                skipQuiet = false;
+                if (!write({ state: 'working', blocked: false, reason: null, quiet_decision: quietDecision })) break;
+                continue;
+              }
+            } else if (decision.action === 'fail') {
+              const reason = recordFailureExhaustion(
+                hudHome,
+                bundled,
+                dir,
+                job,
+                decision.failReason || extractFailureScreenLine(paneText)
+              ).reason;
+              if (!write({ quiet_decision: quietDecision })) break;
+              finish('failed', reason, false);
+              process.exitCode = 1;
+              break;
+            } else {
+              if (!escalateQuiet(quietDecision)) break;
+            }
           }
-          timeout = graceMs < 5000 ? pollMs : sliceMs;
+          if (quietNoticed) timeout = graceMs < 5000 ? pollMs : sliceMs;
         } else {
           if (current.state !== 'working' || current.blocked || current.reason !== 'turn ended, no report yet') {
             if (!write({ state: 'working', blocked: false, reason: 'turn ended, no report yet' })) break;
