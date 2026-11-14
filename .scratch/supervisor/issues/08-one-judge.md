@@ -30,14 +30,25 @@ Patching each path (04–07) keeps the inference; this ticket removes it.
 
 **Who:** imp (agy) · **Size:** net negative or about the same as today (the nested waits go) · **Blocked by:** none
 
-**Status:** ready-for-agent (design: `.scratch/supervisor/design-08.md`, oracle; slices: judge → event shell → edges → real check)
+**Status:** resolved (design: `.scratch/supervisor/design-08.md`, oracle; slices: judge → event shell → edges → real check)
 
-- [ ] Table test of `judge` covering every row above
-- [ ] Fake-herdr test of today's sequences: (a) report written while still `working`, then a long summary, then
+- [x] Table test of `judge` covering every row above
+- [x] Fake-herdr test of today's sequences: (a) report written while still `working`, then a long summary, then
       `done` → `idle_grace` with the report, never "quiet"; (b) tests running in the background with herdr `done` → still
       `working`, then the report → settled; (c) herdr flapping `working`/`done` every second → one settle, no notices;
       (d) `hud_send` in `idle_grace` → `working` with a new baseline; a report rewritten then settles again
-- [ ] herdr errors for 60 s with the pid alive → still `working`; pid gone → `failed`; pid gone with a new report → `closed`
-- [ ] Supervisor killed with the worker alive → `waiting_orchestrator`; both gone → `failed`
-- [ ] At rest for 60 s (fake): zero spawns, zero STATUS writes
-- [ ] Real check by the orchestrator (incl. `strace -c` 60 s at rest): an agy imp writes its report and then prints a summary → `idle_grace` with no notice
+- [x] herdr errors for 60 s with the pid alive → still `working`; pid gone → `failed`; pid gone with a new report → `closed`
+- [x] Supervisor killed with the worker alive → `waiting_orchestrator`; both gone → `failed`
+- [x] At rest for 60 s (fake): zero spawns, zero STATUS writes
+- [x] Real check by the orchestrator (incl. `strace -c` 60 s at rest): an agy imp writes its report and then prints a summary → `idle_grace` with no notice
+
+## Comment (orchestrator, 2026-11-14)
+
+Landed 4ffe4d7b + d880ee7b; fix 874411c0. Real agy run 1 stayed `working` 10 min after its report: herdr pushes
+`pane.agent_status_changed` (dotted) and the shell matched `pane_agent_status_changed`, so every push was dropped;
+the fake herdr used the underscore form. Fixed in the commit "match herdr's dotted push names", plus the 30 s tick now
+re-reads status once (one socket request), with a missed-push regression test (fails without the fix).
+Run 2 (agy hydrogen high, `sleep 150` in the background, report then a ten-sentence summary): `working` through the
+background command, report 14:18:38Z, `idle_grace` 14:19:03Z, no quiet decision, two STATUS writes in total.
+No strace on this machine; /proc instead: at rest 60 s → 0 CPU ticks, 24 reads / 9 writes, no children; whole active
+run (~4 min) → 5 CPU ticks.
