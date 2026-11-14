@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import { ticketFixture, ticketFrames, ticketVocabulary } from '../fixtures/project-tickets.mjs';
-import { plain, NOW, TREE } from '../fixtures/project-page.mjs';
+import { plain, onPage, NOW, TREE } from '../fixtures/project-page.mjs';
 import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
@@ -108,7 +108,7 @@ test('completed feature starts folded; Enter/o toggle it using existing Project 
   frame = f.render(120, 'en', press(frame, 'enter').state);
   assert.doesNotMatch(plain(frame).join('\n'), /Home lanes/);
 });
-test('Enter and raw o open the exact ticket file via the existing action and a fake herdr tab', async (t) => {
+test('Enter on a ticket shows its checklist and latest comment in the panel, a second Enter folds it; raw o opens the file in a fake herdr tab', async (t) => {
   const f = await fixture(t), log = join(f.root, 'open.jsonl'), bin = join(f.root, 'bin');
   fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}
 import fs from 'node:fs';
@@ -117,11 +117,28 @@ fs.appendFileSync(process.env.OPEN_LOG, JSON.stringify(args) + '\\n');
 const operation = args.slice(0, 2).join(' ');
 console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace_id: 'w4E'}} : {root_pane: {pane_id: 'w4E:p3'}}}));
 `, { mode: 0o700 });
-  const frame = f.render(120, 'en', 'tickets'), decoder = new WorkbenchInputDecoder('workboard');
-  frame.state.projectCursor = frame.workboard.rows.find((r) => r.files?.[0] === f.paths.working).item;
-  for (const raw of ['\r', 'o']) {
-    const input = decoder.push(Buffer.from(raw))[0];
-    const result = handleMonitorInput(frame.state, input, { tree: TREE, frame, nowMs: NOW, standalone: true });
+  const decoder = new WorkbenchInputDecoder('workboard'), input = (raw) => decoder.push(Buffer.from(raw))[0];
+  const send = (frame, raw) => handleMonitorInput(frame.state, input(raw), { tree: TREE, frame, nowMs: NOW, standalone: true });
+  const ticketRow = (frame) => frame.workboard.rows.find((r) => r.files?.[0] === f.paths.working);
+  let frame = f.render(80, 'en', 'tickets');
+  assert.doesNotMatch(plain(frame).join('\n'), /Criterion|first criterion landed/, 'a ticket starts closed');
+  frame.state.projectCursor = ticketRow(frame).item;
+  const before = plain(frame);
+  const opened = send(frame, '\r');
+  assert.equal(opened.action, undefined, 'Enter shows the ticket here; it does not open an editor');
+  frame = f.render(80, 'en', opened.state);
+  const text = plain(frame).join('\n');
+  assert.match(text, /02 Home lanes.*1\/4\n +✓ Criterion 1\n +○ Criterion 2\n +○ Criterion 3\n +○ Criterion 4\n +comment +The first criterion landed; the others wait for a synthetic/);
+  assert.match(text, /decision that has not come yet\./, 'the latest comment, not the first');
+  assert.doesNotMatch(text, /An earlier note/);
+  assert.equal(frame.state.projectCursor, ticketRow(frame).item, 'the cursor stays on the ticket');
+  // Every row of the open ticket belongs to it: a click on its checklist folds it again, as the next Enter does.
+  assert.ok(frame.workboard.rows.filter((r) => r.item === frame.state.projectCursor).length >= 7);
+  frame = f.render(80, 'en', send(frame, '\r').state);
+  assert.deepEqual(plain(frame), before);
+  // o opens the exact file, closed or open, through the existing action and the herdr tab.
+  for (const shown of [frame, f.render(80, 'en', opened.state)]) {
+    const result = send(shown, 'o');
     assert.deepEqual(result.action, { type: 'open-files', files: [f.paths.working] });
     await openEditorPane(result.action.files, { ...f.env, PATH: `${bin}:${dirname(process.execPath)}`, HERDR_PANE_ID: 'w4E:p2', OPEN_LOG: log });
   }
@@ -132,6 +149,15 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
     ['pane', 'run', 'w4E:p3', `vim '${f.paths.working}'; exit`],
   ]);
   assert.deepEqual(calls.slice(3), calls.slice(0, 3));
+  // A ticket with no checklist says so; a long title keeps its row and the status moves under it at 40 columns.
+  const bare = f.render(40, 'en', onPage('tickets', { projectFolded: new Set(['agents', 'ticket:native-tree:06-polish.md']) }));
+  assert.match(plain(bare).join('\n'), /● 06 Polish +ready · triaging +0\/0\n +no checklist/);
+  assert.match(plain(bare).join('\n'), /04 Settings cleanup +0\/2\n +blocked by 02, 03/);
+  // Feature rows carry a done/total meter: thin, as full as the done share (a started one never empty, an unfinished one never full).
+  const meters = plain(f.render(120, 'en', 'tickets')).join('\n');
+  assert.match(meters, /native-tree +━─{9} 1\/12 done/);
+  assert.match(meters, /▸ retired-tools +━{10} 2\/2 done/);
+  assert.match(plain(f.render(40, 'en', 'tickets')).join('\n'), /native-tree +━───── 1\/12\n/, 'six cells and no word at 40 columns');
 });
 test('Home collects no tickets; warm signatures read/parse nothing, changes unblock and reorder without cached overlays', async (t) => {
   const f = await fixture(t), calls = observe(t);

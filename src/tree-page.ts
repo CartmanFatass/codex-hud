@@ -1,5 +1,7 @@
 import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pane.js';
-import { ProjectCollector, projectShown, type ProjectSnapshot } from './collectors/project-board.js';
+import { ProjectCollector, projectShown } from './collectors/project-board.js';
+import { ProjectVisits } from './collectors/project-visits.js';
+import { projectList } from './roles/projects.js';
 import { pathToFileURL } from 'node:url';
 import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
 import { theme } from './render/colors.js';
@@ -546,8 +548,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
   const parser = new RolloutParser(40);
   const worktreeCollector = new WorktreeCollector();
-  const projectCollector = new ProjectCollector(HUD_CWD_REAL, jobPipeline.home);
-  let project: ProjectSnapshot | undefined;
+  // One collector per project the tab has shown (this one's always); Home reads only the panel's own.
+  const visits = new ProjectVisits(HUD_CWD_REAL, (root) => new ProjectCollector(root, jobPipeline.home));
+  let projects = projectList(jobPipeline.home, HUD_CWD_REAL);
+  let projectsAt = Date.now();
+  const shownRoot = () => projects.find((p) => p.root === state.projectRoot)?.root ?? HUD_CWD_REAL;
   // Typing here goes to Codex; with no Codex pane to give it to (the panel
   // run on its own), the keys drive the panel as they used to.
   const mainPane = STANDALONE_PANEL ? undefined : resolveMainPane();
@@ -718,8 +723,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           embedded: !STANDALONE_PANEL,
           state,
           worktrees,
-          project,
-          projectName: path.basename(HUD_CWD_REAL),
+          project: visits.snapshot(state.mainTab === 'project' ? shownRoot() : HUD_CWD_REAL),
+          projectName: projects.find((p) => p.root === shownRoot())?.name ?? path.basename(HUD_CWD_REAL),
+          projects,
           error,
           nowMs,
           hud: hud ? { ...hud, delegation: panelDelegation } : hud,
@@ -1014,13 +1020,19 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       decisionLabels.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       homeRecommendation.update(displayBoard());
-      const projectFacts = await projectCollector.collect(
-        projectShown(state, Boolean(settingsPage)) ? true
-          : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
+      // Only the shown project is collected; the list of projects is read again at most every five seconds.
+      const shown = projectShown(state, Boolean(settingsPage));
+      if (shown && Date.now() - projectsAt >= 5000) {
+        projectsAt = Date.now();
+        projects = projectList(jobPipeline.home, HUD_CWD_REAL);
+      }
+      const visit = visits.visit(shown ? shownRoot() : HUD_CWD_REAL);
+      const projectFacts = await visit.collector.collect(
+        shown ? true : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
         jobPipeline.workboard(tree, panelDelegation),
         Date.now()
       );
-      if (projectFacts) project = projectFacts;
+      if (projectFacts) visit.snapshot = projectFacts;
       error = settingsError || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });

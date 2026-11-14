@@ -37,6 +37,8 @@ export interface ProjectSnapshot {
   browser: boolean;
   roleCount: number;
   git?: WorktreeStatus;
+  /** Linked worktrees besides the main one; with `git`, one Git read per five seconds. */
+  worktreeCount?: number;
   ladder: { ids: string[]; current?: string };
   slices: (ProjectItem & { jobId?: string; role?: string; asking?: boolean; drift?: string; ledgerState?: string })[];
   ledger: LedgerSlice[];
@@ -305,6 +307,7 @@ export class ProjectCollector {
       if (at !== undefined) row.at = at;
     }
     out.git = this.git;
+    out.worktreeCount = this.git ? this.worktrees.length : undefined;
     out.last = this.last;
     const canonical = (path: string) => { try { return fs.realpathSync(path); } catch { return resolve(path); } };
     const root = canonical(this.cwd);

@@ -36,6 +36,23 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.projectScroll = kept?.scroll ?? 0;
     next.boardRevealed = kept?.cursor;
   };
+  // Another project for the tab: its pages start fresh (cursor, scroll, folds), the open page stays open.
+  const useProject = (root?: string) => {
+    if (root === next.projectRoot) return;
+    next.projectRoot = root;
+    next.projectSaved = {};
+    // Resting on the switch row, the next Enter or click steps again.
+    if (next.projectCursor !== 'project:switch') next.projectCursor = undefined;
+    next.projectScroll = 0;
+    next.projectFolded = undefined;
+    next.boardRevealed = undefined;
+  };
+  const cycleProject = (step: number) => {
+    const list = frame?.projects;
+    if (!list) return;
+    const at = Math.max(0, list.findIndex((p) => p.root === next.projectRoot)), to = list[(at + step + list.length) % list.length];
+    useProject(to === list[0] ? undefined : to.root);
+  };
   const back =
     input.type === 'mouse' &&
     input.button === 'left' &&
@@ -97,8 +114,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // A hub entry may span two rows (the bar); the cursor visits it once.
     const rows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i),
       at = rows.findIndex((r) => r.item === next.projectCursor);
-    const activate = (row = rows[at]) => {
-      if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
+    // `o` opens a row's file even where Enter folds (a ticket, a long Next bullet); folds with no file toggle on either.
+    const activate = (row = rows[at], open = false) => {
+      if (open && row?.files) return { type: 'open-files' as const, files: row.files };
+      if (row?.item === 'project:switch') cycleProject(1);
+      else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
       else if (row?.item?.startsWith('project:fold:')) {
         const folded = new Set(projectFoldedSet(next)), id = row.item.slice(13);
         if (!folded.delete(id)) folded.add(id);
@@ -114,12 +134,16 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           const again = row.item === next.projectCursor;
           next.projectCursor = row.item;
           // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
-          return result(again || row.item.startsWith('project:page:') ? activate(row) : undefined);
+          return result(again || row.item.startsWith('project:page:') || row.item === 'project:switch' ? activate(row) : undefined);
         }
       }
       return result();
     }
-    if (['enter', 'activate', 'open-session'].includes(key)) return result(activate());
+    if (['enter', 'activate', 'open-session'].includes(key)) return result(activate(undefined, key === 'open-session'));
+    if (key === 'project-prev' || key === 'project-next') {
+      cycleProject(key === 'project-next' ? 1 : -1);
+      return result();
+    }
     if (['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
       const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
@@ -204,6 +228,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const id = item.slice('home-progress:'.length);
     home();
     next.mainTab = 'project';
+    // Home's block is the panel's own project's.
+    useProject(undefined);
     if (id === 'progress') return goProject('progress');
     // A ticket row opens its feature, unfolded, on the Tickets page.
     goProject('tickets', `project:fold:${id}`);

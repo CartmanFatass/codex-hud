@@ -23,6 +23,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['↑ ↓', 'move'],
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
+      ['[ ]', 'switch project (Project)'],
       ['v', 'inspect: details and files'],
       ['a', 'show / hide older jobs and decisions (Home)'],
       ['n N', 'next / previous trouble (Home)'],
@@ -53,7 +54,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
           boardRow(fit(keys[i]?.text ?? '', half) + '    ' + fit(marks[i]?.text ?? '', width - half - 4))
         );
   const notes = [
-    'In Project ⏎ opens a page, then a file or fold there; Esc goes back',
+    'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
     'In the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
@@ -79,6 +80,7 @@ export function renderWorkboardFrame(
     lines: Array.from({ length: height }, () => fit('', width)),
     panes: [],
     controls: [],
+    ...((input.projects?.length ?? 0) > 1 ? { projects: input.projects } : {}),
   };
   if (!width || !height) return frame;
   const help = state.help,
@@ -102,7 +104,7 @@ export function renderWorkboardFrame(
       : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}${target?.kind === 'decision' ? ' ' + (lane?.decisions.find((d) => d.id === target.decisionId)?.evidence[0]?.relativePath.match(/q\d+/)?.[0] ?? '') : ''}`;
   if (sub || page) {
     // An open Project page has no tab row: its crumb returns to the hub, from anywhere on the row.
-    const at = page && projectCrumb(page, input.project, width, now);
+    const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
     frame.lines[0] = subTopRow(at?.crumb ?? crumb, at?.right ?? '', width);
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width: page ? width : 2 });
   } else {
@@ -133,7 +135,7 @@ export function renderWorkboardFrame(
       : inspector
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
         : project
-          ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName)
+          ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects)
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
@@ -219,7 +221,7 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : project ? (page ? '↑↓ move  ⏎ open  esc back  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
+        : project ? (page ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
   if (height > 1)
     frame.lines[height - 1] = footRow(

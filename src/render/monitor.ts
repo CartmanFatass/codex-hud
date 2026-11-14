@@ -43,6 +43,8 @@ export interface MonitorState {
   mainTab?: 'home' | 'project';
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
+  /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
+  projectRoot?: string;
   projectCursor?: string;
   projectScroll?: number;
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
@@ -126,6 +128,8 @@ export interface MonitorFrame {
   panes: MonitorRect[];
   controls: MonitorControl[];
   state: MonitorState;
+  /** Set when there is more than one project to switch between: the panel's own first. */
+  projects?: { root: string; name: string }[];
   helpPage?: { count: number; total: number };
 }
 export interface MonitorData {
@@ -133,8 +137,10 @@ export interface MonitorData {
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
   project?: ProjectSnapshot;
-  /** The project's own name, for the hub's top row. */
+  /** The shown project's own name, for the hub's top row. */
   projectName?: string;
+  /** The projects `[` and `]` cycle through (the panel's own first); one or none means no switch. */
+  projects?: { root: string; name: string }[];
   prefix?: string;
   state: MonitorState;
   width: number;

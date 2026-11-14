@@ -81,14 +81,46 @@ export async function projectFixture(root) {
   const collector = new ProjectCollector(cwd, hud, env, home);
   const data = await collector.collect(true, board, NOW);
   // `state` may be a page name ('progress', 'tickets', 'tree', 'docs', 'control') or a full state; none is the hub.
-  const render = (width, lang = 'en', state = undefined, height = 56, snapshot = data, modelEnabled = true, icons = 'unicode', theme = 'none') => {
+  const render = (width, lang = 'en', state = undefined, height = 56, snapshot = data, modelEnabled = true, icons = 'unicode', theme = 'none', extra = {}) => {
     state = typeof state === 'string' ? onPage(state) : state ?? onPage();
     const display = setDisplayConfig({ theme, icons }), previous = setLanguage(lang);
-    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state, width, height, nowMs: NOW, modelEnabled }); }
+    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state, width, height, nowMs: NOW, modelEnabled, ...extra }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
-  return { cwd, hud, home, env, put, board, collector, data, render, job, linked, sliceJob };
+  return { cwd, hud, home, env, put, board, collector, data, rich: richProgress(data), render, job, linked, sliceJob };
 }
+/** Progress material the base fixture has too little of, all synthetic: a ledger across milestones in ledger order (one row
+ *  with no milestone, one with its commit first, one with no commit), long Next bullets, a job no slice shows. */
+export function richProgress(data) {
+  const day = 864e5, path = data.statePath;
+  const row = (id, state, milestone, text, age, commit) => ({ id, state, milestone, text, ...(commit ? { commit } : {}), ...(age === undefined ? {} : { at: NOW - age * day }) });
+  const ledger = [
+    row('BAR-LINES', 'accepted', 'M3', 'one-line bars on every client (a1b2c3d4)', 30, 'a1b2c3d4'),
+    row('PANEL-KEYS', 'accepted', 'M3', 'whole key hints and readable tab labels (b2c3d4e5, c3d4e5f6)', 29, 'c3d4e5f6'),
+    row('SKILL-MOVE', 'accepted', '—', 'old skills retired to the private config (d4e5f6a7)', 28, 'd4e5f6a7'),
+    row('ONE-PAGE', 'accepted', 'M3b', 'Home and Work on one page (e5f6a7b8)', 20, 'e5f6a7b8'),
+    row('NATIVE-ROWS', 'try', 'M3b', 'native rows keep one order (f6a7b8c9)', 19, 'f6a7b8c9'),
+    row('REVIEW-ONE', 'accepted', 'M4', 'the whole-project review, changes required (a7b8c9d0)', 8, 'a7b8c9d0'),
+    row('SENTENCE-CUT', 'try', 'M4', 'job sentences are cut at a word, never between a name and its flag (b8c9d0e1)', 7, 'b8c9d0e1'),
+    row('WATCH-LINK', 'try', 'M4', 'c9d0e1f2 · the watcher survives a link loop', 5, 'c9d0e1f2'),
+    row('NO-HASH', 'try', 'M4', 'landed with no commit in its text'),
+    row('PAGE-ONE', 'working', '0.1.3', 'the hub and one page per section'),
+    row('PAGE-TWO', 'blocked', '0.1.3', 'waits for page one'),
+    row('DATA-ONE', 'try', '0.1.3', 'ledger history, live jobs and ticket detail (d0e1f2a3)', 1, 'd0e1f2a3'),
+    row('LATER-ONE', 'todo', '0.1.3', 'a later slice'),
+  ];
+  const counts = { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 };
+  for (const r of ledger) counts[r.state]++;
+  const long = 'A long bullet that runs over two rows even at one hundred and twenty columns, because it keeps going with one detail after another, '
+    + 'and then some more words about what should happen next, and after that, and finally what the owner decides at the end of it all';
+  return { ...data, ledger, counts, summary: 'Synthetic hub work in two worktrees', ladder: { ids: [], current: '0.1.3' },
+    slices: [{ label: 'PAGE-ONE', value: 'the hub and one page per section', path, ledgerState: 'working' },
+      { label: 'PAGE-TWO', value: 'waits for page one', path, ledgerState: 'blocked' }],
+    active: [{ jobId: 'j00000000000000aa', role: 'imp', state: 'working', title: 'Tidy the synthetic docs in the main checkout', at: NOW - 5 * 60000, asking: false }],
+    next: ['A short bullet', long, 'Another short bullet that still fits in two rows at forty columns', 'Last: ' + long].map((value) => ({ label: '', value, path })) };
+}
+/** The projects a panel can switch between, for the hub's switch row. */
+export const PROJECTS = [{ root: '/synthetic/demo-project', name: 'demo-project' }, { root: '/synthetic/second-project', name: 'second-project' }, { root: '/synthetic/third', name: 'third' }];
 /** A Project tab state: the hub, or one page of it. */
 export const onPage = (projectPage, extra) => ({ ...initialMonitorState(), mainTab: 'project', projectPage, projectFolded: new Set(['agents']), ...extra });
 export const plain = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd());
@@ -101,6 +133,13 @@ export function projectFrames(f) {
     for (const page of PAGES.filter((p) => p !== 'tickets')) for (const width of [40, 120])
       frames[`${page}-${width}-${lang}`] = plain(f.render(width, lang, page, 40));
   }
+  const open = onPage('progress', { projectFolded: new Set(['agents', 'try:M3b', 'done:M4', 'done:M3', 'done:', 'next:1']) });
+  for (const lang of ['en', 'zh']) for (const width of [40, 120]) frames[`progress-rich-${width}-${lang}`] = plain(f.render(width, lang, 'progress', 64, f.rich));
+  frames['progress-rich-open-40-en'] = plain(f.render(40, 'en', open, 80, f.rich));
+  frames['progress-rich-40-text'] = plain(f.render(40, 'en', 'progress', 64, f.rich, true, 'text'));
+  const second = { projects: PROJECTS, projectName: PROJECTS[1].name };
+  for (const lang of ['en', 'zh']) frames[`hub-switch-40-${lang}`] = plain(f.render(40, lang, onPage(undefined, { projectRoot: PROJECTS[1].root }), 24, f.data, true, 'unicode', 'none', second));
+  frames['progress-switch-40-en'] = plain(f.render(40, 'en', onPage('progress', { projectRoot: PROJECTS[1].root }), 12, f.data, true, 'unicode', 'none', second));
   frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
   frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
   return frames;

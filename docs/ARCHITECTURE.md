@@ -188,6 +188,11 @@ Tickets come from `.scratch/<feature>/issues/<NN>-<slug>.md`, at most 16 feature
 Jobs enrich ticket rows but cannot complete tickets. Project's job join reads
 job/STATUS bodies in the newest 64 directories; only matching tickets need brief bodies.
 
+The panel owns one `ProjectCollector` per project the Project tab has shown
+(`ProjectVisits`: at most four, its own never dropped, the oldest other one first) and
+collects only the shown one; the chosen root is `MonitorState.projectRoot`, so it
+survives the self-reload, and Home reads the panel's own collector only.
+
 Project and `WorktreeCollector` use gated asynchronous Git reads; Changes runs only
 when focused and probes worktrees round-robin. Repository commands/filters and lazy
 fetching must not execute just to draw status. Git failure is unknown, never clean.

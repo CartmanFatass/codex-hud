@@ -135,6 +135,8 @@ export class WorkbenchInputDecoder {
                   '1': 'home-tab',
                   '2': 'project-tab',
                   '4': 'inspect',
+                  '[': 'project-prev',
+                  ']': 'project-next',
                   v: 'inspect',
                   ' ': 'inspect',
                 } as Record<string, string>

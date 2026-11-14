@@ -1,6 +1,8 @@
 /** Local to-tickets fixtures; all files, jobs and times are synthetic. */
 import { join } from 'node:path';
-import { projectFixture, NOW, plain } from './project-page.mjs';
+import { projectFixture, NOW, plain, onPage } from './project-page.mjs';
+export const TICKET_COMMENT = 'The first criterion landed; the others wait for a synthetic owner decision that has not come yet.';
+export const OPEN_TICKET = 'ticket:native-tree:02-home-lanes.md';
 export const ticketVocabulary = [
   ['07', 'resolved', 'done', [' '], 'None'],
   ['08', 'wontfix', 'dropped', ['x'], 'None'],
@@ -12,13 +14,13 @@ export const ticketVocabulary = [
 ];
 export async function ticketFixture(root) {
   const f = await projectFixture(root);
-  const issue = (feature, number, slug, title, status = 'ready-for-agent', blocked = 'None (can start immediately)', boxes = [' '], age = 1) => {
+  const issue = (feature, number, slug, title, status = 'ready-for-agent', blocked = 'None (can start immediately)', boxes = [' '], age = 1, comment = '') => {
     const path = join(f.cwd, '.scratch', feature, 'issues', `${number}-${slug}.md`);
-    f.put(path, `# ${number}: ${title}\n\n**What to build:** A synthetic vertical slice.\n\n**Blocked by:** ${blocked}\n\n**Status:** ${status}\n\n${boxes.map((x, i) => `- [${x}] Criterion ${i + 1}`).join('\n')}\n`, age);
+    f.put(path, `# ${number}: ${title}\n\n**What to build:** A synthetic vertical slice.\n\n**Blocked by:** ${blocked}\n\n**Status:** ${status}\n\n${boxes.map((x, i) => `- [${x}] Criterion ${i + 1}`).join('\n')}\n${comment ? `\n## Comments\n\n- An earlier note.\n- ${comment}\n` : ''}`, age);
     return path;
   };
   const paths = {
-    working: issue('native-tree', '02', 'home-lanes', 'Home lanes', 'ready-for-agent', 'None (can start immediately)', ['x', ' ', ' ', ' ']),
+    working: issue('native-tree', '02', 'home-lanes', 'Home lanes', 'ready-for-agent', 'None (can start immediately)', ['x', ' ', ' ', ' '], 1, TICKET_COMMENT),
     ready: issue('native-tree', '03', 'inspector', 'Inspector', 'ready-for-agent', 'None (can start immediately)', [' ', ' ', ' ']),
     number: issue('native-tree', '04', 'settings', 'Settings cleanup', 'ready-for-agent', '02, 03', [' ', ' ']),
     title: issue('native-tree', '05', 'shortcuts', 'Shortcuts', 'ready-for-agent', 'Inspector', [' ']),
@@ -44,6 +46,8 @@ export function ticketFrames(f) {
   for (const lang of ['en', 'zh']) for (const width of [40, 80, 120]) {
     frames[`tickets-${width}-${lang}`] = plain(f.render(width, lang, 'tickets'));
     if (width !== 80) frames[`hub-${width}-${lang}`] = plain(f.render(width, lang, undefined, f.data, 'none', 24));
+    // A ticket opened: its checklist and latest comment under it.
+    if (width !== 80) frames[`ticket-open-${width}-${lang}`] = plain(f.render(width, lang, onPage('tickets', { projectFolded: new Set(['agents', OPEN_TICKET]) })));
   }
   return frames;
 }

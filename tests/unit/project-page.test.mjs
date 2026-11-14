@@ -29,6 +29,8 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   const f = await fixture(t);
   assert.deepEqual(projectFrames(f), expected);
   assert.equal(f.data.git.branch, 'synthetic-project');
+  assert.equal(f.data.worktreeCount, 2);
+  assert.match(plain(f.render(120)).join('\n'), /Working tree +synthetic-project · \d+ changed · 2 worktrees/);
   assert.match(f.data.last.text, /Synthetic Project baseline/);
   assert.equal(f.data.waiting.length, 2);
   assert.match(f.data.waiting[1].value, /after trying the synthetic setup/);
@@ -91,8 +93,9 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
         /NEVER_RENDER|unrelated bullet|Tickets|工单|INVISIBLE|M5|NOT-A-MILESTONE/
       );
       assert.match(text(pages.tickets), lang === 'en' ? /Project › Tickets\n\n  none/ : /项目 › 工单\n\n  无/);
-      assert.match(text(pages.progress), /\[M1\]  \[M2\]  \[M3\]  \(M3b\)  M4/);
-      assert.match(text(pages.progress), /\+1\b/);
+      // Chips are the ledger's milestones in ledger order; the current one is marked.
+      assert.match(text(pages.progress), /\(M3b\)  M4  M3/);
+      assert.match(text(pages.progress), lang === 'en' ? /^Next ─+ 5$/m : /^下一步 ─+ 5$/m);
       if (width >= 80) {
         assert.match(text(pages.progress), /Which synthetic option\?/);
         assert.match(text(pages.control), /unparseable JSON/);
@@ -522,17 +525,18 @@ test('polish: Next text aligns without filename tails and slice states use the b
     for (const lang of ['en', 'zh']) {
       const frame = f.render(width, lang, 'progress'),
         next = frame.workboard.rows.filter((r) => /:next:\d+$/.test(r.item ?? ''));
-      assert.equal(next.length, 4);
+      // Every bullet is one row here (they fit), after a two-cell bullet mark and no filename tail; one that fits has no fold,
+      // so Enter and o both open STATE.md.
+      assert.equal(next.length, 5);
       for (const [i, row] of next.entries()) {
-        const text = stripAnsi(row.text),
-          start = text.indexOf(f.data.next[i].value);
-        assert.equal(visualLength(text.slice(0, start)), 13);
+        const text = stripAnsi(row.text);
+        assert.equal(text.indexOf(f.data.next[i].value), 4);
+        assert.match(text, /^  → /);
         assert.doesNotMatch(text, /STATE\.md/);
         frame.state.projectCursor = row.item;
         for (const key of ['enter', 'open-session'])
           assert.deepEqual(press(frame, key).action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
       }
-      assert.ok(frame.workboard.rows.some((r) => /^ {13}\+1\s*$/.test(stripAnsi(r.text))));
     }
   const coloured = f.render(120, 'en', 'progress', 56, f.data, true, 'unicode', 'mocha');
   const bar = coloured.workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text))).text;
@@ -627,7 +631,7 @@ test('slice lines use the same Home worker fact/model and keep hidden jobs avail
   data = await f.collector.collect(true, f.board, NOW + 2);
   assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.cwd, 'docs/handoff/STATE.md'));
   const frame = f.render(120, 'en', 'progress', 56, data);
-  for (const suffix of ['summary', 'chips:0', 'slice:0']) {
+  for (const suffix of ['summary', 'chips', 'slice:0']) {
     frame.state.projectCursor = frame.workboard.rows.find((r) => r.item?.endsWith(suffix)).item;
     assert.deepEqual(press(frame, 'enter').action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
   }

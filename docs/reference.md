@@ -246,11 +246,11 @@ Tickets page, at that feature.
 ## Project
 
 Project is a hub with one page per section. The hub's top row names the project
-(the panel's directory name), then Waiting for you (STATE's waiting items, folds with
+(the panel's directory name; see Switching projects below), then Waiting for you (STATE's waiting items, folds with
 Enter), then one row per page with a one-line summary: **Progress** (milestone,
 working, to try, blocked; a stacked bar under it), **Tickets** (done/total, working,
 blocked; absent when the project has no tickets), **Working tree** (branch, changed,
-ahead/behind, editing jobs), **Docs** (spec milestone, newest review) and **Control
+worktrees, ahead/behind, editing jobs), **Docs** (spec milestone, newest review) and **Control
 plane** (roles, keys present, browser). A row too short for its facts drops the last
 ones, never part of one. Enter or one click opens a page; its crumb row
 `‹ Project › Page` replaces the tabs, and Esc or a click on the crumb returns to the
@@ -263,11 +263,26 @@ reviews, roles/convention/instructions and Git/worktrees. No milestone or comple
 is guessed. Key rows contain names/presence only; Browser ✓ means Chrome and
 `jev-ask` exist on PATH, not a running/logged-in browser.
 
-Progress counts STATE's `## Slices` states: working, blocked, try (landed to try),
-todo, accepted, dropped. Milestone chips come from spec §5 and STATE's `Milestone:`.
-Its summary is STATE's Now heading; slice blocks reuse current job-card text.
-Drift marks mean missing/unlisted worktrees or a non-active ledger state, never a
-write back to STATE. Next shows up to four joined bullets.
+**Progress page.** STATE's Now summary (two rows at most), the six-state bar and legend,
+then milestone chips: the milestones of the ledger's second field in ledger order,
+those before the current one (`Milestone:`) in brackets `[M3]`, the current one in
+parentheses `(M4)`, the rest plain; rows with no milestone (`—`) have no chip. Too many
+for two rows: the oldest give way, never the current one. Then four sections:
+
+- **Now**: ledger slices in `working`/`blocked` (drift marks mean a missing or unlisted
+  worktree or a non-active ledger state, never a write back to STATE), each with its
+  job's line from Home's card text, then the project's HUD jobs that have not settled
+  and no slice shows (role, title, age).
+- **Next**: STATE's `## Next`, a bullet at most two rows; Enter on a cut one (`…`) shows
+  all of it, again folds it. A bullet that fits opens STATE.md.
+- **To try**: `try` rows by milestone, newest milestone first and open, the others
+  folded. A row is `ID · date commit` with its text on the rows under it. The date is the
+  ledger row's last hash (7-40 hex) read through the safe Git policy; none when Git
+  does not know it, never guessed.
+- **Done**: `accepted` rows grouped the same way, every group folded; Enter opens one.
+
+Rows wrap onto a second row rather than cut their only line at 40 columns. Enter or `o`
+on a row opens STATE.md; on a fold, Enter folds and `o` folds only where the row has no file.
 
 Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`, at most 16 features ×64 files,
 64 KiB each. Required: matching `# NN: title`, `**Blocked by:**`, `**Status:**`.
@@ -276,9 +291,22 @@ Otherwise unfinished/unresolved dependencies block; no blockers means ready.
 Numbers/titles resolve within that feature; unknown status text stays dim.
 A job with the matching package and ticket number/filename adds role/state/age,
 never completion. The newest-64-directory job lookup is shared with slice blocks.
+**Tickets page**: one row per feature with a done/total meter, Enter folds its tickets;
+Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under
+`## Comments`) under it, a second Enter folds it; `o` opens the ticket file.
 
-On a page Enter/`o` folds a header or opens its file in `$EDITOR` (default vim), in
-a herdr tab that closes with the editor; failed workspace lookup falls back to a
+**Switching projects.** With more than one project the hub's name row is the switch
+(`‹ 2/3 ›`): `[` and `]`, or a click on the row, step through the panel's own project
+and the existing roots in `$HUD_HOME/projects.json` (deduplicated, at most 16). On a
+page `[`/`]` work too and its crumb shows the project's name; its cursor, scroll and
+folds start fresh. The choice belongs to the panel and survives its reload, not
+Settings. Home always stays on the panel's own project, and opening Home's progress block
+returns to it. The panel keeps one collector per visited project (at most four, the
+panel's own never dropped, the oldest other one first) and collects only the shown one.
+A project without STATE.md says `no STATE.md` on Progress; its other pages work.
+
+On a page Enter folds a header, shows a ticket's detail or opens a row's file, and `o`
+opens it in `$EDITOR` (default vim), in a herdr tab that closes with the editor; failed workspace lookup falls back to a
 split. Home and Project retain separate cursor/scroll state. Full Project collection
 runs while the hub or a page is visible, not behind modals; Home reuses only cached
 STATE/ticket reads.
@@ -310,9 +338,10 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 |---|---|
 | `1`, `2`, `3` | Home, Project, Changes summary |
 | Tab/Shift-Tab, Left/Right | Home ⇄ Project |
+| `[`, `]` | Project: previous/next project |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
-| Enter | Expand/collapse card, question, decision or lane; in Project open a page, then a fold or file |
-| `o` | Open question + answer, else report, else brief; native transcript |
+| Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
+| `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |
 | `v`, Space, `4` | Inspector |
 | `a` | Show/hide older jobs and decisions |
 | `n`/`N` | Next/previous trouble |
