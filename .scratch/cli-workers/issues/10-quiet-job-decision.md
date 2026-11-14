@@ -11,8 +11,9 @@ background child is alive, minutes quiet. Options and actions:
   3 questions per job);
 - `finished-no-report` → send the fixed prompt "Write your report to <path> now; if work remains, finish it first."
   once per job, then wait as after any turn;
-- `failed` (error or quota/rate limit on screen) → fail the job with the screen line as reason; quota marks the place
-  exhausted (ROLE-BIND);
+- `failed` (quota/rate limit on screen) → only when the quoted screen line matches the quota regex
+  (`src/roles/exhausted.ts` `isQuotaFailure`): fail the job with that line as reason and mark the place exhausted
+  (ROLE-BIND); a `failed` choice whose line does not match → `needs-human` (owner 2026-11-14);
 - `needs-human` (a terminal prompt, a question, or unclear) → `waiting_orchestrator` with the notice, as 09.
 Below 0.8 probability for the top option, without a key, over the call cap or on any error → `needs-human`. The
 choice, its probability and the action go into STATUS (`quiet_decision`) and show on the card and in the Inspector.
