@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+import { jobRow } from '../../../src/collectors/thin-jobs.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
 import { herdrId } from '../../../src/roles/herdr-run.js';
 import {
@@ -194,7 +195,18 @@ function primary(dir: string): string | null {
 }
 function created(job: Job) {
   const task_dir = directory(job.job);
-  return { job: job.job, task_dir, agent: primary(task_dir) };
+  const { row } = readRow(job);
+  if (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 && row.display_state === 'failed') {
+    return {
+      ok: false,
+      code: 'dispatch_failed',
+      ...row,
+      reason: row.reason ?? 'dispatch failed',
+      task_dir,
+      agent: primary(task_dir),
+    };
+  }
+  return { ...row, task_dir, agent: primary(task_dir) };
 }
 function run(
   command: string,
@@ -650,38 +662,31 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
     return { exit_code: 1, stdout: '', stderr: String(error) };
   }
 }
-function jobStatus(job: Job) {
+function readRow(job: Job) {
   const dir = directory(job.job);
   const file = join(dir, 'STATUS.json');
-  const status = json<{ state?: string; exit_reason?: string | null; error?: string | null }>(file);
-  const state = status?.state ?? (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 ? 'failed' : null);
-  let exit_reason = status?.exit_reason ?? null;
-  if (state === 'failed' && !job.exhaustion_marked && status) {
-    const reasonText = exit_reason || status.error || '';
-    if (reasonText) {
-      const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, reasonText);
-      if (outcome.marked) {
-        job.exhaustion_marked = true;
-        exit_reason = outcome.reason;
-        try {
-          const temp = `${file}.${process.pid}.tmp`;
-          fs.writeFileSync(
-            temp,
-            JSON.stringify({
-              ...status,
-              exit_reason: outcome.reason,
-              ...(status.error ? { error: outcome.reason } : {}),
-            }) + '\n',
-            { mode: 0o600 }
-          );
-          fs.renameSync(temp, file);
-        } catch {
-          /* Ignore transient STATUS.json write error. */
-        }
+  let status = json<Record<string, unknown> & { state?: string; exit_reason?: string | null; error?: string | null }>(file);
+  let row = jobRow(job, status, { dir });
+  if (row.display_state === 'failed' && !job.exhaustion_marked && status && row.reason) {
+    const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, row.reason);
+    if (outcome.marked) {
+      job.exhaustion_marked = true;
+      status = {
+        ...status,
+        exit_reason: outcome.reason,
+        ...(status.error ? { error: outcome.reason } : {}),
+      };
+      try {
+        const temp = `${file}.${process.pid}.tmp`;
+        fs.writeFileSync(temp, JSON.stringify(status) + '\n', { mode: 0o600 });
+        fs.renameSync(temp, file);
+      } catch {
+        /* Ignore transient STATUS.json write error. */
       }
+      row = jobRow(job, status, { dir });
     }
   }
-  return { state, exit_reason };
+  return { row, status };
 }
 function openQuestions(dir: string): string[] {
   const qa = join(dir, 'qa');
@@ -692,7 +697,7 @@ function openQuestions(dir: string): string[] {
 }
 function observation(job: Job) {
   const dir = directory(job.job);
-  const status = jobStatus(job);
+  const { row, status } = readRow(job);
   const report = slice(join(dir, 'report.md'), 65536);
   const questions = openQuestions(dir).map((name) => ({
     id: name.slice(0, -3),
@@ -712,7 +717,11 @@ function observation(job: Job) {
           worker_prompt: job.worker_prompt ?? null,
         }
       : {}),
-    ...status,
+    state: row.state,
+    display_state: row.display_state,
+    reason: row.reason,
+    blocked: row.blocked,
+    exit_reason: typeof status?.exit_reason === 'string' ? status.exit_reason : null,
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
     report_exists: report !== null,
@@ -933,7 +942,20 @@ async function call(name: string, args: Args): Promise<unknown> {
       jobs: jobs()
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .slice(0, 20)
-        .map((job) => ({ job: job.job, role: job.role, state: jobStatus(job).state, created_at: job.created_at })),
+        .map((job) => {
+          const { row } = readRow(job);
+          return {
+            job: row.job,
+            role: row.role,
+            state: row.state,
+            display_state: row.display_state,
+            reason: row.reason,
+            blocked: row.blocked,
+            open_questions: row.open_questions,
+            report_present: row.report_present,
+            created_at: job.created_at,
+          };
+        }),
     };
   if (!tools.some((tool) => tool.name === name)) throw new Error('unknown_tool');
   const id = required(args, 'job');
@@ -947,7 +969,8 @@ async function call(name: string, args: Args): Promise<unknown> {
     const settled = (state: string | null) => ['idle_grace', 'closed', 'failed', 'stopped'].includes(state ?? '');
     const ready = (state: string | null, questions: number) => settled(state) || questions > 0 || Date.now() >= end;
     while (true) {
-      if (Date.now() >= end || ready(jobStatus(job).state, openQuestions(dir).length)) {
+      const { row } = readRow(job);
+      if (Date.now() >= end || ready(row.state, row.open_questions)) {
         const result = observation(job);
         // A question may have been answered or a settled job continued since the lightweight poll.
         if (!ready(result.state, result.questions.length)) continue;
@@ -973,7 +996,7 @@ async function call(name: string, args: Args): Promise<unknown> {
         : { ok: false, sent: false, code: 'send_failed', ...outcome };
     }
     const agent = primary(dir);
-    const state = observation(job).state ?? '';
+    const state = readRow(job).row.state ?? '';
     // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
     // continues in its idle grace when the role allows (owner, 2026-11-11).
     const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
@@ -1017,7 +1040,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     }
   }
   // Idle grace already finished: reap quits and the supervisor closes. A working job is stop-requested and SIGTERMed.
-  if (job.cli && jobStatus(job).state === 'idle_grace') {
+  if (job.cli && readRow(job).row.state === 'idle_grace') {
     try {
       fs.writeFileSync(join(dir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 });
     } catch (error) {

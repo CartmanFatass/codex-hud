@@ -25,7 +25,7 @@ const seen = new Set<string>();
 let cacheHome = '', saved = '';
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
 const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'dispatch_exit_code',
-  'state', 'started_at', 'settled_at', 'ended_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'reason', 'blocked', 'agent', 'quiet_decision']);
+  'state', 'started_at', 'settled_at', 'ended_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string): void {
   if (cacheHome === home) return;
   cacheHome = home; cache.clear(); saved = '';
@@ -134,6 +134,97 @@ export interface ThinJobScope {
   project: string | null;
   pane: string | null;
 }
+export interface JobRow {
+  job: string;
+  role: string | null;
+  package: string | null;
+  state: string | null;
+  display_state: 'working' | 'done' | 'failed' | 'stopped';
+  reason: string | null;
+  blocked: boolean;
+  open_questions: number;
+  report_present: boolean;
+}
+export interface JobRowExtras {
+  dir?: string;
+  openQuestions?: number;
+  reportPresent?: boolean;
+}
+function countOpenQuestions(dir: string): number {
+  const qa = join(dir, 'qa');
+  try {
+    const names = new Set(fs.readdirSync(qa));
+    let count = 0;
+    for (const name of names) {
+      if (/^q\d+\.md$/.test(name) && !names.has(name.replace('.md', '.answer.md'))) count++;
+    }
+    return count;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw error;
+  }
+}
+/**
+ * Derive one job's shared status row from its receipt (`job.json`) and `STATUS.json`.
+ * Shared by the panel collector (`readThinJobs`) and the MCP server so both agree on state, reason and attention.
+ */
+export function jobRow(
+  job: object,
+  status: object | null | undefined,
+  extras?: JobRowExtras
+): JobRow {
+  const j = (job && typeof job === 'object' ? job : {}) as Record<string, unknown>;
+  const hasStatus = status !== null && status !== undefined && typeof status === 'object';
+  const s = (hasStatus ? status : {}) as Record<string, unknown>;
+  const rawState =
+    word(s.state) ??
+    (!hasStatus && typeof j.dispatch_exit_code === 'number' && j.dispatch_exit_code !== 0 ? 'failed' : null);
+  // A job closed after it wrote its report finished its task; only the close raced settlement (owner, 2026-11-12).
+  const displayState: JobRow['display_state'] =
+    rawState === 'stopped'
+      ? s.output_written === true
+        ? 'done'
+        : 'stopped'
+      : rawState === 'failed'
+        ? 'failed'
+        : rawState !== null && ['closed', 'idle_grace', 'done'].includes(rawState)
+          ? 'done'
+          : 'working';
+  const blocked = displayState === 'working' && s.blocked === true;
+  const cliInfo = j.cli !== null && typeof j.cli === 'object' ? (j.cli as { agent?: unknown }) : null;
+  const cliJob = word(s.harness) === 'cli' || cliInfo !== null;
+  const cliAgent = word(s.agent) ?? word(cliInfo?.agent) ?? 'CLI';
+  const stderrFirstLine = word(j.stderr_tail)?.split(/\r?\n/)[0]?.trim() || null;
+  const reason =
+    displayState === 'failed'
+      ? (word(s.exit_reason) ?? word(s.error) ?? word(s.reason) ?? (!hasStatus ? stderrFirstLine : null))
+      : blocked
+        ? (word(s.reason) ?? (cliJob ? `${cliAgent} needs input in its pane` : 'needs input in its pane'))
+        : displayState === 'working' && rawState === 'waiting_orchestrator'
+          ? (word(s.reason) ?? (cliJob ? 'quiet without a report; hud_send to continue or hud_close to stop' : null))
+          : displayState === 'working'
+            ? (word(s.reason) ?? null)
+            : (word(s.reason) ?? word(s.exit_reason) ?? null);
+  const openQuestions =
+    extras?.openQuestions !== undefined ? extras.openQuestions : extras?.dir ? countOpenQuestions(extras.dir) : 0;
+  const reportPresent =
+    extras?.reportPresent !== undefined
+      ? extras.reportPresent
+      : extras?.dir
+        ? fs.existsSync(join(extras.dir, 'report.md'))
+        : s.output_written === true;
+  return {
+    job: word(j.job) ?? '',
+    role: word(j.role),
+    package: word(j.package),
+    state: rawState,
+    display_state: displayState,
+    reason,
+    blocked,
+    open_questions: openQuestions,
+    report_present: reportPresent,
+  };
+}
 /**
  * What a running job is doing, by role (owner, 2026-11-11): only an implementer builds; read-only roles review,
  * research or ask. An unknown role is just working.
@@ -196,18 +287,8 @@ export function readThinJobs(
     const directory = join(root, id),
       status = checkedStatus ?? json(join(directory, 'STATUS.json'), parse),
       s = status?.v ?? {};
-    // A job closed after it wrote its report finished its task; only the close raced settlement (owner, 2026-11-12).
-    const state =
-      s.state === 'stopped'
-        ? s.output_written === true
-          ? 'done'
-          : 'stopped'
-        : s.state === 'failed' ||
-            (!status && typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0)
-          ? 'failed'
-          : ['closed', 'idle_grace', 'done'].includes(String(s.state))
-            ? 'done'
-            : 'working';
+    const initialRow = jobRow(job, status?.v ?? null);
+    const state = initialRow.display_state;
     const at = status?.at ?? jobAt;
     // When the work settled, not when the process later exited: closing an idle job must not reset its age or outcome label.
     const settledAt = state === 'working' ? null : (when(s.settled_at) ?? when(s.ended_at) ?? at);
@@ -232,6 +313,7 @@ export function readThinJobs(
       if (snap) files.push({ rel, kind, at: snap.at, paths: [join(directory, rel)], verdict });
     };
     addFile('brief.md', 'brief', briefFile);
+    let openCount = 0;
     let pending: { fields: ReturnType<typeof questionFields>; evidence: EvidenceRef; id: string } | undefined;
     const qa = join(directory, 'qa'),
       names = new Set(entries(qa, true));
@@ -251,8 +333,10 @@ export function readThinJobs(
         title: fields.question,
         state: a ? 'answered' : 'open',
       });
-      if (!a) pending ??= { fields: questionFields(q.text), evidence: ref(`qa/${name}`, q), id: name.slice(0, -3) };
-      else {
+      if (!a) {
+        openCount++;
+        pending ??= { fields: questionFields(q.text), evidence: ref(`qa/${name}`, q), id: name.slice(0, -3) };
+      } else {
         const record = answerRecord(
           laneId,
           `${id}/qa/${name}`,
@@ -270,25 +354,22 @@ export function readThinJobs(
         }
       }
     }
+    const report = read(join(directory, 'report.md'));
+    const row = jobRow(job, status?.v ?? null, { openQuestions: openCount, reportPresent: report !== null });
     const cliJob = word(s.harness) === 'cli' || (job.cli !== null && typeof job.cli === 'object');
     const paneAsk =
-      !pending && state === 'working' && cliJob
-        ? s.blocked === true
-          ? `${word(s.agent) ?? word(job.cli && typeof job.cli === 'object' ? (job.cli as { agent?: unknown }).agent : null) ?? 'CLI'} needs input in its pane`
-          : s.state === 'waiting_orchestrator'
-            ? word(s.reason) ?? 'quiet without a report; hud_send to continue or hud_close to stop'
-            : ''
+      !pending && row.display_state === 'working' && cliJob && (row.blocked || row.state === 'waiting_orchestrator')
+        ? (row.reason ?? '')
         : '';
-    const waiting = state === 'working'
+    const waiting = row.display_state === 'working'
       ? pending ?? (paneAsk
         ? {
             fields: { question: paneAsk, options: [] as string[], suggested: '' },
             evidence: ref('STATUS.json', { text: '', at: status?.at ?? at, whole: true }),
-            id: s.blocked === true ? 'blocked' : 'quiet',
+            id: row.blocked ? 'blocked' : 'quiet',
           }
         : undefined)
       : undefined;
-    const report = read(join(directory, 'report.md'));
     const reviews = entries(directory)
       .filter((n) => /^review-\d+\.md$/.test(n))
       .sort((a, b) => number(a) - number(b));
@@ -331,9 +412,9 @@ export function readThinJobs(
     const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, sessionFile?.at ?? 0);
     const sentence =
       waiting?.fields.question ||
-      (state === 'failed' ? (word(s.exit_reason) ?? word(s.reason)) : null) ||
+      (state === 'failed' ? row.reason : null) ||
       (report && report.at >= phaseAt ? first(report.text) : lastResult) ||
-      (state === 'working' ? word(s.reason) : null) ||
+      (state === 'working' ? row.reason : null) ||
       '';
     addFile('report.md', 'report', report);
     const qd = s.quiet_decision && typeof s.quiet_decision === 'object' && !Array.isArray(s.quiet_decision)

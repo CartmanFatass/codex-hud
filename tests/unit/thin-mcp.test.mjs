@@ -348,6 +348,9 @@ test('dispatch failure writes a reason for the panel and is reaped', { timeout: 
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'fail-start'), '');
   const job = await f.call('hud_create', { role: 'imp', request_key: 'failed-launch', task: 'Synthetic task.' });
+  assert.equal(job.ok, false);
+  assert.equal(job.code, 'dispatch_failed');
+  assert.match(job.reason, /synthetic start failed/);
   const status = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
   assert.equal(status.state, 'failed');
   assert.match(status.exit_reason, /synthetic start failed/);
@@ -790,18 +793,24 @@ syncBuiltinESMExports();`
   setTimeout(() => fs.writeFileSync(join(dir, 'qa', 'q2.md'), 'New question.'), 100);
   assert.deepEqual(await newQuestion, { ...timeout, questions: [{ id: 'q2', text: 'New question.' }] });
   await f.call('hud_respond', { job, request_id: 'q2', answer: 'Answered.' });
-  for (const state of ['idle_grace', 'closed', 'failed', 'stopped', null]) {
+  for (const [state, display_state] of [
+    ['idle_grace', 'done'],
+    ['closed', 'done'],
+    ['failed', 'failed'],
+    ['stopped', 'stopped'],
+    [null, 'working'],
+  ]) {
     save();
     status('working');
     const pending = read(700);
     const timer = setTimeout(() => (state === null ? fs.unlinkSync(join(dir, 'STATUS.json')) : status(state)), 100);
     t.after(() => clearTimeout(timer));
-    assert.deepEqual(await pending, { ...timeout, state });
+    assert.deepEqual(await pending, { ...timeout, state, display_state });
     assert.equal(Boolean(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at), state !== null);
   }
   receipt.dispatch_exit_code = 1;
   save();
-  assert.deepEqual(await read(), { ...timeout, state: 'failed', dispatch_exit_code: 1 });
+  assert.deepEqual(await read(), { ...timeout, state: 'failed', display_state: 'failed', dispatch_exit_code: 1 });
 });
 
 test('thin send queues a message for a working pi job and refuses a finished one', { timeout: 10000 }, async (t) => {
@@ -1590,9 +1599,14 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
 test('a grok trust dialog is declined and the job fails naming the directory', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), '');
-  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-trust', task: 'Synthetic trust.' });
+  const args = { role: 'imp', on: 'grok', request_key: 'grok-trust', task: 'Synthetic trust.' };
+  const job = await f.call('hud_create', args);
   const status = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json'), 'utf8'));
   const cwd = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).cwd;
+  assert.equal(job.ok, false);
+  assert.equal(job.code, 'dispatch_failed');
+  assert.equal(job.reason, `grok has not trusted ${cwd}; run hud trust ${cwd}`);
+  assert.deepEqual(await f.call('hud_create', args), job);
   assertCliStatus(status, job.task_dir);
   assert.equal(status.state, 'failed');
   assert.equal(status.error, `grok has not trusted ${cwd}; run hud trust ${cwd}`);
@@ -2611,6 +2625,71 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
   assert.equal(brokenArgv.includes('--append-system-prompt'), false);
   assert.equal((await f.call('hud_read', { job: broken.job })).worker_prompt, null);
   assert.equal(JSON.parse(fs.readFileSync(join(broken.task_dir, 'job.json'), 'utf8')).dispatch_exit_code, 0);
+});
+
+test('STATUS table matches across the panel reader and hud_read', async (t) => {
+  const f = await fixture(t);
+  const cases = [
+    { name: 'working', status: { state: 'working', exit_reason: null }, display: 'working', raw: 'working', reason: null, blocked: false },
+    {
+      name: 'waiting-quiet',
+      status: { state: 'waiting_orchestrator', blocked: false, reason: 'quiet', harness: 'cli' },
+      display: 'working',
+      raw: 'waiting_orchestrator',
+      reason: 'quiet',
+      blocked: false,
+    },
+    {
+      name: 'waiting-blocked',
+      status: { state: 'waiting_orchestrator', blocked: true, reason: null, harness: 'cli', agent: 'grok' },
+      display: 'working',
+      raw: 'waiting_orchestrator',
+      reason: 'grok needs input in its pane',
+      blocked: true,
+    },
+    { name: 'idle-grace', status: { state: 'idle_grace', exit_reason: 'settled' }, display: 'done', raw: 'idle_grace', reason: 'settled', blocked: false },
+    { name: 'closed', status: { state: 'closed', exit_reason: 'settled' }, display: 'done', raw: 'closed', reason: 'settled', blocked: false },
+    { name: 'done', status: { state: 'done', exit_reason: 'settled' }, display: 'done', raw: 'done', reason: 'settled', blocked: false },
+    { name: 'stopped-empty', status: { state: 'stopped', output_written: false, exit_reason: 'stop requested' }, display: 'stopped', raw: 'stopped', reason: 'stop requested', blocked: false },
+    { name: 'stopped-output', status: { state: 'stopped', output_written: true, exit_reason: 'stop requested' }, display: 'done', raw: 'stopped', reason: 'stop requested', blocked: false },
+    { name: 'failed', status: { state: 'failed', exit_reason: 'tab closed' }, display: 'failed', raw: 'failed', reason: 'tab closed', blocked: false },
+    { name: 'empty-status', status: {}, display: 'working', raw: null, reason: null, blocked: false },
+    { name: 'missing-ok', status: null, dispatch_exit_code: 0, display: 'working', raw: null, reason: null, blocked: false },
+    { name: 'missing-fail', status: null, dispatch_exit_code: 1, display: 'failed', raw: 'failed', reason: null, blocked: false },
+  ];
+  const ids = cases.map((entry, idx) => {
+    const id = `j${(idx + 1).toString(16).padStart(16, '0')}`;
+    const dir = join(f.env.HUD_HOME, 'jobs', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      join(dir, 'job.json'),
+      JSON.stringify({
+        job: id,
+        role: 'imp',
+        herdr_pane: 'w4E:p1',
+        created_at: new Date(1000 + idx * 1000).toISOString(),
+        dispatch_exit_code: entry.dispatch_exit_code ?? 0,
+        stderr_tail: '',
+      })
+    );
+    if (entry.status !== null) fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(entry.status));
+    return { id, entry };
+  });
+  const listed = (await f.call('hud_read')).jobs;
+  for (const { id, entry } of ids) {
+    const panel = workerFor(f, id);
+    const single = await f.call('hud_read', { job: id });
+    const row = listed.find((item) => item.job === id);
+    assert.equal(panel.state, entry.display, `${entry.name} panel.state`);
+    assert.equal(single.display_state, entry.display, `${entry.name} hud_read.display_state`);
+    assert.equal(single.state, entry.raw, `${entry.name} hud_read.state`);
+    assert.equal(single.reason, entry.reason, `${entry.name} hud_read.reason`);
+    assert.equal(single.blocked, entry.blocked, `${entry.name} hud_read.blocked`);
+    assert.equal(row.display_state, entry.display, `${entry.name} list.display_state`);
+    assert.equal(row.state, entry.raw, `${entry.name} list.state`);
+    assert.equal(row.reason, entry.reason, `${entry.name} list.reason`);
+    assert.equal(row.blocked, entry.blocked, `${entry.name} list.blocked`);
+  }
 });
 
 test('unregistered skill names are skipped and a CLI role is not given skill flags', { timeout: 15000 }, async (t) => {

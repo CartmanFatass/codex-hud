@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { jobRow, readThinJobs } from '../../dist/collectors/thin-jobs.js';
 test('newest 200 jobs: unchanged scan parses no receipts; a changed job appears next scan', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-scan-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -178,4 +178,30 @@ test('a job stopped after writing its report shows as done; one stopped without 
   }
   const states = Object.fromEntries(readThinJobs(home, scope).flatMap((l) => l.workers).map((w) => [w.id.slice(-1), w.state]));
   assert.deepEqual(states, { 1: 'done', 2: 'stopped' });
+});
+
+test('jobRow derives raw state, display state, reason, blocked, open questions and report presence', (t) => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'thin-row-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Open?');
+  fs.writeFileSync(join(dir, 'qa', 'q2.md'), 'Answered?');
+  fs.writeFileSync(join(dir, 'qa', 'q2.answer.md'), 'yes');
+  fs.writeFileSync(join(dir, 'report.md'), 'Done.');
+  const row = jobRow(
+    { job: 'j0000000000000001', role: 'imp', package: 'SUPERVISOR', cli: { agent: 'grok' } },
+    { state: 'waiting_orchestrator', blocked: true, reason: null },
+    { dir }
+  );
+  assert.deepEqual(row, {
+    job: 'j0000000000000001',
+    role: 'imp',
+    package: 'SUPERVISOR',
+    state: 'waiting_orchestrator',
+    display_state: 'working',
+    reason: 'grok needs input in its pane',
+    blocked: true,
+    open_questions: 1,
+    report_present: true,
+  });
 });
