@@ -19,11 +19,11 @@ Codex 状态行还需 tmux。任务另需 PATH 中的 herdr、pi 与单独安装
 见 [Node 下限依据](./docs/ARCHITECTURE.md#3-launch-and-installation)。
 
 从项目的[发布页](https://github.com/CartmanFatass/codex-hud/releases)下载
-`hud-<version>.tar.gz`，然后解压（以下以 0.1.0 为例）：
+`hud-<version>.tar.gz`，然后解压（以下以 0.1.4 为例）：
 
 ```sh
-tar -xzf hud-0.1.0.tar.gz
-cd hud-0.1.0
+tar -xzf hud-0.1.4.tar.gz
+cd hud-0.1.4
 ./install                         # 只安装核心
 ./install --with claude,pi,codex   # 核心及所选扩展
 

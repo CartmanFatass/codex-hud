@@ -22,11 +22,11 @@ The installer does not install/authenticate those tools. See the
 
 Download `hud-<version>.tar.gz` from the project's
 [releases](https://github.com/CartmanFatass/codex-hud/releases), then extract it
-(the example uses version 0.1.0):
+(the example uses version 0.1.4):
 
 ```sh
-tar -xzf hud-0.1.0.tar.gz
-cd hud-0.1.0
+tar -xzf hud-0.1.4.tar.gz
+cd hud-0.1.4
 ./install                         # core only
 ./install --with claude,pi,codex   # core plus selected extensions
 

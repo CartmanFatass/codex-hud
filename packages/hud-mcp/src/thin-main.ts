@@ -1172,7 +1172,7 @@ async function receive(line: string): Promise<void> {
       result = {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'hud-mcp-thin', version: '0.1.0' },
+        serverInfo: { name: 'hud-mcp-thin', version: '0.1.4' },
         instructions: 'Call hud_roster before dispatching.',
       };
       break;
