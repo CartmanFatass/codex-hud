@@ -4,7 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { boardInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
-import { projectRows, homeProgressRows, projectPageOf, projectCrumb } from './project-view.js';
+import { projectRows, homeProgressRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
@@ -89,6 +89,7 @@ export function renderWorkboardFrame(
   const sub = inspector || help || changes;
   const project = !sub && state.mainTab === 'project';
   const page = project ? projectPageOf(state) : undefined;
+  const list = project && projectListOpen(state, input.projects);
   const board = inspector ? source : visibleWorkboard(input, source, state, now);
   const target = state.boardInspect;
   const lane = board.lanes.find((l) => l.id === target?.laneId);
@@ -102,11 +103,11 @@ export function renderWorkboardFrame(
     : changes
       ? t('Changes')
       : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}${target?.kind === 'decision' ? ' ' + (lane?.decisions.find((d) => d.id === target.decisionId)?.evidence[0]?.relativePath.match(/q\d+/)?.[0] ?? '') : ''}`;
-  if (sub || page) {
-    // An open Project page has no tab row: its crumb returns to the hub, from anywhere on the row.
+  if (sub || page || list) {
+    // An open Project page or the Projects list has no tab row: its crumb returns (to the hub), from anywhere on the row.
     const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
-    frame.lines[0] = subTopRow(at?.crumb ?? crumb, at?.right ?? '', width);
-    frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width: page ? width : 2 });
+    frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
+    frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width: page || list ? width : 2 });
   } else {
     const count = board.workers.filter((w) => w.homeNeedsHuman).length;
     const title = ` ${t('Home')}${count ? ' ' + theme.board.attention(String(count)) : ''} `;
@@ -205,7 +206,9 @@ export function renderWorkboardFrame(
     const row = rows[offset + i];
     if (!row) continue;
     const text = fit(row.paint?.() ?? row.text, width);
-    frame.lines[i + 1] = !help && !changes && offset + i === cursorAt ? boardCursor(text) : text;
+    // A Projects list entry is two rows and the cursor marks both.
+    const marked = offset + i === cursorAt || (list && !!key && row.item === key);
+    frame.lines[i + 1] = !help && !changes && marked ? boardCursor(text) : text;
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 });
   }
   const today = new Date(now).toDateString();
@@ -221,7 +224,7 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : project ? (page ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
+        : project ? (page || list ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
   if (height > 1)
     frame.lines[height - 1] = footRow(

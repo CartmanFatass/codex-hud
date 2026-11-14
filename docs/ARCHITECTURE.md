@@ -191,7 +191,11 @@ job/STATUS bodies in the newest 64 directories; only matching tickets need brief
 The panel owns one `ProjectCollector` per project the Project tab has shown
 (`ProjectVisits`: at most four, its own never dropped, the oldest other one first) and
 collects only the shown one; the chosen root is `MonitorState.projectRoot`, so it
-survives the self-reload, and Home reads the panel's own collector only.
+survives the self-reload, and Home reads the panel's own collector only. While the
+Projects list is open (`MonitorState.projectList`) the shown project's full collection
+pauses and `ProjectOverviews` reads every listed root lightly: one Home-mode collector
+per root (file signatures, no Git, no roles) and one `liveCwds()` pass over the newest-64
+job lookup, counted per root; the panel attaches each result to its `ProjectChoice`.
 
 Project and `WorktreeCollector` use gated asynchronous Git reads; Changes runs only
 when focused and probes worktrees round-robin. Repository commands/filters and lazy

@@ -1,6 +1,6 @@
 import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pane.js';
 import { ProjectCollector, projectShown } from './collectors/project-board.js';
-import { ProjectVisits } from './collectors/project-visits.js';
+import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
 import { pathToFileURL } from 'node:url';
 import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
@@ -71,7 +71,9 @@ import {
   finishedAt,
   paneShown,
   type MonitorFrame,
+  type MonitorState,
 } from './render/monitor.js';
+import { projectListOpen } from './render/project-view.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
 import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
 import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
@@ -552,6 +554,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const visits = new ProjectVisits(HUD_CWD_REAL, (root) => new ProjectCollector(root, jobPipeline.home));
   let projects = projectList(jobPipeline.home, HUD_CWD_REAL);
   let projectsAt = Date.now();
+  // The Projects list reads every listed project lightly, and only while it is open.
+  const overviews = new ProjectOverviews((root) => new ProjectCollector(root, jobPipeline.home), HUD_CWD_REAL);
+  let overview = new Map<string, ProjectOverview>();
+  const listing = (s: MonitorState) => projectShown(s) && projectListOpen(s, projects);
   const shownRoot = () => projects.find((p) => p.root === state.projectRoot)?.root ?? HUD_CWD_REAL;
   // Typing here goes to Codex; with no Codex pane to give it to (the panel
   // run on its own), the keys drive the panel as they used to.
@@ -725,7 +731,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           worktrees,
           project: visits.snapshot(state.mainTab === 'project' ? shownRoot() : HUD_CWD_REAL),
           projectName: projects.find((p) => p.root === shownRoot())?.name ?? path.basename(HUD_CWD_REAL),
-          projects,
+          projects: listing(state) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
           error,
           nowMs,
           hud: hud ? { ...hud, delegation: panelDelegation } : hud,
@@ -1026,9 +1032,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         projectsAt = Date.now();
         projects = projectList(jobPipeline.home, HUD_CWD_REAL);
       }
+      // The open list reads the light overviews instead of the shown project's full collection (Git included).
+      if (shown && listing(state)) overview = await overviews.read(projects.map((p) => p.root), jobPipeline.workboard(tree, panelDelegation), Date.now());
       const visit = visits.visit(shown ? shownRoot() : HUD_CWD_REAL);
       const projectFacts = await visit.collector.collect(
-        shown ? true : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
+        shown ? !listing(state) : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
         jobPipeline.workboard(tree, panelDelegation),
         Date.now()
       );
@@ -1299,7 +1307,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       state = result.state;
       syncPanelView();
       if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
-      if (!projectShown(previous) && projectShown(state)) void collect(true);
+      if (projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state))) void collect(true);
       if (result.close) {
         finish(true);
         break;

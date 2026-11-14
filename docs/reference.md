@@ -304,14 +304,31 @@ never completion. The newest-64-directory job lookup is shared with slice blocks
 Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under
 `## Comments`) under it, a second Enter folds it; `o` opens the ticket file.
 
-**Switching projects.** With more than one project the hub's name row is the switch
-(`‹ 2/3 ›`): `[` and `]`, or a click on the row, step through the panel's own project
-and the existing roots in `$HUD_HOME/projects.json` (deduplicated, at most 16). On a
-page `[`/`]` work too and its crumb shows the project's name; its cursor, scroll and
+**Switching projects.** With more than one project the hub's name row reads `name ▾ i/n`
+and `[` and `]` step through the panel's own project and the existing roots in
+`$HUD_HOME/projects.json` (deduplicated, at most 16). Enter or a click on the name row
+opens the **Projects list** (`‹ Projects` replaces the tabs; Esc or a click on the crumb
+returns to the hub). `2` opens the project shown last (at the page it had open, else its hub), never the list.
+On a page `[`/`]` work too and its crumb shows the project's name; its cursor, scroll and
 folds start fresh. The choice belongs to the panel and survives its reload, not
 Settings. Home always stays on the panel's own project, and opening Home's progress block
 returns to it. The panel keeps one collector per visited project (at most four, the
 panel's own never dropped, the oldest other one first) and collects only the shown one.
+With one project there is no `▾ i/n` and no list.
+
+**Projects list.** Two rows per project: its name, current milestone, `?` the count of
+STATE's waiting items and `◉` the count of unsettled HUD jobs under its root; then its
+stacked bar, one key count (landed to try, else open tickets) and the time since it was
+last touched (STATE.md or a ticket file, whichever is newer; a ledger commit date would
+need Git). A project without STATE.md shows `no STATE.md` where the bar would be. Order:
+the panel's own project, then projects with waiting items, then with running jobs, then
+the rest, each group newest first. Enter or one click opens that project's hub (Esc on
+that hub goes back to the list; on a hub not reached from the list Esc does what it
+always did, so keys can still be handed back to Codex). The cursor marks both rows of an
+entry. The list is read only while it is visible: for each listed project STATE and
+tickets as Home reads them (cached by file signature) and, in one pass over the newest
+64 job directories, the unsettled jobs per root. No Git, no roles, no full collection;
+the shown project's own full collection pauses while the list is open.
 A project without STATE.md says `no STATE.md` on Progress; its other pages work.
 
 On a page Enter folds a header, shows a ticket's detail or opens a row's file, and `o`
@@ -347,7 +364,7 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 |---|---|
 | `1`, `2`, `3` | Home, Project, Changes summary |
 | Tab/Shift-Tab, Left/Right | Home ⇄ Project |
-| `[`, `]` | Project: previous/next project |
+| `[`, `]` | Project: previous/next project (not on the Projects list) |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |
@@ -356,7 +373,7 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 | `n`/`N` | Next/previous trouble |
 | `b` | Model text master on/off (also the top-row models word) |
 | `,`, `?` | Settings, Help |
-| Esc | Back (a Project page returns to the hub); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
+| Esc | Back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
 | `q` | Close panel |
 | Prefix twice | Send the prefix itself to the focused pane |
 

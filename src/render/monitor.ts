@@ -8,6 +8,7 @@ import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-type
 import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
+import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ProjectPage } from './project-view.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
@@ -45,6 +46,10 @@ export interface MonitorState {
   projectPage?: ProjectPage;
   /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
   projectRoot?: string;
+  /** The Projects list is open (with several projects) instead of the hub; its cursor is `projectCursor`. */
+  projectList?: boolean;
+  /** The hub was opened from the Projects list, so Esc on it goes back there. */
+  projectBack?: boolean;
   projectCursor?: string;
   projectScroll?: number;
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
@@ -101,6 +106,8 @@ export interface MonitorRect {
   pinned?: number;
   visible?: number;
 }
+/** A project the tab can show; `overview` is read only while the Projects list is open. */
+export interface ProjectChoice { root: string; name: string; overview?: ProjectOverview }
 export interface MonitorControl {
   kind:
     | 'board-home'
@@ -129,7 +136,7 @@ export interface MonitorFrame {
   controls: MonitorControl[];
   state: MonitorState;
   /** Set when there is more than one project to switch between: the panel's own first. */
-  projects?: { root: string; name: string }[];
+  projects?: ProjectChoice[];
   helpPage?: { count: number; total: number };
 }
 export interface MonitorData {
@@ -140,7 +147,7 @@ export interface MonitorData {
   /** The shown project's own name, for the hub's top row. */
   projectName?: string;
   /** The projects `[` and `]` cycle through (the panel's own first); one or none means no switch. */
-  projects?: { root: string; name: string }[];
+  projects?: ProjectChoice[];
   prefix?: string;
   state: MonitorState;
   width: number;

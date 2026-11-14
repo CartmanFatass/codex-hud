@@ -41,6 +41,10 @@ const writers = {
     const { projectFixture, projectFrames } = await load('project-page.mjs');
     return withHome(async (h) => projectFrames({ root: h, ...(await projectFixture(h)) }));
   },
+  'project-list-frames.json': async () => {
+    const { listFixture, listFrames } = await load('project-list.mjs');
+    return withHome(async (h) => listFrames(await listFixture(h)));
+  },
   'ticket-frames.json': async () => {
     const { ticketFixture, ticketFrames } = await load('project-tickets.mjs');
     return withHome(async (h) => ticketFrames({ root: h, ...(await ticketFixture(h)) }));

@@ -52,6 +52,14 @@ export interface ProjectSnapshot {
   editing: ProjectItem[];
 }
 const SETTLED_JOB_STATES = new Set(['done', 'closed', 'idle_grace', 'failed', 'stopped']);
+const canonicalPath = (path: string) => { try { return fs.realpathSync(path); } catch { return resolve(path); } };
+export const insideRoot = (root: string, path: string) => {
+  const rel = relative(root, path);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+};
+/** A job's state from its STATUS.json; without one, a failed dispatch is failed and anything else is working. */
+const jobState = (job: { dispatch_exit_code?: unknown }, s: { state?: unknown }) => typeof s.state === 'string' && s.state ? s.state
+  : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
 export const projectShown = (state: { mainTab?: string; focus: string; help: boolean }, modal = false) =>
   state.mainTab === 'project' && state.focus === 'agents' && !state.help && !modal;
 export class ProjectCollector {
@@ -142,6 +150,31 @@ export class ProjectCollector {
       if (tickets.length) features.push({ slug, at: Math.max(...tickets.map((t) => t.at)), tickets });
     }
     return features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
+  }
+  /** The newest 64 job directories: the one lookup behind Project's Now section and the Projects list. */
+  private recentJobs() {
+    const jobsRoot = join(this.hudHome, 'jobs');
+    return this.names(jobsRoot, Infinity).filter((id) => /^j[0-9a-f]{16}$/.test(id)).flatMap((id) => {
+      try {
+        const st = fs.lstatSync(join(jobsRoot, id));
+        return st.isDirectory() ? [{ id, at: st.mtimeMs }] : [];
+      } catch { return []; }
+    }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id)).slice(0, 64);
+  }
+  private json = (path: string) => {
+    const file = this.read(path);
+    try { return file && !file.truncated ? JSON.parse(file.text) : null; } catch { return null; }
+  };
+  /** Where each unsettled job of that lookup works (canonical paths), for the Projects list's per-root counts: no Git, no board. */
+  liveCwds(): string[] {
+    this.seen.clear();
+    const cwds: string[] = [];
+    for (const { id } of this.recentJobs()) {
+      const dir = join(this.hudHome, 'jobs', id), job = this.json(join(dir, 'job.json'));
+      if (job && typeof job.cwd === 'string' && !job.reaped_at && !SETTLED_JOB_STATES.has(jobState(job, this.json(join(dir, 'STATUS.json')) ?? {}))) cwds.push(canonicalPath(job.cwd));
+    }
+    for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
+    return cwds;
   }
   async collect(shown: boolean | 'home', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
     if (!shown) return;
@@ -309,22 +342,12 @@ export class ProjectCollector {
     out.git = this.git;
     out.worktreeCount = this.git ? this.worktrees.length : undefined;
     out.last = this.last;
-    const canonical = (path: string) => { try { return fs.realpathSync(path); } catch { return resolve(path); } };
-    const root = canonical(this.cwd);
-    const inRoot = (path: string) => { const rel = relative(root, path); return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel)); };
-    const jobsRoot = join(this.hudHome, 'jobs');
-    const jobs = this.names(jobsRoot, Infinity).filter((id) => /^j[0-9a-f]{16}$/.test(id)).flatMap((id) => {
-      try {
-        const st = fs.lstatSync(join(jobsRoot, id));
-        return st.isDirectory() ? [{ id, at: st.mtimeMs }] : [];
-      } catch { return []; }
-    }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id)).slice(0, 64);
+    const canonical = canonicalPath, root = canonical(this.cwd);
+    const inRoot = (path: string) => insideRoot(root, path);
+    const jobsRoot = join(this.hudHome, 'jobs'), jobs = this.recentJobs();
     const byTree = new Map<string, { jobId: string; role: string; asking: boolean; path?: string; at?: number; created: number }>();
     const active: { created: number; entry: ActiveJob }[] = [];
-    const json = (path: string) => {
-      const file = this.read(path);
-      try { return file && !file.truncated ? JSON.parse(file.text) : null; } catch { return null; }
-    };
+    const json = this.json;
     for (const { id } of jobs) {
       const dir = join(jobsRoot, id), job = json(join(dir, 'job.json'));
       if (!job || typeof job.cwd !== 'string') continue;
@@ -334,8 +357,7 @@ export class ProjectCollector {
       const feature = out.tickets.find((f) => f.slug === job.package);
       if (!inside && !feature && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const s = json(join(dir, 'STATUS.json')) ?? {};
-      const state = typeof s.state === 'string' && s.state ? s.state
-        : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
+      const state = jobState(job, s);
       const worker = board.workers.find((w) => w.evidence[0]?.sourceId === id);
       if (inside && !SETTLED_JOB_STATES.has(state) && !job.reaped_at) {
         const at = Date.parse(s.started_at ?? job.created_at);

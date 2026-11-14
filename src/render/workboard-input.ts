@@ -5,7 +5,7 @@ import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
 import { monitorRowAt } from './monitor-input.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { cardExpanded } from './work-card.js';
-import { projectFoldedSet, projectPageOf, type ProjectPage } from './project-view.js';
+import { projectFoldedSet, projectPageOf, projectListOpen, type ProjectPage } from './project-view.js';
 import { join } from 'node:path';
 export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
@@ -24,6 +24,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.boardInspect = undefined;
     next.boardRevealed = undefined;
     next.boardAnchor = undefined;
+    next.projectList = undefined;
+    next.projectBack = undefined;
   };
   // Opening a page keeps where it was left; closing it lands the hub's cursor on that page's row.
   const goProject = (page?: ProjectPage, cursor?: string) => {
@@ -41,7 +43,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (root === next.projectRoot) return;
     next.projectRoot = root;
     next.projectSaved = {};
-    // Resting on the switch row, the next Enter or click steps again.
+    // Resting on the name row, `[` and `]` keep it there.
     if (next.projectCursor !== 'project:switch') next.projectCursor = undefined;
     next.projectScroll = 0;
     next.projectFolded = undefined;
@@ -53,14 +55,35 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const at = Math.max(0, list.findIndex((p) => p.root === next.projectRoot)), to = list[(at + step + list.length) % list.length];
     useProject(to === list[0] ? undefined : to.root);
   };
+  // The Projects list sits above the hubs: the name row opens it, a click on its entry opens that project's hub.
+  const listed = projectListOpen(next, frame?.projects);
+  const showList = (on: boolean) => {
+    const root = next.projectRoot ?? frame?.projects?.[0].root;
+    next.projectList = on || undefined;
+    next.projectBack = undefined;
+    next.projectCursor = on ? `project:list:${root}` : 'project:switch';
+    next.projectScroll = 0;
+    next.boardRevealed = undefined;
+  };
+  const openProject = (root: string) => {
+    useProject(root === frame?.projects?.[0].root ? undefined : root);
+    next.projectList = undefined;
+    // Esc on a hub reached from the list goes back to it; on any other hub it does what it always did.
+    next.projectBack = true;
+    next.projectPage = undefined;
+    next.projectCursor = undefined;
+    next.projectScroll = 0;
+    next.boardRevealed = undefined;
+  };
   const back =
     input.type === 'mouse' &&
     input.button === 'left' &&
     frame?.controls.some(
       (c) => c.kind === 'board-back' && c.y === input.y && input.x >= c.x && input.x < c.x + c.width
     );
-  if (back && main && next.mainTab === 'project' && projectPageOf(next)) {
-    goProject();
+  if (back && main && next.mainTab === 'project' && (projectPageOf(next) || listed)) {
+    if (listed) showList(false);
+    else goProject();
     return result();
   }
   if (back || (key === 'escape' && next.focus === 'changes')) {
@@ -117,7 +140,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // `o` opens a row's file even where Enter folds (a ticket, a long Next bullet); folds with no file toggle on either.
     const activate = (row = rows[at], open = false) => {
       if (open && row?.files) return { type: 'open-files' as const, files: row.files };
-      if (row?.item === 'project:switch') cycleProject(1);
+      if (row?.item === 'project:switch') showList(true);
+      else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
       else if (row?.item?.startsWith('project:fold:')) {
         const folded = new Set(projectFoldedSet(next)), id = row.item.slice(13);
@@ -134,13 +158,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           const again = row.item === next.projectCursor;
           next.projectCursor = row.item;
           // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
-          return result(again || row.item.startsWith('project:page:') || row.item === 'project:switch' ? activate(row) : undefined);
+          return result(again || /^project:(page:|list:|switch$)/.test(row.item) ? activate(row) : undefined);
         }
       }
       return result();
     }
     if (['enter', 'activate', 'open-session'].includes(key)) return result(activate(undefined, key === 'open-session'));
-    if (key === 'project-prev' || key === 'project-next') {
+    if ((key === 'project-prev' || key === 'project-next') && !listed) {
       cycleProject(key === 'project-next' ? 1 : -1);
       return result();
     }
@@ -149,8 +173,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
       return result();
     }
-    if (key === 'escape' && projectPageOf(next)) {
-      goProject();
+    if (key === 'escape' && (projectPageOf(next) || listed || (next.projectBack && frame?.projects))) {
+      if (listed) showList(false);
+      else if (projectPageOf(next)) goProject();
+      else showList(true);
       return result();
     }
     if (!['help', 'settings', 'escape'].includes(key)) return result();

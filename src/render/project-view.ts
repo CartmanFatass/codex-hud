@@ -3,7 +3,7 @@ import { SLICE_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, 
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { jobSentenceLine, workCardDetail, labelSummary } from './work-card.js';
-import type { MonitorRow, MonitorState } from './monitor.js';
+import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { basename } from 'node:path';
 import { boardRow, itemRow, section, mark, minuteAge, kvRows } from './workboard-rows.js';
 import { monitorText, fit, pair, flowLines } from './monitor-text.js';
@@ -35,7 +35,7 @@ function pack(parts: string[], width: number, max = Infinity): string[] {
 }
 const legendItem = (data: ProjectSnapshot, s: SliceState) =>
   sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${data.counts[s]}`);
-const barText = (data: ProjectSnapshot, width: number) => progressSegments(data.counts, width).map(({ state, width: cells }) =>
+const barText = (data: Pick<ProjectSnapshot, 'counts'>, width: number) => progressSegments(data.counts, width).map(({ state, width: cells }) =>
   sliceInk(state)(mark(state === 'todo' || state === 'dropped' ? '░' : state === 'try' ? '▓' : '█', '#').repeat(cells))).join('');
 function progressBarRows(data: ProjectSnapshot, width: number): MonitorRow[] {
   const rows: MonitorRow[] = [];
@@ -150,14 +150,14 @@ const projectItem = (r: ProjectItem, i: number, glyph: string, width: number, no
 };
 /** The hub: the project's name, what waits for the owner, then one summary row per page. */
 function hubRows(
-  data: ProjectSnapshot, state: MonitorState, width: number, now: number, name: string, projects: { root: string }[]
+  data: ProjectSnapshot, state: MonitorState, width: number, now: number, name: string, projects: ProjectChoice[]
 ): MonitorRow[] {
   const folded = projectFoldedSet(state);
-  // With more than one project the name row is the switch: `[` and `]`, or a click, step through them.
+  // With more than one project the name row opens the Projects list (Enter or a click); `[` and `]` still step through them.
   const many = projects.length > 1, at = Math.max(0, projects.findIndex((p) => p.root === state.projectRoot));
   const rows: MonitorRow[] = [boardRow(''), {
     ...section(theme.board.title(monitorText(name) || t('Project')), width,
-      many ? `${mark('‹', '<')} ${at + 1}/${projects.length} ${mark('›', '>')}` : ''),
+      many ? `${mark('▾', 'v')} ${at + 1}/${projects.length}` : ''),
     ...(many ? { item: 'project:switch' } : {}),
   }];
   if (data.waiting.length) {
@@ -176,6 +176,35 @@ function hubRows(
     // The bar sits under its row and opens the same page.
     const bar = Math.min(width, HOME_BLOCK);
     if (page === 'progress' && progressSegments(data.counts, bar).some((s) => s.width)) rows.push({ text: fit(barText(data, bar), width), item });
+  }
+  return rows;
+}
+/** The Projects list is what the tab shows: asked for, with several projects to list, and no page open. */
+export const projectListOpen = (state: MonitorState, projects?: unknown[]) =>
+  state.projectList === true && !projectPageOf(state) && (projects?.length ?? 0) > 1;
+/** The panel's own project first, then those with something waiting, then those with a job running, then the most recently touched. */
+export function projectOrder(projects: ProjectChoice[]): ProjectChoice[] {
+  const rank = (p: ProjectChoice) => p.overview?.waiting ? 0 : p.overview?.running ? 1 : 2;
+  return [projects[0], ...projects.slice(1).sort((a, b) => rank(a) - rank(b) || (b.overview?.at ?? 0) - (a.overview?.at ?? 0))];
+}
+/** `12m`, `3h`, `4d`: how long since a project was touched. */
+function sinceText(at: number | undefined, now: number): string {
+  const minutes = at === undefined ? -1 : Math.max(0, Math.floor((now - at) / 60000));
+  return minutes < 0 ? '' : minutes < 60 ? `${minutes}m` : minutes < 1440 ? `${Math.floor(minutes / 60)}h` : `${Math.floor(minutes / 1440)}d`;
+}
+/** Two rows a project: its name, milestone and what needs you (`?`) or runs (`◉`); then its bar, one key count and the last activity. */
+function listRows(projects: ProjectChoice[], width: number, now: number): MonitorRow[] {
+  const rows: MonitorRow[] = [boardRow('')], cells = Math.max(8, Math.min(24, width - 26));
+  for (const { root, name, overview: o } of projectOrder(projects)) {
+    const item = `project:list:${root}`, title = monitorText(name), milestone = o?.milestone ? monitorText(o.milestone) : '';
+    const marks = [o?.waiting ? theme.board.attention(`? ${o.waiting}`) : '', o?.running ? theme.board.active(`${mark('◉', '@')} ${o.running}`) : '']
+      .filter(Boolean).join('  ');
+    const fits = milestone && visualLength(title) + 2 + visualLength(milestone) <= width - visualLength(marks) - (marks ? 1 : 0);
+    rows.push({ text: pair(theme.board.title(title) + (fits ? '  ' + theme.board.muted(milestone) : ''), marks, width), item });
+    const key = !o ? '' : o.counts.try ? sliceInk('try')(t('{n} to try', { n: o.counts.try })) : o.open ? theme.board.muted(t('{n} open', { n: o.open })) : '';
+    const body = !o ? theme.board.muted(mark('…', '~')) : !o.hasState ? theme.board.muted(t('no STATE.md'))
+      : progressSegments(o.counts, cells).some((s) => s.width) ? barText(o, cells) : '';
+    rows.push({ text: pair(`  ${body}${' '.repeat(Math.max(0, cells - visualLength(body)))}${key ? '  ' + key : ''}`, theme.board.muted(sinceText(o?.at, now)), width), item });
   }
   return rows;
 }
@@ -376,9 +405,11 @@ function pageRows(
 /** The Project tab: a hub of one summary row per page, or the page the panel has open. */
 export function projectRows(
   data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false, name = '', projects: { root: string }[] = []
+  board?: WorkboardSnapshot, modelEnabled = false, name = '', projects: ProjectChoice[] = []
 ): MonitorRow[] {
   const page = projectPageOf(state);
+  // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
+  if (projectListOpen(state, projects)) return listRows(projects, width, now);
   if (!data) return [];
   return page ? pageRows(page, data, state, width, now, board, modelEnabled) : hubRows(data, state, width, now, name, projects);
 }
