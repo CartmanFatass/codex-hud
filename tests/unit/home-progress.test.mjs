@@ -105,7 +105,7 @@ test('expanded questions/cards/decisions and notices claim space before progress
     assert.doesNotMatch(compact(missing).map((r) => stripAnsi(r.text)).join('\n'), /Milestone:|里程碑:/);
   }
 });
-test('real Home input: Up/Down/End select the block, Enter/click opens Project progress or feature and unfolds it', async (t) => {
+test('real Home input: Up/Down/End select the block, Enter/click opens the Progress page, or a ticket row its feature on the Tickets page', async (t) => {
   const f = await fixture(t);
   for (const width of [80, 120]) {
     let frame = f.render(width, 'en', 80);
@@ -114,24 +114,28 @@ test('real Home input: Up/Down/End select the block, Enter/click opens Project p
     frame = f.render(width, 'en', 80, press(frame, 'up').state);
     assert.equal(frame.state.boardAnchor, 'home-progress:progress');
     assert.equal(press(frame, 'open-session').action, undefined, 'o on progress never opens a stale card file');
-    frame.state.projectFolded = new Set(['progress', 'tickets', 'tickets:native-tree', 'control']);
+    frame.state.projectFolded = new Set(['tickets:native-tree', 'agents']);
     let result = press(frame, 'enter');
     assert.equal(result.state.mainTab, 'project');
-    assert.equal(result.state.projectCursor, 'project:fold:progress');
-    assert.equal(result.state.projectFolded.has('progress'), false);
+    assert.equal(result.state.projectPage, 'progress');
     let project = f.render(width, 'en', 80, result.state);
-    assert.ok(plain(project).some((line) => line.includes('Progress')));
+    assert.ok(plain(project).some((line) => line.startsWith('‹ Project › Progress')));
     frame = f.render(width, 'en', 80, press(frame, 'down').state);
     result = press(frame, 'enter');
+    assert.equal(result.state.projectPage, 'tickets');
     assert.equal(result.state.projectCursor, 'project:fold:tickets:native-tree');
-    assert.equal(result.state.projectFolded.has('tickets'), false);
-    assert.equal(result.state.projectFolded.has('tickets:native-tree'), false);
+    assert.equal(result.state.projectFolded.has('tickets:native-tree'), false, 'the feature is unfolded');
+    assert.equal(result.state.projectFolded.has('agents'), true, 'other folds stay');
+    project = f.render(width, 'en', 80, result.state);
+    assert.ok(plain(project).some((line) => line.startsWith('‹ Project › Tickets')));
+    // Esc is the hub, Esc again is where Esc always went.
+    assert.equal(press(project, 'escape').state.projectPage, undefined);
     for (const id of ['home-progress:progress', 'home-progress:tickets:native-tree']) {
       frame = f.render(width, 'en', 80);
       const index = frame.workboard.rows.findIndex((r) => r.item === id);
       result = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 8, y: index + 1 }, ctx(frame));
       assert.equal(result.state.mainTab, 'project');
-      assert.equal(result.state.projectCursor, `project:fold:${id.slice('home-progress:'.length)}`);
+      assert.equal(result.state.projectPage, id.endsWith('progress') ? 'progress' : 'tickets');
       assert.equal(result.action, undefined, 'navigation, not an editor or execution action');
     }
   }

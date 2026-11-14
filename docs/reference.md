@@ -240,15 +240,28 @@ the last good text and valid ranking. Models off hides both.
 **Spare rows.** Cards/decisions get space first. Remaining rows show STATE's Now
 summary, six-state progress bar/legend and up to six open tickets per feature.
 Tickets shrink first as height falls, then legend, bar, summary and the block.
-Enter on a progress/ticket row opens the corresponding Project section.
+Enter on the progress block opens the Project Progress page; on a ticket row, the
+Tickets page, at that feature.
 
 ## Project
 
-Project shows Waiting for you, Progress, local Tickets, Working tree, Docs and the
-folded Control plane. Facts come from `docs/handoff/STATE.md` (root `STATE.md`
-fallback), `docs/spec.md`, reviews, roles/convention/instructions and Git/worktrees.
-No milestone or completion is guessed. Key rows contain names/presence only; Browser
-✓ means Chrome and `jev-ask` exist on PATH, not a running/logged-in browser.
+Project is a hub with one page per section. The hub's top row names the project
+(the panel's directory name), then Waiting for you (STATE's waiting items, folds with
+Enter), then one row per page with a one-line summary: **Progress** (milestone,
+working, to try, blocked; a stacked bar under it), **Tickets** (done/total, working,
+blocked; absent when the project has no tickets), **Working tree** (branch, changed,
+ahead/behind, editing jobs), **Docs** (spec milestone, newest review) and **Control
+plane** (roles, keys present, browser). A row too short for its facts drops the last
+ones, never part of one. Enter or one click opens a page; its crumb row
+`‹ Project › Page` replaces the tabs, and Esc or a click on the crumb returns to the
+hub with the cursor on that page's row. The pages hold the sections as before
+(native agents under Control plane start folded). Each page keeps its own cursor and
+scroll, also across the panel's self-reload.
+
+Facts come from `docs/handoff/STATE.md` (root `STATE.md` fallback), `docs/spec.md`,
+reviews, roles/convention/instructions and Git/worktrees. No milestone or completion
+is guessed. Key rows contain names/presence only; Browser ✓ means Chrome and
+`jev-ask` exist on PATH, not a running/logged-in browser.
 
 Progress counts STATE's `## Slices` states: working, blocked, try (landed to try),
 todo, accepted, dropped. Milestone chips come from spec §5 and STATE's `Milestone:`.
@@ -264,10 +277,11 @@ Numbers/titles resolve within that feature; unknown status text stays dim.
 A job with the matching package and ticket number/filename adds role/state/age,
 never completion. The newest-64-directory job lookup is shared with slice blocks.
 
-Enter/`o` folds a header or opens its file in `$EDITOR` (default vim), in a herdr
-tab that closes with the editor; failed workspace lookup falls back to a split.
-Home and Project retain separate cursor/scroll state. Full Project collection runs
-only while visible, not behind modals; Home reuses only cached STATE/ticket reads.
+On a page Enter/`o` folds a header or opens its file in `$EDITOR` (default vim), in
+a herdr tab that closes with the editor; failed workspace lookup falls back to a
+split. Home and Project retain separate cursor/scroll state. Full Project collection
+runs while the hub or a page is visible, not behind modals; Home reuses only cached
+STATE/ticket reads.
 Git is gated to at most once per five seconds. Reads do not start a browser or MCP.
 
 ## The panel
@@ -297,14 +311,14 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 | `1`, `2`, `3` | Home, Project, Changes summary |
 | Tab/Shift-Tab, Left/Right | Home ⇄ Project |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
-| Enter | Expand/collapse card, question, decision or lane |
+| Enter | Expand/collapse card, question, decision or lane; in Project open a page, then a fold or file |
 | `o` | Open question + answer, else report, else brief; native transcript |
 | `v`, Space, `4` | Inspector |
 | `a` | Show/hide older jobs and decisions |
 | `n`/`N` | Next/previous trouble |
 | `b` | Model text master on/off (also the top-row models word) |
 | `,`, `?` | Settings, Help |
-| Esc | Back; dirty Settings ask save/discard/continue; standalone main-page Esc exits |
+| Esc | Back (a Project page returns to the hub); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
 | `q` | Close panel |
 | Prefix twice | Send the prefix itself to the focused pane |
 

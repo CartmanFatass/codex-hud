@@ -719,6 +719,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           state,
           worktrees,
           project,
+          projectName: path.basename(HUD_CWD_REAL),
           error,
           nowMs,
           hud: hud ? { ...hud, delegation: panelDelegation } : hud,

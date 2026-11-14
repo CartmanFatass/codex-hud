@@ -6,7 +6,7 @@ import { join, dirname, resolve } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
-import { projectFixture, projectFrames, plain, NOW, TREE } from '../fixtures/project-page.mjs';
+import { projectFixture, projectFrames, plain, onPage, PAGES, NOW, TREE } from '../fixtures/project-page.mjs';
 import { progressSegments } from '../../dist/render/project-view.js';
 import { renderWorkCard } from '../../dist/render/work-card.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
@@ -15,6 +15,7 @@ import { initialMonitorState, handleMonitorInput } from '../../dist/render/monit
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { openEditorPane } from '../../dist/cli/panel-pane.js';
+import { readPanelPlace } from '../../dist/utils/panel-reload.js';
 import { commandSequence, monitorKey, needsOpenPanel } from '../../dist/utils/panel-command.js';
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/project-frames.json', import.meta.url), 'utf8'));
 async function fixture(t) {
@@ -79,21 +80,28 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.browser, true);
   for (const width of [32, 40, 56, 80, 120])
     for (const lang of ['en', 'zh']) {
-      const frame = f.render(width, lang);
-      for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
-      const text = plain(frame).join('\n');
-      assert.doesNotMatch(text, /NEVER_RENDER|unrelated bullet|Tickets|工单|INVISIBLE|M5|NOT-A-MILESTONE/);
-      assert.match(text, /\[M1\]  \[M2\]  \[M3\]  \(M3b\)  M4/);
-      assert.match(text, /\+1\b/);
+      const hub = f.render(width, lang),
+        pages = Object.fromEntries(PAGES.map((page) => [page, f.render(width, lang, page)]));
+      for (const frame of [hub, ...Object.values(pages)])
+        for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
+      const text = (...frames) => frames.map((frame) => plain(frame).join('\n')).join('\n');
+      // This project has no tickets: the hub has no Tickets entry and the Tickets page says so.
+      assert.doesNotMatch(
+        text(hub, pages.progress, pages.tree, pages.docs, pages.control),
+        /NEVER_RENDER|unrelated bullet|Tickets|工单|INVISIBLE|M5|NOT-A-MILESTONE/
+      );
+      assert.match(text(pages.tickets), lang === 'en' ? /Project › Tickets\n\n  none/ : /项目 › 工单\n\n  无/);
+      assert.match(text(pages.progress), /\[M1\]  \[M2\]  \[M3\]  \(M3b\)  M4/);
+      assert.match(text(pages.progress), /\+1\b/);
       if (width >= 80) {
-        assert.match(text, /Which synthetic option\?/);
-        assert.match(text, /unparseable JSON/);
-        assert.match(text, /bad\.json/);
+        assert.match(text(pages.progress), /Which synthetic option\?/);
+        assert.match(text(pages.control), /unparseable JSON/);
+        assert.match(text(pages.control), /bad\.json/);
       }
       if (lang === 'zh') {
-        assert.match(text, /^ 首页 1  项目 2/m);
-        assert.doesNotMatch(text, /\bProject 2\b|3 agent\b/);
-        assert.ok(frame.workboard.rows.some((r) => stripAnsi(r.text).startsWith('▸ 代理')));
+        assert.match(text(hub), /^ 首页 1  项目 2/m);
+        assert.doesNotMatch(text(hub, ...Object.values(pages)), /\bProject 2\b|3 agent\b/);
+        assert.ok(pages.control.workboard.rows.some((r) => stripAnsi(r.text).startsWith('▸ 代理')));
       }
     }
   assert.doesNotMatch(JSON.stringify(f.data), /NEVER_RENDER/);
@@ -156,23 +164,20 @@ test('a registered project shows its roles, hides the rest and uses its conventi
   );
   assert.doesNotMatch(JSON.stringify(data), /NEVER_RENDER/);
 });
-test('Control plane and native agents start folded and Enter unfolds/folds through real input', async (t) => {
+test('Control plane page shows its roles; native agents start folded and Enter unfolds/folds through real input', async (t) => {
   const f = await fixture(t);
   const render = (state) => f.render(80, 'en', state, 64);
-  let frame = render({ ...initialMonitorState(), mainTab: 'project' });
-  assert.match(plain(frame).join('\n'), /▸ Control plane/);
-  assert.doesNotMatch(plain(frame).join('\n'), /synthetic\/model/);
-  frame.state.projectCursor = 'project:fold:control';
-  frame = render(press(frame, 'enter').state);
+  let frame = render('control');
+  assert.match(plain(frame).join('\n'), /▸ agents/);
   assert.match(plain(frame).join('\n'), /synthetic\/model/);
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
   frame.state.projectCursor = 'project:fold:agents';
   frame = render(press(frame, 'enter').state);
   for (const name of ['user-agent.md', 'project-agent.md', 'codex-agent.toml'])
     assert.match(plain(frame).join('\n'), new RegExp(name));
-  frame.state.projectCursor = 'project:fold:control';
+  frame.state.projectCursor = 'project:fold:agents';
   frame = render(press(frame, 'enter').state);
-  assert.doesNotMatch(plain(frame).join('\n'), /synthetic\/model/);
+  assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
 });
 test('2 and arrows/Tab switch Home ⇄ Project with independent cursor/scroll; 3 stays Changes', async (t) => {
   const f = await fixture(t),
@@ -183,13 +188,13 @@ test('2 and arrows/Tab switch Home ⇄ Project with independent cursor/scroll; 3
   frame = f.render(80, 'en', send(frame, '2').state);
   assert.equal(frame.state.mainTab, 'project');
   assert.equal(projectShown(frame.state), true);
-  frame.state.projectCursor = 'project:fold:docs';
+  frame.state.projectCursor = 'project:page:docs';
   for (const raw of ['\x1b[D', '\x1b[C', '\t', '\x1b[Z']) {
     frame = f.render(80, 'en', send(frame, raw).state);
     assert.equal(frame.state.mainTab, 'home');
     frame = f.render(80, 'en', send(frame, raw).state);
     assert.equal(frame.state.mainTab, 'project');
-    assert.equal(frame.state.projectCursor, 'project:fold:docs');
+    assert.equal(frame.state.projectCursor, 'project:page:docs');
   }
   const homeControl = frame.controls.find((c) => c.kind === 'board-home');
   frame = f.render(
@@ -324,14 +329,18 @@ console.log(JSON.stringify({result}));
 test('Enter and o open the exact Project file in its own focused workspace tab; default editor is vim', async (t) => {
   const f = await fixture(t),
     { env, calls } = editorHerdr(f);
-  let frame = f.render(80);
-  const rows = frame.workboard.rows.filter((r) => r.files);
-  for (const row of rows) {
+  // Files open from the hub's Waiting items and from every page.
+  const found = [undefined, 'progress', 'tree', 'docs', 'control'].flatMap((page) => {
+    const frame = f.render(80, 'en', page, 80);
+    return frame.workboard.rows.filter((r) => r.files).map((row) => ({ frame, row }));
+  });
+  assert.ok(found.length > 20);
+  for (const { frame, row } of found) {
     frame.state.projectCursor = row.item;
     for (const key of ['enter', 'open-session'])
       assert.deepEqual(press(frame, key).action, { type: 'open-files', files: row.files });
   }
-  const file = rows.find((r) => r.files[0] === join(f.sliceJob, 'report.md'));
+  const { frame, row: file } = found.find(({ row }) => row.files[0] === join(f.sliceJob, 'report.md'));
   frame.state.projectCursor = file.item;
   await openEditorPane(press(frame, 'enter').action.files, env);
   assert.deepEqual(calls(), [
@@ -424,22 +433,94 @@ test('Home and overlays collect nothing; warm Project uses signatures and git wa
     false
   );
 });
-test('Progress folds through real input without disturbing other Project sections', async (t) => {
+const hubEntries = (frame) => [...new Set(frame.workboard.rows.map((r) => r.item).filter((i) => i?.startsWith('project:page:')))];
+const click = (frame, x, y) => handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x, y }, ctx(frame));
+test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; Esc and the crumb return to the hub', async (t) => {
   const f = await fixture(t);
   let frame = f.render(80);
-  frame.state.projectCursor = 'project:fold:progress';
+  assert.match(plain(frame).join('\n'), /^demo-project ─/m);
+  assert.deepEqual(hubEntries(frame), ['progress', 'tree', 'docs', 'control'].map((p) => `project:page:${p}`), 'no tickets: no Tickets entry');
+  assert.equal(frame.state.projectCursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
+  assert.match(plain(frame).join('\n'), /Try the Project tab/);
+  assert.match(plain(frame).join('\n'), /Progress +M3b · 2 working · 1 to try · 1 blocked/);
+  assert.match(plain(frame).join('\n'), /Control plane +13 roles · keys 3\/5 · browser ✓/);
+  frame.state.projectCursor = 'project:fold:waiting';
   frame = f.render(80, 'en', press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /▸ Progress/);
-  assert.doesNotMatch(plain(frame).join('\n'), /NATIVE-TREE|now:|\[M1\]/);
-  assert.match(plain(frame).join('\n'), /Working tree/);
+  assert.match(plain(frame).join('\n'), /▸ Waiting for you/);
+  assert.doesNotMatch(plain(frame).join('\n'), /Try the Project tab/);
   frame = f.render(80, 'en', press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /NATIVE-TREE/);
+  assert.match(plain(frame).join('\n'), /Try the Project tab/);
+  // Down visits each entry once: the Progress bar row below its entry does not trap the cursor.
+  frame.state.projectCursor = 'project:page:progress';
+  const visited = [];
+  for (let i = 0; i < 4; i++) {
+    frame = f.render(80, 'en', press(frame, 'down').state);
+    visited.push(frame.state.projectCursor);
+  }
+  assert.deepEqual(visited, ['tree', 'docs', 'control', 'control'].map((p) => `project:page:${p}`));
+  for (const page of ['progress', 'tree', 'docs', 'control']) {
+    frame.state.projectCursor = `project:page:${page}`;
+    frame = f.render(80, 'en', press(frame, 'enter').state);
+    assert.equal(frame.state.projectPage, page);
+    assert.equal(projectShown(frame.state), true, 'a page is Project: collection runs');
+    assert.match(frame.lines[0] && stripAnsi(frame.lines[0]), /^‹ Project › /);
+    const crumb = frame.controls.find((c) => c.kind === 'board-back');
+    assert.deepEqual([crumb.x, crumb.y, crumb.width], [0, 0, 80], 'the whole crumb row goes back');
+    frame = f.render(80, 'en', press(frame, 'escape').state);
+    assert.equal(frame.state.projectPage, undefined);
+    assert.equal(frame.state.projectCursor, `project:page:${page}`);
+    assert.match(stripAnsi(frame.lines[0]), /^ Home 1  Project 2/);
+    frame = f.render(80, 'en', press(frame, 'enter').state);
+    frame = f.render(80, 'en', click(frame, 33, 0).state);
+    assert.equal(frame.state.projectPage, undefined, 'a click anywhere on the crumb returns');
+    assert.equal(frame.state.mainTab, 'project', 'to the hub, not to Home');
+  }
+  // Esc on the hub is not consumed: the panel decides what it means there.
+  assert.equal(press(frame, 'escape').state.projectPage, undefined);
+  assert.equal(press(frame, 'escape').state.mainTab, 'project');
+  // One click opens a hub entry, the Progress bar included; no editor or execution action.
+  for (const [page, at] of [['docs', 'project:page:docs'], ['progress', 'project:page:progress']]) {
+    const rows = frame.workboard.rows, index = rows.findIndex((r) => r.item === at) + (page === 'progress' ? 1 : 0);
+    const result = click(frame, 10, index + 1);
+    assert.equal(result.state.projectPage, page);
+    assert.equal(result.action, undefined);
+  }
+});
+test('Each Project page keeps its own cursor and scroll, leaving it and across a panel reload', async (t) => {
+  const f = await fixture(t), height = 12;
+  let frame = f.render(80, 'en', 'control', height);
+  for (let i = 0; i < 14; i++) frame = f.render(80, 'en', press(frame, 'down').state, height);
+  const { projectCursor: cursor, projectScroll: scroll } = frame.state;
+  assert.ok(scroll > 0 && cursor.startsWith('project:file:'), 'a short panel scrolls the page with the cursor');
+  const before = plain(frame);
+  frame = f.render(80, 'en', press(frame, 'escape').state, height);
+  assert.equal(frame.state.projectCursor, 'project:page:control');
+  frame.state.projectCursor = 'project:page:docs';
+  frame = f.render(80, 'en', press(frame, 'enter').state, height);
+  frame = f.render(80, 'en', press(frame, 'down').state, height);
+  assert.equal(frame.state.projectCursor.endsWith(':1'), true, 'Docs has its own cursor');
+  frame = f.render(80, 'en', press(frame, 'escape').state, height);
+  frame.state.projectCursor = 'project:page:control';
+  frame = f.render(80, 'en', press(frame, 'enter').state, height);
+  assert.deepEqual([frame.state.projectCursor, frame.state.projectScroll], [cursor, scroll]);
+  assert.deepEqual(plain(frame), before);
+  // The panel restarts itself with the whole state, sets included.
+  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: frame.state }, (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
+  const place = readPanelPlace();
+  assert.equal(place.state.projectPage, 'control');
+  frame = f.render(80, 'en', place.state, height);
+  assert.deepEqual([frame.state.projectCursor, frame.state.projectScroll], [cursor, scroll]);
+  assert.deepEqual(plain(frame), before);
+  // Esc, then the same page again from the hub, still finds its place; so does a reload on the hub.
+  frame = f.render(80, 'en', press(frame, 'escape').state, height);
+  assert.equal(frame.state.projectPage, undefined);
+  assert.equal(frame.state.projectSaved.control.cursor, cursor);
 });
 test('polish: Next text aligns without filename tails and slice states use the bar colours', async (t) => {
   const f = await fixture(t);
   for (const width of [80, 120])
     for (const lang of ['en', 'zh']) {
-      const frame = f.render(width, lang),
+      const frame = f.render(width, lang, 'progress'),
         next = frame.workboard.rows.filter((r) => /:next:\d+$/.test(r.item ?? ''));
       assert.equal(next.length, 4);
       for (const [i, row] of next.entries()) {
@@ -453,7 +534,7 @@ test('polish: Next text aligns without filename tails and slice states use the b
       }
       assert.ok(frame.workboard.rows.some((r) => /^ {13}\+1\s*$/.test(stripAnsi(r.text))));
     }
-  const coloured = f.render(120, 'en', undefined, 56, f.data, true, 'unicode', 'mocha');
+  const coloured = f.render(120, 'en', 'progress', 56, f.data, true, 'unicode', 'mocha');
   const bar = coloured.workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text))).text;
   const inks = [...bar.matchAll(/(\x1b\[[0-9;]+m)[█▓░]+/g)].map((m) => m[1]);
   const row = (frame, id) =>
@@ -461,7 +542,7 @@ test('polish: Next text aligns without filename tails and slice states use the b
   assert.ok(row(coloured, 'NATIVE-TREE').includes(inks[0] + '◐'));
   assert.ok(row(coloured, 'BLOCKED').includes(inks[1] + '◆'));
   for (const id of ['ORPHAN', 'NO-JOB']) assert.match(stripAnsi(row(coloured, id)), /^  ! /);
-  const ascii = f.render(80, 'en', undefined, 56, f.data, true, 'text');
+  const ascii = f.render(80, 'en', 'progress', 56, f.data, true, 'text');
   assert.match(stripAnsi(row(ascii, 'NATIVE-TREE')), /^  @ /);
   assert.match(stripAnsi(row(ascii, 'BLOCKED')), /^  ! /);
 });
@@ -475,16 +556,16 @@ test('bar proportions fill the row in EN/ZH and text icons, including zero state
     );
     for (const s of segments) assert.ok(Math.abs(s.width - (width * f.data.counts[s.state]) / 7) <= 1);
     for (const lang of ['en', 'zh']) {
-      const bar = f.render(width, lang).workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text)));
+      const bar = f.render(width, lang, 'progress').workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text)));
       assert.equal(visualLength(bar.text), width);
     }
   }
-  const ascii = f.render(80, 'en', undefined, 56, f.data, true, 'text');
+  const ascii = f.render(80, 'en', 'progress', 56, f.data, true, 'text');
   assert.ok(ascii.workboard.rows.some((r) => stripAnsi(r.text) === '#'.repeat(80)));
   assert.doesNotMatch(plain(ascii).join('\n'), /[█▓░●]/);
   const counts = { working: 2, blocked: 0, try: 0, todo: 1, accepted: 0, dropped: 0 };
   const data = { ...f.data, counts };
-  const text = plain(f.render(120, 'en', undefined, 56, data)).join('\n');
+  const text = plain(f.render(120, 'en', 'progress', 56, data)).join('\n');
   assert.match(text, /blocked 0/);
   assert.match(text, /landed, to try 0/);
   assert.match(text, /accepted 0/);
@@ -500,40 +581,40 @@ test('drift distinguishes a missing worktree, an unlisted tree and a landed tree
   assert.equal(data.counts.try, 2);
   assert.equal(data.slices.find((s) => s.label === 'NO-JOB').drift, 'ledger');
   assert.equal(data.slices.find((s) => s.label === 'NO-JOB').ledgerState, 'try');
-  const text = plain(f.render(120, 'en', undefined, 56, data)).join('\n');
+  const text = plain(f.render(120, 'en', 'progress', 56, data)).join('\n');
   assert.match(text, /updated 12:35 · ! 2/);
   assert.match(text, /! NO-JOB.*ledger: try/);
   assert.match(text, /! ORPHAN.*no worktree/);
   assert.doesNotMatch(text, /! BLOCKED/);
   f.put(state, original.replace('Milestone: M3b', 'Milestone: UNMATCHED'));
   const noMatch = await f.collector.collect(true, f.board, NOW + 2);
-  assert.doesNotMatch(plain(f.render(80, 'en', undefined, 56, noMatch)).join('\n'), /\[M1\]|\(M3b\)/);
+  assert.doesNotMatch(plain(f.render(80, 'en', 'progress', 56, noMatch)).join('\n'), /\[M1\]|\(M3b\)/);
   fs.utimesSync(state, new Date(NOW - 86400000), new Date(NOW - 86400000));
   const old = await f.collector.collect(true, f.board, NOW + 3);
-  assert.match(plain(f.render(120, 'en', undefined, 56, old)).join('\n'), /updated 2026-11-11/);
+  assert.match(plain(f.render(120, 'en', 'progress', 56, old)).join('\n'), /updated 2026-11-11/);
 });
 test('slice lines use the same Home worker fact/model and keep hidden jobs available; files fall back to STATE', async (t) => {
   const f = await fixture(t),
     worker = f.board.workers.find((w) => w.evidence[0]?.sourceId === 'j0000000000000002');
   const home = renderWorkCard(projectWorkCard(worker, NOW), initialMonitorState(), 120).map(stripAnsi).join('\n');
   assert.match(home, /Question: Which synthetic option\?/);
-  assert.match(plain(f.render(120)).join('\n'), /now: Question: Which synthetic option\?/);
+  assert.match(plain(f.render(120, 'en', 'progress')).join('\n'), /now: Question: Which synthetic option\?/);
   worker.modelSentence = 'Building «synthetic agents» in the Home lane.';
-  assert.match(plain(f.render(120)).join('\n'), /now: Building synthetic agents in the Home lane\./);
-  const coloured = f.render(120, 'en', undefined, 56, f.data, true, 'unicode', 'mocha');
+  assert.match(plain(f.render(120, 'en', 'progress')).join('\n'), /now: Building synthetic agents in the Home lane\./);
+  const coloured = f.render(120, 'en', 'progress', 56, f.data, true, 'unicode', 'mocha');
   assert.match(
     coloured.workboard.rows.find((r) => stripAnsi(r.text).includes('now: Building')).text,
     /\x1b\[[0-9;]+msynthetic agents\x1b\[0m/
   );
-  assert.doesNotMatch(plain(f.render(120, 'en', undefined, 56, f.data, false)).join('\n'), /Building synthetic agents/);
+  assert.doesNotMatch(plain(f.render(120, 'en', 'progress', 56, f.data, false)).join('\n'), /Building synthetic agents/);
   assert.match(
-    plain(f.render(120, 'en', undefined, 56, f.data, false)).join('\n'),
+    plain(f.render(120, 'en', 'progress', 56, f.data, false)).join('\n'),
     /now: Question: Which synthetic option\?/
   );
   worker.state = 'done';
   worker.settledAt = NOW - 3600000;
   worker.homeNeedsHuman = false;
-  const hidden = f.render(120);
+  const hidden = f.render(120, 'en', 'progress');
   assert.equal(
     hidden.workboard.snapshot.workers.some((w) => w.id === worker.id),
     false
@@ -545,7 +626,7 @@ test('slice lines use the same Home worker fact/model and keep hidden jobs avail
   fs.unlinkSync(join(f.sliceJob, 'brief.md'));
   data = await f.collector.collect(true, f.board, NOW + 2);
   assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.cwd, 'docs/handoff/STATE.md'));
-  const frame = f.render(120, 'en', undefined, 56, data);
+  const frame = f.render(120, 'en', 'progress', 56, data);
   for (const suffix of ['summary', 'chips:0', 'slice:0']) {
     frame.state.projectCursor = frame.workboard.rows.find((r) => r.item?.endsWith(suffix)).item;
     assert.deepEqual(press(frame, 'enter').action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
@@ -615,7 +696,7 @@ test('changed/oversized sources, missing milestone and source fallback never inv
     false
   );
   assert.deepEqual(data.ladder.ids, ['M1', 'M2', 'M3', 'M3b', 'M4']);
-  const noMilestone = plain(f.render(80, 'en', undefined, 56, data)).join('\n');
+  const noMilestone = plain(f.render(80, 'en', 'progress', 56, data)).join('\n');
   assert.match(noMilestone, /M1  M2  M3  M3b  M4/);
   assert.doesNotMatch(noMilestone, /\[M1\]|\(M3b\)/);
   assert.deepEqual(data.keys, [

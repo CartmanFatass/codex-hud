@@ -80,14 +80,28 @@ export async function projectFixture(root) {
   board.workers = board.lanes.flatMap((l) => l.workers);
   const collector = new ProjectCollector(cwd, hud, env, home);
   const data = await collector.collect(true, board, NOW);
-  const render = (width, lang = 'en', state = { ...initialMonitorState(), mainTab: 'project', projectFolded: new Set(['agents']) }, height = 56, snapshot = data, modelEnabled = true, icons = 'unicode', theme = 'none') => {
+  // `state` may be a page name ('progress', 'tickets', 'tree', 'docs', 'control') or a full state; none is the hub.
+  const render = (width, lang = 'en', state = undefined, height = 56, snapshot = data, modelEnabled = true, icons = 'unicode', theme = 'none') => {
+    state = typeof state === 'string' ? onPage(state) : state ?? onPage();
     const display = setDisplayConfig({ theme, icons }), previous = setLanguage(lang);
-    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, state, width, height, nowMs: NOW, modelEnabled }); }
+    try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state, width, height, nowMs: NOW, modelEnabled }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
   return { cwd, hud, home, env, put, board, collector, data, render, job, linked, sliceJob };
 }
+/** A Project tab state: the hub, or one page of it. */
+export const onPage = (projectPage, extra) => ({ ...initialMonitorState(), mainTab: 'project', projectPage, projectFolded: new Set(['agents']), ...extra });
 export const plain = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd());
+export const PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'];
+/** The hub at 40/80/120 (and text icons at 40), and each page at 40 and 120, so a regression shows in the diff. */
 export function projectFrames(f) {
-  return Object.fromEntries([80, 120].flatMap((width) => ['en', 'zh'].map((lang) => [`project-${width}-${lang}`, plain(f.render(width, lang))])));
+  const frames = {};
+  for (const lang of ['en', 'zh']) {
+    for (const width of [40, 80, 120]) frames[`hub-${width}-${lang}`] = plain(f.render(width, lang, undefined, 24));
+    for (const page of PAGES.filter((p) => p !== 'tickets')) for (const width of [40, 120])
+      frames[`${page}-${width}-${lang}`] = plain(f.render(width, lang, page, 40));
+  }
+  frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
+  frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
+  return frames;
 }

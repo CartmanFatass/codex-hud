@@ -53,7 +53,7 @@ for (const [number, word, expectedState] of ticketVocabulary) test(`local tracke
   assert.equal(ticket.job, undefined, 'file vocabulary works without a linked job');
   assert.deepEqual(ticket.blockers, [], 'resolved and wontfix dependencies do not block');
   for (const lang of ['en', 'zh']) {
-    const frame = f.render(120, lang, undefined, f.data, 'mocha');
+    const frame = f.render(120, lang, 'tickets', f.data, 'mocha');
     const row = frame.workboard.rows.find((r) => r.files?.[0] === ticket.path), text = stripAnsi(row.text);
     const glyph = expectedState === 'done' ? '✓' : expectedState === 'dropped' ? '–' : expectedState === 'working' ? '◐' : '●';
     assert.ok(text.includes(`${glyph} ${number} Vocabulary ${word}`), text);
@@ -65,12 +65,14 @@ for (const [number, word, expectedState] of ticketVocabulary) test(`local tracke
     assert.match(stripAnsi(feature.text), /1\/12/, 'wontfix is not counted as done even with all boxes checked');
   }
 });
-test('Project ticket frames are cell-exact at 80/120 EN/ZH; unknown words dim and no empty section', async (t) => {
+test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim and no empty section', async (t) => {
   const f = await fixture(t);
   assert.deepEqual(ticketFrames(f), expected);
   for (const width of [32, 56, 80, 120]) for (const lang of ['en', 'zh']) {
-    const frame = f.render(width, lang), text = plain(frame).join('\n');
-    for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
+    const frame = f.render(width, lang, 'tickets'), hub = f.render(width, lang), text = plain(frame).join('\n');
+    for (const line of [...frame.lines, ...hub.lines]) assert.equal(visualLength(line), width, stripAnsi(line));
+    assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +\d+\/14 done/ : /工单 +\d+\/14 完成/, 'the done count is the last fact to go');
+    if (width >= 56) assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +3\/14 done · 2 working · 2 blocked/ : /工单 +3\/14 完成 · 2 工作中 · 2 受阻/);
     if (width >= 80) {
       assert.match(text, lang === 'en' ? /2 features · 14 tickets/ : /2 个功能 · 14 个工单/);
       assert.match(text, lang === 'en' ? /imp working 12m/ : /imp 工作中 12分钟/);
@@ -78,20 +80,22 @@ test('Project ticket frames are cell-exact at 80/120 EN/ZH; unknown words dim an
       assert.match(text, /triaging/);
       assert.match(text, /▸ retired-tools.*2\/2/);
       assert.doesNotMatch(text, /Claude collector|Legacy cleanup|Not a ticket/);
-      assert.ok(text.indexOf(lang === 'en' ? 'Progress' : '进度') < text.indexOf(lang === 'en' ? 'Tickets' : '工单'));
-      assert.ok(text.indexOf(lang === 'en' ? 'Tickets' : '工单') < text.indexOf(lang === 'en' ? 'Working tree' : '工作区'));
+      const entries = plain(hub).join('\n'), at = (word) => entries.indexOf(word);
+      const [progress, tickets, tree, docs, control] = (lang === 'en' ? ['Progress', 'Tickets', 'Working tree', 'Docs', 'Control plane'] : ['进度', '工单', '工作区', '文档', '控制面']).map(at);
+      assert.ok(progress >= 0 && progress < tickets && tickets < tree && tree < docs && docs < control, 'the hub lists Progress, Tickets, Working tree, Docs, Control plane');
     }
   }
-  const coloured = f.render(120, 'en', undefined, f.data, 'mocha');
+  const coloured = f.render(120, 'en', 'tickets', f.data, 'mocha');
   const row = coloured.workboard.rows.find((r) => stripAnsi(r.text).includes('triaging'));
   assert.match(row.text, /\x1b\[[0-9;]+mready · triaging\x1b\[0m/);
   fs.rmSync(join(f.cwd, '.scratch'), { recursive: true });
   const data = await f.collector.collect(true, f.board, NOW + 3);
   assert.deepEqual(data.tickets, []);
-  assert.doesNotMatch(plain(f.render(80, 'en', undefined, data)).join('\n'), /Tickets|native-tree|retired-tools/);
+  assert.doesNotMatch(plain(f.render(80, 'en', undefined, data)).join('\n'), /Tickets|native-tree|retired-tools/, 'no Tickets entry on the hub');
+  assert.match(plain(f.render(80, 'en', 'tickets', data)).join('\n'), /Project › Tickets\n\n  none/);
 });
 test('completed feature starts folded; Enter/o toggle it using existing Project input without mutating state on render', async (t) => {
-  const f = await fixture(t), state = { ...initialMonitorState(), mainTab: 'project' };
+  const f = await fixture(t), state = { ...initialMonitorState(), mainTab: 'project', projectPage: 'tickets' };
   let frame = f.render(120, 'en', state);
   assert.equal(state.projectFolded, undefined);
   frame.state.projectCursor = 'project:fold:tickets:retired-tools';
@@ -103,10 +107,6 @@ test('completed feature starts folded; Enter/o toggle it using existing Project 
   frame.state.projectCursor = 'project:fold:tickets:native-tree';
   frame = f.render(120, 'en', press(frame, 'enter').state);
   assert.doesNotMatch(plain(frame).join('\n'), /Home lanes/);
-  frame.state.projectCursor = 'project:fold:tickets';
-  frame = f.render(120, 'en', press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /▸ Tickets/);
-  assert.doesNotMatch(plain(frame).join('\n'), /retired-tools/);
 });
 test('Enter and raw o open the exact ticket file via the existing action and a fake herdr tab', async (t) => {
   const f = await fixture(t), log = join(f.root, 'open.jsonl'), bin = join(f.root, 'bin');
@@ -117,7 +117,7 @@ fs.appendFileSync(process.env.OPEN_LOG, JSON.stringify(args) + '\\n');
 const operation = args.slice(0, 2).join(' ');
 console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace_id: 'w4E'}} : {root_pane: {pane_id: 'w4E:p3'}}}));
 `, { mode: 0o700 });
-  const frame = f.render(120), decoder = new WorkbenchInputDecoder('workboard');
+  const frame = f.render(120, 'en', 'tickets'), decoder = new WorkbenchInputDecoder('workboard');
   frame.state.projectCursor = frame.workboard.rows.find((r) => r.files?.[0] === f.paths.working).item;
   for (const raw of ['\r', 'o']) {
     const input = decoder.push(Buffer.from(raw))[0];

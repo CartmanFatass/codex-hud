@@ -211,7 +211,7 @@ for (const language of ['en', 'zh']) {
           assert.doesNotMatch(text, /Read and carry out|\/synthetic\/brief/);
           for (const line of frame.lines) assert.equal(visualLength(line), width);
         }
-        const progress = renderMonitor({ tree, workboard: board, project, state: { ...initialMonitorState(), mainTab: 'project' }, width, height: 30, nowMs: f.now });
+        const progress = renderMonitor({ tree, workboard: board, project, state: { ...initialMonitorState(), mainTab: 'project', projectPage: 'progress' }, width, height: 30, nowMs: f.now });
         assert.match(progress.lines.map(stripAnsi).join('\n'), /CLAUDE-BIND/);
         assert.doesNotMatch(progress.lines.map(stripAnsi).join('\n'), /Read and carry out|\/synthetic\/brief/);
         for (const line of progress.lines) assert.equal(visualLength(line), width);

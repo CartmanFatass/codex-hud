@@ -8,6 +8,7 @@ import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-type
 import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
+import type { ProjectPage } from './project-view.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
   iconic,
@@ -40,8 +41,12 @@ export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
   mainTab?: 'home' | 'project';
+  /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
+  projectPage?: ProjectPage;
   projectCursor?: string;
   projectScroll?: number;
+  /** Where each page the owner left was, so opening it again finds the same row and scroll. */
+  projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;
   homeTarget?: WorkTarget;
   homeScroll?: number;
@@ -128,6 +133,8 @@ export interface MonitorData {
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
   project?: ProjectSnapshot;
+  /** The project's own name, for the hub's top row. */
+  projectName?: string;
   prefix?: string;
   state: MonitorState;
   width: number;

@@ -35,10 +35,15 @@ export async function ticketFixture(root) {
   f.put(join(job, 'STATUS.json'), { state: 'working', started_at: new Date(NOW - 12 * 60000).toISOString() });
   f.put(join(job, 'brief.md'), '# Build Home lanes\nImplement .scratch/native-tree/issues/02-home-lanes.md\n');
   const data = await f.collector.collect(true, f.board, NOW + 1);
-  const render = (width, lang = 'en', state, snapshot = data, theme = 'none') => f.render(width, lang, state, 72, snapshot, false, 'unicode', theme);
+  const render = (width, lang = 'en', state, snapshot = data, theme = 'none', height = 72) => f.render(width, lang, state, height, snapshot, false, 'unicode', theme);
   return { ...f, data, paths, issue, ticketJob: job, render };
 }
+/** The hub (now with its Tickets entry) and the Tickets page. */
 export function ticketFrames(f) {
-  return Object.fromEntries([80, 120].flatMap((width) => ['en', 'zh'].map((lang) =>
-    [`tickets-${width}-${lang}`, plain(f.render(width, lang))])));
+  const frames = {};
+  for (const lang of ['en', 'zh']) for (const width of [40, 80, 120]) {
+    frames[`tickets-${width}-${lang}`] = plain(f.render(width, lang, 'tickets'));
+    if (width !== 80) frames[`hub-${width}-${lang}`] = plain(f.render(width, lang, undefined, f.data, 'none', 24));
+  }
+  return frames;
 }

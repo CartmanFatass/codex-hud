@@ -1,5 +1,5 @@
 /** Pure Project rows, using the same kit as Home and the Inspector. */
-import { SLICE_STATES, type SliceState, type ProjectSnapshot, type ProjectItem } from '../collectors/project-board.js';
+import { SLICE_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { jobSentenceLine, workCardDetail, labelSummary } from './work-card.js';
@@ -82,43 +82,103 @@ export function homeProgressRows(data: ProjectSnapshot | undefined, width: numbe
   }
   return rows;
 }
-export function projectRows(
-  data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false
-): MonitorRow[] {
-  if (!data) return [];
-  const rows: MonitorRow[] = [boardRow('')], folded = state.projectFolded ?? new Set(['control', 'agents']);
-  const header = (id: string, label: string, right = '') => {
-    rows.push({
-      ...section(`${folded.has(id) ? mark('▸', '>') + ' ' : ''}${t(label)}`, width, right),
-      item: `project:fold:${id}`,
-    });
-    return !folded.has(id);
-  };
-  const item = (r: ProjectItem, i: number, glyph = '') => {
-    const left = `${r.label ? fit(t(r.label), 10) + ' ' : ''}${monitorText(r.value)}`;
-    const right = width < 56 ? '' : r.at !== undefined ? minuteAge(r.at, now)
-      : r.path ? monitorText(basename(r.path)) : '';
-    rows.push({
-      ...itemRow(glyph, left, right, width),
-      ...(r.path ? { item: `project:file:${r.path}:${i}`, files: [r.path] } : {}),
-    });
-  };
+export const PROJECT_PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'] as const;
+export type ProjectPage = (typeof PROJECT_PAGES)[number];
+const PAGE_WORD: Record<ProjectPage, string> = {
+  progress: 'Progress', tickets: 'Tickets', tree: 'Working tree', docs: 'Docs', control: 'Control plane',
+};
+/** The open page; none, or a name this build does not know, is the hub. */
+export const projectPageOf = (state: MonitorState) => PROJECT_PAGES.find((p) => p === state.projectPage);
+/** Only the native-agents list starts folded: a page's own header is its crumb. */
+export const projectFoldedSet = (state: MonitorState): ReadonlySet<string> => state.projectFolded ?? new Set(['agents']);
+const SETTLED = ['done', 'closed', 'complete', 'failed', 'stopped', 'idle_grace'];
+const ticketWorking = (r: ProjectTicket) => !['done', 'dropped', 'blocked'].includes(r.state)
+  && (r.state === 'working' || (!!r.job && !SETTLED.includes(r.job.state)));
+const parts = (...p: (string | number | false | null | undefined)[]) =>
+  p.filter((s): s is string => typeof s === 'string' && s !== '');
+function updatedText(data: ProjectSnapshot, now: number): string {
+  if (data.updatedAt === undefined) return '';
+  const at = new Date(data.updatedAt), today = new Date(now), two = (n: number) => String(n).padStart(2, '0');
+  return t('updated {time}', { time: at.toDateString() === today.toDateString() ? `${two(at.getHours())}:${two(at.getMinutes())}`
+    : `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}` });
+}
+/** What an open page says about itself on its crumb row, widest first; the first that fits is shown. */
+function pageMeta(page: ProjectPage, data: ProjectSnapshot, now: number): string[] {
+  if (page === 'progress') {
+    const drift = data.slices.filter((r) => r.drift).length, bang = drift ? theme.board.attention(`! ${drift}`) : '';
+    return [parts(updatedText(data, now), bang).join(' · '), bang];
+  }
+  if (page === 'tickets') return data.tickets?.length ? [t('{features} features · {tickets} tickets', {
+    features: data.tickets.length, tickets: data.tickets.reduce((n, f) => n + f.tickets.length, 0) })] : [];
+  if (page === 'control') return [`${data.roleCount} ${t('roles')} · ${data.agents.length} ${t('agents')}`, `${data.roleCount} ${t('roles')}`];
+  return [];
+}
+/** `Project › Page` for the sub-page title row, with the page's own facts on the right when there is room. */
+export function projectCrumb(page: ProjectPage, data: ProjectSnapshot | undefined, width: number, now: number) {
+  const crumb = `${t('Project')} ${mark('›', '>')} ${t(PAGE_WORD[page])}`;
+  return { crumb, right: (data && pageMeta(page, data, now).find((r) => r && visualLength(crumb) + 4 + visualLength(r) <= width)) || '' };
+}
+/** One line per page, most important fact first: a row too short for all of them drops the last, not part of one. */
+function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: number): string[] {
+  const c = data.counts, tickets = data.tickets.flatMap((f) => f.tickets), g = data.git;
+  if (page === 'progress') return parts(data.ladder.current && monitorText(data.ladder.current),
+    c.working && `${c.working} ${t('working')}`, c.try && t('{n} to try', { n: c.try }),
+    c.blocked && `${c.blocked} ${t('blocked')}`, !data.statePath && t('no STATE.md'));
+  if (page === 'tickets') {
+    const working = tickets.filter(ticketWorking).length, blocked = tickets.filter((r) => r.state === 'blocked').length;
+    return tickets.length ? parts(t('{done}/{total} done', { done: tickets.filter((r) => r.state === 'done').length, total: tickets.length }),
+      working && `${working} ${t('working')}`, blocked && `${blocked} ${t('blocked')}`) : [];
+  }
+  if (page === 'tree') return parts(g?.branch && monitorText(g.branch), g && t('{n} changed', { n: g.changed }),
+    g?.ahead && `${g.ahead} ${t('ahead')}`, g?.behind && `${g.behind} ${t('behind')}`,
+    data.editing.length && `${data.editing.length} ${t('editing')}`);
+  if (page === 'docs') {
+    const spec = data.docs.find((r) => r.label === 'spec'), review = data.docs.find((r) => r.label === 'review');
+    return parts(spec && monitorText(spec.value), review && `${t('review')} ${minuteAge(review.at ?? null, now)}`);
+  }
+  return parts(`${data.roleCount} ${t('roles')}`, data.keys.length && `${t('keys')} ${data.keys.filter((k) => k[1]).length}/${data.keys.length}`,
+    `${t('browser')} ${mark(data.browser ? '✓' : '−', data.browser ? '+' : '-')}`);
+}
+const foldRow = (folded: ReadonlySet<string>, id: string, label: string, width: number, right = ''): MonitorRow => ({
+  ...section(`${folded.has(id) ? mark('▸', '>') + ' ' : ''}${t(label)}`, width, right), item: `project:fold:${id}`,
+});
+const projectItem = (r: ProjectItem, i: number, glyph: string, width: number, now: number): MonitorRow => {
+  const left = `${r.label ? fit(t(r.label), 10) + ' ' : ''}${monitorText(r.value)}`;
+  const right = width < 56 ? '' : r.at !== undefined ? minuteAge(r.at, now)
+    : r.path ? monitorText(basename(r.path)) : '';
+  return { ...itemRow(glyph, left, right, width), ...(r.path ? { item: `project:file:${r.path}:${i}`, files: [r.path] } : {}) };
+};
+/** The hub: the project's name, what waits for the owner, then one summary row per page. */
+function hubRows(data: ProjectSnapshot, state: MonitorState, width: number, now: number, name: string): MonitorRow[] {
+  const folded = projectFoldedSet(state);
+  const rows: MonitorRow[] = [boardRow(''), section(theme.board.title(monitorText(name) || t('Project')), width)];
   if (data.waiting.length) {
-    if (header('waiting', 'Waiting for you', String(data.waiting.length)))
-      data.waiting.forEach((r, i) => item(r, i, theme.board.attention('?')));
+    rows.push(foldRow(folded, 'waiting', 'Waiting for you', width, String(data.waiting.length)));
+    if (!folded.has('waiting')) data.waiting.forEach((r, i) => rows.push(projectItem(r, i, theme.board.attention('?'), width, now)));
     rows.push(boardRow(''));
   }
-  let updated = '';
-  if (data.updatedAt !== undefined) {
-    const at = new Date(data.updatedAt), today = new Date(now);
-    const time = at.toDateString() === today.toDateString()
-      ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
-      : `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
-    updated = t('updated {time}', { time });
+  const column = Math.max(...PROJECT_PAGES.map((p) => visualLength(t(PAGE_WORD[p])))) + 1, room = Math.max(1, width - column);
+  for (const page of PROJECT_PAGES) {
+    // A project with no tickets has no Tickets entry, as it had no empty section before.
+    if (page === 'tickets' && !data.tickets?.length) continue;
+    const facts = pageSummary(page, data, now);
+    while (facts.length > 1 && visualLength(facts.join(' · ')) > room) facts.pop();
+    const item = `project:page:${page}`;
+    rows.push({ text: fit(`${theme.board.title(fit(t(PAGE_WORD[page]), column))}${facts.join(' · ') || mark('–', '-')}`, width), item });
+    // The bar sits under its row and opens the same page.
+    const bar = Math.min(width, HOME_BLOCK);
+    if (page === 'progress' && progressSegments(data.counts, bar).some((s) => s.width)) rows.push({ text: fit(barText(data, bar), width), item });
   }
-  const drift = data.slices.filter((r) => r.drift).length;
-  if (header('progress', 'Progress', [updated, drift ? theme.board.attention(`! ${drift}`) : ''].filter(Boolean).join(' · '))) {
+  return rows;
+}
+/** One page: today's section content, without the section header (the crumb names the page). */
+function pageRows(
+  page: ProjectPage, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
+  board?: WorkboardSnapshot, modelEnabled = false
+): MonitorRow[] {
+  const rows: MonitorRow[] = [boardRow('')], folded = projectFoldedSet(state);
+  const item = (r: ProjectItem, i: number, glyph = '') => rows.push(projectItem(r, i, glyph, width, now));
+  if (page === 'progress') {
     const fileRow = (text: string, key: string, path = data.statePath) => rows.push({
       text: fit(text, width), ...(path ? { item: `project:file:${path}:${key}`, files: [path] } : {}),
     });
@@ -155,12 +215,8 @@ export function projectRows(
     data.next.slice(0, 4).forEach((r, i) => fileRow(
       `${i ? ' '.repeat(13) : `${mark('→', '>')} ${fit(t('next'), 10)} `}${monitorText(r.value)}`, `next:${i}`, r.path));
     if (data.next.length > 4) rows.push(boardRow(fit(`${' '.repeat(13)}+${data.next.length - 4}`, width)));
-  }
-  rows.push(boardRow(''));
-  if (data.tickets?.length) {
-    if (header('tickets', 'Tickets', t('{features} features · {tickets} tickets', {
-      features: data.tickets.length, tickets: data.tickets.reduce((n, f) => n + f.tickets.length, 0),
-    }))) for (const feature of data.tickets) {
+  } else if (page === 'tickets') {
+    for (const feature of data.tickets ?? []) {
       const done = feature.tickets.filter((r) => r.state === 'done').length, id = `tickets:${feature.slug}`;
       // Membership toggles the default: completed features start folded, others open.
       const closed = folded.has(id) !== (done === feature.tickets.length);
@@ -168,10 +224,10 @@ export function projectRows(
         theme.board.muted(t('{done}/{total} done', { done, total: feature.tickets.length })), width), item: `project:fold:${id}` });
       if (closed) continue;
       for (const ticket of feature.tickets) {
-        const job = ticket.job, working = job && !['done', 'closed', 'complete', 'failed', 'stopped', 'idle_grace'].includes(job.state);
-        const dropped = ticket.state === 'dropped', literal = /^(needs-triage|needs-info|ready-for-human)$/i.test(ticket.status);
+        const job = ticket.job, dropped = ticket.state === 'dropped';
+        const literal = /^(needs-triage|needs-info|ready-for-human)$/i.test(ticket.status);
         const ink = ticket.state === 'done' ? theme.board.success : dropped || ticket.state === 'blocked' ? theme.board.muted : theme.board.active;
-        const glyph = ticket.state === 'done' ? mark('✓', '+') : dropped ? mark('–', '-') : ticket.state === 'blocked' ? mark('○', 'o') : ticket.state === 'working' || working ? mark('◐', '@') : mark('●', '*');
+        const glyph = ticket.state === 'done' ? mark('✓', '+') : dropped ? mark('–', '-') : ticket.state === 'blocked' ? mark('○', 'o') : ticketWorking(ticket) ? mark('◐', '@') : mark('●', '*');
         const status = ticket.state === 'blocked' ? t('blocked by {tickets}', { tickets: monitorText(ticket.blockers.join(', ')) })
           : literal ? monitorText(ticket.status) : t(ticket.state);
         const unknown = !/^(done|closed|complete|resolved|wontfix|claimed|needs-triage|needs-info|ready-for-human|ready-for-agent)$/i.test(ticket.status);
@@ -183,9 +239,7 @@ export function projectRows(
           item: `project:file:${ticket.path}:ticket`, files: [ticket.path] });
       }
     }
-    rows.push(boardRow(''));
-  }
-  if (header('tree', 'Working tree')) {
+  } else if (page === 'tree') {
     if (data.git) item({ label: 'branch', value: [
       data.git.branch, t('{n} changed', { n: data.git.changed }),
       data.git.ahead === null ? '' : `${data.git.ahead} ${t('ahead')}`,
@@ -193,17 +247,25 @@ export function projectRows(
     ].filter(Boolean).join(' · ') }, 0);
     data.editing.forEach((r, i) => item(r, i, theme.board.active(mark('◉', '@'))));
     if (data.last) item({ label: 'last', value: data.last.text, at: data.last.at }, 0);
-  }
-  rows.push(boardRow(''));
-  if (header('docs', 'Docs')) data.docs.forEach((r, i) => item(r, i));
-  rows.push(boardRow(''));
-  if (header('control', 'Control plane', `${data.roleCount} ${t('roles')} · ${data.agents.length} ${t('agents')}`)) {
+  } else if (page === 'docs') data.docs.forEach((r, i) => item(r, i));
+  else {
     data.control.forEach((r, i) => item(r.label === 'convention'
       ? { ...r, value: t(r.value) + ' · ' + basename(r.path!) } : r, i));
-    if (header('agents', 'agents', String(data.agents.length))) data.agents.forEach((r, i) => item(r, i));
+    rows.push(foldRow(folded, 'agents', 'agents', width, String(data.agents.length)));
+    if (!folded.has('agents')) data.agents.forEach((r, i) => item(r, i));
     rows.push(...kvRows('keys', data.keys.map(([name, present]) =>
       `${name} ${mark(present ? '✓' : '−', present ? '+' : '-')}`).join('  '), width));
     item({ label: 'browser', value: mark(data.browser ? '✓' : '−', data.browser ? '+' : '-') }, 0);
   }
+  if (rows.length === 1) rows.push(boardRow('  ' + theme.board.muted(t('none'))));
   return rows;
+}
+/** The Project tab: a hub of one summary row per page, or the page the panel has open. */
+export function projectRows(
+  data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,
+  board?: WorkboardSnapshot, modelEnabled = false, name = ''
+): MonitorRow[] {
+  const page = projectPageOf(state);
+  if (!data) return [];
+  return page ? pageRows(page, data, state, width, now, board, modelEnabled) : hubRows(data, state, width, now, name);
 }

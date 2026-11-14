@@ -4,7 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { boardInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
-import { projectRows, homeProgressRows } from './project-view.js';
+import { projectRows, homeProgressRows, projectPageOf, projectCrumb } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
@@ -53,7 +53,8 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
           boardRow(fit(keys[i]?.text ?? '', half) + '    ' + fit(marks[i]?.text ?? '', width - half - 4))
         );
   const notes = [
-    'In Project and the Inspector ⏎ opens the file',
+    'In Project ⏎ opens a page, then a file or fold there; Esc goes back',
+    'In the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
   rows.push(boardRow(''), ...notes.flatMap((s) => flowLines(t(s), width).map((s) => boardRow(theme.board.muted(s)))));
@@ -85,6 +86,7 @@ export function renderWorkboardFrame(
     changes = !help && state.focus === 'changes';
   const sub = inspector || help || changes;
   const project = !sub && state.mainTab === 'project';
+  const page = project ? projectPageOf(state) : undefined;
   const board = inspector ? source : visibleWorkboard(input, source, state, now);
   const target = state.boardInspect;
   const lane = board.lanes.find((l) => l.id === target?.laneId);
@@ -98,9 +100,11 @@ export function renderWorkboardFrame(
     : changes
       ? t('Changes')
       : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}${target?.kind === 'decision' ? ' ' + (lane?.decisions.find((d) => d.id === target.decisionId)?.evidence[0]?.relativePath.match(/q\d+/)?.[0] ?? '') : ''}`;
-  if (sub) {
-    frame.lines[0] = subTopRow(crumb, '', width);
-    frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width: 2 });
+  if (sub || page) {
+    // An open Project page has no tab row: its crumb returns to the hub, from anywhere on the row.
+    const at = page && projectCrumb(page, input.project, width, now);
+    frame.lines[0] = subTopRow(at?.crumb ?? crumb, at?.right ?? '', width);
+    frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width: page ? width : 2 });
   } else {
     const count = board.workers.filter((w) => w.homeNeedsHuman).length;
     const title = ` ${t('Home')}${count ? ' ' + theme.board.attention(String(count)) : ''} `;
@@ -129,7 +133,7 @@ export function renderWorkboardFrame(
       : inspector
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
         : project
-          ? projectRows(input.project, state, width, now, source, input.modelEnabled)
+          ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName)
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
@@ -171,7 +175,9 @@ export function renderWorkboardFrame(
     state.inspectCursor =
       files.find((r) => r.files?.[0].endsWith(worker?.work?.requestInfo?.evidence?.relativePath ?? '/report.md'))
         ?.item ?? files[0]?.item;
-  if (project && !rows.some((r) => r.item === state.projectCursor)) state.projectCursor = rows.find((r) => r.item)?.item;
+  // A new hub or page starts on its first destination (a page row, not the Waiting fold).
+  if (project && (!state.projectCursor || !rows.some((r) => r.item === state.projectCursor)))
+    state.projectCursor = (rows.find((r) => r.item?.startsWith('project:page:')) ?? rows.find((r) => r.item))?.item;
   const key = project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
   const cursorAt = rows.findIndex((r) => r.item === key),
     room = Math.max(0, height - 2),
@@ -213,7 +219,7 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : project ? '↑↓ move  ⏎ open  ←→ tab  ? help'
+        : project ? (page ? '↑↓ move  ⏎ open  esc back  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
   if (height > 1)
     frame.lines[height - 1] = footRow(

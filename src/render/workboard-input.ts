@@ -5,6 +5,7 @@ import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
 import { monitorRowAt } from './monitor-input.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { cardExpanded } from './work-card.js';
+import { projectFoldedSet, projectPageOf, type ProjectPage } from './project-view.js';
 import { join } from 'node:path';
 export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
@@ -24,12 +25,27 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.boardRevealed = undefined;
     next.boardAnchor = undefined;
   };
+  // Opening a page keeps where it was left; closing it lands the hub's cursor on that page's row.
+  const goProject = (page?: ProjectPage, cursor?: string) => {
+    const from = projectPageOf(next), saved = { ...next.projectSaved };
+    if (from) saved[from] = { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
+    const kept = page && !cursor ? saved[page] : undefined;
+    next.projectSaved = saved;
+    next.projectPage = page;
+    next.projectCursor = page ? cursor ?? kept?.cursor : from && `project:page:${from}`;
+    next.projectScroll = kept?.scroll ?? 0;
+    next.boardRevealed = kept?.cursor;
+  };
   const back =
     input.type === 'mouse' &&
     input.button === 'left' &&
     frame?.controls.some(
       (c) => c.kind === 'board-back' && c.y === input.y && input.x >= c.x && input.x < c.x + c.width
     );
+  if (back && main && next.mainTab === 'project' && projectPageOf(next)) {
+    goProject();
+    return result();
+  }
   if (back || (key === 'escape' && next.focus === 'changes')) {
     home();
     return result();
@@ -78,10 +94,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   if (key === 'brief-toggle' || tab === 'brief') return result({ type: 'brief-toggle' });
   if (main && next.mainTab === 'project') {
-    const rows = boardFrame.rows.filter((r) => r.item), at = rows.findIndex((r) => r.item === next.projectCursor);
+    // A hub entry may span two rows (the bar); the cursor visits it once.
+    const rows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i),
+      at = rows.findIndex((r) => r.item === next.projectCursor);
     const activate = (row = rows[at]) => {
-      if (row?.item?.startsWith('project:fold:')) {
-        const folded = new Set(next.projectFolded ?? ['control', 'agents']), id = row.item.slice(13);
+      if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
+      else if (row?.item?.startsWith('project:fold:')) {
+        const folded = new Set(projectFoldedSet(next)), id = row.item.slice(13);
         if (!folded.delete(id)) folded.add(id);
         next.projectFolded = folded;
       } else if (row?.files) return { type: 'open-files' as const, files: row.files };
@@ -94,7 +113,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if (row?.item) {
           const again = row.item === next.projectCursor;
           next.projectCursor = row.item;
-          return result(again ? activate(row) : undefined);
+          // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
+          return result(again || row.item.startsWith('project:page:') ? activate(row) : undefined);
         }
       }
       return result();
@@ -103,6 +123,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
       const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
+      return result();
+    }
+    if (key === 'escape' && projectPageOf(next)) {
+      goProject();
       return result();
     }
     if (!['help', 'settings', 'escape'].includes(key)) return result();
@@ -180,10 +204,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const id = item.slice('home-progress:'.length);
     home();
     next.mainTab = 'project';
-    next.projectCursor = `project:fold:${id}`;
-    next.projectScroll = 0;
-    next.projectFolded = new Set([...(next.projectFolded ?? ['control', 'agents'])]
-      .filter((key) => key !== id && key !== (id === 'progress' ? 'progress' : 'tickets')));
+    if (id === 'progress') return goProject('progress');
+    // A ticket row opens its feature, unfolded, on the Tickets page.
+    goProject('tickets', `project:fold:${id}`);
+    next.projectFolded = new Set([...projectFoldedSet(next)].filter((key) => key !== id));
   };
   // Cards expand in place; the compact progress block opens its Project destination.
   const activate = (target = selected()) => {
