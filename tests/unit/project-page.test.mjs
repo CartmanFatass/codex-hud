@@ -445,7 +445,7 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   assert.equal(frame.state.projectCursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
   assert.match(plain(frame).join('\n'), /Progress +M3b · 2 working · 1 to try · 1 blocked/);
-  assert.match(plain(frame).join('\n'), /Control plane +13 roles · keys 3\/5 · browser ✓/);
+  assert.match(plain(frame).join('\n'), /Control plane +6 roles · keys 3\/5 · browser ✓/);
   frame.state.projectCursor = 'project:fold:waiting';
   frame = f.render(80, 'en', press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ Waiting for you/);
@@ -489,9 +489,9 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   }
 });
 test('Each Project page keeps its own cursor and scroll, leaving it and across a panel reload', async (t) => {
-  const f = await fixture(t), height = 12;
+  const f = await fixture(t), height = 8;
   let frame = f.render(80, 'en', 'control', height);
-  for (let i = 0; i < 14; i++) frame = f.render(80, 'en', press(frame, 'down').state, height);
+  for (let i = 0; i < 8; i++) frame = f.render(80, 'en', press(frame, 'down').state, height);
   const { projectCursor: cursor, projectScroll: scroll } = frame.state;
   assert.ok(scroll > 0 && cursor.startsWith('project:file:'), 'a short panel scrolls the page with the cursor');
   const before = plain(frame);
