@@ -27,7 +27,6 @@ Milestone: 0.1.3 · Project hub
   returns dispatch failures, `changes` in every MCP response, `hud watch`. Owner answered (spec §2 amended 130a8eb1;
   no typing into the main pane; ticket 10's decided fail needs a quota line). .scratch/supervisor/ 7 tickets:
   01 running (agy imp jd9c3c796257584b1, MyHUD-wt/SUPERVISOR), 02–03 continue in that job; 04–07 after QUIET-DECIDE.
-- QUIET-DECIDE running: agy imp (gemini-4-hydrogen-high) j240aa7c97d9d354a in MyHUD-wt/QUIET-DECIDE.
 - PROJECT-UX (owner 2026-11-14): after ROLE-BIND 03 lands (Project's basic pages complete), one frontend-implementer
   pass proposes a UI/UX optimisation of the Project hub: rendered mockups first, the owner settles them, then build.
 - ROLE-BIND 03 (control plane switches places) running: frontend-implementer in MyHUD-wt/ROLE-BIND-03.
@@ -148,7 +147,7 @@ board counts these; update at every landing or decision. -->
 - working · 0.1.4 · ROLE-BIND · 01 5b0d5b37, 02 de4dce7a · owner 2026-11-14: a role is the work; places and fallbacks switched in the control plane; bro harness; grok/agy/claude/codex-imp, argon, gemini, flow-video deleted (.scratch/role-bind/, 3 tickets; 03 running)
 - try · 0.1.4 · CLI-NOREPORT · 6f4afa7c · cli-workers 09: the report, not herdr's done, ends a CLI turn; no report → ask the main session; observe only, never prompt or quit for it
 - working · 0.1.4 · SUPERVISOR · owner 2026-11-14: only facts end a CLI job; the session hears what the panel shows (.scratch/supervisor/, 7 tickets; 01 running)
-- working · 0.1.4 · QUIET-DECIDE · cli-workers 10 (agy imp j240aa7c97d9d354a): a quiet CLI job without a report gets one Decision API choice among fixed actions
+- try · 0.1.4 · QUIET-DECIDE · 2117e2b5 · cli-workers 10 (real run passed): a quiet CLI job without a report gets one Decision API choice among fixed actions
 
 ## Now (2026-11-14): 0.1.3 Project hub started; 0.1.1 and 0.1.2 wait for the owner's try
 

@@ -34,9 +34,16 @@ decision provider (no real calls)
 - [x] Low probability, no key, cap reached or provider error → needs-human, nothing sent to the worker
 - [x] `quiet_decision` in STATUS, on the card and in the Inspector; Settings breakdown counts `quiet-job`
 - [x] Mistral DeepSeek provider: added or the reason recorded
-- [ ] One real run by the orchestrator: an agy job told to start a long background command and stop; recorded below
+- [x] One real run by the orchestrator: an agy job told to start a long background command and stop; recorded below
 
 ## Comments
 
 - **Mistral DeepSeek check (`deepseek-v4-1-flash-1017`, reasoning off):** Tested live against `https://api.mistral.ai/v1` using `MISTRAL_API_KEY` from `~/.hud/credentials.env`. `POST /v1/decisions` returned `404` (`no Route matched with those values`). `POST /v1/chat/completions` with `model: "deepseek-v4-1-flash-1017"`, `reasoning_effort: "none"`, and `response_format: { type: "json_schema", strict: true, ... }` returned `200` (`reasoning_tokens: 0`, valid JSON `{"choice": "failed"}`), but adding `logprobs: true, top_logprobs: 5` returned `400` (`code: "3051"`, `"Logprobs are not enabled for this model"`). Structured output works, option probabilities do not, so Decision API providers remain unchanged (`gemini`, `openai`, `typesafe`).
 - **2026-11-14 owner ruling:** A `failed` choice only fails the job (and marks the place exhausted via `recordFailureExhaustion`) when `extractFailureScreenLine` matches `isQuotaFailure` (`src/roles/exhausted.ts`); otherwise `failed` falls back to `needs-human`.
+
+- 2026-11-14 (orchestrator): landed 2117e2b5 (472/472). Real run j96e803f27c3b7243 (agy, gemini-4-hydrogen-high):
+  told to start `(sleep 90; …) &` and end its turn without a report. agy's tool shell killed the background command
+  when the tool call returned (the probe file never appeared), so this run tested "turn ended, no report, no
+  background child". After the idle grace the supervisor read the pane and asked the Decision API:
+  `quiet_decision {choice: needs-human, probability: 0.35, action: needs-human}`, under the 0.8 bar, so the job went
+  `waiting_orchestrator` and the notice reached the main session. Nothing was sent to the worker. Passed.
