@@ -10,7 +10,12 @@ whether the agent is busy.
 - A turn that ends without a new report keeps the job open (`working`, card detail "turn ended, no report yet"); the
   supervisor keeps waiting. A report that appears at any time (also while herdr says working or done) settles the
   turn as today (idle grace or closed).
-- If the agent stays quiet with no report for the role's idle grace (default 10 minutes), send one nudge: "Your turn
+- Background work counts as busy (owner 2026-11-14: Claude Code and agy park background processes and wake themselves
+  when they finish). At the start of each turn the supervisor records the CLI process's descendants (MCP servers and
+  other long-lived helpers); while any newer descendant is alive, or herdr says working, the job is busy and the
+  no-report clock does not run. A self-wake (herdr back to working) simply continues the turn.
+- If the agent stays quiet (herdr not working, no new descendants) with no report for the role's idle grace
+  (default 10 minutes), send one nudge: "Your turn
   ended without a report at <path>. If work remains, finish it; then write the report there."
 - If it is still quiet with no report after another idle grace, the job turns `waiting_orchestrator` with one notice
   line to the main session ("stopped without a report; hud_send to continue or hud_close to stop"). The HUD never
@@ -25,6 +30,7 @@ whether the agent is busy.
 **Status:** ready-for-agent
 
 - [ ] done without report → still open; a later report settles it (fake herdr: done → working → done + report)
+- [ ] a live background child keeps the job busy: no nudge while it runs; the clock starts when it ends
 - [ ] quiet past grace → one nudge prompt; report after the nudge settles normally
 - [ ] still quiet → waiting_orchestrator + one notice line; no `/quit` was sent
 - [ ] agent exit or tab closed still fail as today; the existing CLI tests keep passing (with the new expectations)
