@@ -133,9 +133,30 @@ const closing = () => fs.existsSync(closeFile);
  * idle/unknown alone is not an exit: agy's idle is herdr's fallback, and a transcript viewer is unknown. */
 const sliceMs = 15000;
 const quiet = (status) => status === 'idle' || status === 'unknown';
-function agentMissing() {
+let baseline = null;
+const hasReport = () => {
+  const text = report();
+  return typeof text === 'string' && text.trim().length > 0 && text !== baseline;
+};
+let herdrMisses = 0;
+function pidAlive() {
+  if (!Number.isInteger(current.pid) || current.pid <= 0) return null;
+  const info = procStat(current.pid);
+  return info !== null && info.state !== 'Z' && info.start === current.pid_start_time;
+}
+function herdrMissing() {
   const got = herdr(['agent', 'get', name]);
   return got.code !== 0 || JSON.stringify(got.body ?? '').includes('agent_not_found');
+}
+function agentExited() {
+  const alive = pidAlive();
+  if (alive === true) {
+    herdrMisses = 0;
+    return false;
+  }
+  if (alive === false) return true;
+  herdrMisses = herdrMissing() ? herdrMisses + 1 : 0;
+  return herdrMisses >= 3;
 }
 function watcherSettled() {
   try {
@@ -159,7 +180,7 @@ function write(patch) {
   return true;
 }
 function quit() {
-  if (agentMissing()) return;
+  if (pidAlive() === false || (current.pid === null && herdrMissing())) return;
   herdr(['agent', 'prompt', name, '/quit']);
   herdr(['agent', 'wait', name, '--until', 'idle', '--until', 'unknown', '--timeout', '15000'], 20000);
 }
@@ -209,6 +230,7 @@ function leave() {
   if (blockedEpisode) rememberUnblocked();
   if (stopped()) finish('stopped', 'stop requested');
   else if (closing()) closeSettled();
+  else if (hasReport()) finish('closed', 'settled', true);
   else {
     finish('failed', enrichFailure('agent exited'), false);
     process.exitCode = 1;
@@ -216,15 +238,12 @@ function leave() {
 }
 
 try {
-  let baseline = report();
-  const hasReport = () => {
-    const text = report();
-    return typeof text === 'string' && text.trim().length > 0 && text !== baseline;
-  };
+  baseline = report();
   const hasNewDescendant = (since) => {
     for (const [pid, start] of descendants(current.pid)) if (since.get(pid) !== start) return true;
     return false;
   };
+  const canSettle = () => hasReport() && turnEnded && !hasNewDescendant(turnDescendants);
   refreshSession();
   write({ ...identity(), state: 'working', reason: null });
   let turnDescendants = descendants(current.pid);
@@ -242,18 +261,20 @@ try {
   };
   const pollMs = graceMs < 5000 ? Math.max(50, Math.min(200, graceMs || 50)) : 5000;
   for (;;) {
-    if (watcherSettled() || stopped()) {
-      if (stopped()) leave();
+    if (watcherSettled() || stopped() || closing()) {
+      if (stopped() || closing()) leave();
       break;
     }
-    if (!hasReport()) {
+    if (!canSettle()) {
       let timeout = graceMs < 5000 ? Math.min(sliceMs, 500) : sliceMs;
+      const reportWritten = hasReport();
       if (turnEnded) {
         const busy = hasNewDescendant(turnDescendants);
         if (busy) quietSince = null;
-        else quietSince ??= Date.now();
-        const remaining = busy ? Infinity : quietSince + graceMs - Date.now();
-        if (remaining <= 0) {
+        else if (!reportWritten) quietSince ??= Date.now();
+        else quietSince = null;
+        const remaining = reportWritten || busy ? Infinity : quietSince + graceMs - Date.now();
+        if (!reportWritten && remaining <= 0) {
           if (!quietNoticed) {
             const paneRead = herdr(['pane', 'read', pane, '--source', 'recent']).body?.result?.read?.text;
             const paneText = typeof paneRead === 'string' ? paneRead : '';
@@ -274,8 +295,8 @@ try {
                     questionIndex: quietQuestions + 1,
                   });
             if (decision.asked) quietQuestions += 1;
-            if (watcherSettled() || stopped()) {
-              if (stopped()) leave();
+            if (watcherSettled() || stopped() || closing()) {
+              if (stopped() || closing()) leave();
               break;
             }
             if (hasReport()) continue;
@@ -295,7 +316,7 @@ try {
               const prompt = `Write your report to ${output} now; if work remains, finish it first.`;
               const sent = herdr(['agent', 'prompt', name, prompt]);
               if (sent.code !== 0) {
-                if (agentMissing()) {
+                if (agentExited()) {
                   leave();
                   break;
                 }
@@ -327,8 +348,9 @@ try {
           }
           if (quietNoticed) timeout = graceMs < 5000 ? pollMs : sliceMs;
         } else {
-          if (current.state !== 'working' || current.blocked || current.reason !== 'turn ended, no report yet') {
-            if (!write({ state: 'working', blocked: false, reason: 'turn ended, no report yet' })) break;
+          const expectedReason = reportWritten ? null : 'turn ended, no report yet';
+          if (current.state !== 'working' || current.blocked || current.reason !== expectedReason) {
+            if (!write({ state: 'working', blocked: false, reason: expectedReason })) break;
           }
           timeout = Math.min(remaining, graceMs < 5000 ? pollMs : busy ? 2000 : 5000);
         }
@@ -338,24 +360,69 @@ try {
       skipQuiet = false;
       const waited = herdr(['agent', 'wait', name, ...until, '--timeout', String(timeout)], timeout + 5000);
       if (watcherSettled()) break;
-      if (!hasReport()) {
-        if (waited.code !== 0) {
-          if (agentMissing() || stopped() || closing()) {
-            leave();
-            break;
-          }
-          continue;
+      if (waited.code !== 0) {
+        if (agentExited() || stopped() || closing()) {
+          leave();
+          break;
         }
-        const state = statusOf(waited);
-        if (quiet(state)) {
-          if (agentMissing()) {
-            leave();
-            break;
-          }
-          skipQuiet = true;
-          continue;
+        continue;
+      }
+      const state = statusOf(waited);
+      if (quiet(state)) {
+        if (stopped() || closing() || agentExited()) {
+          leave();
+          break;
         }
-        if (state === 'working') {
+        skipQuiet = true;
+        continue;
+      }
+      if (state === 'working') {
+        turnEnded = false;
+        quietSince = null;
+        quietNoticed = false;
+        refreshSession();
+        if (!write({ state: 'working', blocked: false, reason: null })) break;
+        continue;
+      }
+      let turn = state;
+      if (state === 'blocked') {
+        if (!blockedEpisode) {
+          if (!write({ state: 'waiting_orchestrator', blocked: true, reason: null })) break;
+          notify(`BLOCKED: ${cli.agent} is waiting for interactive input in pane ${pane}`);
+          blockedEpisode = true;
+        }
+        let skipResumeQuiet = false;
+        let next = null;
+        for (;;) {
+          const resumeUntil = ['--until', 'working', '--until', 'done'];
+          if (!skipResumeQuiet) resumeUntil.push('--until', 'idle', '--until', 'unknown');
+          skipResumeQuiet = false;
+          const resumed = herdr(['agent', 'wait', name, ...resumeUntil, '--timeout', String(sliceMs)], sliceMs + 5000);
+          if (watcherSettled()) break;
+          if (resumed.code !== 0) {
+            if (agentExited() || stopped() || closing()) {
+              leave();
+              next = 'left';
+              break;
+            }
+            continue;
+          }
+          next = statusOf(resumed);
+          if (quiet(next)) {
+            if (stopped() || closing() || agentExited()) {
+              rememberUnblocked();
+              leave();
+              next = 'left';
+              break;
+            }
+            skipResumeQuiet = true;
+            continue;
+          }
+          break;
+        }
+        if (next === 'left' || watcherSettled()) break;
+        if (next === 'working') {
+          rememberUnblocked();
           turnEnded = false;
           quietSince = null;
           quietNoticed = false;
@@ -363,72 +430,15 @@ try {
           if (!write({ state: 'working', blocked: false, reason: null })) break;
           continue;
         }
-        let turn = state;
-        if (state === 'blocked') {
-          if (!blockedEpisode) {
-            if (!write({ state: 'waiting_orchestrator', blocked: true, reason: null })) break;
-            notify(`BLOCKED: ${cli.agent} is waiting for interactive input in pane ${pane}`);
-            blockedEpisode = true;
-          }
-          let skipResumeQuiet = false;
-          let next = null;
-          for (;;) {
-            const resumeUntil = ['--until', 'working', '--until', 'done'];
-            if (!skipResumeQuiet) resumeUntil.push('--until', 'idle', '--until', 'unknown');
-            skipResumeQuiet = false;
-            const resumed = herdr(['agent', 'wait', name, ...resumeUntil, '--timeout', String(sliceMs)], sliceMs + 5000);
-            if (watcherSettled()) break;
-            if (hasReport()) {
-              rememberUnblocked();
-              next = 'report';
-              break;
-            }
-            if (resumed.code !== 0) {
-              if (agentMissing() || stopped() || closing()) {
-                leave();
-                next = 'left';
-                break;
-              }
-              continue;
-            }
-            next = statusOf(resumed);
-            if (quiet(next)) {
-              if (agentMissing()) {
-                rememberUnblocked();
-                leave();
-                next = 'left';
-                break;
-              }
-              skipResumeQuiet = true;
-              continue;
-            }
-            break;
-          }
-          if (next === 'left' || watcherSettled()) break;
-          if (next === 'working') {
-            rememberUnblocked();
-            turnEnded = false;
-            quietSince = null;
-            quietNoticed = false;
-            refreshSession();
-            if (!write({ state: 'working', blocked: false, reason: null })) break;
-            continue;
-          }
-          if (next !== 'done' && next !== 'report') continue;
-          rememberUnblocked();
-          turn = 'done';
-        }
-        if (!hasReport()) {
-          if (turn !== 'done') {
-            if (turnEnded) continue;
-            leave();
-            break;
-          }
-          refreshSession();
-          turnEnded = true;
-          continue;
-        }
+        if (next !== 'done') continue;
+        rememberUnblocked();
+        turn = 'done';
       }
+      if (turn === 'done') {
+        refreshSession();
+        turnEnded = true;
+      }
+      continue;
     }
     if (!cli.can_continue) {
       closeSettled();
@@ -451,9 +461,17 @@ try {
     let grace = 'wait';
     let skipGraceQuiet = false;
     let gracePass = 0;
-    while (grace === 'wait' && Date.now() < deadline) {
+    const graceBusyPoll = graceMs < 5000 ? pollMs : 2000;
+    while (grace === 'wait' && (Date.now() < deadline || hasNewDescendant(turnDescendants))) {
+      const busy = hasNewDescendant(turnDescendants);
       const remaining = Math.max(1, deadline - Date.now());
-      const timeout = gracePass === 0 ? graceMs : remaining;
+      const timeout = busy
+        ? Date.now() < deadline
+          ? Math.min(remaining, graceBusyPoll)
+          : graceBusyPoll
+        : gracePass === 0
+          ? graceMs
+          : remaining;
       gracePass += 1;
       const graceUntil = ['--until', 'working'];
       if (!skipGraceQuiet) graceUntil.push('--until', 'idle', '--until', 'unknown');
@@ -464,15 +482,16 @@ try {
         grace = 'resume';
         break;
       }
-      if (continued.code === 0 && quiet(statusOf(continued)) && !agentMissing()) {
+      if (continued.code === 0 && quiet(statusOf(continued)) && !stopped() && !closing() && !agentExited()) {
         skipGraceQuiet = true;
         continue;
       }
-      if (continued.code === 0 || agentMissing() || stopped() || closing()) {
+      if (continued.code === 0 || agentExited() || stopped() || closing()) {
         leave();
         grace = 'left';
         break;
       }
+      if (hasNewDescendant(turnDescendants) || (busy && Date.now() < deadline)) continue;
       closeSettled();
       grace = 'closed';
       break;

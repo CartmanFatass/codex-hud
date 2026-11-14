@@ -33,7 +33,7 @@ async function fixture(t, inHerdr = true, probe = '') {
   const log = join(root, 'commands.jsonl');
   const fake = `#!${process.execPath}
 import * as fs from 'node:fs';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { basename, join } from 'node:path';
 const command = basename(process.argv[1]), args = process.argv.slice(2);
 fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args }) + '\\n');
@@ -53,6 +53,11 @@ if (command === 'pi-dispatch') {
     fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', exit_reason: null }));
     fs.writeFileSync(join(dir, 'report.md'), 'Synthetic implementation report.');
   }
+  if (['cli-exit', 'cli-unknown', 'cli-gone', 'grace-quiet-gone', 'blocked-quiet-gone', 'exit-after-done'].some((name) => fs.existsSync(join(process.env.HOME, name)))) {
+    const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], { detached: true, stdio: 'ignore' });
+    sleeper.unref();
+    fs.writeFileSync(join(process.env.HOME, 'fake-agent-pid'), String(sleeper.pid));
+  }
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'read') {
   const paneFile = join(process.env.HOME, 'pane-read');
   const dialog = join(process.env.HOME, 'trust-dialog');
@@ -63,13 +68,22 @@ if (command === 'pi-dispatch') {
       : 'synthetic grok ready\\n';
   console.log(JSON.stringify({ result: { type: 'pane_read', read: { text, pane_id: args[2], workspace_id: 'w4E', tab_id: 'w4E:t2', source: 'recent', format: 'text', revision: 1, truncated: false } } }));
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'process-info') {
+  if (fs.existsSync(join(process.env.HOME, 'no-pid'))) {
+    console.log(JSON.stringify({ result: { type: 'pane_process_info', process_info: { pane_id: args[args.indexOf('--pane') + 1], shell_pid: 1, foreground_processes: [] } } }));
+    process.exit(0);
+  }
   const pidFile = join(process.env.HOME, 'cli-pid');
+  const fakePidFile = join(process.env.HOME, 'fake-agent-pid');
   const line = fs.readFileSync('/proc/self/status', 'utf8').split('\\n').find((row) => row.startsWith('PPid:'));
-  const ppid = fs.existsSync(pidFile) ? Number(fs.readFileSync(pidFile, 'utf8').trim()) : Number(line.split(':')[1]);
+  const ppid = fs.existsSync(pidFile)
+    ? Number(fs.readFileSync(pidFile, 'utf8').trim())
+    : fs.existsSync(fakePidFile)
+      ? Number(fs.readFileSync(fakePidFile, 'utf8').trim())
+      : Number(line.split(':')[1]);
   console.log(JSON.stringify({ result: { type: 'pane_process_info', process_info: { pane_id: args[args.indexOf('--pane') + 1], shell_pid: 1, foreground_processes: [{ pid: ppid, name: 'grok' }] } } }));
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'get') {
   const goneId = args[2].replace(/-primary$/, '');
-  if (fs.existsSync(join(process.env.HOME, 'late-session-gone')) || fs.existsSync(join(process.env.HUD_HOME, 'jobs', goneId, 'agent-gone')) || ['cli-gone', 'cli-exit', 'cli-unknown'].some((name) => fs.existsSync(join(process.env.HOME, name)))) {
+  if (fs.existsSync(join(process.env.HOME, 'herdr-errors')) || fs.existsSync(join(process.env.HOME, 'late-session-gone')) || fs.existsSync(join(process.env.HUD_HOME, 'jobs', goneId, 'agent-gone')) || ['cli-gone', 'cli-exit', 'cli-unknown'].some((name) => fs.existsSync(join(process.env.HOME, name)))) {
     console.error('agent_not_found');
     process.exit(1);
   }
@@ -88,6 +102,30 @@ if (command === 'pi-dispatch') {
   const dir = join(process.env.HUD_HOME, 'jobs', id);
   const home = process.env.HOME;
   const matched = (agent_status) => console.log(JSON.stringify({ result: { type: 'wait_matched', event: { event: 'pane_agent_status_changed', data: { agent_status, pane_id: 'w4E:p2', workspace_id: 'w4E' } } } }));
+  const killFakeAgent = () => {
+    const fakePidFile = join(home, 'fake-agent-pid');
+    if (fs.existsSync(fakePidFile)) {
+      const fpid = Number(fs.readFileSync(fakePidFile, 'utf8').trim());
+      if (fpid > 0) {
+        try { process.kill(fpid, 'SIGKILL'); } catch {}
+        const end = Date.now() + 200;
+        while (Date.now() < end) {
+          try {
+            const st = fs.readFileSync('/proc/' + fpid + '/stat', 'utf8');
+            if (st.slice(st.lastIndexOf(')') + 1).trim().startsWith('Z ')) break;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  };
+  if (fs.existsSync(join(home, 'herdr-errors'))) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    console.error('herdr_error');
+    process.exit(1);
+  }
   const left = () => fs.existsSync(join(dir, 'agent-gone')) || fs.existsSync(join(dir, 'STATUS.json.stop-requested')) || fs.existsSync(join(dir, 'STATUS.json.close-requested'));
   const poll = (ms, check) => {
     const end = Date.now() + ms;
@@ -106,7 +144,7 @@ if (command === 'pi-dispatch') {
       const blockedQuiet = join(home, 'blocked-quiet');
       if (fs.existsSync(blockedQuiet) && (until.includes('idle') || until.includes('unknown')) && !fs.existsSync(join(home, 'blocked-quiet-seen'))) {
         fs.writeFileSync(join(home, 'blocked-quiet-seen'), '');
-        if (fs.existsSync(join(home, 'blocked-quiet-gone'))) fs.writeFileSync(join(dir, 'agent-gone'), '');
+        if (fs.existsSync(join(home, 'blocked-quiet-gone'))) { fs.writeFileSync(join(dir, 'agent-gone'), ''); killFakeAgent(); }
         matched(fs.readFileSync(blockedQuiet, 'utf8').trim() || 'idle');
         process.exit(0);
       }
@@ -127,10 +165,10 @@ if (command === 'pi-dispatch') {
     process.exit(0);
   }
   if (until.includes('working') && until.includes('blocked') && !until.includes('done')) {
-    if (fs.existsSync(join(home, 'exit-after-done'))) fs.writeFileSync(join(dir, 'agent-gone'), '');
-    if (fs.existsSync(join(home, 'cli-exit'))) { matched('idle'); process.exit(0); }
-    if (fs.existsSync(join(home, 'cli-unknown'))) { matched('unknown'); process.exit(0); }
-    if (fs.existsSync(join(home, 'cli-gone'))) { console.error('agent_not_found'); process.exit(1); }
+    if (fs.existsSync(join(home, 'exit-after-done'))) { fs.writeFileSync(join(dir, 'agent-gone'), ''); killFakeAgent(); }
+    if (fs.existsSync(join(home, 'cli-exit'))) { killFakeAgent(); matched('idle'); process.exit(0); }
+    if (fs.existsSync(join(home, 'cli-unknown'))) { killFakeAgent(); matched('unknown'); process.exit(0); }
+    if (fs.existsSync(join(home, 'cli-gone'))) { killFakeAgent(); console.error('agent_not_found'); process.exit(1); }
     const hit = poll(cap, () => (left() ? 'idle' : fs.existsSync(join(home, 'wake-turn')) ? 'working' : null));
     if (hit === 'working') { matched('working'); process.exit(0); }
     if (hit === 'idle') { matched('idle'); process.exit(0); }
@@ -144,11 +182,18 @@ if (command === 'pi-dispatch') {
     if (fs.existsSync(graceQuiet) && !fs.existsSync(join(home, 'grace-quiet-seen'))) {
       fs.writeFileSync(join(home, 'grace-quiet-seen'), '');
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80);
-      if (fs.existsSync(join(home, 'grace-quiet-gone'))) fs.writeFileSync(join(dir, 'agent-gone'), '');
+      if (fs.existsSync(join(home, 'grace-quiet-gone'))) { fs.writeFileSync(join(dir, 'agent-gone'), ''); killFakeAgent(); }
       matched(fs.readFileSync(graceQuiet, 'utf8').trim() || 'idle');
       process.exit(0);
     }
-    if (!fs.existsSync(join(home, 'hold-grace'))) { console.error('timeout'); process.exit(1); }
+    if (!fs.existsSync(join(home, 'hold-grace'))) {
+      if (fs.existsSync(join(home, 'report-while-working')) && !fs.existsSync(join(home, 'release-done'))) {
+        matched('working');
+        process.exit(0);
+      }
+      console.error('timeout');
+      process.exit(1);
+    }
     const log = process.env.FAKE_LOG;
     const mark = fs.existsSync(log) ? fs.statSync(log).size : 0;
     const hit = poll(cap, () => {
@@ -170,9 +215,25 @@ if (command === 'pi-dispatch') {
       matched(fs.readFileSync(quietHold, 'utf8').trim() || 'idle');
       process.exit(0);
     }
-    if (fs.existsSync(join(home, 'cli-exit'))) { matched('idle'); process.exit(0); }
-    if (fs.existsSync(join(home, 'cli-unknown'))) { matched('unknown'); process.exit(0); }
-    if (fs.existsSync(join(home, 'cli-gone'))) { console.error('agent_not_found'); process.exit(1); }
+    if (fs.existsSync(join(home, 'cli-exit'))) { killFakeAgent(); matched('idle'); process.exit(0); }
+    if (fs.existsSync(join(home, 'cli-unknown'))) { killFakeAgent(); matched('unknown'); process.exit(0); }
+    if (fs.existsSync(join(home, 'cli-gone'))) { killFakeAgent(); console.error('agent_not_found'); process.exit(1); }
+    if (fs.existsSync(join(home, 'report-while-working'))) {
+      const stageFile = join(home, 'report-while-working-stage');
+      const stage = fs.existsSync(stageFile) ? Number(fs.readFileSync(stageFile, 'utf8')) : 0;
+      fs.writeFileSync(stageFile, String(stage + 1));
+      if (stage === 0) {
+        fs.writeFileSync(join(dir, 'report.md'), 'Synthetic mid-turn report.\\n');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 80);
+        console.error('timeout');
+        process.exit(1);
+      }
+      const hit = poll(cap, () => (left() ? 'idle' : fs.existsSync(join(home, 'release-done')) ? 'done' : null));
+      if (hit === 'done') { matched('done'); process.exit(0); }
+      if (hit === 'idle') { matched('idle'); process.exit(0); }
+      console.error('timeout');
+      process.exit(1);
+    }
     if (fs.existsSync(join(home, 'hold-turn'))) {
       const hit = poll(cap, () => (left() ? 'idle' : fs.existsSync(join(home, 'release-turn')) ? 'done' : null));
       if (hit === 'idle') { matched('idle'); process.exit(0); }
@@ -2247,8 +2308,9 @@ test(
       request_key: 'grace-gone',
       task: 'Synthetic grace gone.',
     });
-    await until(() => cliState(gone.task_dir)?.state === 'failed', 8000);
-    assert.equal(cliState(gone.task_dir).error, 'agent exited');
+    await until(() => cliState(gone.task_dir)?.state === 'closed', 8000);
+    assert.equal(cliState(gone.task_dir).exit_reason, 'settled');
+    assert.equal(cliState(gone.task_dir).output_written, true);
   }
 );
 
@@ -3067,4 +3129,172 @@ test('hud_roster convention and hud_create result carry the hud watch Monitor hi
     task: 'Check watch hint.',
   });
   assert.equal(created.hint, 'Claude Code: run `hud watch` under Monitor');
+});
+
+test('report written while working settles only at turn end, not mid-turn slice timeout', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'mid-report-cli', 1, true);
+  fs.writeFileSync(join(f.env.HOME, 'report-while-working'), '');
+  const job = await f.call('hud_create', {
+    role: 'mid-report-cli',
+    request_key: 'mid-report',
+    task: 'Write report mid-turn while still working.',
+  });
+  await until(() => fs.existsSync(join(job.task_dir, 'report.md')), 5000);
+  await new Promise((r) => setTimeout(r, 250));
+  assert.equal(cliState(job.task_dir).state, 'working');
+  assert.equal(cliState(job.task_dir).output_written, false);
+  assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
+
+  fs.writeFileSync(join(f.env.HOME, 'release-done'), '');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, 5000);
+  await until(() => cliState(job.task_dir)?.state === 'closed', 5000);
+  assert.equal(cliState(job.task_dir).output_written, true);
+  assert.equal(cliState(job.task_dir).exit_reason, 'settled');
+});
+
+test('no /quit before done and a live background child holds idle_grace until exit', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'no-cont-mid', 1, false);
+  fs.writeFileSync(join(f.env.HOME, 'report-while-working'), '');
+  const noCont = await f.call('hud_create', {
+    role: 'no-cont-mid',
+    request_key: 'no-quit-early',
+    task: 'Must not send /quit before done.',
+  });
+  await until(() => fs.existsSync(join(noCont.task_dir, 'report.md')), 5000);
+  await new Promise((r) => setTimeout(r, 250));
+  assert.equal(cliState(noCont.task_dir).state, 'working');
+  assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'), false);
+  fs.writeFileSync(join(f.env.HOME, 'release-done'), '');
+  await until(() => cliState(noCont.task_dir)?.state === 'closed', 5000);
+  assert.equal(cliState(noCont.task_dir).output_written, true);
+  assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
+
+  // Now check live background child holding idle_grace past the 1s grace deadline.
+  fs.unlinkSync(join(f.env.HOME, 'report-while-working'));
+  fs.unlinkSync(join(f.env.HOME, 'report-while-working-stage'));
+  fs.unlinkSync(join(f.env.HOME, 'release-done'));
+  writeCliRole(f, 'grace-bg-cli', 1, true);
+  const childPidFile = join(f.env.HOME, 'grace-bg-child');
+  const helperReady = join(f.env.HOME, 'grace-helper-ready');
+  const fakeCli = spawn(
+    process.execPath,
+    [
+      '-e',
+      `const { spawn } = require('node:child_process');
+       const fs = require('node:fs');
+       const helper = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)']);
+       let bg = null;
+       process.on('SIGUSR1', () => {
+         bg = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)']);
+         fs.writeFileSync(${JSON.stringify(childPidFile)}, String(bg.pid));
+       });
+       process.on('SIGUSR2', () => { if (bg) bg.kill('SIGKILL'); });
+       process.on('SIGTERM', () => { helper.kill('SIGKILL'); if (bg) bg.kill('SIGKILL'); process.exit(0); });
+       fs.writeFileSync(${JSON.stringify(helperReady)}, String(helper.pid));
+       setInterval(()=>{}, 1000);`,
+    ],
+    { stdio: 'ignore' }
+  );
+  t.after(() => { try { fakeCli.kill('SIGTERM'); } catch {} });
+  await until(() => fs.existsSync(helperReady));
+  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(fakeCli.pid));
+  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
+  const graceJob = await f.call('hud_create', {
+    role: 'grace-bg-cli',
+    request_key: 'grace-bg-hold',
+    task: 'Background child holds grace.',
+  });
+  await until(() => cliState(graceJob.task_dir)?.pid === fakeCli.pid);
+  fakeCli.kill('SIGUSR1');
+  await until(() => fs.existsSync(childPidFile));
+  fs.writeFileSync(join(graceJob.task_dir, 'report.md'), 'Report ready.\n');
+  fs.writeFileSync(join(f.env.HOME, 'release-turn'), '');
+  await new Promise((r) => setTimeout(r, 1300));
+  assert.equal(['working', 'idle_grace'].includes(cliState(graceJob.task_dir).state), true);
+  assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[2] === `${graceJob.job}-primary` && c.args[3] === '/quit'), false);
+  fakeCli.kill('SIGUSR2');
+  await until(() => cliState(graceJob.task_dir)?.state === 'closed', 5000);
+  assert.equal(cliState(graceJob.task_dir).output_written, true);
+});
+
+test('exit is a /proc pid check: herdr errors keep working while pid lives, pid gone closes with report else fails, null pid uses 3 misses', { timeout: 20000 }, async (t) => {
+  const f = await fixture(t);
+  const spawnDummy = () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { stdio: 'ignore' });
+    t.after(() => { try { child.kill('SIGKILL'); } catch {} });
+    return child;
+  };
+
+  // 1. Live pid stays working across repeated herdr errors, then closes cleanly once herdr recovers.
+  const liveProc = spawnDummy();
+  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(liveProc.pid));
+  fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
+  const keepAlive = await f.call('hud_create', {
+    role: 'imp',
+    on: 'grok',
+    request_key: 'herdr-errors-alive',
+    task: 'Keep working when herdr errors while pid lives.',
+  });
+  await until(
+    () =>
+      f.commands().filter((c) => c.args[1] === 'wait' && c.args[2] === `${keepAlive.job}-primary`).length >= 5,
+    5000
+  );
+  assert.equal(cliState(keepAlive.task_dir).state, 'working');
+  assert.equal(cliState(keepAlive.task_dir).pid, liveProc.pid);
+  fs.unlinkSync(join(f.env.HOME, 'herdr-errors'));
+  await until(() => cliState(keepAlive.task_dir)?.state === 'closed', 8000);
+
+  // 2. Pid gone without a report -> failed.
+  const procNoReport = spawnDummy();
+  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(procNoReport.pid));
+  fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
+  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
+  const failJob = await f.call('hud_create', {
+    role: 'imp',
+    on: 'grok',
+    request_key: 'pid-gone-fail',
+    task: 'Pid dies without report.',
+  });
+  await until(() => cliState(failJob.task_dir)?.pid === procNoReport.pid);
+  procNoReport.kill('SIGKILL');
+  fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
+  await until(() => cliState(failJob.task_dir)?.state === 'failed', 5000);
+  assert.equal(cliState(failJob.task_dir).exit_reason, 'agent exited');
+  assert.equal(cliState(failJob.task_dir).output_written, false);
+  fs.unlinkSync(join(f.env.HOME, 'herdr-errors'));
+
+  // 3. Pid gone with a report -> closed (output_written true).
+  const procWithReport = spawnDummy();
+  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(procWithReport.pid));
+  const closeJob = await f.call('hud_create', {
+    role: 'imp',
+    on: 'grok',
+    request_key: 'pid-gone-report',
+    task: 'Pid dies after writing report.',
+  });
+  await until(() => cliState(closeJob.task_dir)?.pid === procWithReport.pid);
+  fs.writeFileSync(join(closeJob.task_dir, 'report.md'), 'Finished before exit.\n');
+  procWithReport.kill('SIGKILL');
+  fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
+  await until(() => cliState(closeJob.task_dir)?.state === 'closed', 5000);
+  assert.equal(cliState(closeJob.task_dir).exit_reason, 'settled');
+  assert.equal(cliState(closeJob.task_dir).output_written, true);
+
+  // 4. Null pid falls back to herdr only after 3 consecutive misses.
+  fs.unlinkSync(join(f.env.HOME, 'cli-pid'));
+  fs.writeFileSync(join(f.env.HOME, 'no-pid'), '');
+  const nullPidJob = await f.call('hud_create', {
+    role: 'imp',
+    on: 'grok',
+    request_key: 'null-pid-3-misses',
+    task: 'Null pid requires 3 consecutive misses.',
+  });
+  await until(() => cliState(nullPidJob.task_dir)?.state === 'failed', 5000);
+  const agentGets = f.commands().filter((c) => c.args[1] === 'get' && c.args[2] === `${nullPidJob.job}-primary`);
+  // Startup refreshSession() issues 1 get, then 3 consecutive exit-check misses.
+  assert.ok(agentGets.length >= 4);
+  assert.equal(cliState(nullPidJob.task_dir).exit_reason, 'agent exited');
 });
