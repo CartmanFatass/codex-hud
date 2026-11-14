@@ -22,7 +22,8 @@ Milestone: 0.1.3 · Project hub
 - PROJECT-HUB (0.1.3, .scratch/project-hub/): 01 hub and sub-pages (frontend-implementer) and 02 project data
   (agy-imp on gemini-4-hydrogen-high) in parallel; then 03 progress page, ticket detail, project switch (frontend); then 04 projects list (frontend).
 - 0.1.3 milestone review running (review worktree at 9fb89a1a): Sol xhigh j9f77fd522f202f26, DS max j571168de504a133b.
-- Running: CLI-NOREPORT (imp on agy, j8874939f037d8c0f), ROLE-BIND 02 (imp on agy, j286e2ad9ab91088c).
+- CLI-NOREPORT and ROLE-BIND 02 landed; real check of the supervisor fix: jc9a2737d675a10e8 (agy, 150 s command).
+- Next after the 0.1.3 review: ROLE-BIND 03 (control plane switches places, frontend) and QUIET-DECIDE (cli-workers 10).
 - ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
   `bro` replaces `jev`, browser work is oracle + flow, the control plane switches places, `on` kept. 01 and 02 (agy-imp)
   after PROJECT-HUB 02; 03 (frontend) after 02 and PROJECT-HUB 03.
@@ -137,8 +138,8 @@ board counts these; update at every landing or decision. -->
 - try · 0.1.1 · CLI-WORKERS · owner 2026-11-13: roles on interactive CLIs (grok, agy, claude, codex) through herdr, held to pi imp's lifecycle; harness behaviour and session places untouched (.scratch/cli-workers/, 7 tickets all done with grok-4.7 high; real E2E passed on all four CLIs) (cbe059a7)
 - try · 0.1.2 · HUD-SETUP · owner 2026-11-13: `hud setup` (skill asks, command writes) deploys a project's pi workers: roles shown/hidden, pi role tuning, worker skills linked under .hud/skills, worker prompts; other harnesses unchanged (.scratch/hud-setup/, 6 tickets all done with grok-4.7 high; real pi job in a set-up project got its skill and worker prompt; owner to try /hud-setup) (fca81428)
 - try · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch and projects list (.scratch/project-hub/, 4 tickets); landed 5951a489, 682dec52, 162e8b1c, a20019d4
-- working · 0.1.4 · ROLE-BIND · 01 landed 5b0d5b37 · owner 2026-11-14: a role is the work; places and fallbacks switched in the control plane; bro harness; grok/agy/claude/codex-imp, argon, gemini, flow-video deleted (.scratch/role-bind/, 3 tickets)
-- working · 0.1.4 · CLI-NOREPORT · cli-workers 09: the report, not herdr's done, ends a CLI turn; no report → ask the main session; observe only, never prompt or quit for it
+- working · 0.1.4 · ROLE-BIND · 01 5b0d5b37, 02 de4dce7a · owner 2026-11-14: a role is the work; places and fallbacks switched in the control plane; bro harness; grok/agy/claude/codex-imp, argon, gemini, flow-video deleted (.scratch/role-bind/, 3 tickets)
+- try · 0.1.4 · CLI-NOREPORT · 6f4afa7c · cli-workers 09: the report, not herdr's done, ends a CLI turn; no report → ask the main session; observe only, never prompt or quit for it
 - todo · 0.1.4 · QUIET-DECIDE · cli-workers 10: a quiet CLI job without a report gets one Decision API choice among fixed actions
 
 ## Now (2026-11-14): 0.1.3 Project hub started; 0.1.1 and 0.1.2 wait for the owner's try

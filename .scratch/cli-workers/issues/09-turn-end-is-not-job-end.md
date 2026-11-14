@@ -27,9 +27,15 @@ whether the agent is busy.
 
 **Blocked by:** ROLE-BIND 01 (same files: hud-cli.mjs, thin-mcp.test.mjs)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] done without report → still open; a later report settles it (fake herdr: done → working → done + report)
-- [ ] a live background child keeps the job busy: the no-report clock starts only when it ends
-- [ ] quiet past grace → waiting_orchestrator + one notice line; no prompt or `/quit` was sent; a self-wake returns to working
-- [ ] agent exit or tab closed still fail as today; the existing CLI tests keep passing (with the new expectations)
+- [x] done without report → still open; a later report settles it (fake herdr: done → working → done + report)
+- [x] a live background child keeps the job busy: the no-report clock starts only when it ends
+- [x] quiet past grace → waiting_orchestrator + one notice line; no prompt or `/quit` was sent; a self-wake returns to working
+- [x] agent exit or tab closed still fail as today; the existing CLI tests keep passing (with the new expectations)
+
+## Comments
+
+- 2026-11-14 orchestrator: landed as 6f4afa7c. The first imp-on-agy job (j8874939f037d8c0f) was itself quit by this bug while agy
+  ran the tests in the background; the orchestrator ran them (65 pass) and reviewed the diff. Full suite 533 green.
+  Real check with a 150 s command: see below.

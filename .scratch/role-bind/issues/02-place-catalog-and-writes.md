@@ -9,8 +9,13 @@ No rendering.
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Catalog lists what `hud_create` accepts for each harness
-- [ ] Writing a run list then `hud_roster` shows it; unknown fields kept; symlink refused; shipped files never written
-- [ ] Clearing a mark makes the place available again
+- [x] Catalog lists what `hud_create` accepts for each harness
+- [x] Writing a run list then `hud_roster` shows it; unknown fields kept; symlink refused; shipped files never written
+- [x] Clearing a mark makes the place available again
+
+## Comments
+
+- 2026-11-14 orchestrator: implemented by imp on agy (j286e2ad9ab91088c), landed as de4dce7a; 11 tests;
+  full suite 533 green.
