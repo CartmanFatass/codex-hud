@@ -28,6 +28,8 @@ Milestone: 0.1.3 · Project hub
   no typing into the main pane; ticket 10's decided fail needs a quota line). .scratch/supervisor/ 7 tickets:
   01 running (agy imp jd9c3c796257584b1, MyHUD-wt/SUPERVISOR), 02–03 continue in that job; 04–07 after QUIET-DECIDE.
 - QUIET-DECIDE running: agy imp (gemini-4-hydrogen-high) j240aa7c97d9d354a in MyHUD-wt/QUIET-DECIDE.
+- PROJECT-UX (owner 2026-11-14): after ROLE-BIND 03 lands (Project's basic pages complete), one frontend-implementer
+  pass proposes a UI/UX optimisation of the Project hub: rendered mockups first, the owner settles them, then build.
 - ROLE-BIND 03 (control plane switches places) running: frontend-implementer in MyHUD-wt/ROLE-BIND-03.
 - ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
   `bro` replaces `jev`, browser work is oracle + flow, the control plane switches places, `on` kept. 01 and 02 (agy-imp)
