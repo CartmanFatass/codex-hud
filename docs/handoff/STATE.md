@@ -31,7 +31,9 @@ Milestone: 0.1.3 · Project hub
   554/554). Real agy run 1 found pushes ignored (herdr sends `pane.agent_status_changed`, fake used `_`): fixed;
   the safety tick re-reads status (one request/30 s). 09 (hud_send respawns a dead supervisor) landed (556/556). Real agy run
   2 passed (working through a 150 s background command, idle_grace 25 s after the report). 0.1.4 milestone review
-  running on 3e3edfc8 (reviewer default grok 4.7 high j75d0ee9a8d33f947 + DS max jb47dfebe26abe1ac). Imp now dispatches on its default place (agy hydrogen high).
+  on 3e3edfc8: grok + DS changes-required (0d24ed0f); docs fixed a2b2b033; code fixes FIX-014 on agy imp
+  j81262290235b8d5b (roster expiry, failed report prompt, prompt once per job, stale quiet card, ZH note, hud watch
+  without polling); then re-review (default + DS). Imp now dispatches on its default place (agy hydrogen high).
 - PROJECT-UX (owner 2026-11-14): try. Landed 891556a1: timeline hub (A + 2 transplants, Latest folded first,
   Progress last 7 days), ticket lanes, attention-first Control plane, provider → model picker with curated pi
   list (arena, mistral deepseek, anthropic opus, openai gpt-6; newest per family). Page rows scroll, never trimmed (owner).
