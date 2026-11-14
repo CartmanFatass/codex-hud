@@ -10,10 +10,16 @@ docs/reference(.zh).md describe the hub.
 
 **Blocked by:** none
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Hub at 40/80/120 columns EN/ZH, unicode and text icons (frames regenerated with `npm run snapshots:update`)
-- [ ] Enter opens each page, Esc and the crumb return; Tab/`1`/`2` keep switching Home ⇄ Project
-- [ ] Page, cursor and scroll survive a panel reload
-- [ ] Home's progress Enter lands on Progress; a ticket row on Tickets
-- [ ] Collection still runs only while a Project page is visible
+- [x] Hub at 40/80/120 columns EN/ZH, unicode and text icons (frames regenerated with `npm run snapshots:update`)
+- [x] Enter opens each page, Esc and the crumb return; Tab/`1`/`2` keep switching Home ⇄ Project
+- [x] Page, cursor and scroll survive a panel reload
+- [x] Home's progress Enter lands on Progress; a ticket row on Tickets
+- [x] Collection still runs only while a Project page is visible
+
+## Comments
+
+- 2026-11-14 orchestrator: implemented by frontend-implementer, landed as 682dec52; one test outside its list
+  (decision-labels) now opens the Progress page explicitly. Full suite green (508). Hub has no Tickets row when a
+  project has no tickets; the Working tree summary has no worktree count yet (03 may add it).

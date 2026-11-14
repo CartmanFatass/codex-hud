@@ -218,7 +218,7 @@ for (const lang of ['en', 'zh']) for (const width of [80, 120]) test(`01–06: H
   const project = { waiting: [], docs: [], control: [], agents: [], keys: [], editing: [], roleCount: 0,
     ladder: { ids: [] }, counts: { working: 1, blocked: 0, try: 0, accepted: 0, todo: 0, dropped: 0 },
     slices: [{ label: 'SYNTHETIC', value: 'synthetic slice', jobId: id }], next: [], tickets: [] };
-  const inspector = workInspectorRows(w, state, width, f.now), progress = projectRows(project, state, width, f.now, board, true);
+  const inspector = workInspectorRows(w, state, width, f.now), progress = projectRows(project, { ...state, projectPage: 'progress' }, width, f.now, board, true);
   const frame = renderMonitor({ tree: { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) }, workboard: board,
     modelEnabled: true, state, width, height: 80, nowMs: f.now });
   for (const rows of [inspector, progress]) for (const r of rows) assert.ok(visualLength(r.text) <= width, stripAnsi(r.text));
