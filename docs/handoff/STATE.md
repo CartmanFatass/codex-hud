@@ -30,7 +30,8 @@ Milestone: 0.1.3 · Project hub
   d880ee7b (oracle's event-driven design: herdr events, file watches, deadlines, 30 s tick, STATUS on change;
   554/554). Real agy run 1 found pushes ignored (herdr sends `pane.agent_status_changed`, fake used `_`): fixed;
   the safety tick re-reads status (one request/30 s). 09 (hud_send respawns a dead supervisor) landed (556/556). Real agy run
-  2 passed (working through a 150 s background command, idle_grace 25 s after the report). Imp now dispatches on its default place (agy hydrogen high).
+  2 passed (working through a 150 s background command, idle_grace 25 s after the report). 0.1.4 milestone review
+  running on 3e3edfc8 (reviewer default grok 4.7 high j75d0ee9a8d33f947 + DS max jb47dfebe26abe1ac). Imp now dispatches on its default place (agy hydrogen high).
 - PROJECT-UX (owner 2026-11-14): try. Landed 891556a1: timeline hub (A + 2 transplants, Latest folded first,
   Progress last 7 days), ticket lanes, attention-first Control plane, provider → model picker with curated pi
   list (arena, mistral deepseek, anthropic opus, openai gpt-6; newest per family). Page rows scroll, never trimmed (owner).
