@@ -125,7 +125,8 @@ export class ProjectCollector {
         const ticket = this.body(path, (buffer, truncated): ProjectTicket | null => {
           if (truncated) return null;
           const text = buffer.toString('utf8'), heading = text.match(/^# (\d+):[ \t]*(\S[^\r\n]*)/m);
-          const field = (key: string) => text.match(new RegExp(`^\\*\\*${key}:\\*\\*[ \\t]*([^\\r\\n]*)`, 'mi'))?.[1]?.trim();
+          // A field starts a line or follows ` · ` on a shared line (`**Who:** … · **Blocked by:** 02 · **Status:** resolved`).
+          const field = (key: string) => text.match(new RegExp(`(?:^|·)[ \\t]*\\*\\*${key}:\\*\\*[ \\t]*([^·\\r\\n]*)`, 'mi'))?.[1]?.trim();
           const status = field('Status'), blocked = field('Blocked by');
           if (!heading || !heading[2].trim() || Number(heading[1]) !== Number(name.split('-')[0]) || !status || blocked === undefined) return null;
           const boxes = [...text.matchAll(/^[ \t]*[-*] \[([ xX])\][ \t]*([^\r\n]*)/gm)];
@@ -137,9 +138,10 @@ export class ProjectCollector {
           return { number: heading[1], title: heading[2].trim(), path, at: fs.lstatSync(path).mtimeMs, status,
             checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
             blockers: /^none\b/i.test(blocked) ? [] : [blocked],
-            state: /^wontfix$/i.test(status) ? 'dropped'
-              : /^(done|closed|complete|resolved)$/i.test(status) || (items.length > 0 && checked === items.length) ? 'done'
-              : /^claimed$/i.test(status) ? 'working' : 'ready' };
+            // The first word decides; a note after it (`resolved (follow-up in …)`) does not.
+            state: /^wontfix\b/i.test(status) ? 'dropped'
+              : /^(done|closed|complete|resolved)\b/i.test(status) || (items.length > 0 && checked === items.length) ? 'done'
+              : /^claimed\b/i.test(status) ? 'working' : 'ready' };
         });
         // Clone: dependency/job overlays must not mutate the signature-cached parse.
         if (ticket) tickets.push({ ...ticket, blockers: [...ticket.blockers], items: ticket.items.map((i) => ({ ...i })) });

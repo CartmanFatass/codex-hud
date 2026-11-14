@@ -47,6 +47,19 @@ test('local to-tickets derives done by status/boxes, ready, number/title blocker
     assert.equal(tickets(data, 'retired-tools')[0].state, 'done');
   }
 });
+test('fields on one shared line and a status with a note still parse (the supervisor and role-bind tickets)', async (t) => {
+  const f = await fixture(t), dir = join(f.cwd, '.scratch', 'inline', 'issues');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(join(dir, '01-shared.md'), '# 01: Shared line\n\n**Who:** imp · **Size:** small · **Blocked by:** none · **Status:** resolved\n\n- [ ] box\n');
+  fs.writeFileSync(join(dir, '02-note.md'), '# 02: Note after status\n\n**Blocked by:** 01 (landed)\n\n**Status:** resolved (follow-up in phase 2)\n\n- [ ] box\n');
+  fs.writeFileSync(join(dir, '03-open.md'), '# 03: Open on a shared line\n\n**Who:** imp · **Blocked by:** 02 · **Status:** ready-for-agent\n');
+  fs.writeFileSync(join(dir, '04-dropped.md'), '# 04: Dropped with a note\n\n**Who:** imp · **Blocked by:** 03 · **Status:** wontfix (superseded by 08)\n');
+  const data = await f.collector.collect(true, f.board, NOW + 5);
+  assert.deepEqual(tickets(data, 'inline').map((r) => [r.number, r.state, r.status]), [
+    ['01', 'done', 'resolved'], ['02', 'done', 'resolved (follow-up in phase 2)'],
+    ['03', 'ready', 'ready-for-agent'], ['04', 'dropped', 'wontfix (superseded by 08)'],
+  ]);
+});
 for (const [number, word, expectedState] of ticketVocabulary) test(`local tracker vocabulary: ${word}`, async (t) => {
   const f = await fixture(t), ticket = tickets(f.data).find((r) => r.number === number);
   assert.equal(ticket.state, expectedState);
