@@ -1,18 +1,22 @@
 #!/usr/bin/env node
-/** One visible Jev CLI job. The CLIs own the browser, keys and send-once rules. */
+/** One visible browser CLI job. The CLIs own the browser, keys and send-once rules. */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
 
 const dir = process.argv[2];
+const bundled = fileURLToPath(new URL('..', import.meta.url));
+const hudHome = dirname(dirname(resolve(dir)));
 let job;
 try {
   job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
 } catch (error) {
-  console.error(`Cannot read Jev job: ${error.message}`);
+  console.error(`Cannot read browser job: ${error.message}`);
   process.exit(1);
 }
-const role = job.jev,
+const role = job.bro ?? job.jev,
   output = join(dir, 'report.md'),
   brief = join(dir, 'brief.md');
 const started = new Date().toISOString();
@@ -23,7 +27,7 @@ function status(state, reason = null) {
     task_dir: dir,
     slot: 'primary',
     role: job.role,
-    harness: 'jev',
+    harness: 'bro',
     provider: role.provider === 'chatgpt' ? 'openai' : 'gemini',
     pid: process.pid,
     model: role.model ?? null,
@@ -87,13 +91,14 @@ try {
     for (const key of ['model', 'thinking']) if (role[key]) args.push(`--${key}`, role[key]);
     await cli(role.tool, args);
   } else {
+    const kind = role.kind ?? 'image';
     const media = join(dir, 'media');
     fs.mkdirSync(media, { mode: 0o700 });
-    const args = ['send', '--label', job.job, '--kind', role.kind, '--prompt-file', brief, '--out-dir', media];
+    const args = ['send', '--label', job.job, '--kind', kind, '--prompt-file', brief, '--out-dir', media];
     if (role.model) args.push('--model', role.model);
     // Only an explicit cost statement in this brief authorizes passing the CLI's credit confirmation.
     const cost = fs.readFileSync(brief, 'utf8').match(/\bcost:\s*(\d+)\s+credits\b/i)?.[1];
-    if (role.kind === 'video' && cost !== undefined) args.push('--confirm-credits', cost);
+    if (kind === 'video' && cost !== undefined) args.push('--confirm-credits', cost);
     await cli(role.tool, args);
     const files = fs.readdirSync(media).filter((file) => fs.statSync(join(media, file)).isFile());
     fs.writeFileSync(
@@ -106,7 +111,8 @@ try {
   fs.chmodSync(output, 0o600);
   status('closed', 'settled');
 } catch (error) {
-  failure = String(error.message ?? error).replace(/[\r\n]+/g, ' ');
+  const raw = String(error.message ?? error).replace(/[\r\n]+/g, ' ');
+  failure = recordFailureExhaustion(hudHome, bundled, dir, job, raw).reason;
   status('failed', failure);
   process.exitCode = 1;
 }

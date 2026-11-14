@@ -1,6 +1,11 @@
 {
   "role": "flow",
-  "harness": "jev",
-  "tool": "jev-flow",
-  "kind": "image"
+  "can_continue": false,
+  "run": [
+    {
+      "harness": "bro",
+      "tool": "jev-flow",
+      "kind": "image"
+    }
+  ]
 }

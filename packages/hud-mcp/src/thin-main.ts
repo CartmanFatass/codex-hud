@@ -10,7 +10,16 @@ import { fileURLToPath } from 'node:url';
 
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
 import { herdrId } from '../../../src/roles/herdr-run.js';
-import { roleRegistry, executable, piSwitches, type Role } from '../../../src/roles/roster.js';
+import {
+  roleRegistry,
+  harnessDefaults,
+  placeKey,
+  recordFailureExhaustion,
+  executable,
+  piSwitches,
+  type Role,
+  type RolePlace,
+} from '../../../src/roles/roster.js';
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobsRoot = join(hudHome, 'jobs');
 const bundled = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -34,6 +43,10 @@ interface Job extends PiOptions {
   model_source?: string | null;
   read_at?: string;
   reaped_at?: string;
+  place?: RolePlace;
+  place_key?: string;
+  exhaustion_marked?: boolean;
+  bro?: RolePlace;
   jev?: Role;
   cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number };
   dispatch_exit_code: number | null;
@@ -59,13 +72,19 @@ const tools = [
   ),
   tool(
     'hud_create',
-    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Optional package is a display-only label. model and thinking override a pi or CLI role for this job; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the role file).",
+    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Optional package is a display-only label. Uses the role's first available place (runs_on) unless overridden by on. model and thinking override a pi or CLI role for this job; kind selects image or video for flow; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the place).",
     {
       role: text,
       request_key: text,
       task: text,
       cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
+      on: {
+        ...text,
+        description:
+          'Override the harness or browser provider for this job only (pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow).',
+      },
+      kind: { type: 'string', enum: ['image', 'video'], description: 'Flow output kind: image (default) or video.' },
       model: { ...text, description: 'Override the pi or cli role model for this job only.' },
       thinking: { ...text, description: 'Override the pi or cli role thinking for this job only.' },
       lens: { type: 'boolean', description: 'Load pi-lens (--lens / --no-lens).' },
@@ -150,11 +169,13 @@ function directory(job: string): string {
 function save(job: Job, clearRead = false): void {
   const file = join(directory(job.job), 'job.json');
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
-  const read_at = json<Job>(file)?.read_at;
+  const existing = json<Job>(file);
+  const read_at = existing?.read_at;
   if (clearRead) delete job.read_at;
   else if (read_at) job.read_at = read_at;
-  const reaped_at = json<Job>(file)?.reaped_at;
+  const reaped_at = existing?.reaped_at;
   if (reaped_at) job.reaped_at = reaped_at;
+  if (existing?.exhaustion_marked) job.exhaustion_marked = true;
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(job, null, 2) + '\n', { mode: 0o600 });
   fs.renameSync(`${file}.tmp`, file);
 }
@@ -269,12 +290,12 @@ function skillReason(path: string): string | null {
   }
 }
 /** Role skill dirs and the worker prompt, after `--` and before the caller's `pi_args`. */
-function piSkillArgs(job: Job, role: Role): string[] {
+function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
   const gate = registry(job.cwd).project();
   const role_skills: { name: string; path: string }[] = [];
   const skipped_skills: { name: string; reason: string }[] = [];
   const args: string[] = [];
-  for (const name of role.skills ?? []) {
+  for (const name of place.skills ?? role.skills ?? []) {
     if (!isAbsolute(name)) {
       if (!gate.registered) {
         skipped_skills.push({ name, reason: 'unresolved' });
@@ -312,16 +333,18 @@ function piSkillArgs(job: Job, role: Role): string[] {
   job.worker_prompt = worker_prompt;
   return args;
 }
-async function dispatchPi(job: Job, role: Role) {
+async function dispatchPi(job: Job, role: Role, place: RolePlace) {
   try {
-    const resources = piSkillArgs(job, role);
+    const resources = piSkillArgs(job, role, place);
     const launcher = executable('pi-role');
     if (!launcher) throw new Error('pi-role not found on PATH');
     const dir = directory(job.job),
       output = join(dir, 'report.md');
-    const argv = [
+    const piRole = place.pi_role ?? role.instructions;
+    if (!piRole) throw new Error('missing pi_role');
+    const argv: string[] = [
       '--args-json',
-      role.pi_role!,
+      piRole,
       '--task-dir',
       dir,
       '--role-output',
@@ -336,13 +359,13 @@ async function dispatchPi(job: Job, role: Role) {
       join(dir, 'qa'),
     ];
     if (job.herdr_pane) argv.push('--orchestrator', job.herdr_pane);
-    if (role.thinking !== undefined) argv.push('--dispatch-effort-source', 'orchestrator');
+    if (place.thinking !== undefined) argv.push('--dispatch-effort-source', 'orchestrator');
     for (const key of ['lens', 'mcp', 'tps'] as const)
       if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
     if (job.ui_ext === false) argv.push('--no-ui-ext');
     if (job.skills === true) argv.push('--skills');
     argv.push('--', '--tui-mode', 'regular');
-    for (const key of ['model', 'thinking'] as const) if (role[key] !== undefined) argv.push(`--${key}`, role[key]);
+    for (const key of ['model', 'thinking'] as const) if (place[key] !== undefined) argv.push(`--${key}`, place[key]);
     argv.push(...resources, ...(job.pi_args ?? []));
     const built = await run(launcher, argv, job.cwd);
     if (built.exit_code !== 0) return built;
@@ -436,7 +459,7 @@ async function dispatchPi(job: Job, role: Role) {
   }
 }
 const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
-async function dispatchJev(job: Job) {
+async function dispatchBro(job: Job) {
   const dir = directory(job.job),
     tabName = tabLabel(job);
   const result = await run('herdr', [
@@ -506,14 +529,14 @@ async function settlePhantomWorking(name: string) {
   return waited.exit_code === 0 ? null : waited;
 }
 /** Trust refusal is the one STATUS write before the supervisor starts. Same keys as hud-cli.mjs. */
-function failCli(dir: string, job: Job, role: Role, reason: string) {
+function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
   const now = new Date().toISOString();
   const status = {
     version: 1,
     task_dir: fs.realpathSync(dir),
     slot: 'primary',
     harness: 'cli',
-    agent: role.agent,
+    agent: place.agent,
     role: job.role,
     model: job.model ?? null,
     thinking: job.thinking ?? null,
@@ -536,9 +559,9 @@ function failCli(dir: string, job: Job, role: Role, reason: string) {
   fs.renameSync(`${file}.${process.pid}.tmp`, file);
   return { exit_code: 1, stdout: '', stderr: reason };
 }
-async function dispatchCli(job: Job, role: Role) {
+async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
   try {
-    const kind = cliKinds[role.agent as CliAgent];
+    const kind = cliKinds[place.agent as CliAgent];
     const dir = directory(job.job);
     const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
     const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
@@ -576,14 +599,14 @@ async function dispatchCli(job: Job, role: Role) {
         .join(''),
       { mode: 0o600 }
     );
-    const argv = ['agent', 'start', name, '--kind', role.agent!, '--pane', left];
+    const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
     if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
     argv.push(
       '--',
-      ...(role.model ? kind.model(role.model) : []),
-      ...(role.thinking ? kind.effort(role.thinking) : []),
+      ...(place.model ? kind.model(place.model) : []),
+      ...(place.thinking ? kind.effort(place.thinking) : []),
       ...kind.bypass,
-      ...(role.args ?? [])
+      ...(place.args ?? [])
     );
     const started = await run('herdr', argv);
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
@@ -595,7 +618,7 @@ async function dispatchCli(job: Job, role: Role) {
         const declined = await run('herdr', ['pane', 'send-keys', left, ...kind.trust.decline]);
         if (declined.exit_code !== 0) return declined;
         await run('herdr', ['agent', 'wait', name, '--until', 'idle', '--until', 'unknown', '--timeout', '15000']);
-        return failCli(dir, job, role, `${role.agent} has not trusted ${job.cwd}; run hud trust ${job.cwd}`);
+        return failCli(dir, job, place, `${place.agent} has not trusted ${job.cwd}; run hud trust ${job.cwd}`);
       }
     }
     if (notReady) return started;
@@ -603,11 +626,6 @@ async function dispatchCli(job: Job, role: Role) {
       const settled = await settlePhantomWorking(name);
       if (settled) return settled;
     }
-    const instructions = join(
-      fileURLToPath(new URL('../../../../', import.meta.url)),
-      'instructions',
-      'implementer.md'
-    );
     const prompt = `Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`;
     const submitted = await run('herdr', [
       'agent',
@@ -633,11 +651,37 @@ async function dispatchCli(job: Job, role: Role) {
   }
 }
 function jobStatus(job: Job) {
-  const status = json<{ state?: string; exit_reason?: string | null }>(join(directory(job.job), 'STATUS.json'));
-  return {
-    state: status?.state ?? (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 ? 'failed' : null),
-    exit_reason: status?.exit_reason ?? null,
-  };
+  const dir = directory(job.job);
+  const file = join(dir, 'STATUS.json');
+  const status = json<{ state?: string; exit_reason?: string | null; error?: string | null }>(file);
+  const state = status?.state ?? (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 ? 'failed' : null);
+  let exit_reason = status?.exit_reason ?? null;
+  if (state === 'failed' && !job.exhaustion_marked && status) {
+    const reasonText = exit_reason || status.error || '';
+    if (reasonText) {
+      const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, reasonText);
+      if (outcome.marked) {
+        job.exhaustion_marked = true;
+        exit_reason = outcome.reason;
+        try {
+          const temp = `${file}.${process.pid}.tmp`;
+          fs.writeFileSync(
+            temp,
+            JSON.stringify({
+              ...status,
+              exit_reason: outcome.reason,
+              ...(status.error ? { error: outcome.reason } : {}),
+            }) + '\n',
+            { mode: 0o600 }
+          );
+          fs.renameSync(temp, file);
+        } catch {
+          /* Ignore transient STATUS.json write error. */
+        }
+      }
+    }
+  }
+  return { state, exit_reason };
 }
 function openQuestions(dir: string): string[] {
   const qa = join(dir, 'qa');
@@ -694,7 +738,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     const role = required(args, 'role');
     const cwd = jobCwd(args);
     const found = registry(cwd);
-    let definition = found.roles().get(role);
+    const definition = found.roles().get(role);
     if (!definition) {
       const path = found.invalidPath(role);
       return path ? { ok: false, code: 'role_unavailable', path } : { ok: false, code: 'role_unavailable' };
@@ -708,21 +752,52 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (!herdrId(process.env.HERDR_PANE_ID)) return { ok: false, code: 'herdr_required' };
     const task = required(args, 'task');
     if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
+    const onName = args.on !== undefined ? required(args, 'on') : null;
+    const defaults = onName ? harnessDefaults(hudHome, bundled) : null;
+    const onEntry = onName ? defaults?.[onName] : undefined;
+    if (onName && !onEntry) {
+      return { ok: false, code: 'invalid_arguments', error: `unknown harness: ${onName}` };
+    }
+    const matchPlace = (p: RolePlace, target: RolePlace) =>
+      p.harness === target.harness &&
+      (target.harness !== 'cli' || p.agent === target.agent) &&
+      (target.harness !== 'bro' || (p.tool === target.tool && (!target.provider || p.provider === target.provider)));
+    const effective = found.assignment(definition);
+    let place: RolePlace | null = onEntry
+      ? { ...(definition.run.find((p) => matchPlace(p, onEntry)) ?? {}), ...onEntry }
+      : effective.runs_on
+        ? { ...effective.runs_on }
+        : null;
+    if (!place) {
+      return {
+        ok: false,
+        code: 'no_available_place',
+        ...(effective.exhausted.length ? { exhausted: effective.exhausted } : {}),
+      };
+    }
+    if (args.kind !== undefined) {
+      if (place.harness !== 'bro' || place.tool !== 'jev-flow' || (args.kind !== 'image' && args.kind !== 'video')) {
+        return { ok: false, code: 'invalid_arguments' };
+      }
+      place = { ...place, kind: args.kind };
+    } else if (place.harness === 'bro' && place.tool === 'jev-flow' && !place.kind) {
+      place = { ...place, kind: 'image' };
+    }
     for (const key of ['model', 'thinking'] as const) {
       if (args[key] === undefined) continue;
-      if (definition.harness !== 'pi' && definition.harness !== 'cli') return { ok: false, code: 'invalid_arguments' };
-      definition = { ...definition, [key]: required(args, key) };
+      if (place.harness !== 'pi' && place.harness !== 'cli') return { ok: false, code: 'invalid_arguments' };
+      place = { ...place, [key]: required(args, key) };
     }
-    const options: PiOptions = definition.harness === 'pi' ? { split: definition.split ?? false, pi_args: [] } : {};
+    const options: PiOptions = place.harness === 'pi' ? { split: place.split ?? false, pi_args: [] } : {};
     for (const key of piSwitches) {
       const value = args[key];
       if (value === undefined) continue;
-      if (definition.harness !== 'pi' || typeof value !== 'boolean') return { ok: false, code: 'invalid_arguments' };
+      if (place.harness !== 'pi' || typeof value !== 'boolean') return { ok: false, code: 'invalid_arguments' };
       options[key] = value;
     }
     if (args.pi_args !== undefined) {
       if (
-        definition.harness !== 'pi' ||
+        place.harness !== 'pi' ||
         !Array.isArray(args.pi_args) ||
         args.pi_args.length > 128 ||
         args.pi_args.some((value) => typeof value !== 'string' || value.length > 4096)
@@ -736,7 +811,42 @@ async function call(name: string, args: Args): Promise<unknown> {
         };
       options.pi_args = args.pi_args;
     }
-    const effective = definition.harness === 'pi' || definition.harness === 'cli' ? found.assignment(definition) : null;
+    let instructionsPath = '';
+    if (place.harness === 'cli') {
+      const instructionsName = definition.instructions ?? definition.role;
+      if (!plainSkillName(instructionsName)) {
+        return { ok: false, code: 'unsupported_harness', error: `invalid instructions name: ${instructionsName}` };
+      }
+      instructionsPath = join(bundled, 'instructions', `${instructionsName}.md`);
+      if (!fs.existsSync(instructionsPath)) {
+        return {
+          ok: false,
+          code: 'unsupported_harness',
+          path: instructionsPath,
+          error: `missing CLI instructions file: ${instructionsPath}`,
+        };
+      }
+    }
+    const details = found.placeDetails(definition, place);
+    let overrideHarnesses: Record<string, { model?: string }> | null = null;
+    if (onName) {
+      try {
+        overrideHarnesses = json<Record<string, { model?: string }>>(join(hudHome, 'harnesses.json'));
+      } catch {
+        overrideHarnesses = null;
+      }
+    }
+    const harnessesSource =
+      onName && overrideHarnesses?.[onName]?.model !== undefined
+        ? join(hudHome, 'harnesses.json')
+        : join(bundled, 'harnesses.json');
+    const modelSource =
+      args.model !== undefined
+        ? 'hud_create'
+        : onEntry && onEntry.model !== undefined
+          ? harnessesSource
+          : details.model.source;
+    const key = placeKey(place, details.model.value);
     const job: Job = {
       job: 'j' + randomBytes(8).toString('hex'),
       role,
@@ -746,21 +856,23 @@ async function call(name: string, args: Args): Promise<unknown> {
       created_at: new Date().toISOString(),
       ...options,
       ...(args.package === undefined ? {} : { package: args.package as string }),
-      ...(definition.harness === 'jev' ? { jev: definition } : {}),
-      ...(definition.harness === 'cli'
+      place,
+      place_key: key,
+      ...(place.harness === 'bro' ? { bro: place } : {}),
+      ...(place.harness === 'cli'
         ? {
             cli: {
-              agent: definition.agent as CliAgent,
+              agent: place.agent as CliAgent,
               can_continue: definition.can_continue === true,
               idle_grace_s: definition.idle_grace_s ?? 600,
             },
           }
         : {}),
-      ...(effective
+      ...(place.harness === 'pi' || place.harness === 'cli'
         ? {
-            model: effective.model,
-            thinking: effective.thinking,
-            model_source: args.model !== undefined ? 'hud_create' : effective.model_source,
+            model: details.model.value,
+            thinking: details.thinking.value,
+            model_source: modelSource,
           }
         : {}),
       dispatch_exit_code: null,
@@ -772,9 +884,9 @@ async function call(name: string, args: Args): Promise<unknown> {
     // Pi and CLI workers write the report; the Jev CLI saves the browser's answer locally.
     const hudAsk = fileURLToPath(new URL('../../../../bin/hud-ask.mjs', import.meta.url));
     const brief =
-      definition.harness === 'jev'
+      place.harness === 'bro'
         ? `${task}\n`
-        : definition.harness === 'cli'
+        : place.harness === 'cli'
           ? `${task}\n\nWrite your report to ${join(dir, 'report.md')}.\nAsk the orchestrator with: node ${JSON.stringify(hudAsk)} --dir ${JSON.stringify(dir)} --question "..." --default "..."\n`
           : `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
     fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
@@ -783,9 +895,9 @@ async function call(name: string, args: Args): Promise<unknown> {
     ensureWatcher();
     let result;
     try {
-      if (definition.harness === 'jev') result = await dispatchJev(job);
-      else if (definition.harness === 'cli') result = await dispatchCli(job, definition);
-      else result = await dispatchPi(job, definition);
+      if (place.harness === 'bro') result = await dispatchBro(job);
+      else if (place.harness === 'cli') result = await dispatchCli(job, place, instructionsPath);
+      else result = await dispatchPi(job, definition, place);
     } catch (error) {
       result = { exit_code: 1, stdout: '', stderr: String(error) };
     }
@@ -793,19 +905,20 @@ async function call(name: string, args: Args): Promise<unknown> {
     job.stderr_tail = result.stderr;
     const statusFile = join(dir, 'STATUS.json');
     if (result.exit_code !== 0 && !fs.existsSync(statusFile)) {
+      const rawReason = (
+        result.stderr.trim() ||
+        result.stdout.trim().split(/\r?\n/, 1)[0] ||
+        `launch exited ${result.exit_code}`
+      ).slice(0, 500);
+      const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, rawReason);
+      if (outcome.marked) job.exhaustion_marked = true;
       fs.writeFileSync(
         `${statusFile}.${process.pid}.tmp`,
         JSON.stringify({
           state: 'failed',
-          harness: definition.harness,
-          ...(definition.harness === 'jev'
-            ? { provider: definition.provider === 'chatgpt' ? 'openai' : 'gemini' }
-            : {}),
-          exit_reason: (
-            result.stderr.trim() ||
-            result.stdout.trim().split(/\r?\n/, 1)[0] ||
-            `launch exited ${result.exit_code}`
-          ).slice(0, 500),
+          harness: place.harness,
+          ...(place.harness === 'bro' ? { provider: place.provider === 'chatgpt' ? 'openai' : 'gemini' } : {}),
+          exit_reason: outcome.reason,
           ended_at: new Date().toISOString(),
         }) + '\n',
         { mode: 0o600 }
@@ -865,6 +978,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     // continues in its idle grace when the role allows (owner, 2026-11-11).
     const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
     if (
+      job.bro ||
       job.jev ||
       !agent ||
       !(queued || (state === 'idle_grace' && registry(job.cwd).roles().get(job.role)?.can_continue))

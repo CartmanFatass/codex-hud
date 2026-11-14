@@ -76,17 +76,16 @@ MCP 恰有六个工具：**hud_roster**、**hud_create**、**hud_read**、**hud_
 见[项目工作者](#项目工作者)。
 
 `hud_create` 接收 `role`、`request_key`、`task`，可选 `cwd` 和仅用于显示的 `package`。
-重复键返回原任务，不再次启动。`model` 和 `thinking` 可覆盖本次 pi 或 CLI 角色。
-仅 pi 可覆盖布尔项 `lens`、`mcp`、`tps`、`ui_ext`、`skills`、`split`，以及 `pi_args`
+默认在角色的首个可用位置（`runs_on`）启动，也可用 `on` 按本次任务覆盖位置（默认值见内置
+`harnesses.json` 与 `$HUD_HOME/harnesses.json`）。重复键返回原任务，不再次启动。
+`model` 和 `thinking` 可覆盖本次 `pi` 或 `cli` 位置；`kind` 为 `flow` 选择 `image`（默认）或 `video`。
+仅 `pi` 可覆盖布尔项 `lens`、`mcp`、`tps`、`ui_ext`、`skills`、`split`，以及 `pi_args`
 （最多 128 项，每项 4096 字符，原样传递，不经 shell）。省略的开关沿用 pi-role 默认值；
-split 默认取角色文件。`ui_ext: false` 禁用 UI 扩展；`skills: true` 加载个人技能；
+split 默认取位置设置。`ui_ext: false` 禁用 UI 扩展；`skills: true` 加载个人技能；
 split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。
-浏览器角色拒绝这些 pi 选项。CLI 角色只接受 `model` 和 `thinking`。
+浏览器（`bro`）位置拒绝这些 pi 选项。
 
-CLI 角色文件设 `harness` 为 `cli`，`agent` 为 `grok`、`agy`、`claude` 或 `codex`，
-并写 `can_continue`，可选 `model`／`thinking`（省略则用该 CLI 自己的默认）、可选 `idle_grace_s`
-（默认 600）和可选 `args`（原样追加的 CLI 参数，不是 shell 字符串）。内置角色：`grok-imp`、
-`agy-imp`、`claude-imp`、`codex-imp`。另写 `$HUD_HOME/roles/<name>.json` 注册自己的，
+角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer -> `cli` `agy`）、`reviewer`（`pi` reviewer -> `cli` `claude`）、`sonic`、`architect`、`oracle`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、
 `agy models`、`claude --help` 或 `codex -m`。HUD 只传模型标志、强度标志、该 CLI 的权限绕过标志
 和 `args`。不传 home、会话或配置标志，也不设这些环境变量，分发时也不替 CLI 信任目录：

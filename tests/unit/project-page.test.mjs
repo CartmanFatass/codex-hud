@@ -74,10 +74,9 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
     false
   );
   assert.equal(f.data.control.find((r) => r.label === 'convention').path, join(f.cwd, 'hud-convention.md'));
-  assert.equal(f.data.control.find((r) => r.label === 'grok-imp').value, 'cli  grok  grok-4.7  high');
-  assert.equal(f.data.control.find((r) => r.label === 'agy-imp').value, 'cli  agy  gemini-4-argon-high');
-  assert.equal(f.data.control.find((r) => r.label === 'claude-imp').value, 'cli  claude  opus  high');
-  assert.equal(f.data.control.find((r) => r.label === 'codex-imp').value, 'cli  codex  gpt-6.1-sol  high');
+  assert.equal(f.data.control.find((r) => r.label === 'oracle').value, 'bro  6 Pro  6 Pro');
+  assert.equal(f.data.control.find((r) => r.label === 'flow').value, 'bro');
+  assert.equal(f.data.control.find((r) => r.label === 'imp').value, 'pi  synthetic/model  high');
   assert.equal(f.data.agents.length, 3);
   assert.equal(f.data.browser, true);
   for (const width of [32, 40, 56, 80, 120])
@@ -154,7 +153,7 @@ test('a registered project shows its roles, hides the rest and uses its conventi
   assert.equal(data.control.find((r) => r.label === 'imp').value, 'pi  project/imp  high');
   assert.equal(data.control.find((r) => r.label === 'imp').path, join(root, '.hud/roles/imp.json'));
   assert.equal(
-    data.control.some((r) => r.label === 'grok-imp' || r.label === 'secret' || r.label === 'ignored'),
+    data.control.some((r) => r.label === 'oracle' || r.label === 'secret' || r.label === 'ignored'),
     false
   );
   assert.equal(data.control.find((r) => r.label === 'convention').value, 'project');

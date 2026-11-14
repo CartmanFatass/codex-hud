@@ -90,21 +90,30 @@ project's `.hud/`, the cwd, HUD home, then the package wins whole.
 See [Project workers](#project-workers).
 
 `hud_create` takes `role`, `request_key`, `task`, optional `cwd` and display-only
-`package`. A repeated key returns the original job unchanged, not a second launch.
-`model` and `thinking` override a pi or CLI role for this job. Pi-only overrides:
+`package`. It dispatches on the role's first available place (`runs_on`) unless
+overridden with `on` (defaults from shipped `harnesses.json` overridden by
+`$HUD_HOME/harnesses.json`). A repeated key returns the original job unchanged, not
+a second launch. `model` and `thinking` override a `pi` or `cli` place for this job;
+`kind` selects `image` (default) or `video` for `flow`. Pi-only overrides:
 boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, plus `pi_args` (≤128
 strings, ≤4096 chars each, verbatim, no shell). Omitted switches keep pi-role
-defaults; split defaults to the role file. `ui_ext: false` disables UI extensions;
+defaults; split defaults to the place. `ui_ext: false` disables UI extensions;
 `skills: true` includes personal skills. A true split reserves a right helper pane.
-`--orchestrator`/`--notify` pi-argument overrides refuse. Browser roles reject pi
-options. CLI roles accept only `model` and `thinking`.
+`--orchestrator`/`--notify` pi-argument overrides refuse. Browser (`bro`) places
+reject pi options.
 
-A CLI role file sets `harness` to `cli` and `agent` to `grok`, `agy`, `claude` or
-`codex`, plus `can_continue`, optional `model`/`thinking` (omitted: the CLI's
-default), optional `idle_grace_s` (default 600) and optional `args` (verbatim CLI
-arguments, not a shell string). Shipped roles: `grok-imp`, `agy-imp`, `claude-imp`,
-`codex-imp`. Register another as `$HUD_HOME/roles/<name>.json`, for example a
-design role with `"agent": "claude"` and a Claude model alias. List models with
+A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s`
+(default 600), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`
+or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place
+files load as `run[0]` and `"harness": "jev"` loads as `"bro"`. Shipped roles:
+`imp` (`pi` implementer -> `cli` `agy`), `reviewer` (`pi` reviewer -> `cli`
+`claude`), `sonic`, `architect`, `oracle` (`chatgpt`, `gemini`, `argon`), and
+`flow` (`jev-flow`). A `cli` place requires `instructions/<instructions>.md`
+(shipped: `implementer.md`, `reviewer.md`), otherwise `hud_create` returns
+`unsupported_harness`. Quota or rate-limit failures mark the place exhausted in
+`$HUD_HOME/exhausted.json` for 1 hour so the next dispatch falls back; HUD never
+auto-retries. Register custom roles as `$HUD_HOME/roles/<name>.json`, for example
+a design role with `"agent": "claude"` and a Claude model alias. List models with
 `grok models`, `agy models`, `claude --help` or `codex -m`. The HUD passes only
 the model flag, the effort flag, that CLI's permission-bypass flag and `args`.
 It never passes a home, session or config flag, never sets those environments,

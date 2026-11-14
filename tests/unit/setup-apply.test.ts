@@ -89,6 +89,11 @@ function read(path: string) {
 
 test('apply writes the plan, is idempotent, and detect and roster show it', async (t) => {
   const f = fixture(t);
+  fs.mkdirSync(join(f.hud, 'roles'), { recursive: true });
+  fs.writeFileSync(
+    join(f.hud, 'roles', 'grok-imp.json'),
+    JSON.stringify({ role: 'grok-imp', harness: 'cli', agent: 'grok', can_continue: true })
+  );
   gitInit(f.project);
   const nested = join(f.project, 'nested');
   fs.mkdirSync(nested);
@@ -311,6 +316,11 @@ test('foreign files and links are skipped and never replaced', async (t) => {
 
 test('invalid plans write nothing', async (t) => {
   const f = fixture(t);
+  fs.mkdirSync(join(f.hud, 'roles'), { recursive: true });
+  fs.writeFileSync(
+    join(f.hud, 'roles', 'grok-imp.json'),
+    JSON.stringify({ role: 'grok-imp', harness: 'cli', agent: 'grok', can_continue: true })
+  );
   const tickets = skill(join(f.root, 'skills', 'to-tickets'));
   const empty = join(f.root, 'empty-dir');
   fs.mkdirSync(empty);

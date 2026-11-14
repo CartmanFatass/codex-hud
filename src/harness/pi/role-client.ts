@@ -102,13 +102,19 @@ export const PI_ROLE_TOOLS = [
   ),
   tool(
     'hud_create',
-    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Optional package is a display-only label. model and thinking override a pi or CLI role for this job; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the role file).",
+    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Optional package is a display-only label. Uses the role's first available place (runs_on) unless overridden by on. model and thinking override a pi or CLI role for this job; kind selects image or video for flow; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the place).",
     {
       role: text,
       request_key: text,
       task: text,
       cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
+      on: {
+        ...text,
+        description:
+          'Override the harness or browser provider for this job only (pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow).',
+      },
+      kind: { type: 'string', enum: ['image', 'video'], description: 'Flow output kind: image (default) or video.' },
       model: { ...text, description: 'Override the pi or cli role model for this job only.' },
       thinking: { ...text, description: 'Override the pi or cli role thinking for this job only.' },
       lens: { type: 'boolean', description: 'Load pi-lens (--lens / --no-lens).' },

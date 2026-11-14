@@ -2,9 +2,13 @@
 /** One CLI job. Blocking `herdr agent wait` calls drive STATUS.json. */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
 
 const dir = fs.realpathSync(process.argv[2]);
+const bundled = fileURLToPath(new URL('..', import.meta.url));
+const hudHome = dirname(dirname(dir));
 const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
 const session = Object.fromEntries(
   fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').split('\n').flatMap((line) => {
@@ -140,10 +144,21 @@ function finish(state, reason, outputWritten = current.output_written) {
     output_written: outputWritten,
   });
 }
+function enrichFailure(reason) {
+  let detail = reason;
+  if (!isQuotaFailure(detail)) {
+    const text = herdr(['pane', 'read', pane, '--source', 'recent']).body?.result?.read?.text;
+    const hit = typeof text === 'string'
+      ? text.split(/\r?\n/).reverse().find((line) => isQuotaFailure(line))
+      : null;
+    if (hit) detail = `${detail}: ${hit.trim()}`;
+  }
+  return recordFailureExhaustion(hudHome, bundled, dir, job, detail).reason;
+}
 function fail(reason) {
   refreshSession();
   quit();
-  finish('failed', reason, false);
+  finish('failed', enrichFailure(reason), false);
   process.exitCode = 1;
 }
 function closeSettled() {
@@ -168,7 +183,7 @@ function leave() {
   if (stopped()) finish('stopped', 'stop requested');
   else if (closing()) closeSettled();
   else {
-    finish('failed', 'agent exited');
+    finish('failed', enrichFailure('agent exited'), false);
     process.exitCode = 1;
   }
 }

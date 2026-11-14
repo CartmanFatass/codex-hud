@@ -1,8 +1,23 @@
 {
   "role": "oracle",
-  "harness": "jev",
-  "tool": "jev-ask",
-  "provider": "chatgpt",
-  "model": "6 Pro",
-  "effort": "6 Pro"
+  "can_continue": false,
+  "run": [
+    {
+      "harness": "bro",
+      "tool": "jev-ask",
+      "provider": "chatgpt",
+      "model": "6 Pro",
+      "effort": "6 Pro"
+    },
+    {
+      "harness": "bro",
+      "tool": "jev-ask",
+      "provider": "gemini"
+    },
+    {
+      "harness": "bro",
+      "tool": "jev-aistudio",
+      "model": "gemini-4-argon"
+    }
+  ]
 }

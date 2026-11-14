@@ -119,6 +119,10 @@ test('unregistered detect ignores project files and uses default skill roots', a
   fs.mkdirSync(sub);
   fs.mkdirSync(join(f.hud, 'roles'), { recursive: true });
   fs.writeFileSync(join(f.hud, 'roles', 'extra.json'), JSON.stringify(piRole('extra', { model: 'home-model' })));
+  fs.writeFileSync(
+    join(f.hud, 'roles', 'cli-extra.json'),
+    JSON.stringify({ role: 'cli-extra', harness: 'cli', agent: 'grok', can_continue: true })
+  );
   fs.writeFileSync(join(f.hud, 'roles', 'bad.json'), '{');
   fs.writeFileSync(join(f.hud, 'setup.json'), '{');
   fs.mkdirSync(join(f.project, '.hud/roles'), { recursive: true });
@@ -158,9 +162,12 @@ test('unregistered detect ignores project files and uses default skill roots', a
   assert.equal(imp.pi_role, 'implementer');
   assert.equal(imp.model, null);
   assert.deepEqual(Object.keys(imp), ['role', 'harness', 'pi_role', 'model', 'thinking', 'source']);
-  const grok = doc.reference_roles.find((role: { role: string }) => role.role === 'grok-imp');
-  assert.equal(grok.agent, 'grok');
-  assert.equal(grok.pi_role, undefined);
+  const cliExtra = doc.reference_roles.find((role: { role: string }) => role.role === 'cli-extra');
+  assert.equal(cliExtra.agent, 'grok');
+  assert.equal(cliExtra.pi_role, undefined);
+  const oracle = doc.reference_roles.find((role: { role: string }) => role.role === 'oracle');
+  assert.equal(oracle.harness, 'bro');
+  assert.equal(oracle.pi_role, undefined);
   assert.deepEqual(
     doc.enabled_roles,
     [...roleRegistry(f.hud, sub, f.io.env, undefined, undefined, bundled).roles().keys()].sort()

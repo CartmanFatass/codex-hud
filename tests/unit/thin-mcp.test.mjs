@@ -205,7 +205,7 @@ if (command === 'pi-dispatch') {
   console.log('Synthetic reap complete');
 }
 `;
-  for (const command of ['pi-role', 'pi-dispatch', 'pi-role-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
+  for (const command of ['pi-role', 'pi-dispatch', 'pi-role-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow', 'grok', 'agy', 'claude', 'codex']) {
     fs.writeFileSync(join(bin, command), fake, { mode: 0o700 });
   }
   fs.mkdirSync(join(root, 'roles'));
@@ -874,11 +874,22 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'));
   fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'writer.json'), JSON.stringify(role));
   const roster = await f.call('hud_roster');
+  const place = {
+    harness: 'pi',
+    pi_role: 'implementer',
+    split: false,
+    model: 'synthetic/override',
+    thinking: 'high',
+  };
   assert.deepEqual(
     roster.roles.find((entry) => entry.role === role.role),
     {
       ...role,
-      accepts_options: ['model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
+      instructions: 'implementer',
+      run: [place],
+      runs_on: place,
+      exhausted: [],
+      accepts_options: ['on', 'model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
       available: true,
       source_file: join(f.env.HUD_HOME, 'roles', 'writer.json'),
       model_source: join(f.env.HUD_HOME, 'roles', 'writer.json'),
@@ -895,18 +906,22 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
     roster.roles.find((entry) => entry.role === 'architect'),
     {
       role: 'architect',
+      instructions: 'architect',
       source_file: resolve('packages/hud-mcp/roles/architect.json'),
       model: null,
       thinking: null,
       model_source: null,
       thinking_source: null,
       pi_role_file: null,
-      accepts_options: ['model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
+      accepts_options: ['on', 'model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
       harness: 'pi',
       pi_role: 'architect',
       split: false,
       can_continue: false,
       available: true,
+      run: [{ harness: 'pi', pi_role: 'architect', split: false }],
+      runs_on: { harness: 'pi', pi_role: 'architect', split: false },
+      exhausted: [],
     }
   );
   assert.deepEqual(await f.call('hud_create', { role: 'unknown', request_key: 'unknown', task: 'Synthetic task.' }), {
@@ -1045,7 +1060,7 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
 test('thin launch options reject Jev roles and invalid pi values before dispatch', async (t) => {
   const f = await fixture(t);
   const keys = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'];
-  assert.deepEqual((await f.call('hud_roster')).roles.find((r) => r.role === 'oracle').accepts_options, []);
+  assert.deepEqual((await f.call('hud_roster')).roles.find((r) => r.role === 'oracle').accepts_options, ['on']);
   for (const key of keys) {
     const value = key === 'pi_args' ? ['--tools', 'read'] : false;
     assert.deepEqual(
@@ -1119,9 +1134,9 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   );
   const state = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
   assert.equal(state.state, 'closed');
-  assert.equal(state.harness, 'jev');
+  assert.equal(state.harness, 'bro');
   assert.equal(state.provider, 'openai');
-  assert.equal(workerFor(f, job.job).harness, 'jev');
+  assert.equal(workerFor(f, job.job).harness, 'bro');
   assert.match(cardText(workerFor(f, job.job)), /oracle.*Synthetic question/);
   assert.equal(state.output_written, true);
   assert.equal(state.exit_reason, 'settled');
@@ -1133,8 +1148,12 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   assert.equal((await f.call('hud_roster')).roles.find(({ role }) => role === 'oracle').can_continue, false);
   assert.equal((await f.call('hud_close', { job: job.job })).exit_code, 0);
   assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
-  for (const role of ['gemini', 'argon', 'flow']) {
-    const other = await f.call('hud_create', { role, request_key: role, task: 'Synthetic request.' });
+  for (const args of [
+    { role: 'oracle', on: 'gemini', request_key: 'gemini', task: 'Synthetic request.' },
+    { role: 'oracle', on: 'argon', request_key: 'argon', task: 'Synthetic request.' },
+    { role: 'flow', request_key: 'flow', task: 'Synthetic request.' },
+  ]) {
+    const other = await f.call('hud_create', args);
     assert.equal((await f.call('hud_read', { job: other.job })).state, 'closed');
   }
 });
@@ -1173,7 +1192,7 @@ test('thin Flow video confirms only a stated credit cost', { timeout: 15000 }, a
     ['no-cost', 'Synthetic video.', false],
     ['cost', 'Synthetic video; cost: 20 credits', true],
   ]) {
-    const job = await f.call('hud_create', { role: 'flow-video', request_key: key, task });
+    const job = await f.call('hud_create', { role: 'flow', kind: 'video', request_key: key, task });
     const args = f
       .commands()
       .filter(({ command }) => command === 'jev-flow')
@@ -1207,8 +1226,8 @@ test('a running job says what its role does: only an implementer builds', () => 
   assert.equal(runningVerb('glm-imp', 'pi'), 'build');
   assert.equal(runningVerb('reviewer', 'pi'), 'reviewing');
   assert.equal(runningVerb('architect', 'pi'), 'researching');
-  assert.equal(runningVerb('oracle', 'jev'), 'asking web');
-  assert.equal(runningVerb('flow-video', 'jev'), 'generating');
+  assert.equal(runningVerb('oracle', 'bro'), 'asking web');
+  assert.equal(runningVerb('flow', 'bro'), 'generating');
   assert.equal(runningVerb('sonic', 'pi'), 'working');
   assert.equal(runningVerb('grok-imp', 'cli'), 'build');
 });
@@ -1255,7 +1274,7 @@ test('cli kind table holds launch facts and the registry accepts only a valid cl
   assert.equal(cliKinds.agy.startupQuirk, 'done-before-prompt');
   assert.equal(cliKinds.agy.trust.text, 'Do you trust the contents of this project?');
   assert.deepEqual([...cliKinds.agy.trust.decline], ['down', 'enter']);
-  assert.deepEqual(cliKinds.agy.model('gemini-4-argon-high'), ['--model', 'gemini-4-argon-high']);
+  assert.deepEqual(cliKinds.agy.model('gemini-4-hydrogen-high'), ['--model', 'gemini-4-hydrogen-high']);
   assert.deepEqual(cliKinds.agy.bypass, ['--dangerously-skip-permissions']);
   assert.equal(cliKinds.claude.trust.text, 'Is this a project you created or one you trust?');
   assert.deepEqual([...cliKinds.claude.trust.decline], ['enter']);
@@ -1269,33 +1288,30 @@ test('cli kind table holds launch facts and the registry accepts only a valid cl
   assert.deepEqual(cliKinds.codex.effort('high'), ['-c', 'model_reasoning_effort=high']);
   assert.deepEqual(cliKinds.codex.bypass, ['--dangerously-bypass-approvals-and-sandbox']);
   const f = await fixture(t);
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
+  const customCli = join(f.env.HUD_HOME, 'roles', 'cli-check.json');
+  fs.writeFileSync(
+    customCli,
+    JSON.stringify({ role: 'cli-check', harness: 'cli', agent: 'grok', model: 'grok-4.7', thinking: 'high', can_continue: true })
+  );
   const roster = (await f.call('hud_roster')).roles;
-  const role = roster.find((entry) => entry.role === 'grok-imp');
+  for (const deleted of ['grok-imp', 'agy-imp', 'claude-imp', 'codex-imp', 'argon', 'gemini', 'flow-video']) {
+    assert.equal(roster.some((entry) => entry.role === deleted), false, deleted);
+  }
+  const role = roster.find((entry) => entry.role === 'cli-check');
   assert.equal(role.harness, 'cli');
   assert.equal(role.agent, 'grok');
   assert.equal(role.model, 'grok-4.7');
   assert.equal(role.thinking, 'high');
-  const agy = roster.find((entry) => entry.role === 'agy-imp');
-  assert.equal(agy.harness, 'cli');
-  assert.equal(agy.agent, 'agy');
-  assert.equal(agy.model, 'gemini-4-argon-high');
-  assert.equal(agy.thinking, null);
-  assert.equal(agy.can_continue, true);
-  const claude = roster.find((entry) => entry.role === 'claude-imp');
-  assert.equal(claude.harness, 'cli');
-  assert.equal(claude.agent, 'claude');
-  assert.equal(claude.model, 'opus');
-  assert.equal(claude.thinking, 'high');
-  assert.equal(claude.can_continue, true);
-  const codex = roster.find((entry) => entry.role === 'codex-imp');
-  assert.equal(codex.harness, 'cli');
-  assert.equal(codex.agent, 'codex');
-  assert.equal(codex.model, 'gpt-6.1-sol');
-  assert.equal(codex.thinking, 'high');
-  assert.equal(codex.can_continue, true);
   assert.equal(role.can_continue, true);
-  assert.deepEqual(role.accepts_options, ['model', 'thinking']);
+  assert.deepEqual(role.accepts_options, ['on', 'model', 'thinking']);
   assert.equal(role.pi_role_file, null);
+  const imp = roster.find((entry) => entry.role === 'imp');
+  // Shipped roles run on pi only; fallbacks are the owner's choice under $HUD_HOME.
+  assert.deepEqual(imp.run.map((place) => place.harness), ['pi']);
+  const reviewer = roster.find((entry) => entry.role === 'reviewer');
+  assert.deepEqual(reviewer.run.map((place) => place.harness), ['pi']);
+  fs.unlinkSync(customCli);
   const bad = async (body) => {
     fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
     const path = join(f.env.HUD_HOME, 'roles', 'bad.json');
@@ -1336,7 +1352,7 @@ test('a bad role file is skipped; roster and create name it without dropping oth
     [JSON.stringify({ harness: 'pi', note: secret }), 'missing role', null],
     [JSON.stringify({ role: 'bad', harness: 'pi', split: false, can_continue: true }), 'bad pi fields', 'bad'],
     [JSON.stringify({ role: 'bad', harness: 'cli', agent: 'nope', can_continue: true }), 'bad cli fields', 'bad'],
-    [JSON.stringify({ role: 'bad', harness: 'jev', tool: 'jev-ask' }), 'bad jev fields', 'bad'],
+    [JSON.stringify({ role: 'bad', harness: 'jev', tool: 'jev-ask' }), 'bad bro fields', 'bad'],
     [
       JSON.stringify({
         role: 'bad',
@@ -1406,7 +1422,8 @@ test(
   async (t) => {
     const f = await fixture(t);
     const job = await f.call('hud_create', {
-      role: 'grok-imp',
+      role: 'imp',
+      on: 'grok',
       request_key: 'grok-life',
       task: 'Synthetic grok task.',
     });
@@ -1476,7 +1493,7 @@ test(
     assert.equal(closed.output_written, true);
     assert.equal(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), 'Synthetic grok report.\n');
     assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
-    assert.match(cardText(workerFor(f, job.job)), /grok-imp/);
+    assert.match(cardText(workerFor(f, job.job)), /\bimp\b/);
     assert.match(cardText(workerFor(f, job.job)), /Synthetic grok report/);
     await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at);
     assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
@@ -1490,7 +1507,7 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     ['lens', true],
   ])
     assert.deepEqual(
-      await f.call('hud_create', { role: 'grok-imp', request_key: 'reject-' + key, task: 'Synthetic.', [key]: value }),
+      await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'reject-' + key, task: 'Synthetic.', [key]: value }),
       { ok: false, code: 'invalid_arguments' }
     );
   assert.deepEqual(f.commands(), []);
@@ -1506,7 +1523,8 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     })
   );
   const job = await f.call('hud_create', {
-    role: 'grok-imp',
+    role: 'imp',
+    on: 'grok',
     request_key: 'grok-override',
     task: 'Synthetic override.',
     model: 'grok-4.7-build-fast',
@@ -1549,7 +1567,7 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
 test('a grok trust dialog is declined and the job fails naming the directory', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), '');
-  const job = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-trust', task: 'Synthetic trust.' });
+  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-trust', task: 'Synthetic trust.' });
   const status = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json'), 'utf8'));
   const cwd = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).cwd;
   assertCliStatus(status, job.task_dir);
@@ -1570,7 +1588,7 @@ test('a grok trust dialog is declined and the job fails naming the directory', {
 test('a cli job with no report fails and quits', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
-  const job = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-missing', task: 'Synthetic missing.' });
+  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-missing', task: 'Synthetic missing.' });
   await until(() => {
     const file = join(job.task_dir, 'STATUS.json');
     return fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).state === 'failed';
@@ -1600,7 +1618,8 @@ test("a cli continuation in grace is judged against the report at that turn's st
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-grace'), '');
   const job = await f.call('hud_create', {
-    role: 'grok-imp',
+    role: 'imp',
+    on: 'grok',
     request_key: 'grok-cont',
     task: 'Synthetic continuation.',
   });
@@ -1619,7 +1638,7 @@ test('an unchanged cli report after continuation fails', { timeout: 15000 }, asy
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-grace'), '');
   fs.writeFileSync(join(f.env.HOME, 'unchanged-report'), '');
-  const job = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-same', task: 'Synthetic same.' });
+  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-same', task: 'Synthetic same.' });
   await until(() => graceArmed(f.env, job.task_dir), 5000);
   await f.call('hud_send', { job: job.job, message_key: 'same', text: 'Synthetic continuation.' });
   await until(() => cliState(job.task_dir)?.state === 'failed', 5000);
@@ -1630,7 +1649,7 @@ test('an unchanged cli report after continuation fails', { timeout: 15000 }, asy
 test('hud_send queues into a working cli job', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const job = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-queue', task: 'Synthetic queue.' });
+  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-queue', task: 'Synthetic queue.' });
   await until(() => cliState(job.task_dir)?.state === 'working');
   const sent = await f.call('hud_send', { job: job.job, message_key: 'q', text: 'Synthetic addendum.' });
   assert.equal(sent.queued, true);
@@ -1648,7 +1667,7 @@ test('hud_send queues into a working cli job', { timeout: 15000 }, async (t) => 
 test('hud_close stops a working cli job and closes an idle-grace one', { timeout: 20000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const working = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-stop', task: 'Synthetic stop.' });
+  const working = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-stop', task: 'Synthetic stop.' });
   await until(() => cliState(working.task_dir)?.state === 'working');
   assert.equal(typeof cliState(working.task_dir).pid, 'number');
   assert.match(cliState(working.task_dir).pid_start_time, /^\d+$/);
@@ -1661,7 +1680,7 @@ test('hud_close stops a working cli job and closes an idle-grace one', { timeout
   assert.equal(fs.existsSync(join(working.task_dir, 'STATUS.json.stop-requested')), true);
   fs.unlinkSync(join(f.env.HOME, 'hold-turn'));
   fs.writeFileSync(join(f.env.HOME, 'hold-grace'), '');
-  const grace = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-close', task: 'Synthetic close.' });
+  const grace = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-close', task: 'Synthetic close.' });
   await until(() => cliState(grace.task_dir)?.state === 'idle_grace');
   await f.call('hud_close', { job: grace.job });
   await until(() => cliState(grace.task_dir)?.state === 'closed');
@@ -1672,12 +1691,12 @@ test('hud_close stops a working cli job and closes an idle-grace one', { timeout
 test('a cli that exits fails, and a closed tab fails', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-exit'), '');
-  const exited = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-exit', task: 'Synthetic exit.' });
+  const exited = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-exit', task: 'Synthetic exit.' });
   await until(() => cliState(exited.task_dir)?.state === 'failed');
   assert.equal(cliState(exited.task_dir).error, 'agent exited');
   fs.unlinkSync(join(f.env.HOME, 'cli-exit'));
   fs.writeFileSync(join(f.env.HOME, 'cli-gone'), '');
-  const missing = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-gone', task: 'Synthetic gone.' });
+  const missing = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-gone', task: 'Synthetic gone.' });
   await until(() => cliState(missing.task_dir)?.state === 'failed');
   assert.equal(cliState(missing.task_dir).error, 'agent exited');
 });
@@ -1699,7 +1718,7 @@ test('closing a cli job tab fails it', { timeout: 15000 }, async (t) => {
   });
   server.listen(f.env.HERDR_SOCKET_PATH);
   await once(server, 'listening');
-  const job = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-tab', task: 'Synthetic tab.' });
+  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-tab', task: 'Synthetic tab.' });
   await until(() => request && cliState(job.task_dir)?.state === 'working');
   socket.write(
     JSON.stringify({ event: 'tab_closed', data: { type: 'tab_closed', tab_id: 'w4E:t2', workspace_id: 'w4E' } }) + '\n'
@@ -1839,7 +1858,7 @@ test('a blocked CLI turn needs the owner once, then returns to working', { timeo
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-blocked'), '');
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  const job = await f.call('hud_create', { role: 'grok-imp', request_key: 'grok-blocked', task: 'Synthetic blocked.' });
+  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grok-blocked', task: 'Synthetic blocked.' });
   assert.match(
     fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
     /node ".*\/hud-ask\.mjs" --dir ".*" --question/
@@ -1854,7 +1873,7 @@ test('a blocked CLI turn needs the owner once, then returns to working', { timeo
   assert.equal(notices()[0].args[2], 'w4E:p1');
   assert.equal(
     notices()[0].args.at(-1),
-    `[grok-imp@${basename(f.root)}] BLOCKED: grok is waiting for interactive input in pane w4E:p2`
+    `[imp@${basename(f.root)}] BLOCKED: grok is waiting for interactive input in pane w4E:p2`
   );
   const worker = workerFor(f, job.job);
   assert.equal(worker.homeNeedsHuman, true);
@@ -1885,7 +1904,7 @@ test(
   async (t) => {
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'startup-done'), '');
-    const job = await f.call('hud_create', { role: 'agy-imp', request_key: 'agy-life', task: 'Synthetic agy task.' });
+    const job = await f.call('hud_create', { role: 'imp', on: 'agy', request_key: 'agy-life', task: 'Synthetic agy task.' });
     const start = f.commands().find((c) => c.args[1] === 'start').args;
     assert.deepEqual(start.slice(start.indexOf('--') + 1), [
       '--model',
@@ -1917,7 +1936,7 @@ test(
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'start-not-ready'), '');
     fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), 'Do you trust the contents of this project?');
-    const agy = await f.call('hud_create', { role: 'agy-imp', request_key: 'agy-trust', task: 'Synthetic trust.' });
+    const agy = await f.call('hud_create', { role: 'imp', on: 'agy', request_key: 'agy-trust', task: 'Synthetic trust.' });
     const agyStatus = cliState(agy.task_dir);
     const cwd = JSON.parse(fs.readFileSync(join(agy.task_dir, 'job.json'), 'utf8')).cwd;
     assert.equal(agyStatus.state, 'failed');
@@ -1936,7 +1955,8 @@ test(
     assert.equal(fs.existsSync(join(agy.task_dir, 'supervisor.pid')), false);
     fs.unlinkSync(join(f.env.HOME, 'trust-dialog'));
     const bare = await f.call('hud_create', {
-      role: 'agy-imp',
+      role: 'imp',
+      on: 'agy',
       request_key: 'agy-not-ready',
       task: 'Synthetic not ready.',
     });
@@ -1945,7 +1965,8 @@ test(
     assert.equal(fs.existsSync(join(bare.task_dir, 'supervisor.pid')), false);
     fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), '');
     const grok = await f.call('hud_create', {
-      role: 'grok-imp',
+      role: 'imp',
+      on: 'grok',
       request_key: 'grok-not-ready',
       task: 'Synthetic grok trust.',
     });
@@ -1964,7 +1985,8 @@ test(
 test('a claude role launches with its flags and settles through idle grace', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const job = await f.call('hud_create', {
-    role: 'claude-imp',
+    role: 'imp',
+    on: 'claude',
     request_key: 'claude-life',
     task: 'Synthetic claude task.',
   });
@@ -2004,7 +2026,8 @@ test(
     fs.writeFileSync(join(f.env.HOME, 'start-not-ready'), '');
     fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), 'Is this a project you created or one you trust?');
     const job = await f.call('hud_create', {
-      role: 'claude-imp',
+      role: 'imp',
+      on: 'claude',
       request_key: 'claude-trust',
       task: 'Synthetic trust.',
     });
@@ -2032,7 +2055,8 @@ test('idle and unknown while the agent is present do not settle the job', { time
   for (const status of ['idle', 'unknown']) {
     fs.writeFileSync(join(f.env.HOME, 'quiet-hold'), status);
     const job = await f.call('hud_create', {
-      role: 'grok-imp',
+      role: 'imp',
+      on: 'grok',
       request_key: 'quiet-' + status,
       task: 'Synthetic quiet.',
     });
@@ -2050,7 +2074,7 @@ test('idle and unknown while the agent is present do not settle the job', { time
 test('unknown while the agent is gone settles the job', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-unknown'), '');
-  const job = await f.call('hud_create', { role: 'grok-imp', request_key: 'unknown-gone', task: 'Synthetic unknown.' });
+  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'unknown-gone', task: 'Synthetic unknown.' });
   await until(() => cliState(job.task_dir)?.state === 'failed');
   assert.equal(cliState(job.task_dir).error, 'agent exited');
 });
@@ -2061,7 +2085,7 @@ test(
   async (t) => {
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'grace-quiet'), 'idle');
-    const held = await f.call('hud_create', { role: 'grok-imp', request_key: 'grace-idle', task: 'Synthetic grace.' });
+    const held = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'grace-idle', task: 'Synthetic grace.' });
     await until(() => cliState(held.task_dir)?.state === 'closed', 8000);
     const timeouts = graceTimeouts(f);
     assert.equal(timeouts.length, 2);
@@ -2074,7 +2098,8 @@ test(
     fs.writeFileSync(join(f.env.HOME, 'grace-quiet'), 'unknown');
     fs.writeFileSync(join(f.env.HOME, 'grace-quiet-gone'), '');
     const gone = await f.call('hud_create', {
-      role: 'grok-imp',
+      role: 'imp',
+      on: 'grok',
       request_key: 'grace-gone',
       task: 'Synthetic grace gone.',
     });
@@ -2088,7 +2113,8 @@ test('a blocked resume treats idle as present and unknown as gone', { timeout: 1
   fs.writeFileSync(join(f.env.HOME, 'cli-blocked'), '');
   fs.writeFileSync(join(f.env.HOME, 'blocked-quiet'), 'idle');
   const held = await f.call('hud_create', {
-    role: 'grok-imp',
+    role: 'imp',
+    on: 'grok',
     request_key: 'blocked-idle',
     task: 'Synthetic blocked quiet.',
   });
@@ -2102,7 +2128,8 @@ test('a blocked resume treats idle as present and unknown as gone', { timeout: 1
   fs.writeFileSync(join(f.env.HOME, 'blocked-quiet'), 'unknown');
   fs.writeFileSync(join(f.env.HOME, 'blocked-quiet-gone'), '');
   const gone = await f.call('hud_create', {
-    role: 'grok-imp',
+    role: 'imp',
+    on: 'grok',
     request_key: 'blocked-gone',
     task: 'Synthetic blocked gone.',
   });
@@ -2114,7 +2141,8 @@ test('a codex role waits out a phantom startup and passes the start timeout', { 
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'phantom-working'), '');
   const job = await f.call('hud_create', {
-    role: 'codex-imp',
+    role: 'imp',
+    on: 'codex',
     request_key: 'codex-life',
     task: 'Synthetic codex task.',
   });
@@ -2173,7 +2201,8 @@ test(
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'late-session'), '0');
     const job = await f.call('hud_create', {
-      role: 'grok-imp',
+      role: 'imp',
+      on: 'grok',
       request_key: 'late-session',
       task: 'Synthetic late session.',
     });
@@ -2190,7 +2219,7 @@ test('a failed cli job records agent_session_id published after start, before qu
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'late-session'), '0');
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
-  const job = await f.call('hud_create', { role: 'grok-imp', request_key: 'late-fail', task: 'Synthetic late fail.' });
+  const job = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'late-fail', task: 'Synthetic late fail.' });
   await until(() => cliState(job.task_dir)?.state === 'failed');
   assert.equal(cliState(job.task_dir).error, 'output missing, empty or unchanged');
   assert.equal(cliState(job.task_dir).agent_session_id, 'synthetic-grok-session');
@@ -2488,7 +2517,8 @@ test('unregistered skill names are skipped and a CLI role is not given skill fla
   assert.equal(read.worker_prompt, null);
 
   const cli = await f.call('hud_create', {
-    role: 'grok-imp',
+    role: 'imp',
+    on: 'grok',
     request_key: 'cli-untouched',
     task: 'Synthetic cli task.',
   });

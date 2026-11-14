@@ -10,7 +10,7 @@ The user names a role and a task in plain words; you do the rest. Never ask them
 1. Call `hud_roster` once per session; it returns the roles and convention in effect, which the main session follows (`hud-convention.md` in the server's cwd, then `$HUD_HOME`, then the shipped default; first file wins whole, text truncated at 20,000 characters).
 2. Write the brief: the goal, scope and out of scope, completion criteria, a size budget and a stop rule. For a small
    ask the user's own sentence plus those limits is enough. Do not name a report file; HUD adds it.
-3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`; optional `model`/`thinking` overrides apply to pi and cli roles for this job only. Pi-only launch switches: boolean `lens`, `mcp`, `tps`, `ui_ext` (false disables UI extensions; true keeps defaults), `skills` (true includes personal skills; false keeps them excluded), `split` (reserve a right helper pane; defaults to the role file). Omitted switches keep pi-role defaults. `pi_args` appends up to 128 strings (4096 characters each) verbatim after pi-role's `--`, without a shell. `hud_roster` lists accepted options; `hud_read` shows the recorded launch options. A retry returns the original job unchanged even if options differ; use a new key for a different launch.
+3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`; optional `on` selects a harness/provider override for this job (defaults from `harnesses.json`; explicit `model`/`thinking` win), optional `model`/`thinking` apply to `pi` and `cli` places, and optional `kind` (`image` default, or `video`) applies to `flow`. Pi-only launch switches: boolean `lens`, `mcp`, `tps`, `ui_ext` (false disables UI extensions; true keeps defaults), `skills` (true includes personal skills; false keeps them excluded), `split` (reserve a right helper pane; defaults to the place). Omitted switches keep pi-role defaults. `pi_args` appends up to 128 strings (4096 characters each) verbatim after pi-role's `--`, without a shell. `hud_roster` lists `run`, `runs_on`, `exhausted` and `accepts_options`; `hud_read` shows the recorded launch options. A retry returns the original job unchanged even if options differ; use a new key for a different launch.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
 5. Wait for the job to settle: no DONE line is pushed into your pane. Where the client can watch a shell command in
    the background (Claude Code's Monitor), watch the job's `STATUS.json` state and its `qa/` dir; otherwise call
@@ -26,16 +26,13 @@ Dispatch requires a herdr pane.
 
 The shipped defaults; `hud_roster` lists what is actually defined (files in `$HUD_HOME/roles/` add or override).
 
-- `imp` implements a defined change against a brief and completion criteria.
-- `reviewer` independently assesses a specified change and reports findings. You decide whether to accept the change or request repairs.
-- `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design.
-- `architect` returns design options with their costs, including the smallest; you decide.
-- `oracle` asks ChatGPT Pro through `jev-ask`.
-- `gemini` asks Gemini web through `jev-ask`.
-- `argon` asks Gemini Argon in AI Studio through `jev-aistudio`.
-- `flow` generates images through `jev-flow`.
-- `flow-video` generates video through `jev-flow`; state `cost: N credits` in the brief to confirm that cost.
-- `grok-imp`, `agy-imp`, `claude-imp` and `codex-imp` implement on those CLIs. Roles may run on grok, agy, claude or codex; `$HUD_HOME/roles/*.json` adds or overrides one (`harness: "cli"`).
+- `imp` implements a defined change against a brief and completion criteria (places: `pi` implementer, fallback `cli` `agy`).
+- `reviewer` independently assesses a specified change and reports findings (places: `pi` reviewer, fallback `cli` `claude`). You decide whether to accept the change or request repairs.
+- `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design (`pi` only; no CLI instructions file).
+- `architect` returns design options with their costs, including the smallest; you decide (`pi` only; no CLI instructions file).
+- `oracle` asks a strong web model (ordered `bro` places: ChatGPT Pro via `jev-ask`, Gemini web via `jev-ask`, AI Studio Argon via `jev-aistudio`).
+- `flow` generates media in Google Flow through `jev-flow`; pass `kind: "image"` (default) or `kind: "video"` (state `cost: N credits` in the brief for video).
+- Roles may configure ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`, `codex`) and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`) in `$HUD_HOME/roles/*.json`. A CLI place runs only if `instructions/<instructions>.md` exists (`implementer.md`, `reviewer.md`); otherwise `hud_create` returns `unsupported_harness`.
 
 ## Details
 
@@ -53,4 +50,4 @@ Use `hud_send` with `job`, a stable `message_key` and `text` to add to a pi or C
 
 Keep request keys stable; never blindly re-create an uncertain launch.
 
-HUD uses the locally installed pi-roles, Jev and interactive CLIs; it does not chain, retry or choose another backend on its own. Jev roles cannot continue with `hud_send`.
+HUD uses the locally installed pi-roles, browser CLIs (`bro`) and interactive CLIs; it does not chain or choose another backend automatically on failure. When a job fails with a quota or rate limit error, HUD marks that place exhausted for one hour (`$HUD_HOME/exhausted.json`) so the next `hud_create` uses the next available place, and names it in `exit_reason`. Browser (`bro`) roles cannot continue with `hud_send`.

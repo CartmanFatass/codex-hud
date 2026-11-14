@@ -1,7 +1,13 @@
 {
   "role": "imp",
-  "harness": "pi",
-  "pi_role": "implementer",
-  "split": false,
-  "can_continue": true
+  "instructions": "implementer",
+  "can_continue": true,
+  "idle_grace_s": 600,
+  "run": [
+    {
+      "harness": "pi",
+      "pi_role": "implementer",
+      "split": false
+    }
+  ]
 }

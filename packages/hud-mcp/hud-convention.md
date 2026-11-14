@@ -2,7 +2,7 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Give each brief scope, out of scope, completion criteria, a size budget and a stop rule:
   if the work will not fit, stop and report rather than expand it.
 - Build one end-to-end slice per imp job with the simplest change that works.
-- A CLI role runs on grok, agy, claude or codex; its file names the harness and model.
+- A role defines the work (`instructions`) and an ordered `run` list of places (`pi`, `cli`, or `bro`); `hud_create` picks the first available place (`runs_on`) unless overridden with `on`.
 - Ask the main session only when blocked or a choice changes what the user sees or contradicts the brief or spec;
   otherwise choose the simplest option and note it.
 - Have the implementer run the brief's main-path tests once at the end; no full suites unless requested.

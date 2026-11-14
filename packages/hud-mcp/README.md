@@ -42,73 +42,36 @@ than assuming a role's model or workflow.
 
 | Tool | Arguments and behaviour |
 |---|---|
-| `hud_roster` | Optional `cwd` (default: the server's cwd). Returns role definitions, model/thinking assignments, accepted options, invalid role files, the dispatch convention with its source path, and `project` (`root`, `registered`). |
-| `hud_create` | Required `role`, `request_key`, `task`; optional `cwd` (roles resolve against that project; default: the server's cwd), display-only `package`, and `model`/`thinking` for a pi or CLI role. Pi launch switches are below. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. Repeating a request key returns the original job unchanged, even if options differ; it does not relaunch an uncertain attempt. |
+| `hud_roster` | Optional `cwd` (default: the server's cwd). Returns role definitions (`instructions`, ordered `run` places, `runs_on`, `exhausted` marks), model/thinking assignments, accepted options, invalid role files, the dispatch convention with its source path, and `project` (`root`, `registered`). |
+| `hud_create` | Required `role`, `request_key`, `task`; optional `cwd` (roles resolve against that project; default: the server's cwd), display-only `package`, `on` (harness/provider override), `kind` (`image` or `video` for `flow`), and `model`/`thinking` for a `pi` or `cli` place. Pi launch switches are below. Uses the role's first available place (`runs_on`) unless overridden by `on`. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. Repeating a request key returns the original job unchanged, even if options differ; it does not relaunch an uncertain attempt. |
 | `hud_read` | Optional `job`, `wait_ms` (0–120000). Without a job, lists the newest 20. With one, reads STATUS, report (up to 64 KiB) and unanswered questions; waiting stops at settlement, a question or the deadline. A settled report read stamps `read_at`; it is not acceptance. |
-| `hud_send` | Required `job`, `message_key`, `text`. Queues a message while a pi or CLI job works, or continues it during `idle_grace` if its role allows. The message key deduplicates attempts, including failed/uncertain ones. Browser roles cannot continue. |
+| `hud_send` | Required `job`, `message_key`, `text`. Queues a message while a `pi` or `cli` job works, or continues it during `idle_grace` if its role allows. The message key deduplicates attempts, including failed/uncertain ones. Browser (`bro`) roles cannot continue. |
 | `hud_respond` | Required `job`, `request_id` (`qN`), `answer`. Writes `qa/qN.answer.md` once; an existing answer is not overwritten. |
 | `hud_close` | Required `job`. Calls `pi-role-reap` for early cleanup; safe to repeat. Normal finished-job cleanup belongs to the watcher. |
 
-`model` and `thinking` override a pi or CLI role for this job only. Other
-`hud_create` options are pi-only: boolean `lens`, `mcp`, `tps`, `ui_ext`,
-`skills`, `split`, and `pi_args`. Omitted switches keep pi-role defaults;
-`split` defaults to the role file. `ui_ext: false` disables UI extensions;
-`skills: true` includes personal skills. `split: true` reserves a helper pane to
-the right of the primary worker. `pi_args` passes at most 128 strings of at most
-4096 characters verbatim after `--`, never through a shell. `--orchestrator` and
-`--notify` overrides are reserved and rejected. Browser roles reject pi launch
-options. CLI roles accept only `model` and `thinking`.
+`on` selects a harness or browser provider (`pi`, `agy`, `claude`, `codex`, `grok`, `chatgpt`, `gemini`, `argon`, `flow`) using defaults from shipped [`harnesses.json`](harnesses.json) overridden by `$HUD_HOME/harnesses.json`. Explicit `model` and `thinking` override a `pi` or `cli` place for this job only. `kind` selects `image` (default) or `video` for `flow`. Other `hud_create` options are `pi`-only: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, and `pi_args`. Omitted switches keep pi-role defaults; `split` defaults to the place. `ui_ext: false` disables UI extensions; `skills: true` includes personal skills. `split: true` reserves a helper pane to the right of the primary worker. `pi_args` passes at most 128 strings of at most 4096 characters verbatim after `--`, never through a shell. `--orchestrator` and `--notify` overrides are reserved and rejected. Browser (`bro`) roles reject pi launch options. CLI places require `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`), else `hud_create` returns `unsupported_harness`.
 
 ## Roles and convention
 
-Bundled JSON files in `roles/` supply defaults. `$HUD_HOME/roles/*.json` overrides
-by role name. A project registered in `$HUD_HOME/projects.json` may add
-`<root>/.hud/roles/*.json` after those (project wins by name; pi only) and hide
-roles with `.hud/project.json`. An unregistered `.hud/` is ignored
-(`project_config_ignored`). A registered project's `.hud/hud-convention.md` is
-the first convention file. A pi definition names `pi_role`, `split`,
-`can_continue`, optional `skills` (non-empty strings), and optional
-`model`/`thinking`; absent model/thinking comes from the pi-roles role file.
-Each skill name resolves to `<root>/.hud/skills/<name>` (a symlink apply made);
-an absolute path is used as given. Each resolved directory is passed as `--skill`
-after pi-role's `--`. A missing or broken link is skipped and recorded on the job;
-the launch continues. When `.hud/agents/<role>.md` exists, it is passed as
-`--append-system-prompt`. `hud_read` shows `role_skills`, `skipped_skills` and
-`worker_prompt` for that job. A CLI or browser role file that names `skills` is
-invalid and skipped.
+Bundled JSON files in `roles/` define logical roles: `role`, `instructions`, `can_continue`, optional `idle_grace_s`, and `run`, an ordered list of places (`pi`, `cli`, or `bro`). Legacy single-place role files still load (`run[0]`), and `"harness": "jev"` loads as `"bro"`. `$HUD_HOME/roles/*.json` overrides by role name. A project registered in `$HUD_HOME/projects.json` may add `<root>/.hud/roles/*.json` after those (project wins by name; pi only) and hide roles with `.hud/project.json`. An unregistered `.hud/` is ignored (`project_config_ignored`). A registered project's `.hud/hud-convention.md` is the first convention file.
 
-A browser definition names its `tool` and applicable `provider`, `kind`, `model`,
-`thinking` or `effort`. `hud_roster` reports configured assignments, not proof that
-an external tool is installed or logged in.
+A `pi` place names `pi_role` (defaults to `instructions`), `split`, optional `skills` (non-empty strings), and optional `model`/`thinking`; absent model/thinking comes from the pi-roles role file. Each skill name resolves to `<root>/.hud/skills/<name>` (a symlink apply made); an absolute path is used as given. Each resolved directory is passed as `--skill` after pi-role's `--`. A missing or broken link is skipped and recorded on the job; the launch continues. When `.hud/agents/<role>.md` exists, it is passed as `--append-system-prompt`. `hud_read` shows `role_skills`, `skipped_skills` and `worker_prompt` for that job. A `cli` or `bro` place that names `skills` is invalid and skipped.
 
-A CLI definition sets `harness` to `cli` and names `agent` (`grok`, `agy`, `claude`
-or `codex`), required `can_continue`, optional `model` and `thinking` (omitted: that
-CLI's own default), optional `idle_grace_s` (default 600) and optional `args`
-(extra CLI arguments appended verbatim, never a shell string). An invalid file is
-skipped and listed (`invalid`: path and a short reason). It does not hide the other
-roles or remove an earlier valid role of the same name. Shipped roles, all able to
-continue, grace 600 seconds:
+A `bro` place names its `tool` (`jev-ask`, `jev-aistudio`, `jev-flow`) and applicable `provider`, `kind`, `model`, `thinking` or `effort`. Shipped browser roles: `oracle` (`chatgpt`, `gemini`, `argon` in order) and `flow` (`jev-flow`, default `kind: "image"`). `hud_roster` checks executable availability on `PATH` and active `$HUD_HOME/exhausted.json` marks (1 hour TTL on quota/rate-limit failure; HUD does not auto-retry, and failure reasons name the next available place).
 
-| Role | Agent | Model | Thinking |
-|---|---|---|---|
-| `grok-imp` | grok (Grok Build) | grok-4.7 | high |
-| `agy-imp` | agy (Antigravity) | gemini-4-argon-high | CLI default |
-| `claude-imp` | claude (Claude Code) | opus | high |
-| `codex-imp` | codex (Codex CLI) | gpt-6.1-sol | high |
+A `cli` place sets `harness` to `cli` and names `agent` (`grok`, `agy`, `claude` or `codex`), optional `model` and `thinking` (omitted: that CLI's own default), and optional `args` (extra CLI arguments appended verbatim, never a shell string). Top-level `can_continue` and optional `idle_grace_s` (default 600) control continuation. An invalid file is skipped and listed (`invalid`: path and a short reason). It does not hide the other roles or remove an earlier valid role of the same name. Shipped coding roles: `imp` (`pi` implementer -> `cli` `agy`) and `reviewer` (`pi` reviewer -> `cli` `claude`).
 
-Register your own as `$HUD_HOME/roles/<name>.json`. A file there overrides a bundled
-role of the same name. A front-end design role on a Claude model:
+Register your own as `$HUD_HOME/roles/<name>.json`. A file there overrides a bundled role of the same name. A front-end design role with a fallback:
 
 ```json
 {
   "role": "design",
-  "harness": "cli",
-  "agent": "claude",
-  "model": "sonnet",
-  "thinking": "high",
+  "instructions": "implementer",
   "can_continue": true,
   "idle_grace_s": 600,
-  "args": []
+  "run": [
+    { "harness": "cli", "agent": "claude", "model": "sonnet", "thinking": "high", "args": [] }
+  ]
 }
 ```
 

@@ -3,10 +3,24 @@ import * as fs from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cliAgents, type CliAgent } from './cli-kinds.js';
+import {
+  describePlace,
+  isQuotaFailure,
+  markExhausted,
+  placeKey,
+  readExhausted,
+  type ExhaustedMark,
+  type RolePlace,
+} from './exhausted.js';
 import { registeredProject } from './projects.js';
+
+export { describePlace, isQuotaFailure, markExhausted, placeKey, readExhausted, type ExhaustedMark, type RolePlace };
+
 export interface Role {
   role: string;
-  harness: 'pi' | 'jev' | 'cli';
+  instructions?: string;
+  harness: 'pi' | 'bro' | 'cli';
+  run: RolePlace[];
   pi_role?: string;
   split?: boolean;
   can_continue?: boolean;
@@ -25,6 +39,16 @@ export interface Role {
 export interface InvalidRole {
   path: string;
   reason: string;
+}
+export interface HarnessDefault {
+  harness: 'pi' | 'bro' | 'cli';
+  agent?: CliAgent;
+  model?: string;
+  thinking?: string;
+  tool?: 'jev-ask' | 'jev-aistudio' | 'jev-flow';
+  provider?: 'chatgpt' | 'gemini';
+  effort?: string;
+  kind?: 'image' | 'video';
 }
 export const piSwitches = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split'] as const;
 export function executable(command: string, env: NodeJS.ProcessEnv = process.env): string | null {
@@ -50,28 +74,32 @@ function entries(directory: string): string[] {
     throw error;
   }
 }
-function invalidCli(role: Partial<Role>): boolean {
-  const agent = role.agent;
-  if (typeof agent !== 'string' || !(cliAgents as readonly string[]).includes(agent)) return true;
-  if (typeof role.can_continue !== 'boolean') return true;
-  if (role.idle_grace_s !== undefined && (!Number.isInteger(role.idle_grace_s) || role.idle_grace_s < 0)) return true;
-  if (role.args !== undefined && (!Array.isArray(role.args) || role.args.some((arg) => typeof arg !== 'string')))
+function normalizeHarness(value: unknown): unknown {
+  return value === 'jev' ? 'bro' : value;
+}
+function badStrings(value: unknown): boolean {
+  return value !== undefined && (!Array.isArray(value) || value.some((item) => typeof item !== 'string'));
+}
+function badPi(place: Partial<RolePlace>, instructions: unknown, requireSplit: boolean): boolean {
+  const piRole = place.pi_role ?? instructions;
+  if (typeof piRole !== 'string' || !piRole.trim()) return true;
+  if (requireSplit ? typeof place.split !== 'boolean' : place.split !== undefined && typeof place.split !== 'boolean')
     return true;
+  for (const flag of ['lens', 'mcp', 'tps', 'ui_ext'] as const)
+    if (place[flag] !== undefined && typeof place[flag] !== 'boolean') return true;
+  if (badStrings(place.pi_args)) return true;
   return false;
 }
-function badPi(role: Partial<Role>): boolean {
-  return (
-    typeof role.pi_role !== 'string' ||
-    !role.pi_role.trim() ||
-    typeof role.split !== 'boolean' ||
-    typeof role.can_continue !== 'boolean'
-  );
+function badCli(place: Partial<RolePlace>): boolean {
+  if (typeof place.agent !== 'string' || !(cliAgents as readonly string[]).includes(place.agent)) return true;
+  if (badStrings(place.args)) return true;
+  return false;
 }
-function badJev(role: Partial<Role>): boolean {
+function badBro(place: Partial<RolePlace>): boolean {
   return (
-    !['jev-ask', 'jev-aistudio', 'jev-flow'].includes(role.tool ?? '') ||
-    (role.tool === 'jev-ask' && !['chatgpt', 'gemini'].includes(role.provider ?? '')) ||
-    (role.tool === 'jev-flow' && !['image', 'video'].includes(role.kind ?? ''))
+    !['jev-ask', 'jev-aistudio', 'jev-flow'].includes(place.tool ?? '') ||
+    (place.tool === 'jev-ask' && !['chatgpt', 'gemini'].includes(place.provider ?? '')) ||
+    (place.tool === 'jev-flow' && place.kind !== undefined && !['image', 'video'].includes(place.kind))
   );
 }
 /** A short token only. Anything longer or odd is file content and stays out of the reason. */
@@ -91,29 +119,125 @@ function badSkills(value: unknown): boolean {
     (!Array.isArray(skills) || skills.some((item) => typeof item !== 'string' || item.length === 0))
   );
 }
-function roleReason(value: unknown): string | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unparseable JSON';
-  const role = value as Partial<Role>;
-  if (typeof role.role !== 'string' || !role.role.trim()) return 'missing role';
-  if (role.harness !== 'pi' && role.harness !== 'jev' && role.harness !== 'cli')
-    return `unknown harness ${harnessToken(role.harness)}`;
-  if (role.harness === 'pi' && (badPi(role) || badSkills(value))) return 'bad pi fields';
-  if (role.harness === 'cli' && (invalidCli(role) || skillsOf(value) !== undefined)) return 'bad cli fields';
-  if (role.harness === 'jev' && (badJev(role) || skillsOf(value) !== undefined)) return 'bad jev fields';
+function placeReason(
+  value: unknown,
+  instructions: unknown,
+  requireSplit: boolean
+): { reason: string | null; harness?: 'pi' | 'bro' | 'cli' } {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { reason: 'bad run places' };
+  const place = value as Partial<RolePlace>;
+  const harness = normalizeHarness(place.harness);
+  if (harness !== 'pi' && harness !== 'bro' && harness !== 'cli')
+    return { reason: `unknown harness ${harnessToken(place.harness)}` };
+  if (harness === 'pi' && (badPi(place, instructions, requireSplit) || badSkills(value)))
+    return { reason: 'bad pi fields' };
+  if (harness === 'cli' && (badCli(place) || skillsOf(value) !== undefined)) return { reason: 'bad cli fields' };
+  if (harness === 'bro' && (badBro(place) || skillsOf(value) !== undefined)) return { reason: 'bad bro fields' };
   if (
     ['model', 'thinking', 'effort'].some(
-      (key) => role[key as keyof Role] !== undefined && typeof role[key as keyof Role] !== 'string'
+      (key) => place[key as keyof RolePlace] !== undefined && typeof place[key as keyof RolePlace] !== 'string'
     )
   )
-    return 'bad model/thinking/effort';
+    return { reason: 'bad model/thinking/effort' };
+  return { reason: null, harness };
+}
+function roleReason(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unparseable JSON';
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.role !== 'string' || !raw.role.trim()) return 'missing role';
+  if (raw.instructions !== undefined && (typeof raw.instructions !== 'string' || !raw.instructions.trim()))
+    return 'bad instructions';
+  if (raw.idle_grace_s !== undefined && (!Number.isInteger(raw.idle_grace_s) || (raw.idle_grace_s as number) < 0))
+    return 'bad cli fields';
+  if (raw.can_continue !== undefined && typeof raw.can_continue !== 'boolean') return 'bad can_continue';
+  if (raw.run !== undefined) {
+    if (!Array.isArray(raw.run) || raw.run.length === 0) return 'bad run places';
+    let needsContinue = false;
+    for (const item of raw.run) {
+      const checked = placeReason(item, raw.instructions, false);
+      if (checked.reason) return checked.reason;
+      if (checked.harness === 'pi' || checked.harness === 'cli') needsContinue = true;
+    }
+    if (needsContinue && typeof raw.can_continue !== 'boolean') return 'missing can_continue';
+    return null;
+  }
+  const checked = placeReason(value, raw.instructions, true);
+  if (checked.reason) return checked.reason;
+  if ((checked.harness === 'pi' || checked.harness === 'cli') && typeof raw.can_continue !== 'boolean')
+    return checked.harness === 'pi' ? 'bad pi fields' : 'bad cli fields';
   return null;
 }
 function projectReason(value: unknown): string | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unparseable JSON';
-  const role = value as Partial<Role>;
-  if (typeof role.role !== 'string' || !role.role.trim()) return 'missing role';
-  if (role.harness !== 'pi') return 'project roles are pi only';
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.role !== 'string' || !raw.role.trim()) return 'missing role';
+  if (Array.isArray(raw.run)) {
+    if (raw.run.some((p) => !p || typeof p !== 'object' || normalizeHarness((p as { harness?: unknown }).harness) !== 'pi'))
+      return 'project roles are pi only';
+  } else if (normalizeHarness(raw.harness) !== 'pi') {
+    return 'project roles are pi only';
+  }
   return roleReason(value);
+}
+function normalizePlace(raw: Partial<RolePlace>, instructions?: string): RolePlace {
+  const harness = normalizeHarness(raw.harness) as 'pi' | 'bro' | 'cli';
+  const place: RolePlace = { harness };
+  if (raw.model !== undefined) place.model = raw.model;
+  if (raw.thinking !== undefined) place.thinking = raw.thinking;
+  if (harness === 'pi') {
+    place.pi_role = raw.pi_role ?? instructions;
+    place.split = raw.split ?? false;
+    for (const flag of ['lens', 'mcp', 'tps', 'ui_ext'] as const)
+      if (raw[flag] !== undefined) place[flag] = raw[flag];
+    if (raw.skills !== undefined) place.skills = [...raw.skills];
+    if (raw.pi_args !== undefined) place.pi_args = [...raw.pi_args];
+  } else if (harness === 'cli') {
+    place.agent = raw.agent;
+    if (raw.args !== undefined) place.args = [...raw.args];
+  } else {
+    place.tool = raw.tool;
+    if (raw.provider !== undefined) place.provider = raw.provider;
+    if (raw.effort !== undefined) place.effort = raw.effort;
+    if (raw.tool === 'jev-flow') place.kind = raw.kind ?? 'image';
+  }
+  return place;
+}
+function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
+  const rawInstructions = typeof parsed.instructions === 'string' ? parsed.instructions.trim() : undefined;
+  const rawRun = Array.isArray(parsed.run) ? (parsed.run as Partial<RolePlace>[]) : [parsed as Partial<RolePlace>];
+  const run = rawRun.map((item) => normalizePlace(item, rawInstructions));
+  const primary = run[0]!;
+  const instructions =
+    rawInstructions ??
+    (!Array.isArray(parsed.run)
+      ? primary.harness === 'pi'
+        ? primary.pi_role
+        : primary.harness === 'cli'
+          ? 'implementer'
+          : undefined
+      : undefined);
+  const can_continue = run.every((place) => place.harness === 'bro') ? false : Boolean(parsed.can_continue);
+  const idle_grace_s = typeof parsed.idle_grace_s === 'number' ? parsed.idle_grace_s : undefined;
+  return {
+    role: String(parsed.role),
+    ...(instructions !== undefined ? { instructions } : {}),
+    harness: primary.harness,
+    run,
+    can_continue,
+    ...(idle_grace_s !== undefined ? { idle_grace_s } : {}),
+    ...(primary.pi_role !== undefined ? { pi_role: primary.pi_role } : {}),
+    ...(primary.split !== undefined ? { split: primary.split } : {}),
+    ...(primary.skills !== undefined ? { skills: primary.skills } : {}),
+    ...(primary.model !== undefined ? { model: primary.model } : {}),
+    ...(primary.thinking !== undefined ? { thinking: primary.thinking } : {}),
+    ...(primary.tool !== undefined ? { tool: primary.tool } : {}),
+    ...(primary.provider !== undefined ? { provider: primary.provider } : {}),
+    ...(primary.effort !== undefined ? { effort: primary.effort } : {}),
+    ...(primary.kind !== undefined ? { kind: primary.kind } : {}),
+    ...(primary.agent !== undefined ? { agent: primary.agent } : {}),
+    ...(primary.args !== undefined ? { args: primary.args } : {}),
+    source_file: path,
+  };
 }
 function namedRole(value: unknown): string | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
@@ -140,6 +264,69 @@ function slice(file: string, limit: number): { text: string; truncated: boolean 
   } finally {
     fs.closeSync(fd);
   }
+}
+export function harnessDefaults(
+  hudHome: string,
+  bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url)),
+  readJson: (file: string) => unknown = json
+): Record<string, HarnessDefault> {
+  const load = (file: string): Record<string, Partial<HarnessDefault>> => {
+    try {
+      const raw = readJson(file);
+      return raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? (raw as Record<string, Partial<HarnessDefault>>)
+        : {};
+    } catch {
+      return {};
+    }
+  };
+  const base = load(join(bundled, 'harnesses.json'));
+  const override = load(join(hudHome, 'harnesses.json'));
+  const result: Record<string, HarnessDefault> = {};
+  for (const name of new Set([...Object.keys(base), ...Object.keys(override)])) {
+    const merged = { ...(base[name] ?? {}), ...(override[name] ?? {}) };
+    const harness = normalizeHarness(merged.harness);
+    if (harness !== 'pi' && harness !== 'cli' && harness !== 'bro') continue;
+    result[name] = { ...merged, harness } as HarnessDefault;
+  }
+  return result;
+}
+function piRoleInfo(
+  piRole: string | undefined,
+  env: NodeJS.ProcessEnv,
+  read: typeof slice
+): { pi_role_file: string | null; frontmatter: string | undefined } {
+  let pi_role_file: string | null = null;
+  if (piRole) {
+    for (const command of ['pi-role', 'pi-dispatch']) {
+      const bin = executable(command, env);
+      const path = bin && join(dirname(dirname(bin)), 'roles', `${piRole}.md`);
+      if (path && fs.existsSync(path)) {
+        pi_role_file = path;
+        break;
+      }
+    }
+  }
+  const frontmatter = pi_role_file
+    ? read(pi_role_file, 16384)?.text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1]
+    : undefined;
+  return { pi_role_file, frontmatter };
+}
+function frontmatterValue(frontmatter: string | undefined, key: 'model' | 'thinking'): string | null {
+  const value = frontmatter?.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim();
+  return value ? value.replace(/^(['"])(.*)\1$/, '$2') : null;
+}
+function placeAvailable(
+  place: RolePlace,
+  env: NodeJS.ProcessEnv,
+  exhausted: Map<string, ExhaustedMark>,
+  resolvedModel?: string | null
+): boolean {
+  if (exhausted.has(placeKey(place, resolvedModel))) return false;
+  if (place.harness === 'pi') return executable('pi-role', env) !== null;
+  if (place.harness === 'cli')
+    return executable('herdr', env) !== null && !!place.agent && executable(place.agent, env) !== null;
+  return !!place.tool && executable(place.tool, env) !== null;
 }
 /** Project injects bounded signature-cached readers; the MCP keeps its original readers. */
 export function roleRegistry(
@@ -197,12 +384,8 @@ export function roleRegistry(
           invalid.push(role ? { path, reason, role } : { path, reason });
           continue;
         }
-        const role = parsed as Role;
-        roles.set(role.role, {
-          ...role,
-          source_file: path,
-          ...(role.harness === 'jev' ? { can_continue: false } : {}),
-        });
+        const role = normalizeRole(parsed as Record<string, unknown>, path);
+        roles.set(role.role, role);
       }
     };
     const info = project();
@@ -227,41 +410,64 @@ export function roleRegistry(
     if (found.roles.has(name)) return null;
     return found.invalid.filter((item) => item.role === name).at(-1)?.path ?? null;
   }
-  function assignment(role: Role) {
-    let pi_role_file: string | null = null;
-    if (role.harness === 'pi') {
-      for (const command of ['pi-role', 'pi-dispatch']) {
-        const bin = executable(command, env);
-        const path = bin && join(dirname(dirname(bin)), 'roles', `${role.pi_role}.md`);
-        if (path && fs.existsSync(path)) {
-          pi_role_file = path;
-          break;
-        }
-      }
-    }
-    const frontmatter = pi_role_file && read(pi_role_file, 16384)?.text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1];
+  function placeDetails(role: Role, place: RolePlace) {
+    const piInfo =
+      place.harness === 'pi' ? piRoleInfo(place.pi_role ?? role.instructions, env, read) : { pi_role_file: null, frontmatter: undefined };
     const effective = (key: 'model' | 'thinking') => {
-      if (role[key] !== undefined) return { value: role[key], source: role.source_file };
-      const value = frontmatter && frontmatter.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim();
-      return { value: value ? value.replace(/^(['"])(.*)\1$/, '$2') : null, source: value ? pi_role_file : null };
+      if (place[key] !== undefined) return { value: place[key]!, source: role.source_file };
+      const value = frontmatterValue(piInfo.frontmatter, key);
+      return { value, source: value ? piInfo.pi_role_file : null };
     };
     const model = effective('model'),
       thinking = effective('thinking');
+    return { pi_role_file: piInfo.pi_role_file, model, thinking };
+  }
+  function assignment(role: Role, nowMs = Date.now()) {
+    const exhaustedMap = readExhausted(hudHome, nowMs);
+    const evaluated = role.run.map((place) => {
+      const details = placeDetails(role, place);
+      const key = placeKey(place, details.model.value);
+      const mark = exhaustedMap.get(key) ?? null;
+      return { place, details, key, mark, ok: placeAvailable(place, env, exhaustedMap, details.model.value) };
+    });
+    const chosen = evaluated.find((entry) => entry.ok) ?? null;
+    const activeEntry = chosen ?? evaluated[0]!;
+    const active = activeEntry.place;
+    const { pi_role_file, model, thinking } = activeEntry.details;
     return {
       ...role,
+      harness: active.harness,
+      pi_role: active.harness === 'pi' ? (active.pi_role ?? role.instructions) : undefined,
+      split: active.harness === 'pi' ? (active.split ?? false) : undefined,
+      skills: active.harness === 'pi' ? active.skills : undefined,
+      tool: active.harness === 'bro' ? active.tool : undefined,
+      provider: active.harness === 'bro' ? active.provider : undefined,
+      effort: active.harness === 'bro' ? active.effort : undefined,
+      kind: active.harness === 'bro' ? active.kind : undefined,
+      args: active.harness === 'cli' ? active.args : undefined,
+      can_continue: active.harness === 'bro' ? false : role.can_continue,
       model: model.value,
       thinking: thinking.value,
       model_source: model.source,
       thinking_source: thinking.source,
       pi_role_file,
-      agent: role.harness === 'cli' ? role.agent : undefined,
+      agent: active.harness === 'cli' ? active.agent : undefined,
       accepts_options:
-        role.harness === 'pi'
-          ? ['model', 'thinking', ...piSwitches, 'pi_args']
-          : role.harness === 'cli'
-            ? ['model', 'thinking']
-            : [],
-      available: true,
+        active.harness === 'pi'
+          ? ['on', 'model', 'thinking', ...piSwitches, 'pi_args']
+          : active.harness === 'cli'
+            ? ['on', 'model', 'thinking']
+            : active.tool === 'jev-flow'
+              ? ['on', 'kind']
+              : ['on'],
+      available: chosen !== null,
+      run: role.run,
+      runs_on: chosen ? chosen.place : null,
+      exhausted: evaluated.flatMap((entry) =>
+        entry.mark
+          ? [{ place: entry.place, key: entry.key, until: entry.mark.until, reason: entry.mark.reason }]
+          : []
+      ),
     };
   }
   function convention() {
@@ -278,5 +484,57 @@ export function roleRegistry(
     }
     throw new Error('convention_not_found');
   }
-  return { roles, invalid, invalidPath, assignment, convention, project, projectConfigIgnored };
+  return { roles, invalid, invalidPath, assignment, placeDetails, convention, project, projectConfigIgnored };
+}
+
+export function recordFailureExhaustion(
+  hudHome: string,
+  bundled: string,
+  dir: string,
+  job: {
+    role: string;
+    cwd?: string;
+    place?: RolePlace;
+    place_key?: string;
+    model?: string | null;
+    exhaustion_marked?: boolean;
+  },
+  reason: string,
+  env: NodeJS.ProcessEnv = process.env,
+  nowMs = Date.now()
+): { marked: boolean; reason: string } {
+  const jobFile = join(dir, 'job.json');
+  let diskJob: Record<string, unknown> | null = null;
+  try {
+    diskJob = JSON.parse(fs.readFileSync(jobFile, 'utf8')) as Record<string, unknown>;
+  } catch {
+    /* Job may not exist in synthetic calls. */
+  }
+  if (job.exhaustion_marked || diskJob?.exhaustion_marked || !isQuotaFailure(reason)) {
+    return { marked: false, reason };
+  }
+  const key = job.place_key ?? (job.place ? placeKey(job.place, job.model) : null);
+  if (!key) return { marked: false, reason };
+  markExhausted(hudHome, key, reason, nowMs);
+  const reg = roleRegistry(hudHome, job.cwd ?? process.cwd(), env, undefined, undefined, bundled);
+  const roleDef = reg.roles().get(job.role);
+  const nextInfo = roleDef ? reg.assignment(roleDef, nowMs) : null;
+  const nextPlace = nextInfo?.runs_on ?? null;
+  const suffix = nextPlace
+    ? `; next dispatch will use ${describePlace(nextPlace, nextInfo?.model ?? null)}`
+    : '; no fallback place available';
+  const enriched =
+    reason.includes('; next dispatch will use ') || reason.includes('; no fallback place available')
+      ? reason
+      : `${reason.slice(0, Math.max(0, 500 - suffix.length))}${suffix}`;
+  if (diskJob) {
+    try {
+      const temp = `${jobFile}.${process.pid}.tmp`;
+      fs.writeFileSync(temp, JSON.stringify({ ...diskJob, exhaustion_marked: true }, null, 2) + '\n', { mode: 0o600 });
+      fs.renameSync(temp, jobFile);
+    } catch {
+      /* Ignore transient write error. */
+    }
+  }
+  return { marked: true, reason: enriched };
 }

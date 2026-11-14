@@ -142,7 +142,7 @@ export function runningVerb(role: string, harness: string): string {
   if (/(^|-)imp$|implementer/.test(role)) return 'build';
   if (/reviewer/.test(role)) return 'reviewing';
   if (role === 'architect') return 'researching';
-  if (harness === 'jev') return /^flow/.test(role) ? 'generating' : 'asking web';
+  if (harness === 'bro') return /^flow/.test(role) ? 'generating' : 'asking web';
   return 'working';
 }
 export function readThinJobs(

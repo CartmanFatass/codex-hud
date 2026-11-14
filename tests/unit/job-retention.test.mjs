@@ -645,7 +645,7 @@ test('a dead CLI supervisor fails on the next scan; a live one and a pi job do n
 test('retention deletes CLI and Jev jobs without moving their session files into pi', async (t) => {
   const f = fixture(t);
   const cli = f.job(expired(), { cli: { agent: 'grok' } });
-  const jev = f.job(expired(), { jev: { harness: 'jev' } });
+  const jev = f.job(expired(), { bro: { harness: 'bro' } });
   realSession(cli);
   realSession(jev);
   const { child, exited } = f.start();

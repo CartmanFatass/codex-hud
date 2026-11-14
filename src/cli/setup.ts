@@ -427,11 +427,29 @@ function loadAgents(value: unknown, piRoles: Record<string, PlanRole>, reference
   }
   return agents;
 }
+function piRoleShape(role: Role, name = role.role): Record<string, unknown> {
+  const pi = role.run.find((place) => place.harness === 'pi');
+  if (!pi) bad(`pi_roles.${name}.from`);
+  const shape: Record<string, unknown> = {
+    role: name,
+    harness: 'pi',
+    ...(pi.pi_role !== undefined ? { pi_role: pi.pi_role } : {}),
+    split: pi.split ?? false,
+    can_continue: role.can_continue ?? false,
+  };
+  for (const key of ['lens', 'mcp', 'tps', 'ui_ext'] as const) {
+    if (pi[key] !== undefined) shape[key] = pi[key];
+  }
+  if (pi.model !== undefined) shape.model = pi.model;
+  if (pi.thinking !== undefined) shape.thinking = pi.thinking;
+  if (pi.skills !== undefined) shape.skills = [...pi.skills];
+  if (pi.pi_args !== undefined) shape.pi_args = [...pi.pi_args];
+  return shape;
+}
 function roleBody(name: string, entry: PlanRole, reference: Registry): { text: string; differs: boolean } {
   const base = reference.roles().get(entry.from ?? name);
-  const parsed = base && readJson(base.source_file);
-  if (!isRecord(parsed)) bad(`pi_roles.${name}.from`);
-  const next: Record<string, unknown> = { ...parsed, role: name, harness: 'pi' };
+  if (!base || base.harness !== 'pi') bad(`pi_roles.${name}.from`);
+  const next = piRoleShape(base, name);
   if (entry.pi_role !== undefined) next.pi_role = entry.pi_role;
   if (entry.model !== undefined) next.model = entry.model;
   if (entry.thinking !== undefined) next.thinking = entry.thinking;
@@ -441,7 +459,7 @@ function roleBody(name: string, entry: PlanRole, reference: Registry): { text: s
   const same = reference.roles().get(name);
   return {
     text: JSON.stringify(next, null, 2) + '\n',
-    differs: !same || stable(next) !== stable(readJson(same.source_file)),
+    differs: !same || same.harness !== 'pi' || stable(next) !== stable(piRoleShape(same)),
   };
 }
 let tmpSeq = 0;

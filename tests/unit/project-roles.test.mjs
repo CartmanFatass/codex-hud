@@ -175,7 +175,7 @@ test('a non-pi project role is invalid and skills are validated', () => {
   assert.deepEqual(reason(badPi), { path: badPi, reason: 'bad pi fields' });
   assert.deepEqual(reason(notArray), { path: notArray, reason: 'bad pi fields' });
   assert.deepEqual(reason(homeCli), { path: homeCli, reason: 'bad cli fields' });
-  assert.deepEqual(reason(homeJev), { path: homeJev, reason: 'bad jev fields' });
+  assert.deepEqual(reason(homeJev), { path: homeJev, reason: 'bad bro fields' });
   assert.equal(registry.roles().has('local'), false);
   assert.deepEqual(registry.roles().get('skilled').skills, ['to-tickets']);
   assert.equal(JSON.stringify(registry.invalid()).includes('SECRET_BODY'), false);

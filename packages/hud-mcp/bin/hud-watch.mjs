@@ -6,6 +6,10 @@ import { homedir } from 'node:os';
 import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
+
+const bundled = fileURLToPath(new URL('..', import.meta.url));
 
 const home = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobs = join(home, 'jobs'),
@@ -219,11 +223,22 @@ function scan(retryWatch = false) {
         continue;
       }
       if (!['closed', 'failed', 'stopped'].includes(status.state)) continue;
+      if (status.state === 'failed' && job && !job.exhaustion_marked) {
+        const text = String(status.exit_reason ?? status.error ?? '');
+        if (isQuotaFailure(text)) {
+          const res = recordFailureExhaustion(home, bundled, dir, job, text);
+          if (res.marked && res.reason !== text) {
+            status = { ...status, exit_reason: res.reason, error: res.reason };
+            fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
+            fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+          }
+        }
+      }
       const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
       const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
       if (expires < Date.now() && (!tab || job?.reaped_at)) {
-        // Pi sessions live in the job dir. CLI and Jev keep theirs in their own default place.
-        if (!(job?.cli || job?.jev) && !preserveSessions(dir)) continue;
+        // Pi sessions live in the job dir. CLI and browser keep theirs in their own default place.
+        if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
         fs.rmSync(dir, { recursive: true, force: true });
         log(`delete ${id} state=${status.state}`);
         continue;
