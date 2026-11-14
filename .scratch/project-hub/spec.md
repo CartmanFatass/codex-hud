@@ -32,8 +32,8 @@ being done, and has to open STATE.md and the ticket files. One long page mixes s
    STATE.md shows "no STATE.md" in Progress; its other pages work.
 6. **Home.** Enter on Home's progress block opens the Progress page; on a ticket row, the Tickets page.
 
-7. **Projects list (owner 2026-11-14).** With one project nothing changes. With several, `2` opens the hub of the
-   project shown last; its name row reads `name ▾ i/n`; Enter or a click on it opens the Projects list, `[` / `]`
+7. **Projects list (owner 2026-11-14).** With one project nothing changes. With several, `2` opens the project shown
+   last where it was left (its open page, else its hub; orchestrator 2026-11-14, as with one project); its name row reads `name ▾ i/n`; Enter or a click on it opens the Projects list, `[` / `]`
    still cycle. The list has two rows per project: name, current milestone, waiting count (`?`), running HUD jobs
    (`◉`); then the bar, one key count and the last activity. Order: the panel's project first, then waiting, then
    running, then most recent activity. Enter opens that project's hub; Esc or `‹` returns to the list. The list reads
