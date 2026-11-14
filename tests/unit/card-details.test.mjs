@@ -8,6 +8,7 @@ import { initialMonitorState, handleMonitorInput } from '../../dist-test/src/ren
 import { cardExpanded, jobSentenceRows, identifiers, paintSentence, workCardDetail, renderWorkCard } from '../../dist-test/src/render/work-card.js';
 import { projectWorkCard } from '../../dist-test/src/collectors/work-card.js';
 import { decisionRows } from '../../dist-test/src/render/workboard-rows.js';
+import { workInspectorRows } from '../../dist-test/src/render/work-inspector.js';
 import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
 import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
 import { theme, stripAnsi, visualLength } from '../../dist-test/src/render/colors.js';
@@ -221,6 +222,8 @@ test('settled cards drop stale still-working or prompt-report quiet_decision whi
     };
     const card = projectWorkCard(settled, NOW);
     assert.doesNotMatch(workCardDetail(card), /still-working|prompt-report|wait/);
+    const inspector = (worker) => workInspectorRows(worker, state, 110, NOW).map((r) => stripAnsi(r.text)).join('\n');
+    assert.doesNotMatch(inspector(settled), new RegExp(choice), 'the Inspector follows the card');
     assert.doesNotMatch(renderWorkCard(card, state, 80).map(stripAnsi).join('\n'), /still-working|prompt-report|wait/);
 
     const unsettled = { ...settled, state: 'working', settledAt: null, work: { ...base.work, failed: false, result: false, reason: 'quiet' } };
@@ -235,4 +238,5 @@ test('settled cards drop stale still-working or prompt-report quiet_decision whi
     work: { ...base.work, failed: true, result: false, reason: '429 rate limit' },
   };
   assert.match(workCardDetail(projectWorkCard(failedByQuiet, NOW)), /failed 96% → fail/);
+  assert.match(workInspectorRows(failedByQuiet, state, 110, NOW).map((r) => stripAnsi(r.text)).join('\n'), /quiet\s+failed 96% → fail/);
 });

@@ -103,14 +103,19 @@ exits when no open job or failed-job deadline remains. Failed tabs are retained
 for two hours before automatic reap. Failed file watching falls back to polling
 and retries the watch. `watch.pid` and `watch.log` live under HUD home.
 
-A CLI job has one supervisor (`hud-cli.mjs`). After the brief is submitted the
-state is `working`. A following `done` with a changed, non-empty `report.md` enters
-`idle_grace` when the role can continue; otherwise the supervisor sends `/quit` and
-closes. A missing, empty or unchanged report fails the job. During grace, `hud_send`
-continues a role that can continue; the next turn is judged against the report as it
-was when that turn started. Unused grace sends `/quit`, waits until the agent has
-left, and closes with `exit_reason` `settled`. The watcher then reaps the tab.
-Herdr `idle` or `unknown` counts as an exit only when the agent is gone.
+A CLI job has one supervisor (`hud-cli.mjs`); it only observes, and its one pure
+`judge` (`src/cli-judge.ts`) decides every state. Only facts end a job: the worker's
+recorded pid gone or replaced, its tab closed, or dispatch rejected before input
+(`failed`, or `closed` when a new report is on disk). Dispatch and every non-duplicate
+`hud_send` write `turn.json` before the prompt. A report that differs from the turn's
+baseline settles the turn once herdr is not `working` and the report has been stable
+for 10 s: `idle_grace` when the role can continue, otherwise `/quit` and closed.
+Unused grace sends `/quit` when no child process newer than the turn is alive, and
+closes with `exit_reason` `settled`; the watcher then reaps the tab. A turn quiet past
+the grace without a report gets one Decision API choice (see the reference); anything
+unclear is `waiting_orchestrator` with a reason. Herdr's status is advisory and never
+ends a job. The supervisor wakes on herdr pushes, file changes and its own deadlines,
+plus a 30 s tick that re-reads the status once, and writes STATUS only on change.
 `agent_session_id` is that CLI's own session id, refreshed when the supervisor sees
 a transition; STATUS never carries pi's `session_id`.
 
@@ -118,12 +123,13 @@ The worker asks with `hud-ask` (the brief names it by absolute path). That write
 `qa/qN.md`, pushes one `[tag] QUESTION qN: …` line to the orchestrator pane, and
 blocks until `qa/qN.answer.md` or 20 minutes, then prints the answer or the default.
 Answer with `hud_respond`. A mid-turn `blocked` status marks the job as needing the
-owner and sends one `[tag] BLOCKED: <agent> is waiting for interactive input in pane
-<pane>` line. `hud_close` stops a working CLI job, or quits one that is in idle grace.
+owner; the session learns it from `changes` or `hud watch`. `hud_close` stops a working CLI job, or quits one that is in idle grace.
 
 While a CLI job is open, the watcher also checks that the supervisor is alive.
 `HUD_WATCH_CLI_CHECK_MS` is that interval in milliseconds (default 30000). A dead
-supervisor fails the job (`supervisor exited`) on the next check.
+supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited;
+worker still running"); `hud_send` to it starts a new supervisor. With the worker gone
+too, the job closes with a new report or fails without one.
 
 Settled job directories are removed **one day after closure** on a later watcher
 scan (or the next create if the watcher exited); there is no dedicated expiry timer.

@@ -50,6 +50,13 @@ export async function watchCommand(
   const home = getHudHome(io.env);
   const rescanMs = Math.max(50, options.rescanMs ?? DEFAULT_RESCAN_MS);
   let watcher: fs.FSWatcher | undefined;
+  const changed = () => {
+    // A change during a scan is kept for the next wait, never lost until the rescan.
+    dirty = true;
+    if (wakeWait === undefined) return;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = setTimeout(fire, DEBOUNCE_MS);
+  };
   const attach = () => {
     if (watcher) return;
     try {
@@ -57,16 +64,23 @@ export async function watchCommand(
       watcher = fs.watch(join(home, 'jobs'), { recursive: true }, (_event, name) => {
         const file = name?.toString() ?? '';
         if (file.endsWith('.tmp') || file.endsWith('supervisor.pid') || file.includes('/sessions/')) return;
-        // A change during a scan is kept for the next wait, never lost until the rescan.
-        dirty = true;
-        if (wakeWait === undefined) return;
-        if (timer !== undefined) clearTimeout(timer);
-        timer = setTimeout(fire, DEBOUNCE_MS);
+        changed();
       });
-      watcher.on('error', () => { watcher?.close(); watcher = undefined; });
     } catch {
-      /* No jobs/ yet: the rescan attaches the watch once it exists. */
+      try {
+        // No jobs/ yet (fresh home): watch the home until it appears, then switch to jobs/.
+        watcher = fs.watch(home, (_event, name) => {
+          if (name?.toString() !== 'jobs') return;
+          watcher?.close();
+          watcher = undefined;
+          attach();
+          changed();
+        });
+      } catch {
+        return; /* No home yet: the rescan retries. */
+      }
     }
+    watcher.on('error', () => { watcher?.close(); watcher = undefined; });
   };
 
   let stopped = Boolean(options.signal?.aborted);
@@ -110,7 +124,8 @@ export async function watchCommand(
     });
 
   try {
-    // First pass builds the baseline silently without emitting lines.
+    // Watch first, so a change during the baseline scan is not missed; the baseline emits nothing.
+    attach();
     let prev = new Map<string, JobRow>(readThinJobRows(home, scope).map((row) => [row.job, row]));
     while (!stopped) {
       await wait();

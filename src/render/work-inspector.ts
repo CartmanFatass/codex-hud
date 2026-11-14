@@ -96,7 +96,8 @@ export function workInspectorRows(
         ['looping', worker.labels?.looping !== undefined ? `${Math.round(worker.labels.looping * 100)}%` : ''],
         ['category', t(worker.labels?.category ?? '')],
         ['findings', labelSummary({ severity: worker.labels?.severity })],
-        ['quiet', quietDecisionSummary(worker.quietDecision)],
+        // Same rule as the card: a settled job's old decision is history, unless it is why the job failed.
+        ['quiet', worker.settledAt === null || ((worker.work?.failed || ['failed', 'error'].includes(worker.state)) && worker.quietDecision?.action === 'fail') ? quietDecisionSummary(worker.quietDecision) : ''],
         ['started', stamp(worker.startedAt)],
         [
           worker.homeNeedsHuman ? 'asked' : worker.settledAt !== null ? 'ended' : 'activity',

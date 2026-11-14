@@ -91,8 +91,8 @@ project's `.hud/`, the cwd, HUD home, then the package wins whole.
 See [Project workers](#project-workers).
 
 Every MCP response also carries `changes`: one line per state change of the jobs this pane dispatched since
-the last response (omitted when there is none). Panel, statusline, pi footer, MCP and `hud watch` read jobs
-through one reader, so they agree. `hud watch` prints the same lines as they happen, for the caller's pane
+the last response (omitted when there is none). Panel, statusline, pi footer, MCP and `hud watch` derive a job's
+state through one shared `jobRow`, so they agree. `hud watch` prints the same lines as they happen, for the caller's pane
 (`HERDR_PANE_ID`) or every job with `--all`; it reads nothing at rest beyond a 30 s rescan. A working job's
 step-by-step flips are not changes. Claude Code runs it under Monitor. Nothing is ever typed into the main
 session's pane.
@@ -571,7 +571,7 @@ One successful final sentence freezes that settlement; a continuation can settle
 | Question category | 4096-byte question head; ≤100 questions per observed job |
 | Review severity | ≤24 list items (400 chars each) from newest 32 KiB review head or settled reviewer report |
 | Home ranking/brief | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240), question flag, outcome; no bodies |
-| Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; once per quiet turn, ≤3 per job |
+| Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
 | Test API | Fixed synthetic messages only |
 
 Outcome/kind/looping/category/severity labels are display-only enums; language

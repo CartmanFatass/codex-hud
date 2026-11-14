@@ -286,3 +286,22 @@ test('bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM
   assert.equal(code, 0);
   assert.equal(stderr, '');
 });
+
+test('hud watch on a fresh home without jobs/ hears the first job at once, not at the rescan', { timeout: 10000 }, async (t) => {
+  const hudHome = fs.mkdtempSync(join(tmpdir(), 'hud-watch-fresh-'));
+  t.after(() => fs.rmSync(hudHome, { recursive: true, force: true }));
+  const ac = new AbortController();
+  t.after(() => ac.abort());
+  const seen = [];
+  const running = watchCommand(['--all'], {
+    env: { HUD_HOME: hudHome },
+    stdout: (text) => { seen.push(...text.trim().split('\n')); },
+    stderr: () => {},
+  }, { rescanMs: 30000, signal: ac.signal });
+  await wait(50);
+  writeJob(hudHome, 'j00000000000000f1', 'w4E:p1', 'pkg-fresh', { state: 'failed', exit_reason: 'tab closed' });
+  await until(() => seen.length > 0, 3000);
+  assert.match(seen[0], /^j00000000000000f1 imp pkg-fresh: failed/);
+  ac.abort();
+  assert.equal(await running, 0);
+});

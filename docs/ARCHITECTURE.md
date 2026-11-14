@@ -338,7 +338,8 @@ reaps finished tabs, keeps failed tabs for two hours, and deletes settled job di
 one day after closure on a later scan, not a dedicated expiry timer. Before deletion
 it moves legacy real JSONL sessions to pi's store; failures retain the job. No session-link
 target is deleted. CLI sessions stay in that CLI's store. An open CLI job is also checked
-on `HUD_WATCH_CLI_CHECK_MS` (default 30 s); a dead supervisor fails the job. It exits
+on `HUD_WATCH_CLI_CHECK_MS` (default 30 s); a dead supervisor with a live worker hands the job to the main
+session (`waiting_orchestrator`), and `hud_send` restarts it. It exits
 with no open job or failed deadline; a later create restarts it.
 No HUD collection writes into Codex's transcripts/configuration; explicit installer
 registration and `hud import` are separate user actions.
