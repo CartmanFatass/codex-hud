@@ -30,6 +30,10 @@ Milestone: 0.1.3 · Project hub
   while waiting on a background command, and the supervisor failed and quit ROLE-BIND 01's first job. Fix: the report
   is the completion signal; done without a report keeps the job open; background child processes count as busy; quiet past the
   idle grace → waiting_orchestrator with a notice; the HUD sends the worker nothing and never quits it for a missing report. After ROLE-BIND 01 (same files).
+- QUIET-DECIDE (cli-workers 10, owner 2026-11-14, spec §2 "One exception"): after 09, a quiet CLI job without a report
+  gets one Decision API choice among fixed actions (keep waiting / one fixed report prompt / fail / main session);
+  below 0.8 or on any error → main session. Also: Mistral DeepSeek (reasoning off) as a Decision API provider if it
+  gives structured output with probabilities.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
@@ -135,6 +139,7 @@ board counts these; update at every landing or decision. -->
 - working · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch and projects list (.scratch/project-hub/, 4 tickets); 02 landed 5951a489, 01 landed 682dec52, 03 landed 162e8b1c
 - working · 0.1.4 · ROLE-BIND · owner 2026-11-14: a role is the work; places and fallbacks switched in the control plane; bro harness; grok/agy/claude/codex-imp, argon, gemini, flow-video deleted (.scratch/role-bind/, 3 tickets)
 - todo · 0.1.4 · CLI-NOREPORT · cli-workers 09: the report, not herdr's done, ends a CLI turn; no report → ask the main session; observe only, never prompt or quit for it
+- todo · 0.1.4 · QUIET-DECIDE · cli-workers 10: a quiet CLI job without a report gets one Decision API choice among fixed actions
 
 ## Now (2026-11-14): 0.1.3 Project hub started; 0.1.1 and 0.1.2 wait for the owner's try
 
