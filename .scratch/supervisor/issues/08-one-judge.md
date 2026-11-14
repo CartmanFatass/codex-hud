@@ -1,4 +1,4 @@
-# 08: One poll loop and one pure judge for CLI jobs (supersedes 06–07; replaces the loop 04–05 patched)
+# 08: Explicit turns, one pure judge, event-driven (no polling loop) for CLI jobs (supersedes 06–07; replaces the loop 04–05 patched)
 
 **Why (owner 2026-11-14):** "for agy, design the supervisor and the state judgment properly; event-by-event Monitor
 interrupts are not the answer." Today a finished agy job is shown as quiet/asking (ROLE-BIND 04, SUPERVISOR 02 and
@@ -11,7 +11,7 @@ Patching each path (04–07) keeps the inference; this ticket removes it.
 1. **Explicit turns, not inferred ones.** Dispatch and every `hud_send` write `turn.json` in the job dir
    (`{seq, sent_at, report_sig}`: the report's signature, i.e. mtime, size and hash, at send time). A report
    counts for a turn when its signature differs from that turn's `report_sig`. Herdr status never starts a turn.
-2. **One loop, facts every ~2 s:** pid alive (`/proc`, start time), herdr status (advisory only; errors ignored),
+2. **(Revised 2026-11-14: no fixed loop; see `../design-08.md`.)** Facts collected on wakes: pid alive (`/proc`, start time), herdr status (advisory only; errors ignored),
    newer descendants since the turn began, report signature, stop/close request files, open questions, herdr
    `blocked`, and the latest `turn.json`.
 3. **A pure `judge(prev, facts, now)` → next state**, table-tested:
@@ -30,7 +30,7 @@ Patching each path (04–07) keeps the inference; this ticket removes it.
 
 **Who:** imp (agy) · **Size:** net negative or about the same as today (the nested waits go) · **Blocked by:** none
 
-**Status:** ready-for-agent
+**Status:** ready-for-agent (design: `.scratch/supervisor/design-08.md`, oracle; slices: judge → event shell → edges → real check)
 
 - [ ] Table test of `judge` covering every row above
 - [ ] Fake-herdr test of today's sequences: (a) report written while still `working`, then a long summary, then
@@ -39,4 +39,5 @@ Patching each path (04–07) keeps the inference; this ticket removes it.
       (d) `hud_send` in `idle_grace` → `working` with a new baseline; a report rewritten then settles again
 - [ ] herdr errors for 60 s with the pid alive → still `working`; pid gone → `failed`; pid gone with a new report → `closed`
 - [ ] Supervisor killed with the worker alive → `waiting_orchestrator`; both gone → `failed`
-- [ ] Real check by the orchestrator: an agy imp writes its report and then prints a summary → `idle_grace` with no notice
+- [ ] At rest for 60 s (fake): zero spawns, zero STATUS writes
+- [ ] Real check by the orchestrator (incl. `strace -c` 60 s at rest): an agy imp writes its report and then prints a summary → `idle_grace` with no notice
