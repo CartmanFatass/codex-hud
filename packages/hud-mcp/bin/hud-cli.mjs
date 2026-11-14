@@ -41,12 +41,17 @@ function effect(args) {
   try { body = JSON.parse(ran.stdout); } catch { /* Effects can fail without proving worker death. */ }
   return { ok: ran.status === 0, body };
 }
+let initialStatus = null;
+try { initialStatus = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8')); } catch { /* Fresh job has no STATUS yet. */ }
 let current = {
   version: 1, task_dir: dir, slot: 'primary', harness: 'cli', agent: cli.agent,
   role: job.role, model: job.model ?? null, thinking: job.thinking ?? null,
   state: 'working', output_path: output, output_written: false,
-  pid: null, pid_start_time: null, agent_session_id: null,
-  started_at: new Date().toISOString(), settled_at: null, idle_deadline_at: null,
+  pid: Number.isInteger(initialStatus?.pid) ? initialStatus.pid : null,
+  pid_start_time: typeof initialStatus?.pid_start_time === 'string' ? initialStatus.pid_start_time : null,
+  agent_session_id: typeof initialStatus?.agent_session_id === 'string' ? initialStatus.agent_session_id : null,
+  started_at: typeof initialStatus?.started_at === 'string' ? initialStatus.started_at : new Date().toISOString(),
+  settled_at: null, idle_deadline_at: null,
   ended_at: null, exit_reason: null, error: null, supervisor_pid: process.pid,
 };
 let prev = null, status = null, agentMissing = false, workingAt = null, tabClosed = false;

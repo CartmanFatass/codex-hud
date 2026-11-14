@@ -16,6 +16,7 @@ import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
+import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 const workerFor = (f, id) =>
   readThinJobs(f.env.HUD_HOME, { project: null, pane: 'w4E:p1' })
     .flatMap((lane) => lane.workers)
@@ -3579,4 +3580,82 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
   const agentGets = f.socketRequests.filter((req) => req.method === 'agent.get' && req.params.target === `${nullPidJob.job}-primary`);
   assert.ok(agentGets.length >= 4);
   assert.equal(cliState(nullPidJob.task_dir).reason, 'worker not found');
+});
+
+test('hud_send restarts a dead supervisor only when the worker is confirmed alive', { timeout: 20000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'respawn-cli', 1, true);
+  const spawnDummy = () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { stdio: 'ignore' });
+    t.after(() => { try { child.kill('SIGKILL'); } catch {} });
+    return child;
+  };
+  const dead = (pid) => procStat(pid) === null;
+
+  // 1. Dead supervisor + live worker -> hud-watch marks waiting_orchestrator -> hud_send spawns a new supervisor and the turn settles.
+  const liveWorker = spawnDummy();
+  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(liveWorker.pid));
+  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
+  const job = await f.call('hud_create', { role: 'respawn-cli', request_key: 'respawn-live', task: 'Respawn on live worker.' });
+  await until(() => cliState(job.task_dir)?.pid === liveWorker.pid && cliState(job.task_dir)?.supervisor_pid);
+  const oldSupPid = cliState(job.task_dir).supervisor_pid;
+  const startedAt = cliState(job.task_dir).started_at;
+  process.kill(oldSupPid, 'SIGKILL');
+  await until(() => dead(oldSupPid));
+  fs.utimesSync(join(job.task_dir, 'STATUS.json'), new Date(Date.now() + 2000), new Date(Date.now() + 2000));
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 5000);
+  assert.equal(cliState(job.task_dir).reason, 'supervisor exited; worker still running');
+
+  const sent = await f.call('hud_send', { job: job.job, message_key: 'respawn', text: 'Continue with new supervisor.' });
+  assert.equal(sent.sent, true);
+  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.supervisor_pid !== oldSupPid, 5000);
+  const newSupPid = cliState(job.task_dir).supervisor_pid;
+  assert.notEqual(newSupPid, oldSupPid);
+  assert.equal(dead(newSupPid), false);
+  assert.equal(fs.readFileSync(join(job.task_dir, 'supervisor.pid'), 'utf8').trim(), String(newSupPid));
+  assert.equal(cliState(job.task_dir).pid, liveWorker.pid);
+  assert.equal(cliState(job.task_dir).started_at, startedAt);
+  assert.equal(cliState(job.task_dir).reason, null);
+  fs.unlinkSync(join(f.env.HOME, 'hold-turn'));
+  await until(() => cliState(job.task_dir)?.state === 'closed', 8000);
+  assert.equal(cliState(job.task_dir).output_written, true);
+  assert.equal(cliState(job.task_dir).exit_reason, 'settled');
+  await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')));
+
+  // 2. Dead supervisor + dead worker -> keeps today's hud_send behaviour without respawning.
+  const dyingWorker = spawnDummy();
+  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(dyingWorker.pid));
+  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
+  const goneJob = await f.call('hud_create', { role: 'respawn-cli', request_key: 'respawn-gone', task: 'No respawn when worker gone.' });
+  await until(() => cliState(goneJob.task_dir)?.pid === dyingWorker.pid && cliState(goneJob.task_dir)?.supervisor_pid);
+  const goneSupPid = cliState(goneJob.task_dir).supervisor_pid;
+  process.kill(goneSupPid, 'SIGKILL');
+  dyingWorker.kill('SIGKILL');
+  await until(() => dead(goneSupPid) && dead(dyingWorker.pid));
+  const sentGone = await f.call('hud_send', { job: goneJob.job, message_key: 'gone-before-watch', text: 'Worker already dead.' });
+  assert.equal(sentGone.sent, true);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(fs.readFileSync(join(goneJob.task_dir, 'supervisor.pid'), 'utf8').trim(), String(goneSupPid));
+  fs.utimesSync(join(goneJob.task_dir, 'STATUS.json'), new Date(Date.now() + 2000), new Date(Date.now() + 2000));
+  await until(() => cliState(goneJob.task_dir)?.state === 'failed', 5000);
+  assert.deepEqual(
+    await f.call('hud_send', { job: goneJob.job, message_key: 'gone-after-watch', text: 'Still dead.' }),
+    { ok: false, code: 'not_continuable' }
+  );
+  assert.equal(fs.readFileSync(join(goneJob.task_dir, 'supervisor.pid'), 'utf8').trim(), String(goneSupPid));
+
+  // 3. Dead supervisor + unknown worker liveness -> keeps today's hud_send behaviour without respawning.
+  fs.unlinkSync(join(f.env.HOME, 'cli-pid'));
+  fs.unlinkSync(join(f.env.HOME, 'hold-turn'));
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  fs.writeFileSync(join(f.env.HOME, 'no-pid'), '');
+  const unknownJob = await f.call('hud_create', { role: 'respawn-cli', request_key: 'respawn-unknown', task: 'No respawn when liveness unknown.' });
+  await until(() => cliState(unknownJob.task_dir)?.state === 'waiting_orchestrator', 6000);
+  const unknownSupPid = cliState(unknownJob.task_dir).supervisor_pid;
+  process.kill(unknownSupPid, 'SIGKILL');
+  await until(() => dead(unknownSupPid));
+  const sentUnknown = await f.call('hud_send', { job: unknownJob.job, message_key: 'unknown-worker', text: 'Worker liveness unknown.' });
+  assert.equal(sentUnknown.sent, true);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(fs.readFileSync(join(unknownJob.task_dir, 'supervisor.pid'), 'utf8').trim(), String(unknownSupPid));
 });

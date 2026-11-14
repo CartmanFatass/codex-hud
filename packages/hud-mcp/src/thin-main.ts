@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { writeTurn } from './cli-judge.js';
+import { procStat, workerAlive, writeTurn } from './cli-judge.js';
 import { jobChanges, jobRow, type JobRow } from '../../../src/collectors/thin-jobs.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
 import { herdrId } from '../../../src/roles/herdr-run.js';
@@ -541,6 +541,34 @@ async function settlePhantomWorking(name: string) {
   ]);
   return waited.exit_code === 0 ? null : waited;
 }
+function supervisorPid(dir: string, status: Record<string, unknown> | null): number | null {
+  try {
+    const fromFile = Number(fs.readFileSync(join(dir, 'supervisor.pid'), 'utf8').trim());
+    if (Number.isInteger(fromFile) && fromFile > 1) return fromFile;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const fromStatus = status?.supervisor_pid;
+  return typeof fromStatus === 'number' && Number.isInteger(fromStatus) && fromStatus > 1 ? fromStatus : null;
+}
+function supervisorAlive(pid: number): boolean {
+  const info = procStat(pid);
+  if (info) return info.state !== 'Z';
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+function spawnCliSupervisor(dir: string): number | null {
+  const script = fileURLToPath(new URL('../../../../bin/hud-cli.mjs', import.meta.url));
+  const child = spawn(process.execPath, [script, dir], { detached: true, stdio: 'ignore' });
+  child.on('error', (error) => console.error(`hud-cli: ${error.message}`));
+  if (child.pid) fs.writeFileSync(join(dir, 'supervisor.pid'), `${child.pid}\n`, { mode: 0o600 });
+  child.unref();
+  return child.pid ?? null;
+}
 /** Trust refusal is the one STATUS write before the supervisor starts. Same keys as hud-cli.mjs. */
 function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
   const now = new Date().toISOString();
@@ -661,11 +689,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
     if (submitted.exit_code !== 0 && !/agent_prompt_stalled|timeout|timed out/i.test(submitted.stdout + submitted.stderr)) return reject(submitted);
     // A stall after submission still needs supervision; it is not worker death.
     openedTab = null;
-    const script = fileURLToPath(new URL('../../../../bin/hud-cli.mjs', import.meta.url));
-    const child = spawn(process.execPath, [script, dir], { detached: true, stdio: 'ignore' });
-    child.on('error', (error) => console.error(`hud-cli: ${error.message}`));
-    child.unref();
-    if (!child.pid) return { exit_code: 1, stdout: '', stderr: 'hud-cli did not start' };
+    if (!spawnCliSupervisor(dir)) return { exit_code: 1, stdout: '', stderr: 'hud-cli did not start' };
     return { exit_code: 0, stdout: '', stderr: '' };
   } catch (error) {
     return reject({ exit_code: 1, stdout: '', stderr: String(error) });
@@ -1020,7 +1044,8 @@ async function call(name: string, args: Args): Promise<unknown> {
         : { ok: false, sent: false, code: 'send_failed', ...outcome };
     }
     const agent = primary(dir);
-    const state = readRow(job).row.state ?? '';
+    const { row, status } = readRow(job);
+    const state = row.state ?? '';
     // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
     // continues in its idle grace when the role allows (owner, 2026-11-11).
     const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
@@ -1043,6 +1068,19 @@ async function call(name: string, args: Args): Promise<unknown> {
     outcome.exit_code = result.exit_code;
     outcome.stderr_tail = result.stderr;
     save(job, result.exit_code === 0);
+    if (result.exit_code === 0 && job.cli) {
+      const supPid = supervisorPid(dir, status);
+      if (
+        supPid &&
+        !supervisorAlive(supPid) &&
+        workerAlive(
+          typeof status?.pid === 'number' ? status.pid : null,
+          typeof status?.pid_start_time === 'string' ? status.pid_start_time : null
+        ) === true
+      ) {
+        spawnCliSupervisor(dir);
+      }
+    }
     return {
       ...(result.exit_code === 0 ? {} : { code: 'send_failed' }),
       ok: result.exit_code === 0,
