@@ -25,38 +25,13 @@ Milestone: 0.1.4 · Roles apart from harnesses
 
 ## Next
 
-- 0.1.3 review (docs/reviews/2026-11-14-013-review-*.md): Sol changes-required (Codex prefix `[`/`]` unwired; active jobs
-  from other panes have no title), DS accept with 3 minors. FIX-013 landed 6359b958 (467/467); re-review: Sol accept (no findings), DS accept
-  (5 optional; the stale "top row" wording fixed). 0.1.3 waits for the owner's try.
-- SUPERVISOR (owner 2026-11-14: misjudged/killed workers are the bottleneck; the panel shows failures the session
-  never hears). Fable design opinion in: facts-only `failed`, one shared job-row reader for display + MCP, `hud_create`
-  returns dispatch failures, `changes` in every MCP response, `hud watch`. Owner answered (spec §2 amended 130a8eb1;
-  no typing into the main pane; ticket 10's decided fail needs a quota line). .scratch/supervisor/ 7 tickets:
-  01–03 landed (2c5d7e1d, 52b21b91, 458ef06b), 04–05 as a stopgap 90ef78cd (496/496); 08 landed 4ffe4d7b +
-  d880ee7b (oracle's event-driven design: herdr events, file watches, deadlines, 30 s tick, STATUS on change;
-  554/554). Real agy run 1 found pushes ignored (herdr sends `pane.agent_status_changed`, fake used `_`): fixed;
-  the safety tick re-reads status (one request/30 s). 09 (hud_send respawns a dead supervisor) landed (556/556). Real agy run
-  2 passed (working through a 150 s background command, idle_grace 25 s after the report). 0.1.4 milestone review
-  on 3e3edfc8: grok + DS changes-required (0d24ed0f); docs fixed a2b2b033; code fixes 7bd5e175 (roster expiry, failed
-  report prompt, prompt once per job, stale quiet card, ZH note, hud watch on one recursive fs.watch, open question
-  reason; 562/562). Re-review on 7bd5e175: grok and DS accept; follow-ups 86007c37 (563/563). 0.1.4 to the owner's try. Imp now dispatches on its default place (agy hydrogen high).
-- PROJECT-UX (owner 2026-11-14): try. Landed 891556a1: timeline hub (A + 2 transplants, Latest folded first,
-  Progress last 7 days), ticket lanes, attention-first Control plane, provider → model picker with curated pi
-  list (arena, mistral deepseek, anthropic opus, openai gpt-6; newest per family). Page rows scroll, never trimmed (owner).
-- ROLE-BIND 03 landed 19333df8 (480/480): the Control plane switches places. ROLE-BIND 04 (model lists from the
-  harnesses, catalog fallback, typed model) running: agy imp j8a87fdd732834890 in MyHUD-wt/ROLE-BIND-04.
-- ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
-  `bro` replaces `jev`, browser work is oracle + flow, the control plane switches places, `on` kept. 01 and 02 (agy-imp)
-  after PROJECT-HUB 02; 03 (frontend) after 02 and PROJECT-HUB 03.
-- CLI-NOREPORT (bug, 2026-11-14; .scratch/cli-workers/issues/09): herdr's `done` is a screen heuristic; agy shows it
-  while waiting on a background command, and the supervisor failed and quit ROLE-BIND 01's first job. Fix: the report
-  is the completion signal; done without a report keeps the job open; background child processes count as busy; quiet past the
-  idle grace → waiting_orchestrator with a notice; the HUD sends the worker nothing and never quits it for a missing report. After ROLE-BIND 01 (same files).
-- QUIET-DECIDE (cli-workers 10, owner 2026-11-14, spec §2 "One exception"): after 09, a quiet CLI job without a report
-  gets one Decision API choice among fixed actions (keep waiting / one fixed report prompt / fail / main session);
-  below 0.8 or on any error → main session. Also: Mistral DeepSeek (reasoning off) as a Decision API provider if it
-  gives structured output with probabilities.
+- The owner tries 0.1.4 (then 0.1.3, 0.1.2, 0.1.1, M4); what the try finds goes here first. Orchestrator live check
+  2026-11-14 on 60a254b1: dispatch failure returned and its tab closed; agy two turns with a supervisor kill and
+  hud_send respawn; Control plane, hub, Tickets, Progress read through herdr. Found and fixed live: ticket fields on a
+  shared line were skipped (supervisor feature missing), STATE head was stale.
+- Flaky under full-suite load: panel-reload "saving Width 64 from opening width 56" (passes alone 3/3).
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
+- After the tries: the owner picks from the M5 candidates (docs/spec.md §5).
 
 ## Slices
 
@@ -166,6 +141,42 @@ board counts these; update at every landing or decision. -->
 - accepted · 0.1.4 · REVIEW-014 · grok + DS changes-required (0d24ed0f), fixed a2b2b033, 7bd5e175, 86007c37; re-review accept · docs/reviews/2026-11-14-014-*.md
 
 ## Now (2026-11-14): 0.1.4 to the owner's try; 0.1.1–0.1.3 wait for the owner's try
+
+History of 2026-11-14 (was Next):
+
+- 0.1.3 review (docs/reviews/2026-11-14-013-review-*.md): Sol changes-required (Codex prefix `[`/`]` unwired; active jobs
+  from other panes have no title), DS accept with 3 minors. FIX-013 landed 6359b958 (467/467); re-review: Sol accept (no findings), DS accept
+  (5 optional; the stale "top row" wording fixed). 0.1.3 waits for the owner's try.
+- SUPERVISOR (owner 2026-11-14: misjudged/killed workers are the bottleneck; the panel shows failures the session
+  never hears). Fable design opinion in: facts-only `failed`, one shared job-row reader for display + MCP, `hud_create`
+  returns dispatch failures, `changes` in every MCP response, `hud watch`. Owner answered (spec §2 amended 130a8eb1;
+  no typing into the main pane; ticket 10's decided fail needs a quota line). .scratch/supervisor/ 7 tickets:
+  01–03 landed (2c5d7e1d, 52b21b91, 458ef06b), 04–05 as a stopgap 90ef78cd (496/496); 08 landed 4ffe4d7b +
+  d880ee7b (oracle's event-driven design: herdr events, file watches, deadlines, 30 s tick, STATUS on change;
+  554/554). Real agy run 1 found pushes ignored (herdr sends `pane.agent_status_changed`, fake used `_`): fixed;
+  the safety tick re-reads status (one request/30 s). 09 (hud_send respawns a dead supervisor) landed (556/556). Real agy run
+  2 passed (working through a 150 s background command, idle_grace 25 s after the report). 0.1.4 milestone review
+  on 3e3edfc8: grok + DS changes-required (0d24ed0f); docs fixed a2b2b033; code fixes 7bd5e175 (roster expiry, failed
+  report prompt, prompt once per job, stale quiet card, ZH note, hud watch on one recursive fs.watch, open question
+  reason; 562/562). Re-review on 7bd5e175: grok and DS accept; follow-ups 86007c37 (563/563). 0.1.4 to the owner's try. Imp now dispatches on its default place (agy hydrogen high).
+- PROJECT-UX (owner 2026-11-14): try. Landed 891556a1: timeline hub (A + 2 transplants, Latest folded first,
+  Progress last 7 days), ticket lanes, attention-first Control plane, provider → model picker with curated pi
+  list (arena, mistral deepseek, anthropic opus, openai gpt-6; newest per family). Page rows scroll, never trimmed (owner).
+- ROLE-BIND 03 landed 19333df8 (480/480): the Control plane switches places. ROLE-BIND 04 (model lists from the
+  harnesses, catalog fallback, typed model) running: agy imp j8a87fdd732834890 in MyHUD-wt/ROLE-BIND-04.
+- ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
+  `bro` replaces `jev`, browser work is oracle + flow, the control plane switches places, `on` kept. 01 and 02 (agy-imp)
+  after PROJECT-HUB 02; 03 (frontend) after 02 and PROJECT-HUB 03.
+- CLI-NOREPORT (bug, 2026-11-14; .scratch/cli-workers/issues/09): herdr's `done` is a screen heuristic; agy shows it
+  while waiting on a background command, and the supervisor failed and quit ROLE-BIND 01's first job. Fix: the report
+  is the completion signal; done without a report keeps the job open; background child processes count as busy; quiet past the
+  idle grace → waiting_orchestrator with a notice; the HUD sends the worker nothing and never quits it for a missing report. After ROLE-BIND 01 (same files).
+- QUIET-DECIDE (cli-workers 10, owner 2026-11-14, spec §2 "One exception"): after 09, a quiet CLI job without a report
+  gets one Decision API choice among fixed actions (keep waiting / one fixed report prompt / fail / main session);
+  below 0.8 or on any error → main session. Also: Mistral DeepSeek (reasoning off) as a Decision API provider if it
+  gives structured output with probabilities.
+
+
 
 Owner 2026-11-14: Project becomes a hub with progress, tickets, working tree, docs and control-plane pages and a
 project switch (spec §2, .scratch/project-hub/). Routing for this package: frontend work to frontend-implementer, data work to agy-imp (gemini-4-hydrogen-high),
