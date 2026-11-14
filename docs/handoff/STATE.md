@@ -28,7 +28,9 @@ Milestone: 0.1.3 · Project hub
   no typing into the main pane; ticket 10's decided fail needs a quota line). .scratch/supervisor/ 7 tickets:
   01–03 landed (2c5d7e1d, 52b21b91, 458ef06b), 04–05 as a stopgap 90ef78cd (496/496); 08 landed 4ffe4d7b +
   d880ee7b (oracle's event-driven design: herdr events, file watches, deadlines, 30 s tick, STATUS on change;
-  554/554); real agy acceptance running; then 09 (respawn on hud_send). Imp now dispatches on its default place.
+  554/554). Real agy run 1 found pushes ignored (herdr sends `pane.agent_status_changed`, fake used `_`): fixed;
+  the safety tick re-reads status (one request/30 s). 09 (hud_send respawns a dead supervisor) landed (556/556). Real agy run
+  2 running. Imp now dispatches on its default place (agy hydrogen high).
 - PROJECT-UX (owner 2026-11-14): try. Landed 891556a1: timeline hub (A + 2 transplants, Latest folded first,
   Progress last 7 days), ticket lanes, attention-first Control plane, provider → model picker with curated pi
   list (arena, mistral deepseek, anthropic opus, openai gpt-6; newest per family). Page rows scroll, never trimmed (owner).
@@ -150,7 +152,7 @@ board counts these; update at every landing or decision. -->
 - try · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch and projects list (.scratch/project-hub/, 4 tickets); landed 5951a489, 682dec52, 162e8b1c, a20019d4; review b0e6d0f2 → FIX-013 6359b958; re-review accepted by both
 - working · 0.1.4 · ROLE-BIND · 01 5b0d5b37, 02 de4dce7a · owner 2026-11-14: a role is the work; places and fallbacks switched in the control plane; bro harness; grok/agy/claude/codex-imp, argon, gemini, flow-video deleted (.scratch/role-bind/, 4 tickets; 03 landed 19333df8; 04 running)
 - try · 0.1.4 · CLI-NOREPORT · 6f4afa7c · cli-workers 09: the report, not herdr's done, ends a CLI turn; no report → ask the main session; observe only, never prompt or quit for it
-- working · 0.1.4 · SUPERVISOR · owner 2026-11-14: only facts end a CLI job; the session hears what the panel shows (.scratch/supervisor/, 8 tickets; 01–05 and 08 landed, 09 next)
+- working · 0.1.4 · SUPERVISOR · owner 2026-11-14: only facts end a CLI job; the session hears what the panel shows (.scratch/supervisor/, 8 tickets; 01–05, 08, 09 landed; live agy check)
 - try · 0.1.4 · QUIET-DECIDE · 2117e2b5 · cli-workers 10 (real run passed): a quiet CLI job without a report gets one Decision API choice among fixed actions
 
 ## Now (2026-11-14): 0.1.3 Project hub started; 0.1.1 and 0.1.2 wait for the owner's try

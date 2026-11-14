@@ -6,6 +6,6 @@
 **What:** `hud_send` to such a job (supervisor pid gone, worker pid alive) writes the turn and starts a new supervisor
 from the on-disk `turn.json` / `STATUS.json`. Explicit main-session action only; never an automatic restart.
 
-**Who:** imp · **Size:** small · **Blocked by:** 08 · **Status:** ready-for-agent
+**Who:** imp · **Size:** small · **Blocked by:** 08 · **Status:** resolved
 
-- [ ] Dead supervisor + live worker + hud_send → a supervisor runs and the turn settles normally
+- [x] Dead supervisor + live worker + hud_send → a supervisor runs and the turn settles normally
