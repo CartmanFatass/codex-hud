@@ -206,7 +206,7 @@ test('jobRow derives raw state, display state, reason, blocked, open questions a
   });
 });
 
-test('jobChanges emits concise lines only for (state, reason, report_present, open_questions) changes', () => {
+test("jobChanges emits a line for a new state, a question, or a new reason outside working", () => {
   const base = {
     job: 'j0000000000000001',
     role: 'imp',
@@ -220,6 +220,11 @@ test('jobChanges emits concise lines only for (state, reason, report_present, op
   };
   const sameWorking = { ...base, state: 'working' };
   assert.deepEqual(jobChanges([base], [sameWorking]), []);
+  // A worker stepping through tools flips reason and report while working: no event (no flood under Monitor).
+  const stepped = { ...sameWorking, reason: 'turn ended, no report yet', report_present: true };
+  assert.deepEqual(jobChanges([sameWorking], [stepped]), []);
+  assert.deepEqual(jobChanges([stepped], [sameWorking]), []);
+  assert.deepEqual(jobChanges([stepped], [{ ...stepped, open_questions: 1 }]).length, 1);
 
   const waiting = {
     ...sameWorking,

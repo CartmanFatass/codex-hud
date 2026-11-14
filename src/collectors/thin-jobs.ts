@@ -248,12 +248,17 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   const lines: string[] = [];
   for (const row of rows) {
     const old = prior.get(row.job);
+    // A working job's reason and report flip with every tool step of the worker; only what the session acts on is
+    // an event: a new job, a state change, a question, or a new reason outside `working` (owner 2026-11-14: no flood).
+    const working = (r: JobRow) => rowState(r) === 'working';
     if (
       old &&
-      rowState(old) === rowState(row) &&
-      old.reason === row.reason &&
-      old.report_present === row.report_present &&
-      old.open_questions === row.open_questions
+      (working(old) && working(row)
+        ? old.open_questions === row.open_questions
+        : rowState(old) === rowState(row) &&
+          old.reason === row.reason &&
+          old.report_present === row.report_present &&
+          old.open_questions === row.open_questions)
     ) {
       continue;
     }
