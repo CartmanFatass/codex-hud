@@ -4,7 +4,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { jobChanges, jobRow, readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { jobChanges, jobRow, readThinJobRows, readThinJobs } from '../../dist/collectors/thin-jobs.js';
 test('newest 200 jobs: unchanged scan parses no receipts; a changed job appears next scan', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-scan-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -238,4 +238,46 @@ test('jobChanges emits concise lines only for (state, reason, report_present, op
   assert.deepEqual(jobChanges([waiting], [multiQ]), [
     'j0000000000000001 imp 02-changes: done | report | QUESTION (2)',
   ]);
+});
+
+test('readThinJobRows caches unchanged files by signature without reading bodies or writing HUD_HOME', (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'thin-watch-rows-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+
+  const mk = (id, pane, state) => {
+    const dir = join(home, 'jobs', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', package: pane, herdr_pane: pane }));
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state }));
+    fs.writeFileSync(join(dir, 'brief.md'), 'Body should not be opened');
+    return dir;
+  };
+  mk('j0000000000000001', 'w4E:p1', 'working');
+  mk('j0000000000000002', 'w4E:p9', 'failed');
+
+  assert.deepEqual(readThinJobRows(home, {}), []);
+  const scoped = readThinJobRows(home, { pane: 'w4E:p1' });
+  assert.equal(scoped.length, 1);
+  assert.equal(scoped[0].job, 'j0000000000000001');
+
+  const all = readThinJobRows(home, { pane: null });
+  assert.deepEqual(
+    all.map((r) => r.job).sort(),
+    ['j0000000000000001', 'j0000000000000002']
+  );
+
+  // Replace openSync spy to verify signature cache skips re-opening unchanged job.json/STATUS.json and brief.md.
+  const opened = [];
+  const origOpen = fs.openSync;
+  fs.openSync = (file, ...rest) => {
+    opened.push(String(file));
+    return origOpen(file, ...rest);
+  };
+  try {
+    assert.equal(readThinJobRows(home, { pane: null }).length, 2);
+  } finally {
+    fs.openSync = origOpen;
+  }
+  assert.deepEqual(opened, []);
+  assert.equal(fs.existsSync(join(home, 'display')), false);
 });

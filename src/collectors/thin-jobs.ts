@@ -21,6 +21,7 @@ interface Snap {
   json?: Record<string, unknown> | null;
 }
 const cache = new Map<string, { stamp: string; snap: Snap }>();
+const watchCache = new Map<string, { stamp: string; snap: Snap }>();
 const seen = new Set<string>();
 let cacheHome = '', saved = '';
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
@@ -57,14 +58,14 @@ function persist(home: string): void {
   } catch { /* An unavailable display cache must not stop collection. */ }
   finally { try { fs.unlinkSync(temp); } catch { /* renamed or unavailable */ } }
 }
-function read(path: string, max = 65536): Snap | null {
+function read(path: string, max = 65536, store = cache): Snap | null {
   let fd: number | undefined;
   try {
     const st = fs.lstatSync(path);
     if (!st.isFile()) throw new Error('nonregular_job_file');
     seen.add(path);
     const stamp = `${st.mtimeMs}:${st.size}:${st.ino}`;
-    const hit = cache.get(path);
+    const hit = store.get(path);
     if (hit?.stamp === stamp && !hit.snap.whole) complete = false;
     if (hit?.stamp === stamp) return hit.snap;
     fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
@@ -72,10 +73,10 @@ function read(path: string, max = 65536): Snap | null {
     const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
     const snap = { text: buffer.subarray(0, Math.min(size, max)).toString('utf8'), at: st.mtimeMs, whole: size <= max };
     complete &&= snap.whole;
-    cache.set(path, { stamp, snap });
+    store.set(path, { stamp, snap });
     return snap;
   } catch (error) {
-    cache.delete(path);
+    store.delete(path);
     seen.delete(path);
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
     return null;
@@ -83,8 +84,8 @@ function read(path: string, max = 65536): Snap | null {
     if (fd !== undefined) fs.closeSync(fd);
   }
 }
-function json(path: string, parse: (text: string) => unknown): { v: Record<string, unknown>; at: number } | null {
-  const file = read(path);
+function json(path: string, parse: (text: string) => unknown, store = cache): { v: Record<string, unknown>; at: number } | null {
+  const file = read(path, 65536, store);
   if (!file?.whole) complete = false;
   if (!file?.whole) return null;
   if (file.json === undefined) {
@@ -259,6 +260,44 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
     lines.push(formatJobChange(row));
   }
   return lines;
+}
+/**
+ * Lightweight signature-cached reader for `hud watch`: reads only `job.json`, `STATUS.json`, `qa/` filenames,
+ * and `report.md` existence (no file body reads, no disk writes). `scope.pane === null` matches every job;
+ * `scope.pane === undefined` matches none.
+ */
+export function readThinJobRows(home: string, scope: { pane?: string | null }): JobRow[] {
+  if (scope.pane === undefined) return [];
+  if (scope.pane !== null && !herdrId(scope.pane)) return [];
+  seen.clear();
+  const root = join(home, 'jobs');
+  const candidates = entries(root)
+    .filter((id) => /^j[0-9a-f]{16}$/.test(id))
+    .flatMap((id) => {
+      try {
+        const st = fs.lstatSync(join(root, id));
+        return st.isDirectory() ? [{ id, at: st.mtimeMs }] : [];
+      } catch {
+        return [];
+      }
+    })
+    .sort((a, b) => b.at - a.at || a.id.localeCompare(b.id))
+    .slice(0, 200);
+  const rows: JobRow[] = [];
+  for (const { id } of candidates) {
+    const dir = join(root, id);
+    const job = json(join(dir, 'job.json'), JSON.parse, watchCache)?.v;
+    if (!job || job.job !== id || typeof job.role !== 'string') continue;
+    if (scope.pane !== null && job.herdr_pane !== scope.pane) continue;
+    const status = json(join(dir, 'STATUS.json'), JSON.parse, watchCache)?.v ?? null;
+    try {
+      rows.push(jobRow(job, status, { dir }));
+    } catch {
+      /* Job directory disappeared or became unreadable during the scan; skip it. */
+    }
+  }
+  for (const path of watchCache.keys()) if (!seen.has(path)) watchCache.delete(path);
+  return rows;
 }
 /**
  * What a running job is doing, by role (owner, 2026-11-11): only an implementer builds; read-only roles review,

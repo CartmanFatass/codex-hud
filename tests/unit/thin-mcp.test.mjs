@@ -3055,3 +3055,16 @@ test('low probability, cap reached, and provider error all fall back to needs-hu
   assert.equal(cliState(jErr.task_dir).quiet_decision.reason, 'error');
   assert.equal(fErr.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
 });
+
+test('hud_roster convention and hud_create result carry the hud watch Monitor hint', async (t) => {
+  const f = await fixture(t);
+  const roster = await f.call('hud_roster');
+  assert.match(roster.convention.text, /Claude Code: run `hud watch` under Monitor/);
+  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
+  const created = await f.call('hud_create', {
+    role: 'imp',
+    request_key: 'watch-hint',
+    task: 'Check watch hint.',
+  });
+  assert.equal(created.hint, 'Claude Code: run `hud watch` under Monitor');
+});

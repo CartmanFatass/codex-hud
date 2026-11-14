@@ -9,4 +9,5 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Review at milestones or for risky changes: owner configs, deleting data, killing processes, installers—not per change.
 - Review spec compliance and scope creep separately from simplicity and real defects; findings do not imply new tests.
 - Read each result and decide whether to integrate, request a repair, review or stop. Workers do only their own job.
+- Claude Code: run `hud watch` under Monitor.
 The main session owns every handoff and decides every next step. HUD does not chain these steps.

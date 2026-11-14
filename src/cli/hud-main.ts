@@ -5,6 +5,7 @@ import { codexCommand } from './compat.js';
 import { panelCommand, PANEL_HELP } from './panel.js';
 import { trustCommand } from './trust.js';
 import { setupCommand } from './setup.js';
+import { watchCommand } from './watch.js';
 
 export async function main(args: readonly string[], io: HudIO): Promise<number> {
   try {
@@ -19,6 +20,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
     if (args[0] === 'codex' || args[0] === 'codex-hud') return await codexCommand(args.slice(1), io);
     if (args[0] === 'trust') return await trustCommand(args.slice(1), io);
     if (args[0] === 'setup') return await setupCommand(args.slice(1), io);
+    if (args[0] === 'watch') return await watchCommand(args.slice(1), io);
     if (args.length === 1 && args[0] === '--help') {
       await io.stdout(
         'Usage: hud panel --help          Open the interactive panel\n' +
@@ -28,12 +30,13 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud setup --detect [--cwd DIR]  Print project worker setup as JSON\n' +
           '       hud setup --apply PLAN [--cwd DIR]  Write project worker setup from a plan\n' +
           '       hud setup --remove [--cwd DIR]  Drop project registration\n' +
+          '       hud watch [--all]         Stream job change lines for this pane (or all jobs)\n' +
           '       hud codex [ARG ...]        Existing codex-hud launcher (alias: codex-hud)\n' +
           '       hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n'
       );
       return 0;
     }
-    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|codex|codex-hud|uninstall\n');
+    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|watch|codex|codex-hud|uninstall\n');
     return 2;
   } catch (error) {
     if (error instanceof CliError) {

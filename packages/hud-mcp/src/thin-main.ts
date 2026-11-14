@@ -206,7 +206,7 @@ function created(job: Job) {
       agent: primary(task_dir),
     };
   }
-  return { ...row, task_dir, agent: primary(task_dir) };
+  return { ...row, task_dir, agent: primary(task_dir), hint: 'Claude Code: run `hud watch` under Monitor' };
 }
 function run(
   command: string,
