@@ -58,6 +58,7 @@ hud panel --width 64      # 本次覆盖，直到保存修改后的宽度
 hud statusline --help
 hud import --help
 hud trust <dir>           # 把该目录加入 grok、agy 和 claude 的信任列表
+hud watch                 # 本窗格 HUD 任务每次状态变化一行（--all：所有任务）
 hud setup --detect        # 打印本项目的工作者配置 JSON
 hud setup --apply PLAN    # 按计划写入 .hud/
 hud setup --remove        # 去掉项目注册，留下 .hud/
@@ -85,7 +86,7 @@ split 默认取位置设置。`ui_ext: false` 禁用 UI 扩展；`skills: true` 
 split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。
 浏览器（`bro`）位置拒绝这些 pi 选项。
 
-角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer -> `cli` `agy`）、`reviewer`（`pi` reviewer -> `cli` `claude`）、`sonic`、`architect`、`oracle`（`cli` `claude` `fable` -> `pi` `architect`）、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
+角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer）、`sonic`、`architect`、`oracle`（`cli` `claude` `fable` -> `pi` `architect`）、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。内置 `imp` 与 `reviewer` 没有备选，备选由你在控制面或 `$HUD_HOME/roles/<role>.json` 添加。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、
 `agy models`、`claude --help` 或 `codex -m`。HUD 只传模型标志、强度标志、该 CLI 的权限绕过标志
 和 `args`。不传 home、会话或配置标志，也不设这些环境变量，分发时也不替 CLI 信任目录：
@@ -99,16 +100,25 @@ herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 `wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。读取已结束报告记录 `read_at`，不代表验收。
 `hud_send` 给工作中的 pi 或 CLI 任务排队消息，或在允许继续的角色的空闲宽限期内续写；`message_key` 去重。
 CLI 工作者用同一条 `QUESTION` 和 `hud_respond` 流程提问（`hud-ask`，20 分钟后用默认）。
-CLI 受阻时任务显示为需要你，并向编排窗格发一行通知，写明任务和窗格。
+CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得知。
 `hud_respond` 只写一次 `qN.answer.md`。`hud_close` 提前回收，正常清理由 watcher 负责。
 主会话决定所有下一步，MCP 不知道工作流。工具参数见 [MCP README](../packages/hud-mcp/README.md)。
 
+每个 MCP 响应还带 `changes`：自上次响应以来本窗格派出的任务每次状态变化一行（没有则省略）。面板、状态栏、pi 页脚、MCP
+与 `hud watch` 用同一个读取器读任务，所以结论一致。`hud watch` 实时打印同样的行，范围是调用者窗格（`HERDR_PANE_ID`），
+`--all` 为所有任务；静止时除每 30 秒一次重扫外不读任何东西。工作中任务的逐步翻转不算变化。Claude Code 用 Monitor 运行它。
+HUD 从不向主会话窗格输入任何内容。
+
 任务是 `$HUD_HOME/jobs/<job>/` 中的普通文件。pi 历史保存在
 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`，任务的 `sessions/` 链接到主代理／助手文件。
-CLI 任务由监督进程写 STATUS：工作、空闲宽限、宽限未用则 `/quit`，然后以 `settled` 关闭。
-herdr 的 `idle` 或 `unknown` 只有代理已离开才算退出。按需 watcher 在创建时启动，经 `pi-role-reap` 回收已结束任务，
+CLI 任务的监督进程只观察；只有事实能结束任务：记录的进程号消失（或被替换）、标签页关闭、输入前派发被拒（`failed`；
+磁盘上有新报告则 `closed`）。每次派发和 `hud_send` 开始一个回合（`turn.json`）。herdr 不在 `working` 且新报告稳定 10 秒后
+回合结算，进入空闲宽限；宽限未用且没有比回合新的子进程存活时 `/quit`，然后以 `settled` 关闭。herdr 状态只是参考，从不结束任务。
+回合安静超过空闲宽限且无报告时，做一次决策 API 选择，只在固定动作中选（继续等、一次固定的写报告提示、屏幕上有配额行才 `failed`、
+交给主会话）；置信度低于 0.8 或出错则交给主会话。不确定的一律 `waiting_orchestrator` 并写明原因。监督进程由 herdr 推送、
+文件变化和自身截止时间唤醒，另有每 30 秒一次重读状态；STATUS 只在行变化时写。按需 watcher 在创建时启动，经 `pi-role-reap` 回收已结束任务，
 失败标签页保留两小时；没有未结束任务或待到期失败任务时退出。CLI 任务开着时还会检查监督进程是否还活着；
-`HUD_WATCH_CLI_CHECK_MS`（默认 30000）是该间隔。监督进程已死则任务失败。已结算目录在**关闭一天后**的
+`HUD_WATCH_CLI_CHECK_MS`（默认 30000）是该间隔。监督进程已死而工作者仍在时任务为 `waiting_orchestrator`（“supervisor exited; worker still running”），对它 `hud_send` 会启动新的监督进程。已结算目录在**关闭一天后**的
 后续扫描或下次创建时清理，不设专门到期定时器；包括报告及 `hud_read` 访问。删除旧 pi 任务前先将真实 JSONL
 会话移至 pi 存储；CLI 和浏览器会话留在各自存储。cwd 无效、目标冲突或移动失败则保留任务。删除会话链接不删除目标。
 
@@ -412,6 +422,7 @@ F12 关闭／打开 Codex 面板，Shift-F12 打开并聚焦。鼠标单击选�
 | 问题类别 | 4096 字节问题头，每观测任务最多 100 问 |
 | 评审严重度 | 最新 32 KiB 评审头或已结束评审报告最多 24 列表项，各 400 字符 |
 | 首页排序／简报 | 最多 200 卡片的 id、泳道、状态、角色 80、标题 160、年龄、句子原因 240、问题标记、结果；无正文 |
+| 安静任务决策 | CLI 工作者窗格最后 60 行（≤12000 字符）、任务状态、角色、代理、安静分钟数、后台子进程标记、是否已发写报告提示；每个安静回合一次，每任务最多 3 次 |
 | 测试 API | 固定合成消息 |
 
 结果／类型／反复失败／类别／严重度是仅显示的枚举，切语言本地翻译。失败不显示提供方 HTTP 文本。

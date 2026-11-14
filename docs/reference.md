@@ -68,6 +68,7 @@ hud panel --width 64      # this open only, until a changed Width is saved
 hud statusline --help
 hud import --help
 hud trust <dir>           # add the directory to grok, agy and claude trust lists
+hud watch                 # one line per state change of this pane's HUD jobs (--all: every job)
 hud setup --detect        # print this project's worker setup as JSON
 hud setup --apply PLAN    # write .hud/ from a plan
 hud setup --remove        # drop project registration; leave .hud/
@@ -89,6 +90,13 @@ registered project's `.hud/roles`. The first `hud-convention.md` in a registered
 project's `.hud/`, the cwd, HUD home, then the package wins whole.
 See [Project workers](#project-workers).
 
+Every MCP response also carries `changes`: one line per state change of the jobs this pane dispatched since
+the last response (omitted when there is none). Panel, statusline, pi footer, MCP and `hud watch` read jobs
+through one reader, so they agree. `hud watch` prints the same lines as they happen, for the caller's pane
+(`HERDR_PANE_ID`) or every job with `--all`; it reads nothing at rest beyond a 30 s rescan. A working job's
+step-by-step flips are not changes. Claude Code runs it under Monitor. Nothing is ever typed into the main
+session's pane.
+
 `hud_create` takes `role`, `request_key`, `task`, optional `cwd` and display-only
 `package`. It dispatches on the role's first available place (`runs_on`) unless
 overridden with `on` (defaults from shipped `harnesses.json` overridden by
@@ -106,9 +114,9 @@ A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_gra
 (default 600), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`
 or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place
 files load as `run[0]` and `"harness": "jev"` loads as `"bro"`. Shipped roles:
-`imp` (`pi` implementer -> `cli` `agy`), `reviewer` (`pi` reviewer -> `cli`
-`claude`), `sonic`, `architect`, `oracle` (`cli` `claude` `fable` -> `pi` `architect`),
-`pro` (`chatgpt`, `gemini`, `argon`), and `flow` (`jev-flow`). A `cli` place requires `instructions/<instructions>.md`
+`imp` (`pi` implementer), `reviewer` (`pi` reviewer), `sonic`, `architect`, `oracle` (`cli` `claude` `fable` -> `pi` `architect`),
+`pro` (`chatgpt`, `gemini`, `argon`), and `flow` (`jev-flow`). Shipped `imp` and `reviewer`
+have no fallback; the owner adds one in the Control plane or `$HUD_HOME/roles/<role>.json`. A `cli` place requires `instructions/<instructions>.md`
 (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), otherwise `hud_create` returns
 `unsupported_harness`. Quota or rate-limit failures mark the place exhausted in
 `$HUD_HOME/exhausted.json` for 1 hour so the next dispatch falls back; HUD never
@@ -130,21 +138,29 @@ settlement, a question or timeout. Reading a settled report stamps `read_at`, no
 acceptance. `hud_send` queues a message for a working pi or CLI job, or continues
 an eligible role during idle grace; `message_key` deduplicates attempts. CLI
 workers ask through the same `QUESTION` line and `hud_respond` flow (`hud-ask`,
-20 minutes, then the default). A blocked CLI marks the job as needing the owner
-and sends one notice naming the job and pane. `hud_respond` writes a
+20 minutes, then the default). A blocked CLI marks the job as needing the owner;
+the session learns it through `changes` or `hud watch`. `hud_respond` writes a
 `qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher.
 The main session chooses all next steps; the MCP knows no workflow.
 See [the MCP README](../packages/hud-mcp/README.md) for the tool arguments.
 
 Jobs are plain files in `$HUD_HOME/jobs/<job>/`. Pi history stays in
 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to
-primary/helper files. A CLI job's supervisor drives STATUS: working, idle grace,
-`/quit` when grace ends unused, then closed with `settled`. Herdr `idle` or
-`unknown` is an exit only when the agent is gone. The on-demand watcher starts on
+primary/helper files. A CLI job's supervisor only observes; only facts end a job: the
+worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or
+`closed` when a new report is on disk). Each dispatch and `hud_send` starts a turn (`turn.json`). A new report
+settles the turn when herdr is not `working`, the report has been stable for 10 s; then idle grace, and `/quit`
+when grace ends unused with no child process newer than the turn alive, then closed with `settled`. herdr's status
+is advisory and never ends a job. A turn quiet past the idle grace without a report gets one Decision API choice
+among fixed actions (keep waiting, one fixed prompt to write the report, `failed` only with a quota line on screen,
+or hand to the main session); below 0.8 confidence or on any error it goes to the main session. Anything unclear is
+`waiting_orchestrator` with a reason. The supervisor wakes on herdr pushes, file changes and its own deadlines,
+plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes. The on-demand watcher starts on
 create, reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours,
 and exits with no open job or pending failed-job deadline. While a CLI job is open
 it also checks the supervisor; `HUD_WATCH_CLI_CHECK_MS` (default 30000) is that
-interval. A dead supervisor fails the job. Settled directories, including reports and
+interval. A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited;
+worker still running"); `hud_send` to it starts a new supervisor. Settled directories, including reports and
 `hud_read` access, expire **one day after closure** on a later watcher scan or next
 create, not a dedicated expiry timer. Before deleting a legacy pi job it moves real
 JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
@@ -555,6 +571,7 @@ One successful final sentence freezes that settlement; a continuation can settle
 | Question category | 4096-byte question head; ≤100 questions per observed job |
 | Review severity | ≤24 list items (400 chars each) from newest 32 KiB review head or settled reviewer report |
 | Home ranking/brief | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240), question flag, outcome; no bodies |
+| Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; once per quiet turn, ≤3 per job |
 | Test API | Fixed synthetic messages only |
 
 Outcome/kind/looping/category/severity labels are display-only enums; language

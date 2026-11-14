@@ -12,9 +12,10 @@ The user names a role and a task in plain words; you do the rest. Never ask them
    ask the user's own sentence plus those limits is enough. Do not name a report file; HUD adds it.
 3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`; optional `on` selects a harness/provider override for this job (defaults from `harnesses.json`; explicit `model`/`thinking` win), optional `model`/`thinking` apply to `pi` and `cli` places, and optional `kind` (`image` default, or `video`) applies to `flow`. Pi-only launch switches: boolean `lens`, `mcp`, `tps`, `ui_ext` (false disables UI extensions; true keeps defaults), `skills` (true includes personal skills; false keeps them excluded), `split` (reserve a right helper pane; defaults to the place). Omitted switches keep pi-role defaults. `pi_args` appends up to 128 strings (4096 characters each) verbatim after pi-role's `--`, without a shell. `hud_roster` lists `run`, `runs_on`, `exhausted` and `accepts_options`; `hud_read` shows the recorded launch options. A retry returns the original job unchanged even if options differ; use a new key for a different launch.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
-5. Wait for the job to settle: no DONE line is pushed into your pane. Where the client can watch a shell command in
-   the background (Claude Code's Monitor), watch the job's `STATUS.json` state and its `qa/` dir; otherwise call
-   `hud_read` with `wait_ms`. A worker's question still arrives as a `QUESTION` line; answer it within 20 minutes.
+5. Wait for the job to settle: nothing is typed into your pane. Every MCP response carries `changes` (state changes
+   of the jobs this pane dispatched). Where the client can watch a shell command in the background (Claude Code's
+   Monitor), run `hud watch` under it once per session: one line per state change and per new question; re-arm it
+   when it expires. Otherwise call `hud_read` with `wait_ms`. Answer a worker's question within 20 minutes.
 6. Read the report (`hud_read`), check it (for code: the diff and the named checks), then decide: accept, repair, review
    or stop. Settled means finished, not accepted.
 
@@ -26,8 +27,8 @@ Dispatch requires a herdr pane.
 
 The shipped defaults; `hud_roster` lists what is actually defined (files in `$HUD_HOME/roles/` add or override).
 
-- `imp` implements a defined change against a brief and completion criteria (places: `pi` implementer, fallback `cli` `agy`).
-- `reviewer` independently assesses a specified change and reports findings (places: `pi` reviewer, fallback `cli` `claude`). You decide whether to accept the change or request repairs.
+- `imp` implements a defined change against a brief and completion criteria (shipped place: `pi` implementer; the owner may add fallbacks or switch it in the Control plane, so trust `hud_roster`'s `runs_on`).
+- `reviewer` independently assesses a specified change and reports findings (shipped place: `pi` reviewer; same as `imp` for switching). You decide whether to accept the change or request repairs.
 - `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design (`pi` only; no CLI instructions file).
 - `architect` returns design options with their costs, including the smallest; you decide (`pi` only; no CLI instructions file).
 - `oracle` is a local read-only advisor (`cli` `claude` `fable`, fallback `pi` `architect`) for design questions grounded in repo facts.
