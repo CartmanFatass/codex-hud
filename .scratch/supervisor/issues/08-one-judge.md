@@ -1,4 +1,4 @@
-# 08: One poll loop and one pure judge for CLI jobs (supersedes 04–07)
+# 08: One poll loop and one pure judge for CLI jobs (supersedes 06–07; replaces the loop 04–05 patched)
 
 **Why (owner 2026-11-14):** "for agy, design the supervisor and the state judgment properly; event-by-event Monitor
 interrupts are not the answer." Today a finished agy job is shown as quiet/asking (ROLE-BIND 04, SUPERVISOR 02 and
