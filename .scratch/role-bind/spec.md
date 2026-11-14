@@ -19,7 +19,7 @@ runs means asking the main session to pass overrides on every dispatch.
 2. **Harnesses:** `pi`, `cli` (agent `agy`, `grok`, `claude`, `codex`) and `bro` (browser tasks; renamed from
    `jev` so it is not confused with Jev, the decision model). The browser tools keep their own names (`jev-ask`,
    `jev-aistudio`, `jev-flow`).
-3. **Browser work is two roles, not one per site** (amended 2026-11-14 by ticket 05: the browser roles are `pro` and `flow`; `oracle` is a local advisor): `oracle` asks a strong web model (places: ChatGPT Pro, Gemini,
+3. **Browser work is two roles, not one per site** (amended 2026-11-14 by ticket 05: the browser roles are `pro` and `flow`; `oracle` is a local read-only advisor on `cli` `claude` `fable` → `pi` `architect` with `oracle.md`): `pro` asks a strong web model (places: ChatGPT Pro, Gemini,
    AI Studio Argon); `flow` generates in Google Flow, and the job says image or video (`kind`, default image).
 4. **The MCP shows logical roles.** `hud_roster` lists each role with its current place, its fallbacks and the
    harnesses it can run on. `hud_create(role, task, ...)` runs on the role's setting: its first available place as set on the control plane. Per-job overrides stay
@@ -32,7 +32,7 @@ runs means asking the main session to pass overrides on every dispatch.
 6. **A role runs on a CLI only if it has CLI instructions.** Shipped: `implementer.md` and a new read-only
    `reviewer.md`. Otherwise `unsupported_harness` naming the missing file.
 7. **The control plane page switches places.** Rows grouped: roles (place, fallbacks, exhausted marks), browser
-   tasks (oracle and flow), harness availability. On a role the owner cycles the primary place's harness, model and
+   tasks (pro and flow), harness availability. On a role the owner cycles the primary place's harness, model and
    thinking from the catalog, adds/removes/reorders fallbacks, clears an exhausted mark; the change is written to
    `$HUD_HOME/roles/<role>.json` (atomic) and the next dispatch uses it. Enter/`o` still opens the source file.
 8. **Deleted (owner approved 2026-11-14):** role names `grok-imp`, `agy-imp`, `claude-imp`, `codex-imp` (use `imp`

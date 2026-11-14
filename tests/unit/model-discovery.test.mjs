@@ -153,7 +153,7 @@ test('pi/agy/grok discovery caches under $HUD_HOME/display for a day, merges in 
     'agy-typed-1',
   ]);
   assert.deepEqual(catalog.cli.models.grok, ['grok-fresh-1', 'grok-4.7']);
-  assert.deepEqual(catalog.cli.models.claude, ['opus', 'sonnet', 'haiku', 'claude-typed-1']);
+  assert.deepEqual(catalog.cli.models.claude, ['opus', 'sonnet', 'haiku', 'fable', 'claude-typed-1']);
   assert.deepEqual(catalog.cli.models.codex, ['gpt-6.1-sol', 'gpt-6-luna']);
 
   // editPlaces cycles discovered -> catalog -> typed -> unset.

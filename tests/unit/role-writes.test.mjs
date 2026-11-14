@@ -48,7 +48,7 @@ test('placeCatalog returns shipped defaults and merges HUD_HOME catalog addition
   assert.deepEqual(base.cli.agents, ['agy', 'claude', 'codex', 'grok']);
   assert.deepEqual(base.cli.models, {
     agy: ['gemini-4-argon-high', 'gemini-4-hydrogen-high', 'gemini-3.8-flash-high'],
-    claude: ['opus', 'sonnet', 'haiku'],
+    claude: ['opus', 'sonnet', 'haiku', 'fable'],
     codex: ['gpt-6.1-sol', 'gpt-6-luna'],
     grok: ['grok-4.7'],
   });

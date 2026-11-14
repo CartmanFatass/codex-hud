@@ -296,24 +296,24 @@ test('hud_create on uses harnesses.json (and HUD_HOME override), and model still
   assert.equal(rec3.model_source, 'hud_create');
 });
 
-test('oracle falls back across chatgpt -> gemini -> argon and flow passes kind', { timeout: 10000 }, async (t) => {
+test('pro falls back across chatgpt -> gemini -> argon and flow passes kind', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'bro-quota-fail'), '');
-  const fail1 = await f.call('hud_create', { role: 'oracle', request_key: 'ora-1', task: 'Ask 1.' });
+  const fail1 = await f.call('hud_create', { role: 'pro', request_key: 'pro-1', task: 'Ask 1.' });
   const read1 = await f.call('hud_read', { job: fail1.job, wait_ms: 5000 });
   assert.equal(read1.state, 'failed');
   assert.match(read1.exit_reason, /quota exceeded/);
   assert.match(read1.exit_reason, /next dispatch will use bro\/gemini/);
 
   fs.unlinkSync(join(f.env.HOME, 'bro-quota-fail'));
-  const ok2 = await f.call('hud_create', { role: 'oracle', request_key: 'ora-2', task: 'Ask 2.' });
+  const ok2 = await f.call('hud_create', { role: 'pro', request_key: 'pro-2', task: 'Ask 2.' });
   const read2 = await f.call('hud_read', { job: ok2.job, wait_ms: 5000 });
   assert.equal(read2.state, 'closed');
   const gemCmd = f.commands().find((c) => c.command === 'jev-ask' && c.args.includes(ok2.job));
   assert.ok(gemCmd.args.includes('gemini'));
 
   markExhausted(f.env.HUD_HOME, placeKey({ harness: 'bro', tool: 'jev-ask', provider: 'gemini' }), '429');
-  const ok3 = await f.call('hud_create', { role: 'oracle', request_key: 'ora-3', task: 'Ask 3.' });
+  const ok3 = await f.call('hud_create', { role: 'pro', request_key: 'pro-3', task: 'Ask 3.' });
   const read3 = await f.call('hud_read', { job: ok3.job, wait_ms: 5000 });
   assert.equal(read3.state, 'closed');
   const argonCmd = f.commands().find((c) => c.command === 'jev-aistudio' && c.args.includes(ok3.job));
@@ -324,6 +324,45 @@ test('oracle falls back across chatgpt -> gemini -> argon and flow passes kind',
   assert.equal(readVid.state, 'closed');
   const flowCmd = f.commands().find((c) => c.command === 'jev-flow' && c.args.includes(flowVid.job));
   assert.equal(flowCmd.args[flowCmd.args.indexOf('--kind') + 1], 'video');
+});
+
+test('oracle runs locally on claude fable with oracle.md and falls back to pi architect', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const roster = await f.call('hud_roster');
+  const oracle = roster.roles.find((r) => r.role === 'oracle');
+  assert.equal(oracle.instructions, 'oracle');
+  assert.equal(oracle.can_continue, false);
+  assert.equal(oracle.harness, 'cli');
+  assert.equal(oracle.agent, 'claude');
+  assert.equal(oracle.model, 'fable');
+  assert.deepEqual(oracle.run, [
+    { harness: 'cli', agent: 'claude', model: 'fable' },
+    { harness: 'pi', pi_role: 'architect', split: false },
+  ]);
+  const pro = roster.roles.find((r) => r.role === 'pro');
+  assert.equal(pro.harness, 'bro');
+  assert.equal(pro.provider, 'chatgpt');
+  assert.equal(pro.model, '6 Pro');
+  assert.equal(pro.run.length, 3);
+
+  const job = await f.call('hud_create', { role: 'oracle', request_key: 'ora-cli', task: 'Design question?' });
+  await until(() => {
+    const statusFile = join(job.task_dir, 'STATUS.json');
+    return fs.existsSync(statusFile) && JSON.parse(fs.readFileSync(statusFile, 'utf8')).state === 'closed';
+  });
+  const start = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start');
+  assert.equal(start.args[4], 'claude');
+  assert.deepEqual(start.args.slice(start.args.indexOf('--model'), start.args.indexOf('--model') + 2), ['--model', 'fable']);
+  const prompt = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt');
+  assert.match(prompt.args[3], /packages\/hud-mcp\/instructions\/oracle\.md/);
+
+  fs.unlinkSync(join(f.env.PATH, 'claude'));
+  const fbRoster = (await f.call('hud_roster')).roles.find((r) => r.role === 'oracle');
+  assert.deepEqual(fbRoster.runs_on, { harness: 'pi', pi_role: 'architect', split: false });
+  const fbJob = await f.call('hud_create', { role: 'oracle', request_key: 'ora-pi', task: 'Fallback design question?' });
+  assert.ok(fbJob.job);
+  const piCmd = f.commands().find((c) => c.command === 'pi-role' && c.args.includes('architect'));
+  assert.ok(piCmd);
 });
 
 test('reviewer uses reviewer.md on CLI; sonic and architect return unsupported_harness', { timeout: 10000 }, async (t) => {

@@ -129,8 +129,9 @@ export function richControl(data) {
     role('reviewer', 'roles', 'default', [place('pi', 'pi', 'mistral/deepseek-v4-1-flash-1017', 'xhigh', 'active'), place('cli', 'codex', 'gpt-6.1-sol', 'high', 'missing')]),
     role('sonic', 'roles', 'default', [place('pi', 'pi', null, null, 'active')]),
     role('architect', 'roles', 'default', [place('pi', 'pi', 'openai/gpt-6.1-sol', 'max', 'active')]),
+    role('oracle', 'roles', 'default', [place('cli', 'claude', 'fable', null, 'active'), place('pi', 'pi', null, null, 'standby')]),
     role('frontend', 'project', 'project', [place('pi', 'pi', 'project/model', 'high', 'active')]),
-    role('oracle', 'browser', 'default', [place('bro', 'chatgpt', '6 Pro', null, 'exhausted', { until: NOW + 5 * 60000 }),
+    role('pro', 'browser', 'default', [place('bro', 'chatgpt', '6 Pro', null, 'exhausted', { until: NOW + 5 * 60000 }),
       place('bro', 'gemini', null, null, 'active'), place('bro', 'aistudio', 'gemini-4-argon', null, 'standby')]),
     role('flow', 'browser', 'default', [place('bro', 'flow', null, null, 'missing', { kind: 'video' })]),
   ];

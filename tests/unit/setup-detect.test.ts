@@ -166,8 +166,13 @@ test('unregistered detect ignores project files and uses default skill roots', a
   assert.equal(cliExtra.agent, 'grok');
   assert.equal(cliExtra.pi_role, undefined);
   const oracle = doc.reference_roles.find((role: { role: string }) => role.role === 'oracle');
-  assert.equal(oracle.harness, 'bro');
+  assert.equal(oracle.harness, 'cli');
+  assert.equal(oracle.agent, 'claude');
+  assert.equal(oracle.model, 'fable');
   assert.equal(oracle.pi_role, undefined);
+  const pro = doc.reference_roles.find((role: { role: string }) => role.role === 'pro');
+  assert.equal(pro.harness, 'bro');
+  assert.equal(pro.pi_role, undefined);
   assert.deepEqual(
     doc.enabled_roles,
     [...roleRegistry(f.hud, sub, f.io.env, undefined, undefined, bundled).roles().keys()].sort()

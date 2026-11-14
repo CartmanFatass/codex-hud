@@ -1153,11 +1153,11 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
 test('thin launch options reject Jev roles and invalid pi values before dispatch', async (t) => {
   const f = await fixture(t);
   const keys = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'];
-  assert.deepEqual((await f.call('hud_roster')).roles.find((r) => r.role === 'oracle').accepts_options, ['on']);
+  assert.deepEqual((await f.call('hud_roster')).roles.find((r) => r.role === 'pro').accepts_options, ['on']);
   for (const key of keys) {
     const value = key === 'pi_args' ? ['--tools', 'read'] : false;
     assert.deepEqual(
-      await f.call('hud_create', { role: 'oracle', request_key: 'jev-launch', task: 'Synthetic.', [key]: value }),
+      await f.call('hud_create', { role: 'pro', request_key: 'jev-launch', task: 'Synthetic.', [key]: value }),
       { ok: false, code: 'invalid_arguments' }
     );
     assert.deepEqual(
@@ -1178,7 +1178,7 @@ test('thin create rejects model or thinking overrides for Jev roles', { timeout:
   for (const override of [{ model: 'synthetic/other' }, { thinking: 'max' }]) {
     assert.deepEqual(
       await f.call('hud_create', {
-        role: 'oracle',
+        role: 'pro',
         request_key: 'jev-override',
         task: 'Synthetic question.',
         ...override,
@@ -1194,7 +1194,7 @@ test('thin create rejects model or thinking overrides for Jev roles', { timeout:
 
 test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate sends', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
-  const args = { role: 'oracle', request_key: 'oracle-once', task: 'Synthetic question.' };
+  const args = { role: 'pro', request_key: 'pro-once', task: 'Synthetic question.' };
   const job = await f.call('hud_create', args);
   assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'), `${args.task}\n`);
   assert.deepEqual(await f.call('hud_create', args), job);
@@ -1222,7 +1222,7 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
           command === 'herdr' &&
           args[0] === 'agent' &&
           args[2] === 'w4E:p1' &&
-          args[3] === `[oracle@${job.job}] DONE ${job.task_dir}/report.md`
+          args[3] === `[pro@${job.job}] DONE ${job.task_dir}/report.md`
       )
   );
   const state = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
@@ -1230,7 +1230,7 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   assert.equal(state.harness, 'bro');
   assert.equal(state.provider, 'openai');
   assert.equal(workerFor(f, job.job).harness, 'bro');
-  assert.match(cardText(workerFor(f, job.job)), /oracle.*Synthetic question/);
+  assert.match(cardText(workerFor(f, job.job)), /pro.*Synthetic question/);
   assert.equal(state.output_written, true);
   assert.equal(state.exit_reason, 'settled');
   assert.equal((await f.call('hud_read', { job: job.job })).report, 'Synthetic Jev answer.');
@@ -1238,12 +1238,12 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
     (await f.call('hud_send', { job: job.job, message_key: 'no-send', text: 'Synthetic follow-up.' })).code,
     'not_continuable'
   );
-  assert.equal((await f.call('hud_roster')).roles.find(({ role }) => role === 'oracle').can_continue, false);
+  assert.equal((await f.call('hud_roster')).roles.find(({ role }) => role === 'pro').can_continue, false);
   assert.equal((await f.call('hud_close', { job: job.job })).exit_code, 0);
   assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
   for (const args of [
-    { role: 'oracle', on: 'gemini', request_key: 'gemini', task: 'Synthetic request.' },
-    { role: 'oracle', on: 'argon', request_key: 'argon', task: 'Synthetic request.' },
+    { role: 'pro', on: 'gemini', request_key: 'gemini', task: 'Synthetic request.' },
+    { role: 'pro', on: 'argon', request_key: 'argon', task: 'Synthetic request.' },
     { role: 'flow', request_key: 'flow', task: 'Synthetic request.' },
   ]) {
     const other = await f.call('hud_create', args);
@@ -1320,6 +1320,7 @@ test('a running job says what its role does: only an implementer builds', () => 
   assert.equal(runningVerb('reviewer', 'pi'), 'reviewing');
   assert.equal(runningVerb('architect', 'pi'), 'researching');
   assert.equal(runningVerb('oracle', 'bro'), 'asking web');
+  assert.equal(runningVerb('pro', 'bro'), 'asking web');
   assert.equal(runningVerb('flow', 'bro'), 'generating');
   assert.equal(runningVerb('sonic', 'pi'), 'working');
   assert.equal(runningVerb('grok-imp', 'cli'), 'build');

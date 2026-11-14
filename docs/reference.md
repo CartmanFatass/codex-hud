@@ -107,9 +107,9 @@ A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_gra
 or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place
 files load as `run[0]` and `"harness": "jev"` loads as `"bro"`. Shipped roles:
 `imp` (`pi` implementer -> `cli` `agy`), `reviewer` (`pi` reviewer -> `cli`
-`claude`), `sonic`, `architect`, `oracle` (`chatgpt`, `gemini`, `argon`), and
-`flow` (`jev-flow`). A `cli` place requires `instructions/<instructions>.md`
-(shipped: `implementer.md`, `reviewer.md`), otherwise `hud_create` returns
+`claude`), `sonic`, `architect`, `oracle` (`cli` `claude` `fable` -> `pi` `architect`),
+`pro` (`chatgpt`, `gemini`, `argon`), and `flow` (`jev-flow`). A `cli` place requires `instructions/<instructions>.md`
+(shipped: `implementer.md`, `reviewer.md`, `oracle.md`), otherwise `hud_create` returns
 `unsupported_harness`. Quota or rate-limit failures mark the place exhausted in
 `$HUD_HOME/exhausted.json` for 1 hour so the next dispatch falls back; HUD never
 auto-retries. Register custom roles as `$HUD_HOME/roles/<name>.json`, for example
@@ -309,9 +309,9 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
 
 **Control plane page.** Four groups, then the files as before (invalid or ignored role files, the
 convention, pi role definitions, instruction files, native agents, keys, browser): **Roles** (imp,
-reviewer, sonic, architect and any other role), **Project roles** (roles whose file comes from the
+reviewer, sonic, architect, oracle and any other role), **Project roles** (roles whose file comes from the
 project's own `.hud/roles`, which wins), **Browser tasks** (roles that run only on browser places:
-oracle, flow) and **Harnesses** (which of `pi`, `agy`, `claude`, `codex`, `grok`, `jev-ask`,
+pro, flow) and **Harnesses** (which of `pi`, `agy`, `claude`, `codex`, `grok`, `jev-ask`,
 `jev-aistudio`, `jev-flow` this machine has, with the mark legend). A role is one row per place on one
 line: the first is the primary, `↳` rows are its fallbacks in order. A row reads mark, role,
 harness, model, thinking; marks are `◉` in use (where the next `hud_create` runs: the first place

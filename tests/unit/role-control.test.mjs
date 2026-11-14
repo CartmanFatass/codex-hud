@@ -56,23 +56,25 @@ const stored = (s, name) => JSON.parse(fs.readFileSync(join(s.hud, 'roles', `${n
 
 test('Control plane: each role once with its place and fallbacks, browser tasks apart, harnesses with their availability', async (t) => {
   const s = await setup(t);
-  // reviewer gets a fallback; oracle's first place is exhausted, so its next one is the one in use.
+  // reviewer gets a fallback; pro's first place is exhausted, so its next one is the one in use. oracle is in Roles.
   writeRolePlaces(s.hud, 'reviewer', [{ harness: 'pi', pi_role: 'reviewer', split: false }, { harness: 'cli', agent: 'claude', model: 'opus', thinking: 'high' }]);
   markExhausted(s.hud, placeKey({ harness: 'bro', tool: 'jev-ask', provider: 'chatgpt', model: '6 Pro' }), 'quota exceeded', NOW);
   s.session.snap = await s.collector.collect(true, s.board, NOW);
-  assert.deepEqual(s.rows().map((r) => r.item), ['imp:0', 'reviewer:0', 'reviewer:1', 'sonic:0', 'architect:0', 'oracle:0', 'oracle:1', 'oracle:2', 'flow:0'].map((x) => `project:role:${x}`));
+  assert.deepEqual(s.rows().map((r) => r.item), ['imp:0', 'reviewer:0', 'reviewer:1', 'sonic:0', 'architect:0', 'oracle:0', 'oracle:1', 'pro:0', 'pro:1', 'pro:2', 'flow:0'].map((x) => `project:role:${x}`));
   const lines = plain(s.frame(80, 'en', 64));
   const at = (re) => lines.findIndex((l) => re.test(l));
-  // Groups in order; oracle and flow only under Browser tasks; the harnesses after them.
-  assert.ok(at(/^Roles ─/) < at(/ imp /) && at(/ architect /) < at(/^Browser tasks ─/));
-  assert.ok(at(/^Browser tasks ─/) < at(/ oracle /) && at(/ flow /) < at(/^Harnesses ─/));
+  // Groups in order; oracle under Roles, pro and flow only under Browser tasks; the harnesses after them.
+  assert.ok(at(/^Roles ─/) < at(/ imp /) && at(/ oracle /) < at(/^Browser tasks ─/));
+  assert.ok(at(/^Browser tasks ─/) < at(/ pro /) && at(/ flow /) < at(/^Harnesses ─/));
   // Wide rows say whose file is in force: the shipped one, or the owner's once a switch (or the reviewer's fallback) wrote it.
   assert.match(lines[at(/ imp /)], /◉ imp +pi +synthetic\/model +high +default$/);
   assert.match(lines[at(/ reviewer /)], /◉ reviewer +pi +default +yours$/);
   assert.match(lines[at(/ reviewer /) + 1], /○ ↳ +claude +opus +high/);
-  assert.match(lines[at(/ oracle /)], /✗ oracle +chatgpt +6 Pro +exhausted 60m/);
-  assert.match(lines[at(/ oracle /) + 1], /◉ ↳ +gemini/);
-  assert.match(lines[at(/ oracle /) + 2], /○ ↳ +aistudio +gemini-4-argon/);
+  assert.match(lines[at(/ oracle /)], /◉ oracle +claude +fable +default$/);
+  assert.match(lines[at(/ oracle /) + 1], /○ ↳ +pi +default/);
+  assert.match(lines[at(/ pro /)], /✗ pro +chatgpt +6 Pro +exhausted 60m/);
+  assert.match(lines[at(/ pro /) + 1], /◉ ↳ +gemini/);
+  assert.match(lines[at(/ pro /) + 2], /○ ↳ +aistudio +gemini-4-argon/);
   assert.match(lines[at(/ flow /)], /− flow +flow +image +not installed/);
   assert.match(lines[at(/^Harnesses ─/) + 1], /pi ✓ +agy ✓ +claude ✓ +codex − +grok ✓ +jev-ask ✓ +jev-aistudio ✓ +jev-flow −/);
   assert.match(plain(s.frame(80)).join('\n'), /◉ in use +○ standby +✗ exhausted +− not installed/);
@@ -87,12 +89,12 @@ test('Control plane: each role once with its place and fallbacks, browser tasks 
       }
     }
   const narrow = plain(s.frame(40, 'zh', 64)).join('\n');
-  assert.match(narrow, /^角色 ─+ 4$/m);
+  assert.match(narrow, /^角色 ─+ 5$/m);
   assert.match(narrow, /^浏览器任务 ─+ 2$/m);
-  assert.match(narrow, /✗ oracle +chatgpt 6 Pro$/m);
+  assert.match(narrow, /✗ pro +chatgpt 6 Pro$/m);
   assert.match(narrow, /◉ 使用中 +○ 备选 +✗ 已耗尽/);
-  assert.match(plain(s.frame(120, 'zh', 64)).join('\n'), /✗ oracle +chatgpt +6 Pro +已耗尽 60分钟/);
-  assert.match(plain(s.frame(120, 'en', 64)).join('\n'), /✗ oracle +chatgpt +6 Pro +exhausted 60m/);
+  assert.match(plain(s.frame(120, 'zh', 64)).join('\n'), /✗ pro +chatgpt +6 Pro +已耗尽 60分钟/);
+  assert.match(plain(s.frame(120, 'en', 64)).join('\n'), /✗ pro +chatgpt +6 Pro +exhausted 60m/);
 });
 
 test('a key on a place is written to the role file and is what the roster, hud_roster and so the next hud_create use', async (t) => {
@@ -171,19 +173,19 @@ test('a key on a place is written to the role file and is what the roster, hud_r
 
 test('browser places: p walks the web models, a second place can be promoted, a Flow place cycles its kind', async (t) => {
   const s = await setup(t);
-  s.session.state = { ...s.session.state, projectCursor: placeItem('oracle', 0) };
+  s.session.state = { ...s.session.state, projectCursor: placeItem('pro', 0) };
   await s.press('p');
-  assert.deepEqual([s.assignment('oracle').runs_on.provider, s.assignment('oracle').runs_on.tool], ['gemini', 'jev-ask']);
+  assert.deepEqual([s.assignment('pro').runs_on.provider, s.assignment('pro').runs_on.tool], ['gemini', 'jev-ask']);
   await s.press('p');
-  assert.equal(s.assignment('oracle').runs_on.tool, 'jev-aistudio');
+  assert.equal(s.assignment('pro').runs_on.tool, 'jev-aistudio');
   await s.press('P');
   await s.press('P');
-  assert.equal(s.assignment('oracle').runs_on.provider, 'chatgpt');
-  assert.equal(s.assignment('oracle').runs_on.model, '6 Pro');
-  s.session.state = { ...s.session.state, projectCursor: placeItem('oracle', 1) };
+  assert.equal(s.assignment('pro').runs_on.provider, 'chatgpt');
+  assert.equal(s.assignment('pro').runs_on.model, '6 Pro');
+  s.session.state = { ...s.session.state, projectCursor: placeItem('pro', 1) };
   await s.press('K');
-  assert.deepEqual(stored(s, 'oracle').run.map((p) => p.provider ?? p.tool), ['gemini', 'chatgpt', 'jev-aistudio']);
-  assert.equal(s.assignment('oracle').runs_on.provider, 'gemini');
+  assert.deepEqual(stored(s, 'pro').run.map((p) => p.provider ?? p.tool), ['gemini', 'chatgpt', 'jev-aistudio']);
+  assert.equal(s.assignment('pro').runs_on.provider, 'gemini');
   // thinking has no meaning in the browser; a model with nothing to choose says so.
   await s.press('e');
   assert.equal(s.session.done.message, 'no thinking setting here');
@@ -199,8 +201,8 @@ test('browser places: p walks the web models, a second place can be promoted, a 
 
 test('Enter and o on a place open the role file in force, a fallback row included', async (t) => {
   const s = await setup(t);
-  s.session.state = { ...s.session.state, projectCursor: placeItem('oracle', 2) };
-  const shipped = resolve('packages/hud-mcp/roles/oracle.json');
+  s.session.state = { ...s.session.state, projectCursor: placeItem('pro', 2) };
+  const shipped = resolve('packages/hud-mcp/roles/pro.json');
   for (const raw of ['\r', 'o']) assert.deepEqual((await s.press(raw)).action, { type: 'open-files', files: [shipped] });
   // After a switch the file in force is the owner's.
   s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 0) };

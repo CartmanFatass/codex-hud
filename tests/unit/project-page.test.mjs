@@ -77,12 +77,14 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.control.find((r) => r.label === 'convention').path, join(f.cwd, 'hud-convention.md'));
   // Roles live on `roles` now, grouped for the page: browser tasks apart, the project's own files marked.
   assert.deepEqual(f.data.roles.map((r) => [r.role, r.group]), [['imp', 'roles'], ['reviewer', 'roles'], ['sonic', 'roles'],
-    ['architect', 'roles'], ['oracle', 'browser'], ['flow', 'browser']]);
+    ['architect', 'roles'], ['oracle', 'roles'], ['pro', 'browser'], ['flow', 'browser']]);
   assert.deepEqual(first('oracle').places.map((p) => [p.label, p.model, p.state]),
+    [['claude', 'fable', 'missing'], ['pi', null, 'active']]);
+  assert.deepEqual(first('pro').places.map((p) => [p.label, p.model, p.state]),
     [['chatgpt', '6 Pro', 'active'], ['gemini', null, 'standby'], ['aistudio', 'gemini-4-argon', 'missing']]);
   assert.deepEqual([first('flow').places[0].label, first('flow').places[0].kind, first('flow').places[0].state], ['flow', 'image', 'missing']);
   assert.deepEqual([first('imp').path, first('imp').source, first('sonic').source], [join(f.hud, 'roles/imp.json'), 'yours', 'default']);
-  assert.equal(f.data.roleCount, 6);
+  assert.equal(f.data.roleCount, 7);
   assert.deepEqual(f.data.harnesses.map((h) => [h.name, h.ok]), [['pi', true], ['agy', false], ['claude', false], ['codex', false],
     ['grok', false], ['jev-ask', true], ['jev-aistudio', false], ['jev-flow', false]]);
   assert.deepEqual(f.data.control.find((r) => r.label === 'pi role'), { label: 'pi role', value: 'implementer', path: join(f.root, 'roles/implementer.md') });
@@ -161,7 +163,7 @@ test('a registered project shows its roles, hides the rest and uses its conventi
   assert.deepEqual([role('frontend').group, role('frontend').path, role('frontend').places[0].model, role('frontend').places[0].thinking],
     ['project', join(root, '.hud/roles/frontend.json'), 'project/model', 'high']);
   assert.deepEqual([role('imp').group, role('imp').source, role('imp').path, role('imp').places[0].model], ['project', 'project', join(root, '.hud/roles/imp.json'), 'project/imp']);
-  assert.equal(data.roles.some((r) => r.role === 'oracle' || r.role === 'secret'), false);
+  assert.equal(data.roles.some((r) => r.role === 'oracle' || r.role === 'pro' || r.role === 'secret'), false);
   assert.equal(data.control.some((r) => r.label === 'ignored'), false);
   assert.equal(data.control.find((r) => r.label === 'convention').value, 'project');
   assert.equal(data.control.find((r) => r.label === 'convention').path, join(root, '.hud/hud-convention.md'));
@@ -518,7 +520,7 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   assert.equal(frame.state.projectCursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
   assert.match(plain(frame).join('\n'), /Progress +M3b · 2 working · 1 to try · 1 blocked/);
-  assert.match(plain(frame).join('\n'), /Control plane +6 roles · keys 3\/5 · browser ✓/);
+  assert.match(plain(frame).join('\n'), /Control plane +7 roles · keys 3\/5 · browser ✓/);
   frame.state.projectCursor = 'project:fold:waiting';
   frame = f.render(80, 'en', press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ Waiting for you/);
@@ -564,7 +566,7 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
 test('Each Project page keeps its own cursor and scroll, leaving it and across a panel reload', async (t) => {
   const f = await fixture(t), height = 8;
   let frame = f.render(80, 'en', 'control', height);
-  for (let i = 0; i < 8; i++) frame = f.render(80, 'en', press(frame, 'down').state, height);
+  for (let i = 0; i < 10; i++) frame = f.render(80, 'en', press(frame, 'down').state, height);
   const { projectCursor: cursor, projectScroll: scroll } = frame.state;
   assert.ok(scroll > 0 && cursor.startsWith('project:file:'), 'a short panel scrolls the page with the cursor');
   const before = plain(frame);

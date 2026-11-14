@@ -30,9 +30,10 @@ The shipped defaults; `hud_roster` lists what is actually defined (files in `$HU
 - `reviewer` independently assesses a specified change and reports findings (places: `pi` reviewer, fallback `cli` `claude`). You decide whether to accept the change or request repairs.
 - `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design (`pi` only; no CLI instructions file).
 - `architect` returns design options with their costs, including the smallest; you decide (`pi` only; no CLI instructions file).
-- `oracle` asks a strong web model (ordered `bro` places: ChatGPT Pro via `jev-ask`, Gemini web via `jev-ask`, AI Studio Argon via `jev-aistudio`).
+- `oracle` is a local read-only advisor (`cli` `claude` `fable`, fallback `pi` `architect`) for design questions grounded in repo facts.
+- `pro` asks a strong web model (ordered `bro` places: ChatGPT Pro via `jev-ask`, Gemini web via `jev-ask`, AI Studio Argon via `jev-aistudio`).
 - `flow` generates media in Google Flow through `jev-flow`; pass `kind: "image"` (default) or `kind: "video"` (state `cost: N credits` in the brief for video).
-- Roles may configure ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`, `codex`) and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`) in `$HUD_HOME/roles/*.json`. A CLI place runs only if `instructions/<instructions>.md` exists (`implementer.md`, `reviewer.md`); otherwise `hud_create` returns `unsupported_harness`.
+- Roles may configure ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`, `codex`) and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`) in `$HUD_HOME/roles/*.json`. A CLI place runs only if `instructions/<instructions>.md` exists (`implementer.md`, `reviewer.md`, `oracle.md`); otherwise `hud_create` returns `unsupported_harness`.
 
 ## Details
 

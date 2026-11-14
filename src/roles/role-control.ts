@@ -56,7 +56,7 @@ export interface ControlFacts {
   piRoleFiles: string[];
 }
 
-const FIRST = ['imp', 'reviewer', 'sonic', 'architect', 'oracle', 'flow'];
+const FIRST = ['imp', 'reviewer', 'sonic', 'architect', 'oracle', 'pro', 'flow'];
 const rank = (role: string) => (FIRST.includes(role) ? FIRST.indexOf(role) : FIRST.length);
 export function placeLabel(place: RolePlace): string {
   if (place.harness === 'pi') return 'pi';
