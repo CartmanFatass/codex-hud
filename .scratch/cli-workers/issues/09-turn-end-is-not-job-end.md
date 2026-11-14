@@ -15,22 +15,21 @@ whether the agent is busy.
   other long-lived helpers); while any newer descendant is alive, or herdr says working, the job is busy and the
   no-report clock does not run. A self-wake (herdr back to working) simply continues the turn.
 - If the agent stays quiet (herdr not working, no new descendants) with no report for the role's idle grace
-  (default 10 minutes), send one nudge: "Your turn
-  ended without a report at <path>. If work remains, finish it; then write the report there."
-- If it is still quiet with no report after another idle grace, the job turns `waiting_orchestrator` with one notice
-  line to the main session ("stopped without a report; hud_send to continue or hud_close to stop"). The HUD never
-  quits an agent because a report is missing; only stop, close, tab closed, agent exit or the post-report grace end it.
-- `instructions/implementer.md` (and reviewer.md once it exists): write the report as the last step; never end a turn
-  while a command still runs in the background; wait for it in the foreground.
+  (default 10 minutes), the job turns `waiting_orchestrator` with one notice line to the main session ("quiet without
+  a report; hud_send to continue or hud_close to stop"). If the agent wakes by itself afterwards, the job is working
+  again.
+- The HUD only observes here (owner 2026-11-14: do not interfere with the model's run): it sends the worker nothing
+  on its own (no nudge) and does not change the worker instructions for this; the main session decides what to say.
+  It never quits an agent because a report is missing; only stop, close, tab closed, agent exit or the post-report
+  grace end it.
 
-**Who:** agy-imp (gemini-4-hydrogen-high) · **Size:** about 60 source lines; fake-herdr tests in thin-mcp
+**Who:** agy-imp (gemini-4-hydrogen-high) · **Size:** about 50 source lines; fake-herdr tests in thin-mcp
 
 **Blocked by:** ROLE-BIND 01 (same files: hud-cli.mjs, thin-mcp.test.mjs)
 
 **Status:** ready-for-agent
 
 - [ ] done without report → still open; a later report settles it (fake herdr: done → working → done + report)
-- [ ] a live background child keeps the job busy: no nudge while it runs; the clock starts when it ends
-- [ ] quiet past grace → one nudge prompt; report after the nudge settles normally
-- [ ] still quiet → waiting_orchestrator + one notice line; no `/quit` was sent
+- [ ] a live background child keeps the job busy: the no-report clock starts only when it ends
+- [ ] quiet past grace → waiting_orchestrator + one notice line; no prompt or `/quit` was sent; a self-wake returns to working
 - [ ] agent exit or tab closed still fail as today; the existing CLI tests keep passing (with the new expectations)
