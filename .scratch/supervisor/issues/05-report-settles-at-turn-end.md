@@ -3,7 +3,7 @@
 **What:** idle grace or close starts only when the report is new, herdr is not working and no newer background child
 is alive; idle grace consults background children too; drop the `turn !== 'done'` → leave branch.
 
-**Who:** imp (agy) · **Size:** ~60 lines · **Blocked by:** 04 · **Status:** ready-for-agent
+**Who:** imp (agy) · **Size:** ~60 lines · **Blocked by:** 04 · **Status:** wontfix (superseded by 08-one-judge, owner 2026-11-14)
 
 - [ ] Report written while working, a slice expires, then done → idle_grace with output_written true
 - [ ] No `/quit` before done; a live background child holds the grace
