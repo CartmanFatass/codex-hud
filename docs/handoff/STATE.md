@@ -29,8 +29,11 @@ Milestone: 0.1.4 · Roles apart from harnesses
   2026-11-14 on 60a254b1: dispatch failure returned and its tab closed; agy two turns with a supervisor kill and
   hud_send respawn; Control plane, hub, Tickets, Progress read through herdr. Found and fixed live: ticket fields on a
   shared line were skipped (supervisor feature missing), STATE head was stale.
-- Flaky under full-suite load: panel-reload "saving Width 64 from opening width 56" (passes alone 3/3).
-- Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
+- Leftovers closed 2026-11-14: hud_read waits between reads and returns `quiet_decision`; the retention test's fake
+  clock is written atomically (a torn read gave Date.now() 0 and a TimeoutOverflowWarning); pi-roles' dispatch test
+  uses real-shaped herdr ids (Fishpref 1f91417). The panel-reload width flake did not reproduce (6/6, full suite
+  564/564).
+- The owner decides how universal-hud reaches main (main is v0.1.0 and an ancestor: fast-forward possible).
 - After the tries: the owner picks from the M5 candidates (docs/spec.md §5).
 
 ## Slices

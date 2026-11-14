@@ -3683,6 +3683,9 @@ test('failed prompt-report keeps waiting_orchestrator across turn wake', { timeo
   assert.equal(cliState(job.task_dir).state, 'waiting_orchestrator');
   assert.equal(cliState(job.task_dir).quiet_decision.reason, 'prompt-failed');
   assert.equal(server.requests.length, 1);
+  // The session sees why, not only the generic reason.
+  const read = await f.call('hud_read', { job: job.job });
+  assert.deepEqual([read.quiet_decision?.action, read.quiet_decision?.reason], ['needs-human', 'prompt-failed']);
 });
 
 test('reportPromptSent persists across supervisor restart via hud_send', { timeout: 20000 }, async (t) => {

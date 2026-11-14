@@ -755,6 +755,8 @@ function observation(job: Job) {
     reason: row.reason,
     blocked: row.blocked,
     exit_reason: typeof status?.exit_reason === 'string' ? status.exit_reason : null,
+    // Why a quiet CLI job went where it did (e.g. `needs-human` / `prompt-failed`); absent when never asked.
+    ...(status?.quiet_decision && typeof status.quiet_decision === 'object' ? { quiet_decision: status.quiet_decision } : {}),
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
     report_exists: report !== null,
@@ -1021,7 +1023,11 @@ async function call(name: string, args: Args): Promise<unknown> {
           openQuestions: result.questions.length,
           reportPresent: result.report_exists,
         });
-        if (!ready(currentRow)) continue;
+        // The full read disagrees with the quick one (answered or continued meanwhile): wait, never spin.
+        if (!ready(currentRow)) {
+          await sleep(Math.max(0, Math.min(200, end - Date.now())));
+          continue;
+        }
         if (result.report_exists && settled(result.state)) {
           const latest = json<Job>(join(dir, 'job.json'))!;
           if (!latest.read_at) {

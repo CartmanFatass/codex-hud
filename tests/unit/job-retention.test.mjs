@@ -351,8 +351,10 @@ for (const kind of ['session preservation', 'reap']) {
     } else {
       fs.appendFileSync(join(f.home, '..', 'bin', 'pi-role-reap'), 'process.exitCode = 1;\n');
     }
+    // The watcher reads this file as its clock; write it atomically so a read never sees it empty.
     const clock = join(f.home, 'clock'), now = Date.now();
-    fs.writeFileSync(clock, String(now));
+    const setClock = (ms) => { fs.writeFileSync(`${clock}.tmp`, String(ms)); fs.renameSync(`${clock}.tmp`, clock); };
+    setClock(now);
     const { child, exited } = f.start(scanProbe + `
 fs.watch = () => { throw Error('synthetic permanent watch failure'); };
 syncBuiltinESMExports();
@@ -364,10 +366,10 @@ Date.now = () => Number(fs.readFileSync(${JSON.stringify(clock)}, 'utf8'));`);
     assert.equal(child.exitCode, null, 'working job keeps degraded scans running');
     assert.ok(fs.readFileSync(join(f.home, 'scans'), 'utf8').trim().split('\n').length >= 3);
     for (const dir of bad) assert.equal(warnings(dir).length, 1, 'repeated failures within a minute are suppressed');
-    fs.writeFileSync(clock, String(now + 59999));
+    setClock(now + 59999);
     await new Promise((done) => setTimeout(done, 1200));
     for (const dir of bad) assert.equal(warnings(dir).length, 1, 'still suppressed just before one minute');
-    fs.writeFileSync(clock, String(now + 60000));
+    setClock(now + 60000);
     await until(() => bad.every((dir) => warnings(dir).length >= 2));
     for (const dir of bad) assert.equal(warnings(dir).length, 2, 'each job warns again at one minute');
     if (kind === 'reap') {
