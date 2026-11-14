@@ -95,7 +95,7 @@ function subscribe() {
       return unavailable('invalid JSON');
     }
     if (event.error) return unavailable(event.error.message);
-    if (event.event === 'tab_closed') {
+    if (String(event.event ?? '').replace(/\./g, '_') === 'tab_closed') {
       closedTabs.add(event.data.tab_id);
       schedule();
     }

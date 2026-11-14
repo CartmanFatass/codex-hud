@@ -386,7 +386,7 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
   const has = (name) => fs.existsSync(join(env.HOME, name));
   const push = (client, state) => {
     client.state = state;
-    client.socket.write(JSON.stringify({ event: 'pane_agent_status_changed', data: { pane_id: 'w4E:p2', workspace_id: 'w4E', agent_status: state } }) + '\n');
+    client.socket.write(JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: 'w4E:p2', workspace_id: 'w4E', agent_status: state } }) + '\n');
   };
   async function startCliSocket() {
     if (cliSocket || fs.existsSync(env.HERDR_SOCKET_PATH)) return;
@@ -482,9 +482,11 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
     call,
     socketRequests,
     push: (id, state) => { for (const client of subscribers) if (client.id === id) push(client, state); },
+    // herdr's status changes but the push never arrives: only agent.get sees it.
+    silent: (id, state) => { for (const client of subscribers) if (client.id === id) client.state = state; },
     drop: () => { for (const client of subscribers) client.socket.destroy(); },
     dropWorker: (id) => { for (const client of subscribers) if (client.id === id) client.socket.destroy(); },
-    closeTab: () => { for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'tab_closed', data: { tab_id: 'w4E:t2', workspace_id: 'w4E' } }) + '\n'); },
+    closeTab: () => { for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'tab.closed', data: { tab_id: 'w4E:t2', workspace_id: 'w4E' } }) + '\n'); },
     commands: () =>
       fs.existsSync(log)
         ? fs
@@ -540,6 +542,18 @@ test('supervisor events: report then long summary, flapping, explicit continuati
   assert.equal(f.commands().some((c) => c.args[1] === 'wait' && c.args.includes('blocked')), false);
 });
 
+test('supervisor events: a report with a missed status push settles on the safety tick', { timeout: 10000 }, async (t) => {
+  // Live agy 2026-11-14: the push was never matched and a finished job stayed working for 10 minutes.
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  writeCliRole(f, 'missed-push', 4);
+  const job = await f.call('hud_create', { role: 'missed-push', request_key: 'missed-push', task: 'Synthetic missed push.' });
+  await until(() => cliState(job.task_dir)?.pid);
+  fs.writeFileSync(join(job.task_dir, 'report.md'), 'Report, then herdr goes idle without a push.\n');
+  f.silent(job.job, 'idle');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', 5000);
+  assert.equal(cliState(job.task_dir).output_written, true);
+});
 test('supervisor events: done with background tests stays working; report settles even with child alive', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const marker = join(f.env.HOME, 'child-ready');
@@ -584,7 +598,10 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'flaps never sample descendants');
   await new Promise((r) => setTimeout(r, 3100)); // >60 virtual seconds, two real safety ticks
   assert.equal(f.commands().length, commands);
-  assert.equal(f.socketRequests.length, requests);
+  // Each safety tick re-reads the status once, so a missed push cannot hold a job; nothing else is asked at rest.
+  const extra = f.socketRequests.slice(requests);
+  assert.ok(extra.length >= 1 && extra.length <= 3, JSON.stringify(extra));
+  assert.ok(extra.every((r) => r.method === 'agent.get'), JSON.stringify(extra));
   assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'working ticks never sample descendants');
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes);
   assert.equal(cliState(job.task_dir).state, 'working');
@@ -739,7 +756,7 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
   const emit = (tab_id) =>
     socket.write(
       JSON.stringify({
-        event: 'tab_closed',
+        event: 'tab.closed',
         data: {
           type: 'tab_closed',
           tab_id,

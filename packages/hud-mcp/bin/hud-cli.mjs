@@ -130,15 +130,16 @@ function connect() {
       reconnectMs = 5000;
       await seed(); wake(); return;
     }
-    const data = event.data;
-    if (!data || (data.pane_id !== pane && !(event.event === 'tab_closed' && data.tab_id === session.TAB))) return;
+    // herdr names pushed events like their subscriptions (`pane.agent_status_changed`); the schema's kinds use `_`.
+    const kind = String(event.event ?? '').replace(/\./g, '_'), data = event.data;
+    if (!data || (data.pane_id !== pane && !(kind === 'tab_closed' && data.tab_id === session.TAB))) return;
     generation += 1;
-    if (event.event === 'pane_agent_status_changed') {
+    if (kind === 'pane_agent_status_changed') {
       status = data.agent_status; agentMissing = false;
       if (status === 'working') workingAt = Date.now();
-    } else if (event.event === 'pane_closed' || event.event === 'tab_closed') tabClosed = true;
-    else if (event.event === 'pane_agent_detected') { await seed(); }
-    if (!current.agent_session_id && event.event === 'pane_agent_status_changed') await seed();
+    } else if (kind === 'pane_closed' || kind === 'tab_closed') tabClosed = true;
+    else if (kind === 'pane_agent_detected') { await seed(); }
+    if (!current.agent_session_id && kind === 'pane_agent_status_changed') await seed();
     wake();
   });
   lines.on('error', unavailable); socket.on('error', unavailable); socket.on('close', unavailable);
@@ -206,7 +207,8 @@ async function run() {
   busy = true; pending = false;
   const isTick = tickPending; tickPending = false;
   try {
-    if (isTick && (!current.pid_start_time || !current.agent_session_id)) await seed();
+    // The safety tick re-reads status once (one socket request per 30 s), so a missed push cannot hold a job.
+    if (isTick) await seed();
     if (!current.pid_start_time) {
       const info = (await request('pane.process_info', { pane_id: pane }))?.result?.process_info;
       const pid = info?.foreground_processes?.find((item) => item.pid && item.pid !== info.shell_pid)?.pid;
