@@ -15,9 +15,12 @@ Pro separately as pro." For this project the oracle runs on Fable for now.
 
 **Who:** imp · **Size:** small (role files, one instructions file, group lists, tests) · **Blocked by:** none
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `hud_roster` lists `oracle` (cli/claude fable, fallback pi architect) and `pro` (bro chatgpt 6 Pro, fallbacks)
-- [ ] Control plane: oracle under Roles, pro and flow under Browser tasks
-- [ ] `hud_create role=pro` dispatches a browser task; `hud_create role=oracle` starts claude with `--model fable`
+- [x] `hud_roster` lists `oracle` (cli/claude fable, fallback pi architect) and `pro` (bro chatgpt 6 Pro, fallbacks)
+- [x] Control plane: oracle under Roles, pro and flow under Browser tasks
+- [x] `hud_create role=pro` dispatches a browser task; `hud_create role=oracle` starts claude with `--model fable`
       (fake herdr), with the oracle instructions in the brief
+
+## Comments
+- 2026-11-14 (orchestrator): landed b56129ce (497/497). The agy job settled to idle_grace with its report on its own: first clean agy settle after the 04/05 stopgap.
