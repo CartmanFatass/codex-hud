@@ -9,11 +9,11 @@ so a worker in the same repo never shows up as the main session.
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] codex row in the per-kind table; startup spinner handled (test with fake herdr event sequence)
-- [ ] Bar fallback skips worker rollouts (unit test with synthetic rollouts)
-- [ ] One real Codex job by hand (gpt-6-luna, low), recorded in the comments
+- [x] codex row in the per-kind table; startup spinner handled (test with fake herdr event sequence)
+- [x] Bar fallback skips worker rollouts (unit test with synthetic rollouts)
+- [x] One real Codex job by hand (gpt-6-luna, low), recorded in the comments
 
 ## Comments
 
@@ -22,3 +22,5 @@ so a worker in the same repo never shows up as the main session.
   `hud-ask` (QUESTION line reached the orchestrator pane, answer file read back), wrote the report in 31 s →
   idle_grace → `/quit` → closed (settled) → reaped, tab closed; `agent_session_id` recorded; the rollout stayed under
   the account home the owner's shell `codex()` function picked (`$CODEX_HOME/sessions/…`), nothing in the job dir.
+
+- 2026-11-14 orchestrator: resolved in cbe059a7 (0.1.1); bar fallback test: tests/unit/codex-bar-fallback.test.mjs.

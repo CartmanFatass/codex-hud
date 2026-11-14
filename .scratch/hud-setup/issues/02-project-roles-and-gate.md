@@ -11,9 +11,13 @@ When `<root>/.hud/project.json` lists `roles`, only those roles exist for that p
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Registered project: project roles added/overriding, unlisted roles hidden, project convention used
-- [ ] Unregistered project with `.hud/`: nothing from it loads; roster says so
-- [ ] Non-pi project role file is invalid, not loaded
-- [ ] Unit tests on synthetic HUD_HOME and project dirs
+- [x] Registered project: project roles added/overriding, unlisted roles hidden, project convention used
+- [x] Unregistered project with `.hud/`: nothing from it loads; roster says so
+- [x] Non-pi project role file is invalid, not loaded
+- [x] Unit tests on synthetic HUD_HOME and project dirs
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved in fca81428 (0.1.2). Tests: tests/unit/project-roles.test.mjs.

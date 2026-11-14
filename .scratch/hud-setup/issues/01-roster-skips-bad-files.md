@@ -8,9 +8,13 @@ This also stops an older MCP from losing every tool when a newer harness kind's 
 
 **Blocked by:** none
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] One bad file in `$HUD_HOME/roles` leaves every other role and tool working
-- [ ] `hud_roster` lists `invalid: [{ path, reason }]`; reason is short and has no file contents
-- [ ] Project tab control plane shows invalid files (fixtures updated)
-- [ ] Unit tests for each reason class
+- [x] One bad file in `$HUD_HOME/roles` leaves every other role and tool working
+- [x] `hud_roster` lists `invalid: [{ path, reason }]`; reason is short and has no file contents
+- [x] Project tab control plane shows invalid files (fixtures updated)
+- [x] Unit tests for each reason class
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved in fca81428 (0.1.2). Tests: tests/unit/roster-invalid.test.mjs, project-page fixtures.

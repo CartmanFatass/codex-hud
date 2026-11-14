@@ -15,16 +15,16 @@ See `.scratch/cli-workers/spec.md` for the role file shape, per-kind facts, the 
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Role registry accepts and validates `cli` roles; invalid files are refused like today; pi and Jev roles unchanged
-- [ ] The kind-specific bits (flags, trust-dialog text and decline keys, start timeout, startup quirks) live in one small per-kind table, so adding a kind is a table row
-- [ ] Launch passes only the model/effort, bypass and role `args`; no home/session/config flag or env override; no CLI config is written by the HUD
-- [ ] Trust dialog → dialog declined, CLI gone, job `failed` with a reason naming the directory and the CLI
-- [ ] STATUS carries the spec's keys (no `session_id`); `pi-role-reap` reaps a closed CLI job and closes its tab
-- [ ] working → idle_grace → closed with a fake herdr in unit/integration tests (no real model calls in tests)
+- [x] Role registry accepts and validates `cli` roles; invalid files are refused like today; pi and Jev roles unchanged
+- [x] The kind-specific bits (flags, trust-dialog text and decline keys, start timeout, startup quirks) live in one small per-kind table, so adding a kind is a table row
+- [x] Launch passes only the model/effort, bypass and role `args`; no home/session/config flag or env override; no CLI config is written by the HUD
+- [x] Trust dialog → dialog declined, CLI gone, job `failed` with a reason naming the directory and the CLI
+- [x] STATUS carries the spec's keys (no `session_id`); `pi-role-reap` reaps a closed CLI job and closes its tab
+- [x] working → idle_grace → closed with a fake herdr in unit/integration tests (no real model calls in tests)
 - [ ] One real grok job run by hand: report written, card shown in the panel, tab closed after grace (record it in the ticket comments)
-- [ ] The existing test suite stays green
+- [x] The existing test suite stays green
 
 ## Comments
 
@@ -34,3 +34,5 @@ See `.scratch/cli-workers/spec.md` for the role file shape, per-kind facts, the 
   store; the job dir held no session files. Panel card not checked (isolated HUD_HOME). Rollout note: MCP servers
   still running the previous code throw `invalid_role` on a bundled `cli` role file, so `grok-imp.json` is parked in
   `tmp/tasks/CLI-WORKERS-01/` until every client's hud MCP restarts on the new build.
+
+- 2026-11-14 orchestrator: resolved in cbe059a7 (0.1.1). Tests: thin-mcp, thin-panel-jobs, job-retention. Open: the real run used an isolated HUD_HOME, so the panel card part is left to the owner's CLI-WORKERS try.

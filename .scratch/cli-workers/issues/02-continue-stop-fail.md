@@ -11,9 +11,13 @@ runs for pi jobs only.
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Continuation in grace, with a second report check, covered by tests with a fake herdr
-- [ ] hud_close: working → stopped; idle_grace → closed; tab closed → failed; CLI exit → failed
-- [ ] A dead supervisor is detected by the watcher and the job settles failed
-- [ ] Session preservation skipped for non-pi jobs; pi behaviour unchanged (existing tests)
+- [x] Continuation in grace, with a second report check, covered by tests with a fake herdr
+- [x] hud_close: working → stopped; idle_grace → closed; tab closed → failed; CLI exit → failed
+- [x] A dead supervisor is detected by the watcher and the job settles failed
+- [x] Session preservation skipped for non-pi jobs; pi behaviour unchanged (existing tests)
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved in cbe059a7 (0.1.1); continuation, hud_close states, dead supervisor and session-preservation skip covered in thin-mcp tests.

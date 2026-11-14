@@ -7,11 +7,11 @@ Gemini; document how to pick one with `agy models`).
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] agy row in the per-kind table; startup done ignored (test)
-- [ ] Trust dialog path fails cleanly (test with fake herdr)
-- [ ] One real agy job by hand, recorded in the comments
+- [x] agy row in the per-kind table; startup done ignored (test)
+- [x] Trust dialog path fails cleanly (test with fake herdr)
+- [x] One real agy job by hand, recorded in the comments
 
 ## Comments
 
@@ -20,3 +20,5 @@ Gemini; document how to pick one with `agy models`).
   trustedWorkspaces did not gain the dir; trusted dir → report in 20 s → idle_grace → `/quit` → closed (settled) →
   reaped, tab closed, no session files in the job dir. Gap: `agent_session_id` stayed null (agy publishes it after the
   first prompt, the supervisor reads it once at start); fixed in 06.
+
+- 2026-11-14 orchestrator: resolved in cbe059a7 (0.1.1); the agent_session_id gap above fixed in 06.

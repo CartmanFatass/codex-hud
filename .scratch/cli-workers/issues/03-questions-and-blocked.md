@@ -10,9 +10,13 @@ and pane; once the CLI works again the job is `working`.
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Question round trip with hud_respond, covered by a test (fake herdr for the notice)
-- [ ] Timeout path prints the default
-- [ ] blocked mid-turn → needs-owner on the card and one notice line; back to working afterwards
-- [ ] The implementer instruction file tells the worker how to ask (and never to wait on a terminal prompt)
+- [x] Question round trip with hud_respond, covered by a test (fake herdr for the notice)
+- [x] Timeout path prints the default
+- [x] blocked mid-turn → needs-owner on the card and one notice line; back to working afterwards
+- [x] The implementer instruction file tells the worker how to ask (and never to wait on a terminal prompt)
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved in cbe059a7 (0.1.1); hud-ask round trip and timeout in thin-mcp tests; the Codex real run (06) asked a real question through hud-ask.

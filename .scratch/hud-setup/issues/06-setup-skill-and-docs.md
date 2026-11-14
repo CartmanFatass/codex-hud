@@ -7,8 +7,12 @@ in a few lines, runs `--apply`, reports. Install and uninstall handle it exactly
 
 **Blocked by:** 04, 05
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] Skill installed/removed with hud-delegate's mechanism (tests)
 - [x] Docs describe today's behaviour; synthetic examples
 - [ ] Owner runs `/hud-setup` in a real project
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved in fca81428 (0.1.2); archive test 70a58b45 checks the skill ships. Open: the owner's own /hud-setup run (STATE: HUD-SETUP try).

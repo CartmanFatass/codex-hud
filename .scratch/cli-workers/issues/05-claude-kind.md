@@ -8,11 +8,11 @@ session, not a worker's.
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] claude row in the per-kind table; trust path fails cleanly (test)
-- [ ] An example role file in the docs (e.g. a design role on an Opus/Sonnet model)
-- [ ] One real Claude job by hand (haiku, low effort), recorded in the comments
+- [x] claude row in the per-kind table; trust path fails cleanly (test)
+- [x] An example role file in the docs (e.g. a design role on an Opus/Sonnet model)
+- [x] One real Claude job by hand (haiku, low effort), recorded in the comments
 
 ## Comments
 
@@ -22,3 +22,5 @@ session, not a worker's.
   `agent_session_id` recorded; the transcript stayed in Claude's own project store, no session files in the job dir.
   (The model listed the job dir instead of its cwd for the test prompt "the current directory": a wording issue of
   the test task, not the launch — the process ran in the requested cwd.)
+
+- 2026-11-14 orchestrator: resolved in cbe059a7 (0.1.1); example role in docs/reference.md.

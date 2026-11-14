@@ -6,7 +6,11 @@ finding bar.
 
 **Blocked by:** 01, 02, 03, 07, 08
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Both reports archived in docs/reviews/ (local paths stripped)
-- [ ] Each finding triaged: fix (→ 05), accepted trade-off, or rejected with a reason
+- [x] Both reports archived in docs/reviews/ (local paths stripped)
+- [x] Each finding triaged: fix (→ 05), accepted trade-off, or rejected with a reason
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved: reports in docs/reviews/2026-11-12-m4-review-{sol,ds}.md; findings triaged into M4-FIX / M4-PRUNE (05).

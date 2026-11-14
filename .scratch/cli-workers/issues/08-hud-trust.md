@@ -7,10 +7,14 @@ shell. The dispatch failure for an untrusted directory names `hud trust <cwd>`. 
 
 **Blocked by:** 01, 04, 05
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] grok `~/.grok/trusted_folders.toml`, agy `~/.gemini/antigravity-cli/settings.json` `trustedWorkspaces`,
+- [x] grok `~/.grok/trusted_folders.toml`, agy `~/.gemini/antigravity-cli/settings.json` `trustedWorkspaces`,
       claude `~/.claude.json` `projects[dir].hasTrustDialogAccepted` (honours `CLAUDE_CONFIG_DIR`)
-- [ ] Only adds; an existing entry is left alone; a missing file means "not installed" and is not created
-- [ ] Backup before each edit; atomic write keeping the file mode; nothing else in the file changes
-- [ ] Unit tests on a synthetic HOME; real run by the orchestrator: a fresh dir trusted, then grok, agy and claude jobs start
+- [x] Only adds; an existing entry is left alone; a missing file means "not installed" and is not created
+- [x] Backup before each edit; atomic write keeping the file mode; nothing else in the file changes
+- [x] Unit tests on a synthetic HOME; real run by the orchestrator: a fresh dir trusted, then grok, agy and claude jobs start
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved in e99d7acf (0.1.1). Tests: tests/unit/trust.test.ts. Real run: a fresh /tmp dir trusted, then grok, agy and claude jobs started there and settled; codex skipped (bypass flag, no dialog).

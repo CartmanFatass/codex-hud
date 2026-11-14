@@ -6,12 +6,16 @@ universal-hud is merged into main and the version is tagged.
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The archive installs into a clean temp HOME and `hud uninstall` removes it; the owner's real setup is untouched by the test
-- [ ] No secrets, local paths or synthetic-only fixtures leak into the archive
-- [ ] universal-hud merged into main, version tagged
+- [x] The archive installs into a clean temp HOME and `hud uninstall` removes it; the owner's real setup is untouched by the test
+- [x] No secrets, local paths or synthetic-only fixtures leak into the archive
+- [x] universal-hud merged into main, version tagged
 
 **Owner (2026-11-12):** before the release, after both milestone reviewers accept, the architect role (Astra) reviews
 the whole project once more (structure, boundaries, stability, cost). Its answer is advice: the orchestrator decides
 which points block, asks the owner on unclear trade-offs, and fixes the blocking ones before packaging.
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved: RELEASE-ARCHIVE c00936e4 (npm run release, test:release rehearses install/uninstall in a temp HOME; first-party audit clean); Astra advice handled (docs/reviews/2026-11-12-m4-architect.md); v0.1.0 tagged and on main.

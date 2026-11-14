@@ -8,8 +8,12 @@ for 0.1.1 list the feature. STATE.md's ledger has the CLI-WORKERS line.
 
 **Blocked by:** 01, 02, 03, 04, 05, 06
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Docs describe today's behaviour only; synthetic examples
-- [ ] spec line added (owner-approved wording)
-- [ ] npm run check (or the repo's doc checks) green
+- [x] Docs describe today's behaviour only; synthetic examples
+- [x] spec line added (owner-approved wording)
+- [x] npm run check (or the repo's doc checks) green
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved in cbe059a7 (0.1.1): reference en/zh, ARCHITECTURE, hud-delegate skill, docs/releases/0.1.1.md, spec §2.1 owner line.

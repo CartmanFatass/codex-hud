@@ -8,8 +8,12 @@ worker skills per role, and broken links under `.hud/skills`. Read-only.
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Output matches the spec shape; stable key order
-- [ ] Writes nothing anywhere
-- [ ] Unit tests on synthetic HOME/HUD_HOME/project
+- [x] Output matches the spec shape; stable key order
+- [x] Writes nothing anywhere
+- [x] Unit tests on synthetic HOME/HUD_HOME/project
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved in fca81428 (0.1.2); detect also marks manual-only skills (disable-model-invocation). Tests: tests/unit/setup-detect.test.ts.

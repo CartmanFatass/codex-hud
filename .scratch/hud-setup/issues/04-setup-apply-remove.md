@@ -11,9 +11,13 @@ replaces a file or link it did not make (reports and skips). `--remove` drops th
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Plan validated before any write; invalid plan writes nothing
-- [ ] Idempotent; foreign files/links never replaced
-- [ ] After apply, `--detect` and `hud_roster` show the plan's roles
-- [ ] Unit tests on synthetic dirs
+- [x] Plan validated before any write; invalid plan writes nothing
+- [x] Idempotent; foreign files/links never replaced
+- [x] After apply, `--detect` and `hud_roster` show the plan's roles
+- [x] Unit tests on synthetic dirs
+
+## Comments
+
+- 2026-11-14 orchestrator: resolved in fca81428 (0.1.2). Tests: tests/unit/setup-apply.test.ts.
