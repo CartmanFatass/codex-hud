@@ -19,7 +19,7 @@ runs means asking the main session to pass overrides on every dispatch.
 2. **Harnesses:** `pi`, `cli` (agent `agy`, `grok`, `claude`, `codex`) and `bro` (browser tasks; renamed from
    `jev` so it is not confused with Jev, the decision model). The browser tools keep their own names (`jev-ask`,
    `jev-aistudio`, `jev-flow`).
-3. **Browser work is two roles, not one per site:** `oracle` asks a strong web model (places: ChatGPT Pro, Gemini,
+3. **Browser work is two roles, not one per site** (amended 2026-11-14 by ticket 05: the browser roles are `pro` and `flow`; `oracle` is a local advisor): `oracle` asks a strong web model (places: ChatGPT Pro, Gemini,
    AI Studio Argon); `flow` generates in Google Flow, and the job says image or video (`kind`, default image).
 4. **The MCP shows logical roles.** `hud_roster` lists each role with its current place, its fallbacks and the
    harnesses it can run on. `hud_create(role, task, ...)` runs on the role's setting: its first available place as set on the control plane. Per-job overrides stay
