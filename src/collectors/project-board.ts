@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { executable, roleRegistry } from '../roles/roster.js';
-import { controlFacts, type HarnessFact, type RoleFact } from '../roles/role-control.js';
+import { controlFacts, type HarnessFact, type ModelLists, type RoleFact } from '../roles/role-control.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 export interface ProjectItem {
@@ -38,6 +38,8 @@ export interface ProjectSnapshot {
   /** Each role's places, and the harnesses this machine has: what the Control plane switches. Full collection only. */
   roles: RoleFact[];
   harnesses: HarnessFact[];
+  /** The merged model lists behind the Control plane's typed model input (the same ones `m` cycles). */
+  models: ModelLists;
   agents: ProjectItem[];
   keys: [string, boolean][];
   browser: boolean;
@@ -191,7 +193,7 @@ export class ProjectCollector {
   refreshRoles(snapshot: ProjectSnapshot, now: number): void {
     try {
       const facts = controlFacts(this.registry(), this.hudHome, this.env, now, this.readJson, this.names);
-      Object.assign(snapshot, { roles: facts.roles, harnesses: facts.harnesses, roleCount: facts.roles.length });
+      Object.assign(snapshot, { roles: facts.roles, harnesses: facts.harnesses, models: facts.models, roleCount: facts.roles.length });
     } catch { /* The next collection reads them again. */ }
   }
   /** Where each unsettled job of that lookup works (canonical paths), for the Projects list's per-root counts: no Git, no board. */
@@ -209,7 +211,7 @@ export class ProjectCollector {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
-      waiting: [], docs: [], control: [], roles: [], harnesses: [], agents: [], keys: [], browser: false, roleCount: 0, editing: [],
+      waiting: [], docs: [], control: [], roles: [], harnesses: [], models: { pi: [], include: {}, cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0, editing: [],
       ladder: { ids: [] }, slices: [], ledger: [], active: [], next: [], summary: '', tickets: this.tickets(),
       counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
     };
@@ -266,6 +268,7 @@ export class ProjectCollector {
       const facts = controlFacts(registry, this.hudHome, this.env, now, this.readJson, this.names);
       out.roles = facts.roles;
       out.harnesses = facts.harnesses;
+      out.models = facts.models;
       out.roleCount = facts.roles.length;
       for (const bad of registry.invalid()) out.control.push({ label: 'invalid', value: bad.reason, path: bad.path });
       const ignored = registry.projectConfigIgnored();

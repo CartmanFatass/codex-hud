@@ -11,6 +11,7 @@ import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ProjectPage } from './project-view.js';
 import type { PlaceEdit } from '../roles/role-control.js';
+import type { ModelPick } from './model-input.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
   iconic,
@@ -56,6 +57,11 @@ export interface MonitorState {
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;
+  /**
+   * The Control plane's model picker, open on the place `role`/`index`: what is typed to filter, which entry is picked (the
+   * default one until the arrows move it), the provider it has opened (pi: providers first), and whether it lists all.
+   */
+  projectInput?: { role: string; index: number; text: string; pick?: number; provider?: string; all?: boolean };
   homeTarget?: WorkTarget;
   homeScroll?: number;
   boardExpanded?: ReadonlySet<string>;
@@ -93,6 +99,8 @@ export interface MonitorRow {
   key?: string;
   controls?: RowControl[];
   files?: string[];
+  /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
+  modelPick?: ModelPick;
 }
 export interface MonitorRect {
   id: MonitorPane;

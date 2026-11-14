@@ -7,6 +7,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import { cardExpanded } from './work-card.js';
 import { projectFoldedSet, projectPageOf, projectListOpen, type ProjectPage } from './project-view.js';
 import type { PlaceOp } from '../roles/role-control.js';
+import { pickable } from './model-input.js';
 import { join } from 'node:path';
 /** The Control plane's keys (named by the decoder) and what each asks of the place under the cursor. */
 const PLACE_KEYS: Record<string, { op: PlaceOp; step?: 1 | -1 }> = {
@@ -187,6 +188,12 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
     if (key === 'reset' && projectPageOf(next) === 'control') return result({ type: 'refresh-models' });
     const place = PLACE_KEYS[key], onPlace = /^project:role:(.+):(\d+)$/.exec(next.projectCursor ?? '');
+    // `m` opens the model picker where there is something to pick; elsewhere it is the old key (a Flow place's kind, the project file's refusal).
+    const pick = rows[at]?.modelPick;
+    if ((key === 'place-model' || key === 'place-model-prev') && onPlace && projectPageOf(next) === 'control' && pick && pickable(pick)) {
+      next.projectInput = { role: onPlace[1], index: Number(onPlace[2]), text: '' };
+      return result();
+    }
     if (place && onPlace && projectPageOf(next) === 'control')
       return result({ type: 'role-edit', role: onPlace[1], index: Number(onPlace[2]), ...place });
     if (key === 'escape' && (projectPageOf(next) || listed || (next.projectBack && frame?.projects))) {
@@ -273,9 +280,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // Home's block is the panel's own project's.
     useProject(undefined);
     if (id === 'progress') return goProject('progress');
-    // A ticket row opens its feature, unfolded, on the Tickets page.
-    goProject('tickets', `project:fold:${id}`);
-    next.projectFolded = new Set([...projectFoldedSet(next)].filter((key) => key !== id));
+    // A ticket row opens the Tickets page where it was left: its lanes cross features, so no feature row is there to rest on.
+    goProject('tickets');
   };
   // Cards expand in place; the compact progress block opens its Project destination.
   const activate = (target = selected()) => {

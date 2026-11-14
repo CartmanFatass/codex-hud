@@ -1250,6 +1250,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     for (let input of inputs) {
       if (closed) break;
       if (input.type === 'mouse' && !settings.mouse) continue;
+      // A printable key with no name is only the model picker's (it types into the filter); nothing else answers it here.
+      if (STANDALONE_PANEL && input.type === 'key' && !input.key && !state.projectInput) continue;
       syncPanelView();
       const fromSettings = Boolean(settingsPage);
       let panelInput = input.type === 'command';
@@ -1408,14 +1410,25 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     if (!settingsPage) probe.cancel();
     if (!closed && !overlayBefore && (settingsPage || state.help)) focusPanel();
   };
-  const dispatch = (inputs: WorkbenchInput[]) =>
-    withInputRefresh(
+  /** The decoder also hands over printable keys with no name, for the model picker: they count only once `m` has opened it. */
+  const typedForPicker = (inputs: WorkbenchInput[]) => {
+    let picking = Boolean(state.projectInput);
+    return inputs.filter((i) => {
+      if (i.type !== 'key' || !STANDALONE_PANEL) return true;
+      if (i.key.startsWith('place-model')) picking = true;
+      return Boolean(i.key) || picking;
+    });
+  };
+  const dispatch = (all: WorkbenchInput[]) => {
+    const inputs = typedForPicker(all);
+    return withInputRefresh(
       inputs.length > 0,
       () => processInput(inputs),
       () => {
         if (!closed) void collect(true);
       }
     );
+  };
   /** A command that opened the panel (bin/codex-hud-toggle --command): run once, after the first read. */
   const initialCommand = process.env.CODEX_HUD_INITIAL_COMMAND;
   delete process.env.CODEX_HUD_INITIAL_COMMAND;

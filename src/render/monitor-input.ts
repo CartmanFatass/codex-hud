@@ -2,6 +2,7 @@
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
 import { workboardInput } from './workboard-input.js';
+import { modelInputKey } from './model-input.js';
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
   if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height) return undefined;
@@ -13,8 +14,11 @@ export function monitorItemAt(pane: MonitorRect, x: number, y: number): string |
   return monitorRowAt(pane, x, y)?.item || undefined;
 }
 export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
+  // The Control plane's model input owns the keyboard (`q` is a letter in it); a click leaves it and is handled as ever.
+  if (state.projectInput && input.type === 'key') return modelInputKey(state, input, ctx);
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
   const result = (action?: MonitorOutcome['action'], close = false): MonitorOutcome => ({ state: next, close, action });
+  if (input.type === 'mouse' && input.button === 'left') next.projectInput = undefined;
   const key =
     input.type === 'key'
       ? input.key

@@ -8,6 +8,7 @@ import { projectRows, homeProgressRows, projectPageOf, projectCrumb, projectList
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
+import { pickOf } from './model-input.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
@@ -24,7 +25,8 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
       ['[ ]', 'switch project (Project)'],
-      ['p m e', 'place: harness, model, thinking (capitals go back)'],
+      ['p e', 'place: harness, thinking (capitals go back)'],
+      ['m', 'place: pick a model (provider, then model; type to filter)'],
       ['+ - K J', 'place: add, remove, move up, move down'],
       ['x', 'place: clear its exhausted mark'],
       ['r', 'place: refresh model lists'],
@@ -59,7 +61,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
         );
   const notes = [
     'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
-    'On the Control plane p m e + - K J x change the place under the cursor (r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
+    'On the Control plane p m e + - K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
     'In the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
@@ -134,6 +136,8 @@ export function renderWorkboardFrame(
       width: visualLength(models),
     });
   }
+  // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
+  if (state.projectInput && !(project && page === 'control' && pickOf(input.project, state.projectInput))) state.projectInput = undefined;
   const rows = help
     ? helpRows(input, width)
     : changes
@@ -141,7 +145,8 @@ export function renderWorkboardFrame(
       : inspector
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
         : project
-          ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects)
+          ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
+              Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)))
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
@@ -186,17 +191,20 @@ export function renderWorkboardFrame(
   // A new hub or page starts on its first destination (a page row, not the Waiting fold).
   if (project && (!state.projectCursor || !rows.some((r) => r.item === state.projectCursor)))
     state.projectCursor = (rows.find((r) => r.item?.startsWith('project:page:')) ?? rows.find((r) => r.item))?.item;
-  const key = project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
+  // The model picker is the page while it is open: its picked entry is the cursor, and the page's own scroll and reveal wait.
+  const picking = project && page === 'control' && !!state.projectInput;
+  const key = picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
   const cursorAt = rows.findIndex((r) => r.item === key),
     room = Math.max(0, height - 2),
     max = Math.max(0, rows.length - room);
   const scroll = help
     ? (state.helpScroll ?? 0)
+    : picking ? 0
     : sub
       ? state.scroll[changes ? 'changes' : 'details']
       : project ? (state.projectScroll ?? 0) : (state.homeScroll ?? 0);
   let offset = Math.max(0, Math.min(max, scroll));
-  if (!help && !changes && key && state.boardRevealed !== key && room) {
+  if (!help && !changes && !picking && key && state.boardRevealed !== key && room) {
     if (cursorAt < offset) offset = cursorAt;
     else if (cursorAt >= offset + room) offset = cursorAt - room + 1;
     state.boardRevealed = key;
@@ -205,7 +213,7 @@ export function renderWorkboardFrame(
     state.helpScroll = offset;
     frame.helpPage = { count: room, total: rows.length };
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
-  else if (project) state.projectScroll = offset;
+  else if (project) { if (!picking) state.projectScroll = offset; }
   else state.homeScroll = offset;
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
@@ -229,7 +237,8 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : project ? (page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
+        : project ? (state.projectInput ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back'
+          : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
           : page || list ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';

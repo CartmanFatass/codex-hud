@@ -103,8 +103,11 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
         /NEVER_RENDER|unrelated bullet|Tickets|工单|INVISIBLE|M5|NOT-A-MILESTONE/
       );
       assert.match(text(pages.tickets), lang === 'en' ? /Project › Tickets\n\n  none/ : /项目 › 工单\n\n  无/);
-      // Chips are the ledger's milestones in ledger order; the current one is marked.
-      assert.match(text(pages.progress), /\(M3b\)  M4  M3/);
+      // The current milestone's bar and counts (STATE has no dates here, so older work is one row a milestone, newest first).
+      assert.match(text(pages.progress), /^ {3}M3b {2}[█▓░]+ 0\/2$/m);
+      assert.match(text(pages.progress), /^ {2}1 (working|工作中) {2}1 (to try|待试用)$/m);
+      assert.match(text(pages.progress), /^ {2}▸ M3 +✓ 1/m);
+      assert.match(text(pages.progress), /^ {2}▸ M3b +◇ 1/m);
       assert.match(text(pages.progress), lang === 'en' ? /^Next ─+ 5$/m : /^下一步 ─+ 5$/m);
       if (width >= 80) {
         assert.match(text(pages.progress), /Which synthetic option\?/);
@@ -114,7 +117,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
       if (lang === 'zh') {
         assert.match(text(hub), /^ 首页 1  项目 2/m);
         assert.doesNotMatch(text(hub, ...Object.values(pages)), /\bProject 2\b|3 agent\b/);
-        assert.ok(pages.control.workboard.rows.some((r) => stripAnsi(r.text).startsWith('▸ 代理')));
+        assert.ok(pages.control.workboard.rows.some((r) => stripAnsi(r.text).startsWith('▸ 文件')));
       }
     }
   assert.doesNotMatch(JSON.stringify(f.data), /NEVER_RENDER/);
@@ -175,12 +178,27 @@ test('a registered project shows its roles, hides the rest and uses its conventi
   );
   assert.doesNotMatch(JSON.stringify(data), /NEVER_RENDER/);
 });
-test('Control plane page shows its roles; native agents start folded and Enter unfolds/folds through real input', async (t) => {
+test('Control plane page: what needs the owner first, healthy roles and files folded; Enter opens them, the agents fold inside Files', async (t) => {
   const f = await fixture(t);
   const render = (state) => f.render(80, 'en', state, 64);
   let frame = render('control');
-  assert.match(plain(frame).join('\n'), /▸ agents/);
+  let text = plain(frame).join('\n');
+  // flow has nowhere to run and bad.json does not load: they come first; the other roles are one folded row of names.
+  assert.match(text, /^Needs attention ─+ 2$/m);
+  assert.match(text, /^ {2}− flow +flow image not installed$/m);
+  assert.match(text, /^ {2}! bad\.json +unparseable JSON$/m);
+  assert.match(text, /^▸ Healthy ─+ 6$/m);
+  assert.match(text, /^ {2}◉ imp reviewer sonic architect oracle pro$/m);
+  assert.match(text, /^▸ Files ─+ 8$/m);
+  assert.match(text, /^ {2}keys 3\/5 · browser ✓ · missing GEMINI OPENAI$/m);
+  assert.doesNotMatch(text, /synthetic\/model|project-agent\.md|▸ agents/);
+  frame.state.projectCursor = 'project:fold:healthy';
+  frame = render(press(frame, 'enter').state);
+  assert.match(plain(frame).join('\n'), /^Healthy ─+ 6$/m);
   assert.match(plain(frame).join('\n'), /synthetic\/model/);
+  frame.state.projectCursor = 'project:fold:files';
+  frame = render(press(frame, 'enter').state);
+  assert.match(plain(frame).join('\n'), /▸ agents/);
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
   frame.state.projectCursor = 'project:fold:agents';
   frame = render(press(frame, 'enter').state);
@@ -189,6 +207,9 @@ test('Control plane page shows its roles; native agents start folded and Enter u
   frame.state.projectCursor = 'project:fold:agents';
   frame = render(press(frame, 'enter').state);
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
+  frame.state.projectCursor = 'project:fold:healthy';
+  frame = render(press(frame, 'enter').state);
+  assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 6$/m, 'a second Enter folds the roles again');
 });
 test('2 and arrows/Tab switch Home ⇄ Project with independent cursor/scroll; 3 stays Changes', async (t) => {
   const f = await fixture(t),
@@ -408,7 +429,7 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
     { env, calls } = editorHerdr(f);
   // Files open from the hub's Waiting items and from every page.
   const found = [undefined, 'progress', 'tree', 'docs', 'control'].flatMap((page) => {
-    const frame = f.render(80, 'en', page, 80);
+    const frame = f.render(80, 'en', page === 'control' ? onPage('control', { projectFolded: new Set(['agents']) }) : page, 80);
     return frame.workboard.rows.filter((r) => r.files).map((row) => ({ frame, row }));
   });
   assert.ok(found.length > 20);
@@ -519,7 +540,7 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   assert.deepEqual(hubEntries(frame), ['progress', 'tree', 'docs', 'control'].map((p) => `project:page:${p}`), 'no tickets: no Tickets entry');
   assert.equal(frame.state.projectCursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
-  assert.match(plain(frame).join('\n'), /Progress +M3b · 2 working · 1 to try · 1 blocked/);
+  assert.match(plain(frame).join('\n'), /Progress +M3b · 1 working · 1 to try/);
   assert.match(plain(frame).join('\n'), /Control plane +7 roles · keys 3\/5 · browser ✓/);
   frame.state.projectCursor = 'project:fold:waiting';
   frame = f.render(80, 'en', press(frame, 'enter').state);
@@ -563,12 +584,64 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
     assert.equal(result.action, undefined);
   }
 });
+test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a row a page; a short panel loses Latest first, then the bar and the gaps, never the rest', async (t) => {
+  const f = await fixture(t), hub = (width, height, lang = 'en', data = f.rich) => f.render(width, lang, undefined, height, data);
+  for (const lang of ['en', 'zh']) {
+    const frame = hub(40, 40, lang), text = plain(frame).join('\n'), word = (en, zh) => (lang === 'en' ? en : zh);
+    for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
+    const at = (re) => text.search(re);
+    const order = [/^demo-project ─+ 0\.1\.3$/m, new RegExp(`^${word('Waiting for you', '等你处理')} ─+ 2$`, 'm'), new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'),
+      new RegExp(`^${word('Latest', '最近完成')} ─+ ${word('newest first', '最新在前')}$`, 'm'), /^(Progress|进度) /m, /^(Working tree|工作区) /m, /^(Docs|文档) /m, /^(Control plane|控制面) /m].map(at);
+    assert.ok(order.every((n, i) => n >= 0 && (!i || order[i - 1] < n)), `${lang}: ${order}`);
+    // Now: a slice with its text when it fits whole and the word for its state; a job no slice shows with its role and minutes.
+    assert.match(text, new RegExp(`^ {2}◐ PAGE-ONE {10,}${word('working', '工作中')}$`, 'm'));
+    assert.match(text, new RegExp(`^ {2}◆ PAGE-TWO {2}waits for page one +${word('blocked', '受阻')}$`, 'm'));
+    assert.match(text, new RegExp(`^ {2}◉ imp {2}Tidy the synthetic docs.* 5${word('m', '分钟')}$`, 'm'));
+    // Latest: the three newest landed slices by commit date, each with its state and age.
+    assert.deepEqual(text.match(/^ {2}[◇✓] [A-Z-]+/gm), ['  ◇ DATA-ONE', '  ◇ WATCH-LINK', '  ◇ SENTENCE-CUT']);
+    assert.match(text, new RegExp(`^ {2}◇ DATA-ONE {10,}${word('to try 1d', '待试用 1天')}$`, 'm'));
+    assert.match(text, new RegExp(`^ {2}◇ SENTENCE-CUT {10,}${word('to try 7d', '待试用 7天')}$`, 'm'));
+    assert.match(text, /^[█▓░]{40}$/m, 'the current milestone\'s bar under Progress');
+    // The four rows under Latest each open their page.
+    assert.deepEqual([...new Set(frame.workboard.rows.map((r) => r.item).filter((i) => i?.startsWith('project:page:')))], ['progress', 'tree', 'docs', 'control'].map((p) => `project:page:${p}`));
+  }
+  // Wider: five rows of Latest, accepted ones with their word; an accepted slice and its text on one row.
+  const wide = plain(hub(120, 40)).join('\n');
+  assert.deepEqual(wide.match(/^ {2}[◇✓] [A-Z-]+/gm), ['  ◇ DATA-ONE', '  ◇ WATCH-LINK', '  ◇ SENTENCE-CUT', '  ✓ REVIEW-ONE', '  ◇ NATIVE-ROWS']);
+  assert.match(wide, /^ {2}✓ REVIEW-ONE {2}the whole-project review, changes required {10,}accepted 8d$/m);
+  // A short panel: `room` is the height less the tab row and the footer. Latest gives up its oldest rows one by one, then goes;
+  // then the bar, then the blank rows; Waiting for you, Now and the page rows stay (the page scrolls for the rest).
+  const shape = (height) => {
+    const rows = hub(40, height).workboard.rows, plainRows = rows.map((r) => stripAnsi(r.text).trimEnd());
+    return { rows: rows.length, latest: plainRows.filter((r) => /^ {2}[◇✓] /.test(r)).length, bar: plainRows.some((r) => /^[█▓░]+$/.test(r)), blank: plainRows.filter((r) => !r).length,
+      kept: ['Waiting for you', 'Now', 'Progress', 'Working tree', 'Docs', 'Control plane'].every((h) => plainRows.some((r) => r.startsWith(h))) && plainRows.filter((r) => /^([?!]|  [◐◆◉]) /.test(r)).length === 5 };
+  };
+  const shapes = Object.fromEntries([40, 23, 22, 21, 20, 18, 17, 16, 12, 6].map((h) => [h, shape(h)]));
+  assert.deepEqual([40, 23, 22, 21, 20].map((h) => shapes[h].latest), [3, 3, 2, 1, 0], 'Latest folds to its newest rows first');
+  assert.ok([40, 23, 22, 21, 20, 18].every((h) => shapes[h].bar), 'the bar stays while Latest folds');
+  assert.deepEqual([18, 17, 16, 12, 6].map((h) => [shapes[h].bar, shapes[h].blank]), [[true, 3], [false, 3], [false, 0], [false, 0], [false, 0]], 'then the bar, then the gaps');
+  for (const h of [40, 23, 22, 21, 20, 18, 17, 16, 12, 6]) {
+    assert.ok(shapes[h].kept, `${h}: Waiting for you, Now and the pages stay`);
+    if (h >= 17) assert.ok(shapes[h].rows <= h - 2, `${h}: the hub fits the room it has`);
+  }
+  assert.equal(shapes[40].rows, 21);
+  // Nothing landed: no Latest section; nothing waiting: no Waiting for you; the pages never go.
+  const quiet = plain(hub(40, 40, 'en', { ...f.rich, ledger: [], waiting: [] })).join('\n');
+  assert.doesNotMatch(quiet, /Latest|Waiting for you/);
+  assert.match(quiet, /^Control plane /m);
+  // The shortest panel scrolls: the cursor goes down to the last page row and the view follows it.
+  let frame = hub(40, 8);
+  frame.state.projectCursor = 'project:page:control';
+  frame = f.render(40, 'en', frame.state, 8, f.rich);
+  assert.match(plain(frame).join('\n'), /^Control plane /m);
+});
 test('Each Project page keeps its own cursor and scroll, leaving it and across a panel reload', async (t) => {
   const f = await fixture(t), height = 8;
-  let frame = f.render(80, 'en', 'control', height);
-  for (let i = 0; i < 10; i++) frame = f.render(80, 'en', press(frame, 'down').state, height);
+  // The healthy roles and the files are open, so the page is longer than the panel.
+  let frame = f.render(80, 'en', onPage('control', { projectFolded: new Set(['agents']) }), height);
+  for (let i = 0; i < 12; i++) frame = f.render(80, 'en', press(frame, 'down').state, height);
   const { projectCursor: cursor, projectScroll: scroll } = frame.state;
-  assert.ok(scroll > 0 && cursor.startsWith('project:file:'), 'a short panel scrolls the page with the cursor');
+  assert.ok(scroll > 0 && cursor.startsWith('project:') && !cursor.startsWith('project:page:'), 'a short panel scrolls the page with the cursor');
   const before = plain(frame);
   frame = f.render(80, 'en', press(frame, 'escape').state, height);
   assert.equal(frame.state.projectCursor, 'project:page:control');
@@ -597,8 +670,15 @@ test('polish: Next text aligns without filename tails and slice states use the b
   const f = await fixture(t);
   for (const width of [80, 120])
     for (const lang of ['en', 'zh']) {
-      const frame = f.render(width, lang, 'progress'),
+      // Two bullets and a `more` row; Enter on it shows all five (and `fewer` folds them again).
+      const short = f.render(width, lang, 'progress');
+      assert.equal(short.workboard.rows.filter((r) => /:next:\d+$/.test(r.item ?? '')).length, 2);
+      const more = short.workboard.rows.find((r) => r.item === 'project:fold:next');
+      assert.match(stripAnsi(more.text).trimEnd(), lang === 'en' ? /^ {2}▸ 3 more$/ : /^ {2}▸ 还有 3 项$/);
+      short.state.projectCursor = 'project:fold:next';
+      const frame = f.render(width, lang, press(short, 'enter').state),
         next = frame.workboard.rows.filter((r) => /:next:\d+$/.test(r.item ?? ''));
+      assert.match(stripAnsi(frame.workboard.rows.find((r) => r.item === 'project:fold:next').text).trimEnd(), lang === 'en' ? /^ {2}▾ fewer$/ : /^ {2}▾ 收起$/);
       // Every bullet is one row here (they fit), after a two-cell bullet mark and no filename tail; one that fits has no fold,
       // so Enter and o both open STATE.md.
       assert.equal(next.length, 5);
@@ -613,7 +693,9 @@ test('polish: Next text aligns without filename tails and slice states use the b
       }
     }
   const coloured = f.render(120, 'en', 'progress', 56, f.data, true, 'unicode', 'mocha');
-  const bar = coloured.workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text))).text;
+  // The hub's bar counts the whole ledger when no milestone is current: working first, then blocked.
+  const whole = f.render(120, 'en', undefined, 56, { ...f.data, ladder: { ...f.data.ladder, current: undefined } }, true, 'unicode', 'mocha');
+  const bar = whole.workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text).trimEnd())).text;
   const inks = [...bar.matchAll(/(\x1b\[[0-9;]+m)[█▓░]+/g)].map((m) => m[1]);
   const row = (frame, id) =>
     frame.workboard.rows.find((r) => stripAnsi(r.text).includes(id) && /:slice:\d+$/.test(r.item ?? '')).text;
@@ -624,7 +706,7 @@ test('polish: Next text aligns without filename tails and slice states use the b
   assert.match(stripAnsi(row(ascii, 'NATIVE-TREE')), /^  @ /);
   assert.match(stripAnsi(row(ascii, 'BLOCKED')), /^  ! /);
 });
-test('bar proportions fill the row in EN/ZH and text icons, including zero states', async (t) => {
+test('bar proportions fill the hub row in EN/ZH and text icons; the Progress page names only the states that have slices', async (t) => {
   const f = await fixture(t);
   for (const width of [32, 80, 120]) {
     const segments = progressSegments(f.data.counts, width);
@@ -633,22 +715,23 @@ test('bar proportions fill the row in EN/ZH and text icons, including zero state
       width
     );
     for (const s of segments) assert.ok(Math.abs(s.width - (width * f.data.counts[s.state]) / 7) <= 1);
+    // The hub's bar is the current milestone's (M3b: one working, one landed), up to 60 cells, and the row is the panel's width.
     for (const lang of ['en', 'zh']) {
-      const bar = f.render(width, lang, 'progress').workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text)));
+      const bar = f.render(width, lang).workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text).trimEnd()));
       assert.equal(visualLength(bar.text), width);
+      assert.equal(stripAnsi(bar.text).trimEnd().length, Math.min(width, 60));
+      assert.equal(bar.item, 'project:page:progress');
     }
   }
-  const ascii = f.render(80, 'en', 'progress', 56, f.data, true, 'text');
-  assert.ok(ascii.workboard.rows.some((r) => stripAnsi(r.text) === '#'.repeat(80)));
+  const ascii = f.render(80, 'en', undefined, 56, f.data, true, 'text');
+  assert.ok(ascii.workboard.rows.some((r) => stripAnsi(r.text).trimEnd() === '#'.repeat(60)));
   assert.doesNotMatch(plain(ascii).join('\n'), /[█▓░●]/);
-  const counts = { working: 2, blocked: 0, try: 0, todo: 1, accepted: 0, dropped: 0 };
-  const data = { ...f.data, counts };
-  const text = plain(f.render(120, 'en', 'progress', 56, data)).join('\n');
-  assert.match(text, /blocked 0/);
-  assert.match(text, /landed, to try 0/);
-  assert.match(text, /accepted 0/);
-  assert.match(text, /dropped 0/);
-  assert.equal(progressSegments(counts, 80).find((s) => s.state === 'blocked').width, 0);
+  assert.doesNotMatch(plain(f.render(80, 'en', 'progress', 56, f.data, true, 'text')).join('\n'), /[█▓░●]/);
+  // The Progress page's counts name the states that have slices in the current milestone, none with a zero.
+  const text = plain(f.render(120, 'en', 'progress', 56)).join('\n');
+  assert.match(text, /^ {2}1 working {2}1 to try$/m);
+  assert.doesNotMatch(text, /blocked 0|accepted 0|dropped|\b0 (working|to try)/);
+  assert.equal(progressSegments({ working: 2, blocked: 0, try: 0, todo: 1, accepted: 0, dropped: 0 }, 80).find((s) => s.state === 'blocked').width, 0);
 });
 test('drift distinguishes a missing worktree, an unlisted tree and a landed tree; blocked may have no tree', async (t) => {
   const f = await fixture(t),
@@ -705,7 +788,7 @@ test('slice lines use the same Home worker fact/model and keep hidden jobs avail
   data = await f.collector.collect(true, f.board, NOW + 2);
   assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.cwd, 'docs/handoff/STATE.md'));
   const frame = f.render(120, 'en', 'progress', 56, data);
-  for (const suffix of ['summary', 'chips', 'slice:0']) {
+  for (const suffix of ['summary', 'bar', 'slice:0']) {
     frame.state.projectCursor = frame.workboard.rows.find((r) => r.item?.endsWith(suffix)).item;
     assert.deepEqual(press(frame, 'enter').action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
   }
@@ -775,8 +858,8 @@ test('changed/oversized sources, missing milestone and source fallback never inv
   );
   assert.deepEqual(data.ladder.ids, ['M1', 'M2', 'M3', 'M3b', 'M4']);
   const noMilestone = plain(f.render(80, 'en', 'progress', 56, data)).join('\n');
-  assert.match(noMilestone, /M1  M2  M3  M3b  M4/);
-  assert.doesNotMatch(noMilestone, /\[M1\]|\(M3b\)/);
+  // Nothing says which milestone is current, and the ledger is gone: no bar, no milestone rows, only what is running.
+  assert.doesNotMatch(noMilestone, /M1|M3b|▸ M|\[M1\]|\(M3b\)|0\/\d/);
   assert.deepEqual(data.keys, [
     ['GEMINI_API_KEY', false],
     ['MISTRAL_API_KEY', false],

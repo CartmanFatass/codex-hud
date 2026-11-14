@@ -53,16 +53,18 @@ for (const [number, word, expectedState] of ticketVocabulary) test(`local tracke
   assert.equal(ticket.job, undefined, 'file vocabulary works without a linked job');
   assert.deepEqual(ticket.blockers, [], 'resolved and wontfix dependencies do not block');
   for (const lang of ['en', 'zh']) {
-    const frame = f.render(120, lang, 'tickets', f.data, 'mocha');
+    // The Done lane is folded by default; its rows are open here.
+    const frame = f.render(120, lang, onPage('tickets', { projectFolded: new Set(['agents', 'lane:done']) }), f.data, 'mocha');
     const row = frame.workboard.rows.find((r) => r.files?.[0] === ticket.path), text = stripAnsi(row.text);
-    const glyph = expectedState === 'done' ? '✓' : expectedState === 'dropped' ? '–' : expectedState === 'working' ? '◐' : '●';
-    assert.ok(text.includes(`${glyph} ${number} Vocabulary ${word}`), text);
-    const status = ['needs-triage', 'needs-info', 'ready-for-human'].includes(word) ? word
-      : lang === 'en' ? expectedState : ({ done: '完成', dropped: '已放弃', working: '工作中', ready: '就绪' })[expectedState];
-    assert.match(row.text, new RegExp(`\\x1b\\[[0-9;]+m${status}\\x1b\\[0m`));
+    // A ticket that waits on a person is a `?` in For you, whatever else holds it; the rest keep their state's mark.
+    const asks = ['needs-triage', 'needs-info', 'ready-for-human'].includes(word);
+    const glyph = asks ? '?' : expectedState === 'done' ? '✓' : expectedState === 'dropped' ? '–' : expectedState === 'working' ? '◐' : '●';
+    assert.ok(text.includes(`${glyph} nt ${number} Vocabulary ${word}`), text);
+    const status = asks ? word : expectedState === 'working' ? (lang === 'en' ? 'working' : '工作中')
+      : expectedState === 'dropped' ? (lang === 'en' ? 'dropped' : '已放弃') : undefined;
+    if (status) assert.match(row.text, new RegExp(`\\x1b\\[[0-9;]+m${status}\\x1b\\[0m`));
     if (word === 'wontfix') assert.match(row.text, /\x1b\[[0-9;]+m08 Vocabulary wontfix\x1b\[0m/);
-    const feature = frame.workboard.rows.find((r) => r.item === 'project:fold:tickets:native-tree');
-    assert.match(stripAnsi(feature.text), /1\/12/, 'wontfix is not counted as done even with all boxes checked');
+    assert.match(plain(frame).join('\n'), /nt native-tree 1\/12/, 'wontfix is not counted as done even with all boxes checked');
   }
 });
 test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim and no empty section', async (t) => {
@@ -75,10 +77,11 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
     if (width >= 56) assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +3\/14 done · 2 working · 2 blocked/ : /工单 +3\/14 完成 · 2 工作中 · 2 受阻/);
     if (width >= 80) {
       assert.match(text, lang === 'en' ? /2 features · 14 tickets/ : /2 个功能 · 14 个工单/);
-      assert.match(text, lang === 'en' ? /imp working 12m/ : /imp 工作中 12分钟/);
-      assert.match(text, lang === 'en' ? /blocked by 02, 03/ : /受阻于 02, 03/);
+      assert.match(text, lang === 'en' ? /imp 12m/ : /imp 12分钟/);
+      assert.match(text, /◆ nt 04 Settings cleanup +← 02, 03/);
       assert.match(text, /triaging/);
-      assert.match(text, /▸ retired-tools.*2\/2/);
+      assert.match(text, lang === 'en' ? /^▸ Done ─+ 4$/m : /^▸ 已完成 ─+ 4$/m);
+      assert.match(text, /rt retired-tools 2\/2/);
       assert.doesNotMatch(text, /Claude collector|Legacy cleanup|Not a ticket/);
       const entries = plain(hub).join('\n'), at = (word) => entries.indexOf(word);
       const [progress, tickets, tree, docs, control] = (lang === 'en' ? ['Progress', 'Tickets', 'Working tree', 'Docs', 'Control plane'] : ['进度', '工单', '工作区', '文档', '控制面']).map(at);
@@ -87,26 +90,37 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
   }
   const coloured = f.render(120, 'en', 'tickets', f.data, 'mocha');
   const row = coloured.workboard.rows.find((r) => stripAnsi(r.text).includes('triaging'));
-  assert.match(row.text, /\x1b\[[0-9;]+mready · triaging\x1b\[0m/);
+  assert.match(row.text, /\x1b\[[0-9;]+mtriaging\x1b\[0m/);
   fs.rmSync(join(f.cwd, '.scratch'), { recursive: true });
   const data = await f.collector.collect(true, f.board, NOW + 3);
   assert.deepEqual(data.tickets, []);
   assert.doesNotMatch(plain(f.render(80, 'en', undefined, data)).join('\n'), /Tickets|native-tree|retired-tools/, 'no Tickets entry on the hub');
   assert.match(plain(f.render(80, 'en', 'tickets', data)).join('\n'), /Project › Tickets\n\n  none/);
 });
-test('completed feature starts folded; Enter/o toggle it using existing Project input without mutating state on render', async (t) => {
+test('tickets are lanes by state: For you first, then Working, Ready, Blocked; Done starts folded and Enter/o toggle it without mutating state on render', async (t) => {
   const f = await fixture(t), state = { ...initialMonitorState(), mainTab: 'project', projectPage: 'tickets' };
   let frame = f.render(120, 'en', state);
   assert.equal(state.projectFolded, undefined);
-  frame.state.projectCursor = 'project:fold:tickets:retired-tools';
+  const lines = plain(frame), at = (re) => lines.findIndex((l) => re.test(l));
+  // The lanes in order, each with its count; the meter counts the done tickets of every feature, the codes name the features.
+  assert.ok(at(/^For you ─+ 3$/) < at(/^Working ─+ 2$/) && at(/^Working ─+ 2$/) < at(/^Ready ─+ 3$/) && at(/^Ready ─+ 3$/) < at(/^Blocked ─+ 2$/) && at(/^Blocked ─+ 2$/) < at(/^▸ Done ─+ 4$/));
+  assert.match(lines.join('\n'), /^ {2}━{3}─{13} 3\/14$/m);
+  assert.match(lines.join('\n'), /^ {2}nt native-tree 1\/12 {2}rt retired-tools 2\/2$/m);
+  // For you holds what waits on a person, ahead of anything its blockers say; a blocked ticket names its blockers.
+  const lane = (name) => lines.slice(at(new RegExp(`^${name} ─`)) + 1).slice(0, 6).filter((l) => /^ {2}\S/.test(l)).join('\n');
+  assert.match(lane('For you'), /\? nt 10 Vocabulary needs-triage +needs-triage +0\/1/);
+  assert.match(lane('For you'), /\? nt 12 Vocabulary ready-for-human +ready-for-human +0\/1/);
+  assert.match(lane('Working'), /◐ nt 02 Home lanes +imp 12m +1\/4/);
+  assert.match(lane('Blocked'), /◆ nt 05 Shortcuts +← 03 ● +0\/1/);
+  assert.doesNotMatch(lines.join('\n'), /Claude collector/);
+  frame.state.projectCursor = 'project:fold:lane:done';
   frame = f.render(120, 'en', press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /✓ 01 Claude collector.*done.*0\/2/);
-  assert.match(plain(frame).join('\n'), /✓ 02 Legacy cleanup.*done.*2\/2/);
+  assert.match(plain(frame).join('\n'), /^Done ─+ 4$/m);
+  assert.match(plain(frame).join('\n'), /✓ rt 01 Claude collector +0\/2/);
+  assert.match(plain(frame).join('\n'), /✓ rt 02 Legacy cleanup +2\/2/);
   frame = f.render(120, 'en', press(frame, 'open-session').state);
   assert.doesNotMatch(plain(frame).join('\n'), /Claude collector/);
-  frame.state.projectCursor = 'project:fold:tickets:native-tree';
-  frame = f.render(120, 'en', press(frame, 'enter').state);
-  assert.doesNotMatch(plain(frame).join('\n'), /Home lanes/);
+  assert.match(plain(frame).join('\n'), /^▸ Done ─+ 4$/m);
 });
 test('Enter on a ticket shows its checklist and latest comment in the panel, a second Enter folds it; raw o opens the file in a fake herdr tab', async (t) => {
   const f = await fixture(t), log = join(f.root, 'open.jsonl'), bin = join(f.root, 'bin');
@@ -151,13 +165,11 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
   assert.deepEqual(calls.slice(3), calls.slice(0, 3));
   // A ticket with no checklist says so; a long title keeps its row and the status moves under it at 40 columns.
   const bare = f.render(40, 'en', onPage('tickets', { projectFolded: new Set(['agents', 'ticket:native-tree:06-polish.md']) }));
-  assert.match(plain(bare).join('\n'), /● 06 Polish +ready · triaging +0\/0\n +no checklist/);
-  assert.match(plain(bare).join('\n'), /04 Settings cleanup +0\/2\n +blocked by 02, 03/);
-  // Feature rows carry a done/total meter: thin, as full as the done share (a started one never empty, an unfinished one never full).
-  const meters = plain(f.render(120, 'en', 'tickets')).join('\n');
-  assert.match(meters, /native-tree +━─{9} 1\/12 done/);
-  assert.match(meters, /▸ retired-tools +━{10} 2\/2 done/);
-  assert.match(plain(f.render(40, 'en', 'tickets')).join('\n'), /native-tree +━───── 1\/12\n/, 'six cells and no word at 40 columns');
+  assert.match(plain(bare).join('\n'), /● nt 06 Polish +triaging +0\/0\n +no checklist/);
+  assert.match(plain(bare).join('\n'), /◆ nt 04 Settings cleanup +← 02, 03 +0\/2\n/, 'the blockers share the row at 40 columns');
+  // One meter for every ticket: thin, as full as the done share (a started one never empty, an unfinished one never full).
+  assert.match(plain(f.render(120, 'en', 'tickets')).join('\n'), /^ {2}━{3}─{13} 3\/14$/m);
+  assert.match(plain(f.render(40, 'en', 'tickets')).join('\n'), /^ {2}━{3}─{13} 3\/14$/m, 'the same at 40 columns');
 });
 test('Home collects no tickets; warm signatures read/parse nothing, changes unblock and reorder without cached overlays', async (t) => {
   const f = await fixture(t), calls = observe(t);

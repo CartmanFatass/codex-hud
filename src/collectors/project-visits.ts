@@ -36,15 +36,22 @@ export class ProjectVisits {
     return [...this.seen.keys()];
   }
 }
-/** What the Projects list shows of one project. */
+/** What the Projects list shows of one project. `latest` is what it is doing: the slices working, else the newest landed to try, else the newest accepted (ledger order, no dates, no Git). */
 export interface ProjectOverview {
   hasState: boolean; milestone?: string; waiting: number; running: number;
   counts: ProjectSnapshot['counts']; open: number; at?: number;
+  latest?: { state: 'working' | 'blocked' | 'try' | 'accepted'; ids: string[] };
 }
+const latestOf = (ledger: ProjectSnapshot['ledger']): ProjectOverview['latest'] => {
+  const ids = (state: string) => ledger.filter((r) => r.state === state).map((r) => r.id);
+  for (const state of ['working', 'blocked'] as const) if (ids(state).length) return { state, ids: ids(state) };
+  for (const state of ['try', 'accepted'] as const) if (ids(state).length) return { state, ids: ids(state).slice(-1) };
+};
 const overviewOf = (data: ProjectSnapshot, running: number): ProjectOverview => {
-  const newest = Math.max(data.updatedAt ?? 0, data.tickets[0]?.at ?? 0);
+  const newest = Math.max(data.updatedAt ?? 0, data.tickets[0]?.at ?? 0), latest = latestOf(data.ledger);
   return { hasState: !!data.statePath, milestone: data.ladder.current, waiting: data.waiting.length, running, counts: data.counts,
-    open: data.tickets.flatMap((f) => f.tickets).filter((r) => r.state !== 'done' && r.state !== 'dropped').length, ...(newest ? { at: newest } : {}) };
+    open: data.tickets.flatMap((f) => f.tickets).filter((r) => r.state !== 'done' && r.state !== 'dropped').length,
+    ...(latest ? { latest } : {}), ...(newest ? { at: newest } : {}) };
 };
 /**
  * The light read behind the Projects list, one pass for every listed root while the list is visible: STATE and tickets as

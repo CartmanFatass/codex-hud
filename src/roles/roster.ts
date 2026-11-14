@@ -552,7 +552,8 @@ export function recordFailureExhaustion(
 }
 
 export interface PlaceCatalog {
-  pi: { models: string[]; thinking: string[] };
+  /** `include`: which providers' models the Control plane's picker offers by default (`catalog.pi.include`, the owner's `harnesses.json` over the shipped one). */
+  pi: { models: string[]; thinking: string[]; include: Record<string, string[]> };
   cli: { agents: CliAgent[]; models: Record<CliAgent, string[]>; thinking: string[] };
   bro: {
     tools: ('jev-ask' | 'jev-aistudio' | 'jev-flow')[];
@@ -587,6 +588,15 @@ function mergeStrings<T extends string>(base: T[], extra: unknown, allow?: reado
 function mergeLists<T extends string>(sources: unknown[], allow?: readonly T[]): T[] {
   let out: T[] = [];
   for (const source of sources) out = mergeStrings(out, source, allow);
+  return out;
+}
+/** Provider -> patterns; a later source replaces a provider's patterns whole. Names and patterns are plain tokens with `*` and `?`. */
+function mergeInclude(sources: unknown[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const source of sources)
+    for (const [provider, patterns] of Object.entries(asRecord(source)))
+      if (/^[A-Za-z0-9._-]{1,64}$/.test(provider) && Array.isArray(patterns))
+        out[provider] = patterns.filter((p): p is string => typeof p === 'string' && /^[A-Za-z0-9._*?:-]{1,64}$/.test(p));
   return out;
 }
 function mergeModelMaps(sources: Record<string, unknown>[], keys: readonly string[]): Record<string, string[]> {
@@ -662,6 +672,7 @@ export function placeCatalog(
     pi: {
       models: mergeLists([discovered?.pi, sPi.models, ePi.models, typed.pi]),
       thinking: mergeLists([sPi.thinking, ePi.thinking]),
+      include: mergeInclude([sPi.include, ePi.include]),
     },
     cli: {
       agents: mergeLists<CliAgent>([sCli.agents, eCli.agents], cliAgents),

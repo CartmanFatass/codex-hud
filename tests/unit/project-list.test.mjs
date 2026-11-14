@@ -41,20 +41,31 @@ test('Projects list: the panel project first, then waiting, running, then the mo
   assert.deepEqual(names(frame), ['demo-project', 'waiting-project', 'busy-project', 'bare-project', 'quiet-project', 'old-project']);
   const rows = plain(frame);
   const entry = (name) => rows.slice(rows.findIndex((r) => r.startsWith(name)), rows.findIndex((r) => r.startsWith(name)) + 2);
-  // Name, milestone, waiting `?` and running `◉`; then the bar, one key count (to try, else open tickets) and the age.
+  // Name, milestone, waiting `?` and running `◉`; then what it is doing now (working slices, else the newest landed one) and the age.
   assert.match(entry('demo-project')[0], /^demo-project  M3b +\? 2  ◉ 1$/);
-  assert.match(entry('demo-project')[1], /^  [█▓░]{14}  1 to try +0m$/);
+  assert.match(entry('demo-project')[1], /^  ◐ NATIVE-TREE, ORPHAN working +0m$/);
   assert.match(entry('waiting-project')[0], /^waiting-project  M5 +\? 2$/);
-  assert.match(entry('waiting-project')[1], /^  [█▓░]{14}  2 to try +5h$/);
+  assert.match(entry('waiting-project')[1], /^  ◇ B-TWO to try +5h$/, 'no working slice: the newest landed one, and it is still to try');
   // Two running jobs (one asking) count; the settled one and the idle_grace one in another project do not.
   assert.match(entry('busy-project')[0], /^busy-project  M2 +◉ 2$/);
-  assert.match(entry('busy-project')[1], /^  █{14} +20m$/);
+  assert.match(entry('busy-project')[1], /^  ◐ C-ONE, C-TWO working +20m$/);
+  assert.match(entry('quiet-project')[1], /^  ◐ A-THREE working +3d$/, 'a working slice wins over the accepted ones before it');
   assert.match(entry('old-project')[0], /^old-project  M1$/);
-  assert.match(entry('old-project')[1], /^  █{14} +40d$/);
-  // No STATE.md says so where the bar would be; the open tickets are its key count and the newest ticket its age.
-  assert.match(entry('bare-project')[1], /^  no STATE\.md {5}1 open +2d$/);
+  assert.match(entry('old-project')[1], /^  ✓ D-ONE accepted +40d$/);
+  // No STATE.md says so; the open tickets say how many and the newest ticket is its age.
+  assert.match(entry('bare-project')[1], /^  no STATE\.md · 1 open +2d$/);
   // The last-activity column goes through t(): minutes, hours and days in Chinese too.
-  assert.match(text(l.list(40, 'zh')), /^  无 STATE\.md {5}1 未完成 +2天$/m);
+  assert.match(text(l.list(40, 'zh')), /^  无 STATE\.md · 1 未完成 +2天$/m);
+  assert.match(text(l.list(40, 'zh')), /^  ◐ NATIVE-TREE, ORPHAN 工作中 +0分钟$/m);
+  assert.match(text(l.list(40, 'zh')), /^  ◇ B-TWO 待试用 +5小时$/m);
+  // The overview carries it: the working slices, else the newest landed one (ledger order, no dates and no Git behind the list).
+  const latest = (name) => l.projects.find((p) => p.name === name).overview.latest;
+  assert.deepEqual(latest('demo-project'), { state: 'working', ids: ['NATIVE-TREE', 'ORPHAN'] });
+  assert.deepEqual(latest('waiting-project'), { state: 'try', ids: ['B-TWO'] });
+  assert.deepEqual(latest('old-project'), { state: 'accepted', ids: ['D-ONE'] });
+  assert.equal(latest('bare-project'), undefined);
+  // A wide row keeps the bar before it.
+  assert.match(text(l.list(80)), /^  [█▓░]{24}  ◐ NATIVE-TREE, ORPHAN working +0m$/m);
   const zh = text(l.list(40, 'zh'));
   for (const age of ['0分钟', '5小时', '20分钟', '3天', '40天']) assert.match(zh, new RegExp(`${age}$`, 'm'));
   assert.doesNotMatch(zh, /\b\d+[mhd]$/m, 'no English unit left in the Chinese list');
@@ -75,7 +86,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   const view = (state) => l.render(40, 'en', state, 24, l.data, true, 'unicode', 'none', {
     projects, projectName: (projects.find((p) => p.root === state.projectRoot) ?? projects[0]).name });
   let frame = view(onPage());
-  assert.match(text(frame), /^demo-project ─+ ▾ 1\/6$/m);
+  assert.match(text(frame), /^demo-project ─+ M3b ▾ 1\/6$/m);
   // Enter on the name row opens the list with the cursor on the shown project.
   frame.state.projectCursor = 'project:switch';
   frame = view(send(frame, '\r').state);
@@ -88,7 +99,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   frame = view(send(frame, '\r').state);
   assert.equal(frame.state.projectRoot, byName('busy-project'));
   assert.deepEqual([frame.state.projectList, frame.state.projectPage], [undefined, undefined]);
-  assert.match(text(frame), /^busy-project ─+ ▾ 4\/6$/m, 'the hub of that project, numbered by the switch order');
+  assert.match(text(frame), /^busy-project ─+ M3b ▾ 4\/6$/m, 'the hub of that project, numbered by the switch order');
   // Stepping on with ] leaves that hub: Esc no longer goes back to the list it was opened from.
   const stepped = view(send(frame, ']').state);
   assert.equal(stepped.state.projectBack, undefined);
@@ -101,7 +112,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   assert.deepEqual([frame.state.projectList, frame.state.projectRoot], [undefined, byName('busy-project')]);
   // That hub was not reached from the list now: Esc on it does what it always did (nothing here), so keys can be given back.
   assert.equal(esc(frame).state.projectList, undefined);
-  assert.match(text(view(esc(frame).state)), /^busy-project ─+ ▾ 4\/6$/m);
+  assert.match(text(view(esc(frame).state)), /^busy-project ─+ M3b ▾ 4\/6$/m);
   // One click on an entry opens its hub; a click on the crumb row returns to the shown project's hub.
   frame = view(onPage(undefined, { projectList: true }));
   const at = frame.workboard.rows.findIndex((r) => r.item === `project:list:${byName('waiting-project')}`);
@@ -127,7 +138,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   frame = view(send(view(onPage(undefined, { projectList: true, projectRoot: byName('quiet-project') })), '1').state);
   frame = view(send(frame, '2').state);
   assert.deepEqual([frame.state.projectList, frame.state.projectRoot], [undefined, byName('quiet-project')]);
-  assert.match(text(frame), /^quiet-project ─+ ▾ 2\/6$/m);
+  assert.match(text(frame), /^quiet-project ─+ M3b ▾ 2\/6$/m);
   // The list survives the panel's own restart: the whole state goes through the reload place.
   const listed = onPage(undefined, { projectList: true, projectRoot: byName('quiet-project') });
   process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: listed }, (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
@@ -135,7 +146,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   assert.deepEqual([place.state.projectList, place.state.projectRoot], [true, byName('quiet-project')]);
   assert.match(plain(view(place.state))[0], /^‹ Projects/);
   // A root that left the list is the panel's own again; a list that shrank to one project is the plain hub.
-  assert.match(text(l.render(40, 'en', place.state, 24, l.data, true, 'unicode', 'none', { projects: projects.slice(0, 1), projectName: 'demo-project' })), /^demo-project ─+$/m);
+  assert.match(text(l.render(40, 'en', place.state, 24, l.data, true, 'unicode', 'none', { projects: projects.slice(0, 1), projectName: 'demo-project' })), /^demo-project ─+ M3b$/m);
 });
 test('one project shows no list: no `▾ i/n`, no list, Esc and [ ] as before', async (t) => {
   const l = await fixture(t), one = l.projects.slice(0, 1);

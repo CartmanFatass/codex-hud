@@ -49,9 +49,17 @@ export interface HarnessFact {
   name: string;
   ok: boolean;
 }
+/** The merged model lists the picker works from: pi's (with the include list that curates them), each CLI agent's, each browser provider's or tool's. */
+export interface ModelLists {
+  pi: string[];
+  include: Record<string, string[]>;
+  cli: Record<string, string[]>;
+  bro: Record<string, string[]>;
+}
 export interface ControlFacts {
   roles: RoleFact[];
   harnesses: HarnessFact[];
+  models: ModelLists;
   /** pi role definitions behind the pi places (their model and thinking defaults). */
   piRoleFiles: string[];
 }
@@ -122,6 +130,7 @@ export function controlFacts(
   const has = (place: RolePlace) => placeAvailable(place, env, none, null);
   return {
     roles,
+    models: { pi: catalog.pi.models, include: catalog.pi.include, cli: catalog.cli.models, bro: catalog.bro.models },
     piRoleFiles: [...piRoleFiles],
     harnesses: [
       { name: 'pi', ok: has({ harness: 'pi' }) },
@@ -130,6 +139,15 @@ export function controlFacts(
     ],
   };
 }
+
+/** The models a place can be given (its harness's merged list); a Flow place has none, it picks a kind. */
+export function placeModels(place: PlaceFact, lists: ModelLists): string[] | undefined {
+  if (place.harness === 'pi') return lists.pi;
+  if (place.harness === 'cli') return lists.cli[place.label] ?? [];
+  return place.label === 'flow' ? undefined : lists.bro[place.label === 'aistudio' ? 'jev-aistudio' : place.label] ?? [];
+}
+/** The longest model id the picker sets. */
+export const MODEL_ID_MAX = 120;
 
 /** A place's row id on the Control plane page: the role and the place's index in its run list. */
 export const placeItem = (role: string, index: number) => `project:role:${role}:${index}`;
@@ -142,6 +160,8 @@ export interface PlaceEdit {
   op: PlaceOp;
   /** Which way `harness`, `model` and `thinking` cycle; forward when absent. */
   step?: 1 | -1;
+  /** A model chosen in the Control plane's picker: `model` sets it (`''` unsets it, back to the role's default) instead of cycling. */
+  value?: string;
 }
 /** `message` is a panel word (through `t()`); `reason` is the system's own text. `index` is where the cursor goes. */
 export interface EditOutcome {
@@ -241,6 +261,13 @@ export function editPlaces(
       if (!plain(here)) return refuse('launch options are set in the file: o opens it');
       const at = options.findIndex((o) => kindKey(o) === kindKey(here));
       run[i] = options[at < 0 ? (step > 0 ? 0 : options.length - 1) : (at + step + options.length) % options.length]!;
+    } else if (edit.op === 'model' && edit.value !== undefined) {
+      const value = edit.value.trim(), place: Record<string, unknown> = { ...here };
+      if (modelField(here, catalog).field !== 'model') return refuse('no model for this place');
+      if (value.length > MODEL_ID_MAX || /[\x00-\x1f\x7f]/.test(value)) return refuse('not a model id');
+      if (value) place.model = value;
+      else delete place.model;
+      run[i] = place as unknown as RolePlace;
     } else if (edit.op === 'model' || edit.op === 'thinking') {
       const { field, values } =
         edit.op === 'model'

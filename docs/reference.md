@@ -250,21 +250,33 @@ the last good text and valid ranking. Models off hides both.
 summary, six-state progress bar/legend and up to six open tickets per feature.
 Tickets shrink first as height falls, then legend, bar, summary and the block.
 Enter on the progress block opens the Project Progress page; on a ticket row, the
-Tickets page, at that feature.
+Tickets page.
 
 ## Project
 
-Project is a hub with one page per section. The hub's first row names the project
-(the panel's directory name; see Switching projects below), then Waiting for you (STATE's waiting items, folds with
-Enter), then one row per page with a one-line summary: **Progress** (milestone,
-working, to try, blocked; a stacked bar under it), **Tickets** (done/total, working,
-blocked; absent when the project has no tickets), **Working tree** (branch, changed,
-worktrees, ahead/behind, editing jobs), **Docs** (spec milestone, newest review) and **Control
-plane** (roles, keys present, browser). A row too short for its facts drops the last
-ones, never part of one. Enter or one click opens a page; its crumb row
+Project is a hub with one page per section, laid out as a timeline: what waits for you,
+what is happening, what landed, then where each page stands. Top to bottom the hub has:
+
+- the project's name row (the panel's directory name; see Switching projects below) with the
+  current milestone;
+- **Waiting for you**: STATE's waiting items, folding with Enter;
+- **Now**: a row per working or blocked slice (`◐ ID  text`, then the job's role and minutes,
+  `asking ?`, `blocked`, or what is out of step), then the project's unsettled HUD jobs that no
+  slice shows (`◉ role  title  age`). A slice's text goes on its row only when it fits whole;
+- **Latest**: the newest landed slices (to try, accepted), newest first by the commit date the
+  ledger read already has (`◇ ID  text  to try 10h`); three rows at 40 columns, five wider;
+- one row per page with a one-line summary: **Progress** (milestone, working, to try, blocked; the
+  current milestone's bar under it), **Tickets** (done/total, working, blocked; absent when the
+  project has no tickets), **Working tree** (branch, changed, worktrees, ahead/behind, editing
+  jobs), **Docs** (spec milestone, newest review) and **Control plane** (roles at their limit,
+  roles, keys present, browser). A row too short for its facts drops the last ones, never part
+  of one.
+
+A panel shorter than the hub loses **Latest** first (to its newest rows, then whole), then the
+bar and the blank rows between blocks; Waiting for you, Now and the page rows stay (the page
+scrolls with the cursor when even those do not fit). Enter or one click opens a page; its crumb row
 `‹ Project › Page` replaces the tabs, and Esc or a click on the crumb returns to the
-hub with the cursor on that page's row. The pages hold the sections as before
-(native agents under Control plane start folded). Each page keeps its own cursor and
+hub with the cursor on that page's row. Each page keeps its own cursor and
 scroll, also across the panel's self-reload.
 
 Facts come from `docs/handoff/STATE.md` (root `STATE.md` fallback), `docs/spec.md`,
@@ -272,11 +284,10 @@ reviews, roles/convention/instructions and Git/worktrees. No milestone or comple
 is guessed. Key rows contain names/presence only; Browser ✓ means Chrome and
 `jev-ask` exist on PATH, not a running/logged-in browser.
 
-**Progress page.** STATE's Now summary (two rows at most), the six-state bar and legend,
-then milestone chips: the milestones of the ledger's second field in ledger order,
-those before the current one (`Milestone:`) in brackets `[M3]`, the current one in
-parentheses `(M4)`, the rest plain; rows with no milestone (`—`) have no chip. Too many
-for two rows: the oldest give way, never the current one. Then four sections:
+**Progress page.** STATE's Now summary (two rows at most), then the current milestone (`Milestone:`,
+or the whole ledger when none is current): its name, a bar and `accepted/total`, the states
+that have slices (`1 working  1 blocked  2 to try  3 todo`, none with a zero), and one row for
+what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`). Then three sections:
 
 - **Now**: ledger slices in `working`/`blocked` (drift marks mean a missing or unlisted
   worktree or a non-active ledger state, never a write back to STATE), each with its
@@ -285,13 +296,15 @@ for two rows: the oldest give way, never the current one. Then four sections:
   `job.json` title, else the first heading (or line) of its `brief.md`, from the collector's
   signature-cached, size-bounded read (full collection only). Each such row is a stop of its own: Enter or `o`
   opens its report, else its brief, and a long list pages by keyboard.
-- **Next**: STATE's `## Next`, a bullet at most two rows; Enter on a cut one (`…`) shows
-  all of it, again folds it. A bullet that fits opens STATE.md.
-- **To try**: `try` rows by milestone, newest milestone first and open, the others
-  folded. A row is `ID · date commit` with its text on the rows under it. The date is the
-  ledger row's last hash (7-40 hex) read through the safe Git policy; none when Git
-  does not know it, never guessed.
-- **Done**: `accepted` rows grouped the same way, every group folded; Enter opens one.
+- **Next**: STATE's `## Next`, the first two bullets of at most two rows each (Enter on a cut one,
+  `…`, shows all of it, again folds it; a bullet that fits opens STATE.md) and a `2 more` row that
+  shows the rest (`fewer` folds them again).
+- **History**: the last seven days in full, newest first, as a dated feed: a row per landed
+  slice (`◇`/`✓`, its id, its text and its age, `to try 1d` or `3d`), where Enter shows its
+  milestone, commit and day. Older work is one row per milestone (`▸ M4  ✓ 7 accepted  ◇ 1 to try  15–24d`,
+  with the span of days) that Enter opens into its slices; a slice with no commit date is never
+  guessed and sits under its milestone. The date is the ledger row's last hash (7-40 hex) read
+  through the safe Git policy, in the one batched `git log` the collector already runs.
 
 Rows wrap onto a second row rather than cut their only line at 40 columns. Enter or `o`
 on a row opens STATE.md; on a fold, Enter folds and `o` folds only where the row has no file.
@@ -303,35 +316,73 @@ Otherwise unfinished/unresolved dependencies block; no blockers means ready.
 Numbers/titles resolve within that feature; unknown status text stays dim.
 A job with the matching package and ticket number/filename adds role/state/age,
 never completion. The newest-64-directory job lookup is shared with slice blocks.
-**Tickets page**: one row per feature with a done/total meter, Enter folds its tickets;
+**Tickets page**: a done/total meter for every ticket and a short code for each feature (`hp hub-pages 4/7`),
+then the tickets in lanes by state across features, one row each (`◐ hp 06 Projects list  imp 12m  1/3`:
+state mark, the feature's code, number and title; on the right what matters for the lane, then
+checked/total). **For you** comes first: tickets waiting on a person (`needs-triage`, `needs-info`,
+`ready-for-human`) with their latest comment under the row, whatever else holds them. **Working** holds
+tickets that are claimed or have a live job; **Ready** the rest that can start; **Blocked** names its
+blockers (`← 03 ●`, the mark that of the blocker); **Done** starts folded (Enter opens it).
 Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under
 `## Comments`) under it, a second Enter folds it; `o` opens the ticket file.
 
-**Control plane page.** Four groups, then the files as before (invalid or ignored role files, the
-convention, pi role definitions, instruction files, native agents, keys, browser): **Roles** (imp,
-reviewer, sonic, architect, oracle and any other role), **Project roles** (roles whose file comes from the
-project's own `.hud/roles`, which wins), **Browser tasks** (roles that run only on browser places:
-pro, flow) and **Harnesses** (which of `pi`, `agy`, `claude`, `codex`, `grok`, `jev-ask`,
-`jev-aistudio`, `jev-flow` this machine has, with the mark legend). A role is one row per place on one
-line: the first is the primary, `↳` rows are its fallbacks in order. A row reads mark, role,
-harness, model, thinking; marks are `◉` in use (where the next `hud_create` runs: the first place
-that is installed and not exhausted), `○` standby, `✗` exhausted (rows of 56+ columns add the time
-left) and `−` harness not installed. Rows of 80+ columns end with whose file is in force:
-`default` (shipped), `yours` (`$HUD_HOME/roles/<role>.json`) or `project`. Enter and `o` open that
-role file.
+**Control plane page.** What needs you first, then the roles, then the files.
+
+- **Needs attention** (with its count): a role with a place at its limit (`✗ imp  pi exhausted 42m`)
+  and, under it, `next job → ◉ agy gemini-4 high`, the place the next `hud_create` will use (`none`
+  when there is none); a role with nowhere to run (`− flow  flow image not installed`); a role file
+  that does not load (`! bad.json  unparseable JSON`). Each row is a stop that takes the place keys.
+- **Healthy** (folded to one row of names; Enter opens it): the other roles, one row per place
+  under **Roles** (imp, reviewer, sonic, architect, oracle and any other role), **Project roles** (roles
+  whose file comes from the project's own `.hud/roles`, which wins) and **Browser tasks** (roles that
+  run only on browser places: pro, flow). A role is one row per place on one
+  line: the first is the primary, `↳` rows are its fallbacks in order. A row reads mark, role,
+  harness, model, thinking; marks are `◉` in use (where the next `hud_create` runs: the first place
+  that is installed and not exhausted), `○` standby, `✗` exhausted (rows of 56+ columns add the time
+  left) and `−` harness not installed. Rows of 80+ columns end with whose file is in force:
+  `default` (shipped), `yours` (`$HUD_HOME/roles/<role>.json`) or `project`. Enter and `o` open that
+  role file.
+- **Harnesses**: which of `pi`, `agy`, `claude`, `codex`, `grok`, `jev-ask`, `jev-aistudio`,
+  `jev-flow` this machine has, with the mark legend.
+- **Files** (folded to `keys 3/5 · browser ✓ · missing …`; Enter opens it): invalid or ignored role files, the
+  convention, pi role definitions, instruction files, native agents (folded inside), keys, browser.
 
 On a place row (Control plane only): `p`/`P` next/previous harness (`pi`, then each CLI agent for a
 role that has CLI instructions; a browser role walks chatgpt, gemini, aistudio) with that harness's
-default model from `harnesses.json`; `m`/`M` model from the catalog (a Flow place: image/video);
-`e`/`E` thinking. Each cycle passes through "unset" (the role's or harness's own default) before it
-wraps. `+` adds a fallback at the end (the first harness not yet listed, else another model of the
-same one); `-` removes the place (one always stays); `K`/`J` move it earlier/later; `x` clears its
-exhausted mark; `r` refreshes model lists from `pi`, `agy` and `grok`. For `pi`, `agy` and `grok`,
+default model from `harnesses.json`; `e`/`E` thinking (a Flow place: image/video with `m`). Each cycle
+passes through "unset" (the role's or harness's own default) before it wraps. `+` adds a fallback at
+the end (the first harness not yet listed, else another model of the same one); `-` removes the
+place (one always stays); `K`/`J` move it earlier/later; `x` clears its exhausted mark; `r` refreshes
+model lists from `pi`, `agy` and `grok`.
+
+`m` (or `M`) picks the model in a picker that replaces the page: on `pi` the **provider** first, then
+that provider's models; on another harness its models at once (a harness with a single model or none
+cycles it as before). One line a row at 40 columns: the section row names the role, place and
+provider (`imp · pi › openai ─ model`), under it the current model, a filter line (`/ text▌ 2/4`) and
+the entries around the picked one (`◉` marks the current one; at the providers each shows its count).
+Typing filters the entries live (substring, any case); ↑↓/PgUp/PgDn pick; Enter on a provider opens
+it and on a model sets it; the first model row, `default`, unsets the model; text no model matches is
+set as typed (`⏎ openai/new-model`: on `pi` within the provider, or a whole `provider/model` typed at
+the providers); Tab shows every provider and model instead of the curated ones; ← or Backspace on an
+empty filter goes back to the providers; Esc, Ctrl+C or a click leaves the picker, writing nothing.
+Every key is the picker's while it is open (`q` types a `q`).
+
+The curated list is what the owner uses, not all of `pi`'s ~170 models: per provider, only the models
+its patterns name, and of those only the newest of each family (a family is the id with its version
+numbers and date stamps removed: `claude-opus-4-5`, `4-6`, `5`, `5-5` are one, newest `5-5`; a dated
+snapshot loses to the undated id of its version). A role's current model is always offered, even
+when curation would hide it. The patterns are `catalog.pi.include`, shipped in `catalog.json`
+(`arena` `*`, `mistral` `deepseek*`, `anthropic` `*opus*`, `openai` `gpt-6*`) and overridable per
+provider in `$HUD_HOME/harnesses.json`: `{"catalog":{"pi":{"include":{"arena":["*"],"openai":["gpt-6*"]}}}}`
+(`*` and `?` globs on the name after `provider/`, any case).
+
+For `pi`, `agy` and `grok`,
 models come first from each harness's own list command (`pi --list-models`, `agy models`,
 `grok models`), run only when the Control plane page opens or on `r` (never on the refresh tick)
 and cached under `$HUD_HOME/display` for a day (failed or missing commands fall back silently);
 next come shipped `catalog.json` and `$HUD_HOME/harnesses.json`'s `catalog` key (which `claude`
-and `codex` always use), then any models set in `$HUD_HOME/roles/*.json`. A change writes `$HUD_HOME/roles/<role>.json` (atomic, 0600, seeded from
+and `codex` always use), then any models set in `$HUD_HOME/roles/*.json`; the picker curates that
+merged list and never changes it. A change writes `$HUD_HOME/roles/<role>.json` (atomic, 0600, seeded from
 the shipped role, other fields and place keys kept) or `$HUD_HOME/exhausted.json`; the next `hud_roster`
 and `hud_create` read them, so the page shows what the next job uses. A role from the project's file
 cannot be changed here, and a harness switch refuses a place whose file sets launch options
@@ -352,10 +403,12 @@ panel's own never dropped, the oldest other one first) and collects only the sho
 With one project there is no `▾ i/n` and no list.
 
 **Projects list.** Two rows per project: its name, current milestone, `?` the count of
-STATE's waiting items and `◉` the count of unsettled HUD jobs under its root; then its
-stacked bar, one key count (landed to try, else open tickets) and the time since it was
-last touched (STATE.md or a ticket file, whichever is newer; a ledger commit date would
-need Git). A project without STATE.md shows `no STATE.md` where the bar would be. Order:
+STATE's waiting items and `◉` the count of unsettled HUD jobs under its root; then what it is
+doing now (`◐ A-ONE, A-TWO working`: the slices working, else blocked, else the newest landed
+one `◇ B-TWO to try`, else the newest accepted `✓ D-ONE accepted`, in ledger order) and the time
+since it was last touched (STATE.md or a ticket file, whichever is newer; a ledger commit date
+would need Git). At 80+ columns the project's stacked bar leads the row. A project without
+STATE.md shows `no STATE.md` and its open tickets. Order:
 the panel's own project, then projects with waiting items, then with running jobs, then
 the rest, each group newest first. Enter or one click opens that project's hub (Esc on
 that hub goes back to the list; on a hub not reached from the list Esc does what it
@@ -402,7 +455,8 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 | `1`, `2`, `3` | Home, Project, Changes summary |
 | Tab/Shift-Tab, Left/Right | Home ⇄ Project |
 | `[`, `]` | Project: previous/next project (not on the Projects list); in Codex the prefix then `[` or `]`, ignored while the panel is closed |
-| `p` `m` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / model / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`). Panel focused (in Codex), no prefix commands |
+| `p` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`). Panel focused (in Codex), no prefix commands |
+| `m` (`M`) | Control plane: pick the model of the place under the cursor: provider, then model on `pi`; type to filter, ↑↓ pick, Enter sets (an open provider, or the model), Tab shows every model, ← back, Esc cancels |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |

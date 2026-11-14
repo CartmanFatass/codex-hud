@@ -5,9 +5,11 @@ import { PANEL_COMMAND_TAG, isPanelCommand, type PanelCommand } from './panel-co
 export type WorkbenchInput =
   /**
    * A key. `raw` (with `forward` on) is exactly what the terminal sent for
-   * it, and `key` is '' for a key the panel has no name for.
+   * it, and `key` is '' for a key the panel has no name for. `text` is the
+   * character a printable key types (the workboard profile with `forward`
+   * off, the panel's own keyboard), for the Control plane's model picker.
    */
-  | { type: 'key'; key: string; raw?: string }
+  | { type: 'key'; key: string; raw?: string; text?: string }
   | { type: 'mouse'; x: number; y: number; button: 'left' | 'wheel-up' | 'wheel-down' }
   /** A bracketed paste's body (with `forward` on), markers excluded. */
   | { type: 'paste'; text: string }
@@ -99,9 +101,9 @@ export class WorkbenchInputDecoder {
     // A character split across two reads is held back, not mangled.
     this.pending += this.utf8.write(chunk);
     const inputs: WorkbenchInput[] = [];
-    const key = (name: string | undefined, raw: string) => {
-      if (this.forward) inputs.push({ type: 'key', key: name ?? '', raw });
-      else if (name) inputs.push({ type: 'key', key: name });
+    const key = (name: string | undefined, raw: string, text?: string) => {
+      if (this.forward) inputs.push({ type: 'key', key: name ?? '', raw, ...(text ? { text } : {}) });
+      else if (name || text) inputs.push({ type: 'key', key: name ?? '', ...(text ? { text } : {}) });
     };
     while (this.pending.length) {
       if (this.pasting) {
@@ -149,13 +151,16 @@ export class WorkbenchInputDecoder {
                   K: 'place-up',
                   J: 'place-down',
                   x: 'place-clear',
+                  '\x7f': 'backspace',
+                  '\b': 'backspace',
                   v: 'inspect',
                   ' ': 'inspect',
                 } as Record<string, string>
               )[ch] ?? KEYS[ch])
             : KEYS[ch];
         this.pending = this.pending.slice(ch.length);
-        key(name, ch);
+        // The panel's own keyboard (not one that forwards keys to Codex) also types: a printable key carries its character.
+        key(name, ch, this.profile === 'workboard' && !this.forward && ch >= ' ' && ch !== '\x7f' && !/[\x80-\x9f]/.test(ch) ? ch : undefined);
         continue;
       }
       // A second Escape can begin a prefix command or an arrow sequence.

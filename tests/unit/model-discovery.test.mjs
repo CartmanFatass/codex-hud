@@ -239,7 +239,16 @@ test('live panel spawns list commands only on Control plane open and r refresh, 
     `import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};\nawait runLivePage();\nprocess.exit(0);\n`
   );
   const place = JSON.stringify(
-    { state: { ...initialMonitorState(), mainTab: 'project', projectCursor: 'project:page:control' } },
+    // The healthy roles start folded on the Control plane: they are open here, and the page opens with the cursor on imp's row.
+    {
+      state: {
+        ...initialMonitorState(),
+        mainTab: 'project',
+        projectCursor: 'project:page:control',
+        projectFolded: new Set(['agents', 'files']),
+        projectSaved: { control: { cursor: 'project:role:imp:0', scroll: 0 } },
+      },
+    },
     (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v)
   );
   const child = spawn(process.execPath, [runner], {
@@ -300,8 +309,13 @@ test('live panel spawns list commands only on Control plane open and r refresh, 
   assert.equal(spawns().filter((c) => c === 'agy').length, 2);
   assert.equal(spawns().filter((c) => c === 'grok').length, 2);
 
-  // Press m on imp -> picks the freshly discovered pi model.
+  // Press m on imp -> the picker lists the freshly discovered pi model (Tab shows every model: the shipped curation keeps only
+  // gpt-6 for openai), and Enter on it writes it.
   child.stdin.write('m');
+  await until(() => /provider/.test(stripAnsi(out)), 'the model picker');
+  child.stdin.write('\topenai\r');
+  await until(() => /gpt-live-1/.test(stripAnsi(out)), 'the discovered model is listed');
+  child.stdin.write('live\r');
   await until(
     () => fs.existsSync(join(s.hud, 'roles/imp.json')) && JSON.parse(fs.readFileSync(join(s.hud, 'roles/imp.json'), 'utf8')).run[0].model === 'openai/gpt-live-1',
     'm selects discovered model'

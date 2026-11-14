@@ -213,6 +213,16 @@ places with the shipped catalog and `harnesses.json`, then writes through
 `writeRolePlaces`/`clearExhausted` (`$HUD_HOME/roles/<role>.json`, `exhausted.json`).
 A role file under the project's `.hud/roles` wins in the roster, so it is shown apart and
 refused, and a harness switch refuses a place with launch options it would lose.
+The model is chosen in a picker (`MonitorState.projectInput`, `render/model-input.ts`; rows
+in `render/control-view.ts`): the place and the merged model lists ride on the place rows
+(`MonitorRow.modelPick`, from `ControlFacts.models`) so the handler does no I/O, typing
+reaches it as `text` on the decoder's key input (the panel's own keyboard only), and
+Enter returns the same `role-edit` action with the model id as `value`. What the picker
+offers is `roles/model-curation.ts`, a pure function over discovery's list and
+`catalog.pi.include` (providers and patterns, the newest model of each family, the current
+model always kept); discovery and the merge are unchanged. What is on screen needs no new
+data: the hub's Latest and Progress's History order by the commit dates the ledger read
+already carries, and the Projects list's second row is `ProjectOverview.latest`.
 The next `hud_create` reads the same files. Keys are reduced
 to name/presence booleans, never retained as values. Browser availability is only a
 PATH check for Chrome and `jev-ask`, not a login/health claim.

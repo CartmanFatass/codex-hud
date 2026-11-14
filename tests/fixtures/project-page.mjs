@@ -9,6 +9,7 @@ import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi } from '../../dist/render/colors.js';
+import { placeItem } from '../../dist/roles/role-control.js';
 export const NOW = Date.parse('2026-11-12T12:35:00Z');
 export const TREE = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(NOW) };
 export async function projectFixture(root) {
@@ -135,12 +136,24 @@ export function richControl(data) {
       place('bro', 'gemini', null, null, 'active'), place('bro', 'aistudio', 'gemini-4-argon', null, 'standby')]),
     role('flow', 'browser', 'default', [place('bro', 'flow', null, null, 'missing', { kind: 'video' })]),
   ];
-  return { ...data, roles, roleCount: roles.length };
+  return { ...data, roles, roleCount: roles.length, models: MODEL_LISTS };
 }
+/** What the harnesses list for the model picker, all synthetic but shaped like the real ids: versions (4-5, 5-5, 6.1), a dated
+ *  snapshot beside its undated id, a family that ended (o1), a provider the include list does not name, a CLI's short list. */
+export const MODEL_LISTS = {
+  pi: ['arena/gpt-6.1-sol', 'arena/claude-opus-5-5', 'arena/deepseek-v4-1-flash-1017', 'arena/qwen-4-coder',
+    'anthropic/claude-opus-4-5', 'anthropic/claude-opus-4-6', 'anthropic/claude-opus-5', 'anthropic/claude-opus-5-5', 'anthropic/claude-opus-5-5-20261101',
+    'anthropic/claude-sonnet-5', 'anthropic/claude-haiku-5',
+    'openai/gpt-6-sol', 'openai/gpt-6.1-sol', 'openai/gpt-6-luna', 'openai/gpt-6.1-luna', 'openai/gpt-6-astra', 'openai/gpt-5-mini', 'openai/o1',
+    'mistral/deepseek-v4-1-flash-1017', 'mistral/deepseek-v4-1-flash-0912', 'mistral/mistral-large-3', 'google/gemini-4-argon'],
+  include: { arena: ['*'], mistral: ['deepseek*'], anthropic: ['*opus*'], openai: ['gpt-6*'] },
+  cli: { agy: ['gemini-4-argon-high', 'gemini-4-hydrogen-high', 'gemini-3.8-flash-high'], claude: ['opus', 'sonnet', 'haiku'], codex: ['gpt-6.1-sol', 'gpt-6-luna'], grok: ['grok-4.7'] },
+  bro: { chatgpt: ['6 Pro'], 'jev-aistudio': ['gemini-4-argon'] },
+};
 /** The projects a panel can switch between, for the hub's switch row. */
 export const PROJECTS = [{ root: '/synthetic/demo-project', name: 'demo-project' }, { root: '/synthetic/second-project', name: 'second-project' }, { root: '/synthetic/third', name: 'third' }];
 /** A Project tab state: the hub, or one page of it. */
-export const onPage = (projectPage, extra) => ({ ...initialMonitorState(), mainTab: 'project', projectPage, projectFolded: new Set(['agents']), ...extra });
+export const onPage = (projectPage, extra) => ({ ...initialMonitorState(), mainTab: 'project', projectPage, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
 export const plain = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd());
 export const PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'];
 /** The hub at 40/80/120 (and text icons at 40), and each page at 40 and 120, so a regression shows in the diff. */
@@ -151,7 +164,7 @@ export function projectFrames(f) {
     for (const page of PAGES.filter((p) => p !== 'tickets')) for (const width of [40, 120])
       frames[`${page}-${width}-${lang}`] = plain(f.render(width, lang, page, 40));
   }
-  const open = onPage('progress', { projectFolded: new Set(['agents', 'try:M3b', 'done:M4', 'done:M3', 'done:', 'next:1']) });
+  const open = onPage('progress', { projectFolded: new Set(['agents', 'healthy', 'files', 'hist:m:M3b', 'hist:m:M4', 'hist:DATA-ONE', 'next', 'next:1']) });
   for (const lang of ['en', 'zh']) for (const width of [40, 120]) frames[`progress-rich-${width}-${lang}`] = plain(f.render(width, lang, 'progress', 64, f.rich));
   frames['progress-rich-open-40-en'] = plain(f.render(40, 'en', open, 80, f.rich));
   frames['progress-rich-40-text'] = plain(f.render(40, 'en', 'progress', 64, f.rich, true, 'text'));
@@ -159,8 +172,26 @@ export function projectFrames(f) {
   for (const lang of ['en', 'zh']) frames[`hub-switch-40-${lang}`] = plain(f.render(40, lang, onPage(undefined, { projectRoot: PROJECTS[1].root }), 24, f.data, true, 'unicode', 'none', second));
   frames['progress-switch-40-en'] = plain(f.render(40, 'en', onPage('progress', { projectRoot: PROJECTS[1].root }), 12, f.data, true, 'unicode', 'none', second));
   const control = richControl(f.data);
+  // The hub on a tall panel and on shorter ones: Latest loses rows, then goes, then the bar and the blank rows.
+  for (const [height, lang] of [[40, 'en'], [40, 'zh'], [20, 'en'], [16, 'en'], [12, 'en']]) frames[`hub-rich-40-${height}-${lang}`] = plain(f.render(40, lang, undefined, height, f.rich));
+  frames['hub-rich-120-40-en'] = plain(f.render(120, 'en', undefined, 40, f.rich));
+  // The Control plane: what needs the owner first, healthy roles folded; opened, with the files.
   for (const lang of ['en', 'zh']) for (const width of [40, 120]) frames[`control-rich-${width}-${lang}`] = plain(f.render(width, lang, 'control', 48, control));
+  const opened = onPage('control', { projectFolded: new Set(['agents']) });
+  for (const lang of ['en', 'zh']) frames[`control-rich-open-40-${lang}`] = plain(f.render(40, lang, opened, 56, control));
+  frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
+  // The model picker over the page: providers, one provider's models, a filter, every model, a short CLI list.
+  const pick = (role, index, input) => onPage('control', { projectCursor: placeItem(role, index), projectInput: { role, index, text: '', ...input } });
+  for (const lang of ['en', 'zh']) {
+    frames[`pick-provider-40-${lang}`] = plain(f.render(40, lang, pick('imp', 0), 16, control));
+    frames[`pick-model-40-${lang}`] = plain(f.render(40, lang, pick('imp', 0, { provider: 'openai' }), 16, control));
+  }
+  frames['pick-filter-40-en'] = plain(f.render(40, 'en', pick('imp', 0, { provider: 'arena', text: 'opus' }), 16, control));
+  frames['pick-typed-40-en'] = plain(f.render(40, 'en', pick('imp', 0, { provider: 'arena', text: 'zz-new' }), 16, control));
+  frames['pick-all-40-en'] = plain(f.render(40, 'en', pick('imp', 0, { all: true }), 16, control));
+  frames['pick-cli-40-en'] = plain(f.render(40, 'en', pick('imp', 1), 16, control));
+  frames['pick-model-120-en'] = plain(f.render(120, 'en', pick('imp', 0, { provider: 'openai' }), 20, control));
   frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
   frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
   return frames;
