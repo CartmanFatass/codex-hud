@@ -38,14 +38,44 @@ function herdr(args, killAfter = 20000) {
 function statusOf(ran) {
   return ran.body?.result?.event?.data?.agent_status ?? ran.body?.result?.agent?.agent_status ?? null;
 }
-function startTime(pid) {
+function procStat(pid) {
   try {
     const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    const start = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)[19];
-    return /^\d+$/.test(start ?? '') ? start : null;
+    const fields = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/);
+    const start = fields[19];
+    return /^\d+$/.test(start ?? '') ? { state: fields[0], ppid: Number(fields[1]), start } : null;
   } catch {
     return null;
   }
+}
+function startTime(pid) {
+  return procStat(pid)?.start ?? null;
+}
+function descendants(rootPid) {
+  if (!Number.isInteger(rootPid) || rootPid <= 0) return new Map();
+  if (current.pid_start_time && startTime(rootPid) !== current.pid_start_time) return new Map();
+  const children = new Map(), starts = new Map();
+  try {
+    for (const entry of fs.readdirSync('/proc')) {
+      if (!/^\d+$/.test(entry)) continue;
+      const pid = Number(entry), info = procStat(pid);
+      if (!info || info.state === 'Z' || !Number.isInteger(info.ppid)) continue;
+      starts.set(pid, info.start);
+      const list = children.get(info.ppid) ?? [];
+      list.push(pid);
+      children.set(info.ppid, list);
+    }
+  } catch {
+    return new Map();
+  }
+  const found = new Map(), queue = [...(children.get(rootPid) ?? [])];
+  while (queue.length) {
+    const pid = queue.shift();
+    if (found.has(pid)) continue;
+    found.set(pid, starts.get(pid));
+    for (const child of children.get(pid) ?? []) queue.push(child);
+  }
+  return found;
 }
 function identity() {
   const info = herdr(['pane', 'process-info', '--pane', pane]).body?.result?.process_info;
@@ -137,6 +167,8 @@ function finish(state, reason, outputWritten = current.output_written) {
   const now = new Date().toISOString();
   write({
     state,
+    blocked: false,
+    reason: null,
     exit_reason: reason,
     error: state === 'failed' ? reason : null,
     ended_at: now,
@@ -155,12 +187,6 @@ function enrichFailure(reason) {
   }
   return recordFailureExhaustion(hudHome, bundled, dir, job, detail).reason;
 }
-function fail(reason) {
-  refreshSession();
-  quit();
-  finish('failed', enrichFailure(reason), false);
-  process.exitCode = 1;
-}
 function closeSettled() {
   refreshSession();
   quit();
@@ -171,11 +197,11 @@ function rememberUnblocked() {
   blockedEpisode = false;
   current = { ...current, blocked: false };
 }
-function notifyBlocked() {
+function notify(text) {
   const orch = session.ORCH;
   if (!orch || /[\u0000-\u001f\u007f-\u009f]/.test(orch)) return;
   const tag = `${job.role}@${basename(String(job.cwd || dir))}`;
-  herdr(['agent', 'prompt', orch, `[${tag}] BLOCKED: ${cli.agent} is waiting for interactive input in pane ${pane}`]);
+  herdr(['agent', 'prompt', orch, `[${tag}] ${text}`]);
 }
 function leave() {
   if (watcherSettled()) return;
@@ -190,90 +216,144 @@ function leave() {
 
 try {
   let baseline = report();
+  const hasReport = () => {
+    const text = report();
+    return typeof text === 'string' && text.trim().length > 0 && text !== baseline;
+  };
+  const hasNewDescendant = (since) => {
+    for (const [pid, start] of descendants(current.pid)) if (since.get(pid) !== start) return true;
+    return false;
+  };
   refreshSession();
-  write({ ...identity(), state: 'working' });
+  write({ ...identity(), state: 'working', reason: null });
+  let turnDescendants = descendants(current.pid);
+  let turnEnded = false;
+  let quietSince = null;
+  let quietNoticed = false;
   let skipQuiet = false;
+  const pollMs = graceMs < 5000 ? Math.max(50, Math.min(200, graceMs || 50)) : 5000;
   for (;;) {
     if (watcherSettled() || stopped()) {
       if (stopped()) leave();
       break;
     }
-    const until = ['--until', 'done', '--until', 'blocked'];
-    if (!skipQuiet) until.push('--until', 'idle', '--until', 'unknown');
-    skipQuiet = false;
-    const waited = herdr(['agent', 'wait', name, ...until, '--timeout', String(sliceMs)], sliceMs + 5000);
-    if (watcherSettled()) break;
-    if (waited.code !== 0) {
-      if (agentMissing() || stopped() || closing()) {
-        leave();
-        break;
+    if (!hasReport()) {
+      let timeout = graceMs < 5000 ? Math.min(sliceMs, 500) : sliceMs;
+      if (turnEnded) {
+        const busy = hasNewDescendant(turnDescendants);
+        if (busy) quietSince = null;
+        else quietSince ??= Date.now();
+        const remaining = busy ? Infinity : quietSince + graceMs - Date.now();
+        if (remaining <= 0) {
+          if (!quietNoticed) {
+            if (!write({ state: 'waiting_orchestrator', blocked: false, reason: 'quiet without a report; hud_send to continue or hud_close to stop' })) break;
+            notify('quiet without a report; hud_send to continue or hud_close to stop');
+            quietNoticed = true;
+          }
+          timeout = graceMs < 5000 ? pollMs : sliceMs;
+        } else {
+          if (current.state !== 'working' || current.blocked || current.reason !== 'turn ended, no report yet') {
+            if (!write({ state: 'working', blocked: false, reason: 'turn ended, no report yet' })) break;
+          }
+          timeout = Math.min(remaining, graceMs < 5000 ? pollMs : busy ? 2000 : 5000);
+        }
       }
-      continue;
-    }
-    const state = statusOf(waited);
-    if (quiet(state)) {
-      if (agentMissing()) {
-        leave();
-        break;
-      }
-      skipQuiet = true;
-      continue;
-    }
-    let turn = state;
-    if (state === 'blocked') {
-      if (!blockedEpisode) {
-        if (!write({ state: 'waiting_orchestrator', blocked: true })) break;
-        notifyBlocked();
-        blockedEpisode = true;
-      }
-      let skipResumeQuiet = false;
-      let next = null;
-      for (;;) {
-        const resumeUntil = ['--until', 'working', '--until', 'done'];
-        if (!skipResumeQuiet) resumeUntil.push('--until', 'idle', '--until', 'unknown');
-        skipResumeQuiet = false;
-        const resumed = herdr(['agent', 'wait', name, ...resumeUntil, '--timeout', String(sliceMs)], sliceMs + 5000);
-        if (watcherSettled()) break;
-        if (resumed.code !== 0) {
+      const until = ['--until', turnEnded ? 'working' : 'done', '--until', 'blocked'];
+      if (!skipQuiet) until.push('--until', 'idle', '--until', 'unknown');
+      skipQuiet = false;
+      const waited = herdr(['agent', 'wait', name, ...until, '--timeout', String(timeout)], timeout + 5000);
+      if (watcherSettled()) break;
+      if (!hasReport()) {
+        if (waited.code !== 0) {
           if (agentMissing() || stopped() || closing()) {
             leave();
-            next = 'left';
             break;
           }
           continue;
         }
-        next = statusOf(resumed);
-        if (quiet(next)) {
+        const state = statusOf(waited);
+        if (quiet(state)) {
           if (agentMissing()) {
-            rememberUnblocked();
             leave();
-            next = 'left';
             break;
           }
-          skipResumeQuiet = true;
+          skipQuiet = true;
           continue;
         }
-        break;
+        if (state === 'working') {
+          turnEnded = false;
+          quietSince = null;
+          quietNoticed = false;
+          refreshSession();
+          if (!write({ state: 'working', blocked: false, reason: null })) break;
+          continue;
+        }
+        let turn = state;
+        if (state === 'blocked') {
+          if (!blockedEpisode) {
+            if (!write({ state: 'waiting_orchestrator', blocked: true, reason: null })) break;
+            notify(`BLOCKED: ${cli.agent} is waiting for interactive input in pane ${pane}`);
+            blockedEpisode = true;
+          }
+          let skipResumeQuiet = false;
+          let next = null;
+          for (;;) {
+            const resumeUntil = ['--until', 'working', '--until', 'done'];
+            if (!skipResumeQuiet) resumeUntil.push('--until', 'idle', '--until', 'unknown');
+            skipResumeQuiet = false;
+            const resumed = herdr(['agent', 'wait', name, ...resumeUntil, '--timeout', String(sliceMs)], sliceMs + 5000);
+            if (watcherSettled()) break;
+            if (hasReport()) {
+              rememberUnblocked();
+              next = 'report';
+              break;
+            }
+            if (resumed.code !== 0) {
+              if (agentMissing() || stopped() || closing()) {
+                leave();
+                next = 'left';
+                break;
+              }
+              continue;
+            }
+            next = statusOf(resumed);
+            if (quiet(next)) {
+              if (agentMissing()) {
+                rememberUnblocked();
+                leave();
+                next = 'left';
+                break;
+              }
+              skipResumeQuiet = true;
+              continue;
+            }
+            break;
+          }
+          if (next === 'left' || watcherSettled()) break;
+          if (next === 'working') {
+            rememberUnblocked();
+            turnEnded = false;
+            quietSince = null;
+            quietNoticed = false;
+            refreshSession();
+            if (!write({ state: 'working', blocked: false, reason: null })) break;
+            continue;
+          }
+          if (next !== 'done' && next !== 'report') continue;
+          rememberUnblocked();
+          turn = 'done';
+        }
+        if (!hasReport()) {
+          if (turn !== 'done') {
+            if (turnEnded) continue;
+            leave();
+            break;
+          }
+          refreshSession();
+          turnEnded = true;
+          continue;
+        }
       }
-      if (next === 'left' || watcherSettled()) break;
-      if (next === 'working') {
-        rememberUnblocked();
-        refreshSession();
-        if (!write({ state: 'working', blocked: false })) break;
-        continue;
-      }
-      if (next !== 'done') continue;
-      rememberUnblocked();
-      turn = 'done';
-    }
-    if (turn !== 'done') {
-      leave();
-      break;
-    }
-    const text = report();
-    if (typeof text !== 'string' || !text.trim() || text === baseline) {
-      fail('output missing, empty or unchanged');
-      break;
     }
     if (!cli.can_continue) {
       closeSettled();
@@ -284,6 +364,8 @@ try {
     refreshSession();
     if (!write({
       state: 'idle_grace',
+      blocked: false,
+      reason: null,
       output_written: true,
       settled_at: now,
       idle_deadline_at: new Date(deadline).toISOString(),
@@ -323,7 +405,11 @@ try {
     if (grace === 'resume') {
       baseline = report();
       refreshSession();
-      if (!write({ state: 'working', output_written: false, settled_at: null, idle_deadline_at: null, ended_at: null, exit_reason: null, error: null })) break;
+      if (!write({ state: 'working', blocked: false, reason: null, output_written: false, settled_at: null, idle_deadline_at: null, ended_at: null, exit_reason: null, error: null })) break;
+      turnDescendants = descendants(current.pid);
+      turnEnded = false;
+      quietSince = null;
+      quietNoticed = false;
       continue;
     }
     if (grace === 'wait' && !watcherSettled()) closeSettled();

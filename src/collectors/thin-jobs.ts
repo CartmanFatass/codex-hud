@@ -272,15 +272,19 @@ export function readThinJobs(
     }
     const cliJob = word(s.harness) === 'cli' || (job.cli !== null && typeof job.cli === 'object');
     const paneAsk =
-      !pending && state === 'working' && s.blocked === true && cliJob
-        ? `${word(s.agent) ?? word(job.cli && typeof job.cli === 'object' ? (job.cli as { agent?: unknown }).agent : null) ?? 'CLI'} needs input in its pane`
+      !pending && state === 'working' && cliJob
+        ? s.blocked === true
+          ? `${word(s.agent) ?? word(job.cli && typeof job.cli === 'object' ? (job.cli as { agent?: unknown }).agent : null) ?? 'CLI'} needs input in its pane`
+          : s.state === 'waiting_orchestrator'
+            ? word(s.reason) ?? 'quiet without a report; hud_send to continue or hud_close to stop'
+            : ''
         : '';
     const waiting = state === 'working'
       ? pending ?? (paneAsk
         ? {
             fields: { question: paneAsk, options: [] as string[], suggested: '' },
             evidence: ref('STATUS.json', { text: '', at: status?.at ?? at, whole: true }),
-            id: 'blocked',
+            id: s.blocked === true ? 'blocked' : 'quiet',
           }
         : undefined)
       : undefined;
@@ -329,6 +333,7 @@ export function readThinJobs(
       waiting?.fields.question ||
       (state === 'failed' ? (word(s.exit_reason) ?? word(s.reason)) : null) ||
       (report && report.at >= phaseAt ? first(report.text) : lastResult) ||
+      (state === 'working' ? word(s.reason) : null) ||
       '';
     addFile('report.md', 'report', report);
     const worker: OwnerWorker = {
