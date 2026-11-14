@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import * as fs from 'node:fs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -94,7 +95,7 @@ test('hud watch emits four lines for three transitions and qa/q1.md without writ
       },
       stderr: () => {},
     },
-    { pollMs: 25, signal: ac.signal }
+    { rescanMs: 30000, signal: ac.signal }
   );
 
   await wait(80);
@@ -186,13 +187,69 @@ test('hud watch --all watches every pane and exits cleanly on help, usage errors
       },
       stderr: () => {},
     },
-    { pollMs: 25, signal: ac.signal }
+    { rescanMs: 30000, signal: ac.signal }
   );
 
   await wait(60);
   fs.writeFileSync(join(otherDir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'tab closed' }));
   assert.equal(await running, 0);
   assert.deepEqual(seen, ['j00000000000000d4 imp pkg-other: failed | tab closed']);
+});
+
+test('hud watch without HERDR_PANE_ID or --all prints one error line and exits 1', async (t) => {
+  const hudHome = fs.mkdtempSync(join(tmpdir(), 'hud-watch-nopane-'));
+  t.after(() => fs.rmSync(hudHome, { recursive: true, force: true }));
+  let out = '';
+  let err = '';
+  const code = await main(['watch'], {
+    env: { HUD_HOME: hudHome },
+    stdout: (text) => { out += text; },
+    stderr: (text) => { err += text; },
+  });
+  assert.equal(code, 1);
+  assert.equal(out, '');
+  assert.equal(err.trim().split('\n').length, 1);
+  assert.match(err, /no pane.*--all/i);
+});
+
+test('idle hud watch reads nothing between safety rescans', async (t) => {
+  const hudHome = fs.mkdtempSync(join(tmpdir(), 'hud-watch-idle-'));
+  t.after(() => fs.rmSync(hudHome, { recursive: true, force: true }));
+  const callerDir = writeJob(hudHome, 'j00000000000000e8', 'w4E:p1', 'pkg-idle', { state: 'working' });
+  const jobsDir = join(hudHome, 'jobs');
+
+  let jobLists = 0;
+  let statusStats = 0;
+  const originals = { readdirSync: fs.readdirSync, lstatSync: fs.lstatSync };
+  fs.readdirSync = (file, ...args) => {
+    if (String(file) === jobsDir) jobLists++;
+    return originals.readdirSync(file, ...args);
+  };
+  fs.lstatSync = (file, ...args) => {
+    if (String(file) === join(callerDir, 'STATUS.json')) statusStats++;
+    return originals.lstatSync(file, ...args);
+  };
+  syncBuiltinESMExports();
+  t.after(() => { Object.assign(fs, originals); syncBuiltinESMExports(); });
+
+  const { watchCommand: freshWatch } = await import('../../dist/cli/watch.js?idle');
+  const ac = new AbortController();
+  t.after(() => ac.abort());
+  const running = freshWatch([], { env: { HUD_HOME: hudHome, HERDR_PANE_ID: 'w4E:p1' }, stdout: () => {}, stderr: () => {} }, { rescanMs: 400, signal: ac.signal });
+
+  // The baseline scan and the recursive watch's one-time attach may read the directory; after that, nothing.
+  await wait(60);
+  const lists = jobLists, stats = statusStats;
+  assert.equal(stats, 1, 'one baseline read of STATUS.json');
+  await wait(200);
+  assert.equal(jobLists, lists, 'idle watch must not list jobs between rescans');
+  assert.equal(statusStats, stats, 'idle watch must not stat STATUS.json between rescans');
+
+  await until(() => statusStats > stats, 1000);
+  assert.equal(statusStats, stats + 1, 'safety rescan reads once after rescanMs');
+
+  ac.abort();
+  assert.equal(await running, 0);
 });
 
 test('bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM', { timeout: 10000 }, async (t) => {

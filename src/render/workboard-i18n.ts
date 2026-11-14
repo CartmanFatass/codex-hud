@@ -225,8 +225,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'place: add, remove, move up, move down': '位置：添加、删除、上移、下移',
   'place: clear its exhausted mark': '位置：清除耗尽标记',
   'place: refresh model lists': '位置：刷新模型列表',
-  'On the Control plane p m e + - K J x change the place under the cursor (/ types a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened':
-    '在控制面中 p m e + - K J x 修改光标所在的位置（/ 输入模型，r 刷新模型列表）：写入 $HUD_HOME/roles，下一个任务即用；项目自己的角色文件优先，只能打开',
+  'On the Control plane p m e + - K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened':
+    '在控制面中 p m e + - K J x 修改光标所在的位置（m 选择模型，r 刷新模型列表）：写入 $HUD_HOME/roles，下一个任务即用；项目自己的角色文件优先，只能打开',
   'role not found': '没有这个角色',
   'the project file is in force: o opens it': '项目文件生效中：按 o 打开它',
   'no other harness for this role': '该角色没有别的宿主可选',

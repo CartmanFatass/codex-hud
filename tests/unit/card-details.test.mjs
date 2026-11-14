@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cardFixture, colourFrame, colourFrames, NOW } from '../fixtures/card-details.mjs';
 import { initialMonitorState, handleMonitorInput } from '../../dist-test/src/render/monitor.js';
-import { cardExpanded, jobSentenceRows, identifiers, paintSentence } from '../../dist-test/src/render/work-card.js';
+import { cardExpanded, jobSentenceRows, identifiers, paintSentence, workCardDetail, renderWorkCard } from '../../dist-test/src/render/work-card.js';
+import { projectWorkCard } from '../../dist-test/src/collectors/work-card.js';
 import { decisionRows } from '../../dist-test/src/render/workboard-rows.js';
 import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
 import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
@@ -203,4 +204,35 @@ test('Home frames EN/ZH at 80/120 columns retain all colour kinds (ANSI assertio
       theme.board.danger(lang === 'en' ? 'rejects' : '拒绝'), theme.board.opinion(lang === 'en' ? 'recommends simplicity' : '认为更简单'),
       theme.board.identifier(lang === 'en' ? 'parser' : '解析器')].every((span) => ansi.includes(span)));
   }
+});
+
+test('settled cards drop stale still-working or prompt-report quiet_decision while unsettled and quiet-failed keep it', (t) => {
+  const f = fixture(t);
+  const base = f.board.workers[0];
+  const state = { ...initialMonitorState(), mainTab: 'home' };
+  for (const [choice, action] of [['still-working', 'wait'], ['finished-no-report', 'prompt-report']]) {
+    const settled = {
+      ...base,
+      state: 'closed',
+      settledAt: NOW - 1000,
+      modelSentence: undefined,
+      quietDecision: { choice, probability: 0.92, action },
+      work: { ...base.work, failed: false, result: true, reason: 'settled' },
+    };
+    const card = projectWorkCard(settled, NOW);
+    assert.doesNotMatch(workCardDetail(card), /still-working|prompt-report|wait/);
+    assert.doesNotMatch(renderWorkCard(card, state, 80).map(stripAnsi).join('\n'), /still-working|prompt-report|wait/);
+
+    const unsettled = { ...settled, state: 'working', settledAt: null, work: { ...base.work, failed: false, result: false, reason: 'quiet' } };
+    assert.match(workCardDetail(projectWorkCard(unsettled, NOW)), new RegExp(`${choice} 92%`));
+  }
+  const failedByQuiet = {
+    ...base,
+    state: 'failed',
+    settledAt: NOW - 1000,
+    modelSentence: undefined,
+    quietDecision: { choice: 'failed', probability: 0.96, action: 'fail' },
+    work: { ...base.work, failed: true, result: false, reason: '429 rate limit' },
+  };
+  assert.match(workCardDetail(projectWorkCard(failedByQuiet, NOW)), /failed 96% → fail/);
 });

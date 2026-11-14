@@ -264,6 +264,18 @@ test('expired exhausted marks expire after 1 hour', () => {
   }
 });
 
+test('hud_roster drops expired exhausted marks when queried through hud-mcp', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t, { withPi: true });
+  ownImp(f);
+  markExhausted(f.env.HUD_HOME, 'pi:gpt-6.1-sol', 'rate limit', Date.now() - 2 * EXHAUSTED_TTL_MS);
+
+  const roster = await f.call('hud_roster');
+  const imp = roster.roles.find((r) => r.role === 'imp');
+  assert.equal(imp.available, true);
+  assert.equal(imp.runs_on.harness, 'pi');
+  assert.deepEqual(imp.exhausted, []);
+});
+
 test('hud_create on uses harnesses.json (and HUD_HOME override), and model still wins', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const job1 = await f.call('hud_create', { role: 'imp', on: 'agy', request_key: 'on-agy-default', task: 'Task 1.' });

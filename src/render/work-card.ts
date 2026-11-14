@@ -147,7 +147,9 @@ export function quietDecisionSummary(q: WorkCard['worker']['quietDecision']): st
   return detail ? `${action} (${detail})` : action;
 }
 export function workCardDetail(card: WorkCard, sentence = ''): string {
-  const quiet = quietDecisionSummary(card.worker.quietDecision);
+  const showQuiet =
+    card.worker.settledAt === null || (failed(card) && card.worker.quietDecision?.action === 'fail');
+  const quiet = showQuiet ? quietDecisionSummary(card.worker.quietDecision) : '';
   const detail =
     sentence ||
     card.worker.ask ||

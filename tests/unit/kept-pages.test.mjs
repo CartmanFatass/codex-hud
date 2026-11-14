@@ -341,4 +341,6 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   const chinese = plainFrame(draw({ ...opened, focus: 'agents' }, { embedded: true, prefix: 'Ctrl+X' })).join('\n');
   assert.match(chinese, /在 Codex 自带的面板中，请先按 Ctrl\+X/);
   assert.doesNotMatch(chinese, /press .*first/);
+  assert.match(chinese, /在控制面中[\s\S]*m 选择模型/);
+  assert.doesNotMatch(chinese, /On the Control plane|m picks a model/);
 });

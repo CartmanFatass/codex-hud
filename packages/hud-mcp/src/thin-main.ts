@@ -769,7 +769,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     const gate = found.project();
     const ignored = found.projectConfigIgnored();
     return {
-      roles: [...found.roles().values()].map(found.assignment),
+      roles: [...found.roles().values()].map((role) => found.assignment(role)),
       invalid: found.invalid(),
       convention: found.convention(),
       project: { root: gate.root, registered: gate.registered },

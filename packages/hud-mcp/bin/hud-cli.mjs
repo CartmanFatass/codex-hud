@@ -59,7 +59,7 @@ let turn = readTurn(dir) ?? writeTurn(dir), signature = null, stamp;
 let stop = false, close = false, openQuestions = false, diskDirty = true;
 let socket, lines, reconnectTimer, debounce, deadline, tickTimer, dirWatch, qaWatch;
 let stopped = false, busy = false, pending = false, tickPending = false, reconnectMs = 5000, generation = 0;
-let quietQuestions = 0, reportPromptSent = false, rowStamp;
+let quietQuestions = 0, reportPromptSent = Boolean(turn.report_prompt_sent), rowStamp;
 function shutdown() {
   stopped = true;
   for (const timer of [reconnectTimer, debounce, deadline, tickTimer]) clearTimeout(timer);
@@ -241,10 +241,13 @@ async function run() {
         ...(decision.reason ? { reason: decision.reason } : {}), at: new Date().toISOString() };
       if (decision.action === 'prompt-report') {
         reportPromptSent = true;
-        writeTurn(dir);
+        const sent = writeTurn(dir, true);
         if (!effect(['agent', 'prompt', name, `Write your report to ${output} now; if work remains, finish it first.`]).ok) {
           decision.action = 'needs-human'; decision.reason = 'prompt-failed';
           current.quiet_decision = { ...current.quiet_decision, action: 'needs-human', reason: 'prompt-failed' };
+          turn = sent;
+          observed = { ...observed, turn: sent };
+          prev = prev ? { ...prev, seq: sent.seq } : prev;
         } else { diskDirty = true; wake(); return; }
       }
       if (decision.action === 'fail') decision.failReason = recordFailureExhaustion(hudHome, bundled, dir, job, decision.failReason).reason;

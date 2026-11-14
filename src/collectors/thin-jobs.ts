@@ -196,18 +196,18 @@ export function jobRow(
   const cliJob = word(s.harness) === 'cli' || cliInfo !== null;
   const cliAgent = word(s.agent) ?? word(cliInfo?.agent) ?? 'CLI';
   const stderrFirstLine = word(j.stderr_tail)?.split(/\r?\n/)[0]?.trim() || null;
+  const openQuestions =
+    extras?.openQuestions !== undefined ? extras.openQuestions : extras?.dir ? countOpenQuestions(extras.dir) : 0;
   const reason =
     displayState === 'failed'
       ? (word(s.exit_reason) ?? word(s.error) ?? word(s.reason) ?? (!hasStatus ? stderrFirstLine : null))
       : blocked
         ? (word(s.reason) ?? (cliJob ? `${cliAgent} needs input in its pane` : 'needs input in its pane'))
         : displayState === 'working' && rawState === 'waiting_orchestrator'
-          ? (word(s.reason) ?? (cliJob ? 'quiet without a report; hud_send to continue or hud_close to stop' : null))
+          ? (word(s.reason) ?? (cliJob && openQuestions === 0 ? 'quiet without a report; hud_send to continue or hud_close to stop' : null))
           : displayState === 'working'
             ? (word(s.reason) ?? null)
             : (word(s.reason) ?? word(s.exit_reason) ?? null);
-  const openQuestions =
-    extras?.openQuestions !== undefined ? extras.openQuestions : extras?.dir ? countOpenQuestions(extras.dir) : 0;
   const reportPresent =
     extras?.reportPresent !== undefined
       ? extras.reportPresent

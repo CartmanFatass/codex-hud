@@ -204,6 +204,22 @@ test('jobRow derives raw state, display state, reason, blocked, open questions a
     open_questions: 1,
     report_present: true,
   });
+
+  // Unblocked waiting_orchestrator with an open question omits the quiet-without-report reason; without a question it keeps it.
+  const openQRow = jobRow(
+    { job: 'j0000000000000001', role: 'imp', package: 'SUPERVISOR', cli: { agent: 'grok' } },
+    { state: 'waiting_orchestrator', blocked: false, reason: null },
+    { dir }
+  );
+  assert.equal(openQRow.reason, null);
+  assert.equal(openQRow.open_questions, 1);
+
+  const quietRow = jobRow(
+    { job: 'j0000000000000001', role: 'imp', package: 'SUPERVISOR', cli: { agent: 'grok' } },
+    { state: 'waiting_orchestrator', blocked: false, reason: null },
+    { openQuestions: 0, reportPresent: false }
+  );
+  assert.equal(quietRow.reason, 'quiet without a report; hud_send to continue or hud_close to stop');
 });
 
 test("jobChanges emits a line for a new state, a question, or a new reason outside working", () => {

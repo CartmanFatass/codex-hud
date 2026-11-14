@@ -7,6 +7,7 @@ export interface Turn {
   seq: number;
   sent_at: string;
   report_sig: string | null;
+  report_prompt_sent?: boolean;
 }
 
 export function reportSignature(dir: string): string | null {
@@ -31,8 +32,15 @@ export function readTurn(dir: string): Turn | null {
 }
 
 /** Publish before input: a fast report must differ from the send-time baseline. */
-export function writeTurn(dir: string): Turn {
-  const turn = { seq: (readTurn(dir)?.seq ?? 0) + 1, sent_at: new Date().toISOString(), report_sig: reportSignature(dir) };
+export function writeTurn(dir: string, reportPromptSent?: boolean): Turn {
+  const prev = readTurn(dir);
+  const sent = reportPromptSent || prev?.report_prompt_sent;
+  const turn: Turn = {
+    seq: (prev?.seq ?? 0) + 1,
+    sent_at: new Date().toISOString(),
+    report_sig: reportSignature(dir),
+    ...(sent ? { report_prompt_sent: true } : {}),
+  };
   const file = join(dir, 'turn.json');
   fs.writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(turn) + '\n', { mode: 0o600 });
   fs.renameSync(`${file}.${process.pid}.tmp`, file);

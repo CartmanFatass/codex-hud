@@ -255,6 +255,8 @@ if (command === 'pi-dispatch') {
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && String(args[3]).startsWith('Write your report to ') && fs.existsSync(join(process.env.HOME, 'write-on-report-prompt'))) {
   const reportPath = String(args[3]).slice('Write your report to '.length).split(' now;')[0];
   fs.writeFileSync(reportPath, 'Synthetic report after prompt.\\n');
+} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && String(args[3]).startsWith('Write your report to ') && fs.existsSync(join(process.env.HOME, 'fail-report-prompt'))) {
+  console.error('synthetic report prompt failed'); process.exit(1);
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && fs.existsSync(join(process.env.HOME, 'stalled-prompt'))) {
   console.error('agent_prompt_stalled after submit'); process.exit(1);
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && fs.existsSync(join(process.env.HOME, 'rejected-prompt'))) {
@@ -3658,4 +3660,56 @@ test('hud_send restarts a dead supervisor only when the worker is confirmed aliv
   assert.equal(sentUnknown.sent, true);
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(fs.readFileSync(join(unknownJob.task_dir, 'supervisor.pid'), 'utf8').trim(), String(unknownSupPid));
+});
+
+test('failed prompt-report keeps waiting_orchestrator across turn wake', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'qd-prompt-fail', 1, false);
+  fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
+  fs.writeFileSync(join(f.env.HOME, 'fail-report-prompt'), '');
+  const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.93));
+  configureFakeDecision(f, server.baseUrl);
+  const job = await f.call('hud_create', { role: 'qd-prompt-fail', request_key: 'qd-prompt-fail', task: 'Synthetic failed report prompt.' });
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 10000);
+  const status = cliState(job.task_dir);
+  assert.equal(status.quiet_decision.action, 'needs-human');
+  assert.equal(status.quiet_decision.reason, 'prompt-failed');
+  const turn = JSON.parse(fs.readFileSync(join(job.task_dir, 'turn.json'), 'utf8'));
+  assert.equal(turn.seq, 2);
+  assert.equal(turn.report_prompt_sent, true);
+
+  // Even after turn.json watch/debounce wakes the supervisor, waiting_orchestrator holds.
+  await new Promise((r) => setTimeout(r, 350));
+  assert.equal(cliState(job.task_dir).state, 'waiting_orchestrator');
+  assert.equal(cliState(job.task_dir).quiet_decision.reason, 'prompt-failed');
+  assert.equal(server.requests.length, 1);
+});
+
+test('reportPromptSent persists across supervisor restart via hud_send', { timeout: 20000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'qd-prompt-respawn', 1, true);
+  const liveWorker = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { stdio: 'ignore' });
+  t.after(() => { try { liveWorker.kill('SIGKILL'); } catch {} });
+  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(liveWorker.pid));
+  fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
+  const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.93));
+  configureFakeDecision(f, server.baseUrl);
+
+  const job = await f.call('hud_create', { role: 'qd-prompt-respawn', request_key: 'qd-prompt-respawn', task: 'Synthetic respawn no repeat.' });
+  const expectedPrompt = `Write your report to ${join(job.task_dir, 'report.md')} now; if work remains, finish it first.`;
+  const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3] === expectedPrompt);
+  await until(() => prompts().length === 1 && cliState(job.task_dir)?.supervisor_pid, 10000);
+  const oldSupPid = cliState(job.task_dir).supervisor_pid;
+  assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'turn.json'), 'utf8')).report_prompt_sent, true);
+
+  process.kill(oldSupPid, 'SIGKILL');
+  await until(() => procStat(oldSupPid) === null);
+  const sent = await f.call('hud_send', { job: job.job, message_key: 'respawn-no-repeat', text: 'Continue after supervisor restart.' });
+  assert.equal(sent.sent, true);
+  await until(() => cliState(job.task_dir)?.supervisor_pid !== oldSupPid && cliState(job.task_dir)?.state === 'waiting_orchestrator', 10000);
+
+  assert.equal(prompts().length, 1);
+  assert.ok(server.requests.length >= 2);
+  assert.equal(server.requests.at(-1).input[0].content[2].data.facts.report_prompt_already_sent, true);
+  assert.equal(cliState(job.task_dir).quiet_decision.action, 'needs-human');
 });
