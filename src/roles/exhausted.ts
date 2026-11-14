@@ -90,25 +90,19 @@ function readMap(file: string, nowMs: number): Map<string, ExhaustedMark> {
   return marks;
 }
 
-export function readExhausted(hudHome: string, nowMs = Date.now()): Map<string, ExhaustedMark> {
-  return readMap(join(hudHome, EXHAUSTED_FILE), nowMs);
+function assertExhaustedFile(file: string): boolean {
+  try {
+    const st = fs.lstatSync(file);
+    if (st.isSymbolicLink()) throw new Error('exhausted.json is a symlink');
+    if (!st.isFile()) throw new Error('exhausted.json is not a file');
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
 }
 
-export function markExhausted(hudHome: string, key: string, reason: string, nowMs = Date.now()): ExhaustedMark {
-  fs.mkdirSync(hudHome, { recursive: true, mode: 0o700 });
-  const file = join(hudHome, EXHAUSTED_FILE);
-  try {
-    if (fs.lstatSync(file).isSymbolicLink()) throw new Error('exhausted.json is a symlink');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-  }
-  const marks = readMap(file, nowMs);
-  const entry: ExhaustedMark = {
-    until: new Date(nowMs + EXHAUSTED_TTL_MS).toISOString(),
-    reason: reason.replace(/[\r\n]+/g, ' ').slice(0, 300),
-    marked_at: new Date(nowMs).toISOString(),
-  };
-  marks.set(key, entry);
+function writeExhausted(file: string, marks: Map<string, ExhaustedMark>): void {
   const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
   try {
     fs.writeFileSync(
@@ -116,6 +110,7 @@ export function markExhausted(hudHome: string, key: string, reason: string, nowM
       JSON.stringify({ version: 1, places: Object.fromEntries(marks) }, null, 2) + '\n',
       { flag: 'wx', mode: 0o600 }
     );
+    assertExhaustedFile(file);
     fs.renameSync(temp, file);
     fs.chmodSync(file, 0o600);
   } finally {
@@ -125,5 +120,33 @@ export function markExhausted(hudHome: string, key: string, reason: string, nowM
       /* Renamed or failed before creation. */
     }
   }
+}
+
+export function readExhausted(hudHome: string, nowMs = Date.now()): Map<string, ExhaustedMark> {
+  return readMap(join(hudHome, EXHAUSTED_FILE), nowMs);
+}
+
+export function markExhausted(hudHome: string, key: string, reason: string, nowMs = Date.now()): ExhaustedMark {
+  fs.mkdirSync(hudHome, { recursive: true, mode: 0o700 });
+  const file = join(hudHome, EXHAUSTED_FILE);
+  assertExhaustedFile(file);
+  const marks = readMap(file, nowMs);
+  const entry: ExhaustedMark = {
+    until: new Date(nowMs + EXHAUSTED_TTL_MS).toISOString(),
+    reason: reason.replace(/[\r\n]+/g, ' ').slice(0, 300),
+    marked_at: new Date(nowMs).toISOString(),
+  };
+  marks.set(key, entry);
+  writeExhausted(file, marks);
   return entry;
+}
+
+export function clearExhausted(hudHome: string, key: string, nowMs = Date.now()): boolean {
+  const file = join(hudHome, EXHAUSTED_FILE);
+  if (!assertExhaustedFile(file)) return false;
+  const marks = readMap(file, nowMs);
+  if (!marks.has(key)) return false;
+  marks.delete(key);
+  writeExhausted(file, marks);
+  return true;
 }

@@ -1,0 +1,30 @@
+{
+  "pi": {
+    "models": [
+      "openai/gpt-6.1-sol",
+      "openai/gpt-6-astra",
+      "mistral/deepseek-v4-1-flash-1017",
+      "arena/gpt-6.1-sol"
+    ],
+    "thinking": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+  },
+  "cli": {
+    "agents": ["agy", "claude", "codex", "grok"],
+    "models": {
+      "agy": ["gemini-4-argon-high", "gemini-4-hydrogen-high", "gemini-3.8-flash-high"],
+      "claude": ["opus", "sonnet", "haiku"],
+      "codex": ["gpt-6.1-sol", "gpt-6-luna"],
+      "grok": ["grok-4.7"]
+    },
+    "thinking": ["low", "medium", "high", "xhigh", "max"]
+  },
+  "bro": {
+    "tools": ["jev-ask", "jev-aistudio", "jev-flow"],
+    "providers": ["chatgpt", "gemini"],
+    "kinds": ["image", "video"],
+    "models": {
+      "chatgpt": ["6 Pro"],
+      "jev-aistudio": ["gemini-4-argon"]
+    }
+  }
+}

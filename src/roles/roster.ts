@@ -1,9 +1,11 @@
 /** hud_roster's read-only registry, shared without starting the MCP. */
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cliAgents, type CliAgent } from './cli-kinds.js';
 import {
+  clearExhausted,
   describePlace,
   isQuotaFailure,
   markExhausted,
@@ -14,7 +16,16 @@ import {
 } from './exhausted.js';
 import { registeredProject } from './projects.js';
 
-export { describePlace, isQuotaFailure, markExhausted, placeKey, readExhausted, type ExhaustedMark, type RolePlace };
+export {
+  clearExhausted,
+  describePlace,
+  isQuotaFailure,
+  markExhausted,
+  placeKey,
+  readExhausted,
+  type ExhaustedMark,
+  type RolePlace,
+};
 
 export interface Role {
   role: string;
@@ -537,4 +548,138 @@ export function recordFailureExhaustion(
     }
   }
   return { marked: true, reason: enriched };
+}
+
+export interface PlaceCatalog {
+  pi: { models: string[]; thinking: string[] };
+  cli: { agents: CliAgent[]; models: Record<CliAgent, string[]>; thinking: string[] };
+  bro: {
+    tools: ('jev-ask' | 'jev-aistudio' | 'jev-flow')[];
+    providers: ('chatgpt' | 'gemini')[];
+    kinds: ('image' | 'video')[];
+    models: Record<string, string[]>;
+  };
+}
+
+const BRO_TOOLS = ['jev-ask', 'jev-aistudio', 'jev-flow'] as const;
+const BRO_PROVIDERS = ['chatgpt', 'gemini'] as const;
+const BRO_KINDS = ['image', 'video'] as const;
+const VALID_ROLE = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+function mergeStrings<T extends string>(base: T[], extra: unknown, allow?: readonly T[]): T[] {
+  const out = [...base];
+  if (!Array.isArray(extra)) return out;
+  for (const item of extra) {
+    if (typeof item !== 'string' || !item.trim()) continue;
+    if (allow && !(allow as readonly string[]).includes(item)) continue;
+    if (!out.includes(item as T)) out.push(item as T);
+  }
+  return out;
+}
+function mergeModelMap(base: Record<string, unknown>, extra: unknown, keys: readonly string[]): Record<string, string[]> {
+  const ext = asRecord(extra);
+  const out: Record<string, string[]> = {};
+  for (const key of keys) out[key] = mergeStrings(mergeStrings<string>([], base[key]), ext[key]);
+  return out;
+}
+export function placeCatalog(
+  hudHome: string,
+  bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url)),
+  readJson: (file: string) => unknown = json
+): PlaceCatalog {
+  const safe = (file: string) => {
+    try {
+      return asRecord(readJson(file));
+    } catch {
+      return {};
+    }
+  };
+  const shipped = safe(join(bundled, 'catalog.json'));
+  const extra = asRecord(safe(join(hudHome, 'harnesses.json')).catalog);
+  const sPi = asRecord(shipped.pi),
+    ePi = asRecord(extra.pi);
+  const sCli = asRecord(shipped.cli),
+    eCli = asRecord(extra.cli);
+  const sBro = asRecord(shipped.bro),
+    eBro = asRecord(extra.bro);
+  const sBroModels = asRecord(sBro.models),
+    eBroModels = asRecord(eBro.models);
+  const broModelKeys = [...new Set([...Object.keys(sBroModels), ...Object.keys(eBroModels)])];
+  return {
+    pi: {
+      models: mergeStrings(mergeStrings<string>([], sPi.models), ePi.models),
+      thinking: mergeStrings(mergeStrings<string>([], sPi.thinking), ePi.thinking),
+    },
+    cli: {
+      agents: mergeStrings(mergeStrings<CliAgent>([], sCli.agents, cliAgents), eCli.agents, cliAgents),
+      models: mergeModelMap(asRecord(sCli.models), eCli.models, cliAgents) as Record<CliAgent, string[]>,
+      thinking: mergeStrings(mergeStrings<string>([], sCli.thinking), eCli.thinking),
+    },
+    bro: {
+      tools: mergeStrings(mergeStrings([], sBro.tools, BRO_TOOLS), eBro.tools, BRO_TOOLS),
+      providers: mergeStrings(mergeStrings([], sBro.providers, BRO_PROVIDERS), eBro.providers, BRO_PROVIDERS),
+      kinds: mergeStrings(mergeStrings([], sBro.kinds, BRO_KINDS), eBro.kinds, BRO_KINDS),
+      models: mergeModelMap(sBroModels, eBroModels, broModelKeys),
+    },
+  };
+}
+
+function lstatKind(path: string, wantDir: boolean, label: string): boolean {
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  if (st.isSymbolicLink()) throw new Error(`refusing symlink: ${label}`);
+  if (wantDir ? !st.isDirectory() : !st.isFile()) throw new Error(`refusing non-${wantDir ? 'directory' : 'file'}: ${label}`);
+  return true;
+}
+function readRoleRecord(file: string, label: string): Record<string, unknown> {
+  if (!lstatKind(file, false, label)) return {};
+  const parsed = json(file);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`invalid role JSON: ${label}`);
+  return parsed as Record<string, unknown>;
+}
+export function writeRolePlaces(
+  hudHome: string,
+  role: string,
+  run: readonly RolePlace[],
+  bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url))
+): string {
+  if (typeof role !== 'string' || !VALID_ROLE.test(role)) throw new Error(`invalid role name: ${String(role)}`);
+  if (!Array.isArray(run) || run.length === 0) throw new Error('run must be a non-empty array');
+  const rolesDir = join(hudHome, 'roles');
+  const target = join(rolesDir, `${role}.json`);
+  lstatKind(rolesDir, true, rolesDir);
+  const hasHome = lstatKind(target, false, target);
+  const base = hasHome
+    ? readRoleRecord(target, target)
+    : readRoleRecord(join(bundled, 'roles', `${role}.json`), `shipped/${role}.json`);
+  const nextRun = run.map((place) => (place && typeof place === 'object' && !Array.isArray(place) ? { ...place } : place));
+  const next: Record<string, unknown> = { ...base, role, run: nextRun };
+  if (next.can_continue === undefined && nextRun.some((p) => p && (p.harness === 'pi' || p.harness === 'cli'))) {
+    next.can_continue = false;
+  }
+  const err = roleReason(next);
+  if (err) throw new Error(`invalid role places: ${err}`);
+  fs.mkdirSync(rolesDir, { recursive: true, mode: 0o700 });
+  const temp = join(rolesDir, `.${role}.${process.pid}.${randomUUID()}.tmp`);
+  try {
+    fs.writeFileSync(temp, JSON.stringify(next, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    lstatKind(target, false, target);
+    fs.renameSync(temp, target);
+    fs.chmodSync(target, 0o600);
+  } finally {
+    try {
+      fs.unlinkSync(temp);
+    } catch {
+      /* Renamed or failed before creation. */
+    }
+  }
+  return target;
 }
