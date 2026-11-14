@@ -28,8 +28,9 @@ Milestone: 0.1.3 · Project hub
   no typing into the main pane; ticket 10's decided fail needs a quota line). .scratch/supervisor/ 7 tickets:
   01–03 landed (2c5d7e1d, 52b21b91, 458ef06b), 04–05 as a stopgap 90ef78cd (496/496); 08 (explicit turns, one
   loop, one pure judge; supersedes 06–07) on pi imp in MyHUD-wt/SUPERVISOR-08; 04–07 after QUIET-DECIDE.
-- PROJECT-UX (owner 2026-11-14): phase 1 running: frontend-implementer renders 2–3 mockup directions of the Project
-  section (docs/design/project-ux/, worktree MyHUD-wt/PROJECT-UX); the owner settles one, then a build brief.
+- PROJECT-UX (owner 2026-11-14): try. Landed 891556a1: timeline hub (A + 2 transplants, Latest folded first,
+  Progress last 7 days), ticket lanes, attention-first Control plane, provider → model picker with curated pi
+  list (arena, mistral deepseek, anthropic opus, openai gpt-6; newest per family). Open: trim page rows on short panels?
 - ROLE-BIND 03 landed 19333df8 (480/480): the Control plane switches places. ROLE-BIND 04 (model lists from the
   harnesses, catalog fallback, typed model) running: agy imp j8a87fdd732834890 in MyHUD-wt/ROLE-BIND-04.
 - ROLE-BIND (0.1.4, .scratch/role-bind/): roles are the work with an ordered place list (primary + fallbacks),
