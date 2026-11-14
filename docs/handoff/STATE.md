@@ -21,7 +21,10 @@ Milestone: 0.1.3 · Project hub
 
 - PROJECT-HUB (0.1.3, .scratch/project-hub/): 01 hub and sub-pages (frontend-implementer) and 02 project data
   (agy-imp on gemini-4-hydrogen-high) in parallel; then 03 progress page, ticket detail, project switch (frontend).
-- 0.1.3 milestone review: reviewer Sol xhigh; when its quota runs out, the same role on arena/gpt-6.1-sol xhigh.
+- 0.1.3 milestone review: both reviewers (owner 2026-11-14), Sol xhigh (arena/gpt-6.1-sol xhigh when its quota runs
+  out) and DS max.
+- ROLE-BIND (0.1.4, .scratch/role-bind/): roles apart from harnesses, `hud_create` `on`; the four `*-imp` names go
+  (owner approved). 01 (agy-imp) after PROJECT-HUB 02 lands; 02 control plane (frontend) after 01 and PROJECT-HUB 01.
 - Small leftover for me: pi-roles' pi-dispatch test still uses synthetic ids.
 
 ## Slices
@@ -124,13 +127,14 @@ board counts these; update at every landing or decision. -->
 - dropped · M3b · BAR-PHOSPHOR · bar themes Phosphor and Pill Rail (owner: not built)
 - try · 0.1.1 · CLI-WORKERS · owner 2026-11-13: roles on interactive CLIs (grok, agy, claude, codex) through herdr, held to pi imp's lifecycle; harness behaviour and session places untouched (.scratch/cli-workers/, 7 tickets all done with grok-4.7 high; real E2E passed on all four CLIs) (cbe059a7)
 - try · 0.1.2 · HUD-SETUP · owner 2026-11-13: `hud setup` (skill asks, command writes) deploys a project's pi workers: roles shown/hidden, pi role tuning, worker skills linked under .hud/skills, worker prompts; other harnesses unchanged (.scratch/hud-setup/, 6 tickets all done with grok-4.7 high; real pi job in a set-up project got its skill and worker prompt; owner to try /hud-setup) (fca81428)
-- todo · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch (.scratch/project-hub/, 3 tickets)
+- working · 0.1.3 · PROJECT-HUB · owner 2026-11-14: Project hub with progress, tickets, working tree, docs and control-plane pages; project switch (.scratch/project-hub/, 3 tickets)
+- todo · 0.1.4 · ROLE-BIND · owner 2026-11-14: a role is the work, `hud_create` `on` picks the harness; grok/agy/claude/codex-imp deleted (.scratch/role-bind/, 2 tickets)
 
 ## Now (2026-11-14): 0.1.3 Project hub started; 0.1.1 and 0.1.2 wait for the owner's try
 
 Owner 2026-11-14: Project becomes a hub with progress, tickets, working tree, docs and control-plane pages and a
 project switch (spec §2, .scratch/project-hub/). Routing for this package: frontend work to frontend-implementer, data work to agy-imp (gemini-4-hydrogen-high),
-review only at the milestone by Sol xhigh (arena provider when quota runs out), sonic unchanged.
+review only at the milestone by Sol xhigh (arena provider when quota runs out) and DS max, sonic unchanged.
 
 ### M4 close log (2026-11-12)
 

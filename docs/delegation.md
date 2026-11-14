@@ -63,7 +63,7 @@ answer is the simplest option; anything beyond the spec goes to the owner.
 | --- | --- | --- |
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
 | implementer | pi, `openai/gpt-6.1-sol` high (skill `hud-delegate`, role `imp`) | one slice each |
-| reviewer | pi, two in parallel: `openai/gpt-6.1-sol` xhigh and `mistral/deepseek-v4-1-flash-1017` max (`hud_create` model override). Chosen after a three-way trial on M3 (owner, 2026-11-11) | milestone reviews and the risky cases above only |
+| reviewer | pi, two in parallel: `openai/gpt-6.1-sol` xhigh and `mistral/deepseek-v4-1-flash-1017` max (`hud_create` model override). Chosen after a three-way trial on M3 (owner, 2026-11-11). When Sol's quota runs out: the same role on `arena/gpt-6.1-sol` xhigh (owner, 2026-11-14) | milestone reviews and the risky cases above only |
 | sonic | pi, DeepSeek V4.1 Flash | small chores for any role; never tests, bug hunting or design |
 | architect | pi, `openai/gpt-6-astra` high | only a structural question the orchestrator cannot settle; advice only |
 | Argon / ChatGPT Pro | `jev-ask` | only a new product direction |
