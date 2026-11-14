@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
+import { workerAlive, readTurn, reportSignature } from '../dist/packages/hud-mcp/src/cli-judge.js';
 
 const bundled = fileURLToPath(new URL('..', import.meta.url));
 
@@ -198,15 +199,22 @@ function scan(retryWatch = false) {
         cliPoll = true;
         const pid = supervisorPid(dir, status);
         if (pid && !supervisorAlive(pid)) {
-          status = {
-            ...status,
-            state: 'failed',
-            exit_reason: 'supervisor exited',
-            error: 'supervisor exited',
-            ended_at: new Date().toISOString(),
-          };
-          fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
-          fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+          const alive = workerAlive(status.pid, status.pid_start_time);
+          const reason = alive === false ? 'worker exited' : alive === true ? 'supervisor exited; worker still running' : 'supervisor exited; worker liveness unknown';
+          const sig = reportSignature(dir), turn = readTurn(dir);
+          const report = sig !== null && sig !== turn?.report_sig;
+          const state = alive === false ? (report ? 'closed' : 'failed') : 'waiting_orchestrator';
+          if (status.state !== state || status.reason !== (alive === false ? null : reason)) {
+            status = {
+              ...status, state, blocked: false, reason: alive === false ? null : reason,
+              exit_reason: alive === false ? (report ? 'settled' : reason) : null,
+              error: state === 'failed' ? reason : null,
+              output_written: alive === false ? report : status.output_written,
+              ended_at: alive === false ? new Date().toISOString() : null,
+            };
+            fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
+            fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+          }
         }
       }
       // A persisted launch without STATUS is still open until dispatch returns.

@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { main } from '../../dist/cli/hud-main.js';
 import { watchCommand } from '../../dist/cli/watch.js';
+import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 
 function writeJob(hudHome, id, pane, pkg, status, report = false) {
   const dir = join(hudHome, 'jobs', id);
@@ -42,6 +43,37 @@ async function until(check, timeoutMs = 4000) {
   }
   assert.fail('timed out waiting for expected watcher output');
 }
+
+test('dead supervisor watcher preserves a live worker; both gone fail or close by the explicit report baseline', { timeout: 10000 }, async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'dead-supervisor-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), HUD_WATCH_CLI_CHECK_MS: '30' };
+  const worker = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env, stdio: 'ignore' });
+  const supervisor = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { env, stdio: 'ignore' });
+  t.after(() => { worker.kill('SIGKILL'); supervisor.kill('SIGKILL'); });
+  await until(() => procStat(worker.pid) !== null);
+  const initial = { state: 'working', pid: worker.pid, pid_start_time: procStat(worker.pid).start, supervisor_pid: supervisor.pid };
+  const failed = writeJob(env.HUD_HOME, 'j00000000000000f1', 'w4E:p1', 'no-report', initial);
+  const closed = writeJob(env.HUD_HOME, 'j00000000000000f2', 'w4E:p1', 'with-report', initial, true);
+  for (const dir of [failed, closed]) fs.writeFileSync(join(dir, 'turn.json'), JSON.stringify({ seq: 1, sent_at: new Date().toISOString(), report_sig: null }));
+  const watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, stdio: 'ignore' });
+  t.after(() => watcher.kill('SIGKILL'));
+  supervisor.kill('SIGKILL');
+  await new Promise((r) => supervisor.once('exit', r));
+  const status = (dir) => JSON.parse(fs.readFileSync(join(dir, 'STATUS.json')));
+  await until(() => status(failed).state === 'waiting_orchestrator');
+  assert.equal(status(failed).reason, 'supervisor exited; worker still running');
+  assert.equal(status(failed).error, null);
+  assert.equal(status(closed).state, 'waiting_orchestrator');
+  const stamp = fs.statSync(join(failed, 'STATUS.json')).mtimeMs;
+  await wait(120);
+  assert.equal(fs.statSync(join(failed, 'STATUS.json')).mtimeMs, stamp, 'unchanged observation does not rewrite STATUS');
+  worker.kill('SIGKILL');
+  await new Promise((r) => worker.once('exit', r));
+  await until(() => status(failed).state === 'failed' && status(closed).state === 'closed');
+  assert.equal(status(failed).exit_reason, 'worker exited');
+  assert.equal(status(closed).output_written, true);
+});
 
 test('hud watch emits four lines for three transitions and qa/q1.md without writing HUD_HOME', async (t) => {
   const hudHome = fs.mkdtempSync(join(tmpdir(), 'hud-watch-'));

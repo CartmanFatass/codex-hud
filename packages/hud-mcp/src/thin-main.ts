@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
+import { writeTurn } from './cli-judge.js';
 import { jobChanges, jobRow, type JobRow } from '../../../src/collectors/thin-jobs.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
 import { herdrId } from '../../../src/roles/herdr-run.js';
@@ -572,6 +573,11 @@ function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
   return { exit_code: 1, stdout: '', stderr: reason };
 }
 async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
+  let openedTab: string | null = null;
+  const reject = async (result: { exit_code: number; stdout: string; stderr: string }) => {
+    if (openedTab) await run('herdr', ['tab', 'close', openedTab]);
+    return result;
+  };
   try {
     const kind = cliKinds[place.agent as CliAgent];
     const dir = directory(job.job);
@@ -593,6 +599,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
     const { tab, root_pane } = JSON.parse(result.stdout).result;
     const left = root_pane.pane_id;
     if (!herdrId(tab.tab_id) || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
+    openedTab = tab.tab_id;
     const fields = {
       TASK: job.job,
       TAB: tab.tab_id,
@@ -622,23 +629,24 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
     );
     const started = await run('herdr', argv);
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
-    if (started.exit_code !== 0 && !notReady) return started;
+    if (started.exit_code !== 0 && !notReady) return reject(started);
     if (kind.trust?.text) {
       const read = await run('herdr', ['pane', 'read', left, '--source', 'recent']);
-      if (read.exit_code !== 0) return notReady ? started : read;
+      if (read.exit_code !== 0) return reject(notReady ? started : read);
       if (paneText(read.stdout).includes(kind.trust.text)) {
         const declined = await run('herdr', ['pane', 'send-keys', left, ...kind.trust.decline]);
-        if (declined.exit_code !== 0) return declined;
+        if (declined.exit_code !== 0) return reject(declined);
         await run('herdr', ['agent', 'wait', name, '--until', 'idle', '--until', 'unknown', '--timeout', '15000']);
-        return failCli(dir, job, place, `${place.agent} has not trusted ${job.cwd}; run hud trust ${job.cwd}`);
+        return reject(failCli(dir, job, place, `${place.agent} has not trusted ${job.cwd}; run hud trust ${job.cwd}`));
       }
     }
-    if (notReady) return started;
+    if (notReady) return reject(started);
     if (kind.startupQuirk === 'phantom-working') {
       const settled = await settlePhantomWorking(name);
-      if (settled) return settled;
+      if (settled) return reject(settled);
     }
     const prompt = `Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`;
+    writeTurn(dir);
     const submitted = await run('herdr', [
       'agent',
       'prompt',
@@ -650,8 +658,9 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
       '--timeout',
       '30000',
     ]);
-    if (submitted.exit_code !== 0) return submitted;
-    // After the prompt is accepted as working, so a startup done (agy) is not a finished turn.
+    if (submitted.exit_code !== 0 && !/agent_prompt_stalled|timeout|timed out/i.test(submitted.stdout + submitted.stderr)) return reject(submitted);
+    // A stall after submission still needs supervision; it is not worker death.
+    openedTab = null;
     const script = fileURLToPath(new URL('../../../../bin/hud-cli.mjs', import.meta.url));
     const child = spawn(process.execPath, [script, dir], { detached: true, stdio: 'ignore' });
     child.on('error', (error) => console.error(`hud-cli: ${error.message}`));
@@ -659,7 +668,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
     if (!child.pid) return { exit_code: 1, stdout: '', stderr: 'hud-cli did not start' };
     return { exit_code: 0, stdout: '', stderr: '' };
   } catch (error) {
-    return { exit_code: 1, stdout: '', stderr: String(error) };
+    return reject({ exit_code: 1, stdout: '', stderr: String(error) });
   }
 }
 function readRow(job: Job) {
@@ -1027,6 +1036,8 @@ async function call(name: string, args: Args): Promise<unknown> {
     const outcome = { key, exit_code: null as number | null, stderr_tail: '' };
     (job.send_outcomes ??= []).push(outcome);
     save(job);
+    // Baseline before typing: even a fast report belongs to this explicit turn.
+    if (job.cli) writeTurn(dir);
     // agent prompt types the text and submits it with Enter.
     const result = await run('herdr', ['agent', 'prompt', agent, message]);
     outcome.exit_code = result.exit_code;
