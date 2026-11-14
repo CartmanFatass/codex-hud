@@ -1,7 +1,7 @@
 /** On-demand, read-only Project facts. No MCP startup, models, browser IPC or writes. */
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { executable, roleRegistry } from '../roles/roster.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
@@ -13,9 +13,17 @@ export interface ProjectItem {
 }
 export const SLICE_STATES = ['working', 'blocked', 'try', 'todo', 'accepted', 'dropped'] as const;
 export type SliceState = typeof SLICE_STATES[number];
+export interface LedgerSlice {
+  id: string; state: SliceState; milestone: string; text: string; commit?: string; at?: number;
+}
+export interface ActiveJob {
+  jobId: string; role: string; state: string; package?: string; title?: string; at?: number; asking: boolean;
+}
+export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
   number: string; title: string; path: string; at: number; status: string;
-  checked: number; total: number; blockers: string[]; state: 'done' | 'dropped' | 'working' | 'blocked' | 'ready';
+  checked: number; total: number; items: TicketItem[]; comment?: string;
+  blockers: string[]; state: 'done' | 'dropped' | 'working' | 'blocked' | 'ready';
   job?: { role: string; state: string; at?: number; created: number };
 }
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[] }
@@ -31,6 +39,8 @@ export interface ProjectSnapshot {
   git?: WorktreeStatus;
   ladder: { ids: string[]; current?: string };
   slices: (ProjectItem & { jobId?: string; role?: string; asking?: boolean; drift?: string; ledgerState?: string })[];
+  ledger: LedgerSlice[];
+  active: ActiveJob[];
   counts: Record<SliceState, number>;
   summary: string;
   statePath?: string;
@@ -39,6 +49,7 @@ export interface ProjectSnapshot {
   next: ProjectItem[];
   editing: ProjectItem[];
 }
+const SETTLED_JOB_STATES = new Set(['done', 'closed', 'idle_grace', 'failed', 'stopped']);
 export const projectShown = (state: { mainTab?: string; focus: string; help: boolean }, modal = false) =>
   state.mainTab === 'project' && state.focus === 'agents' && !state.help && !modal;
 export class ProjectCollector {
@@ -48,6 +59,7 @@ export class ProjectCollector {
   private git?: WorktreeStatus;
   private last?: ProjectSnapshot['last'];
   private worktrees: WorktreeInfo[] = [];
+  private commitAt = new Map<string, number>();
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) {}
   private cached<T>(path: string, load: (st: fs.Stats) => T): T | null {
     try {
@@ -96,16 +108,21 @@ export class ProjectCollector {
           const field = (key: string) => text.match(new RegExp(`^\\*\\*${key}:\\*\\*[ \\t]*([^\\r\\n]*)`, 'mi'))?.[1]?.trim();
           const status = field('Status'), blocked = field('Blocked by');
           if (!heading || !heading[2].trim() || Number(heading[1]) !== Number(name.split('-')[0]) || !status || blocked === undefined) return null;
-          const boxes = [...text.matchAll(/^[ \t]*[-*] \[([ xX])\]/gm)];
-          const checked = boxes.filter((b) => b[1].toLowerCase() === 'x').length;
+          const boxes = [...text.matchAll(/^[ \t]*[-*] \[([ xX])\][ \t]*([^\r\n]*)/gm)];
+          const items = boxes.map((b) => ({ done: b[1].toLowerCase() === 'x', text: b[2].replace(/\s+/g, ' ').trim() }));
+          const checked = items.filter((i) => i.done).length;
+          const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
+          const commentRaw = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].at(-1)?.[1]?.replace(/\s+/g, ' ').trim();
+          const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
           return { number: heading[1], title: heading[2].trim(), path, at: fs.lstatSync(path).mtimeMs, status,
-            checked, total: boxes.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
+            checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
+            blockers: /^none\b/i.test(blocked) ? [] : [blocked],
             state: /^wontfix$/i.test(status) ? 'dropped'
-              : /^(done|closed|complete|resolved)$/i.test(status) || (boxes.length > 0 && checked === boxes.length) ? 'done'
+              : /^(done|closed|complete|resolved)$/i.test(status) || (items.length > 0 && checked === items.length) ? 'done'
               : /^claimed$/i.test(status) ? 'working' : 'ready' };
         });
         // Clone: dependency/job overlays must not mutate the signature-cached parse.
-        if (ticket) tickets.push({ ...ticket, blockers: [...ticket.blockers] });
+        if (ticket) tickets.push({ ...ticket, blockers: [...ticket.blockers], items: ticket.items.map((i) => ({ ...i })) });
       }
       tickets.sort((a, b) => Number(a.number) - Number(b.number) || a.path.localeCompare(b.path));
       for (const ticket of tickets) {
@@ -129,7 +146,7 @@ export class ProjectCollector {
     this.seen.clear();
     const out: ProjectSnapshot = {
       waiting: [], docs: [], control: [], agents: [], keys: [], browser: false, roleCount: 0, editing: [],
-      ladder: { ids: [] }, slices: [], next: [], summary: '', tickets: this.tickets(),
+      ladder: { ids: [] }, slices: [], ledger: [], active: [], next: [], summary: '', tickets: this.tickets(),
       counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
     };
     const statePath = [join(this.cwd, 'docs/handoff/STATE.md'), join(this.cwd, 'STATE.md')].find((p) => this.read(p));
@@ -149,12 +166,16 @@ export class ProjectCollector {
     for (const row of bullets('Slices')) {
       const parts = row.value.split(/\s+·\s+/);
       if (parts.length < 4) continue;
-      const [status, , id, ...text] = parts;
-      ledger.set(id, { state: status, text: text.join(' · ') });
+      const [status, milestone, id, ...rest] = parts;
+      const text = rest.join(' · ');
+      ledger.set(id, { state: status, text });
       if (!SLICE_STATES.includes(status as SliceState)) continue;
-      out.counts[status as SliceState]++;
-      if (status === 'working' || status === 'blocked') out.slices.push({
-        label: id, value: text.join(' · '), path: statePath, ledgerState: status,
+      const state = status as SliceState;
+      out.counts[state]++;
+      const commit = [...text.matchAll(/\b[0-9a-f]{7,40}\b/gi)].at(-1)?.[0];
+      out.ledger.push({ id, state, milestone, text, ...(commit ? { commit } : {}) });
+      if (state === 'working' || state === 'blocked') out.slices.push({
+        label: id, value: text, path: statePath, ledgerState: state,
       });
     }
     const milestone = state.match(/^Milestone:[ \t]*([^\r\n]+)$/m)?.[1]?.trim();
@@ -250,6 +271,7 @@ export class ProjectCollector {
       this.git = undefined;
       this.last = undefined;
       this.worktrees = [];
+      this.commitAt.clear();
       try {
         const filters = await neutralizeFilters(worktreeGit, this.cwd);
         this.git = parseWorktreeStatus(await worktreeGit(this.cwd, [
@@ -261,10 +283,32 @@ export class ProjectCollector {
         ])).trim().split('\0');
         if (hash && at && Number.isFinite(Number(at))) this.last = { text: `${hash} ${subject}`, at: Number(at) * 1000 };
       } catch { /* No repo, unborn HEAD or failed probe: unknown, not zero. */ }
+      const hashes = [...new Set(out.ledger.map((r) => r.commit?.toLowerCase()).filter((c): c is string => !!c))];
+      if (hashes.length) {
+        try {
+          const log = await worktreeGit(this.cwd, [
+            'log', '--no-walk', '--ignore-missing', '--no-show-signature', '--format=%h%x00%ct', ...hashes, '--',
+          ]);
+          const resolved = log.trim().split('\n').filter(Boolean).map((line) => {
+            const [h, ct] = line.split('\0');
+            return [h?.toLowerCase() ?? '', Number(ct) * 1000] as const;
+          }).filter(([h, ts]) => h && Number.isFinite(ts));
+          for (const c of hashes) {
+            const hit = resolved.find(([h]) => h === c || h.startsWith(c) || c.startsWith(h));
+            if (hit) this.commitAt.set(c, hit[1]);
+          }
+        } catch { /* Unknown or unavailable commits: no at. */ }
+      }
+    }
+    for (const row of out.ledger) {
+      const at = row.commit ? this.commitAt.get(row.commit.toLowerCase()) : undefined;
+      if (at !== undefined) row.at = at;
     }
     out.git = this.git;
     out.last = this.last;
     const canonical = (path: string) => { try { return fs.realpathSync(path); } catch { return resolve(path); } };
+    const root = canonical(this.cwd);
+    const inRoot = (path: string) => { const rel = relative(root, path); return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel)); };
     const jobsRoot = join(this.hudHome, 'jobs');
     const jobs = this.names(jobsRoot, Infinity).filter((id) => /^j[0-9a-f]{16}$/.test(id)).flatMap((id) => {
       try {
@@ -273,6 +317,7 @@ export class ProjectCollector {
       } catch { return []; }
     }).sort((a, b) => b.at - a.at || a.id.localeCompare(b.id)).slice(0, 64);
     const byTree = new Map<string, { jobId: string; role: string; asking: boolean; path?: string; at?: number; created: number }>();
+    const active: { created: number; entry: ActiveJob }[] = [];
     const json = (path: string) => {
       const file = this.read(path);
       try { return file && !file.truncated ? JSON.parse(file.text) : null; } catch { return null; }
@@ -281,13 +326,32 @@ export class ProjectCollector {
       const dir = join(jobsRoot, id), job = json(join(dir, 'job.json'));
       if (!job || typeof job.cwd !== 'string') continue;
       const cwd = canonical(job.cwd);
+      const inside = inRoot(cwd);
       const created = Date.parse(job.created_at) || 0;
       const feature = out.tickets.find((f) => f.slug === job.package);
-      if (!feature && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
+      if (!inside && !feature && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const s = json(join(dir, 'STATUS.json')) ?? {};
+      const state = typeof s.state === 'string' && s.state ? s.state
+        : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
+      const worker = board.workers.find((w) => w.evidence[0]?.sourceId === id);
+      if (inside && !SETTLED_JOB_STATES.has(state) && !job.reaped_at) {
+        const at = Date.parse(s.started_at ?? job.created_at);
+        const title = [
+          worker?.task && worker.task !== id.slice(-6) ? worker.task : undefined,
+          job.title, job.task,
+        ].find((v): v is string => typeof v === 'string' && v.trim().length > 0)?.replace(/\s+/g, ' ').trim();
+        active.push({
+          created,
+          entry: {
+            jobId: id, role: typeof job.role === 'string' ? job.role : '', state,
+            ...(typeof job.package === 'string' && job.package ? { package: job.package } : {}),
+            ...(title ? { title } : {}), ...(Number.isFinite(at) ? { at } : {}),
+            asking: state === 'waiting_orchestrator',
+          },
+        });
+      }
       const report = join(dir, 'report.md'), brief = join(dir, 'brief.md');
       if (feature) {
-        const worker = board.workers.find((w) => w.evidence[0]?.sourceId === id);
         const material = [job.task, job.brief_path, worker?.task, this.read(brief)?.text].filter((v) => typeof v === 'string').join('\n');
         for (const ticket of feature.tickets) {
           if ((ticket.job?.created ?? -Infinity) >= created) continue;
@@ -304,6 +368,7 @@ export class ProjectCollector {
       byTree.set(cwd, { jobId: id, role: typeof job.role === 'string' ? job.role : '', created,
         asking: s.state === 'waiting_orchestrator', path, ...(Number.isFinite(at) ? { at } : {}) });
     }
+    out.active = active.sort((a, b) => b.created - a.created || a.entry.jobId.localeCompare(b.entry.jobId)).map((a) => a.entry);
     for (const slice of out.slices) if (ledger.get(slice.label)?.state === 'working' &&
       !this.worktrees.some((tree) => basename(tree.path) === slice.label)) slice.drift = 'no worktree';
     for (const tree of this.worktrees) {
