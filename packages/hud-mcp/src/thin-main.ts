@@ -24,6 +24,7 @@ import {
 } from '../../../src/roles/roster.js';
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobsRoot = join(hudHome, 'jobs');
+const { ensureQueueWatcher } = await import(new URL('../../../../bin/hud-notify.mjs', import.meta.url).href);
 const bundled = fileURLToPath(new URL('../../../../', import.meta.url));
 function registry(cwd: string) {
   return roleRegistry(hudHome, cwd, process.env, undefined, undefined, bundled);
@@ -44,6 +45,7 @@ interface Job extends PiOptions {
   thinking?: string | null;
   model_source?: string | null;
   read_at?: string;
+  observed_at?: string;
   reaped_at?: string;
   place?: RolePlace;
   place_key?: string;
@@ -81,6 +83,7 @@ const tools = [
       task: text,
       cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
+      idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI-only idle grace override for this job, in seconds.' },
       on: {
         ...text,
         description:
@@ -114,6 +117,7 @@ const tools = [
   tool('hud_read', 'Read a job, optionally waiting for settlement or a question; omit job for the 20 newest.', {
     job: text,
     wait_ms: { type: 'integer', minimum: 0, maximum: 120000 },
+    full: { type: 'boolean', description: 'Include the report even if already read.' },
   }),
   tool(
     'hud_send',
@@ -168,13 +172,14 @@ function slice(file: string, limit: number): { text: string; truncated: boolean 
 function directory(job: string): string {
   return join(jobsRoot, job);
 }
-function save(job: Job, clearRead = false): void {
+function save(job: Job): void {
   const file = join(directory(job.job), 'job.json');
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
   const existing = json<Job>(file);
-  const read_at = existing?.read_at;
-  if (clearRead) delete job.read_at;
-  else if (read_at) job.read_at = read_at;
+  for (const key of ['read_at', 'observed_at'] as const) {
+    const at = existing?.[key];
+    if (at && (!job[key] || at > job[key])) job[key] = at;
+  }
   const reaped_at = existing?.reaped_at;
   if (reaped_at) job.reaped_at = reaped_at;
   if (existing?.exhaustion_marked) job.exhaustion_marked = true;
@@ -196,7 +201,7 @@ function primary(dir: string): string | null {
 }
 function created(job: Job) {
   const task_dir = directory(job.job);
-  const { row } = readRow(job);
+  const { report_unread: _unread, report_mtime: _mtime, question_ids: _questions, ...row } = readRow(job).row;
   if (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 && row.display_state === 'failed') {
     return {
       ok: false,
@@ -371,7 +376,10 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace) {
       '--qa-dir',
       join(dir, 'qa'),
     ];
-    if (job.herdr_pane) argv.push('--orchestrator', job.herdr_pane);
+    if (job.herdr_pane) {
+      const notify = fileURLToPath(new URL('../../../../bin/hud-notify.mjs', import.meta.url));
+      argv.push('--notify', [process.execPath, notify, hudHome, job.herdr_pane, job.job].map(quote).join(' '));
+    }
     if (place.thinking !== undefined) argv.push('--dispatch-effort-source', 'orchestrator');
     for (const key of ['lens', 'mcp', 'tps'] as const)
       if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
@@ -728,10 +736,10 @@ function openQuestions(dir: string): string[] {
     .filter((name) => !fs.existsSync(join(qa, name.replace('.md', '.answer.md'))))
     .sort();
 }
-function observation(job: Job) {
+function observation(job: Job, full = false) {
   const dir = directory(job.job);
   const { row, status } = readRow(job);
-  const report = slice(join(dir, 'report.md'), 65536);
+  const report = row.report_unread || full ? slice(join(dir, 'report.md'), 65536) : null;
   const questions = openQuestions(dir).map((name) => ({
     id: name.slice(0, -3),
     text: slice(join(dir, 'qa', name), 2048)?.text ?? '',
@@ -742,6 +750,7 @@ function observation(job: Job) {
     model: job.model,
     thinking: job.thinking,
     model_source: job.model_source,
+    ...(job.cli ? { idle_grace_s: job.cli.idle_grace_s } : {}),
     ...Object.fromEntries([...piSwitches, 'pi_args' as const].map((key) => [key, job[key]])),
     ...(job.role_skills !== undefined
       ? {
@@ -759,9 +768,11 @@ function observation(job: Job) {
     ...(status?.quiet_decision && typeof status.quiet_decision === 'object' ? { quiet_decision: status.quiet_decision } : {}),
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
-    report_exists: report !== null,
-    report: report?.text ?? null,
-    report_truncated: report?.truncated ?? false,
+    report_exists: row.report_present,
+    report_unread: row.report_unread,
+    ...(row.report_present && !report
+      ? { report_unchanged: true }
+      : { report: report?.text ?? null, report_truncated: report?.truncated ?? false }),
     questions,
   };
 }
@@ -791,6 +802,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     const existing = jobs().find((job) => job.request_key === request_key);
     if (existing) {
       ensureWatcher();
+      ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
       return created(existing);
     }
     if (!herdrId(process.env.HERDR_PANE_ID)) return { ok: false, code: 'herdr_required' };
@@ -818,6 +830,14 @@ async function call(name: string, args: Args): Promise<unknown> {
         code: 'no_available_place',
         ...(effective.exhausted.length ? { exhausted: effective.exhausted } : {}),
       };
+    }
+    if (args.idle_grace_s !== undefined) {
+      if (!Number.isInteger(args.idle_grace_s) || (args.idle_grace_s as number) < 60 || (args.idle_grace_s as number) > 3600)
+        return { ok: false, code: 'invalid_arguments', error: 'idle_grace_s must be an integer from 60 to 3600' };
+      if (place.harness !== 'cli')
+        return { ok: false, code: 'invalid_arguments', error: place.harness === 'pi'
+          ? "idle_grace_s is CLI-only; pi grace follows the model's cache lifetime inside pi-roles"
+          : 'idle_grace_s is CLI-only; browser jobs have no idle grace' };
     }
     if (args.kind !== undefined) {
       if (place.harness !== 'bro' || place.tool !== 'jev-flow' || (args.kind !== 'image' && args.kind !== 'video')) {
@@ -908,7 +928,7 @@ async function call(name: string, args: Args): Promise<unknown> {
             cli: {
               agent: place.agent as CliAgent,
               can_continue: definition.can_continue === true,
-              idle_grace_s: definition.idle_grace_s ?? 600,
+              idle_grace_s: (args.idle_grace_s as number | undefined) ?? definition.idle_grace_s ?? 600,
             },
           }
         : {}),
@@ -933,11 +953,13 @@ async function call(name: string, args: Args): Promise<unknown> {
         : place.harness === 'cli'
           ? `${task}\n\nWrite your report to ${join(dir, 'report.md')}.\nAsk the orchestrator with: node ${JSON.stringify(hudAsk)} --dir ${JSON.stringify(dir)} --question "..." --default "..."\n`
           : `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
-    fs.writeFileSync(join(dir, 'brief.md'), brief, { flag: 'wx', mode: 0o600 });
+    const ending = place.harness === 'bro' ? '' : `Once the report file is written, end your turn with the single line \`report written: ${join(dir, 'report.md')}\` and do not repeat the report in your final message.\n`;
+    fs.writeFileSync(join(dir, 'brief.md'), brief + ending, { flag: 'wx', mode: 0o600 });
     // Persist before dispatch: an interrupted launch must not dispatch again on retry.
     save(job);
     createdJobs.add(job.job);
     ensureWatcher();
+    ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
     let result;
     try {
       if (place.harness === 'bro') result = await dispatchBro(job);
@@ -991,6 +1013,7 @@ async function call(name: string, args: Args): Promise<unknown> {
             blocked: row.blocked,
             open_questions: row.open_questions,
             report_present: row.report_present,
+            report_unread: row.report_unread,
             created_at: job.created_at,
           };
         }),
@@ -1001,10 +1024,11 @@ async function call(name: string, args: Args): Promise<unknown> {
   if (!job) return { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
   if (name === 'hud_read') {
+    if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
     if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
       throw new Error('invalid_arguments: wait_ms');
     const end = Date.now() + Math.max(0, Math.min(120000, (args.wait_ms as number | undefined) ?? 0));
-    const settled = (state: string | null) => ['idle_grace', 'closed', 'failed', 'stopped'].includes(state ?? '');
+    const settled = (state: string | null) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(state ?? '');
     const initial = readRow(job).row;
     const ready = (row: JobRow) =>
       settled(row.state) ||
@@ -1016,7 +1040,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     while (true) {
       const { row } = readRow(job);
       if (Date.now() >= end || ready(row)) {
-        const result = observation(job);
+        const result = observation(json<Job>(join(dir, 'job.json')) ?? job, args.full === true);
         // A question may have been answered or a settled job continued since the lightweight poll.
         const currentRow = jobRow(job, json<Record<string, unknown>>(join(dir, 'STATUS.json')), {
           dir,
@@ -1028,12 +1052,12 @@ async function call(name: string, args: Args): Promise<unknown> {
           await sleep(Math.max(0, Math.min(200, end - Date.now())));
           continue;
         }
-        if (result.report_exists && settled(result.state)) {
+        if (('report' in result && result.report_exists) || result.blocked || result.display_state === 'failed') {
           const latest = json<Job>(join(dir, 'job.json'))!;
-          if (!latest.read_at) {
-            latest.read_at = new Date().toISOString();
-            save(latest);
-          }
+          const at = new Date().toISOString();
+          if ('report' in result && result.report_exists) latest.read_at = at;
+          if (result.blocked || result.display_state === 'failed') latest.observed_at = at;
+          save(latest);
         }
         return result;
       }
@@ -1045,6 +1069,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     const message = required(args, 'text');
     if (job.message_keys.includes(key)) {
       const outcome = job.send_outcomes?.find((outcome) => outcome.key === key);
+      if (outcome?.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
       return outcome?.exit_code === 0
         ? { ok: true, sent: false }
         : { ok: false, sent: false, code: 'send_failed', ...outcome };
@@ -1073,7 +1098,8 @@ async function call(name: string, args: Args): Promise<unknown> {
     const result = await run('herdr', ['agent', 'prompt', agent, message]);
     outcome.exit_code = result.exit_code;
     outcome.stderr_tail = result.stderr;
-    save(job, result.exit_code === 0);
+    save(job);
+    if (result.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
     if (result.exit_code === 0 && job.cli) {
       const supPid = supervisorPid(dir, status);
       if (

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /** Ask the orchestrator from a CLI worker. Same files and texts as pi-roles ask_orchestrator. */
-import { spawnSync } from 'node:child_process';
+import { notify } from './hud-notify.mjs';
 import * as fs from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 const argv = process.argv.slice(2);
 const opts = { option: [] };
@@ -48,10 +48,7 @@ function questionBody(q) {
 function questionLine(q) {
   const oneLine = q.question.replace(/\s+/g, ' ').trim().slice(0, 400);
   const options = q.options?.length ? ` | options: ${q.options.join(' / ')}` : '';
-  return `[${q.tag}] QUESTION q${q.n}: ${oneLine}${options} | default: ${q.default.trim()} | full text: ${q.qfile} | reply: write ${q.afile}`;
-}
-function shellQuote(s) {
-  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+  return `[${q.tag}] QUESTION q${q.n}: ${oneLine}${options} | default: ${q.default.trim()} | full text: ${q.qfile} | reply: hud_respond job=${job.job} request_id=q${q.n}`;
 }
 function nextQuestionNumber(existing) {
   let highest = 0;
@@ -112,10 +109,10 @@ const published = publishQuestion(qa, {
 let pushed = 'not pushed (no --notify / --orchestrator)';
 const orch = sessionValue('ORCH');
 if (orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
-  const command = `herdr agent prompt ${shellQuote(orch)}`;
-  const ran = spawnSync('sh', ['-c', `${command} "$1"`, 'pi-role-notify', questionLine(published)], { encoding: 'utf8', timeout: 20000 });
+  const command = `herdr agent prompt ${orch}`;
+  const ran = notify(orch, questionLine(published), dirname(dirname(resolve(dir))));
   const detail = ran.error?.message ?? ((ran.stderr || ran.stdout || '').trim().slice(0, 200) || `exit ${ran.status}`);
-  pushed = ran.status === 0 ? `pushed via "${command}"` : `notify failed (${detail})`;
+  pushed = ran.skipped ? 'delivered by hud watch' : ran.status === 0 ? (ran.detail || `pushed via "${command}"`) : `notify failed (${ran.detail ? `${ran.detail}; ` : ''}${detail})`;
 }
 const timeoutRaw = opts.timeout ?? process.env.HUD_ASK_TIMEOUT;
 const timeoutSec = timeoutRaw !== undefined && /^\d+$/.test(String(timeoutRaw)) ? Number(timeoutRaw) : 1200;

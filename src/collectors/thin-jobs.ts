@@ -26,7 +26,7 @@ const seen = new Set<string>();
 let cacheHome = '', saved = '';
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
 const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'dispatch_exit_code',
-  'state', 'started_at', 'settled_at', 'ended_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
+  'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string): void {
   if (cacheHome === home) return;
   cacheHome = home; cache.clear(); saved = '';
@@ -145,23 +145,24 @@ export interface JobRow {
   blocked: boolean;
   open_questions: number;
   report_present: boolean;
+  report_unread: boolean;
+  report_mtime: number | null;
+  question_ids: string[];
 }
 export interface JobRowExtras {
   dir?: string;
   openQuestions?: number;
   reportPresent?: boolean;
+  reportAt?: number;
 }
-function countOpenQuestions(dir: string): number {
+function openQuestionIds(dir: string): string[] {
   const qa = join(dir, 'qa');
   try {
     const names = new Set(fs.readdirSync(qa));
-    let count = 0;
-    for (const name of names) {
-      if (/^q\d+\.md$/.test(name) && !names.has(name.replace('.md', '.answer.md'))) count++;
-    }
-    return count;
+    return [...names].filter((name) => /^q\d+\.md$/.test(name) && !names.has(name.replace('.md', '.answer.md')))
+      .sort((a, b) => number(a) - number(b)).map((name) => name.slice(0, -3));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
 }
@@ -196,8 +197,8 @@ export function jobRow(
   const cliJob = word(s.harness) === 'cli' || cliInfo !== null;
   const cliAgent = word(s.agent) ?? word(cliInfo?.agent) ?? 'CLI';
   const stderrFirstLine = word(j.stderr_tail)?.split(/\r?\n/)[0]?.trim() || null;
-  const openQuestions =
-    extras?.openQuestions !== undefined ? extras.openQuestions : extras?.dir ? countOpenQuestions(extras.dir) : 0;
+  const questionIds = extras?.dir ? openQuestionIds(extras.dir) : [];
+  const openQuestions = extras?.openQuestions ?? questionIds.length;
   const reason =
     displayState === 'failed'
       ? (word(s.exit_reason) ?? word(s.error) ?? word(s.reason) ?? (!hasStatus ? stderrFirstLine : null))
@@ -214,6 +215,10 @@ export function jobRow(
       : extras?.dir
         ? fs.existsSync(join(extras.dir, 'report.md'))
         : s.output_written === true;
+  let reportMtime: number | null = extras?.reportAt ?? null;
+  if (extras?.dir && reportPresent) {
+    try { reportMtime = fs.statSync(join(extras.dir, 'report.md')).mtimeMs; } catch { /* disappeared */ }
+  }
   return {
     job: word(j.job) ?? '',
     role: word(j.role),
@@ -224,16 +229,19 @@ export function jobRow(
     blocked,
     open_questions: openQuestions,
     report_present: reportPresent,
+    report_unread: reportPresent && reportMtime !== null && reportMtime > (when(j.read_at) ?? -Infinity),
+    report_mtime: reportMtime,
+    question_ids: questionIds,
   };
 }
 const rowState = (row: JobRow) => row.state ?? row.display_state;
-function formatJobChange(row: JobRow): string {
+export function formatJobChange(row: JobRow): string {
   const head = [row.job, row.role, row.package].filter(Boolean).join(' ');
   const reason = row.reason ? row.reason.replace(/\s+/g, ' ').trim() : null;
   const parts = [
     rowState(row),
     ...(reason ? [reason] : []),
-    ...(row.report_present ? ['report'] : []),
+    ...(row.report_unread ? ['report'] : []),
     ...(row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
   ];
   return `${head}: ${parts.join(' | ')}`;
@@ -268,7 +276,7 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
 }
 /**
  * Lightweight signature-cached reader for `hud watch`: reads only `job.json`, `STATUS.json`, `qa/` filenames,
- * and `report.md` existence (no file body reads, no disk writes). `scope.pane === null` matches every job;
+ * and `report.md` mtime (no artifact body reads, no disk writes). `scope.pane === null` matches every job;
  * `scope.pane === undefined` matches none.
  */
 export function readThinJobRows(home: string, scope: { pane?: string | null }): JobRow[] {
@@ -434,7 +442,7 @@ export function readThinJobs(
       }
     }
     const report = read(join(directory, 'report.md'));
-    const row = jobRow(job, status?.v ?? null, { openQuestions: openCount, reportPresent: report !== null });
+    const row = jobRow(job, status?.v ?? null, { openQuestions: openCount, reportPresent: report !== null, reportAt: report?.at });
     const cliJob = word(s.harness) === 'cli' || (job.cli !== null && typeof job.cli === 'object');
     const paneAsk =
       !pending && row.display_state === 'working' && cliJob && (row.blocked || row.state === 'waiting_orchestrator')

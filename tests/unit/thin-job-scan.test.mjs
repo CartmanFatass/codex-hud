@@ -203,6 +203,9 @@ test('jobRow derives raw state, display state, reason, blocked, open questions a
     blocked: true,
     open_questions: 1,
     report_present: true,
+    report_unread: true,
+    report_mtime: fs.statSync(join(dir, 'report.md')).mtimeMs,
+    question_ids: ['q1'],
   });
 
   // Unblocked waiting_orchestrator with an open question omits the quiet-without-report reason; without a question it keeps it.
@@ -233,6 +236,9 @@ test("jobChanges emits a line for a new state, a question, or a new reason outsi
     blocked: false,
     open_questions: 0,
     report_present: false,
+    report_unread: false,
+    report_mtime: null,
+    question_ids: [],
   };
   const sameWorking = { ...base, state: 'working' };
   assert.deepEqual(jobChanges([base], [sameWorking]), []);
@@ -249,6 +255,7 @@ test("jobChanges emits a line for a new state, a question, or a new reason outsi
     blocked: true,
     open_questions: 1,
     report_present: true,
+    report_unread: true,
   };
   assert.deepEqual(jobChanges([sameWorking], [waiting]), [
     'j0000000000000001 imp 02-changes: waiting_orchestrator | claude needs input | report | QUESTION',

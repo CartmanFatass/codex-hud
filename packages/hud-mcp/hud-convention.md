@@ -9,5 +9,12 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - Review at milestones or for risky changes: owner configs, deleting data, killing processes, installers—not per change.
 - Review spec compliance and scope creep separately from simplicity and real defects; findings do not imply new tests.
 - Read each result and decide whether to integrate, request a repair, review or stop. Workers do only their own job.
-- Claude Code: run `hud watch` under Monitor.
+- Claude Code: run `hud watch` under Monitor and re-arm after expiry; it catches up pending work and prints only
+  actionable events. `--verbose` and MCP `changes` retain the fuller change stream; `report` means unread.
+- Codex: quiet events and questions are queued automatically; no Monitor command is needed. Queue delivery
+  uses the pane's Codex account and leaves drafts alone; no thread id or a queue failure falls back to typing.
+- Other main sessions: typed questions plus `hud_read` with `wait_ms` for settlement. A live pane-scoped watch
+  suppresses direct questions. Lines include text and a `hud_respond` reply; no duplicate question read is needed.
+- `hud_read` lists open-question counts and unread-report flags; a job read returns only an unread report
+  (`report_unchanged: true` otherwise; `full: true` to reread). A report read in idle grace marks it read too.
 The main session owns every handoff and decides every next step. HUD does not chain these steps.

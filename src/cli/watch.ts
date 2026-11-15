@@ -1,15 +1,18 @@
-/** `hud watch [--all]`: stream one `jobChanges` line per job change with zero writes. */
+/** `hud watch`: push only actionable events; --verbose retains the MCP change stream. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { jobChanges, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
+import { formatJobChange, jobChanges, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
+import { questionFields } from '../collectors/work-artifacts.js';
 import { getHudHome } from '../hud-home.js';
 import { herdrId } from '../roles/herdr-run.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 
 export const WATCH_HELP =
-  'Usage: hud watch [--all]\n' +
-  'Stream job state change lines for the caller pane (HERDR_PANE_ID), or all jobs with --all.\n';
+  'Usage: hud watch [--all] [--verbose] [--queue]\n' +
+  'Stream pending questions and actionable job events for the caller pane (HERDR_PANE_ID).\n' +
+  '--all: every pane; --verbose: every change, as in MCP changes.\n' +
+  '--queue: deliver quietly through the Codex caller queue (typed fallback on failure).\n';
 
 // Woken by file changes under jobs/; the slow rescan only covers a watch lost or not yet attachable.
 const DEFAULT_RESCAN_MS = 30_000;
@@ -20,9 +23,45 @@ const isBrokenPipe = (error: unknown): boolean => {
   return code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED';
 };
 
+const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(row.state ?? '');
+function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRow[], catchup = false): string[] {
+  return rows.flatMap((row) => {
+    const old = prev.get(row.job);
+    const questions = row.question_ids.filter((id) => !old?.question_ids.includes(id)).map((id) => {
+          const file = join(home, 'jobs', row.job, 'qa', `${id}.md`);
+          const buffer = Buffer.alloc(2048);
+          let fd: number | undefined;
+          let body = '';
+          try { fd = fs.openSync(file, 'r'); body = buffer.subarray(0, fs.readSync(fd, buffer, 0, 2048, 0)).toString('utf8'); }
+          catch { /* The full-text path remains usable if publication raced this read. */ }
+          finally { if (fd !== undefined) fs.closeSync(fd); }
+          const q = questionFields(body), one = (s: string) => s.replace(/\s+/g, ' ').trim();
+          const tag = body.match(/^# Question q\d+ from (.+)$/m)?.[1] ?? row.role ?? row.job;
+          return `[${one(tag)}] QUESTION ${id}: ${one(q.question).slice(0, 400)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}`;
+        });
+    let attentionUnread = true;
+    if (catchup && (row.blocked || row.display_state === 'failed')) {
+      const dir = join(home, 'jobs', row.job);
+      try {
+        const observed = Date.parse(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).observed_at);
+        attentionUnread = !Number.isFinite(observed) || fs.statSync(join(dir, 'STATUS.json')).mtimeMs > observed;
+      } catch { /* unread */ }
+    }
+    const pending = (settled(row) && row.report_unread) || (attentionUnread && (row.blocked || row.display_state === 'failed'));
+    const event = (row.blocked && !old?.blocked) || (row.state !== 'working' && (
+      (!old && row.state !== null && !questions.length) ||
+      (old && settled(row) && !settled(old)) ||
+      (row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime)) ||
+      (row.state === 'waiting_orchestrator' && !row.open_questions && (old?.state !== row.state || old.reason !== row.reason))
+    ));
+    return [...questions, ...((catchup ? pending : event) ? [formatJobChange(row)] : [])];
+  });
+}
+
 export interface WatchOptions {
   rescanMs?: number;
   signal?: AbortSignal;
+  queueIdleMs?: number;
 }
 
 export async function watchCommand(
@@ -34,13 +73,16 @@ export async function watchCommand(
     await io.stdout(WATCH_HELP);
     return 0;
   }
-  let all = false;
+  let all = false, verbose = false, queue = false;
   for (const arg of args) {
     if (arg === '--all') all = true;
-    else throw new CliError('usage: hud watch [--all]');
+    else if (arg === '--verbose') verbose = true;
+    else if (arg === '--queue') queue = true;
+    else throw new CliError('usage: hud watch [--all] [--verbose] [--queue]');
   }
+  if (queue && (all || verbose)) throw new CliError('--queue requires a single pane and quiet events');
 
-  // Capture caller's pane once at start from HERDR_PANE_ID; never persisted.
+  // Capture the pane once; the ephemeral PID marker below advertises only this watch.
   const callerPane = herdrId(io.env.HERDR_PANE_ID) ? io.env.HERDR_PANE_ID : null;
   if (!all && !callerPane) {
     io.stderr('no pane found (HERDR_PANE_ID unset); pass --all to watch all jobs\n');
@@ -48,7 +90,10 @@ export async function watchCommand(
   }
   const scope = { pane: all ? null : callerPane };
   const home = getHudHome(io.env);
-  const rescanMs = Math.max(50, options.rescanMs ?? DEFAULT_RESCAN_MS);
+  const queueIdleMs = options.queueIdleMs ?? 10 * 60_000;
+  const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue ? queueIdleMs : Infinity));
+  const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
+  let idleSince: number | null = null;
   let watcher: fs.FSWatcher | undefined;
   const changed = () => {
     // A change during a scan is kept for the next wait, never lost until the rescan.
@@ -123,21 +168,47 @@ export async function watchCommand(
       timer = setTimeout(fire, dirty ? DEBOUNCE_MS : rescanMs);
     });
 
+  const pidFile = !all && callerPane ? join(home, 'watchers', `${callerPane}.pid`) : null;
+  const cleanup = () => {
+    if (pidFile) {
+      try { if (fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid)) fs.unlinkSync(pidFile); } catch { /* gone */ }
+    }
+  };
+  process.once('exit', cleanup);
   try {
-    // Watch first, so a change during the baseline scan is not missed; the baseline emits nothing.
+    if (pidFile) {
+      fs.mkdirSync(join(home, 'watchers'), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
+    }
+    // Attach before catch-up so events during the scan are not lost.
     attach();
-    let prev = new Map<string, JobRow>(readThinJobRows(home, scope).map((row) => [row.job, row]));
+    let prev = new Map<string, JobRow>();
+    let first = true;
     while (!stopped) {
-      await wait();
+      if (!first) await wait();
       if (stopped) break;
       dirty = false;
+      if (queue && delivery!.paneInfo(callerPane, io.env)?.agent !== 'codex') break;
       const rows = readThinJobRows(home, scope);
-      const lines = jobChanges(prev, rows);
+      if (queue) {
+        const pending = rows.some((row) => !settled(row) || row.report_unread || row.open_questions) ||
+          actionable(home, new Map(), rows, true).length > 0;
+        if (pending) idleSince = null;
+        else {
+          idleSince ??= Date.now();
+          if (Date.now() - idleSince >= queueIdleMs) break;
+        }
+      }
+      const lines = first ? actionable(home, prev, rows, true) : verbose ? jobChanges(prev, rows) : actionable(home, prev, rows);
+      first = false;
       prev = new Map(rows.map((row) => [row.job, row]));
       for (const line of lines) {
         if (stopped) break;
         try {
-          await io.stdout(`${line}\n`);
+          if (queue) {
+            const sent = delivery!.notify(callerPane, line, home, { queue: true, env: io.env });
+            if (sent.detail?.includes('failed') || sent.status !== 0) io.stderr(`${sent.detail || 'event delivery failed'}\n`);
+          } else await io.stdout(`${line}\n`);
         } catch (error) {
           if (isBrokenPipe(error)) {
             stop();
@@ -149,6 +220,8 @@ export async function watchCommand(
     }
     return 0;
   } finally {
+    cleanup();
+    process.off('exit', cleanup);
     process.off('SIGTERM', stop);
     process.off('SIGINT', stop);
     process.off('SIGPIPE', stop);

@@ -43,13 +43,13 @@ than assuming a role's model or workflow.
 | Tool | Arguments and behaviour |
 |---|---|
 | `hud_roster` | Optional `cwd` (default: the server's cwd). Returns role definitions (`instructions`, ordered `run` places, `runs_on`, `exhausted` marks), model/thinking assignments, accepted options, invalid role files, the dispatch convention with its source path, and `project` (`root`, `registered`). |
-| `hud_create` | Required `role`, `request_key`, `task`; optional `cwd` (roles resolve against that project; default: the server's cwd), display-only `package`, `on` (harness/provider override), `kind` (`image` or `video` for `flow`), and `model`/`thinking` for a `pi` or `cli` place. Pi launch switches are below. Uses the role's first available place (`runs_on`) unless overridden by `on`. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. Repeating a request key returns the original job unchanged, even if options differ; it does not relaunch an uncertain attempt. |
-| `hud_read` | Optional `job`, `wait_ms` (0–120000). Without a job, lists the newest 20. With one, reads STATUS, report (up to 64 KiB) and unanswered questions; waiting stops at settlement, a question or the deadline. A settled report read stamps `read_at`; it is not acceptance. |
+| `hud_create` | Required `role`, `request_key`, `task`; optional `cwd` (roles resolve against that project; default: the server's cwd), display-only `package`, `idle_grace_s` (CLI-only integer 60–3600, overrides the role for this job), `on` (harness/provider override), `kind` (`image` or `video` for `flow`), and `model`/`thinking` for a `pi` or `cli` place. Pi launch switches are below. Uses the role's first available place (`runs_on`) unless overridden by `on`. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. Repeating a request key returns the original job unchanged, even if options differ; it does not relaunch an uncertain attempt. |
+| `hud_read` | Optional `job`, `wait_ms` (0–120000), `full` (boolean). Without a job, lists the newest 20 with `open_questions` and `report_unread`. With one, returns STATUS, unanswered questions, effective CLI `idle_grace_s` and the unread report (up to 64 KiB); already read: `report_unchanged: true`, no body (`full: true` includes it again). Waiting stops at settlement, a question or the deadline. Every returned report body stamps `read_at` (including during work/idle grace), not acceptance; sends preserve it until a newer report appears. Reading a failure/block separately marks that attention seen. |
 | `hud_send` | Required `job`, `message_key`, `text`. Queues a message while a `pi` or `cli` job works, or continues it during `idle_grace` if its role allows. The message key deduplicates attempts, including failed/uncertain ones. Browser (`bro`) roles cannot continue. |
 | `hud_respond` | Required `job`, `request_id` (`qN`), `answer`. Writes `qa/qN.answer.md` once; an existing answer is not overwritten. |
 | `hud_close` | Required `job`. Calls `pi-role-reap` for early cleanup; safe to repeat. Normal finished-job cleanup belongs to the watcher. |
 
-`on` selects a harness or browser provider (`pi`, `agy`, `claude`, `codex`, `grok`, `chatgpt`, `gemini`, `argon`, `flow`) using defaults from shipped [`harnesses.json`](harnesses.json) overridden by `$HUD_HOME/harnesses.json`. Explicit `model` and `thinking` override a `pi` or `cli` place for this job only. `kind` selects `image` (default) or `video` for `flow`. Other `hud_create` options are `pi`-only: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, and `pi_args`. Omitted switches keep pi-role defaults; `split` defaults to the place. `ui_ext: false` disables UI extensions; `skills: true` includes personal skills. `split: true` reserves a helper pane to the right of the primary worker. `pi_args` passes at most 128 strings of at most 4096 characters verbatim after `--`, never through a shell. `--orchestrator` and `--notify` overrides are reserved and rejected. Browser (`bro`) roles reject pi launch options. CLI places require `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), else `hud_create` returns `unsupported_harness`.
+`on` selects a harness or browser provider (`pi`, `agy`, `claude`, `codex`, `grok`, `chatgpt`, `gemini`, `argon`, `flow`) using defaults from shipped [`harnesses.json`](harnesses.json) overridden by `$HUD_HOME/harnesses.json`. Explicit `model` and `thinking` override a `pi` or `cli` place for this job only. `kind` selects `image` (default) or `video` for `flow`. `idle_grace_s` is CLI-only; pi overrides refuse because pi grace follows the model's cache lifetime inside pi-roles, and browser jobs have no idle grace. Other `hud_create` options are `pi`-only: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, and `pi_args`. Omitted switches keep pi-role defaults; `split` defaults to the place. `ui_ext: false` disables UI extensions; `skills: true` includes personal skills. `split: true` reserves a helper pane to the right of the primary worker. `pi_args` passes at most 128 strings of at most 4096 characters verbatim after `--`, never through a shell. `--orchestrator` and `--notify` overrides are reserved and rejected. Browser (`bro`) roles reject pi launch options. CLI places require `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), else `hud_create` returns `unsupported_harness`.
 
 ## Roles and convention
 
@@ -95,7 +95,20 @@ nor a particular role's responsibilities.
 `$HUD_HOME/jobs/<job>/` holds `job.json`, `brief.md`, `STATUS.json`, `SESSION.txt`,
 `report.md` and `qa/` pairs. Pi-roles owns pi lifecycle and grace; the browser
 wrapper records browser-job STATUS and saves the CLI result. Mutations serialize
-within an MCP process; waiting reads do not block answers.
+within an MCP process; waiting reads do not block answers. A report is unread when its mtime is newer than
+`read_at` (or no stamp exists). CLI/pi briefs tell workers to write the file and end with only
+`report written: <path>`; HUD readers use the file, not that final chat line.
+
+Every MCP response carries the session's `changes` since its last call (omitted when empty).
+`hud watch` under a command monitor pushes less: full one-line questions, settlements/unread reports,
+new blocks and new quiet-worker reasons, not working starts/resumes, question-count drops or already-reported
+closure. On start it catches up pending questions, unread settled reports and unread failures/blocks.
+Re-arm after expiry; `--verbose` prints all MCP change lines, `--all` watches every pane. A `report` token means
+unread. Claude Code runs `hud watch` under Monitor. Codex receives these quiet lines automatically through
+its own queue: create/successful send starts one detached `hud watch --queue` per pane, without event stdout.
+It catches up and exits when the pane is gone/no longer Codex, or after 10 minutes without unsettled jobs,
+unread attention/reports or unanswered questions. Pane-scoped watches register `$HUD_HOME/watchers/<pane>.pid`
+and remove it at exit. Other main sessions keep typed questions and `hud_read` with `wait_ms`.
 
 `hud_create` starts the on-demand `hud-watch.mjs` if needed. It reacts to job-file
 and herdr tab-close events, invokes `pi-role-reap` after settlement/grace, and
@@ -120,9 +133,13 @@ plus a 30 s tick that re-reads the status once, and writes STATUS only on change
 a transition; STATUS never carries pi's `session_id`.
 
 The worker asks with `hud-ask` (the brief names it by absolute path). That writes
-`qa/qN.md`, pushes one `[tag] QUESTION qN: …` line to the orchestrator pane, and
-blocks until `qa/qN.answer.md` or 20 minutes, then prints the answer or the default.
-Answer with `hud_respond`. A mid-turn `blocked` status marks the job as needing the
+`qa/qN.md` and blocks until `qa/qN.answer.md` or 20 minutes, then prints the answer or the default.
+CLI and pi questions use a live pane-scoped `hud watch` first; without one, a Codex main session receives
+one queued line via `codex queue --thread … --message …`, using `CODEX_HOME` from its pane's Codex process
+(default `~/.codex`), never a shell function. Other agents, a missing thread id or any queue failure fall back
+to typing. A queue failure reports that fallback; the queue watcher keeps running. Successful queue delivery
+leaves input drafts untouched and avoids typed-input prompt hooks. Stale PIDs never suppress delivery. The watch carries the question text (first 2 KiB), options, default, full-text
+path and `hud_respond` reply, so another read is unnecessary. Answer with `hud_respond`. A mid-turn `blocked` status marks the job as needing the
 owner; the session learns it from `changes` or `hud watch`. `hud_close` stops a working CLI job, or quits one that is in idle grace.
 
 While a CLI job is open, the watcher also checks that the supervisor is alive.

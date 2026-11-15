@@ -68,7 +68,7 @@ hud panel --width 64      # this open only, until a changed Width is saved
 hud statusline --help
 hud import --help
 hud trust <dir>           # add the directory to grok, agy and claude trust lists
-hud watch                 # one line per state change of this pane's HUD jobs (--all: every job)
+hud watch                 # pending questions and actionable events (--verbose: every change; --all: every pane)
 hud setup --detect        # print this project's worker setup as JSON
 hud setup --apply PLAN    # write .hud/ from a plan
 hud setup --remove        # drop project registration; leave .hud/
@@ -92,17 +92,29 @@ See [Project workers](#project-workers).
 
 Every MCP response also carries `changes`: one line per state change of the jobs this pane dispatched since
 the last response (omitted when there is none). Panel, statusline, pi footer, MCP and `hud watch` derive a job's
-state through one shared `jobRow`, so they agree. `hud watch` prints the same lines as they happen, for the caller's pane
-(`HERDR_PANE_ID`) or every job with `--all`; it reads nothing at rest beyond a 30 s rescan. A working job's
-step-by-step flips are not changes. Claude Code runs it under Monitor. Nothing is ever typed into the main
-session's pane.
+state through one shared `jobRow`, so they agree. `hud watch` defaults to actionable events: new questions
+(with text, options, default and `hud_respond` reply), settlement/unread reports, blocks and new quiet-worker
+reasons. It skips working starts/resumes, answered questions and already-reported closure; `--verbose` keeps
+all MCP change lines. On start it catches up pending questions, unread settled reports and unread failures/blocks.
+It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan. Claude Code
+runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through
+`codex queue`: create/send starts a detached `hud watch --queue`, with catch-up and no event lines on stdout.
+It exits when the pane is gone/no longer Codex, or after 10 minutes with no unsettled job, unread attention/report
+or unanswered question. A pane-scoped watch records `$HUD_HOME/watchers/<pane>.pid` until exit.
+Without a live watch, CLI and pi worker questions go directly to the Codex thread queue; other main sessions
+receive typed questions and use `hud_read` with `wait_ms` for settlement. Queue delivery uses the pane's Codex
+process `CODEX_HOME` (default `~/.codex`), not the MCP account. A missing thread id or any queue failure falls
+back to typing that line, so only this fallback can touch a draft or fire prompt hooks. Stale PIDs never suppress
+delivery. MCP `changes` stays the fuller, query-only stream; a `report` token always means unread.
 
 `hud_create` takes `role`, `request_key`, `task`, optional `cwd` and display-only
 `package`. It dispatches on the role's first available place (`runs_on`) unless
 overridden with `on` (defaults from shipped `harnesses.json` overridden by
 `$HUD_HOME/harnesses.json`). A repeated key returns the original job unchanged, not
 a second launch. `model` and `thinking` override a `pi` or `cli` place for this job;
-`kind` selects `image` (default) or `video` for `flow`. Pi-only overrides:
+`kind` selects `image` (default) or `video` for `flow`. Optional `idle_grace_s` (integer 60–3600) overrides
+CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).
+Pi-only overrides:
 boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, plus `pi_args` (≤128
 strings, ≤4096 chars each, verbatim, no shell). Omitted switches keep pi-role
 defaults; split defaults to the place. `ui_ext: false` disables UI extensions;
@@ -132,14 +144,18 @@ herdr starts the CLI through the interactive shell, so that shell's functions ap
 `hud trust <dir>` adds that directory to the trust files of grok, agy and claude
 after a backup under `$HUD_HOME`. A missing CLI file is not created. Codex is skipped.
 
-`hud_read` without a job lists the newest 20; with a job it reads STATUS, report
-(up to 64 KiB) and open questions. `wait_ms` waits at most 120000 ms, stopping at
-settlement, a question or timeout. Reading a settled report stamps `read_at`, not
-acceptance. `hud_send` queues a message for a working pi or CLI job, or continues
+`hud_read` without a job lists the newest 20 with `open_questions` and `report_unread`; with a job it reads
+STATUS, open questions and an unread report (up to 64 KiB). A report is unread when newer than `read_at`, or no
+`read_at` exists. Already-read reports return `report_unchanged: true` without a body; `full: true` includes it
+again. CLI jobs show effective `idle_grace_s`. `wait_ms` waits at most 120000 ms, stopping at settlement, a
+question or timeout. Every returned report body stamps `read_at` (including during work and idle grace), not
+acceptance; continuing preserves that stamp until a newer report appears. Reading a failure/block separately
+marks that attention as seen. Workers write the report file, then finish with just
+`report written: <path>`, not a second copy in chat. `hud_send` queues a message for a working pi or CLI job, or continues
 an eligible role during idle grace; `message_key` deduplicates attempts. CLI
 workers ask through the same `QUESTION` line and `hud_respond` flow (`hud-ask`,
 20 minutes, then the default). A blocked CLI marks the job as needing the owner;
-the session learns it through `changes` or `hud watch`. `hud_respond` writes a
+the session learns it through `changes`, Claude's `hud watch` or Codex's automatic queue. `hud_respond` writes a
 `qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher.
 The main session chooses all next steps; the MCP knows no workflow.
 See [the MCP README](../packages/hud-mcp/README.md) for the tool arguments.

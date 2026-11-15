@@ -1,0 +1,78 @@
+/** Shared question/event delivery: watch, Codex queue, then typed fallback. */
+import { spawn, spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+export function watching(pane, home = process.env.HUD_HOME || join(homedir(), '.hud')) {
+  try {
+    if (!pane) return false;
+    const pid = Number(fs.readFileSync(join(home, 'watchers', `${pane}.pid`), 'utf8').trim());
+    if (!Number.isInteger(pid) || pid <= 1) return false;
+    process.kill(pid, 0);
+    const argv = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0');
+    const env = Object.fromEntries(fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0').map((s) => {
+      const at = s.indexOf('='); return [s.slice(0, at), s.slice(at + 1)];
+    }));
+    return argv.includes('watch') && argv.some((arg) => /(?:^|\/)hud$/.test(arg)) && !argv.includes('--all') &&
+      env.HERDR_PANE_ID === pane && resolve(env.HUD_HOME || join(env.HOME || homedir(), '.hud')) === resolve(home);
+  } catch { return false; } // Stale or reused PID: never suppress a question.
+}
+export function paneInfo(pane, env = process.env) {
+  try {
+    const got = spawnSync('herdr', ['pane', 'get', pane], { env, encoding: 'utf8', timeout: 2000 });
+    return got.status === 0 ? JSON.parse(got.stdout).result.pane : null;
+  } catch { return null; }
+}
+export function notify(pane, message, home, { queue = false, env = process.env } = {}) {
+  if (!queue && watching(pane, home)) return { status: 0, skipped: true };
+  const info = paneInfo(pane, env);
+  let detail = '';
+  if (info?.agent === 'codex' && info.agent_session?.value) {
+    try {
+      const got = spawnSync('herdr', ['pane', 'process-info', '--pane', pane], { env, encoding: 'utf8', timeout: 2000 });
+      if (got.status !== 0) throw new Error(got.error?.message || got.stderr || 'process-info failed');
+      const proc = JSON.parse(got.stdout).result.process_info.foreground_processes.find((p) => p.name === 'codex');
+      if (!proc) throw new Error('Codex process not found');
+      const entries = fs.readFileSync(`/proc/${proc.pid}/environ`, 'utf8').split('\0');
+      const value = (key) => entries.find((s) => s.startsWith(`${key}=`))?.slice(key.length + 1);
+      const CODEX_HOME = value('CODEX_HOME') || join(value('HOME') || homedir(), '.codex');
+      const sent = spawnSync('codex', ['queue', '--thread', info.agent_session.value, '--message', message], {
+        env: { ...env, CODEX_HOME }, encoding: 'utf8', timeout: 20000,
+      });
+      if (sent.status === 0) return { ...sent, detail: 'pushed via codex queue' };
+      throw new Error(sent.error?.message || sent.stderr || `exit ${sent.status}`);
+    } catch (error) {
+      detail = `codex queue failed (${String(error.message).trim().slice(0, 200)}); fell back to typing`;
+    }
+  }
+  const typed = spawnSync('herdr', ['agent', 'prompt', pane, message], { env, encoding: 'utf8', timeout: 20000 });
+  return { ...typed, ...(detail ? { detail } : {}) };
+}
+
+export function ensureQueueWatcher(pane, home) {
+  try {
+    if (!pane || watching(pane, home) || paneInfo(pane)?.agent !== 'codex' || watching(pane, home)) return;
+    const pidFile = join(home, 'watchers', `${pane}.pid`);
+    fs.mkdirSync(join(home, 'watchers'), { recursive: true, mode: 0o700 });
+    const hud = fileURLToPath(new URL('../../../bin/hud', import.meta.url));
+    const child = spawn(process.execPath, [hud, 'watch', '--queue'], { detached: true, stdio: 'ignore' });
+    const cleanup = () => {
+      try { if (fs.readFileSync(pidFile, 'utf8').trim() === String(child.pid)) fs.unlinkSync(pidFile); } catch { /* gone */ }
+    };
+    child.on('error', cleanup);
+    if (child.pid) fs.writeFileSync(pidFile, `${child.pid}\n`, { mode: 0o600 });
+    child.unref();
+  } catch { /* Dispatch still succeeds; questions retain the typed fallback. */ }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const [home, pane, job, message = ''] = process.argv.slice(2);
+  process.env.HUD_HOME = home;
+  // pi-roles builds a file-write reply; the HUD main session answers through its MCP.
+  const line = message.replace(/ \| reply: write .*$/, ` | reply: hud_respond job=${job} request_id=${message.match(/QUESTION (q\d+):/)?.[1] ?? ''}`);
+  const result = notify(pane, line);
+  if (result.error) process.stderr.write(`${result.error.message}\n`);
+  process.exitCode = result.status ?? 1;
+}

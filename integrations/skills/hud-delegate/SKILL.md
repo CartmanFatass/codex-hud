@@ -10,14 +10,19 @@ The user names a role and a task in plain words; you do the rest. Never ask them
 1. Call `hud_roster` once per session; it returns the roles and convention in effect, which the main session follows (`hud-convention.md` in the server's cwd, then `$HUD_HOME`, then the shipped default; first file wins whole, text truncated at 20,000 characters).
 2. Write the brief: the goal, scope and out of scope, completion criteria, a size budget and a stop rule. For a small
    ask the user's own sentence plus those limits is enough. Do not name a report file; HUD adds it.
-3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`; optional `on` selects a harness/provider override for this job (defaults from `harnesses.json`; explicit `model`/`thinking` win), optional `model`/`thinking` apply to `pi` and `cli` places, and optional `kind` (`image` default, or `video`) applies to `flow`. Pi-only launch switches: boolean `lens`, `mcp`, `tps`, `ui_ext` (false disables UI extensions; true keeps defaults), `skills` (true includes personal skills; false keeps them excluded), `split` (reserve a right helper pane; defaults to the place). Omitted switches keep pi-role defaults. `pi_args` appends up to 128 strings (4096 characters each) verbatim after pi-role's `--`, without a shell. `hud_roster` lists `run`, `runs_on`, `exhausted` and `accepts_options`; `hud_read` shows the recorded launch options. A retry returns the original job unchanged even if options differ; use a new key for a different launch.
+3. `hud_create` with `role`, a short `request_key` (task slug plus date, stable on retry), the brief as `task`, and `cwd`; optional `on` selects a harness/provider override for this job (defaults from `harnesses.json`; explicit `model`/`thinking` win), optional `model`/`thinking` apply to `pi` and `cli` places, and optional `kind` (`image` default, or `video`) applies to `flow`. Optional `idle_grace_s` (integer 60–3600) overrides CLI grace for this job; pi/browser overrides refuse (pi grace follows model cache lifetime inside pi-roles). Pi-only launch switches: boolean `lens`, `mcp`, `tps`, `ui_ext` (false disables UI extensions; true keeps defaults), `skills` (true includes personal skills; false keeps them excluded), `split` (reserve a right helper pane; defaults to the place). Omitted switches keep pi-role defaults. `pi_args` appends up to 128 strings (4096 characters each) verbatim after pi-role's `--`, without a shell. `hud_roster` lists `run`, `runs_on`, `exhausted` and `accepts_options`; `hud_read` shows the recorded launch options. A retry returns the original job unchanged even if options differ; use a new key for a different launch.
 4. Tell the user in one line: role, job id. The worker runs in its own tab.
-5. Wait for the job to settle: nothing is typed into your pane. Every MCP response carries `changes` (state changes
-   of the jobs this pane dispatched). Where the client can watch a shell command in the background (Claude Code's
-   Monitor), run `hud watch` under it once per session: one line per state change and per new question; re-arm it
-   when it expires. Otherwise call `hud_read` with `wait_ms`. Answer a worker's question within 20 minutes.
-6. Read the report (`hud_read`), check it (for code: the diff and the named checks), then decide: accept, repair, review
-   or stop. Settled means finished, not accepted.
+5. Claude Code: run `hud watch` under Monitor and re-arm after expiry. Codex: events are queued automatically;
+   no Monitor command is needed, and drafts stay untouched (missing thread id or queue failure falls back to typing).
+   Both catch up pending work and deliver full questions, settlements/unread reports, new blocks and quiet-worker
+   reasons—not working starts/resumes, answered questions or already-reported closure. `--verbose` and MCP
+   `changes` retain the fuller stream. Other main sessions receive typed questions and wait with `hud_read` and
+   `wait_ms`. A live pane-scoped watch suppresses direct questions. Answer within 20 minutes using the line's
+   `hud_respond` reply.
+6. Read the report file through `hud_read`, check it (for code: the diff and named checks), then decide: accept,
+   repair, review or stop. Lists include `open_questions` and `report_unread`; a `report` token means unread.
+   A job read omits an already-read report (`report_unchanged: true`; use `full: true` to reread); idle-grace reads
+   mark reports read too. Workers finish chat with only `report written: <path>`. Settled means finished, not accepted.
 
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role when a job finishes. A review verdict is information for you, not permission to continue.
 
@@ -40,7 +45,8 @@ The shipped defaults; `hud_roster` lists what is actually defined (files in `$HU
 
 ### Questions
 
-`hud_read` lists unanswered `qa/qN.md` questions by id with the first 2 KiB. Answer with `hud_respond` using `job`, `request_id` and `answer`; it writes `qa/qN.answer.md` only once and never overwrites an existing answer.
+Watch question lines carry the first 2 KiB's question, options, default and full-text path; no extra read is needed.
+`hud_read` also lists unanswered `qa/qN.md` questions by id with the first 2 KiB. Answer with `hud_respond` using `job`, `request_id` and `answer`; it writes `qa/qN.answer.md` only once and never overwrites an existing answer.
 
 ### Helpers
 

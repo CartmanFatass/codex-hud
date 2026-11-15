@@ -109,6 +109,7 @@ export const PI_ROLE_TOOLS = [
       task: text,
       cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
+      idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI-only idle grace override for this job, in seconds.' },
       on: {
         ...text,
         description:
@@ -141,6 +142,7 @@ export const PI_ROLE_TOOLS = [
   tool('hud_read', 'Read a job, optionally waiting for settlement or a question; omit job for the 20 newest.', {
     job: text,
     wait_ms: { type: 'integer', minimum: 0, maximum: 120000 },
+    full: { type: 'boolean', description: 'Include the report even if already read.' },
   }),
   tool(
     'hud_send',

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -76,7 +76,7 @@ test('dead supervisor watcher preserves a live worker; both gone fail or close b
   assert.equal(status(closed).output_written, true);
 });
 
-test('hud watch emits four lines for three transitions and qa/q1.md without writing HUD_HOME', async (t) => {
+test('hud watch --verbose retains the existing MCP change lines', async (t) => {
   const hudHome = fs.mkdtempSync(join(tmpdir(), 'hud-watch-'));
   t.after(() => fs.rmSync(hudHome, { recursive: true, force: true }));
 
@@ -87,7 +87,7 @@ test('hud watch emits four lines for three transitions and qa/q1.md without writ
   const lines = [];
   const ac = new AbortController();
   const running = watchCommand(
-    [],
+    ['--verbose'],
     {
       env,
       stdout: (text) => {
@@ -145,6 +145,106 @@ test('hud watch emits four lines for three transitions and qa/q1.md without writ
   assert.equal(fs.existsSync(join(hudHome, 'display')), false);
   assert.equal(fs.existsSync(join(hudHome, 'watch.pid')), false);
   assert.equal(fs.existsSync(join(hudHome, 'watch.log')), false);
+  assert.equal(fs.existsSync(join(hudHome, 'watchers', 'w4E:p1.pid')), false);
+});
+
+for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbose ? 'verbose' : 'quiet'})`, async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-life-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const ac = new AbortController();
+  t.after(() => ac.abort());
+  const lines = [], id = 'j00000000000000a1', head = `${id} imp life:`;
+  const running = watchCommand(verbose ? ['--verbose'] : [], {
+    env: { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1' }, stdout: (s) => lines.push(s.trim()), stderr: () => {},
+  }, { signal: ac.signal, rescanMs: 100 });
+  const dir = writeJob(home, id, 'w4E:p1', 'life', { state: 'working' });
+  const status = async (state, reason) => {
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, reason }));
+    await wait(180);
+  };
+  await wait(180);
+  fs.mkdirSync(join(dir, 'qa'));
+  const qfile = join(dir, 'qa/q1.md');
+  fs.writeFileSync(qfile, '# Question q1 from imp@demo\n\nWhich\nlayout?\n\nOptions:\n- rows\n- columns\n\nDefault if unanswered: rows\n');
+  await status('waiting_orchestrator', 'question');
+  fs.writeFileSync(join(dir, 'qa/q1.answer.md'), 'rows');
+  await wait(180);
+  await status('working');
+  fs.writeFileSync(join(dir, 'report.md'), 'First report');
+  await status('idle_grace');
+  const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
+  const markRead = async () => {
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ ...receipt, read_at: new Date().toISOString() }));
+    await wait(180);
+  };
+  await markRead();
+  await status('working');
+  fs.writeFileSync(join(dir, 'report.md'), 'Second report');
+  await status('idle_grace');
+  await markRead();
+  await status('working');
+  await status('idle_grace'); // A new settlement is actionable even without rewriting the already-read report.
+  await status('closed');
+  ac.abort();
+  assert.equal(await running, 0);
+  assert.deepEqual(lines, verbose ? [
+    `${head} working`, `${head} waiting_orchestrator | question | QUESTION`,
+    `${head} waiting_orchestrator | question`, `${head} working`, `${head} idle_grace | report`,
+    `${head} working`, `${head} idle_grace | report`, `${head} working`, `${head} idle_grace`, `${head} closed`,
+  ] : [
+    `[imp@demo] QUESTION q1: Which layout? | options: rows / columns | default: rows | full text: ${qfile} | reply: hud_respond job=${id} request_id=q1`,
+    `${head} idle_grace | report`, `${head} idle_grace | report`, `${head} idle_grace`,
+  ]);
+});
+
+test('hud watch catch-up prints pending questions, unread settlements and unread failures/blocks once', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-catchup-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const question = writeJob(home, 'j0000000000000001', 'w4E:p1', 'ask', { state: 'waiting_orchestrator' });
+  fs.mkdirSync(join(question, 'qa'));
+  for (const n of [1, 2]) fs.writeFileSync(join(question, `qa/q${n}.md`), `# Question q${n} from imp@demo\n\nQuestion ${n}?\n\nDefault if unanswered: yes\n`);
+  writeJob(home, 'j0000000000000002', 'w4E:p1', 'unread', { state: 'idle_grace' }, true);
+  writeJob(home, 'j0000000000000003', 'w4E:p1', 'failed', { state: 'failed', reason: 'gone' });
+  writeJob(home, 'j0000000000000004', 'w4E:p1', 'blocked', { state: 'working', blocked: true, reason: 'input' });
+  const read = writeJob(home, 'j0000000000000005', 'w4E:p1', 'read', { state: 'closed' }, true);
+  const job = JSON.parse(fs.readFileSync(join(read, 'job.json')));
+  fs.writeFileSync(join(read, 'job.json'), JSON.stringify({ ...job, read_at: new Date(Date.now() + 1000).toISOString() }));
+  const lines = [], ac = new AbortController();
+  t.after(() => ac.abort());
+  const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1' }, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: ac.signal, rescanMs: 60 });
+  await wait(240);
+  assert.equal(lines.length, 5);
+  assert.equal(lines.filter((s) => s.includes('QUESTION q')).length, 2);
+  assert.equal(lines.filter((s) => s.includes('idle_grace | report')).length, 1);
+  assert.equal(lines.filter((s) => s.includes('failed | gone')).length, 1);
+  assert.equal(lines.filter((s) => s.includes('working | input')).length, 1);
+  // Answer and next question can coalesce into one scan with the same count: never lose the new id.
+  fs.writeFileSync(join(question, 'qa/q1.answer.md'), 'yes');
+  fs.writeFileSync(join(question, 'qa/q3.md'), '# Question q3 from imp@demo\n\nNext question?\n\nDefault if unanswered: yes\n\nContext: ' + 'x'.repeat(2200) + 'NOT IN LINE');
+  await until(() => lines.length === 6);
+  assert.match(lines.at(-1), /QUESTION q3: Next question\?/);
+  assert.doesNotMatch(lines.at(-1), /NOT IN LINE/);
+  ac.abort();
+  await running;
+});
+
+test('quiet watch emits new blocks and quiet reasons but never working/resume chatter', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-attention-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const dir = writeJob(home, 'j0000000000000001', 'w4E:p1', 'attention', { state: 'working' });
+  const lines = [], ac = new AbortController();
+  t.after(() => ac.abort());
+  const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1' }, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: ac.signal, rescanMs: 60 });
+  for (const state of [
+    { state: 'working', reason: 'tool' }, { state: 'working', blocked: true, reason: 'input' },
+    { state: 'working' }, { state: 'waiting_orchestrator', reason: 'quiet' },
+    { state: 'waiting_orchestrator', reason: 'worker not found' }, { state: 'working' },
+  ]) {
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(state));
+    await wait(150);
+  }
+  ac.abort(); await running;
+  assert.deepEqual(lines.map((s) => s.split(': ').at(-1)), ['working | input', 'waiting_orchestrator | quiet', 'waiting_orchestrator | worker not found']);
 });
 
 test('hud watch --all watches every pane and exits cleanly on help, usage errors, and EPIPE', async (t) => {
@@ -194,6 +294,137 @@ test('hud watch --all watches every pane and exits cleanly on help, usage errors
   fs.writeFileSync(join(otherDir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'tab closed' }));
   assert.equal(await running, 0);
   assert.deepEqual(seen, ['j00000000000000d4 imp pkg-other: failed | tab closed']);
+});
+
+test('CLI and pi question pushes use only watch while live, and fall back with missing or stale watcher PIDs', { timeout: 10000 }, async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-push-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const bin = join(home, 'bin'), log = join(home, 'pushes');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}\nimport fs from 'node:fs'; if (process.argv[2] === 'agent') fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`, { mode: 0o700 });
+  const env = { ...process.env, HOME: home, HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1', PATH: `${bin}:${process.env.PATH}` };
+  const id = 'j0000000000000001';
+  const dir = writeJob(home, id, 'w4E:p1', 'push', { state: 'working' });
+  fs.writeFileSync(join(dir, 'SESSION.txt'), 'ORCH=w4E:p1\n');
+  const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
+  const pidFile = join(home, 'watchers', 'w4E:p1.pid');
+  await until(() => fs.existsSync(pidFile));
+  assert.equal(Number(fs.readFileSync(pidFile)), child.pid);
+  const pushBoth = () => {
+    const ask = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-ask.mjs'), '--dir', dir, '--question', 'Which layout?', '--default', 'rows', '--timeout', '0'], { env, encoding: 'utf8' });
+    assert.equal(ask.status, 0, ask.stderr);
+    const pi = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-notify.mjs'), home, 'w4E:p1', id, '[imp@demo] QUESTION q99: Which layout? | reply: write /synthetic/q99.answer.md'], { env, encoding: 'utf8' });
+    assert.equal(pi.status, 0, pi.stderr);
+  };
+  pushBoth();
+  assert.equal(fs.existsSync(log), false);
+  child.kill('SIGTERM');
+  await new Promise((r) => child.once('exit', r));
+  assert.equal(fs.existsSync(pidFile), false);
+  for (const pid of [null, 99999999, process.pid]) {
+    if (pid !== null) fs.writeFileSync(pidFile, String(pid));
+    pushBoth();
+  }
+  const pushes = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(pushes.length, 6);
+  assert.ok(pushes.every((args) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === 'w4E:p1'));
+  assert.match(pushes[1][3], /reply: hud_respond job=j0000000000000001 request_id=q99$/);
+});
+
+function queueFixture(t, agent = 'codex', thread = '00000000-0000-4000-8000-000000000001', fail = false) {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-queue-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const bin = join(home, 'bin'), log = join(home, 'deliveries'), agentFile = join(home, 'agent');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(agentFile, agent);
+  const fake = `#!${process.execPath}
+import fs from 'node:fs';
+const args = process.argv.slice(2);
+if (args[0] === 'pane' && args[1] === 'get') {
+  console.log(JSON.stringify({ result: { pane: { agent: fs.readFileSync(${JSON.stringify(agentFile)}, 'utf8'), agent_session: { value: ${JSON.stringify(thread)} } } } }));
+} else if (args[0] === 'pane' && args[1] === 'process-info') {
+  console.log(JSON.stringify({ result: { process_info: { foreground_processes: [{ name: 'codex', pid: ${process.pid} }] } } }));
+} else {
+  fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, home: process.env.CODEX_HOME }) + '\\n');
+  if (args[0] === 'queue' && ${fail}) { console.error('no rollout found'); process.exit(1); }
+}
+`;
+  for (const name of ['herdr', 'codex']) fs.writeFileSync(join(bin, name), fake, { mode: 0o700 });
+  const env = { ...process.env, HOME: home, HUD_HOME: home, CODEX_HOME: join(home, 'wrong-account'), HERDR_PANE_ID: 'w4E:p1', PATH: `${bin}:${process.env.PATH}` };
+  const deliveries = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
+  return { home, env, agentFile, deliveries };
+}
+
+for (const [label, agent, thread, fail] of [
+  ['Codex queue', 'codex', '00000000-0000-4000-8000-000000000001', false],
+  ['queue failure types', 'codex', '00000000-0000-4000-8000-000000000001', true],
+  ['no thread types', 'codex', null, false],
+  ['other agents type', 'claude', null, false],
+]) test(`CLI and pi questions: ${label}`, (t) => {
+  const f = queueFixture(t, agent, thread, fail), id = 'j0000000000000001';
+  const dir = writeJob(f.home, id, 'w4E:p1', 'queue', { state: 'working' });
+  fs.writeFileSync(join(dir, 'SESSION.txt'), 'ORCH=w4E:p1\n');
+  const ask = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-ask.mjs'), '--dir', dir, '--question', 'Which layout?', '--default', 'rows', '--timeout', '0'], { env: f.env, encoding: 'utf8' });
+  assert.equal(ask.status, 0, ask.stderr);
+  if (fail) assert.match(ask.stdout, /codex queue failed.*fell back to typing/);
+  const pi = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-notify.mjs'), f.home, 'w4E:p1', id, '[imp@demo] QUESTION q99: Which layout? | reply: write /synthetic/q99.answer.md'], { env: f.env, encoding: 'utf8' });
+  assert.equal(pi.status, 0, pi.stderr);
+  const all = f.deliveries(), queued = all.filter((d) => d.args[0] === 'queue'), typed = all.filter((d) => d.args[0] === 'agent');
+  const usesQueue = agent === 'codex' && thread !== null;
+  assert.equal(queued.length, usesQueue ? 2 : 0);
+  assert.equal(typed.length, usesQueue && !fail ? 0 : 2);
+  const lines = [
+    `[imp@${id}] QUESTION q1: Which layout? | default: rows | full text: ${join(dir, 'qa/q1.md')} | reply: hud_respond job=${id} request_id=q1`,
+    `[imp@demo] QUESTION q99: Which layout? | reply: hud_respond job=${id} request_id=q99`,
+  ];
+  const procEnv = Object.fromEntries(fs.readFileSync('/proc/self/environ', 'utf8').split('\0').map((s) => { const i = s.indexOf('='); return [s.slice(0, i), s.slice(i + 1)]; }));
+  queued.forEach((d, i) => {
+    assert.deepEqual(d.args, ['queue', '--thread', thread, '--message', lines[i]]);
+    assert.equal(d.home, procEnv.CODEX_HOME || join(procEnv.HOME, '.codex'), 'use the pane process account, not notifier CODEX_HOME');
+    assert.notEqual(d.home, f.env.CODEX_HOME);
+  });
+  typed.forEach((d, i) => assert.deepEqual(d.args, ['agent', 'prompt', 'w4E:p1', lines[i]]));
+});
+
+test('hud watch --queue queues catch-up and settlement silently and exits on agent change', async (t) => {
+  const f = queueFixture(t);
+  writeJob(f.home, 'j0000000000000001', 'w4E:p1', 'catchup', { state: 'idle_grace' }, true);
+  const dir = writeJob(f.home, 'j0000000000000002', 'w4E:p1', 'settlement', { state: 'working' });
+  const ac = new AbortController(), stdout = [], stderr = [];
+  t.after(() => ac.abort());
+  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60 });
+  await until(() => f.deliveries().length === 1);
+  fs.writeFileSync(join(dir, 'report.md'), 'Done.');
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+  await until(() => f.deliveries().length === 2);
+  assert.deepEqual(f.deliveries().map((d) => d.args), [
+    ['queue', '--thread', '00000000-0000-4000-8000-000000000001', '--message', 'j0000000000000001 imp catchup: idle_grace | report'],
+    ['queue', '--thread', '00000000-0000-4000-8000-000000000001', '--message', 'j0000000000000002 imp settlement: idle_grace | report'],
+  ]);
+  fs.writeFileSync(f.agentFile, 'claude');
+  assert.equal(await running, 0);
+  assert.deepEqual(stdout, []);
+  assert.deepEqual(stderr, []);
+  assert.equal(fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')), false);
+});
+
+test('hud watch --queue typed fallback keeps running and exits after injectable empty idle interval', async (t) => {
+  const f = queueFixture(t, 'codex', 'synthetic-thread', true);
+  const dir = writeJob(f.home, 'j0000000000000001', 'w4E:p1', 'fallback', { state: 'closed' }, true);
+  const ac = new AbortController(), stdout = [], stderr = [];
+  t.after(() => ac.abort());
+  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, queueIdleMs: 100 });
+  await until(() => f.deliveries().length === 2);
+  await wait(180);
+  assert.equal(fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')), true, 'unread report prevents idle exit');
+  const job = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ ...job, read_at: new Date(Date.now() + 1000).toISOString() }));
+  assert.equal(await running, 0);
+  assert.deepEqual(f.deliveries().map((d) => d.args[0]), ['queue', 'agent']);
+  assert.equal(f.deliveries()[0].args[4], f.deliveries()[1].args[3]);
+  assert.deepEqual(stdout, []);
+  assert.match(stderr.join(''), /codex queue failed.*fell back to typing/);
 });
 
 test('hud watch without HERDR_PANE_ID or --all prints one error line and exits 1', async (t) => {
