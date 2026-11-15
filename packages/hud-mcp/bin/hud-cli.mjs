@@ -187,7 +187,8 @@ function collect(isTick) {
   if (nextStamp !== stamp) { signature = reportSignature(dir); stamp = nextStamp; }
   return { turn, reportSig: signature, alive: workerAlive(current.pid, current.pid_start_time), status,
     newerChild: isTick && status !== 'working' ? newerChild() : null,
-    stop, close, openQuestions, canContinue: cli.can_continue, graceMs, tick: isTick, agentMissing, workingAt, tabClosed };
+    stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
+    tick: isTick, agentMissing, workingAt, tabClosed };
 }
 function write(result) {
   const terminal = ['closed', 'failed', 'stopped'].includes(result.state);

@@ -96,3 +96,109 @@ test('judge: a handled quiet episode does not ask repeatedly, a new turn can ask
   assert.equal(prev.state, 'working');
   assert.equal(prev.quietHandled, false);
 });
+
+test('judge: turn trust settles a stable report at 2s after done or idle, never before', () => {
+  for (const status of ['done', 'idle']) {
+    const observed = { ...facts, stateTrust: 'turn', workingAt: 0, status, reportSig: 'report' };
+    let prev = judge(initial, observed, 1000);
+    assert.equal(prev.wakeAt, 3000);
+    assert.equal(judge(prev, observed, 2999).state, 'working');
+    prev = judge(prev, observed, 3000);
+    assert.equal(prev.state, 'idle_grace');
+    assert.equal(prev.outputWritten, true);
+    assert.equal(prev.deadline, 603_000);
+    assert.equal(judge(prev, { ...observed, status: 'working', workingAt: 4000 }, 4000).state, 'idle_grace');
+    assert.equal(judge(quiet, { ...observed, canContinue: false }, 3000).action, 'quit');
+  }
+});
+
+test('judge: turn trust reaches the no-report decision at 10s, then keeps the full post-decision wait', () => {
+  const observed = { ...facts, stateTrust: 'turn', workingAt: 0, status: 'done' };
+  const prev = judge(initial, observed, 1000);
+  assert.equal(prev.wakeAt, 11_000);
+  assert.equal(judge(prev, observed, 10_999).action, null);
+  assert.equal(judge(prev, observed, 11_000).action, 'decide');
+  assert.equal(judge(prev, { ...observed, decision: { action: 'needs-human' } }, 11_000).state, 'waiting_orchestrator');
+  for (const action of ['wait', 'prompt-report']) {
+    const waiting = judge(prev, { ...observed, decision: { action } }, 11_000);
+    assert.equal(waiting.wakeAt, 611_000);
+    assert.equal(judge(waiting, observed, 21_000).wakeAt, 611_000);
+    assert.equal(judge(waiting, observed, 610_999).action, null);
+    assert.equal(judge(waiting, observed, 611_000).action, 'decide');
+  }
+  // A failed report-prompt updates turn.json without new working evidence. Its validated decision must stick.
+  const failedPrompt = { ...observed, turn: { ...turn, seq: 2, sent_at: new Date(12_000).toISOString() } };
+  const handedOff = judge({ ...prev, seq: 2 }, { ...failedPrompt, decision: { action: 'needs-human' } }, 12_001);
+  assert.equal(handedOff.state, 'waiting_orchestrator');
+  assert.equal(judge(handedOff, failedPrompt, 12_002).state, 'waiting_orchestrator');
+});
+
+test('judge: turn trust without working in this turn retains advisory timings', () => {
+  const laterTurn = { ...turn, seq: 2, sent_at: new Date(1000).toISOString() };
+  for (const workingAt of [undefined, null, 999]) {
+    const observed = { ...facts, turn: laterTurn, stateTrust: 'turn', workingAt, status: 'idle' };
+    const prev = judge(initial, observed, 1000);
+    assert.equal(prev.wakeAt, 601_000);
+    assert.equal(judge(prev, observed, 11_000).action, null);
+    assert.equal(judge(prev, observed, 601_000).action, 'decide');
+    const report = { ...observed, reportSig: 'report' };
+    const writing = judge(initial, report, 1000);
+    assert.equal(writing.wakeAt, 11_000);
+    assert.equal(judge(writing, report, 3000).state, 'working');
+    assert.equal(judge(writing, report, 11_000).state, 'idle_grace');
+  }
+});
+
+test('judge: advisory report during working and status flaps never starts grace early (agy)', () => {
+  const observed = { ...facts, stateTrust: 'advisory', workingAt: 0, reportSig: 'report' };
+  let prev = judge(initial, observed, 1000);
+  assert.equal(prev.quietSince, null);
+  prev = judge(prev, { ...observed, status: 'done' }, 60_000);
+  assert.equal(prev.wakeAt, 70_000);
+  prev = judge(prev, { ...observed, workingAt: 61_000 }, 61_000);
+  assert.equal(prev.state, 'working');
+  assert.equal(prev.quietSince, null);
+  const done = { ...observed, status: 'done', workingAt: 61_000 };
+  prev = judge(prev, done, 62_000);
+  assert.equal(judge(prev, done, 71_999).state, 'working');
+  prev = judge(prev, done, 72_000);
+  assert.equal(prev.state, 'idle_grace');
+  assert.equal(prev.deadline, 672_000);
+  assert.equal(prev.outputWritten, true);
+  const noReportFacts = { ...done, reportSig: null };
+  const noReportQuiet = judge(initial, noReportFacts, 62_000);
+  assert.equal(judge(noReportQuiet, noReportFacts, 72_000).action, null);
+  assert.equal(judge(noReportQuiet, noReportFacts, 662_000).action, 'decide');
+});
+
+test('judge: an old job without state_trust behaves exactly as advisory', () => {
+  const oldJob = { cli: { agent: 'grok', can_continue: true, idle_grace_s: 600 } };
+  let legacy = initial, advisory = initial;
+  for (const [now, patch] of [[1000, { status: 'done' }], [11_000, { status: 'done' }],
+    [601_000, { status: 'done' }], [602_000, { status: 'working', reportSig: 'report', workingAt: 602_000 }],
+    [603_000, { status: 'done', reportSig: 'report' }], [605_000, { status: 'done', reportSig: 'report' }],
+    [613_000, { status: 'done', reportSig: 'report' }]]) {
+    const observed = { ...facts, workingAt: 0, ...patch };
+    legacy = judge(legacy, { ...observed, stateTrust: oldJob.cli.state_trust }, now);
+    advisory = judge(advisory, { ...observed, stateTrust: 'advisory' }, now);
+    assert.deepEqual(legacy, advisory);
+  }
+});
+
+test('judge: turn trust preserves outage, child, question and working-flap boundaries', () => {
+  const observed = { ...facts, stateTrust: 'turn', workingAt: 0, status: 'done', reportSig: 'report' };
+  const prev = judge(initial, observed, 1000);
+  assert.equal(judge(prev, { ...observed, status: null }, 3000).wakeAt, 63_000);
+  assert.equal(judge(prev, { ...observed, status: 'unknown' }, 3000).wakeAt, 11_000);
+  assert.equal(judge(prev, { ...observed, status: 'blocked' }, 3000).state, 'waiting_orchestrator');
+  assert.equal(judge(prev, { ...observed, openQuestions: true }, 3000).state, 'waiting_orchestrator');
+  assert.equal(judge(prev, { ...observed, workingAt: 2999 }, 3000).wakeAt, 5000);
+  assert.equal(judge(prev, { ...observed, reportSig: 'rewritten' }, 3000).wakeAt, 5000);
+  const held = judge(prev, { ...observed, newerChild: true, canContinue: false }, 3000);
+  assert.equal(held.state, 'idle_grace');
+  assert.equal(held.action, null);
+  assert.equal(judge(held, { ...observed, newerChild: true }, 4000).action, null);
+  const noReportFacts = { ...observed, reportSig: null, newerChild: true };
+  assert.equal(judge(initial, noReportFacts, 11_000).quietSince, null);
+  assert.equal(judge(prev, { ...observed, newerChild: null }, 3000).action, 'sample');
+});

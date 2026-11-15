@@ -55,6 +55,7 @@ export interface InvalidRole {
 export interface HarnessDefault {
   harness: 'pi' | 'bro' | 'cli';
   agent?: CliAgent;
+  state_trust?: 'turn' | 'advisory';
   model?: string;
   thinking?: string;
   tool?: 'jev-ask' | 'jev-aistudio' | 'jev-flow';
@@ -299,7 +300,11 @@ export function harnessDefaults(
     const merged = { ...(base[name] ?? {}), ...(override[name] ?? {}) };
     const harness = normalizeHarness(merged.harness);
     if (harness !== 'pi' && harness !== 'cli' && harness !== 'bro') continue;
-    result[name] = { ...merged, harness } as HarnessDefault;
+    result[name] = {
+      ...merged,
+      harness,
+      ...(harness === 'cli' ? { state_trust: merged.state_trust === 'turn' ? 'turn' : 'advisory' } : {}),
+    } as HarnessDefault;
   }
   return result;
 }
@@ -432,7 +437,11 @@ export function roleRegistry(
     };
     const model = effective('model'),
       thinking = effective('thinking');
-    return { pi_role_file: piInfo.pi_role_file, model, thinking };
+    const state_trust =
+      place.harness === 'cli'
+        ? harnessDefaults(hudHome, bundled, readJson)[place.agent!]?.state_trust ?? 'advisory'
+        : undefined;
+    return { pi_role_file: piInfo.pi_role_file, model, thinking, state_trust };
   }
   function assignment(role: Role, nowMs = Date.now()) {
     const exhaustedMap = readExhausted(hudHome, nowMs);
@@ -464,6 +473,7 @@ export function roleRegistry(
       thinking_source: thinking.source,
       pi_role_file,
       agent: active.harness === 'cli' ? active.agent : undefined,
+      ...(active.harness === 'cli' ? { state_trust: activeEntry.details.state_trust } : {}),
       accepts_options:
         active.harness === 'pi'
           ? ['on', 'model', 'thinking', ...piSwitches, 'pi_args']

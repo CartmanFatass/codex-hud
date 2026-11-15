@@ -148,13 +148,19 @@ Jobs are plain files in `$HUD_HOME/jobs/<job>/`. Pi history stays in
 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to
 primary/helper files. A CLI job's supervisor only observes; only facts end a job: the
 worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or
-`closed` when a new report is on disk). Each dispatch and `hud_send` starts a turn (`turn.json`). A new report
-settles the turn when herdr is not `working`, the report has been stable for 10 s; then idle grace, and `/quit`
-when grace ends unused with no child process newer than the turn alive, then closed with `settled`. herdr's status
-is advisory and never ends a job. A turn quiet past the idle grace without a report gets one Decision API choice
+`closed` when a new report is on disk). Each dispatch and `hud_send` starts a turn (`turn.json`). With `advisory`
+trust, a new report settles the turn when herdr is not `working` and the report has been stable for 10 s; then idle
+grace, and `/quit` when grace ends unused with no child process newer than the turn alive, then closed with `settled`.
+Herdr's status alone never fails a live worker. A turn quiet past the idle grace without a report gets one Decision API choice
 among fixed actions (keep waiting, one fixed prompt to write the report, `failed` only with a quota line on screen,
 or hand to the main session); below 0.8 confidence or on any error it goes to the main session. Anything unclear is
-`waiting_orchestrator` with a reason. The supervisor wakes on herdr pushes, file changes and its own deadlines,
+`waiting_orchestrator` with a reason. CLI `state_trust` has two levels: `advisory` keeps those timings, while `turn`,
+after herdr has been seen `working` in the current turn and is now `done` or `idle`, settles a stable new report in
+2 s or reaches the no-report quiet decision after 10 s (the post-decision wait is unchanged).
+Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; set, for example,
+`{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.
+`hud_roster` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
+The supervisor wakes on herdr pushes, file changes and its own deadlines,
 plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes. The on-demand watcher starts on
 create, reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours,
 and exits with no open job or pending failed-job deadline. While a CLI job is open

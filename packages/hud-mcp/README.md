@@ -107,14 +107,20 @@ A CLI job has one supervisor (`hud-cli.mjs`); it only observes, and its one pure
 `judge` (`src/cli-judge.ts`) decides every state. Only facts end a job: the worker's
 recorded pid gone or replaced, its tab closed, or dispatch rejected before input
 (`failed`, or `closed` when a new report is on disk). Dispatch and every non-duplicate
-`hud_send` write `turn.json` before the prompt. A report that differs from the turn's
+`hud_send` write `turn.json` before the prompt. With `advisory` trust, a report that differs from the turn's
 baseline settles the turn once herdr is not `working` and the report has been stable
 for 10 s: `idle_grace` when the role can continue, otherwise `/quit` and closed.
 Unused grace sends `/quit` when no child process newer than the turn is alive, and
 closes with `exit_reason` `settled`; the watcher then reaps the tab. A turn quiet past
 the grace without a report gets one Decision API choice (see the reference); anything
-unclear is `waiting_orchestrator` with a reason. Herdr's status is advisory and never
-ends a job. The supervisor wakes on herdr pushes, file changes and its own deadlines,
+unclear is `waiting_orchestrator` with a reason. Herdr's status alone never fails a live worker.
+CLI `state_trust` has two levels: `advisory` keeps those timings, while `turn`, after herdr has been seen `working`
+in the current turn and is now `done` or `idle`, settles a stable new report in 2 s or reaches the no-report quiet
+decision after 10 s (the post-decision wait is unchanged).
+Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; set, for example,
+`{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.
+`hud_roster` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
+The supervisor wakes on herdr pushes, file changes and its own deadlines,
 plus a 30 s tick that re-reads the status once, and writes STATUS only on change.
 `agent_session_id` is that CLI's own session id, refreshed when the supervisor sees
 a transition; STATUS never carries pi's `session_id`.

@@ -78,6 +78,7 @@ export interface Judgment {
   exitReason: string | null;
   action: 'decide' | 'quit' | 'sample' | null;
   quietHandled: boolean;
+  decisionWait?: boolean; // A quiet decision's wait still uses the full idle grace.
   missingTicks: number;
   wakeAt: number | null;
 }
@@ -92,6 +93,7 @@ export interface Facts {
   openQuestions: boolean;
   canContinue: boolean;
   graceMs: number;
+  stateTrust?: 'turn' | 'advisory';
   tick?: boolean;
   agentMissing?: boolean;
   workingAt?: number | null;
@@ -134,13 +136,15 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     if (facts.newerChild === null) return { ...next, state: 'idle_grace', action: 'sample' };
     return end('closed', 'settled', true);
   }
+  const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= Date.parse(facts.turn.sent_at)
+    && (facts.status === 'done' || facts.status === 'idle');
   const quiet = facts.status !== 'working' && (facts.status !== null || report);
   next.quietSince = quiet ? (next.quietSince ?? now) : null;
   if (!report && facts.newerChild === true) next.quietSince = null;
-  if (next.quietSince === null) return { ...next, state: 'working', quietHandled: false };
+  if (next.quietSince === null) return { ...next, state: 'working', quietHandled: false, decisionWait: false };
   if (report) {
-    // Error quiet runs inside the 60s outage window, but a new/partial report still needs 10s stability.
-    const due = Math.max(next.quietSince + 10_000, facts.status === null ? next.errorsSince! + 60_000 : 0);
+    // A trusted turn end shortens stability; errors retain the full 60s outage window.
+    const due = Math.max(next.quietSince + (trustedEnd ? 2000 : 10_000), facts.status === null ? next.errorsSince! + 60_000 : 0);
     if (now < due) return { ...next, state: 'working', wakeAt: due };
     if (facts.newerChild === null) return { ...next, state: 'working', action: 'sample' };
     if (!facts.canContinue && facts.newerChild) return { ...next, state: 'idle_grace', outputWritten: true, settledAt: now, deadline: now };
@@ -148,14 +152,14 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     return { ...next, state: 'idle_grace', outputWritten: true, settledAt: now,
       deadline: now + facts.graceMs, wakeAt: now + facts.graceMs };
   }
-  const due = next.quietSince + facts.graceMs;
+  const due = next.quietSince + (trustedEnd && !next.decisionWait ? 10_000 : facts.graceMs);
   next.reason = !newTurn ? prev?.reason ?? null : null;
-  if (now < due) return { ...next, state: 'working', wakeAt: due };
+  if (now < due && !facts.decision && !next.quietHandled) return { ...next, state: 'working', wakeAt: due };
   if (facts.newerChild === null) return { ...next, state: 'working', action: 'sample' };
   const decision = facts.decision;
   if (decision?.action === 'fail') return end('failed', decision.failReason ?? 'quota failure');
   if (decision?.action === 'wait' || decision?.action === 'prompt-report') {
-    return { ...next, state: 'working', quietSince: now, quietHandled: false,
+    return { ...next, state: 'working', quietSince: now, quietHandled: false, decisionWait: true,
       reason: decision.action === 'wait' ? 'turn ended, no report yet' : null, wakeAt: now + facts.graceMs };
   }
   if (decision || next.quietHandled) return {

@@ -50,7 +50,7 @@ interface Job extends PiOptions {
   exhaustion_marked?: boolean;
   bro?: RolePlace;
   jev?: Role;
-  cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number };
+  cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number; state_trust?: 'turn' | 'advisory' };
   dispatch_exit_code: number | null;
   stderr_tail: string;
   message_keys: string[];
@@ -909,6 +909,7 @@ async function call(name: string, args: Args): Promise<unknown> {
               agent: place.agent as CliAgent,
               can_continue: definition.can_continue === true,
               idle_grace_s: definition.idle_grace_s ?? 600,
+              state_trust: details.state_trust ?? 'advisory',
             },
           }
         : {}),

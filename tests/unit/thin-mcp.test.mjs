@@ -17,6 +17,44 @@ import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
+import { harnessDefaults } from '../../dist/roles/roster.js';
+test('CLI state trust defaults, owner overrides, roster facts and dispatch snapshots agree', async (t) => {
+  const f = await fixture(t);
+  const config = join(f.env.HUD_HOME, 'harnesses.json');
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
+  for (const agent of ['agy', 'claude', 'codex', 'grok']) {
+    fs.writeFileSync(join(f.env.HUD_HOME, 'roles', `${agent}-check.json`), JSON.stringify({
+      role: `${agent}-check`, instructions: 'implementer', can_continue: true,
+      run: [{ harness: 'cli', agent }],
+    }));
+  }
+  // The owner's existing model-only file still inherits the shipped trust levels.
+  fs.writeFileSync(config, JSON.stringify({ agy: { model: 'synthetic/override' } }));
+  const bundled = resolve('packages/hud-mcp');
+  const defaults = harnessDefaults(f.env.HUD_HOME, bundled);
+  assert.equal(defaults.agy.model, 'synthetic/override');
+  let roster = (await f.call('hud_roster')).roles;
+  for (const agent of ['agy', 'claude', 'codex', 'grok']) {
+    const expected = agent === 'agy' ? 'advisory' : 'turn';
+    assert.equal(defaults[agent].state_trust, expected);
+    assert.equal(roster.find((r) => r.role === `${agent}-check`).state_trust, expected);
+  }
+  fs.writeFileSync(config, JSON.stringify({ agy: { model: 'synthetic/override', state_trust: 'turn' }, grok: { state_trust: 'advisory' } }));
+  roster = (await f.call('hud_roster')).roles;
+  assert.equal(roster.find((r) => r.role === 'agy-check').state_trust, 'turn');
+  assert.equal(roster.find((r) => r.role === 'grok-check').state_trust, 'advisory');
+  // Dispatch through the normal MCP path, rejecting the fake launch before any worker is started.
+  fs.writeFileSync(join(f.env.HOME, 'fail-start'), '');
+  const agy = await f.call('hud_create', { role: 'agy-check', request_key: 'trust-agy', task: 'Synthetic task.' });
+  const grok = await f.call('hud_create', { role: 'imp', on: 'grok', request_key: 'trust-grok', task: 'Synthetic task.' });
+  const record = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  assert.equal(record(agy).cli.state_trust, 'turn');
+  assert.equal(record(grok).cli.state_trust, 'advisory');
+  fs.writeFileSync(config, JSON.stringify({ agy: { state_trust: 'advisory' }, grok: { state_trust: 'turn' } }));
+  assert.equal(record(agy).cli.state_trust, 'turn');
+  assert.equal(record(grok).cli.state_trust, 'advisory');
+});
+
 const workerFor = (f, id) =>
   readThinJobs(f.env.HUD_HOME, { project: null, pane: 'w4E:p1' })
     .flatMap((lane) => lane.workers)

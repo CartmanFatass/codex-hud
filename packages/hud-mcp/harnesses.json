@@ -5,23 +5,27 @@
   "agy": {
     "harness": "cli",
     "agent": "agy",
+    "state_trust": "advisory",
     "model": "gemini-4-argon-high"
   },
   "claude": {
     "harness": "cli",
     "agent": "claude",
+    "state_trust": "turn",
     "model": "opus",
     "thinking": "high"
   },
   "codex": {
     "harness": "cli",
     "agent": "codex",
+    "state_trust": "turn",
     "model": "gpt-6.1-sol",
     "thinking": "high"
   },
   "grok": {
     "harness": "cli",
     "agent": "grok",
+    "state_trust": "turn",
     "model": "grok-4.7",
     "thinking": "high"
   },
