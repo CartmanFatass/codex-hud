@@ -517,3 +517,131 @@ No adversarial authentication layer, dependency workflow engine, automatic upstr
 ## Scope
 
 **needs orchestrator** — the design/inventory is complete, but implementation changes the owner-approved CLI launch constraint, native installation/discovery promise, role-prompt ownership across HUD and external Pi-roles, possibly the supported isolation profiles and unanswered-question policy. The owner chooses D’s remaining options; the orchestrator scopes the slices. Paradigm B, original methods with collision-only patches, mechanics-only convention, leaf workers, main-session decisions and milestone review remain fixed.
+
+
+---
+
+# Addendum (forked session, job jceac13e0aaff45b8)
+
+Recommendation: Choose (a) now—make HUD’s worker skill-input port consistent across harnesses, keep main-session discovery native, and defer central MCP skill delivery; if later wanted, use ordinary tools first, not SEP-2640/resources/flags.
+
+# WORKER-UNIFY addendum: revised recommendation
+
+Read-only follow-up against `691b31b9`. The runtime files inspected previously are unchanged; the spec now explicitly removes the tool-count limit (`docs/spec.md:12–13`, commit `2e8d300a`). No live clients, builds or tests were run. Client behavior not established from source remains **unverified**.
+
+## 1. Route (a), with an explicit limitation
+
+**I revise my recommendation to (a).** My original C made a general prompt-delivery architecture too prominent relative to the immediate need. “Skills, roles, conventions and briefs are prompts with different recipients and load times” is a useful mental model; it does not require one delivery subsystem for all of them.
+
+The smallest useful boundary is:
+
+- HUD accepts explicitly selected worker skill names/paths.
+- One resolver turns them into complete skill directories.
+- Pi receives `--skill`; CLI workers receive explicit entry paths in their first input.
+- HUD records what was supplied and what could not be supplied.
+- Main sessions retain their clients’ native discovery and user-invocation behavior.
+
+HUD does not interpret the skill’s method, infer a workflow, resolve a task graph or decide what should run next. This matches “the MCP knows no particular role and no workflow” in `docs/spec.md:13`.
+
+**What (a) retains:** original methods plus collision patches, complete supporting files, explicit worker assignment, and one authoritative edition of a skill. Native skill directories can link to the same effective source; choosing (a) does **not** require three separately maintained copies. Worker role/lifecycle unification can proceed independently of main-session skill distribution.
+
+**What (a) gives up relative to central delivery:**
+
+1. One server-controlled main-session catalog, available without native installation.
+2. Server-side filtering of that catalog/body delivery by job.
+3. A uniform loading interface independent of native skill support and naming conventions.
+
+Most importantly, **(a) does not satisfy the earlier strong requirement that main-only skills be invisible to CLI workers**. Claude workers normally share the main session’s discovery locations; the earlier live observation was supplied by main, not independently repeated here. With no new exclusion flags, assigning a narrow list tells the worker what to use but does not hide the other skills. The same limitation applies wherever a CLI shares discovery with main. Pi’s existing exclusion helps, but selected package resources can still contribute skills, as the original inventory showed.
+
+This must be an accepted trade-off, not an implementation detail concealed behind “exactly these skills.” Route (a) guarantees **explicit delivery**, not exclusive host discovery. If invisibility remains a must-have, (a) alone is insufficient. Central tools could hide centrally served entries, but still would not hide unrelated native/plugin skills or create a filesystem sandbox.
+
+Nor should route (b), if revisited, become a mandatory workflow standard. Central distribution and standardizing how work is done are separate decisions; the fixed main-session/leaf-worker rules do not justify an automatic method pipeline.
+
+## 2. Maintenance cost does change the recommendation
+
+The native SEP route adds costs before delivering much that directory-based worker inputs cannot already provide: capability negotiation, feature availability, resource naming, user invocation, supporting-file behavior, and compatibility across multiple client implementations.
+
+Qualification matters here: the previous investigation found an embedded Claude gate returning false and native extension code, not a verified public enabling flag. Codex’s lack of official support was supplied as an upstream search summary; Pi’s inspected code/docs established no native SEP path. **These do not prove every possible version/configuration lacks support**, but they are enough reason not to make the product depend on it.
+
+I would not schedule native SEP integration now. Reconsider it when a supported client route demonstrably replaces custom code or native-installation friction becomes a recurring owner problem.
+
+This objection is much weaker for **ordinary MCP tools**: all three HUD integrations already use those. Tools-only central delivery need not maintain three experimental skill protocols. It still brings catalog ownership, caller classification, migration and invocation UX costs, so it is a reasonable later option—not a prerequisite for fixing worker inputs.
+
+## 3. The two missed messages supersede C3 and D1
+
+**Yes, both change the answer.** The MVP restriction—plain tools, no SEP, resources or new flags—removes my proposed transport stack. The tool-count decision removes the reason to overload `hud_roster` or prefer resources merely to remain at six.
+
+If the owner still wants a central-loading MVP rather than (a), use two ordinary read-only tools, for example:
+
+- `hud_skills_list`: names, short descriptions, invocation class and source; no bodies.
+- `hud_skill_read(name, file?)`: default `SKILL.md`, or a contained supporting file; return the text and its base directory/source.
+
+One implementation serves every client. Do not add one tool per skill, automatic installation, dependency orchestration or a compulsory workflow. User-only methods are selected by an explicit user request; a generic tool does not automatically produce native slash commands or prove that a human authorized an invocation. Those UX limits must remain explicit.
+
+The current Pi HUD package mirrors the server’s tool definitions and proxies `tools/call`, so new tools need registration there too (`src/harness/pi/role-client.ts:21–79,91–174`); that is ordinary integration work, not SEP maintenance.
+
+Therefore:
+
+- Original **C3’s resources/extension/prompts recommendation is withdrawn for the MVP**.
+- Original **D1’s “preserve six tools” decision is obsolete**, already settled by the owner.
+- Under **(a), neither new tool is needed in the first slice**. Keep the port small and add central discovery only for an observed need.
+
+## 4. Pane lookup: useful association, not sufficient caller identity
+
+### First correct which pane the record names
+
+`job.json.herdr_pane` is the **dispatching main pane**, not the worker pane: it is assigned from the MCP server’s environment at `packages/hud-mcp/src/thin-main.ts:914–919`.
+
+The worker is recorded as `SESSION.txt.LEFT`; `ORCH` is the dispatching pane (`:415–423` for Pi; `:639–647` for CLI). Matching the caller’s pane to `job.herdr_pane` would label a main session with jobs as a worker—the opposite of the intended classification.
+
+A no-new-env implementation must match the caller pane to recorded **worker occupancy**: primarily `LEFT`, and actual helper-slot evidence when considering `RIGHT`. A reserved right pane alone does not prove a helper is running there.
+
+### Is the corrected lookup sound?
+
+**Yes for best-effort association in the ordinary separate-process case; no as a complete identity or permission boundary using pane IDs alone.** Existing files provide a useful candidate without injecting `HUD_JOB_DIR`. But these cases matter:
+
+| Case | Failure of a simple lookup / necessary distinction |
+|---|---|
+| Worker finishes, pane is reused | Historical SESSION files remain after execution. “Any matching job” contaminates the new occupant. The current agent/session must match the recorded worker, not merely the pane. |
+| Main starts in a former job pane | Same problem, including stale jobs still marked working. A fresh main’s MCP must not inherit worker restrictions just because an old file names its pane. |
+| Job is terminal but worker still alive | `closed` is not necessarily process exit; failed jobs can retain a live worker/tab. Filtering only nonterminal jobs could expose main-only material to the original worker. Job state is not occupancy evidence. |
+| Old worker MCP remains after closure or job retention | Recomputing “no active matching job → main” promotes the old worker server. Once that server is positively associated with a worker, do not promote it merely because STATUS changed or files disappeared. Keep worker/unknown until its client binding ends. |
+| Native subagent shares main’s pane/connection | Pane lookup identifies the containing main session, not the actor making a tool call. Actual native-client MCP sharing is **unverified**, but the pane alone cannot distinguish actors that share it. |
+| Missing/overridden env or ambiguous matches | Return unknown for a context-sensitive operation; do not claim positive main identity from missing evidence. Ordinary unbound use can have a documented default, but that is policy, not identity proof. |
+
+A practical future filter would find a candidate from SESSION files, compare existing herdr/native-session or PID-start evidence, and retain a confirmed worker association for that **server/client lifetime**, not permanently for the pane. A new main process gets a fresh binding. This avoids a cryptographic identity system, but is more than the proposed one-field lookup. Treat it as trusted-local routing, never a sandbox.
+
+With a tools-only surface, keep tool schemas stable and filter returned catalog/read data. Call-time classification does not reliably retract descriptions a client already cached at initialization.
+
+### Pi’s MCP adapter
+
+I inspected the installed adapter this time. Its stdio transport defaults to inheriting process environment (`~/.pi/agent/npm/node_modules/pi-mcp-adapter/server-manager.ts:1233–1242,2253–2272`). It also allows `inheritEnv:false` and explicit overrides. Its session-start path resets state and shuts down the prior runtime (`index.ts:1679–1720`), with shutdown cleanup at `:1849–1874`.
+
+Thus inheriting `HERDR_PANE_ID` is supported by its **default source path**; “every HUD MCP always inherits the correct pane” is still too broad. The actual configured worker entry, any overrides, and real herdr/session handover are **unverified**. HTTP/shared servers would not acquire per-caller process environment this way either.
+
+**For route (a), do not build caller classification in the first slice.** Explicit job inputs already identify their recipient at dispatch. Classification becomes necessary only if a later shared MCP catalog promises main/worker filtering. Then test live worker, terminal-but-alive worker, pane reuse/new main, and missing-env/native-subagent cases before making that promise.
+
+## 5. For the implementer: smallest first vertical slice under (a)
+
+**Finish the narrow ORACLE-SKILL delivery slice: the same codebase-design directory reaches oracle on Pi and Claude CLI.** The existing held work is recorded at `docs/handoff/STATE.md:151`; reuse its generic delivery work after checking it against the decided minimal content patches, rather than rebuilding it as a central prompt service.
+
+Write/change:
+
+1. A small shared resolver, e.g. `src/roles/skill-paths.ts`, extracted from `piSkillArgs` (`thin-main.ts:311–352`). Resolve explicit absolute directories; bare names use registered project `.hud/skills` first, then shipped effective skills. Preserve supporting files and the registration gate.
+2. `src/roles/roster.ts`: accept/retain skill names on local CLI places as well as Pi. Landed code still rejects CLI skill lists (`:145–158`). No browser file-delivery promise.
+3. `thin-main.ts`: Pi gets the resolved `--skill` paths; CLI’s first prompt names the corresponding `SKILL.md` paths and requires reading the assigned reference. Record resolved/unavailable inputs consistently. An unavailable required input must be reported explicitly, not replaced with a same-named native/plugin skill or claimed as loaded.
+4. Ship the complete selected codebase-design edition and bind it to oracle’s local places. Do not change main-session installation, other role bodies, helpers, QA policy or lifecycle in this slice.
+
+No new MCP tools, caller classification, environment injection, exclusion flags, generalized prompt registry or dependency engine. A `hud_create` per-job skill list can follow when an ad-hoc assignment actually needs it; do not repurpose today’s boolean `skills` option.
+
+**Proof:** focused tests cover registered-project/shipped/absolute resolution and unavailable inputs; Pi and CLI receive the same directory; a relative support file remains reachable. Main then dispatches one tiny oracle question on each place, reads the reports and checks normal closure. This proves delivery, not exclusive discovery or model obedience.
+
+**Owner can try:** switch oracle from Pi to Claude and ask the same design question using the same reference, while continuing to invoke main-session skills through the familiar native client mechanism.
+
+## Optional hardening
+
+None for the first slice. Caller filtering and native skill exclusion are separate functional requirements, not free hardening hidden inside a resolver.
+
+## Scope
+
+**needs orchestrator** — recommend (a) and explicitly accept its non-exclusive discovery limitation, or retain central tools-only delivery if invisibility is still required. The tool-count decision and the MVP’s no-SEP/resources/flags boundary are already settled; do not ask the owner to decide them again. This addendum supersedes the original report’s transport recommendation, not its verified inventory or the settled method/worker policies.
