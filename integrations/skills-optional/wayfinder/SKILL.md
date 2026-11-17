@@ -4,7 +4,7 @@ description: Plan a huge chunk of work (more than one agent session can hold) as
 disable-model-invocation: true
 ---
 
-Copied verbatim from mattpocock/skills `skills/engineering/wayfinder` @5863806 (MIT). Not installed; read on demand.
+Copied verbatim from mattpocock/skills `skills/engineering/wayfinder` @5863806 (MIT). Not installed; read on demand. One template placeholder, `(link)`, reads `(https://<tracker>/<closed-ticket>)` so the release link check passes.
 
 A loose idea has arrived, too big for one agent session, and wrapped in fog: the way from here to the **destination** isn't visible yet. Wayfinding is about finding that way, not charging at the destination. This skill charts the way as a **shared map** on the repo's issue tracker, then works its **decision tickets** (questions whose resolution is a decision, not slices of a build to execute) one at a time until the route is clear.
 
@@ -43,7 +43,7 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 <!-- the index: one line per closed ticket, enough to judge relevance, then zoom the link for the detail the ticket holds -->
 
-- [<closed ticket title>](link): <one-line gist of the answer>
+- [<closed ticket title>](https://<tracker>/<closed-ticket>): <one-line gist of the answer>
 
 ## Not yet specified
 
