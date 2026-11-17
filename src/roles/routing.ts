@@ -118,9 +118,9 @@ export interface PiHelperBindings {
   readonly reviewer: PiHelperBinding;
 }
 export const PI_ROLE_DEFAULTS = Object.freeze({
-  implementer: Object.freeze({ model: 'openai/gpt-6.1-sol', effort: 'high' }),
-  reviewer: Object.freeze({ model: 'openai/gpt-6.1-sol', effort: 'xhigh' }),
-  architect: Object.freeze({ model: 'openai/gpt-6-astra', effort: 'high' }),
+  implementer: Object.freeze({ model: 'openai/gpt-6.2-sol', effort: 'high' }),
+  reviewer: Object.freeze({ model: 'openai/gpt-6.2-sol', effort: 'xhigh' }),
+  architect: Object.freeze({ model: 'openai/gpt-6.2-astra', effort: 'high' }),
   sonic: Object.freeze({ model: 'mistral/deepseek-v4-1-flash-1017', effort: 'high' }),
 });
 

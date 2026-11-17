@@ -61,22 +61,21 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    Progress is a dated feed of the last 7 days with older work one row per milestone; Tickets are lanes by state with
    a For-you lane; the control plane opens with what needs attention and the place the next job will use, healthy
    roles folded. Skills tab (owner, 2026-11-17): a third main tab after Project lists the backup skills, Matt Pocock
-   skills that are not installed and that the main session reads from their upstream text when the owner asks for
-   one; each skill's name and its whole one-line description in the panel's language, read from a catalog file
+   skills that are not installed (adapted copies in `integrations/skills-optional/` and the upstream text) and that
+   the main session reads when the owner asks for one; each skill's name and its whole one-line description in the panel's language, read from a catalog file
    the HUD ships; the description wraps under the name rather than being cut, so the tab reads at the owner's 40-column
    panel (owner, 2026-11-17). Display only: no action on a row, no install state, no adopted or dropped skills.
 3. **Set up a project's workers in one conversation** (owner, 2026-11-13). `hud setup --detect | --apply PLAN | --remove` writes a project's `.hud/` and is driven by a `hud-setup` skill that asks the owner, as claude-hud's setup does. Customisation is on pi workers only: main sessions and the official harnesses (Claude Code, Codex, Grok Build, Antigravity) keep their behaviour, and their roles are only shown or hidden. A project's `.hud/` loads only once the owner has set that project up (`$HUD_HOME/projects.json`); a cloned repo's `.hud/` does nothing on its own.
-   Adapted skills (owner, 2026-11-17; replaces the 2026-11-10 "Matt's skills, unchanged" decision): the upstream
-   plugin is off everywhere (Claude, Codex, pi); a curated few of Matt Pocock's skills ship in `integrations/skills/`,
-   adapted so the main session decides and HUD roles execute: `grill-with-docs` (with `grilling` and
-   `domain-modeling`), `to-spec`, `to-tickets` and `hud-build` (Matt's `implement-spec` as a HUD recipe: tickets as a task graph,
-   one imp per ready ticket in its own worktree, the main session integrates; owner, 2026-11-17) for main sessions
-   (user-invoked, installed for Claude and Codex, not pi); `tdd` and `diagnosing-bugs` for pi workers, linked per project through `hud setup`. `codebase-design` (owner, 2026-11-17) is adapted for the
-   `oracle` role and installed for main sessions too: every oracle place loads it; a role place may name skills on any harness (a CLI worker is told each
-   skill's path), and a bare skill name resolves to the project's `.hud/skills` first, then to the skills the HUD ships. Each names the upstream
-   commit it came from; we own the adapted text and do not track upstream. `hud-handoff` (the fixed-form handoff to a fresh session, on the six-tool surface) is installed for
-   Claude and Codex beside `hud-delegate` and `hud-setup` (owner, 2026-11-17). The rest are backups listed in the Skills
-   tab. Ticket tracking: a project's tracker may be GitHub Issues, mirrored one way into `.scratch/` for the Project
+   Skills (owner, 2026-11-17, second decision; supersedes the same day's adapted-skills and MATT-PARADIGM
+   decisions): the HUD's own flow is the one in `docs/delegation.md`, slicing with `to-tickets` and one review per
+   milestone. Matt Pocock's skills are an inactive collection taken on demand: the upstream plugin is off
+   everywhere (Claude, Codex, pi, other harnesses), and only `to-tickets` (adapted to the Project tab's ticket format
+   and `hud tickets sync`) is installed, for Claude and Codex main sessions. The other adapted copies
+   (`grill-with-docs` with `grilling` and `domain-modeling`, `to-spec`, `hud-build`, `tdd`, `diagnosing-bugs`) live in
+   `integrations/skills-optional/`: not installed, not linked to workers, not offered by `hud setup`, and no role
+   loads one by default; the main session reads one when the owner asks. Each names the upstream commit it came
+   from; we own the adapted text and do not track upstream. `hud-handoff` is installed for Claude and Codex beside
+   `hud-delegate` and `hud-setup`. The Skills tab lists the whole inactive collection. Ticket tracking: a project's tracker may be GitHub Issues, mirrored one way into `.scratch/` for the Project
    tab and workers; only the mirror tool writes the mirror. The mirror tool is `hud tickets sync` (owner, 2026-11-17):
    it reads the project's GitHub issues through `gh`, takes each parent issue with sub-issues as a feature (its slug
    from the parent's title) and its sub-issues as that feature's tickets, and writes them into `.scratch/` in the

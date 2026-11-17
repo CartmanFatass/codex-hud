@@ -345,42 +345,31 @@ test('detect marks skills that disable model invocation', async (t) => {
 
 test('detect includes bundled skills with and without setup.json skill_roots', async (t) => {
   const f = fixture(t);
-  const expectedTdd = {
-    name: 'tdd',
-    path: join(bundledSkills, 'tdd'),
+  const expectedTickets = {
+    name: 'to-tickets',
+    path: join(bundledSkills, 'to-tickets'),
     root: bundledSkills,
-    model_invocable: true,
+    model_invocable: false,
   };
-  const expectedDiagnosing = {
-    name: 'diagnosing-bugs',
-    path: join(bundledSkills, 'diagnosing-bugs'),
-    root: bundledSkills,
-    model_invocable: true,
-  };
+  const optional = (doc: { skills: { name: string }[] }) =>
+    doc.skills.filter((item) => ['tdd', 'diagnosing-bugs', 'grill-with-docs', 'to-spec', 'hud-build'].includes(item.name));
 
   const withoutSetup = await detect(f, f.project);
   assert.deepEqual(
-    withoutSetup.skills.find((item: { name: string }) => item.name === 'tdd'),
-    expectedTdd
+    withoutSetup.skills.find((item: { name: string }) => item.name === 'to-tickets'),
+    expectedTickets
   );
-  assert.deepEqual(
-    withoutSetup.skills.find((item: { name: string }) => item.name === 'diagnosing-bugs'),
-    expectedDiagnosing
-  );
+  assert.deepEqual(optional(withoutSetup), [], 'optional skills are not bundled');
 
   const customRoot = join(f.root, 'custom-skills');
-  const userTdd = skill(customRoot, 'tdd', '---\nname: tdd\n---\n');
+  const userTickets = skill(customRoot, 'to-tickets', '---\nname: to-tickets\n---\n');
   fs.writeFileSync(join(f.hud, 'setup.json'), JSON.stringify({ skill_roots: [customRoot] }));
   f.reset();
 
   const withSetup = await detect(f, f.project);
   assert.deepEqual(
-    withSetup.skills.filter((item: { name: string }) => item.name === 'tdd'),
-    [{ name: 'tdd', path: userTdd, root: customRoot, model_invocable: true }, expectedTdd]
-  );
-  assert.deepEqual(
-    withSetup.skills.find((item: { name: string }) => item.name === 'diagnosing-bugs'),
-    expectedDiagnosing
+    withSetup.skills.filter((item: { name: string }) => item.name === 'to-tickets'),
+    [{ name: 'to-tickets', path: userTickets, root: customRoot, model_invocable: true }, expectedTickets]
   );
 });
 

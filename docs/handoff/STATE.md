@@ -148,10 +148,12 @@ board counts these; update at every landing or decision. -->
 - try · — · HUD-HANDOFF · owner 2026-11-17: hud-handoff installed for Claude and Codex (9a077fd2)
 - try · — · SKILLS-READ · owner 2026-11-17: Skills descriptions wrap in full under the name, readable at 40 columns (spec f996b63f; landed from 957997cc)
 - try · — · SIDEBAR-ONE · owner 2026-11-17: one standalone herdr sidebar for every client with mouse (click tab/row, second click = Enter, wheel, crumb back); Codex /hud skill; Codex tmux panel (F12, prefix keys, gutter lock, prefix setting) retired, tmux bar kept (spec 0cb19f5a; landed from 917fc152). Live mouse through herdr in a real terminal not yet verified
-- blocked · — · ORACLE-SKILL · owner 2026-11-17: oracle loads an adapted codebase-design on every place; role skills on CLI places; bare names fall back to shipped skills (spec 884669ff; imp job je0ee2f0349dac642 in ../MyHUD-wt/ORACLE-SKILL) — report in, landing held until MATT-PARADIGM decides
-- done · — · MATT-PARADIGM · owner 2026-11-17 chose paradigm B, Matt's original methods restored, Skills tab = optional skills; report docs/reviews/2026-11-17-matt-paradigm-oracle.md; delivery waits on WORKER-UNIFY
+- dropped · — · ORACLE-SKILL · owner 2026-11-17: oracle loading an adapted codebase-design dropped with MATT-OFF; the imp's work (dacf135e, worktree and branch wt/ORACLE-SKILL deleted) never landed
+- dropped · — · MATT-PARADIGM · owner 2026-11-17 chose paradigm B (report docs/reviews/2026-11-17-matt-paradigm-oracle.md), then superseded the same day by MATT-OFF
 - decide · — · WORKER-UNIFY · owner 2026-11-17: oracle report + addendum in docs/reviews/2026-11-17-worker-unify-oracle.md; addendum recommends route (a) decoupled skill port, no MCP skill transport; owner thinking, no decision yet (handoff tmp/handoff/2026-11-17-worker-unify-*.md)
-- try · — · MATT-FLOW · owner 2026-11-17: the convention keeps only HUD mechanics (method lives in on-demand skills; a convention absorbing Matt's flow was written and reverted the same day); hud-build (implement-spec as a HUD recipe, user-invoked) installed for Claude and Codex
+- dropped · — · MATT-FLOW · owner 2026-11-17: the convention keeps only HUD mechanics (a convention absorbing Matt's flow was written and reverted the same day); hud-build no longer installed (MATT-OFF)
+- try · — · MATT-OFF · owner 2026-11-17: Matt skills are an inactive collection taken on demand; the HUD flow is delegation.md (to-tickets + one milestone review). Only to-tickets installed (Claude, Codex); grill-with-docs, to-spec, hud-build, tdd, diagnosing-bugs moved to integrations/skills-optional/ and listed in the Skills tab; global links and JevDev's pi-worker links removed
+- try · — · MODELS-6.2 · owner 2026-11-17: sol and astra are 6.2: pi-roles implementer/reviewer → openai/gpt-6.2-sol, architect (oracle presets) → openai/gpt-6.2-astra (Fishpref pi-roles); HUD's PI_ROLE_DEFAULTS match
 
 ## Now (2026-11-14): 0.1.4 to the owner's try; 0.1.1–0.1.3 wait for the owner's try
 

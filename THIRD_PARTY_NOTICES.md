@@ -75,7 +75,7 @@ SOFTWARE.
 
 ## Matt Pocock Skills
 
-The adapted engineering and productivity skills under `integrations/skills/` are derived from **mattpocock/skills** and owned here without tracking upstream:
+The adapted skills under `integrations/skills/` (`to-tickets`, installed) and `integrations/skills-optional/` (the rest, not installed) are derived from **mattpocock/skills** and owned here without tracking upstream:
 
 - Upstream: https://github.com/mattpocock/skills
 - Commit: `5863806dd4e15c63174bee4e7515a4256792ecfa`

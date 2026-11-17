@@ -71,7 +71,7 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       ['mcp', 'remove', '-s', 'user', 'hud'],
       ['mcp', 'add', '-s', 'user', 'hud', '-e', 'HUD_MCP_SURFACE=roles', '--', path.join(bin, 'hud-mcp')],
     ]);
-    const skills = ['hud-delegate', 'hud-setup', 'grill-with-docs', 'to-spec', 'to-tickets'];
+    const skills = ['hud-delegate', 'hud-setup', 'hud-handoff', 'to-tickets'];
     for (const name of skills) {
       assert.equal(fs.readlinkSync(path.join(config, 'skills', name)), path.join(root, 'integrations/skills', name));
     }

@@ -8,7 +8,7 @@ import { setDisplayConfig, THEMES } from '../../dist/render/hud-config.js';
 import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
 const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(0) };
 const catalog = readBackupSkills();
-const render = (state, extra = {}) => renderMonitor({ tree, state, backupSkills: catalog, width: 160, height: 20, nowMs: 0, ...extra });
+const render = (state, extra = {}) => renderMonitor({ tree, state, backupSkills: catalog, width: 160, height: 25, nowMs: 0, ...extra });
 const send = (frame, input) => handleMonitorInput(frame.state, input, { tree, frame, nowMs: 0, standalone: true });
 const key = (frame, key) => send(frame, { type: 'key', key });
 const skills = () => ({ ...initialMonitorState(), mainTab: 'skills' });
@@ -46,7 +46,7 @@ test('Skills renders shipped catalog in EN/ZH, fits narrow rows, scrolls, and ha
       const frame = render(skills());
       const text = frame.lines.map(stripAnsi).join('\n');
       assert.equal(stripAnsi(frame.lines[1]).trim(), '', 'a blank row under the tabs, as Home and Project have');
-      assert.match(stripAnsi(frame.lines[2]), lang === 'zh' ? /^备用技能 ─+ 12$/ : /^Backup skills ─+ 12$/);
+      assert.match(stripAnsi(frame.lines[2]), lang === 'zh' ? /^备用技能 ─+ 17$/ : /^Backup skills ─+ 17$/);
       for (const line of frame.lines.slice(1, -1)) assert.doesNotMatch(line, /\x1b\[48;/);
       for (const skill of catalog) {
         assert.ok(text.includes(skill.name), skill.name);
@@ -167,13 +167,13 @@ test('Skills drops its intro, then the blank row, only when that lets the tab fi
   try {
     const text = (frame) => frame.lines.map(stripAnsi);
     const intro = /Matt Pocock skills kept as backups/;
-    // At 160 columns the tab is 16 rows (blank, header, intro, blank, 12 skills); `room` is the panel's height less 2.
-    assert.match(text(render(skills(), { width: 160, height: 18 })).join('\n'), intro);
-    const noIntro = render(skills(), { width: 160, height: 16 });
+    // At 160 columns the tab is 21 rows (blank, header, intro, blank, 17 skills); `room` is the panel's height less 2.
+    assert.match(text(render(skills(), { width: 160, height: 23 })).join('\n'), intro);
+    const noIntro = render(skills(), { width: 160, height: 21 });
     assert.doesNotMatch(text(noIntro).join('\n'), intro);
     assert.equal(text(noIntro)[1].trim(), '');
     assert.match(text(noIntro)[2], /^Backup skills/);
-    const tight = render(skills(), { width: 160, height: 15 });
+    const tight = render(skills(), { width: 160, height: 20 });
     assert.match(text(tight)[1], /^Backup skills/);
     assert.equal(tight.panes[0].contentLength, catalog.length + 1);
     // Too short for even that: the tab keeps its shape and scrolls.

@@ -521,8 +521,8 @@ wheel scrolling moves the viewport without moving the selection. Help lists curr
 ### Skills
 
 Skills lists the shipped backup-skills catalog (`integrations/skills/backup-skills.json`):
-Matt Pocock skills not installed, which the main session can read from upstream when
-asked. Under a `Backup skills` header with the count, a muted line says what the list
+Matt Pocock skills not installed: the adapted copies in `integrations/skills-optional/`
+and the upstream text, which the main session reads when asked. Under a `Backup skills` header with the count, a muted line says what the list
 is, then each skill's name and its whole one-line description in the panel's language.
 Descriptions wrap, never cut, so the tab reads at a 40-column panel. A panel under 103
 columns (with the shipped names) stacks them: the name in the identifier ink on its own

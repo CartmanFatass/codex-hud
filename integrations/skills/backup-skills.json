@@ -1,10 +1,35 @@
 {
-  "source": "mattpocock/skills (MIT), upstream text at ~/codex/MySkills/_upstream/mattpocock-skills",
+  "source": "mattpocock/skills (MIT): adapted copies in integrations/skills-optional, upstream text at ~/codex/MySkills/_upstream/mattpocock-skills",
   "skills": [
     {
       "name": "wayfinder",
       "en": "Map a large, foggy effort as decision tickets and settle them one at a time",
       "zh": "把大而模糊的工作画成决策地图，逐张解决待决问题"
+    },
+    {
+      "name": "grill-with-docs",
+      "en": "Interview the owner on a fuzzy idea, keeping a glossary and decision records",
+      "zh": "就模糊的想法拷问需求，同时维护术语表和决策记录"
+    },
+    {
+      "name": "to-spec",
+      "en": "Turn the conversation into a spec with user stories and testing seams",
+      "zh": "把对话整理成规格：用户故事、实现决策和测试接缝"
+    },
+    {
+      "name": "hud-build",
+      "en": "Build a spec's tickets as a task graph, one imp per ready ticket",
+      "zh": "把规格的工单当任务图来建，每张就绪工单派一个 imp"
+    },
+    {
+      "name": "tdd",
+      "en": "Red-green-refactor at the seams the spec agreed",
+      "zh": "在规格约定的接缝上红绿重构"
+    },
+    {
+      "name": "diagnosing-bugs",
+      "en": "A feedback loop first, then reproduce, hypothesise and fix",
+      "zh": "先建反馈回路，再复现、假设、修复"
     },
     {
       "name": "triage",

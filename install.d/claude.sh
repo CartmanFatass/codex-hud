@@ -61,12 +61,19 @@ hud_ext_install() {
   fi
 
   mkdir -p -- "$config/skills" "$BIN_DIR"
-  for name in hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets hud-build; do
+  for name in hud-delegate hud-setup hud-handoff to-tickets; do
     skill="$config/skills/$name"
     if [[ -L "$skill" || ! -e "$skill" ]]; then
       ln -sfn -- "$REPO/integrations/skills/$name" "$skill"
     else
       printf 'Warning: keeping existing non-symlink skill: %s\n' "$skill" >&2
+    fi
+  done
+  # Optional skills are no longer installed; drop the links earlier installs made.
+  for name in grill-with-docs to-spec hud-build; do
+    skill="$config/skills/$name"
+    if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
+      rm -- "$skill"
     fi
   done
   link="$BIN_DIR/hud-statusline"
