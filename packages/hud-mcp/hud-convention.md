@@ -8,8 +8,10 @@ only writer of specs, tickets and the integration branch; HUD roles execute; HUD
    product boundary in the spec, and dispatch. Grill only a fuzzy idea or a change whose scope, non-goals or "done"
    are not clear; then suggest `/grill-with-docs` to the owner (it interviews and keeps `GLOSSARY.md` and ADRs
    current). A question that needs a runnable answer goes to a throwaway prototype job first.
-2. Can one imp finish it in one session? Yes → one brief, one imp. No → `/to-spec`, then `/to-tickets`: tracer-bullet
-   vertical slices, each runnable end to end on its own, each declaring its blocking edges; the owner approves the list.
+2. Can one imp finish it in one session? Yes (most work) → the main session writes one brief for one imp; no spec,
+   no tickets. No → the main session itself runs `/to-spec`, then `/to-tickets`: tracer-bullet vertical slices, each
+   runnable end to end on its own, each declaring its blocking edges; the owner approves the list. Imps never write
+   specs or tickets; they build from a brief.
 3. Build: `/hud-build` works the tickets as a task graph (one fresh imp per ready ticket, each in its own worktree);
    for a single brief, `hud-delegate` directly.
 4. Review once per milestone, not per ticket (below). The owner tries the result; that is the acceptance.
