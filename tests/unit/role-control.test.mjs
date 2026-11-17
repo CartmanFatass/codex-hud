@@ -82,8 +82,8 @@ test('Control plane: what needs the owner first with the place the next job uses
   assert.match(lines[at(/ pro /) + 1], /^ {6}next job → ◉ gemini$/);
   assert.match(lines[at(/ flow /)], /^ {2}− flow +flow image not installed$/);
   assert.match(lines[at(/bad\.json/)], /^ {2}! bad\.json +unparseable JSON$/);
-  assert.match(lines[at(/^▸ Healthy ─/)], / 4$/);
-  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp \[default\] reviewer \[custom\] sonic oracle \[fable\]$/);
+  assert.match(lines[at(/^▸ Healthy ─/)], / 5$/);
+  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp \[default\] reviewer \[custom\] sonic oracle \[fable\] general$/);
   assert.ok(at(/^Needs attention ─/) < at(/^▸ Healthy ─/) && at(/^▸ Healthy ─/) < at(/^Harnesses ─/));
   assert.doesNotMatch(lines.join('\n'), /synthetic\/model|^Roles ─|^Browser tasks ─/m);
   assert.match(lines[at(/^Harnesses ─/) + 1], /pi ✓ +agy ✓ +claude ✓ +codex − +grok ✓ +jev-ask ✓ +jev-aistudio ✓ +jev-flow −/);
@@ -102,7 +102,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   assert.match(narrow, /^需要处理 ─+ 3$/m);
   assert.match(narrow, /^ {2}✗ pro +chatgpt 已耗尽 60分钟$/m);
   assert.match(narrow, /^ {6}下个任务 → ◉ gemini$/m);
-  assert.match(narrow, /^▸ 正常 ─+ 4$/m);
+  assert.match(narrow, /^▸ 正常 ─+ 5$/m);
   assert.match(narrow, /◉ 使用中 +○ 备选 +✗ 已耗尽/);
   // `next job` is a stop that takes the place keys, for the place it names; the healthy roles are one Enter away.
   s.session.state = { ...s.session.state, projectCursor: placeItem('pro', 1) };
@@ -113,17 +113,17 @@ test('Control plane: what needs the owner first with the place the next job uses
   // The healthy roles are one Enter away, and all one row a place again.
   s.session.state = { ...s.session.state, projectCursor: 'project:fold:healthy' };
   await s.press('\r');
-  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow):/.test(i)), ['imp:0', 'imp:1', 'reviewer:0', 'reviewer:1', 'sonic:0', 'oracle:0', 'oracle:1'].map((x) => `project:role:${x}`));
-  assert.match(s.text(), /^Healthy ─+ 4$/m);
+  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow):/.test(i)), ['imp:0', 'imp:1', 'reviewer:0', 'reviewer:1', 'sonic:0', 'oracle:0', 'oracle:1', 'general:0'].map((x) => `project:role:${x}`));
+  assert.match(s.text(), /^Healthy ─+ 5$/m);
   await s.press('\r');
-  assert.match(s.text(), /^▸ Healthy ─+ 4$/m, 'Enter again folds them');
+  assert.match(s.text(), /^▸ Healthy ─+ 5$/m, 'Enter again folds them');
 });
 test('Control plane, opened: each role once with its place and fallbacks, browser tasks apart', async (t) => {
   const s = await setup(t);
   writeRolePlaces(s.hud, 'reviewer', [{ harness: 'pi', pi_role: 'reviewer', split: false }, { harness: 'cli', agent: 'claude', model: 'opus', thinking: 'high' }]);
   s.session.snap = await s.collector.collect(true, s.board, NOW);
   // Nothing is exhausted here, but flow has nowhere to run: it is the one role up top; everyone else is a healthy place row.
-  assert.deepEqual(s.rows().map((r) => r.item), ['flow:0', 'imp:0', 'imp:1', 'reviewer:0', 'reviewer:1', 'sonic:0', 'oracle:0', 'oracle:1', 'pro:0', 'pro:1', 'pro:2'].map((x) => `project:role:${x}`));
+  assert.deepEqual(s.rows().map((r) => r.item), ['flow:0', 'imp:0', 'imp:1', 'reviewer:0', 'reviewer:1', 'sonic:0', 'oracle:0', 'oracle:1', 'general:0', 'pro:0', 'pro:1', 'pro:2'].map((x) => `project:role:${x}`));
   const lines = plain(s.frame(80, 'en', 64));
   const at = (re) => lines.findIndex((l) => re.test(l));
   // Groups in order under Healthy; pro only under Browser tasks; the harnesses after them.

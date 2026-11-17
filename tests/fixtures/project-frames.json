@@ -22,7 +22,7 @@
     "████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
     "Working tree  synthetic-project",
     "Docs          M3b · AI-THIN · review 30m",
-    "Control plane 6 roles · keys 3/5",
+    "Control plane 7 roles · keys 3/5",
     "         ↑↓ move  ⏎ open  ←→ tab  ? help"
   ],
   "hub-80-en": [
@@ -48,7 +48,7 @@
     "██████████████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
     "Working tree  synthetic-project · 5 changed · 2 worktrees · 1 editing",
     "Docs          M3b · AI-THIN · review 30m",
-    "Control plane 6 roles · keys 3/5 · browser ✓",
+    "Control plane 7 roles · keys 3/5 · browser ✓",
     "                                                 ↑↓ move  ⏎ open  ←→ tab  ? help"
   ],
   "hub-120-en": [
@@ -74,7 +74,7 @@
     "██████████████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
     "Working tree  synthetic-project · 5 changed · 2 worktrees · 1 editing",
     "Docs          M3b · AI-THIN · review 30m",
-    "Control plane 6 roles · keys 3/5 · browser ✓",
+    "Control plane 7 roles · keys 3/5 · browser ✓",
     "                                                                                         ↑↓ move  ⏎ open  ←→ tab  ? help"
   ],
   "progress-40-en": [
@@ -330,13 +330,13 @@
     "                                                                                       ↑↓ move  ⏎ open  esc back  ? help"
   ],
   "control-40-en": [
-    "‹ Project › Control plane        6 roles",
+    "‹ Project › Control plane        7 roles",
     "",
     "Needs attention ────────────────────── 2",
     "  − flow      flow image not installed",
     "  ! bad.json            unparseable JSON",
     "",
-    "▸ Healthy ──────────────────────────── 5",
+    "▸ Healthy ──────────────────────────── 6",
     "  ◉ imp [custom] reviewer [default] son…",
     "",
     "Harnesses ──────────────────────────────",
@@ -372,14 +372,14 @@
     "     ↑↓ move  ⏎ open  c C preset  ? help"
   ],
   "control-120-en": [
-    "‹ Project › Control plane                                                                             6 roles · 3 agents",
+    "‹ Project › Control plane                                                                             7 roles · 3 agents",
     "",
     "Needs attention ────────────────────────────────────────────────────────────────────────────────────────────────────── 2",
     "  − flow       flow image not installed",
     "  ! bad.json                                                                                            unparseable JSON",
     "",
-    "▸ Healthy ──────────────────────────────────────────────────────────────────────────────────────────────────────────── 5",
-    "  ◉ imp [custom] reviewer [default] sonic oracle [fable] pro",
+    "▸ Healthy ──────────────────────────────────────────────────────────────────────────────────────────────────────────── 6",
+    "  ◉ imp [custom] reviewer [default] sonic oracle [fable] pro general",
     "",
     "Harnesses ──────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  pi ✓  agy −  claude −  codex −  grok −  jev-ask ✓  jev-aistudio −  jev-flow −",
@@ -436,7 +436,7 @@
     "████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
     "工作区 synthetic-project · 5 项修改",
     "文档   M3b · AI-THIN · 评审 30分钟",
-    "控制面 6 角色 · 密钥 3/5 · 浏览器 ✓",
+    "控制面 7 角色 · 密钥 3/5 · 浏览器 ✓",
     "        ↑↓ 移动  ⏎ 打开  ←→ 切页  ? 帮助"
   ],
   "hub-80-zh": [
@@ -462,7 +462,7 @@
     "██████████████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
     "工作区 synthetic-project · 5 项修改 · 2 个工作树 · 1 编辑中",
     "文档   M3b · AI-THIN · 评审 30分钟",
-    "控制面 6 角色 · 密钥 3/5 · 浏览器 ✓",
+    "控制面 7 角色 · 密钥 3/5 · 浏览器 ✓",
     "                                                ↑↓ 移动  ⏎ 打开  ←→ 切页  ? 帮助"
   ],
   "hub-120-zh": [
@@ -488,7 +488,7 @@
     "██████████████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
     "工作区 synthetic-project · 5 项修改 · 2 个工作树 · 1 编辑中",
     "文档   M3b · AI-THIN · 评审 30分钟",
-    "控制面 6 角色 · 密钥 3/5 · 浏览器 ✓",
+    "控制面 7 角色 · 密钥 3/5 · 浏览器 ✓",
     "                                                                                        ↑↓ 移动  ⏎ 打开  ←→ 切页  ? 帮助"
   ],
   "progress-40-zh": [
@@ -744,13 +744,13 @@
     "                                                                                       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
   ],
   "control-40-zh": [
-    "‹ 项目 › 控制面          6 角色 · 3 代理",
+    "‹ 项目 › 控制面          7 角色 · 3 代理",
     "",
     "需要处理 ───────────────────────────── 2",
     "  − flow      flow image 未安装",
     "  ! bad.json            unparseable JSON",
     "",
-    "▸ 正常 ─────────────────────────────── 5",
+    "▸ 正常 ─────────────────────────────── 6",
     "  ◉ imp [自定义] reviewer [default] son…",
     "",
     "宿主 ───────────────────────────────────",
@@ -786,14 +786,14 @@
     "       ↑↓ 移动  ⏎ 打开  c C 预设  ? 帮助"
   ],
   "control-120-zh": [
-    "‹ 项目 › 控制面                                                                                          6 角色 · 3 代理",
+    "‹ 项目 › 控制面                                                                                          7 角色 · 3 代理",
     "",
     "需要处理 ───────────────────────────────────────────────────────────────────────────────────────────────────────────── 2",
     "  − flow       flow image 未安装",
     "  ! bad.json                                                                                            unparseable JSON",
     "",
-    "▸ 正常 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────── 5",
-    "  ◉ imp [自定义] reviewer [default] sonic oracle [fable] pro",
+    "▸ 正常 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────── 6",
+    "  ◉ imp [自定义] reviewer [default] sonic oracle [fable] pro general",
     "",
     "宿主 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  pi ✓  agy −  claude −  codex −  grok −  jev-ask ✓  jev-aistudio −  jev-flow −",
@@ -1262,7 +1262,7 @@
     "████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
     "Working tree  synthetic-project",
     "Docs          M3b · AI-THIN · review 30m",
-    "Control plane 6 roles · keys 3/5",
+    "Control plane 7 roles · keys 3/5",
     "    ↑↓ move  ⏎ open  ←→ tab  [ ] project"
   ],
   "hub-switch-40-zh": [
@@ -1288,7 +1288,7 @@
     "████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓",
     "工作区 synthetic-project · 5 项修改",
     "文档   M3b · AI-THIN · 评审 30分钟",
-    "控制面 6 角色 · 密钥 3/5 · 浏览器 ✓",
+    "控制面 7 角色 · 密钥 3/5 · 浏览器 ✓",
     "      ↑↓ 移动  ⏎ 打开  ←→ 切页  [ ] 项目"
   ],
   "progress-switch-40-en": [
@@ -1327,7 +1327,7 @@
     "████████████████████▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░",
     "Working tree  synthetic-project",
     "Docs          M3b · AI-THIN · review 30m",
-    "Control plane 6 roles · keys 3/5",
+    "Control plane 7 roles · keys 3/5",
     "",
     "",
     "",
@@ -1369,7 +1369,7 @@
     "████████████████████▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░",
     "工作区 synthetic-project · 5 项修改",
     "文档   M3b · AI-THIN · 评审 30分钟",
-    "控制面 6 角色 · 密钥 3/5 · 浏览器 ✓",
+    "控制面 7 角色 · 密钥 3/5 · 浏览器 ✓",
     "",
     "",
     "",
@@ -1406,7 +1406,7 @@
     "████████████████████▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░",
     "Working tree  synthetic-project",
     "Docs          M3b · AI-THIN · review 30m",
-    "Control plane 6 roles · keys 3/5",
+    "Control plane 7 roles · keys 3/5",
     "",
     "",
     "         ↑↓ move  ⏎ open  ←→ tab  ? help"
@@ -1424,7 +1424,7 @@
     "Progress      0.1.3 · 1 working",
     "Working tree  synthetic-project",
     "Docs          M3b · AI-THIN · review 30m",
-    "Control plane 6 roles · keys 3/5",
+    "Control plane 7 roles · keys 3/5",
     "",
     "",
     "         ↑↓ move  ⏎ open  ←→ tab  ? help"
@@ -1467,7 +1467,7 @@
     "██████████████████████████████▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░",
     "Working tree  synthetic-project · 5 changed · 2 worktrees · 1 editing",
     "Docs          M3b · AI-THIN · review 30m",
-    "Control plane 6 roles · keys 3/5 · browser ✓",
+    "Control plane 7 roles · keys 3/5 · browser ✓",
     "",
     "",
     "",
@@ -2098,7 +2098,7 @@
     "########################################",
     "Working tree  synthetic-project",
     "Docs          M3b · AI-THIN · review 30m",
-    "Control plane 6 roles · keys 3/5",
+    "Control plane 7 roles · keys 3/5",
     "         ↑↓ move  ⏎ open  ←→ tab  ? help"
   ],
   "progress-40-text": [
