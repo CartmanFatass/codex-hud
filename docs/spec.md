@@ -54,8 +54,23 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    try) above the page rows, and when the panel is short Latest folds first; the hub's bar is the current milestone's;
    Progress is a dated feed of the last 7 days with older work one row per milestone; Tickets are lanes by state with
    a For-you lane; the control plane opens with what needs attention and the place the next job will use, healthy
-   roles folded.
+   roles folded. Skills tab (owner, 2026-11-17): a third main tab after Project lists the backup skills, Matt Pocock
+   skills that are not installed and that the main session reads from their upstream text when the owner asks for
+   one; one row each, the skill's name and a one-line description in the panel's language, read from a catalog file
+   the HUD ships. Display only: no action on a row, no install state, no adopted or dropped skills.
 3. **Set up a project's workers in one conversation** (owner, 2026-11-13). `hud setup --detect | --apply PLAN | --remove` writes a project's `.hud/` and is driven by a `hud-setup` skill that asks the owner, as claude-hud's setup does. Customisation is on pi workers only: main sessions and the official harnesses (Claude Code, Codex, Grok Build, Antigravity) keep their behaviour, and their roles are only shown or hidden. A project's `.hud/` loads only once the owner has set that project up (`$HUD_HOME/projects.json`); a cloned repo's `.hud/` does nothing on its own.
+   Adapted skills (owner, 2026-11-17; replaces the 2026-11-10 "Matt's skills, unchanged" decision): the upstream
+   plugin is off everywhere (Claude, Codex, pi); a curated few of Matt Pocock's skills ship in `integrations/skills/`,
+   adapted so the main session decides and HUD roles execute: `grill-with-docs` (with `grilling` and
+   `domain-modeling`), `to-spec` and `to-tickets` for main sessions (user-invoked, installed for Claude and Codex, not
+   pi); `tdd` and `diagnosing-bugs` for pi workers, linked per project through `hud setup`. Each names the upstream
+   commit it came from; we own the adapted text and do not track upstream. The rest are backups listed in the Skills
+   tab. Ticket tracking: a project's tracker may be GitHub Issues, mirrored one way into `.scratch/` for the Project
+   tab and workers; only the mirror tool writes the mirror. The mirror tool is `hud tickets sync` (owner, 2026-11-17):
+   it reads the project's GitHub issues through `gh`, takes each parent issue with sub-issues as a feature (its slug
+   from the parent's title) and its sub-issues as that feature's tickets, and writes them into `.scratch/` in the
+   format the Project tab reads. The main session runs it after each tracker write; nothing polls, and the panel
+   never touches the network.
 4. **Install and uninstall in one command.** `./install` with core plus chosen extensions (Claude, pi, Codex, browser,
    herdr); `hud uninstall` removes them. Registration uses each client's official commands where they exist.
 
