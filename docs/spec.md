@@ -18,7 +18,10 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    watcher closes them; `hud_close` only closes one early (owner, 2026-11-11).
 2. **Show what is happening.** A side panel (Home, Project) shows the main session's jobs and their state; Home is one page: what needs the owner, then the package lanes with their job cards, then the decisions (Home and Work merged, owner, 2026-11-11). Finished jobs and older decisions hide after a short time; `a` shows them again in place (owner, 2026-11-11). The bottom
    status lines are always on (Claude's statusline, pi's footer; Codex's tmux bar comes with `codexH`); only the side panel is opt-in: it opens only with
-   `/hud` (in Codex with F12, as before) (owner, 2026-11-11). The delegation tools stay registered either way (owner,
+   `/hud` (owner, 2026-11-11). One sidebar for every client (owner, 2026-11-17): Codex opens the same standalone herdr
+   sidebar with `/hud` as Claude and pi do; Codex's tmux panel (F12/Shift-F12, the prefix keys, the gutter focus lock and
+   the prefix setting) is retired, and Codex's tmux bar stays. The sidebar takes the mouse in every client: a click
+   selects a tab, row or button, a second click acts as Enter, the wheel scrolls. The delegation tools stay registered either way (owner,
    2026-11-11). Each client keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
    (taking in p10k-footer; its ribbon stays at the right end of the editor's top border and other extensions' statuses
    stay visible, owner, 2026-11-12), Codex's existing tmux bar. Bar themes (owner, 2026-11-12): Gauge Plates, Tide, Micro
