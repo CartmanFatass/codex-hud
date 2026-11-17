@@ -147,8 +147,9 @@ board counts these; update at every landing or decision. -->
 - try · — · ROLE-PRESETS · owner 2026-11-17: named presets per role, c/C on the control plane applies the next/previous; architect folded into oracle; imp default/grok/hydrogen, reviewer default/pi, oracle fable/architect; glm-imp removed (backup ~/.hud/backups/roles-2026-11-17) (spec 070d6b6e, landed from bc5a5761)
 - try · — · HUD-HANDOFF · owner 2026-11-17: hud-handoff installed for Claude and Codex (9a077fd2)
 - try · — · SKILLS-READ · owner 2026-11-17: Skills descriptions wrap in full under the name, readable at 40 columns (spec f996b63f; landed from 957997cc)
-- working · — · SIDEBAR-ONE · owner 2026-11-17: one standalone herdr sidebar for every client with mouse; Codex tmux panel (F12, prefix keys) retired, tmux bar kept (spec 0cb19f5a; imp job jedc327f7d1019cf2 in ../MyHUD-wt/SIDEBAR-ONE)
-- working · — · ORACLE-SKILL · owner 2026-11-17: oracle loads an adapted codebase-design on every place; role skills on CLI places; bare names fall back to shipped skills (spec 884669ff; imp job je0ee2f0349dac642 in ../MyHUD-wt/ORACLE-SKILL)
+- try · — · SIDEBAR-ONE · owner 2026-11-17: one standalone herdr sidebar for every client with mouse (click tab/row, second click = Enter, wheel, crumb back); Codex /hud skill; Codex tmux panel (F12, prefix keys, gutter lock, prefix setting) retired, tmux bar kept (spec 0cb19f5a; landed from 917fc152). Live mouse through herdr in a real terminal not yet verified
+- blocked · — · ORACLE-SKILL · owner 2026-11-17: oracle loads an adapted codebase-design on every place; role skills on CLI places; bare names fall back to shipped skills (spec 884669ff; imp job je0ee2f0349dac642 in ../MyHUD-wt/ORACLE-SKILL) — report in, landing held until MATT-PARADIGM decides
+- working · — · MATT-PARADIGM · owner 2026-11-17: oracle (max) on how HUD should integrate Matt Pocock's skill library (job j8b8eb93244e7221e)
 - try · — · MATT-FLOW · owner 2026-11-17: the convention keeps only HUD mechanics (method lives in on-demand skills; a convention absorbing Matt's flow was written and reverted the same day); hud-build (implement-spec as a HUD recipe, user-invoked) installed for Claude and Codex
 
 ## Now (2026-11-14): 0.1.4 to the owner's try; 0.1.1–0.1.3 wait for the owner's try
