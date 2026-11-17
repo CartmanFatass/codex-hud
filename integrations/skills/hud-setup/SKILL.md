@@ -15,7 +15,7 @@ In the project, with Bash:
 hud setup --detect
 ```
 
-It prints one JSON document and writes nothing. Use `enabled_roles` as the default set. Each `skills[]` entry has `name`, `path`, `root` and `model_invocable`. `model_invocable: false` means the skill's frontmatter has `disable-model-invocation: true`: pi loads it but leaves it out of the model's skill list, so a worker will not pick it by itself. It can still be linked. If `pi.installed` is false, say so; show/hide still works, pi launches will not until `pi-role` is on PATH.
+It prints one JSON document and writes nothing. Use `enabled_roles` as the default set. Each `skills[]` entry has `name`, `path`, `root` and `model_invocable`. `model_invocable: false` means the skill's frontmatter has `disable-model-invocation: true`: pi loads it but leaves it out of the model's skill list, so a worker will not pick it by itself. It can still be linked. `model_invocable` says whether a worker picks a skill by itself, not whether it is safe for a worker; link only worker-safe skills (none that ask the user, spawn agents, commit or publish). If `pi.installed` is false, say so; show/hide still works, pi launches will not until `pi-role` is on PATH.
 
 ## 2. Ask
 
@@ -42,10 +42,10 @@ hud setup --apply "$plan"
   "version": 1,
   "roles": ["imp", "reviewer"],
   "pi_roles": {
-    "imp": { "model": "example-model", "thinking": "high", "skills": ["to-tickets"] },
-    "frontend": { "from": "imp", "pi_role": "implementer", "skills": ["to-tickets"] }
+    "imp": { "model": "example-model", "thinking": "high", "skills": ["tdd"] },
+    "frontend": { "from": "imp", "pi_role": "implementer", "skills": ["tdd"] }
   },
-  "skills": { "to-tickets": "/path/to/skills/to-tickets" },
+  "skills": { "tdd": "/path/to/skills/tdd" },
   "agents": { "imp": "Worker-only notes.\n" },
   "convention": "keep"
 }

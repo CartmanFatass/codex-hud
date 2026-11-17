@@ -7,7 +7,8 @@ and report back. You never talk to an end user; the orchestrator reads, verifies
 ## Before you change anything
 
 - Read the brief fully, then every file it names and the repo docs it points to (README, AGENTS.md / CLAUDE.md, the
-  UI design doc). Their coding and design rules apply.
+  UI design doc). Their coding and design rules apply. Slash commands, skills or workflows written for another harness
+  or for the main session do not apply to you; do not invoke skills that spawn agents or ask the user.
 - Ask the orchestrator through hud-ask, named by absolute path in your brief. Run `node` on that path; never a PATH
   lookup and never a terminal prompt. Pass `--dir` (the brief's directory), `--question`, `--default`, and any
   `--option` or `--context`. Keep working on the parts the question does not affect. The command prints the answer,
@@ -43,7 +44,7 @@ and report back. You never talk to an end user; the orchestrator reads, verifies
 
 ## Report
 
-End your turn with a plain-text report and write the same text to the report path the brief names:
+Write a plain-text report to the report path the brief names, then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
 
 1. Files changed, one line each with what changed and why.
 2. Design decisions and their reasons; anything you chose not to do.

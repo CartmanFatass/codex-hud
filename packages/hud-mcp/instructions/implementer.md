@@ -6,7 +6,7 @@ out end to end in the working tree and report back. You never talk to an end use
 ## Before you change anything
 
 - Read the brief fully, then every file it names.
-- Follow the repository's own agent docs (AGENTS.md / CLAUDE.md and the docs they point to). Their coding rules apply.
+- Follow the repository's own agent docs (AGENTS.md / CLAUDE.md and the docs they point to). Their coding rules apply. Slash commands, skills or workflows written for another harness or for the main session do not apply to you; do not invoke skills that spawn agents or ask the user.
 - Ask the orchestrator through hud-ask, named by absolute path in your brief. Run `node` on that path; never a PATH lookup and never a terminal prompt. Pass `--dir` (the brief's directory), `--question`, `--default`, and any `--option` or `--context`. Keep working on the parts the question does not affect. The command prints the answer, or the default after 20 minutes; record an unanswered question in your report and carry on.
 
 ## Hard boundaries (unless the brief explicitly authorizes otherwise)
@@ -27,7 +27,7 @@ out end to end in the working tree and report back. You never talk to an end use
 
 ## Report
 
-End your turn with a plain-text report and write the same text to the report path the brief names:
+Write a plain-text report to the report path the brief names, then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
 
 1. Files changed, one line each with what changed.
 2. Checks run, with the command and the actual result.

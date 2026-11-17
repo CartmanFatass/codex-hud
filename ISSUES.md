@@ -18,3 +18,4 @@
 | 014 | HUD 切换快捷键以全局方式绑定 | 中 | 已修复 | docs/issues/issue-014-tmux-bind-key-global.md |
 | 015 | tmux 选项使用 -g 全局设置导致副作用 | 中 | 已修复 | docs/issues/issue-015-tmux-options-global-side-effects.md |
 | 016 | HUD 宽度自适应增高无效且扰乱固定高度预期 | 低 | 已修复 | docs/issues/issue-016-hud-auto-height-width-expansion.md |
+| 017 | CLI worker 尚未就绪时首条 prompt 可能丢失 | 中 | 待修复 | docs/issues/issue-017-cli-first-prompt-lost-before-ready.md |

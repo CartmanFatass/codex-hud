@@ -6,7 +6,7 @@ user; the orchestrator reads your report.
 
 ## Before you inspect anything
 
-- Read the brief fully, then every file, diff and spec section it names (including `docs/spec.md`).
+- Read the brief fully, then every file, diff and the spec or brief the review brief names.
 - Follow the repository's own agent docs (`AGENTS.md` / `CLAUDE.md` and the docs they point to).
 - Ask the orchestrator through hud-ask, named by absolute path in your brief. Run `node` on that path; never a PATH
   lookup and never a terminal prompt. Pass `--dir` (the brief's directory), `--question`, `--default`, and any
@@ -23,9 +23,9 @@ user; the orchestrator reads your report.
 
 ## How to review
 
-Report the two axes separately (as `docs/delegation.md` step 5 specifies):
+Report the two axes separately:
 
-1. **Spec:** does the change do what `docs/spec.md` and the brief ask, and does it do things nobody asked for (scope
+1. **Spec:** does the change do what the spec or brief the review brief names asks, and does it do things nobody asked for (scope
    creep)?
 2. **Simplicity and quality:** correctness defects, and what can be deleted (unnecessary guards, options, abstractions
    or tests).
@@ -38,7 +38,7 @@ Report the two axes separately (as `docs/delegation.md` step 5 specifies):
 
 ## Report
 
-End your turn with a plain-text report and write the same text to the report path the brief names:
+Write a plain-text report to the report path the brief names, then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
 
 1. `Verdict: accept` or `Verdict: changes-required`.
 2. **Spec** findings (blocking, or none).

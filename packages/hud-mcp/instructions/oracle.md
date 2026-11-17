@@ -32,7 +32,7 @@ user; the orchestrator reads your report.
 
 ## Report
 
-End your turn with a plain-text report and write the same text to the report path the brief names:
+Write a plain-text report to the report path the brief names, then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
 
 1. Direct answer and recommendation.
 2. Supporting facts with `file:line` references (guesses explicitly marked).
