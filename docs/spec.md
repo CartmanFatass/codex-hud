@@ -64,7 +64,8 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    adapted so the main session decides and HUD roles execute: `grill-with-docs` (with `grilling` and
    `domain-modeling`), `to-spec` and `to-tickets` for main sessions (user-invoked, installed for Claude and Codex, not
    pi); `tdd` and `diagnosing-bugs` for pi workers, linked per project through `hud setup`. Each names the upstream
-   commit it came from; we own the adapted text and do not track upstream. The rest are backups listed in the Skills
+   commit it came from; we own the adapted text and do not track upstream. `hud-handoff` (the fixed-form handoff to a fresh session, on the six-tool surface) is installed for
+   Claude and Codex beside `hud-delegate` and `hud-setup` (owner, 2026-11-17). The rest are backups listed in the Skills
    tab. Ticket tracking: a project's tracker may be GitHub Issues, mirrored one way into `.scratch/` for the Project
    tab and workers; only the mirror tool writes the mirror. The mirror tool is `hud tickets sync` (owner, 2026-11-17):
    it reads the project's GitHub issues through `gh`, takes each parent issue with sub-issues as a feature (its slug
