@@ -206,9 +206,21 @@ export function renderWorkboardFrame(
   // The model picker is the page while it is open: its picked entry is the cursor, and the page's own scroll and reveal wait.
   const picking = project && page === 'control' && !!state.projectInput;
   const key = skills ? '' : picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
-  const cursorAt = rows.findIndex((r) => r.item === key),
-    room = Math.max(0, height - 2),
-    max = Math.max(0, rows.length - room);
+  let room = Math.max(0, height - 2);
+  let preview: MonitorRow[] = [];
+  if (project && page === 'control' && !picking) {
+    const start = rows.findIndex((r) => r.placePreview);
+    if (start >= 0) {
+      const count = rows.filter((r) => r.placePreview).length;
+      // Under the role list when it fits; on a shorter frame keep it below the scrollable rows.
+      // If even the preview would fill the terminal, leave it in the ordinary scrolling content.
+      if (start + count > room && count < room) {
+        preview = rows.splice(start, count);
+        room -= count;
+      }
+    }
+  }
+  const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(0, rows.length - room);
   const scroll = help
     ? (state.helpScroll ?? 0)
     : picking ? 0
@@ -237,6 +249,7 @@ export function renderWorkboardFrame(
     frame.lines[i + 1] = !help && !changes && marked ? boardCursor(text) : text;
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 });
   }
+  preview.forEach((row, i) => { frame.lines[room + 1 + i] = row.text; });
   const today = new Date(now).toDateString();
   const done = source.workers.filter(
     (w) =>

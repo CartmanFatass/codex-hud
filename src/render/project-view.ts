@@ -514,7 +514,7 @@ function pageRows(
     if (data.last) item({ label: 'last', value: data.last.text, at: data.last.at }, 0);
   } else if (page === 'docs') data.docs.forEach((r, i) => item(r, i));
   else {
-    rows.push(...controlRows(data, width, now, !folded.has('healthy')));
+    rows.push(...controlRows(data, width, now, !folded.has('healthy'), state.projectCursor));
     // Files: the role definitions and instruction files, the native agents, keys and browser; one row of keys while folded.
     const files = data.control.filter((r) => r.label !== 'invalid'), open = !folded.has('files'), have = data.keys.filter((k) => k[1]).length;
     rows.push(boardRow(''), foldRow(folded, 'files', 'Files', width, String(files.length + data.agents.length)));

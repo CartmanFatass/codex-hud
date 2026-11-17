@@ -100,6 +100,8 @@ export interface MonitorRow {
   key?: string;
   controls?: RowControl[];
   files?: string[];
+  /** Display-only detail row that can pin below the Control plane's scrolling list. */
+  placePreview?: true;
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;
 }

@@ -7,7 +7,7 @@ import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { placeItem, placeModels, type PlaceFact, type PlaceState, type RoleFact } from '../roles/role-control.js';
 import type { MonitorRow } from './monitor.js';
 import { pickOf, pickView, type ModelInput } from './model-input.js';
-import { boardRow, section, mark, pack } from './workboard-rows.js';
+import { boardRow, section, mark, pack, kvRows } from './workboard-rows.js';
 import { monitorText, fit, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { basename } from 'node:path';
@@ -23,8 +23,8 @@ const LEGEND: [PlaceState, string][] = [['active', 'in use'], ['standby', 'stand
 /** A role needs the owner when one of its places is exhausted or none can run. Healthy roles are the rest. */
 export const needsAttention = (role: RoleFact) =>
   role.places.some((p) => p.state === 'exhausted') || !role.places.some((p) => p.state === 'active');
-const roleName = (role: RoleFact) => monitorText(role.role) + (role.preset === undefined ? '' :
-  theme.board.muted(` [${role.preset === null ? t('custom') : monitorText(role.preset)}]`));
+const presetName = (role: RoleFact) => role.preset === undefined ? '' : ` [${role.preset ?? t('custom')}]`;
+const roleName = (role: RoleFact) => monitorText(role.role) + (role.preset === undefined ? '' : theme.board.muted(monitorText(presetName(role))));
 /** `pi  model  thinking`, the model cut in the middle (never the harness or the thinking) when the row is short. */
 function placeText(p: PlaceFact, room: number, gap: string): string {
   const tail = monitorText(p.thinking ?? p.kind ?? ''), cells = (model: string) =>
@@ -53,6 +53,27 @@ function placeRow(role: RoleFact, i: number, width: number, now: number, data: P
   const left = lead + (place.state === 'active' ? text : theme.board.muted(text));
   return { text: tag ? pair(left, tag, width) : fit(left, width), ...placeTarget(role, i, data) };
 }
+function placePreview(data: ProjectSnapshot, item: string | undefined, width: number): MonitorRow[] {
+  const id = /^project:role:(.+):(\d+)$/.exec(item ?? '');
+  if (!id) return [];
+  const role = data.roles.find((r) => r.role === id[1]), index = Number(id[2]), place = role?.places[index];
+  if (!role || !place) return [];
+  const status = place.state === 'active' ? t('next job runs here')
+    : place.state === 'standby' ? t('fallback {n}', { n: index })
+    : place.state === 'missing' ? t('not installed')
+    : place.until === undefined ? t('exhausted')
+    : t('exhausted until {time}', { time: new Date(place.until).toTimeString().slice(0, 5) });
+  return [
+    boardRow(''),
+    section(t('Selected place'), width),
+    ...kvRows('role', role.role + presetName(role), width),
+    ...kvRows('state', status, width),
+    ...kvRows('harness', [place.harness, place.label !== place.harness && place.label, place.kind].filter(Boolean).join(' · '), width),
+    ...kvRows('model', place.model ?? t(place.kind ? 'none' : 'default'), width),
+    ...kvRows('thinking', place.thinking ?? t(place.harness === 'bro' ? 'none' : 'default'), width),
+    ...kvRows('source file', `${t(role.source)} · ${basename(role.path)}`, width, undefined, 11),
+  ].map((r) => ({ ...r, placePreview: true }));
+}
 /**
  * The model picker, in place of the page while it is open: the place, its current model, the filter line and the entries
  * around the picked one (a window as tall as the panel allows). The picked entry is the row the cursor paints.
@@ -78,7 +99,7 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
       : [boardRow(fit('  ' + theme.board.muted(t('none')), width))]),
   ];
 }
-export function controlRows(data: ProjectSnapshot, width: number, now: number, healthyOpen: boolean): MonitorRow[] {
+export function controlRows(data: ProjectSnapshot, width: number, now: number, healthyOpen: boolean, cursor?: string): MonitorRow[] {
   const out: MonitorRow[] = [], nameWidth = width < 56 ? 9 : 10, push = (row: MonitorRow) => out.push(row);
   const gap = () => { if (out.length) out.push(boardRow('')); };
   const attention = data.roles.filter(needsAttention), invalid = data.control.filter((r) => r.label === 'invalid');
@@ -101,6 +122,7 @@ export function controlRows(data: ProjectSnapshot, width: number, now: number, h
         push({ text: fit(prefix + (place ? `${glyph('active')} ${placeText(place, width - visualLength(prefix) - 2, ' ')}` : theme.board.muted(t('none'))), width),
           ...(next >= 0 ? placeTarget(role, next, data) : {}) });
       }
+      role.places.forEach((p, i) => { if (p.state === 'standby') push(placeRow(role, i, width, now, data)); });
     }
     invalid.forEach((r, i) => out.push({
       text: pair(`  ${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, theme.board.muted(monitorText(r.value)), width),
@@ -119,6 +141,9 @@ export function controlRows(data: ProjectSnapshot, width: number, now: number, h
       for (const role of roles) role.places.forEach((_, i) => push(placeRow(role, i, width, now, data)));
     }
   }
+  // Preview the same default stop that the frame selects when the old cursor is gone.
+  const selected = out.find((r) => r.item === cursor && r.item) ?? out.find((r) => r.item);
+  out.push(...placePreview(data, selected?.item, width));
   if (data.harnesses.length) {
     gap();
     out.push(section(t('Harnesses'), width));

@@ -3,7 +3,7 @@ import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
-import { renderWorkCard, requestLines, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary, quietDecisionSummary } from './work-card.js';
+import { ageText, renderWorkCard, requestLines, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary, quietDecisionSummary } from './work-card.js';
 import {
   kvRows,
   section,
@@ -64,6 +64,9 @@ export function workInspectorRows(
       : renderWorkCard(card, expanded, width).map((text) => boardRow(text));
   const stamp = (at: number | null) =>
     at === null ? '' : `${localTime(at, now)} · ${t('{age} ago', { age: minuteAge(at, now) })}`;
+  const end = worker.settledAt ?? (worker.state === 'working' ? now : null);
+  const ran = worker.startedAt !== null && end !== null && end >= worker.startedAt
+    ? ageText(Math.floor((end - worker.startedAt) / 60000), true) : '';
   const model = worker.model?.replace(/^.*\//, '') ?? '',
     glyph = !asciiBoard() ? providerMark({ id: model, provider: worker.provider })?.glyph : '';
   rows.push(
@@ -103,6 +106,7 @@ export function workInspectorRows(
           worker.homeNeedsHuman ? 'asked' : worker.settledAt !== null ? 'ended' : 'activity',
           stamp(worker.homeNeedsHuman ? worker.humanEndedAt : (worker.settledAt ?? worker.work?.activityAt ?? null)),
         ],
+        ['ran', ran],
       ],
       width
     )

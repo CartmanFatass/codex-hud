@@ -79,6 +79,26 @@ test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
           assert.equal(visualLength(line), width, `${page} ${lang} ${width}: ${stripAnsi(line)}`);
       }
 });
+test('Inspector shows elapsed run time for running and settled jobs, not for unknown endpoints', (t) => {
+  const f = fixture(t);
+  const nowMs = NOW + 18 * 60000;
+  const draw = (worker) => {
+    const board = { ...f.board, lanes: f.board.lanes.map((lane) => ({
+      ...lane, workers: lane.workers.map((w) => w.id === worker.id ? worker : w),
+    })), workers: f.board.workers.map((w) => w.id === worker.id ? worker : w) };
+    return plainFrame(renderMonitor({
+      tree: TREE, workboard: board, width: 40, height: 30, nowMs,
+      state: { ...f.states.job, boardInspect: { kind: 'worker', laneId: worker.laneId, workerId: worker.id } },
+    })).join('\n');
+  };
+  const settled = f.board.workers.find((w) => w.task === 'Add the retry helper');
+  assert.match(draw(settled), /started\s+10:15[^\n]*\nended\s+11:23[^\n]*\nran\s+1h08m/);
+  assert.match(draw(f.apiWorker), /started\s+11:48[^\n]*\nactivity[^\n]*\nran\s+1h05m/);
+  assert.match(plainFrame(f.render('job', 40, 'zh')).join('\n'), /^用时\s+47分钟$/m);
+  assert.doesNotMatch(draw({ ...f.apiWorker, startedAt: null }), /^ran\s/m);
+  assert.doesNotMatch(draw({ ...settled, settledAt: null }), /^ran\s/m);
+});
+
 test('Inspector uses collected files, selects the open question/report/brief and opens exact QA pairs', (t) => {
   const f = fixture(t);
   const ctx = (frame) => ({ tree: TREE, frame, nowMs: NOW, standalone: true });

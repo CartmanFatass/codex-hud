@@ -48,8 +48,11 @@ export const workStateInk = (card: WorkCard) => {
           ? theme.board.active
           : theme.board.success;
 };
-export function ageText(minutes: number): string {
-  return minutes < 60 ? t('{n}m', { n: minutes }) : t('{h}h{m}m', { h: Math.floor(minutes / 60), m: minutes % 60 });
+export function ageText(minutes: number, padMinutes = false): string {
+  const rest = minutes % 60;
+  return minutes < 60 ? t('{n}m', { n: minutes }) : t('{h}h{m}m', {
+    h: Math.floor(minutes / 60), m: padMinutes ? String(rest).padStart(2, '0') : rest,
+  });
 }
 /** Paths, filenames, code and flags share the deterministic identifier ink. */
 const identifierPattern = /`[^`]+`|(?:\.?\.?\/|~\/)[^\s,;，。；]+|\b[\w.-]+\/[\w/.-]+|\b[\w.-]+\.[a-zA-Z][\w-]*\b|--[\w-]+/g;

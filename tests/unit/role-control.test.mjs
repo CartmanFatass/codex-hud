@@ -76,7 +76,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   // Folded: a place at its limit (and where the next job goes), a role with nowhere to run, a role file that does not load; the rest are names.
   const lines = plain(s.frame(80, 'en', 64));
   const at = (re) => lines.findIndex((l) => re.test(l));
-  assert.deepEqual(s.rows().map((r) => r.item), ['pro:0', 'pro:1', 'flow:0'].map((x) => `project:role:${x}`));
+  assert.deepEqual(s.rows().map((r) => r.item), ['pro:0', 'pro:1', 'pro:2', 'flow:0'].map((x) => `project:role:${x}`));
   assert.match(lines[at(/^Needs attention ─/)], / 3$/);
   assert.match(lines[at(/ pro /)], /^ {2}✗ pro +chatgpt exhausted 60m$/);
   assert.match(lines[at(/ pro /) + 1], /^ {6}next job → ◉ gemini$/);
@@ -118,6 +118,46 @@ test('Control plane: what needs the owner first with the place the next job uses
   await s.press('\r');
   assert.match(s.text(), /^▸ Healthy ─+ 5$/m, 'Enter again folds them');
 });
+test('Control plane previews the selected place in full, even when the role list scrolls', async (t) => {
+  const s = await setup(t);
+  const model = 'synthetic-provider/very-long-model-identifier-for-place-preview-20261117';
+  const exhausted = { harness: 'cli', agent: 'claude', model, thinking: 'high' };
+  writeRolePlaces(s.hud, 'reviewer', [exhausted, { harness: 'pi', pi_role: 'reviewer', split: false },
+    { harness: 'cli', agent: 'agy', model: 'synthetic-fallback', thinking: 'low' }]);
+  markExhausted(s.hud, placeKey(exhausted), 'quota exceeded', NOW);
+  s.collector.refreshRoles(s.session.snap, NOW);
+  const before = stored(s, 'reviewer');
+  s.session.state = onPage('control', { projectFolded: new Set(['agents', 'files']) });
+  const draw = () => s.frame(40, 'en', 16);
+  const choose = (frame, input) => {
+    const out = handleMonitorInput(frame.state, input, { tree: TREE, frame, nowMs: NOW, standalone: true });
+    assert.equal(out.action, undefined);
+    s.session.state = out.state;
+    return draw();
+  };
+  let frame = draw();
+  assert.equal(frame.state.projectCursor, placeItem('reviewer', 0));
+  const lines = plain(frame), at = lines.findIndex((line) => line.startsWith('model '));
+  assert.ok(lines.findIndex((line) => line.startsWith('Selected place')) > lines.findIndex((line) => /✗ reviewer/.test(line)));
+  assert.match(lines.join('\n'), /role +reviewer \[custom\][\s\S]*state +exhausted until 13:35[\s\S]*harness +cli · claude/);
+  const modelLines = lines.slice(at, lines.findIndex((line) => line.startsWith('thinking ')));
+  assert.ok(modelLines.length > 1);
+  assert.equal(modelLines.map((line) => line.slice(10).trim()).join(''), model);
+  assert.match(lines.join('\n'), /thinking +high\nsource file +yours · reviewer\.json/);
+  frame = choose(frame, { type: 'key', key: 'down' });
+  assert.equal(frame.state.projectCursor, placeItem('reviewer', 1));
+  assert.match(plain(frame).join('\n'), /state +next job runs here/);
+  const y = plain(frame).findIndex((line) => /↳ +agy/.test(line));
+  assert.ok(y > 0);
+  frame = choose(frame, { type: 'mouse', button: 'left', x: 4, y });
+  assert.equal(frame.state.projectCursor, placeItem('reviewer', 2));
+  assert.match(plain(frame).join('\n'), /state +fallback 2[\s\S]*model +synthetic-fallback/);
+  const zh = s.frame(38, 'zh', 16);
+  assert.match(plain(zh).join('\n'), /所选位置[\s\S]*角色 +reviewer \[自定义\][\s\S]*状态 +备选 2[\s\S]*思考 +low/);
+  for (const line of zh.lines) assert.equal(visualLength(line), 38, stripAnsi(line));
+  assert.deepEqual(stored(s, 'reviewer'), before);
+});
+
 test('Control plane, opened: each role once with its place and fallbacks, browser tasks apart', async (t) => {
   const s = await setup(t);
   writeRolePlaces(s.hud, 'reviewer', [{ harness: 'pi', pi_role: 'reviewer', split: false }, { harness: 'cli', agent: 'claude', model: 'opus', thinking: 'high' }]);
