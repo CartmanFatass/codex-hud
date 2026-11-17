@@ -3,8 +3,11 @@ It absorbs Matt Pocock's engineering flow (mattpocock/skills) into HUD's split: 
 only writer of specs, tickets and the integration branch; HUD roles execute; HUD never chains roles.
 
 ## The flow: idea → ship
-1. `/grill-with-docs`: interview the owner until scope, non-goals and "done" are clear; keep `GLOSSARY.md` and ADRs
-   current as terms settle. A question that needs a runnable answer goes to a throwaway prototype job first.
+1. Start where the request is. A clear request (the owner says what and the scope is evident) goes straight to a
+   brief: ask only the one or two questions whose answer changes what gets built, record decisions that move the
+   product boundary in the spec, and dispatch. Grill only a fuzzy idea or a change whose scope, non-goals or "done"
+   are not clear; then suggest `/grill-with-docs` to the owner (it interviews and keeps `GLOSSARY.md` and ADRs
+   current). A question that needs a runnable answer goes to a throwaway prototype job first.
 2. Can one imp finish it in one session? Yes → one brief, one imp. No → `/to-spec`, then `/to-tickets`: tracer-bullet
    vertical slices, each runnable end to end on its own, each declaring its blocking edges; the owner approves the list.
 3. Build: `/hud-build` works the tickets as a task graph (one fresh imp per ready ticket, each in its own worktree);
