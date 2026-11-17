@@ -82,7 +82,6 @@ export interface MonitorState {
   help: boolean;
   zoom: boolean;
   helpScroll?: number;
-  keys?: boolean;
   cardStallMinutes?: number;
   /** A settled card folds to one row after this, and leaves Home after the hide time (Settings). */
   cardFoldMinutes?: number;
@@ -161,7 +160,6 @@ export interface MonitorData {
   projectName?: string;
   /** The projects `[` and `]` cycle through (the panel's own first); one or none means no switch. */
   projects?: ProjectChoice[];
-  prefix?: string;
   state: MonitorState;
   width: number;
   height: number;
@@ -174,14 +172,12 @@ export interface MonitorData {
   loading?: boolean;
   linkNames?: boolean;
   mouse?: boolean;
-  embedded?: boolean;
 }
 export interface MonitorContext {
   tree: SubagentTree;
   nowMs?: number;
   frame?: MonitorFrame;
   navigationOverlay?: boolean;
-  standalone?: boolean;
 }
 export interface MonitorOutcome {
   state: MonitorState;

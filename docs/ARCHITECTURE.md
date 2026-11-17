@@ -37,11 +37,10 @@ trust-dialog text and decline keys, and startup quirks are the table in
 supervisor; `hud-ask.mjs` writes the question. The HUD passes only model, effort,
 the bypass flag and role `args`. Harness behaviour and session places are untouched.
 
-Claude's statusline and pi's footer are client integrations. Codex's tmux display
-has two entries: `src/index.ts` (bar) and `src/tree-page.ts` (panel). In that tmux
-session the panel replaces the bar; the active process writes the snapshot and
-notifications. A herdr panel opened for Claude/pi is separate from their statusline.
-No panel opens at launch: `/hud` opens it in Claude/pi, F12 in Codex.
+Claude's statusline, pi's footer and Codex's tmux bar (`src/index.ts`) are the client
+integrations. One standalone panel (`src/tree-page.ts`) serves all three clients
+via `/hud` (`hud panel`), writing its own snapshot and notifications when needed.
+No panel opens at launch.
 
 ## 2. Repository map
 
@@ -90,13 +89,11 @@ are not supported, even if individual APIs or dependencies work there.
   the locked build tools need no higher floor than the product (see `package-lock.json`).
 
 `hud codex` runs the existing `bin/codex-hud` tmux launcher. It creates a session
-for the cwd and selected `CODEX_HOME`, starts Codex unchanged, and opens the bar.
-F12 uses `codex-hud-toggle` to replace bar/panel; the replacement is checked alive
-before the old pane is killed, under a tmux lock. `codex-hud-keys` owns the HUD's
-prefix table; `codex-hud-command` delivers panel commands through the input stream.
-The launcher forwards Codex arguments; explicit `--attach` reuses a session.
+for the cwd and selected `CODEX_HOME`, starts Codex unchanged, and opens the 1-line bar.
+The launcher forwards Codex arguments and `CODEX_HOME`; explicit `--attach` reuses a session.
 The read-only herdr observer checks the designated main pane, not whichever pane
-is focused. No global tmux configuration is required.
+is focused. No global tmux configuration is required. `/hud` opens the standalone
+herdr sidebar panel (`hud panel`).
 
 ## 4. Collecting data
 
@@ -295,9 +292,8 @@ Always retain `frame.state`: reconciliation preserves selection by identity and
 separate scroll/fold state. Cards show a title plus two sentence rows, expanding
 in place; raw workflow files open from the Inspector or `o`.
 
-Codex prefix commands arrive through `codex-hud-command` and the input decoder in
-stream order. Outside modal pages, ordinary input/paste forwards to Codex; standalone
-panels consume their own keys. Mouse hit testing uses the same frame controls.
+All standalone panels decode their own keys and SGR mouse events through
+`WorkbenchInputDecoder('workboard')`. Mouse hit testing uses the same frame controls.
 `frame-diff.ts` writes changed rows with absolute positioning and erases each row
 before writing (erasing after a full-width row would wipe its last cell).
 
@@ -410,14 +406,11 @@ Performance evidence names host and workload; it is not automatically WSL qualif
   list and fitting-ladder position, then each client's available facts. Test widths.
 - **Card/Inspector:** external prose is sanitized and wrapped; stored model text
   may decorate a card, never decide its state. Test narrow widths and both languages.
-- **Panel command:** update `utils/panel-command.ts`, the tmux key binding,
-  both needs-open-panel lists, help and references. No native-session-switch recipe.
 
 ## 11. Gotchas
 
 - Panels reload after a valid build; bars still need restarting for new code.
 - Saved display settings override environment defaults; `NO_COLOR` still wins.
-- Codex's prefix table is shared within its tmux server, not the global root table.
 - A report's existence is not proof of success; model text is not a workflow verdict.
 - Codex encrypted tasks have no public text to summarize. Do not send ciphertext
   or invent a task from a nickname; public pre-create charge is usable when present.

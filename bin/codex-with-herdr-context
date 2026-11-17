@@ -19,6 +19,8 @@ def command(binary, arguments, environment):
     for key in CONTEXT_KEYS:
         value = environment.get(key, "") if inside else ""
         overrides += ["-c", f"shell_environment_policy.set.{key}={json.dumps(value)}"]
+    if environment.get("CODEX_HOME"):
+        overrides += ["-c", f"shell_environment_policy.set.CODEX_HOME={json.dumps(environment['CODEX_HOME'])}"]
     return [binary, *overrides, *arguments]
 
 

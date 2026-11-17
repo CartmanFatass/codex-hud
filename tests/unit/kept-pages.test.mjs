@@ -229,28 +229,29 @@ test('Settings Bar style cycles the exported styles, saves barStyle, and ignores
   assert.equal(reset.model, state.draft.model);
   assert.equal(reset.modelCallsPerHour, state.draft.modelCallsPerHour);
 });
-for (const embedded of [false, true])
-  test(`Settings s saves and t tests through the ${embedded ? 'embedded' : 'standalone'} decoder`, (t) => {
-    const f = fixture(t), saved = { ...process.env };
-    process.env.HUD_SETTINGS_PATH = join(f.api, 'keyboard-settings.json');
-    t.after(() => { process.env = saved; });
-    const decoder = new WorkbenchInputDecoder('workboard', { forward: embedded });
-    const input = (raw) => decoder.push(Buffer.from(raw))[0];
-    const draft = { ...defaultSettings(), modelEnabled: false };
-    let state = { draft, original: draft, selected: SETTING_ROWS.findIndex((r) => r.key === 'barStyle'), offset: 0, message: '' };
-    const press = (raw) => handleSettingsInput(state, input(raw), renderSettingsPage(state, 80, 40));
-    state = press('\x1b[C').state;
-    assert.equal(state.draft.barStyle, 'p10k');
-    const save = press('s');
-    assert.equal(save.action, 'save');
-    saveSettings(save.state.draft);
-    assert.equal(loadSettings().barStyle, 'p10k');
-    assert.equal(press('t').action, undefined, 'test is Models-only');
-    state = { ...state, selected: SETTING_ROWS.findIndex((r) => r.group === 'Models') };
-    assert.equal(press('t').action, 'test-api');
-    const dialog = renderSettingsConfirmation([], { choice: 'cancel' }, 80, 16, 0, state);
-    assert.equal(handleSettingsConfirmation({ choice: 'cancel' }, input('s'), dialog).action, 'save');
-  });
+test('Settings s saves and t tests through the standalone decoder', (t) => {
+  const f = fixture(t), saved = { ...process.env };
+  process.env.HUD_SETTINGS_PATH = join(f.api, 'keyboard-settings.json');
+  t.after(() => { process.env = saved; });
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const input = (raw) => decoder.push(Buffer.from(raw))[0];
+  const draft = { ...defaultSettings(), modelEnabled: false };
+  let state = { draft, original: draft, selected: SETTING_ROWS.findIndex((r) => r.key === 'barStyle'), offset: 0, message: '' };
+  const press = (raw) => handleSettingsInput(state, input(raw), renderSettingsPage(state, 80, 40));
+  state = press('\x1b[C').state;
+  assert.equal(state.draft.barStyle, 'p10k');
+  const save = press('s');
+  assert.equal(save.action, 'save');
+  saveSettings(save.state.draft);
+  assert.equal(loadSettings().barStyle, 'p10k');
+  assert.equal(press('t').action, undefined, 'test is Models-only');
+  state = { ...state, selected: SETTING_ROWS.findIndex((r) => r.group === 'Models') };
+  assert.equal(press('t').action, 'test-api');
+  const dialog = renderSettingsConfirmation([], { choice: 'cancel' }, 80, 16, 0, state);
+  assert.equal(handleSettingsConfirmation({ choice: 'cancel' }, input('s'), dialog).action, 'save');
+  assert.equal(handleSettingsConfirmation({ choice: 'cancel' }, input('d'), dialog).action, 'discard');
+  assert.equal(handleSettingsConfirmation({ choice: 'cancel' }, input('c'), dialog).action, 'cancel');
+});
 
 test('Settings keeps draft confirmation, selected help, and a one-row synthetic API result', (t) => {
   const draft = { ...defaultSettings(), modelCallsPerHour: 120, modelEnabled: true },
@@ -322,25 +323,22 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
     cursor = asking.state.inspectCursor;
   const ctx = (frame) => ({ tree: TREE, frame, nowMs: NOW });
   const opened = handleMonitorInput(asking.state, { type: 'key', key: 'help' }, ctx(asking)).state;
-  const help = draw(opened, { mouse: false, embedded: false });
+  const help = draw(opened, { mouse: false });
   const body = plainFrame(help).join('\n');
   assert.match(body, /\+ done\s+@ running/);
-  assert.doesNotMatch(body, /click selects|Codex's own panel|Timeline/);
+  assert.doesNotMatch(body, /click selects|Codex's own panel|Timeline|press .* first/);
   assert.match(body, /Home · Project/);
   assert.equal(help.state.inspectCursor, cursor);
   const returned = handleMonitorInput(help.state, { type: 'key', key: 'escape' }, ctx(help)).state;
   assert.equal(returned.help, false);
   assert.equal(returned.focus, 'details');
   assert.equal(draw(returned).state.inspectCursor, cursor);
-  const embedded = plainFrame(
-    draw({ ...opened, focus: 'agents' }, { mouse: true, embedded: true, prefix: 'Ctrl+X' })
-  ).join('\n');
-  assert.match(embedded, /click selects/);
-  assert.match(embedded, /press Ctrl\+X first/);
+  const withMouse = plainFrame(draw({ ...opened, focus: 'agents' }, { mouse: true })).join('\n');
+  assert.match(withMouse, /click selects/);
+  assert.doesNotMatch(withMouse, /press .* first/);
   setLanguage('zh');
-  const chinese = plainFrame(draw({ ...opened, focus: 'agents' }, { embedded: true, prefix: 'Ctrl+X' })).join('\n');
-  assert.match(chinese, /在 Codex 自带的面板中，请先按 Ctrl\+X/);
-  assert.doesNotMatch(chinese, /press .*first/);
+  const chinese = plainFrame(draw({ ...opened, focus: 'agents' })).join('\n');
+  assert.doesNotMatch(chinese, /在 Codex 自带的面板中|press .*first/);
   assert.match(chinese, /在控制面中 c\/C 应用下一个／上一个角色预设[\s\S]*m\s+选择模型/);
   assert.doesNotMatch(chinese, /On the Control plane|m picks a model/);
 });

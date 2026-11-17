@@ -51,8 +51,8 @@ Do not delete unrelated colliding commands to make an installation succeed.
 
 Ordinary `claude` uses the HUD statusline; an existing owner-defined non-HUD
 statusline is preserved. Ordinary `pi` loads the HUD footer. `codexH` starts Codex
-with its tmux bar. Only the side panel is opt-in: `/hud` in Claude/pi, F12 in Codex;
-it never opens at launch. Restart clients after registration changes.
+with its tmux bar. Only the side panel is opt-in: `/hud` opens it in Claude,
+Codex and pi; it never opens at launch. Restart clients after registration changes.
 
 ```sh
 hud uninstall
@@ -113,10 +113,10 @@ The panel has **Home** and **Project** tabs:
   workflow files/transcripts, Changes is only a Git/worktree summary. There is no
   Timeline, agent-log page, layout selector, picture or status-card footer.
 
-Codex uses F12 to toggle the panel, Shift-F12 to focus it, and the prefix `Ctrl+\`
-then a key for commands (`1` Home, `2` Project, `3` Changes, `,` Settings, `?` Help).
-Ordinary input forwards to Codex outside modal pages. Claude/pi use `/hud`;
-`hud panel --here` runs in the current terminal. Panels reload after a valid new
+Claude, Codex and pi all open the standalone side panel with `/hud`
+(`hud panel --here` runs in the current terminal). Controls work directly in the panel
+(`1` Home, `2` Project, `3` Changes, `5` Skills, `,` Settings, `?` Help, plus mouse
+clicks and wheel scrolling). Panels reload after a valid new
 build, keeping their place and waiting for unsaved Settings.
 
 ## Delegation

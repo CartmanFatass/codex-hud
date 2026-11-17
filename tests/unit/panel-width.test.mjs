@@ -165,29 +165,6 @@ test('keeper follows containing width, leaves manual drags alone and clamps with
   assert.equal(panelWidth(100, 40), 13);
 });
 
-test('tmux still resizes its own tree pane with the shared default and ignores unchanged window widths', async (t) => {
-  const f = fixture(t), saved = { ...process.env };
-  t.after(() => { process.env = saved; });
-  const log = join(f.dir, 'tmux-calls');
-  writeFileSync(join(f.dir, 'bin', 'tmux'), `#!${process.execPath}
-const fs = require('node:fs'), args = process.argv.slice(2);
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
-if (args[0] === 'display-message') console.log('160');
-`, { mode: 0o700 });
-  process.env = { ...f.env, TMUX_PANE: '%2', CODEX_HUD_MAIN_PANE: '%1' };
-  let requested = 0;
-  const keeper = treeWidthKeeper(() => requested);
-  await keeper.apply();
-  await keeper.follow();
-  requested = 80;
-  await keeper.apply();
-  const calls = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.deepEqual(calls.filter((a) => a[0] === 'resize-pane'), [
-    ['resize-pane', '-t', '%2', '-x', '56'], ['resize-pane', '-t', '%2', '-x', '80'],
-  ]);
-  assert.deepEqual(f.calls(), [], 'Codex tmux takes precedence over outer herdr context');
-});
-
 test('a settings save supersedes an in-flight startup width read without a duplicate resize', async () => {
   let release, requested = 56;
   const geometry = new Promise((resolve) => { release = resolve; }), resized = [];

@@ -942,8 +942,7 @@ function rootThreadOf(threadId: string): string {
   return cachePut(rootThreadCache, threadId, meta && !meta.isRoot && meta.rootId ? meta.rootId : threadId);
 }
 
-function findSessionByThreadId(sessionId: string): SessionFile | null {
-  const codexHome = getCodexHome();
+export function findSessionByThreadId(sessionId: string, codexHome = getCodexHome()): SessionFile | null {
   // The archive is only walked when the live tree does not have the file.
   const found =
     findRolloutPathBySessionIdInRoot(path.join(codexHome, 'sessions'), sessionId) ??

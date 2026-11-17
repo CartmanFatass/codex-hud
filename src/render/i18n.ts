@@ -280,8 +280,6 @@ const ZH: Record<string, string> = {
   '{n} cols': '{n} 列',
   Mouse: '鼠标',
   'Click and scroll the panel': '在侧栏中点击和滚动',
-  'Prefix key': '前缀键',
-  'Then a key: a panel command. Codex uses Ctrl+] for Skip Question': '再按一键执行侧栏命令。Codex 用 Ctrl+] 跳过提问',
   Refresh: '刷新',
   'How often the panel reads': '侧栏多久读取一次',
 

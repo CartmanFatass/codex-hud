@@ -184,7 +184,6 @@ export function pageFixture(home) {
         width,
         height,
         modelEnabled: true,
-        embedded: true,
         mouse: true,
         nowMs: NOW,
       });

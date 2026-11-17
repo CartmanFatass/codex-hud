@@ -365,7 +365,7 @@ async function main(): Promise<void> {
   sessionFinder.start(5000); // Check for session changes every 5 seconds
 
   // Do not write logs to stdout: the compact pane is one line, so a startup
-  // log would hide the status header after F12 restore. The first read of a
+  // log would hide the status header. The first read of a
   // long rollout takes seconds; a dim line says so rather than a blank bar.
   if (process.stdout.isTTY) {
     process.stdout.write('\x1b[2J\x1b[H' + colors.dim(' codex-hud · reading session…'));

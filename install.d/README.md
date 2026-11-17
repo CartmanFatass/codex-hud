@@ -31,9 +31,10 @@ codexH() { hud codex "$@"; }
 `codexH` uses the existing `hud codex` tmux-bar launcher and leaves `CODEX_HOME`
 to the caller.
 
-The panel never opens by itself: Claude and pi use `/hud`; Codex uses F12.
+The panel never opens by itself: Claude, Codex and pi all use `/hud`.
 Claude gets a `/hud` command file (one line: run `hud panel` with Bash and report the pane id);
-pi gets the `/hud` command from the display package. Codex installs no prompt file.
+Codex gets a `/hud` skill (`hud`) with the same instruction;
+pi gets the `/hud` command from the display package.
 
 ## What each extension changes
 
@@ -52,12 +53,12 @@ pi gets the `/hud` command from the display package. Codex installs no prompt fi
   still never opens automatically. Uninstall uses `pi remove` for both packages,
   removes both directories and reverses the filter change.
 - **codex**: registers the six-role MCP (`codex mcp add hud`), links the
-  `hud-delegate`, `hud-setup`, `grill-with-docs`, `to-spec` and `to-tickets` skills and removes the legacy `$CODEX_HOME/prompts/hud.md` only if it
+  `hud`, `hud-delegate`, `hud-setup`, `hud-handoff`, `grill-with-docs`, `to-spec` and `to-tickets` skills and removes the legacy `$CODEX_HOME/prompts/hud.md` only if it
   still contains the HUD-owned line (uninstall also removes an old owned copy).
   Before MCP edits, the resolved `config.toml` gets a one-time plain `.hud-backup`.
   The official Codex commands may drop comments; a warning names that retained
   backup if the number of comment lines falls. No comments are reinserted.
-  `hud codex` is the HUD launch (tmux bar); F12 opens the panel.
+  `hud codex` is the HUD launch (tmux bar); `/hud` opens the standalone panel.
 - **herdr**: checks PATH for `herdr`, `pi-role`, `pi-role-reap`, `pi-dispatch` and `pi`,
   printing their locations and sources. Only missing `herdr` fails installation.
   No external tool or herdr registration is installed; uninstall is a stated no-op.

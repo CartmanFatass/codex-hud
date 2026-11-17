@@ -16,7 +16,7 @@ test('Codex registers roles, backs up config before rewrites, warns on comment l
     const codexHome = path.join(temp, 'codex home');
     const fakeBin = path.join(temp, 'fake-bin');
     const log = path.join(temp, 'codex-argv.jsonl');
-    const skills = ['hud-delegate', 'hud-setup', 'grill-with-docs', 'to-spec', 'to-tickets'];
+    const skills = ['hud', 'hud-delegate', 'hud-setup', 'hud-handoff', 'grill-with-docs', 'to-spec', 'to-tickets'];
     const skillPaths = skills.map((name) => [path.join(repo, 'integrations/skills', name), path.join(codexHome, 'skills', name)]);
     fs.mkdirSync(path.join(repo, 'install.d'), { recursive: true });
     for (const [target] of skillPaths) fs.mkdirSync(target, { recursive: true });

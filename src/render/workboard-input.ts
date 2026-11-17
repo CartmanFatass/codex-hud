@@ -180,8 +180,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     };
     if (input.type === 'mouse') {
       const pane = frame?.panes.find((p) => p.id === 'agents');
-      if (input.button !== 'left') next.projectScroll = Math.max(0, (next.projectScroll ?? 0) + (input.button === 'wheel-down' ? 3 : -3));
-      else {
+      if (input.button !== 'left') {
+        const page = Math.max(1, pane?.height ?? 1), max = Math.max(0, (pane?.contentLength ?? 0) - page);
+        next.projectScroll = Math.max(0, Math.min(max, (next.projectScroll ?? 0) + (input.button === 'wheel-down' ? 3 : -3)));
+      } else {
         const row = pane && monitorRowAt(pane, input.x, input.y);
         if (row?.item) {
           const again = row.item === next.projectCursor;
@@ -241,12 +243,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (key === 'escape' && inspector && (next.mainTab || next.boardInspect)) {
-    // Inspector return precedes standalone keys-release. Embedded forwarding is decided by the page.
     next.focus = 'agents';
     next.modes.details = 'closed';
     next.zoom = false;
     next.boardInspect = undefined;
-    if (ctx.standalone) next.keys = true;
     return result();
   }
   if (!boardFrame || (!main && !next.boardInspect)) return null;
@@ -343,9 +343,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const pane = frame?.panes.find((p) => p.id === (inspector ? 'details' : 'agents'));
     if (!pane) return result();
     if (input.button !== 'left') {
+      const page = Math.max(1, pane.height), max = Math.max(0, pane.contentLength - page);
       const delta = input.button === 'wheel-down' ? 3 : -3;
-      if (inspector) next.scroll.details = Math.max(0, next.scroll.details + delta);
-      else next.homeScroll = Math.max(0, (next.homeScroll ?? 0) + delta);
+      if (inspector) next.scroll.details = Math.max(0, Math.min(max, next.scroll.details + delta));
+      else next.homeScroll = Math.max(0, Math.min(max, (next.homeScroll ?? 0) + delta));
       return result();
     }
     const row = monitorRowAt(pane, input.x, input.y),
@@ -361,9 +362,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     const target = item ? boardFrame.targets.get(item) : undefined;
     if (target) {
-      if (selected() && targetKey(selected()!) === targetKey(target)) activate(target);
+      if (!next.boardAnchor && selected() && targetKey(selected()!) === targetKey(target)) activate(target);
       else setTarget(target);
-      next.keys = true;
     }
     return result();
   }
@@ -371,7 +371,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (main) activate();
     return result();
   }
-  // `o` (also Ctrl+\ o) opens the selected job's file in $EDITOR.
+  // `o` opens the selected job's file in $EDITOR.
   if (key === 'open-session' && main) return result(next.boardAnchor ? undefined : jobFiles());
   if (key === 'show-all' && main) {
     next.tree.showAll = !next.tree.showAll;

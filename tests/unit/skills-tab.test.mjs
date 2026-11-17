@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readBackupSkills } from '../../dist/collectors/backup-skills.js';
 import { renderMonitor, initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
-import { commandSequence, monitorKey, needsOpenPanel } from '../../dist/utils/panel-command.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { setDisplayConfig, THEMES } from '../../dist/render/hud-config.js';
 import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
@@ -14,7 +13,7 @@ const send = (frame, input) => handleMonitorInput(frame.state, input, { tree, fr
 const key = (frame, key) => send(frame, { type: 'key', key });
 const skills = () => ({ ...initialMonitorState(), mainTab: 'skills' });
 
-test('main tabs cycle in both directions; Skills opens by header, keyboard and Codex command', () => {
+test('main tabs cycle in both directions; Skills opens by header and keyboard', () => {
   for (const [direction, order] of [
     ['right', ['project', 'skills', 'home']], ['tab', ['project', 'skills', 'home']],
     ['left', ['skills', 'project', 'home']], ['shift-tab', ['skills', 'project', 'home']],
@@ -29,9 +28,6 @@ test('main tabs cycle in both directions; Skills opens by header, keyboard and C
   assert.equal(send(frame, { type: 'mouse', button: 'left', x: control.x, y: control.y }).state.mainTab, 'skills');
   const decoder = new WorkbenchInputDecoder('workboard');
   assert.equal(send(frame, decoder.push(Buffer.from('5'))[0]).state.mainTab, 'skills');
-  const command = decoder.push(Buffer.from(commandSequence('pane-5')))[0];
-  assert.equal(key(frame, monitorKey(command.command)).state.mainTab, 'skills');
-  assert.equal(needsOpenPanel(command.command), true);
   assert.match(render({ ...initialMonitorState(), help: true }, { width: 160, height: 50 }).lines.map(stripAnsi).join('\n'), /1 2 5 +Home · Project · Skills/);
   const before = setLanguage('en');
   try {

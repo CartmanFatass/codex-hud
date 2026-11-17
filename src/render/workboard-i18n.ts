@@ -184,7 +184,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab':
     '↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页',
   'click selects · again expands · wheel scrolls': '点击选中 · 再点展开 · 滚轮滚动',
-  "In Codex's own panel press {p} first": '在 Codex 自带的面板中，请先按 {p}',
   // Control plane: where each role runs.
   Roles: '角色',
   'Project roles': '项目角色',

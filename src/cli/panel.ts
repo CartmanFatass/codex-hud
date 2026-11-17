@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { realpathSync, statSync } from 'node:fs';
-import { claudeCallerSession } from '../collectors/claude-caller-session.js';
+import { callerSession } from '../collectors/claude-caller-session.js';
 import { displayTarget } from '../integrations/panel/receipt.js';
 import { getHudHome } from '../hud-home.js';
 import { resolveHudEnv } from '../utils/hud-env.js';
@@ -75,8 +75,8 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
   }
   const here = rest[0] === '--here';
   const selection = here ? rest.slice(1) : rest;
-  const bound = selection.length ? undefined : await claudeCallerSession(io.env);
-  const selected = bound ? ['--harness', 'claude', '--session', bound.session, '--source', bound.source] : selection;
+  const bound = selection.length ? undefined : await callerSession(io.env);
+  const selected = bound ? ['--harness', bound.harness, '--session', bound.session, '--source', bound.source] : selection;
   const { root, source, harness } = panelSelection(selected);
   if (!here && io.env.HERDR_PANE_ID) {
     const pane = await openPanelPane(
@@ -93,12 +93,12 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
     {
       ...io.env,
       HUD_SETTINGS_PATH: resolveHudEnv(io.env, 'HUD_SETTINGS_PATH') || join(getHudHome(io.env), 'hud-settings.json'),
+      ...(harness === 'codex' && source ? { CODEX_HOME: source } : {}),
 
       CODEX_HUD_PANEL_ALL_DELEGATIONS: root ? '0' : '1',
       ...(root ? { CODEX_HUD_PANEL_ROOT: root } : {}),
       CODEX_HUD_PANEL_SOURCE: source ?? '',
       CODEX_HUD_PANEL_HARNESS: harness ?? '',
-      CODEX_HUD_STANDALONE_PANEL: '1',
     }
   );
 }

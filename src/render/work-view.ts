@@ -68,12 +68,6 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
   rows.push(boardRow(''), ...notes.flatMap((s) => flowLines(t(s), width).map((s) => boardRow(theme.board.muted(s)))));
-  if (input.embedded)
-    rows.push(
-      ...flowLines(t("In Codex's own panel press {p} first", { p: input.prefix ?? 'Ctrl+\\' }), width).map((s) =>
-        boardRow(theme.board.muted(s))
-      )
-    );
   return [boardRow(''), ...rows];
 }
 export function renderWorkboardFrame(
@@ -115,10 +109,10 @@ export function renderWorkboardFrame(
       ? t('Changes')
       : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}${target?.kind === 'decision' ? ' ' + (lane?.decisions.find((d) => d.id === target.decisionId)?.evidence[0]?.relativePath.match(/q\d+/)?.[0] ?? '') : ''}`;
   if (sub || page || list) {
-    // An open Project page or the Projects list has no tab row: its crumb returns (to the hub), from anywhere on the row.
+    // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
     const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
     frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
-    frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width: page || list ? width : 2 });
+    frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
     const count = board.workers.filter((w) => w.homeNeedsHuman).length;
     const title = ` ${t('Home')}${count ? ' ' + theme.board.attention(String(count)) : ''} `;

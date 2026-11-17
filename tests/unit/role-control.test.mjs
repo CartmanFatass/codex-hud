@@ -524,17 +524,14 @@ test('Control plane keys: decoded names, only on a place row of the Control plan
   assert.deepEqual([...'pPmMeE+-KJx'].map((c) => names(c)[0]), ['place-harness', 'place-harness-prev', 'place-model', 'place-model-prev',
     'place-thinking', 'place-thinking-prev', 'place-add', 'place-remove', 'place-up', 'place-down', 'place-clear']);
   assert.deepEqual([...'srtjkq'].map((c) => names(c)[0]), ['settings-save', 'reset', 'settings-test', 'down', 'up', 'close']);
-  // The panel's own keyboard also types: a printable key carries its character (named or not), a control key has none, and a
-  // keyboard that forwards keys to Codex (or another profile) carries no text at all.
-  const decoded = (raw, profile = 'workboard', options = {}) => new WorkbenchInputDecoder(profile, options).push(Buffer.from(raw));
+  // The panel's own keyboard also types: a printable key carries its character (named or not), and a control key has none.
+  const decoded = (raw, profile = 'workboard') => new WorkbenchInputDecoder(profile).push(Buffer.from(raw));
   assert.deepEqual(decoded('m'), [{ type: 'key', key: 'place-model', text: 'm' }]);
   assert.deepEqual(decoded('Z'), [{ type: 'key', key: '', text: 'Z' }]);
   assert.deepEqual(decoded('é-'), [{ type: 'key', key: '', text: 'é' }, { type: 'key', key: 'place-remove', text: '-' }]);
   assert.deepEqual(decoded('\x7f'), [{ type: 'key', key: 'backspace' }]);
   assert.deepEqual(decoded('\r'), [{ type: 'key', key: 'enter' }]);
   assert.deepEqual(decoded('\x1b[B'), [{ type: 'key', key: 'down' }]);
-  assert.deepEqual(decoded('Z', 'workboard', { forward: true }), [{ type: 'key', key: '', raw: 'Z' }]);
-  assert.deepEqual(decoded('m', 'workboard', { forward: true }), [{ type: 'key', key: 'place-model', raw: 'm' }]);
   assert.deepEqual(decoded('Z', 'monitor'), []);
   // Elsewhere they do nothing: the hub, another page, a row of the Control plane that is not a place.
   for (const state of [onPage(), onPage('progress'), onPage('control', { projectCursor: 'project:fold:healthy' })]) {

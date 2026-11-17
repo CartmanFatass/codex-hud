@@ -4,7 +4,6 @@ import type { HudHealthState } from '../types.js';
 import { truncateAnsi, theme, visualLength, coloredBar } from './colors.js';
 import { t } from './i18n.js';
 import { fit, monitorText } from './monitor-text.js';
-import { PREFIX_KEYS, prefixName } from '../utils/panel-command.js';
 import { PANEL_WIDTHS } from '../utils/pane-width.js';
 import { BAR_STYLES, THEMES } from './hud-config.js';
 import type { ModelProbeState } from '../collectors/model-probe.js';
@@ -145,14 +144,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'summaryIntervalMinutes', group: 'Models', label: 'Summary interval', values: [2, 5, 10, 15, 30],
     help: "How often a running job's sentence and Home's brief may refresh", format: (value) => t('{n}m', { n: Number(value) }) },
   {
-    key: 'prefixKey',
-    group: 'Codex',
-    label: 'Prefix key',
-    values: PREFIX_KEYS,
-    help: 'Then a key: a panel command. Codex uses Ctrl+] for Skip Question',
-    format: (value) => prefixName(String(value)),
-  },
-  {
     key: 'statusline',
     group: 'Codex',
     label: 'Bar on launch',
@@ -173,6 +164,7 @@ export interface SettingsPageState {
   message: string;
   original?: HudSettings;
   decisionKeys?: Partial<Record<HudSettings['decisionApi'], boolean>>;
+  revealed?: number;
 }
 export function settingGroup(stateOrRow: Pick<SettingsPageState, 'selected'> | SettingRow): SettingGroup {
   return 'group' in stateOrRow
@@ -191,7 +183,7 @@ const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['homeMode', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
   Models: ['modelEnabled', 'decisionCallsPerHour', 'summaryIntervalMinutes'],
-  Codex: ['prefixKey', 'statusline'],
+  Codex: ['statusline'],
 };
 export function resetSettingsGroup(draft: HudSettings, group: string): HudSettings {
   if (!Object.hasOwn(RESET_FIELDS, group)) return draft;
@@ -209,6 +201,7 @@ export interface SettingsFrame {
   footerY: number;
   saveX?: number;
   probeAction?: { y: number; width: number };
+  maxOffset?: number;
 }
 export function valueText(row: SettingRow, value: SettingValue): string {
   const text = typeof value === 'boolean' ? (value ? 'on' : 'off') : row.format ? row.format(value) : String(value);
@@ -300,15 +293,18 @@ export function renderSettingsPage(
     }
   }
   const room = Math.max(0, height - 2),
-    at = content.findIndex((r) => r.index === selected);
-  let offset = Math.max(0, Math.min(state.offset, Math.max(0, content.length - room)));
-  if (at < offset) offset = Math.max(0, at - 1);
-  const helpEnd = content.findIndex((r, i) => i > at && (r.index !== undefined || r.probe));
-  const reveal =
-    SETTING_ROWS[selected].key === 'modelCallsPerHour'
-      ? content.findIndex((r) => r.probe)
-      : Math.min(at + 3, helpEnd < 0 ? content.length - 1 : helpEnd - 1);
-  if (room && reveal >= offset + room) offset = Math.min(at, reveal - room + 1);
+    at = content.findIndex((r) => r.index === selected),
+    maxOffset = Math.max(0, content.length - room);
+  let offset = Math.max(0, Math.min(state.offset, maxOffset));
+  if (state.revealed !== selected) {
+    if (at < offset) offset = Math.max(0, at - 1);
+    const helpEnd = content.findIndex((r, i) => i > at && (r.index !== undefined || r.probe));
+    const reveal =
+      SETTING_ROWS[selected].key === 'modelCallsPerHour'
+        ? content.findIndex((r) => r.probe)
+        : Math.min(at + 3, helpEnd < 0 ? content.length - 1 : helpEnd - 1);
+    if (room && reveal >= offset + room) offset = Math.min(at, reveal - room + 1);
+  }
   const body = content.slice(offset, offset + room),
     lines = [
       subTopRow(t('Settings'), dirty ? theme.board.attention(t('unsaved')) : '', width),
@@ -329,11 +325,12 @@ export function renderSettingsPage(
   return {
     lines: lines.slice(0, height).map((s) => fit(s, width)),
     rows: [null, ...body.map((r) => r.index ?? null)],
-    state: { ...state, original, selected, offset },
+    state: { ...state, original, selected, offset, revealed: selected },
     back: back < 0 ? undefined : { y: back + 1, x: body[back].back! },
     footerY: height - 1,
     saveX: dirty ? width - visualLength(t('unsaved')) : undefined,
     probeAction: probe < 0 ? undefined : { y: probe + 1, width },
+    maxOffset,
   };
 }
 const boardSelected = (text: string) => theme.board.selected(text);
@@ -348,20 +345,28 @@ export function handleSettingsInput(
     if (input.button === 'left' && input.y === 0)
       return {
         state: next,
-        action: input.x < 2 ? 'back' : frame.saveX !== undefined && input.x >= frame.saveX ? 'save' : undefined,
+        action: frame.saveX !== undefined && input.x >= frame.saveX ? 'save' : 'back',
       };
     if (input.button === 'left' && input.y === frame.probeAction?.y) return { state: next, action: 'test-api' };
     if (input.button === 'left') {
       const index = frame.rows[input.y];
       if (index === null || index === undefined) return { state: next };
+      if (index !== frame.state.selected) {
+        next.selected = index;
+        next.message = '';
+        return { state: next };
+      }
       const onBack =
         frame.back?.y === input.y &&
-        index === frame.state.selected &&
         input.x >= frame.back.x &&
         input.x <= frame.back.x + 1;
-      next.selected = index;
       key = onBack ? 'left' : 'right';
-    } else key = input.button === 'wheel-down' ? 'down' : 'up';
+    } else {
+      const delta = input.button === 'wheel-down' ? 3 : -3;
+      next.offset = Math.max(0, Math.min(frame.maxOffset ?? Infinity, next.offset + delta));
+      next.revealed = next.selected;
+      return { state: next };
+    }
   }
   if (key === 'escape' || key === 'settings' || key === 'close') return { state: next, action: 'back' };
   if (key === 'settings-save') return { state: next, action: 'save' };

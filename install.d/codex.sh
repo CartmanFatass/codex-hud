@@ -40,7 +40,7 @@ hud_codex_skill() {
 
 hud_ext_install() {
   local prompt="${CODEX_HOME:-$HOME/.codex}/prompts/hud.md"
-  # Codex opens the panel with F12; remove only the legacy prompt we wrote.
+  # Remove only the legacy prompt we wrote; Codex now uses the `hud` skill.
   if [[ -f "$prompt" && "$(cat -- "$prompt")" == "$hud_codex_prompt_line" ]]; then
     rm -- "$prompt"
   fi
@@ -56,7 +56,7 @@ hud_ext_install() {
   fi
 
   local name
-  for name in hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets hud-build; do
+  for name in hud hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets hud-build; do
     hud_codex_skill "$name"
   done
 }
@@ -69,7 +69,7 @@ hud_ext_uninstall() {
   fi
 
   local name skill
-  for name in hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets hud-build; do
+  for name in hud hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets hud-build; do
     skill="${CODEX_HOME:-$HOME/.codex}/skills/$name"
     if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
       rm -- "$skill"

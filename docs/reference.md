@@ -49,7 +49,7 @@ codexH() { hud codex "$@"; }
 codexH
 ```
 
-Only the panel is opt-in: `/hud` opens it in Claude/pi, F12 in Codex; it never opens
+Only the panel is opt-in: `/hud` opens it in Claude, Codex and pi; it never opens
 at launch. Uninstall with `hud uninstall` or `./install --uninstall`; `--with names`
 limits extension removal. HUD data and unrelated owner settings remain. Claude
 settings follow symlinks with a one-time plain backup; Codex backs up resolved
@@ -80,7 +80,7 @@ hud codex --model gpt-5    # Codex arguments pass through to the tmux launcher
 `--root <namespace/session-id>` or `--harness claude|pi|codex --session ID --source ABS`;
 these select observations, not execution identity. Without explicit selection,
 `HERDR_PANE_ID` permits a one-second `herdr pane current` lookup for the caller's
-Claude transcript; no focused-pane guess or statusline-written binding is used.
+Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pane); no focused-pane guess or statusline-written binding is used.
 Unavailable evidence leaves the jobs view unbound to a native session.
 
 The MCP has exactly six tools: **hud_roster**, **hud_create**, **hud_read**,
@@ -433,8 +433,7 @@ the shipped role, other fields and place keys kept) or `$HUD_HOME/exhausted.json
 and `hud_create` read them, so the page shows what the next job uses. A role from the project's file
 cannot be changed here, and a harness switch refuses a place whose file sets launch options
 (`split`, `skills`, `args`...), since it would rebuild them: both say so in a line at the top
-until the next key, and `o` opens the file. In Codex, focus the panel first (click the gutter
-or Shift-F12); these keys have no prefix commands.
+until the next key, and `o` opens the file.
 
 **Switching projects.** With more than one project the hub's name row reads `name ▾ i/n`
 and `[` and `]` step through the panel's own project and the existing roots in
@@ -456,9 +455,9 @@ since it was last touched (STATE.md or a ticket file, whichever is newer; a ledg
 would need Git). At 80+ columns the project's stacked bar leads the row. A project without
 STATE.md shows `no STATE.md` and its open tickets. Order:
 the panel's own project, then projects with waiting items, then with running jobs, then
-the rest, each group newest first. Enter or one click opens that project's hub (Esc on
-that hub goes back to the list; on a hub not reached from the list Esc does what it
-always did, so keys can still be handed back to Codex). The cursor marks both rows of an
+the rest, each group newest first. Enter or one click opens that project's hub (Esc or clicking the top crumb on
+that hub goes back to the list; on a hub not reached from the list Esc goes to
+the panel's main tab or exits the standalone panel). The cursor marks both rows of an
 entry. The list is read only while it is visible: for each listed project STATE and
 tickets as Home reads them (cached by file signature) and, in one pass over the newest
 64 job directories, the unsettled jobs per root, at most once every five seconds while
@@ -493,15 +492,14 @@ back off to five-second collection; input/redraw remain independent.
 
 ### Keys
 
-In Codex, press the prefix (default `Ctrl+\`) then the key; ordinary input outside
-Settings/Help forwards to Codex. Standalone panels consume their own keys.
+Standalone panels consume their own keys and SGR mouse events directly.
 
 | Key | Action |
 |---|---|
 | `1`, `2`, `3`, `5` | Home, Project, Changes summary, Skills (`4` remains Inspector) |
 | Tab/Shift-Tab, Left/Right | Cycle Home → Project → Skills → Home, or reverse |
-| `[`, `]` | Project: previous/next project (not on the Projects list); in Codex the prefix then `[` or `]`, ignored while the panel is closed |
-| `p` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`). Panel focused (in Codex), no prefix commands |
+| `[`, `]` | Project: previous/next project (not on the Projects list) |
+| `p` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
 | `c` / `C` | Control plane: apply the next / previous role preset |
 | `m` (`M`) | Control plane: pick the model of the place under the cursor: provider, then model on `pi`; type to filter, ↑↓ pick, Enter sets (an open provider, or the model), Tab shows every model, ← back, Esc cancels |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
@@ -514,13 +512,11 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 | `,`, `?` | Settings, Help |
 | Esc | Back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
 | `q` | Close panel |
-| Prefix twice | Send the prefix itself to the focused pane |
 
-Codex repeat movement keeps the prefix active for half a second. Settings chooses
-`Ctrl+\` or `Ctrl+]`; older settings without an explicit prefix retain `Ctrl+]`.
-F12 closes/reopens the Codex panel; Shift-F12 opens with focus. Mouse click selects,
-a second click expands, wheel scrolls without moving selection. Clicking the blank
-gutter keeps keys in the panel until Esc. Help lists current shortcuts.
+Mouse clicks select a row/button, a second click on the selected item runs Enter's
+action (Project hub links, Inspector file links and Home progress-block links open
+on one click), clicking the top crumb goes back, clicking a tab switches tabs, and
+wheel scrolling moves the viewport without moving the selection. Help lists current shortcuts.
 
 ### Skills
 
@@ -563,7 +559,7 @@ Project dirty; a moved submodule commit does. The Changes view ignores submodule
 | Display | Theme, Bar style, Icons, Language |
 | Panel | Home mode, Width, Stall threshold, Fold after, Hide after, Notifications, Refresh, Mouse |
 | Models | Model text, Model, Decision API, Call cap, Decision cap, Summary interval, separate hourly counters, Test API |
-| Codex | Prefix key, Bar on launch |
+| Codex | Bar on launch |
 
 All groups are open. Up/Down selects; Left/Right or Enter changes; `s` saves, `r`
 resets only this group, `t` runs/cancels Test API. Dirty leave asks Save and leave /
@@ -734,7 +730,7 @@ are needed; unchanged counters do not refresh it. Old samples say last, not live
 | `CODEX_HUD_THEME`, `CODEX_HUD_ICONS` | Theme/icon defaults |
 | `NO_COLOR` | Any non-empty value disables colour, even with saved settings |
 | `CODEX_HUD_STATUSLINE` | 1 default; 0 disables Codex bar on new HUD sessions, wins over Bar on launch |
-| `CODEX_HUD_TREE_WIDTH` | Initial tmux panel width when no saved settings |
+| `CODEX_HUD_TREE_WIDTH` | Initial panel width when no saved settings |
 | `CODEX_HUD_CWD`, `CODEX_SESSIONS_PATH` | Explicit workspace/session directory |
 | `CODEX_HUD_MOUSE`, `CODEX_HUD_AUTO_ATTACH` | Mouse policy, explicit auto-attach preference |
 | `CODEX_HUD_NOTIFY`, `CODEX_HUD_NOTIFY_DESKTOP`, `CODEX_HUD_NOTIFY_COOLDOWN` | Notification opt-ins, cooldown (300 seconds default) |

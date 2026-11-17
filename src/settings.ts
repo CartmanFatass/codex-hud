@@ -13,11 +13,7 @@ import {
   type IconMode,
 } from './render/hud-config.js';
 import { getHudHome } from './hud-home.js';
-import { PREFIX_KEYS, type PrefixKey } from './utils/panel-command.js';
 import { DEFAULT_WIDTH } from './utils/pane-width.js';
-
-/** The prefix before Ctrl+\ was the default, kept by settings files saved without one. */
-export const LEGACY_PREFIX_KEY: PrefixKey = 'C-]';
 
 export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'> {
   statusline: boolean;
@@ -52,12 +48,6 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   notify: boolean;
   /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
   notifyDesktop: boolean;
-  /**
-   * The tmux key in front of every panel command (`Ctrl+\` then `,` opens
-   * settings; `Ctrl+]` for files saved before it was the default). Only keys checked against Codex's own bindings are offered;
-   * see PREFIX_KEYS. bin/codex-hud-keys installs it.
-   */
-  prefixKey: PrefixKey;
   /** Unicode marks or their ASCII/text equivalents. Old icon sets load as unicode. */
   icons: IconMode;
 }
@@ -98,7 +88,6 @@ export function defaultSettings(): HudSettings {
     cardHideMinutes: 15,
     notify: false,
     notifyDesktop: false,
-    prefixKey: 'C-\\',
     icons: 'unicode',
   };
 }
@@ -145,7 +134,6 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   modelCallsPerHour: (value) => isIntegerBetween(value, 0, 1000),
   decisionCallsPerHour: (value) => isIntegerBetween(value, 0, 2000),
   summaryIntervalMinutes: (value) => isIntegerBetween(value, 1, 120),
-  prefixKey: oneOf(...PREFIX_KEYS),
   icons: oneOf('unicode', 'text'),
 };
 
@@ -198,12 +186,6 @@ function readSettings(file: string): HudSettings {
     }
     if (bytesRead > MAX_SETTINGS_BYTES) throw new Error('HUD settings file is too large (maximum 64 KiB).');
     const raw: unknown = JSON.parse(buffer.subarray(0, bytesRead).toString('utf8'));
-    // Ctrl+\ became the default prefix when Codex 0.160 took Ctrl+] for Skip
-    // Question. A settings file saved before that, with no prefix of its own,
-    // keeps the Ctrl+] its owner has been using: only a fresh install moves.
-    if (raw && typeof raw === 'object' && !Array.isArray(raw) && !Object.hasOwn(raw, 'prefixKey')) {
-      return mergeValidated(defaultSettings(), { ...(raw as Record<string, unknown>), prefixKey: LEGACY_PREFIX_KEY });
-    }
     return mergeValidated(defaultSettings(), raw);
   } finally {
     fs.closeSync(fd);

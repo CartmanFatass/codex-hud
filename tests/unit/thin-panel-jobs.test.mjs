@@ -388,10 +388,9 @@ test('model button uses the master preference; b matches it and S is inert', asy
     assert.equal(clicked.action.type, 'brief-toggle');
     assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'brief-toggle' }, ctx).action, clicked.action);
     modelEnabled = !modelEnabled;
-    const [input] = new WorkbenchInputDecoder('workboard', { forward: true }).push(Buffer.from('S'));
+    const [input] = new WorkbenchInputDecoder('workboard').push(Buffer.from('S'));
     assert.deepEqual(handleMonitorInput(frame.state, input, ctx).state, frame.state);
   }
-  assert.deepEqual(new WorkbenchInputDecoder('workboard').push(Buffer.from('\x1b_codex-hud:summary\x1b\\')), []);
 });
 test('a lane row ends in one glyph per job, oldest first, then the role of the newest running or asking one', async (t) => {
   const f = fixture(t);

@@ -55,10 +55,11 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     next.help = true;
     next.helpScroll = 0;
   }
-  if (key === 'escape') next.keys = false;
   if (next.focus === 'changes') {
+    const pane = ctx.frame?.panes.find((p) => p.id === 'changes');
+    const max = pane ? Math.max(0, pane.contentLength - Math.max(1, pane.height)) : Infinity;
     const delta = key === 'down' ? 1 : key === 'up' ? -1 : key === 'page-down' ? 5 : key === 'page-up' ? -5 : 0;
-    next.scroll.changes = Math.max(0, next.scroll.changes + delta);
+    next.scroll.changes = Math.max(0, Math.min(max, next.scroll.changes + delta));
   }
   return result();
 }

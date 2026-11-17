@@ -16,7 +16,7 @@ import { setDisplayConfig } from '../../dist-test/src/render/hud-config.js';
 import { targetKey } from '../../dist-test/src/collectors/workboard-types.js';
 import { collectionObservation, jobPanelObservation } from '../../dist-test/src/utils/collection-observation.js';
 import { recordAdaptivePoll, createAdaptivePollState } from '../../dist-test/src/collectors/adaptive-poll.js';
-import { claudeCallerSession } from '../../dist-test/src/collectors/claude-caller-session.js';
+import { callerSession, claudeCallerSession } from '../../dist-test/src/collectors/claude-caller-session.js';
 import { panelCommand, panelSelection } from '../../dist-test/src/cli/panel.js';
 const tick = async () => {
   for (let i = 0; i < 15; i++) await new Promise(setImmediate);
@@ -631,4 +631,57 @@ test('explicit --root and harness/session/source win without querying current pa
     assert.ok(f.calls().at(-1)[3].includes(selection.map(s => `'${s}'`).join(' ')));
   }
   assert.equal(f.calls().some(c => c[1] === 'current'), false);
+});
+
+test('Codex caller binds via herdr pane current or CODEX_THREAD_ID, passes --harness codex --session --source, and renders Codex in panel', async t => {
+  const f = callerFixture(t);
+  const codexSession = '22222222-2222-4222-8222-222222222222';
+  const childSession = '33333333-3333-4333-8333-333333333333';
+  const codexHome = f.env.CODEX_HOME;
+  const now = new Date();
+  const [yyyy, mm, dd] = now.toISOString().slice(0, 10).split('-');
+  const stamp = now.toISOString();
+  const sessionDir = join(codexHome, 'sessions', yyyy, mm, dd);
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.writeFileSync(join(sessionDir, `rollout-${yyyy}-${mm}-${dd}T07-00-00-${codexSession}.jsonl`), [
+    JSON.stringify({ type: 'session_meta', timestamp: stamp, payload: { id: codexSession, cwd: f.home, model: 'gpt-5' } }),
+    JSON.stringify({ type: 'event_msg', timestamp: stamp, payload: { type: 'task_started' } }),
+  ].join('\n') + '\n');
+  fs.writeFileSync(join(sessionDir, `rollout-${yyyy}-${mm}-${dd}T07-00-01-${childSession}.jsonl`), [
+    JSON.stringify({ type: 'session_meta', timestamp: stamp, payload: {
+      id: childSession, cwd: f.home, model: 'gpt-5',
+      source: { subagent: { thread_spawn: { parent_thread_id: codexSession, depth: 1 } } },
+      parent_thread_id: codexSession, agent_nickname: 'codex-sub', agent_role: 'reviewer',
+    } }),
+    JSON.stringify({ type: 'event_msg', timestamp: stamp, payload: { type: 'task_started' } }),
+  ].join('\n') + '\n');
+
+  // 1) pane.agent_session reports codex (even if pane.agent is omitted or 'codex')
+  f.setReply({ result: { type: 'pane_current', pane: { pane_id: 'w4E:p1', cwd: f.home, agent_session: { agent: 'codex', kind: 'id', source: 'herdr:codex', value: codexSession } } } });
+  const bound = await callerSession(f.env);
+  assert.deepEqual(bound, { harness: 'codex', session: codexSession, source: codexHome });
+  const selected = panelSelection(['--harness', bound.harness, '--session', bound.session, '--source', bound.source]);
+  assert.equal(selected.harness, 'codex');
+  assert.equal(selected.source, codexHome);
+  assert.ok(selected.root?.endsWith('/' + codexSession), selected.root);
+
+  await panelCommand({ env: f.env, stdout: () => {}, stderr: () => {} });
+  const runCmd = f.calls().findLast(c => c[1] === 'run')[3];
+  assert.ok(runCmd.includes("'--harness' 'codex'"), runCmd);
+  assert.ok(runCmd.includes(`'--session' '${codexSession}'`), runCmd);
+  assert.ok(runCmd.includes(`'--source' '${codexHome}'`), runCmd);
+
+  // Foreground panel binds to the Codex session in --source and displays Codex
+  assert.match(await foregroundCaller(t, f, ['--here'], 'Codex'), /Codex/);
+
+  // 2) Fallback via CODEX_THREAD_ID inside a herdr pane when agent_session is absent
+  f.setReply({ result: { type: 'pane_current', pane: { pane_id: 'w4E:p1', cwd: f.home } } });
+  assert.deepEqual(await callerSession({ ...f.env, CODEX_THREAD_ID: codexSession }), {
+    harness: 'codex', session: codexSession, source: codexHome,
+  });
+
+  // 3) Outside herdr, callerSession returns undefined without querying herdr
+  const outside = { ...f.env, CODEX_THREAD_ID: codexSession };
+  delete outside.HERDR_PANE_ID;
+  assert.equal(await callerSession(outside), undefined);
 });

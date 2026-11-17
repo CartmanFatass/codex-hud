@@ -47,10 +47,9 @@ import {
   type SettingsConfirmationState,
   type SettingsConfirmationFrame,
 } from './render/settings-confirmation.js';
-import { spawn, execFile, execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { SessionFinder, findRolloutsInDaysYielding, treeLookbackDays } from './collectors/session-finder.js';
+import { SessionFinder, findRolloutsInDaysYielding, findSessionByThreadId, treeLookbackDays } from './collectors/session-finder.js';
 import { RolloutParser, type RolloutParseResult } from './collectors/rollout.js';
 import {
   buildSubagentTreeYielding,
@@ -78,8 +77,6 @@ import {
 } from './render/monitor.js';
 import { projectListOpen, projectPageOf } from './render/project-view.js';
 import { WorkbenchInputDecoder, type WorkbenchInput } from './utils/workbench-input.js';
-import { isPanelCommand, monitorKey, overlayKey, prefixName, type PanelCommand } from './utils/panel-command.js';
-import { KeyForwarder, type ForwardItem } from './utils/key-forward.js';
 import { fileSignature } from './utils/file-signature.js';
 import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js';
 import { SmallModel, modelHttpRequest } from './collectors/small-model.js';
@@ -412,7 +409,6 @@ function treePaths(nodes: SubagentTreeNode[]): Set<string> {
 }
 
 const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
-const STANDALONE_PANEL = process.env.CODEX_HUD_STANDALONE_PANEL === '1';
 const HUD_CWD_REAL = (() => {
   try {
     return fs.realpathSync(HUD_CWD);
@@ -427,102 +423,27 @@ const HUD_SESSION_START = (() => {
 const ENTER = '\x1b[?1049h\x1b[?25l\x1b[?2004h\x1b[?1000h\x1b[?1006h';
 const LEAVE = '\x1b[?1000l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[?1049l';
 
-/** A tmux command, through CODEX_HUD_TMUX_BIN when set (the test harness's server). */
-function tmux(args: string[], input?: string): Promise<void> {
-  return new Promise((resolve) => {
-    try {
-      const child = execFile(process.env.CODEX_HUD_TMUX_BIN || 'tmux', args, { timeout: 3000, windowsHide: true }, () =>
-        resolve()
-      );
-      if (input !== undefined) child.stdin?.end(input);
-    } catch {
-      resolve();
-    }
-  });
-}
-
-/** The Codex pane typing is passed to: the launch's, else the session's option. */
-function resolveMainPane(): string | undefined {
-  if (STANDALONE_PANEL) return undefined;
-  const pane = process.env.CODEX_HUD_MAIN_PANE;
-  if (pane) return pane;
-  if (!process.env.TMUX) return undefined;
-  try {
-    const option = execFileSync(
-      process.env.CODEX_HUD_TMUX_BIN || 'tmux',
-      ['show-options', '-qv', '@codex_hud_main_pane'],
-      { encoding: 'utf8', timeout: 1500, stdio: ['ignore', 'pipe', 'ignore'] }
-    ).trim();
-    return /^%\d+$/.test(option) ? option : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** This pane: an overlay opened from the prefix or a button takes the keyboard. */
-function focusPanel(): void {
-  if (STANDALONE_PANEL) return;
-  const pane = process.env.TMUX_PANE;
-  if (pane) void tmux(['select-pane', '-t', pane]);
-}
-
-/** Esc leaves focus mode: the keys go back to the Codex pane. */
-function focusMain(): void {
-  if (STANDALONE_PANEL) return;
-  const pane = process.env.CODEX_HUD_MAIN_PANE;
-  if (pane) void tmux(['select-pane', '-t', pane]);
-}
-
-/**
- * Refresh the command table at panel startup or after the prefix changed,
- * so an existing session picks up removed commands and new bindings too.
- * Only inside a HUD session, which passes the toggle.
- */
-function reinstallPrefix(prefix: string): void {
-  if (STANDALONE_PANEL) return;
-  const toggle = process.env.CODEX_HUD_TOGGLE_CMD;
-  const session = process.env.CODEX_HUD_TMUX_SESSION;
-  if (!toggle || !session) return;
-  try {
-    const child = spawn('bash', [path.join(path.dirname(toggle), 'codex-hud-keys'), session, prefix], {
-      stdio: 'ignore',
-      detached: true,
-    });
-    child.on('error', () => {});
-    child.unref();
-  } catch {
-    /* The next launch installs it. */
-  }
-}
-
-function requestEnsureSingle(): void {
-  if (STANDALONE_PANEL) return;
-  const toggle = process.env.CODEX_HUD_TOGGLE_CMD;
-  const session = process.env.CODEX_HUD_TMUX_SESSION;
-  if (!toggle || !session) return;
-  try {
-    const child = spawn('bash', [toggle, session, '--ensure-single'], { stdio: 'ignore', detached: true });
-    child.on('error', () => {});
-    child.unref();
-  } catch {
-    /* Closing the side pane is best effort. */
-  }
+function restoreTerminal(): void {
+  if (process.stdin.isTTY) process.stdin.setRawMode(false);
+  process.stdout.write(LEAVE);
 }
 
 export async function runLivePage(options: { installCleanup?: (end: () => void) => () => void } = {}): Promise<void> {
   const reload = new PanelReload(), place = readPanelPlace(), openedAt = place?.openedAt ?? Date.now();
   let restarting: Promise<void> | undefined;
   startProfiling('panel');
-  if (STANDALONE_PANEL)
-    for (const key of [
-      'CODEX_HUD_MAIN_PANE',
-      'CODEX_HUD_TOGGLE_CMD',
-      'CODEX_HUD_TMUX_SESSION',
-      'CODEX_HUD_INITIAL_COMMAND',
-      'TMUX',
-      'TMUX_PANE',
-    ])
-      delete process.env[key];
+  for (const key of [
+    'CODEX_HUD_MAIN_PANE',
+    'CODEX_HUD_TOGGLE_CMD',
+    'CODEX_HUD_TMUX_SESSION',
+    'CODEX_HUD_INITIAL_COMMAND',
+    'TMUX',
+    'TMUX_PANE',
+  ])
+    delete process.env[key];
+  const selectedHarness = process.env.CODEX_HUD_PANEL_HARNESS || '';
+  const selectedSource = process.env.CODEX_HUD_PANEL_SOURCE || '';
+  if (selectedHarness === 'codex' && selectedSource) process.env.CODEX_HOME = selectedSource;
   const selectedRoot = process.env.CODEX_HUD_PANEL_ROOT
     ? formatRosterRoot(parseRosterRoot(process.env.CODEX_HUD_PANEL_ROOT))
     : null;
@@ -579,14 +500,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         modelListRefresh = null;
       });
   };
-  // Typing here goes to Codex; with no Codex pane to give it to (the panel
-  // run on its own), the keys drive the panel as they used to.
-  const mainPane = STANDALONE_PANEL ? undefined : resolveMainPane();
-  const decoder = new WorkbenchInputDecoder('workboard', { forward: !STANDALONE_PANEL });
-  const forwarder = new KeyForwarder(
-    () => mainPane,
-    (call) => tmux(call.args, call.input)
-  );
+  const decoder = new WorkbenchInputDecoder('workboard');
   let settings = defaultSettings();
   let settingsError = '';
   let settingsFailure: unknown = null;
@@ -598,7 +512,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   applyDisplaySettings(settings);
   setLanguage(resolveLanguage(settings.language));
   if (settingsFailure) settingsError = t('Settings: {reason}', { reason: String(settingsFailure) });
-  else reinstallPrefix(settings.prefixKey);
   const configuredState = () => {
     const next = initialMonitorState();
     next.modes = monitorModes(settings);
@@ -649,7 +562,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   let widthOverride = place?.widthOverride === null ? undefined
     : place?.widthOverride ?? (Number(process.env.HUD_PANEL_WIDTH) || undefined);
-  const widthKeeper = STANDALONE_PANEL && !process.env.HUD_PANEL_CALLER_PANE
+  const widthKeeper = !process.env.HUD_PANEL_CALLER_PANE
     ? null : treeWidthKeeper(() => widthOverride ?? settings.treeWidth);
   // Every model call of the panel goes through one service: one queue, one
   // cache, one hourly cap. Its cache and call log live beside the HUD's state.
@@ -757,7 +670,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           workboard: state.mainTab === 'home' && state.focus === 'agents' && !state.help ? homeRecommendation.apply(displayBoard()) : displayBoard(),
           modelEnabled: settings.modelEnabled,
           mouse: settings.mouse,
-          embedded: !STANDALONE_PANEL,
           state,
           worktrees,
           project: shown.snapshot,
@@ -769,7 +681,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           hud: hud ? { ...hud, delegation: panelDelegation } : hud,
           notice: jobRender.notice || hudProblems(hud, nowMs, t)[0],
           loading: jobRender.loading,
-          prefix: prefixName(settings.prefixKey),
           width,
           height: process.stdout.rows || 24,
         });
@@ -931,7 +842,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     if (epoch === collectionEpoch) {
       const data = currentHud();
       const native = collectionObservation(data, tree);
-      const jobOnly = STANDALONE_PANEL && !boundJobRoot;
+      const jobOnly = !boundJobRoot;
       const jobQuiet = jobOnly && !selectedRoot && !nativeTree.nodes.length && native.activity !== 'active';
       const observation = jobOnly
         ? jobPipeline.observation(tree, panelDelegation, jobQuiet && nativeCalls.emptyAndComplete)
@@ -966,9 +877,15 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     // Where a failure happened, for the health row.
     let stage: HealthSource = 'session';
     try {
-      session = finder.check();
-      boundJobRoot = session ? `${makeSourceId('codex', fs.realpathSync(getCodexHome()))}/${session.sessionId}` : '';
-      if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
+      if (selectedHarness === 'codex' && selectedRoot && selectedSource) {
+        const sid = parseRosterRoot(selectedRoot).sessionId;
+        session = findSessionByThreadId(sid, selectedSource);
+        boundJobRoot = `${makeSourceId('codex', fs.realpathSync(selectedSource))}/${sid}`;
+      } else {
+        session = finder.check();
+        boundJobRoot = session ? `${makeSourceId('codex', fs.realpathSync(getCodexHome()))}/${session.sessionId}` : '';
+        if (selectedRoot && selectedRoot !== boundJobRoot) session = null;
+      }
       const observationRoot = allDelegations ? null : (selectedRoot ?? boundJobRoot);
       jobPipeline.setRoot(allDelegations ? null : observationRoot || 'unbound/no-session');
       const jobRead = jobPipeline.refresh(undefined, { deadline: delegationDeadline });
@@ -1171,20 +1088,14 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     process.stdin.pause();
     process.stdout.write(LEAVE);
     snapshotWriter.remove();
-    if (user) requestEnsureSingle();
     if (callerGone) void closePanelPane(process.env.HERDR_PANE_ID!, process.env).catch(() => {}).finally(resolveDone);
     else resolveDone();
   };
-  /**
-   * A command from the prefix table as the input it stands for. An open
-   * overlay keeps the ones that move inside it or close it; any other
-   * closes the overlay and goes to the panel.
-   */
   const applySettingsDraft = (): boolean => {
     const page = settingsPage;
     if (!page) return false;
     try {
-      const previousPrefix = settings.prefixKey, previousWidth = settings.treeWidth;
+      const previousWidth = settings.treeWidth;
       settings = saveSettings(page.draft);
       if (settings.treeWidth !== previousWidth) widthOverride = undefined;
       settingsError = '';
@@ -1204,7 +1115,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       worktrees = null;
       void refreshGit();
       notifier.configure(resolveNotifierOptions(process.env, settings));
-      if (settings.prefixKey !== previousPrefix) reinstallPrefix(settings.prefixKey);
       page.message = t('Saved');
       page.original = { ...settings };
       process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
@@ -1231,21 +1141,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     settingsPage = null;
     return true;
   };
-  const commandInput = (command: PanelCommand): WorkbenchInput | null => {
-    const overlay = settingsPage ? 'settings' : state.help ? 'help' : null;
-    if (overlay) {
-      const key = overlayKey(command, overlay);
-      if (key) return { type: 'key', key };
-      if (settingsPage && !requestSettingsLeave(monitorKey(command))) return null;
-      settingsPage = null;
-      state = { ...state, help: false };
-    }
-    return { type: 'key', key: monitorKey(command) };
-  };
   const processInput = (inputs: WorkbenchInput[]) => {
-    const overlayBefore = Boolean(settingsPage || state.help);
-    // What goes to Codex, in order, sent once the whole read is through.
-    const forward: ForwardItem[] = [];
     if (roleNotice && inputs.length) {
       if (error === roleNotice) error = settingsError || null;
       roleNotice = '';
@@ -1254,14 +1150,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (closed) break;
       if (input.type === 'mouse' && !settings.mouse) continue;
       // A printable key with no name is only the model picker's (it types into the filter); nothing else answers it here.
-      if (STANDALONE_PANEL && input.type === 'key' && !input.key && !state.projectInput) continue;
+      if (input.type === 'key' && !input.key && !state.projectInput) continue;
       syncPanelView();
       const fromSettings = Boolean(settingsPage);
-      let panelInput = input.type === 'command';
       if (settingsLeave && confirmationFrame) {
-        const dialogInput: WorkbenchInput =
-          input.type === 'command' ? { type: 'key', key: overlayKey(input.command, 'settings') ?? '' } : input;
-        const result = handleSettingsConfirmation(settingsLeave, dialogInput, confirmationFrame);
+        const result = handleSettingsConfirmation(settingsLeave, input, confirmationFrame);
         settingsLeave = { ...settingsLeave, ...result.state };
         if (!result.action) {
           render();
@@ -1284,35 +1177,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           render();
           continue;
         }
-        // Preserve the destination by key, not old mouse coordinates: Save
-        // may have changed the pane width and therefore every tab's hit span.
         input = { type: 'key', key: destination };
-        panelInput = true;
       }
-      if (input.type === 'command') {
-        const decoded = commandInput(input.command);
-        if (!decoded) {
-          render();
-          continue;
-        }
-        input = decoded;
-      } else if (mainPane && input.type !== 'mouse' && !panelInput) {
-        // Focus mode keeps keys here, as an overlay does, without being one:
-        // a prefix command is still a panel command.
-        const overlay = Boolean(settingsPage || state.help || state.keys);
-        if (!overlay) {
-          // Not the panel's: every key and paste is Codex's.
-          if (input.type === 'paste') forward.push({ kind: 'paste', text: input.text });
-          else if (input.raw) forward.push({ kind: 'keys', text: input.raw });
-          continue;
-        }
-        // An open overlay owns the keyboard until it closes. Its keys are
-        // the ones it needs; q and Ctrl+C close it, not the panel, and a
-        // paste has nowhere to go.
-        if (input.type === 'paste') continue;
-        if (input.key === 'close') input = { type: 'key', key: 'escape' };
-      }
-      if (input.type === 'paste') continue;
       if (settingsPage && settingsFrame) {
         const result = handleSettingsInput(settingsPage, input, settingsFrame);
         settingsPage = result.state;
@@ -1347,14 +1213,13 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         tree,
         frame,
         navigationOverlay: fromSettings,
-        standalone: STANDALONE_PANEL,
       });
       state = result.state;
       syncPanelView();
       if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
       if (projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state))) void collect(true);
       if (result.close) {
-        finish(true);
+        finish();
         break;
       }
       if (JSON.stringify(state.modes) !== JSON.stringify(previous.modes)) {
@@ -1404,20 +1269,16 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           message: '',
         };
       }
-      if (!previous.keys && state.keys) focusPanel();
-      if (previous.keys && !state.keys) focusMain();
       render();
     }
     syncModelListDiscovery();
-    if (!STANDALONE_PANEL && forward.length) void forwarder.send(forward);
     if (!settingsPage) probe.cancel();
-    if (!closed && !overlayBefore && (settingsPage || state.help)) focusPanel();
   };
   /** The decoder also hands over printable keys with no name, for the model picker: they count only once `m` has opened it. */
   const typedForPicker = (inputs: WorkbenchInput[]) => {
     let picking = Boolean(state.projectInput);
     return inputs.filter((i) => {
-      if (i.type !== 'key' || !STANDALONE_PANEL) return true;
+      if (i.type !== 'key') return true;
       if (i.key.startsWith('place-model')) picking = true;
       return Boolean(i.key) || picking;
     });
@@ -1431,12 +1292,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         if (!closed) void collect(true);
       }
     );
-  };
-  /** A command that opened the panel (bin/codex-hud-toggle --command): run once, after the first read. */
-  const initialCommand = process.env.CODEX_HUD_INITIAL_COMMAND;
-  delete process.env.CODEX_HUD_INITIAL_COMMAND;
-  const runInitialCommand = () => {
-    if (!place && initialCommand && isPanelCommand(initialCommand)) dispatch([{ type: 'command', command: initialCommand }]);
   };
   const onData = (chunk: Buffer) => {
     if (escapeTimer) clearTimeout(escapeTimer);
@@ -1470,7 +1325,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     process.stdin.on('data', onData);
     render();
     syncModelListDiscovery();
-    void collect().then(runInitialCommand);
+    void collect();
     void refreshGit();
     armCollect();
     scheduleRepaint();
@@ -1479,14 +1334,23 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   await restarting;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  const onCrash = (err: unknown) => {
+    restoreTerminal();
+    process.stderr.write(`${String(err)}\n`);
+    process.exit(1);
+  };
+  process.on('uncaughtException', onCrash);
+  process.on('unhandledRejection', onCrash);
   runLivePage()
     .catch((error) => {
       process.stderr.write(`${String(error)}\n`);
       process.exitCode = 1;
     })
     .finally(() => {
-      if (process.stdin.isTTY) process.stdin.setRawMode(false);
-      process.stdout.write(LEAVE);
+      process.off('uncaughtException', onCrash);
+      process.off('unhandledRejection', onCrash);
+      restoreTerminal();
       process.exit(process.exitCode ?? 0);
     });
+}

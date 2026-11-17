@@ -138,7 +138,7 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
   }
   for (const required of ['install', 'install.d/pi.sh', 'bin/hud', 'packages/hud-mcp/src/thin-main.ts',
     'packages/hud-mcp/bin/hud-watch.mjs', 'packages/hud-mcp/bin/hud-jev.mjs', 'packages/hud-mcp/hud-convention.md',
-    'packages/hud-mcp/roles/imp.json', 'integrations/skills/hud-delegate/SKILL.md', 'integrations/skills/hud-setup/SKILL.md',
+    'packages/hud-mcp/roles/imp.json', 'integrations/skills/hud/SKILL.md', 'integrations/skills/hud-delegate/SKILL.md', 'integrations/skills/hud-setup/SKILL.md',
     'integrations/skills/grill-with-docs/SKILL.md', 'integrations/skills/to-spec/SKILL.md', 'integrations/skills/to-tickets/SKILL.md',
     'node_modules/typescript/bin/tsc', 'node_modules/@iarna/toml/LICENSE', 'package-lock.json', 'THIRD_PARTY_NOTICES.md']) {
     assert.ok(members.includes(`hud-${version}/${required}`), `missing ${required}`);
@@ -249,6 +249,7 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
         path.join(env.CLAUDE_CONFIG_DIR, 'skills', name),
         path.join(env.CODEX_HOME, 'skills', name),
       ]),
+      path.join(env.CODEX_HOME, 'skills', 'hud'),
       path.join(env.CLAUDE_CONFIG_DIR, 'commands/hud.md')]) {
       assert.equal(fs.lstatSync(file, { throwIfNoEntry: false }), undefined, file);
     }

@@ -45,7 +45,6 @@ async function frames(t) {
         width: 90,
         height: 40,
         modelEnabled: true,
-        embedded: true,
         mouse: true,
         nowMs: NOW,
       }).lines.join('\n')

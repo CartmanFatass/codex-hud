@@ -1,7 +1,4 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { runHerdr, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
-const exec = promisify(execFile);
 /** A request for none (0, from older settings) uses DEFAULT_WIDTH. */
 export const DEFAULT_WIDTH = 56;
 /** Home's width presets; other saved widths still draw. */
@@ -9,8 +6,7 @@ export const PANEL_WIDTHS: readonly number[] = [40, 48, 56, 64, 80, 100];
 
 /**
  * The panel takes the width asked for, 56 unless told otherwise,
- * and the agent keeps at least 41 columns. bin/codex-hud-toggle and bin/codex-hud
- * open the pane at that width before this takes over.
+ * and the agent keeps at least 41 columns.
  */
 export function panelWidth(requested: number, windowWidth: number): number {
   const desired = requested > 0 ? requested : DEFAULT_WIDTH;
@@ -55,12 +51,6 @@ export class TreeWidthKeeper {
   }
 }
 
-async function tmuxWindowWidth(pane: string): Promise<number | null> {
-  const { stdout } = await exec('tmux', ['display-message', '-p', '-t', pane, '#{window_width}'], { timeout: 2000 });
-  const width = Number(stdout.trim());
-  return Number.isInteger(width) && width >= 1 ? width : null;
-}
-
 /** The keeper for the right split opened by openPanelPane, never another pane. */
 function herdrWidthKeeper(requested: () => number): TreeWidthKeeper | null {
   const env = process.env, pane = env.HERDR_PANE_ID, caller = env.HUD_PANEL_CALLER_PANE;
@@ -87,15 +77,7 @@ function herdrWidthKeeper(requested: () => number): TreeWidthKeeper | null {
   }, requested);
 }
 
-/** The keeper for this process's own pane, or null outside a HUD tree pane. */
+/** The keeper for this process's own herdr pane, or null outside a split panel. */
 export function treeWidthKeeper(requested: () => number): TreeWidthKeeper | null {
-  const pane = process.env.TMUX_PANE;
-  if (!pane || !/^%\d+$/.test(pane) || !process.env.CODEX_HUD_MAIN_PANE) return herdrWidthKeeper(requested);
-  return new TreeWidthKeeper(
-    () => tmuxWindowWidth(pane),
-    async (width) => {
-      await exec('tmux', ['resize-pane', '-t', pane, '-x', String(width)], { timeout: 2000 });
-    },
-    requested
-  );
+  return herdrWidthKeeper(requested);
 }
