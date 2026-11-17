@@ -55,8 +55,10 @@ hud_ext_install() {
     printf 'Warning: codex is not on PATH; skipping Codex MCP registration.\n' >&2
   fi
 
-  hud_codex_skill hud-delegate
-  hud_codex_skill hud-setup
+  local name
+  for name in hud-delegate hud-setup grill-with-docs to-spec to-tickets; do
+    hud_codex_skill "$name"
+  done
 }
 
 hud_ext_uninstall() {
@@ -67,7 +69,7 @@ hud_ext_uninstall() {
   fi
 
   local name skill
-  for name in hud-delegate hud-setup; do
+  for name in hud-delegate hud-setup grill-with-docs to-spec to-tickets; do
     skill="${CODEX_HOME:-$HOME/.codex}/skills/$name"
     if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
       rm -- "$skill"

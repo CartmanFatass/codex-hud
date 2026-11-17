@@ -16,13 +16,10 @@ test('Codex registers roles, backs up config before rewrites, warns on comment l
     const codexHome = path.join(temp, 'codex home');
     const fakeBin = path.join(temp, 'fake-bin');
     const log = path.join(temp, 'codex-argv.jsonl');
-    const target = path.join(repo, 'integrations/skills/hud-delegate');
-    const setupTarget = path.join(repo, 'integrations/skills/hud-setup');
-    const skill = path.join(codexHome, 'skills/hud-delegate');
-    const setupSkill = path.join(codexHome, 'skills/hud-setup');
+    const skills = ['hud-delegate', 'hud-setup', 'grill-with-docs', 'to-spec', 'to-tickets'];
+    const skillPaths = skills.map((name) => [path.join(repo, 'integrations/skills', name), path.join(codexHome, 'skills', name)]);
     fs.mkdirSync(path.join(repo, 'install.d'), { recursive: true });
-    fs.mkdirSync(target, { recursive: true });
-    fs.mkdirSync(setupTarget, { recursive: true });
+    for (const [target] of skillPaths) fs.mkdirSync(target, { recursive: true });
     fs.mkdirSync(fakeBin);
     fs.mkdirSync(codexHome);
     const config = path.join(codexHome, 'config.toml');
@@ -79,8 +76,7 @@ if (process.argv[3] === 'remove') {
       if (content === null) assert.ok(result.stderr.includes(backup));
       assert.equal(fs.readFileSync(backup, 'utf8'), original);
       assert.equal(fs.readFileSync(config, 'utf8'), 'model = "synthetic"\n');
-      assert.equal(fs.readlinkSync(skill), target);
-      assert.equal(fs.readlinkSync(setupSkill), setupTarget);
+      for (const [target, link] of skillPaths) assert.equal(fs.readlinkSync(link), target);
       if (content === 'Owner prompt.\n') assert.equal(fs.readFileSync(prompt, 'utf8'), content);
       else assert.equal(fs.existsSync(prompt), false);
     }
@@ -89,8 +85,7 @@ if (process.argv[3] === 'remove') {
     assert.equal((removed.stderr.match(/Warning: Codex/g) ?? []).length, 1);
     assert.ok(removed.stderr.includes(backup));
     assert.equal(fs.readFileSync(backup, 'utf8'), original);
-    assert.throws(() => fs.lstatSync(skill), { code: 'ENOENT' });
-    assert.throws(() => fs.lstatSync(setupSkill), { code: 'ENOENT' });
+    for (const [, link] of skillPaths) assert.throws(() => fs.lstatSync(link), { code: 'ENOENT' });
     assert.equal(fs.readFileSync(prompt, 'utf8'), 'Owner prompt.\n');
     fs.writeFileSync(prompt, promptLine);
     run('--uninstall', '--with', 'codex');

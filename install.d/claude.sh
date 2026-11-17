@@ -61,7 +61,7 @@ hud_ext_install() {
   fi
 
   mkdir -p -- "$config/skills" "$BIN_DIR"
-  for name in hud-delegate hud-setup; do
+  for name in hud-delegate hud-setup grill-with-docs to-spec to-tickets; do
     skill="$config/skills/$name"
     if [[ -L "$skill" || ! -e "$skill" ]]; then
       ln -sfn -- "$REPO/integrations/skills/$name" "$skill"
@@ -101,8 +101,13 @@ hud_ext_uninstall() {
   if [[ -f "$command_file" && "$(cat -- "$command_file")" == "$hud_claude_command_line" ]]; then
     rm -- "$command_file"
   fi
-  for link in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-delegate" \
-    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-setup" "$BIN_DIR/hud-statusline"; do
+  for link in \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-delegate" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-setup" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/grill-with-docs" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/to-spec" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/to-tickets" \
+    "$BIN_DIR/hud-statusline"; do
     if [[ -L "$link" && "$(readlink -m "$link")" == "$REPO/"* ]]; then
       rm -- "$link"
     fi

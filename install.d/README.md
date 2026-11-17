@@ -38,7 +38,7 @@ pi gets the `/hud` command from the display package. Codex installs no prompt fi
 ## What each extension changes
 
 - **claude**: registers the six-role MCP (`claude mcp add -s user hud`), links the
-  `hud-delegate` and `hud-setup` skills and `hud-statusline`, writes `~/.claude/commands/hud.md`, and
+  `hud-delegate`, `hud-setup`, `grill-with-docs`, `to-spec` and `to-tickets` skills and `hud-statusline`, writes `~/.claude/commands/hud.md`, and
   writes the HUD `statusLine` into global `settings.json` (refresh interval 5),
   following symlinks and retaining a one-time plain `.hud-backup`. An owner's own
   non-HUD statusline is left alone. Uninstall removes the HUD statusline, restores
@@ -52,7 +52,7 @@ pi gets the `/hud` command from the display package. Codex installs no prompt fi
   still never opens automatically. Uninstall uses `pi remove` for both packages,
   removes both directories and reverses the filter change.
 - **codex**: registers the six-role MCP (`codex mcp add hud`), links the
-  `hud-delegate` and `hud-setup` skills and removes the legacy `$CODEX_HOME/prompts/hud.md` only if it
+  `hud-delegate`, `hud-setup`, `grill-with-docs`, `to-spec` and `to-tickets` skills and removes the legacy `$CODEX_HOME/prompts/hud.md` only if it
   still contains the HUD-owned line (uninstall also removes an old owned copy).
   Before MCP edits, the resolved `config.toml` gets a one-time plain `.hud-backup`.
   The official Codex commands may drop comments; a warning names that retained
