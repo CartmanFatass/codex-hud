@@ -149,7 +149,7 @@ board counts these; update at every landing or decision. -->
 - try · — · SKILLS-READ · owner 2026-11-17: Skills descriptions wrap in full under the name, readable at 40 columns (spec f996b63f; landed from 957997cc)
 - working · — · SIDEBAR-ONE · owner 2026-11-17: one standalone herdr sidebar for every client with mouse; Codex tmux panel (F12, prefix keys) retired, tmux bar kept (spec 0cb19f5a; imp job jedc327f7d1019cf2 in ../MyHUD-wt/SIDEBAR-ONE)
 - working · — · ORACLE-SKILL · owner 2026-11-17: oracle loads an adapted codebase-design on every place; role skills on CLI places; bare names fall back to shipped skills (spec 884669ff; imp job je0ee2f0349dac642 in ../MyHUD-wt/ORACLE-SKILL)
-- try · — · MATT-FLOW · owner 2026-11-17: default convention absorbs Matt Pocock's flow and design vocabulary (0.1.4 text kept as hud-convention.v0.1.4.md); hud-build (implement-spec as a HUD recipe) installed for Claude and Codex; review stays once per milestone
+- try · — · MATT-FLOW · owner 2026-11-17: the convention keeps only HUD mechanics (method lives in on-demand skills; a convention absorbing Matt's flow was written and reverted the same day); hud-build (implement-spec as a HUD recipe, user-invoked) installed for Claude and Codex
 
 ## Now (2026-11-14): 0.1.4 to the owner's try; 0.1.1–0.1.3 wait for the owner's try
 

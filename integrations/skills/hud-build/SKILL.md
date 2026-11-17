@@ -32,13 +32,17 @@ The tickets are not a list of steps. They are a **task graph**: the tickets whos
    - context pointers: the spec, the ticket file or `#N`, the notes file, ADRs and the files to read first;
    - the seam to test at (agreed in the spec) and the main-path test to add; with `tdd` the worker builds red → green;
    - scope and out of scope, done-when (the ticket's acceptance list), a size budget and the stop rule;
-   - "never edit the main checkout; commit in your worktree" (the integration step picks the commits).
-5. **Integrate as each job settles.** Read the report and the diff, run the ticket's checks, then cherry-pick or merge
-   the worktree branch onto the integration branch yourself. Tick the ticket's acceptance (on GitHub, then
+   - "work only in this worktree, never the main checkout; do not commit" (the worker leaves its changes in the
+     worktree's working tree; the main session commits them).
+5. **Integrate as each job settles.** Read the report and the diff, run the ticket's checks, commit the worktree's
+   changes on its branch yourself, then cherry-pick or merge that branch onto the integration branch. Tick the ticket's acceptance (on GitHub, then
    `hud tickets sync`), remove the worktree and its branch. A job that stopped on its stop rule gets a repair brief to
    the same job (`hud_send`, while it can continue) or a re-sliced ticket, never a wider brief.
 6. **Advance the frontier.** When an integration unblocks tickets, dispatch them (step 4). Keep the project's slice
    ledger (if it has one) current at every dispatch and landing.
-7. **Milestone review**, once, on the whole integration diff: per the convention's Review section (two axes, design
-   intent in the brief, blocking bar). One fresh `imp` fixes the blocking findings in one pass.
+7. **Milestone review**, once, on the whole integration diff, not per ticket: a `reviewer` job whose brief states the
+   design intent (one line per change on what it is for and which trade-offs are deliberate) and asks for two axes
+   reported separately: spec (does it do what the spec asks, and nothing nobody asked for) and quality (real defects,
+   and what can be deleted). Findings block only if a real user would hit them or the spec is violated; the rest is an
+   optional list that implies no new tests. One fresh `imp` fixes the blocking findings in one pass.
 8. **Close.** Mark the draft PR ready, or close the tickets the tracker's way; tell the owner what to try and how.
