@@ -27,7 +27,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    selects a tab, row or button, a second click acts as Enter, the wheel scrolls. The delegation tools stay registered either way (owner,
    2026-11-11). Each client keeps one status line: Claude's statusline (replacing claude-hud, same fields as the owner uses), pi's footer
    (taking in p10k-footer; its ribbon stays at the right end of the editor's top border and other extensions' statuses
-   stay visible, owner, 2026-11-12), Codex's existing tmux bar. Bar themes (owner, 2026-11-12): Gauge Plates, Tide, Micro
+   stay visible, owner, 2026-11-12), Codex's existing tmux bar. Every status line shows output tokens/s (owner, 2026-11-17): the pi footer already does; Claude's statusline and Codex's bar show it too. Bar themes (owner, 2026-11-12): Gauge Plates, Tide, Micro
    Glyphs, Stacked (two rows, the one opt-in exception), Headline and Triptych from the BAR-THEMES concepts join as
    choices on all three bars, the pi ribbon included; the default stays today's look. The panel and status lines can use external models with the
    owner's own keys (`$HUD_HOME/credentials.env`, through the Decisions API) for job summaries, recaps and sentences.
