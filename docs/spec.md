@@ -56,8 +56,9 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    a For-you lane; the control plane opens with what needs attention and the place the next job will use, healthy
    roles folded. Skills tab (owner, 2026-11-17): a third main tab after Project lists the backup skills, Matt Pocock
    skills that are not installed and that the main session reads from their upstream text when the owner asks for
-   one; one row each, the skill's name and a one-line description in the panel's language, read from a catalog file
-   the HUD ships. Display only: no action on a row, no install state, no adopted or dropped skills.
+   one; each skill's name and its whole one-line description in the panel's language, read from a catalog file
+   the HUD ships; the description wraps under the name rather than being cut, so the tab reads at the owner's 40-column
+   panel (owner, 2026-11-17). Display only: no action on a row, no install state, no adopted or dropped skills.
 3. **Set up a project's workers in one conversation** (owner, 2026-11-13). `hud setup --detect | --apply PLAN | --remove` writes a project's `.hud/` and is driven by a `hud-setup` skill that asks the owner, as claude-hud's setup does. Customisation is on pi workers only: main sessions and the official harnesses (Claude Code, Codex, Grok Build, Antigravity) keep their behaviour, and their roles are only shown or hidden. A project's `.hud/` loads only once the owner has set that project up (`$HUD_HOME/projects.json`); a cloned repo's `.hud/` does nothing on its own.
    Adapted skills (owner, 2026-11-17; replaces the 2026-11-10 "Matt's skills, unchanged" decision): the upstream
    plugin is off everywhere (Claude, Codex, pi); a curated few of Matt Pocock's skills ship in `integrations/skills/`,
