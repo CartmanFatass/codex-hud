@@ -107,6 +107,8 @@ hud_ext_uninstall() {
     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/grill-with-docs" \
     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/to-spec" \
     "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/to-tickets" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-handoff" \
+    "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/hud-build" \
     "$BIN_DIR/hud-statusline"; do
     if [[ -L "$link" && "$(readlink -m "$link")" == "$REPO/"* ]]; then
       rm -- "$link"
