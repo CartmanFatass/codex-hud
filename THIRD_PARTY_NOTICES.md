@@ -75,7 +75,7 @@ SOFTWARE.
 
 ## Matt Pocock Skills
 
-The adapted skills under `integrations/skills/` (`to-tickets`, installed) and `integrations/skills-optional/` (the rest, not installed) are derived from **mattpocock/skills** and owned here without tracking upstream:
+The skills under `integrations/skills/` (`to-tickets`, installed) and `integrations/skills-optional/` (the rest, not installed) are derived from **mattpocock/skills**: adapted copies are owned here without tracking upstream, verbatim copies carry only a one-line source note:
 
 - Upstream: https://github.com/mattpocock/skills
 - Commit: `5863806dd4e15c63174bee4e7515a4256792ecfa`
@@ -91,6 +91,12 @@ Adapted skills:
 - `to-tickets` (`skills/engineering/to-tickets`)
 - `tdd` (`skills/engineering/tdd`)
 - `diagnosing-bugs` (`skills/engineering/diagnosing-bugs`)
+
+Verbatim copies (each directory as upstream, plus a source line in `SKILL.md`):
+
+- `skills/engineering/`: `wayfinder`, `triage`, `improve-codebase-architecture`, `wizard`, `prototype`, `retro`,
+  `pr`, `codebase-design`
+- `skills/productivity/`: `teach`, `wait-what`, `writing-for-agents`, `to-questionnaire`
 
 ```text
 MIT License

@@ -62,12 +62,12 @@ answer is the simplest option; anything beyond the spec goes to the owner.
 | Role | Runs on | Used for |
 | --- | --- | --- |
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
-| implementer | pi, `openai/gpt-6.1-sol` high (skill `hud-delegate`, role `imp`) | one slice each |
-| reviewer | pi, two in parallel: `openai/gpt-6.1-sol` xhigh and `mistral/deepseek-v4-1-flash-1017` max (`hud_create` model override). Chosen after a three-way trial on M3 (owner, 2026-11-11). When Sol's quota runs out: the same role on `arena/gpt-6.1-sol` xhigh (owner, 2026-11-14) | milestone reviews and the risky cases above only |
-| sonic | pi, DeepSeek V4.1 Flash | small chores for any role; never tests, bug hunting or design |
-| architect | pi, `openai/gpt-6-astra` high | only a structural question the orchestrator cannot settle; advice only |
-| Argon / ChatGPT Pro | `jev-ask` | only a new product direction |
-| frontend-implementer | Claude subagent (sonnet) | rendering work with a settled design |
+| implementer | role `imp` (skill `hud-delegate`): pi `openai/gpt-6.2-sol` high, fallback pi `xai/grok-4.7` | one slice each |
+| reviewer | role `reviewer`, two in parallel from different model families: pi `openai/gpt-6.2-sol` xhigh, fallback agy `gemini-4-hydrogen-high` | milestone reviews and the risky cases above only |
+| sonic | role `sonic`: pi, DeepSeek V4.1 Flash | small chores for any role; never tests, bug hunting or design |
+| oracle | role `oracle`: claude `fable` high, fallback pi `architect` (`openai/gpt-6.2-astra` high) | the strongest-model seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
+| pro | role `pro` (`bro`): ChatGPT 6 Pro, then Gemini web, then AI Studio Argon | a new product direction; research that needs outside sources (primary sources, each claim cited) |
+| frontend-implementer | role `frontend-imp`: claude `claude-sonnet-5-5` xhigh | UI design and frontend development |
 | Hermes | Windows, computer use | tests that need human-like interaction |
 
 Codex tests use `codex2` (free account, `gpt-6-luna` medium), never the main `codex` account.

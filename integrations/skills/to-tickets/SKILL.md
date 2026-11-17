@@ -23,17 +23,17 @@ Break the work into **tracer-bullet** slices:
 - Each fits a single implementer session. Do any prefactoring first.
 - Declare **Blocked by** edges: tickets that must finish before this one starts.
 
-**Wide-refactor exception:** A mechanical repo-wide change that cannot land green slice-by-slice uses **expand–contract**: expand (add new alongside old), migrate batches blocked by expand, then contract (remove old) blocked by all migrate batches.
-
 ### 3. Check granularity with the owner
 
 Present a numbered list showing **Title**, **Blocked by**, and **What it delivers**. Ask whether granularity is right, blocking edges genuinely gate each ticket, and any tickets should merge or split. Iterate until approved.
+
+A ticket whose acceptance cannot be written, or whose boundary depends on something the spec leaves open, is a spec gap: write it as an owner question in `docs/handoff/questions/` and keep that ticket out of `ready-for-agent`. Do not settle the spec yourself.
 
 ### 4. Publish tickets
 
 Publish blockers first in dependency order. Do not close or rewrite a parent issue. Open items in the spec keep derived tickets from `ready-for-agent`; otherwise label `ready-for-agent`.
 
-- **Local markdown:** write one file per ticket at `.scratch/<feature>/issues/NN-<slug>.md` matching the Project tab format (`# NN: Title` where the heading number equals the `NN` filename prefix, `**Status:**`, `**Blocked by:** none` or `NN, NN`, a `- [ ]` checklist, `## Comments`).
+- **Local markdown:** write one file per ticket at `.scratch/<feature>/issues/NN-<slug>.md` from the local template below; the heading number equals the `NN` filename prefix, and `**Blocked by:**` is `none` or `NN, NN`.
 - **GitHub with `.scratch/` mirror:** publish the spec as the parent issue (if not already published), then create each ticket as a GitHub sub-issue of that parent (`gh issue create --parent N` or `gh issue edit N --add-sub-issue M`). Express blocking as native blocked-by edges or a single body line `Blocked by: #N, #M`. Never write `.scratch/`. After publishing, run `hud tickets sync` in the repo root; sync prints the `<slug>` derived from the parent title and writes each mirrored ticket file to `.scratch/<slug>/issues/<N>-<slug>.md` (where `N` is the GitHub issue number).
 
 ### 5. Ownership and HUD dispatch
@@ -74,4 +74,4 @@ Blocked by: #N, #M
 
 </issue-template>
 
-Omit the `Blocked by: #N, #M` line if there are no blockers or if using native blocked-by edges. Avoid brittle file paths or code snippets in tickets unless a short prototype shape encodes a decision.
+Omit the `Blocked by: #N, #M` line if there are no blockers or if using native blocked-by edges.
