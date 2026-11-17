@@ -790,9 +790,11 @@ async function call(name: string, args: Args): Promise<unknown> {
     };
   }
   if (name === 'hud_create') {
-    const role = required(args, 'role');
+    const asked = required(args, 'role');
     const cwd = jobCwd(args);
     const found = registry(cwd);
+    // `architect` names oracle unless a role file defines its own architect.
+    const role = asked === 'architect' && !found.roles().has(asked) ? 'oracle' : asked;
     const definition = found.roles().get(role);
     if (!definition) {
       const path = found.invalidPath(role);

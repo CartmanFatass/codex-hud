@@ -20,7 +20,7 @@ Read `docs/ARCHITECTURE.md` before changing code: the two processes (bar `src/in
 
 This clone of codex-hud is being turned into one HUD for Claude Code, Codex and pi. On the owner's machine, before doing anything on this branch read, in order:
 
-1. `docs/spec.md`: the product boundary (what it must do, what it does not do, threat model, milestones). Only the owner changes it; nothing it rules out is built.
+1. `docs/spec.md`: the product boundary (what it must do, what it does not do, threat model, milestones). Only the owner decides what it says (an agent edits it only after telling the owner the change and the reason); nothing it rules out is built.
 2. `docs/delegation.md`: the workflow since 2026-11-10: grill the owner, slice into vertical slices, one implementer per slice without per-slice review, one two-axis review per milestone, the owner tries it.
 3. `docs/handoff/STATE.md`: where the work stands.
 

@@ -127,7 +127,7 @@ A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_gra
 (default 600), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`
 or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place
 files load as `run[0]` and `"harness": "jev"` loads as `"bro"`. Shipped roles:
-`imp` (`pi` implementer -> `pi` Grok 4.7), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`),
+`imp` (`pi` implementer -> `pi` Grok 4.7), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one),
 `pro` (`chatgpt`, `gemini`, `argon`), and `flow` (`jev-flow`). A `cli` place requires `instructions/<instructions>.md`
 (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), otherwise `hud_create` returns
 `unsupported_harness`. Quota or rate-limit failures mark the place exhausted in

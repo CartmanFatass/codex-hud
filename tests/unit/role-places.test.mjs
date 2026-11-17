@@ -369,6 +369,10 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   assert.ok(fbJob.job);
   const piCmd = f.commands().find((c) => c.command === 'pi-role' && c.args.includes('architect'));
   assert.ok(piCmd);
+
+  const alias = await f.call('hud_create', { role: 'architect', request_key: 'ora-alias', task: 'Alias question?' });
+  assert.ok(alias.job);
+  assert.equal((await f.call('hud_read', { job: alias.job })).role, 'oracle');
 });
 
 test('reviewer uses reviewer.md on CLI; sonic returns unsupported_harness', { timeout: 10000 }, async (t) => {

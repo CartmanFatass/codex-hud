@@ -5,7 +5,7 @@ test plans, review tiers, a full gate after every merge) produced a narrow, defe
 guards and tests. The data is in `docs/reviews/2026-11-10-test-volume-audit.md`; the decision is in
 `docs/handoff/STATE.md`. Earlier versions of this file are in git history.
 
-**The boundary is `docs/spec.md`.** Only the owner changes it. Nothing the spec rules out is built, whatever an
+**The boundary is `docs/spec.md`.** Only the owner decides what it says: an agent edits it only after telling the owner the change and the reason. Nothing the spec rules out is built, whatever an
 agent proposes.
 
 ## The loop (per milestone)
