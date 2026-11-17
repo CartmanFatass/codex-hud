@@ -122,6 +122,7 @@ export function renderParity(
         (git && settings.gitStatus.showAheadBehind ? bar.gitSync(git.ahead, git.behind) : ''),
     },
     quota: windows.length ? { windows } : undefined,
+    tps: t.tps,
     needs: work.needs,
     events: [...events(t, evidence.definitions ?? {}, d.showAgents, d.showSkills), ...work.events],
     loaded: {

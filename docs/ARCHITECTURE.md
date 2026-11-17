@@ -277,10 +277,11 @@ change-summary generator runs.
 ## 6. Rendering and input
 
 All three bars collect `BarFacts`; `render/layout/bar-fields.ts` fits and paints
-model/effort, context, repo/branch, client quota (pi cost in its ribbon), event notices
-and loaded counts. Missing facts disappear. Notices retain starts/completions/failures
-and Claude skill loads for three minutes, with open questions/approvals pinned.
-No tool-at-work line, clock or output rate appears in the bar. Styles are line,
+model/effort, context, repo/branch, client quota (pi cost in its ribbon), output rate
+(Claude and Codex; pi keeps its ribbon reading), event notices and loaded counts.
+Missing facts disappear. Notices retain starts/completions/failures and Claude skill loads
+for three minutes, with open questions/approvals pinned. No tool-at-work line or clock
+appears in the bar. Styles are line,
 p10k, gauge, tide, micro, stacked, headline and triptych; Stacked is two rows in
 Claude/pi, with the one-row Codex pane falling back to line.
 

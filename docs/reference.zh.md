@@ -464,18 +464,21 @@ Esc、Ctrl+C 或单击离开选择器，不写任何东西。选择器打开时�
 Claude 状态行、pi 页脚、Codex tmux 状态行共用事实渲染器：
 
 ```text
-model effort │ context %/window │ repo branch(dirty) │ quota │ notices ··· MCP n  skills n
+model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s │ notices ··· MCP n  skills n
 ```
 
 上下文十格，70% 前绿、70% 起黄、85% 起红，有数据时对齐客户端压缩窗口。
 Claude/Codex 只显示各自最紧额度窗口，蓝、75% 起品红、90% 起红；pi 用会话费用，位于编辑器右上条带，不在底部重复。
 缺失事实省略。代理／任务开始、完成、失败及 Claude 技能加载事件保留三分钟。
-待批准／待答问题固定显示。没有时钟、速率、任务数、hooks 数、当前工具或空闲回退文字。
+待批准／待答问题固定显示。没有时钟、任务数、hooks 数、当前工具或空闲回退文字。
+
+- Claude 状态行：`~N t/s` 根据转录中的输出词元数和从提示或工具结果到回复的耗时估算最新回复的速率。
+- Codex 状态行：`~N t/s` 显示从会话日志得出的现有输出速率估值。
 
 设置样式：`line`、`p10k`、`gauge`、`tide`、`micro`、`stacked`、`headline`、`triptych`。
 Stacked 在 Claude/pi 为两行，Codex 回退 line；Tide 底色需 truecolor。文字图标／无色仍保留含义。
-`barFields` 从 `model,context,project,quota,notice,loaded` 选择，不改变顺序。
-变窄先丢加载详情、表条、重置时间、项目细节，再考虑模型；通知按词截断，模型永不丢弃。
+`barFields` 从 `model,context,project,quota,tps,notice,loaded` 选择，不改变顺序。
+如果指定了字段列表，请加入 `tps` 来显示速率。窄栏优先省略速率；通知按词截断，模型永不丢弃。
 pi 顶条跟随样式，其它扩展状态保留。状态行仅英文。
 
 ### pi 控制

@@ -2,7 +2,7 @@
  * The bottom bar of all three clients (Claude's statusline, pi's footer, Codex's tmux bar), built in one place. A client
  * only collects its facts (`BarFacts`); this file words them, paints them in the chosen style and fits them to one line.
  *
- *   model effort │ context %/window │ repo branch │ quota │ notice zone ········ MCP n  skills n
+ *   model effort │ context %/window │ repo branch │ quota │ ~N t/s │ notice zone ········ MCP n  skills n
  *
  * Fields a client cannot supply are left out, never shown as zero. The fields shown are `barFields`; the style is
  * `barStyle`: `│` separators (`line`), or powerline capsules (`p10k`: each segment padded by a space on its own
@@ -80,6 +80,8 @@ export interface BarFacts {
   project?: { name: string; branch: string | null; marks?: string; dirty?: boolean };
   /** Usage windows, or one reading of its own (`credits 31.8K`, pi's `$0.420`). */
   quota?: { windows: Array<{ label: string; percent: number; reset?: string }> } | { label?: string; text: string };
+  /** Latest available output-rate estimate, in tokens per second. */
+  tps?: number;
   /** What needs the owner now (an approval, a job's question): pinned while it is open. */
   needs?: string[];
   events?: BarEvent[];
@@ -246,6 +248,12 @@ function quotaSeg(q: NonNullable<BarFacts['quota']>): Seg {
     ink: worst === 'usage' ? P10K.quota : P10K[worst === 'usageHigh' ? 'warn' : (worst as 'bad')],
     at: 0,
   };
+}
+
+function tpsSeg(rate: number | undefined): Seg | null {
+  if (rate === undefined || !Number.isFinite(rate) || rate <= 0) return null;
+  const reading = rate >= 0.05 ? rate.toFixed(1) : rate.toPrecision(1);
+  return { id: 'tps', forms: [[[`~${reading} t/s`, 'value']]], ink: P10K.info, at: 0 };
 }
 
 /** What the client loaded; pi's extension words go first, before the counts. */
@@ -567,6 +575,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     on.has('context') && facts.context ? contextSeg(facts.context) : null,
     on.has('project') && facts.project?.name ? projectSeg(facts.project) : null,
     on.has('quota') && facts.quota ? quotaSeg(facts.quota) : null,
+    on.has('tps') ? tpsSeg(facts.tps) : null,
   ];
   // Micro tells who (model, repo) before the meters.
   if (style === 'micro') fields.splice(1, 0, ...fields.splice(2, 1));
@@ -793,6 +802,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
  */
 const LADDER: BarField[] = [
   'loaded',
+  'tps',
   'context',
   'quota',
   'quota',
@@ -827,6 +837,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     on.has('context') && facts.context ? contextSeg(facts.context) : null,
     on.has('project') && facts.project?.name ? projectSeg(facts.project) : null,
     on.has('quota') && facts.quota ? quotaSeg(facts.quota) : null,
+    on.has('tps') ? tpsSeg(facts.tps) : null,
     zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null,
   ].filter((seg): seg is Seg => seg !== null);
   const right = on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null;

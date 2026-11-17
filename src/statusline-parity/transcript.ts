@@ -55,8 +55,13 @@ interface State {
   compactPostTokens?: number;
   results: { id: string; pos: number; at?: number; model?: string; notified: boolean }[];
   resultFloor: number;
+  speed: {
+    prompt?: { id: string; at: number };
+    response?: { id?: string; startedAt?: number; tps?: number };
+  };
 }
 export interface TranscriptView {
+  tps?: number;
   agents: Agent[];
   todos: Todo[];
   skills: string[];
@@ -76,7 +81,37 @@ function status(v: unknown): string | undefined {
   if (['completed', 'complete', 'done'].includes(String(v))) return 'completed';
   return undefined;
 }
-function reduce(s: State, raw: string, pos: number): void {
+/** Approximate one request's wall time from its parent prompt/tool result to the latest assistant fragment. */
+function observeSpeed(s: State['speed'], e: Record<string, unknown>, message: Record<string, unknown>, time: number) {
+  if (e.isSidechain === true) return;
+  if (e.type === 'user') {
+    const id = e.uuid;
+    s.prompt =
+      typeof id === 'string' && id.length > 0 && id.length <= 128 && Number.isFinite(time)
+        ? { id, at: time }
+        : undefined;
+  } else if (e.type === 'assistant') {
+    const id = typeof message.id === 'string' && message.id.length <= 128 ? message.id : undefined;
+    // Claude can emit several records with the same message ID and usage. Do not sum them.
+    const startedAt =
+      s.prompt && e.parentUuid === s.prompt.id
+        ? s.prompt.at
+        : id && id === s.response?.id
+          ? s.response.startedAt
+          : undefined;
+    const elapsed = time - (startedAt ?? NaN);
+    const tokens = record(message.usage).output_tokens;
+    s.response = {
+      id,
+      startedAt,
+      tps:
+        typeof tokens === 'number' && Number.isSafeInteger(tokens) && tokens > 0 && elapsed > 0
+          ? (tokens * 1000) / elapsed
+          : undefined,
+    };
+  }
+}
+function reduce(s: State, raw: string, pos: number, latest = true): void {
   let e: Record<string, unknown>;
   try {
     e = record(JSON.parse(raw));
@@ -138,6 +173,7 @@ function reduce(s: State, raw: string, pos: number): void {
   // Only conversation records carry tool calls: Claude Code's `api-request-blob` lines echo them without a timestamp
   // and would reset an agent's start to 0 or reopen a finished one.
   const conversation = e.type === 'assistant' || e.type === 'user';
+  if (latest && conversation) observeSpeed(s.speed, e, message, time);
   const blocks = conversation && Array.isArray(message.content) ? message.content : [];
   for (const item of blocks) {
     const b = record(item),
@@ -240,6 +276,7 @@ function view(s: State, bytesRead: number): TranscriptView {
     }
   }
   return {
+    tps: s.speed.response?.tps,
     agents: s.agents.filter((a) => a.startPos >= 0),
     todos,
     skills: [...s.skills].sort((a, b) => a.pos - b.pos).map((x) => x.name),
@@ -271,6 +308,7 @@ export function collectTranscript(file: string, env: NodeJS.ProcessEnv): Transcr
     effortPos: -1,
     results: [],
     resultFloor: -1,
+    speed: {},
   };
   let fd: number | undefined;
   try {
@@ -282,12 +320,12 @@ export function collectTranscript(file: string, env: NodeJS.ProcessEnv): Transcr
     const cache = cachePath(env, 'transcript', file);
     let s = cached<State>(cache);
     const reset =
-      !s ||
+      !s?.speed ||
       !Array.isArray(s.results) ||
       s.identity !== identity ||
       stat.size < s.size ||
       (stat.size === s.size && stat.mtimeMs !== s.mtime);
-    if (reset) s = { ...empty, identity };
+    if (reset) s = { ...empty, identity, speed: {} };
     if (!s) s = empty;
     let bytesRead = 0;
     const read = (start: number, end: number) => {
@@ -309,7 +347,8 @@ export function collectTranscript(file: string, env: NodeJS.ProcessEnv): Transcr
       let line = from;
       while (from < b.length) {
         if (b[from] === 10) {
-          if (from - line <= MAX_LINE) reduce(s!, b.subarray(line, from).toString('utf8'), start + line);
+          // Only the ordered tail/appends can determine the latest response; never pair across head/backfill gaps.
+          if (from - line <= MAX_LINE) reduce(s!, b.subarray(line, from).toString('utf8'), start + line, keepTail);
           line = from + 1;
         }
         from++;

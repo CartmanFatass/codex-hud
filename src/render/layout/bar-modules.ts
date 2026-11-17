@@ -66,6 +66,7 @@ export function barFacts(data: HudData, nowMs: number): BarFacts {
               reset: w.resetsAt && !w.resetDue ? span(Math.ceil((w.resetsAt.getTime() - nowMs) / 60000)) : '',
             })),
           },
+    tps: data.outputRate?.tokensPerSecond,
     needs: [
       ...alertParts(
         collectAttention(data, nowMs).filter((item) => item.kind === 'approval'),

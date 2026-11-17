@@ -32,7 +32,7 @@ export function activeBarStyle(): BarStyle {
   return active.theme === 'none' ? 'line' : barStyleOf(active.barStyle);
 }
 /** The bar's fields in their fixed order; `loaded` is the right cluster (MCP, skills, pi's extension words). */
-export const BAR_FIELDS = ['model', 'context', 'project', 'quota', 'notice', 'loaded'] as const;
+export const BAR_FIELDS = ['model', 'context', 'project', 'quota', 'tps', 'notice', 'loaded'] as const;
 export type BarField = (typeof BAR_FIELDS)[number];
 /** Shown unless the settings say otherwise: all of them. */
 export const DEFAULT_BAR_FIELDS: readonly BarField[] = BAR_FIELDS;
