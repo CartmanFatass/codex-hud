@@ -67,7 +67,9 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    plugin is off everywhere (Claude, Codex, pi); a curated few of Matt Pocock's skills ship in `integrations/skills/`,
    adapted so the main session decides and HUD roles execute: `grill-with-docs` (with `grilling` and
    `domain-modeling`), `to-spec` and `to-tickets` for main sessions (user-invoked, installed for Claude and Codex, not
-   pi); `tdd` and `diagnosing-bugs` for pi workers, linked per project through `hud setup`. Each names the upstream
+   pi); `tdd` and `diagnosing-bugs` for pi workers, linked per project through `hud setup`. `codebase-design` (owner, 2026-11-17) is adapted for the
+   `oracle` role: every oracle place loads it; a role place may name skills on any harness (a CLI worker is told each
+   skill's path), and a bare skill name resolves to the project's `.hud/skills` first, then to the skills the HUD ships. Each names the upstream
    commit it came from; we own the adapted text and do not track upstream. `hud-handoff` (the fixed-form handoff to a fresh session, on the six-tool surface) is installed for
    Claude and Codex beside `hud-delegate` and `hud-setup` (owner, 2026-11-17). The rest are backups listed in the Skills
    tab. Ticket tracking: a project's tracker may be GitHub Issues, mirrored one way into `.scratch/` for the Project
