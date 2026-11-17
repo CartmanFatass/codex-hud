@@ -41,6 +41,9 @@ const ZH: Record<string, string> = {
   Skills: '技能',
   'Backup skills': '备用技能',
   'Skills catalog unavailable': '技能目录缺失或无法读取',
+  'No backup skills listed': '目录里没有备用技能',
+  'Matt Pocock skills kept as backups, not installed. Ask the main session to read one when you want it.':
+    'Matt Pocock 的备用技能，未安装。想用哪一个，让主会话去读它的上游原文。',
   'Home · Project · Skills': '首页 · 项目 · 技能',
   '↑↓ scroll  ←→ tab  , settings  ? help': '↑↓ 滚动  ←→ 切页  , 设置  ? 帮助',
   outcome: '结果',

@@ -161,7 +161,7 @@ export function renderWorkboardFrame(
       : inspector
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
         : skills
-          ? skillsRows(input.backupSkills, width)
+          ? skillsRows(input.backupSkills, width, Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)))
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)))

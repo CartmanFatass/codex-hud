@@ -522,10 +522,15 @@ gutter keeps keys in the panel until Esc. Help lists current shortcuts.
 
 Skills lists the shipped backup-skills catalog (`integrations/skills/backup-skills.json`):
 Matt Pocock skills not installed, which the main session can read from upstream when
-asked. Each row has the name and a one-line description in the panel's language;
-long rows truncate, and movement keys or the wheel scroll. Display only: Enter and
-clicking a row do nothing; no install state or adopted/dropped skills. A missing or
-unreadable catalog shows a muted notice.
+asked. Under a `Backup skills` header with the count, a muted line says what the list
+is, then one row per skill: the name in one aligned column and its one-line description
+in the panel's language. A description that does not fit ends in an ellipsis, cut at a
+word where it can; a name over a third of the panel (18 cells at least, so only
+`improve-codebase-architecture` at the default width) is cut in the middle, and a
+panel too narrow for any description shows names alone. On a short panel the intro goes
+first, then the blank row above the header; movement keys or the wheel scroll the rest.
+Display only: Enter and clicking a row do nothing; no install state or adopted/dropped
+skills. A missing or unreadable catalog shows a muted notice, an empty one another.
 
 ### Inspector
 
