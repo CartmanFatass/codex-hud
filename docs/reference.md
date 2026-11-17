@@ -527,14 +527,17 @@ gutter keeps keys in the panel until Esc. Help lists current shortcuts.
 Skills lists the shipped backup-skills catalog (`integrations/skills/backup-skills.json`):
 Matt Pocock skills not installed, which the main session can read from upstream when
 asked. Under a `Backup skills` header with the count, a muted line says what the list
-is, then one row per skill: the name in one aligned column and its one-line description
-in the panel's language. A description that does not fit ends in an ellipsis, cut at a
-word where it can; a name over a third of the panel (18 cells at least, so only
-`improve-codebase-architecture` at the default width) is cut in the middle, and a
-panel too narrow for any description shows names alone. On a short panel the intro goes
-first, then the blank row above the header; movement keys or the wheel scroll the rest.
-Display only: Enter and clicking a row do nothing; no install state or adopted/dropped
-skills. A missing or unreadable catalog shows a muted notice, an empty one another.
+is, then each skill's name and its whole one-line description in the panel's language.
+Descriptions wrap, never cut, so the tab reads at a 40-column panel. A panel under 103
+columns (with the shipped names) stacks them: the name in the identifier ink on its own
+row, the description under it two cells further in, nearly the panel's width. One of 103
+or more puts the description beside the name in its own column, wrapped rows hanging
+under the first. A name longer than the row breaks after a hyphen. The wrapped list is longer
+than most panels, so the intro stays and the tab scrolls (movement keys or the wheel);
+only where dropping the intro, then the blank row above the header, lets the whole tab
+fit does it go. Display only: Enter and clicking a row do nothing; no install state or
+adopted/dropped skills. A missing or unreadable catalog shows a muted notice, an empty
+one another.
 
 ### Inspector
 

@@ -61,7 +61,7 @@ test('Skills renders shipped catalog in EN/ZH, fits narrow rows, scrolls, and ha
         for (const line of short.lines) assert.equal(visualLength(line), width);
         short = render(key(short, 'end').state, { width, height: 6 });
         assert.equal(short.panes[0].offset, short.panes[0].contentLength - short.panes[0].height);
-        assert.match(short.lines.map(stripAnsi).join('\n'), /writing-/);
+        assert.ok(short.lines.map(stripAnsi).join('\n').includes(catalog.at(-1)[lang].split(/\s+/).at(-1)), 'the end of the last description');
         short = render(key(short, 'home').state, { width, height: 6 });
         assert.equal(short.panes[0].offset, 0);
         assert.ok(send(short, { type: 'mouse', button: 'wheel-down', x: 0, y: 3 }).state.skillsScroll > 0);
@@ -81,82 +81,113 @@ test('a missing or unreadable Skills catalog renders one muted notice, not a cra
     for (const path of [new URL('../fixtures/no-skills-catalog.json', import.meta.url), new URL('../fixtures/', import.meta.url)]) {
       const backupSkills = readBackupSkills(path);
       assert.equal(backupSkills, null);
-      const frame = render(skills(), { backupSkills });
-      const last = frame.workboard.rows.at(-1);
-      assert.equal(stripAnsi(last.text).trim(), 'Skills catalog unavailable');
-      assert.ok(last.text.includes(theme.board.muted('Skills catalog unavailable')));
-      assert.ok(frame.workboard.rows.every((r) => !r.item && !r.files));
-      assert.match(stripAnsi(frame.lines[2]), /^Backup skills ─+$/, 'no count over a catalog that was not read');
-      assert.ok(frame.lines.map(stripAnsi).join('\n').includes('Skills catalog unavailable'));
+      for (const width of [40, 160]) {
+        const frame = render(skills(), { backupSkills, width });
+        const last = frame.workboard.rows.at(-1);
+        assert.equal(stripAnsi(last.text).trim(), 'Skills catalog unavailable');
+        assert.ok(last.text.includes(theme.board.muted('Skills catalog unavailable')));
+        assert.ok(frame.workboard.rows.every((r) => !r.item && !r.files));
+        assert.match(stripAnsi(frame.lines[2]), /^Backup skills ─+$/, 'no count over a catalog that was not read');
+        assert.ok(frame.lines.map(stripAnsi).join('\n').includes('Skills catalog unavailable'));
+        for (const line of frame.lines) assert.equal(visualLength(line), width);
+      }
+      // Narrower than the notice, it wraps like the rest of the tab instead of being cut.
+      const narrow = render(skills(), { backupSkills, width: 20 }).workboard.rows.map((r) => stripAnsi(r.text).trim());
+      assert.ok(narrow.includes('Skills catalog') && narrow.includes('unavailable'));
     }
   } finally { setDisplayConfig(display); setLanguage(before); }
 });
 
-const rowsOf = (frame, lang, count = catalog.length) => {
-  const lines = frame.lines.map(stripAnsi);
-  const at = lines.findIndex((l) => lines.indexOf(l) > 1 && catalog[0].name === l.trim().split(/\s+/)[0]);
-  assert.ok(at > 0, `${lang}: first skill row found`);
-  return lines.slice(at, at + count);
+/**
+ * The tab's skills as the panel painted them: a name in the identifier ink, then the description rows (the first of them
+ * on the name's row when the layout is side by side). A name too long for its row wraps onto the next, with no
+ * description between, and is joined back here.
+ */
+const skillBlocks = (frame) => {
+  const blocks = [], ink = /^ {2}\x1b\[[0-9;]*m([^\x1b]*)\x1b\[[0-9;]*m( *)(.*)$/;
+  for (const raw of frame.workboard.rows.map((r) => r.text)) {
+    const m = ink.exec(raw), line = stripAnsi(raw).trimEnd(), last = blocks.at(-1);
+    if (m && raw.startsWith('  ' + theme.board.identifier(m[1]))) {
+      assert.doesNotMatch(m[3], /\x1b/, 'the description is plain text');
+      if (last && !last.desc.length && !m[3]) last.name += m[1];
+      else blocks.push({ name: m[1], side: !!m[3], column: 2 + visualLength(m[1]) + m[2].length, desc: m[3] ? [m[3]] : [], indents: m[3] ? [2 + visualLength(m[1]) + m[2].length] : [] });
+    } else if (last && line.trim()) {
+      last.desc.push(line.trim());
+      last.indents.push(line.length - line.trimStart().length);
+    }
+  }
+  return blocks;
 };
+/** The width at which the side-by-side layout starts for the shipped catalog: the longest name, the description column and the gaps. */
+const sideFrom = 2 + Math.max(...catalog.map((s) => s.name.length)) + 2 + 70;
+const stripSpace = (text) => text.replace(/\s+/g, '');
 
-test('Skills lays out aligned names and one-line descriptions at 40, 80 and 160 columns in EN and ZH', () => {
+test('Skills wraps each whole description under its name at every width from 12 to 170 columns in EN and ZH, never cutting', () => {
   const before = setLanguage('en'), display = setDisplayConfig({ theme: 'terminal' });
   try {
     for (const lang of ['en', 'zh']) {
       setLanguage(lang);
-      for (const width of [40, 80, 160]) {
+      for (let width = 12; width <= 170; width++) {
         const frame = render(skills(), { width, height: 24 });
         for (const line of frame.lines) assert.equal(visualLength(line), width, `${lang} ${width}`);
-        const lines = frame.lines.map(stripAnsi);
-        assert.ok(lines[3].startsWith('  ') && lines[3].trim(), 'the intro sits under the header, indented');
-        const rows = rowsOf(frame, lang);
-        assert.equal(rows.length, catalog.length);
-        // One row a skill; the description starts in one column on every row.
-        const starts = rows.map((row) => /^( {2}\S+ {2,})/.exec(row)[1].length);
-        assert.equal(new Set(starts).size, 1, `${lang} ${width}: one description column`);
-        rows.forEach((row, i) => {
-          const skill = catalog[i], text = skill[lang];
-          assert.ok(row.startsWith('  ' + (width >= 80 ? skill.name : skill.name.slice(0, 4))), `${lang} ${width}: ${skill.name}`);
-          const description = row.slice(starts[0]).trimEnd();
-          if (visualLength(description) < visualLength(text)) {
-            assert.ok(description.endsWith('…'), `${lang} ${width}: a cut description says so`);
-            assert.ok(text.startsWith(description.slice(0, -1).replace(/[\s,;:]+$/, '')), `${lang} ${width}: a cut keeps the text's start`);
-          } else assert.equal(description, text);
-        });
-        if (width >= 80) assert.ok(rows.every((row, i) => row.includes(catalog[i].name)), 'whole names where the panel has room');
-        if (width === 160) assert.ok(rows.every((row, i) => row.includes(catalog[i][lang])), 'whole descriptions on a wide panel');
-        if (width === 40) {
-          const long = rows[catalog.findIndex((s) => s.name === 'improve-codebase-architecture')];
-          assert.match(long, /^ {2}improve-cod…ecture {2}\S/, 'only the one over-long name is cut, in the middle');
-          assert.ok(rows.every((row, i) => i === 8 || row.includes(catalog[i].name)));
+        assert.ok(frame.workboard.rows.slice(2).every((r) => !stripAnsi(r.text).includes('…')), `${lang} ${width}: nothing under the header is cut`);
+        const blocks = skillBlocks(frame);
+        assert.deepEqual(blocks.map((b) => b.name), catalog.map((s) => s.name), `${lang} ${width}: whole names, in order`);
+        blocks.forEach((b, i) => assert.equal(stripSpace(b.desc.join('')), stripSpace(catalog[i][lang]), `${lang} ${width}: ${b.name} in full`));
+        if (width < sideFrom) {
+          assert.ok(blocks.every((b) => !b.side && b.indents.every((n) => n === 4)), `${lang} ${width}: the description under its name, two cells in`);
+        } else {
+          assert.equal(new Set(blocks.map((b) => b.column)).size, 1, `${lang} ${width}: one description column`);
+          assert.ok(blocks.every((b) => b.side && b.indents.every((n) => n === b.column)), `${lang} ${width}: wrapped rows hang under the first`);
         }
-        assert.ok(rows.every((row, i) => frame.lines[lines.indexOf(row)].includes(theme.board.identifier(row.trim().split(/\s+/)[0]))), 'names are the identifier ink');
-        for (const line of frame.lines.slice(1, -1)) assert.doesNotMatch(line, /\x1b\[48;/);
       }
     }
   } finally { setDisplayConfig(display); setLanguage(before); }
 });
 
-test('Skills drops its intro, then the blank row, before a short panel scrolls; a narrow one shows names alone', () => {
+test('Skills at 40 columns: a description wraps in 36 cells under its name, names stand alone and the tab scrolls', () => {
+  const before = setLanguage('en'), display = setDisplayConfig({ theme: 'terminal' });
+  try {
+    for (const lang of ['en', 'zh']) {
+      setLanguage(lang);
+      const frame = render(skills(), { width: 40, height: 24 }), blocks = skillBlocks(frame), lines = frame.lines.map(stripAnsi);
+      assert.equal(blocks.length, catalog.length);
+      assert.ok(lines[3].startsWith('  ') && lines[3].trim(), 'the intro sits under the header, indented, and is kept on a panel the list cannot fit');
+      assert.ok(blocks.every((b, i) => !b.side && b.desc.length >= 1 && b.desc.every((row) => visualLength(row) <= 36) && b.name === catalog[i].name));
+      assert.ok(blocks.some((b) => b.desc.length >= 2), 'long descriptions take more than one row');
+      assert.ok(frame.panes[0].contentLength > frame.panes[0].height, 'wrapped, the tab is longer than the panel and scrolls');
+      for (const line of frame.lines.slice(1, -1)) assert.doesNotMatch(line, /\x1b\[48;/);
+    }
+    // A name over the row (29 cells at 30 columns, which leave 28) breaks after a hyphen, whole.
+    setLanguage('en');
+    const rows = render(skills(), { width: 30, height: 24 }).workboard.rows.map((r) => stripAnsi(r.text).trimEnd());
+    const at = rows.indexOf('  improve-codebase-');
+    assert.equal(rows[at + 1], '  architecture');
+  } finally { setDisplayConfig(display); setLanguage(before); }
+});
+
+test('Skills drops its intro, then the blank row, only when that lets the tab fit; otherwise it scrolls with its intro', () => {
   const before = setLanguage('en'), display = setDisplayConfig({ theme: 'terminal' });
   try {
     const text = (frame) => frame.lines.map(stripAnsi);
     const intro = /Matt Pocock skills kept as backups/;
-    // The whole tab is 16 rows (blank, header, intro, blank, 12 skills): the intro goes when a panel has fewer to give, the blank row above the header below 14.
+    // At 160 columns the tab is 16 rows (blank, header, intro, blank, 12 skills); `room` is the panel's height less 2.
     assert.match(text(render(skills(), { width: 160, height: 18 })).join('\n'), intro);
     const noIntro = render(skills(), { width: 160, height: 16 });
     assert.doesNotMatch(text(noIntro).join('\n'), intro);
     assert.equal(text(noIntro)[1].trim(), '');
     assert.match(text(noIntro)[2], /^Backup skills/);
-    const tight = render(skills(), { width: 160, height: 14 });
+    const tight = render(skills(), { width: 160, height: 15 });
     assert.match(text(tight)[1], /^Backup skills/);
     assert.equal(tight.panes[0].contentLength, catalog.length + 1);
-    // A panel too narrow for any description keeps the names, cut in the middle if they must be.
-    for (const width of [12, 16, 20]) {
-      const rows = rowsOf(render(skills(), { width, height: 24 }), `en ${width}`);
-      assert.ok(rows.every((row) => !/[a-z] {2,}\S/.test(row.trim().replace(/…/g, 'x'))), `${width}: names only`);
-      assert.ok(rows.some((row) => row.trim().includes('…')) || width >= 30);
-    }
+    // Too short for even that: the tab keeps its shape and scrolls.
+    const scrolls = render(skills(), { width: 160, height: 8 });
+    assert.match(text(scrolls).join('\n'), intro);
+    assert.equal(scrolls.panes[0].contentLength, catalog.length + 4);
+    // At 40 columns the wrapped list never fits a panel this size, so the intro stays.
+    const narrow = render(skills(), { width: 40, height: 30 });
+    assert.match(text(narrow).join('\n'), intro);
+    assert.equal(text(narrow)[1].trim(), '');
   } finally { setDisplayConfig(display); setLanguage(before); }
 });
 
@@ -165,9 +196,13 @@ test('Skills in every theme uses theme inks only, and with no colour emits no es
   try {
     for (const name of THEMES) {
       setDisplayConfig({ theme: name });
-      const lines = render(skills(), { width: 80, height: 24 }).lines;
-      if (name === 'none') for (const line of lines) assert.doesNotMatch(line, /\x1b/);
-      else assert.ok(lines.some((l) => l.includes(theme.board.identifier('wayfinder'))), name);
+      for (const width of [40, 80]) {
+        const frame = render(skills(), { width, height: 24 }), lines = frame.lines;
+        if (name === 'none') for (const line of lines) assert.doesNotMatch(line, /\x1b/);
+        else assert.ok(lines.some((l) => l.includes(theme.board.identifier('wayfinder'))), name);
+        const all = stripSpace(frame.workboard.rows.map((r) => stripAnsi(r.text)).join(''));
+        for (const skill of catalog) assert.ok(all.includes(stripSpace(skill.en)), `${name} ${width}: ${skill.name} in full`);
+      }
     }
     setDisplayConfig({ theme: 'terminal' });
     // A catalog with no skills is not the unreadable one.
