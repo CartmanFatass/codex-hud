@@ -72,6 +72,7 @@ hud watch                 # pending questions and actionable events (--verbose: 
 hud setup --detect        # print this project's worker setup as JSON
 hud setup --apply PLAN    # write .hud/ from a plan
 hud setup --remove        # drop project registration; leave .hud/
+hud tickets sync [--cwd DIR]  # mirror GitHub parent/sub-issues into .scratch/
 hud codex --model gpt-5    # Codex arguments pass through to the tmux launcher
 ```
 
@@ -349,6 +350,10 @@ on a row opens STATE.md; on a fold, Enter folds and `o` folds only where the row
 
 Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`, at most 16 features ×64 files,
 64 KiB each. Required: matching `# NN: title`, `**Blocked by:**`, `**Status:**`.
+`hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way into `.scratch/` via `gh`
+(open parent issues with sub-issues, plus already-mirrored parents so closed features
+receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files
+with a generated marker; it refuses if `.scratch/` holds non-generated ticket files.
 Done means done/closed/complete status or all checkboxes checked (at least one).
 Otherwise unfinished/unresolved dependencies block; no blockers means ready.
 Numbers/titles resolve within that feature; unknown status text stays dim.

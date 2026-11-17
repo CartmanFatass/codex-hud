@@ -62,6 +62,7 @@ hud watch                 # 本窗格 HUD 任务每次状态变化一行（--all
 hud setup --detect        # 打印本项目的工作者配置 JSON
 hud setup --apply PLAN    # 按计划写入 .hud/
 hud setup --remove        # 去掉项目注册，留下 .hud/
+hud tickets sync [--cwd DIR]  # 单向将 GitHub 父子议题镜像到 .scratch/
 hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 ```
 
@@ -239,6 +240,8 @@ Esc 或点击面包屑回到总览，光标停在刚离开的那一页。每页�
 
 工单读取 `.scratch/<feature>/issues/<NN>-<slug>.md`，最多 16 功能 ×64 文件，每份 64 KiB。
 必须有匹配编号的 `# NN: title`、`**Blocked by:**`、`**Status:**`。
+`hud tickets sync [--cwd DIR]` 通过 `gh` 将 GitHub 议题单向镜像到 `.scratch/`
+（包含有子议题的开放父议题，以及已存在镜像目录的父议题以更新关闭后的最终状态），写入 `.gitignore`（`*`）、`spec.md` 与带生成标记的工单文件；若 `.scratch/` 中存在非生成的本地工单文件则拒绝写入。
 状态 done/closed/complete，或至少一个复选框且全部勾选，即完成；否则未完／未解析依赖为受阻，无依赖为就绪。
 编号／标题只在同功能内解析，未知状态原样暗显。包名和工单编号／文件名匹配的任务补充角色、状态与年龄，
 不决定完成。最新 64 目录的任务查询与切片共享。
