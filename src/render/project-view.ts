@@ -25,11 +25,11 @@ export function progressSegments(counts: ProjectSnapshot['counts'], width: numbe
     return segment;
   });
 }
-const legendItem = (data: ProjectSnapshot, s: SliceState) =>
-  sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${data.counts[s]}`);
+const legendItem = (counts: ProjectSnapshot['counts'], s: SliceState) =>
+  sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${counts[s]}`);
 const barText = (data: Pick<ProjectSnapshot, 'counts'>, width: number) => progressSegments(data.counts, width).map(({ state, width: cells }) =>
   sliceInk(state)(mark(state === 'todo' || state === 'dropped' ? '░' : state === 'try' ? '▓' : '█', '#').repeat(cells))).join('');
-const HOME_BLOCK = 60, HOME_TICKETS = 6;
+const HOME_BLOCK = 60, HOME_TICKETS = 6, HOME_WAITING = 5;
 /** Legend entries as a grid of aligned columns, in the fewest rows that fit `room`: a split never leaves one entry alone. */
 function legendGrid(entries: string[], room: number): { lines: string[]; width: number } {
   const widths = entries.map(visualLength);
@@ -42,18 +42,31 @@ function legendGrid(entries: string[], room: number): { lines: string[]; width: 
   }
   return { lines: [], width: 0 };
 }
-/** Only whole spare rows; cards and decisions have already claimed their space. Shrinks from the bottom up: tickets, legend, bar, summary. */
+/**
+ * Only whole spare rows; cards and decisions have already claimed their space. The counts are the current milestone's, as on the hub
+ * (the whole ledger when there is none, and the title says so). Shrinks from the bottom up: tickets, the summary's wrapped rows,
+ * legend, summary, then the bar, then the block.
+ */
 export function homeProgressRows(data: ProjectSnapshot | undefined, width: number, spare: number, gap = true): MonitorRow[] {
   if (!data || spare < 3 || (!data.summary && !data.ladder.current && !data.tickets.length)) return [];
   const row = (text: string, id = 'progress'): MonitorRow => ({ text: fit(text, width), item: `home-progress:${id}` });
-  const states = SLICE_STATES.filter((s) => data.counts[s]);
-  const legend = legendGrid(states.map((s) => legendItem(data, s)), Math.min(width - 2, HOME_BLOCK));
-  const rows = [...(gap ? [boardRow('')] : []),
-    { ...section(t('Progress'), width, data.ladder.current ? `${t('Milestone')} ${monitorText(data.ladder.current)}` : ''), item: 'home-progress:progress' },
-    ...(data.summary ? [row('  ' + monitorText(data.summary))] : []),
-    ...(states.length ? [row('  ' + barText(data, Math.max(0, Math.min(width - 2, Math.max(24, legend.width)))))] : [])].slice(0, spare);
-  if (rows.length + legend.lines.length > spare) return rows;
-  rows.push(...legend.lines.map((line) => row('  ' + line)));
+  const cur = currentRows(data), counts = cur.counts, states = SLICE_STATES.filter((s) => counts[s]);
+  const legend = legendGrid(states.map((s) => legendItem(counts, s)), Math.min(width - 2, HOME_BLOCK));
+  const summary = data.summary ? clampLines(data.summary, width - 2, 3).lines : [];
+  const milestone = data.ladder.current && (cur.whole && cur.rows.length ? '' : data.ladder.current);
+  const head = section(t('Progress'), width, milestone ? `${t('Milestone')} ${monitorText(milestone)}` : cur.rows.length ? t('All slices') : '');
+  // What the block keeps as it shrinks: the bar and the first summary row, then the legend, then the summary's other rows.
+  let room = spare - (gap ? 1 : 0) - 1;
+  const bar = states.length && room > 0 ? (room--, 1) : 0, first = summary.length && room > 0 ? (room--, 1) : 0;
+  const legendRows = bar && legend.lines.length <= room ? legend.lines : [];
+  room -= legendRows.length;
+  const more = first ? Math.min(summary.length - 1, room) : 0;
+  room -= more;
+  const rows = [...(gap ? [boardRow('')] : []), { ...head, item: 'home-progress:progress' },
+    ...summary.slice(0, first + more).map((line) => row('  ' + line)),
+    ...(bar ? [row('  ' + barText({ counts }, Math.max(0, Math.min(width - 2, Math.max(24, legend.width)))))] : []),
+    ...legendRows.map((line) => row('  ' + line))];
+  if (bar && !legendRows.length) return rows;
   const rank = { working: 0, ready: 1, blocked: 2 } as Record<string, number>;
   for (const feature of data.tickets) {
     const open = feature.tickets.filter((r) => r.state in rank).sort((a, b) => rank[a.state] - rank[b.state]);
@@ -68,6 +81,37 @@ export function homeProgressRows(data: ProjectSnapshot | undefined, width: numbe
     if (cut) rows.push(row('  ' + theme.board.muted(t('+{n} more', { n: open.length - shown.length })), id));
   }
   return rows;
+}
+/**
+ * Home's spare rows, top to bottom: STATE's waiting items (a row each) and the newest landed slices under the cards, the progress block
+ * at the bottom. The block takes its rows first (its own order of shrinking is above); the two lists, waiting first, take what is left.
+ */
+export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, spare: number, now: number, gap = true): MonitorRow[] {
+  if (!data || spare < 1) return [];
+  const progress = homeProgressRows(data, width, spare, gap), out: MonitorRow[] = [], keep = progress.length + (progress.length && !gap ? 1 : 0);
+  // A list of at most `all.length` rows out of `total`; short of room it ends with `+N more` for those it does not show.
+  const list = (head: MonitorRow, id: string, all: MonitorRow[], total: number, room: number): MonitorRow[] => {
+    const slots = room - 1, item = `home-progress:${id}`;
+    if (slots < 1 || !all.length) return [];
+    const shown = all.slice(0, total > Math.min(slots, all.length) && slots > 2 ? slots - 1 : slots), hidden = total - shown.length;
+    return [{ ...head, item }, ...shown, ...(hidden > 0 && slots > 2 ? [{ text: fit('  ' + theme.board.muted(t('+{n} more', { n: hidden })), width), item }] : [])];
+  };
+  const lists = [
+    (room: number) => list(section(t('Waiting for you'), width, String(data.waiting.length)), 'waiting', data.waiting.slice(0, HOME_WAITING).map((r): MonitorRow => ({
+      ...itemRow(theme.board.attention('?'), monitorText(r.value), '', width), item: 'home-progress:waiting' })), data.waiting.length, room),
+    (room: number) => {
+      const landed = landedNewest(data).slice(0, width < 56 ? 3 : 5).map(({ r }): MonitorRow => ({
+        text: inline(`  ${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now), width), item: 'home-progress:latest' }));
+      return list(section(t('Latest'), width, t('newest first')), 'latest', landed, landed.length, room);
+    },
+  ];
+  // A blank row sets each list off from what is above it, and the last from the block (the block has its own when it was given one).
+  for (const make of lists) {
+    const lead = out.length || gap ? 1 : 0, block = make(spare - keep - out.length - lead);
+    if (block.length) out.push(...(lead ? [boardRow('')] : []), ...block);
+  }
+  const fill = (rows: MonitorRow[]) => [...out, ...Array.from({ length: spare - out.length - rows.length }, () => boardRow('')), ...rows];
+  return progress.length ? fill(out.length && !gap ? [boardRow(''), ...progress] : progress) : out;
 }
 export const PROJECT_PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'] as const;
 export type ProjectPage = (typeof PROJECT_PAGES)[number];

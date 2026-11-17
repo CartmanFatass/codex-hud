@@ -5,7 +5,7 @@ import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './moni
 import { boardInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
 import { skillsRows } from './skills-view.js';
-import { projectRows, homeProgressRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
+import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
@@ -164,10 +164,9 @@ export function renderWorkboardFrame(
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   if (home) {
-    // Progress sits at the bottom of the spare rows (owner): the work above keeps the room next to it.
-    const spare = height - 2 - rows.length,
-      progress = homeProgressRows(input.project, width, spare, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim());
-    if (progress.length) rows.push(...Array.from({ length: spare - progress.length }, () => boardRow('')), ...progress);
+    // The waiting items and the newest landed slices sit under the cards, progress at the bottom (owner): the work above keeps the room next to it.
+    const spare = height - 2 - rows.length;
+    rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim()));
   }
   if (state.boardAnchor?.startsWith('home-progress:') && !rows.some((r) => r.item === state.boardAnchor))
     state.boardAnchor = undefined;
@@ -259,7 +258,7 @@ export function renderWorkboardFrame(
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
   if (height > 1)
     frame.lines[height - 1] = footRow(
-      !home ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
+      !home || !done ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
       t(hints),
       width
     );

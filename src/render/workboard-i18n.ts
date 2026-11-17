@@ -12,6 +12,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Decided for you': '已替你决定',
   'Nothing needs you': '没有需要你处理的事',
   '{n} running': '{n} 运行中',
+  '{n} waiting for you': '{n} 项等你处理',
+  'All slices': '全部切片',
   'report ready': '报告待阅',
   asking: '提问中',
   blocked: '受阻',

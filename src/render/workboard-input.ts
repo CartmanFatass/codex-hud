@@ -296,7 +296,14 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.mainTab = 'project';
     // Home's block is the panel's own project's.
     useProject(undefined);
-    if (id === 'progress') return goProject('progress');
+    if (id === 'waiting') {
+      // The hub's Waiting block, with the cursor on its fold.
+      next.projectPage = undefined;
+      next.projectCursor = 'project:fold:waiting';
+      next.projectScroll = 0;
+      return;
+    }
+    if (id === 'progress' || id === 'latest') return goProject('progress');
     // A ticket row opens the Tickets page where it was left: its lanes cross features, so no feature row is there to rest on.
     goProject('tickets');
   };

@@ -284,11 +284,21 @@ older fold, visible with `a`. A separate chat call writes a short progress brief
 at Summary interval. No key/error means default order; a pending/failed brief keeps
 the last good text and valid ranking. Models off hides both.
 
-**Spare rows.** Cards/decisions get space first. Remaining rows show STATE's Now
-summary, six-state progress bar/legend and up to six open tickets per feature.
-Tickets shrink first as height falls, then legend, bar, summary and the block.
-Enter on the progress block opens the Project Progress page; on a ticket row, the
-Tickets page.
+**Top line.** `? 5 waiting for you · 0 running` counts STATE's "Waiting for the owner" items
+with the job questions (the same items as the Project tab's count); `✓ Nothing needs you`
+shows only when both are zero. With waiting items, Enter or a click opens the Project hub on its
+Waiting block. The footer's `✓ n done today` is absent at 0.
+
+**Spare rows.** Cards/decisions get space first. Remaining rows show, top to bottom: STATE's
+waiting items (a row each, up to five, then `+N more`), the newest landed slices (three at 38–55
+columns, five wider; Home reads no commit dates, so later ledger rows come first), then at the
+bottom the progress block: STATE's Now summary (up to three wrapped rows), a six-state progress
+bar/legend and up to six open tickets per feature. The block counts the current milestone's
+slices exactly as the Project hub does; with no current milestone it counts the whole ledger and
+is titled `All slices`. The block takes its rows before the two lists, which take what is left.
+As height falls the latest list shrinks first, then waiting, tickets, the summary's extra
+rows, legend, summary, bar and the block. Enter on the waiting block opens the hub's Waiting
+block, on the latest or progress block the Project Progress page; on a ticket row, the Tickets page.
 
 ## Project
 
