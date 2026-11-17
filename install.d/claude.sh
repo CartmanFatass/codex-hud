@@ -61,7 +61,7 @@ hud_ext_install() {
   fi
 
   mkdir -p -- "$config/skills" "$BIN_DIR"
-  for name in hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets; do
+  for name in hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets hud-build; do
     skill="$config/skills/$name"
     if [[ -L "$skill" || ! -e "$skill" ]]; then
       ln -sfn -- "$REPO/integrations/skills/$name" "$skill"

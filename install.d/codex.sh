@@ -56,7 +56,7 @@ hud_ext_install() {
   fi
 
   local name
-  for name in hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets; do
+  for name in hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets hud-build; do
     hud_codex_skill "$name"
   done
 }
@@ -69,7 +69,7 @@ hud_ext_uninstall() {
   fi
 
   local name skill
-  for name in hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets; do
+  for name in hud-delegate hud-setup hud-handoff grill-with-docs to-spec to-tickets hud-build; do
     skill="${CODEX_HOME:-$HOME/.codex}/skills/$name"
     if [[ -L "$skill" && "$(readlink -m "$skill")" == "$REPO/"* ]]; then
       rm -- "$skill"
