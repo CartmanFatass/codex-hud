@@ -1,5 +1,6 @@
 import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pane.js';
 import { ProjectCollector, projectShown } from './collectors/project-board.js';
+import { readBackupSkills } from './collectors/backup-skills.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
 import { editPlaces, placeItem } from './roles/role-control.js';
@@ -715,6 +716,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let repaintTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveDone = () => {};
 
+  const backupSkills = readBackupSkills();
   const render = () => {
     if (closed || (place && !collected)) return;
     syncPanelView();
@@ -759,6 +761,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           state,
           worktrees,
           project: shown.snapshot,
+          backupSkills,
           projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
           projects: listing(state) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
           error,

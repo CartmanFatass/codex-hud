@@ -1,6 +1,6 @@
 {
   "home-52-en-tall": [
-    " Home 1  Project 2                        models off",
+    " Home 1  Project 2  Skills                models off",
     "",
     "? imp · NATIVE-TREE                        asking 0m",
     "┃ Question: Which synthetic option?",
@@ -38,7 +38,7 @@
     "✓ 0 done today  ↑↓ move  ⏎ expand  o open  v inspect"
   ],
   "home-52-en-tickets-short": [
-    " Home 1  Project 2                        models off",
+    " Home 1  Project 2  Skills                models off",
     "",
     "? imp · NATIVE-TREE                        asking 0m",
     "┃ Question: Which synthetic option?",
@@ -71,7 +71,7 @@
     "✓ 0 done today  ↑↓ move  ⏎ expand  o open  v inspect"
   ],
   "home-52-en-legend-short": [
-    " Home 1  Project 2                        models off",
+    " Home 1  Project 2  Skills                models off",
     "",
     "? imp · NATIVE-TREE                        asking 0m",
     "┃ Question: Which synthetic option?",
@@ -101,7 +101,7 @@
     "✓ 0 done today  ↑↓ move  ⏎ expand  o open  v inspect"
   ],
   "home-52-en-bar-short": [
-    " Home 1  Project 2                        models off",
+    " Home 1  Project 2  Skills                models off",
     "",
     "? imp · NATIVE-TREE                        asking 0m",
     "┃ Question: Which synthetic option?",
@@ -129,7 +129,7 @@
     "✓ 0 done today  ↑↓ move  ⏎ expand  o open  v inspect"
   ],
   "home-52-en-gone": [
-    " Home 1  Project 2                        models off",
+    " Home 1  Project 2  Skills                models off",
     "",
     "? imp · NATIVE-TREE                        asking 0m",
     "┃ Question: Which synthetic option?",
@@ -155,7 +155,7 @@
     "✓ 0 done today  ↑↓ move  ⏎ expand  o open  v inspect"
   ],
   "home-52-zh-tall": [
-    " 首页 1  项目 2                              模型 关",
+    " 首页 1  项目 2  技能                        模型 关",
     "",
     "? imp · NATIVE-TREE                     提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -193,7 +193,7 @@
     "✓ 0 今日完成         ↑↓ 移动  ⏎ 展开  o 打开  v 详情"
   ],
   "home-52-zh-tickets-short": [
-    " 首页 1  项目 2                              模型 关",
+    " 首页 1  项目 2  技能                        模型 关",
     "",
     "? imp · NATIVE-TREE                     提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -226,7 +226,7 @@
     "✓ 0 今日完成         ↑↓ 移动  ⏎ 展开  o 打开  v 详情"
   ],
   "home-52-zh-legend-short": [
-    " 首页 1  项目 2                              模型 关",
+    " 首页 1  项目 2  技能                        模型 关",
     "",
     "? imp · NATIVE-TREE                     提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -256,7 +256,7 @@
     "✓ 0 今日完成         ↑↓ 移动  ⏎ 展开  o 打开  v 详情"
   ],
   "home-52-zh-bar-short": [
-    " 首页 1  项目 2                              模型 关",
+    " 首页 1  项目 2  技能                        模型 关",
     "",
     "? imp · NATIVE-TREE                     提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -284,7 +284,7 @@
     "✓ 0 今日完成         ↑↓ 移动  ⏎ 展开  o 打开  v 详情"
   ],
   "home-52-zh-gone": [
-    " 首页 1  项目 2                              模型 关",
+    " 首页 1  项目 2  技能                        模型 关",
     "",
     "? imp · NATIVE-TREE                     提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -310,7 +310,7 @@
     "✓ 0 今日完成         ↑↓ 移动  ⏎ 展开  o 打开  v 详情"
   ],
   "home-80-en-tall": [
-    " Home 1  Project 2                                                    models off",
+    " Home 1  Project 2  Skills                                            models off",
     "",
     "? imp · NATIVE-TREE                                                    asking 0m",
     "┃ Question: Which synthetic option?",
@@ -348,7 +348,7 @@
     "✓ 0 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "home-80-en-tickets-short": [
-    " Home 1  Project 2                                                    models off",
+    " Home 1  Project 2  Skills                                            models off",
     "",
     "? imp · NATIVE-TREE                                                    asking 0m",
     "┃ Question: Which synthetic option?",
@@ -381,7 +381,7 @@
     "✓ 0 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "home-80-en-legend-short": [
-    " Home 1  Project 2                                                    models off",
+    " Home 1  Project 2  Skills                                            models off",
     "",
     "? imp · NATIVE-TREE                                                    asking 0m",
     "┃ Question: Which synthetic option?",
@@ -411,7 +411,7 @@
     "✓ 0 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "home-80-en-bar-short": [
-    " Home 1  Project 2                                                    models off",
+    " Home 1  Project 2  Skills                                            models off",
     "",
     "? imp · NATIVE-TREE                                                    asking 0m",
     "┃ Question: Which synthetic option?",
@@ -439,7 +439,7 @@
     "✓ 0 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "home-80-en-gone": [
-    " Home 1  Project 2                                                    models off",
+    " Home 1  Project 2  Skills                                            models off",
     "",
     "? imp · NATIVE-TREE                                                    asking 0m",
     "┃ Question: Which synthetic option?",
@@ -465,7 +465,7 @@
     "✓ 0 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "home-80-zh-tall": [
-    " 首页 1  项目 2                                                          模型 关",
+    " 首页 1  项目 2  技能                                                    模型 关",
     "",
     "? imp · NATIVE-TREE                                                 提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -503,7 +503,7 @@
     "✓ 0 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-80-zh-tickets-short": [
-    " 首页 1  项目 2                                                          模型 关",
+    " 首页 1  项目 2  技能                                                    模型 关",
     "",
     "? imp · NATIVE-TREE                                                 提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -536,7 +536,7 @@
     "✓ 0 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-80-zh-legend-short": [
-    " 首页 1  项目 2                                                          模型 关",
+    " 首页 1  项目 2  技能                                                    模型 关",
     "",
     "? imp · NATIVE-TREE                                                 提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -566,7 +566,7 @@
     "✓ 0 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-80-zh-bar-short": [
-    " 首页 1  项目 2                                                          模型 关",
+    " 首页 1  项目 2  技能                                                    模型 关",
     "",
     "? imp · NATIVE-TREE                                                 提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -594,7 +594,7 @@
     "✓ 0 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-80-zh-gone": [
-    " 首页 1  项目 2                                                          模型 关",
+    " 首页 1  项目 2  技能                                                    模型 关",
     "",
     "? imp · NATIVE-TREE                                                 提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -620,7 +620,7 @@
     "✓ 0 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-120-en-tall": [
-    " Home 1  Project 2                                                                                            models off",
+    " Home 1  Project 2  Skills                                                                                    models off",
     "",
     "? imp · NATIVE-TREE                                                                                            asking 0m",
     "┃ Question: Which synthetic option?",
@@ -658,7 +658,7 @@
     "✓ 0 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "home-120-en-tickets-short": [
-    " Home 1  Project 2                                                                                            models off",
+    " Home 1  Project 2  Skills                                                                                    models off",
     "",
     "? imp · NATIVE-TREE                                                                                            asking 0m",
     "┃ Question: Which synthetic option?",
@@ -691,7 +691,7 @@
     "✓ 0 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "home-120-en-legend-short": [
-    " Home 1  Project 2                                                                                            models off",
+    " Home 1  Project 2  Skills                                                                                    models off",
     "",
     "? imp · NATIVE-TREE                                                                                            asking 0m",
     "┃ Question: Which synthetic option?",
@@ -721,7 +721,7 @@
     "✓ 0 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "home-120-en-bar-short": [
-    " Home 1  Project 2                                                                                            models off",
+    " Home 1  Project 2  Skills                                                                                    models off",
     "",
     "? imp · NATIVE-TREE                                                                                            asking 0m",
     "┃ Question: Which synthetic option?",
@@ -749,7 +749,7 @@
     "✓ 0 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "home-120-en-gone": [
-    " Home 1  Project 2                                                                                            models off",
+    " Home 1  Project 2  Skills                                                                                    models off",
     "",
     "? imp · NATIVE-TREE                                                                                            asking 0m",
     "┃ Question: Which synthetic option?",
@@ -775,7 +775,7 @@
     "✓ 0 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "home-120-zh-tall": [
-    " 首页 1  项目 2                                                                                                  模型 关",
+    " 首页 1  项目 2  技能                                                                                            模型 关",
     "",
     "? imp · NATIVE-TREE                                                                                         提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -813,7 +813,7 @@
     "✓ 0 今日完成                                            ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-120-zh-tickets-short": [
-    " 首页 1  项目 2                                                                                                  模型 关",
+    " 首页 1  项目 2  技能                                                                                            模型 关",
     "",
     "? imp · NATIVE-TREE                                                                                         提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -846,7 +846,7 @@
     "✓ 0 今日完成                                            ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-120-zh-legend-short": [
-    " 首页 1  项目 2                                                                                                  模型 关",
+    " 首页 1  项目 2  技能                                                                                            模型 关",
     "",
     "? imp · NATIVE-TREE                                                                                         提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -876,7 +876,7 @@
     "✓ 0 今日完成                                            ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-120-zh-bar-short": [
-    " 首页 1  项目 2                                                                                                  模型 关",
+    " 首页 1  项目 2  技能                                                                                            模型 关",
     "",
     "? imp · NATIVE-TREE                                                                                         提问中 0分钟",
     "┃ Question: Which synthetic option?",
@@ -904,7 +904,7 @@
     "✓ 0 今日完成                                            ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "home-120-zh-gone": [
-    " 首页 1  项目 2                                                                                                  模型 关",
+    " 首页 1  项目 2  技能                                                                                            模型 关",
     "",
     "? imp · NATIVE-TREE                                                                                         提问中 0分钟",
     "┃ Question: Which synthetic option?",

@@ -56,7 +56,7 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
       assert.doesNotMatch(text, /Preview|Reset all|HUD read the session/);
     }
     if (page === 'help') {
-      assert.match(text, /1 2\s+Home · Project/);
+      assert.match(text, /1 2 5\s+Home · Project · Skills/);
       assert.match(text, /3\s+Changes/);
       assert.match(text, /← → Tab\s+next \/ previous tab/);
       assert.doesNotMatch(text, /Timeline|Mouse\s+Legend/);

@@ -122,7 +122,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           ?.item;
       return result();
     }
-    if (['home-tab', 'project-tab', 'left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
+    if (['home-tab', 'project-tab', 'skills-tab', 'left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
   }
   if (key === 'home-tab') {
     home();
@@ -130,11 +130,16 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   const tab = input.type === 'mouse' && input.button === 'left'
     ? frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : '';
-  if (key === 'project-tab' || tab === 'board-project' || tab === 'board-home' ||
+  if (['project-tab', 'skills-tab'].includes(key) || ['board-home', 'board-project', 'board-skills'].includes(tab || '') ||
     (main && ['left', 'right', 'tab', 'shift-tab'].includes(key))) {
-    const project = tab === 'board-project' || key === 'project-tab' || (tab !== 'board-home' && next.mainTab !== 'project');
+    const tabs = ['home', 'project', 'skills'] as const;
+    const step = key === 'left' || key === 'shift-tab' ? -1 : 1;
+    const to = tab === 'board-home' ? 'home'
+      : tab === 'board-project' || key === 'project-tab' ? 'project'
+      : tab === 'board-skills' || key === 'skills-tab' ? 'skills'
+      : tabs[(tabs.indexOf(next.mainTab ?? 'home') + step + tabs.length) % tabs.length];
     home();
-    if (project) next.mainTab = 'project';
+    next.mainTab = to;
     return result();
   }
   if (key === 'changes') {
@@ -145,6 +150,17 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (key === 'brief-toggle' || tab === 'brief') return result({ type: 'brief-toggle' });
+  if (main && next.mainTab === 'skills') {
+    const pane = frame?.panes.find((p) => p.id === 'agents');
+    const page = Math.max(1, pane?.height ?? 1), max = Math.max(0, (pane?.contentLength ?? 0) - page);
+    const move = input.type === 'mouse' ? (input.button === 'wheel-down' ? 3 : input.button === 'wheel-up' ? -3 : 0)
+      : key === 'down' ? 1 : key === 'up' ? -1 : key === 'page-down' ? page : key === 'page-up' ? -page : 0;
+    next.skillsScroll = key === 'home' ? 0 : key === 'end' ? max
+      : Math.max(0, Math.min(max, (next.skillsScroll ?? 0) + move));
+    // Catalog rows have no selection or actions, including Enter, o and Inspector.
+    if (!['help', 'settings', 'escape'].includes(key)) return result();
+    return null;
+  }
   if (main && next.mainTab === 'project') {
     // A hub entry may span two rows (the bar); the cursor visits it once.
     const rows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i),

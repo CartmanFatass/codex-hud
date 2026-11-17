@@ -1,0 +1,65 @@
+{
+  "source": "mattpocock/skills (MIT), upstream text at ~/codex/MySkills/_upstream/mattpocock-skills",
+  "skills": [
+    {
+      "name": "wayfinder",
+      "en": "Map a large, foggy effort as decision tickets and settle them one at a time",
+      "zh": "把大而模糊的工作画成决策地图，逐张解决待决问题"
+    },
+    {
+      "name": "triage",
+      "en": "Sort issues others filed: reproduce, dedupe, turn into agent-ready briefs",
+      "zh": "整理别人提的 issue：复现、去重、写成 agent 可接手的说明"
+    },
+    {
+      "name": "prototype",
+      "en": "Throwaway code that answers one design question, logic or UI",
+      "zh": "写一次性代码回答一个设计问题，分逻辑原型和 UI 原型"
+    },
+    {
+      "name": "retro",
+      "en": "After a session, improve the agents' environment, not the code",
+      "zh": "一段工作后复盘，改进 agent 的工作环境而不是代码"
+    },
+    {
+      "name": "teach",
+      "en": "A separate learning workspace with lessons, practice and a record",
+      "zh": "独立的学习工作区：分课讲解、练习和学习记录"
+    },
+    {
+      "name": "wizard",
+      "en": "An interactive bash wizard for steps only a human can do",
+      "zh": "生成交互式 bash 向导，带人完成只能亲手做的步骤"
+    },
+    {
+      "name": "pr",
+      "en": "A PR body: before/after evidence and which changes are one-way doors",
+      "zh": "规范 PR 正文：改动前后对比，标出不可回退的改动"
+    },
+    {
+      "name": "codebase-design",
+      "en": "Vocabulary for deep modules: small interfaces, where seams go",
+      "zh": "深模块设计词汇：小接口、深实现、seam 放在哪"
+    },
+    {
+      "name": "improve-codebase-architecture",
+      "en": "Survey the codebase for modules worth deepening, with a comparison report",
+      "zh": "扫描代码库，找出值得加深的模块并出对比报告"
+    },
+    {
+      "name": "to-questionnaire",
+      "en": "Turn a question you cannot answer into a questionnaire for an expert",
+      "zh": "把自己答不了的问题变成问卷，交给懂行的人填写"
+    },
+    {
+      "name": "wait-what",
+      "en": "The last reply did not land: have it re-pitched",
+      "zh": "上一条回复没看懂时，让 agent 换种说法重讲"
+    },
+    {
+      "name": "writing-for-agents",
+      "en": "How to write skills, AGENTS.md and briefs that agents follow",
+      "zh": "怎么写 agent 能照做的 skill、AGENTS.md 和 brief"
+    }
+  ]
+}

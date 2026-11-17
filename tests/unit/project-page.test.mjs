@@ -211,7 +211,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 6$/m, 'a second Enter folds the roles again');
 });
-test('2 and arrows/Tab switch Home ⇄ Project with independent cursor/scroll; 3 stays Changes', async (t) => {
+test('2 and arrows/Tab cycle main tabs with independent Project cursor/scroll; 3 stays Changes', async (t) => {
   const f = await fixture(t),
     decoder = new WorkbenchInputDecoder('workboard');
   const send = (frame, raw) => handleMonitorInput(frame.state, decoder.push(Buffer.from(raw))[0], ctx(frame));
@@ -222,10 +222,11 @@ test('2 and arrows/Tab switch Home ⇄ Project with independent cursor/scroll; 3
   assert.equal(projectShown(frame.state), true);
   frame.state.projectCursor = 'project:page:docs';
   for (const raw of ['\x1b[D', '\x1b[C', '\t', '\x1b[Z']) {
-    frame = f.render(80, 'en', send(frame, raw).state);
-    assert.equal(frame.state.mainTab, 'home');
-    frame = f.render(80, 'en', send(frame, raw).state);
-    assert.equal(frame.state.mainTab, 'project');
+    const order = raw === '\x1b[D' || raw === '\x1b[Z' ? ['home', 'skills', 'project'] : ['skills', 'home', 'project'];
+    for (const tab of order) {
+      frame = f.render(80, 'en', send(frame, raw).state);
+      assert.equal(frame.state.mainTab, tab);
+    }
     assert.equal(frame.state.projectCursor, 'project:page:docs');
   }
   const homeControl = frame.controls.find((c) => c.kind === 'board-home');

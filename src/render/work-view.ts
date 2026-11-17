@@ -4,6 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { boardInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
+import { skillsRows } from './skills-view.js';
 import { projectRows, homeProgressRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
@@ -18,7 +19,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const keys = [
     section(t('Keys'), half),
     ...[
-      ['1 2', 'Home · Project'],
+      ['1 2 5', 'Home · Project · Skills'],
       ['← → Tab', 'next / previous tab'],
       ['3', 'Changes'],
       ['↑ ↓', 'move'],
@@ -95,6 +96,8 @@ export function renderWorkboardFrame(
     changes = !help && state.focus === 'changes';
   const sub = inspector || help || changes;
   const project = !sub && state.mainTab === 'project';
+  const skills = !sub && state.mainTab === 'skills';
+  const home = !sub && !project && !skills;
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
   const board = inspector ? source : visibleWorkboard(input, source, state, now);
@@ -120,20 +123,33 @@ export function renderWorkboardFrame(
     const title = ` ${t('Home')}${count ? ' ' + theme.board.attention(String(count)) : ''} `;
     const waiting = input.project?.waiting.length ?? 0;
     const projectTitle = ` ${t('Project')}${waiting ? ' ' + theme.board.attention(String(waiting)) : ''} `;
+    const skillsTitle = ` ${t('Skills')} `;
     const models = t(input.modelEnabled === false ? 'models off' : 'models on');
+    const modelsWidth = visualLength(models);
+    const leftRoom = Math.max(0, width - modelsWidth - 1);
     frame.lines[0] = pair(
-      (project ? theme.board.muted : theme.board.title)(title) +
-        (project ? theme.board.title : theme.board.muted)(projectTitle),
+      (home ? theme.board.title : theme.board.muted)(title) +
+        (project ? theme.board.title : theme.board.muted)(projectTitle) +
+        (skills ? theme.board.title : theme.board.muted)(skillsTitle),
       (input.modelEnabled === false ? theme.board.attention : theme.board.muted)(models),
       width
     );
-    frame.controls.push({ kind: 'board-home', x: 0, y: 0, width: visualLength(title) });
-    frame.controls.push({ kind: 'board-project', x: visualLength(title), y: 0, width: visualLength(projectTitle) });
+    let x = 0;
+    for (const [kind, label] of [
+      ['board-home', title],
+      ['board-project', projectTitle],
+      ['board-skills', skillsTitle],
+    ] as const) {
+      const span = visualLength(label);
+      const clipped = Math.max(0, Math.min(leftRoom, x + span) - x);
+      if (clipped > 0) frame.controls.push({ kind, x, y: 0, width: clipped });
+      x += span;
+    }
     frame.controls.push({
       kind: 'brief',
-      x: Math.max(0, width - visualLength(models)),
+      x: Math.max(0, width - modelsWidth),
       y: 0,
-      width: visualLength(models),
+      width: Math.min(width, modelsWidth),
     });
   }
   // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
@@ -144,13 +160,15 @@ export function renderWorkboardFrame(
       ? [boardRow(''), ...changesRows(input, state, width, now)]
       : inspector
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
+        : skills
+          ? skillsRows(input.backupSkills, width)
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)))
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
-  if (!sub && !project) {
+  if (home) {
     // Progress sits at the bottom of the spare rows (owner): the work above keeps the room next to it.
     const spare = height - 2 - rows.length,
       progress = homeProgressRows(input.project, width, spare, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim());
@@ -168,7 +186,7 @@ export function renderWorkboardFrame(
     for (const target of all) targets.set(targetKey(target), target);
   }
   let selected = state.homeTarget;
-  if (!sub && !project && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
+  if (home && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
     const order = source.lanes.flatMap((l) => [
       { kind: 'lane' as const, laneId: l.id },
       ...l.workers.map((w) => ({ kind: 'worker' as const, laneId: l.id, workerId: w.id })),
@@ -181,7 +199,7 @@ export function renderWorkboardFrame(
       .sort((a, b) => a.distance - b.distance)[0]?.target;
     state.homeTarget = selected;
   }
-  if (!sub && !project && !selected && !state.boardAnchor)
+  if (home && !selected && !state.boardAnchor)
     state.boardAnchor = rows.find((r) => r.item?.startsWith('home-progress:'))?.item;
   const files = rows.filter((r) => r.files?.length);
   if (inspector && !files.some((r) => r.item === state.inspectCursor))
@@ -193,7 +211,7 @@ export function renderWorkboardFrame(
     state.projectCursor = (rows.find((r) => r.item?.startsWith('project:page:')) ?? rows.find((r) => r.item))?.item;
   // The model picker is the page while it is open: its picked entry is the cursor, and the page's own scroll and reveal wait.
   const picking = project && page === 'control' && !!state.projectInput;
-  const key = picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
+  const key = skills ? '' : picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
   const cursorAt = rows.findIndex((r) => r.item === key),
     room = Math.max(0, height - 2),
     max = Math.max(0, rows.length - room);
@@ -202,7 +220,7 @@ export function renderWorkboardFrame(
     : picking ? 0
     : sub
       ? state.scroll[changes ? 'changes' : 'details']
-      : project ? (state.projectScroll ?? 0) : (state.homeScroll ?? 0);
+      : skills ? (state.skillsScroll ?? 0) : project ? (state.projectScroll ?? 0) : (state.homeScroll ?? 0);
   let offset = Math.max(0, Math.min(max, scroll));
   if (!help && !changes && !picking && key && state.boardRevealed !== key && room) {
     if (cursorAt < offset) offset = cursorAt;
@@ -214,6 +232,7 @@ export function renderWorkboardFrame(
     frame.helpPage = { count: room, total: rows.length };
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
   else if (project) { if (!picking) state.projectScroll = offset; }
+  else if (skills) state.skillsScroll = offset;
   else state.homeScroll = offset;
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
@@ -237,6 +256,7 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
+        : skills ? '↑↓ scroll  ←→ tab  , settings  ? help'
         : project ? (state.projectInput ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back'
           : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
@@ -244,7 +264,7 @@ export function renderWorkboardFrame(
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
   if (height > 1)
     frame.lines[height - 1] = footRow(
-      sub || project ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
+      !home ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
       t(hints),
       width
     );

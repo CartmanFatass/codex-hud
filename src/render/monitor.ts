@@ -12,6 +12,7 @@ import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ProjectPage } from './project-view.js';
 import type { PlaceEdit } from '../roles/role-control.js';
 import type { ModelPick } from './model-input.js';
+import type { BackupSkill } from '../collectors/backup-skills.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
   iconic,
@@ -43,7 +44,8 @@ export type MonitorPane = (typeof MONITOR_PANES)[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
-  mainTab?: 'home' | 'project';
+  mainTab?: 'home' | 'project' | 'skills';
+  skillsScroll?: number;
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
   /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
@@ -121,6 +123,7 @@ export interface MonitorControl {
   kind:
     | 'board-home'
     | 'board-project'
+    | 'board-skills'
     | 'board-back'
     | 'board-pick'
     | 'board-activate'
@@ -153,6 +156,7 @@ export interface MonitorData {
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
   project?: ProjectSnapshot;
+  backupSkills?: BackupSkill[] | null;
   /** The shown project's own name, for the hub's top row. */
   projectName?: string;
   /** The projects `[` and `]` cycle through (the panel's own first); one or none means no switch. */

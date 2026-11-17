@@ -470,7 +470,7 @@ Git is gated to at most once per five seconds. Reads do not start a browser or M
 
 ### Frame and reload
 
-Home and Project are the two tabs. Inspector, Changes, Settings and Help share
+Home, Project and Skills are the three tabs. Inspector, Changes, Settings and Help share
 one title band, exact-width rows and whole footer hints (rightmost hints drop when
 narrow). There is no Agents pane, stacked/compact layout, Timeline, activity hub,
 agent log, Summary or diagnostics page. Each page retains its scroll/selection.
@@ -490,8 +490,8 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 
 | Key | Action |
 |---|---|
-| `1`, `2`, `3` | Home, Project, Changes summary |
-| Tab/Shift-Tab, Left/Right | Home ⇄ Project |
+| `1`, `2`, `3`, `5` | Home, Project, Changes summary, Skills (`4` remains Inspector) |
+| Tab/Shift-Tab, Left/Right | Cycle Home → Project → Skills → Home, or reverse |
 | `[`, `]` | Project: previous/next project (not on the Projects list); in Codex the prefix then `[` or `]`, ignored while the panel is closed |
 | `p` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`). Panel focused (in Codex), no prefix commands |
 | `m` (`M`) | Control plane: pick the model of the place under the cursor: provider, then model on `pi`; type to filter, ↑↓ pick, Enter sets (an open provider, or the model), Tab shows every model, ← back, Esc cancels |
@@ -512,6 +512,15 @@ Codex repeat movement keeps the prefix active for half a second. Settings choose
 F12 closes/reopens the Codex panel; Shift-F12 opens with focus. Mouse click selects,
 a second click expands, wheel scrolls without moving selection. Clicking the blank
 gutter keeps keys in the panel until Esc. Help lists current shortcuts.
+
+### Skills
+
+Skills lists the shipped backup-skills catalog (`integrations/skills/backup-skills.json`):
+Matt Pocock skills not installed, which the main session can read from upstream when
+asked. Each row has the name and a one-line description in the panel's language;
+long rows truncate, and movement keys or the wheel scroll. Display only: Enter and
+clicking a row do nothing; no install state or adopted/dropped skills. A missing or
+unreadable catalog shows a muted notice.
 
 ### Inspector
 

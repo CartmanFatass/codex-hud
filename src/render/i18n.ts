@@ -38,6 +38,11 @@ export function language(): Language {
 
 const ZH: Record<string, string> = {
   ...WORKBOARD_ZH,
+  Skills: '技能',
+  'Backup skills': '备用技能',
+  'Skills catalog unavailable': '技能目录缺失或无法读取',
+  'Home · Project · Skills': '首页 · 项目 · 技能',
+  '↑↓ scroll  ←→ tab  , settings  ? help': '↑↓ 滚动  ←→ 切页  , 设置  ? 帮助',
   outcome: '结果',
   kind: '类型',
   category: '类别',
