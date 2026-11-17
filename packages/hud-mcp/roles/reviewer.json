@@ -7,6 +7,14 @@
       "harness": "pi",
       "pi_role": "reviewer",
       "split": false
-    }
+    },
+    { "harness": "cli", "agent": "agy", "model": "gemini-4-hydrogen-high" }
+  ],
+  "presets": [
+    { "name": "default", "run": [
+      { "harness": "pi", "pi_role": "reviewer", "split": false },
+      { "harness": "cli", "agent": "agy", "model": "gemini-4-hydrogen-high" }
+    ] },
+    { "name": "pi", "run": [{ "harness": "pi", "pi_role": "reviewer", "split": false }] }
   ]
 }

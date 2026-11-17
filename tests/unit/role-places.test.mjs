@@ -175,7 +175,7 @@ async function until(check, timeout = 3000) {
   }
 }
 
-/** The owner's own imp: pi first, agy as fallback (shipped imp is pi only). */
+/** The owner's own imp: pi first, agy as fallback. */
 function ownImp(f) {
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
   fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'imp.json'), JSON.stringify({
@@ -344,7 +344,7 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   assert.equal(oracle.agent, 'claude');
   assert.equal(oracle.model, 'fable');
   assert.deepEqual(oracle.run, [
-    { harness: 'cli', agent: 'claude', model: 'fable' },
+    { harness: 'cli', agent: 'claude', model: 'fable', thinking: 'high' },
     { harness: 'pi', pi_role: 'architect', split: false },
   ]);
   const pro = roster.roles.find((r) => r.role === 'pro');
@@ -371,7 +371,7 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   assert.ok(piCmd);
 });
 
-test('reviewer uses reviewer.md on CLI; sonic and architect return unsupported_harness', { timeout: 10000 }, async (t) => {
+test('reviewer uses reviewer.md on CLI; sonic returns unsupported_harness', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, { withPi: false });
   const rev = await f.call('hud_create', { role: 'reviewer', on: 'claude', request_key: 'rev-cli', task: 'Review diff.' });
   // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
@@ -379,7 +379,7 @@ test('reviewer uses reviewer.md on CLI; sonic and architect return unsupported_h
   const prompt = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt');
   assert.match(prompt.args[3], /packages\/hud-mcp\/instructions\/reviewer\.md/);
 
-  for (const role of ['sonic', 'architect']) {
+  for (const role of ['sonic']) {
     const res = await f.call('hud_create', { role, on: 'claude', request_key: `unsup-${role}`, task: 'Task.' });
     assert.equal(res.ok, false);
     assert.equal(res.code, 'unsupported_harness');
@@ -407,7 +407,7 @@ test('legacy role files including harness: jev load and deleted names are absent
     );
     const reg = roleRegistry(hud, cwd, { PATH: bin }, undefined, undefined, bundled);
     const roles = reg.roles();
-    for (const deleted of ['grok-imp', 'agy-imp', 'claude-imp', 'codex-imp', 'argon', 'gemini', 'flow-video']) {
+    for (const deleted of ['architect', 'grok-imp', 'agy-imp', 'claude-imp', 'codex-imp', 'argon', 'gemini', 'flow-video']) {
       assert.equal(roles.has(deleted), false, deleted);
     }
     const oldJev = roles.get('old-jev');

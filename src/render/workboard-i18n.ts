@@ -195,8 +195,10 @@ export const WORKBOARD_ZH: Record<string, string> = {
   exhausted: '已耗尽',
   'not installed': '未安装',
   'pi role': '角色定义',
-  '↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh':
-    '↑↓ 移动  ⏎ 打开  ? 帮助  p 宿主  m 模型  e 思考  + - 备选  x 清除  r 刷新',
+  custom: '自定义',
+  'role: next / previous preset': '角色：下一个／上一个预设',
+  '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh':
+    '↑↓ 移动  ⏎ 打开  c C 预设  ? 帮助  p 宿主  m 模型  e 思考  + - 备选  x 清除  r 刷新',
   'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back': '输入筛选  ↑↓ 选择  ⏎ 设置  esc 取消  tab 全部  ← 返回',
   'place: pick a model (provider, then model; type to filter)': '位置：选择模型（先选提供方，再选模型；输入即筛选）',
   'place: harness, thinking (capitals go back)': '位置：宿主、思考（大写键反向）',
@@ -225,8 +227,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'place: add, remove, move up, move down': '位置：添加、删除、上移、下移',
   'place: clear its exhausted mark': '位置：清除耗尽标记',
   'place: refresh model lists': '位置：刷新模型列表',
-  'On the Control plane p m e + - K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened':
-    '在控制面中 p m e + - K J x 修改光标所在的位置（m 选择模型，r 刷新模型列表）：写入 $HUD_HOME/roles，下一个任务即用；项目自己的角色文件优先，只能打开',
+  'On the Control plane c/C applies the next/previous role preset; p m e + - K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened':
+    '在控制面中 c/C 应用下一个／上一个角色预设；p m e + - K J x 修改光标所在的位置（m 选择模型，r 刷新模型列表）：写入 $HUD_HOME/roles，下一个任务即用；项目自己的角色文件优先，只能打开',
   'role not found': '没有这个角色',
   'the project file is in force: o opens it': '项目文件生效中：按 o 打开它',
   'no other harness for this role': '该角色没有别的宿主可选',

@@ -1386,6 +1386,8 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
       ...role,
       instructions: 'implementer',
       run: [place],
+      presets: [],
+      preset: null,
       runs_on: place,
       exhausted: [],
       accepts_options: ['on', 'model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
@@ -1401,28 +1403,23 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   assert.equal(imp.thinking, 'low');
   assert.equal(imp.model_source, join(f.root, 'roles', 'implementer.md'));
   assert.equal(imp.thinking_source, imp.model_source);
-  assert.deepEqual(
-    roster.roles.find((entry) => entry.role === 'architect'),
-    {
-      role: 'architect',
-      instructions: 'architect',
-      source_file: resolve('packages/hud-mcp/roles/architect.json'),
-      model: null,
-      thinking: null,
-      model_source: null,
-      thinking_source: null,
-      pi_role_file: null,
-      accepts_options: ['on', 'model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
-      harness: 'pi',
-      pi_role: 'architect',
-      split: false,
-      can_continue: false,
-      available: true,
-      run: [{ harness: 'pi', pi_role: 'architect', split: false }],
-      runs_on: { harness: 'pi', pi_role: 'architect', split: false },
-      exhausted: [],
-    }
-  );
+  assert.equal(roster.roles.some((r) => r.role === 'architect'), false);
+  const oracle = roster.roles.find((r) => r.role === 'oracle');
+  assert.equal(oracle.preset, 'fable');
+  assert.deepEqual(oracle.presets, [
+    { name: 'fable', run: oracle.run },
+    { name: 'architect', run: [{ harness: 'pi', pi_role: 'architect', split: false }] },
+  ]);
+  for (const name of ['imp', 'reviewer']) {
+    const r = roster.roles.find((r) => r.role === name);
+    assert.equal(r.preset, 'default');
+    assert.deepEqual(r.presets[0].run, r.run);
+  }
+  assert.deepEqual(roster.roles.find((r) => r.role === 'imp').presets.map((p) => p.name), ['default', 'grok', 'hydrogen']);
+  for (const name of ['sonic', 'pro', 'flow', 'general']) {
+    const r = roster.roles.find((r) => r.role === name);
+    if (r) assert.deepEqual([r.presets, r.preset], [[], null]);
+  }
   assert.deepEqual(await f.call('hud_create', { role: 'unknown', request_key: 'unknown', task: 'Synthetic task.' }), {
     ok: false,
     code: 'role_unavailable',
@@ -1807,10 +1804,9 @@ test('cli kind table holds launch facts and the registry accepts only a valid cl
   assert.deepEqual(role.accepts_options, ['on', 'model', 'thinking']);
   assert.equal(role.pi_role_file, null);
   const imp = roster.find((entry) => entry.role === 'imp');
-  // Shipped roles run on pi only; fallbacks are the owner's choice under $HUD_HOME.
-  assert.deepEqual(imp.run.map((place) => place.harness), ['pi']);
+  assert.deepEqual(imp.run.map((place) => place.harness), ['pi', 'pi']);
   const reviewer = roster.find((entry) => entry.role === 'reviewer');
-  assert.deepEqual(reviewer.run.map((place) => place.harness), ['pi']);
+  assert.deepEqual(reviewer.run.map((place) => place.harness), ['pi', 'cli']);
   fs.unlinkSync(customCli);
   const bad = async (body) => {
     fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });

@@ -77,14 +77,14 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.control.find((r) => r.label === 'convention').path, join(f.cwd, 'hud-convention.md'));
   // Roles live on `roles` now, grouped for the page: browser tasks apart, the project's own files marked.
   assert.deepEqual(f.data.roles.map((r) => [r.role, r.group]), [['imp', 'roles'], ['reviewer', 'roles'], ['sonic', 'roles'],
-    ['architect', 'roles'], ['oracle', 'roles'], ['pro', 'browser'], ['flow', 'browser']]);
+    ['oracle', 'roles'], ['pro', 'browser'], ['flow', 'browser']]);
   assert.deepEqual(first('oracle').places.map((p) => [p.label, p.model, p.state]),
     [['claude', 'fable', 'missing'], ['pi', null, 'active']]);
   assert.deepEqual(first('pro').places.map((p) => [p.label, p.model, p.state]),
     [['chatgpt', '6 Pro', 'active'], ['gemini', null, 'standby'], ['aistudio', 'gemini-4-argon', 'missing']]);
   assert.deepEqual([first('flow').places[0].label, first('flow').places[0].kind, first('flow').places[0].state], ['flow', 'image', 'missing']);
   assert.deepEqual([first('imp').path, first('imp').source, first('sonic').source], [join(f.hud, 'roles/imp.json'), 'yours', 'default']);
-  assert.equal(f.data.roleCount, 7);
+  assert.equal(f.data.roleCount, 6);
   assert.deepEqual(f.data.harnesses.map((h) => [h.name, h.ok]), [['pi', true], ['agy', false], ['claude', false], ['codex', false],
     ['grok', false], ['jev-ask', true], ['jev-aistudio', false], ['jev-flow', false]]);
   assert.deepEqual(f.data.control.find((r) => r.label === 'pi role'), { label: 'pi role', value: 'implementer', path: join(f.root, 'roles/implementer.md') });
@@ -187,14 +187,14 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   assert.match(text, /^Needs attention ─+ 2$/m);
   assert.match(text, /^ {2}− flow +flow image not installed$/m);
   assert.match(text, /^ {2}! bad\.json +unparseable JSON$/m);
-  assert.match(text, /^▸ Healthy ─+ 6$/m);
-  assert.match(text, /^ {2}◉ imp reviewer sonic architect oracle pro$/m);
+  assert.match(text, /^▸ Healthy ─+ 5$/m);
+  assert.match(text, /^ {2}◉ imp \[custom\] reviewer \[default\] sonic oracle \[fable\] pro$/m);
   assert.match(text, /^▸ Files ─+ 8$/m);
   assert.match(text, /^ {2}keys 3\/5 · browser ✓ · missing GEMINI OPENAI$/m);
   assert.doesNotMatch(text, /synthetic\/model|project-agent\.md|▸ agents/);
   frame.state.projectCursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /^Healthy ─+ 6$/m);
+  assert.match(plain(frame).join('\n'), /^Healthy ─+ 5$/m);
   assert.match(plain(frame).join('\n'), /synthetic\/model/);
   frame.state.projectCursor = 'project:fold:files';
   frame = render(press(frame, 'enter').state);
@@ -209,7 +209,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
   frame.state.projectCursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
-  assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 6$/m, 'a second Enter folds the roles again');
+  assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 5$/m, 'a second Enter folds the roles again');
 });
 test('2 and arrows/Tab cycle main tabs with independent Project cursor/scroll; 3 stays Changes', async (t) => {
   const f = await fixture(t),
@@ -542,7 +542,7 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   assert.equal(frame.state.projectCursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
   assert.match(plain(frame).join('\n'), /Progress +M3b · 1 working · 1 to try/);
-  assert.match(plain(frame).join('\n'), /Control plane +7 roles · keys 3\/5 · browser ✓/);
+  assert.match(plain(frame).join('\n'), /Control plane +6 roles · keys 3\/5 · browser ✓/);
   frame.state.projectCursor = 'project:fold:waiting';
   frame = f.render(80, 'en', press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ Waiting for you/);

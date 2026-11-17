@@ -8,6 +8,19 @@
       "harness": "pi",
       "pi_role": "implementer",
       "split": false
-    }
+    },
+    { "harness": "pi", "pi_role": "implementer", "split": false, "model": "xai/grok-4.7" }
+  ],
+  "presets": [
+    { "name": "default", "run": [
+      { "harness": "pi", "pi_role": "implementer", "split": false },
+      { "harness": "pi", "pi_role": "implementer", "split": false, "model": "xai/grok-4.7" }
+    ] },
+    { "name": "grok", "run": [
+      { "harness": "pi", "pi_role": "implementer", "split": false, "model": "xai/grok-4.7", "thinking": "high" }
+    ] },
+    { "name": "hydrogen", "run": [
+      { "harness": "cli", "agent": "agy", "model": "gemini-4-hydrogen-high" }
+    ] }
   ]
 }

@@ -123,14 +123,14 @@ export function richProgress(data) {
 /** Control plane material the base fixture has too little of, all synthetic: fallbacks, every mark, a project role, a long model. */
 export function richControl(data) {
   const place = (harness, label, model, thinking, state, extra = {}) => ({ harness, label, model, thinking, state, ...extra });
-  const role = (name, group, source, places) => ({ role: name, group, source, path: `/synthetic/${source}/roles/${name}.json`, places });
+  const role = (name, group, source, places) => ({ role: name, group, source, path: `/synthetic/${source}/roles/${name}.json`, places,
+    ...(['imp', 'reviewer', 'oracle'].includes(name) ? { preset: name === 'imp' ? null : name === 'oracle' ? 'fable' : 'default' } : {}) });
   const roles = [
     role('imp', 'roles', 'yours', [place('pi', 'pi', 'openai/gpt-6.1-sol', 'high', 'exhausted', { until: NOW + 42 * 60000 }),
       place('cli', 'agy', 'gemini-4-hydrogen-high', 'xhigh', 'active'), place('cli', 'claude', 'opus', 'high', 'standby')]),
     role('reviewer', 'roles', 'default', [place('pi', 'pi', 'mistral/deepseek-v4-1-flash-1017', 'xhigh', 'active'), place('cli', 'codex', 'gpt-6.1-sol', 'high', 'missing')]),
     role('sonic', 'roles', 'default', [place('pi', 'pi', null, null, 'active')]),
-    role('architect', 'roles', 'default', [place('pi', 'pi', 'openai/gpt-6.1-sol', 'max', 'active')]),
-    role('oracle', 'roles', 'default', [place('cli', 'claude', 'fable', null, 'active'), place('pi', 'pi', null, null, 'standby')]),
+    role('oracle', 'roles', 'default', [place('cli', 'claude', 'fable', 'high', 'active'), place('pi', 'pi', null, null, 'standby')]),
     role('frontend', 'project', 'project', [place('pi', 'pi', 'project/model', 'high', 'active')]),
     role('pro', 'browser', 'default', [place('bro', 'chatgpt', '6 Pro', null, 'exhausted', { until: NOW + 5 * 60000 }),
       place('bro', 'gemini', null, null, 'active'), place('bro', 'aistudio', 'gemini-4-argon', null, 'standby')]),

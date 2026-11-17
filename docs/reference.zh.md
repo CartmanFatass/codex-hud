@@ -87,7 +87,7 @@ split 默认取位置设置。`ui_ext: false` 禁用 UI 扩展；`skills: true` 
 split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。
 浏览器（`bro`）位置拒绝这些 pi 选项。
 
-角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer）、`sonic`、`architect`、`oracle`（`cli` `claude` `fable` -> `pi` `architect`）、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。内置 `imp` 与 `reviewer` 没有备选，备选由你在控制面或 `$HUD_HOME/roles/<role>.json` 添加。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
+角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer → `pi` Grok 4.7）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`）、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、
 `agy models`、`claude --help` 或 `codex -m`。HUD 只传模型标志、强度标志、该 CLI 的权限绕过标志
 和 `args`。不传 home、会话或配置标志，也不设这些环境变量，分发时也不替 CLI 信任目录：
@@ -257,7 +257,7 @@ Esc 或点击面包屑回到总览，光标停在刚离开的那一页。每页�
 - **需要处理**（带数量）：有位置到了限额的角色（`✗ imp  pi 已耗尽 42分钟`），其下是 `下个任务 → ◉ agy gemini-4 high`，
   即下一次 `hud_create` 会用的位置（没有则写 `无`）；无处可跑的角色（`− flow  flow image 未安装`）；加载不了的角色文件
   （`! bad.json  unparseable JSON`）。每一行都是停靠点，可用位置键。
-- **正常**（折叠成一行角色名，Enter 展开）：其余角色，每个位置一行，分**角色**（imp、reviewer、sonic、architect、oracle 及其他角色）、
+- **正常**（折叠成一行角色名，Enter 展开）：其余角色，每个位置一行，分**角色**（imp、reviewer、sonic、oracle 及其他角色）、
   **项目角色**（文件来自项目自己的 `.hud/roles`，它优先）和**浏览器任务**（只在浏览器位置运行的角色：pro、flow）。每个位置占一行：
   第一个是主位置，`↳` 行是按顺序的备选。一行依次是标记、角色、宿主、模型、思考档位；标记 `◉` 使用中
   （下一次 `hud_create` 运行的位置：第一个已安装且未耗尽的）、`○` 备选、`✗` 已耗尽（56 列及以上显示剩余时间）、
@@ -266,6 +266,10 @@ Esc 或点击面包屑回到总览，光标停在刚离开的那一页。每页�
 - **宿主**：本机有哪些 `pi`、`agy`、`claude`、`codex`、`grok`、`jev-ask`、`jev-aistudio`、`jev-flow`，并附标记图例。
 - **文件**（折叠成 `密钥 3/5 · 浏览器 ✓ · 缺 …`，Enter 展开）：无效或被忽略的角色文件、约定、pi 角色定义、指令文件、
   原生代理（其中再折叠）、密钥、浏览器。
+
+角色文件可带 `presets`：`[{ "name": "short-token", "run": [...] }]`，每项是完整有序位置列表，按 `run` 的规则校验。名称在同一文件内唯一，1–32 个 `[A-Za-z0-9._-]` 字符。预设按内置 → 用户 → 生效项目文件合并，同名由更具体的文件覆盖，省略则继承。`hud_roster` 返回 `presets` 和 `preset`（匹配名称或 null）；`hud_create` 不接受预设参数。
+
+在角色的位置行上，`c`/`C` 一步应用下一个／上一个预设（自定义状态从首个／末个开始），将整套 run 写入用户文件并保留其他字段（含 presets）。有预设的角色行显示 `[名称]` 或 `[自定义]`；耗尽标记仍按位置保留。项目文件生效时照常拒绝修改，`o` 打开文件。内置 imp：`default`、`grok`（high）、`hydrogen`；reviewer：`default`、`pi`；oracle：`fable`、`architect`（原 architect 角色的 pi 配置），不再有独立的 architect HUD 角色。
 
 在位置行上（仅控制面）：`p`/`P` 下一个／上一个宿主（`pi`，对有 CLI 指令的角色再依次是各 CLI；浏览器角色依次是
 chatgpt、gemini、aistudio），模型取 `harnesses.json` 中该宿主的默认值；`e`/`E` 思考档位（Flow 位置用 `m` 在 image/video 间切换）。
@@ -348,6 +352,7 @@ Codex 中先按前缀（默认 `Ctrl+\`）再按键；设置／帮助之外的�
 | Tab/Shift-Tab、左右 | 首页 → 项目 → 技能 → 首页循环，或反向 |
 | `[`、`]` | 项目页：上一个／下一个项目（项目列表上无效）；在 Codex 中先按前缀再按 `[` 或 `]`，面板关闭时忽略 |
 | `p` `e`（大写反向）、`+` `-` `K` `J`、`x`、`r` | 控制面：光标所在位置的宿主／思考档位；添加／删除／上移／下移位置；清除其耗尽标记；刷新宿主模型列表（`r`）。需面板获得焦点（Codex 中），无前缀命令 |
+| `c` / `C` | 控制面：应用下一个／上一个角色预设 |
 | `m`（`M`） | 控制面：为光标所在位置选模型：`pi` 先供应商再模型；输入筛选、↑↓ 选择、Enter 设置（打开供应商或设置模型）、Tab 显示全部模型、← 返回、Esc 取消 |
 | 上下（`j`/`k`）、PgUp/PgDn、Home/End（`g`/`G`） | 移动／翻页／首尾 |
 | Enter | 展开／折叠卡片、问题、决定或泳道；在项目中先打开一页，再折叠、显示工单或打开行的文件 |

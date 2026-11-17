@@ -9,6 +9,7 @@ import { isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   clearExhausted,
+  currentPreset,
   harnessDefaults,
   placeAvailable,
   placeCatalog,
@@ -44,6 +45,8 @@ export interface RoleFact {
   /** `project` roles come from the project's own `.hud/roles`, which wins and is never written here. */
   group: 'roles' | 'project' | 'browser';
   places: PlaceFact[];
+  /** Absent for roles without presets; null means a custom run. */
+  preset?: string | null;
 }
 export interface HarnessFact {
   name: string;
@@ -64,7 +67,7 @@ export interface ControlFacts {
   piRoleFiles: string[];
 }
 
-const FIRST = ['imp', 'reviewer', 'sonic', 'architect', 'oracle', 'pro', 'flow'];
+const FIRST = ['imp', 'reviewer', 'sonic', 'oracle', 'pro', 'flow'];
 const rank = (role: string) => (FIRST.includes(role) ? FIRST.indexOf(role) : FIRST.length);
 export function placeLabel(place: RolePlace): string {
   if (place.harness === 'pi') return 'pi';
@@ -123,6 +126,7 @@ export function controlFacts(
       source: pinned ? 'project' : inside(join(hudHome, 'roles'), role.source_file) ? 'yours' : 'default',
       group: pinned ? 'project' : role.run.every((p) => p.harness === 'bro') ? 'browser' : 'roles',
       places,
+      ...(role.presets?.length ? { preset: assigned.preset } : {}),
     });
   }
   roles.sort((a, b) => rank(a.role) - rank(b.role) || a.role.localeCompare(b.role));
@@ -152,13 +156,13 @@ export const MODEL_ID_MAX = 120;
 /** A place's row id on the Control plane page: the role and the place's index in its run list. */
 export const placeItem = (role: string, index: number) => `project:role:${role}:${index}`;
 
-export type PlaceOp = 'harness' | 'model' | 'thinking' | 'add' | 'remove' | 'up' | 'down' | 'clear';
+export type PlaceOp = 'preset' | 'harness' | 'model' | 'thinking' | 'add' | 'remove' | 'up' | 'down' | 'clear';
 export interface PlaceEdit {
   role: string;
   /** The place under the cursor: 0 is the primary, the rest are fallbacks in order. */
   index: number;
   op: PlaceOp;
-  /** Which way `harness`, `model` and `thinking` cycle; forward when absent. */
+  /** Which way `preset`, `harness`, `model` and `thinking` cycle; forward when absent. */
   step?: 1 | -1;
   /** A model chosen in the Control plane's picker: `model` sets it (`''` unsets it, back to the role's default) instead of cycling. */
   value?: string;
@@ -250,6 +254,14 @@ export function editPlaces(
       return { ok: true, index: i };
     }
     if (projectPinned(registry, role)) return refuse('the project file is in force: o opens it');
+    if (edit.op === 'preset') {
+      const presets = role.presets ?? [];
+      if (!presets.length) return { ok: true, index: i };
+      const at = presets.findIndex((p) => p.name === currentPreset(role));
+      const next = presets[at < 0 ? (step > 0 ? 0 : presets.length - 1) : (at + step + presets.length) % presets.length]!;
+      writeRolePlaces(hudHome, role.role, next.run, bundled);
+      return { ok: true, index: 0 };
+    }
     const run = workingRun(role, hudHome), here = run[i];
     if (!here) return refuse('role not found');
     const catalog = placeCatalog(hudHome, bundled, undefined, now);

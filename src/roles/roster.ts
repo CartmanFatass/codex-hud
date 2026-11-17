@@ -1,5 +1,6 @@
 /** hud_roster's read-only registry, shared without starting the MCP. */
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import * as fs from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,11 +29,20 @@ export {
   type RolePlace,
 };
 
+export interface RolePreset {
+  name: string;
+  run: RolePlace[];
+}
+/** Compare normalized places as data: object key order is irrelevant, place order is not. */
+export function currentPreset(role: Pick<Role, 'run' | 'presets'>): string | null {
+  return role.presets?.find((p) => isDeepStrictEqual(p.run, role.run))?.name ?? null;
+}
 export interface Role {
   role: string;
   instructions?: string;
   harness: 'pi' | 'bro' | 'cli';
   run: RolePlace[];
+  presets?: RolePreset[];
   pi_role?: string;
   split?: boolean;
   can_continue?: boolean;
@@ -154,6 +164,16 @@ function placeReason(
     return { reason: 'bad model/thinking/effort' };
   return { reason: null, harness };
 }
+function runReason(run: unknown, instructions: unknown, canContinue: unknown): string | null {
+  if (!Array.isArray(run) || run.length === 0) return 'bad run places';
+  let needsContinue = false;
+  for (const item of run) {
+    const checked = placeReason(item, instructions, false);
+    if (checked.reason) return checked.reason;
+    if (checked.harness === 'pi' || checked.harness === 'cli') needsContinue = true;
+  }
+  return needsContinue && typeof canContinue !== 'boolean' ? 'missing can_continue' : null;
+}
 function roleReason(value: unknown): string | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unparseable JSON';
   const raw = value as Record<string, unknown>;
@@ -163,17 +183,19 @@ function roleReason(value: unknown): string | null {
   if (raw.idle_grace_s !== undefined && (!Number.isInteger(raw.idle_grace_s) || (raw.idle_grace_s as number) < 0))
     return 'bad cli fields';
   if (raw.can_continue !== undefined && typeof raw.can_continue !== 'boolean') return 'bad can_continue';
-  if (raw.run !== undefined) {
-    if (!Array.isArray(raw.run) || raw.run.length === 0) return 'bad run places';
-    let needsContinue = false;
-    for (const item of raw.run) {
-      const checked = placeReason(item, raw.instructions, false);
-      if (checked.reason) return checked.reason;
-      if (checked.harness === 'pi' || checked.harness === 'cli') needsContinue = true;
+  if (raw.presets !== undefined) {
+    if (!Array.isArray(raw.presets)) return 'bad presets';
+    const names = new Set<string>();
+    for (const preset of raw.presets) {
+      if (!preset || typeof preset !== 'object' || Array.isArray(preset) ||
+          typeof preset.name !== 'string' || !/^[A-Za-z0-9._-]{1,32}$/.test(preset.name)) return 'bad preset name';
+      if (names.has(preset.name)) return `duplicate preset ${preset.name}`;
+      names.add(preset.name);
+      const reason = runReason(preset.run, raw.instructions, raw.can_continue);
+      if (reason) return `preset ${preset.name}: ${reason}`;
     }
-    if (needsContinue && typeof raw.can_continue !== 'boolean') return 'missing can_continue';
-    return null;
   }
+  if (raw.run !== undefined) return runReason(raw.run, raw.instructions, raw.can_continue);
   const checked = placeReason(value, raw.instructions, true);
   if (checked.reason) return checked.reason;
   if ((checked.harness === 'pi' || checked.harness === 'cli') && typeof raw.can_continue !== 'boolean')
@@ -190,7 +212,11 @@ function projectReason(value: unknown): string | null {
   } else if (normalizeHarness(raw.harness) !== 'pi') {
     return 'project roles are pi only';
   }
-  return roleReason(value);
+  const reason = roleReason(value);
+  if (reason) return reason;
+  if (((raw.presets ?? []) as RolePreset[]).some((p) => p.run.some((place) => normalizeHarness(place.harness) !== 'pi')))
+    return 'project roles are pi only';
+  return null;
 }
 function normalizePlace(raw: Partial<RolePlace>, instructions?: string): RolePlace {
   const harness = normalizeHarness(raw.harness) as 'pi' | 'bro' | 'cli';
@@ -236,6 +262,9 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     ...(instructions !== undefined ? { instructions } : {}),
     harness: primary.harness,
     run,
+    presets: ((parsed.presets ?? []) as RolePreset[]).map((p) => ({
+      name: p.name, run: p.run.map((item) => normalizePlace(item, rawInstructions)),
+    })),
     can_continue,
     ...(idle_grace_s !== undefined ? { idle_grace_s } : {}),
     ...(primary.pi_role !== undefined ? { pi_role: primary.pi_role } : {}),
@@ -402,6 +431,9 @@ export function roleRegistry(
           continue;
         }
         const role = normalizeRole(parsed as Record<string, unknown>, path);
+        role.presets = [...new Map([
+          ...(roles.get(role.role)?.presets ?? []), ...(role.presets ?? []),
+        ].map((p) => [p.name, p])).values()];
         roles.set(role.role, role);
       }
     };
@@ -484,6 +516,8 @@ export function roleRegistry(
               : ['on'],
       available: chosen !== null,
       run: role.run,
+      presets: role.presets ?? [],
+      preset: currentPreset(role),
       runs_on: chosen ? chosen.place : null,
       exhausted: evaluated.flatMap((entry) =>
         entry.mark

@@ -82,8 +82,8 @@ test('Control plane: what needs the owner first with the place the next job uses
   assert.match(lines[at(/ pro /) + 1], /^ {6}next job → ◉ gemini$/);
   assert.match(lines[at(/ flow /)], /^ {2}− flow +flow image not installed$/);
   assert.match(lines[at(/bad\.json/)], /^ {2}! bad\.json +unparseable JSON$/);
-  assert.match(lines[at(/^▸ Healthy ─/)], / 5$/);
-  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp reviewer sonic architect oracle$/);
+  assert.match(lines[at(/^▸ Healthy ─/)], / 4$/);
+  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp \[default\] reviewer \[custom\] sonic oracle \[fable\]$/);
   assert.ok(at(/^Needs attention ─/) < at(/^▸ Healthy ─/) && at(/^▸ Healthy ─/) < at(/^Harnesses ─/));
   assert.doesNotMatch(lines.join('\n'), /synthetic\/model|^Roles ─|^Browser tasks ─/m);
   assert.match(lines[at(/^Harnesses ─/) + 1], /pi ✓ +agy ✓ +claude ✓ +codex − +grok ✓ +jev-ask ✓ +jev-aistudio ✓ +jev-flow −/);
@@ -102,7 +102,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   assert.match(narrow, /^需要处理 ─+ 3$/m);
   assert.match(narrow, /^ {2}✗ pro +chatgpt 已耗尽 60分钟$/m);
   assert.match(narrow, /^ {6}下个任务 → ◉ gemini$/m);
-  assert.match(narrow, /^▸ 正常 ─+ 5$/m);
+  assert.match(narrow, /^▸ 正常 ─+ 4$/m);
   assert.match(narrow, /◉ 使用中 +○ 备选 +✗ 已耗尽/);
   // `next job` is a stop that takes the place keys, for the place it names; the healthy roles are one Enter away.
   s.session.state = { ...s.session.state, projectCursor: placeItem('pro', 1) };
@@ -113,27 +113,27 @@ test('Control plane: what needs the owner first with the place the next job uses
   // The healthy roles are one Enter away, and all one row a place again.
   s.session.state = { ...s.session.state, projectCursor: 'project:fold:healthy' };
   await s.press('\r');
-  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow):/.test(i)), ['imp:0', 'reviewer:0', 'reviewer:1', 'sonic:0', 'architect:0', 'oracle:0', 'oracle:1'].map((x) => `project:role:${x}`));
-  assert.match(s.text(), /^Healthy ─+ 5$/m);
+  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow):/.test(i)), ['imp:0', 'imp:1', 'reviewer:0', 'reviewer:1', 'sonic:0', 'oracle:0', 'oracle:1'].map((x) => `project:role:${x}`));
+  assert.match(s.text(), /^Healthy ─+ 4$/m);
   await s.press('\r');
-  assert.match(s.text(), /^▸ Healthy ─+ 5$/m, 'Enter again folds them');
+  assert.match(s.text(), /^▸ Healthy ─+ 4$/m, 'Enter again folds them');
 });
 test('Control plane, opened: each role once with its place and fallbacks, browser tasks apart', async (t) => {
   const s = await setup(t);
   writeRolePlaces(s.hud, 'reviewer', [{ harness: 'pi', pi_role: 'reviewer', split: false }, { harness: 'cli', agent: 'claude', model: 'opus', thinking: 'high' }]);
   s.session.snap = await s.collector.collect(true, s.board, NOW);
   // Nothing is exhausted here, but flow has nowhere to run: it is the one role up top; everyone else is a healthy place row.
-  assert.deepEqual(s.rows().map((r) => r.item), ['flow:0', 'imp:0', 'reviewer:0', 'reviewer:1', 'sonic:0', 'architect:0', 'oracle:0', 'oracle:1', 'pro:0', 'pro:1', 'pro:2'].map((x) => `project:role:${x}`));
+  assert.deepEqual(s.rows().map((r) => r.item), ['flow:0', 'imp:0', 'imp:1', 'reviewer:0', 'reviewer:1', 'sonic:0', 'oracle:0', 'oracle:1', 'pro:0', 'pro:1', 'pro:2'].map((x) => `project:role:${x}`));
   const lines = plain(s.frame(80, 'en', 64));
   const at = (re) => lines.findIndex((l) => re.test(l));
   // Groups in order under Healthy; pro only under Browser tasks; the harnesses after them.
   assert.ok(at(/^Healthy ─/) < at(/^Roles ─/) && at(/^Roles ─/) < at(/ imp /) && at(/ oracle /) < at(/^Browser tasks ─/));
   assert.ok(at(/^Browser tasks ─/) < at(/ pro /) && at(/ pro /) < at(/^Harnesses ─/));
   // Wide rows say whose file is in force: the shipped one, or the owner's once a switch (or the reviewer's fallback) wrote it.
-  assert.match(lines[at(/ imp /)], /◉ imp +pi +synthetic\/model +high +default$/);
-  assert.match(lines[at(/ reviewer /)], /◉ reviewer +pi +default +yours$/);
+  assert.match(lines[at(/ imp /)], /◉ imp \[default\] +pi +synthetic\/model +high +default$/);
+  assert.match(lines[at(/ reviewer /)], /◉ reviewer \[custom\] +pi +default +yours$/);
   assert.match(lines[at(/ reviewer /) + 1], /○ ↳ +claude +opus +high/);
-  assert.match(lines[at(/ oracle /)], /◉ oracle +claude +fable +default$/);
+  assert.match(lines[at(/ oracle /)], /◉ oracle \[fable\] +claude +fable +high +default$/);
   assert.match(lines[at(/ oracle /) + 1], /○ ↳ +pi +default/);
   assert.match(lines[at(/ pro /)], /◉ pro +chatgpt +6 Pro/);
   assert.match(lines[at(/ pro /) + 1], /○ ↳ +gemini/);
@@ -144,13 +144,16 @@ test('Control plane, opened: each role once with its place and fallbacks, browse
 test('a key on a place is written to the role file and is what the roster, hud_roster and so the next hud_create use', async (t) => {
   const s = await setup(t);
   assert.equal(s.assignment('imp').runs_on.harness, 'pi');
+  // Keep this place-edit exercise on one primary; presets themselves are exercised below.
+  s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 1) };
+  await s.press('-');
   // p: the harness of the primary place. The shipped table gives the agent its model; a CLI place has no pi role.
   await s.press('p');
   assert.deepEqual(s.session.done, { ok: true, index: 0 });
   let imp = s.assignment('imp');
   assert.deepEqual([imp.harness, imp.agent, imp.model, imp.runs_on.agent, imp.available], ['cli', 'agy', 'gemini-4-argon-high', 'agy', true]);
   assert.equal(imp.source_file, join(s.hud, 'roles/imp.json'));
-  assert.match(s.text(), /◉ imp +agy +gemini-4-argon-high/);
+  assert.match(s.text(), /◉ imp \[custom\] +agy +gemini-4-argon-high/);
   const file = join(s.hud, 'roles/imp.json');
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   assert.deepEqual(fs.readdirSync(join(s.hud, 'roles')).filter((n) => n.endsWith('.tmp')), []);
@@ -206,11 +209,11 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   markExhausted(s.hud, placeKey({ harness: 'cli', agent: first.agent, model: first.model }), 'HTTP 429', NOW);
   s.session.snap = await s.collector.collect(true, s.board, NOW);
   assert.equal(s.assignment('imp').runs_on.harness, 'pi', 'the next place is in use while the first is exhausted');
-  assert.match(s.text(), /✗ imp +agy/);
+  assert.match(s.text(), /✗ imp \[custom\] +agy/);
   s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 0) };
   await s.press('x');
   assert.equal(s.assignment('imp').runs_on.agent, 'agy');
-  assert.match(s.text(), /◉ imp +agy/);
+  assert.match(s.text(), /◉ imp \[custom\] +agy/);
   await s.press('x');
   assert.equal(s.session.done.message, 'not marked exhausted');
   // The MCP reads the same files: hud_roster shows what the page shows.
@@ -223,6 +226,32 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   const roster = JSON.parse((await reply).result.content[0].text).roles.find((r) => r.role === 'imp');
   assert.deepEqual([roster.harness, roster.agent, roster.model, roster.available, roster.runs_on.agent], ['cli', 'agy', 'gemini-4-argon-high', true, 'agy']);
   assert.equal(roster.run.length, 2);
+});
+
+test('c/C apply a whole role preset through the real key path; rows show default, named and custom; marks stay per place', async (t) => {
+  const s = await setup(t);
+  assert.match(s.text(), /imp \[default\]/);
+  assert.match(plain(s.frame(120)).at(-1), /c C preset/);
+  await s.press('c');
+  assert.deepEqual(s.session.done, { ok: true, index: 0 });
+  assert.equal(s.assignment('imp').preset, 'grok');
+  assert.deepEqual(stored(s, 'imp').run, s.assignment('imp').presets[1].run);
+  assert.match(s.text(), /imp \[grok\]/);
+  markExhausted(s.hud, 'pi:xai/grok-4.7', 'quota exceeded', NOW);
+  await s.press('c');
+  assert.match(s.text(), /imp \[hydrogen\]/);
+  await s.press('C');
+  assert.match(s.text(), /✗ imp \[grok\]/);
+  assert.equal(s.assignment('imp').exhausted.length, 1);
+  await s.press('C');
+  await s.press('e');
+  assert.match(s.text(), /imp \[custom\]/);
+  await s.press('c');
+  assert.equal(s.assignment('imp').preset, 'default', 'custom starts at first');
+  assert.doesNotMatch(s.text(), /sonic \[/);
+  s.session.state = { ...s.session.state, projectCursor: placeItem('sonic', 0) };
+  await s.press('c');
+  assert.equal(fs.existsSync(join(s.hud, 'roles/sonic.json')), false, 'no presets writes nothing');
 });
 
 test('browser places: p walks the web models, a second place can be promoted, a Flow place cycles its kind', async (t) => {
@@ -340,7 +369,7 @@ test('the model picker: Tab shows every provider and model, `default` unsets, a 
   await s.keys('m', ENTER, UP, ENTER);
   assert.equal(stored(s, 'imp').run[0].model, undefined);
   assert.equal(s.assignment('imp').model, 'synthetic/model', 'the pi role\'s own model is what the next job gets');
-  assert.match(s.text(), /◉ imp +pi +synthetic\/model +high +yours$/m, 'the row shows that model, and the owner\'s file is the one in force');
+  assert.match(s.text(), /◉ imp \[default\] +pi +synthetic\/model +high +yours$/m, 'the row shows that model, and the owner\'s file is the one in force');
   // While the picker is open every key is its own: q, p, e, + and x type or move, and nothing else happens.
   await s.press('m');
   for (const raw of ['q', 'p', 'e', '+', 'x', 'K', 'o', 'j']) {
@@ -348,7 +377,7 @@ test('the model picker: Tab shows every provider and model, `default` unsets, a 
     assert.deepEqual([out.action, out.close], [undefined, false], raw);
   }
   assert.equal(s.session.state.projectInput.text, 'qpe+xKoj');
-  assert.equal(stored(s, 'imp').run.length, 1);
+  assert.equal(stored(s, 'imp').run.length, 2);
   assert.equal(stored(s, 'imp').run[0].harness, 'pi');
   // A click leaves it (the page is the same one underneath).
   const view = s.frame();
@@ -438,15 +467,15 @@ test('a project role file in force is shown apart and never written past', async
   const own = { role: 'frontend', harness: 'pi', pi_role: 'implementer', split: false, can_continue: true, model: 'project/model' };
   s.put(join(s.cwd, '.hud/roles/frontend.json'), own);
   s.put(join(s.cwd, '.hud/roles/imp.json'), { ...own, role: 'imp', model: 'project/imp' });
-  s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'reviewer', 'sonic', 'architect'] });
+  s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'reviewer', 'sonic'] });
   s.session.snap = await s.collector.collect(true, s.board, NOW + 1);
   const lines = plain(s.frame(80));
-  assert.ok(lines.findIndex((l) => /^Project roles ─+ 2$/.test(l)) > lines.findIndex((l) => / architect /.test(l)));
+  assert.ok(lines.findIndex((l) => /^Project roles ─+ 2$/.test(l)) > lines.findIndex((l) => / sonic /.test(l)));
   assert.match(s.text(), /◉ frontend +pi +project\/model/);
-  assert.match(s.text(), /◉ imp +pi +project\/imp/);
+  assert.match(s.text(), /◉ imp \[custom\] +pi +project\/imp/);
   const before = fs.readFileSync(join(s.cwd, '.hud/roles/imp.json'), 'utf8');
   s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 0) };
-  for (const raw of ['p', 'm', 'e', '+', '-', 'K']) {
+  for (const raw of ['p', 'm', 'e', '+', '-', 'K', 'c', 'C']) {
     await s.press(raw);
     assert.deepEqual(s.session.done, { ok: false, message: 'the project file is in force: o opens it' }, raw);
   }
@@ -522,7 +551,7 @@ test('the live panel applies a Control plane key to the role files, and says why
   const root = fs.realpathSync(s.cwd);
   s.put(join(s.hud, 'projects.json'), { version: 1, projects: [{ root, registered_at: '2026-11-13T00:00:00.000Z' }] });
   s.put(join(s.cwd, '.hud/roles/frontend.json'), { role: 'frontend', harness: 'pi', pi_role: 'implementer', split: false, can_continue: true, model: 'project/model' });
-  s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'reviewer', 'sonic', 'architect'] });
+  s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'reviewer', 'sonic'] });
   s.put(join(s.hud, 'hud-settings.json'), { modelEnabled: false, refreshMs: 100, language: 'en' });
   const place = JSON.stringify({ state: { ...initialMonitorState(), mainTab: 'project', projectPage: 'control', projectCursor: placeItem('imp', 0), projectFolded: new Set(['agents', 'files']) } },
     (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
@@ -547,9 +576,9 @@ test('the live panel applies a Control plane key to the role files, and says why
   await until(() => / model\b/.test(stripAnsi(out)) && /gpt-6\.1-sol/.test(stripAnsi(out)), 'the models of the provider');
   child.stdin.write('sol\r');
   await until(() => fs.existsSync(join(s.hud, 'roles/imp.json')) && stored(s, 'imp').run[0].model === 'openai/gpt-6.1-sol', 'the model written');
-  // Down to the project's own role: four place rows below imp (reviewer, sonic, architect, then frontend).
+  // Down to the project's own role: imp fallback, two reviewer places, sonic, then frontend.
   const mark = out.length;
-  child.stdin.write('jjjjp');
+  child.stdin.write('jjjjjp');
   // The panel here is 30 columns wide, so the notice is cut to what fits.
   await until(() => /the project file is in/.test(stripAnsi(out.slice(mark))), 'the notice');
   assert.equal(fs.existsSync(join(s.hud, 'roles/frontend.json')), false);

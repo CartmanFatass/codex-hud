@@ -127,9 +127,8 @@ A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_gra
 (default 600), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`
 or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place
 files load as `run[0]` and `"harness": "jev"` loads as `"bro"`. Shipped roles:
-`imp` (`pi` implementer), `reviewer` (`pi` reviewer), `sonic`, `architect`, `oracle` (`cli` `claude` `fable` -> `pi` `architect`),
-`pro` (`chatgpt`, `gemini`, `argon`), and `flow` (`jev-flow`). Shipped `imp` and `reviewer`
-have no fallback; the owner adds one in the Control plane or `$HUD_HOME/roles/<role>.json`. A `cli` place requires `instructions/<instructions>.md`
+`imp` (`pi` implementer -> `pi` Grok 4.7), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`),
+`pro` (`chatgpt`, `gemini`, `argon`), and `flow` (`jev-flow`). A `cli` place requires `instructions/<instructions>.md`
 (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), otherwise `hud_create` returns
 `unsupported_harness`. Quota or rate-limit failures mark the place exhausted in
 `$HUD_HOME/exhausted.json` for 1 hour so the next dispatch falls back; HUD never
@@ -376,7 +375,7 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
   when there is none); a role with nowhere to run (`− flow  flow image not installed`); a role file
   that does not load (`! bad.json  unparseable JSON`). Each row is a stop that takes the place keys.
 - **Healthy** (folded to one row of names; Enter opens it): the other roles, one row per place
-  under **Roles** (imp, reviewer, sonic, architect, oracle and any other role), **Project roles** (roles
+  under **Roles** (imp, reviewer, sonic, oracle and any other role), **Project roles** (roles
   whose file comes from the project's own `.hud/roles`, which wins) and **Browser tasks** (roles that
   run only on browser places: pro, flow). A role is one row per place on one
   line: the first is the primary, `↳` rows are its fallbacks in order. A row reads mark, role,
@@ -389,6 +388,10 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
   `jev-flow` this machine has, with the mark legend.
 - **Files** (folded to `keys 3/5 · browser ✓ · missing …`; Enter opens it): invalid or ignored role files, the
   convention, pi role definitions, instruction files, native agents (folded inside), keys, browser.
+
+Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → project file in force; more specific wins, omission inherits. `hud_roster` returns `presets` and `preset` (matching name or null); `hud_create` has no preset argument.
+
+On a role's place row, `c`/`C` applies the next/previous preset in one step (from `custom`, first/last), writing its run to the owner's file and keeping other fields, including presets. The role row shows `[name]` or `[custom]` when presets exist; exhausted marks remain per place. Project-pinned roles refuse as for other edits; `o` opens the file. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
 
 On a place row (Control plane only): `p`/`P` next/previous harness (`pi`, then each CLI agent for a
 role that has CLI instructions; a browser role walks chatgpt, gemini, aistudio) with that harness's
@@ -499,6 +502,7 @@ Settings/Help forwards to Codex. Standalone panels consume their own keys.
 | Tab/Shift-Tab, Left/Right | Cycle Home → Project → Skills → Home, or reverse |
 | `[`, `]` | Project: previous/next project (not on the Projects list); in Codex the prefix then `[` or `]`, ignored while the panel is closed |
 | `p` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`). Panel focused (in Codex), no prefix commands |
+| `c` / `C` | Control plane: apply the next / previous role preset |
 | `m` (`M`) | Control plane: pick the model of the place under the cursor: provider, then model on `pi`; type to filter, ↑↓ pick, Enter sets (an open provider, or the model), Tab shows every model, ← back, Esc cancels |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |

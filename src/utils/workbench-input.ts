@@ -141,6 +141,8 @@ export class WorkbenchInputDecoder {
                   '[': 'project-prev',
                   ']': 'project-next',
                   // Control plane: the place under the cursor (capitals go back).
+                  c: 'role-preset',
+                  C: 'role-preset-prev',
                   p: 'place-harness',
                   P: 'place-harness-prev',
                   m: 'place-model',

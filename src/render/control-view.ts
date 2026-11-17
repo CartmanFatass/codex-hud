@@ -23,6 +23,8 @@ const LEGEND: [PlaceState, string][] = [['active', 'in use'], ['standby', 'stand
 /** A role needs the owner when one of its places is exhausted or none can run. Healthy roles are the rest. */
 export const needsAttention = (role: RoleFact) =>
   role.places.some((p) => p.state === 'exhausted') || !role.places.some((p) => p.state === 'active');
+const roleName = (role: RoleFact) => monitorText(role.role) + (role.preset === undefined ? '' :
+  theme.board.muted(` [${role.preset === null ? t('custom') : monitorText(role.preset)}]`));
 /** `pi  model  thinking`, the model cut in the middle (never the harness or the thinking) when the row is short. */
 function placeText(p: PlaceFact, room: number, gap: string): string {
   const tail = monitorText(p.thinking ?? p.kind ?? ''), cells = (model: string) =>
@@ -46,7 +48,7 @@ function placeRow(role: RoleFact, i: number, width: number, now: number, data: P
     ? theme.board.attention(`${t('exhausted')} ${t('{n}m', { n: Math.max(1, Math.ceil((place.until - now) / 60000)) })}`)
     : place.state === 'missing' ? theme.board.muted(t('not installed'))
     : i === 0 && width >= 80 ? theme.board.muted(t(role.source)) : '';
-  const lead = `  ${glyph(place.state)} ${fit(i ? theme.board.muted(mark('↳', '>')) : theme.board.title(monitorText(role.role)), name)} `;
+  const lead = `  ${glyph(place.state)} ${fit(i ? theme.board.muted(mark('↳', '>')) : theme.board.title(roleName(role)), Math.max(name, visualLength(roleName(role))))} `;
   const text = placeText(place, width - visualLength(lead) - (tag ? visualLength(tag) + 1 : 0), gap);
   const left = lead + (place.state === 'active' ? text : theme.board.muted(text));
   return { text: tag ? pair(left, tag, width) : fit(left, width), ...placeTarget(role, i, data) };
@@ -84,7 +86,7 @@ export function controlRows(data: ProjectSnapshot, width: number, now: number, h
     gap();
     out.push(section(t('Needs attention'), width, theme.board.attention(String(attention.length + invalid.length))));
     for (const role of attention) {
-      const lead = (i: number, g: string) => `  ${g} ${fit(i ? theme.board.muted(mark('↳', '>')) : theme.board.title(monitorText(role.role)), nameWidth)} `;
+      const lead = (i: number, g: string) => `  ${g} ${fit(i ? theme.board.muted(mark('↳', '>')) : theme.board.title(roleName(role)), Math.max(nameWidth, visualLength(roleName(role))))} `;
       const dead = role.places.map((p, i) => [p, i] as const).filter(([p]) => p.state === 'exhausted');
       dead.forEach(([p, i], n) => {
         const min = p.until === undefined ? '' : ` ${t('{n}m', { n: Math.max(1, Math.ceil((p.until - now) / 60000)) })}`;
@@ -109,7 +111,7 @@ export function controlRows(data: ProjectSnapshot, width: number, now: number, h
   if (healthy.length) {
     gap();
     out.push({ ...section(`${healthyOpen ? '' : mark('▸', '>') + ' '}${t('Healthy')}`, width, String(healthy.length)), item: 'project:fold:healthy' });
-    if (!healthyOpen) out.push({ text: fit(`  ${glyph('active')} ${healthy.map((r) => monitorText(r.role)).join(' ')}`, width), item: 'project:fold:healthy' });
+    if (!healthyOpen) out.push({ text: fit(`  ${glyph('active')} ${healthy.map(roleName).join(' ')}`, width), item: 'project:fold:healthy' });
     else for (const [title, group] of [['Roles', 'roles'], ['Project roles', 'project'], ['Browser tasks', 'browser']] as const) {
       const roles = healthy.filter((r) => r.group === group);
       if (!roles.length) continue;

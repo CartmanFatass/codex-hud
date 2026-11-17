@@ -1,6 +1,6 @@
 ---
 name: hud-delegate
-description: Hand work to a local HUD role in its own herdr tab - imp (implementer), reviewer, sonic (small chores), and any other role hud_roster lists. Use whenever the user delegates in plain words ("交给 imp", "让 implementer 做", "派个 sonic", "让 sonic 查一下", "review 一下", "起个 reviewer", "问 architect", "delegate this", "dispatch a sonic") or a project's docs route work to a role. The main session writes the brief, dispatches with hud_create, waits for the job to settle, reads the report and decides the next step.
+description: Hand work to a local HUD role in its own herdr tab - imp (implementer), reviewer, sonic (small chores), and any other role hud_roster lists. Use whenever the user delegates in plain words ("交给 imp", "让 implementer 做", "派个 sonic", "让 sonic 查一下", "review 一下", "起个 reviewer", "问 oracle", "delegate this", "dispatch a sonic") or a project's docs route work to a role. The main session writes the brief, dispatches with hud_create, waits for the job to settle, reads the report and decides the next step.
 ---
 
 # Delegate through HUD
@@ -32,11 +32,11 @@ Dispatch requires a herdr pane.
 
 The shipped defaults; `hud_roster` lists what is actually defined (files in `$HUD_HOME/roles/` add or override).
 
-- `imp` implements a defined change against a brief and completion criteria (shipped place: `pi` implementer; the owner may add fallbacks or switch it in the Control plane, so trust `hud_roster`'s `runs_on`).
-- `reviewer` independently assesses a specified change and reports findings (shipped place: `pi` reviewer; same as `imp` for switching). You decide whether to accept the change or request repairs.
+- `imp` implements a defined change against a brief and completion criteria (shipped places: `pi` implementer, then `pi` Grok 4.7; the owner may add fallbacks or switch it in the Control plane, so trust `hud_roster`'s `runs_on`).
+- `reviewer` independently assesses a specified change and reports findings (shipped places: `pi` reviewer, then `agy` Hydrogen high; same as `imp` for switching). You decide whether to accept the change or request repairs.
 - `sonic` does small, fully specified chores: lookups and small patches, never test authoring, bug diagnosis, measurement or design (`pi` only; no CLI instructions file).
-- `architect` returns design options with their costs, including the smallest; you decide (`pi` only; no CLI instructions file).
-- `oracle` is a local read-only advisor (`cli` `claude` `fable`, fallback `pi` `architect`) for design questions grounded in repo facts.
+- `oracle` is a local read-only advisor (`cli` `claude` `fable` high, fallback `pi` `architect`) for design questions grounded in repo facts. It carries both former architect/oracle setups as the `architect` and `fable` presets; there is no separate `architect` HUD role.
+- `hud_roster` includes merged `presets` (names and runs) and `preset` (matching name or null). The owner applies presets with `c`/`C` on the Control plane; `hud_create` has no preset parameter.
 - `pro` asks a strong web model (ordered `bro` places: ChatGPT Pro via `jev-ask`, Gemini web via `jev-ask`, AI Studio Argon via `jev-aistudio`).
 - `flow` generates media in Google Flow through `jev-flow`; pass `kind: "image"` (default) or `kind: "video"` (state `cost: N credits` in the brief for video).
 - Roles may configure ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`, `codex`) and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`) in `$HUD_HOME/roles/*.json`. A CLI place runs only if `instructions/<instructions>.md` exists (`implementer.md`, `reviewer.md`, `oracle.md`); otherwise `hud_create` returns `unsupported_harness`.

@@ -11,6 +11,7 @@ import { pickable } from './model-input.js';
 import { join } from 'node:path';
 /** The Control plane's keys (named by the decoder) and what each asks of the place under the cursor. */
 const PLACE_KEYS: Record<string, { op: PlaceOp; step?: 1 | -1 }> = {
+  'role-preset': { op: 'preset' }, 'role-preset-prev': { op: 'preset', step: -1 },
   'place-harness': { op: 'harness' }, 'place-harness-prev': { op: 'harness', step: -1 },
   'place-model': { op: 'model' }, 'place-model-prev': { op: 'model', step: -1 },
   'place-thinking': { op: 'thinking' }, 'place-thinking-prev': { op: 'thinking', step: -1 },

@@ -26,6 +26,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
       ['[ ]', 'switch project (Project)'],
+      ['c C', 'role: next / previous preset'],
       ['p e', 'place: harness, thinking (capitals go back)'],
       ['m', 'place: pick a model (provider, then model; type to filter)'],
       ['+ - K J', 'place: add, remove, move up, move down'],
@@ -62,7 +63,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
         );
   const notes = [
     'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
-    'On the Control plane p m e + - K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
+    'On the Control plane c/C applies the next/previous role preset; p m e + - K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
     'In the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
@@ -258,7 +259,7 @@ export function renderWorkboardFrame(
         ? '↑↓ scroll  esc back'
         : skills ? '↑↓ scroll  ←→ tab  , settings  ? help'
         : project ? (state.projectInput ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back'
-          : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
+          : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
           : page || list ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';

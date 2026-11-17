@@ -6,12 +6,20 @@
     {
       "harness": "cli",
       "agent": "claude",
-      "model": "fable"
+      "model": "fable",
+      "thinking": "high"
     },
     {
       "harness": "pi",
       "pi_role": "architect",
       "split": false
     }
+  ],
+  "presets": [
+    { "name": "fable", "run": [
+      { "harness": "cli", "agent": "claude", "model": "fable", "thinking": "high" },
+      { "harness": "pi", "pi_role": "architect", "split": false }
+    ] },
+    { "name": "architect", "run": [{ "harness": "pi", "pi_role": "architect", "split": false }] }
   ]
 }
