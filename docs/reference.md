@@ -204,8 +204,8 @@ Codex and pi, asks; these commands only read or write.
 `--cwd` (or `--cwd` itself), whether that root is registered, reference roles
 (shipped and `$HUD_HOME/roles`), project roles, the enabled set, invalid role files,
 skills and worker-skill links. Skill roots come from `$HUD_HOME/setup.json`
-`skill_roots`, defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and
-`~/.agents/skills`. A skill is a directory with `SKILL.md`; its name is the
+`skill_roots` (defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and
+`~/.agents/skills`), always followed by the checkout's `integrations/skills`. A skill is a directory with `SKILL.md`; its name is the
 frontmatter `name`. Each skill includes `model_invocable`: false when that
 frontmatter has `disable-model-invocation: true`. Pi still loads such a skill, but
 leaves it out of the model's skill list, so a worker will not pick it by itself.

@@ -135,8 +135,9 @@ hud setup --remove [--cwd DIR]
 
 `--detect` 打印一份 JSON，不写任何文件。它给出 `--cwd` 的 git 顶层（否则就是 `--cwd`）、
 该根是否已注册、参考角色（内置与 `$HUD_HOME/roles`）、项目角色、启用集合、无效角色文件、
-技能，以及工作者技能链接。技能根目录来自 `$HUD_HOME/setup.json` 的 `skill_roots`，
-默认 `~/.pi/agent/skills`、`~/.claude/skills` 和 `~/.agents/skills`。技能是含 `SKILL.md`
+技能，以及工作者技能链接。技能根目录来自 `$HUD_HOME/setup.json` 的 `skill_roots`
+（默认 `~/.pi/agent/skills`、`~/.claude/skills` 和 `~/.agents/skills`），其后总是包含本仓库自带的
+`integrations/skills`。技能是含 `SKILL.md`
 的目录，名字取 frontmatter 的 `name`。每项带 `model_invocable`：frontmatter 有
 `disable-model-invocation: true` 时为 false。pi 仍加载该技能，但不放进模型的技能列表，
 所以工作者不会自己选用它。

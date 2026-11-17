@@ -153,6 +153,12 @@ function roleSource(file: string, bundled: string, hudHome: string): string {
 }
 
 function skillRoots(hudHome: string, home: string | undefined): string[] {
+  const bundled = bundledSkillRoot();
+  const base = userSkillRoots(hudHome, home);
+  return base.includes(bundled) ? base : [...base, bundled];
+}
+
+function userSkillRoots(hudHome: string, home: string | undefined): string[] {
   const defaults = expandAll(DEFAULT_SKILL_ROOTS, home) ?? [];
   let parsed: unknown;
   try {
@@ -227,16 +233,24 @@ function skillLinks(root: string) {
     });
 }
 
-function bundledRoot(): string {
+function bundledDir(parts: readonly string[], check: readonly string[], fallback: string): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 8; i++) {
-    const candidate = join(dir, 'packages', 'hud-mcp');
-    if (isDir(join(candidate, 'roles'))) return candidate;
+    const candidate = join(dir, ...parts);
+    if (isDir(join(candidate, ...check))) return candidate;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  return fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url));
+  return fileURLToPath(new URL(fallback, import.meta.url));
+}
+
+function bundledRoot(): string {
+  return bundledDir(['packages', 'hud-mcp'], ['roles'], '../../packages/hud-mcp/');
+}
+
+function bundledSkillRoot(): string {
+  return bundledDir(['integrations', 'skills'], [], '../../integrations/skills');
 }
 
 function listDir(dir: string): string[] {

@@ -9,6 +9,7 @@ import { main } from '../../src/cli/hud.js';
 import { roleRegistry } from '../../src/roles/roster.js';
 
 const bundled = join(process.cwd(), 'packages/hud-mcp');
+const bundledSkills = fs.realpathSync(join(process.cwd(), 'integrations/skills'));
 
 function fixture(t: TestContext) {
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-setup-')));
@@ -178,26 +179,29 @@ test('unregistered detect ignores project files and uses default skill roots', a
     [...roleRegistry(f.hud, sub, f.io.env, undefined, undefined, bundled).roles().keys()].sort()
   );
   assert.deepEqual(doc.invalid, [{ path: join(f.hud, 'roles', 'bad.json'), reason: 'unparseable JSON' }]);
-  assert.deepEqual(doc.skills, [
-    {
-      name: 'from-claude',
-      path: join(f.home, '.claude/skills/zeta'),
-      root: join(f.home, '.claude/skills'),
-      model_invocable: true,
-    },
-    {
-      name: 'plain',
-      path: join(f.home, '.pi/agent/skills/plain'),
-      root: join(f.home, '.pi/agent/skills'),
-      model_invocable: true,
-    },
-    {
-      name: 'quoted',
-      path: join(f.home, '.agents/skills/mid'),
-      root: join(f.home, '.agents/skills'),
-      model_invocable: true,
-    },
-  ]);
+  assert.deepEqual(
+    doc.skills.filter((item: { root: string }) => item.root !== bundledSkills),
+    [
+      {
+        name: 'from-claude',
+        path: join(f.home, '.claude/skills/zeta'),
+        root: join(f.home, '.claude/skills'),
+        model_invocable: true,
+      },
+      {
+        name: 'plain',
+        path: join(f.home, '.pi/agent/skills/plain'),
+        root: join(f.home, '.pi/agent/skills'),
+        model_invocable: true,
+      },
+      {
+        name: 'quoted',
+        path: join(f.home, '.agents/skills/mid'),
+        root: join(f.home, '.agents/skills'),
+        model_invocable: true,
+      },
+    ]
+  );
   f.reset();
   assert.equal(await main(['setup', '--cwd', sub, '--detect'], f.io), 0);
   assert.equal(f.out(), JSON.stringify(doc, null, 2) + '\n');
@@ -290,18 +294,21 @@ test('registered detect reports project roles, custom skill roots, links and inv
     true
   );
   assert.equal(JSON.stringify(doc.invalid).includes('SECRET'), false);
-  assert.deepEqual(doc.skills, [
-    { name: 'fancy', path: named, root: first, model_invocable: true },
-    { name: 'shared', path: sharedA, root: first, model_invocable: true },
-    { name: 'shared', path: sharedB, root: second, model_invocable: true },
-    {
-      name: 'tilde',
-      path: join(f.home, 'elsewhere/only-tilde'),
-      root: join(f.home, 'elsewhere'),
-      model_invocable: true,
-    },
-    { name: 'via-link', path: fs.realpathSync(linked), root: second, model_invocable: true },
-  ]);
+  assert.deepEqual(
+    doc.skills.filter((item: { root: string }) => item.root !== bundledSkills),
+    [
+      { name: 'fancy', path: named, root: first, model_invocable: true },
+      { name: 'shared', path: sharedA, root: first, model_invocable: true },
+      { name: 'shared', path: sharedB, root: second, model_invocable: true },
+      {
+        name: 'tilde',
+        path: join(f.home, 'elsewhere/only-tilde'),
+        root: join(f.home, 'elsewhere'),
+        model_invocable: true,
+      },
+      { name: 'via-link', path: fs.realpathSync(linked), root: second, model_invocable: true },
+    ]
+  );
   assert.equal(
     doc.skills.some((item: { name: string }) => item.name === 'default-only'),
     false
@@ -323,7 +330,9 @@ test('detect marks skills that disable model invocation', async (t) => {
   skill(f.home, '.pi/agent/skills/body-only', '# notes\ndisable-model-invocation: true\n');
   const doc = await detect(f, f.project);
   assert.deepEqual(
-    doc.skills.map((item: { name: string; model_invocable: boolean }) => [item.name, item.model_invocable]),
+    doc.skills
+      .filter((item: { root: string }) => item.root !== bundledSkills)
+      .map((item: { name: string; model_invocable: boolean }) => [item.name, item.model_invocable]),
     [
       ['auto', true],
       ['body-only', true],
@@ -331,6 +340,47 @@ test('detect marks skills that disable model invocation', async (t) => {
       ['manual', false],
       ['quoted-off', false],
     ]
+  );
+});
+
+test('detect includes bundled skills with and without setup.json skill_roots', async (t) => {
+  const f = fixture(t);
+  const expectedTdd = {
+    name: 'tdd',
+    path: join(bundledSkills, 'tdd'),
+    root: bundledSkills,
+    model_invocable: true,
+  };
+  const expectedDiagnosing = {
+    name: 'diagnosing-bugs',
+    path: join(bundledSkills, 'diagnosing-bugs'),
+    root: bundledSkills,
+    model_invocable: true,
+  };
+
+  const withoutSetup = await detect(f, f.project);
+  assert.deepEqual(
+    withoutSetup.skills.find((item: { name: string }) => item.name === 'tdd'),
+    expectedTdd
+  );
+  assert.deepEqual(
+    withoutSetup.skills.find((item: { name: string }) => item.name === 'diagnosing-bugs'),
+    expectedDiagnosing
+  );
+
+  const customRoot = join(f.root, 'custom-skills');
+  const userTdd = skill(customRoot, 'tdd', '---\nname: tdd\n---\n');
+  fs.writeFileSync(join(f.hud, 'setup.json'), JSON.stringify({ skill_roots: [customRoot] }));
+  f.reset();
+
+  const withSetup = await detect(f, f.project);
+  assert.deepEqual(
+    withSetup.skills.filter((item: { name: string }) => item.name === 'tdd'),
+    [{ name: 'tdd', path: userTdd, root: customRoot, model_invocable: true }, expectedTdd]
+  );
+  assert.deepEqual(
+    withSetup.skills.find((item: { name: string }) => item.name === 'diagnosing-bugs'),
+    expectedDiagnosing
   );
 });
 
