@@ -41,6 +41,7 @@ export interface DecisionRecord {
   readonly evidence: readonly EvidenceRef[];
 }
 export interface OwnerWorker {
+  readonly diffStat?: import('./diff-stat.js').DiffStatSummary;
   readonly homeRank?: number;
   readonly homeFolded?: boolean;
   readonly labels?: import('./decision-labels.js').DisplayLabels;

@@ -20,6 +20,7 @@ import { monitorText, fit } from './monitor-text.js';
 import { providerMark } from './providers.js';
 import { laneStrip } from './work-lanes.js';
 import { t } from './i18n.js';
+import { diffStatRows } from './diff-stat-rows.js';
 import { formatTokenCount } from './lines/activity-line.js';
 export function localTime(at: number | null, now: number): string {
   if (at === null) return '';
@@ -111,6 +112,8 @@ export function workInspectorRows(
       width
     )
   );
+  const changes = diffStatRows(worker.diffStat, width);
+  if (changes.length) rows.push(boardRow(''), section(t('Changes'), width), ...changes);
   const files = worker.files ?? [];
   if (files.length) rows.push(boardRow(''), section(t('Files'), width, String(files.length)));
   for (const file of files) {

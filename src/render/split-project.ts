@@ -13,6 +13,7 @@ import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, asksYou, barText, briefRows, clam
   ledgerText, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
   type ProjectPage } from './project-view.js';
 import { glyph, needsAttention, placeTarget, placeText, roleName } from './control-view.js';
+import { diffStatRows } from './diff-stat-rows.js';
 import { splitItems, splitScope, splitSubValid, type SplitScene } from './split-frame.js';
 import { boardRow, kvRows, mark, minuteAge, pack, section } from './workboard-rows.js';
 import { jobSentenceRows, labelSummary, stemLines, workCardDetail } from './work-card.js';
@@ -48,7 +49,10 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
   const preview = (cursor?: string): Shown => {
     if (cursor === 'project:fold:waiting') return { label: t('Waiting for you'), right: waitFacts, rows: data.waiting.flatMap((r, i) => waitingRows(r, i, width, now, Infinity)) };
     const page = /^project:page:(.+)$/.exec(cursor ?? '')?.[1] as ProjectPage | undefined;
-    if (page && page !== 'progress') return { label: t(PAGE_WORD[page]), right: t('⏎ open page'), rows: bare(pageRows(page, data, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1)) };
+    if (page && page !== 'progress') {
+      const facts = page === 'tree' ? { ...data, gitDiff: undefined } : data;
+      return { label: t(PAGE_WORD[page]), right: t('⏎ open page'), rows: bare(pageRows(page, facts, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1)) };
+    }
     const rows: MonitorRow[] = [...indent(data.summary, width, 2)];
     const total = cur.rows.length - cur.counts.dropped, cells = Math.max(6, Math.min(HOME_BLOCK, width - 10));
     if (progressSegments(cur.counts, cells).some((s) => s.width)) rows.push(plain(`  ${barText({ counts: cur.counts }, cells)} ${muted(`${cur.counts.accepted}/${total}`)}`, width));
@@ -101,7 +105,8 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
     const id = /^project:slice:(.+)$/.exec(cursor ?? '')?.[1], r = slices.find((x) => x.id === id);
     if (r) {
       // The slice's whole text, with its model brief and steps (a to-try slice, model on) above it.
-      const s = info(r), worker = workerOf(r), rows = [...briefRows(r.brief, width).map((l) => plain(l, width)), ...indent(ledgerText(r) || r.text, width, Infinity)];
+      const s = info(r), worker = workerOf(r), rows = [...briefRows(r.brief, width).map((l) => plain(l, width)), ...indent(ledgerText(r) || r.text, width, Infinity),
+        ...diffStatRows(r.state === 'try' ? r.diff : undefined, width)];
       if (worker && s) {
         rows.push(plain(`  ${muted(t('now:'))} ${roleInk(worker.role ?? '')(monitorText(worker.role ?? ''))} ${muted(worker.homeNeedsHuman ? `${t('asking')} ?` : minuteAge(s.at ?? null, now))}`, width));
         rows.push(...(input.modelEnabled && worker.modelSentence ? jobSentenceRows(worker.modelSentence, width, theme.board.muted, true).map((l) => plain(l, width))
@@ -190,7 +195,9 @@ function factsPart(page: 'tree' | 'docs', data: ProjectSnapshot, width: number, 
   const preview = (cursor?: string): Shown => {
     const r = facts[Number(/^project:row:(\d+)$/.exec(cursor ?? '')?.[1])];
     return !r ? { label: '', rows: [] } : { label: r.label === '!' ? t('Unlisted worktrees') : t(r.label), right: 'at' in r && r.at !== undefined ? minuteAge(r.at, now) : '',
-      rows: [...flowLines(monitorText(r.value), width - 2).map((l) => plain('  ' + l, width)), ...('path' in r && r.path ? [plain('  ' + muted(basename(r.path)), width)] : [])] };
+      rows: [...flowLines(monitorText(r.value), width - 2).map((l) => plain('  ' + l, width)),
+        ...diffStatRows(page === 'tree' && r.label === 'branch' ? data.gitDiff : undefined, width),
+        ...('path' in r && r.path ? [plain('  ' + muted(basename(r.path)), width)] : [])] };
   };
   return { list, preview, start: list.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ open file  PgUp PgDn scroll  esc back  ? help' };
 }

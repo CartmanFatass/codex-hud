@@ -163,6 +163,8 @@ const ZH: Record<string, string> = {
   // Page frame
   Worktrees: '工作树',
   Changes: '改动',
+  bin: '二进制',
+  '+{n} more files': '另有 {n} 个文件',
   Inspect: '详情',
 
   // Agents summary

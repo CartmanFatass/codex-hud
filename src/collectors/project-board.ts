@@ -7,6 +7,7 @@ import { controlFacts, type HarnessFact, type ModelLists, type RoleFact } from '
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
+import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 export interface ProjectItem {
   label: string;
   value: string;
@@ -23,6 +24,7 @@ export interface LedgerSlice {
   id: string; state: SliceState; milestone: string; text: string; commit?: string; at?: number;
   /** Laid on by the panel from its stored briefs (`TryBriefs.apply`), never collected. */
   brief?: TryBrief;
+  diff?: DiffStatSummary;
 }
 export interface ActiveJob {
   jobId: string; role: string; state: string; package?: string; title?: string; at?: number; asking: boolean;
@@ -52,6 +54,7 @@ export interface ProjectSnapshot {
   browser: boolean;
   roleCount: number;
   git?: WorktreeStatus;
+  gitDiff?: DiffStatSummary;
   /** Linked worktrees besides the main one; with `git`, one Git read per five seconds. */
   worktreeCount?: number;
   ladder: { ids: string[]; current?: string };
@@ -87,6 +90,7 @@ export class ProjectCollector {
   private last?: ProjectSnapshot['last'];
   private worktrees: WorktreeInfo[] = [];
   private commitAt = new Map<string, number>();
+  private diffs = new DiffStatCollector();
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) {}
   private cached<T>(path: string, load: (st: fs.Stats) => T): T | null {
     try {
@@ -366,6 +370,17 @@ export class ProjectCollector {
       if (at !== undefined) row.at = at;
     }
     out.git = this.git;
+    const toTry = out.ledger.filter((r) => r.state === 'try').reverse()
+      .sort((a, b) => (b.at ?? -1) - (a.at ?? -1)).slice(0, 12);
+    await Promise.all([
+      ...(this.git && this.git.changed > 0 ? [this.diffs.workingTree(this.cwd, now).then((diff) => {
+        if (diff) out.gitDiff = diff;
+      })] : []),
+      ...toTry.map(async (row) => {
+        const diff = await this.diffs.commits(this.cwd, row.text, now);
+        if (diff) row.diff = diff;
+      }),
+    ]);
     out.worktreeCount = this.git ? this.worktrees.length : undefined;
     out.last = this.last;
     const canonical = canonicalPath, root = canonical(this.cwd);

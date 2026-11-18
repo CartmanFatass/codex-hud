@@ -8,6 +8,7 @@ import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { basename } from 'node:path';
 import { boardRow, itemRow, section, mark, minuteAge, kvRows, pack } from './workboard-rows.js';
 import { controlRows, pickerRows } from './control-view.js';
+import { diffStatRows } from './diff-stat-rows.js';
 import { pickOf } from './model-input.js';
 import { monitorText, fit, pair, flowLines } from './monitor-text.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
@@ -468,6 +469,7 @@ export function pageRows(
         tried && !(short && state.projectCursor !== item) ? Infinity : 2, !brief.length);
       if (folded.has(id)) lines.splice(1, 0, ' '.repeat(indent + 4) + theme.board.muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at, now) : ''].filter(Boolean).join(' · ')), ...brief);
       for (const line of lines) rows.push({ text: fit(line, width), item, tryTarget, ...(data.statePath ? { files: [data.statePath] } : {}) });
+      if (r.state === 'try' && folded.has(id)) rows.push(...diffStatRows(r.diff, width));
     };
     // Newest milestone first; the newest to-try milestone is selectable but stays open.
     const byMilestone = (list: typeof landed, prefix: string, tried = false, short = false) => {
@@ -590,6 +592,7 @@ export function pageRows(
       data.git.ahead === null ? '' : `${data.git.ahead} ${t('ahead')}`,
       data.git.behind ? `${data.git.behind} ${t('behind')}` : '',
     ].filter(Boolean).join(' · ') }, 0);
+    rows.push(...diffStatRows(data.gitDiff, width));
     data.editing.forEach((r, i) => item(r, i, theme.board.active(mark('◉', '@'))));
     if (data.last) item({ label: 'last', value: data.last.text, at: data.last.at }, 0);
     // Worktrees with no ledger row: the ones that left the hub's Now, counted on its Working tree row.

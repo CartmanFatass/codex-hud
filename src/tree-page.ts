@@ -18,6 +18,7 @@ import type { JobSnapshot } from './collectors/job-display-types.js';
 import { TaskObservationCollector } from './collectors/task-observations.js';
 import { buildWorkboard } from './collectors/workboard.js';
 import { readThinJobs, type ThinJobScope } from './collectors/thin-jobs.js';
+import { DiffStatCollector } from './collectors/diff-stat.js';
 import type { TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-types.js';
 import { composeJobTree, type JobTreeResult } from './collectors/job-tree.js';
 import { NativeCallCollector } from './collectors/native-calls.js';
@@ -116,6 +117,7 @@ export class PanelJobPipeline {
     board: WorkboardSnapshot;
   };
   private thinJobs: ReturnType<typeof readThinJobs> = [];
+  private jobDiffs = new DiffStatCollector();
   private thinObservation = { complete: false };
   observation(tree: SubagentTree, legacy: DelegationViewModel | null, nativeQuiet: boolean) {
     return jobPanelObservation(this.workboard(tree, legacy), this.thinObservation.complete, nativeQuiet);
@@ -196,7 +198,8 @@ export class PanelJobPipeline {
   }
   async refresh(
     charge?: (bytes: number, entries: number, elapsed: number) => void,
-    slice?: JobReadSlice
+    slice?: JobReadSlice,
+    inspecting?: string
   ): Promise<boolean> {
     const generation = this.generation;
     const start = performance.now();
@@ -208,7 +211,18 @@ export class PanelJobPipeline {
       maxEntries: 128 - snapshot.coverage.entries,
       maxBytes: Math.max(0, Math.min(1024 * 1024, slice?.maxBytes ?? 1024 * 1024) - snapshot.coverage.bytes),
     });
-    this.thinJobs = readThinJobs(this.home, this.thinScope, JSON.parse, { openedAt: this.openedAt }, this.thinObservation);
+    let lanes = readThinJobs(this.home, this.thinScope, JSON.parse, { openedAt: this.openedAt }, this.thinObservation);
+    const id = /^thin-job:(j[0-9a-f]{16})$/.exec(inspecting ?? '')?.[1];
+    const lane = id && lanes.find((l) => l.workers.some((w) => w.id === inspecting));
+    if (id && lane) {
+      const worker = lane.workers.find((w) => w.id === inspecting)!;
+      const diffStat = await this.jobDiffs.job(path.resolve(this.home, 'jobs', id), worker.settledAt, Date.now());
+      if (this.closed || generation !== this.generation) return false;
+      if (diffStat) lanes = lanes.map((l) => l !== lane ? l : {
+        ...l, workers: l.workers.map((w) => w === worker ? { ...w, diffStat } : w),
+      });
+    }
+    this.thinJobs = lanes;
     this.boardCache = undefined;
     this.snapshot = snapshot;
     this.taskSnapshot = tasks;
@@ -898,7 +912,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       }
       const observationRoot = allDelegations ? null : (selectedRoot ?? boundJobRoot);
       jobPipeline.setRoot(allDelegations ? null : observationRoot || 'unbound/no-session');
-      const jobRead = jobPipeline.refresh(undefined, { deadline: delegationDeadline });
+      const inspect = !settingsPage && !state.help && state.focus === 'details' ? state.boardInspect : undefined;
+      const jobRead = jobPipeline.refresh(undefined, { deadline: delegationDeadline }, inspect?.kind === 'worker' ? inspect.workerId : undefined);
       await jobRead;
       if (closed) return;
       const nativeRead = selectedRoot
