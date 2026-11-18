@@ -152,7 +152,7 @@ board counts these; update at every landing or decision. -->
 - working · 0.2.0 · PANEL-V2 · panel micro-actions (g/QA reply/X), Split V2 cues/ratio/scrollbar, live / filter, sparklines + sonic subtrees, safe --numstat diff bars, Control quota radar, static HTML board (.scratch/panel-v2/, 7 tickets)
 - try · — · MCP-READ-COMPACT · compact actionable `hud_read()` list; `view:"recent"` retains the newest 20 full rows (separately scheduled, `.scratch/mcp-read-compact/issues/01-compact-hud-read.md`); landed e629b295 (default 327 B vs recent 4,475 B, −92.69%)
 
-## Now (2026-11-18): 0.2.0 9/14 tickets landed (mcp-next 01–04; panel-v2 01, 02, 05, 06, 07) + MCP-READ-COMPACT 01 (try); in flight: mcp-next 05 context assembly (imp j8c2f223e5dc7032c), panel-v2 03 `/` filter (frontend-imp j87862a1ac99b122f); serial per chain (owner); next: mcp-next 06, panel-v2 04
+## Now (2026-11-18): 0.2.0 10/14 tickets landed (mcp-next 01–05; panel-v2 01, 02, 05, 06, 07) + MCP-READ-COMPACT 01 (try); in flight: panel-v2 03 `/` filter (frontend-imp j87862a1ac99b122f); mcp-next 06 ready (worktree + brief tmp/tasks/mcp-next-06) and waits for panel-v2 03 because its panel line shares render files (serial, owner); then panel-v2 04, mcp-next 07
 
 State on 2026-11-18, checked against the ledger below (no working, blocked or todo slice), herdr (only the main session's tab) and origin (in sync).
 
