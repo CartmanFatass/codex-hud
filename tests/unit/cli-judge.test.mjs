@@ -39,6 +39,8 @@ const rows = [
   ['PID gone with report despite working', initial, { alive: false, reportSig: 'report' }, 2, { state: 'closed', outputWritten: true }],
   ['tab closure', initial, { tabClosed: true }, 2, { state: 'failed', exitReason: 'tab closed' }],
   ['stop', initial, { stop: true }, 2, { state: 'stopped' }],
+  ['stop then the worker is killed', initial, { stop: true, alive: false }, 2, { state: 'stopped', exitReason: 'stop requested' }],
+  ['stop then the tab is closed', initial, { stop: true, tabClosed: true }, 2, { state: 'stopped', exitReason: 'stop requested' }],
   ['close', initial, { close: true }, 2, { state: 'closed', action: 'quit' }],
   ['blocked', initial, { status: 'blocked' }, 2, { state: 'waiting_orchestrator', blocked: true }],
   ['open question', quiet, { openQuestions: true }, 11_000, { state: 'waiting_orchestrator', quietSince: null }],

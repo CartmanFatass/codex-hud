@@ -175,9 +175,10 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     ...next, state, exitReason: reason, outputWritten: report,
     settledAt: next.settledAt ?? now, action: quit ? 'quit' : null, wakeAt: null,
   });
+  // hud_close writes the stop marker before it kills the worker: a stop on purpose is not a failure.
+  if (facts.stop) return end('stopped', 'stop requested');
   if (facts.alive === false) return end(report ? 'closed' : 'failed', report ? 'settled' : 'worker exited');
   if (facts.tabClosed) return end('failed', 'tab closed');
-  if (facts.stop) return end('stopped', 'stop requested');
   if (facts.close) return end('closed', 'settled', true);
   if (facts.supervisorError) return { ...next, state: 'waiting_orchestrator', reason: facts.supervisorError };
   if (facts.alive !== null) next.missingTicks = 0;
