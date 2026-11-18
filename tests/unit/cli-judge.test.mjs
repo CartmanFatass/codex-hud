@@ -12,9 +12,12 @@ test('worker identity: missing start is unknown for a live PID, but absence is s
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
   const exited = once(child, 'exit');
   try {
-    assert.equal(workerHasChild(process.pid, null), false);
-    assert.equal(workerHasChild(process.pid, '0'), false, 'a reused worker PID does not count');
-    assert.equal(workerHasChild(process.pid, procStat(process.pid).start), true);
+    const oldTurn = new Date(0).toISOString();
+    assert.equal(workerHasChild(process.pid, null, oldTurn), false);
+    assert.equal(workerHasChild(process.pid, '0', oldTurn), false, 'a reused worker PID does not count');
+    assert.equal(workerHasChild(process.pid, procStat(process.pid).start, oldTurn), true);
+    const newTurn = new Date(Date.now() + 1000).toISOString();
+    assert.equal(workerHasChild(process.pid, procStat(process.pid).start, newTurn), false);
   } finally {
     child.kill();
     await exited;

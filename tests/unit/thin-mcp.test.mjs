@@ -66,7 +66,7 @@ const cardText = (worker) =>
     .join('\n');
 
 const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
-async function fixture(t, inHerdr = true, probe = '') {
+async function fixture(t, inHerdr = true, probe = '', watcherTickMs) {
   const root = fs.mkdtempSync(join(tmpdir(), 'thin-mcp-'));
   const bin = join(root, 'bin');
   fs.mkdirSync(bin);
@@ -323,8 +323,9 @@ if (command === 'pi-dispatch') {
   if (args[args.indexOf('--kind') + 1] === 'video' && !args.includes('--confirm-credits')) process.exit(17);
   fs.writeFileSync(join(args[args.indexOf('--out-dir') + 1], 'synthetic-media.mp4'), 'synthetic media');
 } else if (command === 'pi-role-reap') {
+  const dir = args[0], fail = join(dir, 'fail-reap-once');
+  if (fs.existsSync(fail)) { fs.unlinkSync(fail); process.exit(1); }
   try {
-    const dir = args[0];
     const status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
     if (status && !['closed', 'failed', 'stopped', 'idle_grace'].includes(status.state))
       fs.writeFileSync(join(dir, 'STATUS.json.stop-requested'), '');
@@ -365,6 +366,7 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
     NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${clock}`,
     HUD_MCP_SURFACE: 'roles',
     HUD_WATCH_FAILED_RETENTION_MS: '1000',
+    ...(watcherTickMs ? { HUD_WATCH_CLI_CHECK_MS: String(watcherTickMs) } : {}),
     PATH: `${bin}:${process.env.PATH}`,
     FAKE_LOG: log,
     HERDR_SOCKET_PATH: join(root, 'events.sock'),
@@ -429,7 +431,7 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
       child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
     });
   }
-  let cliSocket;
+  let cliSocket, piStatus = () => 'idle';
   const socketRequests = [];
   const subscribers = new Set();
   const has = (name) => fs.existsSync(join(env.HOME, name));
@@ -452,6 +454,11 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
         }
         else if (req.method === 'agent.get') {
           const id = req.params.target.replace(/-primary$/, '');
+          const jobFile = join(env.HUD_HOME, 'jobs', id, 'job.json');
+          if (fs.existsSync(jobFile) && !JSON.parse(fs.readFileSync(jobFile)).cli) {
+            reply({ agent: { agent_status: piStatus() } });
+            return;
+          }
           const sub = [...subscribers].reverse().find((item) => item.supervisor && !item.id) ?? [...subscribers].find((item) => item.supervisor && item.id === id);
           if (sub) sub.id = id;
           if (has('herdr-errors') || has('no-pid')) { socket.write(JSON.stringify({ id: req.id, error: { code: 'agent_not_found' } }) + '\n'); return; }
@@ -530,6 +537,8 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
     rpc,
     call,
     socketRequests,
+    startCliSocket,
+    piStatus: (get) => { piStatus = get; },
     push: (id, state) => { for (const client of subscribers) if (client.id === id) push(client, state); },
     // herdr's status changes but the push never arrives: only agent.get sees it.
     silent: (id, state) => { for (const client of subscribers) if (client.id === id) client.state = state; },
@@ -637,20 +646,27 @@ const statusQueries = (f, job) => f.socketRequests.filter((r) =>
 const readCloseQuit = (f, job) => f.commands().some((c) =>
   c.command === 'herdr' && c.args[1] === 'prompt' && c.args[2] === job.agent && c.args[3] === '/quit');
 const readCloseReaped = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).reaped_at;
+const reapAttempts = (f, job) => f.commands().filter((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir).length;
+
+async function publishPiGrace(job, worker) {
+  const dir = job.task_dir, now = Date.now();
+  const report = join(dir, 'report.md');
+  fs.writeFileSync(report, 'Synthetic settled pi report.\n');
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({
+    version: 1, task_dir: dir, slot: 'primary', state: 'idle_grace', output_written: true,
+    ...(worker ? { pid: worker.pid, pid_start_time: procStat(worker.pid).start } : {}),
+    settled_at: new Date(now).toISOString(), idle_deadline_at: new Date(now + 8000).toISOString(),
+  }));
+  const mtime = fs.statSync(report).mtimeMs;
+  await until(() => Date.now() > mtime); // hud_read records integer milliseconds.
+}
 
 test('read-close: hud_read closes settled CLI and pi workers within one tick', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'read-close-cli', 8);
   for (const role of ['read-close-cli', 'imp']) {
     const job = await f.call('hud_create', { role, request_key: `close-on-read-${role}`, task: 'Synthetic task.' });
-    if (role === 'imp') {
-      // Fake pi publishes its own idle grace; hud-watch must invoke the ordinary reaper.
-      const dir = job.task_dir, now = Date.now();
-      fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({
-        version: 1, task_dir: dir, slot: 'primary', state: 'idle_grace', output_written: true,
-        settled_at: new Date(now).toISOString(), idle_deadline_at: new Date(now + 8000).toISOString(),
-      }));
-    }
+    if (role === 'imp') await publishPiGrace(job); // Fake pi settles only after the initial prompt.
     await until(() => cliState(job.task_dir)?.state === 'idle_grace');
     const grace = cliState(job.task_dir), queries = statusQueries(f, job);
     assert.equal(readCloseReaped(job), undefined);
@@ -668,6 +684,90 @@ test('read-close: hud_read closes settled CLI and pi workers within one tick', {
     assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
     assert.equal((await f.call('hud_send', { job: job.job, message_key: 'repair', text: 'Synthetic repair.' })).code, 'not_continuable');
   }
+});
+
+test('read-close: reading the old Pi report after an admitted continuation does not reap', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t, true, '', 200);
+  await f.startCliSocket();
+  const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-continuation', task: 'Synthetic task.' });
+  await publishPiGrace(job);
+  const sent = await f.call('hud_send', { job: job.job, message_key: 'next', text: 'Synthetic continuation.' });
+  assert.equal(sent.sent, true);
+  assert.equal(sent.queued, undefined, 'the continuation was admitted from idle grace');
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  await new Promise((done) => setTimeout(done, 450));
+  assert.equal(reapAttempts(f, job), 0);
+  assert.equal(cliState(job.task_dir).state, 'idle_grace');
+
+  await publishPiGrace(job);
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  await until(() => readCloseReaped(job));
+  assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
+});
+
+test('read-close: aborts Pi reap when fresh Herdr status has turned working', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const worker = fakeCliWithChild(t, f);
+  await f.startCliSocket();
+  const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-resumed', task: 'Synthetic task.' });
+  await publishPiGrace(job, worker);
+  let state = 'idle';
+  f.piStatus(() => (state = 'working')); // The worker resumes during the automatic reap preflight.
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  await until(() => statusQueries(f, job) > 0);
+  await new Promise((done) => setTimeout(done, 100));
+  assert.equal(state, 'working');
+  assert.ok(procStat(worker.pid));
+  assert.equal(cliState(job.task_dir).state, 'idle_grace', 'the on-disk status is still stale');
+  assert.equal(reapAttempts(f, job), 0);
+  assert.equal(readCloseReaped(job), undefined);
+
+  fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ ...cliState(job.task_dir), state: 'working' }));
+  assert.equal((await f.call('hud_close', { job: job.job })).exit_code, 0);
+  assert.equal(reapAttempts(f, job), 1, 'explicit close still invokes the reaper on a working job');
+  assert.ok(fs.existsSync(join(job.task_dir, 'STATUS.json.stop-requested')));
+});
+
+test('read-close: failed Pi reap is retried on the slow safety tick without a file event', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t, true, '', 350);
+  await f.startCliSocket();
+  const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-retry', task: 'Synthetic task.' });
+  await publishPiGrace(job);
+  fs.writeFileSync(join(job.task_dir, 'fail-reap-once'), '');
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  const log = join(f.env.HUD_HOME, 'watch.log');
+  await until(() => fs.existsSync(log) && fs.readFileSync(log, 'utf8').includes(`reap ${job.job} state=idle_grace exit=1`));
+  assert.equal(cliState(job.task_dir).state, 'idle_grace');
+  assert.equal(readCloseReaped(job), undefined);
+  await until(() => readCloseReaped(job));
+  assert.equal(reapAttempts(f, job), 2);
+  assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
+});
+
+test('read-close: Pi ignores pre-dispatch children but waits for current-turn children', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t, true, '', 200);
+  const worker = fakeCliWithChild(t, f);
+  await f.startCliSocket();
+  const oldChild = await worker.start();
+  const first = await f.call('hud_create', { role: 'imp', request_key: 'pi-old-child', task: 'Synthetic task.' });
+  await publishPiGrace(first, worker);
+  assert.match((await f.call('hud_read', { job: first.job })).report, /^Synthetic /);
+  await until(() => readCloseReaped(first));
+  assert.ok(procStat(oldChild));
+  worker.stop();
+  await until(() => procStat(oldChild) === null);
+
+  const second = await f.call('hud_create', { role: 'imp', request_key: 'pi-new-child', task: 'Synthetic task.' });
+  const newChild = await worker.start();
+  await publishPiGrace(second, worker);
+  assert.match((await f.call('hud_read', { job: second.job })).report, /^Synthetic /);
+  await until(() => statusQueries(f, second) >= 2);
+  assert.equal(reapAttempts(f, second), 0);
+  assert.equal(cliState(second.task_dir).state, 'idle_grace');
+  worker.stop();
+  await until(() => procStat(newChild) === null);
+  await until(() => readCloseReaped(second));
+  assert.equal(cliState(second.task_dir).exit_reason, 'closed after report read');
 });
 
 test('read-close: listing an unread report leaves the CLI grace deadline in place', { timeout: 10000 }, async (t) => {
@@ -712,15 +812,29 @@ test('read-close: a live CLI child holds the close until the safety tick sees it
   await until(() => readCloseReaped(job));
 });
 
-test('supervisor events: idle and a stable report do not settle while a pre-turn child lives; the next tick settles after exit', { timeout: 10000 }, async (t) => {
+test('read-close: a live pre-turn CLI child does not block settlement or close', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   const child = await worker.start();
+  writeCliRole(f, 'pre-turn-cli', 20);
+  const job = await f.call('hud_create', { role: 'pre-turn-cli', request_key: 'pre-turn-read-close', task: 'Synthetic task.' });
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  await until(() => readCloseReaped(job));
+  assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
+  assert.ok(readCloseQuit(f, job));
+  assert.ok(procStat(child), 'the older child was still alive at close');
+});
+
+test('supervisor events: an in-turn child holds settlement until the safety tick sees it exit', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'background-events', 4);
   const job = await f.call('hud_create', { role: 'background-events', request_key: 'background-events', task: 'Synthetic background work.' });
   await until(() => cliState(job.task_dir)?.pid === worker.pid && cliState(job.task_dir)?.agent_session_id);
   assert.equal(cliState(job.task_dir).pid_start_time, procStat(worker.pid).start);
+  const child = await worker.start();
   fs.writeFileSync(join(job.task_dir, 'report.md'), 'Report while tests finish.\n');
   f.push(job.job, 'idle');
   const before = statusQueries(f, job);
@@ -2286,10 +2400,9 @@ test('an unchanged cli report after continuation stays open without failing', { 
   await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, 5000);
 });
 
-test('quiet without a report and a live child makes no Decision API call and types no prompt', { timeout: 10000 }, async (t) => {
+test('quiet without a report and an in-turn child makes no Decision API call and types no prompt', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
-  await worker.start();
   writeCliRole(f, 'bg-cli', 0.25, false);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   fs.writeFileSync(join(f.env.HOME, 'write-on-report-prompt'), '');
@@ -2297,6 +2410,7 @@ test('quiet without a report and a live child makes no Decision API call and typ
   configureFakeDecision(f, server.baseUrl);
   const job = await f.call('hud_create', { role: 'bg-cli', request_key: 'bg-child', task: 'Synthetic bg child.' });
   await until(() => cliState(job.task_dir)?.agent_session_id);
+  await worker.start();
   const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && String(c.args[3]).startsWith('Write your report to '));
   f.push(job.job, 'idle');
   const before = statusQueries(f, job);

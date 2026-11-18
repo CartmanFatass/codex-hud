@@ -10,6 +10,7 @@ import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
 import { judge, procStat, workerAlive, workerHasChild, readTurn, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
+import { request } from './herdr-request.mjs';
 
 const dir = fs.realpathSync(process.argv[2]);
 const bundled = fileURLToPath(new URL('..', import.meta.url)), hudHome = dirname(dirname(dir));
@@ -22,21 +23,6 @@ const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'ut
 const name = session.PRIMARY, pane = session.LEFT, cli = job.cli;
 const output = join(dir, 'report.md'), graceMs = (cli.idle_grace_s ?? 600) * 1000;
 fs.writeFileSync(join(dir, 'supervisor.pid'), `${process.pid}\n`, { mode: 0o600 });
-// Protocol 22: subscription sockets cannot carry requests. Each query gets a separate connection.
-function request(method, params) {
-  if (!process.env.HERDR_SOCKET_PATH) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    const socket = createConnection(process.env.HERDR_SOCKET_PATH ?? '');
-    const lines = createInterface({ input: socket });
-    const done = (body = null) => { clearTimeout(timer); lines.close(); socket.destroy(); resolve(body); };
-    const timer = setTimeout(done, 2000);
-    socket.on('connect', () => socket.write(JSON.stringify({ id: 'hud-cli', method, params }) + '\n'));
-    lines.once('line', (line) => { try { done(JSON.parse(line)); } catch { done(); } });
-    lines.on('error', () => done());
-    socket.on('error', () => done());
-    socket.on('end', () => done());
-  });
-}
 function effect(args) {
   const ran = spawnSync('herdr', args, { encoding: 'utf8', timeout: 20000 });
   let body = null;
@@ -151,7 +137,7 @@ function connect() {
   });
   lines.on('error', unavailable); socket.on('error', unavailable); socket.on('close', unavailable);
 }
-const sampleChild = () => workerHasChild(current.pid, current.pid_start_time);
+const sampleChild = () => workerHasChild(current.pid, current.pid_start_time, turn.sent_at);
 function collect(isTick, checkChild = isTick && status !== 'working') {
   if (diskDirty || isTick) {
     turn = readTurn(dir) ?? turn;

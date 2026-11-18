@@ -149,8 +149,9 @@ STATUS, open questions and an unread report (up to 64 KiB). A report is unread w
 `read_at` exists. Already-read reports return `report_unchanged: true` without a body; `full: true` includes it
 again. CLI jobs show effective `idle_grace_s`. `wait_ms` waits at most 120000 ms, stopping at settlement, a
 question or timeout. Every returned report body stamps `read_at` (including during work and idle grace), not
-acceptance. A settled pi or CLI worker closes when its report is read (`closed after report read`); an unread
-report keeps the usual idle deadline. Reading a failure/block separately marks that attention as seen.
+acceptance. A settled pi or CLI worker closes when its current turn's report is read (`closed after report read`);
+reading an earlier turn's report after a continuation does not close the worker. An unread report keeps the usual
+idle deadline. Reading a failure/block separately marks that attention as seen.
 Workers write the report file, then finish with just `report written: <path>`, not a second copy in chat.
 `hud_send` queues a message for a working pi or CLI job, or continues an eligible role during idle grace while
 its report is still unread. Use a new job for a repair after reading a settled report; `message_key` deduplicates sends. CLI
@@ -167,7 +168,8 @@ primary/helper files. A CLI job's supervisor only observes; only facts end a job
 worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or
 `closed` when a new report is on disk). Each dispatch and `hud_send` starts a turn (`turn.json`). With `advisory`
 trust, a new report settles the turn when herdr is not `working` and the report has been stable for 10 s. A live
-child defers CLI settlement, the quiet decision and automatic close. For a continuable worker, idle grace ends
+descendant started in the current turn defers CLI settlement, the quiet decision and automatic close. The same
+child rule applies to pi read-close, using its latest dispatch or send. For a continuable CLI worker, idle grace ends
 when the report is read or the deadline passes. Both use `/quit` and watcher reap; a deadline close says `settled`.
 Herdr's status alone never fails a live worker. A turn quiet past the idle grace without a report gets one Decision API choice
 among fixed actions (keep waiting, one fixed prompt to write the report, `failed` only with a quota line on screen,

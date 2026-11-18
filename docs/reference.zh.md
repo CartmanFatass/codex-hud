@@ -97,9 +97,12 @@ herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 `hud trust <dir>` 把该目录加入 grok、agy 和 claude 的信任文件（先在 `$HUD_HOME` 下备份）。
 文件不存在则不创建。codex 跳过。
 
-`hud_read` 不带任务列最新 20 个；带任务读取 STATUS、报告（最多 64 KiB）与待答问题。
-`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。读取已结束报告记录 `read_at`，不代表验收。
-`hud_send` 给工作中的 pi 或 CLI 任务排队消息，或在允许继续的角色的空闲宽限期内续写；`message_key` 去重。
+`hud_read` 不带任务列最新 20 个；带任务读取 STATUS、未读报告（最多 64 KiB）与待答问题。报告比 `read_at` 新，或尚无 `read_at`，即为未读。
+已读报告只返回 `report_unchanged: true`，`full: true` 可再次读取正文。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。
+返回报告正文时记录 `read_at`（包括工作中和空闲宽限期），不代表验收。已结算的 pi 或 CLI 工作者在当前回合的报告被读取后关闭
+（`closed after report read`）；续写后读取上一回合的报告不会关闭工作者，未读报告仍保留原有的空闲期限。读取失败或受阻状态会单独标记为已查看。
+工作者写完报告后只回复 `report written: <path>`，不在对话中重复正文。
+`hud_send` 给工作中的 pi 或 CLI 任务排队消息；角色允许继续且报告未读时，也可在空闲宽限期内续写。读取已结算的报告后，修正须另开任务；`message_key` 去重。
 CLI 工作者用同一条 `QUESTION` 和 `hud_respond` 流程提问（`hud-ask`，20 分钟后用默认）。
 CLI 受阻时任务显示为需要你；会话经 `changes` 或 `hud watch` 得知。
 `hud_respond` 只写一次 `qN.answer.md`。`hud_close` 提前回收，正常清理由 watcher 负责。
@@ -113,8 +116,9 @@ HUD 从不向主会话窗格输入任何内容。
 任务是 `$HUD_HOME/jobs/<job>/` 中的普通文件。pi 历史保存在
 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`，任务的 `sessions/` 链接到主代理／助手文件。
 CLI 任务的监督进程只观察；只有事实能结束任务：记录的进程号消失（或被替换）、标签页关闭、输入前派发被拒（`failed`；
-磁盘上有新报告则 `closed`）。每次派发和 `hud_send` 开始一个回合（`turn.json`）。herdr 不在 `working` 且新报告稳定 10 秒后
-回合结算，进入空闲宽限；宽限未用且没有比回合新的子进程存活时 `/quit`，然后以 `settled` 关闭。herdr 状态只是参考，从不结束任务。
+磁盘上有新报告则 `closed`）。每次派发和 `hud_send` 开始一个回合（`turn.json`）。在 `advisory` 模式下，herdr 不在 `working` 且新报告稳定 10 秒后
+回合结算。只有在当前回合开始时或之后启动且仍存活的后代进程，才会推迟 CLI 结算、安静任务决策和自动关闭；pi 的读后自动关闭也按最近一次派发或发送判断。
+可继续的 CLI 工作者在报告被读取或期限届满时结束空闲宽限；两种情况都通过 `/quit` 和 watcher 回收，因到期关闭时原因为 `settled`。herdr 状态本身不会让仍在运行的任务判为失败。
 回合安静超过空闲宽限且无报告时，做一次决策 API 选择，只在固定动作中选（继续等、一次固定的写报告提示、屏幕上有配额行才 `failed`、
 交给主会话）；置信度低于 0.8 或出错则交给主会话。不确定的一律 `waiting_orchestrator` 并写明原因。监督进程由 herdr 推送、
 文件变化和自身截止时间唤醒，另有每 30 秒一次重读状态；STATUS 只在行变化时写。按需 watcher 在创建时启动，经 `pi-role-reap` 回收已结束任务，

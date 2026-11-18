@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { workerAlive, workerHasChild, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
+import { request } from './herdr-request.mjs';
 
 const bundled = fileURLToPath(new URL('..', import.meta.url));
 
@@ -65,6 +66,7 @@ let watcher, timer,
   socket,
   subscribed = false,
   queued = false,
+  scanning = false,
   stopped = false;
 const closedTabs = new Set();
 function subscribe() {
@@ -161,8 +163,21 @@ function supervisorAlive(pid) {
     return error.code === 'EPERM';
   }
 }
-function scan(retryWatch = false) {
+function readCloseTurn(dir, job, status) {
+  if (status?.state !== 'idle_grace' || status.output_written !== true ||
+      !job?.read_at || job.reaped_at || job.cli || job.bro || job.jev || job.send_outcomes?.at(-1)?.exit_code === null) return null;
+  // Legacy jobs with sends have no reliable turn boundary.
+  const sentAt = job.pi_sent_at ?? (job.message_keys?.length ? null : job.created_at);
+  const sent = Date.parse(sentAt);
+  // Reading the previous turn's report after a send is not a receipt for the new turn.
+  if (!(Date.parse(status.settled_at) >= sent && Date.parse(job.read_at) > sent)) return null;
+  const report = fs.statSync(join(dir, 'report.md'), { throwIfNoEntry: false });
+  return report?.isFile() && Math.floor(report.mtimeMs) > sent && reportWasRead(job.read_at, report.mtimeMs) ? sentAt : null;
+}
+async function scan(retryWatch = false) {
   if (stopped) return;
+  if (scanning) { queued = true; return; }
+  scanning = true;
   queued = false;
   clearTimeout(timer);
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
@@ -223,18 +238,11 @@ function scan(retryWatch = false) {
         if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) open = true;
         continue;
       }
-      let readInGrace = false;
+      let readInGrace = null;
       if (status.state === 'idle_grace') {
         open = true;
         // Pi owns the unread deadline. CLI grace always goes through its supervisor.
-        if (!tab || !job?.read_at || job.reaped_at || job.cli || job.bro || job.jev || status.output_written !== true) continue;
-        const report = fs.statSync(join(dir, 'report.md'), { throwIfNoEntry: false });
-        if (!report?.isFile() || !reportWasRead(job.read_at, report.mtimeMs)) continue;
-        if (workerHasChild(status.pid ?? null, status.pid_start_time ?? null) !== false) {
-          safetyCheck = true;
-          continue;
-        }
-        readInGrace = true;
+        if (!tab || !(readInGrace = readCloseTurn(dir, job, status))) continue;
       }
       if (status.state === 'working' || status.state?.startsWith('waiting')) {
         open = true;
@@ -270,6 +278,16 @@ function scan(retryWatch = false) {
           continue;
         }
       }
+      if (readInGrace) {
+        safetyCheck = true; // Revisit a busy worker or a failed reap on the existing slow tick.
+        const target = session.match(/^PRIMARY=([^\r\n]+)$/m)?.[1];
+        const agent = target && (await request('agent.get', { target }))?.result?.agent;
+        const latest = json(statusFile);
+        if (!['idle', 'done'].includes(agent?.agent_status) || closedTabs.has(tab) ||
+            readCloseTurn(dir, json(jobFile), latest) !== readInGrace ||
+            workerHasChild(latest.pid ?? null, latest.pid_start_time ?? null, readInGrace) !== false) continue;
+        // The check isn't atomic with the external reaper; a later start can still race it.
+      }
       const result = spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000 });
       const message = `reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}`;
       if (result.status === 0) log(message);
@@ -300,16 +318,17 @@ function scan(retryWatch = false) {
   }
   for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);
   if (open) subscribe();
-  // Use the same slow check for a dead CLI supervisor or a child holding a Pi read-close.
   if (safetyCheck) nearest = Math.min(nearest, Date.now() + cliCheck);
   if ((open || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + 1000);
+  scanning = false;
   if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.ceil(nearest - Date.now())));
-  else if (!open) stop();
+  if (queued) setImmediate(scan);
+  else if (!open && nearest === Infinity) stop();
 }
 function schedule() {
   if (!queued && !stopped) {
     queued = true;
-    setImmediate(scan);
+    if (!scanning) setImmediate(scan);
   }
 }
 // Watch before catch-up, so a STATUS rename during the initial scan is not missed.

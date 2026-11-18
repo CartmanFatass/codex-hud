@@ -45,6 +45,7 @@ interface Job extends PiOptions {
   thinking?: string | null;
   model_source?: string | null;
   read_at?: string;
+  pi_sent_at?: string;
   observed_at?: string;
   reaped_at?: string;
   place?: RolePlace;
@@ -176,7 +177,7 @@ function save(job: Job): void {
   const file = join(directory(job.job), 'job.json');
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
   const existing = json<Job>(file);
-  for (const key of ['read_at', 'observed_at'] as const) {
+  for (const key of ['read_at', 'observed_at', 'pi_sent_at'] as const) {
     const at = existing?.[key];
     if (at && (!job[key] || at > job[key])) job[key] = at;
   }
@@ -453,6 +454,8 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace) {
     const started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
     if (started.exit_code !== 0) return started;
     const prompt = `Read ${join(dir, 'brief.md')} and do exactly what it asks.`;
+    job.pi_sent_at = new Date().toISOString();
+    save(job);
     const submitted = await run('herdr', [
       'agent',
       'prompt',
@@ -1095,6 +1098,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     job.message_keys.push(key);
     const outcome = { key, exit_code: null as number | null, stderr_tail: '' };
     (job.send_outcomes ??= []).push(outcome);
+    if (!job.cli) job.pi_sent_at = new Date().toISOString();
     save(job);
     // Baseline before typing: even a fast report belongs to this explicit turn.
     if (job.cli) writeTurn(dir);

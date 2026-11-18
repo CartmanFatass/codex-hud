@@ -66,40 +66,51 @@ export function workerAlive(pid: number | null, start: string | null): boolean |
   return start ? info.start === start : null;
 }
 
-/** A live descendant implies a live direct child: Linux reparents an exiting child's children. */
-export function workerHasChild(pid: number | null, start: string | null): boolean | 'unknown' {
+/** Look through older children too: a session-long helper can start work in this turn. */
+export function workerHasChild(pid: number | null, start: string | null, sentAt: string): boolean | 'unknown' {
   if (pid === null || workerAlive(pid, start) !== true) return false;
-  const tasks = `/proc/${pid}/task`;
   const buffer = Buffer.alloc(4096);
+  const parents = [pid];
   let budget = 512;
   try {
-    const threads = fs.opendirSync(tasks);
-    try {
-      for (let thread; (thread = threads.readSync()) !== null;) {
-        if (--budget < 0) return 'unknown';
-        let size;
-        try {
-          const fd = fs.openSync(`${tasks}/${thread.name}/children`, 'r');
-          try { size = fs.readSync(fd, buffer, 0, buffer.length, null); }
-          finally { fs.closeSync(fd); }
-        } catch (error) {
-          if (['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) continue;
-          return 'unknown';
-        }
-        // Skip a possibly truncated final PID; incomplete coverage cannot justify closing.
-        const ids = buffer.toString('utf8', 0, size).trimStart().split(/\s+/);
-        if (size === buffer.length) ids.pop();
-        for (const id of ids) {
-          if (!id) continue;
-          if (--budget < 0) return 'unknown';
-          const child = procStat(Number(id));
-          if (child?.ppid === pid && (child.threads > 1 || !/^[ZXx]$/.test(child.state ?? ''))) {
-            return workerAlive(pid, start) === true;
-          }
-        }
-        if (size === buffer.length) return 'unknown';
+    const boot = +new Date() - parseFloat(fs.readFileSync('/proc/uptime', 'utf8')) * 1000;
+    const since = Math.floor((Date.parse(sentAt) - boot) / 10); // Linux USER_HZ is 100; include the send's whole tick.
+    if (!Number.isFinite(since)) return 'unknown';
+    for (let parent; (parent = parents.pop()) !== undefined;) {
+      const tasks = `/proc/${parent}/task`;
+      let threads;
+      try { threads = fs.opendirSync(tasks); }
+      catch (error) {
+        if (parent !== pid && ['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) continue;
+        throw error;
       }
-    } finally { threads.closeSync(); }
+      try {
+        for (let thread; (thread = threads.readSync()) !== null;) {
+          if (--budget < 0) return 'unknown';
+          let size;
+          try {
+            const fd = fs.openSync(`${tasks}/${thread.name}/children`, 'r');
+            try { size = fs.readSync(fd, buffer, 0, buffer.length, null); }
+            finally { fs.closeSync(fd); }
+          } catch (error) {
+            if (['ENOENT', 'ESRCH'].includes((error as NodeJS.ErrnoException).code ?? '')) continue;
+            return 'unknown';
+          }
+          // Skip a possibly truncated final PID; incomplete coverage cannot justify closing.
+          const ids = buffer.toString('utf8', 0, size).trimStart().split(/\s+/);
+          if (size === buffer.length) ids.pop();
+          for (const id of ids) {
+            if (!id) continue;
+            if (--budget < 0) return 'unknown';
+            const child = procStat(Number(id));
+            if (child?.ppid !== parent || (child.threads <= 1 && /^[ZXx]$/.test(child.state ?? ''))) continue;
+            if (Number(child.start) >= since) return workerAlive(pid, start) === true;
+            parents.push(Number(id));
+          }
+          if (size === buffer.length) return 'unknown';
+        }
+      } finally { threads.closeSync(); }
+    }
   } catch {
     return workerAlive(pid, start) === true ? 'unknown' : false;
   }
