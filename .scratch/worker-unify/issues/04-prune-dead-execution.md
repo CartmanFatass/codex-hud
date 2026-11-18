@@ -1,6 +1,6 @@
 # 04: Delete the dead execution code
 
-**Status:** ready-for-agent
+**Status:** done (cherry-picked from 21d3ee77)
 **Blocked by:** none
 
 **What to build:** `.scratch/worker-unify/spec.md` decision 5, from oracle report §2 A5 (verify each item again; the
