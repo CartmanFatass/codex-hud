@@ -1,6 +1,6 @@
 # 02: Any worker starts sonic with `hud-sonic`
 
-**Status:** ready-for-agent
+**Status:** done (cf98727b); pi parent gating moved to 03; live check pending
 **Blocked by:** 01
 
 **What to build:** `.scratch/worker-unify/spec.md` decision 1 and the "sonic path" design: one command every
