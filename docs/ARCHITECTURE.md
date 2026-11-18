@@ -33,7 +33,10 @@ browser runtime.
 
 CLI dispatch is `dispatchCli` in `packages/hud-mcp/src/thin-main.ts`. Kind flags,
 trust-dialog text and decline keys, and startup quirks are the table in
-`src/roles/cli-kinds.ts`. `packages/hud-mcp/bin/hud-cli.mjs` is the per-job
+`src/roles/cli-kinds.ts`. Before opening a tab, dispatch requires an explicit
+local trust grant for Grok, Antigravity and Claude; missing, unreadable, malformed
+or symlinked trust files do not grant trust. Codex skips this check, and the
+other CLIs' screen-dialog checks remain in place. `packages/hud-mcp/bin/hud-cli.mjs` is the per-job
 supervisor; `hud-ask.mjs` writes the question. The HUD passes only model, effort,
 the bypass flag and role `args`. Harness behaviour and session places are untouched.
 
@@ -334,7 +337,7 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 |---|---|
 | `jobs/<job>/` | Plain job/brief/STATUS/report/QA and session links; MCP, pi-roles, CLI supervisor or browser wrapper |
 | `roles/`, `hud-convention.md` | Owner overrides; read by roster; `roles/<role>.json` places are also written by the Control plane page |
-| `exhausted.json` | One-hour quota marks on places; written when a job fails on a quota, cleared by the Control plane page |
+| `exhausted.json` | Quota marks on places until the parsed reset (1 minute to 24 hours; 1 hour by default); cleared by the Control plane page |
 | `credentials.env`, `config.json` | Owner keys and Decision API/configuration |
 | `display/state/<session>.json` | Active Codex bar/panel snapshot; atomic inode ownership prevents outgoing writers deleting replacements |
 | `display/scan/`, `display/thin-jobs.json` | Rebuildable observation caches |

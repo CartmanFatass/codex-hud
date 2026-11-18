@@ -6,6 +6,15 @@ import type { CliAgent } from './cli-kinds.js';
 
 export const EXHAUSTED_TTL_MS = 60 * 60 * 1000;
 const EXHAUSTED_FILE = 'exhausted.json';
+const DAY_MS = 24 * EXHAUSTED_TTL_MS;
+const DURATION_PART = /(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?=\b|\d)/gi;
+const RELATIVE_RESET = new RegExp(
+  String.raw`\b(?:in\s+|retry[- ]after\b\s*:?\s*)(${DURATION_PART.source}(?:\s*(?:,\s*|and\s+)?${DURATION_PART.source})*)`,
+  'gi'
+);
+const ABSOLUTE_RESET =
+  /\b(?:until|at|resets?(?:_at)?)[\s:=]+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})|\d{10}(?:\d{3})?)\b/gi;
+const UTC_RESET = /\b(?:until|at|resets?)[\s:=]+([01]?\d|2[0-3]):([0-5]\d)\s*UTC\b/gi;
 const QUOTA_ERROR =
   /(?:\b(?:rate[_ -]?limit(?:ed|s)?|quota(?:[_ -]?(?:exceeded|exhausted|reached))?|resource_exhausted|too many requests|usage limit|limit reached|insufficient[_ ]quota|out of credits)\b|\b(?:http|status|code)?[:\s]*429\b)/i;
 
@@ -36,7 +45,35 @@ export interface ExhaustedMark {
 }
 
 export function isQuotaFailure(text: string): boolean {
-  return QUOTA_ERROR.test(text);
+  // A directory name in a trust refusal may itself contain quota-related words.
+  return !/^(?:grok|agy|claude) has not trusted /.test(text) && QUOTA_ERROR.test(text);
+}
+
+/** Cooldown duration, not an absolute timestamp. An expired hint is not a cooldown. */
+export function parseQuotaResetMs(text: string, nowMs = Date.now()): number | null {
+  const clamp = (ms: number) => Math.min(DAY_MS, Math.max(60_000, ms));
+  for (const [, duration] of text.matchAll(RELATIVE_RESET)) {
+    let ms = 0;
+    for (const [, value, unit] of duration.matchAll(DURATION_PART)) {
+      const kind = unit[0].toLowerCase();
+      ms += Number(value) * (kind === 'h' ? EXHAUSTED_TTL_MS : kind === 'm' ? 60_000 : 1_000);
+    }
+    if (ms > 0) return clamp(ms);
+  }
+  for (const [, seconds] of text.matchAll(/\bretry[- ]after\s*:\s*(\d+)(?=[ \t]*(?:$|[\r\n,;)\]]|\.(?!\d)))/gi)) {
+    if (Number(seconds) > 0) return clamp(Number(seconds) * 1000);
+  }
+  for (const [, stamp] of text.matchAll(ABSOLUTE_RESET)) {
+    const reset = /^\d+$/.test(stamp) ? Number(stamp) * (stamp.length === 10 ? 1000 : 1) : Date.parse(stamp);
+    if (reset > nowMs) return clamp(reset - nowMs);
+  }
+  for (const [, hour, minute] of text.matchAll(UTC_RESET)) {
+    // A date-less clock time means the next occurrence in UTC.
+    const midnight = Math.floor(nowMs / DAY_MS) * DAY_MS;
+    const ms = midnight + (Number(hour) * 60 + Number(minute)) * 60_000 - nowMs;
+    return clamp(ms > 0 ? ms : ms + DAY_MS);
+  }
+  return null;
 }
 
 export function placeKey(
@@ -126,27 +163,31 @@ export function readExhausted(hudHome: string, nowMs = Date.now()): Map<string, 
   return readMap(join(hudHome, EXHAUSTED_FILE), nowMs);
 }
 
-export function markExhausted(hudHome: string, key: string, reason: string, nowMs = Date.now()): ExhaustedMark {
-  fs.mkdirSync(hudHome, { recursive: true, mode: 0o700 });
+// Keep the read-modify-write synchronous so tool calls in one process cannot interleave it.
+function updateExhausted(hudHome: string, nowMs: number, update: (marks: Map<string, ExhaustedMark>) => boolean): boolean {
   const file = join(hudHome, EXHAUSTED_FILE);
   assertExhaustedFile(file);
   const marks = readMap(file, nowMs);
+  if (!update(marks)) return false;
+  writeExhausted(file, marks);
+  return true;
+}
+
+export function markExhausted(hudHome: string, key: string, reason: string, nowMs = Date.now()): ExhaustedMark {
+  fs.mkdirSync(hudHome, { recursive: true, mode: 0o700 });
+  const ttl = parseQuotaResetMs(reason, nowMs) ?? EXHAUSTED_TTL_MS;
   const entry: ExhaustedMark = {
-    until: new Date(nowMs + EXHAUSTED_TTL_MS).toISOString(),
+    until: new Date(nowMs + ttl).toISOString(),
     reason: reason.replace(/[\r\n]+/g, ' ').slice(0, 300),
     marked_at: new Date(nowMs).toISOString(),
   };
-  marks.set(key, entry);
-  writeExhausted(file, marks);
+  updateExhausted(hudHome, nowMs, (marks) => {
+    marks.set(key, entry);
+    return true;
+  });
   return entry;
 }
 
 export function clearExhausted(hudHome: string, key: string, nowMs = Date.now()): boolean {
-  const file = join(hudHome, EXHAUSTED_FILE);
-  if (!assertExhaustedFile(file)) return false;
-  const marks = readMap(file, nowMs);
-  if (!marks.has(key)) return false;
-  marks.delete(key);
-  writeExhausted(file, marks);
-  return true;
+  return updateExhausted(hudHome, nowMs, (marks) => marks.delete(key));
 }

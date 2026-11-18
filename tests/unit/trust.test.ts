@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { main } from '../../src/cli/hud.js';
+import { isCliDirTrusted } from '../../src/cli/trust.js';
 
 function fixture(t: TestContext) {
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-trust-')));
@@ -127,6 +128,43 @@ test('adds each agent, keeps grok bytes, agy indent and claude keys, backs up, s
   assert.match(f.out(), /^grok: already trusted\nagy: already trusted\nclaude: already trusted\ncodex: skipped /);
   assert.deepEqual(fs.readFileSync(grok), after);
   assert.equal(fs.readdirSync(join(f.hud, 'backups', 'trust')).length, 3);
+});
+
+test('CLI pre-flight reads explicit grants for the real directory and refuses invalid configs without writing', (t) => {
+  const f = fixture(t);
+  const grok = join(f.home, '.grok', 'trusted_folders.toml');
+  const agy = join(f.home, '.gemini', 'antigravity-cli', 'settings.json');
+  const cfg = join(f.root, 'claude-config');
+  const claude = join(cfg, '.claude.json');
+  const alias = join(f.root, 'alias');
+  const env = { ...f.io.env, CLAUDE_CONFIG_DIR: cfg };
+  const agents = ['grok', 'agy', 'claude'];
+  fs.symlinkSync(f.project, alias);
+  const beforeMissing = tree(f.root);
+  assert.equal(isCliDirTrusted('codex', join(f.root, 'missing'), {}), true);
+  for (const agent of agents) assert.equal(isCliDirTrusted(agent, f.project, env), false);
+  assert.equal(tree(f.root), beforeMissing);
+
+  for (const file of [grok, agy, claude]) fs.mkdirSync(dirname(file), { recursive: true });
+  const grokGrant = `[folders.${JSON.stringify(f.project)}]\ntrusted = true\n`;
+  fs.writeFileSync(grok, grokGrant);
+  fs.writeFileSync(agy, JSON.stringify({ trustedWorkspaces: [f.project] }));
+  fs.writeFileSync(claude, JSON.stringify({ projects: { [f.project]: { hasTrustDialogAccepted: true } } }));
+  const beforeTrusted = tree(f.root);
+  for (const agent of agents) {
+    assert.equal(isCliDirTrusted(agent, alias, env), true);
+    assert.equal(isCliDirTrusted(agent, f.root, env), false);
+    assert.equal(isCliDirTrusted(agent, claude, env), false);
+  }
+  assert.equal(tree(f.root), beforeTrusted);
+
+  fs.writeFileSync(grok, grokGrant + 'invalid TOML');
+  fs.renameSync(agy, join(f.root, 'agy-grant.json'));
+  fs.symlinkSync(join(f.root, 'agy-grant.json'), agy);
+  fs.writeFileSync(claude, '{');
+  const beforeInvalid = tree(f.root);
+  for (const agent of agents) assert.equal(isCliDirTrusted(agent, f.project, env), false);
+  assert.equal(tree(f.root), beforeInvalid);
 });
 
 test('a missing trust file is not installed and is not created', async (t) => {

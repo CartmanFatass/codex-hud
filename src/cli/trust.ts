@@ -1,6 +1,7 @@
 /** `hud trust <dir>` writes grok, agy and claude trust files. Dispatch never calls this. */
 import * as fs from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import * as TOML from '@iarna/toml';
 import type { HudIO } from './hud.js';
 import { CliError, privateHome } from './private-home.js';
 
@@ -18,6 +19,21 @@ export async function trustCommand(args: readonly string[], io: HudIO): Promise<
   });
   await io.stdout(lines.join('\n') + '\n');
   return lines.some((line) => line.includes(': failed (')) ? 1 : 0;
+}
+
+/** Missing or unreadable config is not a trust grant. This path never calls commit. */
+export function isCliDirTrusted(agent: string, dir: string, env = process.env): boolean {
+  if (agent === 'codex') return true;
+  if (agent !== 'grok' && agent !== 'agy' && agent !== 'claude') return false;
+  try {
+    const resolved = resolveDir(dir);
+    const text = readNoFollow(trustFile(agent, env)).data.toString('utf8');
+    if (agent === 'grok') return grokTrusted(text, resolved);
+    // The edit helpers return null when the parsed config already trusts this directory.
+    return (agent === 'agy' ? agyEdit(text, resolved) : claudeEdit(text, resolved)) === null;
+  } catch {
+    return false;
+  }
 }
 
 function resolveDir(arg: string): string {
@@ -127,7 +143,8 @@ function readNoFollow(file: string): { data: Buffer; mode: number } {
 }
 
 function grokEdit(text: string, dir: string): string | null {
-  if (grokTrusted(text, dir)) return null;
+  // Preserve the writer's existing handling of legacy content it cannot parse.
+  if (grokTrusted(text, dir, true)) return null;
   const block = `[folders."${tomlEscape(dir)}"]\ntrusted = true\ndecided_at = ${Math.floor(Date.now() / 1000)}\n`;
   if (!text) return block;
   if (text.endsWith('\n\n')) return text + block;
@@ -138,7 +155,13 @@ function tomlEscape(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-function grokTrusted(text: string, dir: string): boolean {
+function grokTrusted(text: string, dir: string, allowLegacy = false): boolean {
+  try {
+    const { folders } = TOML.parse(text) as { folders?: Record<string, { trusted?: unknown }> };
+    return folders?.[dir]?.trusted === true;
+  } catch (error) {
+    if (!allowLegacy) throw error;
+  }
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
     if (folderPath(lines[i]) !== dir) continue;

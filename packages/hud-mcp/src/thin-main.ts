@@ -9,6 +9,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { procStat, readTurn, saveTurn, workerAlive, writeTurn } from './cli-judge.js';
+import { isCliDirTrusted } from '../../../src/cli/trust.js';
 import { jobChanges, jobRow, type JobRow } from '../../../src/collectors/thin-jobs.js';
 import { TryLog } from '../../../src/collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
@@ -58,6 +59,7 @@ interface Job extends PiOptions {
   jev?: Role;
   cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number; state_trust?: 'turn' | 'advisory' };
   dispatch_exit_code: number | null;
+  dispatch_code?: 'untrusted_cwd';
   stderr_tail: string;
   message_keys: string[];
   send_outcomes?: { key: string; exit_code: number | null; stderr_tail: string }[];
@@ -210,7 +212,7 @@ function created(job: Job) {
   if (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 && row.display_state === 'failed') {
     return {
       ok: false,
-      code: 'dispatch_failed',
+      code: job.dispatch_code ?? 'dispatch_failed',
       ...row,
       reason: row.reason ?? 'dispatch failed',
       task_dir,
@@ -637,15 +639,20 @@ function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
   fs.renameSync(`${file}.${process.pid}.tmp`, file);
   return { exit_code: 1, stdout: '', stderr: reason };
 }
-async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
+type DispatchResult = { exit_code: number; stdout: string; stderr: string; code?: 'untrusted_cwd' };
+async function dispatchCli(job: Job, place: RolePlace, instructions: string): Promise<DispatchResult> {
   let openedTab: string | null = null;
-  const reject = async (result: { exit_code: number; stdout: string; stderr: string }) => {
+  const reject = async (result: DispatchResult) => {
     if (openedTab) await run('herdr', ['tab', 'close', openedTab]);
     return result;
   };
   try {
     const kind = cliKinds[place.agent as CliAgent];
     const dir = directory(job.job);
+    const untrusted = `${place.agent} has not trusted ${job.cwd}; run hud trust ${job.cwd}`;
+    if (!isCliDirTrusted(place.agent!, job.cwd, process.env)) {
+      return { ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' };
+    }
     const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
     const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
     const tabName = tabLabel(job),
@@ -706,7 +713,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
         const declined = await run('herdr', ['pane', 'send-keys', left, ...kind.trust.decline]);
         if (declined.exit_code !== 0) return reject(declined);
         await run('herdr', ['agent', 'wait', name, '--until', 'idle', '--until', 'unknown', '--timeout', '15000']);
-        return reject(failCli(dir, job, place, `${place.agent} has not trusted ${job.cwd}; run hud trust ${job.cwd}`));
+        return reject(failCli(dir, job, place, untrusted));
       }
     }
     if (notReady) return reject(started);
@@ -991,9 +998,14 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     fs.mkdirSync(children, { recursive: true, mode: 0o700 });
     fs.writeFileSync(join(children, job.job), '', { mode: 0o600, flag: 'wx' });
   } else createdJobs.add(job.job);
+  // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
+  return keyLock(`job:${job.job}`, () => launchJob(job, definition, place, dir, instructionsPath));
+}
+
+async function launchJob(job: Job, definition: Role, place: RolePlace, dir: string, instructionsPath: string) {
   ensureWatcher();
-  ensureQueueWatcher(pane, hudHome);
-  let result;
+  ensureQueueWatcher(job.herdr_pane, hudHome);
+  let result: DispatchResult;
   try {
     if (place.harness === 'bro') result = await dispatchBro(job);
     else if (place.harness === 'cli') result = await dispatchCli(job, place, instructionsPath);
@@ -1002,6 +1014,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     result = { exit_code: 1, stdout: '', stderr: String(error) };
   }
   job.dispatch_exit_code = result.exit_code;
+  if (result.code) job.dispatch_code = result.code;
   job.stderr_tail = result.stderr;
   const statusFile = join(dir, 'STATUS.json');
   if (result.exit_code !== 0 && !fs.existsSync(statusFile)) {
@@ -1027,7 +1040,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   }
   save(job);
   const out = created(job);
-  if (!parentJob) cursor.set(job.job, readRow(job).row);
+  if (!job.parent_job) cursor.set(job.job, readRow(job).row);
   return out;
 }
 
@@ -1223,6 +1236,7 @@ function sessionRows(): JobRow[] {
 let cursor: Map<string, JobRow>;
 const tries = new TryLog(hudHome);
 function withChanges(value: unknown): unknown {
+  // Snapshot, diff and advance the shared cursors synchronously, in response order.
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const rows = sessionRows();
   const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd())];
@@ -1230,8 +1244,26 @@ function withChanges(value: unknown): unknown {
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
 }
 
-// Serialize mutations within this server; waiting reads do not block answers or other calls.
-let mutations: Promise<unknown> = Promise.resolve();
+// Only calls touching the same request key or job wait on one another.
+const locks = new Map<string, Promise<unknown>>();
+async function keyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prior = locks.get(key) ?? Promise.resolve();
+  const next = prior.then(fn, fn);
+  locks.set(key, next);
+  try {
+    return await next;
+  } finally {
+    if (locks.get(key) === next) locks.delete(key);
+  }
+}
+function mutationKey(name: string, args: Args): string | null {
+  const create = name === 'hud_create';
+  if (!create && name !== 'hud_send' && name !== 'hud_respond' && name !== 'hud_close') return null;
+  const id = create ? args.request_key : args.job;
+  // Leave validation to the tool, without making invalid calls wait for one another.
+  if (typeof id !== 'string' || !id) return `invalid:${randomBytes(8).toString('hex')}`;
+  return `${create ? 'request' : 'job'}:${id}`;
+}
 const write = (value: unknown) => process.stdout.write(JSON.stringify(value) + '\n');
 const rpcError = (id: unknown, code: number, message: string) =>
   write({ jsonrpc: '2.0', id, error: { code, message } });
@@ -1278,12 +1310,12 @@ async function receive(line: string): Promise<void> {
       }
       const invoke = () => call(name, args);
       try {
-        const readOnly = name === 'hud_read' || name === 'hud_roster';
+        const key = mutationKey(name, args);
         // Refuse before invocation or reporting changes, which can record quota exhaustion.
         const value =
-          isWorker && ['hud_create', 'hud_send', 'hud_close', 'hud_respond'].includes(name)
+          isWorker && key !== null
             ? { ok: false, code: 'worker_cannot_dispatch' }
-            : withChanges(readOnly ? await invoke() : await (mutations = mutations.then(invoke, invoke)));
+            : withChanges(key === null ? await invoke() : await keyLock(key, invoke));
         result = { content: [{ type: 'text', text: JSON.stringify(value) }] };
       } catch (error) {
         result = {

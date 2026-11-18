@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
-import { EXHAUSTED_TTL_MS } from '../../dist/roles/exhausted.js';
+import { EXHAUSTED_TTL_MS, parseQuotaResetMs } from '../../dist/roles/exhausted.js';
 import { markExhausted, placeKey, readExhausted, roleRegistry } from '../../dist/roles/roster.js';
 
 const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
@@ -102,6 +102,11 @@ if (command === 'pi-role') {
     env[name] = join(root, name.toLowerCase());
     fs.mkdirSync(env[name]);
   }
+  const trusted = fs.realpathSync(root);
+  const agyDir = join(env.HOME, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(agyDir, { recursive: true });
+  fs.writeFileSync(join(agyDir, 'settings.json'), JSON.stringify({ trustedWorkspaces: [trusted] }));
+  fs.writeFileSync(join(env.CLAUDE_CONFIG_DIR, '.claude.json'), JSON.stringify({ projects: { [trusted]: { hasTrustDialogAccepted: true } } }));
   const child = spawn(process.execPath, [entry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
   let next = 0,
@@ -252,11 +257,39 @@ test('quota failure marks pi exhausted for 1h, names next place, and falls back 
   assert.equal(noPlace.exhausted.length, 2);
 });
 
-test('expired exhausted marks expire after 1 hour', () => {
+test('parses relative, ISO, epoch and UTC clock quota resets and clamps the resulting delay', () => {
+  const now = Date.parse('2026-11-18T14:00:00Z');
+  const epoch = Date.parse('2026-11-18T15:30:00Z');
+  for (const [reason, expected] of [
+    ['try again in 18m', 18 * 60_000],
+    ['in 2h 15m', 135 * 60_000],
+    ['in 45s', 60_000],
+    ['retry after 120 seconds', 120_000],
+    ['resets in 1 hour and 30 minutes', 90 * 60_000],
+    ['Retry-After: 900', 900_000],
+    ['retry-after: 2 days', null],
+    ['resets in 48h', 24 * EXHAUSTED_TTL_MS],
+    ['resets at 2026-11-18T15:30:00Z', 90 * 60_000],
+    ['exhausted until 2026-11-18T16:30:00+01:00', 90 * 60_000],
+    [`reset: ${epoch / 1000}`, 90 * 60_000],
+    [`x-ratelimit-reset: ${epoch}`, 90 * 60_000],
+    ['resets at 14:30 UTC', 30 * 60_000],
+    ['resets at 13:30 UTC', 1410 * 60_000],
+    ['resets at 14:90 UTC', null],
+    ['resets at 2026-11-18T13:30:00Z', null],
+    ['retry after 0 seconds', null],
+    ['rate limit exceeded (429)', null],
+  ]) assert.equal(parseQuotaResetMs(reason, now), expected, reason);
+});
+
+test('exhausted marks expire at the parsed reset, or after 1 hour when no reset is named', () => {
   const dir = fs.mkdtempSync(join(tmpdir(), 'exhausted-ttl-'));
   try {
     const t0 = Date.parse('2026-11-14T00:00:00Z');
     markExhausted(dir, 'pi:gpt-6.1-sol', 'rate limit', t0);
+    markExhausted(dir, 'cli:agy:model', 'rate limit; try again in 18m', t0);
+    assert.equal(readExhausted(dir, t0 + 18 * 60_000 - 1).size, 2);
+    assert.equal(readExhausted(dir, t0 + 18 * 60_000).has('cli:agy:model'), false);
     assert.equal(readExhausted(dir, t0 + EXHAUSTED_TTL_MS - 1).has('pi:gpt-6.1-sol'), true);
     assert.equal(readExhausted(dir, t0 + EXHAUSTED_TTL_MS).has('pi:gpt-6.1-sol'), false);
   } finally {

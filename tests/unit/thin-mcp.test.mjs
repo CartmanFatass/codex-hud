@@ -88,6 +88,11 @@ if (command === 'pi-dispatch') {
 } else if (command === 'pi-role') {
   console.log(JSON.stringify(args.slice(2)));
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
+  if (args[args.indexOf('--kind') + 1] === 'grok' && fs.existsSync(join(process.env.HOME, 'hold-grok-start'))) {
+    waitToReply();
+    console.error('synthetic delayed start failed');
+    process.exit(1);
+  }
   if (fs.existsSync(join(process.env.HOME, 'start-not-ready'))) {
     console.log(JSON.stringify({ error: { code: 'agent_not_ready', message: 'agent synthetic is blocked during startup and is not ready for prompts' } }));
     process.exit(1);
@@ -393,6 +398,15 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
     env[name] = join(root, name.toLowerCase());
     fs.mkdirSync(env[name]);
   }
+  // The fake CLI can still show a trust prompt even when these local grants exist.
+  const trusted = fs.realpathSync(root);
+  const grokDir = join(env.HOME, '.grok');
+  const agyDir = join(env.HOME, '.gemini', 'antigravity-cli');
+  fs.mkdirSync(grokDir);
+  fs.mkdirSync(agyDir, { recursive: true });
+  fs.writeFileSync(join(grokDir, 'trusted_folders.toml'), `[folders.${JSON.stringify(trusted)}]\ntrusted = true\n`);
+  fs.writeFileSync(join(agyDir, 'settings.json'), JSON.stringify({ trustedWorkspaces: [trusted] }));
+  fs.writeFileSync(join(env.CLAUDE_CONFIG_DIR, '.claude.json'), JSON.stringify({ projects: { [trusted]: { hasTrustDialogAccepted: true } } }));
   if (inHerdr) env.HERDR_PANE_ID = 'w4E:p1';
   else delete env.HERDR_PANE_ID;
   if (worker) env.HUD_JOB_DIR = join(env.HUD_HOME, 'jobs', 'j0000000000000001');
@@ -1698,6 +1712,41 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
 });
 
+test('a slow CLI launch blocks only retries with the same request key, not other job mutations', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const old = await f.call('hud_create', { role: 'imp', request_key: 'already-working', task: 'Synthetic task.' });
+  fs.writeFileSync(join(f.env.HOME, 'hold-grok-start'), '');
+  const args = { role: 'imp', on: 'grok', request_key: 'slow-launch', task: 'Slow synthetic launch.' };
+  let launchFinished = false;
+  let retryFinished = false;
+  const launch = f.call('hud_create', args).finally(() => { launchFinished = true; });
+  const grokStarts = () => f.commands().filter(({ args }) => args[1] === 'start' && args.includes('grok'));
+  await until(() => grokStarts().length > 0);
+  const retry = f.call('hud_create', args).finally(() => { retryFinished = true; });
+  const release = join(f.env.HOME, 'release-prompt-result');
+  try {
+    const [other, answer, send, close] = await Promise.all([
+      f.call('hud_create', { role: 'imp', request_key: 'unrelated-create', task: 'Another synthetic task.' }),
+      f.call('hud_respond', { job: old.job, request_id: 'q1', answer: 'Synthetic answer.' }),
+      f.call('hud_send', { job: old.job, message_key: 'unrelated-send', text: 'Synthetic message.' }),
+      f.call('hud_close', { job: old.job }),
+    ]);
+    assert.notEqual(other.job, old.job);
+    assert.equal(answer.written, true);
+    assert.equal(send.sent, true);
+    assert.equal(close.exit_code, 0);
+    assert.equal(launchFinished, false, 'unrelated calls finish while herdr is still starting Grok');
+    assert.equal(retryFinished, false, 'duplicate waits for the original result');
+  } finally {
+    fs.writeFileSync(release, '');
+    await Promise.all([launch, retry]);
+  }
+  assert.equal((await launch).code, 'dispatch_failed');
+  assert.equal((await retry).job, (await launch).job);
+  assert.equal((await retry).code, 'dispatch_failed');
+  assert.equal(grokStarts().length, 1);
+});
+
 test('marked worker MCP refuses all dispatch tools but still answers roster and read', async (t) => {
   const f = await fixture(t, true, '', undefined, true);
   const dir = f.env.HUD_JOB_DIR;
@@ -2668,6 +2717,25 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     const file = join(plain.task_dir, 'STATUS.json');
     return fs.existsSync(file) && ['closed', 'failed'].includes(JSON.parse(fs.readFileSync(file, 'utf8')).state);
   });
+});
+
+test('local CLI trust refuses missing grants without creating a tab', async (t) => {
+  const f = await fixture(t);
+  const cwd = join(f.root, 'quota fixtures');
+  fs.mkdirSync(cwd);
+  fs.unlinkSync(join(f.env.HOME, '.gemini', 'antigravity-cli', 'settings.json'));
+  for (const agent of ['grok', 'agy', 'claude']) {
+    const args = { role: 'imp', on: agent, request_key: `not-trusted-${agent}`, task: 'Synthetic task.', cwd };
+    const job = await f.call('hud_create', args);
+    assert.equal(job.ok, false);
+    assert.equal(job.code, 'untrusted_cwd');
+    assert.equal(job.reason, `${agent} has not trusted ${cwd}; run hud trust ${cwd}`);
+    assert.equal(job.agent, null);
+    assert.equal(cliState(job.task_dir).state, 'failed');
+    assert.deepEqual(await f.call('hud_create', args), job);
+  }
+  assert.equal(f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'create'), false);
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
 });
 
 test('a grok trust dialog is declined and the job fails naming the directory', { timeout: 10000 }, async (t) => {
