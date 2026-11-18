@@ -1,6 +1,6 @@
 # 03: HUD-run pi jobs use the HUD role text; one question rule
 
-**Status:** ready-for-agent
+**Status:** done (HUD 8609817e, Fishpref bd18067; live check 2026-11-17: a pi imp had no call_*/rate_helper tools, ran the HUD implementer text, and used hud-sonic start/wait while it kept working)
 **Blocked by:** 02
 
 **What to build:** `.scratch/worker-unify/spec.md` decisions 3 and 4. Today a pi imp reads Fishpref
