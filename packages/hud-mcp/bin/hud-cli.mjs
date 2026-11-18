@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
-import { judge, procStat, workerAlive, workerHasChild, readTurn, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { request } from './herdr-request.mjs';
 import { sonicChildren, sonicCollectPrompt } from './sonic-jobs.mjs';
@@ -45,7 +45,7 @@ let current = {
 };
 let prev = null, status = null, agentMissing = false, workingAt = null, tabClosed = false;
 let turn = readTurn(dir) ?? writeTurn(dir), signature = null, stamp;
-let stop = false, close = false, openQuestions = false, diskDirty = true;
+let stop = false, close = false, openQuestions = false, diskDirty = true, sendInFlight = false;
 let socket, lines, reconnectTimer, debounce, deadline, tickTimer, dirWatch, qaWatch;
 let stopped = false, busy = false, pending = false, tickPending = false, reconnectMs = 5000, generation = 0;
 let quietQuestions = 0, reportPromptSent = Boolean(turn.report_prompt_sent), rowStamp;
@@ -131,18 +131,23 @@ function connect() {
     if (kind === 'pane_agent_status_changed') {
       status = data.agent_status; agentMissing = false;
       if (status === 'working') workingAt = Date.now();
-    } else if (kind === 'pane_closed' || kind === 'tab_closed') tabClosed = true;
-    else if (kind === 'pane_agent_detected') { await seed(); }
+    } else if (kind === 'pane_closed' || kind === 'tab_closed') {
+      tabClosed = true; diskDirty = true; // Read stop intent even if the file event has not arrived.
+    } else if (kind === 'pane_agent_detected') { await seed(); }
     if (!current.agent_session_id && kind === 'pane_agent_status_changed') await seed();
     wake();
   });
   lines.on('error', unavailable); socket.on('error', unavailable); socket.on('close', unavailable);
 }
-const sampleChild = () => workerHasChild(current.pid, current.pid_start_time, turn.sent_at);
+const sampleChild = () => workerHasChild(current.pid, current.pid_start_time, turn.sent_at, firstInput(turn));
 function collect(isTick, checkChild = isTick && status !== 'working') {
   if (diskDirty || isTick) {
     turn = readTurn(dir) ?? turn;
-    readAt = JSON.parse(fs.readFileSync(jobFile, 'utf8')).read_at;
+    const receipt = JSON.parse(fs.readFileSync(jobFile, 'utf8'));
+    readAt = receipt.read_at;
+    // Keep the prior settlement while the sender can still cancel this baseline. If it dies, assume delivery is possible.
+    sendInFlight = turn.send && receipt.send_outcomes?.some((attempt) => attempt.key === turn.send.key && attempt.exit_code === null)
+      && workerAlive(turn.send.pid, turn.send.start) === true;
     stop = fs.existsSync(join(dir, 'STATUS.json.stop-requested'));
     close = fs.existsSync(join(dir, 'STATUS.json.close-requested'));
     const qa = join(dir, 'qa');
@@ -170,9 +175,9 @@ function write(result) {
   if (changed === rowStamp) return;
   current = row; rowStamp = changed;
   const file = join(dir, 'STATUS.json');
-  // A watcher may have received a tab-close push while this socket was down.
+  // A watcher may have reached a terminal verdict while this socket was down.
   try {
-    if (JSON.parse(fs.readFileSync(file, 'utf8')).exit_reason === 'tab closed' && result.exitReason !== 'tab closed') { shutdown(); return; }
+    if (['closed', 'failed', 'stopped'].includes(JSON.parse(fs.readFileSync(file, 'utf8')).state)) { shutdown(); return; }
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   fs.writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify({ ...row, updated_at: iso(Date.now()) }) + '\n', { mode: 0o600 });
   fs.renameSync(`${file}.${process.pid}.tmp`, file);
@@ -190,6 +195,7 @@ async function run() {
       if (pid) { current.pid = pid; current.pid_start_time = procStat(pid)?.start ?? null; }
     }
     let observed = collect(isTick);
+    if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
     let next = judge(prev, observed, Date.now());
     if (next.action === 'sample') {
       observed = { ...observed, liveChild: sampleChild() };
@@ -217,7 +223,7 @@ async function run() {
       if (decision.asked) quietQuestions += 1;
       diskDirty = true;
       const latest = collect(false, true);
-      if (latest.turn.seq !== observed.turn.seq || latest.reportSig !== observed.reportSig || latest.stop || latest.close || latest.alive === false || latest.status !== observed.status || latest.workingAt !== observed.workingAt || latest.openQuestions || latest.liveChild !== false || latest.sonic.open || latest.sonic.uncollected.length) { wake(); return; }
+      if (sendInFlight || latest.turn.seq !== observed.turn.seq || latest.reportSig !== observed.reportSig || latest.stop || latest.close || latest.alive === false || latest.status !== observed.status || latest.workingAt !== observed.workingAt || latest.openQuestions || latest.liveChild !== false || latest.sonic.open || latest.sonic.uncollected.length) { wake(); return; }
       current.quiet_decision = { choice: decision.choice, probability: decision.probability, action: decision.action,
         ...(decision.reason ? { reason: decision.reason } : {}), at: new Date().toISOString() };
       if (decision.action === 'prompt-report') {
@@ -234,6 +240,7 @@ async function run() {
       if (decision.action === 'fail') decision.failReason = recordFailureExhaustion(hudHome, bundled, dir, job, decision.failReason).reason;
       next = judge(prev, { ...observed, decision }, Date.now());
     }
+    // Settlement is independent of /quit delivery; the global watcher owns cleanup and retries.
     if (next.action === 'quit' && observed.alive !== false) effect(['agent', 'prompt', name, '/quit']);
     write(next);
     if (stopped) return;

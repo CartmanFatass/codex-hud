@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
-import { workerAlive, workerHasChild, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { terminalFact, workerAlive, workerHasChild, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { request } from './herdr-request.mjs';
 
@@ -69,6 +69,7 @@ let watcher, timer,
   scanning = false,
   stopped = false;
 const closedTabs = new Set();
+const reapRetries = new Map();
 function subscribe() {
   if (subscribed) return;
   subscribed = true;
@@ -206,31 +207,29 @@ async function scan(retryWatch = false) {
       // Unreadable lifecycle or tab evidence may still belong to an open job.
       catch (error) { if (error.code !== 'ENOENT') open = true; throw error; }
       const tab = session?.match(/^TAB=([^\r\n]+)$/m)?.[1];
-      if (tab && closedTabs.has(tab) && !['closed', 'failed', 'stopped'].includes(status?.state)) {
-        status = { ...status, state: 'failed', exit_reason: 'tab closed', ended_at: new Date().toISOString() };
-        fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
-        fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
-      }
-      if (job?.cli && status && !['closed', 'failed', 'stopped'].includes(status.state)) {
-        safetyCheck = true;
-        const pid = supervisorPid(dir, status);
-        if (pid && !supervisorAlive(pid)) {
-          const alive = workerAlive(status.pid, status.pid_start_time);
-          const reason = alive === false ? 'worker exited' : alive === true ? 'supervisor exited; worker still running' : 'supervisor exited; worker liveness unknown';
-          const sig = reportSignature(dir), turn = readTurn(dir);
-          const report = sig !== null && sig !== turn?.report_sig;
-          const state = alive === false ? (report ? 'closed' : 'failed') : 'waiting_orchestrator';
-          if (status.state !== state || status.reason !== (alive === false ? null : reason)) {
-            status = {
-              ...status, state, blocked: false, reason: alive === false ? null : reason,
-              exit_reason: alive === false ? (report ? 'settled' : reason) : null,
-              error: state === 'failed' ? reason : null,
-              output_written: alive === false ? report : status.output_written,
-              ended_at: alive === false ? new Date().toISOString() : null,
-            };
-            fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
-            fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+      const tabClosed = closedTabs.has(tab);
+      if (!['closed', 'failed', 'stopped'].includes(status?.state)) {
+        let update;
+        const now = new Date().toISOString();
+        if (job?.cli) {
+          safetyCheck ||= Boolean(status);
+          const pid = status && supervisorPid(dir, status);
+          if (tabClosed || (pid && !supervisorAlive(pid))) {
+            const alive = workerAlive(status?.pid, status?.pid_start_time);
+            const end = terminalFact({ alive, tabClosed, stop: fs.existsSync(`${statusFile}.stop-requested`),
+              turn: readTurn(dir), reportSig: reportSignature(dir) });
+            const reason = alive === true ? 'supervisor exited; worker still running' : 'supervisor exited; worker liveness unknown';
+            if (end) update = { state: end.state, reason: null, blocked: false, output_written: end.outputWritten,
+              settled_at: status?.settled_at ?? now, ended_at: now, exit_reason: end.exitReason,
+              error: end.state === 'failed' ? end.exitReason : null, updated_at: now };
+            else if (status?.state !== 'waiting_orchestrator' || status.reason !== reason)
+              update = { state: 'waiting_orchestrator', reason, blocked: false, ended_at: null, exit_reason: null, error: null };
           }
+        } else if (tabClosed) update = { state: 'failed', exit_reason: 'tab closed', ended_at: now };
+        if (update) {
+          status = { ...status, ...update };
+          fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
+          fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
         }
       }
       // A persisted launch without STATUS is still open until dispatch returns.
@@ -288,10 +287,27 @@ async function scan(retryWatch = false) {
             workerHasChild(latest.pid ?? null, latest.pid_start_time ?? null, readInGrace) !== false) continue;
         // The check isn't atomic with the external reaper; a later start can still race it.
       }
+      const ownership = JSON.stringify([session, status.pid, status.pid_start_time]);
+      const retry = reapRetries.get(id);
+      if (!readInGrace && retry?.ownership === ownership && retry.at > Date.now()) {
+        nearest = Math.min(nearest, retry.at);
+        continue;
+      }
       const result = spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000 });
       const message = `reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}`;
-      if (result.status === 0) log(message);
-      else warn(`reap ${id}`, message);
+      if (result.status === 0) { reapRetries.delete(id); log(message); }
+      else {
+        warn(`reap ${id}`, message);
+        if (!readInGrace) {
+          // The reaper has no distinct exit code for an ownership refusal. Stop only on an explicit refusal
+          // with no other reported cleanup error; otherwise let the same reaper recheck ownership on retry.
+          const refusal = result.status === 1 && result.stderr?.trimEnd().endsWith(`: TAB ${tab} name changed or missing; not closing`)
+            && !result.stderr.trim().includes('\n');
+          const at = refusal ? Infinity : Date.now() + cliCheck;
+          reapRetries.set(id, { ownership, at });
+          nearest = Math.min(nearest, at);
+        }
+      }
       if (result.status === 0 && readInGrace) {
         // Pi may have published shutdown STATUS during reap. Preserve those facts and name the trigger.
         const latest = json(statusFile);

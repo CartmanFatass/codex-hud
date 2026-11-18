@@ -8,7 +8,11 @@ export interface Turn {
   sent_at: string;
   report_sig: string | null;
   report_prompt_sent?: boolean;
+  first_sent_at?: string;
+  send?: { key: string; pid: number; start: string | null };
 }
+
+export const firstInput = (turn: Turn) => turn.first_sent_at ?? (turn.seq === 1 ? turn.sent_at : undefined);
 
 export function reportSignature(dir: string): string | null {
   try {
@@ -32,7 +36,7 @@ export function readTurn(dir: string): Turn | null {
 }
 
 /** Publish before input: a fast report must differ from the send-time baseline. */
-export function writeTurn(dir: string, reportPromptSent?: boolean): Turn {
+export function writeTurn(dir: string, reportPromptSent?: boolean, send?: Turn['send']): Turn {
   const prev = readTurn(dir);
   const sent = reportPromptSent || prev?.report_prompt_sent;
   const turn: Turn = {
@@ -40,11 +44,17 @@ export function writeTurn(dir: string, reportPromptSent?: boolean): Turn {
     sent_at: new Date().toISOString(),
     report_sig: reportSignature(dir),
     ...(sent ? { report_prompt_sent: true } : {}),
+    ...(prev && firstInput(prev) ? { first_sent_at: firstInput(prev) } : {}),
+    ...(send ? { send } : {}),
   };
+  saveTurn(dir, turn);
+  return turn;
+}
+
+export function saveTurn(dir: string, turn: Turn): void {
   const file = join(dir, 'turn.json');
   fs.writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(turn) + '\n', { mode: 0o600 });
   fs.renameSync(`${file}.${process.pid}.tmp`, file);
-  return turn;
 }
 
 export function procStat(pid: number) {
@@ -66,17 +76,54 @@ export function workerAlive(pid: number | null, start: string | null): boolean |
   return start ? info.start === start : null;
 }
 
-/** Look through older children too: a session-long helper can start work in this turn. */
-export function workerHasChild(pid: number | null, start: string | null, sentAt: string): boolean | 'unknown' {
+type Bootstrap = { stage: 'launcher' } | { stage: 'shell' | 'server'; entry: string };
+const base = (path = '') => path.split('/').at(-1);
+function bootstrap(pid: number, start: string, oldDirect: boolean, parent: number, chain?: Bootstrap): Bootstrap | boolean {
+  let argv;
+  try { argv = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0+$/, '').split('\0'); }
+  catch { return false; }
+  if (workerAlive(pid, start) !== true) return false;
+  if (oldDirect) {
+    // npm normally retitles itself to one argv element; other launchers may retain the original argv.
+    if (argv.length === 1 && argv[0]?.startsWith('npm exec ')) argv = argv[0].split(' ');
+    if (base(argv[0]) === 'node') argv.shift();
+    const launcher = base(argv.shift());
+    if (launcher === 'npm' || launcher === 'npm-cli.js') { if (argv.shift() !== 'exec') return false; }
+    else if (launcher === 'pnpm' || launcher === 'pnpm.cjs') { if (argv.shift() !== 'dlx') return false; }
+    else if (launcher !== 'npx' && launcher !== 'npx-cli.js' && launcher !== 'uvx') return false;
+    while (['-y', '--yes', '--'].includes(argv[0] ?? '')) argv.shift();
+    const spec = argv[0];
+    return argv.length === 1 && spec && !spec.startsWith('-') && !/\s/.test(spec) ? { stage: 'launcher' } : false;
+  }
+  if (!chain) return false;
+  if (chain.stage === 'launcher') {
+    // Learn the executable from the shell, not the package spec. Reject arguments and shell syntax.
+    const entry = argv[2]?.trim();
+    return base(argv[0]) === 'sh' && argv.length === 3 && argv[1] === '-c' && entry && /^[\w.@%+-]+$/.test(entry)
+      ? { stage: 'shell', entry } : false;
+  }
+  const { entry, stage } = chain;
+  if (stage === 'shell') return (base(argv[0]) === entry || (base(argv[0]) === 'node' && argv[1]?.endsWith(`/.bin/${entry}`)))
+    ? { stage: 'server', entry } : false;
+  return entry === 'chrome-devtools-mcp' && base(argv[0]) === 'node' &&
+    Boolean(argv[1]?.endsWith('/node_modules/chrome-devtools-mcp/build/src/telemetry/watchdog/main.js')) &&
+    (argv.includes(`--parent-pid=${parent}`) || argv.some((arg, i) => arg === '--parent-pid' && argv[i + 1] === String(parent)));
+}
+
+/** Exempt only identified MCP bootstrap processes, not the work started below them. */
+export function workerHasChild(pid: number | null, start: string | null, sentAt: string, firstSentAt?: string): boolean | 'unknown' {
   if (pid === null || workerAlive(pid, start) !== true) return false;
   const buffer = Buffer.alloc(4096);
-  const parents = [pid];
+  const parents: { pid: number; start: string | null; chain?: Bootstrap }[] = [{ pid, start }];
   let budget = 512;
   try {
     const boot = +new Date() - parseFloat(fs.readFileSync('/proc/uptime', 'utf8')) * 1000;
     const since = Math.floor((Date.parse(sentAt) - boot) / 10); // Linux USER_HZ is 100; include the send's whole tick.
+    const first = Math.floor((Date.parse(firstSentAt ?? '') - boot) / 10);
     if (!Number.isFinite(since)) return 'unknown';
-    for (let parent; (parent = parents.pop()) !== undefined;) {
+    for (let item; (item = parents.pop()) !== undefined;) {
+      const { pid: parent, chain } = item;
+      if (chain && workerAlive(parent, item.start) !== true) return 'unknown';
       const tasks = `/proc/${parent}/task`;
       let threads;
       try { threads = fs.opendirSync(tasks); }
@@ -104,8 +151,10 @@ export function workerHasChild(pid: number | null, start: string | null, sentAt:
             if (--budget < 0) return 'unknown';
             const child = procStat(Number(id));
             if (child?.ppid !== parent || (child.threads <= 1 && /^[ZXx]$/.test(child.state ?? ''))) continue;
-            if (Number(child.start) >= since) return workerAlive(pid, start) === true;
-            parents.push(Number(id));
+            const oldDirect = parent === pid && Number(child.start) < first;
+            const match = oldDirect || chain ? bootstrap(Number(id), child.start, oldDirect, parent, chain) : false;
+            if (!match && Number(child.start) >= since) return workerAlive(pid, start) === true;
+            parents.push({ pid: Number(id), start: child.start, ...(typeof match === 'object' ? { chain: match } : {}) });
           }
           if (size === buffer.length) return 'unknown';
         }
@@ -159,6 +208,15 @@ export interface Facts {
   supervisorError?: string;
 }
 
+export function terminalFact({ stop, alive, tabClosed, turn, reportSig }: Pick<Facts, 'stop' | 'alive' | 'tabClosed' | 'reportSig'> & { turn: Turn | null }) {
+  const outputWritten = reportSig !== null && reportSig !== turn?.report_sig;
+  // Stop intent is written before termination, so it wins over both exit and tab close.
+  if (stop) return { state: 'stopped', exitReason: 'stop requested', outputWritten } as const;
+  if (alive === false) return { state: outputWritten ? 'closed' : 'failed', exitReason: outputWritten ? 'settled' : 'worker exited', outputWritten } as const;
+  if (tabClosed) return { state: 'failed', exitReason: 'tab closed', outputWritten } as const;
+  return null;
+}
+
 /** All lifecycle choices live here; the shell only collects facts and applies effects. */
 export function judge(prev: Judgment | null, facts: Facts, now: number): Judgment {
   const newTurn = prev?.seq !== facts.turn.seq;
@@ -175,10 +233,8 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     ...next, state, exitReason: reason, outputWritten: report,
     settledAt: next.settledAt ?? now, action: quit ? 'quit' : null, wakeAt: null,
   });
-  // hud_close writes the stop marker before it kills the worker: a stop on purpose is not a failure.
-  if (facts.stop) return end('stopped', 'stop requested');
-  if (facts.alive === false) return end(report ? 'closed' : 'failed', report ? 'settled' : 'worker exited');
-  if (facts.tabClosed) return end('failed', 'tab closed');
+  const terminal = terminalFact(facts);
+  if (terminal) return end(terminal.state, terminal.exitReason);
   if (facts.close) return end('closed', 'settled', true);
   if (facts.supervisorError) return { ...next, state: 'waiting_orchestrator', reason: facts.supervisorError };
   if (facts.alive !== null) next.missingTicks = 0;

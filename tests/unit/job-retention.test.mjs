@@ -349,7 +349,12 @@ for (const kind of ['session preservation', 'reap']) {
     if (kind === 'session preservation') {
       for (const dir of bad) realSession(dir, 'sessions', { type: 'session' });
     } else {
-      fs.appendFileSync(join(f.home, '..', 'bin', 'pi-role-reap'), 'process.exitCode = 1;\n');
+      fs.appendFileSync(join(f.home, '..', 'bin', 'pi-role-reap'), `
+if (fs.existsSync(process.env.HUD_HOME + '/reap-ownership-lost')) {
+  console.error('pi-role-reap: ' + process.argv[2] + ': TAB synthetic-tab name changed or missing; not closing');
+}
+process.exitCode = 1;
+`);
     }
     // The watcher reads this file as its clock; write it atomically so a read never sees it empty.
     const clock = join(f.home, 'clock'), now = Date.now();
@@ -369,15 +374,21 @@ Date.now = () => Number(fs.readFileSync(${JSON.stringify(clock)}, 'utf8'));`);
     setClock(now + 59999);
     await new Promise((done) => setTimeout(done, 1200));
     for (const dir of bad) assert.equal(warnings(dir).length, 1, 'still suppressed just before one minute');
-    setClock(now + 60000);
+    // A terminal reap is retried on the slow timer, not at every intervening scan.
+    setClock(now + (kind === 'reap' ? 60999 : 60000));
     await until(() => bad.every((dir) => warnings(dir).length >= 2));
-    for (const dir of bad) assert.equal(warnings(dir).length, 2, 'each job warns again at one minute');
-    if (kind === 'reap') {
-      assert.ok(fs.readFileSync(join(f.home, 'reaps'), 'utf8').trim().split('\n').length >= 8, 'reap keeps retrying despite throttled logs');
-      for (const dir of bad) assert.equal(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).reaped_at, undefined);
-    }
+    for (const dir of bad) assert.equal(warnings(dir).length, 2, 'each job warns again after one minute');
     fs.writeFileSync(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+    if (kind === 'reap') {
+      assert.ok(fs.readFileSync(join(f.home, 'reaps'), 'utf8').trim().split('\n').length >= 6, 'reap keeps retrying despite throttled logs');
+      await new Promise((done) => setTimeout(done, 1200)); // Allow a degraded scan to observe the last job closing.
+      assert.equal(child.exitCode, null, 'pending cleanup keeps the watcher alive without a working job');
+      fs.writeFileSync(join(f.home, 'reap-ownership-lost'), '');
+      setClock(now + 61999);
+    }
     await exited;
+    if (kind === 'reap') for (const dir of bad)
+      assert.equal(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).reaped_at, undefined);
     assert.equal(child.exitCode, 0);
     assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
   });

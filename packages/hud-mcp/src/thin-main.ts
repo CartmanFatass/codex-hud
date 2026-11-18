@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { procStat, workerAlive, writeTurn } from './cli-judge.js';
+import { procStat, readTurn, saveTurn, workerAlive, writeTurn } from './cli-judge.js';
 import { jobChanges, jobRow, type JobRow } from '../../../src/collectors/thin-jobs.js';
 import { TryLog } from '../../../src/collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
@@ -223,7 +223,7 @@ function run(
   command: string,
   argv: string[],
   cwd?: string
-): Promise<{ exit_code: number; stdout: string; stderr: string }> {
+): Promise<{ exit_code: number; stdout: string; stderr: string; notStarted: boolean }> {
   return new Promise((done) => {
     const child = spawn(command, argv, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '',
@@ -237,8 +237,16 @@ function run(
     child.on('error', (error) => {
       stderr = (stderr + error.message).slice(-4096);
     });
-    child.on('close', (code) => done({ exit_code: code ?? -1, stdout, stderr }));
+    child.on('close', (code) => done({ exit_code: code ?? -1, stdout, stderr, notStarted: child.pid === undefined }));
   });
+}
+function refusedBeforeInput(result: Awaited<ReturnType<typeof run>>): boolean {
+  if (result.exit_code === 0) return false;
+  if (result.notStarted) return true;
+  let code;
+  try { code = JSON.parse(result.stdout)?.error?.code; } catch { /* Herdr can also render the error on stderr. */ }
+  code ??= /^(?:Error:\s*)?(agent_not_ready|agent_not_found)(?=[:\s]|$)/.exec(result.stderr.trim())?.[1];
+  return code === 'agent_not_ready' || code === 'agent_not_found';
 }
 async function workspaceArgs(job: Job): Promise<string[]> {
   const result = await run('herdr', ['pane', 'get', job.herdr_pane]);
@@ -1135,12 +1143,22 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (!job.cli) job.pi_sent_at = new Date().toISOString();
     save(job);
     // Baseline before typing: even a fast report belongs to this explicit turn.
-    if (job.cli) writeTurn(dir);
+    const prior = job.cli ? readTurn(dir) : null;
+    const turn = job.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }) : null;
     // agent prompt types the text and submits it with Enter.
     const result = await run('herdr', ['agent', 'prompt', agent, message]);
-    outcome.exit_code = result.exit_code;
-    outcome.stderr_tail = result.stderr;
-    save(job);
+    if (turn && refusedBeforeInput(result)) {
+      const active = readTurn(dir);
+      if (active?.seq === turn.seq && active.send?.key === key && active.send.pid === process.pid) {
+        if (prior) saveTurn(dir, prior);
+        else fs.unlinkSync(join(dir, 'turn.json'));
+      }
+    }
+    const latest = json<Job>(join(dir, 'job.json')) ?? job;
+    const attempted = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
+    attempted.exit_code = result.exit_code;
+    attempted.stderr_tail = result.stderr;
+    save(latest);
     if (result.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
     if (result.exit_code === 0 && job.cli) {
       const supPid = supervisorPid(dir, status);
