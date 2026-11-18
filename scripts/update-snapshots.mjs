@@ -64,6 +64,10 @@ const writers = {
       Date.now = now;
     }
   },
+  'bar-widths.json': async () => {
+    const { widthFrames } = await import(join(root, 'dist-test/tests/fixtures/bar-widths.js'));
+    return widthFrames();
+  },
 };
 const only = process.argv.slice(2);
 const changed = [];

@@ -1,0 +1,82 @@
+{
+  "80": {
+    "quiet": [
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s"
+    ],
+    "one": [
+      "✻ opus-5.5 │ 41% │ example wt/BAR-NARROW* │ 5h 62% │ [✓●] frontend-implementer"
+    ],
+    "busy": [
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ ◐ Explore Audit…"
+    ],
+    "claude": [
+      "✻ opus-5.5 high │ 86%/400K │ example main* │ 5h 92% │ ◐ frontend-implementer"
+    ],
+    "pi": [
+      "≋ v4.1-flash high │ 72%/200K │ example synthetic-main* │ ◐ imp │ ✓ reviewer 12m"
+    ],
+    "codex": [
+      "◎ 5.6-astra xhigh │ 88%/400K │ example main* │ 5h 78% │ ◐ explorer │ ✓ worker 1m"
+    ]
+  },
+  "100": {
+    "quiet": [
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s"
+    ],
+    "one": [
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ ~42.7 t/s │ [✓●] frontend-implementer"
+    ],
+    "busy": [
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ ◐ Explore │ [✓●] frontend-implementer"
+    ],
+    "claude": [
+      "✻ opus-5.5 high │ 86%/400K │ example main* │ 5h 92% │ ◐ frontend-implementer │ ✦ skill hud-delegate"
+    ],
+    "pi": [
+      "≋ v4.1-flash high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ ◐ imp Synthetic… │ ✓ reviewer 12m"
+    ],
+    "codex": [
+      "◎ 5.6-astra xhigh │ 88%/400K │ example main*↑2 │ 5h 78% │ ◐ explorer Synthetic search │ ✓ worker 1m"
+    ]
+  },
+  "120": {
+    "quiet": [
+      "✻ opus-5.5 high │ ████░░░░░░ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h ██████░░░░ 62% (1h19m) │ ~42.7 t/s"
+    ],
+    "one": [
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ ~42.7 t/s │ [✓●] frontend-implementer BAR-NARROW: the… 12m"
+    ],
+    "busy": [
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW* │ 5h 62% │ ~42.7 t/s │ ◐ Explore │ [✓●] frontend-implementer 12m"
+    ],
+    "claude": [
+      "✻ opus-5.5 high │ 86%/400K │ example main* │ 5h 92% (41m) │ ◐ frontend-implementer Synthetic │ ✦ skill hud-delegate"
+    ],
+    "pi": [
+      "≋ v4.1-flash high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ ◐ imp Synthetic fix │ ✓ reviewer 12m"
+    ],
+    "codex": [
+      "◎ 5.6-astra xhigh │ 88%/400K │ example main*↑2 │ 5h 78% (1h19m) │ ◐ explorer Synthetic search │ ✓ worker 1m"
+    ]
+  },
+  "144": {
+    "quiet": [
+      "✻ opus-5.5 high │ ████░░░░░░ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h ██████░░░░ 62% (1h19m) │ ~42.7 t/s                          MCP 4  skills 31"
+    ],
+    "one": [
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% │ ~42.7 t/s │ [✓●] frontend-implementer BAR-NARROW: the bottom bar reads… 12m"
+    ],
+    "busy": [
+      "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% │ ~42.7 t/s │ ◐ Explore Audit bar fitting ladder │ [✓●] frontend-implementer 12m"
+    ],
+    "claude": [
+      "✻ opus-5.5 high │ █████████░ 86%/400K │ example main* │ 5h █████████░ 92% (41m) │ ◐ frontend-implementer Synthetic │ ✦ skill hud-delegate"
+    ],
+    "pi": [
+      "≋ v4.1-flash high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ ◐ imp Synthetic fix │ ✓ reviewer Synthetic… 12m      MCP 2  skills 3"
+    ],
+    "codex": [
+      "◎ 5.6-astra xhigh │ █████████░ 88%/400K │ example main*↑2 │ 5h ████████░░ 78% (1h19m) │ ◐ explorer Synthetic… │ ✓ worker 1m      MCP 2  skills 5"
+    ]
+  }
+}

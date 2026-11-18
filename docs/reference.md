@@ -711,8 +711,13 @@ Settings Bar style: `line`, `p10k`, `gauge` (Gauge Plates), `tide`, `micro`, `st
 `headline`, `triptych`. Stacked is two rows in Claude/pi; Codex falls back to line.
 Tide tints need truecolor. Text icons/none keep meanings without colour. `barFields`
 selects from `model,context,project,quota,tps,notice,loaded` without reordering them.
-If you use a field allowlist, include `tps` to show the rate. On narrow bars it drops early;
-notices cut at words, and the model is never dropped. pi's ribbon follows the look;
+If you use a field allowlist, include `tps` to show the rate. Narrow bars (a main pane beside
+the open panel is 144 columns on a 184-column terminal) give up, cheapest first: the loaded counts;
+both gauges' cells together; the quota's reset and the branch's `↑n`; a notice's title (a few words,
+then none); the rate; the older of two notices; the effort; the context's window (`41%`); the branch;
+the quota; the project; the context. The model is never dropped, a job's role stays whole, and the
+numbers keep their forms while a job starts: it takes room from titles, which take back what is left.
+pi's ribbon follows the look;
 other extensions' statuses remain visible. The bars stay English-only apart from a job's own title.
 
 ### pi controls

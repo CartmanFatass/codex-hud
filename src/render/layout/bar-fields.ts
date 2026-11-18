@@ -7,8 +7,8 @@
  * Fields a client cannot supply are left out, never shown as zero. The fields shown are `barFields`; the style is
  * `barStyle`: `│` separators (`line`), or powerline capsules (`p10k`: each segment padded by a space on its own
  * background, an arrow in its colour leading into the next; flat, without arrows, when icons are text). The line always fits: forms shorten and whole segments drop in the order of
- * `LADDER`, and the notice zone, which only tells events, shows in full: the loaded cluster gives way for it first, the
- * other fields after, and only as a last resort is it cut at a word.
+ * `LADDER`: the vitals' numbers (model, context, project, quota, output rate) outrank the notice zone, which tells
+ * events and gives up its titles, then its older item, before they give up more than their extras.
  */
 
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
@@ -228,7 +228,8 @@ function contextSeg(c: NonNullable<BarFacts['context']>): Seg {
     ...(c.window > 0 ? ([[`/${formatTokenCount(c.window)}`, 'dim']] as Form) : []),
   ];
   const ink = role === 'ok' ? P10K.context : P10K[role as 'warn' | 'bad'];
-  return { id: 'context', forms: [[...cells(c.percent, role), ...numbers], numbers], ink, at: 0 };
+  // The window goes after the cells: `41%` alone is still the reading.
+  return { id: 'context', forms: [[...cells(c.percent, role), ...numbers], numbers, [[c.shown, role]]], ink, at: 0 };
 }
 
 function projectSeg(p: NonNullable<BarFacts['project']>): Seg {
@@ -261,8 +262,8 @@ function quotaSeg(q: NonNullable<BarFacts['quota']>): Seg {
   const worst = quotaRole(Math.max(...shown.map((w) => w.percent)));
   return {
     id: 'quota',
-    // The reset goes first, then the bar.
-    forms: [reading(true, true), reading(true, false), reading(false, false)],
+    // The bar goes first (with the context's), then the reset.
+    forms: [reading(true, true), reading(false, true), reading(false, false)],
     ink: worst === 'usage' ? P10K.quota : P10K[worst === 'usageHigh' ? 'warn' : (worst as 'bad')],
     at: 0,
   };
@@ -311,6 +312,8 @@ interface Notice {
 
 /** The widest a job's title gets, so a long brief heading cannot push the vitals off the bar. */
 const TITLE_COLS = 36;
+/** What the vitals leave a title before it goes altogether: a few words, enough to tell two jobs of one role apart. */
+const TITLE_SHORT = 14;
 
 const MARKS = {
   started: ['◐', 'info'],
@@ -377,7 +380,7 @@ function zoneOf(
 /** Whole words up to `room` columns, then `…`; nothing when not even the first fits. Unspaced text (CJK) is cut by column. */
 function cutWords(words: string, room: number): string {
   if (visualLength(words) <= room) return words;
-  if (!/\s/.test(words) && /[^\x00-\x7f]/.test(words)) {
+  if (!/\s/.test(words) && /[^\x00-\x7f…]/.test(words)) {
     const cut = truncateAnsi(words, room);
     return cut === '…' ? '' : cut;
   }
@@ -425,15 +428,27 @@ function noticeSeg(notice: Notice, room: number, pad: string, form = 0): Seg | n
   return { id: 'notice', forms: [parts], ink: P10K[notice.tone], at: 0 };
 }
 
+/**
+ * An item as the vitals plan for it, one form per stage of giving way: whole, a few words of its title, its name alone.
+ * Whatever room is left afterwards goes back to the titles.
+ */
+function noticeStages(notice: Notice, pad: string): Form[] {
+  const whole = noticeSeg(notice, Infinity, pad)?.forms[0] ?? [];
+  const few = noticeSeg({ ...notice, title: cutWords(notice.title, TITLE_SHORT) }, Infinity, pad)?.forms[0] ?? whole;
+  return [whole, few, noticeSeg(notice, Infinity, pad, 2)?.forms[0] ?? few];
+}
+
 const textWidth = (seg: Seg | null) => (seg ? visualLength(text(seg.forms[0])) : 0);
 
 /**
- * The items side by side in `room` columns: the widest loses words of its title, then the title and its run time,
- * until they fit; null if they cannot.
+ * The items side by side in `room` columns: the widest title loses words until the items fit, down to each one's name and
+ * run time; then the run times and names go form by form; null if they cannot.
  */
 function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
   const form = items.map(() => 0),
     cap = items.map(() => Infinity);
+  // What an item keeps while another still has a title to give: its name and how long it ran.
+  const floor = items.map((item) => textWidth(noticeSeg(item, Infinity, pad, 1)));
   for (;;) {
     const segs = items.map((item, i) => noticeSeg(item, cap[i]!, pad, form[i]));
     const widths = segs.map(textWidth);
@@ -441,10 +456,15 @@ function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
     if (over <= 0) return segs.filter((seg): seg is Seg => seg !== null);
     const open = items.map((_, i) => i).filter((i) => form[i]! < 2);
     if (!open.length) return null;
-    const i = open.reduce((a, b) => (widths[b]! >= widths[a]! ? b : a));
+    const titled = open.filter((i) => form[i] === 0 && widths[i]! > floor[i]!);
+    const pick = titled.length ? titled : open;
+    const i = pick.reduce((a, b) => (widths[b]! >= widths[a]! ? b : a));
     // The widest gives up words down to the next widest (half the overflow when level), so each keeps some of its title.
-    const next = Math.max(0, ...open.filter((j) => j !== i).map((j) => widths[j]!));
-    const target = widths[i]! > next ? Math.max(widths[i]! - over, next) : widths[i]! - Math.ceil(over / 2);
+    const next = Math.max(0, ...pick.filter((j) => j !== i).map((j) => widths[j]!));
+    const target = Math.max(
+      widths[i]! > next ? Math.max(widths[i]! - over, next) : widths[i]! - Math.ceil(over / 2),
+      titled.length ? floor[i]! : 0
+    );
     const cut = form[i] === 0 && items[i]!.title ? noticeSeg(items[i]!, target, pad) : null;
     if (cut && textWidth(cut) < widths[i]!) cap[i] = target;
     else form[i]!++;
@@ -623,7 +643,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     : [];
   const noticeSegments = notices.map((n) => {
     const seg = noticeSeg(n, Infinity, '')!;
-    seg.forms = [seg.forms[0]!, noticeSeg(n, Infinity, '', 1)?.forms[0] ?? seg.forms[0]!];
+    seg.forms = noticeStages(n, '');
     return seg;
   });
   const fields = [
@@ -651,7 +671,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     style === 'headline' &&
     (s.id === 'notice' || (!zone?.alert && reading(s) && ['warn', 'bad', 'usageHigh'].includes(reading(s)!.role)));
   // One meter form for both gauges: the bars go together, as the concepts have them.
-  const bars = () => !list.some((s) => (s.id === 'context' && s.at > 0) || (s.id === 'quota' && s.at > 1));
+  const bars = () => !list.some((s) => (s.id === 'context' || s.id === 'quota') && s.at > 0);
   const body = (s: Seg): Form => {
     const form = s.forms[s.at] ?? [];
     const r = reading(s);
@@ -763,31 +783,46 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
   const natural = () =>
     alive().reduce((n, s, i, all) => n + size(s) + (i ? space(all[i - 1], s) : 0), 0) + (style === 'triptych' ? 4 : 0);
   roomy = natural() <= width;
-  const cutNotice = () => {
-    const s = noticeSegments[0];
-    if (!s) return false;
-    const room = width - natural() + size(s) - (style === 'gauge' || zone?.alert ? 2 : 0);
-    const cut = noticeSeg(notices[0]!, room, '');
-    if (!cut) return false;
+  // A notice cut at a word to the room it has (`grow`: only when that gives it more than it has).
+  const fitNotice = (i: number, notice: Notice, grow = false) => {
+    const s = noticeSegments[i];
+    if (!s || !text(body(s))) return false;
+    const room = width - natural() + size(s) - (style === 'gauge' || (i === 0 && zone?.alert) ? 2 : 0);
+    const cut = noticeSeg(notice, room, '');
+    if (!cut || (grow && textWidth(cut) <= visualLength(text(body(s))))) return false;
     s.forms = cut.forms;
     s.at = 0;
     return true;
   };
-  // The existing ladder's losses: the notice's titles give way before the main effort does.
+  // A notice gives up its title before the vitals give up more than their extras (see `LADDER`).
+  let stage = 0;
   for (const id of LADDER) {
     if (roomy || natural() <= width) break;
+    if (id === 'title') {
+      stage = Math.min(stage + 1, 2);
+      for (const s of noticeSegments) s.at = Math.max(s.at, stage);
+      continue;
+    }
+    if (id === 'meters') {
+      for (const s of list) if ((s.id === 'context' || s.id === 'quota') && s.at < 1) s.at = 1;
+      continue;
+    }
     if (id === 'notice') {
-      // The second item loses its title first, then the first is cut at a word.
-      if (noticeSegments.length > 1) noticeSegments[1]!.at = 1;
-      if (natural() <= width || cutNotice()) break;
+      // The older of two items goes before the branch does; the newest is cut at a word.
+      if (noticeSegments.length > 1) noticeSegments[1]!.at = noticeSegments[1]!.forms.length;
+      if (natural() <= width || fitNotice(0, notices[0]!)) break;
       continue;
     }
     const s = list.find((s) => s.id === id);
-    if (s && s.at < s.forms.length) s.at++;
+    if (s && s.at < s.forms.length) s.at = id === 'loaded' && s.at ? s.forms.length : s.at + 1;
   }
   // Last resort for the notice zone: keep the pinned/newest one and cut at a word, never split its metadata.
-  if (!roomy && natural() > width && noticeSegments.length > 1) noticeSegments[1]!.at = 2;
-  if (!roomy && natural() > width && noticeSegments[0] && !cutNotice()) noticeSegments[0].forms = [];
+  if (!roomy && natural() > width && noticeSegments.length > 1) noticeSegments[1]!.at = noticeSegments[1]!.forms.length;
+  if (!roomy && natural() > width && noticeSegments[0] && !fitNotice(0, notices[0]!)) noticeSegments[0].forms = [];
+  // What room is left goes back to the titles, the newest first: a few words each before any gets more.
+  if (!roomy && natural() < width)
+    for (const cap of [TITLE_SHORT, TITLE_COLS])
+      notices.forEach((n, i) => fitNotice(i, { ...n, title: cutWords(n.title, cap) }, true));
   const shown = alive();
   const segments: BarSegment[] = [];
   const out = ['', ''];
@@ -845,20 +880,26 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
 // ─── Fit and layout ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Who gives up the next form when the line is too wide, cheapest loss first. The effort goes after the context bar, the
- * quota's reset and bar and the project's short form, and a notice is cut at a word (`notice`) before it goes; the
- * model alone is never dropped.
+ * Who gives up the next form when the line is too wide, cheapest loss first. The vitals' numbers outrank everything
+ * round them, and a notice's name outranks its title, so the order is: the loaded counts; both gauges' cells (`meters`:
+ * the two go together); the quota's reset; the branch's marks; a notice's title, down to a few words and then
+ * altogether (`title`, twice); the output rate; the older of two notices (`notice`, which also cuts the newest at a
+ * word, and shortens a pinned need to `N needs`); the effort; the context's window; the branch; the quota; the
+ * project; the context. The model alone is never dropped. What room is left afterwards goes back to the titles, so a
+ * job starting takes room from titles and extras, not from the numbers.
  */
-const LADDER: BarField[] = [
+const LADDER: Array<BarField | 'meters' | 'title'> = [
   'loaded',
-  'tps',
-  'context',
-  'quota',
+  'loaded',
+  'meters',
   'quota',
   'project',
-  'loaded',
+  'title',
+  'title',
+  'tps',
   'notice',
   'model',
+  'context',
   'project',
   'quota',
   'project',
@@ -912,17 +953,29 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     .map((event) => textWidth(noticeSeg(event, Infinity, pad, 2)))
     .sort((a, b) => b - a);
   const wide = () => !zone?.alert && smallest.length > 1 && smallest[0] + smallest[1] <= room(2);
-  // A notice shows in full: the loaded cluster goes first when it is in the way, the other fields shorten after it.
+  // A notice keeps its name and gives up its title before the vitals give up anything but their extras: the loaded
+  // cluster goes first when it is in the way, then the gauges, the reset and the marks, then a title down to a few words.
   // The second item is wanted too, at its shortest, so that two jobs show as two items when the vitals can give way.
   const second = lone && zone?.events[1];
-  const wanted = lone
-    ? [textWidth(noticeSeg(lone, Infinity, pad)), ...(second ? [textWidth(noticeSeg(second, Infinity, pad, 2))] : [])]
-    : [];
-  const total = () => leftWidth([...fields().map(size), ...wanted]) + gap() + rightWidth();
+  const stages = lone ? noticeStages(lone, pad) : [];
+  let stage = 0;
+  const wanted = () => [
+    ...(lone ? [visualLength(text(stages[stage]))] : []),
+    ...(second ? [textWidth(noticeSeg(second, Infinity, pad, 2))] : []),
+  ];
+  const total = () => leftWidth([...fields().map(size), ...wanted()]) + gap() + rightWidth();
   for (const id of LADDER) {
     if (total() <= width) break;
-    // The notice gives way here, before the effort: both items at their shortest, else the newest cut at a word to what
-    // room is left, if a word fits.
+    if (id === 'title') {
+      stage = Math.min(stage + 1, 2);
+      continue;
+    }
+    if (id === 'meters') {
+      for (const seg of all) if ((seg.id === 'context' || seg.id === 'quota') && seg.at < 1) seg.at = 1;
+      continue;
+    }
+    // The older of two items gives way here, before the effort does: the newest alone, cut at a word to what room is
+    // left, if its name fits.
     if (id === 'notice') {
       if (alertSeg && alertSeg.forms.length > 1) alertSeg.at = 1;
       if (wide() || (lone && noticeSeg(lone, room(1), pad))) break;

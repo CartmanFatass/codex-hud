@@ -206,9 +206,15 @@ test('context and quota bars as claude-hud draws them: cells, colours, one windo
   assert.doesNotMatch(both(80), /5h/);
   assert.match(both(8), /5h █░░░░░░░░░ 8% \(1h19m\)$/);
   assert.equal(stripAnsi(draw({ quota: { windows: [win('7d', 31, '2d')] } })), 'M │ 7d ███░░░░░░░ 31% (2d)');
-  // Narrower: the context's bar goes, then the quota's reset, then its bar (leaving `5h 8%`), then the segments.
-  const shrunk = [39, 31, 20, 12].map((w) => stripAnsi(draw({ context, quota }, w)).replace('M │ 40%/400K', '·'));
-  assert.deepEqual(shrunk, ['· │ 5h █░░░░░░░░░ 8% (1h19m)', '· │ 5h █░░░░░░░░░ 8%', '· │ 5h 8%', '·']);
+  // Narrower: both bars go together, then the quota's reset, then the context's window (`40%`), then the quota itself.
+  const shrunk = [49, 28, 27, 19, 14].map((w) => stripAnsi(draw({ context, quota }, w)));
+  assert.deepEqual(shrunk, [
+    'M │ 40%/400K │ 5h 8% (1h19m)',
+    'M │ 40%/400K │ 5h 8% (1h19m)',
+    'M │ 40%/400K │ 5h 8%',
+    'M │ 40% │ 5h 8%',
+    'M │ 40%',
+  ]);
   // Colours (the terminal theme): the context green; the quota bright magenta from 75 (bright blue below, red from 90).
   setDisplayConfig({ theme: 'terminal' });
   const has = (facts: BarFacts, ...codes: string[]) => codes.every((code) => draw(facts).includes(code));
