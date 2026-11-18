@@ -9,6 +9,7 @@ import { theme } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { currentWorker, currentDecision, foldedWorker } from './work-visibility.js';
+import { answerable, replyHint } from './job-actions.js';
 /** One open question as its slab: the amber title, the question and its options (the whole text once expanded), the file and the hints, a blank row. */
 export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
   const rows: MonitorRow[] = [];
@@ -18,7 +19,8 @@ export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state
   const lane = board.lanes.find((l) => l.id === worker.laneId);
   // Collapsed, the short card; Enter expands it to the question whole, the context and every option.
   const open = state.boardExpanded?.has(targetKey(target)) === true;
-  const hint = `${t(open ? '⏎ collapse' : '⏎ expand')}  ${t('o open')}`;
+  // Open and answerable, the footer offers `r`; while the reply is open it says what its keys take instead.
+  const hint = (open && replyHint(worker, state)) || `${t(open ? '⏎ collapse' : '⏎ expand')}  ${t('o open')}${open && answerable(worker) ? `  ${t('r reply')}` : ''}`;
   rows.push(
     boardRow(
       theme.board.askTitle(
@@ -42,7 +44,7 @@ export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state
     .join(' · ');
   const lines =
     open && r
-      ? [...requestLines(card, true), quiet].filter(Boolean).flatMap((part) => stemLines(part, width, theme.board.attention))
+      ? [...requestLines(card, true, answerable(worker) !== undefined), quiet].filter(Boolean).flatMap((part) => stemLines(part, width, theme.board.attention))
       : [
           ...stemLines(r?.question ?? worker.ask ?? card.reason ?? '', width, theme.board.attention, 3),
           ...(choices ? stemLines(choices, width, theme.board.attention, 1) : []),

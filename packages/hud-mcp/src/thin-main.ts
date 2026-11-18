@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { procStat, readTurn, saveTurn, workerAlive, writeTurn } from './cli-judge.js';
 import { isCliDirTrusted } from '../../../src/cli/trust.js';
 import { jobChanges, jobRow, type JobRow } from '../../../src/collectors/thin-jobs.js';
+import { PanelActionLog } from '../../../src/collectors/panel-actions.js';
 import { TryLog } from '../../../src/collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
 import { herdrId } from '../../../src/roles/herdr-run.js';
@@ -1247,12 +1248,12 @@ function sessionRows(): JobRow[] {
     .map((job) => readRow(job, !isWorker).row);
 }
 let cursor: Map<string, JobRow>;
-const tries = new TryLog(hudHome);
+const tries = new TryLog(hudHome), answers = new PanelActionLog(hudHome);
 function withChanges(value: unknown): unknown {
   // Snapshot, diff and advance the shared cursors synchronously, in response order.
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const rows = sessionRows();
-  const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd())];
+  const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)))];
   cursor = new Map(rows.map((row) => [row.job, row]));
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
 }

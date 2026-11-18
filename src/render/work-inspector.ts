@@ -22,6 +22,7 @@ import { laneStrip } from './work-lanes.js';
 import { t } from './i18n.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { formatTokenCount } from './lines/activity-line.js';
+import { answerable, replyHint } from './job-actions.js';
 export function localTime(at: number | null, now: number): string {
   if (at === null) return '';
   const date = new Date(at),
@@ -58,9 +59,10 @@ export function workInspectorRows(
     card.state === 'needs-you'
       ? [
           boardRow(renderWorkCard(card, expanded, width)[0]),
-          ...requestLines(card, true).flatMap((s) =>
-            stemLines(s, width, theme.board.attention).map((text) => boardRow(theme.board.slab(text)))
-          ),
+          ...[...requestLines(card, true, answerable(worker) !== undefined).flatMap((s) => stemLines(s, width, theme.board.attention)),
+            // An answerable question says how: `r` opens the reply, whose own keys take its place while it is open.
+            ...(answerable(worker) ? stemLines(replyHint(worker, state) || t('r reply'), width, theme.board.muted, 1) : []),
+          ].map((text) => boardRow(theme.board.slab(text))),
         ]
       : renderWorkCard(card, expanded, width).map((text) => boardRow(text));
   const stamp = (at: number | null) =>

@@ -26,9 +26,10 @@ main session ─► six-tool MCP ─► job files + herdr tab
 job-file / herdr events ─► on-demand watcher ─► pi-role-reap
 ```
 
-The panel observes; it does not brief workers, answer questions, accept work or
-chain roles. The main session makes those decisions through the MCP. Its one write
-is the Control plane's role places (§4.6). Models write only display text. There is no ledger database, resident execution host or owned
+The panel observes; it does not brief workers, accept work or chain roles. The main
+session makes those decisions through the MCP. Its writes are the Control plane's role
+places (§4.6) and the owner's three micro-actions on a HUD job (§6): focus its tab,
+answer an open question, stop it. Models write only display text. There is no ledger database, resident execution host or owned
 browser runtime.
 
 CLI dispatch is `dispatchCli` in `packages/hud-mcp/src/thin-main.ts`. Kind flags,
@@ -300,6 +301,14 @@ is no secondary stacked/compact Agents renderer, Timeline or diagnostics page.
 The `split` layout (`panelLayout`, `render/split-*.ts`) draws Home, the hub and the list pages as a list over a preview:
 one scene per view (`split-home.ts`, `split-project.ts`), one painter (`split-frame.ts`) and its own keys (`split-input.ts`);
 `renderWorkboardFrame` and `workboardInput` only branch to them, and what Split does not draw stays Classic's.
+The owner's micro-actions on a HUD job (`render/job-actions.ts`, spec §2.2) are pure input: `g` becomes
+`focus-job-tab`; `r` opens a reply (`MonitorState.reply`) in which `1`–`4` and `d` pick an option or the worker's
+default (outside it `1`–`4` stay the tabs) and become `answer-job`; `X` sets `confirmStop`, whose `y`/Enter becomes
+`stop-job`. Any other input cancels either modal state. `tree-page.ts` does the I/O: `focusJobTab` and `stopJob`
+(`cli/panel-pane.ts`: `herdr tab focus`, `pi-role-reap`) and `answerJobQuestion` (`collectors/panel-actions.ts`), which
+writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
+`PanelActionLog` turns those records into `[role@job] ANSWERED qN from panel: …` lines for `hud watch` and the MCP
+`changes`, as the try log does: only answers made while the reader runs.
 Always retain `frame.state`: reconciliation preserves selection by identity and
 separate scroll/fold state. Cards show a title plus two sentence rows, expanding
 in place; raw workflow files open from the Inspector or `o`.
@@ -344,6 +353,7 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | `display/scan/`, `display/thin-jobs.json` | Rebuildable observation caches |
 | `display/model-cache/` | Shared text replies/reservations and revision-keyed overlays; Decision reservations have their own subdirectory |
 | `display/profile.log` | Optional stage timings |
+| `panel-actions.jsonl` | Append-only 0600 log of answers the owner gave from the panel; read by `hud watch` and the MCP `changes` |
 | `watch.pid`, `watch.log` | On-demand watcher PID and diagnostics |
 
 Pi history lives in pi's own session store; job directories contain links. The watcher

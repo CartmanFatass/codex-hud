@@ -121,13 +121,13 @@ export function paintSentence(raw: string, line?: string, start = 0): string {
   }
   return painted;
 }
-/** An open question as its paragraphs; the context and every option only when `full`. */
-export function requestLines(card: WorkCard, full = false): string[] {
+/** An open question as its paragraphs; the context and every option only when `full`, the first four numbered `[1]`… when `numbered` (the owner can answer it here). */
+export function requestLines(card: WorkCard, full = false, numbered = false): string[] {
   const r = card.worker.work?.requestInfo;
   return r
     ? [
         r.question,
-        ...(full ? [r.context ? `${t('blocked')} ${r.context}` : '', ...r.options] : []),
+        ...(full ? [r.context ? `${t('blocked')} ${r.context}` : '', ...r.options.map((o, i) => (numbered && i < 4 ? `[${i + 1}] ${o}` : o))] : []),
         r.suggested ? `${t('default')}: ${r.suggested}` : '',
       ].filter(Boolean)
     : [];

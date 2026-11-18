@@ -11,6 +11,7 @@ import { createServer } from 'node:net';
 import { readThinJobs, runningVerb } from '../../dist/collectors/thin-jobs.js';
 import { cliKinds } from '../../dist/roles/cli-kinds.js';
 import { watchCommand } from '../../dist/cli/watch.js';
+import { answerJobQuestion } from '../../dist/collectors/panel-actions.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { renderWorkCard, workStateInk } from '../../dist/render/work-card.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
@@ -4033,6 +4034,22 @@ test('hud_read wait_ms wakes on waiting_orchestrator and session changes ride on
 
   const roster2 = await f.call('hud_roster');
   assert.equal('changes' in roster2, false);
+});
+
+test('an answer the owner gives from the panel rides on the next response as one change line', async (t) => {
+  const f = await fixture(t);
+  const dir = join(f.env.HUD_HOME, 'jobs', 'j00000000000001b1');
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: 'j00000000000001b1', role: 'imp', package: '03-ask', herdr_pane: 'w4E:p1', created_at: new Date().toISOString(),
+    cli: { agent: 'grok' }, dispatch_exit_code: 0, stderr_tail: '' }));
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  fs.writeFileSync(join(dir, 'qa/q1.md'), '# Question q1 from imp@demo\n\nKeep it?\n\nOptions:\n- keep it\n- drop it\n\nDefault if unanswered: keep it\n');
+  await f.call('hud_roster');
+  assert.equal('changes' in (await f.call('hud_roster')), false);
+  assert.deepEqual(answerJobQuestion(f.env.HUD_HOME, 'j00000000000001b1', 'q1', 'drop it', 'imp'), { ok: true, written: true });
+  const next = await f.call('hud_roster');
+  assert.ok(next.changes.includes('[imp@j00000000000001b1] ANSWERED q1 from panel: drop it'), JSON.stringify(next.changes));
+  assert.equal('changes' in (await f.call('hud_roster')), false, 'once');
 });
 
 test('unregistered skill names are skipped and a CLI role is not given skill flags', { timeout: 15000 }, async (t) => {

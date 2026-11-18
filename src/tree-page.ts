@@ -1,6 +1,7 @@
-import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pane.js';
+import { openEditorPane, closePanelPane, watchPanelCaller, focusJobTab, stopJob } from './cli/panel-pane.js';
 import { ProjectCollector, projectShown } from './collectors/project-board.js';
 import { appendTry, TryLog } from './collectors/try-records.js';
+import { answerJobQuestion } from './collectors/panel-actions.js';
 import { readBackupSkills } from './collectors/backup-skills.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
@@ -1275,6 +1276,27 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           roleNotice = '';
         } catch { roleNotice = t('Could not record try'); }
         error = roleNotice || settingsError || null;
+      }
+      // The owner's micro-actions on a HUD job (spec §2.2): what failed shows until the next key, then the job is read again.
+      const notice = (text: string) => { roleNotice = text; error = text || settingsError || null; };
+      if (result.action?.type === 'focus-job-tab') {
+        void focusJobTab(result.action.dir, process.env).then((focused) => {
+          if (focused.ok) return;
+          notice(t(focused.reason === 'tab closed' ? 'tab closed' : focused.reason === 'no tab' ? 'no tab recorded' : 'could not focus the tab'));
+          render();
+        });
+      }
+      if (result.action?.type === 'answer-job') {
+        const { home, jobId, qid, answer, role } = result.action, done = answerJobQuestion(home, jobId, qid, answer, role);
+        notice(!done.ok ? `${t('Could not answer')}: ${done.reason}` : done.written ? '' : t('Already answered'));
+        void collect(true);
+      }
+      if (result.action?.type === 'stop-job') {
+        void stopJob(result.action.dir, process.env).then((stopped) => {
+          if (!stopped.ok) notice(`${t('Could not stop')}: ${stopped.reason}`);
+          render();
+          void collect(true);
+        });
       }
       if (result.action?.type === 'refresh-models') refreshModelLists(true);
       if (result.action?.type === 'role-edit') {

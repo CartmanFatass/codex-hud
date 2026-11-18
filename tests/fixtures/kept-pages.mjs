@@ -156,7 +156,8 @@ export function pageFixture(home) {
       modes: { agents: 'open', changes: 'open', details: 'closed' },
     },
   };
-  const render = (page, width, lang = 'en', height = 40) => {
+  // Help lists three more keys (the job micro-actions) and still shows the skills catalog under them.
+  const render = (page, width, lang = 'en', height = page === 'help' ? 44 : 40) => {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }),
       previous = setLanguage(lang);
     try {

@@ -120,6 +120,9 @@ export class WorkbenchInputDecoder {
                   K: 'place-up',
                   J: 'place-down',
                   x: 'place-clear',
+                  // A HUD job's micro-actions: `d` answers with the question's default once `r` opened the reply; `X` asks to stop it.
+                  d: 'answer-default',
+                  X: 'stop-job',
                   '\x7f': 'backspace',
                   '\b': 'backspace',
                   v: 'inspect',

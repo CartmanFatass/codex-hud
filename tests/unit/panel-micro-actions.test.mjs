@@ -1,0 +1,293 @@
+/** The owner's micro-actions on a HUD job from the panel (spec §2.2): `g` its tab, `r` then `1`–`4` / `d` to answer, `X` to stop. */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { NOW, TREE, plain } from '../fixtures/project-page.mjs';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { answerJobQuestion, PanelActionLog, PANEL_ACTIONS_FILE } from '../../dist/collectors/panel-actions.js';
+import { focusJobTab, stopJob } from '../../dist/cli/panel-pane.js';
+import { watchCommand } from '../../dist/cli/watch.js';
+import { renderMonitor, initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { setLanguage } from '../../dist/render/i18n.js';
+import { visualLength, stripAnsi } from '../../dist/render/colors.js';
+import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
+import { targetKey } from '../../dist/collectors/workboard-types.js';
+
+const PANE = 'w4E:p1', ASKING = 'j0123456789abcdef', RUNNING = 'j1111111111111111', DONE = 'j2222222222222222';
+const QUESTION = '# Question q1 from imp@demo\n\nKeep the v1 shim for one more release?\n\nOptions:\n- keep it\n- remove it now\n\nDefault if unanswered: keep it\n\nContext: the parser still reads v1\n';
+const decoder = new WorkbenchInputDecoder('workboard');
+/** What the panel's own keyboard hands over for these bytes. */
+const key = (bytes) => decoder.push(Buffer.from(bytes))[0];
+
+function fixture(t) {
+  const home = fs.mkdtempSync(join(tmpdir(), 'micro-actions-'));
+  const display = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
+  t.after(() => { setDisplayConfig(display); fs.rmSync(home, { recursive: true, force: true }); });
+  const put = (id, role, status, extra = {}) => {
+    const dir = join(home, 'jobs', id);
+    fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+    const files = { 'job.json': { job: id, herdr_pane: PANE, role, package: role.toUpperCase(), created_at: new Date(NOW - 240_000).toISOString() },
+      'STATUS.json': status, 'brief.md': `# ${role.toUpperCase()}: synthetic job`, ...extra };
+    for (const [file, body] of Object.entries(files)) {
+      fs.mkdirSync(join(dir, file, '..'), { recursive: true });
+      fs.writeFileSync(join(dir, file), typeof body === 'string' ? body : JSON.stringify(body));
+      fs.utimesSync(join(dir, file), new Date(NOW - 240_000), new Date(NOW - 240_000));
+    }
+    return dir;
+  };
+  put(ASKING, 'imp', { state: 'working' }, { 'qa/q1.md': QUESTION });
+  put(RUNNING, 'reviewer', { state: 'working' });
+  put(DONE, 'sonic', { state: 'closed' }, { 'report.md': 'Done.' });
+  const lanes = readThinJobs(home, { pane: PANE, project: null });
+  const board = { revision: 'micro', lanes, workers: lanes.flatMap((l) => l.workers), decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
+  const worker = (id) => board.workers.find((w) => w.id === `thin-job:${id}`);
+  const render = (state = initialMonitorState(), width = 60, lang = 'en', height = 30) => {
+    const language = setLanguage(lang);
+    try { return renderMonitor({ tree: TREE, workboard: board, state, width, height, nowMs: NOW }); } finally { setLanguage(language); }
+  };
+  /** Select a job's card, draw, press one key and draw again: the outcome and the frame it leaves. */
+  const press = (id, bytes, state = {}) => {
+    const w = worker(id);
+    const frame = render({ ...initialMonitorState(), homeTarget: { kind: 'worker', laneId: w.laneId, workerId: w.id }, ...state });
+    const out = handleMonitorInput(frame.state, typeof bytes === 'string' ? key(bytes) : bytes, { tree: TREE, frame, nowMs: NOW });
+    return { out, frame: render(out.state, 60, 'en') };
+  };
+  return { home, board, worker, render, press, dir: (id) => join(home, 'jobs', id) };
+}
+
+test('the decoder names the new keys and keeps the tab digits', () => {
+  assert.deepEqual([key('g'), key('d'), key('X'), key('r')].map((k) => [k.key, k.text]), [['home', 'g'], ['answer-default', 'd'], ['stop-job', 'X'], ['reset', 'r']]);
+  assert.deepEqual(['1', '2', '3', '4'].map((c) => key(c).key), ['home-tab', 'project-tab', 'changes', 'inspect']);
+  assert.deepEqual(decoder.push(Buffer.from('\x1b[H')).map((k) => [k.key, k.text]), [['home', undefined]]);
+});
+
+test('answerJobQuestion writes qN.answer.md once with mode 0600 and records it; bad ids, a missing question and a second answer change nothing', (t) => {
+  const f = fixture(t), file = join(f.dir(ASKING), 'qa/q1.answer.md');
+  assert.deepEqual(answerJobQuestion(f.home, ASKING, 'q1', ' keep it \n', 'imp'), { ok: true, written: true });
+  assert.equal(fs.readFileSync(file, 'utf8'), 'keep it');
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(answerJobQuestion(f.home, ASKING, 'q1', 'remove it now'), { ok: true, written: false });
+  assert.equal(fs.readFileSync(file, 'utf8'), 'keep it', 'the first answer stands');
+  for (const [job, qid, answer] of [['../x', 'q1', 'a'], [ASKING, 'q1/../../x', 'a'], [ASKING, 'q9', 'a'], [ASKING, 'q1', '  ']])
+    assert.equal(answerJobQuestion(f.home, job, qid, answer).ok, false, `${job} ${qid}`);
+  assert.equal(fs.existsSync(join(f.dir(ASKING), 'qa/q9.answer.md')), false);
+  const log = fs.readFileSync(join(f.home, PANEL_ACTIONS_FILE), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(log.length, 1, 'only the answer that was written is recorded');
+  assert.deepEqual({ ...log[0], at: undefined }, { at: undefined, type: 'answer', job: ASKING, qid: 'q1', role: 'imp', answer: 'keep it' });
+  assert.equal(fs.statSync(join(f.home, PANEL_ACTIONS_FILE)).mode & 0o777, 0o600);
+});
+
+test('PanelActionLog tells only of answers made after it started, for the jobs it follows, once', (t) => {
+  const f = fixture(t);
+  fs.writeFileSync(join(f.dir(ASKING), 'qa/q2.md'), QUESTION);
+  assert.equal(answerJobQuestion(f.home, ASKING, 'q1', 'before', 'imp').ok, true);
+  const log = new PanelActionLog(f.home);
+  assert.deepEqual(log.changes(new Set([ASKING])), []);
+  assert.equal(answerJobQuestion(f.home, ASKING, 'q2', 'remove it now\nnow', 'imp').ok, true);
+  assert.deepEqual(log.changes(new Set([RUNNING])), [], 'another session\'s job is not this one\'s news');
+  assert.deepEqual(log.changes(new Set([ASKING])), [], 'and it is read once');
+  fs.writeFileSync(join(f.dir(ASKING), 'qa/q3.md'), QUESTION);
+  answerJobQuestion(f.home, ASKING, 'q3', 'keep it', 'imp');
+  assert.deepEqual(log.changes(new Set([ASKING])), [`[imp@${ASKING}] ANSWERED q3 from panel: keep it`]);
+  // A line still being written waits for its newline.
+  fs.appendFileSync(join(f.home, PANEL_ACTIONS_FILE), JSON.stringify({ type: 'answer', job: ASKING, qid: 'q4', role: null, answer: 'late' }));
+  assert.deepEqual(log.changes(new Set([ASKING])), []);
+  fs.appendFileSync(join(f.home, PANEL_ACTIONS_FILE), '\n');
+  assert.deepEqual(log.changes(new Set([ASKING])), [`[job@${ASKING}] ANSWERED q4 from panel: late`]);
+});
+
+test('hud watch tells the main session what the owner answered from the panel', { timeout: 10000 }, async (t) => {
+  const f = fixture(t), lines = [], ac = new AbortController();
+  t.after(() => ac.abort());
+  const running = watchCommand([], { env: { HUD_HOME: f.home, HERDR_PANE_ID: PANE }, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: ac.signal, rescanMs: 60 });
+  await new Promise((r) => setTimeout(r, 200));
+  lines.length = 0;
+  answerJobQuestion(f.home, ASKING, 'q1', 'remove it now', 'imp');
+  const end = Date.now() + 4000;
+  while (!lines.some((l) => l.includes('ANSWERED')) && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+  ac.abort();
+  await running;
+  assert.deepEqual(lines.filter((l) => l.includes('ANSWERED')), [`[imp@${ASKING}] ANSWERED q1 from panel: remove it now`]);
+});
+
+test('g on a HUD job card (Home and Inspector) focuses its tab; elsewhere it stays the top of the list, and the Home key always does', (t) => {
+  const f = fixture(t);
+  for (const id of [ASKING, RUNNING, DONE]) assert.deepEqual(f.press(id, 'g').out.action, { type: 'focus-job-tab', dir: f.dir(id) }, id);
+  const home = f.press(RUNNING, '\x1b[H');
+  assert.equal(home.out.action, undefined, 'the Home key moves, it does not focus');
+  const w = f.worker(RUNNING), target = { kind: 'worker', laneId: w.laneId, workerId: w.id };
+  assert.deepEqual(f.press(RUNNING, 'g', { focus: 'details', boardInspect: target }).out.action, { type: 'focus-job-tab', dir: f.dir(RUNNING) });
+  // A lane header, the progress block and the Project tab have no job: `g` jumps to the top as before.
+  assert.equal(f.press(RUNNING, 'g', { mainTab: 'project' }).out.action, undefined);
+  const header = f.render(), ctx = { tree: TREE, frame: header, nowMs: NOW };
+  assert.equal(handleMonitorInput({ ...header.state, homeTarget: { kind: 'lane', laneId: w.laneId } }, key('g'), ctx).action, undefined);
+  assert.equal(handleMonitorInput({ ...header.state, homeTarget: target, boardAnchor: 'home-progress:progress' }, key('g'), ctx).action, undefined);
+});
+
+test('1–4 switch tabs as ever; r opens the reply on an answerable question, where 1–4 pick an option and d the default', (t) => {
+  const f = fixture(t);
+  // Outside a reply the digits are the tabs, even on an expanded question.
+  const asked = f.worker(ASKING), open = { boardExpanded: new Set([targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id })]) };
+  for (const [c, tab] of [['1', 'home'], ['2', 'project']]) {
+    const out = f.press(ASKING, c, open);
+    assert.equal(out.out.action, undefined);
+    assert.equal(out.out.state.mainTab, tab);
+    assert.equal(out.out.state.reply, undefined);
+  }
+  const { out, frame } = f.press(ASKING, 'r');
+  assert.deepEqual(out.state.reply, { jobId: ASKING, qid: 'q1' });
+  const text = plain(frame).join('\n');
+  assert.match(text, /┃ \[1\] keep it\n┃ \[2\] remove it now/);
+  assert.match(text, /┃ qa\/q1\.md +1-2 answer {2}d default {2}Esc cancel/);
+  assert.doesNotMatch(text, /r reply/, 'the reply keys replace the offer while it is open');
+  const opened = plain(f.render({ ...initialMonitorState(), homeTarget: out.state.homeTarget, boardExpanded: out.state.boardExpanded })).join('\n');
+  assert.match(opened, /┃ qa\/q1\.md +⏎ collapse {2}o open {2}r reply/);
+  const asking = f.worker(ASKING), reply = out.state;
+  const next = (bytes, state = reply) => handleMonitorInput(state, key(bytes), { tree: TREE, frame, nowMs: NOW });
+  const action = (answer) => ({ type: 'answer-job', home: f.home, jobId: ASKING, qid: 'q1', answer, role: 'imp' });
+  assert.deepEqual(next('1').action, action('keep it'));
+  assert.deepEqual(next('2').action, action('remove it now'));
+  assert.deepEqual(next('d').action, action('keep it'));
+  assert.equal(next('1').state.reply, undefined, 'answering closes the reply');
+  // No third option: the key waits, the reply stays open.
+  const three = next('3');
+  assert.equal(three.action, undefined);
+  assert.deepEqual(three.state.reply, reply.reply);
+  assert.equal(asking.work.requestInfo.options.length, 2);
+  // Anything else cancels and does nothing more.
+  for (const no of [handleMonitorInput(reply, { type: 'key', key: 'escape' }, { tree: TREE, frame, nowMs: NOW }), next('x'), next('j')]) {
+    assert.equal(no.action, undefined);
+    assert.equal(no.state.reply, undefined);
+  }
+  assert.equal(handleMonitorInput(reply, { type: 'mouse', button: 'left', x: 3, y: 5 }, { tree: TREE, frame, nowMs: NOW }).state.reply, undefined);
+  assert.equal(next('q').close, true, 'q still closes the panel');
+});
+
+test('r and the answer keys do nothing on a job with no answerable question; a reply for another question is dropped', (t) => {
+  const f = fixture(t);
+  assert.equal(f.press(RUNNING, 'r').out.state.reply, undefined);
+  assert.equal(f.press(DONE, 'r').out.state.reply, undefined);
+  // A pane ask (no qN file to answer) is not answerable here either.
+  const asked = f.worker(ASKING), saved = asked.work.requestInfo;
+  asked.work.requestInfo = { ...saved, id: 'blocked', evidence: { ...saved.evidence, relativePath: 'STATUS.json' } };
+  assert.equal(f.press(ASKING, 'r').out.state.reply, undefined);
+  asked.work.requestInfo = saved;
+  const { out, frame } = f.press(ASKING, 'r');
+  const stale = { ...out.state, reply: { jobId: ASKING, qid: 'q7' } };
+  const dropped = handleMonitorInput(stale, key('1'), { tree: TREE, frame, nowMs: NOW });
+  assert.equal(dropped.action, undefined);
+  assert.equal(dropped.state.reply, undefined);
+});
+
+test('X asks before stopping an unsettled job: y or Enter stops it, any other input cancels, a settled job has nothing to stop', (t) => {
+  const f = fixture(t);
+  const { out, frame } = f.press(RUNNING, 'X');
+  assert.deepEqual(out.state.confirmStop, { jobId: RUNNING, role: 'reviewer', dir: f.dir(RUNNING) });
+  assert.equal(plain(frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
+  const ctx = { tree: TREE, frame, nowMs: NOW };
+  assert.deepEqual(handleMonitorInput(out.state, key('y'), ctx).action, { type: 'stop-job', dir: f.dir(RUNNING) });
+  assert.deepEqual(handleMonitorInput(out.state, key('\r'), ctx).action, { type: 'stop-job', dir: f.dir(RUNNING) });
+  assert.equal(handleMonitorInput(out.state, key('y'), ctx).state.confirmStop, undefined);
+  for (const input of [{ type: 'key', key: 'escape' }, key('n'), key('j'), { type: 'mouse', button: 'left', x: 2, y: 4 }]) {
+    const no = handleMonitorInput(out.state, input, ctx);
+    assert.equal(no.action, undefined);
+    assert.equal(no.state.confirmStop, undefined);
+    assert.equal(no.close, false);
+  }
+  assert.equal(f.press(DONE, 'X').out.state.confirmStop, undefined, 'a settled job is not stopped');
+  assert.equal(f.press(RUNNING, 'X', { mainTab: 'project' }).out.state.confirmStop, undefined);
+  const inspected = f.press(RUNNING, 'X', { focus: 'details', boardInspect: { kind: 'worker', laneId: f.worker(RUNNING).laneId, workerId: f.worker(RUNNING).id } });
+  assert.equal(inspected.out.state.confirmStop?.jobId, RUNNING);
+  assert.equal(plain(inspected.frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
+});
+
+test('the Split layout takes the same keys for the job its list cursor is on', (t) => {
+  const f = fixture(t), split = { ...initialMonitorState(), panelLayout: 'split' };
+  let frame = f.render(split, 60, 'en', 30);
+  const ctx = () => ({ tree: TREE, frame, nowMs: NOW });
+  const run = (bytes, state = frame.state) => { const out = handleMonitorInput(state, typeof bytes === 'string' ? key(bytes) : bytes, ctx()); frame = f.render(out.state, 60, 'en', 30); return out; };
+  // The cursor starts on the lane that asks.
+  assert.deepEqual(run('g').action, { type: 'focus-job-tab', dir: f.dir(ASKING) });
+  assert.deepEqual(run('r').state.reply, { jobId: ASKING, qid: 'q1' });
+  const text = plain(frame).join('\n');
+  assert.match(text, /┃ \[2\] remove it now/);
+  assert.match(text, /1-2 answer {2}d default {2}Esc cancel/);
+  assert.deepEqual(run('2').action, { type: 'answer-job', home: f.home, jobId: ASKING, qid: 'q1', answer: 'remove it now', role: 'imp' });
+  assert.equal(frame.state.reply, undefined);
+  frame = f.render({ ...frame.state, splitCursor: targetKey({ kind: 'lane', laneId: f.worker(RUNNING).laneId }) }, 60, 'en', 30);
+  assert.equal(run('X').state.confirmStop?.jobId, RUNNING);
+  assert.equal(plain(frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
+  assert.deepEqual(run('y').action, { type: 'stop-job', dir: f.dir(RUNNING) });
+  // The Home key still moves the list's cursor.
+  assert.equal(run('\x1b[H').action, undefined);
+  const asking = f.render(split, 60, 'en', 30), opened = handleMonitorInput(asking.state, key('r'), { tree: TREE, frame: asking, nowMs: NOW }).state;
+  const zh = f.render(opened, 60, 'zh', 30);
+  assert.match(plain(zh).join('\n'), /1-2 答复 {2}d 默认 {2}Esc 取消/);
+});
+
+test('every row is exactly the panel width with a reply open, a stop prompt open and the Inspector showing a question, in both layouts and languages', (t) => {
+  const f = fixture(t), asking = f.worker(ASKING), running = f.worker(RUNNING);
+  const at = (w) => ({ homeTarget: { kind: 'worker', laneId: w.laneId, workerId: w.id } });
+  const states = [
+    { ...at(asking), reply: { jobId: ASKING, qid: 'q1' }, boardExpanded: new Set([targetKey({ kind: 'worker', laneId: asking.laneId, workerId: asking.id })]) },
+    { ...at(running), confirmStop: { jobId: RUNNING, role: 'reviewer', dir: f.dir(RUNNING) } },
+    { ...at(asking), focus: 'details', boardInspect: { kind: 'worker', laneId: asking.laneId, workerId: asking.id }, reply: { jobId: ASKING, qid: 'q1' } },
+    { ...at(asking), focus: 'details', boardInspect: { kind: 'worker', laneId: asking.laneId, workerId: asking.id } },
+  ];
+  for (const layout of [undefined, 'split']) for (const lang of ['en', 'zh']) for (const width of [24, 32, 40, 60, 100]) for (const [i, state] of states.entries()) {
+    const frame = f.render({ ...initialMonitorState(), panelLayout: layout, ...state }, width, lang, 28);
+    for (const line of frame.lines) assert.equal(visualLength(line), width, `${layout} ${lang} ${width} state ${i}: ${stripAnsi(line)}`);
+  }
+  const zh = plain(f.render({ ...initialMonitorState(), ...states[1] }, 60, 'zh'))[1];
+  assert.match(zh, /^停止 reviewer j1111111？ {2}y 确认 · Esc 取消/);
+  const split = plain(f.render({ ...initialMonitorState(), panelLayout: 'split', ...states[1] }, 60, 'en'));
+  assert.equal(split[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
+});
+
+test('with no reply and no stop prompt open, a collapsed question and Home are drawn as before', (t) => {
+  const f = fixture(t);
+  const text = plain(f.render(initialMonitorState(), 60)).join('\n');
+  assert.match(text, /┃ Keep the v1 shim for one more release\?/);
+  assert.doesNotMatch(text, /\[1\]|r reply|Stop /);
+  assert.match(text, /⏎ expand {2}o open/);
+});
+
+/** A herdr and a pi-role-reap that only record what they were asked. */
+function stubs(t, { herdr = 0, reap = 0 } = {}) {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'micro-stubs-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const make = (name, code) => { fs.writeFileSync(join(dir, name), `#!/bin/sh\necho "$@" >> "${join(dir, name)}.log"\nexit ${code}\n`, { mode: 0o700 }); };
+  make('herdr', herdr);
+  make('pi-role-reap', reap);
+  const log = (name) => { try { return fs.readFileSync(join(dir, `${name}.log`), 'utf8').trim().split('\n'); } catch { return []; } };
+  return { env: { PATH: dir }, log };
+}
+
+test('focusJobTab runs herdr tab focus with the TAB of SESSION.txt and says why it could not', async (t) => {
+  const f = fixture(t), s = stubs(t), dir = f.dir(RUNNING);
+  assert.deepEqual(await focusJobTab(dir, s.env), { ok: false, reason: 'no tab' });
+  fs.writeFileSync(join(dir, 'SESSION.txt'), 'TASK=x\nTAB=w4E:t7\nTAB_NAME=job\n');
+  assert.deepEqual(await focusJobTab(dir, s.env), { ok: true });
+  assert.deepEqual(s.log('herdr'), ['tab focus w4E:t7']);
+  fs.writeFileSync(join(dir, 'SESSION.txt'), 'TAB=\x07bad\n');
+  assert.deepEqual(await focusJobTab(dir, s.env), { ok: false, reason: 'no tab' });
+  fs.writeFileSync(join(dir, 'SESSION.txt'), 'TAB=w4E:t7\n');
+  assert.deepEqual(await focusJobTab(dir, stubs(t, { herdr: 1 }).env), { ok: false, reason: 'tab closed' });
+  assert.deepEqual(await focusJobTab(dir, { PATH: join(f.home, 'nowhere') }), { ok: false, reason: 'unavailable' });
+});
+
+test('stopJob reaps the job directory, and first asks a CLI job already in its idle grace to quit', async (t) => {
+  const f = fixture(t), s = stubs(t), dir = f.dir(RUNNING);
+  assert.deepEqual(await stopJob(dir, s.env), { ok: true });
+  assert.deepEqual(s.log('pi-role-reap'), [dir]);
+  assert.equal(fs.existsSync(join(dir, 'STATUS.json.close-requested')), false, 'a working job is only reaped');
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: RUNNING, cli: { agent: 'claude' } }));
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
+  assert.deepEqual(await stopJob(dir, s.env), { ok: true });
+  assert.equal(fs.statSync(join(dir, 'STATUS.json.close-requested')).mode & 0o777, 0o600);
+  assert.deepEqual(await stopJob(dir, s.env), { ok: true }, 'a close request that is already there is fine');
+  assert.deepEqual(await stopJob(dir, stubs(t, { reap: 3 }).env), { ok: false, reason: 'reap failed' });
+});

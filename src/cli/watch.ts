@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { formatJobChange, jobChanges, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
 import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
+import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.js';
 import { getHudHome } from '../hud-home.js';
 import { herdrId } from '../roles/herdr-run.js';
 import type { HudIO } from './hud.js';
@@ -92,7 +93,7 @@ export async function watchCommand(
     return 1;
   }
   const scope = { pane: all ? null : callerPane };
-  const home = getHudHome(io.env), tries = new TryLog(home);
+  const home = getHudHome(io.env), tries = new TryLog(home), answers = new PanelActionLog(home);
   const queueIdleMs = options.queueIdleMs ?? 10 * 60_000;
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue ? queueIdleMs : Infinity));
   const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
@@ -110,7 +111,7 @@ export async function watchCommand(
       homeWatcher = fs.watch(home, (_event, name) => {
         const file = name?.toString();
         if (file === 'jobs' && !watcher) { attach(); changed(); }
-        if (file === TRIES_FILE) changed();
+        if (file === TRIES_FILE || file === PANEL_ACTIONS_FILE) changed();
       });
       homeWatcher.on('error', () => { homeWatcher?.close(); homeWatcher = undefined; });
     } catch { /* No home yet: the rescan retries. */ }
@@ -189,7 +190,8 @@ export async function watchCommand(
       dirty = false;
       if (queue && delivery!.paneInfo(callerPane, io.env)?.agent !== 'codex') break;
       const rows = readThinJobRows(home, scope);
-      const tryLines = tries.changes(queue ? process.cwd() : undefined);
+      // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
+      const tryLines = [...tries.changes(queue ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)))];
       if (queue) {
         const pending = tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions) ||
           actionable(home, new Map(), rows, true).length > 0;

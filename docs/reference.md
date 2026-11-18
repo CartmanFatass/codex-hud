@@ -161,7 +161,10 @@ its report is still unread. Use a new job for a repair after reading a settled r
 workers ask through the same `QUESTION` line and `hud_respond` flow (`hud-ask`,
 20 minutes, then the default). A blocked CLI marks the job as needing the owner;
 the session learns it through `changes`, Claude's `hud watch` or Codex's automatic queue. `hud_respond` writes a
-`qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher.
+`qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher. The owner can also answer
+an open question from the panel (`r`, then a number or `d`); the session hears it as one `changes` / `hud watch` line,
+`[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the
+reader runs; a question answered earlier is simply gone).
 The main session chooses all next steps; the MCP knows no workflow.
 See [the MCP README](../packages/hud-mcp/README.md) for the tool arguments.
 
@@ -246,7 +249,8 @@ is untrusted, run `hud trust <dir>` yourself.
 ## Home
 
 Home shows needs-you questions, package lanes with compact job cards, native
-session lanes, then **Decided for you**. It only observes files, never sends work.
+session lanes, then **Decided for you**. It observes files and never briefs or chains work; its only
+actions on a job are the owner's three micro-actions (see [Keys](#keys)).
 Running jobs with unanswered questions need you; an unanswered question left on a
 finished job does not. A report is not proof of success, and display labels are not
 acceptance or a merge decision. Unknown evidence stays unknown.
@@ -554,7 +558,10 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `p` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
 | `c` / `C` | Control plane: apply the next / previous role preset |
 | `m` (`M`) | Control plane: pick the model of the place under the cursor: provider, then model on `pi`; type to filter, ↑↓ pick, Enter sets (an open provider, or the model), Tab shows every model, ← back, Esc cancels |
-| Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
+| Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last (`g` on a HUD job card is the next row) |
+| `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else `g` is Home (first row), and the Home key always is |
+| `r`, then `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default): `r` opens the question whole with its options numbered `[1]`…; while the reply is open, `1`–`4` pick that option and `d` the worker's default, Esc or any other key cancels. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else; `1`–`4` stay the tabs when no reply is open |
+| `X` | On an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then `pi-role-reap <dir>` runs and the panel reads again); any other key cancels |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |
 | `v`, `4` | Inspector |

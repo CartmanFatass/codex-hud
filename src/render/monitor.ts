@@ -70,6 +70,10 @@ export interface MonitorState {
    * default one until the arrows move it), the provider it has opened (pi: providers first), and whether it lists all.
    */
   projectInput?: { role: string; index: number; text: string; pick?: number; provider?: string; all?: boolean };
+  /** The open question of a HUD job the owner is answering from the panel (`r`): `1`–`4` pick an option, `d` the default, anything else cancels. */
+  reply?: { jobId: string; qid: string };
+  /** A HUD job the owner asked to stop (`X`): a one-row prompt waits for `y` or Enter, any other input cancels. */
+  confirmStop?: { jobId: string; role: string; dir: string };
   homeTarget?: WorkTarget;
   homeScroll?: number;
   boardExpanded?: ReadonlySet<string>;
@@ -210,7 +214,11 @@ export interface MonitorOutcome {
     | ({ type: 'role-edit' } & PlaceEdit)
     | { type: 'record-try'; action: TryAction; target: TryTarget }
     | { type: 'refresh-models' }
-    | { type: 'brief-toggle' };
+    | { type: 'brief-toggle' }
+    /** Owner micro-actions on a HUD job (spec §2.2): focus its herdr tab, answer its open question, stop it. */
+    | { type: 'focus-job-tab'; dir: string }
+    | { type: 'answer-job'; home: string; jobId: string; qid: string; answer: string; role: string | null }
+    | { type: 'stop-job'; dir: string };
 }
 export function initialMonitorState(): MonitorState {
   return {

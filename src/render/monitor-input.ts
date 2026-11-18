@@ -3,6 +3,7 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
 import { workboardInput } from './workboard-input.js';
 import { modelInputKey } from './model-input.js';
+import { jobModalInput } from './job-actions.js';
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
   if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height) return undefined;
@@ -28,6 +29,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
           : 'up'
         : '';
   if (key === 'close') return result(undefined, true);
+  const modal = jobModalInput(state, input, ctx);
+  if (modal) return modal;
   if (next.help) {
     const back =
       input.type === 'mouse' &&

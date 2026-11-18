@@ -1,9 +1,10 @@
 /** Simple local herdr pane operations shared by the CLI and pi package. */
-import { basename } from 'node:path';
+import * as fs from 'node:fs';
+import { basename, join } from 'node:path';
 import { loadSettings } from '../settings.js';
 import { panelWidth, DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { truncateAnsi } from '../render/colors.js';
-import { runHerdr, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
+import { runHerdr, runCommand, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
 
 async function command(argv: string[], env: NodeJS.ProcessEnv) {
   const result = await runHerdr(argv, env);
@@ -31,6 +32,33 @@ export async function openEditorPane(files: string[], env: NodeJS.ProcessEnv): P
   if (!herdrId(pane)) throw Error(inTab ? 'panel_tab_unknown' : 'panel_split_unknown');
   const paths = files.map((file) => `'${file.replaceAll("'", "'\\''")}'`).join(' ');
   await command(['pane', 'run', pane, `${env.EDITOR || 'vim'} ${paths}; exit`], env);
+}
+
+/** Focus the herdr tab a HUD job runs in (`TAB=` in its SESSION.txt); `ok: false` when it has none or the tab is gone. */
+export async function focusJobTab(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
+  let tab: string | undefined;
+  try {
+    tab = fs.readFileSync(join(jobDir, 'SESSION.txt'), 'utf8').split('\n').find((line) => line.startsWith('TAB='))?.slice(4);
+  } catch { /* No session file: the job never opened a tab. */ }
+  if (!herdrId(tab)) return { ok: false, reason: 'no tab' };
+  const result = await runHerdr(['tab', 'focus', tab], env, { budgetMs: 5000 });
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason === 'failed' ? 'tab closed' : result.reason };
+}
+
+const readJson = (file: string): Record<string, unknown> | null => {
+  try {
+    const value: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return isRecord(value) ? value : null;
+  } catch { return null; }
+};
+/** Stop a HUD job as `hud_close` does: a CLI job already in its idle grace is asked to quit, then `pi-role-reap` reaps it. */
+export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
+  if (isRecord(readJson(join(jobDir, 'job.json'))?.cli) && readJson(join(jobDir, 'STATUS.json'))?.state === 'idle_grace') {
+    try { fs.writeFileSync(join(jobDir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return { ok: false, reason: 'close request failed' }; }
+  }
+  const result = await runCommand('pi-role-reap', [jobDir], env, { budgetMs: 60_000 });
+  return result.ok ? { ok: true } : { ok: false, reason: result.reason === 'unavailable' ? 'pi-role-reap missing' : 'reap failed' };
 }
 
 export async function closePanelPane(pane: string, env: NodeJS.ProcessEnv): Promise<void> {

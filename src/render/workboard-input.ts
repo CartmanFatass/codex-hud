@@ -1,4 +1,4 @@
-/** Display-only main-tab routing; no answer/receipt/status or execution mutations. */
+/** Main-tab routing. It mutates nothing: the owner's micro-actions on a job leave as actions (`job-actions.ts`) for the panel to run. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
 import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
@@ -11,6 +11,7 @@ import { pickable } from './model-input.js';
 import { splitHomeInput, splitProjectInput } from './split-input.js';
 import { join } from 'node:path';
 import { tryInput } from './try-input.js';
+import { openJobAction } from './job-actions.js';
 
 /** The Control plane's keys (named by the decoder) and what each asks of the place under the cursor. */
 const PLACE_KEYS: Record<string, { op: PlaceOp; step?: 1 | -1 }> = {
@@ -127,6 +128,9 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     home();
     return result();
   }
+  // `g`, `r` and `X` on a HUD job, on Home (either layout) and in the Inspector; before the keys that move the cursor take `g` for Home.
+  const job = (main && next.mainTab === 'home') || (inspector && next.boardInspect) ? openJobAction(next, input, key, boardFrame.snapshot, result) : undefined;
+  if (job) return job;
   if (inspector && next.boardInspect) {
     const rows = boardFrame.rows.filter((r) => r.files?.length),
       at = rows.findIndex((r) => r.item === next.inspectCursor);

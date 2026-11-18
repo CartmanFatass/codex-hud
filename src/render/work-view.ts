@@ -16,6 +16,7 @@ import { t } from './i18n.js';
 import { homeScene } from './split-home.js';
 import { projectScene } from './split-project.js';
 import { paintSplit } from './split-frame.js';
+import { stopPromptRows } from './job-actions.js';
 export { footHints } from './workboard-rows.js';
 function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const half = width >= 80 ? Math.floor((width - 4) / 2) : width;
@@ -37,6 +38,9 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['+ - K J', 'place: add, remove, move up, move down'],
       ['x', 'place: clear its exhausted mark'],
       ['r', 'place: refresh model lists'],
+      ['g', 'job: go to its herdr tab'],
+      ['r 1-4 d', 'job: answer its question'],
+      ['X', 'job: stop it (y confirms)'],
       ['v', 'inspect: details and files'],
       ['a', 'show / hide older jobs and decisions (Home)'],
       ['n N', 'next / previous trouble (Home)'],
@@ -174,7 +178,7 @@ export function renderWorkboardFrame(
     const scene = home ? homeScene(input, board, state, targets, width, now, doneToday())
       : project && !(page === 'control' && state.projectInput) ? projectScene(input, state, board, page, width, now) : undefined;
     if (scene) return paintSplit(frame, scene, board, targets, state.homeTarget, width, height,
-      [input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x));
+      [...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x));
   }
   const rows = help
     ? helpRows(input, width)
@@ -188,6 +192,8 @@ export function renderWorkboardFrame(
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
+  // A stop waiting for its answer is the top row of Home and the Inspector, where the job under the cursor is.
+  if (home || inspector) rows.unshift(...stopPromptRows(state, width));
   if (home) {
     // The waiting items and the newest landed slices sit under the cards, progress at the bottom (owner): the work above keeps the room next to it.
     const spare = height - 2 - rows.length;
