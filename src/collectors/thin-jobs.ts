@@ -103,6 +103,8 @@ const when = (v: unknown): number | null => {
   const at = typeof v === 'string' ? Date.parse(v) : NaN;
   return Number.isFinite(at) ? at : null;
 };
+export const reportWasRead = (readAt: unknown, mtime: number | null): boolean =>
+  mtime !== null && mtime <= (when(readAt) ?? -Infinity);
 const word = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 const first = (text: string) =>
   text
@@ -229,7 +231,7 @@ export function jobRow(
     blocked,
     open_questions: openQuestions,
     report_present: reportPresent,
-    report_unread: reportPresent && reportMtime !== null && reportMtime > (when(j.read_at) ?? -Infinity),
+    report_unread: reportPresent && reportMtime !== null && !reportWasRead(j.read_at, reportMtime),
     report_mtime: reportMtime,
     question_ids: questionIds,
   };

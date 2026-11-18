@@ -44,8 +44,8 @@ than assuming a role's model or workflow.
 |---|---|
 | `hud_roster` | Optional `cwd` (default: the server's cwd). Returns role definitions (`instructions`, ordered `run` places, merged `presets` (names and runs), `preset` (matching name or null), `runs_on`, `exhausted` marks), model/thinking assignments, accepted options, invalid role files, the dispatch convention with its source path, and `project` (`root`, `registered`). |
 | `hud_create` | Required `role`, `request_key`, `task`; optional `cwd` (roles resolve against that project; default: the server's cwd), display-only `package`, `idle_grace_s` (CLI-only integer 60–3600, overrides the role for this job), `on` (harness/provider override), `kind` (`image` or `video` for `flow`), and `model`/`thinking` for a `pi` or `cli` place. Pi launch switches are below. Uses the role's first available place (`runs_on`) unless overridden by `on`. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. Repeating a request key returns the original job unchanged, even if options differ; it does not relaunch an uncertain attempt. |
-| `hud_read` | Optional `job`, `wait_ms` (0–120000), `full` (boolean). Without a job, lists the newest 20 with `open_questions` and `report_unread`. With one, returns STATUS, unanswered questions, effective CLI `idle_grace_s` and the unread report (up to 64 KiB); already read: `report_unchanged: true`, no body (`full: true` includes it again). Waiting stops at settlement, a question or the deadline. Every returned report body stamps `read_at` (including during work/idle grace), not acceptance; sends preserve it until a newer report appears. Reading a failure/block separately marks that attention seen. |
-| `hud_send` | Required `job`, `message_key`, `text`. Queues a message while a `pi` or `cli` job works, or continues it during `idle_grace` if its role allows. The message key deduplicates attempts, including failed/uncertain ones. Browser (`bro`) roles cannot continue. |
+| `hud_read` | Optional `job`, `wait_ms` (0–120000), `full` (boolean). Without a job, lists the newest 20 with `open_questions` and `report_unread`. With one, returns STATUS, unanswered questions, effective CLI `idle_grace_s` and the unread report (up to 64 KiB); already read: `report_unchanged: true`, no body (`full: true` includes it again). Waiting stops at settlement, a question or the deadline. Every returned report body stamps `read_at` (including during work/idle grace), not acceptance. Reading a settled pi or CLI report closes its worker. Reading a failure/block separately marks that attention seen. |
+| `hud_send` | Required `job`, `message_key`, `text`. Queues a message while a `pi` or `cli` job works, or continues it during `idle_grace` if its role allows and the report is unread. After reading a settled report, dispatch a new job for repairs. The message key deduplicates attempts, including failed/uncertain ones. Browser (`bro`) roles cannot continue. |
 | `hud_respond` | Required `job`, `request_id` (`qN`), `answer`. Writes `qa/qN.answer.md` once; an existing answer is not overwritten. |
 | `hud_close` | Required `job`. Calls `pi-role-reap` for early cleanup; safe to repeat. Normal finished-job cleanup belongs to the watcher. |
 
@@ -113,8 +113,10 @@ unread attention/reports or unanswered questions. Pane-scoped watches register `
 and remove it at exit. Other main sessions keep typed questions and `hud_read` with `wait_ms`.
 
 `hud_create` starts the on-demand `hud-watch.mjs` if needed. It reacts to job-file
-and herdr tab-close events, invokes `pi-role-reap` after settlement/grace, and
-exits when no open job or failed-job deadline remains. Failed tabs are retained
+and herdr tab-close events, invokes `pi-role-reap` when a pi report in idle grace
+is read or after normal closure, and exits when no open job or failed-job deadline remains.
+The read-close reason is `closed after report read`. Unread pi reports keep the pi-roles
+deadline; a live child blocks the watcher's read-triggered reap. Failed tabs are retained
 for two hours before automatic reap. Failed file watching falls back to polling
 and retries the watch. `watch.pid` and `watch.log` live under HUD home.
 
@@ -124,9 +126,10 @@ recorded pid gone or replaced, its tab closed, or dispatch rejected before input
 (`failed`, or `closed` when a new report is on disk). Dispatch and every non-duplicate
 `hud_send` write `turn.json` before the prompt. With `advisory` trust, a report that differs from the turn's
 baseline settles the turn once herdr is not `working` and the report has been stable
-for 10 s: `idle_grace` when the role can continue, otherwise `/quit` and closed.
-Unused grace sends `/quit` when no child process newer than the turn is alive, and
-closes with `exit_reason` `settled`; the watcher then reaps the tab. A turn quiet past
+for 10 s: `idle_grace` when the role can continue and the report is unread, otherwise `/quit` and closed.
+Reading the report or reaching the idle deadline sends `/quit` and the watcher reaps the tab.
+An unread deadline close has `exit_reason` `settled`. A live child defers CLI settlement,
+the quiet decision and automatic close. A turn quiet past
 the grace without a report gets one Decision API choice (see the reference); anything
 unclear is `waiting_orchestrator` with a reason. Herdr's status alone never fails a live worker.
 CLI `state_trust` has two levels: `advisory` keeps those timings, while `turn`, after herdr has been seen `working`
@@ -135,7 +138,7 @@ decision after 10 s (the post-decision wait is unchanged).
 Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; set, for example,
 `{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.
 `hud_roster` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
-The supervisor wakes on herdr pushes, file changes and its own deadlines,
+The supervisor wakes on herdr pushes, file changes (including `job.json` when a report is read) and its own deadlines,
 plus a 30 s tick that re-reads the status once, and writes STATUS only on change.
 `agent_session_id` is that CLI's own session id, refreshed when the supervisor sees
 a transition; STATUS never carries pi's `session_id`.

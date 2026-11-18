@@ -20,8 +20,9 @@ The user names a role and a task in plain words; you do the rest. Never ask them
    `hud_respond` reply.
 6. Read the report file through `hud_read`, check it (for code: the diff and named checks), then decide: accept,
    repair, review or stop. Lists include `open_questions` and `report_unread`; a `report` token means unread.
-   A job read omits an already-read report (`report_unchanged: true`; use `full: true` to reread); idle-grace reads
-   mark reports read too. Workers finish chat with only `report written: <path>`. Settled means finished, not accepted.
+   A job read omits an already-read report (`report_unchanged: true`; use `full: true` to reread). Reading a settled
+   pi or CLI report closes the worker; an unread report keeps its idle deadline. Workers finish chat with only
+   `report written: <path>`. Settled means finished, not accepted.
 
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role when a job finishes. A review verdict is information for you, not permission to continue.
 
@@ -53,7 +54,7 @@ An implementer may use pi-roles' helpers when the brief asks; they open in a pan
 
 ### Repairs
 
-Use `hud_send` with `job`, a stable `message_key` and `text` to add to a pi or CLI job: while it works (STATUS `working`, `waiting_helper`, `waiting_orchestrator`) the message is queued and the worker reads it after its current step (`queued: true`); while it is in `idle_grace` it continues a role that can continue, including a CLI role that can continue. Duplicate message keys are not sent again. A finished job returns `not_continuable`: create a new job. CLI workers ask through the same `QUESTION` / `hud_respond` flow.
+Use `hud_send` with `job`, a stable `message_key` and `text` to add to a pi or CLI job: while it works (STATUS `working`, `waiting_helper`, `waiting_orchestrator`) the message is queued and the worker reads it after its current step (`queued: true`); while it is in `idle_grace` it continues only if the role allows it and the report is still unread. Duplicate message keys are not sent again. A closed job returns `not_continuable`; after reading a settled report, create a new job for the repair. CLI workers ask through the same `QUESTION` / `hud_respond` flow.
 
 Keep request keys stable; never blindly re-create an uncertain launch.
 

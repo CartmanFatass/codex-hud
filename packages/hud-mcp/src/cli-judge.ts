@@ -124,9 +124,12 @@ export interface Judgment {
   missingTicks: number;
   wakeAt: number | null;
 }
+export const REPORT_READ_EXIT = 'closed after report read';
+
 export interface Facts {
   turn: Turn;
   reportSig: string | null;
+  reportRead: boolean;
   alive: boolean | null;
   status: string | null;
   liveChild: boolean | 'unknown' | null; // null: not sampled yet
@@ -153,6 +156,7 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     reason: null, exitReason: null, action: null, quietHandled: false, missingTicks: 0, wakeAt: null,
   } : { ...prev, action: null, blocked: false, reason: null, wakeAt: null };
   const report = facts.reportSig !== null && facts.reportSig !== facts.turn.report_sig;
+  const readReport = report && facts.reportRead;
   if (next.reportSig !== facts.reportSig || (next.quietSince !== null && (facts.workingAt ?? -Infinity) > next.quietSince)) next.quietSince = null;
   next.reportSig = facts.reportSig;
   const end = (state: Judgment['state'], reason: string, quit = false): Judgment => ({
@@ -173,10 +177,11 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   }
   // Only explicit input reopens a settled turn. Advisory flapping cannot re-baseline it.
   if (!newTurn && prev?.state === 'idle_grace') {
-    if (now < next.deadline!) return { ...next, state: 'idle_grace', wakeAt: next.deadline };
+    if (!readReport && now < next.deadline!)
+      return { ...next, state: 'idle_grace', wakeAt: next.deadline };
     if (facts.status === 'working' || facts.liveChild) return { ...next, state: 'idle_grace' };
     if (facts.liveChild === null) return { ...next, state: 'idle_grace', action: 'sample' };
-    return end('closed', 'settled', true);
+    return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
   }
   const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= Date.parse(facts.turn.sent_at)
     && (facts.status === 'done' || facts.status === 'idle');
@@ -190,7 +195,7 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     if (now < due) return { ...next, state: 'working', wakeAt: due };
     if (facts.liveChild === null) return { ...next, state: 'working', action: 'sample' };
     if (facts.liveChild) return { ...next, state: 'working' };
-    if (!facts.canContinue) return end('closed', 'settled', true);
+    if (readReport || !facts.canContinue) return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
     return { ...next, state: 'idle_grace', outputWritten: true, settledAt: now,
       deadline: now + facts.graceMs, wakeAt: now + facts.graceMs };
   }

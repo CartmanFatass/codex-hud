@@ -634,6 +634,84 @@ function fakeCliWithChild(t, f) {
 const statusQueries = (f, job) => f.socketRequests.filter((r) =>
   r.method === 'agent.get' && r.params.target === `${job.job}-primary`).length;
 
+const readCloseQuit = (f, job) => f.commands().some((c) =>
+  c.command === 'herdr' && c.args[1] === 'prompt' && c.args[2] === job.agent && c.args[3] === '/quit');
+const readCloseReaped = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).reaped_at;
+
+test('read-close: hud_read closes settled CLI and pi workers within one tick', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'read-close-cli', 8);
+  for (const role of ['read-close-cli', 'imp']) {
+    const job = await f.call('hud_create', { role, request_key: `close-on-read-${role}`, task: 'Synthetic task.' });
+    if (role === 'imp') {
+      // Fake pi publishes its own idle grace; hud-watch must invoke the ordinary reaper.
+      const dir = job.task_dir, now = Date.now();
+      fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({
+        version: 1, task_dir: dir, slot: 'primary', state: 'idle_grace', output_written: true,
+        settled_at: new Date(now).toISOString(), idle_deadline_at: new Date(now + 8000).toISOString(),
+      }));
+    }
+    await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+    const grace = cliState(job.task_dir), queries = statusQueries(f, job);
+    assert.equal(readCloseReaped(job), undefined);
+    const read = await f.call('hud_read', { job: job.job });
+    assert.match(read.report, /^Synthetic /);
+    await until(() => cliState(job.task_dir)?.state === 'closed', 1650); // 1.5s accelerated safety tick + dispatch overhead.
+    const closed = cliState(job.task_dir);
+    assert.equal(closed.exit_reason, 'closed after report read');
+    assert.equal(closed.output_written, true);
+    assert.equal(closed.settled_at, grace.settled_at);
+    assert.ok(Date.parse(closed.ended_at) < Date.parse(grace.idle_deadline_at));
+    assert.ok(statusQueries(f, job) <= queries + 1);
+    if (role !== 'imp') assert.ok(readCloseQuit(f, job));
+    await until(() => readCloseReaped(job));
+    assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
+    assert.equal((await f.call('hud_send', { job: job.job, message_key: 'repair', text: 'Synthetic repair.' })).code, 'not_continuable');
+  }
+});
+
+test('read-close: listing an unread report leaves the CLI grace deadline in place', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'unread-close-cli', 2);
+  const job = await f.call('hud_create', { role: 'unread-close-cli', request_key: 'unread-close', task: 'Synthetic task.' });
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  const { idle_deadline_at } = cliState(job.task_dir);
+  assert.equal((await f.call('hud_read')).jobs.find((row) => row.job === job.job).report_unread, true);
+  await new Promise((done) => setTimeout(done, 300));
+  assert.equal(cliState(job.task_dir).state, 'idle_grace');
+  assert.equal(readCloseQuit(f, job), false);
+  assert.equal(readCloseReaped(job), undefined);
+  await until(() => cliState(job.task_dir)?.state === 'closed');
+  const closed = cliState(job.task_dir);
+  assert.equal(closed.exit_reason, 'settled');
+  assert.ok(Date.parse(closed.ended_at) >= Date.parse(idle_deadline_at));
+  assert.ok(readCloseQuit(f, job));
+  await until(() => readCloseReaped(job));
+});
+
+test('read-close: a live CLI child holds the close until the safety tick sees it exit', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const worker = fakeCliWithChild(t, f);
+  writeCliRole(f, 'child-read-cli', 8);
+  const job = await f.call('hud_create', { role: 'child-read-cli', request_key: 'child-read-close', task: 'Synthetic task.' });
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  const child = await worker.start();
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  const queries = statusQueries(f, job);
+  await until(() => statusQueries(f, job) > queries);
+  assert.ok(procStat(child));
+  assert.equal(cliState(job.task_dir).state, 'idle_grace');
+  assert.equal(readCloseQuit(f, job), false);
+  assert.equal(readCloseReaped(job), undefined);
+  assert.equal((await f.call('hud_send', { job: job.job, message_key: 'repair', text: 'Synthetic repair.' })).code, 'not_continuable');
+  worker.stop();
+  await until(() => procStat(child) === null);
+  await until(() => cliState(job.task_dir)?.state === 'closed', 1650);
+  assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
+  assert.ok(readCloseQuit(f, job));
+  await until(() => readCloseReaped(job));
+});
+
 test('supervisor events: idle and a stable report do not settle while a pre-turn child lives; the next tick settles after exit', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
@@ -1333,11 +1411,14 @@ test(
     const job = await f.call('hud_create', { role: 'imp', request_key: 'send-outcomes', task: 'Synthetic task.' });
     const dispatches = () => f.commands().filter((c) => c.command === 'herdr' && c.args[0] !== 'pane');
     const before = dispatches().length;
-    fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
     await f.call('hud_read', { job: job.job });
     const receiptFile = join(job.task_dir, 'job.json');
     const stamp = JSON.parse(fs.readFileSync(receiptFile)).read_at;
     assert.ok(stamp);
+    // An earlier read stamp survives sends; a newer, unread settled report still permits continuation.
+    await new Promise((done) => setTimeout(done, 10));
+    fs.writeFileSync(join(job.task_dir, 'report.md'), 'Unread settled report.');
+    fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
     const herdr = join(f.root, 'bin', 'herdr');
     const fake = `#!${process.execPath}
 import fs from 'node:fs';

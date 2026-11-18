@@ -8,7 +8,8 @@ import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
-import { workerAlive, readTurn, reportSignature } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { workerAlive, workerHasChild, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 
 const bundled = fileURLToPath(new URL('..', import.meta.url));
 
@@ -167,7 +168,7 @@ function scan(retryWatch = false) {
   if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
   seen.clear();
   let open = false,
-    cliPoll = false,
+    safetyCheck = false,
     nearest = Infinity;
   for (const id of fs.readdirSync(jobs)) {
     if (!/^j[a-f0-9]{16}$/.test(id)) continue;
@@ -196,7 +197,7 @@ function scan(retryWatch = false) {
         fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
       }
       if (job?.cli && status && !['closed', 'failed', 'stopped'].includes(status.state)) {
-        cliPoll = true;
+        safetyCheck = true;
         const pid = supervisorPid(dir, status);
         if (pid && !supervisorAlive(pid)) {
           const alive = workerAlive(status.pid, status.pid_start_time);
@@ -222,15 +223,24 @@ function scan(retryWatch = false) {
         if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) open = true;
         continue;
       }
+      let readInGrace = false;
       if (status.state === 'idle_grace') {
         open = true;
-        continue;
+        // Pi owns the unread deadline. CLI grace always goes through its supervisor.
+        if (!tab || !job?.read_at || job.reaped_at || job.cli || job.bro || job.jev || status.output_written !== true) continue;
+        const report = fs.statSync(join(dir, 'report.md'), { throwIfNoEntry: false });
+        if (!report?.isFile() || !reportWasRead(job.read_at, report.mtimeMs)) continue;
+        if (workerHasChild(status.pid ?? null, status.pid_start_time ?? null) !== false) {
+          safetyCheck = true;
+          continue;
+        }
+        readInGrace = true;
       }
       if (status.state === 'working' || status.state?.startsWith('waiting')) {
         open = true;
         continue;
       }
-      if (!['closed', 'failed', 'stopped'].includes(status.state)) continue;
+      if (!readInGrace && !['closed', 'failed', 'stopped'].includes(status.state)) continue;
       if (status.state === 'failed' && job && !job.exhaustion_marked) {
         const text = String(status.exit_reason ?? status.error ?? '');
         if (isQuotaFailure(text)) {
@@ -264,6 +274,15 @@ function scan(retryWatch = false) {
       const message = `reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}`;
       if (result.status === 0) log(message);
       else warn(`reap ${id}`, message);
+      if (result.status === 0 && readInGrace) {
+        // Pi may have published shutdown STATUS during reap. Preserve those facts and name the trigger.
+        const latest = json(statusFile);
+        if (latest && ['idle_grace', 'closed'].includes(latest.state)) {
+          status = { ...latest, state: 'closed', exit_reason: REPORT_READ_EXIT, ended_at: latest.ended_at ?? new Date().toISOString() };
+          fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
+          fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+        }
+      }
       if (result.status === 0 && job) {
         // Read again: hud_read/send/create may have updated the receipt during reap.
         const latest = json(jobFile);
@@ -281,8 +300,8 @@ function scan(retryWatch = false) {
   }
   for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);
   if (open) subscribe();
-  // A dead supervisor is rare; a slow check keeps the watcher light while CLI jobs are open.
-  if (cliPoll) nearest = Math.min(nearest, Date.now() + cliCheck);
+  // Use the same slow check for a dead CLI supervisor or a child holding a Pi read-close.
+  if (safetyCheck) nearest = Math.min(nearest, Date.now() + cliCheck);
   if ((open || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + 1000);
   if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.ceil(nearest - Date.now())));
   else if (!open) stop();

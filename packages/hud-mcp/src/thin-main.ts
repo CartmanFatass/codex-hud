@@ -114,14 +114,14 @@ const tools = [
     },
     ['role', 'request_key', 'task']
   ),
-  tool('hud_read', 'Read a job, optionally waiting for settlement or a question; omit job for the 20 newest.', {
+  tool('hud_read', 'Read a job, optionally waiting for settlement or a question. Reading a settled report closes the worker; omit job for the 20 newest.', {
     job: text,
     wait_ms: { type: 'integer', minimum: 0, maximum: 120000 },
     full: { type: 'boolean', description: 'Include the report even if already read.' },
   }),
   tool(
     'hud_send',
-    'Send a message to a pi or CLI job: queued while it works, a continuation during idle_grace (roles that can continue); message_key deduplicates sends.',
+    'Send a message to a pi or CLI job: queued while it works, or continued during idle_grace before the report is read (roles that can continue); message_key deduplicates sends.',
     { job: text, message_key: text, text },
     ['job', 'message_key', 'text']
   ),
@@ -1083,11 +1083,12 @@ async function call(name: string, args: Args): Promise<unknown> {
     // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
     // continues in its idle grace when the role allows (owner, 2026-11-11).
     const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
+    const readReport = row.report_mtime !== null && !row.report_unread;
     if (
       job.bro ||
       job.jev ||
       !agent ||
-      !(queued || (state === 'idle_grace' && registry(job.cwd).roles().get(job.role)?.can_continue))
+      !(queued || (state === 'idle_grace' && !readReport && registry(job.cwd).roles().get(job.role)?.can_continue))
     )
       return { ok: false, code: 'not_continuable' };
     // Record the attempt first, so a lost reply cannot cause a duplicate prompt.

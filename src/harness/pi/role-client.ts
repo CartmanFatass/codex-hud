@@ -139,14 +139,14 @@ export const PI_ROLE_TOOLS = [
     },
     ['role', 'request_key', 'task']
   ),
-  tool('hud_read', 'Read a job, optionally waiting for settlement or a question; omit job for the 20 newest.', {
+  tool('hud_read', 'Read a job, optionally waiting for settlement or a question. Reading a settled report closes the worker; omit job for the 20 newest.', {
     job: text,
     wait_ms: { type: 'integer', minimum: 0, maximum: 120000 },
     full: { type: 'boolean', description: 'Include the report even if already read.' },
   }),
   tool(
     'hud_send',
-    'Send a message to a pi or CLI job: queued while it works, a continuation during idle_grace (roles that can continue); message_key deduplicates sends.',
+    'Send a message to a pi or CLI job: queued while it works, or continued during idle_grace before the report is read (roles that can continue); message_key deduplicates sends.',
     { job: text, message_key: text, text },
     ['job', 'message_key', 'text']
   ),

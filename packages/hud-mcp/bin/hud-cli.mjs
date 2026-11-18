@@ -9,10 +9,12 @@ import { fileURLToPath } from 'node:url';
 import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
 import { judge, procStat, workerAlive, workerHasChild, readTurn, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 
 const dir = fs.realpathSync(process.argv[2]);
 const bundled = fileURLToPath(new URL('..', import.meta.url)), hudHome = dirname(dirname(dir));
-const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+const jobFile = join(dir, 'job.json'), job = JSON.parse(fs.readFileSync(jobFile, 'utf8'));
+let readAt = job.read_at;
 const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').split('\n').flatMap((line) => {
   const at = line.indexOf('=');
   return at > 0 ? [[line.slice(0, at), line.slice(at + 1)]] : [];
@@ -87,7 +89,7 @@ function watchDir() {
     dirWatch = fs.watch(dir, (_event, filename) => {
       const file = filename?.toString();
       if (file && (file === 'STATUS.json' || file === 'supervisor.pid' || file.endsWith('.tmp'))) return;
-      if (!file || ['report.md', 'turn.json', 'qa', 'STATUS.json.stop-requested', 'STATUS.json.close-requested'].includes(file)) {
+      if (!file || ['report.md', 'job.json', 'turn.json', 'qa', 'STATUS.json.stop-requested', 'STATUS.json.close-requested'].includes(file)) {
         diskDirty = true; watchQa(); wake();
       }
     });
@@ -153,6 +155,7 @@ const sampleChild = () => workerHasChild(current.pid, current.pid_start_time);
 function collect(isTick, checkChild = isTick && status !== 'working') {
   if (diskDirty || isTick) {
     turn = readTurn(dir) ?? turn;
+    readAt = JSON.parse(fs.readFileSync(jobFile, 'utf8')).read_at;
     stop = fs.existsSync(join(dir, 'STATUS.json.stop-requested'));
     close = fs.existsSync(join(dir, 'STATUS.json.close-requested'));
     const qa = join(dir, 'qa');
@@ -162,7 +165,8 @@ function collect(isTick, checkChild = isTick && status !== 'working') {
   const st = fs.statSync(output, { throwIfNoEntry: false });
   const nextStamp = st ? `${st.mtimeMs}:${st.size}` : null;
   if (nextStamp !== stamp) { signature = reportSignature(dir); stamp = nextStamp; }
-  return { turn, reportSig: signature, alive: workerAlive(current.pid, current.pid_start_time), status,
+  return { turn, reportSig: signature, reportRead: reportWasRead(readAt, st?.isFile() ? st.mtimeMs : null),
+    alive: workerAlive(current.pid, current.pid_start_time), status,
     liveChild: checkChild ? sampleChild() : null,
     stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
     tick: isTick, agentMissing, workingAt, tabClosed };

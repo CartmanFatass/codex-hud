@@ -23,7 +23,7 @@ test('worker identity: missing start is unknown for a live PID, but absence is s
 });
 
 const turn = { seq: 1, sent_at: new Date(0).toISOString(), report_sig: null };
-const facts = { turn, reportSig: null, alive: true, status: 'working', liveChild: false,
+const facts = { turn, reportSig: null, reportRead: false, alive: true, status: 'working', liveChild: false,
   stop: false, close: false, openQuestions: false, canContinue: true, graceMs: 600_000 };
 const initial = judge(null, facts, 0);
 const quiet = judge(initial, { ...facts, status: 'done', reportSig: 'report' }, 1000);
