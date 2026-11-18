@@ -21,7 +21,8 @@ import { TaskObservationCollector } from './collectors/task-observations.js';
 import { buildWorkboard } from './collectors/workboard.js';
 import { readThinJobs, type ThinJobScope } from './collectors/thin-jobs.js';
 import { DiffStatCollector } from './collectors/diff-stat.js';
-import type { TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-types.js';
+import { ActivityRings } from './collectors/activity-ring.js';
+import type { OwnerWorker, TaskSnapshot, WorkboardSnapshot } from './collectors/workboard-types.js';
 import { composeJobTree, type JobTreeResult } from './collectors/job-tree.js';
 import { NativeCallCollector } from './collectors/native-calls.js';
 import { performance } from 'node:perf_hooks';
@@ -119,6 +120,7 @@ export class PanelJobPipeline {
     board: WorkboardSnapshot;
   };
   private thinJobs: ReturnType<typeof readThinJobs> = [];
+  private rings = new ActivityRings();
   private jobDiffs = new DiffStatCollector();
   private thinObservation = { complete: false };
   observation(tree: SubagentTree, legacy: DelegationViewModel | null, nativeQuiet: boolean) {
@@ -186,12 +188,19 @@ export class PanelJobPipeline {
       cost: { entries: 0, files: 0, bytes: 0, probes: 0, enumerations: 0, parses: 0, elapsedMs: 0 },
     };
     const base = buildWorkboard(this.observer.home, tasks, jobs, tree, legacy);
-    const board = {
+    let board = {
       ...base,
       lanes: [...this.thinJobs, ...base.lanes],
       workers: [...this.thinJobs.flatMap((lane) => lane.workers), ...base.workers],
       decisions: [...this.thinJobs.flatMap((lane) => lane.decisions), ...base.decisions],
     };
+    // Each running worker's activity ring, fed once per recomposition; a worker is one object in the lanes and the list.
+    const activity = this.rings.observe(board.workers, Date.now());
+    if (activity.size) {
+      const add = new Map(board.workers.filter((w) => activity.has(w.id)).map((w) => [w, { ...w, activity: activity.get(w.id) }]));
+      const swap = (w: OwnerWorker) => add.get(w) ?? w;
+      board = { ...board, workers: board.workers.map(swap), lanes: board.lanes.map((l) => ({ ...l, workers: l.workers.map(swap) })) };
+    }
     this.boardCache = { tree, legacy, jobs: this.snapshot, tasks: this.taskSnapshot, board };
     return board;
   }

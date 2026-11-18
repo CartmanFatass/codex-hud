@@ -61,6 +61,8 @@ export interface OwnerWorker extends Partial<JobProgress> {
     rate?: import('./token-rate.js').TokenRateSnapshot;
     spent?: import('../types.js').TokenSpent;
   };
+  /** Observed activity of a running worker: ten one-minute buckets, oldest first, each a count of collects that saw it write. */
+  readonly activity?: readonly number[];
   readonly nativeDepth?: number;
   readonly parentJobId?: string;
   readonly parentName?: string;

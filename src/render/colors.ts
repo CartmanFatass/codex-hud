@@ -204,6 +204,7 @@ const ZERO_WIDTH_RANGES: Array<[number, number]> = [
 
 const WIDE_RANGES: Array<[number, number]> = [
   [0x1100, 0x115f], // Hangul Jamo
+  [0x26a1, 0x26a1], // High Voltage Sign: emoji presentation, two columns
   [0x2e80, 0x303e], // CJK Radicals .. CJK Symbols and Punctuation
   [0x3041, 0x33ff], // Hiragana .. CJK Compatibility
   [0x3400, 0x4dbf], // CJK Extension A

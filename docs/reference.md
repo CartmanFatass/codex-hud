@@ -292,6 +292,11 @@ Brief headings supply job titles; otherwise a model name or first task line fits
 the width. Only the newest current settled card initially expands, until its fold
 time; explicit choices win for that panel lifetime. Enter on a lane folds it.
 
+**Sonic children.** A `sonic` job a HUD job dispatched (its `parent_job`) is not a card: it is one row under the parent's
+card, `├─ ⚡ sonic · short title  3m ◉` (the last `└─`, ascii `|-` and `` `- ``), with its elapsed time and state glyph, in
+Classic and in Split's preview. A parent folded to its title row hides the rows and says `⚡ N sonic` (the ones still
+running) on its right. A `/` filter that matches a sonic job keeps its parent with it.
+
 **Panel lifetime.** Jobs settled before the panel opened are excluded, including
 their decisions and model inputs; `a` cannot reveal them. Active/unknown jobs stay
 eligible regardless of age. Build reload preserves the original opening time.
@@ -702,7 +707,11 @@ or unreadable catalog shows a muted notice, an empty one another.
 
 The selected card/question/decision expands above facts: role/harness, model/effort,
 package, state/phase and observed local times. The Inspector and expanded running cards in both layouts show
-one muted Milestone line when the worker has logged one. Files lists brief, QA, reviews and
+one muted Milestone line when the worker has logged one, and an Activity row under it: ten one-minute
+buckets (`▁▂▃▄▅▆▇█`, `..--==##` with text icons) of how often the panel saw the running worker write (session, status,
+report or `hud-progress`), a quiet minute blank, eight sightings or more a full cell. The ring lives in the panel's memory
+from when it first saw the worker, so there is none for a worker that has not written since, and none once it settles.
+Files lists brief, QA, reviews and
 report; Up/Down selects, Enter/`o` opens. Native cards list their transcript and
 available context %, estimated tokens/s and cumulative tokens; missing values are
 omitted, with no extra model request. No stage/log history or switch controls remain.

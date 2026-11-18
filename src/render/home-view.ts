@@ -67,7 +67,7 @@ export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state
 /** Only the newest result opens by itself, and only before its fold time: running cards change activity constantly and would make Home jump. */
 export function markNewest(board: WorkboardSnapshot, state: MonitorState, now: number): void {
   const newest = board.workers
-    .filter((w) => !state.boardFolded?.has(w.laneId) && w.settledAt !== null && currentWorker(w, now, state) && !foldedWorker(w, now, state))
+    .filter((w) => !state.boardFolded?.has(w.laneId) && w.settledAt !== null && !w.parentJobId && currentWorker(w, now, state) && !foldedWorker(w, now, state))
     .reduce<(typeof board.workers)[number] | undefined>(
       (a, w) => (!a || (w.settledAt ?? 0) > (a.settledAt ?? 0) ? w : a),
       undefined

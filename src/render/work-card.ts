@@ -144,6 +144,16 @@ export function milestoneLine(worker: WorkCard['worker'], width: number): string
   const entry = worker.latest_progress;
   if (entry) return fit(theme.board.muted(`${mark('┃', '|')} ${t('Milestone')}: ${monitorText(entry.text)}`), width);
 }
+/** Ten one-minute buckets of observed writes as one segment: a quiet minute is blank, eight writes in a minute fill the cell. */
+export function sparkline(counts: readonly number[]): string {
+  const glyphs = mark('▁▂▃▄▅▆▇█', '..--==##');
+  return counts.map((c) => (c > 0 ? glyphs[Math.min(8, c) - 1] : ' ')).join('');
+}
+/** The running worker's activity row (the Inspector and an expanded card); absent while nothing has been observed. */
+export function pulseLine(worker: WorkCard['worker'], width: number): string | undefined {
+  if (worker.activity?.some((c) => c > 0))
+    return fit(theme.board.muted(`${mark('┃', '|')} ${t('Activity')} `) + theme.board.active(sparkline(worker.activity)) + theme.board.muted(` ${ageText(worker.activity.length)}`), width);
+}
 export function quietDecisionSummary(q: WorkCard['worker']['quietDecision']): string {
   if (!q) return '';
   const action = t(q.action);
@@ -181,9 +191,9 @@ export function labelSummary(labels: WorkCard['worker']['labels']): string {
   return [labels?.outcome ? `[${t(labels.outcome.value)}]` : '',
     ...(labels?.severity ?? []).map((n, i) => n ? `${n} ${t(['must fix', 'should fix', 'optional'][i])}` : '')].filter(Boolean).join(' · ');
 }
-function workCardName(card: WorkCard, _state: MonitorState, width: number) {
+function workCardName(card: WorkCard, _state: MonitorState, width: number, badge = '') {
   const labels = card.worker.labels;
-  const right = [labels?.looping !== undefined ? `${mark('⚠', '!')} ${t('looping')}` : '',
+  const right = [badge, labels?.looping !== undefined ? `${mark('⚠', '!')} ${t('looping')}` : '',
     labels?.outcome ? `[${t(labels.outcome.value)}]` : '', workStateWord(card), ageText(card.elapsedMinutes ?? 0)].filter(Boolean).join(' ');
   const role = monitorText(card.role),
     x = 2 + visualLength(role) + 2;
@@ -202,9 +212,9 @@ function workCardName(card: WorkCard, _state: MonitorState, width: number) {
 }
 /** Rows a collapsed card's sentence may use; the sentence prompt's length limit is sized for it. */
 export const SENTENCE_ROWS = 2;
-export function renderWorkCard(card: WorkCard, state: MonitorState, width: number, sentence = ''): readonly string[] {
+export function renderWorkCard(card: WorkCard, state: MonitorState, width: number, sentence = '', badge = ''): readonly string[] {
   const ink = workStateInk(card),
-    name = workCardName(card, state, width);
+    name = workCardName(card, state, width, badge);
   const rows = [
     theme.board.title(pair(`${ink(workStateGlyph(card))} ${name.role}  ${name.text}`, ink(name.right), width)),
   ];

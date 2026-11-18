@@ -31,13 +31,15 @@ const has = (needle: string, ...fields: (string | null | undefined)[]) => fields
 /** Home: a card matches on its package, title, role, harness, the keywords of its model sentence or its status word; a decision on its package or title. */
 export function homeMatcher(board: WorkboardSnapshot, needle: string, now: number, stall?: number) {
   const label = new Map(board.lanes.map((l) => [l.id, l.label]));
+  const own = (w: OwnerWorker) => {
+    const card = projectWorkCard(w, now, stall), { plain, spans } = keywordMarks(monitorText(w.modelSentence ?? ''));
+    const word = failed(card) ? 'failed' : w.state === 'stopped' ? 'stopped' : card.state === 'needs-you' ? 'asking'
+      : card.state === 'stalled' ? 'stalled' : card.state === 'in-progress' ? 'working' : 'done';
+    return has(needle, label.get(w.laneId), card.title, card.role, w.harness, word, t(word), ...spans.map((s) => plain.slice(s.start, s.end)));
+  };
   return {
-    worker: (w: OwnerWorker) => {
-      const card = projectWorkCard(w, now, stall), { plain, spans } = keywordMarks(monitorText(w.modelSentence ?? ''));
-      const word = failed(card) ? 'failed' : w.state === 'stopped' ? 'stopped' : card.state === 'needs-you' ? 'asking'
-        : card.state === 'stalled' ? 'stalled' : card.state === 'in-progress' ? 'working' : 'done';
-      return has(needle, label.get(w.laneId), card.title, card.role, w.harness, word, t(word), ...spans.map((s) => plain.slice(s.start, s.end)));
-    },
+    // A sonic child that matches brings its parent, which it is drawn under.
+    worker: (w: OwnerWorker) => own(w) || board.workers.some((c) => c.parentJobId === w.id && own(c)),
     decision: (d: DecisionRecord) => has(needle, label.get(d.laneId), d.title, d.modelTitle),
   };
 }

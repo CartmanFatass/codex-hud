@@ -3,7 +3,7 @@ import type { OwnerWorker, WorkLane, WorkTarget } from '../collectors/workboard-
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorRow, MonitorState } from './monitor.js';
-import { ageText, renderWorkCard, requestLines, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary, milestoneLine, quietDecisionSummary } from './work-card.js';
+import { ageText, renderWorkCard, requestLines, stemLines, jobSentenceRows, workPhaseText, workStateGlyph, workStateInk, labelSummary, milestoneLine, pulseLine, quietDecisionSummary } from './work-card.js';
 import {
   kvRows,
   section,
@@ -67,6 +67,8 @@ export function workInspectorRows(
       : renderWorkCard(card, expanded, width).map((text) => boardRow(text));
   const milestone = milestoneLine(worker, width);
   if (milestone) rows.push(boardRow(milestone));
+  const pulse = pulseLine(worker, width);
+  if (pulse) rows.push(boardRow(pulse));
   const stamp = (at: number | null) =>
     at === null ? '' : `${localTime(at, now)} · ${t('{age} ago', { age: minuteAge(at, now) })}`;
   const end = worker.settledAt ?? (worker.state === 'working' ? now : null);

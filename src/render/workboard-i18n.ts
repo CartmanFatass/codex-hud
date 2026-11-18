@@ -9,6 +9,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   Projects: '项目列表',
   '{n} open': '{n} 未完成',
   Milestone: '里程碑',
+  Activity: '活动',
+  '{n} sonic': '{n} 个 sonic',
   'Decided for you': '已替你决定',
   'Nothing needs you': '没有需要你处理的事',
   '{n} running': '{n} 运行中',
