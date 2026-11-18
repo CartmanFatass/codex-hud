@@ -1,6 +1,6 @@
 # 02: The Split layout
 
-**Status:** ready-for-agent
+**Status:** done (31dd4035)
 **Blocked by:** none (owner 2026-11-17: in parallel with 01 over a fixed seam; see Comments)
 
 **What to build:** `docs/spec.md` §2.2 "Panel layouts". Option 2 · Split of `docs/design/panel-v8/` (`options.html`,
