@@ -1,6 +1,6 @@
 # 03: Fix the worker-close review findings
 
-**Status:** ready-for-agent
+**Status:** done (af6e0e85)
 **Blocked by:** 01, 02 (both in wt/worker-close-02, not landed)
 
 Review: docs/reviews/2026-11-17-worker-close-review.md (verdict: fix first). One pass, in the same worktree.
@@ -23,3 +23,8 @@ Review: docs/reviews/2026-11-17-worker-close-review.md (verdict: fix first). One
 - [ ] Main-path tests, temp homes, fake workers only; `tmp/env.sh` build + cli-judge and thin-mcp suites pass.
 
 ## Comments
+- Re-review 2026-11-17 (docs/reviews/2026-11-17-worker-close-review.md, second part): a partial reap failure
+  (pi quits, Herdr fails to close the tab, or STATUS stays idle_grace with the worker gone) drops the retry and
+  leaves the tab. Needs a Herdr outage during cleanup; follow-up if it shows up: keep the read-close cleanup pending
+  on the slow tick until it succeeds or the turn changes; allow cleanup when Herdr says agent missing and the pid
+  is gone.

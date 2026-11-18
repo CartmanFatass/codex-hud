@@ -29,3 +29,31 @@ Reviewed `e651befb..ab6815c8` on `wt/worker-close-02` against both tickets, `doc
 - `tmp/worker-close-02-checks.log`: both builds exited 0; earlier combined run 133/134, failing tool-description parity. `tmp/worker-close-02-recheck.log`: parity and four focused checks passed, `recheck_exit=0`; the independent run above also passed parity. Three additional synthetic `tmp/env.sh node` probes exited 0 and reproduced findings 1–3. No full-suite rerun or real Pi, CLI, or Herdr worker was launched.
 
 **Verdict: fix first — 1 (active Pi worker killed), 2 (idle MCP subprocess pins a finished worker), 3 (read-close does not retry).**
+
+---
+
+# WORKER-CLOSE 03 re-review · `4c264954`
+
+**Verdict: fix first.** Findings 1 and 2 are fixed within the agreed design. Finding 3 is fixed only when the failed reap leaves the worker idle and still registered with Herdr.
+
+## Spec
+
+- **Finding 1 — fixed.** Pi records the send before prompting. The watcher requires settlement, a newer report and a read receipt for that turn. It checks fresh Herdr status, then rereads the job and STATUS and checks for current-turn descendants before reaping. A read of the previous report after a continuation does not reap; a fresh `working` response prevents an automatic reap. Explicit `hud_close` still force-stops. The agreed window between preflight and the external reaper remains.
+- **Finding 2 — fixed.** Pre-turn helpers no longer block CLI settlement, the quiet decision or automatic closure, or Pi read-close. The child check traverses older helpers and still finds an in-turn grandchild. The Chinese reference mirrors the English rules. No scope expansion found.
+
+## Simplicity and quality
+
+1. **Major — `packages/hud-mcp/bin/hud-watch.mjs:282–295`: a partial read-close failure still loses the reap retry.** The timer depends on the job remaining an `idle_grace` candidate and Herdr continuing to report `idle` or `done`. If Pi quits and publishes `closed` but Herdr temporarily fails to close the tab, the STATUS event triggers an immediate terminal-state attempt. If the same outage outlasts that attempt, the watcher cancels the safety tick and exits with the tab unreaped. If the worker is gone but STATUS stays `idle_grace`, the tick instead queries Herdr indefinitely: `agent_not_found` prevents a second reap. I reproduced both with the production watcher and fake Herdr/reaper: the first case made exactly two attempts (`idle_grace`, `closed`) before exiting; the second made one attempt followed by six `agent_not_found` responses despite the recorded fake worker having exited. Neither stamped `reaped_at`.
+   **Fix:** Keep failed read-close cleanup pending on the existing slow tick until cleanup succeeds or the turn changes. For a still-live worker, keep the fresh idle and child checks; when Herdr explicitly reports the agent missing and the recorded PID is confirmed gone, allow cleanup without requiring `idle` or `done`. Don't drop the retry just because the first attempt published terminal STATUS.
+
+## Verified
+
+- Reviewed the complete `git show 4c264954`, the previous review, the ticket, the product spec, both reference diffs and the installed reaper source. The reaper can stop a worker before a later inventory or tab-close operation returns an error. The new fail-once fixture exercises the real watcher and safety timer, but exits before changing worker or job state, so it does not cover partial cleanup.
+- `tmp/tasks/WORKER-CLOSE-03/checks/suites.log`: both builds completed; CLI judge and thin MCP suites **139 passed, 0 failed**, `exit=0`. The log postdates the edited source.
+- `tmp/env.sh node --test` (focused worker identity, child, read-close, continuation, tool parity and send outcomes in `tests/unit/{cli-judge,thin-mcp}.test.mjs`): **22 passed, 0 failed**, exit 0 on Node **24.22.1**. Focused watcher, retention and Pi send checks in `tests/unit/{thin-mcp,job-retention}.test.mjs`: **7 passed, 0 failed**, exit 0.
+- `tmp/env.sh node --input-type=module -e …` synthetic probes: both partial-reap reproductions exited 0 after asserting the failures above. The `/proc` probe exited 0: old helper alone `false`, with an in-turn grandchild `true`, after grandchild exit `false`. No real Pi, CLI or Herdr worker was launched.
+- `git diff --check ab6815c8..4c264954`: exit 0. `git status --short --untracked-files=all`: clean.
+
+Report: `/home/fires/.hud/jobs/j10ebe798f551f836/report.md` — 1 finding.
+
+**Orchestrator, 2026-11-17:** landed anyway. The remaining finding needs a Herdr failure during cleanup and leaves a tab whose worker already quit; below the blocking bar, kept as a follow-up note on ticket 03.

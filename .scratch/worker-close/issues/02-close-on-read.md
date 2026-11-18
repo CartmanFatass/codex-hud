@@ -1,6 +1,6 @@
 # 02: Close a settled job's worker once its report is read
 
-**Status:** ready-for-agent
+**Status:** done (a25fca5c)
 **Blocked by:** 01
 
 **What to build:** Owner, 2026-11-17 (option A): a finished worker no longer waits out its 10–30 minute idle window

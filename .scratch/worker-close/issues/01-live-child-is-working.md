@@ -1,6 +1,6 @@
 # 01: A live child process means the worker is still working
 
-**Status:** ready-for-agent
+**Status:** done (c4ac0183)
 **Blocked by:** none
 
 **What to build:** Owner, 2026-11-17: agy is misjudged when it runs a background command: herdr may show idle while
