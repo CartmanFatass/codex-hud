@@ -9,7 +9,7 @@ import { main } from '../../dist/cli/hud-main.js';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 
-function writeJob(hudHome, id, pane, pkg, status, report = false) {
+function writeJob(hudHome, id, pane, pkg, status, report = false, parent_job) {
   const dir = join(hudHome, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
@@ -23,6 +23,7 @@ function writeJob(hudHome, id, pane, pkg, status, report = false) {
       cli: { agent: 'claude' },
       dispatch_exit_code: 0,
       stderr_tail: '',
+      parent_job,
     })
   );
   if (status !== null) {
@@ -146,6 +147,27 @@ test('hud watch --verbose retains the existing MCP change lines', async (t) => {
   assert.equal(fs.existsSync(join(hudHome, 'watch.pid')), false);
   assert.equal(fs.existsSync(join(hudHome, 'watch.log')), false);
   assert.equal(fs.existsSync(join(hudHome, 'watchers', 'w4E:p1.pid')), false);
+});
+
+test('hud watch skips child completion and report, but delivers questions and failure', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-sonic-'));
+  const id = 'j0000000000000002', pane = 'w4E:p1', ac = new AbortController(), lines = [];
+  t.after(() => { ac.abort(); fs.rmSync(home, { recursive: true, force: true }); });
+  const dir = writeJob(home, id, pane, 'sonic', { state: 'closed' }, true, 'j0000000000000001');
+  const running = watchCommand([], { env: { HUD_HOME: home, HERDR_PANE_ID: pane },
+    stdout: (line) => lines.push(line), stderr: () => {} }, { signal: ac.signal, rescanMs: 100 });
+  fs.mkdirSync(join(dir, 'qa'));
+  fs.writeFileSync(join(dir, 'qa/q1.md'), 'Synthetic question?');
+  await until(() => lines.length > 0);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /QUESTION q1/);
+  fs.writeFileSync(join(dir, 'qa/q1.answer.md'), 'Answer.');
+  fs.writeFileSync(join(dir, 'STATUS.json'), '{"state":"failed","exit_reason":"synthetic failure"}');
+  await until(() => lines.length > 1);
+  assert.match(lines[1], /failed \| synthetic failure$/m);
+  assert.ok(lines.every((line) => !line.includes(' | report')));
+  ac.abort();
+  assert.equal(await running, 0);
 });
 
 for (const verbose of [false, true]) test(`hud watch scripted lifecycle (${verbose ? 'verbose' : 'quiet'})`, async (t) => {
@@ -330,6 +352,10 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
   assert.equal(pushes.length, 6);
   assert.ok(pushes.every((args) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === 'w4E:p1'));
   assert.match(pushes[1][3], /reply: hud_respond job=j0000000000000001 request_id=q99$/);
+  writeJob(home, id, 'w4E:p1', 'push', { state: 'closed' }, true, 'j0000000000000002');
+  const done = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-notify.mjs'), home, 'w4E:p1', id, '[sonic@demo] DONE /synthetic/report.md'], { env, encoding: 'utf8' });
+  assert.equal(done.status, 0, done.stderr);
+  assert.equal(fs.readFileSync(log, 'utf8').trim().split('\n').length, 6, 'opt-in child DONE is also quiet');
 });
 
 function queueFixture(t, agent = 'codex', thread = '00000000-0000-4000-8000-000000000001', fail = false) {

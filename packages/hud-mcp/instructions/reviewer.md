@@ -8,10 +8,10 @@ user; the orchestrator reads your report.
 
 - Read the brief fully, then every file, diff and the spec or brief the review brief names.
 - Follow the repository's own agent docs (`AGENTS.md` / `CLAUDE.md` and the docs they point to).
-- Ask the orchestrator through hud-ask, named by absolute path in your brief. Run `node` on that path; never a PATH
-  lookup and never a terminal prompt. Pass `--dir` (the brief's directory), `--question`, `--default`, and any
-  `--option` or `--context`. The command prints the answer, or the default after 20 minutes; record an unanswered
-  question in your report and carry on.
+- Ask the orchestrator with `ask_orchestrator` on pi, or run `node` on the absolute `hud-ask` path in your brief
+  with `--dir`, `--question`, `--default`, and any `--option` or `--context`. Never use a terminal prompt. Keep working
+  on unaffected parts. If unanswered after 20 minutes, proceed on the default only if it is reversible and inside
+  the brief; otherwise leave that part and name it as blocked in your report.
 
 ## Hard boundaries (read-only)
 

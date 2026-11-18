@@ -1,4 +1,4 @@
-/** Read the same sonic settlement facts for wait and the CLI parent supervisor. */
+/** Shared sonic settlement and collection protocol for wait and both parent drivers. */
 import * as fs from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -29,4 +29,10 @@ export function sonicChildren(dir) {
     }
   }
   return { open, uncollected };
+}
+
+export function sonicCollectPrompt(dir, output, ids) {
+  // Record the input attempt before sending. Collection itself uses a separate receipt.
+  for (const id of ids) fs.writeFileSync(join(dirname(dir), id, 'sonic-prompted'), '', { mode: 0o600 });
+  return `Collect these sonic reports with hud-sonic wait: ${ids.join(', ')}. Then finish your work and write your report to ${output}.`;
 }

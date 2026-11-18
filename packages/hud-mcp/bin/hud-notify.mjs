@@ -70,6 +70,11 @@ export function ensureQueueWatcher(pane, home) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [home, pane, job, message = ''] = process.argv.slice(2);
   process.env.HUD_HOME = home;
+  // An opt-in Pi DONE push must also leave child reports to their parent.
+  if (/^\[.*\] DONE /.test(message) && /^j[0-9a-f]{16}$/.test(job)) {
+    try { if (JSON.parse(fs.readFileSync(join(home, 'jobs', job, 'job.json'), 'utf8')).parent_job) process.exit(0); }
+    catch { /* No child evidence: keep the existing delivery path. */ }
+  }
   // pi-roles builds a file-write reply; the HUD main session answers through its MCP.
   const line = message.replace(/ \| reply: write .*$/, ` | reply: hud_respond job=${job} request_id=${message.match(/QUESTION (q\d+):/)?.[1] ?? ''}`);
   const result = notify(pane, line);

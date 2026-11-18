@@ -349,4 +349,9 @@ test('a settled job whose report is unread shows [✓●] on the bar until hud_r
   // hud_read stamps read_at after the report was written: the dot goes, the report stays.
   receipt({ read_at: new Date(Date.now() + 1000).toISOString() });
   assert.deepEqual(bar(), { unread: undefined, line: 'M │ [✓] imp Fix the panel' });
+  receipt({ parent_job: 'j0000000000000001' });
+  assert.deepEqual(bar(), { unread: true, line: 'M │ [◐] imp Fix the panel' }, 'only the child start remains on the bar; its card keeps the report');
+  write('STATUS.json', JSON.stringify({ state: 'failed', ended_at: settled }));
+  assert.match(bar().line, /imp Fix the panel/);
+  assert.doesNotMatch(bar().line, /●/);
 });

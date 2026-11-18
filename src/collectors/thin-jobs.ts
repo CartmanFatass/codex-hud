@@ -139,6 +139,7 @@ export interface ThinJobScope {
 }
 export interface JobRow {
   job: string;
+  parent_job?: string;
   role: string | null;
   package: string | null;
   state: string | null;
@@ -221,8 +222,10 @@ export function jobRow(
   if (extras?.dir && reportPresent) {
     try { reportMtime = fs.statSync(join(extras.dir, 'report.md')).mtimeMs; } catch { /* disappeared */ }
   }
+  const parent = word(j.parent_job);
   return {
     job: word(j.job) ?? '',
+    ...(parent ? { parent_job: parent } : {}),
     role: word(j.role),
     package: word(j.package),
     state: rawState,
@@ -243,7 +246,7 @@ export function formatJobChange(row: JobRow): string {
   const parts = [
     rowState(row),
     ...(reason ? [reason] : []),
-    ...(row.report_unread ? ['report'] : []),
+    ...(!row.parent_job && row.report_unread ? ['report'] : []),
     ...(row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
   ];
   return `${head}: ${parts.join(' | ')}`;
@@ -258,6 +261,8 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   const lines: string[] = [];
   for (const row of rows) {
     const old = prior.get(row.job);
+    if (row.parent_job && row.display_state !== 'working' && row.display_state !== 'failed' &&
+        !row.question_ids.some((id) => !old?.question_ids.includes(id))) continue;
     // A working job's reason and report flip with every tool step of the worker; only what the session acts on is
     // an event: a new job, a state change, a question, or a new reason outside `working` (owner 2026-11-14: no flood).
     const working = (r: JobRow) => rowState(r) === 'working';
@@ -267,7 +272,7 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
         ? old.open_questions === row.open_questions
         : rowState(old) === rowState(row) &&
           old.reason === row.reason &&
-          old.report_present === row.report_present &&
+          (row.parent_job || old.report_present === row.report_present) &&
           old.open_questions === row.open_questions)
     ) {
       continue;
@@ -534,7 +539,7 @@ export function readThinJobs(
       sessionFile,
       id: workerId,
       laneId,
-      ...(parentLabel !== undefined ? { parentJobId: `thin-job:${parent}` } : {}),
+      ...(parent ? { parentJobId: `thin-job:${parent}` } : {}),
       role: String(job.role),
       harness: word(s.harness) ?? word(job.harness) ?? 'pi',
       task: title,

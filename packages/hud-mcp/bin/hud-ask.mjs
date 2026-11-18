@@ -126,9 +126,10 @@ while (timeoutSec > 0 && Date.now() - started < timeoutSec * 1000) {
   await new Promise((resolve) => setTimeout(resolve, Math.min(2000, left)));
 }
 const waited = Math.round((Date.now() - started) / 1000);
+const defaultLine = `Proposed default: ${fallback.trim()}. Proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report.`;
 const text = answer
   ? `ANSWER from the orchestrator (q${published.n}, after ${waited}s):\n\n${answer}`
   : timeoutSec === 0
-    ? `Question q${published.n} recorded (${pushed}); not waiting. Proceed with your default: ${fallback.trim()}. Record the open question in your report.`
-    : `No answer to q${published.n} within ${timeoutSec}s (${pushed}). Proceed with your default: ${fallback.trim()}. Record the open question in your report.`;
+    ? `Question q${published.n} recorded (${pushed}); not waiting. ${defaultLine}`
+    : `No answer to q${published.n} within ${timeoutSec}s (${pushed}). ${defaultLine}`;
 process.stdout.write(text + '\n');

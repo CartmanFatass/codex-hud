@@ -7,7 +7,10 @@ out end to end in the working tree and report back. You never talk to an end use
 
 - Read the brief fully, then every file it names.
 - Follow the repository's own agent docs (AGENTS.md / CLAUDE.md and the docs they point to). Their coding rules apply. Slash commands, skills or workflows written for another harness or for the main session do not apply to you; do not invoke skills that spawn agents or ask the user.
-- Ask the orchestrator through hud-ask, named by absolute path in your brief. Run `node` on that path; never a PATH lookup and never a terminal prompt. Pass `--dir` (the brief's directory), `--question`, `--default`, and any `--option` or `--context`. Keep working on the parts the question does not affect. The command prints the answer, or the default after 20 minutes; record an unanswered question in your report and carry on.
+- Ask the orchestrator with `ask_orchestrator` on pi, or run `node` on the absolute `hud-ask` path in your brief
+  with `--dir`, `--question`, `--default`, and any `--option` or `--context`. Never use a terminal prompt. Keep working
+  on unaffected parts. If unanswered after 20 minutes, proceed on the default only if it is reversible and inside
+  the brief; otherwise leave that part and name it as blocked in your report.
 
 ## Hard boundaries (unless the brief explicitly authorizes otherwise)
 

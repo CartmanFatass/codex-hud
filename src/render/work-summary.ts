@@ -11,7 +11,7 @@ const wordOf = (worker: OwnerWorker, now: number): string => {
       ? 'needs you'
       : state === 'stalled'
         ? 'stalled'
-        : state === 'awaiting-acceptance'
+        : state === 'awaiting-acceptance' && !worker.parentJobId
           ? 'report ready'
           : state === 'in-progress'
             ? 'running'
@@ -34,12 +34,12 @@ export function workSignals(lanes: readonly WorkLane[], now: number): WorkSignal
         name: worker.role || 'job',
         title: worker.briefTitle || label,
         job: true as const,
-        unread: worker.reportUnread === true,
+        unread: !worker.parentJobId && worker.reportUnread === true,
       };
       if (wordOf(worker, now) === 'needs you') needs.push(askOf(who));
       if (worker.startedAt !== null && now - worker.startedAt < NOTICE_MS)
         events.push(agentEvent('started', who, worker.startedAt));
-      if (worker.settledAt !== null && now - worker.settledAt < NOTICE_MS) {
+      if (worker.settledAt !== null && now - worker.settledAt < NOTICE_MS && (!worker.parentJobId || worker.work?.failed)) {
         const ran = worker.startedAt === null ? undefined : worker.settledAt - worker.startedAt;
         events.push(agentEvent(worker.work?.failed ? 'failed' : 'done', who, worker.settledAt, ran));
       }

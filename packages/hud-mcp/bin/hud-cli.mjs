@@ -11,7 +11,7 @@ import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
 import { judge, procStat, workerAlive, workerHasChild, readTurn, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { request } from './herdr-request.mjs';
-import { sonicChildren } from './sonic-jobs.mjs';
+import { sonicChildren, sonicCollectPrompt } from './sonic-jobs.mjs';
 
 const dir = fs.realpathSync(process.argv[2]);
 const bundled = fileURLToPath(new URL('..', import.meta.url)), hudHome = dirname(dirname(dir));
@@ -198,12 +198,8 @@ async function run() {
     if (next.action === 'collect-sonic') {
       const { open, uncollected } = sonicChildren(dir);
       if (open || !uncollected.length) { wake(); return; }
-      // Record the attempt before input, as for hud_send. Collection is a separate receipt.
-      for (const id of uncollected) {
-        fs.writeFileSync(join(hudHome, 'jobs', id, 'sonic-prompted'), '', { mode: 0o600 });
-      }
+      const prompt = sonicCollectPrompt(dir, output, uncollected);
       writeTurn(dir);
-      const prompt = `Collect these sonic reports with hud-sonic wait: ${uncollected.join(', ')}. Then finish your work and write your report to ${output}.`;
       if (!effect(['agent', 'prompt', name, prompt]).ok) throw new Error('sonic collect prompt failed');
       diskDirty = true; wake(); return;
     }

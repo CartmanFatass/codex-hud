@@ -620,11 +620,20 @@ test('hud-sonic start returns two independent child jobs; wait follows STATUS, s
   const stillWorking = { status: 3, stdout: 'still working: run wait again\n', stderr: '' };
   assert.deepEqual(await wait(first), stillWorking, 'a report file alone does not settle a child');
   assert.deepEqual(await wait(second, '0.2'), stillWorking);
+  const qa = join(dir(first), 'qa');
+  fs.mkdirSync(qa, { recursive: true });
+  fs.writeFileSync(join(qa, 'q1.md'), 'Synthetic child question.');
+  const changes = async () => (await f.call('hud_read')).changes ?? [];
+  assert.ok((await changes()).some((line) => line.startsWith(first) && line.includes('QUESTION') && !line.includes(' | report')));
   const waiting = wait(first, '2');
+  fs.writeFileSync(join(qa, 'q1.answer.md'), 'Answer.');
   publishSonic(dir(first), { state: 'closed', output_written: true });
+  assert.ok(!(await changes()).some((line) => line.startsWith(first)), 'child settlement stays quiet');
   assert.deepEqual(await waiting, { status: 0, stdout: `${dir(first)}/report.md\nSynthetic implementation report.`, stderr: '' });
   assert.equal((await f.call('hud_read')).jobs.find((job) => job.job === first).report_unread, true);
+  assert.match((await f.call('hud_read', { job: first, full: true })).report, /Synthetic implementation report/);
   publishSonic(dir(second), { state: 'failed', exit_reason: 'synthetic child failed' });
+  assert.ok((await changes()).some((line) => line.startsWith(second) && line.endsWith('failed | synthetic child failed')));
   const failed = await wait(second);
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, /synthetic child failed/);
@@ -642,6 +651,14 @@ test('hud-sonic start returns two independent child jobs; wait follows STATUS, s
   const outside = await runSonic(f, 'start', foreignDir, '--task-file', task);
   assert.equal(outside.status, 1);
   assert.match(outside.stderr, /under HUD_HOME/);
+});
+
+test('every bundled role uses the same unanswered-question policy', () => {
+  const dir = resolve('packages/hud-mcp/instructions');
+  for (const file of fs.readdirSync(dir).filter((name) => name.endsWith('.md'))) {
+    const body = fs.readFileSync(join(dir, file), 'utf8').replace(/\s+/g, ' ');
+    assert.match(body, /If unanswered after 20 minutes, proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report/, file);
+  }
 });
 
 test('an open sonic child holds the real CLI supervisor; uncollected reports get one fixed prompt', { timeout: 12000 }, async (t) => {
@@ -1381,6 +1398,10 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     join(job.task_dir, 'qa'),
     '--notify',
     [process.execPath, resolve('packages/hud-mcp/bin/hud-notify.mjs'), f.env.HUD_HOME, 'w4E:p1', job.job].map((s) => "'" + s.replace(/'/g, "'\\''") + "'").join(' '),
+    '--hud-instructions',
+    resolve('packages/hud-mcp/instructions/implementer.md'),
+    '--hud-sonic-jobs',
+    resolve('packages/hud-mcp/bin/sonic-jobs.mjs'),
     '--',
     '--tui-mode',
     'regular',
@@ -2715,8 +2736,8 @@ function runAsk(env, args) {
 test('implementer instructions tell a CLI worker to ask through hud-ask', () => {
   const text = fs.readFileSync(resolve('packages/hud-mcp/instructions/implementer.md'), 'utf8');
   assert.match(text, /hud-ask/);
-  assert.match(text, /absolute path/);
-  assert.match(text, /never a terminal prompt/);
+  assert.match(text, /absolute `hud-ask` path/);
+  assert.match(text, /Never use a terminal prompt/i);
   assert.match(text, /Keep working/);
   assert.doesNotMatch(text, /write the question in your report and stop/);
 });
@@ -2816,7 +2837,7 @@ test('hud-ask prints the default when no answer arrives', { timeout: 10000 }, as
   assert.equal(result.code, 0, result.stderr);
   assert.match(
     result.stdout,
-    /No answer to q1 within 1s \(pushed via "herdr agent prompt w4E:p1"\)\. Proceed with your default: rows\. Record the open question in your report/
+    /No answer to q1 within 1s \(pushed via "herdr agent prompt w4E:p1"\)\. Proposed default: rows\. Proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report/
   );
   assert.equal(fs.existsSync(join(dir, 'qa', 'q1.md')), true);
 });
@@ -3339,7 +3360,7 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
     JSON.stringify(role('frontend', ['to-tickets', 'gone', 'no-such', '../escape', absolute]))
   );
   for (const name of ['plain', 'linked', 'broken'])
-    fs.writeFileSync(join(root, '.hud', 'roles', `${name}.json`), JSON.stringify(role(name)));
+    fs.writeFileSync(join(root, '.hud', 'roles', `${name}.json`), JSON.stringify({ ...role(name), instructions: name }));
   fs.writeFileSync(
     join(root, '.hud', 'project.json'),
     JSON.stringify({ version: 1, roles: ['frontend', 'plain', 'linked', 'broken'] })
@@ -3400,6 +3421,7 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
     .at(-1).args;
   assert.equal(plainArgv.includes('--skill'), false);
   assert.equal(plainArgv.includes('--append-system-prompt'), false);
+  assert.equal(plainArgv.includes('--hud-instructions'), false, 'a pi role with no HUD text retains its launch');
   const plainRead = await f.call('hud_read', { job: plain.job });
   assert.deepEqual(plainRead.role_skills, []);
   assert.deepEqual(plainRead.skipped_skills, []);

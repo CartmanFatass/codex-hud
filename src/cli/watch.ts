@@ -40,6 +40,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
           const tag = body.match(/^# Question q\d+ from (.+)$/m)?.[1] ?? row.role ?? row.job;
           return `[${one(tag)}] QUESTION ${id}: ${one(q.question).slice(0, 400)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}`;
         });
+    if (row.parent_job && settled(row) && row.display_state !== 'failed') return questions;
     let attentionUnread = true;
     if (catchup && (row.blocked || row.display_state === 'failed')) {
       const dir = join(home, 'jobs', row.job);
@@ -48,11 +49,12 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
         attentionUnread = !Number.isFinite(observed) || fs.statSync(join(dir, 'STATUS.json')).mtimeMs > observed;
       } catch { /* unread */ }
     }
-    const pending = (settled(row) && row.report_unread) || (attentionUnread && (row.blocked || row.display_state === 'failed'));
+    const pending = (!row.parent_job && settled(row) && row.report_unread) || (attentionUnread && (row.blocked || row.display_state === 'failed'));
     const event = (row.blocked && !old?.blocked) || (row.state !== 'working' && (
       (!old && row.state !== null && !questions.length) ||
       (old && settled(row) && !settled(old)) ||
-      (row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime)) ||
+      (!row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime)) ||
+      (row.parent_job && row.display_state === 'failed' && old?.display_state !== 'failed') ||
       (row.state === 'waiting_orchestrator' && !row.open_questions && (old?.state !== row.state || old.reason !== row.reason))
     ));
     return [...questions, ...((catchup ? pending : event) ? [formatJobChange(row)] : [])];
@@ -189,7 +191,7 @@ export async function watchCommand(
       const rows = readThinJobRows(home, scope);
       const tryLines = tries.changes(queue ? process.cwd() : undefined);
       if (queue) {
-        const pending = tryLines.length > 0 || rows.some((row) => !settled(row) || row.report_unread || row.open_questions) ||
+        const pending = tryLines.length > 0 || rows.some((row) => !settled(row) || (!row.parent_job && row.report_unread) || row.open_questions) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
