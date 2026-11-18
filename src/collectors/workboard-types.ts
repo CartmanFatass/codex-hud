@@ -56,6 +56,7 @@ export interface OwnerWorker {
     spent?: import('../types.js').TokenSpent;
   };
   readonly nativeDepth?: number;
+  readonly parentJobId?: string;
   readonly parentName?: string;
   readonly files?: readonly {
     rel: string;

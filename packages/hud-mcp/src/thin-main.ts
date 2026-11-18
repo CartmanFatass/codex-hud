@@ -47,6 +47,7 @@ interface Job extends PiOptions {
   thinking?: string | null;
   model_source?: string | null;
   read_at?: string;
+  parent_job?: string;
   pi_sent_at?: string;
   observed_at?: string;
   reaped_at?: string;
@@ -117,7 +118,7 @@ const tools = [
     },
     ['role', 'request_key', 'task']
   ),
-  tool('hud_read', 'Read a job, optionally waiting for settlement or a question. Reading a settled report closes the worker; omit job for the 20 newest.', {
+  tool('hud_read', 'Read a job, optionally waiting for settlement or a question. Reading a settled report from the main session closes the worker; omit job for the 20 newest.', {
     job: text,
     wait_ms: { type: 'integer', minimum: 0, maximum: 120000 },
     full: { type: 'boolean', description: 'Include the report even if already read.' },
@@ -186,8 +187,9 @@ function save(job: Job): void {
   const reaped_at = existing?.reaped_at;
   if (reaped_at) job.reaped_at = reaped_at;
   if (existing?.exhaustion_marked) job.exhaustion_marked = true;
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(job, null, 2) + '\n', { mode: 0o600 });
-  fs.renameSync(`${file}.tmp`, file);
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(job, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(temp, file);
 }
 function jobs(): Job[] {
   return entries(jobsRoot)
@@ -749,7 +751,7 @@ function openQuestions(dir: string): string[] {
 }
 function observation(job: Job, full = false) {
   const dir = directory(job.job);
-  const { row, status } = readRow(job);
+  const { row, status } = readRow(job, !isWorker);
   const report = row.report_unread || full ? slice(join(dir, 'report.md'), 65536) : null;
   const questions = openQuestions(dir).map((name) => ({
     id: name.slice(0, -3),
@@ -787,6 +789,228 @@ function observation(job: Job, full = false) {
     questions,
   };
 }
+export async function dispatchJob(args: Args, pane: string | undefined, parentJob?: string) {
+  const asked = required(args, 'role');
+  const cwd = jobCwd(args);
+  const found = registry(cwd);
+  // `architect` names oracle unless a role file defines its own architect.
+  const role = asked === 'architect' && !found.roles().has(asked) ? 'oracle' : asked;
+  const definition = found.roles().get(role);
+  if (!definition) {
+    const path = found.invalidPath(role);
+    return path ? { ok: false, code: 'role_unavailable', path } : { ok: false, code: 'role_unavailable' };
+  }
+  const request_key = required(args, 'request_key');
+  const existing = jobs().find((job) => job.request_key === request_key);
+  if (existing) {
+    ensureWatcher();
+    ensureQueueWatcher(pane, hudHome);
+    return created(existing);
+  }
+  if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
+  const task = required(args, 'task');
+  if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
+  const onName = args.on !== undefined ? required(args, 'on') : null;
+  const defaults = onName ? harnessDefaults(hudHome, bundled) : null;
+  const onEntry = onName ? defaults?.[onName] : undefined;
+  if (onName && !onEntry) {
+    return { ok: false, code: 'invalid_arguments', error: `unknown harness: ${onName}` };
+  }
+  const matchPlace = (p: RolePlace, target: RolePlace) =>
+    p.harness === target.harness &&
+    (target.harness !== 'cli' || p.agent === target.agent) &&
+    (target.harness !== 'bro' || (p.tool === target.tool && (!target.provider || p.provider === target.provider)));
+  const effective = found.assignment(definition);
+  let place: RolePlace | null = onEntry
+    ? { ...(definition.run.find((p) => matchPlace(p, onEntry)) ?? {}), ...onEntry }
+    : effective.runs_on
+      ? { ...effective.runs_on }
+      : null;
+  if (!place) {
+    return {
+      ok: false,
+      code: 'no_available_place',
+      ...(effective.exhausted.length ? { exhausted: effective.exhausted } : {}),
+    };
+  }
+  if (args.idle_grace_s !== undefined) {
+    if (!Number.isInteger(args.idle_grace_s) || (args.idle_grace_s as number) < 60 || (args.idle_grace_s as number) > 3600)
+      return { ok: false, code: 'invalid_arguments', error: 'idle_grace_s must be an integer from 60 to 3600' };
+    if (place.harness !== 'cli')
+      return { ok: false, code: 'invalid_arguments', error: place.harness === 'pi'
+        ? "idle_grace_s is CLI-only; pi grace follows the model's cache lifetime inside pi-roles"
+        : 'idle_grace_s is CLI-only; browser jobs have no idle grace' };
+  }
+  if (args.kind !== undefined) {
+    if (place.harness !== 'bro' || place.tool !== 'jev-flow' || (args.kind !== 'image' && args.kind !== 'video')) {
+      return { ok: false, code: 'invalid_arguments' };
+    }
+    place = { ...place, kind: args.kind };
+  } else if (place.harness === 'bro' && place.tool === 'jev-flow' && !place.kind) {
+    place = { ...place, kind: 'image' };
+  }
+  for (const key of ['model', 'thinking'] as const) {
+    if (args[key] === undefined) continue;
+    if (place.harness !== 'pi' && place.harness !== 'cli') return { ok: false, code: 'invalid_arguments' };
+    place = { ...place, [key]: required(args, key) };
+  }
+  const options: PiOptions = place.harness === 'pi' ? { split: place.split ?? false, pi_args: [] } : {};
+  for (const key of piSwitches) {
+    const value = args[key];
+    if (value === undefined) continue;
+    if (place.harness !== 'pi' || typeof value !== 'boolean') return { ok: false, code: 'invalid_arguments' };
+    options[key] = value;
+  }
+  if (args.pi_args !== undefined) {
+    if (
+      place.harness !== 'pi' ||
+      !Array.isArray(args.pi_args) ||
+      args.pi_args.length > 128 ||
+      args.pi_args.some((value) => typeof value !== 'string' || value.length > 4096)
+    )
+      return { ok: false, code: 'invalid_arguments' };
+    if (args.pi_args.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
+      return {
+        ok: false,
+        code: 'invalid_arguments',
+        error: 'pi_args cannot override --orchestrator or --notify caller binding',
+      };
+    options.pi_args = args.pi_args;
+  }
+  let instructionsPath = '';
+  if (place.harness === 'cli') {
+    const instructionsName = definition.instructions ?? definition.role;
+    if (!plainSkillName(instructionsName)) {
+      return { ok: false, code: 'unsupported_harness', error: `invalid instructions name: ${instructionsName}` };
+    }
+    instructionsPath = join(bundled, 'instructions', `${instructionsName}.md`);
+    if (!fs.existsSync(instructionsPath)) {
+      return {
+        ok: false,
+        code: 'unsupported_harness',
+        path: instructionsPath,
+        error: `missing CLI instructions file: ${instructionsPath}`,
+      };
+    }
+  }
+  const details = found.placeDetails(definition, place);
+  let overrideHarnesses: Record<string, { model?: string }> | null = null;
+  if (onName) {
+    try {
+      overrideHarnesses = json<Record<string, { model?: string }>>(join(hudHome, 'harnesses.json'));
+    } catch {
+      overrideHarnesses = null;
+    }
+  }
+  const harnessesSource =
+    onName && overrideHarnesses?.[onName]?.model !== undefined
+      ? join(hudHome, 'harnesses.json')
+      : join(bundled, 'harnesses.json');
+  const modelSource =
+    args.model !== undefined
+      ? 'hud_create'
+      : onEntry && onEntry.model !== undefined
+        ? harnessesSource
+        : details.model.source;
+  const key = placeKey(place, details.model.value);
+  const job: Job = {
+    job: 'j' + randomBytes(8).toString('hex'),
+    role,
+    request_key,
+    cwd,
+    herdr_pane: pane,
+    created_at: new Date().toISOString(),
+    ...(parentJob ? { parent_job: parentJob } : {}),
+    ...options,
+    ...(args.package === undefined ? {} : { package: args.package as string }),
+    place,
+    place_key: key,
+    ...(place.harness === 'bro' ? { bro: place } : {}),
+    ...(place.harness === 'cli'
+      ? {
+          cli: {
+            agent: place.agent as CliAgent,
+            can_continue: definition.can_continue === true,
+            idle_grace_s: (args.idle_grace_s as number | undefined) ?? definition.idle_grace_s ?? 600,
+            state_trust: details.state_trust ?? 'advisory',
+          },
+        }
+      : {}),
+    ...(place.harness === 'pi' || place.harness === 'cli'
+      ? {
+          model: details.model.value,
+          thinking: details.thinking.value,
+          model_source: modelSource,
+        }
+      : {}),
+    dispatch_exit_code: null,
+    stderr_tail: '',
+    message_keys: [],
+  };
+  const dir = directory(job.job);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // Pi and CLI workers write the report; the Jev CLI saves the browser's answer locally.
+  const hudAsk = fileURLToPath(new URL('../../../../bin/hud-ask.mjs', import.meta.url));
+  const brief =
+    place.harness === 'bro'
+      ? `${task}\n`
+      : place.harness === 'cli'
+        ? `${task}\n\nWrite your report to ${join(dir, 'report.md')}.\nAsk the orchestrator with: node ${JSON.stringify(hudAsk)} --dir ${JSON.stringify(dir)} --question "..." --default "..."\n`
+        : `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
+  const ending = place.harness === 'bro' ? '' : `Once the report file is written, end your turn with the single line \`report written: ${join(dir, 'report.md')}\` and do not repeat the report in your final message.\n`;
+  const sonicCommand = `node ${JSON.stringify(join(bundled, 'bin', 'hud-sonic.mjs'))}`;
+  const sonic = role === 'sonic' || place.harness === 'bro' ? '' :
+    `Sonic command: ${sonicCommand} start --dir ${JSON.stringify(dir)} --task-file <file> [--thinking off|low|medium|high]\n` +
+    `Collect: ${sonicCommand} wait --dir ${JSON.stringify(dir)} --job <id>\n`;
+  fs.writeFileSync(join(dir, 'brief.md'), brief + sonic + ending, { flag: 'wx', mode: 0o600 });
+  // Persist before dispatch: an interrupted launch must not dispatch again on retry.
+  save(job);
+  if (parentJob) {
+    // Index children locally so supervising one parent need not scan every HUD job.
+    const children = join(directory(parentJob), '.sonic');
+    fs.mkdirSync(children, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(join(children, job.job), '', { mode: 0o600, flag: 'wx' });
+  } else createdJobs.add(job.job);
+  ensureWatcher();
+  ensureQueueWatcher(pane, hudHome);
+  let result;
+  try {
+    if (place.harness === 'bro') result = await dispatchBro(job);
+    else if (place.harness === 'cli') result = await dispatchCli(job, place, instructionsPath);
+    else result = await dispatchPi(job, definition, place);
+  } catch (error) {
+    result = { exit_code: 1, stdout: '', stderr: String(error) };
+  }
+  job.dispatch_exit_code = result.exit_code;
+  job.stderr_tail = result.stderr;
+  const statusFile = join(dir, 'STATUS.json');
+  if (result.exit_code !== 0 && !fs.existsSync(statusFile)) {
+    const rawReason = (
+      result.stderr.trim() ||
+      result.stdout.trim().split(/\r?\n/, 1)[0] ||
+      `launch exited ${result.exit_code}`
+    ).slice(0, 500);
+    const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, rawReason);
+    if (outcome.marked) job.exhaustion_marked = true;
+    fs.writeFileSync(
+      `${statusFile}.${process.pid}.tmp`,
+      JSON.stringify({
+        state: 'failed',
+        harness: place.harness,
+        ...(place.harness === 'bro' ? { provider: place.provider === 'chatgpt' ? 'openai' : 'gemini' } : {}),
+        exit_reason: outcome.reason,
+        ended_at: new Date().toISOString(),
+      }) + '\n',
+      { mode: 0o600 }
+    );
+    fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
+  }
+  save(job);
+  const out = created(job);
+  if (!parentJob) cursor.set(job.job, readRow(job).row);
+  return out;
+}
+
 async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_roster') {
     const found = registry(jobCwd(args));
@@ -800,224 +1024,14 @@ async function call(name: string, args: Args): Promise<unknown> {
       ...(ignored ? { project_config_ignored: ignored } : {}),
     };
   }
-  if (name === 'hud_create') {
-    const asked = required(args, 'role');
-    const cwd = jobCwd(args);
-    const found = registry(cwd);
-    // `architect` names oracle unless a role file defines its own architect.
-    const role = asked === 'architect' && !found.roles().has(asked) ? 'oracle' : asked;
-    const definition = found.roles().get(role);
-    if (!definition) {
-      const path = found.invalidPath(role);
-      return path ? { ok: false, code: 'role_unavailable', path } : { ok: false, code: 'role_unavailable' };
-    }
-    const request_key = required(args, 'request_key');
-    const existing = jobs().find((job) => job.request_key === request_key);
-    if (existing) {
-      ensureWatcher();
-      ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
-      return created(existing);
-    }
-    if (!herdrId(process.env.HERDR_PANE_ID)) return { ok: false, code: 'herdr_required' };
-    const task = required(args, 'task');
-    if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
-    const onName = args.on !== undefined ? required(args, 'on') : null;
-    const defaults = onName ? harnessDefaults(hudHome, bundled) : null;
-    const onEntry = onName ? defaults?.[onName] : undefined;
-    if (onName && !onEntry) {
-      return { ok: false, code: 'invalid_arguments', error: `unknown harness: ${onName}` };
-    }
-    const matchPlace = (p: RolePlace, target: RolePlace) =>
-      p.harness === target.harness &&
-      (target.harness !== 'cli' || p.agent === target.agent) &&
-      (target.harness !== 'bro' || (p.tool === target.tool && (!target.provider || p.provider === target.provider)));
-    const effective = found.assignment(definition);
-    let place: RolePlace | null = onEntry
-      ? { ...(definition.run.find((p) => matchPlace(p, onEntry)) ?? {}), ...onEntry }
-      : effective.runs_on
-        ? { ...effective.runs_on }
-        : null;
-    if (!place) {
-      return {
-        ok: false,
-        code: 'no_available_place',
-        ...(effective.exhausted.length ? { exhausted: effective.exhausted } : {}),
-      };
-    }
-    if (args.idle_grace_s !== undefined) {
-      if (!Number.isInteger(args.idle_grace_s) || (args.idle_grace_s as number) < 60 || (args.idle_grace_s as number) > 3600)
-        return { ok: false, code: 'invalid_arguments', error: 'idle_grace_s must be an integer from 60 to 3600' };
-      if (place.harness !== 'cli')
-        return { ok: false, code: 'invalid_arguments', error: place.harness === 'pi'
-          ? "idle_grace_s is CLI-only; pi grace follows the model's cache lifetime inside pi-roles"
-          : 'idle_grace_s is CLI-only; browser jobs have no idle grace' };
-    }
-    if (args.kind !== undefined) {
-      if (place.harness !== 'bro' || place.tool !== 'jev-flow' || (args.kind !== 'image' && args.kind !== 'video')) {
-        return { ok: false, code: 'invalid_arguments' };
-      }
-      place = { ...place, kind: args.kind };
-    } else if (place.harness === 'bro' && place.tool === 'jev-flow' && !place.kind) {
-      place = { ...place, kind: 'image' };
-    }
-    for (const key of ['model', 'thinking'] as const) {
-      if (args[key] === undefined) continue;
-      if (place.harness !== 'pi' && place.harness !== 'cli') return { ok: false, code: 'invalid_arguments' };
-      place = { ...place, [key]: required(args, key) };
-    }
-    const options: PiOptions = place.harness === 'pi' ? { split: place.split ?? false, pi_args: [] } : {};
-    for (const key of piSwitches) {
-      const value = args[key];
-      if (value === undefined) continue;
-      if (place.harness !== 'pi' || typeof value !== 'boolean') return { ok: false, code: 'invalid_arguments' };
-      options[key] = value;
-    }
-    if (args.pi_args !== undefined) {
-      if (
-        place.harness !== 'pi' ||
-        !Array.isArray(args.pi_args) ||
-        args.pi_args.length > 128 ||
-        args.pi_args.some((value) => typeof value !== 'string' || value.length > 4096)
-      )
-        return { ok: false, code: 'invalid_arguments' };
-      if (args.pi_args.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
-        return {
-          ok: false,
-          code: 'invalid_arguments',
-          error: 'pi_args cannot override --orchestrator or --notify caller binding',
-        };
-      options.pi_args = args.pi_args;
-    }
-    let instructionsPath = '';
-    if (place.harness === 'cli') {
-      const instructionsName = definition.instructions ?? definition.role;
-      if (!plainSkillName(instructionsName)) {
-        return { ok: false, code: 'unsupported_harness', error: `invalid instructions name: ${instructionsName}` };
-      }
-      instructionsPath = join(bundled, 'instructions', `${instructionsName}.md`);
-      if (!fs.existsSync(instructionsPath)) {
-        return {
-          ok: false,
-          code: 'unsupported_harness',
-          path: instructionsPath,
-          error: `missing CLI instructions file: ${instructionsPath}`,
-        };
-      }
-    }
-    const details = found.placeDetails(definition, place);
-    let overrideHarnesses: Record<string, { model?: string }> | null = null;
-    if (onName) {
-      try {
-        overrideHarnesses = json<Record<string, { model?: string }>>(join(hudHome, 'harnesses.json'));
-      } catch {
-        overrideHarnesses = null;
-      }
-    }
-    const harnessesSource =
-      onName && overrideHarnesses?.[onName]?.model !== undefined
-        ? join(hudHome, 'harnesses.json')
-        : join(bundled, 'harnesses.json');
-    const modelSource =
-      args.model !== undefined
-        ? 'hud_create'
-        : onEntry && onEntry.model !== undefined
-          ? harnessesSource
-          : details.model.source;
-    const key = placeKey(place, details.model.value);
-    const job: Job = {
-      job: 'j' + randomBytes(8).toString('hex'),
-      role,
-      request_key,
-      cwd,
-      herdr_pane: process.env.HERDR_PANE_ID,
-      created_at: new Date().toISOString(),
-      ...options,
-      ...(args.package === undefined ? {} : { package: args.package as string }),
-      place,
-      place_key: key,
-      ...(place.harness === 'bro' ? { bro: place } : {}),
-      ...(place.harness === 'cli'
-        ? {
-            cli: {
-              agent: place.agent as CliAgent,
-              can_continue: definition.can_continue === true,
-              idle_grace_s: (args.idle_grace_s as number | undefined) ?? definition.idle_grace_s ?? 600,
-              state_trust: details.state_trust ?? 'advisory',
-            },
-          }
-        : {}),
-      ...(place.harness === 'pi' || place.harness === 'cli'
-        ? {
-            model: details.model.value,
-            thinking: details.thinking.value,
-            model_source: modelSource,
-          }
-        : {}),
-      dispatch_exit_code: null,
-      stderr_tail: '',
-      message_keys: [],
-    };
-    const dir = directory(job.job);
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    // Pi and CLI workers write the report; the Jev CLI saves the browser's answer locally.
-    const hudAsk = fileURLToPath(new URL('../../../../bin/hud-ask.mjs', import.meta.url));
-    const brief =
-      place.harness === 'bro'
-        ? `${task}\n`
-        : place.harness === 'cli'
-          ? `${task}\n\nWrite your report to ${join(dir, 'report.md')}.\nAsk the orchestrator with: node ${JSON.stringify(hudAsk)} --dir ${JSON.stringify(dir)} --question "..." --default "..."\n`
-          : `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
-    const ending = place.harness === 'bro' ? '' : `Once the report file is written, end your turn with the single line \`report written: ${join(dir, 'report.md')}\` and do not repeat the report in your final message.\n`;
-    fs.writeFileSync(join(dir, 'brief.md'), brief + ending, { flag: 'wx', mode: 0o600 });
-    // Persist before dispatch: an interrupted launch must not dispatch again on retry.
-    save(job);
-    createdJobs.add(job.job);
-    ensureWatcher();
-    ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
-    let result;
-    try {
-      if (place.harness === 'bro') result = await dispatchBro(job);
-      else if (place.harness === 'cli') result = await dispatchCli(job, place, instructionsPath);
-      else result = await dispatchPi(job, definition, place);
-    } catch (error) {
-      result = { exit_code: 1, stdout: '', stderr: String(error) };
-    }
-    job.dispatch_exit_code = result.exit_code;
-    job.stderr_tail = result.stderr;
-    const statusFile = join(dir, 'STATUS.json');
-    if (result.exit_code !== 0 && !fs.existsSync(statusFile)) {
-      const rawReason = (
-        result.stderr.trim() ||
-        result.stdout.trim().split(/\r?\n/, 1)[0] ||
-        `launch exited ${result.exit_code}`
-      ).slice(0, 500);
-      const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, rawReason);
-      if (outcome.marked) job.exhaustion_marked = true;
-      fs.writeFileSync(
-        `${statusFile}.${process.pid}.tmp`,
-        JSON.stringify({
-          state: 'failed',
-          harness: place.harness,
-          ...(place.harness === 'bro' ? { provider: place.provider === 'chatgpt' ? 'openai' : 'gemini' } : {}),
-          exit_reason: outcome.reason,
-          ended_at: new Date().toISOString(),
-        }) + '\n',
-        { mode: 0o600 }
-      );
-      fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
-    }
-    save(job);
-    const out = created(job);
-    cursor.set(job.job, readRow(job).row);
-    return out;
-  }
+  if (name === 'hud_create') return dispatchJob(args, process.env.HERDR_PANE_ID);
   if (name === 'hud_read' && args.job === undefined)
     return {
       jobs: jobs()
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .slice(0, 20)
         .map((job) => {
-          const { row } = readRow(job);
+          const { row } = readRow(job, !isWorker);
           return {
             job: row.job,
             role: row.role,
@@ -1043,7 +1057,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       throw new Error('invalid_arguments: wait_ms');
     const end = Date.now() + Math.max(0, Math.min(120000, (args.wait_ms as number | undefined) ?? 0));
     const settled = (state: string | null) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(state ?? '');
-    const initial = readRow(job).row;
+    const initial = readRow(job, !isWorker).row;
     const ready = (row: JobRow) =>
       settled(row.state) ||
       row.state === 'waiting_orchestrator' ||
@@ -1052,7 +1066,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       jobChanges([initial], [row]).length > 0 ||
       Date.now() >= end;
     while (true) {
-      const { row } = readRow(job);
+      const { row } = readRow(job, !isWorker);
       if (Date.now() >= end || ready(row)) {
         const result = observation(json<Job>(join(dir, 'job.json')) ?? job, args.full === true);
         // A question may have been answered or a settled job continued since the lightweight poll.
@@ -1066,7 +1080,7 @@ async function call(name: string, args: Args): Promise<unknown> {
           await sleep(Math.max(0, Math.min(200, end - Date.now())));
           continue;
         }
-        if (('report' in result && result.report_exists) || result.blocked || result.display_state === 'failed') {
+        if (!isWorker && (('report' in result && result.report_exists) || result.blocked || result.display_state === 'failed')) {
           const latest = json<Job>(join(dir, 'job.json'))!;
           const at = new Date().toISOString();
           if ('report' in result && result.report_exists) latest.read_at = at;
@@ -1176,7 +1190,7 @@ function sessionRows(): JobRow[] {
     .slice(0, 200)
     .map((job) => readRow(job, !isWorker).row);
 }
-let cursor = new Map<string, JobRow>(sessionRows().map((row) => [row.job, row]));
+let cursor: Map<string, JobRow>;
 const tries = new TryLog(hudHome);
 function withChanges(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
@@ -1264,6 +1278,9 @@ async function receive(line: string): Promise<void> {
   }
   write({ jsonrpc: '2.0', id: request.id, result });
 }
-createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
-  void receive(line);
-});
+export function serveMcp() {
+  cursor = new Map(sessionRows().map((row) => [row.job, row]));
+  createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
+    void receive(line);
+  });
+}

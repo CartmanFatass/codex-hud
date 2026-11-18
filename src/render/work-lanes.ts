@@ -99,10 +99,21 @@ export function laneRows(
     state.tree.showAll || lane.identity.kind === 'native'
       ? lane.workers
       : [...lane.workers].sort((a, b) => workerPriority(a, now) - workerPriority(b, now));
-  for (const worker of workers) {
+  const roots = new Set(workers.filter((w) => !w.parentJobId).map((w) => w.id));
+  const childOf = (w: OwnerWorker) => w.parentJobId && roots.has(w.parentJobId) ? w.parentJobId : undefined;
+  const children = new Map<string, OwnerWorker[]>();
+  const top = workers.filter((w) => {
+    const parent = childOf(w);
+    if (!parent) return true;
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent)!.push(w);
+    return false;
+  });
+  const ordered = top.flatMap((w) => [w, ...(children.get(w.id) ?? [])]);
+  for (const worker of ordered) {
     const card = projectWorkCard(worker, now, state.cardStallMinutes);
     const sentence = card.reason ? t(card.reason) : '';
-    const indent = worker.nativeDepth === 2 ? '  ' : '';
+    const indent = worker.nativeDepth === 2 || childOf(worker) ? '  ' : '';
     const room = Math.max(1, width - indent.length);
     const key = targetKey({ kind: 'worker', laneId: lane.id, workerId: worker.id });
     // Home's asking card is a title-only pointer back to the complete slab.

@@ -16,7 +16,9 @@ talk to an end user; the orchestrator reads your report.
 - No git commit, push, branch switch, reset, stash, clean, rebase or merge. Leave changes in the working tree.
 - Never delete or overwrite user data, caches or state; never modify files the brief marks read-only.
 - No new dependencies, services or paid model calls; if one seems required, say why in the report instead.
-- Do not start another role unless the brief asks.
+- You may hand a simple, fully specified sub-task to sonic with `node` and the absolute `hud-sonic.mjs` path in
+  your brief. Choose the thinking for the sub-task, `start` early and keep working, then `wait` when you need the
+  report. Check sonic's result before building on it. Start no other role.
 - You are not alone in the working tree: preserve other contributors' edits.
 
 ## How to work

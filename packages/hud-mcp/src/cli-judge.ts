@@ -129,7 +129,7 @@ export interface Judgment {
   blocked: boolean;
   reason: string | null;
   exitReason: string | null;
-  action: 'decide' | 'quit' | 'sample' | null;
+  action: 'decide' | 'quit' | 'sample' | 'collect-sonic' | null;
   quietHandled: boolean;
   decisionWait?: boolean; // A quiet decision's wait still uses the full idle grace.
   missingTicks: number;
@@ -144,6 +144,7 @@ export interface Facts {
   alive: boolean | null;
   status: string | null;
   liveChild: boolean | 'unknown' | null; // null: not sampled yet
+  sonic?: { open: boolean; uncollected: string[] };
   stop: boolean;
   close: boolean;
   openQuestions: boolean;
@@ -183,11 +184,17 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   else if (facts.tick) next.missingTicks = facts.agentMissing ? next.missingTicks + 1 : 0;
   if (next.missingTicks >= 3) return { ...next, state: 'waiting_orchestrator', reason: 'worker not found' };
   next.errorsSince = facts.status === null ? (next.errorsSince ?? now) : null;
+  const collectSonic = Boolean(facts.sonic?.uncollected.length);
+  if (facts.sonic?.open || collectSonic) {
+    next.outputWritten = false;
+    next.settledAt = next.deadline = null;
+  }
   if (facts.status === 'blocked' || facts.openQuestions) {
     return { ...next, state: 'waiting_orchestrator', blocked: facts.status === 'blocked', quietSince: null };
   }
-  // Only explicit input reopens a settled turn. Advisory flapping cannot re-baseline it.
-  if (!newTurn && prev?.state === 'idle_grace') {
+  if (facts.sonic?.open) return { ...next, state: 'working', quietSince: null, quietHandled: false, decisionWait: false };
+  // Only explicit input or new sonic work reopens a settled turn. Advisory flapping cannot re-baseline it.
+  if (!newTurn && prev?.state === 'idle_grace' && !collectSonic) {
     if (!readReport && now < next.deadline!)
       return { ...next, state: 'idle_grace', wakeAt: next.deadline };
     if (facts.status === 'working' || facts.liveChild) return { ...next, state: 'idle_grace' };
@@ -200,12 +207,13 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   next.quietSince = quiet ? (next.quietSince ?? now) : null;
   if (!report && facts.liveChild) next.quietSince = null;
   if (next.quietSince === null) return { ...next, state: 'working', quietHandled: false, decisionWait: false };
-  if (report) {
+  if (report || collectSonic) {
     // A trusted turn end shortens stability; errors retain the full 60s outage window.
     const due = Math.max(next.quietSince + (trustedEnd ? 2000 : 10_000), facts.status === null ? next.errorsSince! + 60_000 : 0);
     if (now < due) return { ...next, state: 'working', wakeAt: due };
     if (facts.liveChild === null) return { ...next, state: 'working', action: 'sample' };
     if (facts.liveChild) return { ...next, state: 'working' };
+    if (collectSonic) return { ...next, state: 'working', action: 'collect-sonic' };
     if (readReport || !facts.canContinue) return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
     return { ...next, state: 'idle_grace', outputWritten: true, settledAt: now,
       deadline: now + facts.graceMs, wakeAt: now + facts.graceMs };

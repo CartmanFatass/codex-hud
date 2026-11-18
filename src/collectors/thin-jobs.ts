@@ -25,7 +25,7 @@ const watchCache = new Map<string, { stamp: string; snap: Snap }>();
 const seen = new Set<string>();
 let cacheHome = '', saved = '';
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
-const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'dispatch_exit_code',
+const factKeys = new Set(['job', 'role', 'herdr_pane', 'created_at', 'title', 'package', 'parent_job', 'dispatch_exit_code',
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string): void {
   if (cacheHome === home) return;
@@ -372,7 +372,7 @@ export function readThinJobs(
     })
     .sort((a, b) => b.created - a.created || a.id.localeCompare(b.id));
   const lanes = new Map<string, WorkLane>();
-  for (const { id, job, created, jobAt, status: checkedStatus } of jobs.slice(0, 200)) {
+  const cards = jobs.flatMap(({ id, job, created, jobAt, status: checkedStatus }) => {
     const directory = join(root, id),
       status = checkedStatus ?? json(join(directory, 'STATUS.json'), parse),
       s = status?.v ?? {};
@@ -381,12 +381,19 @@ export function readThinJobs(
     const at = status?.at ?? jobAt;
     // When the work settled, not when the process later exited: closing an idle job must not reset its age or outcome label.
     const settledAt = state === 'working' ? null : (when(s.settled_at) ?? when(s.ended_at) ?? at);
-    if (settledAt !== null && settledAt < (options?.openedAt ?? -Infinity)) continue;
+    if (settledAt !== null && settledAt < (options?.openedAt ?? -Infinity)) return [];
     const briefFile = read(join(directory, 'brief.md')),
       brief = briefFile?.text ?? '';
     const briefTitle = first(brief.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? '');
     const title = briefTitle || first(brief) || first(word(job.title) ?? '') || id.slice(-6);
     const label = word(job.package) ?? (title.includes(':') ? title.split(':', 1)[0] : title);
+    return [{ id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, label }];
+  });
+  const labels = new Map(cards.map(({ id, label }) => [id, label]));
+  for (const { id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, label: ownLabel } of cards) {
+    const parent = word(job.parent_job);
+    const parentLabel = parent && parent !== id ? labels.get(parent) : undefined;
+    const label = parentLabel ?? ownLabel;
     const laneId = `thin-job:package:${label}`,
       workerId = `thin-job:${id}`;
     const ref = (file: string, snap: Snap): EvidenceRef => ({
@@ -527,6 +534,7 @@ export function readThinJobs(
       sessionFile,
       id: workerId,
       laneId,
+      ...(parentLabel !== undefined ? { parentJobId: `thin-job:${parent}` } : {}),
       role: String(job.role),
       harness: word(s.harness) ?? word(job.harness) ?? 'pi',
       task: title,

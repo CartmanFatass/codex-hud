@@ -16,7 +16,7 @@ try {
   process.exit(1);
 }
 try {
-  await import(entry);
+  (await import(entry)).serveMcp();
 } catch (error) {
   process.stderr.write(`hud-mcp startup failed: ${error instanceof Error ? error.message : 'unknown_error'}\n`);
   process.exitCode = 1;

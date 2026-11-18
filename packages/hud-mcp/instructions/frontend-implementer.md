@@ -27,7 +27,9 @@ and report back. You never talk to an end user; the orchestrator reads, verifies
   are fine when the brief allows them.
 - Never put real personal data (window titles, names, file paths from the user's machine) into committed files,
   fixtures or images.
-- Do not start another role or spawn agents unless the brief asks.
+- You may hand a simple, fully specified sub-task to sonic with `node` and the absolute `hud-sonic.mjs` path in
+  your brief. Choose the thinking for the sub-task, `start` early and keep working, then `wait` when you need the
+  report. Check sonic's result before building on it. Start no other role or agent.
 
 ## How to work
 

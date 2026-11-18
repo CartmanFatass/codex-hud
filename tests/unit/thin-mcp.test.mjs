@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -565,6 +565,125 @@ async function until(check, timeout = 4000) {
     await new Promise((done) => setTimeout(done, 20));
   }
 }
+
+function runSonic(f, action, dir, ...args) {
+  return new Promise((done) => execFile(process.execPath,
+    [resolve('packages/hud-mcp/bin/hud-sonic.mjs'), action, '--dir', dir, ...args],
+    { cwd: f.root, env: { ...f.env, HUD_JOB_DIR: dir, HERDR_PANE_ID: 'w4E:p9' } },
+    (error, stdout, stderr) => done({ status: error?.code ?? 0, stdout, stderr })
+  ));
+}
+function sonicTask(f) {
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
+  fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'sonic.json'), JSON.stringify({
+    role: 'sonic', instructions: 'sonic', can_continue: false, run: [{
+      harness: 'pi', pi_role: 'sonic', model: 'synthetic/sonic', thinking: 'low',
+    }],
+  }));
+  const task = join(f.root, 'sonic-task.md');
+  fs.writeFileSync(task, '# Synthetic sonic sub-task\n\nSummarize the synthetic fixture.');
+  return task;
+}
+function publishSonic(dir, status) {
+  const tmp = join(dir, 'test-status.tmp');
+  fs.writeFileSync(tmp, JSON.stringify(status));
+  fs.renameSync(tmp, join(dir, 'STATUS.json'));
+}
+
+test('hud-sonic start returns two independent child jobs; wait follows STATUS, scope and timeout', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const task = sonicTask(f);
+  const parent = await f.call('hud_create', { role: 'imp', request_key: 'sonic-parent', task: 'Synthetic parent.' });
+  const start = (...opts) => runSonic(f, 'start', parent.task_dir, '--task-file', task, ...opts);
+  const results = await Promise.all([start('--thinking', 'high'), start()]);
+  const [first, second] = results.map(({ status, stdout, stderr }) => {
+    assert.equal(status, 0, stderr);
+    return stdout.trim();
+  });
+  assert.notEqual(first, second);
+  const dir = (id) => join(f.env.HUD_HOME, 'jobs', id);
+  for (const [id, thinking] of [[first, 'high'], [second, 'low']]) {
+    assert.match(id, /^j[0-9a-f]{16}$/);
+    const job = JSON.parse(fs.readFileSync(join(dir(id), 'job.json')));
+    assert.equal(job.parent_job, parent.job);
+    assert.equal(job.herdr_pane, 'w4E:p1');
+    assert.equal(job.cwd, f.root);
+    assert.equal(job.role, 'sonic');
+    assert.equal(job.model, 'synthetic/sonic');
+    assert.equal(job.thinking, thinking);
+    const launched = f.commands().find(({ args }) => args[1] === 'start' && args[2] === `${id}-primary`).args;
+    assert.equal(launched[launched.indexOf('--thinking') + 1], thinking);
+    assert.match(fs.readFileSync(join(dir(id), 'SESSION.txt'), 'utf8'), /^ORCH=w4E:p1$/m);
+    assert.equal(cliState(dir(id)).state, 'working');
+  }
+  const wait = (id, timeout = '0', own = parent.task_dir) => runSonic(f, 'wait', own, '--job', id, '--timeout', timeout);
+  const stillWorking = { status: 3, stdout: 'still working: run wait again\n', stderr: '' };
+  assert.deepEqual(await wait(first), stillWorking, 'a report file alone does not settle a child');
+  assert.deepEqual(await wait(second, '0.2'), stillWorking);
+  const waiting = wait(first, '2');
+  publishSonic(dir(first), { state: 'closed', output_written: true });
+  assert.deepEqual(await waiting, { status: 0, stdout: `${dir(first)}/report.md\nSynthetic implementation report.`, stderr: '' });
+  assert.equal((await f.call('hud_read')).jobs.find((job) => job.job === first).report_unread, true);
+  publishSonic(dir(second), { state: 'failed', exit_reason: 'synthetic child failed' });
+  const failed = await wait(second);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /synthetic child failed/);
+
+  const other = await f.call('hud_create', { role: 'imp', request_key: 'not-the-parent', task: 'Synthetic other job.' });
+  const refused = await wait(first, '0', other.task_dir);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /not a sonic child/);
+  const sonicParent = await runSonic(f, 'start', dir(first), '--task-file', task);
+  assert.equal(sonicParent.status, 1);
+  assert.match(sonicParent.stderr, /a sonic worker cannot start sonic/);
+  const foreignDir = join(f.root, first);
+  fs.mkdirSync(foreignDir);
+  fs.copyFileSync(join(dir(first), 'job.json'), join(foreignDir, 'job.json'));
+  const outside = await runSonic(f, 'start', foreignDir, '--task-file', task);
+  assert.equal(outside.status, 1);
+  assert.match(outside.stderr, /under HUD_HOME/);
+});
+
+test('an open sonic child holds the real CLI supervisor; uncollected reports get one fixed prompt', { timeout: 12000 }, async (t) => {
+  const f = await fixture(t);
+  const task = sonicTask(f);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  writeCliRole(f, 'sonic-parent-cli', 0.25, false);
+  const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
+  configureFakeDecision(f, server.baseUrl);
+  const parent = await f.call('hud_create', { role: 'sonic-parent-cli', request_key: 'sonic-parent-cli', task: 'Synthetic CLI parent.' });
+  await until(() => cliState(parent.task_dir)?.agent_session_id);
+  const start = () => runSonic(f, 'start', parent.task_dir, '--task-file', task);
+  const [child, alreadyCollected] = await Promise.all([start(), start()]);
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(alreadyCollected.status, 0, alreadyCollected.stderr);
+  const id = child.stdout.trim(), dir = join(f.env.HUD_HOME, 'jobs', id);
+  const collectedId = alreadyCollected.stdout.trim();
+  publishSonic(join(f.env.HUD_HOME, 'jobs', collectedId), { state: 'closed', output_written: true });
+  const report = await runSonic(f, 'wait', parent.task_dir, '--job', collectedId, '--timeout', '0');
+  assert.equal(report.status, 0, report.stderr);
+  const prompts = () => f.commands().filter(({ args }) => args[1] === 'prompt' && args[2] === parent.agent && args[3].startsWith('Collect these sonic reports'));
+  f.push(parent.job, 'idle');
+  await new Promise((done) => setTimeout(done, 400)); // exceeds the accelerated 250ms no-report grace
+  assert.equal(server.requests.length, 0);
+  assert.equal(cliState(parent.task_dir).state, 'working');
+
+  fs.writeFileSync(join(parent.task_dir, 'report.md'), 'Premature synthetic parent report.');
+  await new Promise((done) => setTimeout(done, 700)); // exceeds the accelerated report stability window
+  assert.equal(cliState(parent.task_dir).state, 'working');
+  assert.equal(cliState(parent.task_dir).settled_at, null);
+  assert.equal(readCloseQuit(f, parent), false);
+  assert.equal(prompts().length, 0);
+
+  publishSonic(dir, { state: 'closed', output_written: true });
+  await until(() => prompts().length === 1, 5000);
+  assert.ok(prompts()[0].args[3].includes(id));
+  assert.ok(!prompts()[0].args[3].includes(collectedId));
+  fs.writeFileSync(join(parent.task_dir, 'report.md'), 'Synthetic parent report after collect prompt.');
+  await until(() => cliState(parent.task_dir)?.state === 'closed', 5000);
+  assert.equal(prompts().length, 1, 'the same report is not prompted for again');
+  assert.equal(server.requests.length, 0);
+});
 
 test('supervisor events: report then long summary, flapping, explicit continuation and rewritten report', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
@@ -1228,7 +1347,10 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   // Breaks if hud_create stops naming the report path: workers then answer in the pane and the job fails.
   assert.equal(
     fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
-    `${args.task}\n\nWrite your final answer to ${join(job.task_dir, 'report.md')}; the job fails without that file.\nOnce the report file is written, end your turn with the single line \`report written: ${join(job.task_dir, 'report.md')}\` and do not repeat the report in your final message.\n`
+    `${args.task}\n\nWrite your final answer to ${join(job.task_dir, 'report.md')}; the job fails without that file.\n` +
+    `Sonic command: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} start --dir ${JSON.stringify(job.task_dir)} --task-file <file> [--thinking off|low|medium|high]\n` +
+    `Collect: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} wait --dir ${JSON.stringify(job.task_dir)} --job <id>\n` +
+    `Once the report file is written, end your turn with the single line \`report written: ${join(job.task_dir, 'report.md')}\` and do not repeat the report in your final message.\n`
   );
   assert.deepEqual(f.commands()[0].args, ['pane', 'get', 'w4E:p1']);
   const commands = f.commands().filter((c) => c.args[1] !== 'get');
@@ -1383,6 +1505,10 @@ test('marked worker MCP refuses all dispatch tools but still answers roster and 
   const read = await f.call('hud_read', { job });
   assert.equal(read.state, 'working');
   assert.deepEqual(read.questions, [{ id: 'q1', text: 'Synthetic question.' }]);
+  await publishPiGrace({ task_dir: dir });
+  assert.match((await f.call('hud_read', { job })).report, /^Synthetic settled pi report/);
+  assert.equal((await f.call('hud_read')).jobs[0].report_unread, true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')), receipt);
 
   const refused = { ok: false, code: 'worker_cannot_dispatch' };
   assert.deepEqual(await f.call('hud_send', { job, message_key: 'worker-send', text: 'Synthetic message.' }), refused);
@@ -1391,6 +1517,7 @@ test('marked worker MCP refuses all dispatch tools but still answers roster and 
   // A quota failure in a session row must not be recorded as a side effect of the refusal.
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'quota exceeded' }));
   assert.deepEqual(await f.call('hud_create', args), refused);
+  assert.equal((await f.call('hud_read', { job })).exit_reason, 'quota exceeded');
   assert.deepEqual(f.commands(), []);
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [job]);
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);

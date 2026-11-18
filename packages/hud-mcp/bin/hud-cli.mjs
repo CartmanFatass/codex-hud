@@ -11,6 +11,7 @@ import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
 import { judge, procStat, workerAlive, workerHasChild, readTurn, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { request } from './herdr-request.mjs';
+import { sonicChildren } from './sonic-jobs.mjs';
 
 const dir = fs.realpathSync(process.argv[2]);
 const bundled = fileURLToPath(new URL('..', import.meta.url)), hudHome = dirname(dirname(dir));
@@ -75,7 +76,7 @@ function watchDir() {
     dirWatch = fs.watch(dir, (_event, filename) => {
       const file = filename?.toString();
       if (file && (file === 'STATUS.json' || file === 'supervisor.pid' || file.endsWith('.tmp'))) return;
-      if (!file || ['report.md', 'job.json', 'turn.json', 'qa', 'STATUS.json.stop-requested', 'STATUS.json.close-requested'].includes(file)) {
+      if (!file || ['report.md', 'job.json', 'turn.json', 'qa', '.sonic', 'STATUS.json.stop-requested', 'STATUS.json.close-requested'].includes(file)) {
         diskDirty = true; watchQa(); wake();
       }
     });
@@ -154,6 +155,7 @@ function collect(isTick, checkChild = isTick && status !== 'working') {
   return { turn, reportSig: signature, reportRead: reportWasRead(readAt, st?.isFile() ? st.mtimeMs : null),
     alive: workerAlive(current.pid, current.pid_start_time), status,
     liveChild: checkChild ? sampleChild() : null,
+    sonic: sonicChildren(dir),
     stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
     tick: isTick, agentMissing, workingAt, tabClosed };
 }
@@ -193,11 +195,23 @@ async function run() {
       observed = { ...observed, liveChild: sampleChild() };
       next = judge(prev, observed, Date.now());
     }
+    if (next.action === 'collect-sonic') {
+      const { open, uncollected } = sonicChildren(dir);
+      if (open || !uncollected.length) { wake(); return; }
+      // Record the attempt before input, as for hud_send. Collection is a separate receipt.
+      for (const id of uncollected) {
+        fs.writeFileSync(join(hudHome, 'jobs', id, 'sonic-prompted'), '', { mode: 0o600 });
+      }
+      writeTurn(dir);
+      const prompt = `Collect these sonic reports with hud-sonic wait: ${uncollected.join(', ')}. Then finish your work and write your report to ${output}.`;
+      if (!effect(['agent', 'prompt', name, prompt]).ok) throw new Error('sonic collect prompt failed');
+      diskDirty = true; wake(); return;
+    }
     if (next.action === 'decide') {
       const text = effect(['pane', 'read', pane, '--source', 'recent']).body?.result?.read?.text ?? '';
-      // The pane read can block; don't ask using the earlier process sample.
-      const liveChild = sampleChild();
-      if (liveChild !== false) { wake(); return; }
+      // The pane read can block; don't ask using the earlier child sample.
+      const liveChild = sampleChild(), sonic = sonicChildren(dir);
+      if (liveChild !== false || sonic.open || sonic.uncollected.length) { wake(); return; }
       const decision = quietQuestions >= 3
         ? { choice: null, probability: null, action: 'needs-human', reason: 'max-questions', asked: false }
         : await decideQuietJob({ hudHome, jobId: job.job, role: job.role, agent: cli.agent,
@@ -207,7 +221,7 @@ async function run() {
       if (decision.asked) quietQuestions += 1;
       diskDirty = true;
       const latest = collect(false, true);
-      if (latest.turn.seq !== observed.turn.seq || latest.reportSig !== observed.reportSig || latest.stop || latest.close || latest.alive === false || latest.status !== observed.status || latest.workingAt !== observed.workingAt || latest.openQuestions || latest.liveChild !== false) { wake(); return; }
+      if (latest.turn.seq !== observed.turn.seq || latest.reportSig !== observed.reportSig || latest.stop || latest.close || latest.alive === false || latest.status !== observed.status || latest.workingAt !== observed.workingAt || latest.openQuestions || latest.liveChild !== false || latest.sonic.open || latest.sonic.uncollected.length) { wake(); return; }
       current.quiet_decision = { choice: decision.choice, probability: decision.probability, action: decision.action,
         ...(decision.reason ? { reason: decision.reason } : {}), at: new Date().toISOString() };
       if (decision.action === 'prompt-report') {

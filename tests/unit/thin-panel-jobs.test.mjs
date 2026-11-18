@@ -111,7 +111,7 @@ function fixture(t) {
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(now) };
   const render = (board, height = 180, width = 56, state = initialMonitorState()) =>
     renderMonitor({ tree, workboard: board, state, width, height, nowMs: now });
-  return { env, pipeline, tree, render, put, askDir, ready };
+  return { env, pipeline, tree, render, put, job, askDir, ready };
 }
 const plain = (frame) => frame.lines.map(stripAnsi);
 // Everything starts collapsed; this is the state of a panel where every card and decision was expanded with Enter.
@@ -192,6 +192,23 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes, decision o
   assert.ok(sent[0].message.includes(question));
   assert.deepEqual(notifier.update({}, now + 2, changed), []);
 });
+test('Home frame places a sonic card under its parent in the parent lane', async (t) => {
+  const f = fixture(t);
+  f.job(8, 'SONIC-PRIVATE-LABEL', 'Inspect synthetic fixtures', 'working', 0, null, 'w4E:p1', {
+    role: 'sonic', parent_job: 'j0000000000000005', created_at: new Date(now - 2000).toISOString(),
+  });
+  await f.pipeline.refresh();
+  const board = f.pipeline.workboard(f.tree);
+  const frame = f.render(board, 45);
+  const lines = plain(frame);
+  const parent = lines.findIndex((line) => line.includes('width flag'));
+  const child = lines.findIndex((line) => line.includes('Inspect synthetic'));
+  assert.ok(parent >= 0 && child > parent);
+  assert.match(lines[child], /^ {2}\S/);
+  assert.ok(!lines.some((line) => line.includes('SONIC-PRIVATE-LABEL')));
+  assert.ok(lines.every((line) => visualLength(line) === 56));
+});
+
 test('Home shows questions, lanes with cards, then decisions; Enter reveals the whole question', async (t) => {
   const f = fixture(t);
   f.put(
