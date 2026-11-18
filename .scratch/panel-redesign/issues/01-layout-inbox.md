@@ -1,6 +1,6 @@
 # 01: Layout setting and the Inbox layout
 
-**Status:** ready-for-agent
+**Status:** done (98df0c4e)
 **Blocked by:** none
 
 **What to build:** `docs/spec.md` §2.2 "Panel layouts" (owner, 2026-11-17). Option 1 · Inbox of
