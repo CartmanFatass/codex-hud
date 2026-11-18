@@ -44,6 +44,7 @@ interface Job extends PiOptions {
   herdr_pane: string;
   created_at: string;
   package?: string;
+  preset?: string;
   model?: string | null;
   thinking?: string | null;
   model_source?: string | null;
@@ -82,7 +83,7 @@ const tools = [
   ),
   tool(
     'hud_create',
-    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Optional package is a display-only label. Uses the role's first available place (runs_on) unless overridden by on. model and thinking override a pi or CLI role for this job; kind selects image or video for flow; other launch switches and pi_args are pi-only. Omitted switches keep pi-role defaults (split uses the place).",
+    "Dispatch a local role; request_key returns the existing job unchanged on retry. cwd resolves roles for that project (default: this server's cwd). Uses the first available place in the role's run or named preset; use on instead to override the harness. model and thinking override pi or CLI places; kind is flow-only, idle_grace_s is CLI-only, and launch switches and pi_args are pi-only.",
     {
       role: text,
       request_key: text,
@@ -95,6 +96,7 @@ const tools = [
         description:
           'Override the harness or browser provider for this job only (pi, agy, claude, codex, grok, chatgpt, gemini, argon, flow).',
       },
+      preset: { type: 'string', description: 'Select a named role preset for this job without editing role files.' },
       kind: { type: 'string', enum: ['image', 'video'], description: 'Flow output kind: image (default) or video.' },
       model: { ...text, description: 'Override the pi or cli role model for this job only.' },
       thinking: { ...text, description: 'Override the pi or cli role thinking for this job only.' },
@@ -787,6 +789,7 @@ function observation(job: Job, full = false) {
   return {
     job: job.job,
     role: job.role,
+    ...(job.preset !== undefined ? { preset: job.preset } : {}),
     model: job.model,
     thinking: job.thinking,
     model_source: job.model_source,
@@ -837,6 +840,14 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
   const task = required(args, 'task');
   if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
+  if (args.preset !== undefined && args.on !== undefined) {
+    return { ok: false, code: 'invalid_arguments', error: 'preset and on are mutually exclusive' };
+  }
+  const presetName = args.preset === undefined ? undefined : required(args, 'preset');
+  const preset = definition.presets?.find((p) => p.name === presetName);
+  if (presetName !== undefined && !preset) {
+    return { ok: false, code: 'invalid_arguments', error: `unknown preset: ${presetName}` };
+  }
   const onName = args.on !== undefined ? required(args, 'on') : null;
   const defaults = onName ? harnessDefaults(hudHome, bundled) : null;
   const onEntry = onName ? defaults?.[onName] : undefined;
@@ -847,7 +858,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     p.harness === target.harness &&
     (target.harness !== 'cli' || p.agent === target.agent) &&
     (target.harness !== 'bro' || (p.tool === target.tool && (!target.provider || p.provider === target.provider)));
-  const effective = found.assignment(definition);
+  const effective = found.assignment(preset ? { ...definition, run: preset.run } : definition);
   let place: RolePlace | null = onEntry
     ? { ...(definition.run.find((p) => matchPlace(p, onEntry)) ?? {}), ...onEntry }
     : effective.runs_on
@@ -857,7 +868,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     return {
       ok: false,
       code: 'no_available_place',
-      ...(effective.exhausted.length ? { exhausted: effective.exhausted } : {}),
+      ...(preset || effective.exhausted.length ? { exhausted: effective.exhausted } : {}),
     };
   }
   if (args.idle_grace_s !== undefined) {
@@ -950,6 +961,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     ...(parentJob ? { parent_job: parentJob } : {}),
     ...options,
     ...(args.package === undefined ? {} : { package: args.package as string }),
+    ...(presetName === undefined ? {} : { preset: presetName }),
     place,
     place_key: key,
     ...(place.harness === 'bro' ? { bro: place } : {}),
@@ -999,7 +1011,8 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     fs.writeFileSync(join(children, job.job), '', { mode: 0o600, flag: 'wx' });
   } else createdJobs.add(job.job);
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
-  return keyLock(`job:${job.job}`, () => launchJob(job, definition, place, dir, instructionsPath));
+  const launchRole = preset ? { ...definition, skills: effective.skills } : definition;
+  return keyLock(`job:${job.job}`, () => launchJob(job, launchRole, place, dir, instructionsPath));
 }
 
 async function launchJob(job: Job, definition: Role, place: RolePlace, dir: string, instructionsPath: string) {

@@ -78,9 +78,11 @@ MCP 恰有六个工具：**hud_roster**、**hud_create**、**hud_read**、**hud_
 见[项目工作者](#项目工作者)。
 
 `hud_create` 接收 `role`、`request_key`、`task`，可选 `cwd` 和仅用于显示的 `package`。
-默认在角色的首个可用位置（`runs_on`）启动，也可用 `on` 按本次任务覆盖位置（默认值见内置
-`harnesses.json` 与 `$HUD_HOME/harnesses.json`）。重复键返回原任务，不再次启动。
-`model` 和 `thinking` 可覆盖本次 `pi` 或 `cli` 位置；`kind` 为 `flow` 选择 `image`（默认）或 `video`。
+默认在角色的首个可用位置（`runs_on`）启动。传入 `preset` 可使用指定预设中首个可用且未耗尽的位置，
+仅对本次任务生效，不修改角色文件。也可用 `on` 覆盖执行环境或浏览器服务商（默认值见内置
+`harnesses.json` 与 `$HUD_HOME/harnesses.json`）。`preset` 和 `on` 不能同时传入。
+重复键返回原任务，不再次启动。指定过的 `preset` 会随 `hud_read` 的任务详情返回。
+`model` 和 `thinking` 可覆盖所选 `pi` 或 `cli` 位置的模型和推理强度；`kind` 为 `flow` 选择 `image`（默认）或 `video`。
 仅 `pi` 可覆盖布尔项 `lens`、`mcp`、`tps`、`ui_ext`、`skills`、`split`，以及 `pi_args`
 （最多 128 项，每项 4096 字符，原样传递，不经 shell）。省略的开关沿用 pi-role 默认值；
 split 默认取位置设置。`ui_ext: false` 禁用 UI 扩展；`skills: true` 加载个人技能；
@@ -291,7 +293,7 @@ Esc 或点击面包屑回到总览，光标停在刚离开的那一页。每页�
 - **文件**（折叠成 `密钥 3/5 · 浏览器 ✓ · 缺 …`，Enter 展开）：无效或被忽略的角色文件、约定、pi 角色定义、指令文件、
   原生代理（其中再折叠）、密钥、浏览器。
 
-角色文件可带 `presets`：`[{ "name": "short-token", "run": [...] }]`，每项是完整有序位置列表，按 `run` 的规则校验。名称在同一文件内唯一，1–32 个 `[A-Za-z0-9._-]` 字符。预设按内置 → 用户 → 生效项目文件合并，同名由更具体的文件覆盖，省略则继承。`hud_roster` 返回 `presets` 和 `preset`（匹配名称或 null）；`hud_create` 不接受预设参数。
+角色文件可带 `presets`：`[{ "name": "short-token", "run": [...] }]`，每项是完整有序位置列表，按 `run` 的规则校验。名称在同一文件内唯一，1–32 个 `[A-Za-z0-9._-]` 字符。预设按内置 → 用户 → 生效项目文件合并，同名由更具体的文件覆盖，省略则继承。`hud_roster` 返回 `presets` 和 `preset`（匹配名称或 null）。将 `presets` 中的名称传给 `hud_create`，即可仅在本次任务中使用该预设。
 
 在角色的位置行上，`c`/`C` 一步应用下一个／上一个预设（自定义状态从首个／末个开始），将整套 run 写入用户文件并保留其他字段（含 presets）。有预设的角色行显示 `[名称]` 或 `[自定义]`；耗尽标记仍按位置保留。项目文件生效时照常拒绝修改，`o` 打开文件。内置 imp：`default`、`grok`（high）、`hydrogen`；reviewer：`default`、`pi`；oracle：`fable`、`architect`（原 architect 角色的 pi 配置），不再有独立的 architect HUD 角色。
 

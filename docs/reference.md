@@ -109,10 +109,13 @@ back to typing that line, so only this fallback can touch a draft or fire prompt
 delivery. MCP `changes` stays the fuller, query-only stream; a `report` token always means unread.
 
 `hud_create` takes `role`, `request_key`, `task`, optional `cwd` and display-only
-`package`. It dispatches on the role's first available place (`runs_on`) unless
-overridden with `on` (defaults from shipped `harnesses.json` overridden by
-`$HUD_HOME/harnesses.json`). A repeated key returns the original job unchanged, not
-a second launch. `model` and `thinking` override a `pi` or `cli` place for this job;
+`package`. By default it dispatches on the role's first available place (`runs_on`).
+Pass `preset` to use the first available, non-exhausted place in a named role preset
+without editing role files. Alternatively, pass `on` to override the harness/provider
+(defaults from shipped `harnesses.json` overridden by `$HUD_HOME/harnesses.json`).
+`preset` and `on` are mutually exclusive. A repeated key returns the original job
+unchanged, not a second launch. `hud_read` returns the job's `preset` if one was selected.
+`model` and `thinking` override the selected `pi` or `cli` place for this job;
 `kind` selects `image` (default) or `video` for `flow`. Optional `idle_grace_s` (integer 60–3600) overrides
 CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).
 Pi-only overrides:
@@ -426,7 +429,7 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
 - **Files** (folded to `keys 3/5 · browser ✓ · missing …`; Enter opens it): invalid or ignored role files, the
   convention, pi role definitions, instruction files, native agents (folded inside), keys, browser.
 
-Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → project file in force; more specific wins, omission inherits. `hud_roster` returns `presets` and `preset` (matching name or null); `hud_create` has no preset argument.
+Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → project file in force; more specific wins, omission inherits. `hud_roster` returns `presets` and `preset` (matching name or null). Pass a name from `presets` to `hud_create` to use it for one job only.
 
 On a role's place row, `c`/`C` applies the next/previous preset in one step (from `custom`, first/last), writing its run to the owner's file and keeping other fields, including presets. The role row shows `[name]` or `[custom]` when presets exist; exhausted marks remain per place. Project-pinned roles refuse as for other edits; `o` opens the file. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
 

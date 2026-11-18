@@ -18,7 +18,7 @@ import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PiRoleClient, PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
-import { harnessDefaults } from '../../dist/roles/roster.js';
+import { harnessDefaults, markExhausted } from '../../dist/roles/roster.js';
 test('CLI state trust defaults, owner overrides, roster facts and dispatch snapshots agree', async (t) => {
   const f = await fixture(t);
   const config = join(f.env.HUD_HOME, 'harnesses.json');
@@ -2073,6 +2073,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   assert.equal(roster.roles.some((r) => r.role === 'architect'), false);
   const oracle = roster.roles.find((r) => r.role === 'oracle');
   assert.equal(oracle.preset, 'fable');
+  assert.deepEqual(oracle.accepts_options, ['on', 'preset', 'model', 'thinking']);
   assert.deepEqual(oracle.presets, [
     { name: 'fable', run: oracle.run },
     { name: 'architect', run: [{ harness: 'pi', pi_role: 'architect', split: false }] },
@@ -2100,12 +2101,15 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
     f.commands().some((c) => c.command === 'pi-dispatch' || c.args[1] === 'split'),
     false
   );
-  assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))), 'package'), false);
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+  assert.equal(Object.hasOwn(receipt, 'package'), false);
+  assert.equal(Object.hasOwn(receipt, 'preset'), false);
   fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   assert.equal(
     (await f.call('hud_send', { job: job.job, message_key: 'custom-send', text: 'Synthetic follow-up.' })).sent,
     true
   );
+  assert.equal(Object.hasOwn(await f.call('hud_read', { job: job.job }), 'preset'), false);
 });
 
 test(
@@ -2161,6 +2165,81 @@ test(
     }
   }
 );
+
+test('hud_create uses a merged preset for one job and falls back within it without editing roles', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const roles = join(f.env.HUD_HOME, 'roles');
+  const file = join(roles, 'imp.json');
+  const role = {
+    role: 'imp', instructions: 'implementer', can_continue: true,
+    run: [{ harness: 'pi', model: 'synthetic/normal', skills: ['normal-only'] }],
+    presets: [{ name: 'default', run: [
+      { harness: 'pi', model: 'synthetic/primary', thinking: 'low' },
+      { harness: 'pi', pi_role: 'reviewer', model: 'synthetic/backup', thinking: 'high', split: true },
+    ] }],
+  };
+  const original = JSON.stringify(role, null, 2) + '\n';
+  fs.mkdirSync(roles);
+  fs.writeFileSync(file, original);
+  const roster = async () => (await f.call('hud_roster')).roles.find((r) => r.role === 'imp');
+  const before = await roster();
+  assert.equal(before.runs_on.model, 'synthetic/normal');
+  assert.ok(before.accepts_options.includes('preset'));
+
+  const args = { role: 'imp', preset: 'default', task: 'Synthetic task.' };
+  const receipt = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  const piArgv = () => f.commands().filter((c) => c.command === 'pi-role').at(-1).args;
+  const first = await f.call('hud_create', { ...args, request_key: 'preset-primary' });
+  assert.equal(receipt(first).dispatch_exit_code, 0);
+  assert.equal(receipt(first).preset, 'default');
+  assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/primary', '--thinking', 'low']);
+  assert.equal((await f.call('hud_read', { job: first.job })).preset, 'default');
+  assert.deepEqual(receipt(first).skipped_skills, []); // No skills inherited from the unselected default run.
+
+  markExhausted(f.env.HUD_HOME, 'pi:synthetic/primary', 'rate limit');
+  const fallback = await f.call('hud_create', {
+    ...args, request_key: 'preset-fallback', model: 'synthetic/override', lens: false, split: false,
+  });
+  const record = receipt(fallback);
+  assert.equal(record.dispatch_exit_code, 0);
+  assert.equal(record.preset, 'default');
+  assert.equal(record.place.pi_role, 'reviewer');
+  assert.equal(record.model_source, 'hud_create');
+  assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/override', '--thinking', 'high']);
+  assert.ok(piArgv().includes('--no-lens'));
+  const read = await f.call('hud_read', { job: fallback.job });
+  assert.deepEqual([read.preset, read.model, read.split], ['default', 'synthetic/override', false]);
+  assert.equal((await f.call('hud_create', { ...args, request_key: 'preset-fallback', preset: 'grok' })).job, fallback.job);
+
+  markExhausted(f.env.HUD_HOME, 'pi:synthetic/backup', 'rate limit');
+  const unavailable = await f.call('hud_create', { ...args, request_key: 'preset-unavailable' });
+  assert.equal(unavailable.ok, false);
+  assert.equal(unavailable.code, 'no_available_place');
+  assert.deepEqual(unavailable.exhausted.map((p) => p.key), ['pi:synthetic/primary', 'pi:synthetic/backup']);
+  assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 2);
+  assert.deepEqual(await roster(), before);
+  assert.deepEqual(fs.readdirSync(roles), ['imp.json']);
+  assert.equal(fs.readFileSync(file, 'utf8'), original);
+});
+
+test('hud_create rejects unknown, conflicting and malformed preset arguments before dispatch', async (t) => {
+  const f = await fixture(t);
+  const args = { role: 'imp', request_key: 'invalid-preset', task: 'Synthetic task.' };
+  assert.deepEqual(await f.call('hud_create', { ...args, preset: 'missing' }), {
+    ok: false, code: 'invalid_arguments', error: 'unknown preset: missing',
+  });
+  assert.deepEqual(await f.call('hud_create', { ...args, preset: 'default', on: 'pi' }), {
+    ok: false, code: 'invalid_arguments', error: 'preset and on are mutually exclusive',
+  });
+  for (const preset of ['', 42, null]) {
+    const { result } = await f.rpc('tools/call', { name: 'hud_create', arguments: { ...args, preset } });
+    assert.equal(result.isError, true);
+    assert.deepEqual(JSON.parse(result.content[0].text), {
+      ok: false, code: 'tool_error', error: 'invalid_arguments: preset',
+    });
+  }
+  assert.deepEqual(f.commands(), []);
+});
 
 test('thin resume forwards the session ID without overriding pi default lookup', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);

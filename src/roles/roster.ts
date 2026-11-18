@@ -506,14 +506,17 @@ export function roleRegistry(
       pi_role_file,
       agent: active.harness === 'cli' ? active.agent : undefined,
       ...(active.harness === 'cli' ? { state_trust: activeEntry.details.state_trust } : {}),
-      accepts_options:
-        active.harness === 'pi'
-          ? ['on', 'model', 'thinking', ...piSwitches, 'pi_args']
+      accepts_options: [
+        'on',
+        ...((role.presets?.length ?? 0) > 0 ? ['preset'] : []),
+        ...(active.harness === 'pi'
+          ? ['model', 'thinking', ...piSwitches, 'pi_args']
           : active.harness === 'cli'
-            ? ['on', 'model', 'thinking']
+            ? ['model', 'thinking']
             : active.tool === 'jev-flow'
-              ? ['on', 'kind']
-              : ['on'],
+              ? ['kind']
+              : []),
+      ],
       available: chosen !== null,
       run: role.run,
       presets: role.presets ?? [],
