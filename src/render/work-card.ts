@@ -140,6 +140,10 @@ const QUIET_REASONS: Record<string, string> = {
   'max-questions': 'max questions',
   'prompt-failed': 'prompt failed',
 };
+export function milestoneLine(worker: WorkCard['worker'], width: number): string | undefined {
+  const entry = worker.latest_progress;
+  if (entry) return fit(theme.board.muted(`${mark('┃', '|')} ${t('Milestone')}: ${monitorText(entry.text)}`), width);
+}
 export function quietDecisionSummary(q: WorkCard['worker']['quietDecision']): string {
   if (!q) return '';
   const action = t(q.action);

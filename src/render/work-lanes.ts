@@ -3,7 +3,7 @@ import type { WorkboardSnapshot, WorkLane, OwnerWorker } from '../collectors/wor
 import { targetKey } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { cardExpanded, failed, renderWorkCard, workPhaseText } from './work-card.js';
+import { cardExpanded, failed, milestoneLine, renderWorkCard, workPhaseText } from './work-card.js';
 import { boardRow, mark } from './workboard-rows.js';
 import { pair, monitorText, fit } from './monitor-text.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
@@ -123,8 +123,13 @@ export function laneRows(
         : renderWorkCard(card, state, room, sentence);
     // Past its fold time a settled card is its title row (muted once hidden, in show-all) until Enter opens it.
     const hidden = !currentWorker(worker, now, state);
-    if (!cardExpanded(state, key) && (hidden || foldedWorker(worker, now, state)))
+    const expanded = cardExpanded(state, key);
+    if (!expanded && (hidden || foldedWorker(worker, now, state)))
       lines = [hidden ? theme.board.muted(stripAnsi(lines[0])) : lines[0]];
+    if (expanded && worker.state === 'working' && !worker.homeNeedsHuman) {
+      const milestone = milestoneLine(worker, room);
+      if (milestone) lines = [...lines, theme.board.body(milestone)];
+    }
     rows.push(...lines.map((text) => ({ text: indent + text, item: key, key })));
   }
   rows.push(boardRow(''));

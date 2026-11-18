@@ -72,7 +72,7 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 没有显式选择时，`HERDR_PANE_ID` 允许用一秒预算向 `herdr pane current` 查询调用者的 Claude 转写或 Codex 会话（herdr 窗格内回退读取 `CODEX_THREAD_ID`）；
 不猜聚焦窗格、不读取状态行写下的绑定。证据不可用时，仅保留未绑定原生会话的任务视图。
 
-MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_send**、**hud_respond**、**hud_close**。
+MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**。
 先调用 `hud_roster` 获取生效的角色、模型／推理强度来源、可接受选项和约定。
 `$HUD_HOME/roles/*.json` 按角色名覆盖内置 JSON，已注册项目的 `.hud/roles` 再覆盖。
 已注册项目的 `.hud/`、cwd、HUD 主目录、包目录中第一个 `hud-convention.md` 整体替换默认约定。
@@ -116,6 +116,12 @@ herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 `wait_ms` 为 0–120000 毫秒的整数（默认 60000；`0` 只检查一次）。返回 `ready`、`timed_out`、触发返回的任务编号 `triggered`
 和精简任务列表 `jobs`。没有目标任务时立即返回 `ready: true` 和空列表。等待不会读取报告或问题正文、标记已读或已查看，也不会关闭工作者；
 完整结果请用带任务编号的 `hud_read` 读取。
+
+`hud_peek({ job, lines? })` 返回精简的 `status` 行和工作窗格末尾的 `pane_lines`（1–120 行，默认 40）。
+窗格缺失或不可用时，`pane_lines` 为 `null`，并返回 `pane_reason`。该工具不读取报告、不标记已读或已查看，也不关闭工作者。
+pi 和 CLI 工作者可用简报里的可选命令 `hud-progress.mjs` 记录里程碑（每条一行，最多 240 字符，保留最新 50 条）。
+`hud_read({ job })` 与 `hud_peek` 的 `progress` 返回最新 10 条，`latest_progress` 返回最后一条（没有则为 `null`）；
+列表和等待结果不含这些字段。里程碑不会触发 `changes` 或 `hud watch` 事件。
 
 带 `job` 时读取 STATUS、未读报告（最多 64 KiB）与待答问题。报告比 `read_at` 新，或尚无 `read_at`，即为未读。
 已读报告只返回 `report_unchanged: true`，`full: true` 可再次读取正文。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。
@@ -486,6 +492,7 @@ Esc、Ctrl+C 或单击离开选择器，不写任何东西。选择器打开时�
 ### 详情
 
 卡片／问题／决定展开，下列角色／客户端、模型／强度、包、状态／阶段与观测到的本地时间。
+若工作者记录了里程碑，详情和两种布局下展开的运行中任务卡会以一行暗色文字显示最新一条。
 文件区列 brief、问答、评审、报告，上下选中，Enter／`o` 打开。
 原生卡片列转写和已有上下文百分比、估算 tokens/s、累计 tokens；缺失省略，不额外调用模型。
 不保留阶段／日志历史或对话切换控件。

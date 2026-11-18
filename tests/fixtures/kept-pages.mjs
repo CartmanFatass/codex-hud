@@ -86,6 +86,9 @@ export function pageFixture(home) {
   );
   qa(ux, 'q3', 'Keep the v1 shim for one more release?', 'keep it for one more release', null, 3);
   put(join(api, 'review-1.md'), 'Verdict: changes-required\n\n2 major · 1 minor', 9);
+  put(join(api, 'progress.jsonl'), JSON.stringify({
+    at: ago(3).toISOString(), text: 'Retry cap verified · 回退上限已验证 · Checked both error paths',
+  }) + '\n', 3);
   const lanes = readThinJobs(home, { project: '/synthetic/repo', pane: 'w4E:p1' });
   // The overlay is the stored model result, not a model fake on a render path.
   for (const lane of lanes) {

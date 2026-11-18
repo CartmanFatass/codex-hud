@@ -46,6 +46,7 @@ than assuming a role's model or workflow.
 | `hud_create` | Required `role`, `request_key`, `task`; optional `cwd` (roles resolve against that project; default: the server's cwd), display-only `package`, `idle_grace_s` (CLI-only integer 60–3600, overrides the role for this job), `on` (harness/provider override), `kind` (`image` or `video` for `flow`), and `model`/`thinking` for a `pi` or `cli` place. Pi launch switches are below. Uses the role's first available place (`runs_on`) unless overridden by `on`. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. Repeating a request key returns the original job unchanged, even if options differ; it does not relaunch an uncertain attempt. |
 | `hud_read` | Without a `job`, defaults to `view: "compact"` (running jobs and jobs that need attention); use `view: "recent"` for the newest 20 full rows. `view` is list-only. With a `job`, optional `wait_ms` (0–120000) and `full` (boolean); returns STATUS, unanswered questions, effective CLI `idle_grace_s` and the unread report (up to 64 KiB). Already read: `report_unchanged: true`, no body (`full: true` includes it again). Waiting stops at settlement, a question or the deadline. Every returned report body stamps `read_at` (including during work/idle grace), not acceptance. Reading a settled pi or CLI report closes its worker. Reading a failure/block separately marks that attention seen. |
 | `hud_wait` | Optional `jobs` (job IDs; omitted: the caller session's jobs that are unsettled when the call starts), `mode` (`any` by default, or `all`), and integer `wait_ms` (0–120000; default 60000; `0` checks once). Watches job files without blocking other calls. `any` wakes on settlement or attention; `all` waits for every target to settle but wakes early on a question, block, orchestrator wait or failure. Returns `ready`, `timed_out`, `triggered` (job IDs that met the wake condition) and compact `jobs` rows. No targets returns ready with empty lists. It does not read bodies, mark anything seen or close workers. |
+| `hud_peek` | Required `job`; optional integer `lines` (1–120, default 40). Returns a compact `status` row, progress and up to `lines` of recent output from the worker's `LEFT` herdr pane. If unavailable, `pane_lines` is `null` with `pane_reason`. Does not read reports, mark anything seen or close the worker. |
 | `hud_send` | Required `job`, `message_key`, `text`. Queues a message while a `pi` or `cli` job works, or continues it during `idle_grace` if its role allows and the report is unread. After reading a settled report, dispatch a new job for repairs. The message key deduplicates attempts, including failed/uncertain ones. Browser (`bro`) roles cannot continue. |
 | `hud_respond` | Required `job`, `request_id` (`qN`), `answer`. Writes `qa/qN.answer.md` once; an existing answer is not overwritten. |
 | `hud_close` | Required `job`. Calls `pi-role-reap` for early cleanup; safe to repeat. Normal finished-job cleanup belongs to the watcher. |
@@ -65,6 +66,12 @@ Both list views return a newest-first `jobs` snapshot without reading report or 
 Compact rows show `job`, `role` and `state`, plus `report_unread: true`, `blocked: true`, pending `question_ids`
 and a block, wait or failure `reason` when applicable. Closed jobs with unread reports still appear; use `recent`
 for history or fields such as `open_questions`. The per-session `changes` stream is independent of the snapshot.
+
+Pi and CLI briefs include the optional `node <package>/bin/hud-progress.mjs [--dir <job-dir>] "Milestone text"`
+command (`--dir` defaults to `HUD_JOB_DIR`). It stores one line of up to 240 characters as `{at,text}` in the
+job's `progress.jsonl`, retaining the newest 50. `hud_read({ job })` and `hud_peek` return the latest 10 in
+append order as `progress` and the newest entry as `latest_progress` (or `null`). Milestones do not appear in
+list/wait rows or trigger `changes` / `hud watch` events.
 
 ## Roles and convention
 

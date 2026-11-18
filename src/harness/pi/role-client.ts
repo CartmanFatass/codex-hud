@@ -172,6 +172,12 @@ export const PI_ROLE_TOOLS = [
     }
   ),
   tool(
+    'hud_peek',
+    'Inspect a job’s compact status, milestones and recent worker pane output without marking anything read or closing the worker.',
+    { job: text, lines: { type: 'integer', minimum: 1, maximum: 120, default: 40 } },
+    ['job']
+  ),
+  tool(
     'hud_send',
     'Send a message to a pi or CLI job: queued while it works, or continued during idle_grace before the report is read (roles that can continue); message_key deduplicates sends.',
     { job: text, message_key: text, text },

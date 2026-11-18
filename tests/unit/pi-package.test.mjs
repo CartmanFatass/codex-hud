@@ -304,7 +304,7 @@ test('combined pi packages retain delegation after canceled navigation and displ
     assert.equal(h.calls.notices.at(-1), 'HUD: reconnected; panel_not_open');
     assert.ok((await roster()).details.roles.length);
   }
-  assert.equal(h.tools.size, 7);
+  assert.equal(h.tools.size, 8);
   assert.equal(h.commands.size, 1);
   assert.equal(p.counts().splits, 0);
 });
@@ -362,6 +362,7 @@ test('the delegation-only package registers the tools but no footer, no /hud and
   assert.deepEqual([...h.tools.keys()].sort(), [
     'hud_close',
     'hud_create',
+    'hud_peek',
     'hud_read',
     'hud_respond',
     'hud_roster',

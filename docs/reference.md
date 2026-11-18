@@ -84,7 +84,7 @@ these select observations, not execution identity. Without explicit selection,
 Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pane); no focused-pane guess or statusline-written binding is used.
 Unavailable evidence leaves the jobs view unbound to a native session.
 
-The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**,
+The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**,
 **hud_send**, **hud_respond**, **hud_close**. Call `hud_roster` first for effective
 roles, model/thinking sources, accepted options and the convention. Bundled
 role JSON is overridden by `$HUD_HOME/roles/*.json` by role name, then by a
@@ -171,6 +171,13 @@ unsettled jobs at the start of the call. `mode: "any"` (default) returns when on
 `wait_ms` is an integer from 0 to 120000 (default 60000; `0` checks once). The response includes `ready`, `timed_out`,
 `triggered` job IDs and compact `jobs` rows. No targets returns ready with empty lists. Waiting does not read
 report or question bodies, mark anything seen or close workers; use `hud_read` with a job ID for the full result.
+
+`hud_peek({ job, lines? })` returns a compact `status` row and the last lines of the job's worker pane as
+`pane_lines` (1–120, default 40). A missing or unavailable pane returns `pane_lines: null` and a `pane_reason`.
+It does not read the report, mark the job seen or close the worker. Pi and CLI workers can use the optional
+`hud-progress.mjs` command in their briefs to log milestones (one line, up to 240 characters; newest 50 stored).
+`hud_read({ job })` and `hud_peek` show the newest 10 as `progress` and the last as `latest_progress` (or `null`);
+list and wait rows omit them. Milestones do not emit `changes` or `hud watch` events.
 
 With a `job`, `hud_read` reads STATUS, open questions and an unread report (up to 64 KiB). A report is unread when
 newer than `read_at`, or when no `read_at` exists. Already-read reports return `report_unchanged: true` without a
@@ -694,7 +701,8 @@ or unreadable catalog shows a muted notice, an empty one another.
 ### Inspector
 
 The selected card/question/decision expands above facts: role/harness, model/effort,
-package, state/phase and observed local times. Files lists brief, QA, reviews and
+package, state/phase and observed local times. The Inspector and expanded running cards in both layouts show
+one muted Milestone line when the worker has logged one. Files lists brief, QA, reviews and
 report; Up/Down selects, Enter/`o` opens. Native cards list their transcript and
 available context %, estimated tokens/s and cumulative tokens; missing values are
 omitted, with no extra model request. No stage/log history or switch controls remain.

@@ -10,11 +10,11 @@ import { fileURLToPath } from 'node:url';
 
 import { procStat, readTurn, saveTurn, workerAlive, writeTurn } from './cli-judge.js';
 import { isCliDirTrusted } from '../../../src/cli/trust.js';
-import { jobChanges, jobRow, type JobRow } from '../../../src/collectors/thin-jobs.js';
+import { jobChanges, jobRow, readJobProgress, type JobRow } from '../../../src/collectors/thin-jobs.js';
 import { PanelActionLog } from '../../../src/collectors/panel-actions.js';
 import { TryLog } from '../../../src/collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
-import { herdrId } from '../../../src/roles/herdr-run.js';
+import { herdrId, runHerdr } from '../../../src/roles/herdr-run.js';
 import {
   roleRegistry,
   harnessDefaults,
@@ -155,6 +155,12 @@ const tools = [
       mode: { type: 'string', enum: ['any', 'all'], default: 'any' },
       wait_ms: { type: 'integer', minimum: 0, maximum: 120000, default: 60000 },
     }
+  ),
+  tool(
+    'hud_peek',
+    'Inspect a job’s compact status, milestones and recent worker pane output without marking anything read or closing the worker.',
+    { job: text, lines: { type: 'integer', minimum: 1, maximum: 120, default: 40 } },
+    ['job']
   ),
   tool(
     'hud_send',
@@ -830,6 +836,23 @@ function compactRow(row: JobRow) {
   };
 }
 
+async function peekJob(job: Job, lines: unknown = 40) {
+  if (typeof lines !== 'number' || !Number.isInteger(lines) || lines < 1 || lines > 120)
+    throw new Error('invalid_arguments: lines');
+  const dir = directory(job.job);
+  const summary = { status: compactRow(readRow(job, false).row), ...readJobProgress(dir) };
+  let pane: string | undefined;
+  try {
+    const session = slice(join(dir, 'SESSION.txt'), 16384);
+    if (!session?.truncated) pane = session?.text.split(/\r?\n/).find((line) => line.startsWith('LEFT='))?.slice(5);
+  } catch { /* No readable pane receipt. */ }
+  if (!herdrId(pane) || pane.startsWith('-')) return { ...summary, pane_lines: null, pane_reason: 'no pane' };
+  const result = await runHerdr(['pane', 'read', pane, '--source', 'recent'], process.env, { budgetMs: 1000 });
+  if (!result.ok) return { ...summary, pane_lines: null, pane_reason: result.reason };
+  const output = paneText(result.stdout).replace(/\r?\n$/, '');
+  return { ...summary, pane_lines: output ? output.split(/\r?\n/).slice(-lines) : [] };
+}
+
 function listJobs(recent: boolean) {
   const newest = jobs().sort((a, b) => b.created_at.localeCompare(a.created_at));
   const recentLimit = 20;
@@ -975,6 +998,7 @@ function observation(job: Job, full = false) {
     stderr_tail: job.stderr_tail,
     report_exists: row.report_present,
     report_unread: row.report_unread,
+    ...readJobProgress(dir),
     ...(row.report_present && !report
       ? { report_unchanged: true }
       : { report: report?.text ?? null, report_truncated: report?.truncated ?? false }),
@@ -1236,8 +1260,10 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   const sonic = role === 'sonic' || place.harness === 'bro' ? '' :
     `Sonic command: ${sonicCommand} start --dir ${JSON.stringify(dir)} --task-file <file> [--thinking off|low|medium|high]\n` +
     `Collect: ${sonicCommand} wait --dir ${JSON.stringify(dir)} --job <id>\n`;
+  const progress = place.harness === 'bro' ? '' :
+    `Optional milestone: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --dir ${JSON.stringify(dir)} "message"\n`;
   // References follow the task: the panel title, sentence goal and decision labels read the brief's opening lines.
-  fs.writeFileSync(join(dir, 'brief.md'), brief + sonic + ending, { flag: 'wx', mode: 0o600 });
+  fs.writeFileSync(join(dir, 'brief.md'), brief + sonic + progress + ending, { flag: 'wx', mode: 0o600 });
   // Persist before dispatch: an interrupted launch must not dispatch again on retry.
   save(job);
   if (parentJob) {
@@ -1321,6 +1347,7 @@ async function call(name: string, args: Args): Promise<unknown> {
   const id = required(args, 'job');
   const job = /^j[0-9a-f]{16}$/.test(id) ? json<Job>(join(directory(id), 'job.json')) : null;
   if (!job) return { ok: false, code: 'job_not_found' };
+  if (name === 'hud_peek') return job.job === id ? peekJob(job, args.lines) : { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
   if (name === 'hud_read') {
     if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
@@ -1463,19 +1490,19 @@ async function call(name: string, args: Args): Promise<unknown> {
 const callerPane = herdrId(process.env.HERDR_PANE_ID) ? process.env.HERDR_PANE_ID! : null;
 const createdJobs = new Set<string>();
 const isSessionJob = (job: Job) => (callerPane ? job.herdr_pane === callerPane : createdJobs.has(job.job));
-function sessionRows(): JobRow[] {
+function sessionRows(markExhaustion: boolean): JobRow[] {
   return jobs()
     .filter(isSessionJob)
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.job.localeCompare(b.job))
     .slice(0, 200)
-    .map((job) => readRow(job, !isWorker).row);
+    .map((job) => readRow(job, markExhaustion).row);
 }
 let cursor: Map<string, JobRow>;
 const tries = new TryLog(hudHome), answers = new PanelActionLog(hudHome);
-function withChanges(value: unknown): unknown {
+function withChanges(value: unknown, markExhaustion: boolean): unknown {
   // Snapshot, diff and advance the shared cursors synchronously, in response order.
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
-  const rows = sessionRows();
+  const rows = sessionRows(markExhaustion);
   const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)))];
   cursor = new Map(rows.map((row) => [row.job, row]));
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
@@ -1552,7 +1579,7 @@ async function receive(line: string): Promise<void> {
         const value =
           isWorker && key !== null
             ? { ok: false, code: 'worker_cannot_dispatch' }
-            : withChanges(key === null ? await invoke() : await keyLock(key, invoke));
+            : withChanges(key === null ? await invoke() : await keyLock(key, invoke), !isWorker && name !== 'hud_peek');
         result = { content: [{ type: 'text', text: JSON.stringify(value) }] };
       } catch (error) {
         result = {
@@ -1578,7 +1605,7 @@ async function receive(line: string): Promise<void> {
   write({ jsonrpc: '2.0', id: request.id, result });
 }
 export function serveMcp() {
-  cursor = new Map(sessionRows().map((row) => [row.job, row]));
+  cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
   createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
     void receive(line);
   });

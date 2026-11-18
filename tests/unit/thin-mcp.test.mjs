@@ -1581,7 +1581,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const listed = await f.rpc('tools/list');
   assert.deepEqual(
     listed.result.tools.map((tool) => tool.name),
-    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_send', 'hud_respond', 'hud_close']
+    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close']
   );
   // The shipped imp splits on demand; an owner role file can still ask for the helper pane up front.
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
@@ -1608,6 +1608,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     `${args.task}\n\nWrite your final answer to ${join(job.task_dir, 'report.md')}; the job fails without that file.\n` +
     `Sonic command: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} start --dir ${JSON.stringify(job.task_dir)} --task-file <file> [--thinking off|low|medium|high]\n` +
     `Collect: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} wait --dir ${JSON.stringify(job.task_dir)} --job <id>\n` +
+    `Optional milestone: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-progress.mjs'))} --dir ${JSON.stringify(job.task_dir)} "message"\n` +
     `Once the report file is written, end your turn with the single line \`report written: ${join(job.task_dir, 'report.md')}\` and do not repeat the report in your final message.\n`
   );
   assert.deepEqual(f.commands()[0].args, ['pane', 'get', 'w4E:p1']);
@@ -1911,6 +1912,102 @@ function waitFixtureJob(f, n, state = 'working', herdr_pane = 'w4E:p1') {
   return { job, dir, receipt, status };
 }
 
+const progressRecord = (text) => ({ at: '2026-11-18T12:00:00.000Z', text });
+const jsonLines = (rows) => rows.map((row) => JSON.stringify(row) + '\n').join('');
+
+test('hud-progress validates the job directory, normalizes text, and retains the newest 50', async (t) => {
+  const f = await fixture(t);
+  const { dir, job } = waitFixtureJob(f, 1);
+  const log = join(dir, 'progress.jsonl');
+  const run = (...args) => spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-progress.mjs'), ...args], {
+    env: { ...f.env, HUD_JOB_DIR: dir }, encoding: 'utf8',
+  });
+  const outside = join(f.root, job);
+  fs.cpSync(dir, outside, { recursive: true });
+  assert.notEqual(run('--dir', outside, 'outside').status, 0);
+  assert.notEqual(run(' \x07\n ').status, 0);
+  assert.equal(fs.existsSync(join(outside, 'progress.jsonl')), false);
+  assert.equal(fs.existsSync(log), false);
+  const first = run('  Scanned\r\nnotes\x07\u0085  ');
+  assert.equal(first.status, 0, first.stderr);
+  const read = () => fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(read()[0].text, 'Scanned notes');
+  assert.ok(Number.isFinite(Date.parse(read()[0].at)));
+  assert.equal(fs.statSync(log).mode & 0o777, 0o600);
+  const seed = Array.from({ length: 49 }, (_, i) => progressRecord(`Step ${i}`));
+  fs.appendFileSync(log, jsonLines(seed));
+  const inode = fs.statSync(log).ino;
+  const rotated = run('--dir', dir, '进'.repeat(245));
+  assert.equal(rotated.status, 0, rotated.stderr);
+  assert.notEqual(fs.statSync(log).ino, inode, 'rotation publishes a fresh inode');
+  assert.deepEqual(read().map((r) => r.text), [...seed.map((r) => r.text), '进'.repeat(240)]);
+});
+
+test('single-job reads and the panel get progress without changes or narration in list/wait rows', async (t) => {
+  const f = await fixture(t);
+  const { dir, job, status } = waitFixtureJob(f, 1);
+  await f.call('hud_roster');
+  const streamed = [], ac = new AbortController();
+  const watching = watchCommand(['--verbose'], { env: f.env, stdout: (s) => streamed.push(s.trim()), stderr: () => {} },
+    { signal: ac.signal, rescanMs: 60 });
+  try {
+    const records = Array.from({ length: 12 }, (_, i) => progressRecord(`Step ${i}`));
+    const log = join(dir, 'progress.jsonl');
+    fs.writeFileSync(log, jsonLines(records.slice(0, -1)));
+    assert.deepEqual(workerFor(f, job).latest_progress, records.at(-2));
+    fs.appendFileSync(log, jsonLines(records.slice(-1)));
+    const detail = await f.call('hud_read', { job });
+    assert.deepEqual(detail.progress, records.slice(-10));
+    assert.deepEqual(detail.latest_progress, records.at(-1));
+    assert.equal(detail.changes, undefined);
+    assert.deepEqual(workerFor(f, job).progress, detail.progress);
+    const compact = [{ job, role: 'imp', state: 'working' }];
+    assert.deepEqual(await f.call('hud_read'), { jobs: compact });
+    assert.deepEqual((await f.call('hud_wait', { jobs: [job], wait_ms: 0 })).jobs, compact);
+    status('done');
+    await until(() => streamed.length > 0);
+    assert.deepEqual(streamed, [`${job} imp: done`]);
+  } finally {
+    ac.abort(); await watching;
+  }
+});
+
+test('hud_peek returns a bounded pane tail and does not acknowledge, exhaust or close jobs', async (t) => {
+  const f = await fixture(t);
+  const { dir, job } = waitFixtureJob(f, 1, 'idle_grace');
+  const fault = waitFixtureJob(f, 2, 'failed');
+  const faultStatus = JSON.stringify({ state: 'failed', reason: 'HTTP 429 quota' });
+  fs.writeFileSync(join(fault.dir, 'STATUS.json'), faultStatus);
+  fs.writeFileSync(join(fault.dir, 'job.json'), JSON.stringify({ ...fault.receipt, place_key: 'synthetic-quota' }));
+  fs.writeFileSync(join(dir, 'report.md'), 'Synthetic report not read.');
+  fs.writeFileSync(join(dir, 'SESSION.txt'), 'PRIMARY=synthetic\nLEFT=w4E:p2\nRIGHT=w4E:p3\n');
+  const milestone = progressRecord('Tested the change');
+  fs.writeFileSync(join(dir, 'progress.jsonl'), jsonLines([milestone]));
+  const pane = Array.from({ length: 121 }, (_, i) => `pane line ${i}`);
+  fs.writeFileSync(join(f.env.HOME, 'pane-read'), pane.join('\r\n') + '\r\n');
+  const paths = [join(dir, 'job.json'), join(dir, 'STATUS.json'), join(fault.dir, 'job.json'), join(fault.dir, 'STATUS.json')];
+  const before = paths.map((path) => fs.readFileSync(path, 'utf8'));
+  const peek = await f.call('hud_peek', { job });
+  assert.deepEqual(peek.status, { job, role: 'imp', state: 'idle_grace', report_unread: true });
+  assert.deepEqual(peek.progress, [milestone]);
+  assert.deepEqual(peek.pane_lines, pane.slice(-40));
+  assert.deepEqual((await f.call('hud_peek', { job, lines: 120 })).pane_lines, pane.slice(-120));
+  const noPane = await f.call('hud_peek', { job: fault.job });
+  assert.equal(noPane.pane_lines, null);
+  assert.equal(noPane.pane_reason, 'no pane');
+  assert.equal(noPane.status.reason, 'HTTP 429 quota');
+  for (const lines of [0, 121, 2.5, '3']) {
+    const response = await f.rpc('tools/call', { name: 'hud_peek', arguments: { job, lines } });
+    assert.equal(response.result.isError, true);
+    assert.equal(JSON.parse(response.result.content[0].text).error, 'invalid_arguments: lines');
+  }
+  assert.deepEqual(paths.map((path) => fs.readFileSync(path, 'utf8')), before);
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
+  assert.deepEqual(f.commands(), Array.from({ length: 2 }, () => ({
+    command: 'herdr', args: ['pane', 'read', 'w4E:p2', '--source', 'recent'],
+  })));
+});
+
 test('hud_wait any wakes on a settlement among the caller’s initially unsettled jobs', { timeout: 4000 }, async (t) => {
   const f = await fixture(t);
   const first = waitFixtureJob(f, 1), second = waitFixtureJob(f, 2);
@@ -2065,7 +2162,9 @@ test('hud_create idle_grace_s overrides CLI grace at both bounds and refuses inv
     assert.ok(job.job, JSON.stringify(job));
     assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).cli.idle_grace_s, value);
     assert.equal((await f.call('hud_read', { job: job.job })).idle_grace_s, value);
-    assert.match(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'), /end your turn with the single line `report written:/);
+    const brief = fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8');
+    assert.match(brief, /end your turn with the single line `report written:/);
+    assert.match(brief, /^Optional milestone: node .*\/hud-progress\.mjs" --dir /m);
   }
 });
 

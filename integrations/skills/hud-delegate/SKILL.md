@@ -19,6 +19,7 @@ The user names a role and a task in plain words; you do the rest. Never ask them
    not repeated list reads. Without a watch or queue, main sessions receive typed questions. A live pane-scoped
    watch suppresses direct questions. Answer within 20 minutes using the line's
    `hud_respond` reply.
+   Use `hud_peek` to see a worker's recent pane and optional `hud-progress` milestones without marking the job read or closing it.
 6. Read the report file through `hud_read`, check it (for code: the diff and named checks), then decide: accept,
    repair, review or stop. `hud_read({})` lists running jobs and pending attention, with question IDs and unread
    report flags when applicable; use `view: "recent"` (without `job`) for the newest 20 full rows. A `report` token

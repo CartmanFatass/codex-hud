@@ -82,6 +82,32 @@ test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
           assert.equal(visualLength(line), width, `${page} ${lang} ${width}: ${stripAnsi(line)}`);
       }
 });
+test('the Inspector and expanded running cards show exactly one localized milestone in Classic and Split', (t) => {
+  const f = fixture(t);
+  const { id: workerId, laneId } = f.apiWorker;
+  const target = { kind: 'worker', laneId, workerId };
+  for (const [lang, label] of [['en', 'Milestone'], ['zh', '里程碑']]) for (const width of [40, 80]) {
+    const lines = (frame) => frame.lines.filter((line) => stripAnsi(line).includes(`${label}: Retry cap verified`));
+    const check = (frame) => {
+      const rows = lines(frame);
+      assert.equal(rows.length, 1);
+      assert.equal(visualLength(rows[0]), width);
+    };
+    check(f.render('job', width, lang));
+    const previous = setLanguage(lang);
+    try {
+      for (const panelLayout of ['classic', 'split']) {
+        const state = { ...initialMonitorState(), panelLayout, homeTarget: target, splitCursor: targetKey({ kind: 'lane', laneId }) };
+        const draw = (expanded) => renderMonitor({ tree: TREE, workboard: f.board, width, height: 48, nowMs: NOW,
+          state: { ...state, boardExpanded: new Set(expanded ? [targetKey(target)] : []) },
+        });
+        assert.equal(lines(draw(false)).length, 0);
+        check(draw(true));
+      }
+    } finally { setLanguage(previous); }
+  }
+});
+
 test('Inspector shows elapsed run time for running and settled jobs, not for unknown endpoints', (t) => {
   const f = fixture(t);
   const nowMs = NOW + 18 * 60000;

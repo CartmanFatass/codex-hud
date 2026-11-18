@@ -40,7 +40,12 @@ export interface DecisionRecord {
   readonly stale: boolean;
   readonly evidence: readonly EvidenceRef[];
 }
-export interface OwnerWorker {
+interface ProgressEntry { at: string; text: string }
+export interface JobProgress {
+  readonly progress: readonly ProgressEntry[];
+  readonly latest_progress: ProgressEntry | null;
+}
+export interface OwnerWorker extends Partial<JobProgress> {
   readonly diffStat?: import('./diff-stat.js').DiffStatSummary;
   readonly homeRank?: number;
   readonly homeFolded?: boolean;

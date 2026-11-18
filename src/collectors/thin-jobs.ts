@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId } from '../roles/herdr-run.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
-import type { DecisionRecord, EvidenceRef, OwnerWorker, WorkLane } from './workboard-types.js';
+import type { DecisionRecord, EvidenceRef, JobProgress, OwnerWorker, WorkLane } from './workboard-types.js';
 
 let complete = false;
 function entries(path: string, missingOK = false): string[] {
@@ -19,6 +19,7 @@ interface Snap {
   at: number;
   whole: boolean;
   json?: Record<string, unknown> | null;
+  progress?: JobProgress;
 }
 const cache = new Map<string, { stamp: string; snap: Snap }>();
 const watchCache = new Map<string, { stamp: string; snap: Snap }>();
@@ -58,14 +59,14 @@ function persist(home: string): void {
   } catch { /* An unavailable display cache must not stop collection. */ }
   finally { try { fs.unlinkSync(temp); } catch { /* renamed or unavailable */ } }
 }
-function read(path: string, max = 65536, store = cache): Snap | null {
+function read(path: string, max = 65536, store: typeof cache | null = cache): Snap | null {
   let fd: number | undefined;
   try {
     const st = fs.lstatSync(path);
     if (!st.isFile()) throw new Error('nonregular_job_file');
-    seen.add(path);
+    if (store) seen.add(path);
     const stamp = `${st.mtimeMs}:${st.size}:${st.ino}`;
-    const hit = store.get(path);
+    const hit = store?.get(path);
     if (hit?.stamp === stamp && !hit.snap.whole) complete = false;
     if (hit?.stamp === stamp) return hit.snap;
     fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
@@ -73,11 +74,11 @@ function read(path: string, max = 65536, store = cache): Snap | null {
     const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
     const snap = { text: buffer.subarray(0, Math.min(size, max)).toString('utf8'), at: st.mtimeMs, whole: size <= max };
     complete &&= snap.whole;
-    store.set(path, { stamp, snap });
+    store?.set(path, { stamp, snap });
     return snap;
   } catch (error) {
-    store.delete(path);
-    seen.delete(path);
+    store?.delete(path);
+    if (store) seen.delete(path);
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
     return null;
   } finally {
@@ -137,7 +138,7 @@ export interface ThinJobScope {
   project: string | null;
   pane: string | null;
 }
-export interface JobRow {
+export interface JobRow extends Partial<JobProgress> {
   job: string;
   parent_job?: string;
   role: string | null;
@@ -157,6 +158,22 @@ export interface JobRowExtras {
   openQuestions?: number;
   reportPresent?: boolean;
   reportAt?: number;
+  progress?: JobProgress;
+}
+/** Milestones are display metadata: watch/list rows do not read this file. */
+export function readJobProgress(dir: string, cached = false): JobProgress {
+  const file = read(join(dir, 'progress.jsonl'), 65536, cached ? cache : null);
+  if (!file?.whole) return { progress: [], latest_progress: null };
+  return file.progress ??= (() => {
+    const progress = file.text.split('\n').flatMap((line) => {
+      try {
+        const entry = JSON.parse(line);
+        if (when(entry?.at) !== null && word(entry?.text)) return [{ at: entry.at as string, text: entry.text as string }];
+      } catch { /* Ignore a partial or malformed record. */ }
+      return [];
+    }).slice(-10);
+    return { progress, latest_progress: progress.at(-1) ?? null };
+  })();
 }
 function openQuestionIds(dir: string): string[] {
   const qa = join(dir, 'qa');
@@ -237,6 +254,7 @@ export function jobRow(
     report_unread: reportPresent && reportMtime !== null && !reportWasRead(j.read_at, reportMtime),
     report_mtime: reportMtime,
     question_ids: questionIds,
+    ...extras?.progress,
   };
 }
 const rowState = (row: JobRow) => row.state ?? row.display_state;
@@ -456,7 +474,10 @@ export function readThinJobs(
       }
     }
     const report = read(join(directory, 'report.md'));
-    const row = jobRow(job, status?.v ?? null, { openQuestions: openCount, reportPresent: report !== null, reportAt: report?.at });
+    const row = jobRow(job, status?.v ?? null, {
+      openQuestions: openCount, reportPresent: report !== null, reportAt: report?.at,
+      progress: readJobProgress(directory, true),
+    });
     const cliJob = word(s.harness) === 'cli' || (job.cli !== null && typeof job.cli === 'object');
     const paneAsk =
       !pending && row.display_state === 'working' && cliJob && (row.blocked || row.state === 'waiting_orchestrator')
@@ -537,6 +558,8 @@ export function readThinJobs(
     const worker: OwnerWorker = {
       files,
       sessionFile,
+      progress: row.progress,
+      latest_progress: row.latest_progress,
       id: workerId,
       laneId,
       ...(parent ? { parentJobId: `thin-job:${parent}` } : {}),

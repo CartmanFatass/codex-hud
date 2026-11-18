@@ -21,5 +21,6 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - `hud_read({})` lists running jobs and pending attention, including unanswered question IDs and unread reports.
   Use `view: "recent"` for the newest 20 full rows. Neither list marks items read. A job read returns only an unread
   report (`report_unchanged: true` otherwise; `full: true` to reread). A report read in idle grace marks it read too.
+- Use `hud_peek` to inspect a worker's recent pane and optional `hud-progress` milestones without marking the job read or closing it.
 - On a `try accepted` line, update that project's STATE ledger to `accepted`; on a `try flagged` line, add the slice under Waiting for the owner and ask the owner what is wrong.
 The main session owns every handoff and decides every next step. HUD does not chain these steps.
