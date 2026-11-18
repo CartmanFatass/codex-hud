@@ -6,14 +6,15 @@
 
 This repo is codex-hud, being turned into one HUD for Claude Code, Codex and pi. The product scope is concept §15,
 "2026-11-07 Scope convergence: fixed roles, herdr execution, owned Jev": a fixed-role MCP facade, herdr for CLI
-execution, an owned Jev runtime for browser jobs, and main-session chaining. The active queue is R0–R7 in
-`docs/handoff/STATE.md`. Work happens on branch `universal-hud`. From 2026-11-03 it is developed remotely; this
-file is the entry point for remote agents (dots). `CLAUDE.md` holds the same project guide for Claude Code, plus local
+execution, an owned Jev runtime for browser jobs, and main-session chaining. **Current state is in `docs/handoff/STATE.md`; the R0–R7 queue it once held is archived in
+`docs/handoff/archive/STATE-2026-11-03-to-11-14.md` and is not active (the owner reset the effort on 2026-11-10: `docs/spec.md` is the
+boundary, `docs/delegation.md` the workflow).** Work happens on branch `universal-hud`. This file is the 2026-11-03 entry point for
+remote agents (dots) and is kept as that history. `CLAUDE.md` holds the same project guide for Claude Code, plus local
 routing that does not apply here.
 
 ## Read first
 
-1. `docs/handoff/STATE.md`: current status, the package queue (R0–R7), merge rules, owner questions, local-only work.
+1. `docs/handoff/STATE.md`: current status and the owner's open questions (the old package queue, merge rules and local-only list are in the archive next to it).
 2. `docs/cloud/dots.md`: roles, the loop, and the prompts for subagents.
 3. `docs/cloud/README.md`: rules every agent keeps and the check set. The Claude-specific tool names there (Agent
    tool, SendMessage) map to dots subagents.

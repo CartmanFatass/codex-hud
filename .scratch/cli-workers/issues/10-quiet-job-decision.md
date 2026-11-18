@@ -28,7 +28,7 @@ decision provider (no real calls)
 
 **Blocked by:** 09
 
-**Status:** in-review
+**Status:** done (2117e2b5)
 
 - [x] Each option leads to its action; a second `finished-no-report` never sends the prompt twice
 - [x] Low probability, no key, cap reached or provider error → needs-human, nothing sent to the worker
