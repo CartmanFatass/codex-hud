@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import { procStat, workerAlive, writeTurn } from './cli-judge.js';
 import { jobChanges, jobRow, type JobRow } from '../../../src/collectors/thin-jobs.js';
+import { TryLog } from '../../../src/collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
 import { herdrId } from '../../../src/roles/herdr-run.js';
 import {
@@ -1176,10 +1177,11 @@ function sessionRows(): JobRow[] {
     .map((job) => readRow(job, !isWorker).row);
 }
 let cursor = new Map<string, JobRow>(sessionRows().map((row) => [row.job, row]));
+const tries = new TryLog(hudHome);
 function withChanges(value: unknown): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const rows = sessionRows();
-  const changes = jobChanges(cursor, rows);
+  const changes = [...jobChanges(cursor, rows), ...tries.changes(process.cwd())];
   cursor = new Map(rows.map((row) => [row.job, row]));
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
 }

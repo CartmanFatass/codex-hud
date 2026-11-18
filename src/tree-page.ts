@@ -1,5 +1,6 @@
 import { openEditorPane, closePanelPane, watchPanelCaller } from './cli/panel-pane.js';
 import { ProjectCollector, projectShown } from './collectors/project-board.js';
+import { appendTry, TryLog } from './collectors/try-records.js';
 import { readBackupSkills } from './collectors/backup-skills.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
@@ -476,6 +477,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const worktreeCollector = new WorktreeCollector();
   // One collector per project the tab has shown (this one's always); Home reads only the panel's own.
   const visits = new ProjectVisits(HUD_CWD_REAL, (root) => new ProjectCollector(root, jobPipeline.home));
+  const tries = new TryLog(jobPipeline.home);
   let projects = projectList(jobPipeline.home, HUD_CWD_REAL);
   let projectsAt = Date.now();
   // The Projects list reads every listed project lightly, and only while it is open.
@@ -633,6 +635,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const render = () => {
     if (closed || (place && !collected)) return;
     syncPanelView();
+    // On a switch, the previous snapshot goes with its own root until the new project has been read.
+    const shown = state.mainTab === 'project' ? visits.shown(shownRoot()) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
+    const tryMarks = projectShown(state, !!settingsPage) && state.projectTry && shown.snapshot
+      ? tries.marks(shown.root, shown.snapshot.ledger) : undefined;
     const output = time('render', () => {
       let lines: string[];
       if (settingsPage) {
@@ -663,8 +669,6 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const nowMs = Date.now();
         const hud = currentHud();
         const jobRender = panelJobRenderState(jobComposition, !collected || treeBuiltFor !== tree.rootId);
-        // The Project tab keeps the previous project's page until a project just switched to has been read once.
-        const shown = state.mainTab === 'project' ? visits.shown(shownRoot()) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
         frame = renderMonitor({
           tree,
           workboard: state.mainTab === 'home' && state.focus === 'agents' && !state.help ? homeRecommendation.apply(displayBoard()) : displayBoard(),
@@ -673,6 +677,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           state,
           worktrees,
           project: shown.snapshot,
+          tryMarks,
           backupSkills,
           projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
           projects: listing(state) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
@@ -1235,6 +1240,13 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           error = String(err);
           render();
         });
+      }
+      if (result.action?.type === 'record-try' && visits.snapshot(shownRoot())) {
+        try {
+          appendTry(jobPipeline.home, shownRoot(), result.action.action, result.action.target);
+          roleNotice = '';
+        } catch { roleNotice = t('Could not record try'); }
+        error = roleNotice || settingsError || null;
       }
       if (result.action?.type === 'refresh-models') refreshModelLists(true);
       if (result.action?.type === 'role-edit') {

@@ -211,6 +211,9 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       tryOnly();
       return result();
     }
+    const target = rows[at]?.tryTarget;
+    if (next.projectTry && projectPageOf(next) === 'progress' && target && (key === 'try-accept' || key === 'next-trouble'))
+      return result({ type: 'record-try', action: key === 'try-accept' ? 'accept' : 'flag', target });
     // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
     if (key === 'reset' && projectPageOf(next) === 'control') return result({ type: 'refresh-models' });
     const place = PLACE_KEYS[key], onPlace = /^project:role:(.+):(\d+)$/.exec(next.projectCursor ?? '');

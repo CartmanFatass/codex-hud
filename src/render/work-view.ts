@@ -26,6 +26,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
       ['[ ]', 'switch project (Project)'],
+      ['y n', 'accept / flag (to-try view)'],
       ['c C', 'role: next / previous preset'],
       ['p e', 'place: harness, thinking (capitals go back)'],
       ['m', 'place: pick a model (provider, then model; type to filter)'],
@@ -153,7 +154,7 @@ export function renderWorkboardFrame(
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
-              Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)))
+              Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
@@ -260,7 +261,7 @@ export function renderWorkboardFrame(
           : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
           : page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
-          : page === 'progress' ? (state.projectTry ? '↑↓ move  ⏎ open  t all  esc back  ? help' : '↑↓ move  ⏎ open  t to try  esc back  ? help')
+          : page === 'progress' ? (state.projectTry ? '↑↓ move  y accept  n flag  t all  esc back  ⏎ open  ? help' : '↑↓ move  ⏎ open  t to try  esc back  ? help')
           : page || list ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
   if (height > 1)

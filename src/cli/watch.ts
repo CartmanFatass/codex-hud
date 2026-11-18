@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { formatJobChange, jobChanges, readThinJobRows, type JobRow } from '../collectors/thin-jobs.js';
 import { questionFields } from '../collectors/work-artifacts.js';
+import { TRIES_FILE, TryLog } from '../collectors/try-records.js';
 import { getHudHome } from '../hud-home.js';
 import { herdrId } from '../roles/herdr-run.js';
 import type { HudIO } from './hud.js';
@@ -10,7 +11,7 @@ import { CliError } from './private-home.js';
 
 export const WATCH_HELP =
   'Usage: hud watch [--all] [--verbose] [--queue]\n' +
-  'Stream pending questions and actionable job events for the caller pane (HERDR_PANE_ID).\n' +
+  'Stream pending questions and actionable job events for the caller pane (HERDR_PANE_ID), plus project try records.\n' +
   '--all: every pane; --verbose: every change, as in MCP changes.\n' +
   '--queue: deliver quietly through the Codex caller queue (typed fallback on failure).\n';
 
@@ -89,12 +90,12 @@ export async function watchCommand(
     return 1;
   }
   const scope = { pane: all ? null : callerPane };
-  const home = getHudHome(io.env);
+  const home = getHudHome(io.env), tries = new TryLog(home);
   const queueIdleMs = options.queueIdleMs ?? 10 * 60_000;
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue ? queueIdleMs : Infinity));
   const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
   let idleSince: number | null = null;
-  let watcher: fs.FSWatcher | undefined;
+  let watcher: fs.FSWatcher | undefined, homeWatcher: fs.FSWatcher | undefined;
   const changed = () => {
     // A change during a scan is kept for the next wait, never lost until the rescan.
     dirty = true;
@@ -103,6 +104,14 @@ export async function watchCommand(
     timer = setTimeout(fire, DEBOUNCE_MS);
   };
   const attach = () => {
+    if (!homeWatcher) try {
+      homeWatcher = fs.watch(home, (_event, name) => {
+        const file = name?.toString();
+        if (file === 'jobs' && !watcher) { attach(); changed(); }
+        if (file === TRIES_FILE) changed();
+      });
+      homeWatcher.on('error', () => { homeWatcher?.close(); homeWatcher = undefined; });
+    } catch { /* No home yet: the rescan retries. */ }
     if (watcher) return;
     try {
       // One recursive watch covers every job's STATUS.json, report.md and qa/ (Node 24 on Linux).
@@ -111,20 +120,7 @@ export async function watchCommand(
         if (file.endsWith('.tmp') || file.endsWith('supervisor.pid') || file.includes('/sessions/')) return;
         changed();
       });
-    } catch {
-      try {
-        // No jobs/ yet (fresh home): watch the home until it appears, then switch to jobs/.
-        watcher = fs.watch(home, (_event, name) => {
-          if (name?.toString() !== 'jobs') return;
-          watcher?.close();
-          watcher = undefined;
-          attach();
-          changed();
-        });
-      } catch {
-        return; /* No home yet: the rescan retries. */
-      }
-    }
+    } catch { return; /* The home watch or next rescan will retry. */ }
     watcher.on('error', () => { watcher?.close(); watcher = undefined; });
   };
 
@@ -140,6 +136,7 @@ export async function watchCommand(
   };
   const stop = () => {
     stopped = true;
+    homeWatcher?.close();
     watcher?.close();
     watcher = undefined;
     if (timer !== undefined) {
@@ -190,8 +187,9 @@ export async function watchCommand(
       dirty = false;
       if (queue && delivery!.paneInfo(callerPane, io.env)?.agent !== 'codex') break;
       const rows = readThinJobRows(home, scope);
+      const tryLines = tries.changes(queue ? process.cwd() : undefined);
       if (queue) {
-        const pending = rows.some((row) => !settled(row) || row.report_unread || row.open_questions) ||
+        const pending = tryLines.length > 0 || rows.some((row) => !settled(row) || row.report_unread || row.open_questions) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
@@ -200,6 +198,7 @@ export async function watchCommand(
         }
       }
       const lines = first ? actionable(home, prev, rows, true) : verbose ? jobChanges(prev, rows) : actionable(home, prev, rows);
+      lines.push(...tryLines);
       first = false;
       prev = new Map(rows.map((row) => [row.job, row]));
       for (const line of lines) {
@@ -228,6 +227,7 @@ export async function watchCommand(
     process.stdout?.off('error', onStdoutError);
     options.signal?.removeEventListener('abort', stop);
     if (timer !== undefined) clearTimeout(timer);
+    homeWatcher?.close();
     watcher?.close();
   }
 }

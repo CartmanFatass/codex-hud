@@ -13,6 +13,7 @@ import type { ProjectPage } from './project-view.js';
 import type { PlaceEdit } from '../roles/role-control.js';
 import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
+import type { TryAction, TryTarget } from '../collectors/try-records.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
 export {
   iconic,
@@ -107,6 +108,7 @@ export interface MonitorRow {
   placePreview?: true;
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;
+  tryTarget?: TryTarget;
 }
 export interface MonitorRect {
   id: MonitorPane;
@@ -159,6 +161,7 @@ export interface MonitorData {
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
   project?: ProjectSnapshot;
+  tryMarks?: ReadonlyMap<string, TryAction>;
   backupSkills?: BackupSkill[] | null;
   /** The shown project's own name, for the hub's top row. */
   projectName?: string;
@@ -191,6 +194,7 @@ export interface MonitorOutcome {
     | { type: 'open-files'; files: string[] }
     /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
     | ({ type: 'role-edit' } & PlaceEdit)
+    | { type: 'record-try'; action: TryAction; target: TryTarget }
     | { type: 'refresh-models' }
     | { type: 'brief-toggle' };
 }

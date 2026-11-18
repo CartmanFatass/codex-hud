@@ -105,6 +105,7 @@ export class WorkbenchInputDecoder {
                   '4': 'inspect',
                   '[': 'project-prev',
                   ']': 'project-next',
+                  y: 'try-accept',
                   // Control plane: the place under the cursor (capitals go back).
                   c: 'role-preset',
                   C: 'role-preset-prev',

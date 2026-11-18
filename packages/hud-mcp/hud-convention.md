@@ -17,4 +17,5 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   suppresses direct questions. Lines include text and a `hud_respond` reply; no duplicate question read is needed.
 - `hud_read` lists open-question counts and unread-report flags; a job read returns only an unread report
   (`report_unchanged: true` otherwise; `full: true` to reread). A report read in idle grace marks it read too.
+- On a `try accepted` line, update that project's STATE ledger to `accepted`; on a `try flagged` line, add the slice under Waiting for the owner and ask the owner what is wrong.
 The main session owns every handoff and decides every next step. HUD does not chain these steps.

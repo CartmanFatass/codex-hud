@@ -1,6 +1,7 @@
 /** Pure Project rows, using the same kit as Home and the Inspector. */
 import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
+import type { TryAction } from '../collectors/try-records.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { jobSentenceLine, workCardDetail, labelSummary } from './work-card.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
@@ -213,7 +214,8 @@ const inFlight = (data: ProjectSnapshot) => data.slices.filter((r) => r.drift !=
 /** Landed slices (to try or accepted), the newest first by commit date; those with none last, the later ledger rows first. */
 const landedNewest = (data: ProjectSnapshot) => data.ledger.flatMap((r, i) => r.state === 'try' || r.state === 'accepted' ? [{ r, i }] : [])
   .sort((a, b) => (b.r.at ?? -1) - (a.r.at ?? -1) || b.i - a.i);
-const landedMark = (r: LedgerSlice) => r.state === 'try' ? sliceInk('try')(mark('◇', 'o')) : sliceInk('accepted')(mark('✓', '+'));
+const landedMark = (r: LedgerSlice, action?: TryAction) => action === 'flag' ? theme.board.attention(mark('⚑', '!'))
+  : r.state === 'try' && action !== 'accept' ? sliceInk('try')(mark('◇', 'o')) : sliceInk('accepted')(mark('✓', '+'));
 /** The hub's Latest and Progress's History share this right side: `to try 10h`, or only the age for an accepted slice on Progress. */
 const landedAge = (r: LedgerSlice, now: number, word = true) =>
   [r.state === 'try' ? sliceInk('try')(t('to try')) : word ? theme.board.muted(t('accepted')) : '', theme.board.muted(sinceText(r.at, now))].filter(Boolean).join(' ');
@@ -432,7 +434,7 @@ function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, width: n
 /** One page: today's section content, without the section header (the crumb names the page). */
 function pageRows(
   page: ProjectPage, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false
+  board?: WorkboardSnapshot, modelEnabled = false, tryMarks?: ReadonlyMap<string, TryAction>
 ): MonitorRow[] {
   const rows: MonitorRow[] = [boardRow('')], folded = projectFoldedSet(state);
   const item = (r: ProjectItem, i: number, glyph = '') => rows.push(projectItem(r, i, glyph, width, now));
@@ -443,26 +445,34 @@ function pageRows(
     const head = (label: string, right: string | number) => rows.push(boardRow(''), section(t(label), width, String(right)));
     // Landed slices as rows: each a row Enter opens (its milestone, commit and day), the milestones one row each that Enter opens into its slices.
     const landed = landedNewest(data), recent = landed.filter(({ r }) => r.at !== undefined && now - r.at <= 7 * DAY), older = landed.filter((x) => !recent.includes(x));
-    const entry = ({ r }: { r: LedgerSlice }, indent: number, right = landedAge(r, now, false)) => {
-      const id = `hist:${r.id}`, lines = stacked(`${' '.repeat(indent)}${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), right, width, indent + 4, 2);
+    const entry = ({ r }: { r: LedgerSlice }, indent: number, right = landedAge(r, now, false), tried = false) => {
+      const action = tried ? tryMarks?.get(r.id) : undefined;
+      const tryTarget = tried ? { milestone: r.milestone, slices: [r] } : undefined;
+      const id = `hist:${r.id}`, lines = stacked(`${' '.repeat(indent)}${landedMark(r, action)} ${monitorText(r.id)}`, ledgerText(r), right, width, indent + 4, 2);
       if (folded.has(id)) lines.splice(1, 0, ' '.repeat(indent + 4) + theme.board.muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at, now) : ''].filter(Boolean).join(' · ')));
-      for (const line of lines) rows.push({ text: fit(line, width), item: `project:fold:${id}`, ...(data.statePath ? { files: [data.statePath] } : {}) });
+      for (const line of lines) rows.push({ text: fit(line, width), item: `project:fold:${id}`, tryTarget, ...(data.statePath ? { files: [data.statePath] } : {}) });
     };
-    // Newest milestone first; `prefix` keeps each list's folds its own. Of the to-try list (`tried`) the newest milestone is open and has no fold.
+    // Newest milestone first; the newest to-try milestone is selectable but stays open.
     const byMilestone = (list: typeof landed, prefix: string, tried = false) => {
       const order = milestoneOrder(data), buckets = new Map<string, typeof landed>();
-      for (const x of list) { const m = NO_MILESTONE.test(x.r.milestone) ? '' : x.r.milestone; buckets.set(m, [...(buckets.get(m) ?? []), x]); }
-      const names = [...buckets.keys()].map((m) => m || t('other')), column = Math.min(10, Math.max(...names.map(visualLength), 0));
+      const name = (m: string) => NO_MILESTONE.test(m) ? t('other') : monitorText(m);
+      for (const x of list) { const m = !tried && NO_MILESTONE.test(x.r.milestone) ? '' : x.r.milestone; buckets.set(m, [...(buckets.get(m) ?? []), x]); }
+      const names = [...buckets.keys()].map(name), column = Math.min(10, Math.max(...names.map(visualLength), 0));
       for (const [at, [milestone, items]] of [...buckets].sort((a, b) => order.indexOf(b[0]) - order.indexOf(a[0])).entries()) {
-        const id = `${prefix}${milestone}`, newest = tried && !at, open = newest || folded.has(id), accepted = items.filter(({ r }) => r.state === 'accepted').length, tries = items.length - accepted;
+        const id = `${prefix}${milestone}`, newest = tried && !at, open = newest || folded.has(id);
+        const action = (r: LedgerSlice) => tried ? tryMarks?.get(r.id) : undefined;
+        const accepted = items.filter(({ r }) => r.state === 'accepted' || action(r) === 'accept').length;
+        const flagged = items.filter(({ r }) => action(r) === 'flag').length, tries = items.length - accepted - flagged;
         const days = items.flatMap(({ r }) => r.at === undefined ? [] : [Math.floor((now - r.at) / DAY)]), lo = Math.min(...days), hi = Math.max(...days);
         const span = !days.length ? '' : lo === hi ? t('{n}d', { n: lo }) : `${lo}–${t('{n}d', { n: hi })}`;
         // Counts with their words; a row too short for them keeps the marks and the numbers.
         const counts = (words: boolean) => [accepted && sliceInk('accepted')(`${mark('✓', '+')} ${accepted}${words ? ' ' + t('accepted') : ''}`),
+          flagged && theme.board.attention(`${mark('⚑', '!')} ${flagged}${words ? ' ' + t('flagged') : ''}`),
           tries && sliceInk('try')(`${mark('◇', 'o')} ${tries}${words ? ' ' + t('to try') : ''}`)].filter(Boolean).join('  ');
-        const lead = `  ${open ? mark('▾', 'v') : mark('▸', '>')} ${fit(monitorText(milestone) || t('other'), column)} `, words = visualLength(lead + counts(true)) + visualLength(span) + 1 <= width;
-        rows.push({ text: pair(lead + counts(words), theme.board.muted(span), width), ...(newest ? {} : { item: `project:fold:${id}` }) });
-        if (open) items.forEach((x) => entry(x, 4, tried ? theme.board.muted(sinceText(x.r.at, now)) : undefined));
+        const lead = `  ${open ? mark('▾', 'v') : mark('▸', '>')} ${fit(name(milestone), column)} `, words = visualLength(lead + counts(true)) + visualLength(span) + 1 <= width;
+        const tryTarget = tried ? { milestone, slices: items.map(({ r }) => r) } : undefined;
+        rows.push({ text: pair(lead + counts(words), theme.board.muted(span), width), item: newest ? `project:${id}` : `project:fold:${id}`, tryTarget });
+        if (open) items.forEach((x) => entry(x, 4, tried ? theme.board.muted(sinceText(x.r.at, now)) : undefined, tried));
       }
     };
     if (!data.statePath) rows.push(boardRow('  ' + theme.board.muted(t('no STATE.md'))));
@@ -590,7 +600,8 @@ function pageRows(
 /** The Project tab: a hub of one summary row per page, or the page the panel has open. */
 export function projectRows(
   data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false, name = '', projects: ProjectChoice[] = [], room?: number
+  board?: WorkboardSnapshot, modelEnabled = false, name = '', projects: ProjectChoice[] = [], room?: number,
+  tryMarks?: ReadonlyMap<string, TryAction>
 ): MonitorRow[] {
   const page = projectPageOf(state);
   // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
@@ -598,5 +609,5 @@ export function projectRows(
   if (!data) return [];
   // The model picker is the Control plane while it is open.
   if (page === 'control' && state.projectInput && pickOf(data, state.projectInput)) return pickerRows(data, state.projectInput, width, room ?? 24);
-  return page ? pageRows(page, data, state, width, now, board, modelEnabled) : hubRows(data, state, width, now, name, projects, board, room);
+  return page ? pageRows(page, data, state, width, now, board, modelEnabled, tryMarks) : hubRows(data, state, width, now, name, projects, board, room);
 }

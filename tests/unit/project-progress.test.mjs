@@ -377,7 +377,7 @@ test('Progress to try: Enter on the count shows only the ledger\'s `try` slices 
       '        ticket detail',
       '  ▸ M3b   ◇ 1 to try               19d']);
     else assert.match(lines[2], /^仅待试用 ─+ 2$/);
-    assert.match(lines.at(-1), new RegExp(word('t all', 't 全部')));
+    assert.match(lines.at(-1), new RegExp(word('y accept  n flag  t all', 'y 验收  n 标记  t 全部')));
     assert.doesNotMatch(lines.join('\n'), /NATIVE-ROWS|PAGE-ONE|LATER-ONE|ONE-PAGE|still to try|Now|Next|History|现在|下一步|历史|[█▒░]/);
     // Enter on the older milestone's row opens it into its slice; again folds it.
     const at = (state) => ({ ...state, projectCursor: 'project:fold:try:m:M3b' });

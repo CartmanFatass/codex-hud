@@ -6,6 +6,7 @@ import { executable, roleRegistry } from '../roles/roster.js';
 import { controlFacts, type HarnessFact, type ModelLists, type RoleFact } from '../roles/role-control.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
+import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
 export interface ProjectItem {
   label: string;
   value: string;
@@ -109,7 +110,7 @@ export class ProjectCollector {
       if (!st.isFile()) throw Error('not_file');
       const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
       try {
-        const buffer = Buffer.alloc(65536), size = fs.readSync(fd, buffer, 0, buffer.length, 0);
+        const buffer = Buffer.alloc(STATE_BYTES), size = fs.readSync(fd, buffer, 0, buffer.length, 0);
         return parse(buffer.subarray(0, size), st.size > size);
       } finally { fs.closeSync(fd); }
     });
@@ -219,25 +220,18 @@ export class ProjectCollector {
       ladder: { ids: [] }, slices: [], ledger: [], active: [], next: [], summary: '', tickets: this.tickets(),
       counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
     };
-    const statePath = [join(this.cwd, 'docs/handoff/STATE.md'), join(this.cwd, 'STATE.md')].find((p) => this.read(p));
+    const statePath = statePaths(this.cwd).find((p) => this.read(p));
     const state = statePath ? this.read(statePath)!.text : '';
-    const bullets = (heading: string, whole = false) => {
-      const section = state.split(new RegExp(`^## ${heading}[ \\t]*\\r?$`, 'm'))[1]?.split(/^## /m)[0] ?? '';
-      return [...section.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].map((m) => ({
-        label: '', value: m[1].replace(/\s+/g, ' ').trim(), path: statePath, ...(whole ? { text: m[1].replace(/\r/g, '') } : {}),
-      }));
-    };
+    const bullets = (heading: string, whole = false) => stateBullets(state, heading).map((text) => ({
+      label: '', value: text.replace(/\s+/g, ' ').trim(), path: statePath, ...(whole ? { text: text.replace(/\r/g, '') } : {}),
+    }));
     out.waiting = bullets('Waiting for the owner', true);
     out.next = bullets('Next');
     out.statePath = statePath;
     try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
     out.summary = state.match(/^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m)?.[1]?.trim() ?? '';
     const ledger = new Map<string, { state: string; text: string }>();
-    for (const row of bullets('Slices')) {
-      const parts = row.value.split(/\s+·\s+/);
-      if (parts.length < 4) continue;
-      const [status, milestone, id, ...rest] = parts;
-      const text = rest.join(' · ');
+    for (const { state: status, milestone, id, text } of parseLedger(state)) {
       ledger.set(id, { state: status, text });
       if (!SLICE_STATES.includes(status as SliceState)) continue;
       const state = status as SliceState;
