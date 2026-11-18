@@ -677,7 +677,12 @@ against the client's compaction window when known. Claude/Codex show only their
 own tightest quota window, blue then magenta from 75%, red from 90%; pi has session
 cost instead (in its top-right editor ribbon, not duplicated below). Missing facts
 are absent. Agent/job start/done/failure and Claude skill-load notices stay three
-minutes. Open approvals/questions are pinned. No clock, task count, hooks count, tool-at-work or idle fallback.
+minutes. An agent or job item names the work, never the model: its type or role and what it
+works on (`◐ imp 状态栏TPS`; a Claude subagent's Agent-call description, a HUD job's brief
+heading else its package, a Codex subagent's label or task; left out when unknown), and a
+finished or failed one how long it ran, fixed when it ended (`✓ imp 状态栏TPS 12m`). `×n`
+groups the same kind with the same words; the title is cut at 36 columns, then at a word
+on narrow bars, before the item goes, and the type stays. Open approvals/questions are pinned. No clock, task count, hooks count, tool-at-work or idle fallback.
 
 - Claude statusline: `~N t/s` estimates the latest response from transcript output tokens and elapsed time since its prompt or tool result.
 - Codex bar: `~N t/s` shows the existing output-rate estimate from the rollout.
@@ -688,7 +693,7 @@ Tide tints need truecolor. Text icons/none keep meanings without colour. `barFie
 selects from `model,context,project,quota,tps,notice,loaded` without reordering them.
 If you use a field allowlist, include `tps` to show the rate. On narrow bars it drops early;
 notices cut at words, and the model is never dropped. pi's ribbon follows the look;
-other extensions' statuses remain visible. The bars stay English-only.
+other extensions' statuses remain visible. The bars stay English-only apart from a job's own title.
 
 ### pi controls
 

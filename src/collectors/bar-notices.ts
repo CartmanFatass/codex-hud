@@ -38,16 +38,16 @@ export class BarNoticeTracker {
       const who = {
         subject: node.role || node.nickname || node.name,
         id: node.id,
-        model: node.model,
-        effort: node.effort,
+        task: node.label || node.task,
       };
+      const ranMs = node.startedAt ? Math.max(0, nowMs - node.startedAt.getTime()) : undefined;
       const before = this.agents.get(node.id);
       // Dated by its own start: an agent the tree only now lists is old news to the bar.
       if (!fresh && before === undefined && (node.status === 'running' || node.status === 'starting'))
         found.push({ kind: 'agent-started', ...who, at: node.startedAt ?? at });
       if (!fresh && (before === 'running' || before === 'starting')) {
-        if (node.status === 'completed') found.push({ kind: 'agent-done', ...who, at });
-        else if (node.status === 'error') found.push({ kind: 'agent-failed', ...who, at });
+        if (node.status === 'completed') found.push({ kind: 'agent-done', ...who, ranMs, at });
+        else if (node.status === 'error') found.push({ kind: 'agent-failed', ...who, ranMs, at });
       }
     }
     this.agents = new Map(agents.map((node) => [node.id, node.status]));

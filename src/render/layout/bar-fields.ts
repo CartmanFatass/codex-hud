@@ -14,7 +14,7 @@
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
 import { formatTokenCount } from '../lines/activity-line.js';
 import { activeBarStyle, displayConfig, iconSet, isLightTheme, type BarField, type BarStyle } from '../hud-config.js';
-import { providerMark, shortModel } from '../providers.js';
+import { providerMark } from '../providers.js';
 
 /**
  * How long an event stays in the notice zone. Nothing rotates and nothing ticks (owner, 2026-11-11: a bar that keeps
@@ -62,12 +62,15 @@ export type Form = ReadonlyArray<readonly [text: string, role?: Role, bar?: true
 /** Something that happened: a subagent or job started, finished or failed, a skill was loaded. */
 export interface BarEvent {
   kind: 'started' | 'done' | 'failed' | 'warn' | 'skill';
+  /** The words: an agent's name and title, which is also what `×n` groups by. */
   text: string;
   at: number;
-  /** The words when the zone is short of room (no model, no detail). */
-  short?: string;
-  /** An agent's name, the start of `text`: such an item is the name in the agent colour and the rest dim, with no age. */
+  /** An agent's or job's type or role (`imp`, `Explore`) in the agent colour: it stays whole while the zone shrinks. */
   name?: string;
+  /** What it works on, in its own words: cut at a word when the zone is short of room, and the first thing to go. */
+  title?: string;
+  /** How long it ran (`12m`), fixed when it ended: done and failed only. */
+  ran?: string;
   /** Who it is about: only its latest event shows, so `finished` replaces `started`. Defaults to the text. */
   key?: string;
 }
@@ -101,19 +104,24 @@ export function gitSync(ahead: number, behind: number): string {
   return [ahead > 0 ? `${icons.ahead}${ahead}` : '', behind > 0 ? `${icons.behind}${behind}` : ''].join('');
 }
 
-/** A subagent's or job's event, as claude-hud's agents line has it: `frontend-implementer [sonnet-5.5 · xhigh]`. */
+/** `42s`, `12m`, `1h19m`: how long something ran. */
+const runTime = (ms: number) => (ms < 60_000 ? `${Math.floor(ms / 1000)}s` : span(Math.floor(ms / 60_000)));
+
+/** A subagent's or job's event: its type or role, what it works on (when known) and, for an end, how long it ran. */
 export function agentEvent(
   kind: 'started' | 'done' | 'failed',
-  who: { id?: string; name: string; model?: string; effort?: string },
-  at: number
+  who: { id?: string; name: string; title?: string },
+  at: number,
+  ranMs?: number
 ): BarEvent {
-  const meta = [shortModel(who.model), who.effort].filter(Boolean).join(' · ');
+  const title = who.title?.trim() || undefined;
   return {
     kind,
     at,
-    text: `${who.name}${meta ? ` [${meta}]` : ''}`,
-    short: who.name,
+    text: title ? `${who.name} ${title}` : who.name,
     name: who.name,
+    title,
+    ran: kind !== 'started' && ranMs !== undefined && ranMs >= 0 ? runTime(ranMs) : undefined,
     key: who.id ?? who.name,
   };
 }
@@ -278,13 +286,19 @@ function loadedSeg(l: NonNullable<BarFacts['loaded']>): Seg {
 interface Notice {
   mark: string;
   tone: 'alert' | 'ok' | 'bad' | 'info' | 'skill';
+  /** The text; an agent's name, to which its title is added. */
   words: string;
-  /** The words with no model and no detail. */
-  short: string;
-  /** An agent's name, the start of `words`. */
+  /** An agent's name: it stays whole or the item goes. */
   name?: string;
+  title: string;
+  /** ` ×3`: always shown. */
+  count: string;
+  /** ` 12m`: the run time, the first to go. */
   tail: string;
 }
+
+/** The widest a job's title gets, so a long brief heading cannot push the vitals off the bar. */
+const TITLE_COLS = 36;
 
 const MARKS = {
   started: ['◐', 'info'],
@@ -296,16 +310,18 @@ const MARKS = {
 
 const clean = (words: string) => words.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
 
-function noticeOf(event: BarEvent): Notice {
+function noticeOf(event: BarEvent, count = 1): Notice {
   const [mark, tone] = MARKS[event.kind];
+  const name = event.name && clean(event.name);
   return {
     mark,
     tone,
-    words: clean(event.text),
-    short: clean(event.short ?? event.text),
-    name: event.name && clean(event.name),
-    // No age: a counting clock would change the bar every refresh.
-    tail: '',
+    words: name || clean(event.text),
+    name: name || undefined,
+    title: cutWords(clean(event.title ?? ''), TITLE_COLS),
+    count: count > 1 ? ` ×${count}` : '',
+    // Fixed at the end, never a clock; a group of several ran for no one time.
+    tail: count > 1 || !event.ran ? '' : ` ${event.ran}`,
   };
 }
 
@@ -321,27 +337,25 @@ function zoneOf(
   const latest = new Map<string, BarEvent>();
   for (const event of [...(facts.events ?? [])].sort((a, b) => a.at - b.at))
     if (now - event.at < NOTICE_MS) latest.set(event.key ?? event.text, event);
-  // The same kind of event for the same name (three `frontend-implementer`s started) is one item with `×3`.
+  // The same kind of event with the same words (three `Explore ‹title›` started) is one item with `×3`.
   const groups = new Map<string, BarEvent[]>();
   for (const event of [...latest.values()].sort((a, b) => b.at - a.at || a.text.localeCompare(b.text))) {
-    const group = `${event.kind}\u0000${event.short ?? event.text}`;
+    const group = `${event.kind}\u0000${event.text}`;
     groups.set(group, [...(groups.get(group) ?? []), event]);
   }
-  const events = [...groups.values()].map(([newest, ...rest]) => {
-    if (!rest.length) return noticeOf(newest);
-    const times = ` ×${rest.length + 1}`;
-    const text = rest.every((event) => event.text === newest.text) ? newest.text : (newest.short ?? newest.text);
-    return noticeOf({ ...newest, text: text + times, short: (newest.short ?? newest.text) + times });
-  });
+  const events = [...groups.values()].map(([newest, ...rest]) => noticeOf(newest, rest.length + 1));
   const words = facts.needs?.length ? clean(facts.needs.join(' · ')) : '';
-  const alert: Notice | null = words ? { mark: '!', tone: 'alert', words, short: words, tail: '' } : null;
+  const alert: Notice | null = words ? { mark: '!', tone: 'alert', words, title: '', count: '', tail: '' } : null;
   return alert || events.length ? { alert, events } : null;
 }
 
 /** Whole words up to `room` columns, then `…`; nothing when not even the first fits. Unspaced text (CJK) is cut by column. */
 function cutWords(words: string, room: number): string {
   if (visualLength(words) <= room) return words;
-  if (!/\s/.test(words) && /[^\x00-\x7f]/.test(words)) return truncateAnsi(words, room);
+  if (!/\s/.test(words) && /[^\x00-\x7f]/.test(words)) {
+    const cut = truncateAnsi(words, room);
+    return cut === '…' ? '' : cut;
+  }
   let out = '';
   for (const word of words.split(/\s+/)) {
     const next = out ? `${out} ${word}` : word;
@@ -353,45 +367,56 @@ function cutWords(words: string, room: number): string {
 }
 
 /**
- * An item as a segment, longest form first (`form` 0: its words and how long ago, 1: its short words and the age, 2:
- * its short words alone), the words cut at a word to `room` columns; null when not even the first word fits.
+ * An item as a segment, longest form first (`form` 0: its name, its title and how long it ran, 1: its name and the run
+ * time, 2: its name alone), the title cut at a word to `room` columns; null when not even the name fits.
  */
 function noticeSeg(notice: Notice, room: number, pad: string, form = 0): Seg | null {
-  const tail = form > 1 ? '' : notice.tail;
-  const space = room - visualLength(`${notice.mark} ${tail}${pad}${pad}`);
-  // An agent's `[model · effort]` stays whole or goes: it is never cut.
-  const whole = !form && (!notice.name || visualLength(notice.words) <= space);
-  const words = cutWords(whole ? notice.words : notice.short, space);
+  // Only an alert's badge has the padding inside it.
+  const left = (tail: string) =>
+    room - visualLength(`${notice.mark} ${notice.count}${tail}`) - (notice.tone === 'alert' ? 2 * pad.length : 0);
+  // The run time goes before the name does.
+  let tail = form > 1 ? '' : notice.tail;
+  if (notice.name !== undefined && visualLength(notice.words) > left(tail)) tail = '';
+  const space = left(tail);
+  const named = notice.name !== undefined;
+  const words = named ? (visualLength(notice.words) <= space ? notice.words : '') : cutWords(notice.words, space);
   if (!words) return null;
-  const alert = notice.tone === 'alert';
-  const named = Math.min(words.length, notice.name?.length ?? 0);
-  const parts: Form = alert
-    ? [[`${pad}${notice.mark} ${words}${pad}`, pad ? 'alert' : 'warn']]
-    : [
-        [`${notice.mark} `, notice.tone],
-        ...(notice.name
-          ? ([
-              [words.slice(0, named), 'agent'],
-              [words.slice(named), 'dim'],
-            ] as Form)
-          : ([[words, 'value']] as Form)),
-        [tail, 'dim'],
-      ];
+  const title = named && !form ? cutWords(notice.title, space - visualLength(words) - 1) : '';
+  const parts: Form =
+    notice.tone === 'alert'
+      ? [[`${pad}${notice.mark} ${words}${pad}`, pad ? 'alert' : 'warn']]
+      : [
+          [`${notice.mark} `, notice.tone],
+          [words, named ? 'agent' : 'value'],
+          ...(title ? ([[` ${title}`, 'value']] as Form) : []),
+          [`${notice.count}${tail}`, 'dim'],
+        ];
   return { id: 'notice', forms: [parts], ink: P10K[notice.tone], at: 0 };
 }
 
 const textWidth = (seg: Seg | null) => (seg ? visualLength(text(seg.forms[0])) : 0);
 
-/** The items side by side in `room` columns: the widest gives up a form at a time until they fit; null if they cannot. */
+/**
+ * The items side by side in `room` columns: the widest loses words of its title, then the title and its run time,
+ * until they fit; null if they cannot.
+ */
 function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
-  const form = items.map(() => 0);
+  const form = items.map(() => 0),
+    cap = items.map(() => Infinity);
   for (;;) {
-    const segs = items.map((item, i) => noticeSeg(item, Infinity, pad, form[i]));
+    const segs = items.map((item, i) => noticeSeg(item, cap[i]!, pad, form[i]));
     const widths = segs.map(textWidth);
-    if (widths.reduce((a, b) => a + b, 0) <= room) return segs.filter((seg): seg is Seg => seg !== null);
-    const open = items.map((_, i) => i).filter((i) => form[i] < 2);
+    const over = widths.reduce((a, b) => a + b, 0) - room;
+    if (over <= 0) return segs.filter((seg): seg is Seg => seg !== null);
+    const open = items.map((_, i) => i).filter((i) => form[i]! < 2);
     if (!open.length) return null;
-    form[open.reduce((a, b) => (widths[b] >= widths[a] ? b : a))]++;
+    const i = open.reduce((a, b) => (widths[b]! >= widths[a]! ? b : a));
+    // The widest gives up words down to the next widest (half the overflow when level), so each keeps some of its title.
+    const next = Math.max(0, ...open.filter((j) => j !== i).map((j) => widths[j]!));
+    const target = widths[i]! > next ? Math.max(widths[i]! - over, next) : widths[i]! - Math.ceil(over / 2);
+    const cut = form[i] === 0 && items[i]!.title ? noticeSeg(items[i]!, target, pad) : null;
+    if (cut && textWidth(cut) < widths[i]!) cap[i] = target;
+    else form[i]!++;
   }
 }
 
@@ -647,14 +672,15 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     }
     if (s.id === 'project')
       return [f.filter(([, role]) => role === 'project'), f.filter(([, role]) => role === 'branch')];
-    if (s.id === 'notice')
-      // The agent's `[model · effort]` goes under its name, without the brackets.
+    if (s.id === 'notice') {
+      // An agent's title and run time go under its name.
+      if (f[1]?.[1] !== 'agent') return [f, []];
+      const rest = f.slice(2).filter(([words]) => words.trim());
       return [
-        f.filter(([, role]) => role !== 'dim'),
-        f
-          .filter(([w, role]) => role === 'dim' && w.trim())
-          .map(([w]): Form[number] => [`  ${w.replace(/[[\]]/g, '').trim()}`, 'dim']),
+        f.slice(0, 2),
+        rest.length ? [['  '], ...rest.map(([w, r], i): Form[number] => [i ? w : w.trimStart(), r])] : [],
       ];
+    }
     if (s.id === 'loaded') {
       // pi's extension words stand in a column of their own, MCP over skills beside it.
       const cut = f.findIndex(([words]) => words === 'skills');
@@ -710,26 +736,18 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     const s = noticeSegments[0];
     if (!s) return false;
     const room = width - natural() + size(s) - (style === 'gauge' || zone?.alert ? 2 : 0);
-    const cut = noticeSeg(notices[0]!, room, '', 1);
+    const cut = noticeSeg(notices[0]!, room, '');
     if (!cut) return false;
     s.forms = cut.forms;
     s.at = 0;
     return true;
   };
-  // The existing ladder's losses, with notice metadata giving way before the main effort.
+  // The existing ladder's losses: the notice's titles give way before the main effort does.
   for (const id of LADDER) {
     if (roomy || natural() <= width) break;
-    // Like line's two-item fit: metadata can go as a whole when both newest names fit beside the vitals.
-    const before = noticeSegments.map((s) => s.at);
-    if (noticeSegments.length > 1) {
-      for (const s of noticeSegments) s.at = 1;
-      if (natural() <= width) break;
-      noticeSegments.forEach((s, i) => (s.at = before[i]!));
-    }
     if (id === 'notice') {
-      for (const s of noticeSegments) s.at = 1;
-      if (natural() <= width) break;
-      if (noticeSegments.length > 1) noticeSegments[1]!.at = 2;
+      // The second item loses its title first, then the first is cut at a word.
+      if (noticeSegments.length > 1) noticeSegments[1]!.at = 1;
       if (natural() <= width || cutNotice()) break;
       continue;
     }
@@ -861,13 +879,18 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     .sort((a, b) => b - a);
   const wide = () => !zone?.alert && smallest.length > 1 && smallest[0] + smallest[1] <= room(2);
   // A notice shows in full: the loaded cluster goes first when it is in the way, the other fields shorten after it.
-  const wanted = lone ? [textWidth(noticeSeg(lone, Infinity, pad))] : [];
+  // The second item is wanted too, at its shortest, so that two jobs show as two items when the vitals can give way.
+  const second = lone && zone?.events[1];
+  const wanted = lone
+    ? [textWidth(noticeSeg(lone, Infinity, pad)), ...(second ? [textWidth(noticeSeg(second, Infinity, pad, 2))] : [])]
+    : [];
   const total = () => leftWidth([...fields().map(size), ...wanted]) + gap() + rightWidth();
   for (const id of LADDER) {
-    if (total() <= width || wide()) break;
-    // The notice gives way here, before the effort: cut at a word to what room is left, if a word fits.
+    if (total() <= width) break;
+    // The notice gives way here, before the effort: both items at their shortest, else the newest cut at a word to what
+    // room is left, if a word fits.
     if (id === 'notice') {
-      if (lone && noticeSeg(lone, room(1), pad)) break;
+      if (wide() || (lone && noticeSeg(lone, room(1), pad))) break;
       continue;
     }
     const seg = all.find((candidate) => candidate.id === id);

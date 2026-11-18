@@ -14,7 +14,9 @@ import { fitStatusBar } from '../../src/render/header.js';
 import { setDisplayConfig } from '../../src/render/hud-config.js';
 import { stripAnsi, visualWidth } from '../../src/render/colors.js';
 import { renderParity } from '../../src/statusline-parity/render.js';
-import { agentDefinitions, compactWindow } from '../../src/statusline-parity/collect.js';
+import { compactWindow } from '../../src/statusline-parity/collect.js';
+import { workSignals } from '../../src/render/work-summary.js';
+import { BarNoticeTracker } from '../../src/collectors/bar-notices.js';
 import { shortModel } from '../../src/render/providers.js';
 import { paritySettings } from '../../src/statusline-parity/settings.js';
 import { DEFAULT_LAYOUT } from '../../src/types.js';
@@ -59,12 +61,12 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
   f.statuses.clear();
   f.controller.setWork({
     needs: [],
-    events: [agentEvent('started', { name: 'Explore' }, FOOTER_NOW - 20_000)],
+    events: [agentEvent('started', { name: 'Explore', title: 'Audit' }, FOOTER_NOW - 20_000)],
   });
   const codex = fitStatusBar(
     makeHudData({
       project: { ...makeHudData().project, skillsCount: 10 },
-      notices: [{ kind: 'agent-started', subject: 'Explore', at: new Date(FOOTER_NOW - 20_000) }],
+      notices: [{ kind: 'agent-started', subject: 'Explore', task: 'Audit', at: new Date(FOOTER_NOW - 20_000) }],
     }),
     DEFAULT_LAYOUT,
     120,
@@ -73,7 +75,7 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
   // model [effort] │ context (its meter is the first thing to go) │ repo branch │ [quota] │ notice (an agent's name, no
   // age), then what was loaded (which gives way to a long notice). pi's session cost is switched off here.
   const shape =
-    /^[^│]+ │ (?:[█░]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ (?:\d+[hd] (?:[█░]+ )?\d+%[^│]* │ )?◐ Explore(?: +MCP \d+  skills \d+)?$/;
+    /^[^│]+ │ (?:[█░]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ (?:\d+[hd] (?:[█░]+ )?\d+%[^│]* │ )?◐ Explore Audit(?: +MCP \d+  skills \d+)?$/;
   for (const row of [claude, f.render()[0], codex]) {
     assert.match(stripAnsi(row), shape);
     assert.ok(visualWidth(row) <= 120 && !row.includes('\n'), 'one row that fits');
@@ -115,10 +117,12 @@ test('notice zone: the newest two, steady over time, one per subject, needs-you 
   const same = [event('started', 'started a', 60_000, 'a'), event('done', 'finished a', 10_000, 'a')];
   assert.equal(zone({ events: same }, at), 'M │ ✓ finished a');
   // Three subagents of one name started: one item with ×3, not the name three times; a different kind stays apart.
-  const three = [1, 2, 3].map((n) => agentEvent('started', { id: `fe${n}`, name: 'frontend-implementer', model: 'claude-sonnet-5-5' }, at - n * 1000));
-  assert.equal(zone({ events: three }, at), 'M │ ◐ frontend-implementer [sonnet-5.5] ×3');
+  const three = [1, 2, 3].map((n) =>
+    agentEvent('started', { id: `fe${n}`, name: 'frontend-implementer' }, at - n * 1000)
+  );
+  assert.equal(zone({ events: three }, at), 'M │ ◐ frontend-implementer ×3');
   const mixed = [...three.slice(0, 2), agentEvent('done', { id: 'fe3', name: 'frontend-implementer' }, at - 500)];
-  assert.equal(zone({ events: mixed }, at), 'M │ ✓ frontend-implementer │ ◐ frontend-implementer [sonnet-5.5] ×2');
+  assert.equal(zone({ events: mixed }, at), 'M │ ✓ frontend-implementer │ ◐ frontend-implementer ×2');
   // An event is shown at +2 minutes and gone at +4, and nothing replaces it.
   const old = [event('done', 'finished d', 0)];
   assert.match(zone({ events: old }, at + 120_000), /finished d$/);
@@ -212,47 +216,153 @@ test('context and quota bars as claude-hud draws them: cells, colours, one windo
   assert.ok(has({ quota: { windows: [win('5h', 80)] } }, '\x1b[95m████████\x1b[0m', '\x1b[95m80%\x1b[0m'));
 });
 
-test('subagent notices: name, model, effort from the agent definition; the main effort outlives a long notice', (t) => {
-  noColour(t);
-  const dir = fs.mkdtempSync(join(tmpdir(), 'bar-agents-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  fs.mkdirSync(join(dir, 'agents'));
-  const definition = '---\nname: frontend-implementer\nmodel: sonnet\neffort: xhigh\n---\nBody\n';
-  fs.writeFileSync(join(dir, 'agents', 'frontend-implementer.md'), definition);
-  const base = { description: 'd', startPos: 1, background: false };
-  const agents = [
-    { ...base, id: 'a', type: 'frontend-implementer', model: 'claude-sonnet-5-5', start: NOW - 20_000 },
-    { ...base, id: 'b', type: 'Explore', model: 'claude-haiku-4-5-20251001', start: NOW - 90_000, end: NOW - 60_000 },
-  ];
-  const definitions = agentDefinitions(agents, undefined, { CLAUDE_CONFIG_DIR: dir }, NOW);
-  assert.deepEqual(definitions, { 'frontend-implementer': { model: 'sonnet', effort: 'xhigh' } });
+// ─── What a notice says: the work, not the model (bar-notice 01) ─────────────────────────────────────────────────
+
+/** A synthetic Claude transcript with the given Agent calls, drawn through the statusline's real renderer. */
+function claudeBar(agents: Array<Record<string, unknown>>, width: number, now = NOW) {
+  const base = { startPos: 1, background: false };
+  const transcript = {
+    agents: agents.map((a) => ({ ...base, ...a })),
+    todos: [],
+    skills: [],
+    ultracode: false,
+    bytesRead: 0,
+    pendingHistory: false,
+  };
   const input = {
     model: { id: 'claude-opus-5-5[1m]', display_name: 'Opus 5.5' },
     effort: 'high',
     cwd: '/p/example',
     context_window: { used_percentage: 16, context_window_size: 1_000_000 },
-    rate_limits: { five_hour: { used_percentage: 8, resets_at: (NOW + 79 * 60_000) / 1000 } },
   };
-  const draw = (width: number, rest = {}) => {
-    const transcript = { agents, todos: [], skills: [], ultracode: false, bytesRead: 0, pendingHistory: false };
-    const evidence = {
-      transcript: { ...transcript, ...rest },
-      counts: { mcpCount: 4 },
-      git: { branch: 'main', dirty: true, ahead: 0, behind: 0 },
-      definitions,
-    };
-    return stripAnsi(renderParity(input, width, paritySettings(OWNER_CONFIG), evidence, NOW));
-  };
-  assert.match(
-    draw(160),
-    /^✻ opus-5\.5 high │ .* │ ◐ frontend-implementer \[sonnet-5\.5 · xhigh\] │ ✓ Explore \[haiku-4\.5\]/
+  const evidence = { transcript, counts: { mcpCount: 4 }, git: null } as unknown as Parameters<typeof renderParity>[3];
+  return stripAnsi(renderParity(input, width, paritySettings(OWNER_CONFIG), evidence, now));
+}
+
+test('Claude subagents read type + the call description; a finished one carries its fixed run time; no model', (t) => {
+  noColour(t);
+  const agents = [
+    {
+      id: 'a',
+      type: 'frontend-implementer',
+      description: 'Tidy the notice zone',
+      model: 'claude-sonnet-5-5',
+      start: NOW - 20_000,
+    },
+    {
+      id: 'b',
+      type: 'Explore',
+      description: 'Find where notices are made',
+      model: 'claude-haiku-4-5',
+      start: NOW - 790_000,
+      end: NOW - 60_000,
+    },
+  ];
+  const wide = claudeBar(agents, 200);
+  assert.match(wide, /│ ◐ frontend-implementer Tidy the notice zone │ ✓ Explore Find where notices are made 12m\b/);
+  assert.doesNotMatch(wide, /sonnet|haiku|xhigh|\[/);
+  // The run time is fixed at the end: the bar a minute later is the same line.
+  assert.equal(claudeBar(agents, 200, NOW + 60_000), wide);
+  // Two Agent calls of one type with different descriptions are two items, not `×2`.
+  const two = claudeBar(
+    [agents[0]!, { ...agents[0]!, id: 'c', description: 'Check the docs', start: NOW - 30_000 }],
+    200
   );
-  // No effort: the model alone in the brackets.
-  const events = [agentEvent('done', { name: 'reviewer', model: 'claude-haiku-4-5' }, NOW)];
-  assert.equal(stripAnsi(renderBar({ model: { name: 'M' }, events }, 80, NOW).line), 'M │ ✓ reviewer [haiku-4.5]');
-  // A long notice at 120 columns is cut at a word before the main model's effort goes.
-  const skillLoads = [{ name: 'a-skill-with-a-very-long-name-that-cannot-fit-on-the-bar-at-all', at: NOW - 30_000 }];
-  assert.match(draw(120, { agents: [], skillLoads }), /^✻ opus-5\.5 high │ .*✦ skill(?: hud-delegate|…)$/);
+  assert.match(two, /◐ frontend-implementer Tidy the notice zone │ ◐ frontend-implementer Check the docs/);
+  assert.doesNotMatch(two, /×/);
+  // No description: the type alone, nothing guessed.
+  assert.match(claudeBar([{ ...agents[0]!, description: '' }], 200), /│ ◐ frontend-implementer +MCP 4$/);
+  // Narrow: the title is cut at a word, the type stays; then the title goes and the type stays.
+  assert.match(claudeBar([agents[0]!], 70), /│ ◐ frontend-implementer Tidy the…$/);
+  assert.match(claudeBar([agents[0]!], 62), /│ ◐ frontend-implementer$/);
+});
+
+test('HUD jobs read role + brief heading (else the package); two imps are two items; the run time is fixed', (t) => {
+  noColour(t);
+  const worker = (id: string, extra: Record<string, unknown>) =>
+    ({ id: `thin-job:${id}`, role: 'imp', startedAt: NOW - 10_000, settledAt: null, work: {}, ...extra }) as never;
+  const lane = (label: string, workers: unknown[]) => ({ id: `thin-job:package:${label}`, label, workers }) as never;
+  const finished = worker('cccccc', { briefTitle: 'Fix the panel', startedAt: NOW - 725_000, settledAt: NOW - 5_000 });
+  const lanes = [
+    lane('pkg-a', [worker('aaaaaa', { briefTitle: '状态栏TPS' })]),
+    lane('pkg-b', [worker('bbbbbb', {}), finished]),
+  ];
+  const zone = (jobs: unknown[], width = 160, at = NOW) =>
+    stripAnsi(renderBar({ model: { name: 'M' }, events: workSignals(jobs as never, NOW).events }, width, at).line);
+  // Two different imp jobs are two items; the finished one carries its run time, fixed at its end.
+  assert.equal(zone([lanes[0]!, lane('pkg-b', [finished])]), 'M │ ✓ imp Fix the panel 12m │ ◐ imp 状态栏TPS');
+  assert.equal(
+    zone([lanes[0]!, lane('pkg-b', [finished])], 160, NOW + 60_000),
+    'M │ ✓ imp Fix the panel 12m │ ◐ imp 状态栏TPS'
+  );
+  // No brief heading: the package names it.
+  assert.equal(zone([lanes[1]!]), 'M │ ✓ imp Fix the panel 12m │ ◐ imp pkg-b');
+  assert.doesNotMatch(zone(lanes), /sonnet|gpt|\[|×/);
+  // The same words of one kind group; a package label that only repeats the role or the job id says nothing.
+  assert.equal(
+    zone([lane('pkg-a', [worker('d1', { briefTitle: 'Same' }), worker('d2', { briefTitle: 'Same' })])]),
+    'M │ ◐ imp Same ×2'
+  );
+  assert.equal(zone([lane('imp', [worker('e1', {})]), lane('ffffff', [worker('ffffff', {})])]), 'M │ ◐ imp ×2');
+});
+
+test('Codex subagents read name + task when known, with the run time they ended at; no model', (t) => {
+  noColour(t);
+  const node = (status: string, extra = {}) =>
+    ({
+      id: 'n1',
+      name: 'explorer',
+      role: 'explorer',
+      task: 'Search the notice code',
+      status,
+      startedAt: new Date(NOW - 700_000),
+      model: 'gpt-5.6-sol',
+      effort: 'high',
+      children: [],
+      ...extra,
+    }) as never;
+  const data = (nodes: unknown[]) =>
+    makeHudData({
+      session: { id: 's1' } as never,
+      subagentTree: { rootId: 's1', nodes: nodes as never, totalCount: nodes.length, updatedAt: new Date(NOW) },
+    });
+  const tracker = new BarNoticeTracker();
+  tracker.observe(data([]), NOW - 800_000);
+  const nameless = node('running', { id: 'n2', name: 'worker', role: 'worker', task: undefined });
+  const started = tracker.observe(data([node('running'), nameless]), NOW - 690_000);
+  assert.deepEqual(started.map((n) => [n.subject, n.task]).sort(), [
+    ['explorer', 'Search the notice code'],
+    ['worker', undefined],
+  ]);
+  const done = tracker.observe(data([node('completed'), nameless]), NOW);
+  assert.equal(done[0]!.kind, 'agent-done');
+  assert.equal(done[0]!.ranMs, 700_000);
+  assert.deepEqual(
+    Object.keys(done[0]!).filter((k) => /model|effort/.test(k)),
+    []
+  );
+  const line = stripAnsi(fitStatusBar(makeHudData({ notices: done }), DEFAULT_LAYOUT, 160, NOW).line);
+  assert.match(line, /✓ explorer Search the notice code 11m/);
+  assert.doesNotMatch(line, /sol|\[/);
+});
+
+test('a long title is cut at a word in the line and capsule looks; the role stays, then the title goes', (t) => {
+  const previous = setDisplayConfig({ theme: 'terminal', barFields: ['model', 'notice'] });
+  t.after(() => setDisplayConfig(previous));
+  const events = [
+    agentEvent('done', { id: 'j', name: 'imp', title: 'Rework the notice zone of every bar' }, NOW - 1000, 754_000),
+  ];
+  for (const style of ['line', 'p10k'] as const) {
+    const draw = (width: number) =>
+      stripAnsi(renderBar({ model: { name: 'M' }, events }, width, NOW, style).line)
+        .replace(/[\ue0b0\ue0b2]/g, '')
+        .trim();
+    assert.match(draw(120), /✓ imp Rework the notice zone of every bar 12m$/);
+    assert.match(draw(30), /✓ imp Rework the… 12m$/);
+    assert.match(draw(18), /✓ imp 12m$/);
+    assert.match(draw(12), /✓ imp$/);
+    for (let width = 1; width <= 60; width++) assert.ok(visualWidth(draw(width)) <= width);
+  }
 });
 
 test('model names are short: route, vendor, date, build and window words go, version hyphens become dots', () => {

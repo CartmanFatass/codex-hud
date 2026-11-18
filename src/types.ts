@@ -587,10 +587,12 @@ export interface BarNotice {
   kind: 'agent-started' | 'agent-done' | 'agent-failed';
   /** The agent's name (its role, else its nickname), for the agent notices. */
   subject?: string;
-  /** Who it is, the model and the effort it runs at: the agent notices. */
+  /** Who it is: the agent notices. */
   id?: string;
-  model?: string;
-  effort?: string;
+  /** What it works on: its label, else the task it was given. */
+  task?: string;
+  /** How long it ran, as seen at the end: done and failed only. */
+  ranMs?: number;
   at: Date;
 }
 

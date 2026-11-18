@@ -26,18 +26,18 @@ export function workSignals(lanes: readonly WorkLane[], now: number): WorkSignal
   const workers = lanes.flatMap((l) => l.workers);
   const asking = workers.filter((worker) => wordOf(worker, now) === 'needs you').length;
   const events: BarEvent[] = [];
-  for (const worker of workers) {
-    const who = {
-      id: worker.id,
-      name: worker.role || 'job',
-      model: worker.model ?? undefined,
-      effort: worker.effort ?? undefined,
-    };
-    if (worker.startedAt !== null && now - worker.startedAt < NOTICE_MS)
-      events.push(agentEvent('started', who, worker.startedAt));
-    if (worker.settledAt !== null && now - worker.settledAt < NOTICE_MS)
-      events.push(agentEvent(worker.work?.failed ? 'failed' : 'done', who, worker.settledAt));
-  }
+  for (const lane of lanes)
+    for (const worker of lane.workers) {
+      // The role and the brief's heading, else the package; a label that only repeats the role or the job id says nothing.
+      const label = lane.label === worker.role || worker.id.endsWith(lane.label) ? '' : lane.label;
+      const who = { id: worker.id, name: worker.role || 'job', title: worker.briefTitle || label };
+      if (worker.startedAt !== null && now - worker.startedAt < NOTICE_MS)
+        events.push(agentEvent('started', who, worker.startedAt));
+      if (worker.settledAt !== null && now - worker.settledAt < NOTICE_MS) {
+        const ran = worker.startedAt === null ? undefined : worker.settledAt - worker.startedAt;
+        events.push(agentEvent(worker.work?.failed ? 'failed' : 'done', who, worker.settledAt, ran));
+      }
+    }
   return { needs: asking ? [`Work: ${asking} needs you`] : [], events };
 }
 export function renderWorkSummary(lanes: readonly WorkLane[], width: number, now: number): string {

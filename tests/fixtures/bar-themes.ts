@@ -20,8 +20,8 @@ export function barThemeScene() {
   footer.controller.setWork({
     needs: [],
     events: [
-      agentEvent('started', { name: 'imp', model: 'gpt-6.1-sol', effort: 'high' }, THEME_NOW - 10000),
-      agentEvent('done', { name: 'reviewer', model: 'gpt-6.1-sol', effort: 'xhigh' }, THEME_NOW - 20000),
+      agentEvent('started', { name: 'imp', title: 'Synthetic fix' }, THEME_NOW - 10000),
+      agentEvent('done', { name: 'reviewer', title: 'Synthetic check' }, THEME_NOW - 20000, 754_000),
     ],
   });
   const data = makeHudData({
@@ -35,11 +35,10 @@ export function barThemeScene() {
       {
         kind: 'agent-started',
         subject: 'explorer',
-        model: 'gpt-5.6-astra',
-        effort: 'medium',
+        task: 'Synthetic search',
         at: new Date(THEME_NOW - 10000),
       },
-      { kind: 'agent-done', subject: 'worker', model: 'gpt-5.6-luna', at: new Date(THEME_NOW - 20000) },
+      { kind: 'agent-done', subject: 'worker', ranMs: 95_000, at: new Date(THEME_NOW - 20000) },
     ],
   });
   return {
@@ -79,7 +78,6 @@ export function barThemeScene() {
           },
           counts: { mcpCount: 4 },
           git: { branch: 'main', dirty: true, ahead: 0, behind: 0 },
-          definitions: { 'frontend-implementer': { effort: 'xhigh' } },
         },
         THEME_NOW
       );

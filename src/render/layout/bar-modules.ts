@@ -14,14 +14,14 @@ import { agentEvent, gitSync, span, type BarEvent, type BarFacts } from './bar-f
 
 function eventOf(notice: BarNotice): BarEvent {
   const at = notice.at.getTime();
-  const who = { id: notice.id, name: notice.subject ?? 'agent', model: notice.model, effort: notice.effort };
+  const who = { id: notice.id, name: notice.subject ?? 'agent', title: notice.task };
   switch (notice.kind) {
     case 'agent-started':
       return agentEvent('started', who, at);
     case 'agent-done':
-      return agentEvent('done', who, at);
+      return agentEvent('done', who, at, notice.ranMs);
     case 'agent-failed':
-      return agentEvent('failed', who, at);
+      return agentEvent('failed', who, at, notice.ranMs);
   }
 }
 

@@ -226,7 +226,7 @@ function conceptRows(style: (typeof BAR_STYLES)[number], extra: Partial<BarFacts
 test('the six looks paint with the concepts own 256-colour inks, never the terminal palette', (t) => {
   const previous = setDisplayConfig({});
   t.after(() => setDisplayConfig(previous));
-  const events = [agentEvent('started', { name: 'imp', model: 'gpt-6.1-sol', effort: 'high' }, THEME_NOW - 1000)];
+  const events = [agentEvent('started', { name: 'imp', title: 'Synthetic fix' }, THEME_NOW - 1000)];
   for (const style of BAR_STYLES.slice(2)) {
     const { line } = conceptRows(style, { events });
     assert.doesNotMatch(line, /\x1b\[(?:[39][0-7]|2)m/, `${style} uses basic ANSI colours or dim`);
@@ -254,6 +254,12 @@ test('each look keeps its concept idiom: ctx label, group order, aligned columns
   const stacked = conceptRows('stacked').rows;
   assert.equal(stacked[1]!.indexOf('high'), stacked[0]!.indexOf('opus-5.5'), 'effort under the name, past the mark');
   assert.match(stacked[1]!, /━.* 400K/);
+  // A job's title and run time go under its name on the second row; no model on either.
+  const job = [agentEvent('done', { id: 'j', name: 'imp', title: 'Fix the panel' }, THEME_NOW - 1000, 754_000)];
+  const [top, under] = conceptRows('stacked', { events: job }).rows as [string, string];
+  assert.equal(under.indexOf('Fix the panel 12m'), top.indexOf('imp'), 'the title sits under the name');
+  assert.match(top, /✓ imp/);
+  assert.doesNotMatch(`${top}\n${under}`, /sol|\[/);
   assert.doesNotMatch(stacked[1]!, /\/400K/);
   const headline = conceptRows('headline').rows[0]!;
   assert.match(headline, /^ {20,}✻ opus-5\.5 high/, 'quiet: the left is empty');
@@ -267,11 +273,7 @@ test('the six looks fit every width, in both light and dark', (t) => {
   const previous = setDisplayConfig({});
   t.after(() => setDisplayConfig(previous));
   const events = [
-    agentEvent(
-      'started',
-      { name: 'frontend-implementer', model: 'claude-sonnet-5-5', effort: 'xhigh' },
-      THEME_NOW - 1000
-    ),
+    agentEvent('started', { name: 'frontend-implementer', title: 'Synthetic notice work' }, THEME_NOW - 1000),
     agentEvent('done', { name: 'reviewer' }, THEME_NOW - 2000),
   ];
   const variants: Partial<BarFacts>[] = [

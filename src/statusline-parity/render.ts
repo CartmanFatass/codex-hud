@@ -46,34 +46,24 @@ function usageWindows(value: Record<string, unknown>, now: number) {
   return [five, seven].filter((w) => w !== undefined);
 }
 /** What the transcript says just happened: a subagent started or finished, a skill was loaded. */
-function events(t: TranscriptView, defs: AgentDefinitions, showAgents: boolean, showSkills: boolean): bar.BarEvent[] {
+function events(t: TranscriptView, showAgents: boolean, showSkills: boolean): bar.BarEvent[] {
   const found: bar.BarEvent[] = [];
   for (const a of showAgents ? t.agents : []) {
-    const def = defs[a.type];
-    // The call's model, else the result's, else the definition's; the effort is the definition's.
-    const who = {
-      id: a.id,
-      name: safe(a.type, 24) || 'agent',
-      model: a.model || def?.model,
-      effort: def?.effort,
-    };
+    // The type and what the Agent call said it is for; no model.
+    const who = { id: a.id, name: safe(a.type, 24) || 'agent', title: a.description };
     found.push(bar.agentEvent('started', who, a.start));
-    if (a.end !== undefined) found.push(bar.agentEvent('done', who, a.end));
+    if (a.end !== undefined) found.push(bar.agentEvent('done', who, a.end, a.end - a.start));
   }
   for (const load of showSkills ? (t.skillLoads ?? []) : [])
     found.push({ kind: 'skill', at: load.at, text: `skill ${load.name}`, key: `skill ${load.name}` });
   return found;
 }
-/** What a subagent type's definition (`agents/<type>.md`) says about its model and effort, by type. */
-export type AgentDefinitions = Record<string, { model?: string; effort?: string }>;
 export interface ParityEvidence {
   transcript: TranscriptView;
   counts: ConfigCounts;
   git: GitView | null;
   /** Where Claude compacts on its own, in tokens, from its settings; null when it does not say. */
   compact?: number | null;
-  /** The recent subagents' definitions, read by the collector; a type with none (a built-in one) is not in it. */
-  definitions?: AgentDefinitions;
 }
 export function renderParity(
   input: unknown,
@@ -124,7 +114,7 @@ export function renderParity(
     quota: windows.length ? { windows } : undefined,
     tps: t.tps,
     needs: work.needs,
-    events: [...events(t, evidence.definitions ?? {}, d.showAgents, d.showSkills), ...work.events],
+    events: [...events(t, d.showAgents, d.showSkills), ...work.events],
     loaded: {
       counts: [
         ['MCP', c.mcpCount],
