@@ -8,30 +8,11 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Waiting for the owner
 
 - Try 2026-11-17 (all landed on universal-hud): Home top line counts what waits for you, progress counts the current milestone, an idle Home shows waiting items and latest done (PANEL-TIDY 01); Project hub wraps waiting items, Now omits unlisted worktrees (02); Skills moved into Help, two main tabs (03); Progress `t`/Enter shows only what is still to try, and Enter on a waiting item reads it in place (PANEL-NEXT); control plane previews the selected place, Inspector shows run time; bar notices say role + title + time, no model, a pinned need names its job, unread report `[✓●]` (BAR-NOTICE); `~N t/s` on Claude's statusline and Codex's bar (STATUSLINE-TPS); a live child process keeps a CLI worker open, a read report closes it (WORKER-CLOSE: run an agy job with a background command, then a Claude or Codex job and read its report); presets with `c`/`C` (ROLE-PRESETS); one sidebar with mouse (SIDEBAR-ONE); Skills page readable at 40 columns (SKILLS-READ).
-- Owner questions open (2026-11-18): (1) Keep `[✓●]` until the report is read (now it hides after 3 minutes)? (2) M5 candidate not ticketed: reopening a long session's panel shows recent activity first.
-- Try 0.1.4 (review accepted): Control plane opens on what needs you; switch a role's place (provider → model
-  picker; owner: picker ok 2026-11-14), add/reorder a fallback, clear an exhausted mark; the next hud_create uses it.
-  CLI jobs end only on facts, and a live child process the worker started in its current turn counts as still working (WORKER-CLOSE, 2026-11-17); `hud watch` under Monitor hears every change (orchestrator live-checked dispatch
-  failure, two turns, supervisor kill + hud_send respawn on agy, 2026-11-14).
-- Try 0.1.3 PROJECT-HUB + PROJECT-UX: Project tab is a timeline hub (waits for you, Now, Latest, pages); Progress
-  last 7 days; Tickets lanes; `[` `]` switch projects, Enter on the name opens the Projects list.
-- Try 0.1.2 HUD-SETUP: run `/hud-setup` in a real project; its pi workers get the chosen skills and prompt.
-- Try 0.1.1 CLI-WORKERS: dispatch imp on a cli place (agy, grok, claude or codex; `on` or the Control plane); the card shows on Home and the tab
-  closes once its report is read (an unread report keeps it until the idle deadline; WORKER-CLOSE, 2026-11-17). `hud trust <dir>` first for a new directory.
-
-- Try M4 (9 landed): reopen `/hud` in a Claude pane → Home shows `Claude · 本次会话` with nested subagents indented
-  (CLAUDE-BIND, NP-01, NP-05); a subagent waiting on background work turns ◉ again when it resumes (NP-02); job cards
-  show the brief's heading as title (NP-04); Chinese 「」 keywords are coloured (NP-03); Home's spare rows show progress
-  and open tickets, Enter jumps to Project (HOME-PROGRESS); Settings → Models → Decision API switches Jev's provider
-  (GEMINI-DECIDE); settled cards show an outcome mark, the Inspector shows kind/outcome/review counts, Project has a
-  questions show a category (DL; needs a working Gemini or OpenAI key); Settings → Theme offers
-  terminal, titanium, mocha, arctic, ember, contrast, latte, paper and each changes Home/Project/Inspector (THEMES); bottom bars in each look match the concepts (BAR-FIDELITY);
-  Home's progress/tickets sit at the bottom, Model fit is gone (HOME-TIDY).
 
 ## Next
 
-- The owner tries what is under Waiting for the owner, the 2026-11-17 items first, then 0.1.4, 0.1.3, 0.1.2, 0.1.1, M4; what a try finds goes here first.
-- The owner answers the open question under Waiting (`[✓●]` lifetime).
+- The owner tries the 2026-11-17 batch under Waiting; what a try finds goes here first. Older batches (0.1.4, 0.1.3, 0.1.2, 0.1.1, M4) left Waiting on 2026-11-17 (owner: only the newest stays); their ledger lines stay `try` until the owner accepts them with PANEL-TRY's `y`.
+- Owner question asked in chat 2026-11-17: keep `[✓●]` until the report is read (now it hides after 3 minutes)?
 - PANEL-TRY: one ticket, .scratch/panel-try/.
 - WORKER-UNIFY: tickets 01 and 04 first (independent), then 02, then 03; one milestone review; the owner tries a worker that hands work to sonic.
 - After the tries: the owner picks from the M5 candidates (docs/spec.md §5: retention periods, tail-first transcript read, Advanced settings).
@@ -157,7 +138,7 @@ board counts these; update at every landing or decision. -->
 - dropped · — · ORACLE-SKILL · owner 2026-11-17: oracle loading an adapted codebase-design dropped with MATT-OFF; then oracle became the strongest-model seat with no default skill, a brief names a method skill by path (SKILL-ROLES); the imp's work (dacf135e, worktree and branch wt/ORACLE-SKILL deleted) never landed
 - dropped · — · MATT-PARADIGM · owner 2026-11-17 chose paradigm B (report docs/reviews/2026-11-17-matt-paradigm-oracle.md), then superseded the same day by MATT-OFF
 - working · — · WORKER-UNIFY · owner 2026-11-17 decided (all of the main session's recommendations, plus: workers call sonic freely, choosing its thinking, without blocking): one worker form on every harness; spec §2.1 "Workers are neutral" rewritten; .scratch/worker-unify/ (spec + 4 tickets): 01 worker marker, MCP refuses dispatch from a worker; 02 `hud-sonic` start/wait (non-blocking, parallel, parent unsettled while a child is open); 03 HUD-run pi jobs use the HUD role text, no call_sonic/call_reviewer, one question rule; 04 delete dead execution code (oracle report §A5). Landed ahead of the tickets: browser completion no longer typed into the main pane, empty browser report fails, general.md report wording (main session); imp jobs: 01 j03e828514171d388 (MyHUD-wt/WORKER-UNIFY-01), 04 j4f467942b0fa4f3b (MyHUD-wt/WORKER-UNIFY-04)
-- working · — · PANEL-TRY · owner 2026-11-17: on Progress's to-try view `y` accepts, `n` flags a milestone or slice; the panel writes only $HUD_HOME/tries.jsonl, the main session updates STATE from the watch line (spec §2.2); .scratch/panel-try/ 01
+- working · — · PANEL-TRY · owner 2026-11-17: on Progress's to-try view `y` accepts, `n` flags a milestone or slice; the panel writes only $HUD_HOME/tries.jsonl, the main session updates STATE from the watch line (spec §2.2); .scratch/panel-try/ 01; imp jbd01e6ca77d8ebce (MyHUD-wt/PANEL-TRY)
 - try · — · GENERAL · owner 2026-11-16: `general` role for ad-hoc dispatch, model/thinking per job (cb0d67a9; pi-roles general.md in Fishpref)
 - dropped · — · MATT-FLOW · owner 2026-11-17: the convention keeps only HUD mechanics (a convention absorbing Matt's flow was written and reverted the same day); hud-build no longer installed (MATT-OFF)
 - try · — · MATT-OFF · owner 2026-11-17: Matt skills are an inactive collection taken on demand; the HUD flow is delegation.md (to-tickets + one milestone review). Only to-tickets installed (Claude, Codex); grill-with-docs, to-spec, hud-build, tdd, diagnosing-bugs moved to integrations/skills-optional/ and listed in the Skills tab; global links and JevDev's pi-worker links removed
