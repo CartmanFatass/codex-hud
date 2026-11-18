@@ -1,6 +1,6 @@
 # 01: Workers carry a marker and cannot dispatch through the MCP
 
-**Status:** ready-for-agent
+**Status:** done (e19d45ac); live check (item 5) pending with 02
 **Blocked by:** none
 
 **What to build:** `.scratch/worker-unify/spec.md` decision 2 and the "Worker marker" and "Refusal" design. A Claude

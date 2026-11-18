@@ -28,7 +28,12 @@ harness can run, so a worker hands a simple sub-task to sonic at the thinking it
 - [ ] Tests (temp homes): start/wait happy path with a fake sonic place; two children side by side; thinking
       override; failed child; `--timeout 0` and timeout exit 3; open child keeps the parent unsettled; uncollected
       report gets one prompt; sonic-parent refusal; foreign job refusal; nested card render frame test.
+- [ ] `hud_read` from a marked worker (`HUD_JOB_DIR` set) never marks a report read or closes a worker (see Comments).
 - [ ] Live check by the main session after landing: an agy imp job and a pi imp job each start one sonic sub-task
       and use its report.
 
 ## Comments
+
+- Main session, 2026-11-17, from 01's landing: a marked worker may still call `hud_read`, and reading a settled
+  report marks it read and closes that job's worker. In this ticket, `hud_read` from a marked worker never marks a
+  report read and never closes a worker (it may read only; the main session's unread state stays).
