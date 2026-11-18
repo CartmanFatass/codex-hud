@@ -8,7 +8,7 @@ export function initRepo(parent) {
   fs.mkdirSync(root);
   git(root, 'init', '-qb', 'trunk');
   git(root, 'config', 'user.name', 'Synthetic');
-  git(root, 'config', 'user.email', 'synthetic@example.test');
+  git(root, 'config', 'user.email', 'synthetic@invalid');
   fs.writeFileSync(join(root, 'tracked.txt'), 'base\n');
   fs.writeFileSync(join(root, '.gitignore'), 'ignored.txt\n');
   git(root, 'add', '.');
