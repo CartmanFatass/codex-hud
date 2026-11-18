@@ -23,8 +23,8 @@ agent proposes.
    slice. The implementer runs the main-path tests for what it changed, once, at the end.
 4. **Integrate.** The orchestrator reads each diff, tries the slice, and merges it into the milestone branch. No
    full gate per slice; one full test run at the end of the milestone.
-5. **Review once, at the milestone.** Two reviewers from different model families, in parallel, on the same brief
-   and the whole milestone diff (owner, 2026-11-11: fewer reviews, better ones); each reports two axes separately:
+5. **Review once, at the milestone.** One reviewer on the whole milestone diff (owner, 2026-11-17: no second
+   reviewer and no model-family rule; supersedes 2026-11-11); it reports two axes separately:
    - **spec:** does it do what `docs/spec.md` asks, and does it do things nobody asked for (scope creep);
    - **simplicity and quality:** correctness defects, and what can be deleted (guards, options, abstractions, tests).
 
@@ -63,7 +63,7 @@ answer is the simplest option; anything beyond the spec goes to the owner.
 | --- | --- | --- |
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
 | implementer | role `imp` (skill `hud-delegate`): pi `openai/gpt-6.2-sol` high, fallback pi `xai/grok-4.7` | one slice each |
-| reviewer | role `reviewer`, two in parallel from different model families: pi `openai/gpt-6.2-sol` xhigh, fallback agy `gemini-4-hydrogen-high` | milestone reviews and the risky cases above only |
+| reviewer | role `reviewer`, one per review: pi `openai/gpt-6.2-sol` xhigh, fallback agy `gemini-4-hydrogen-high` | milestone reviews and the risky cases above only |
 | sonic | role `sonic`: pi, DeepSeek V4.1 Flash | small chores for any role; never tests, bug hunting or design |
 | oracle | role `oracle`: claude `fable` high, fallback pi `architect` (`openai/gpt-6.2-astra` high) | the strongest-model seat: read-only high-level judgement of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
 | pro | role `pro` (`bro`): ChatGPT 6 Pro, then Gemini web, then AI Studio Argon | a new product direction; research that needs outside sources (primary sources, each claim cited) |
