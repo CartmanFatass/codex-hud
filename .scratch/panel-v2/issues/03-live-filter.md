@@ -1,6 +1,6 @@
 # 03: Global live `/` filter across Home, Progress slices and Tickets
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 02
 
 **What to build:** `docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §3. Add instant keyboard filtering (`/`) across Home cards/lanes, Project Progress slices and Project Tickets.
