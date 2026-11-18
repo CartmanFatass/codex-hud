@@ -296,11 +296,9 @@ Always retain `frame.state`: reconciliation preserves selection by identity and
 separate scroll/fold state. Cards show a title plus two sentence rows, expanding
 in place; raw workflow files open from the Inspector or `o`.
 
-Settings → Panel → Layout (`panelLayout`) picks which rows Home and Project are made of. Classic is
-`home-view.ts` and `project-view.ts`; Inbox is `inbox-home.ts` and `inbox-project.ts`, entered by one branch in
-`work-view.ts` (Home) and one in `projectRows` (the hub and Progress; every other page is Classic's). A layout is
-rows only: the frame, the input and the state are shared, so a new layout adds a module and a branch, and the
-layouts not kept are deleted.
+Settings → Panel → Layout (`panelLayout`) defaults to Classic (`home-view.ts` and `project-view.ts`);
+Split is the other choice. Both layouts share the Space marks and `y`/`n` batch action for to-try rows.
+Marks belong to the open view. A batch appends one record under `$HUD_HOME`, never to project files.
 
 All standalone panels decode their own keys and SGR mouse events through
 `WorkbenchInputDecoder('workboard')`. Mouse hit testing uses the same frame controls.

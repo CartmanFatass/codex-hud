@@ -58,7 +58,7 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
     if (page === 'help') {
       assert.match(text, /1 2\s+Home · Project/);
       assert.match(text, /Backup skills ─+ 17/);
-      assert.match(text, /y n\s+accept \/ flag \(to-try view\)/);
+      assert.match(text, /Space\s+mark to try; y\/n accept\/flag/);
       assert.match(text, /3\s+Changes/);
       assert.match(text, /← → Tab\s+next \/ previous tab/);
       assert.doesNotMatch(text, /Timeline|Mouse\s+Legend/);

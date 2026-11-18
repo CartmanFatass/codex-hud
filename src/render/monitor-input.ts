@@ -47,6 +47,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
     }
     return result();
   }
+  if (key === 'help' || key === 'settings') next.trySelection = undefined;
   const board = workboardInput(next, input, ctx);
   if (board) return board;
   if (key === 'settings') return result({ type: 'settings' });

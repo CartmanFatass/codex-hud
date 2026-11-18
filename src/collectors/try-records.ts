@@ -5,17 +5,19 @@ import { readStateLedger, type parseLedger } from './state-ledger.js';
 
 type Slice = ReturnType<typeof parseLedger>[number];
 export type TryAction = 'accept' | 'flag';
-export interface TryTarget { milestone: string; slices: Pick<Slice, 'id' | 'text'>[] }
+// Mixed batches keep each slice's milestone aligned with its id (and, for flags, its revision).
+export interface TryTarget { milestone: string; slices: Pick<Slice, 'id' | 'text'>[]; milestones?: string[] }
 interface TryRecord {
-  at: string; root: string; action: TryAction; milestone: string; slices: string[]; revisions?: string[];
+  at: string; root: string; action: TryAction; milestone: string; slices: string[]; revisions?: string[]; milestones?: string[];
 }
 export const TRIES_FILE = 'tries.jsonl';
 // STATE has no per-line timestamps. Fingerprint the parsed ledger text so unrelated edits don't clear a flag.
 const revision = (text: string) => createHash('sha256').update(text).digest('hex');
 
 export function appendTry(home: string, root: string, action: TryAction, target: TryTarget): void {
-  const { milestone, slices } = target;
+  const { milestone, slices, milestones } = target;
   const record: TryRecord = { at: new Date().toISOString(), root, action, milestone, slices: slices.map((s) => s.id),
+    ...(milestones ? { milestones } : {}),
     ...(action === 'flag' ? { revisions: slices.map((s) => revision(s.text)) } : {}) };
   fs.mkdirSync(home, { mode: 0o700, recursive: true });
   const fd = fs.openSync(join(home, TRIES_FILE), fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT |
@@ -24,7 +26,7 @@ export function appendTry(home: string, root: string, action: TryAction, target:
   finally { fs.closeSync(fd); }
 }
 
-const pending = (record: TryRecord, slice: Slice, i: number) => slice.state === 'try' && slice.milestone === record.milestone &&
+const pending = (record: TryRecord, slice: Slice, i: number) => slice.state === 'try' && slice.milestone === (record.milestones?.[i] ?? record.milestone) &&
   (record.action === 'accept' || record.revisions?.[i] === revision(slice.text));
 
 /** The HUD home is private and the log append-only. Idle reads never reopen its body. */

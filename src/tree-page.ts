@@ -637,7 +637,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     syncPanelView();
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
     const shown = state.mainTab === 'project' ? visits.shown(shownRoot()) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
-    const tryMarks = projectShown(state, !!settingsPage) && (state.projectTry || state.panelLayout === 'inbox') && shown.snapshot
+    const page = projectPageOf(state);
+    const showTries = state.panelLayout === 'split' ? !page || page === 'progress' : !!state.projectTry;
+    const tryMarks = projectShown(state, !!settingsPage) && !listing(state) && showTries && shown.snapshot
       ? tries.marks(shown.root, shown.snapshot.ledger) : undefined;
     const output = time('render', () => {
       let lines: string[];
@@ -1117,7 +1119,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         zoom: false,
         scroll: { ...state.scroll, agents: 0 },
         // The rows of the other layout are not these: the cursors and the to-try filter start over.
-        ...(settings.panelLayout !== previousLayout ? { boardAnchor: undefined, homeTarget: undefined, projectCursor: undefined, projectTry: undefined, projectScroll: 0, homeScroll: 0 } : {}),
+        ...(settings.panelLayout !== previousLayout ? { boardAnchor: undefined, homeTarget: undefined, projectCursor: undefined, projectTry: undefined, trySelection: undefined, projectScroll: 0, homeScroll: 0 } : {}),
       };
       worktrees = null;
       void refreshGit();

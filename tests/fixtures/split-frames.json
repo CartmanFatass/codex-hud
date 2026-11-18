@@ -149,7 +149,7 @@
     "",
     "",
     "",
-    "       ↑↓ move  ⏎ open  y accept  n flag"
+    "   ↑↓ move  Space mark  y accept  n flag"
   ],
   "hub-short-40-en": [
     " Home 1  Project 2            models off",
@@ -175,7 +175,7 @@
     "  ◇ NO-HASH                       to try",
     "",
     "Now",
-    "       ↑↓ move  ⏎ open  y accept  n flag"
+    "   ↑↓ move  Space mark  y accept  n flag"
   ],
   "progress-40-en": [
     "‹ Project › Progress       updated 12:35",
@@ -217,7 +217,7 @@
     "",
     "",
     "",
-    "  ↑↓ move  ⏎ open file  y accept  n flag"
+    "   ↑↓ move  Space mark  y accept  n flag"
   ],
   "control-40-en": [
     "‹ Project › Control plane        7 roles",
@@ -537,7 +537,7 @@
     "",
     "",
     "",
-    "↑↓ 移动  ⏎ 打开  y 验收  n 标记  ←→ 切页"
+    "     ↑↓ 移动  Space 勾选  y 验收  n 标记"
   ],
   "hub-short-40-zh": [
     " 首页 1  项目 2                  模型 关",
@@ -563,7 +563,7 @@
     "  ◇ NO-HASH                       待试用",
     "",
     "现在",
-    "↑↓ 移动  ⏎ 打开  y 验收  n 标记  ←→ 切页"
+    "     ↑↓ 移动  Space 勾选  y 验收  n 标记"
   ],
   "progress-40-zh": [
     "‹ 项目 › 进度               更新于 12:35",
@@ -605,7 +605,7 @@
     "",
     "",
     "",
-    "     ↑↓ 移动  ⏎ 打开文件  y 验收  n 标记"
+    "     ↑↓ 移动  Space 勾选  y 验收  n 标记"
   ],
   "control-40-zh": [
     "‹ 项目 › 控制面          7 角色 · 3 代理",

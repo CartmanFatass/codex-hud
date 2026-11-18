@@ -508,50 +508,14 @@ Git is gated to at most once per five seconds. Reads do not start a browser or M
 
 ## Panel layouts
 
-Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classic`, `inbox`, `split`) chooses how Home and
-Project are laid out; saving it switches the open panel at once, no restart. **Classic** is Home and Project as
-described above and the default. **Split** is not built yet and shows Classic. The owner tries the layouts and keeps one;
-the others are then deleted. Every other page (Tickets, Working tree, Docs, Control plane, a waiting item's page,
-the Projects list), the Inspector, Changes, Settings and Help are the same in every layout.
+Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classic`, `split`) chooses how Home and
+Project are laid out; saving switches the open panel at once, no restart. **Classic** is the default described above.
+**Split** puts a list over a preview of the selected row (see [Split layout](#split-layout)).
 
-**Inbox** is one list ranked by need (design: `docs/design/panel-v8/`, Option 1).
-
-*Home*, top to bottom, with a blank row between blocks:
-
-- The question slab (amber header, the question, then the options with `●` on the default). Enter opens the whole
-  question; the footer carries `⏎ expand  o open`. A job that asks is the slab, not a second row.
-- Busy (something runs or asks): one row `? 3 waiting for you · 2 to try  ▸` counting STATE's waiting items; Enter
-  opens the hub with the cursor on its Waiting header. Idle: a `Waiting for you` header and the items themselves
-  (six, then `+n more`).
-- `Jobs  3 running · 1 failed`: every job of the project's packages, ranked question, failure, stalled, report ready,
-  running (the oldest first), then finished (the newest first). A job is a title row, `◉ imp  PKG title  47m`: the
-  package is the title's first word, or a dim `PKG ›` in front when the title does not start with it. While it runs
-  or when it went wrong it has one sentence row under the title (two for a failure); a finished job, and one folded
-  after the Fold time, is its title row. Enter opens the card whole.
-- `this session`: the native agents of the session, as above, a child indented.
-- `Decided for you  3 · 1 worth a look`: a departure keeps its row; ordinary decisions are one fold `▸ 2 as proposed`
-  that Enter opens.
-- Idle only: `Latest` (the newest landed slices).
-- `Progress  Milestone M3`: one summary row, the bar and one counts row (`✓ 3  ◇ 2  ◐ 2  ◆ 1  ○ 1   3/9 accepted`).
-  Open tickets are not on Home in this layout; they stay on the hub's Tickets row.
-
-On a short panel Home gives way in this order: blank rows, the section headers (the `this session` header last but
-one), sentences but the failure's first and the longest-running job's, the failure's second row, Latest, the progress
-summary and counts (the bar stays, with `M3 3/9 · 2 to try`), decisions to one row, the `this session` header. The
-question, the waiting count, a failure and every running job are never given up (the panel scrolls instead).
-
-*Project hub*: the name row; `Waiting for you  3 · 2 to try` (the ledger's slices to try, then STATE's waiting items;
-a `Try …` item that names a slice is that slice's row only); `In flight` (what the hub's `Now` showed); `Latest
-accepted`; `Pages`, whose rows lead with a mark (`◐` working, `○` quiet, amber `?` a ticket asks you, amber `!` the
-Control plane has a role at limit or a worktree is unlisted) and show the Progress bar on its own row. The cursor
-starts on the first slice to try. On a slice row `y` accepts and `n` flags it, writing the same record as in
-Classic's to-try view (`$HUD_HOME/tries.jsonl`); the mark shows at once (`✓ AUDIT-LOG  accepted 3h`,
-`⚑ EXPORT-CSV  flagged 1d`) until STATE agrees. Enter or `o` on a slice opens STATE.md; the row of a STATE item
-opens its page. On a short panel Latest accepted gives way first, then the headers and blank rows.
-
-*Progress*: the summary, the bar and counts, then `To try` (the slices to try, one row each, `y` / `n`), `Now`, `Next`,
-and `History` of accepted slices only (the last seven days in full, older work one row a milestone). There is no
-to-try filter: `t` does nothing. A milestone-wide `y` is gone with it; accept slices one by one.
+In Classic's to-try view and on Split's to-try rows, Space toggles a mark (`▣`, or `*` with text icons).
+`y` accepts and `n` flags the marked rows, or the current row if nothing is marked. All affected slices go into
+one record in `$HUD_HOME/tries.jsonl` and produce one line in `hud watch` and MCP `changes`. Recording a result
+or leaving the view clears the Space marks.
 
 ## The panel
 
@@ -586,10 +550,11 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |
-| `v`, Space, `4` | Inspector |
+| `v`, `4` | Inspector |
 | `a` | Show/hide older jobs and decisions |
 | `n`/`N` | Next/previous trouble |
-| `y` / `n` | Project: accept / flag the to-try slice under the cursor (Progress's to-try view; in the Inbox layout every to-try row of the hub and of Progress) |
+| Space | Toggle a mark on the to-try row under the cursor; on Home, open Inspector |
+| `y` / `n` | Accept / flag marked to-try rows, or the current row if none are marked |
 | `b` | Model text master on/off (also the top-row models word) |
 | `,`, `?` | Settings, Help |
 | Esc | Back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
@@ -618,9 +583,9 @@ Home and Project become **a list above and a preview of the cursor row below**
   cursor row is that page's substance (Progress: summary, bar, slices to try, Now,
   latest accepted). Enter on a page opens it, as before.
 - **Progress.** One ledger list (working, blocked, to try, todo; accepted, Next and
-  History are one row each) with the cursor slice explained underneath. `y` / `n`
-  accept / flag a to-try row; on the hub they act on the next slice to try, the first
-  row of its preview that has no mark yet.
+  History are one row each) with the cursor slice explained underneath. In the hub's
+  Progress preview, Space starts on the highlighted to-try row and moves the keys into
+  the preview. Without Space marks, `y` / `n` on the hub still act on the next slice to try.
 - **Control plane.** Roles on top (those that need you first), the cursor role's
   places below. Enter takes the keys into the places: ↑↓ choose one, `p m e + - K J x`
   act on it, Esc returns; `c` / `C` apply a preset to the role from the list.

@@ -10,7 +10,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, asksYou, barText, clampLines, currentRows, hubNowRows, inFlight, inline, landedAge, landedMark, landedNewest,
-  ledgerText, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, ticketRows, unlisted, unsliced, waitingRows, projectItem,
+  ledgerText, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
   type ProjectPage } from './project-view.js';
 import { glyph, needsAttention, placeTarget, placeText, roleName } from './control-view.js';
 import { splitItems, splitScope, splitSubValid, type SplitScene } from './split-frame.js';
@@ -54,8 +54,11 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
     if (progressSegments(cur.counts, cells).some((s) => s.width)) rows.push(plain(`  ${barText({ counts: cur.counts }, cells)} ${muted(`${cur.counts.accepted}/${total}`)}`, width));
     const landed = landedNewest(data), marks = input.tryMarks, queue = landed.filter(({ r }) => r.state === 'try');
     const todo = queue.filter(({ r }) => !marks?.get(r.id)), done = queue.filter(({ r }) => marks?.get(r.id));
-    const tryRow = ({ r }: { r: LedgerSlice }, act: boolean): MonitorRow => ({ item: `project:try:${r.id}`, ...(data.statePath ? { files: [data.statePath] } : {}),
-      ...(act ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text: inline(`  ${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now), width) });
+    const tryRow = ({ r }: { r: LedgerSlice }, act: boolean): MonitorRow => {
+      const item = `project:try:${r.id}`;
+      return { item, ...(data.statePath ? { files: [data.statePath] } : {}), ...(act ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}),
+        text: inline(`  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now), width) };
+    };
     if (queue.length) rows.push(boardRow(''), plain(muted(`${t('To try')}   ${t('y accept  n flag')}`), width), ...todo.map((x) => tryRow(x, true)), ...done.map((x) => tryRow(x, false)));
     if (inFlight(data).length || unsliced(data).length) rows.push(boardRow(''), plain(muted(t('Now')), width), ...hubNowRows(data, width, now, board));
     const accepted = landed.filter(({ r }) => r.state === 'accepted').slice(0, 3);
@@ -63,11 +66,11 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
     return { label: t('Progress'), right: muted(t('⏎ open page')), rows, ...(todo.length ? { act: `project:try:${todo[0].r.id}` } : {}) };
   };
   return { list: [name, boardRow(''), ...waiting, ...pages], preview,
-    start: pages.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ open  y accept  n flag  ←→ tab  [ ] project  ? help', focusHints: '↑↓ move  ⏎ open  esc back  ? help' };
+    start: pages.find((r) => r.item)?.item, hints: '↑↓ move  Space mark  y accept  n flag  ⏎ open  ←→ tab  [ ] project  ? help', focusHints: '↑↓ move  ⏎ open  esc back  ? help' };
 }
 
 const SLICE_MARK: Partial<Record<SliceState, () => string>> = { working: () => sliceInk('working')(mark('◐', '@')), blocked: () => sliceInk('blocked')(mark('◆', '!')), todo: () => muted(mark('○', '-')) };
-function progressPart(input: MonitorData, data: ProjectSnapshot, board: WorkboardSnapshot, width: number, now: number): Part {
+function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState, board: WorkboardSnapshot, width: number, now: number): Part {
   const cur = currentRows(data), marks = input.tryMarks, path = data.statePath, files = path ? { files: [path] } : {};
   const list: MonitorRow[] = [];
   const total = cur.rows.length - cur.counts.dropped, label = cur.whole || !data.ladder.current ? '' : ` ${monitorText(data.ladder.current)} `, frac = `${cur.counts.accepted}/${total}`;
@@ -78,8 +81,9 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, board: Workboar
   for (const st of ['working', 'blocked', 'try', 'todo'] as const) for (const r of cur.rows.filter((x) => x.state === st)) {
     const s = info(r), role = workerOf(r)?.role ?? s?.role ?? '';
     const right = s?.drift ? theme.board.attention(t(s.drift)) : st === 'working' && s?.jobId ? `${role ? roleInk(role)(monitorText(role)) + ' ' : ''}${muted(minuteAge(s.at ?? null, now))}` : st === 'try' ? muted(sinceText(r.at, now)) : '';
-    list.push({ item: `project:slice:${r.id}`, ...files, ...(st === 'try' ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}),
-      text: pair(`${st === 'try' ? landedMark(r, marks?.get(r.id)) : SLICE_MARK[st]!()} ${fit(monitorText(r.id), col)} ${muted(t(st === 'try' ? 'to try' : st))}`, right, width) });
+    const item = `project:slice:${r.id}`;
+    list.push({ item, ...files, ...(st === 'try' ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}),
+      text: pair(`${trySelectionMark(state, item)}${st === 'try' ? landedMark(r, marks?.get(r.id)) : SLICE_MARK[st]!()} ${fit(monitorText(r.id), col)} ${muted(t(st === 'try' ? 'to try' : st))}`, right, width) });
   }
   for (const job of unsliced(data)) list.push({ item: `project:job:${job.jobId}`, ...(job.path ? { files: [job.path] } : {}),
     text: pair(`${sliceInk('working')(mark('◉', '@'))} ${roleInk(job.role)(monitorText(job.role || job.jobId.slice(-6)))} ${muted(monitorText(job.title ?? job.package ?? ''))}`, job.asking ? theme.board.attention(`${t('asking')} ?`) : muted(minuteAge(job.at ?? null, now)), width) });
@@ -113,7 +117,7 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, board: Workboar
     const job = unsliced(data).find((j) => `project:job:${j.jobId}` === cursor);
     return { label: monitorText(job?.role ?? ''), rows: job ? indent(job.title ?? job.package ?? '', width, 3) : [] };
   };
-  const hints = '↑↓ move  ⏎ open file  y accept  n flag  PgUp PgDn scroll  esc back  ? help';
+  const hints = '↑↓ move  Space mark  y accept  n flag  ⏎ open file  PgUp PgDn scroll  esc back  ? help';
   return { list, preview, start: list.find((r) => r.item)?.item, hints };
 }
 const NO_MILESTONE = /^[—–-]*$/;
@@ -189,7 +193,7 @@ function factsPart(page: 'tree' | 'docs', data: ProjectSnapshot, width: number, 
 export function projectScene(input: MonitorData, state: MonitorState, board: WorkboardSnapshot, page: ProjectPage | undefined, width: number, now: number): SplitScene | undefined {
   const data = input.project;
   if (!data || page === 'waiting') return undefined;
-  const part = !page ? hubPart(input, data, state, board, width, now) : page === 'progress' ? progressPart(input, data, board, width, now)
+  const part = !page ? hubPart(input, data, state, board, width, now) : page === 'progress' ? progressPart(input, data, state, board, width, now)
     : page === 'control' ? controlPart(data, width, now) : page === 'tickets' ? ticketsPart(data, state, width, now) : factsPart(page, data, width, now);
   const items = splitItems(part.list), wait = (at?: string) => (at?.startsWith('project:wait:') ? 'project:fold:waiting' : at);
   let focus = state.splitFocus === 'preview', cursor = wait(focus ? state.splitList : state.projectCursor);
@@ -203,8 +207,10 @@ export function projectScene(input: MonitorData, state: MonitorState, board: Wor
   const scope = `project|${page ?? 'hub'}|${state.projectRoot ?? ''}|${cursor}`;
   splitScope(state, scope);
   const sub = focus ? splitSubValid(state, shown.rows) : undefined;
+  if (!page && state.splitFocus && !sub) state.trySelection = undefined;
   state.splitFocus = sub ? 'preview' : undefined;
   state.splitList = cursor;
   state.projectCursor = sub ?? cursor;
-  return { list: part.list, cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, act: sub ? undefined : shown.act, scope, hints: sub ? part.focusHints ?? part.hints : part.hints };
+  const hints = !sub ? part.hints : shown.act ? '↑↓ move  Space mark  y accept  n flag  esc back  ? help' : part.focusHints ?? part.hints;
+  return { list: part.list, cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, act: sub ? undefined : shown.act, scope, hints };
 }

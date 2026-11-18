@@ -53,10 +53,6 @@ const writers = {
     const { ticketFixture, ticketFrames } = await load('project-tickets.mjs');
     return withHome(async (h) => ticketFrames({ root: h, ...(await ticketFixture(h)) }));
   },
-  'inbox-frames.json': async () => {
-    const { inboxFixture, inboxFrames } = await load('inbox.mjs');
-    return withHome(async (h) => inboxFrames(inboxFixture(join(h, 'busy')), inboxFixture(join(h, 'idle'), { idle: true })));
-  },
   'bar-themes.json': async () => {
     const bars = await import(join(root, 'dist-test/tests/fixtures/bar-themes.js'));
     const now = Date.now;

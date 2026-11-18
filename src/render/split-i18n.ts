@@ -13,9 +13,10 @@ export const SPLIT_ZH: Record<string, string> = {
     '↑↓ 移动  ⏎ 打开  PgUp PgDn 滚动  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页',
   '↑↓ move  ⏎ expand  esc back  PgUp PgDn scroll  o open  v inspect  ? help':
     '↑↓ 移动  ⏎ 展开  esc 返回  PgUp PgDn 滚动  o 打开  v 详情  ? 帮助',
-  '↑↓ move  ⏎ open  y accept  n flag  ←→ tab  [ ] project  ? help': '↑↓ 移动  ⏎ 打开  y 验收  n 标记  ←→ 切页  [ ] 项目  ? 帮助',
-  '↑↓ move  ⏎ open file  y accept  n flag  PgUp PgDn scroll  esc back  ? help':
-    '↑↓ 移动  ⏎ 打开文件  y 验收  n 标记  PgUp PgDn 滚动  esc 返回  ? 帮助',
+  '↑↓ move  Space mark  y accept  n flag  ⏎ open  ←→ tab  [ ] project  ? help': '↑↓ 移动  Space 勾选  y 验收  n 标记  ⏎ 打开  ←→ 切页  [ ] 项目  ? 帮助',
+  '↑↓ move  Space mark  y accept  n flag  esc back  ? help': '↑↓ 移动  Space 勾选  y 验收  n 标记  esc 返回  ? 帮助',
+  '↑↓ move  Space mark  y accept  n flag  ⏎ open file  PgUp PgDn scroll  esc back  ? help':
+    '↑↓ 移动  Space 勾选  y 验收  n 标记  ⏎ 打开文件  PgUp PgDn 滚动  esc 返回  ? 帮助',
   '↑↓ move  ⏎ places  c C preset  PgUp PgDn scroll  esc back  ? help': '↑↓ 移动  ⏎ 位置  c C 预设  PgUp PgDn 滚动  esc 返回  ? 帮助',
   '↑↓ place  p harness  m model  e thinking  + - fallback  K J move  x clear  esc back  ? help':
     '↑↓ 位置  p 宿主  m 模型  e 思考  + - 备选  K J 移动  x 清除  esc 返回  ? 帮助',

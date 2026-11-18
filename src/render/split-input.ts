@@ -9,6 +9,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorState } from './monitor.js';
 import { monitorRowAt } from './monitor-input.js';
 import { splitItems } from './split-frame.js';
+import { tryInput } from './try-input.js';
 
 type Outcome = (action?: MonitorOutcome['action']) => MonitorOutcome;
 const MOVE = ['up', 'down', 'home', 'end'];
@@ -80,17 +81,24 @@ export function splitProjectInput(next: MonitorState, input: WorkbenchInput, key
       if (focus && next.splitSub === got.click) return enter();
       next.splitList = focus ? next.splitList : next.projectCursor; next.splitFocus = 'preview'; next.splitSub = got.click; next.projectCursor = got.click;
     } else if (got.click === next.projectCursor && !focus) return enter();
-    else { next.splitFocus = undefined; next.projectCursor = got.click; }
+    else { next.splitFocus = undefined; next.projectCursor = got.click; if (focus) next.trySelection = undefined; }
     return result();
   }
   if (got === 'done') return result();
   if (MOVE.includes(key)) { move(splitItems(focus ? preview?.rows : list?.rows), key); return result(); }
-  if (key === 'escape' && focus) { next.splitFocus = undefined; next.projectCursor = next.splitList; return result(); }
+  if (key === 'escape' && focus) { next.splitFocus = undefined; next.projectCursor = next.splitList; next.trySelection = undefined; return result(); }
   if ((key === 'enter' || key === 'activate') && next.projectCursor && intoPreview(next.projectCursor)) return result();
-  // `y` and `n` act on the to-try slice under the cursor: the list's row, the preview's, else the next one the hub's preview is waiting on.
-  if (key === 'try-accept' || key === 'next-trouble') {
-    const target = (rows.find((r) => r.item === at && r.tryTarget) ?? (focus ? undefined : preview?.rows.find((r) => r.tryTarget)))?.tryTarget;
-    return target ? result({ type: 'record-try', action: key === 'try-accept' ? 'accept' : 'flag', target }) : undefined;
+  if (key === 'space' || key === 'try-accept' || key === 'next-trouble') {
+    const cursorRow = rows.find((r) => r.item === at && r.tryTarget);
+    const row = cursorRow ?? (focus ? undefined : preview?.rows.find((r) => r.tryTarget));
+    // The hub already highlights its next slice. Space on it also takes the keys into the preview to mark more rows.
+    if (key === 'space' && !cursorRow && row?.item) {
+      next.splitList = next.projectCursor;
+      next.splitFocus = 'preview';
+      next.projectCursor = next.splitSub = row.item;
+    }
+    const tried = tryInput(next, key, row);
+    if (tried) return tried;
   }
   // `c` and `C` apply a preset to the role under the cursor, from the list; the place keys act in the preview, on a place.
   const role = /^project:role:([^:]+)$/.exec(next.projectCursor ?? '')?.[1];

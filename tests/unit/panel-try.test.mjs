@@ -38,10 +38,9 @@ const until = async (condition, diagnostic) => {
   assert.fail(diagnostic());
 };
 
-test('the live panel records y/n on milestone and slice rows and paints the latest marks until the ledger agrees', async (t) => {
-  const f = fixture(t);
-  fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ modelEnabled: false, refreshMs: 100, language: 'en', theme: 'none', icons: 'unicode' }));
-  const runner = `process.stdout.columns = 80; process.stdout.rows = 24;
+function panel(t, f, { layout = 'classic', columns = 80 } = {}) {
+  fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ panelLayout: layout, modelEnabled: false, refreshMs: 100, language: 'en', theme: 'none', icons: 'unicode' }));
+  const runner = `process.stdout.columns = ${columns}; process.stdout.rows = 24;
     const { runLivePage } = await import(${JSON.stringify(new URL('../../dist/tree-page.js', import.meta.url).href)});
     await runLivePage(); process.exit(0);`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', runner], {
@@ -61,6 +60,13 @@ test('the live panel records y/n on milestone and slice rows and paints the late
   const painted = (pattern) => until(() => pattern.test(frame()), () => `${pattern}\n${frame()}\n${err}`);
   const key = (input) => child.stdin.write(input);
   const recorded = (n) => until(() => f.records().length === n, () => `${JSON.stringify(f.records())}\n${frame()}\n${err}`);
+  const close = async () => { key('q'); child.stdin.end(); assert.deepEqual(await exited, [0, null]); };
+  return { key, frame, painted, recorded, close };
+}
+
+test('the live panel records y/n on milestone and slice rows and paints the latest marks until the ledger agrees', async (t) => {
+  const f = fixture(t);
+  const { key, frame, painted, recorded, close } = panel(t, f);
 
   key('2');
   await painted(/^Progress +0\.1\.4/m);
@@ -106,9 +112,61 @@ test('the live panel records y/n on milestone and slice rows and paints the late
   fs.writeFileSync(f.state, fs.readFileSync(f.state, 'utf8').replace('first slice', 'updated first slice'));
   await painted(/◇ ONE/);
   await painted(/▾ 0\.1\.4 +◇ 1 to try/);
-  key('q');
-  child.stdin.end();
-  assert.deepEqual(await exited, [0, null]);
+  await close();
+});
+
+test('Space marks two rows, then y writes one try record and one watch line in Classic and both Split views', async (t) => {
+  for (const view of ['classic', 'split-hub', 'split-progress']) {
+    const f = fixture(t);
+    const { key, frame, painted, recorded, close } = panel(t, f, { layout: view === 'classic' ? 'classic' : 'split', columns: 40 });
+    key('2');
+    await painted(/^.*Progress.*0\.1\.4/m);
+    let slices = ['TWO', 'ONE'];
+    if (view === 'classic') {
+      key('\rt');
+      await painted(/^Only to try /m);
+      key('jj ');
+      await painted(/▣ ◇ TWO/);
+      key('t'); // Leaving and re-entering clears the selection.
+      await painted(/t to try/);
+      key('t');
+      await painted(/^Only to try /m);
+      assert.doesNotMatch(frame(), /▣/);
+      key('jj ');
+      await painted(/▣ ◇ TWO/);
+      key(' ');
+      await painted(/^ {4}◇ TWO/m); // Toggle the same row off.
+    } else if (view === 'split-progress') {
+      key('\r');
+      await painted(/^‹ .*Progress/m);
+      slices = ['ONE', 'TWO'];
+    } else {
+      await painted(/^To try/m);
+      slices = ['TWO', 'OLDER']; // One record across milestones.
+    }
+    assert.match(frame(), /Space mark/);
+    key(' ');
+    await painted(new RegExp(`▣ ◇ ${slices[0]}`));
+    key(view === 'split-hub' ? 'jj ' : 'j ');
+    await painted(new RegExp(`▣ ◇ ${slices[1]}`));
+    assert.match(frame(), new RegExp(`▣ ◇ ${slices[0]}`));
+    assert.deepEqual(f.records(), []);
+    key('y');
+    await recorded(1);
+    await painted(new RegExp(`✓ ${slices[1]}`));
+    assert.doesNotMatch(frame(), /▣/);
+    assert.equal(f.records()[0].action, 'accept');
+    assert.deepEqual(f.records()[0].slices, slices);
+    const abort = new AbortController(), lines = [];
+    t.after(() => abort.abort());
+    const watching = watchCommand(['--all'], { env: f.env, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: abort.signal });
+    await until(() => lines.length > 0, () => `${view}: ${JSON.stringify(f.records())}`);
+    abort.abort();
+    assert.equal(await watching, 0);
+    const title = view === 'split-hub' ? 'SampleHUD' : 'SampleHUD 0.1.4';
+    assert.deepEqual(lines, [`try accepted ${title}: ${slices.join(', ')}`]);
+    await close();
+  }
 });
 
 test('hud watch skips reflected tries on catch-up and emits each live record once without waiting for a rescan', async (t) => {
@@ -155,6 +213,6 @@ test('MCP changes carry unreflected try lines once, only for the session cwd', a
   };
   assert.deepEqual((await roster()).changes, ['try flagged SampleHUD TWO']);
   assert.equal((await roster()).changes, undefined);
-  f.record('accept', { id: 'ONE' });
-  assert.deepEqual((await roster()).changes, ['try accepted SampleHUD 0.1.4: ONE']);
+  f.record('accept', { id: 'ONE' }, { id: 'TWO' });
+  assert.deepEqual((await roster()).changes, ['try accepted SampleHUD 0.1.4: ONE, TWO']);
 });

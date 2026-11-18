@@ -60,6 +60,8 @@ export interface MonitorState {
   projectWait?: number;
   /** Progress shows only the slices in state `try`; where the full feed's cursor and scroll were, so clearing it lands there. */
   projectTry?: { cursor?: string; scroll: number };
+  /** Space-marked rows in the current to-try view, before recording a decision. */
+  trySelection?: ReadonlyMap<string, TryTarget>;
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;

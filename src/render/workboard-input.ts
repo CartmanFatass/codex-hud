@@ -10,6 +10,8 @@ import type { PlaceOp } from '../roles/role-control.js';
 import { pickable } from './model-input.js';
 import { splitHomeInput, splitProjectInput } from './split-input.js';
 import { join } from 'node:path';
+import { tryInput } from './try-input.js';
+
 /** The Control plane's keys (named by the decoder) and what each asks of the place under the cursor. */
 const PLACE_KEYS: Record<string, { op: PlaceOp; step?: 1 | -1 }> = {
   'role-preset': { op: 'preset' }, 'role-preset-prev': { op: 'preset', step: -1 },
@@ -25,11 +27,12 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const frame = ctx.frame,
     boardFrame = frame?.workboard;
   if (!boardFrame) return null;
-  let key = input.type === 'key' ? input.key : '';
+  const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.key : '';
   const main = next.focus === 'agents';
   const inspector = next.focus === 'details';
-  const home = () => {
-    next.mainTab = 'home';
+  const home = (tab: 'home' | 'project' = 'home') => {
+    next.mainTab = tab;
+    if (tab === 'home') next.trySelection = undefined;
     next.focus = 'agents';
     next.modes.agents = 'open';
     next.zoom = false;
@@ -43,6 +46,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const goProject = (page?: ProjectPage, cursor?: string) => {
     const from = projectPageOf(next), saved = { ...next.projectSaved }, full = next.projectTry ?? { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
     if (from) saved[from] = full;
+    next.trySelection = undefined;
     next.projectTry = undefined;
     const kept = page && !cursor ? saved[page] : undefined;
     next.projectSaved = saved;
@@ -54,6 +58,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   // Progress's to-try filter: on, it keeps where the full feed was; off (the same key, Enter on its header or Esc), the feed is back there.
   const tryOnly = () => {
     const full = next.projectTry;
+    next.trySelection = undefined;
     next.projectTry = full ? undefined : { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
     next.projectCursor = full ? full.cursor : 'project:try';
     next.projectScroll = full?.scroll ?? 0;
@@ -68,6 +73,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const useProject = (root?: string) => {
     if (root === next.projectRoot) return;
     next.projectRoot = root;
+    next.trySelection = undefined;
     // Esc goes back to the list only from a hub opened out of it, not from one stepped to with `[` and `]`.
     next.projectBack = undefined;
     next.projectSaved = {};
@@ -89,6 +95,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const showList = (on: boolean) => {
     const root = next.projectRoot ?? frame?.projects?.[0].root;
     next.projectList = on || undefined;
+    next.trySelection = undefined;
     next.projectBack = undefined;
     next.projectCursor = on ? `project:list:${root}` : 'project:switch';
     next.projectScroll = 0;
@@ -152,11 +159,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const to = tab === 'board-home' ? 'home'
       : tab === 'board-project' || key === 'project-tab' ? 'project'
       : next.mainTab === 'project' ? 'home' : 'project';
-    home();
-    next.mainTab = to;
+    home(to);
     return result();
   }
   if (key === 'changes') {
+    next.trySelection = undefined;
     next.focus = 'changes';
     next.boardInspect = undefined;
     next.modes.changes = 'open';
@@ -213,14 +220,14 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
       return result();
     }
-    if (input.type === 'key' && input.text === 't' && projectPageOf(next) === 'progress' && next.panelLayout !== 'inbox') {
-      tryOnly();
-      return result();
+    if (projectPageOf(next) === 'progress') {
+      if (input.type === 'key' && input.text === 't') {
+        tryOnly();
+        return result();
+      }
+      const tried = next.panelLayout !== 'split' && next.projectTry && tryInput(next, key, rows[at]);
+      if (tried) return tried;
     }
-    const target = rows[at]?.tryTarget;
-    // Inbox has no to-try view: every to-try row of the hub and Progress takes `y` and `n`.
-    if ((next.panelLayout === 'inbox' || (next.projectTry && projectPageOf(next) === 'progress')) && target && (key === 'try-accept' || key === 'next-trouble'))
-      return result({ type: 'record-try', action: key === 'try-accept' ? 'accept' : 'flag', target });
     // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
     if (key === 'reset' && projectPageOf(next) === 'control') return result({ type: 'refresh-models' });
     const place = PLACE_KEYS[key], onPlace = /^project:role:(.+):(\d+)$/.exec(next.projectCursor ?? '');

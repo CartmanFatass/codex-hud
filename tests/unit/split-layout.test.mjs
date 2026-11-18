@@ -7,7 +7,9 @@ import { join } from 'node:path';
 import { splitFixture, splitFrames, split } from '../fixtures/split-layout.mjs';
 import { NOW, TREE, plain, onPage } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
-import { defaultSettings } from '../../dist/settings.js';
+import { defaultSettings, loadSettings } from '../../dist/settings.js';
+import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
+import { withDisplaySettings } from '../../dist/settings-runtime.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/split-frames.json', import.meta.url), 'utf8'));
@@ -236,6 +238,30 @@ test('Tickets, Working tree and Docs: a row each, the whole text or the checklis
   assert.match(rule(tree), /^branch ─+/);
   assert.equal(tree.pane('preview').rows.length > 0, true);
   assert.ok(docs.lines().length === 40);
+});
+
+test('a saved retired layout renders Classic, Split keeps its Home frame, and the 40-column Layout row offers only Classic and Split', async (t) => {
+  const { busy } = await fixtures(t);
+  const path = join(busy.hud, 'hud-settings.json');
+  const env = { ...process.env, HUD_SETTINGS_PATH: path };
+  const select = (panelLayout) => {
+    fs.writeFileSync(path, JSON.stringify({ panelLayout, language: 'en', theme: 'none' }));
+    return loadSettings(env);
+  };
+  const classic = select('inbox'), shown = select('split');
+  assert.equal(classic.panelLayout, 'classic');
+  const home = (settings) => plain(busy.render(40, 'en', 40, { ...initialMonitorState(), panelLayout: settings.panelLayout }));
+  assert.deepEqual(home(classic), home(defaultSettings()));
+  assert.deepEqual(home(shown), expected['home-busy-40-en']);
+  const selected = SETTING_ROWS.findIndex((r) => r.key === 'panelLayout');
+  assert.deepEqual(SETTING_ROWS[selected].values, ['classic', 'split']);
+  for (const [draft, label] of [[classic, 'Classic'], [shown, 'Split']]) {
+    const frame = withDisplaySettings(draft, () => renderSettingsPage({ draft, selected, offset: 0, message: '' }, 40, 24));
+    const text = plain(frame).join('\n');
+    assert.match(text, new RegExp(`Layout +‹ ${label} ›`));
+    assert.match(text, /Classic is the\n┃ default; Split/);
+    assert.doesNotMatch(text, /Inbox/);
+  }
 });
 
 test('Classic is untouched: no layout set draws no preview pane, its Help has no Split rows, and the setting defaults to classic', async (t) => {

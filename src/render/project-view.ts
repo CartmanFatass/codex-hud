@@ -12,7 +12,6 @@ import { pickOf } from './model-input.js';
 import { monitorText, fit, pair, flowLines } from './monitor-text.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { t } from './i18n.js';
-import { inboxHubRows, inboxProgressRows } from './inbox-project.js';
 export const sliceInk = (state: SliceState) => ({ working: theme.board.active, blocked: theme.board.attention,
   try: theme.board.identifier, accepted: theme.board.success, todo: theme.board.muted, dropped: theme.board.frame })[state];
 /** Cumulative rounding keeps the stacked bar cell-exact, including small nonzero segments. */
@@ -178,7 +177,7 @@ export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: numbe
   return parts(limit && theme.board.attention(t('{n} at limit', { n: limit })), `${data.roleCount} ${t('roles')}`, data.keys.length && `${t('keys')} ${data.keys.filter((k) => k[1]).length}/${data.keys.length}`,
     `${t('browser')} ${mark(data.browser ? '✓' : '−', data.browser ? '+' : '-')}`);
 }
-export const foldRow = (folded: ReadonlySet<string>, id: string, label: string, width: number, right = ''): MonitorRow => ({
+const foldRow = (folded: ReadonlySet<string>, id: string, label: string, width: number, right = ''): MonitorRow => ({
   ...section(`${folded.has(id) ? mark('▸', '>') + ' ' : ''}${t(label)}`, width, right), item: `project:fold:${id}`,
 });
 export const itemRight = (r: ProjectItem, width: number, now: number) => width < 56 ? '' : r.at !== undefined ? minuteAge(r.at, now)
@@ -195,7 +194,7 @@ export function waitingRows(r: ProjectItem, i: number, width: number, now: numbe
     : clampClean(body, room, 2).lines.map((line, k) => ({ ...row, text: k ? fit('  ' + line, width) : pair(`${glyph} ${line}`, theme.board.muted(right), width) }));
 }
 export const roleInk = (role: string) => (theme.board.roleInk as Record<string, (s: string) => string>)[role] ?? ((s: string) => s);
-export const DAY = 864e5;
+const DAY = 864e5;
 /** STATE's current milestone's ledger rows with their counts; a ledger that has none of them (or no current milestone) is counted whole. */
 export function currentRows(data: ProjectSnapshot) {
   const mine = data.ledger.filter((r) => r.milestone === data.ladder.current), rows = mine.length ? mine : data.ledger;
@@ -215,6 +214,7 @@ export const inFlight = (data: ProjectSnapshot) => data.slices.filter((r) => r.d
 /** Landed slices (to try or accepted), the newest first by commit date; those with none last, the later ledger rows first. */
 export const landedNewest = (data: ProjectSnapshot) => data.ledger.flatMap((r, i) => r.state === 'try' || r.state === 'accepted' ? [{ r, i }] : [])
   .sort((a, b) => (b.r.at ?? -1) - (a.r.at ?? -1) || b.i - a.i);
+export const trySelectionMark = (state: MonitorState, item: string) => state.trySelection?.has(item) ? `${theme.board.active(mark('▣', '*'))} ` : '';
 export const landedMark = (r: LedgerSlice, action?: TryAction) => action === 'flag' ? theme.board.attention(mark('⚑', '!'))
   : r.state === 'try' && action !== 'accept' ? sliceInk('try')(mark('◇', 'o')) : sliceInk('accepted')(mark('✓', '+'));
 /** The hub's Latest and Progress's History share this right side: `to try 10h`, or only the age for an accepted slice on Progress. */
@@ -328,9 +328,9 @@ function listRows(projects: ProjectChoice[], width: number, now: number): Monito
   }
   return rows;
 }
-export const NO_MILESTONE = /^[—–-]*$/;
+const NO_MILESTONE = /^[—–-]*$/;
 /** Milestones in ledger order, oldest first; STATE's current one is always among them. A ledger naming none falls back to spec §5. */
-export function milestoneOrder(data: ProjectSnapshot): string[] {
+function milestoneOrder(data: ProjectSnapshot): string[] {
   const seen = new Set(data.ledger.map((r) => r.milestone).filter((m) => !NO_MILESTONE.test(m)));
   if (!seen.size) data.ladder.ids.forEach((id) => seen.add(id));
   if (data.ladder.current) seen.add(data.ladder.current);
@@ -340,7 +340,7 @@ export function milestoneOrder(data: ProjectSnapshot): string[] {
 export const ledgerText = (r: LedgerSlice) => r.text.replace(/\s*\((?:[0-9a-f]{7,40}(?:[,;]\s*|(?=\))))+\)\s*$/i, '')
   .replace(/^[0-9a-f]{7,40}\s*·\s*/i, '').trim();
 /** `MM-DD`, with the year when it is not this one. */
-export function dateText(at: number, now: number): string {
+function dateText(at: number, now: number): string {
   const day = new Date(at), two = (n: number) => String(n).padStart(2, '0');
   return `${day.getFullYear() === new Date(now).getFullYear() ? '' : day.getFullYear() + '-'}${two(day.getMonth() + 1)}-${two(day.getDate())}`;
 }
@@ -354,7 +354,7 @@ export function clampClean(body: string, room: number, max: number) {
   return { more, lines: more ? [...lines.slice(0, max - 1), fit(lines.slice(max - 1).join(' '), Math.max(1, room))] : lines };
 }
 /** `head` and `text` on one row when they fit beside `right` (and `one`); else `head` with `right`, and the text wrapped under it at `indent`. */
-export function stacked(head: string, text: string, right: string, width: number, indent: number, max = 2, one = true): string[] {
+function stacked(head: string, text: string, right: string, width: number, indent: number, max = 2, one = true): string[] {
   const body = monitorText(text);
   if (!body) return [pair(head, right, width)];
   if (one && visualLength(head) + 2 + visualLength(body) + (right ? visualLength(right) + 1 : 0) <= width) return [pair(`${head}  ${body}`, right, width)];
@@ -453,9 +453,10 @@ export function pageRows(
     const entry = ({ r }: { r: LedgerSlice }, indent: number, right = landedAge(r, now, false), tried = false) => {
       const action = tried ? tryMarks?.get(r.id) : undefined;
       const tryTarget = tried ? { milestone: r.milestone, slices: [r] } : undefined;
-      const id = `hist:${r.id}`, lines = stacked(`${' '.repeat(indent)}${landedMark(r, action)} ${monitorText(r.id)}`, ledgerText(r), right, width, indent + 4, 2);
+      const id = `hist:${r.id}`, item = `project:fold:${id}`, selected = tried ? trySelectionMark(state, item) : '';
+      const lines = stacked(`${' '.repeat(indent)}${selected}${landedMark(r, action)} ${monitorText(r.id)}`, ledgerText(r), right, width, indent + 4, 2);
       if (folded.has(id)) lines.splice(1, 0, ' '.repeat(indent + 4) + theme.board.muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at, now) : ''].filter(Boolean).join(' · ')));
-      for (const line of lines) rows.push({ text: fit(line, width), item: `project:fold:${id}`, tryTarget, ...(data.statePath ? { files: [data.statePath] } : {}) });
+      for (const line of lines) rows.push({ text: fit(line, width), item, tryTarget, ...(data.statePath ? { files: [data.statePath] } : {}) });
     };
     // Newest milestone first; the newest to-try milestone is selectable but stays open.
     const byMilestone = (list: typeof landed, prefix: string, tried = false) => {
@@ -474,9 +475,10 @@ export function pageRows(
         const counts = (words: boolean) => [accepted && sliceInk('accepted')(`${mark('✓', '+')} ${accepted}${words ? ' ' + t('accepted') : ''}`),
           flagged && theme.board.attention(`${mark('⚑', '!')} ${flagged}${words ? ' ' + t('flagged') : ''}`),
           tries && sliceInk('try')(`${mark('◇', 'o')} ${tries}${words ? ' ' + t('to try') : ''}`)].filter(Boolean).join('  ');
-        const lead = `  ${open ? mark('▾', 'v') : mark('▸', '>')} ${fit(name(milestone), column)} `, words = visualLength(lead + counts(true)) + visualLength(span) + 1 <= width;
+        const item = newest ? `project:${id}` : `project:fold:${id}`, selected = tried ? trySelectionMark(state, item) : '';
+        const lead = `  ${selected}${open ? mark('▾', 'v') : mark('▸', '>')} ${fit(name(milestone), column)} `, words = visualLength(lead + counts(true)) + visualLength(span) + 1 <= width;
         const tryTarget = tried ? { milestone, slices: items.map(({ r }) => r) } : undefined;
-        rows.push({ text: pair(lead + counts(words), theme.board.muted(span), width), item: newest ? `project:${id}` : `project:fold:${id}`, tryTarget });
+        rows.push({ text: pair(lead + counts(words), theme.board.muted(span), width), item, tryTarget });
         if (open) items.forEach((x) => entry(x, 4, tried ? theme.board.muted(sinceText(x.r.at, now)) : undefined, tried));
       }
     };
@@ -614,7 +616,5 @@ export function projectRows(
   if (!data) return [];
   // The model picker is the Control plane while it is open.
   if (page === 'control' && state.projectInput && pickOf(data, state.projectInput)) return pickerRows(data, state.projectInput, width, room ?? 24);
-  if (state.panelLayout === 'inbox' && (!page || page === 'progress'))
-    return page ? inboxProgressRows(data, state, width, now, board, modelEnabled, tryMarks) : inboxHubRows(data, state, width, now, name, projects, board, room, tryMarks);
   return page ? pageRows(page, data, state, width, now, board, modelEnabled, tryMarks) : hubRows(data, state, width, now, name, projects, board, room);
 }
