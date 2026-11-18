@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { projectFixture, plain, onPage, NOW, TREE } from '../fixtures/project-page.mjs';
+import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { renderHtmlBoard } from '../../dist/render/html-board.js';
 import { language } from '../../dist/render/i18n.js';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
@@ -29,7 +30,8 @@ function inputs(x = XSS) {
     control: [], roles: [], harnesses: [], models: { pi: [], include: {}, cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0, editing: [],
     ladder: { ids: [], current: 'M5' }, next: [], summary: `Closing ${x}`,
     slices: [{ label: 'PAGE-ONE', value: `working ${x}`, ledgerState: 'working', role: 'imp', at: NOW - 40 * 60e3 }],
-    active: [], counts: { working: 1, blocked: 0, try: 2, todo: 3, accepted: 4, dropped: 1 },
+    active: [{ jobId: 'j0000000000000001', role: 'imp', state: 'working', asking: true }],
+    counts: { working: 1, blocked: 0, try: 2, todo: 3, accepted: 4, dropped: 1 },
     git: { branch: `wt/${x}`, changed: 3, staged: 1, unstaged: 1, untracked: 1, conflicts: 0, ahead: 2, behind: 0 },
     ledger: [
       row('BRIEFED', { diff: diffOf(x), text: 'BRIEFED (a1b2c3d4) see .scratch/panel-v2/issues/07-board.md', brief: { brief: `Adds the board ${x}`, steps: ['Run it', `Open ${x}`] } }),
@@ -39,8 +41,9 @@ function inputs(x = XSS) {
   };
   const requestInfo = { id: 'q1', question: `Which ${x}?`, suggested: 'a', options: ['a) keep', `b) ${x}`] };
   const worker = { id: 'thin-job:j0000000000000001', laneId: 'l', role: 'imp', harness: 'pi', task: `Build ${x}`, model: 'synthetic/model', effort: 'high',
-    state: 'working', startedAt: NOW - 20 * 60e3, settledAt: null, homeNeedsHuman: true, work: { requestInfo, reason: `now ${x}` } };
-  const settled = { ...worker, id: 'thin-job:j0000000000000002', task: 'Finished one', state: 'done', settledAt: NOW - 1, homeNeedsHuman: false, work: {} };
+    state: 'working', startedAt: NOW - 20 * 60e3, settledAt: null, homeNeedsHuman: true, work: { requestInfo, reason: `now ${x}` },
+    evidence: [{ sourceId: 'j0000000000000001' }] };
+  const settled = { ...worker, id: 'thin-job:j0000000000000002', task: 'Finished one', state: 'done', settledAt: NOW - 1, homeNeedsHuman: false, work: {}, evidence: [{ sourceId: 'j0000000000000002' }] };
   const workboard = { revision: 'x', lanes: [], workers: [worker, settled], decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
   return { projectName: `proj ${x}`, root: `/home/user/${x}`, project, workboard, reviewText: `# Review ${x}\n- minor ${x}\n`, generatedAt: NOW, lang: 'en' };
 }
@@ -121,7 +124,7 @@ test('Needs you, In flight, tickets and the review appear when there is somethin
 
   const input = inputs();
   const quiet = renderHtmlBoard({ ...input, workboard: undefined, reviewText: undefined,
-    project: { ...input.project, waiting: [], tickets: [], ledger: [], slices: [], counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 } } });
+    project: { ...input.project, waiting: [], tickets: [], ledger: [], slices: [], active: [], counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 } } });
   for (const id of ['needs', 'try', 'flight', 'tickets', 'review']) assert.doesNotMatch(quiet, new RegExp(`<section id="${id}"`));
 });
 
@@ -184,16 +187,62 @@ test('hud board writes the page atomically and prints its path', async (t) => {
   assert.ok(html.includes(`content="default-src 'none'; style-src 'unsafe-inline'"`));
   assert.doesNotMatch(html, /<script/);
   assert.match(html, /<h1>project<\/h1>/);
-  // Synthetic project: its STATE waiting items, its ledger slice to try, its job asking a question, its newest review.
+  // Synthetic project: its STATE waiting items, its ledger slice to try, its checkout's job, its newest review.
   assert.match(html, /Try the Project tab/);
   assert.match(html, /<span class="id">LANDING<\/span>/);
-  assert.match(html, /Which synthetic option\?/);
+  assert.match(html, /Build the Project tab/);
   assert.match(html, /class="root">2026-11-12-review\.md<\/p><div class="review">Verdict: accept/);
   assert.match(html, /branch synthetic-project/);
   // The caller's pane is the HERDR_PANE_ID: without one there are no jobs.
   const alone = await f.run(['board', '--cwd', f.cwd, '--out', join(f.root, 'alone.html')], { HERDR_PANE_ID: '' });
   assert.equal(alone.code, 0);
-  assert.doesNotMatch(fs.readFileSync(join(f.root, 'alone.html'), 'utf8'), /Which synthetic option\?/);
+  assert.doesNotMatch(fs.readFileSync(join(f.root, 'alone.html'), 'utf8'), /Build the Project tab/);
+});
+
+test('hud board exports every To-try slice with diff bars, including the oldest of thirteen', async (t) => {
+  const f = await cli(t), cwd = initRepo(f.root);
+  for (let i = 0; i < 13; i++) fs.writeFileSync(join(cwd, `landing-${i}.txt`), 'synthetic change\n');
+  git(cwd, 'add', '.');
+  git(cwd, 'commit', '-qm', 'land synthetic changes');
+  const commit = git(cwd, 'rev-parse', '--short', 'HEAD');
+  const ids = Array.from({ length: 13 }, (_, i) => `TRY-${i + 1}`);
+  f.put(join(cwd, 'docs/handoff/STATE.md'), `## Slices\n\n${ids.map((id) => `- try · M5 · ${id} · synthetic change (${commit})`).join('\n')}\n`);
+  const result = await f.run(['board', '--cwd', cwd]);
+  assert.equal(result.code, 0, result.err);
+  const html = fs.readFileSync(result.out.trim(), 'utf8');
+  const cards = [...html.matchAll(/<article class="card try"><header><span class="id">(TRY-\d+)<\/span>(.*?)<\/article>/g)];
+  assert.deepEqual(cards.map((card) => card[1]), [...ids].reverse());
+  for (const [, , card] of cards) {
+    assert.equal([...card.matchAll(/class="p mono"/g)].length, 12);
+    assert.match(card, /\+1 more files/);
+  }
+});
+
+test('hud board scopes questions and In flight to one project within the caller pane', async (t) => {
+  const f = await cli(t), other = join(f.root, 'other-project');
+  const receipt = join(f.sliceJob, 'job.json');
+  f.put(receipt, { ...JSON.parse(fs.readFileSync(receipt, 'utf8')),
+    worktree: { root: f.linked[0], main_root: f.cwd, branch: 'wt/NATIVE-TREE' } });
+  for (const [n, cwd, pane, title] of [
+    [3, other, 'w4E:p1', 'Other project'], [4, f.cwd, 'w4E:p2', 'Other pane'],
+  ]) {
+    const id = `j000000000000000${n}`, dir = join(f.hud, 'jobs', id);
+    f.put(join(dir, 'job.json'), { job: id, cwd, role: 'imp', herdr_pane: pane, created_at: new Date(NOW).toISOString() });
+    f.put(join(dir, 'brief.md'), `# ${title} job`);
+    f.put(join(dir, 'qa', 'q1.md'), `Question: ${title} question?`);
+  }
+  fs.mkdirSync(other);
+  for (const [cwd, ownQuestion, ownJob, excluded] of [
+    [f.cwd, /Which synthetic option\?/, /NATIVE-TREE: synthetic subagents/, /Other project|Other pane/],
+    [other, /Other project question\?/, /Other project job/, /Which synthetic option|Build the Project tab|Other pane/],
+  ]) {
+    const result = await f.run(['board', '--cwd', cwd]);
+    assert.equal(result.code, 0, result.err);
+    const html = fs.readFileSync(result.out.trim(), 'utf8');
+    assert.match(/<section id="needs">(.*?)<\/section>/s.exec(html)?.[1] ?? '', ownQuestion);
+    assert.match(/<section id="flight">(.*?)<\/section>/s.exec(html)?.[1] ?? '', ownJob);
+    assert.doesNotMatch(html, excluded);
+  }
 });
 
 test('hud board --out never follows a link and replaces it', async (t) => {

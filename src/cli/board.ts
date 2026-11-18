@@ -50,7 +50,7 @@ function readReview(path: string | undefined): string | undefined {
 /** One full collection of the project, rendered and written atomically (0600); returns the path. */
 export async function writeBoard(run: BoardRun): Promise<string> {
   const root = fs.realpathSync(run.cwd);
-  const collected = await new ProjectCollector(root, run.hudHome, run.env).collect(true, run.workboard, run.now);
+  const collected = await new ProjectCollector(root, run.hudHome, run.env).collect('export', run.workboard, run.now);
   const project = collected && run.briefs.apply(root, collected);
   if (!project) throw new Error('no project facts');
   const html = renderHtmlBoard({

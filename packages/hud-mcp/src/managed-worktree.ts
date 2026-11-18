@@ -69,6 +69,24 @@ export async function gitSummary(wt: ManagedWorktree) {
   } catch { return { ...base, head: null, ahead_commits: null, changed_files: null, dirty: null }; }
 }
 
+function nestedGitReason(root: string): string | undefined {
+  const pending = [root];
+  let remaining = 100_000;
+  while (pending.length) {
+    const path = pending.pop()!;
+    if (!fs.lstatSync(path).isDirectory()) return 'worktree directory changed during cleanup check';
+    const dir = fs.opendirSync(path);
+    try {
+      for (let entry; (entry = dir.readSync());) {
+        if (--remaining < 0) return 'worktree exceeds the nested Git repository check limit';
+        if (entry.name === '.git') {
+          if (path !== root) return 'worktree contains a nested Git repository marker';
+        } else if (entry.isDirectory()) pending.push(join(path, entry.name));
+      }
+    } finally { dir.closeSync(); }
+  }
+}
+
 /** Returns the reason for preserving the checkout (or its branch); null means removed. */
 export async function reapWorktree(id: string, job: { job: string; cwd: string; worktree: ManagedWorktree }) {
   const wt = job.worktree;
@@ -96,6 +114,8 @@ export async function reapWorktree(id: string, job: { job: string; cwd: string; 
     const pending = fields(await status(wt.root, filters, true));
     if (pending.some((row) => !/^(?:\?\?|!!) node_modules$/.test(row) || !dependencyLink(wt)))
       return 'worktree is dirty (tracked, untracked or ignored files)';
+    const nested = nestedGitReason(wt.root);
+    if (nested) return nested;
     if (pending.includes('?? node_modules')) fs.unlinkSync(join(wt.root, 'node_modules'));
     await git(wt.main_root, [...filters, 'worktree', 'remove', '--', wt.root]);
     // Don't delete a branch advanced independently during cleanup; Git also checks merge/checkout safety.

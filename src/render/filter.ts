@@ -50,11 +50,13 @@ export function filterProject(data: ProjectSnapshot, page: 'progress' | 'tickets
     const tickets = data.tickets.map((f) => ({ ...f, tickets: f.tickets.filter((r) => has(needle, f.slug, r.number, r.title, r.status, ...r.blockers)) })).filter((f) => f.tickets.length);
     return { data: { ...data, tickets }, count: tickets.reduce((n, f) => n + f.tickets.length, 0) };
   }
-  const ledger = data.ledger.filter((r) => has(needle, r.id, r.milestone, r.text, r.state, t(r.state === 'try' ? 'to try' : r.state)));
-  // A worktree slice stays with its ledger row, and the jobs no slice shows are matched alone; STATE's Next and summary are not slices.
-  const slices = data.slices.filter((s) => has(needle, s.label, s.value, s.role, s.ledgerState, s.drift, s.ledgerState && t(s.ledgerState)) || ledger.some((r) => r.id === s.label));
+  // A worktree slice and its ledger row match together; jobs outside any slice are matched alone.
+  const matchedLabels = new Set(data.slices.filter((s) => has(needle, s.label, s.value, s.role, s.ledgerState, s.drift, s.ledgerState && t(s.ledgerState))).map((s) => s.label));
+  const ledger = data.ledger.filter((r) => matchedLabels.has(r.id) || has(needle, r.id, r.milestone, r.text, r.state, t(r.state === 'try' ? 'to try' : r.state)));
+  const ledgerIds = new Set(ledger.map((r) => r.id));
+  const slices = data.slices.filter((s) => matchedLabels.has(s.label) || ledgerIds.has(s.label));
   const loose = data.active.filter((a) => !data.slices.some((s) => s.jobId === a.jobId) && has(needle, a.role, a.title, a.package, a.state));
-  return { data: { ...data, ledger, slices, active: loose, next: [], summary: '' }, count: ledger.length + loose.length + slices.filter((s) => !ledger.some((r) => r.id === s.label)).length };
+  return { data: { ...data, ledger, slices, active: loose, next: [], summary: '' }, count: ledger.length + loose.length + slices.filter((s) => !ledgerIds.has(s.label)).length };
 }
 
 /** The bar: `/ query▌` and how many rows match (not before something is typed). */

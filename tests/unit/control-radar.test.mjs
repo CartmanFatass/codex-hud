@@ -71,8 +71,8 @@ test('pi and role totals use local days, shared settlement facts, and refresh wi
   put(session('project', 'old'), usage(99, 9, 20), now - DAY);
   put(session('project', 'no-usage'), '{"type":"session"}');
   const imp = job(1, 'imp', 30 * MINUTE, { state: 'idle_grace', started_at: iso(now - 12 * MINUTE), settled_at: iso(now - 6 * MINUTE), ended_at: iso(now - MINUTE) });
-  job(2, 'imp', 10 * MINUTE, { state: 'failed', ended_at: iso(now - 2 * MINUTE), quiet_decision: {} });
-  job(3, 'imp', MINUTE, { state: 'waiting_orchestrator', quiet_decision: {} });
+  job(2, 'imp', 10 * MINUTE, { state: 'failed', ended_at: iso(now - 2 * MINUTE), quiet_decision: { action: 'fail', choice: 'failed', probability: 0.96 } });
+  job(3, 'imp', MINUTE, { state: 'waiting_orchestrator', quiet_decision: { action: 'needs-human', choice: 'finished-no-report', probability: 0.72 } });
   job(4, 'reviewer', MINUTE, undefined, { dispatch_exit_code: 1 });
   job(5, 'reviewer', 2 * MINUTE, { state: 'stopped' });
   job(6, 'old', DAY, { state: 'done' });
@@ -88,6 +88,15 @@ test('pi and role totals use local days, shared settlement facts, and refresh wi
   assert.deepEqual(next.roleStats.imp, { total: 3, ok: 0, failed: 1, quietEscalated: 2, avgMinutes: 8 });
   assert.equal(next.piToday.tokens, 511);
   assert.equal(collect(now + DAY), undefined);
+});
+
+test('an ordinary question does not increment the quiet-escalation tally', (t) => {
+  const { put, job, collect } = fixture(t);
+  job(1, 'imp', 2 * MINUTE, { state: 'waiting_orchestrator', quiet_decision: { action: 'needs-human', choice: null, probability: null, reason: 'no-key' } });
+  const asking = job(2, 'imp', MINUTE, { state: 'waiting_orchestrator', reason: 'open question' });
+  put(join(asking, 'qa', 'q1.md'), 'Question: Which synthetic option?');
+  assert.equal(collect().roleStats.imp.total, 2);
+  assert.equal(collect().roleStats.imp.quietEscalated, 1);
 });
 
 test('bounded scan reads at most 16 pi session directories, 64 JSONL tails and 200 job directories', (t) => {

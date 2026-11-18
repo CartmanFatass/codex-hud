@@ -154,7 +154,8 @@ ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
 <div class="bar" role="img" aria-label="${e(STATES.map(([s, l]) => `${project.counts[s]} ${t(l)}`).join(', '))}">${STATES.filter(([s]) => project.counts[s] > 0).map(([s, l]) => `<i title="${e(`${project.counts[s]} ${t(l)}`)}" style="flex:${count(project.counts[s])};background:var(--${s === 'try' ? 'trying' : s})"></i>`).join('')}</div>
 <ul class="legend">${STATES.map(([s, l]) => `<li><i style="background:var(--${s === 'try' ? 'trying' : s})"></i><b>${count(project.counts[s])}</b> ${e(t(l))}</li>`).join('')}<li>${count(total)} ${e(t('slices'))}</li></ul></header>`;
 
-  const workers = (workboard?.workers ?? []).filter(live);
+  const activeIds = new Set(project.active.map((job) => job.jobId));
+  const workers = (workboard?.workers ?? []).filter((w) => live(w) && activeIds.has(w.evidence[0]?.sourceId));
   const asks = workers.filter((w) => w.work?.requestInfo);
   const needs = [
     ...project.waiting.map((w) => `<article class="card ask"><header>${chip('try', 'STATE')}</header><p class="pre">${e((w.text ?? w.value).trim())}</p></article>`),
@@ -164,14 +165,14 @@ ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
     }),
   ];
 
-  const tries = project.ledger.filter((r) => r.state === 'try').reverse().sort((a, b) => (b.at ?? -1) - (a.at ?? -1)).slice(0, 12);
+  const tries = project.ledger.filter((r) => r.state === 'try').reverse().sort((a, b) => (b.at ?? -1) - (a.at ?? -1));
   const slices = project.slices.filter((s) => s.ledgerState === 'working' || s.ledgerState === 'blocked');
   const flight = [
     ...slices.map((s) => {
       const state = s.ledgerState === 'blocked' ? 'blocked' : 'working';
       return `<article class="card ${state}"><header><span class="id">${e(s.label)}</span>${chip(state, t(state))}${s.role ? chip('plain', s.role) : ''}<span class="meta">${e(ago(s.at, now))}</span></header><p>${e(s.value)}</p>${s.drift ? `<p class="plain">${e(t(s.drift))}</p>` : ''}</article>`;
     }),
-    ...(workboard ? workers : []).map((w) => `<article class="card ${w.homeNeedsHuman ? 'ask' : 'working'}"><header><span class="id">${e(w.briefTitle ?? w.task)}</span>${chip('plain', [w.role, w.harness].filter(Boolean).join(' · ') || 'job')}<span class="meta">${e([w.model, w.effort, w.startedAt ? age(new Date(w.startedAt), now) : ''].filter(Boolean).join(' · '))}</span></header>${w.modelSentence || w.work?.reason ? `<p>${e(w.modelSentence || w.work?.reason)}</p>` : ''}</article>`),
+    ...workers.map((w) => `<article class="card ${w.homeNeedsHuman ? 'ask' : 'working'}"><header><span class="id">${e(w.briefTitle ?? w.task)}</span>${chip('plain', [w.role, w.harness].filter(Boolean).join(' · ') || 'job')}<span class="meta">${e([w.model, w.effort, w.startedAt ? age(new Date(w.startedAt), now) : ''].filter(Boolean).join(' · '))}</span></header>${w.modelSentence || w.work?.reason ? `<p>${e(w.modelSentence || w.work?.reason)}</p>` : ''}</article>`),
     ...(workboard ? [] : project.active.map((j) => `<article class="card ${j.asking ? 'ask' : 'working'}"><header><span class="id">${e(j.title ?? j.jobId)}</span>${chip('plain', j.role || 'job')}<span class="meta">${e(ago(j.at, now))}</span></header></article>`)),
   ];
 

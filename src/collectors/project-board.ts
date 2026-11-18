@@ -222,7 +222,7 @@ export class ProjectCollector {
     for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
     return cwds;
   }
-  async collect(shown: boolean | 'home', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
+  async collect(shown: boolean | 'home' | 'export', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
@@ -375,22 +375,32 @@ export class ProjectCollector {
       if (at !== undefined) row.at = at;
     }
     out.git = this.git;
+    const exporting = shown === 'export';
     const toTry = out.ledger.filter((r) => r.state === 'try').reverse()
-      .sort((a, b) => (b.at ?? -1) - (a.at ?? -1)).slice(0, 12);
-    await Promise.all([
-      ...(this.git && this.git.changed > 0 ? [this.diffs.workingTree(this.cwd, now).then((diff) => {
-        if (diff) out.gitDiff = diff;
-      })] : []),
-      ...toTry.map(async (row) => {
-        const diff = await this.diffs.commits(this.cwd, row.text, now);
-        if (diff) row.diff = diff;
-      }),
-    ]);
+      .sort((a, b) => (b.at ?? -1) - (a.at ?? -1));
+    const attachDiff = async (row: LedgerSlice) => {
+      const diff = await this.diffs.commits(this.cwd, row.text, now);
+      if (diff) row.diff = diff;
+    };
+    if (exporting) {
+      // The one-shot export has no slice cap, but never starts more than four diff reads at once.
+      for (let i = 0; i < toTry.length; i += 4) await Promise.all(toTry.slice(i, i + 4).map(attachDiff));
+    } else {
+      await Promise.all([
+        ...(this.git && this.git.changed > 0 ? [this.diffs.workingTree(this.cwd, now).then((diff) => {
+          if (diff) out.gitDiff = diff;
+        })] : []),
+        ...toTry.slice(0, 12).map(attachDiff),
+      ]);
+    }
     out.worktreeCount = this.git ? this.worktrees.length : undefined;
     out.last = this.last;
     const canonical = canonicalPath, root = canonical(this.cwd);
     const inRoot = (path: string) => insideRoot(root, path);
-    const jobsRoot = join(this.hudHome, 'jobs'), jobs = this.recentJobs();
+    const jobsRoot = join(this.hudHome, 'jobs');
+    const workersByJob = new Map(board.workers.map((w) => [w.evidence[0]?.sourceId, w]));
+    // An export only joins receipts for the caller's already pane-scoped workers.
+    const jobs = exporting ? [...workersByJob.keys()].filter((id): id is string => !!id && /^j[0-9a-f]{16}$/.test(id)).map((id) => ({ id })) : this.recentJobs();
     const byTree = new Map<string, { jobId: string; role: string; asking: boolean; path?: string; at?: number; created: number }>();
     const managed = new Map<string, string>();
     const active: { created: number; entry: ActiveJob }[] = [];
@@ -403,12 +413,13 @@ export class ProjectCollector {
       const isolated = wt?.root === cwd && typeof wt.branch === 'string' && typeof wt.main_root === 'string';
       if (isolated) managed.set(cwd, wt.branch);
       const inside = inRoot(cwd) || (isolated && inRoot(wt.main_root));
+      if (exporting && !inside) continue;
       const created = Date.parse(job.created_at) || 0;
       const feature = out.tickets.find((f) => f.slug === job.package);
       if (!inside && !feature && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
       const s = json(join(dir, 'STATUS.json')) ?? {};
       const state = jobState(job, s);
-      const worker = board.workers.find((w) => w.evidence[0]?.sourceId === id);
+      const worker = workersByJob.get(id);
       if (inside && !SETTLED_JOB_STATES.has(state) && !job.reaped_at) {
         const at = Date.parse(s.started_at ?? job.created_at);
         // The workboard's description, the job's own title or task; a job of another pane has neither, so its brief says.

@@ -49,20 +49,37 @@ async function until(check, timeoutMs = 4000) {
   assert.fail('timed out waiting for expected watcher output');
 }
 
-for (const scenario of ['merged', 'dirty', 'unmerged']) test(`watcher preserves data when cleaning a ${scenario} managed worktree`, (t) => {
+for (const scenario of ['merged', 'dirty', 'unmerged', 'nested']) test(`watcher preserves data when cleaning a ${scenario} managed worktree`, (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-worktree-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const main_root = initRepo(home), base_head = git(main_root, 'rev-parse', 'HEAD');
+  const main_root = initRepo(home);
+  if (scenario === 'nested') {
+    fs.mkdirSync(join(main_root, 'vendor'));
+    fs.writeFileSync(join(main_root, 'vendor', 'tracked.txt'), 'parent baseline\n');
+    git(main_root, 'add', 'vendor');
+    git(main_root, 'commit', '-qm', 'track the vendor file');
+  }
+  const base_head = git(main_root, 'rev-parse', 'HEAD');
   const id = 'j00000000000000f1', branch = 'wt/imp-0000f1', root = join(home, 'demo-wt', 'imp-0000f1');
   git(main_root, 'worktree', 'add', '-qb', branch, root, base_head);
-  fs.mkdirSync(join(main_root, 'node_modules'));
-  fs.symlinkSync(join(main_root, 'node_modules'), join(root, 'node_modules'));
-  if (scenario === 'dirty') fs.writeFileSync(join(root, 'ignored.txt'), 'keep this ignored file');
+  const vendor = join(root, 'vendor');
+  let nestedCommit;
+  if (scenario === 'nested') {
+    git(vendor, 'init', '-q');
+    fs.writeFileSync(join(vendor, 'tracked.txt'), 'nested-only content\n');
+    git(vendor, 'add', 'tracked.txt');
+    git(vendor, '-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', 'commit', '-qm', 'nested-only commit');
+    nestedCommit = git(vendor, 'rev-parse', 'HEAD');
+    fs.writeFileSync(join(vendor, 'tracked.txt'), 'parent baseline\n');
+    assert.equal(git(root, 'status', '--porcelain'), '', 'the parent status does not see the nested repo');
+  } else if (scenario === 'dirty') fs.writeFileSync(join(root, 'ignored.txt'), 'keep this ignored file');
   else {
     fs.appendFileSync(join(root, 'tracked.txt'), 'new commit\n');
     git(root, 'commit', '-qam', 'job work');
     if (scenario === 'merged') git(main_root, 'merge', '-q', branch);
   }
+  fs.mkdirSync(join(main_root, 'node_modules'));
+  fs.symlinkSync(join(main_root, 'node_modules'), join(root, 'node_modules'));
   fs.writeFileSync(join(home, 'pi-role-reap'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), PATH: `${home}:${process.env.PATH}` };
   const dir = writeJob(env.HUD_HOME, id, 'w4E:p1', 'imp', { state: 'closed', ended_at: new Date().toISOString() });
@@ -82,6 +99,12 @@ for (const scenario of ['merged', 'dirty', 'unmerged']) test(`watcher preserves 
   } else {
     assert.match(result.worktree_kept_reason, new RegExp(scenario));
     assert.equal(fs.readlinkSync(join(root, 'node_modules')), join(main_root, 'node_modules'));
+  }
+  if (nestedCommit) {
+    assert.equal(result.worktree_removed_at, undefined);
+    assert.equal(git(vendor, 'rev-parse', 'HEAD'), nestedCommit);
+    assert.equal(git(vendor, 'show', `${nestedCommit}:tracked.txt`), 'nested-only content');
+    assert.equal(git(main_root, 'rev-parse', branch), base_head);
   }
 });
 

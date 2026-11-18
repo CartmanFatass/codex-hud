@@ -169,6 +169,21 @@ test('Progress filters slices by id, milestone, text, role and state, Tickets by
   }
 });
 
+test('a role match on a joined job keeps its selectable Split Progress slice and counts it once', async (t) => {
+  const f = await busy(t), base = f.rich, id = 'build-feature';
+  const job = { jobId: 'j00000000000000bb', role: 'frontend-imp', state: 'working', asking: false };
+  const project = { ...base,
+    ledger: [...base.ledger, { id, state: 'working', milestone: base.ladder.current, text: 'add the feature' }],
+    slices: [...base.slices, { label: id, value: 'add the feature', ledgerState: 'working', jobId: job.jobId, role: job.role }],
+    active: [...base.active, job],
+  };
+  const d = drive(f, page('progress', { panelLayout: 'split' }), { data: project, width: 60 });
+  d.press('/'); d.type('frontend-imp'); d.enter();
+  assert.match(d.bar(), /^\/ frontend-imp +1 match · esc clear$/);
+  assert.equal(d.state.projectCursor, `project:slice:${id}`);
+  assert.match(d.lines().join('\n'), /add the feature/);
+});
+
 test('every row is exactly the panel\'s width with the bar up, in English and Chinese, and the filter is kept across the reload', async (t) => {
   const f = await busy(t);
   const views = [['Home', classic(), f.data], ['Home split', split(), f.data], ['Progress', page('progress'), f.rich], ['Progress split', page('progress', { panelLayout: 'split' }), f.rich],

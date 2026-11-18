@@ -124,7 +124,8 @@ function roleRadar(root: string, today: string, cache: Cache): ControlRadar['rol
     const stats = groups.get(row.role) ?? { total: 0, ok: 0, failed: 0, quietEscalated: 0, avgMinutes: null, elapsed: 0, timed: 0 };
     groups.set(row.role, stats);
     stats.total++;
-    if (status?.quiet_decision != null || row.state === 'waiting_orchestrator') stats.quietEscalated++;
+    const quietAction = record(status?.quiet_decision).action;
+    if (typeof quietAction === 'string' && quietAction.trim()) stats.quietEscalated++;
     if (row.display_state === 'done' || row.display_state === 'failed') {
       stats[row.display_state === 'done' ? 'ok' : 'failed']++;
       const start = at(status?.started_at ?? job.created_at), end = at(status?.settled_at ?? status?.ended_at);
