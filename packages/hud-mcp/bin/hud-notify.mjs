@@ -2,21 +2,52 @@
 import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+function startTime(pid) {
+  const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+  return stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)[19];
+}
+
+export function registerPiWatcher(pane, home) {
+  if (!pane || basename(pane) !== pane) return;
+  const dir = join(home, 'watchers'), file = join(dir, `${pane}.pid`), tmp = `${file}.${process.pid}.tmp`;
+  try {
+    const marker = JSON.stringify({ pid: process.pid, start: startTime(process.pid), pane, home: resolve(home) }) + '\n';
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(tmp, marker, { mode: 0o600, flag: 'wx' });
+    try { fs.renameSync(tmp, file); }
+    catch (error) { fs.unlinkSync(tmp); throw error; }
+    return () => {
+      try { if (fs.readFileSync(file, 'utf8') === marker) fs.unlinkSync(file); } catch { /* gone */ }
+    };
+  } catch { /* Without a marker the ordinary delivery path stays in use. */ }
+}
 
 export function watching(pane, home = process.env.HUD_HOME || join(homedir(), '.hud')) {
   try {
-    if (!pane) return false;
-    const pid = Number(fs.readFileSync(join(home, 'watchers', `${pane}.pid`), 'utf8').trim());
+    if (!pane || basename(pane) !== pane) return false;
+    const text = fs.readFileSync(join(home, 'watchers', `${pane}.pid`), 'utf8').trim();
+    const native = text.startsWith('{') ? JSON.parse(text) : null;
+    const pid = native ? native.pid : Number(text);
     if (!Number.isInteger(pid) || pid <= 1) return false;
     process.kill(pid, 0);
     const argv = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0');
     const env = Object.fromEntries(fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0').map((s) => {
       const at = s.indexOf('='); return [s.slice(0, at), s.slice(at + 1)];
     }));
+    if (env.HERDR_PANE_ID !== pane) return false;
+    if (native) {
+      const piEntry = /(?:^|\/)pi$|\/(?:@earendil-works|@mariozechner)\/pi-coding-agent\/dist\/cli\.js$/;
+      const isPi = basename(argv[0]) === 'pi' || (/^(node|nodejs)$/.test(basename(argv[0])) && piEntry.test(argv[1] ?? ''));
+      // Pi's installed binding supplies the home when it wasn't exported at process launch.
+      return isPi && !env.HUD_JOB_DIR && native.pane === pane && native.home === resolve(home) &&
+        (!env.HUD_HOME || resolve(env.HUD_HOME) === resolve(home)) &&
+        typeof native.start === 'string' && native.start === startTime(pid);
+    }
     return argv.includes('watch') && argv.some((arg) => /(?:^|\/)hud$/.test(arg)) && !argv.includes('--all') &&
-      env.HERDR_PANE_ID === pane && resolve(env.HUD_HOME || join(env.HOME || homedir(), '.hud')) === resolve(home);
+      resolve(env.HUD_HOME || join(env.HOME || homedir(), '.hud')) === resolve(home);
   } catch { return false; } // Stale or reused PID: never suppress a question.
 }
 export function paneInfo(pane, env = process.env) {

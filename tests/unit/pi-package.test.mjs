@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { createFooterHost } from '../fakes/pi.mjs';
 const root = process.env.R6A_PI_EMITTED_ROOT ?? path.resolve('dist');
 const { displayTarget } = await import(pathToFileURL(path.join(root, 'integrations/panel/receipt.js')));
@@ -371,5 +372,87 @@ test('the delegation-only package registers the tools but no footer, no /hud and
   assert.equal(p.counts().splits, 0, 'the settings-registered package a worker could load opens no panel');
   assert.equal(h.calls.footer, 0, 'no footer');
   assert.equal(h.calls.status.length, 0, 'no Work segment');
+  assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false, 'no native sendMessage API');
+  await h.emit('session_shutdown', c.ctx);
+});
+
+async function until(check) {
+  const deadline = Date.now() + 3000;
+  while (!check()) {
+    assert.ok(Date.now() < deadline, 'timed out waiting for the native watcher');
+    await sleep(20);
+  }
+}
+
+test('pi delegation wakes the current session natively and fences the watcher on rebind and shutdown', async (t) => {
+  const f = setup(t), h = host(), c = context(f, h), p = ports(f);
+  const home = f.binding.hudHome, pane = f.env.HERDR_PANE_ID;
+  const marker = path.join(home, 'watchers', `${pane}.pid`);
+  const id = 'j0000000000000001', dir = path.join(home, 'jobs', id);
+  const receipt = { job: id, role: 'imp', herdr_pane: pane, created_at: new Date().toISOString(), cli: { agent: 'claude' } };
+  const status = (state) => fs.writeFileSync(path.join(dir, 'STATUS.json'), JSON.stringify({ state }));
+  const messages = [];
+  h.pi.sendMessage = (message, options) => messages.push({ message, options });
+  fs.mkdirSync(path.join(dir, 'qa'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify(receipt));
+  status('working');
+  await load(f, h, p);
+  await load(f, h, p, 'hud-display.mjs');
+  t.after(() => h.emit('session_shutdown', c.ctx));
+  assert.equal(fs.existsSync(marker), false, 'extension load is inert until session_start');
+  await h.emit('session_start', c.ctx);
+  assert.equal(JSON.parse(fs.readFileSync(marker, 'utf8')).pid, process.pid);
+  const q1 = path.join(dir, 'qa/q1.md');
+  fs.writeFileSync(q1, '# Question q1 from imp@demo\n\nWhich layout?\n\nDefault if unanswered: rows\n');
+  await until(() => messages.length === 1);
+  fs.writeFileSync(path.join(dir, 'qa/q1.answer.md'), 'rows');
+  fs.writeFileSync(path.join(dir, 'report.md'), 'Synthetic report.');
+  status('idle_grace');
+  await until(() => messages.length === 2);
+  fs.writeFileSync(path.join(home, 'tries.jsonl'), [
+    { root: '/synthetic/other-project', action: 'accept', milestone: 'M1', slices: ['other'] },
+    { root: f.cwd, action: 'accept', milestone: 'M1', slices: ['demo'] },
+  ].map(JSON.stringify).join('\n') + '\n');
+  await until(() => messages.length === 3);
+  assert.deepEqual(messages, [
+    `[imp@demo] QUESTION q1: Which layout? | default: rows | full text: ${q1} | reply: hud_respond job=${id} request_id=q1`,
+    `${id} imp: idle_grace | report`,
+    'try accepted workspace M1: demo',
+  ].map((content) => ({
+    message: { customType: 'hud-watch', content, display: true },
+    options: { deliverAs: 'followUp', triggerTurn: true },
+  })));
+  assert.deepEqual(p.calls(), [], 'native delivery never calls herdr');
+  assert.equal(h.calls.messages, 0, 'native delivery never sends as user input');
+
+  fs.writeFileSync(path.join(dir, 'job.json'), JSON.stringify({ ...receipt, read_at: new Date().toISOString() }));
+  const next = context(f, h, 'session-b');
+  const rebinding = h.emit('session_tree', next.ctx);
+  assert.equal(fs.existsSync(marker), false, 'fence synchronously unregisters the outgoing watch');
+  await rebinding;
+  assert.equal(fs.existsSync(marker), true, 'incoming session starts its own watch');
+  next.setId('stale');
+  fs.writeFileSync(path.join(dir, 'qa/q2.md'), 'A stale binding must not get this question.');
+  await until(() => !fs.existsSync(marker));
+  assert.equal(messages.length, 3);
+
+  fs.writeFileSync(path.join(dir, 'qa/q2.answer.md'), 'Already answered.');
+  next.setId('session-b');
+  await h.emit('session_tree', next.ctx);
+  assert.equal(fs.existsSync(marker), true);
+  fs.writeFileSync(path.join(dir, 'qa/q3.md'), 'A shut-down binding must not get this question.');
+  await h.emit('session_shutdown', next.ctx);
+  assert.equal(fs.existsSync(marker), false);
+  await sleep(150);
+  assert.equal(messages.length, 3);
+});
+
+test('pi delegation never starts a native watcher for a HUD worker', async (t) => {
+  const f = setup(t), h = host(), c = context(f, h), p = ports(f);
+  f.env.HUD_JOB_DIR = path.join(f.binding.hudHome, 'jobs/j0000000000000001');
+  h.pi.sendMessage = () => assert.fail('a worker must not be woken by the main watcher');
+  await load(f, h, p);
+  await h.emit('session_start', c.ctx);
+  assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false);
   await h.emit('session_shutdown', c.ctx);
 });

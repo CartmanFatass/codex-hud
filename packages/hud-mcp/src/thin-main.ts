@@ -28,7 +28,7 @@ import {
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobsRoot = join(hudHome, 'jobs');
 const isWorker = process.env.HUD_JOB_DIR !== undefined;
-const { ensureQueueWatcher } = await import(new URL('../../../../bin/hud-notify.mjs', import.meta.url).href);
+const { ensureQueueWatcher, watching } = await import(new URL('../../../../bin/hud-notify.mjs', import.meta.url).href);
 const bundled = fileURLToPath(new URL('../../../../', import.meta.url));
 function registry(cwd: string) {
   return roleRegistry(hudHome, cwd, process.env, undefined, undefined, bundled);
@@ -212,6 +212,7 @@ function primary(dir: string): string | null {
 function created(job: Job) {
   const task_dir = directory(job.job);
   const { report_unread: _unread, report_mtime: _mtime, question_ids: _questions, ...row } = readRow(job).row;
+  const watch = callerPane ? { watcher_alive: watching(callerPane, hudHome) } : {};
   if (job.dispatch_exit_code !== null && job.dispatch_exit_code !== 0 && row.display_state === 'failed') {
     return {
       ok: false,
@@ -220,9 +221,13 @@ function created(job: Job) {
       reason: row.reason ?? 'dispatch failed',
       task_dir,
       agent: primary(task_dir),
+      ...watch,
     };
   }
-  return { ...row, task_dir, agent: primary(task_dir), hint: 'Claude Code: run `hud watch` under Monitor' };
+  return {
+    ...row, task_dir, agent: primary(task_dir), ...watch,
+    ...(watch.watcher_alive ? {} : { hint: 'Claude Code: run `hud watch` under Monitor' }),
+  };
 }
 function run(
   command: string,
@@ -1068,6 +1073,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       invalid: found.invalid(),
       convention: found.convention(),
       project: { root: gate.root, registered: gate.registered },
+      ...(callerPane ? { watcher_alive: watching(callerPane, hudHome) } : {}),
       ...(ignored ? { project_config_ignored: ignored } : {}),
     };
   }

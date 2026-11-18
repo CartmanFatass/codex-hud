@@ -5,12 +5,18 @@ import type { PiPackageBinding, PiPackageContext } from './package-context.js';
 export type { PiPackageBinding, PiPackageContext } from './package-context.js';
 import { displayTarget } from '../../integrations/panel/receipt.js';
 import { closePanelPane, panelPaneExists } from '../../cli/panel-pane.js';
+import { startSessionWatch } from '../../cli/watch.js';
+import { herdrId } from '../../roles/herdr-run.js';
 import { openPiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
 import type { FooterAPI, FooterHost } from './footer-host.js';
 /** Structural host projection. SDK compatibility is checked against the installed declarations. */
 export interface PiPackageAPI extends FooterAPI {
   on(event: string, handler: (event: unknown, ctx: PiPackageContext) => void | Promise<void>): (() => void) | void;
+  sendMessage?(
+    message: { customType: string; content: string; display: boolean; details?: unknown },
+    options?: { triggerTurn?: boolean; deliverAs?: 'steer' | 'followUp' | 'nextTurn' }
+  ): void;
   registerCommand(
     name: string,
     options: { description: string; handler(args: string, ctx: PiPackageContext): Promise<void> }
@@ -44,7 +50,7 @@ export function installPiPackage(
   } = {},
   mode: PiPackageMode
 ) {
-  const env = { ...(deps.env ?? process.env), HUD_HOME: binding.hudHome };
+  const env: NodeJS.ProcessEnv = { ...(deps.env ?? process.env), HUD_HOME: binding.hudHome };
   let footer: ReturnType<typeof createP10kFooter> | undefined;
   const segment = createPiSegment({ env, ...deps.segment, onSignals: (signals) => footer?.setWork(signals) });
   type State = {
@@ -52,6 +58,7 @@ export function installPiPackage(
     id: string;
     source: string;
     client: PiRoleClient;
+    stopWatch?: () => void;
     pane?: string;
     panelWork: Promise<void>;
     diagnostic: string;
@@ -96,6 +103,7 @@ export function installPiPackage(
     ++epoch;
     const old = active;
     active = null;
+    old?.stopWatch?.();
     if (mode === 'display') {
       segment.stop();
       footer?.stop();
@@ -126,6 +134,24 @@ export function installPiPackage(
     };
     active = s;
     if (!current(s) || ticket !== epoch) return;
+    const pane = env.HERDR_PANE_ID;
+    if (mode === 'delegate' && herdrId(pane) && !env.HUD_JOB_DIR && typeof pi.sendMessage === 'function') {
+      const { registerPiWatcher } = await import(new URL('../../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href);
+      if (!current(s)) return;
+      const unregister = registerPiWatcher(pane, binding.hudHome);
+      if (unregister) {
+        const stop = startSessionWatch(binding.hudHome, pane, ctx.cwd, (lines) => {
+          if (!current(s)) return s.stopWatch?.();
+          try {
+            pi.sendMessage?.(
+              { customType: 'hud-watch', content: lines.join('\n'), display: true },
+              { deliverAs: 'followUp', triggerTurn: true }
+            );
+          } catch { s.stopWatch?.(); }
+        });
+        s.stopWatch = () => { stop(); unregister(); };
+      }
+    }
     if (mode === 'display') {
       if (isPiTui(ctx) && deps.footerHost) {
         const host = footer ? undefined : await deps.footerHost();

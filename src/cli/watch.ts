@@ -62,6 +62,77 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
   });
 }
 
+// The CLI and pi both watch the same inputs, including atomic replacements of tries.jsonl.
+function watchInputs(home: string, changed: () => void, persistent = true) {
+  let watcher: fs.FSWatcher | undefined, homeWatcher: fs.FSWatcher | undefined;
+  let closed = false;
+  const attach = () => {
+    if (closed) return;
+    if (!homeWatcher) try {
+      homeWatcher = fs.watch(home, { persistent }, (event, name) => {
+        const file = name?.toString();
+        if (file === 'jobs' && event === 'rename') {
+          watcher?.close();
+          watcher = undefined;
+          attach();
+        }
+        if (!file || file === 'jobs' || file === TRIES_FILE || file === PANEL_ACTIONS_FILE) changed();
+      });
+      homeWatcher.on('error', () => { homeWatcher?.close(); homeWatcher = undefined; });
+    } catch { /* No home yet: the rescan retries. */ }
+    if (watcher) return;
+    try {
+      // One recursive watch covers every job's STATUS.json, report.md and qa/ (Node 24 on Linux).
+      const jobs = fs.watch(join(home, 'jobs'), { recursive: true, persistent }, (_event, name) => {
+        const file = name?.toString() ?? '';
+        if (file.endsWith('.tmp') || file.endsWith('supervisor.pid') || file.includes('/sessions/')) return;
+        changed();
+      });
+      watcher = jobs;
+      jobs.on('error', () => { jobs.close(); if (watcher === jobs) watcher = undefined; });
+    } catch { /* The home watch or next rescan will retry. */ }
+  };
+  return {
+    attach,
+    close: () => {
+      if (closed) return;
+      closed = true;
+      homeWatcher?.close();
+      watcher?.close();
+    },
+  };
+}
+
+/** In-process, pane-scoped quiet events; no CLI signal hooks or transport. */
+export function startSessionWatch(home: string, pane: string, cwd: string, deliver: (lines: string[]) => void) {
+  const tries = new TryLog(home), answers = new PanelActionLog(home);
+  let prev = new Map<string, JobRow>();
+  let first = true, stopped = false;
+  let timer: ReturnType<typeof setTimeout>;
+  const inputs = watchInputs(home, () => schedule(DEBOUNCE_MS), false);
+  function schedule(ms: number) {
+    if (stopped) return;
+    clearTimeout(timer);
+    timer = setTimeout(scan, ms).unref();
+  }
+  function scan() {
+    inputs.attach();
+    const rows = readThinJobRows(home, { pane });
+    const lines = [...actionable(home, prev, rows, first), ...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)))];
+    first = false;
+    prev = new Map(rows.map((row) => [row.job, row]));
+    schedule(DEFAULT_RESCAN_MS);
+    if (lines.length) deliver(lines);
+  }
+  inputs.attach();
+  schedule(DEBOUNCE_MS);
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    inputs.close();
+  };
+}
+
 export interface WatchOptions {
   rescanMs?: number;
   signal?: AbortSignal;
@@ -98,34 +169,13 @@ export async function watchCommand(
   const rescanMs = Math.max(50, Math.min(options.rescanMs ?? DEFAULT_RESCAN_MS, queue ? queueIdleMs : Infinity));
   const delivery = queue ? await import(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href) : null;
   let idleSince: number | null = null;
-  let watcher: fs.FSWatcher | undefined, homeWatcher: fs.FSWatcher | undefined;
-  const changed = () => {
+  const inputs = watchInputs(home, () => {
     // A change during a scan is kept for the next wait, never lost until the rescan.
     dirty = true;
     if (wakeWait === undefined) return;
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(fire, DEBOUNCE_MS);
-  };
-  const attach = () => {
-    if (!homeWatcher) try {
-      homeWatcher = fs.watch(home, (_event, name) => {
-        const file = name?.toString();
-        if (file === 'jobs' && !watcher) { attach(); changed(); }
-        if (file === TRIES_FILE || file === PANEL_ACTIONS_FILE) changed();
-      });
-      homeWatcher.on('error', () => { homeWatcher?.close(); homeWatcher = undefined; });
-    } catch { /* No home yet: the rescan retries. */ }
-    if (watcher) return;
-    try {
-      // One recursive watch covers every job's STATUS.json, report.md and qa/ (Node 24 on Linux).
-      watcher = fs.watch(join(home, 'jobs'), { recursive: true }, (_event, name) => {
-        const file = name?.toString() ?? '';
-        if (file.endsWith('.tmp') || file.endsWith('supervisor.pid') || file.includes('/sessions/')) return;
-        changed();
-      });
-    } catch { return; /* The home watch or next rescan will retry. */ }
-    watcher.on('error', () => { watcher?.close(); watcher = undefined; });
-  };
+  });
 
   let stopped = Boolean(options.signal?.aborted);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -139,9 +189,7 @@ export async function watchCommand(
   };
   const stop = () => {
     stopped = true;
-    homeWatcher?.close();
-    watcher?.close();
-    watcher = undefined;
+    inputs.close();
     if (timer !== undefined) {
       clearTimeout(timer);
       timer = undefined;
@@ -164,7 +212,7 @@ export async function watchCommand(
     new Promise<void>((resolve) => {
       if (stopped) return resolve();
       wakeWait = resolve;
-      attach();
+      inputs.attach();
       timer = setTimeout(fire, dirty ? DEBOUNCE_MS : rescanMs);
     });
 
@@ -181,7 +229,7 @@ export async function watchCommand(
       fs.writeFileSync(pidFile, `${process.pid}\n`, { mode: 0o600 });
     }
     // Attach before catch-up so events during the scan are not lost.
-    attach();
+    inputs.attach();
     let prev = new Map<string, JobRow>();
     let first = true;
     while (!stopped) {
@@ -230,7 +278,6 @@ export async function watchCommand(
     process.stdout?.off('error', onStdoutError);
     options.signal?.removeEventListener('abort', stop);
     if (timer !== undefined) clearTimeout(timer);
-    homeWatcher?.close();
-    watcher?.close();
+    inputs.close();
   }
 }

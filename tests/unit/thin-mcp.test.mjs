@@ -596,6 +596,29 @@ async function until(check, timeout = 4000) {
   }
 }
 
+test('roster and create report pane watcher liveness, omitting the Monitor hint only while live', async (t) => {
+  const f = await fixture(t);
+  const create = () => f.call('hud_create', { role: 'imp', request_key: 'watcher-live', task: 'Synthetic task.' });
+  assert.equal((await f.call('hud_roster')).watcher_alive, false);
+  const initial = await create();
+  assert.equal(initial.watcher_alive, false);
+  assert.equal(initial.hint, 'Claude Code: run `hud watch` under Monitor');
+
+  const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { env: f.env, stdio: 'ignore' });
+  const exited = once(child, 'exit');
+  t.after(() => child.kill('SIGKILL'));
+  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers/w4E:p1.pid')));
+  assert.equal((await f.call('hud_roster')).watcher_alive, true);
+  const retry = await create();
+  assert.equal(retry.job, initial.job);
+  assert.equal(retry.watcher_alive, true);
+  assert.equal(Object.hasOwn(retry, 'hint'), false);
+
+  child.kill('SIGTERM');
+  await exited;
+  assert.equal((await f.call('hud_roster')).watcher_alive, false);
+});
+
 function runSonic(f, action, dir, ...args) {
   return new Promise((done) => execFile(process.execPath,
     [resolve('packages/hud-mcp/bin/hud-sonic.mjs'), action, '--dir', dir, ...args],
@@ -2443,6 +2466,7 @@ test('thin Flow video confirms only a stated credit cost', { timeout: 15000 }, a
 
 test('thin create requires herdr without dispatching', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, false);
+  assert.equal(Object.hasOwn(await f.call('hud_roster'), 'watcher_alive'), false);
   assert.deepEqual(
     await f.call('hud_create', {
       role: 'imp',

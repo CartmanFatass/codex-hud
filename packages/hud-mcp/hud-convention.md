@@ -13,8 +13,11 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   actionable events. `--verbose` and MCP `changes` retain the fuller change stream; `report` means unread.
 - Codex: quiet events and questions are queued automatically; no Monitor command is needed. Queue delivery
   uses the pane's Codex account and leaves drafts alone; no thread id or a queue failure falls back to typing.
-- Other main sessions: typed questions plus `hud_read` with `wait_ms` for settlement. A live pane-scoped watch
-  suppresses direct questions. Lines include text and a `hud_respond` reply; no duplicate question read is needed.
+- pi: the HUD package automatically sends actionable events as native follow-up messages without touching the
+  draft. No Monitor or panel is needed.
+- A live pane watch (`watcher_alive` in `hud_roster` and `hud_create`) suppresses direct question pushes.
+  Without a watch or queue, questions are typed and settlement can be read with `hud_read` and `wait_ms`.
+  Lines include text and a `hud_respond` reply; no duplicate question read is needed.
 - `hud_read` lists open-question counts and unread-report flags; a job read returns only an unread report
   (`report_unchanged: true` otherwise; `full: true` to reread). A report read in idle grace marks it read too.
 - On a `try accepted` line, update that project's STATE ledger to `accepted`; on a `try flagged` line, add the slice under Waiting for the owner and ask the owner what is wrong.

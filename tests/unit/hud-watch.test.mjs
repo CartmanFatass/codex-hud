@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -8,6 +9,7 @@ import test from 'node:test';
 import { main } from '../../dist/cli/hud-main.js';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
+import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
 
 function writeJob(hudHome, id, pane, pkg, status, report = false, parent_job) {
   const dir = join(hudHome, 'jobs', id);
@@ -381,6 +383,42 @@ if (args[0] === 'pane' && args[1] === 'get') {
   const deliveries = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
   return { home, env, agentFile, deliveries };
 }
+
+test('a live pi watcher suppresses fallback, but dead, reused and mismatched PIDs do not', async (t) => {
+  const f = queueFixture(t, 'pi'), pane = f.env.HERDR_PANE_ID;
+  const pidFile = join(f.home, 'watchers', `${pane}.pid`);
+  const script = join(f.home, 'pi');
+  fs.writeFileSync(script, `
+    import { registerPiWatcher } from ${JSON.stringify(new URL('../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href)};
+    registerPiWatcher(process.env.HERDR_PANE_ID, process.env.HUD_HOME);
+    setInterval(() => {}, 1000);
+  `);
+  const child = spawn(process.execPath, [script], { env: f.env, stdio: 'ignore' });
+  const exited = once(child, 'exit');
+  t.after(() => child.kill('SIGKILL'));
+  await until(() => fs.existsSync(pidFile));
+  const marker = fs.readFileSync(pidFile, 'utf8'), pi = JSON.parse(marker);
+  assert.equal(pi.pid, child.pid);
+  assert.equal(watching(pane, f.home), true);
+  assert.deepEqual(notify(pane, 'Synthetic question', f.home, { env: f.env }), { status: 0, skipped: true });
+  assert.deepEqual(f.deliveries(), []);
+
+  const otherPane = 'w4E:p9';
+  fs.writeFileSync(join(f.home, 'watchers', `${otherPane}.pid`), JSON.stringify({ ...pi, pane: otherPane }));
+  assert.equal(watching(otherPane, f.home), false, 'different launch pane');
+  const otherHome = join(f.home, 'other');
+  fs.mkdirSync(join(otherHome, 'watchers'), { recursive: true });
+  fs.writeFileSync(join(otherHome, 'watchers', `${pane}.pid`), JSON.stringify({ ...pi, home: otherHome }));
+  assert.equal(watching(pane, otherHome), false, 'different launch HUD home');
+  fs.writeFileSync(pidFile, JSON.stringify({ ...pi, start: '0' }));
+  assert.equal(watching(pane, f.home), false, 'stale process start time with otherwise matching identity');
+  fs.writeFileSync(pidFile, marker);
+  child.kill('SIGKILL');
+  await exited;
+  assert.equal(watching(pane, f.home), false);
+  assert.equal(notify(pane, 'Synthetic question', f.home, { env: f.env }).status, 0);
+  assert.deepEqual(f.deliveries().map((d) => d.args), [['agent', 'prompt', pane, 'Synthetic question']]);
+});
 
 for (const [label, agent, thread, fail] of [
   ['Codex queue', 'codex', '00000000-0000-4000-8000-000000000001', false],

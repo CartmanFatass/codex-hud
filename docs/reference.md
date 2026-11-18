@@ -101,12 +101,16 @@ It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyo
 runs it under Monitor; re-arm after expiry. Codex receives the same quiet events automatically through
 `codex queue`: create/send starts a detached `hud watch --queue`, with catch-up and no event lines on stdout.
 It exits when the pane is gone/no longer Codex, or after 10 minutes with no unsettled job, unread attention/report
-or unanswered question. A pane-scoped watch records `$HUD_HOME/watchers/<pane>.pid` until exit.
+or unanswered question. The pi HUD package automatically delivers questions, settlements and other actionable
+lines as native follow-up messages in the main session, without touching its editor draft. No Monitor or panel
+is needed; pi workers do not start this watch. A pane-scoped watch records `$HUD_HOME/watchers/<pane>.pid`
+while active. `hud_roster` and `hud_create` report `watcher_alive` when the caller has a pane; a live watch
+suppresses direct pushes and the `hud_create` Monitor hint.
 Without a live watch, CLI and pi worker questions go directly to the Codex thread queue; other main sessions
 receive typed questions and use `hud_read` with `wait_ms` for settlement. Queue delivery uses the pane's Codex
 process `CODEX_HOME` (default `~/.codex`), not the MCP account. A missing thread id or any queue failure falls
-back to typing that line, so only this fallback can touch a draft or fire prompt hooks. Stale PIDs never suppress
-delivery. MCP `changes` stays the fuller, query-only stream; a `report` token always means unread.
+back to typing that line, which can touch a draft or fire prompt hooks. Stale PIDs never suppress delivery.
+MCP `changes` stays the fuller, query-only stream; a `report` token always means unread.
 
 `hud_create` takes `role`, `request_key`, `task`, optional `cwd` and display-only
 `package`. By default it dispatches on the role's first available place (`runs_on`).
@@ -160,7 +164,7 @@ Workers write the report file, then finish with just `report written: <path>`, n
 its report is still unread. Use a new job for a repair after reading a settled report; `message_key` deduplicates sends. CLI
 workers ask through the same `QUESTION` line and `hud_respond` flow (`hud-ask`,
 20 minutes, then the default). A blocked CLI marks the job as needing the owner;
-the session learns it through `changes`, Claude's `hud watch` or Codex's automatic queue. `hud_respond` writes a
+the session learns it through `changes`, Claude's `hud watch`, Codex's automatic queue or pi's native follow-up messages. `hud_respond` writes a
 `qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher. The owner can also answer
 an open question from the panel (`r`, then a number or `d`); the session hears it as one `changes` / `hud watch` line,
 `[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the
