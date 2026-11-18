@@ -35,7 +35,7 @@ For development, build with `npm run build:hud-mcp`; run the stdio entry with
 `node packages/hud-mcp/bin/hud-mcp.mjs`. `HUD_HOME` defaults to `~/.hud`.
 Stdout is newline-delimited JSON-RPC; diagnostics go to stderr.
 
-## Six tools
+## Tools
 
 Call `hud_roster` before dispatching; use the returned roles and convention rather
 than assuming a role's model or workflow.
@@ -45,6 +45,7 @@ than assuming a role's model or workflow.
 | `hud_roster` | Optional `cwd` (default: the server's cwd). Returns role definitions (`instructions`, ordered `run` places, merged `presets` (names and runs), `preset` (matching name or null), `runs_on`, `exhausted` marks), model/thinking assignments, accepted options, invalid role files, the dispatch convention with its source path, and `project` (`root`, `registered`). |
 | `hud_create` | Required `role`, `request_key`, `task`; optional `cwd` (roles resolve against that project; default: the server's cwd), display-only `package`, `idle_grace_s` (CLI-only integer 60–3600, overrides the role for this job), `on` (harness/provider override), `kind` (`image` or `video` for `flow`), and `model`/`thinking` for a `pi` or `cli` place. Pi launch switches are below. Uses the role's first available place (`runs_on`) unless overridden by `on`. Writes a brief and job record, opens a herdr tab and returns `job`, `task_dir`, `agent`. Repeating a request key returns the original job unchanged, even if options differ; it does not relaunch an uncertain attempt. |
 | `hud_read` | Without a `job`, defaults to `view: "compact"` (running jobs and jobs that need attention); use `view: "recent"` for the newest 20 full rows. `view` is list-only. With a `job`, optional `wait_ms` (0–120000) and `full` (boolean); returns STATUS, unanswered questions, effective CLI `idle_grace_s` and the unread report (up to 64 KiB). Already read: `report_unchanged: true`, no body (`full: true` includes it again). Waiting stops at settlement, a question or the deadline. Every returned report body stamps `read_at` (including during work/idle grace), not acceptance. Reading a settled pi or CLI report closes its worker. Reading a failure/block separately marks that attention seen. |
+| `hud_wait` | Optional `jobs` (job IDs; omitted: the caller session's jobs that are unsettled when the call starts), `mode` (`any` by default, or `all`), and integer `wait_ms` (0–120000; default 60000; `0` checks once). Watches job files without blocking other calls. `any` wakes on settlement or attention; `all` waits for every target to settle but wakes early on a question, block, orchestrator wait or failure. Returns `ready`, `timed_out`, `triggered` (job IDs that met the wake condition) and compact `jobs` rows. No targets returns ready with empty lists. It does not read bodies, mark anything seen or close workers. |
 | `hud_send` | Required `job`, `message_key`, `text`. Queues a message while a `pi` or `cli` job works, or continues it during `idle_grace` if its role allows and the report is unread. After reading a settled report, dispatch a new job for repairs. The message key deduplicates attempts, including failed/uncertain ones. Browser (`bro`) roles cannot continue. |
 | `hud_respond` | Required `job`, `request_id` (`qN`), `answer`. Writes `qa/qN.answer.md` once; an existing answer is not overwritten. |
 | `hud_close` | Required `job`. Calls `pi-role-reap` for early cleanup; safe to repeat. Normal finished-job cleanup belongs to the watcher. |
@@ -115,7 +116,7 @@ unread. Claude Code runs `hud watch` under Monitor. Codex receives these quiet l
 its own queue: create/successful send starts one detached `hud watch --queue` per pane, without event stdout.
 It catches up and exits when the pane is gone/no longer Codex, or after 10 minutes without unsettled jobs,
 unread attention/reports or unanswered questions. Pane-scoped watches register `$HUD_HOME/watchers/<pane>.pid`
-and remove it at exit. Other main sessions keep typed questions and `hud_read` with `wait_ms`.
+and remove it at exit. Other main sessions keep typed questions and can use `hud_wait` for settlement or attention.
 
 `hud_create` starts the on-demand `hud-watch.mjs` if needed. It reacts to job-file
 and herdr tab-close events, invokes `pi-role-reap` when a pi report in idle grace

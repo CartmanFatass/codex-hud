@@ -1577,7 +1577,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const listed = await f.rpc('tools/list');
   assert.deepEqual(
     listed.result.tools.map((tool) => tool.name),
-    ['hud_roster', 'hud_create', 'hud_read', 'hud_send', 'hud_respond', 'hud_close']
+    ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_send', 'hud_respond', 'hud_close']
   );
   // The shipped imp splits on demand; an owner role file can still ask for the helper pane up front.
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
@@ -1889,6 +1889,94 @@ test('hud_read rejects invalid views and views on single-job reads', async (t) =
     const response = await f.rpc('tools/call', { name: 'hud_read', arguments: args });
     assert.equal(response.result.isError, true);
     assert.deepEqual(JSON.parse(response.result.content[0].text), { ok: false, code: 'tool_error', error });
+  }
+});
+
+function waitFixtureJob(f, n, state = 'working', herdr_pane = 'w4E:p1') {
+  const job = `j${n.toString(16).padStart(16, '0')}`;
+  const dir = join(f.env.HUD_HOME, 'jobs', job);
+  const receipt = { job, role: 'imp', herdr_pane, created_at: new Date(n * 1000).toISOString() };
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify(receipt));
+  const status = (state) => {
+    const file = join(dir, 'STATUS.json');
+    fs.writeFileSync(`${file}.tmp`, JSON.stringify({ state }));
+    fs.renameSync(`${file}.tmp`, file);
+  };
+  status(state);
+  return { job, dir, receipt, status };
+}
+
+test('hud_wait any wakes on a settlement among the caller’s initially unsettled jobs', { timeout: 4000 }, async (t) => {
+  const f = await fixture(t);
+  const first = waitFixtureJob(f, 1), second = waitFixtureJob(f, 2);
+  waitFixtureJob(f, 3, 'done');
+  const foreign = waitFixtureJob(f, 4, 'working', 'w4E:p9');
+  await f.call('hud_roster'); // Advance the cursor before writing the settlement.
+  const waiting = f.call('hud_wait', { wait_ms: 5000 });
+  await f.rpc('ping'); // The wait is active and does not hold up another call.
+  foreign.status('done');
+  fs.writeFileSync(join(second.dir, 'report.md'), 'Synthetic report.');
+  second.status('idle_grace');
+  const result = await waiting;
+  result.jobs.sort((a, b) => a.job.localeCompare(b.job));
+  assert.deepEqual(result, {
+    ready: true, timed_out: false, triggered: [second.job],
+    jobs: [
+      { job: first.job, role: 'imp', state: 'working' },
+      { job: second.job, role: 'imp', state: 'idle_grace', report_unread: true },
+    ],
+    changes: [`${second.job} imp: idle_grace | report`],
+  });
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(second.dir, 'job.json'), 'utf8')), second.receipt);
+});
+
+test('hud_wait all wakes after the last explicit target settles', { timeout: 4000 }, async (t) => {
+  const f = await fixture(t);
+  const first = waitFixtureJob(f, 1), second = waitFixtureJob(f, 2);
+  const args = { jobs: [first.job, second.job], mode: 'all' };
+  const waiting = f.call('hud_wait', { ...args, wait_ms: 5000 });
+  await f.rpc('ping');
+  first.status('stopped');
+  assert.equal((await f.call('hud_wait', { ...args, wait_ms: 0 })).ready, false);
+  second.status('done');
+  const result = await waiting;
+  assert.equal(result.ready, true);
+  assert.equal(result.timed_out, false);
+  assert.deepEqual(result.triggered, args.jobs);
+  assert.deepEqual(result.jobs.map((job) => job.state), ['stopped', 'done']);
+});
+
+test('hud_wait all wakes early for a question and previews only its ID', { timeout: 4000 }, async (t) => {
+  const f = await fixture(t);
+  const first = waitFixtureJob(f, 1), second = waitFixtureJob(f, 2);
+  const waiting = f.call('hud_wait', { jobs: [first.job, second.job], mode: 'all', wait_ms: 5000 });
+  await f.rpc('ping');
+  fs.writeFileSync(join(first.dir, 'qa', 'q1.md'), 'Synthetic question.');
+  const result = await waiting;
+  assert.equal(result.ready, true);
+  assert.equal(result.timed_out, false);
+  assert.deepEqual(result.triggered, [first.job]);
+  assert.deepEqual(result.jobs, [
+    { job: first.job, role: 'imp', state: 'working', question_ids: ['q1'] },
+    { job: second.job, role: 'imp', state: 'working' },
+  ]);
+});
+
+test('hud_wait returns a compact snapshot on timeout and rejects invalid targets', async (t) => {
+  const f = await fixture(t);
+  assert.deepEqual(await f.call('hud_wait'), { ready: true, timed_out: false, triggered: [], jobs: [] });
+  const { job } = waitFixtureJob(f, 1);
+  await f.call('hud_roster');
+  const start = performance.now();
+  assert.deepEqual(await f.call('hud_wait', { jobs: [job], wait_ms: 100 }), {
+    ready: false, timed_out: true, triggered: [], jobs: [{ job, role: 'imp', state: 'working' }],
+  });
+  assert.ok(performance.now() - start >= 100);
+  for (const args of [{ jobs: ['../outside'] }, { jobs: ['j0000000000000002'] }, { mode: 'some' }, { wait_ms: 120001 }]) {
+    const response = await f.rpc('tools/call', { name: 'hud_wait', arguments: args });
+    assert.equal(response.result.isError, true);
+    assert.match(JSON.parse(response.result.content[0].text).error, /^invalid_arguments:/);
   }
 });
 

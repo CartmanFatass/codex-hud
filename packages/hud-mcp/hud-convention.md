@@ -16,7 +16,7 @@ This is an overridable default, not a worker obligation. A project's own docs ov
 - pi: the HUD package automatically sends actionable events as native follow-up messages without touching the
   draft. No Monitor or panel is needed.
 - A live pane watch (`watcher_alive` in `hud_roster` and `hud_create`) suppresses direct question pushes.
-  Without a watch or queue, questions are typed and settlement can be read with `hud_read` and `wait_ms`.
+  Without a watch or queue, questions are typed; use `hud_wait` for settlement or attention across jobs without marking anything read.
   Lines include text and a `hud_respond` reply; no duplicate question read is needed.
 - `hud_read({})` lists running jobs and pending attention, including unanswered question IDs and unread reports.
   Use `view: "recent"` for the newest 20 full rows. Neither list marks items read. A job read returns only an unread

@@ -84,7 +84,7 @@ these select observations, not execution identity. Without explicit selection,
 Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pane); no focused-pane guess or statusline-written binding is used.
 Unavailable evidence leaves the jobs view unbound to a native session.
 
-The MCP has exactly six tools: **hud_roster**, **hud_create**, **hud_read**,
+The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**,
 **hud_send**, **hud_respond**, **hud_close**. Call `hud_roster` first for effective
 roles, model/thinking sources, accepted options and the convention. Bundled
 role JSON is overridden by `$HUD_HOME/roles/*.json` by role name, then by a
@@ -108,7 +108,7 @@ is needed; pi workers do not start this watch. A pane-scoped watch records `$HUD
 while active. `hud_roster` and `hud_create` report `watcher_alive` when the caller has a pane; a live watch
 suppresses direct pushes and the `hud_create` Monitor hint.
 Without a live watch, CLI and pi worker questions go directly to the Codex thread queue; other main sessions
-receive typed questions and use `hud_read` with `wait_ms` for settlement. Queue delivery uses the pane's Codex
+receive typed questions and can use `hud_wait` for settlement. Queue delivery uses the pane's Codex
 process `CODEX_HOME` (default `~/.codex`), not the MCP account. A missing thread id or any queue failure falls
 back to typing that line, which can touch a draft or fire prompt hooks. Stale PIDs never suppress delivery.
 MCP `changes` stays the fuller, query-only stream; a `report` token always means unread.
@@ -157,6 +157,13 @@ after a backup under `$HUD_HOME`. A missing CLI file is not created. Codex is sk
 block, wait or failure `reason`. A closed job with an unread report still appears. Use `view: "recent"` for the
 newest 20 full rows, including handled history. Neither list marks anything read; `changes` still includes events
 for jobs hidden from the snapshot. `view` cannot be combined with `job`.
+
+`hud_wait({ jobs?, mode?, wait_ms? })` watches several jobs at once. Omit `jobs` to take the caller session's
+unsettled jobs at the start of the call. `mode: "any"` (default) returns when one settles or needs attention;
+`"all"` waits for every target to settle, but a question, block, orchestrator wait or failure returns early.
+`wait_ms` is an integer from 0 to 120000 (default 60000; `0` checks once). The response includes `ready`, `timed_out`,
+`triggered` job IDs and compact `jobs` rows. No targets returns ready with empty lists. Waiting does not read
+report or question bodies, mark anything seen or close workers; use `hud_read` with a job ID for the full result.
 
 With a `job`, `hud_read` reads STATUS, open questions and an unread report (up to 64 KiB). A report is unread when
 newer than `read_at`, or when no `read_at` exists. Already-read reports return `report_unchanged: true` without a

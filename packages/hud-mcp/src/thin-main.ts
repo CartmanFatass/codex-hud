@@ -1,4 +1,4 @@
-/** Six local pi-roles tools, newline-delimited JSON-RPC over stdio. */
+/** Local HUD role tools, newline-delimited JSON-RPC over stdio. */
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -135,6 +135,15 @@ const tools = [
         enum: ['compact', 'recent'],
         description: 'List only, without a job. Default: compact. Use recent for the newest 20 full rows.',
       },
+    }
+  ),
+  tool(
+    'hud_wait',
+    'Wait for any or all specified jobs to settle, or for work that needs attention. Omit jobs to wait on the caller session’s unsettled jobs. Returns compact status without reading reports.',
+    {
+      jobs: { type: 'array', items: text },
+      mode: { type: 'string', enum: ['any', 'all'], default: 'any' },
+      wait_ms: { type: 'integer', minimum: 0, maximum: 120000, default: 60000 },
     }
   ),
   tool(
@@ -798,6 +807,19 @@ function failureUnobserved(job: Job): boolean {
   }
 }
 
+function compactRow(row: JobRow) {
+  const reason = row.blocked || row.state === 'waiting_orchestrator' || row.display_state === 'failed' ? row.reason : null;
+  return {
+    job: row.job,
+    role: row.role,
+    state: row.state ?? row.display_state,
+    ...(row.report_unread ? { report_unread: true } : {}),
+    ...(row.blocked ? { blocked: true } : {}),
+    ...(row.question_ids.length ? { question_ids: row.question_ids } : {}),
+    ...(reason ? { reason } : {}),
+  };
+}
+
 function listJobs(recent: boolean) {
   const newest = jobs().sort((a, b) => b.created_at.localeCompare(a.created_at));
   const recentLimit = 20;
@@ -829,19 +851,76 @@ function listJobs(recent: boolean) {
       !row.question_ids.length &&
       !(failed && failureUnobserved(job))
     ) return [];
-    const reason = row.blocked || row.state === 'waiting_orchestrator' || failed ? row.reason : null;
-    return [
-      {
-        job: row.job,
-        role: row.role,
-        state: row.state ?? row.display_state,
-        ...(row.report_unread ? { report_unread: true } : {}),
-        ...(row.blocked ? { blocked: true } : {}),
-        ...(row.question_ids.length ? { question_ids: row.question_ids } : {}),
-        ...(reason ? { reason } : {}),
-      },
-    ];
+    return [compactRow(row)];
   });
+}
+
+const settled = (state: string | null) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(state ?? '');
+
+async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args) {
+  if (mode !== 'any' && mode !== 'all') throw new Error('invalid_arguments: mode');
+  if (typeof wait_ms !== 'number' || !Number.isInteger(wait_ms) || wait_ms < 0 || wait_ms > 120000)
+    throw new Error('invalid_arguments: wait_ms');
+  const deadline = performance.now() + wait_ms;
+  const readJob = (id: string) => json<Job>(join(directory(id), 'job.json'));
+  let initial: JobRow[];
+  if (ids === undefined) {
+    initial = jobs().filter(isSessionJob).map((job) => readRow(job, false).row).filter((row) => !settled(row.state));
+  } else {
+    if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string' || !/^j[0-9a-f]{16}$/.test(id)))
+      throw new Error('invalid_arguments: jobs');
+    initial = [...new Set<string>(ids)].map((id) => {
+      const job = readJob(id);
+      if (!job) throw new Error(`invalid_arguments: unknown job ${id}`);
+      return readRow(job, false).row;
+    });
+  }
+  const targets = new Set(initial.map((row) => row.job));
+  function result(rows: JobRow[]) {
+    const allSettled = mode === 'all' && rows.length === targets.size && rows.every((row) => settled(row.state));
+    const triggered = rows.filter((row) => allSettled || (mode === 'any' && settled(row.state)) ||
+      row.blocked || row.state === 'waiting_orchestrator' || row.display_state === 'failed' || row.open_questions > 0
+    ).map((row) => row.job);
+    const ready = targets.size === 0 || triggered.length > 0;
+    return { ready, timed_out: !ready && performance.now() >= deadline, triggered, jobs: rows.map(compactRow) };
+  }
+  const current = result(initial);
+  if (current.ready || current.timed_out) return current;
+
+  let watcher: fs.FSWatcher | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await new Promise<ReturnType<typeof result>>((resolve, reject) => {
+      function check() {
+        try {
+          const rows = [...targets].flatMap((id) => {
+            const job = readJob(id);
+            return job ? [readRow(job, false).row] : [];
+          });
+          const next = result(rows);
+          if (!next.ready && !next.timed_out) return false;
+          resolve(next);
+        } catch (error) {
+          reject(error);
+        }
+        return true;
+      }
+      function tick() {
+        if (!check()) timer = setTimeout(tick, Math.min(5000, Math.max(0, Math.ceil(deadline - performance.now()))));
+      }
+      try {
+        watcher = fs.watch(jobsRoot, { recursive: true }, (_event, name) => {
+          const [id, file] = name?.split('/') ?? [];
+          if (!id || (targets.has(id) && (!file || ['job.json', 'STATUS.json', 'report.md', 'qa'].includes(file)))) check();
+        });
+        watcher.on('error', () => { watcher?.close(); watcher = undefined; });
+      } catch { /* The safety timer still checks the target jobs. */ }
+      tick(); // Check again after attaching so a change during setup cannot be missed.
+    });
+  } finally {
+    watcher?.close();
+    clearTimeout(timer);
+  }
 }
 
 function openQuestions(dir: string): string[] {
@@ -1145,6 +1224,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     };
   }
   if (name === 'hud_create') return dispatchJob(args, process.env.HERDR_PANE_ID);
+  if (name === 'hud_wait') return waitJobs(args);
   if (name === 'hud_read') {
     const { view } = args;
     if (view !== undefined) {
@@ -1163,7 +1243,6 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
       throw new Error('invalid_arguments: wait_ms');
     const end = Date.now() + Math.max(0, Math.min(120000, (args.wait_ms as number | undefined) ?? 0));
-    const settled = (state: string | null) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(state ?? '');
     const initial = readRow(job, !isWorker).row;
     const ready = (row: JobRow) =>
       settled(row.state) ||

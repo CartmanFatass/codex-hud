@@ -72,7 +72,7 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 没有显式选择时，`HERDR_PANE_ID` 允许用一秒预算向 `herdr pane current` 查询调用者的 Claude 转写或 Codex 会话（herdr 窗格内回退读取 `CODEX_THREAD_ID`）；
 不猜聚焦窗格、不读取状态行写下的绑定。证据不可用时，仅保留未绑定原生会话的任务视图。
 
-MCP 恰有六个工具：**hud_roster**、**hud_create**、**hud_read**、**hud_send**、**hud_respond**、**hud_close**。
+MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_send**、**hud_respond**、**hud_close**。
 先调用 `hud_roster` 获取生效的角色、模型／推理强度来源、可接受选项和约定。
 `$HUD_HOME/roles/*.json` 按角色名覆盖内置 JSON，已注册项目的 `.hud/roles` 再覆盖。
 已注册项目的 `.hud/`、cwd、HUD 主目录、包目录中第一个 `hud-convention.md` 整体替换默认约定。
@@ -104,6 +104,12 @@ herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 并在适用时带上 `report_unread: true`、`blocked: true`、待答问题编号 `question_ids`、受阻、等待或失败的原因 `reason`。
 任务已关闭但报告未读时仍会列出。`view: "recent"` 保留最新 20 个任务的完整列表，包括已处理的历史任务。
 两种列表都不会标记已读；未出现在列表中的任务仍可通过 `changes` 报告变化。`view` 不能与 `job` 同用。
+
+`hud_wait({ jobs?, mode?, wait_ms? })` 一次监听多个任务。省略 `jobs` 时，监听调用开始时本会话尚未结算的任务。
+`mode: "any"`（默认）在任一任务结算或需要关注时返回；`"all"` 等到所有任务结算，但遇到提问、受阻、等待主会话或失败时会提前返回。
+`wait_ms` 为 0–120000 毫秒的整数（默认 60000；`0` 只检查一次）。返回 `ready`、`timed_out`、触发返回的任务编号 `triggered`
+和精简任务列表 `jobs`。没有目标任务时立即返回 `ready: true` 和空列表。等待不会读取报告或问题正文、标记已读或已查看，也不会关闭工作者；
+完整结果请用带任务编号的 `hud_read` 读取。
 
 带 `job` 时读取 STATUS、未读报告（最多 64 KiB）与待答问题。报告比 `read_at` 新，或尚无 `read_at`，即为未读。
 已读报告只返回 `report_unchanged: true`，`full: true` 可再次读取正文。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。

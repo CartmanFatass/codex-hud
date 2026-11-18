@@ -15,8 +15,9 @@ The user names a role and a task in plain words; you do the rest. Never ask them
    no Monitor command is needed, and drafts stay untouched (missing thread id or queue failure falls back to typing).
    Both catch up pending work and deliver full questions, settlements/unread reports, new blocks and quiet-worker
    reasons—not working starts/resumes, answered questions or already-reported closure. `--verbose` and MCP
-   `changes` retain the fuller stream. Other main sessions receive typed questions and wait with `hud_read` and
-   `wait_ms`. A live pane-scoped watch suppresses direct questions. Answer within 20 minutes using the line's
+   `changes` retain the fuller stream. When waiting across jobs, use `hud_wait` (`mode: "any"` or `"all"`),
+   not repeated list reads. Without a watch or queue, main sessions receive typed questions. A live pane-scoped
+   watch suppresses direct questions. Answer within 20 minutes using the line's
    `hud_respond` reply.
 6. Read the report file through `hud_read`, check it (for code: the diff and named checks), then decide: accept,
    repair, review or stop. `hud_read({})` lists running jobs and pending attention, with question IDs and unread

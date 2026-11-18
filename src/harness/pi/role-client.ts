@@ -155,6 +155,15 @@ export const PI_ROLE_TOOLS = [
     }
   ),
   tool(
+    'hud_wait',
+    'Wait for any or all specified jobs to settle, or for work that needs attention. Omit jobs to wait on the caller session’s unsettled jobs. Returns compact status without reading reports.',
+    {
+      jobs: { type: 'array', items: text },
+      mode: { type: 'string', enum: ['any', 'all'], default: 'any' },
+      wait_ms: { type: 'integer', minimum: 0, maximum: 120000, default: 60000 },
+    }
+  ),
+  tool(
     'hud_send',
     'Send a message to a pi or CLI job: queued while it works, or continued during idle_grace before the report is read (roles that can continue); message_key deduplicates sends.',
     { job: text, message_key: text, text },
