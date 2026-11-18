@@ -8,7 +8,9 @@ export type WorkbenchInput =
    * keyboard), for the Control plane's model picker and confirmation dialog.
    */
   | { type: 'key'; key: string; text?: string }
-  | { type: 'mouse'; x: number; y: number; button: 'left' | 'wheel-up' | 'wheel-down' };
+  | { type: 'mouse'; x: number; y: number; button: 'left' | 'wheel-up' | 'wheel-down' }
+  /** The pointer moved with the left button held (button-event tracking); only Split's rule divider answers it. */
+  | { type: 'drag'; x: number; y: number };
 
 const KEYS: Record<string, string> = {
   j: 'down',
@@ -128,6 +130,8 @@ export class WorkbenchInputDecoder {
                   v: 'inspect',
                   ' ': 'inspect',
                   w: 'export-board',
+                  // Split: `=` grows the list like `+` (which is the Control plane's place-add there).
+                  '=': 'list-grow',
                 } as Record<string, string>
               )[ch] ?? KEYS[ch])
             : KEYS[ch];
@@ -155,6 +159,8 @@ export class WorkbenchInputDecoder {
               : null;
         if (button && mouse[4] === 'M' && !(code & 32)) {
           inputs.push({ type: 'mouse', button, x: Number(mouse[2]) - 1, y: Number(mouse[3]) - 1 });
+        } else if (mouse[4] === 'M' && (code & 35) === 32) {
+          inputs.push({ type: 'drag', x: Number(mouse[2]) - 1, y: Number(mouse[3]) - 1 });
         }
         this.pending = this.pending.slice(mouse[0].length);
         continue;

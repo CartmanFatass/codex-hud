@@ -438,8 +438,9 @@ const HUD_SESSION_START = (() => {
   const raw = Number(process.env.CODEX_HUD_SESSION_START);
   return Number.isFinite(raw) && raw > 0 ? new Date(raw > 1e12 ? raw : raw * 1000) : null;
 })();
-const ENTER = '\x1b[?1049h\x1b[?25l\x1b[?2004h\x1b[?1000h\x1b[?1006h';
-const LEAVE = '\x1b[?1000l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[?1049l';
+// 1002 adds motion while a button is held (Split's rule divider drags); a terminal without it still has the clicks of 1000.
+const ENTER = '\x1b[?1049h\x1b[?25l\x1b[?2004h\x1b[?1000h\x1b[?1006h\x1b[?1002h';
+const LEAVE = '\x1b[?1002l\x1b[?1000l\x1b[?1006l\x1b[?2004l\x1b[?25h\x1b[?1049l';
 
 function restoreTerminal(): void {
   if (process.stdin.isTTY) process.stdin.setRawMode(false);
@@ -1155,7 +1156,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       notifier.configure(resolveNotifierOptions(process.env, settings));
       page.message = t('Saved');
       page.original = { ...settings };
-      process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
+      process.stdout.write(settings.mouse ? '\x1b[?1000h\x1b[?1006h\x1b[?1002h' : '\x1b[?1002l\x1b[?1000l\x1b[?1006l');
       void (settings.treeWidth !== previousWidth ? widthKeeper?.apply() : undefined)
         ?.then(() => {
           lastPaint = null;
@@ -1198,7 +1199,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
     for (let input of inputs) {
       if (closed) break;
-      if (input.type === 'mouse' && !settings.mouse) continue;
+      if ((input.type === 'mouse' || input.type === 'drag') && !settings.mouse) continue;
       // A printable key with no name is only the model picker's (it types into the filter); nothing else answers it here.
       if (input.type === 'key' && !input.key && !state.projectInput) continue;
       syncPanelView();
@@ -1365,7 +1366,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   const dispatch = (all: WorkbenchInput[]) => {
     const inputs = typedForPicker(all);
     return withInputRefresh(
-      inputs.length > 0,
+      inputs.some((i) => i.type !== 'drag'), // a motion with the button held only moves the rule: no collection for it
       () => processInput(inputs),
       () => {
         if (!closed) void collect(true);

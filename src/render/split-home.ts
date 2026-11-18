@@ -9,16 +9,18 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { askSlabRows, markNewest } from './home-view.js';
 import { laneRows, orderedLanes, workerPriority } from './work-lanes.js';
-import { ageText, failed, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
+import type { WorkCard } from '../collectors/work-card.js';
+import { keywordMarks } from '../utils/keyword-marks.js';
+import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
 import { barText, currentRows, homeProgressRows, inline, landedAge, landedMark, landedNewest, ledgerText, roleInk, waitingRows } from './project-view.js';
 import { boardRow, decisionBlock, mark, minuteAge, section } from './workboard-rows.js';
 import { splitScope, splitSubValid, type SplitScene } from './split-frame.js';
 import { fit, flowLines, monitorText, pair } from './monitor-text.js';
-import { theme, visualLength } from './colors.js';
+import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 
 const WAITING = 'home-progress:waiting', PROGRESS = 'home-progress:progress', DECIDED = 'split:decided';
-interface Entry { item: string; needs: boolean; rows: MonitorRow[]; preview: () => { label: string; right?: string; rows: MonitorRow[] } }
+interface Entry { item: string; needs: boolean; rows: MonitorRow[]; /** The lane's first row with a working cue, shown while the cursor is elsewhere. */ cued?: MonitorRow; preview: () => { label: string; right?: string; rows: MonitorRow[] } }
 /** A lane's phase as Home's lane header says it: a thin-job lane reads it off its newest job. */
 function lanePhase(lane: WorkLane, now: number): string {
   if (!lane.id.startsWith('thin-job:')) return lane.phase ?? '';
@@ -26,6 +28,23 @@ function lanePhase(lane: WorkLane, now: number): string {
   const review = active?.work?.phases.filter((p) => p.startsWith('review')).at(-1);
   if (!active) return 'done';
   return review ? (review.includes('accept') ? review : `${review.match(/^review r\d+/)?.[0] ?? review} · fixing`) : (active.phase ?? 'build');
+}
+const CUE_MIN = 6;
+/** What a working lane's row says in its free cells: the model sentence's marked keywords that fit, else the card's reason or its phases so far. Nothing when `room` is short. */
+function laneCue(card: WorkCard, room: number): string {
+  if (room < CUE_MIN) return '';
+  const { plain, spans } = keywordMarks(monitorText(card.worker.modelSentence ?? ''));
+  let used = 0;
+  const picked: string[] = [];
+  for (const span of spans) {
+    const word = plain.slice(span.start, span.end), need = visualLength(word) + (picked.length ? 1 : 0);
+    if (used + need > room) break;
+    used += need;
+    picked.push(`«${span.type}${word}»`);
+  }
+  if (picked.length) return paintSentence(picked.join(' '));
+  const fact = monitorText(card.reason ? t(card.reason) : card.phases.length > 1 ? phaseChain(card) : '');
+  return fact ? theme.board.muted(truncateAnsi(fact, room)) : '';
 }
 const tries = (waiting: readonly { value: string }[]) => waiting.filter((r) => /^try\b/i.test(r.value)).length;
 /** The target the lane's acting job is: the one that asks, else the most important. */
@@ -49,11 +68,14 @@ export function homeScene(
     const mid = native ? t('native') : phase === 'done' ? (failed(card) ? monitorText(card.role) : t('{n} done', { n: lane.workers.length })) : workPhaseText(phase);
     const right = native ? theme.board.muted(t('{n} running', { n: running })) : word
       ? `${ink(word)} ${theme.board.muted(age)}` : `${roleInk(card.role)(monitorText(card.role))} ${theme.board.muted(age)}`;
-    const rows: MonitorRow[] = [{ text: pair(`${ink(workStateGlyph(card))} ${fit(names[i], col)} ${theme.board.muted(mid)}`, right, width), item }];
+    const lead = `${ink(workStateGlyph(card))} ${fit(names[i], col)} ${theme.board.muted(mid)}`;
+    const rows: MonitorRow[] = [{ text: pair(lead, right, width), item }];
+    // A job at work shows what it is on in the row's free cells, while the cursor is elsewhere.
+    const cue = card.state === 'in-progress' && top.settledAt === null ? laneCue(card, width - visualLength(lead) - visualLength(right) - 2) : '';
     // A question or a failure keeps its reason on a row of its own: it is what the owner opens the panel for.
     const why = top.homeNeedsHuman ? top.work?.requestInfo?.question ?? top.ask ?? card.reason ?? '' : failed(card) ? workCardDetail(card) : '';
     if (why) rows.push({ text: stemLines(why, width, ink, 1)[0], item });
-    return { item, needs: group(lane) <= 2, rows, preview: () => {
+    return { item, needs: group(lane) <= 2, rows, cued: cue ? { text: pair(`${lead} ${cue}`, right, width), item } : undefined, preview: () => {
       const slabs = board.workers.filter((w) => w.homeNeedsHuman && w.laneId === lane.id).flatMap((w) => askSlabRows(w, board, state, width, now));
       // The asking job's pointer card is the slab above it; every other card is today's, and no fold hides one here.
       const cards = laneRows(input, { ...lane, workers: lane.workers.filter((w) => !w.homeNeedsHuman) }, { ...state, boardFolded: undefined }, width, now).slice(1, -1);
@@ -96,7 +118,7 @@ export function homeScene(
   state.boardAnchor = at && /^(home-progress:|split:)/.test(at) ? at : undefined;
   if (!state.boardAnchor) state.homeTarget = sub ? targets.get(sub) : lane ? { kind: 'worker', laneId: lane.id, workerId: laneTop(lane, now).id } : state.homeTarget;
   return {
-    list: entries.length ? entries.flatMap((e) => e.rows) : [boardRow(theme.board.muted(fit('  ' + t('Nothing in progress'), width)))],
+    list: entries.length ? entries.flatMap((e) => (e.cued && e.item !== cursor ? [e.cued, ...e.rows.slice(1)] : e.rows)) : [boardRow(theme.board.muted(fit('  ' + t('Nothing in progress'), width)))],
     cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, scope,
     left: done ? theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`) : '',
     hints: sub ? '↑↓ move  ⏎ expand  esc back  PgUp PgDn scroll  o open  v inspect  ? help' : '↑↓ move  ⏎ open  PgUp PgDn scroll  o open  v inspect  a all  , settings  ? help  ←→ tab',

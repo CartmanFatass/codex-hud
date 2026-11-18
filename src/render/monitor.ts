@@ -106,6 +106,10 @@ export interface MonitorState {
   splitList?: string;
   splitScroll?: number;
   splitListScroll?: number;
+  /** The list's share of the list-and-preview rows, set with `=` `+` `-` or by dragging the rule; unset, the list is as tall as it needs. Kept across the panel's reload. */
+  splitRatio?: number;
+  /** A drag of the rule is under way (the press was on it). */
+  splitDrag?: boolean;
   /** What the preview's scroll belongs to; another page or cursor row starts it at the top. */
   splitFor?: string;
 }

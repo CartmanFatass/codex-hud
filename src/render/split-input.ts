@@ -11,12 +11,33 @@ import { monitorRowAt } from './monitor-input.js';
 import { splitItems } from './split-frame.js';
 import { tryInput } from './try-input.js';
 
+/** The list's share stays between a fifth and four fifths of the rows, so neither part can be dragged away. */
+const RATIO = [0.2, 0.8];
 type Outcome = (action?: MonitorOutcome['action']) => MonitorOutcome;
 const MOVE = ['up', 'down', 'home', 'end'];
 const step = (items: string[], at: string | undefined, key: string): string | undefined =>
   items[key === 'home' ? 0 : key === 'end' ? items.length - 1 : Math.max(0, Math.min(items.length - 1, items.indexOf(at ?? '') + (key === 'up' ? -1 : 1)))];
 const panes = (ctx: MonitorContext) => ({ list: ctx.frame?.panes.find((p) => p.id === 'agents'), preview: ctx.frame?.panes.find((p) => p.id === 'preview') });
 const inside = (pane: MonitorRect | undefined, y: number) => !!pane && y >= pane.y && y < pane.y + pane.height;
+/**
+ * `=` `+` grow the list by a row, `-` grows the preview; a press on the rule starts a drag that follows the pointer. Only while the
+ * list has the keys: with them in the preview the list is compact (Esc restores the share), and `+` `-` there are the Control
+ * plane's place keys. True when the input was one of these.
+ */
+function resize(next: MonitorState, input: WorkbenchInput, key: string, ctx: MonitorContext): boolean {
+  const { list, preview } = panes(ctx), total = list && preview && next.splitFocus !== 'preview' ? list.height + preview.height : 0;
+  const to = (rows: number) => { next.splitRatio = Math.round(Math.max(RATIO[0], Math.min(RATIO[1], rows / total)) * 1000) / 1000; };
+  if (input.type === 'drag') {
+    // The rule sits under the list, past the blank row a roomy list leaves above it.
+    if (total && next.splitDrag) to(input.y - list!.y - (preview!.y - 1 - (list!.y + list!.height)));
+    return true;
+  }
+  const press = total > 0 && input.type === 'mouse' && input.button === 'left' && input.y === preview!.y - 1;
+  next.splitDrag = press || undefined;
+  const step = key === 'list-grow' || key === 'place-add' ? 1 : key === 'place-remove' ? -1 : 0;
+  if (total && step) to(list!.height + step);
+  return press || (total > 0 && step !== 0);
+}
 /** What one input means in either view: the key to treat as pressed, a scroll or a move already made, or a row clicked. */
 function read(next: MonitorState, input: WorkbenchInput, key: string, ctx: MonitorContext, move: (items: string[], key: string) => void) {
   const { list, preview } = panes(ctx);
@@ -38,6 +59,7 @@ export function splitHomeInput(
   next: MonitorState, input: WorkbenchInput, key: string, ctx: MonitorContext, result: Outcome,
   deps: { toggle: (item: string) => void; openProgress: (item: string) => void },
 ): MonitorOutcome | undefined {
+  if (resize(next, input, key, ctx)) return result();
   const { list, preview } = panes(ctx), focus = next.splitFocus === 'preview';
   const subs = splitItems(preview?.rows), cursor = next.splitCursor;
   const move = (items: string[], k: string) => { const to = step(items, focus ? next.splitSub : cursor, k); if (focus) next.splitSub = to; else next.splitCursor = to; };
@@ -70,6 +92,7 @@ export function splitHomeInput(
 }
 
 export function splitProjectInput(next: MonitorState, input: WorkbenchInput, key: string, ctx: MonitorContext, result: Outcome, activate: () => MonitorOutcome): MonitorOutcome | undefined {
+  if (resize(next, input, key, ctx)) return result();
   const { list, preview } = panes(ctx), focus = next.splitFocus === 'preview', at = focus ? next.splitSub : next.projectCursor;
   const subs = splitItems(preview?.rows), rows = [...(list?.rows ?? []), ...(preview?.rows ?? [])];
   const move = (items: string[], k: string) => { const to = step(items, at, k); if (focus) next.splitSub = to; next.projectCursor = to; };

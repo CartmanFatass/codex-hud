@@ -15,7 +15,7 @@ import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { homeScene } from './split-home.js';
 import { projectScene } from './split-project.js';
-import { paintSplit } from './split-frame.js';
+import { paintSplit, splitScrolls } from './split-frame.js';
 import { stopPromptRows } from './job-actions.js';
 export { footHints } from './workboard-rows.js';
 function helpRows(input: MonitorData, width: number): MonitorRow[] {
@@ -27,7 +27,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['← → Tab', 'next / previous tab'],
       ['3', 'Changes'],
       ['↑ ↓', 'move'],
-      ...(input.state.panelLayout === 'split' ? [['PgUp Dn', 'scroll the preview (Split)']] : []),
+      ...(input.state.panelLayout === 'split' ? [['PgUp Dn', 'scroll the preview (Split)'], ['= + -', 'Split: list bigger / smaller (or drag the rule)']] : []),
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
       ['[ ]', 'switch project (Project)'],
@@ -176,10 +176,13 @@ export function renderWorkboardFrame(
   };
   // The Split layout draws Home, the hub and the pages that are lists in its own frame (split-*.ts); the rest is Classic's.
   if (state.panelLayout === 'split' && !sub && !list) {
-    const scene = home ? homeScene(input, board, state, targets, width, now, doneToday())
-      : project && !(page === 'control' && state.projectInput) ? projectScene(input, state, board, page, width, now) : undefined;
-    if (scene) return paintSplit(frame, scene, board, targets, state.homeTarget, width, height,
-      [...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x));
+    const build = (w: number) => home ? homeScene(input, board, state, targets, w, now, doneToday())
+      : project && !(page === 'control' && state.projectInput) ? projectScene(input, state, board, page, w, now) : undefined;
+    const notes = [...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x);
+    let scene = build(width);
+    // A preview that scrolls keeps its last cell for the scrollbar: its rows are laid out one cell narrower, so none is cut.
+    if (scene && splitScrolls(scene, state, height, notes.length)) scene = { ...scene, preview: build(width - 1)?.preview ?? scene.preview };
+    if (scene) return paintSplit(frame, scene, board, targets, state.homeTarget, width, height, notes);
   }
   const rows = help
     ? helpRows(input, width)

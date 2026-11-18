@@ -306,6 +306,11 @@ is no secondary stacked/compact Agents renderer, Timeline or diagnostics page.
 The `split` layout (`panelLayout`, `render/split-*.ts`) draws Home, the hub and the list pages as a list over a preview:
 one scene per view (`split-home.ts`, `split-project.ts`), one painter (`split-frame.ts`) and its own keys (`split-input.ts`);
 `renderWorkboardFrame` and `workboardInput` only branch to them, and what Split does not draw stays Classic's.
+The list is as tall as it needs, at most `MonitorState.splitRatio` of the list-and-preview rows (`=` `+` `-` and a drag of the rule,
+`resize` in `split-input.ts`; the decoder's `drag` input needs the mouse mode 1002 `tree-page.ts` enables; the state travels in the
+reload's JSON), and three rows around the cursor while `splitFocus` is `preview`. A preview with more rows than its room
+(`splitScrolls`) is built again one cell narrower and paints its scrollbar in the freed last cell; a Home lane at work that
+the cursor is not on may add a cue (`laneCue`) to its row.
 The owner's micro-actions on a HUD job (`render/job-actions.ts`, spec §2.2) are pure input: `g` becomes
 `focus-job-tab`; `r` opens a reply (`MonitorState.reply`) in which `1`–`4` and `d` pick an option or the worker's
 default (outside it `1`–`4` stay the tabs) and become `answer-job`; `X` sets `confirmStop`, whose `y`/Enter becomes

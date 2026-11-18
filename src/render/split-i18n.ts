@@ -22,5 +22,6 @@ export const SPLIT_ZH: Record<string, string> = {
     '↑↓ 位置  p 宿主  m 模型  e 思考  + - 备选  K J 移动  x 清除  esc 返回  ? 帮助',
   '↑↓ move  ⏎ open file  PgUp PgDn scroll  esc back  ? help': '↑↓ 移动  ⏎ 打开文件  PgUp PgDn 滚动  esc 返回  ? 帮助',
   'scroll the preview (Split)': '滚动下方预览（分栏）',
+  'Split: list bigger / smaller (or drag the rule)': '分栏：列表变大／变小（或拖动分隔线）',
   'Split: ⏎ opens the row’s preview, Esc comes back; click selects, again opens': '分栏：⏎ 进入所选行的预览，Esc 返回；点击选中，再点击打开',
 };

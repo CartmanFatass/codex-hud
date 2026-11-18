@@ -11,6 +11,9 @@ import { defaultSettings, loadSettings } from '../../dist/settings.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { withDisplaySettings } from '../../dist/settings-runtime.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
+import { targetKey } from '../../dist/collectors/workboard-types.js';
+import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
+import { readPanelPlace } from '../../dist/utils/panel-reload.js';
 
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/split-frames.json', import.meta.url), 'utf8'));
 async function fixtures(t) {
@@ -124,7 +127,10 @@ test('Home mouse: a click selects the row, a second click is Enter; a click on a
   d.run({ type: 'mouse', x: 4, y: card, button: 'left' });
   assert.equal(d.state.splitFocus, 'preview');
   assert.match(d.state.splitSub, /worker/);
-  d.run({ type: 'mouse', x: 4, y: card, button: 'left' });
+  // The list gave its rows to the preview (it is compact there), so the card is higher now: a second click lands on it.
+  const moved = d.pane('preview'), again = moved.y + moved.rows.findIndex((r) => stripAnsi(r.text).startsWith('✓ reviewer'));
+  assert.ok(again < card);
+  d.run({ type: 'mouse', x: 4, y: again, button: 'left' });
   assert.ok(d.state.boardToggled?.has(d.state.splitSub), 'a second click toggles it, as Enter does (the newest result starts open)');
 });
 
@@ -342,4 +348,146 @@ test('Classic is untouched: no layout set draws no preview pane, its Help has no
   // The pages Split leaves to Classic keep their frames: one waiting item's text, in either layout.
   const waiting = (layout) => plain(busy.render(40, 'en', 40, { ...initialMonitorState(), mainTab: 'project', projectPage: 'waiting', projectWait: 0, panelLayout: layout }));
   assert.deepEqual(waiting('split'), waiting(undefined));
+});
+
+/** The first lane named `label` says `sentence` about its job, as the model would. */
+const sentence = (board, label, text) => {
+  const lanes = board.lanes.map((l) => (l.label === label ? { ...l, workers: l.workers.map((w) => ({ ...w, modelSentence: text })) } : l));
+  return { ...board, lanes, workers: lanes.flatMap((l) => l.workers) };
+};
+const agentsRows = (frame) => frame.panes.find((p) => p.id === 'agents').rows.map((r) => stripAnsi(r.text));
+const lastCells = (d) => { const p = d.pane('preview'); return d.lines().slice(p.y, p.y + p.height).map((l) => [...l].at(-1)); };
+const keysOf = (text) => new WorkbenchInputDecoder('workboard').push(Buffer.from(text));
+
+test('Split V2 input: = + - and a drag of the rule are named by the decoder; the drag is only a motion with the left button held', () => {
+  assert.deepEqual(keysOf('=+-'), [{ type: 'key', key: 'list-grow', text: '=' }, { type: 'key', key: 'place-add', text: '+' }, { type: 'key', key: 'place-remove', text: '-' }]);
+  assert.deepEqual(keysOf('\x1b[<0;5;7M\x1b[<32;5;4M\x1b[<35;5;4M\x1b[<0;5;4m'), [{ type: 'mouse', button: 'left', x: 4, y: 6 }, { type: 'drag', x: 4, y: 3 }]);
+});
+
+test('Home: a working lane the cursor is not on shows its model keywords in the row’s free cells, only when the width allows', async (t) => {
+  const { busy } = await fixtures(t);
+  const board = sentence(busy.board, 'M4-PROJECT', '«parser» rewrite, «+tests» green, «-lint» red');
+  const row = (frame) => agentsRows(frame).find((l) => /^◉ M4-PRO/.test(l));
+  const at = (width, lang = 'en', state = split()) => busy.render(width, lang, 40, state, undefined, { workboard: board });
+  assert.match(row(at(80)), /^◉ M4-PROJECT +build parser tests lint +imp 20m$/);
+  assert.match(row(at(40)), /^◉ M4-PROJECT +build parser +imp 20m$/, 'only the keywords that fit');
+  assert.doesNotMatch(row(at(26)), /parser/, 'no room, no cue');
+  assert.equal(row(busy.render(80, 'en', 40)).includes('parser'), false, 'without a model sentence there is nothing to show');
+  // The row under the cursor is previewed below, so it keeps the plain row.
+  const lane = board.lanes.find((l) => l.label === 'M4-PROJECT');
+  assert.doesNotMatch(row(at(80, 'en', split({ splitCursor: targetKey({ kind: 'lane', laneId: lane.id }) }))), /parser/);
+  for (const lang of ['en', 'zh']) for (const width of [20, 26, 40, 52, 80, 120]) for (const line of at(width, lang).lines) assert.equal(visualLength(line), width, `${lang} ${width}`);
+});
+
+test('Split ratio: = and + grow the list, - grows the preview, a drag of the rule follows the pointer, and the share survives a reload', async (t) => {
+  const { busy } = await fixtures(t);
+  const d = driver(busy, { height: 24 });
+  const rows = () => [d.pane('agents').height, d.pane('preview').height];
+  const [list, preview] = rows();
+  assert.equal(d.state.splitRatio, undefined, 'unset, the list is as tall as it needs');
+  d.run('place-remove');
+  assert.deepEqual(rows(), [list - 1, preview + 1], '- grows the preview by a row');
+  d.run('place-remove');
+  assert.deepEqual(rows(), [list - 2, preview + 2]);
+  d.run('list-grow');
+  assert.deepEqual(rows(), [list - 1, preview + 1], '= grows the list');
+  d.run('place-add');
+  assert.deepEqual(rows(), [list, preview], '+ does too');
+  // The share is kept across the panel's reload, which hands its state over as JSON.
+  d.run('place-remove'); d.run('place-remove'); d.run('place-remove');
+  const saved = d.state.splitRatio, held = process.env.HUD_PANEL_RELOAD_PLACE;
+  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: d.state, settings: null });
+  const place = readPanelPlace();
+  if (held === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE; else process.env.HUD_PANEL_RELOAD_PLACE = held;
+  assert.equal(place.state.splitRatio, saved);
+  const reloaded = driver(busy, { height: 24 }).at({ ...place.state, splitDrag: undefined });
+  assert.deepEqual([reloaded.pane('agents').height, reloaded.pane('preview').height], [list - 3, preview + 3]);
+  // Dragging the rule: the press is on it, the motion moves it, the list never goes below a fifth of the rows or above what it needs.
+  const rule = () => d.pane('preview').y - 1, total = list + preview;
+  d.run({ type: 'mouse', x: 5, y: rule(), button: 'left' });
+  assert.equal(d.state.splitDrag, true);
+  d.run({ type: 'drag', x: 5, y: d.pane('agents').y + 4 });
+  assert.deepEqual(rows(), [4, total - 4 + 0], 'the rule is under the fourth list row');
+  d.run({ type: 'drag', x: 5, y: 2 });
+  assert.equal(d.pane('agents').height, Math.round(total * 0.2), 'a fifth of the rows at least');
+  d.run({ type: 'drag', x: 5, y: 23 });
+  assert.equal(d.pane('agents').height, list, 'no taller than the list needs');
+  d.run('down');
+  assert.equal(d.state.splitDrag, undefined, 'any other input ends the drag');
+  const before = d.state.splitRatio;
+  d.run({ type: 'drag', x: 5, y: 6 });
+  assert.equal(d.state.splitRatio, before, 'a motion that did not start on the rule moves nothing');
+  // A press on a list row is a click as ever, not a drag.
+  d.run({ type: 'mouse', x: 5, y: d.pane('agents').y + 2, button: 'left' });
+  assert.equal(d.state.splitDrag, undefined);
+  // Classic has no rule: the same inputs change nothing there.
+  const classic = busy.render(40, 'en', 24, initialMonitorState());
+  for (const input of ['list-grow', 'place-remove', { type: 'drag', x: 2, y: 5 }]) {
+    const out = handleMonitorInput(classic.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame: classic, nowMs: NOW, standalone: true });
+    assert.equal(out.state.splitRatio, undefined);
+  }
+});
+
+test('Split ratio keys leave the Control plane’s + and - to its places', async (t) => {
+  const { busy } = await fixtures(t);
+  const d = driver(busy, { data: busy.control }).at(page('control'));
+  assert.equal(d.run('place-add').action, undefined, 'from the role list + is the ratio key: no place is under it');
+  assert.ok(d.state.splitRatio);
+  const before = d.state.splitRatio;
+  d.run('enter');
+  assert.equal(d.run('place-add').action.op, 'add', 'on a place it adds one');
+  assert.equal(d.run('place-remove').action.op, 'remove');
+  assert.equal(d.state.splitRatio, before);
+});
+
+test('Preview focus compacts the list to three rows around the cursor, and Esc restores the chosen share', async (t) => {
+  const { busy } = await fixtures(t);
+  const d = driver(busy);
+  d.run('place-remove'); d.run('place-remove');
+  const [list, preview] = [d.pane('agents').height, d.pane('preview').height];
+  assert.ok(list > 3);
+  for (let i = 0; i < 2; i++) d.run('down');
+  const cursor = d.state.splitCursor;
+  d.run('enter');
+  assert.equal(d.state.splitFocus, 'preview');
+  assert.equal(d.pane('agents').height, 3);
+  assert.equal(d.pane('preview').height, list + preview - 3, 'the preview has every row the list gave up');
+  assert.ok(d.pane('agents').rows.slice(d.pane('agents').offset, d.pane('agents').offset + 3).some((r) => r.item === cursor), 'the cursor row stays in view');
+  assert.equal(d.state.splitCursor, cursor);
+  // The ratio keys do nothing in the preview, so the share Esc restores is the chosen one.
+  const ratio = d.state.splitRatio;
+  d.run('place-remove');
+  assert.equal(d.state.splitRatio, ratio);
+  d.run('escape');
+  assert.deepEqual([d.pane('agents').height, d.pane('preview').height], [list, preview]);
+});
+
+test('Preview scrollbar: a thumb over a dim track in the last cell of the scrolling preview, ascii # over |, no extra column', async (t) => {
+  const { busy } = await fixtures(t);
+  const d = driver(busy, { height: 19 });
+  const room = d.pane('preview').height, total = d.pane('preview').contentLength;
+  assert.ok(total > room, 'the question’s preview is longer than the room');
+  const top = lastCells(d);
+  assert.equal(top.length, room);
+  assert.equal(top[0], '┃', 'at the top the thumb is at the top');
+  assert.ok(top.every((c) => c === '┃' || c === '│'));
+  assert.equal(top.includes('│'), true, 'there is track below it');
+  for (let i = 0; i < 6; i++) d.run('page-down');
+  const end = lastCells(d);
+  assert.equal(end.at(-1), '┃', 'at the end the thumb is at the bottom');
+  assert.equal(end[0], '│');
+  // The thumb is as long as the share in view (rounded), and the rows keep exactly the panel width.
+  assert.equal(end.filter((c) => c === '┃').length, Math.max(1, Math.round((room * room) / total)));
+  for (const line of d.frame.lines) assert.equal(visualLength(line), 40);
+  const text = busy.render(40, 'en', 19, undefined, undefined, { icons: 'text' }), p = text.panes.find((x) => x.id === 'preview');
+  assert.deepEqual([...new Set(plain(text).slice(p.y, p.y + p.height).map((l) => [...l].at(-1)))].sort(), ['#', '|']);
+  // A preview that fits has no bar, and nothing is cut from a row that fills the panel: the rows are laid out one cell narrower.
+  const tall = driver(busy);
+  assert.ok(tall.pane('preview').contentLength <= tall.pane('preview').height);
+  assert.ok(lastCells(tall).every((c) => c !== '┃' && c !== '│'));
+  const hub = driver(busy, { data: busy.control, height: 24 }).at(page(undefined));
+  assert.ok(hub.lines().some((l) => /^  ◇ DATA-ONE +to try 1d[┃│]$/.test(l)), 'a right-aligned age keeps its unit beside the bar');
+  assert.ok(hub.lines().some((l) => /^    ledger history, live jobs and +│$/.test(l)), 'a wrapped line is wrapped one cell narrower, not cut');
+  const zh = busy.render(40, 'zh', 40, page('progress'), busy.rich);
+  for (const line of zh.lines) assert.equal(visualLength(line), 40);
 });

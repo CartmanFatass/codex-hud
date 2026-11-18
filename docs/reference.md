@@ -625,7 +625,10 @@ Home and Project become **a list above and a preview of the cursor row below**
   list the preview shows that row: the question's slab and the lane's cards, the
   waiting items with the newest landed slices, the decisions, or the progress block.
   On a short panel blank rows go first, then the preview from its bottom; the list
-  never gives way (a very short panel scrolls it with its cursor).
+  never gives way (a very short panel scrolls it with its cursor). A lane at work that
+  the cursor is not on shows, in the row's free cells, the marked keywords of its
+  model sentence (else its reason or the phases so far); when the width leaves under
+  six cells, nothing.
 - **Project hub.** Waiting for you and the pages are the list; the preview of the
   cursor row is that page's substance (Progress: summary, bar, slices to try, Now,
   latest accepted). Enter on a page opens it, as before. A waiting item and a slice to try
@@ -646,8 +649,13 @@ Home and Project become **a list above and a preview of the cursor row below**
 | Up/Down | Move in the list (or in the preview, once Enter has taken the keys there) |
 | PgUp/PgDn, wheel over the preview | Scroll the preview; the wheel over the list moves the cursor |
 | Enter | A row with something to act on in its preview (cards, waiting items, places) moves the keys there; there Enter does what it does in Classic. Elsewhere as in Classic |
+| `=` `+` / `-` | Grow the list / the preview by a row (the list's share stays between a fifth and four fifths of the rows and is kept when the panel reloads). `+` `-` stay the Control plane's place keys once Enter has taken the keys to a place |
+| Drag the rule | Press on the rule row (the label line above the preview) and drag: the list ends where the pointer is. Needs a terminal that reports motion with a button held |
 | Esc | Back from the preview to the list, then as in Classic |
 | Click | Selects a row (or a preview row); a second click is Enter |
+
+While the keys are in the preview the list shrinks to three rows around its cursor, so the preview has the rest; Esc brings the chosen share back.
+A preview with more rows than fit shows a scrollbar in its last cell: a thumb (`┃`, `#` with text icons) over a dim track (`│`, `|`); its rows are laid out one cell narrower, so nothing is cut.
 
 One waiting item's page and the Projects list are Classic's frames in either layout.
 
