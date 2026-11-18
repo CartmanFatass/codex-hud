@@ -1,6 +1,6 @@
 # 01: `y` accepts, `n` flags a try from the panel
 
-**Status:** ready-for-agent
+**Status:** done (c1f0ca2d)
 **Blocked by:** none
 
 **What to build:** `docs/spec.md` §2.2, "try records" (owner, 2026-11-17). The owner tries landed work and today has
