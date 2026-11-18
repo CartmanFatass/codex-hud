@@ -385,10 +385,12 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace) {
       const notify = fileURLToPath(new URL('../../../../bin/hud-notify.mjs', import.meta.url));
       argv.push('--notify', [process.execPath, notify, hudHome, job.herdr_pane, job.job].map(quote).join(' '));
     }
-    if (role.instructions && plainSkillName(role.instructions)) {
-      const instructions = join(bundled, 'instructions', `${role.instructions}.md`);
-      if (fs.existsSync(instructions)) argv.push('--hud-instructions', instructions, '--hud-sonic-jobs', join(bundled, 'bin', 'sonic-jobs.mjs'));
+    const instructionsName = role.instructions ?? role.role;
+    if (plainSkillName(instructionsName)) {
+      const instructions = join(bundled, 'instructions', `${instructionsName}.md`);
+      if (fs.existsSync(instructions)) argv.push('--hud-instructions', instructions);
     }
+    argv.push('--hud-sonic-jobs', join(bundled, 'bin', 'sonic-jobs.mjs'));
     if (place.thinking !== undefined) argv.push('--dispatch-effort-source', 'orchestrator');
     for (const key of ['lens', 'mcp', 'tps'] as const)
       if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
@@ -415,6 +417,8 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace) {
       tabName,
       '--env',
       `HUD_JOB_DIR=${dir}`,
+      '--env',
+      `HUD_HOME=${hudHome}`,
       '--no-focus',
     ]);
     if (result.exit_code !== 0) return result;
@@ -506,6 +510,8 @@ async function dispatchBro(job: Job) {
     tabName,
     '--env',
     `HUD_JOB_DIR=${dir}`,
+    '--env',
+    `HUD_HOME=${hudHome}`,
     '--no-focus',
   ]);
   if (result.exit_code !== 0) return result;
@@ -646,6 +652,8 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
       tabName,
       '--env',
       `HUD_JOB_DIR=${dir}`,
+      '--env',
+      `HUD_HOME=${hudHome}`,
       '--no-focus',
     ]);
     if (result.exit_code !== 0) return result;

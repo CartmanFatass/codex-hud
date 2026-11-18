@@ -5,3 +5,5 @@ rules. Do not start another role or expand the task. If a decision is needed, us
 `hud-ask` command in your brief. If unanswered after 20 minutes, proceed on the default only if it is reversible and
 inside the brief; otherwise leave that part and name it as blocked in your report. Write your result to the named
 report and follow the brief's final-line instruction.
+
+Do not author tests, diagnose bugs, measure, make design calls, or commit.

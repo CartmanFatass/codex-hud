@@ -16,7 +16,7 @@ import { renderWorkCard, workStateInk } from '../../dist/render/work-card.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, theme } from '../../dist/render/colors.js';
-import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
+import { PiRoleClient, PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 import { harnessDefaults } from '../../dist/roles/roster.js';
 test('CLI state trust defaults, owner overrides, roster facts and dispatch snapshots agree', async (t) => {
@@ -1331,6 +1331,31 @@ test('model-supplied pi_args cannot override the inherited caller notification b
   }
   assert.deepEqual(f.commands(), [], 'no launcher or herdr mutation for a rejected binding');
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'jobs')), false);
+});
+
+test('pi dispatch falls back to the role name for HUD instructions and passes the bound HUD home to the tab', async (t) => {
+  const f = await fixture(t);
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'));
+  fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'general.json'), JSON.stringify({
+    role: 'general', can_continue: true, run: [{ harness: 'pi', pi_role: 'implementer' }],
+  }));
+  const env = { ...f.env };
+  delete env.HUD_HOME;
+  const client = new PiRoleClient({ release: resolve('.'), node: process.execPath, hudHome: f.env.HUD_HOME }, env, f.root);
+  try {
+    const result = await client.call('hud_create', { role: 'general', request_key: 'bound-home', task: 'Synthetic task.' });
+    const job = JSON.parse(result.content[0].text);
+    assert.match(job.job, /^j[0-9a-f]{16}$/);
+    const argv = f.commands().find(({ command }) => command === 'pi-role').args;
+    const instructions = argv.indexOf('--hud-instructions');
+    assert.notEqual(instructions, -1);
+    assert.equal(argv[instructions + 1], resolve('packages/hud-mcp/instructions/general.md'));
+    const tab = f.commands().find(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').args;
+    const at = tab.indexOf('--env');
+    assert.deepEqual(tab.slice(at, at + 4), ['--env', `HUD_JOB_DIR=${job.task_dir}`, '--env', `HUD_HOME=${f.env.HUD_HOME}`]);
+  } finally {
+    await client.stop();
+  }
 });
 
 test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
@@ -3421,7 +3446,10 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
     .at(-1).args;
   assert.equal(plainArgv.includes('--skill'), false);
   assert.equal(plainArgv.includes('--append-system-prompt'), false);
-  assert.equal(plainArgv.includes('--hud-instructions'), false, 'a pi role with no HUD text retains its launch');
+  assert.equal(plainArgv.includes('--hud-instructions'), false, 'a pi role with no HUD text retains its Pi body');
+  const sonicAt = plainArgv.indexOf('--hud-sonic-jobs');
+  assert.notEqual(sonicAt, -1);
+  assert.equal(plainArgv[sonicAt + 1], resolve('packages/hud-mcp/bin/sonic-jobs.mjs'));
   const plainRead = await f.call('hud_read', { job: plain.job });
   assert.deepEqual(plainRead.role_skills, []);
   assert.deepEqual(plainRead.skipped_skills, []);
