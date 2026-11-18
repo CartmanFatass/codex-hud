@@ -1,6 +1,6 @@
 # 03: Skills reference moves into Help
 
-**Status:** ready-for-agent
+**Status:** done (2ee8d597)
 **Blocked by:** none
 
 **What to build:** The Skills tab's list becomes a section of Help (`?`), freeing the third main tab. Proposed by the

@@ -1,6 +1,6 @@
 # 02: Project hub uses its room and keeps Now about work
 
-**Status:** ready-for-agent
+**Status:** done (759b8688)
 **Blocked by:** 01
 
 **What to build:** The Project hub shows whole waiting items and a Now block that is about work in flight. Owner,

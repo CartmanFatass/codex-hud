@@ -1,6 +1,6 @@
 # 03: Control plane shows the selected place in full; Inspector shows how long a job ran
 
-**Status:** ready-for-agent
+**Status:** done (ee4bc94f)
 **Blocked by:** none
 
 **What to build:** Architect, 2026-11-17: let the owner check a preset without cycling it or opening a JSON file; and

@@ -1,6 +1,6 @@
 # 02: The pinned need names the job; HUD jobs and subagents look different; an unread report shows
 
-**Status:** ready-for-agent
+**Status:** done (37cc5478)
 **Blocked by:** 01
 
 **What to build:** Owner, 2026-11-17 (notice items 4–6). Today a need is `! Work: 1 needs you`, English only, without

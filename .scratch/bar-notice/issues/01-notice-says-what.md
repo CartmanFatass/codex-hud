@@ -1,6 +1,6 @@
 # 01: A bar notice says what the job is doing, not which model runs it
 
-**Status:** ready-for-agent
+**Status:** done (41db1271)
 **Blocked by:** none
 
 **What to build:** The notice zone of all three bars (Claude statusline, Codex tmux bar, pi footer) names the work,

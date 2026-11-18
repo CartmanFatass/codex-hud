@@ -1,6 +1,6 @@
 # 01: Read one try in place
 
-**Status:** ready-for-agent
+**Status:** done (7c96e9af)
 **Blocked by:** panel-tidy 02
 
 **What to build:** Owner and architect, 2026-11-17: the owner's bottleneck is trying landed work; a waiting item is a

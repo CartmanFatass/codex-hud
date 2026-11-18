@@ -1,6 +1,6 @@
 # 01: Home tells the truth and uses its spare rows
 
-**Status:** ready-for-agent
+**Status:** done (565022bc)
 **Blocked by:** none
 
 **What to build:** Home's first screen agrees with the Project tab and does not sit blank. Owner, 2026-11-17, from a
