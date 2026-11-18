@@ -151,7 +151,7 @@ board counts these; update at every landing or decision. -->
 - working · 0.2.0 · MCP-NEXT · high-throughput MCP orchestration: fine-grained locks, pre-flight trust, parsed quota TTL, preset dispatch, hud_wait, pi native watch, zero-copy context, hud-progress/hud_peek, managed worktree isolation (.scratch/mcp-next/, 7 tickets)
 - working · 0.2.0 · PANEL-V2 · panel micro-actions (g/QA reply/X), Split V2 cues/ratio/scrollbar, live / filter, sparklines + sonic subtrees, safe --numstat diff bars, Control quota radar, static HTML board (.scratch/panel-v2/, 7 tickets)
 
-## Now (2026-11-18): Wave 1 of MCP-NEXT (01) and PANEL-V2 (01, 05, 06) in flight with parallel workers
+## Now (2026-11-18): 4/14 tickets landed (mcp-next 01, 02; panel-v2 05, 06); 3 in flight (mcp-next 04, panel-v2 01, panel-v2 07); handing off orchestrator session due to prompt cache drops
 
 State on 2026-11-18, checked against the ledger below (no working, blocked or todo slice), herdr (only the main session's tab) and origin (in sync).
 
