@@ -11,8 +11,9 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Next
 
-- Supervisor: CLI jobs can stay `working` after their report (oracle j3c05661fd2983765 reproducing; fix proposal goes to the owner).
-- PANEL-REDESIGN: owner kept Split (2026-11-18); 03 landed eedb8a46 (Inbox deleted; Space marks rows, one y/n records them as one try record), 04 landed 39cce818 (to-try and waiting text whole and wrapped; model brief + acceptance steps per to-try slice, cached); next one milestone review of Split, 03 and 04 (after the supervisor fix: oracle j3c05661fd2983765 is diagnosing CLI jobs that never settle).
+- SUPERVISOR-FIX: CLI jobs stayed `working` because npm-launched MCP servers finished starting after the first turn (docs/reviews/2026-11-18-supervisor-stuck.md); owner chose fix 1 (known launcher chains are not work) + A (stop vs tab close) + B (retry failed cleanup) + C (refused send opens no turn); imp je3855c5d42c7dc86.
+- PANEL-REDESIGN review: repair (docs/reviews/2026-11-18-panel-redesign-milestone.md, 8 blocking); imp jd5dd445f8b83aef3.
+- PANEL-REDESIGN: owner kept Split (2026-11-18); 03 landed eedb8a46 (Inbox deleted; Space marks rows, one y/n records them as one try record), 04 landed 39cce818 (to-try and waiting text whole and wrapped; model brief + acceptance steps per to-try slice, cached); milestone review: repair, fix imp jd5dd445f8b83aef3.
 - After the tries: the owner picks from the M5 candidates (docs/spec.md §5: retention periods, tail-first transcript read, Advanced settings).
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
 
