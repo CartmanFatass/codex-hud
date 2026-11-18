@@ -1,16 +1,18 @@
 # State of the universal-hud effort (brought current 2026-11-18)
 
-Milestone: 0.1.4 · Roles apart from harnesses (released as v0.1.4 on 2026-11-14; later work is unreleased on universal-hud)
+Milestone: 0.2.0 · MCP orchestration & Panel V2 (mcp-next + panel-v2)
 
 Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review rounds, night logs) moved to
 `docs/handoff/archive/STATE-2026-11-03-to-11-14.md`; they are not current.
 
 ## Waiting for the owner
 
-- Nothing waits: the owner accepted the 2026-11-17 batch and the older batches from the panel on 2026-11-18 (66 slices). Still `try` in the ledger: HOME-RECOMMEND, SETTLE-FIX, M4-PRUNE, MATT-OFF. PANEL-REDESIGN accepted 2026-11-18.
+- Nothing waits: the owner approved all 14 vertical-slice tickets across `mcp-next` (01–07) and `panel-v2` (01–07) on 2026-11-18. Still `try` in the ledger from earlier rounds: HOME-RECOMMEND, SETTLE-FIX, M4-PRUNE, MATT-OFF, SUPERVISOR-FIX.
 
 ## Next
 
+- MCP-NEXT (`.scratch/mcp-next/`, 7 tickets): 01 fine-grained locks + pre-flight trust + parsed quota TTL → 02 `hud_create` preset + 04 pi native silent watch → 03 `hud_wait` → 05 `context_files`/`from_jobs` → 06 `hud-progress` + `hud_peek` → 07 managed `worktree` isolation.
+- PANEL-V2 (`.scratch/panel-v2/`, 7 tickets): 01 micro-actions (`g` tab focus, `1–4`/`d` QA reply, `X` stop) + 05 safe `--numstat` diff bars + 06 Control plane quota/spend radar → 02 Split V2 (working cues, ratio, scrollbar) + 07 static HTML review board (`hud board` / `w`) → 03 global `/` filter → 04 activity sparklines + nested sonic subtrees.
 - SUPERVISOR-FIX: CLI jobs stayed `working` because npm-launched MCP servers finished starting after the first turn (docs/reviews/2026-11-18-supervisor-stuck.md); owner chose fix 1 (known launcher chains are not work) + A (stop vs tab close) + B (retry failed cleanup) + C (refused send opens no turn); landed 1c4530ce (generic launcher rule) + 32e26e4f (npm quotes the bin name in sh -c; found by the live check); live check passed. thin-mcp.test.mjs SIGPIPE deaths fixed 8a43ed40 (hud watch removed its process-wide SIGPIPE listener, which on Node 24 reset the test process to die on a closed-socket write; test-only symptom, predates the supervisor fix). Full suite 85+678 green. SUPERVISOR-FIX waits for the owner's try: dispatch any Claude worker (frontend-imp or oracle) and watch it settle after its report.
 - PANEL-REDESIGN: done and accepted (Split kept, Inbox deleted, batch try records, whole to-try text with model briefs).
 - After the tries: the owner picks from the M5 candidates (docs/spec.md §5: retention periods, tail-first transcript read, Advanced settings).
@@ -146,8 +148,10 @@ board counts these; update at every landing or decision. -->
 - accepted · — · SKILL-ROLES · owner 2026-11-17: only to-tickets is in the HUD flow (ticket management and boundaries; spec gaps become owner questions, tickets held); oracle is the strongest-model seat for any read-only judgement (oracle.md, Fishpref architect.md); frontend-imp designs and builds UI; pro research asks for cited primary sources; hud-delegate defers brief contents to the convention; the remaining Matt skills (wayfinder, triage, improve-codebase-architecture, wizard, teach, wait-what, writing-for-agents, to-questionnaire, prototype, retro, pr, codebase-design) copied verbatim into skills-optional; delegation.md role table matches hud_roster
 - accepted · — · ARCH-ALIAS · owner 2026-11-17: hud_create takes `architect` for `oracle` unless a role file defines its own; spec rule: an agent edits docs/spec.md only after telling the owner the change and the reason; spec §2.3 lists the verbatim skills-optional copies and oracle as the strongest-model seat with no default skill; pi extension reinstalled (hud-setup linked)
 - accepted · — · MODELS-6.2 · owner 2026-11-17: sol and astra are 6.2: pi-roles implementer/reviewer → openai/gpt-6.2-sol, architect (oracle presets) → openai/gpt-6.2-astra (Fishpref pi-roles); HUD's PI_ROLE_DEFAULTS match
+- working · 0.2.0 · MCP-NEXT · high-throughput MCP orchestration: fine-grained locks, pre-flight trust, parsed quota TTL, preset dispatch, hud_wait, pi native watch, zero-copy context, hud-progress/hud_peek, managed worktree isolation (.scratch/mcp-next/, 7 tickets)
+- working · 0.2.0 · PANEL-V2 · panel micro-actions (g/QA reply/X), Split V2 cues/ratio/scrollbar, live / filter, sparklines + sonic subtrees, safe --numstat diff bars, Control quota radar, static HTML board (.scratch/panel-v2/, 7 tickets)
 
-## Now (2026-11-17 PST): WORKER-UNIFY 01 and 04 with imps (pi implementer); every other landed slice waits for the owner's try
+## Now (2026-11-18): Wave 1 of MCP-NEXT (01) and PANEL-V2 (01, 05, 06) in flight with parallel workers
 
 State on 2026-11-18, checked against the ledger below (no working, blocked or todo slice), herdr (only the main session's tab) and origin (in sync).
 
