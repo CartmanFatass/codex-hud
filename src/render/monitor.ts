@@ -218,7 +218,9 @@ export interface MonitorOutcome {
     /** Owner micro-actions on a HUD job (spec §2.2): focus its herdr tab, answer its open question, stop it. */
     | { type: 'focus-job-tab'; dir: string }
     | { type: 'answer-job'; home: string; jobId: string; qid: string; answer: string; role: string | null }
-    | { type: 'stop-job'; dir: string };
+    | { type: 'stop-job'; dir: string }
+    /** `w` on Home or Project: the panel writes the shown project's HTML review board and opens it. */
+    | { type: 'export-board' };
 }
 export function initialMonitorState(): MonitorState {
   return {

@@ -1,4 +1,5 @@
 import { openEditorPane, closePanelPane, watchPanelCaller, focusJobTab, stopJob } from './cli/panel-pane.js';
+import { openBoard, writeBoard } from './cli/board.js';
 import { ProjectCollector, projectShown } from './collectors/project-board.js';
 import { appendTry, TryLog } from './collectors/try-records.js';
 import { answerJobQuestion } from './collectors/panel-actions.js';
@@ -100,7 +101,7 @@ import { HudStatus } from './collectors/hud-status.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { resolveResetTime } from './render/quota.js';
-import { t, setLanguage, resolveLanguage } from './render/i18n.js';
+import { t, setLanguage, resolveLanguage, language } from './render/i18n.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
 import type { HealthSource } from './collectors/hud-health.js';
 import type { SubagentTree, SubagentTreeNode } from './types.js';
@@ -567,6 +568,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let error: string | null = settingsError || null;
   // What the last Control plane key could not do; shown until the next key.
   let roleNotice = '';
+  // `w`: the board's saved name (or why not), at the top until the next key.
+  let boardNotice = '';
   let frame: MonitorFrame | undefined;
   let lastPaint: string[] | null = null;
   let closed = false;
@@ -702,6 +705,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
           projects: listing(state) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
           error,
+          publicationNotice: boardNotice || null,
           nowMs,
           hud: hud ? { ...hud, delegation: panelDelegation } : hud,
           notice: jobRender.notice || hudProblems(hud, nowMs, t)[0],
@@ -1175,7 +1179,19 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     settingsPage = null;
     return true;
   };
+  // `w`: one full collection of the shown project, off the paint path; the file opens in a browser when an opener exists.
+  const exportBoard = () => {
+    const root = state.mainTab === 'project' ? shownRoot() : HUD_CWD_REAL;
+    void writeBoard({ cwd: root, hudHome: jobPipeline.home, env: process.env, now: Date.now(), lang: language(), workboard: displayBoard(), briefs: tryBriefs })
+      .then((file) => {
+        openBoard(file, process.env);
+        boardNotice = t('Board saved: {name}', { name: path.basename(file) });
+      })
+      .catch(() => { boardNotice = t('Could not export board'); })
+      .finally(() => render());
+  };
   const processInput = (inputs: WorkbenchInput[]) => {
+    if (boardNotice && inputs.length) boardNotice = '';
     if (roleNotice && inputs.length) {
       if (error === roleNotice) error = settingsError || null;
       roleNotice = '';
@@ -1299,6 +1315,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         });
       }
       if (result.action?.type === 'refresh-models') refreshModelLists(true);
+      if (result.action?.type === 'export-board') exportBoard();
       if (result.action?.type === 'role-edit') {
         const { type: _type, ...edit } = result.action;
         const done = editPlaces(jobPipeline.home, shownRoot(), process.env, edit);

@@ -205,6 +205,11 @@ Project and `WorktreeCollector` use gated asynchronous Git reads; Changes runs o
 when focused and probes worktrees round-robin. Repository commands/filters and lazy
 fetching must not execute just to draw status. Git failure is unknown, never clean.
 Project opens files through the existing `$EDITOR` herdr-tab action.
+
+`hud board` and the panel's `w` write one static HTML review board (`render/html-board.ts`, pure: collected facts in,
+one escaped, script-free page out; `cli/board.ts` collects once with a fresh `ProjectCollector` and the stored `TryBriefs`,
+and writes with `writePrivateFile`). No model call, no server; its text and sections are in the reference.
+
 The Control plane page is where the owner switches where each role runs.
 `roles/role-control.ts` has both halves: `controlFacts` (read-only, called by the collector:
 each role's places with in-use/standby/exhausted/missing and the harnesses on PATH) and

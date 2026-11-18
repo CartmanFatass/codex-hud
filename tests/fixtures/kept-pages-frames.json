@@ -407,6 +407,8 @@
     "        decisions (Home)",
     "n N     next / previous trouble (Home)",
     "b       models on / off",
+    "w       export a review board (HTML)",
+    "        and open it",
     ",       Settings",
     "?       this page",
     "Esc     back",
@@ -419,8 +421,6 @@
     "In the Inspector ⏎ opens the file",
     "click selects · again expands · wheel scrolls",
     "",
-    "Backup skills ─────────────────────────────────────────────────────────────── 17",
-    "  Matt Pocock skills kept as backups, not installed. Ask the main session to",
     "                                                             ↑↓ scroll  esc back"
   ],
   "changes-80-en": [
@@ -869,6 +869,7 @@
     "a       show / hide older jobs and decisions (Home)",
     "n N     next / previous trouble (Home)",
     "b       models on / off",
+    "w       export a review board (HTML) and open it",
     ",       Settings",
     "?       this page",
     "Esc     back",
@@ -886,7 +887,6 @@
     "  wayfinder                      Map a large, foggy effort as decision tickets and settle them one at a time",
     "  grill-with-docs                Interview the owner on a fuzzy idea, keeping a glossary and decision records",
     "  to-spec                        Turn the conversation into a spec with user stories and testing seams",
-    "  hud-build                      Build a spec's tickets as a task graph, one imp per ready ticket",
     "                                                                                                     ↑↓ scroll  esc back"
   ],
   "changes-120-en": [

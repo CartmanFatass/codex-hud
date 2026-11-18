@@ -452,6 +452,27 @@ const ZH: Record<string, string> = {
   'needs a native session ref': '需要原生会话引用',
   'requires authorization': '需要授权',
   '{label}: {value}': '{label}：{value}',
+  // The review board (`hud board`, the panel's `w`).
+  'Review board': '审阅看板',
+  'Needs you': '需要你处理',
+  'In flight': '进行中',
+  Review: '评审',
+  'Latest milestone review': '最新里程碑评审',
+  'How to try': '试用步骤',
+  'Ledger line': '台账原文',
+  Options: '选项',
+  'Default if unanswered': '未答复时的默认',
+  Generated: '生成于',
+  Auto: '自动',
+  Dark: '深色',
+  Light: '浅色',
+  slices: '个切片',
+  '{n} files': '{n} 个文件',
+  'blocked by {ids}': '受 {ids} 阻塞',
+  'Static page written by hud board: no script, no network.': '由 hud board 写出的静态页面：无脚本，无网络。',
+  'Board saved: {name}': '已导出看板: {name}',
+  'Could not export board': '无法导出看板',
+  'export a review board (HTML) and open it': '导出审阅看板（HTML）并打开',
 };
 
 const EN_OVERRIDES: Record<string, string> = {

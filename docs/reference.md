@@ -73,6 +73,7 @@ hud setup --detect        # print this project's worker setup as JSON
 hud setup --apply PLAN    # write .hud/ from a plan
 hud setup --remove        # drop project registration; leave .hud/
 hud tickets sync [--cwd DIR]  # mirror GitHub parent/sub-issues into .scratch/
+hud board [--cwd DIR] [--out FILE] [--open]  # write the project's HTML review board, print its path
 hud codex --model gpt-5    # Codex arguments pass through to the tmux launcher
 ```
 
@@ -521,6 +522,28 @@ runs while the hub or a page is visible, not behind modals; Home reuses only cac
 STATE/ticket reads.
 Git is gated to at most once per five seconds. Reads do not start a browser or MCP.
 
+## Review board
+
+`hud board [--html] [--cwd DIR] [--out FILE] [--open]` writes the project's review board: one static HTML file for a
+browser, with no script, font, image, link or network request (its Content-Security-Policy allows inline style only) and
+every project string escaped. Sections: the header (project, branch with changed/ahead/behind, milestone, time written, and a
+stacked bar of working / blocked / to try / accepted / todo); **Needs you** (STATE's waiting items and open job questions
+with their options and default, when there are any); **To try** (one card per slice: milestone, age, commit, the stored model
+brief with numbered steps, else the ledger line, the `.scratch/` tickets its line names, and per-file `--numstat` bars);
+**In flight** (working and blocked slices, running jobs with role, model, elapsed time and current sentence); **Tickets**
+(per-feature meters, unfinished tickets with their checklists); and the **latest milestone review**. Sections with nothing
+in them are left out. The page follows the system light/dark setting, or the Auto / Dark / Light switch at its top (pure
+CSS), and reads from phone width up.
+
+It collects once, as Project does: no HTTP server and no model call. To-try briefs appear only when the panel has already
+stored them (the same cache and Model text switch as the panel); the caller pane's jobs appear only inside herdr
+(`HERDR_PANE_ID`). The file is `$HUD_HOME/display/board-<project>.html` unless `--out` names one, written 0600 to a temp
+name and renamed, so a link at the target is replaced, never followed. The command prints the path. `--open` then runs
+`wslview`, else `xdg-open`, detached; with neither on `PATH` it only says so on stderr (exit 0).
+
+In the panel `w` (Home or Project, not in a picker or Settings) does the same for the project shown, opens it the same way and
+shows `Board saved: <file>` at the top until the next key.
+
 ## Panel layouts
 
 Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classic`, `split`) chooses how Home and
@@ -574,6 +597,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Space | Toggle a mark on the to-try row under the cursor; on Home, open Inspector |
 | `y` / `n` | Accept / flag marked to-try rows, or the current row if none are marked |
 | `b` | Model text master on/off (also the top-row models word) |
+| `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
 | `,`, `?` | Settings, Help |
 | Esc | Back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
 | `q` | Close panel |

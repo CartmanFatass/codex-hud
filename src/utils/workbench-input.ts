@@ -127,6 +127,7 @@ export class WorkbenchInputDecoder {
                   '\b': 'backspace',
                   v: 'inspect',
                   ' ': 'inspect',
+                  w: 'export-board',
                 } as Record<string, string>
               )[ch] ?? KEYS[ch])
             : KEYS[ch];

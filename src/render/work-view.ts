@@ -45,6 +45,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['a', 'show / hide older jobs and decisions (Home)'],
       ['n N', 'next / previous trouble (Home)'],
       ['b', 'models on / off'],
+      ['w', 'export a review board (HTML) and open it'],
       [',', 'Settings'],
       ['?', 'this page'],
       ['Esc', 'back'],
