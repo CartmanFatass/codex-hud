@@ -31,7 +31,7 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
     for (const [key, text] of Object.entries(frames).filter(([key]) => key.startsWith(page + '-')))
       assert.deepEqual(text, expected[key], key);
     // Help is a scrolling page: one more key row (w) moved the Backup skills header below the first 40 rows.
-    const frame = f.render(page, 80, 'en', page === 'help' ? 44 : 40),
+    const frame = f.render(page, 80, 'en', page === 'help' ? 46 : 40),
       text = plainFrame(frame).join('\n');
     if (page === 'older') {
       assert.match(text, /5 older shown · a hide/);
@@ -337,7 +337,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
     setLanguage(lang);
   });
   const draw = (state, options = {}) =>
-    renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 44, nowMs: NOW, ...options });
+    renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 46, nowMs: NOW, ...options });
   const home = draw(f.states.home),
     text = plainFrame(home).join('\n');
   assert.match(text, /@ imp  Retry/);
