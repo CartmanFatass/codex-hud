@@ -1,6 +1,6 @@
 # 01: Return a compact actionable hud_read list; keep recent history on demand
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** none
 
 **What to build:** Implement [the list contract](../spec.md) in one vertical slice. A model polling `hud_read({})` should receive the IDs and facts it can act on, not a copy of its recent job history. Keep the old result available explicitly.
