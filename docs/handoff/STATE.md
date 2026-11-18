@@ -12,7 +12,6 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Next
 
 - The owner tries the 2026-11-17 batch under Waiting; what a try finds goes here first. Older batches (0.1.4, 0.1.3, 0.1.2, 0.1.1, M4) left Waiting on 2026-11-17 (owner: only the newest stays); their ledger lines stay `try` until the owner accepts them with PANEL-TRY's `y`.
-- Owner question asked in chat 2026-11-17: keep `[✓●]` until the report is read (now it hides after 3 minutes)?
 - PANEL-TRY: one ticket, .scratch/panel-try/.
 - WORKER-UNIFY: tickets 01 and 04 first (independent), then 02, then 03; one milestone review; the owner tries a worker that hands work to sonic.
 - After the tries: the owner picks from the M5 candidates (docs/spec.md §5: retention periods, tail-first transcript read, Advanced settings).
@@ -164,7 +163,7 @@ State on 2026-11-18, checked against the ledger below (no working, blocked or to
   already show ahead/behind). A status-bar job counter and an always-shown running job were declined (docs/reference.md: the bar shows no task count).
 - The owner's workflow changes: reviews run one reviewer with no model-family rule (docs/delegation.md); a read report closes its worker and a live
   child process counts as still working (WORKER-CLOSE, spec 38a27e21).
-- WORKER-UNIFY and PANEL-TRY decided late 2026-11-17 (ledger).
+- WORKER-UNIFY and PANEL-TRY decided late 2026-11-17 (ledger). `[✓●]` keeps hiding after 3 minutes (owner: no, 2026-11-17).
 
 ### 2026-11-14 (was Next)
 
