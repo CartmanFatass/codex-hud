@@ -1,6 +1,6 @@
 # 04: Worker activity sparklines, progress milestones and nested sonic subtrees
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 03
 
 **What to build:** `docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §4. Visualize real-time worker activity cadence with a 10-minute sparkline, show `hud-progress` milestones, and render nested `sonic` child topologies cleanly under parent cards.

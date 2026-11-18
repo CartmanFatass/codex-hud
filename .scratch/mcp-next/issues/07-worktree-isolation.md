@@ -1,6 +1,6 @@
 # 07: First-class managed worktree isolation in hud_create and hud-watch
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 06
 
 **What to build:** `docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §7. Automate clean per-job git worktree creation, `node_modules` linking, `git_summary` reporting and safe post-closure cleanup.
