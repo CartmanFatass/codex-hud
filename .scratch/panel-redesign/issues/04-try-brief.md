@@ -1,6 +1,6 @@
 # 04: What the owner tries is never cut; a model brief and acceptance steps
 
-**Status:** ready-for-agent
+**Status:** done (39cce818)
 **Blocked by:** none (in parallel with 03; see Comments)
 
 **What to build:** `docs/spec.md` §2.2 (owner, 2026-11-18): opening the to-try slices and the waiting items, the owner

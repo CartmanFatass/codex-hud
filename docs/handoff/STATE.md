@@ -12,7 +12,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Next
 
 - The owner tries the 2026-11-17 batch under Waiting; what a try finds goes here first. Older batches (0.1.4, 0.1.3, 0.1.2, 0.1.1, M4) left Waiting on 2026-11-17 (owner: only the newest stays); their ledger lines stay `try` until the owner accepts them with PANEL-TRY's `y`.
-- PANEL-REDESIGN: owner kept Split (2026-11-18); 03 landed eedb8a46 (Inbox deleted; Space marks rows, one y/n records them as one try record), 04 uncut to-try text + model brief and acceptance steps (frontend-imp j4e438ea6bb63ea21), in parallel; then one milestone review of Split, 03 and 04.
+- PANEL-REDESIGN: owner kept Split (2026-11-18); 03 landed eedb8a46 (Inbox deleted; Space marks rows, one y/n records them as one try record), 04 landed 39cce818 (to-try and waiting text whole and wrapped; model brief + acceptance steps per to-try slice, cached); next one milestone review of Split, 03 and 04 (after the supervisor fix: oracle j3c05661fd2983765 is diagnosing CLI jobs that never settle).
 - After the tries: the owner picks from the M5 candidates (docs/spec.md §5: retention periods, tail-first transcript read, Advanced settings).
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
 
