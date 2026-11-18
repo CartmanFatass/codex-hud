@@ -158,7 +158,7 @@ else await reload.restart({state:{},settings:null},()=>{});`);
   assert.deepEqual(await run.exited, { code: 23, signal: null });
 });
 
-function live(t, initialPlace, { bound = false, width = false } = {}) {
+function live(t, initialPlace, { bound = false, width = false, columns = 100 } = {}) {
   const f = fixture(t);
   if (bound) {
     const source = join(f.env.CLAUDE_CONFIG_DIR, 'projects', 'synthetic');
@@ -201,7 +201,7 @@ console.log(JSON.stringify({result:args[1]==='layout'?{layout:{
   writeFileSync(runner, `import {appendFileSync} from 'node:fs';
 import {PanelReload} from './dist/utils/panel-reload.js';
 import {runLivePage} from './dist/tree-page.js';
-process.stdout.columns=100;process.stdout.rows=35;
+process.stdout.columns=${columns};process.stdout.rows=35;
 const log=v=>appendFileSync(${JSON.stringify(log)},JSON.stringify(v,(_k,v)=>v instanceof Set?{panelSet:[...v]}:v)+'\\n');
 log({start:true,pid:process.pid,argv:process.argv.slice(2),test:process.env.SYNTHETIC});
 const original=PanelReload.prototype.restart;
@@ -270,6 +270,24 @@ for (const bound of [false, true]) for (const view of ['project', 'help', 'inspe
     assert.deepEqual(state.boardToggled.panelSet, [...f.state.boardToggled]);
     assert.equal(state.cardHideMinutes, 15, 'missing handoff fields get configured defaults');
   }
+});
+
+test('the 40-column Classic to-try view reloads with its cursor but without pending batch marks', async (t) => {
+  const f = live(t, (state) => ({ state: { ...state, mainTab: 'project', projectPage: 'progress', projectTry: { scroll: 0 } }, settings: null }), { columns: 40 });
+  writeFileSync(join(f.env.CODEX_HUD_CWD, 'STATE.md'), 'Milestone: M4\n\n## Slices\n- try · M4 · RELOAD-ONE · Synthetic reload slice\n');
+  await until(() => f.output().includes('RELOAD-ONE'), 'the to-try view did not render');
+  f.child.stdin.write('gjj ');
+  await until(() => f.output().includes('▣'), 'the slice was not marked');
+  const at = f.output().length;
+  appendFileSync(f.entry, '\n// marked try view build');
+  await until(() => f.output().slice(at).includes('RELOAD-ONE'), 'the marked page did not repaint after reload: ' + f.stderr());
+  assert.equal(f.events().filter((e) => e.start).length, 2);
+  const saved = f.restarts()[0].restart.state;
+  assert.equal(saved.projectCursor, 'project:fold:hist:RELOAD-ONE');
+  assert.ok(saved.projectTry);
+  assert.doesNotMatch(f.output().slice(at), /▣/);
+  f.child.stdin.write(' ');
+  await until(() => f.output().slice(at).includes('▣'), 'could not mark the slice again after reload');
 });
 
 test('saving Width 64 from opening width 56 keeps 64 across real panel replacements', async (t) => {

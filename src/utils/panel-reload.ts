@@ -13,6 +13,7 @@ export function readPanelPlace(): Place | undefined {
     if (place) {
       // Older builds saved Skills as a main tab; it now lives in Help.
       if ((place.state?.mainTab as string | undefined) === 'skills') place.state.mainTab = 'home';
+      if (place.state) delete place.state.trySelection; // Legacy handoffs encoded a marked batch as a plain object.
       place.openedAt ??= Date.now(); // Legacy handoffs start their lifetime when consumed.
     }
     return place;
@@ -49,7 +50,8 @@ export class PanelReload {
     return ok;
   }
   async restart(place: Place, finish: () => void): Promise<void> {
-    const saved = JSON.stringify(place, (_key, value) => value instanceof Set ? { panelSet: [...value] } : value);
+    const { trySelection: _marks, ...state } = place.state;
+    const saved = JSON.stringify({ ...place, state }, (_key, value) => value instanceof Set ? { panelSet: [...value] } : value);
     const env: NodeJS.ProcessEnv = { ...this.env, [PLACE]: saved };
     if (this.env[SUPERVISED]) {
       await new Promise<void>((resolve, reject) => process.send!(saved, (err) => err ? reject(err) : resolve()));

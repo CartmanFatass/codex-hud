@@ -26,16 +26,17 @@ export function progressSegments(counts: ProjectSnapshot['counts'], width: numbe
     return segment;
   });
 }
-export const legendItem = (counts: ProjectSnapshot['counts'], s: SliceState) =>
+const legendItem = (counts: ProjectSnapshot['counts'], s: SliceState) =>
   sliceInk(s)(`${mark('●', '*')} ${t(s === 'try' ? 'landed, to try' : s)} ${counts[s]}`);
 // To try is a medium shade (▒), a step from both the full block of what is accepted and the light one of what is still to do; the
 // ascii glyphs differ too, so a bar with no colour (the `none` theme) still reads.
 const BAR_GLYPH: Record<SliceState, [string, string]> = { working: ['█', '#'], blocked: ['█', '#'], try: ['▒', '='], accepted: ['█', '#'], todo: ['░', '.'], dropped: ['░', '.'] };
 export const barText = (data: Pick<ProjectSnapshot, 'counts'>, width: number) => progressSegments(data.counts, width).map(({ state, width: cells }) =>
   sliceInk(state)(mark(...BAR_GLYPH[state]).repeat(cells))).join('');
-export const HOME_BLOCK = 60, HOME_TICKETS = 6, HOME_WAITING = 5;
+export const HOME_BLOCK = 60;
+const HOME_TICKETS = 6, HOME_WAITING = 5;
 /** Legend entries as a grid of aligned columns, in the fewest rows that fit `room`: a split never leaves one entry alone. */
-export function legendGrid(entries: string[], room: number): { lines: string[]; width: number } {
+function legendGrid(entries: string[], room: number): { lines: string[]; width: number } {
   const widths = entries.map(visualLength);
   for (let rows = 1; entries.length; rows++) {
     const cols = Math.ceil(entries.length / rows);
@@ -180,15 +181,14 @@ export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: numbe
 const foldRow = (folded: ReadonlySet<string>, id: string, label: string, width: number, right = ''): MonitorRow => ({
   ...section(`${folded.has(id) ? mark('▸', '>') + ' ' : ''}${t(label)}`, width, right), item: `project:fold:${id}`,
 });
-export const itemRight = (r: ProjectItem, width: number, now: number) => width < 56 ? '' : r.at !== undefined ? minuteAge(r.at, now)
+const itemRight = (r: ProjectItem, width: number, now: number) => width < 56 ? '' : r.at !== undefined ? minuteAge(r.at, now)
   : r.path ? monitorText(basename(r.path)) : '';
 export const projectItem = (r: ProjectItem, i: number, glyph: string, width: number, now: number): MonitorRow => {
   const left = `${r.label ? fit(t(r.label), 10) + ' ' : ''}${monitorText(r.value)}`;
   return { ...itemRow(glyph, left, itemRight(r, width, now), width), ...(r.path ? { item: `project:file:${r.path}:${i}`, files: [r.path] } : {}) };
 };
-/** A waiting item (`? text`): one row, cut when too long; given `wrap` rows (`Infinity`: all it needs; `true`, Inbox's old form: two), a text that does not fit flows on under its first word, the last row cut when they run out. */
-export function waitingRows(r: ProjectItem, i: number, width: number, now: number, wrap: number | boolean = 1): MonitorRow[] {
-  const rows = typeof wrap === 'number' ? wrap : wrap ? 2 : 1;
+/** A waiting item (`? text`) flows onto up to `rows` lines (`Infinity`: all it needs). */
+export function waitingRows(r: ProjectItem, i: number, width: number, now: number, rows = 1): MonitorRow[] {
   const glyph = theme.board.attention('?'), row = { ...projectItem(r, i, glyph, width, now), item: `project:wait:${i}` }, right = itemRight(r, width, now);
   const room = width - 2 - (right ? visualLength(right) + 1 : 0), body = monitorText(r.value);
   return rows < 2 || visualLength(body) <= room ? [row]
@@ -293,7 +293,7 @@ function hubRows(
     // Only the spare rows of the whole hub flow waiting items; a shorter panel cuts them to one row before Latest or the bar give way (the cursor's item stays whole).
     if (room === undefined || rows.length <= room) return build(n, bar, gaps, k ? 0 : room === undefined ? Infinity : room - rows.length, true);
   }
-  return build(0, false, false);
+  return build(0, false, false, 0, true);
 }
 /** The Projects list is what the tab shows: asked for, with several projects to list, and no page open. */
 export const projectListOpen = (state: MonitorState, projects?: unknown[]) =>
@@ -375,7 +375,7 @@ function meter(done: number, total: number, cells: number): string {
 const ASKS = /^(needs-triage|needs-info|ready-for-human)$/i;
 /** A ticket that asks for the owner: it waits on an answer or a human, whatever else holds it. */
 export const asksYou = (r: ProjectTicket) => r.state !== 'done' && r.state !== 'dropped' && ASKS.test(r.status);
-export const ticketLane = (r: ProjectTicket) => r.state === 'done' || r.state === 'dropped' ? 'done' : asksYou(r) ? 'you' : ticketWorking(r) ? 'working'
+const ticketLane = (r: ProjectTicket) => r.state === 'done' || r.state === 'dropped' ? 'done' : asksYou(r) ? 'you' : ticketWorking(r) ? 'working'
   : r.state === 'blocked' ? 'blocked' : 'ready';
 const ticketGlyph = (r: ProjectTicket) => r.state === 'done' ? theme.board.success(mark('✓', '+')) : r.state === 'dropped' ? theme.board.muted(mark('–', '-'))
   : r.state === 'blocked' ? theme.board.attention(mark('◆', '!')) : theme.board.active(ticketWorking(r) ? mark('◐', '@') : mark('●', '*'));

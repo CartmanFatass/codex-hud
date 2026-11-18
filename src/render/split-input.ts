@@ -69,33 +69,47 @@ export function splitHomeInput(
   return undefined;
 }
 
-export function splitProjectInput(next: MonitorState, input: WorkbenchInput, key: string, ctx: MonitorContext, result: Outcome, enter: () => MonitorOutcome): MonitorOutcome | undefined {
+export function splitProjectInput(next: MonitorState, input: WorkbenchInput, key: string, ctx: MonitorContext, result: Outcome, activate: () => MonitorOutcome): MonitorOutcome | undefined {
   const { list, preview } = panes(ctx), focus = next.splitFocus === 'preview', at = focus ? next.splitSub : next.projectCursor;
   const subs = splitItems(preview?.rows), rows = [...(list?.rows ?? []), ...(preview?.rows ?? [])];
   const move = (items: string[], k: string) => { const to = step(items, at, k); if (focus) next.splitSub = to; next.projectCursor = to; };
-  // Only what Classic does not do is here; a page or the name row opens on Enter as it always did.
-  const intoPreview = (item: string) => { if (!focus && subs.length && !/^project:(page:|switch$)/.test(item)) { next.splitList = item; next.splitFocus = 'preview'; next.splitSub = subs[0]; next.projectCursor = subs[0]; return true; } return false; };
+  const intoPreview = (item: string) => {
+    if (!focus) next.splitList = next.projectCursor;
+    next.splitFocus = 'preview';
+    next.projectCursor = next.splitSub = item;
+  };
+  const enter = () => {
+    if (!focus && at && subs.length && !/^project:(page:|switch$)/.test(at)) {
+      intoPreview(subs[0]);
+      return result();
+    }
+    return activate();
+  };
   const got = read(next, input, key, ctx, move);
   if (typeof got === 'object') {
     if (got.inPreview) {
-      if (focus && next.splitSub === got.click) return enter();
-      next.splitList = focus ? next.splitList : next.projectCursor; next.splitFocus = 'preview'; next.splitSub = got.click; next.projectCursor = got.click;
-    } else if (got.click === next.projectCursor && !focus) return enter();
+      if (focus && at === got.click) return enter();
+      intoPreview(got.click);
+    } else if (got.click === at && !focus) return enter();
     else { next.splitFocus = undefined; next.projectCursor = got.click; if (focus) next.trySelection = undefined; }
     return result();
   }
   if (got === 'done') return result();
   if (MOVE.includes(key)) { move(splitItems(focus ? preview?.rows : list?.rows), key); return result(); }
   if (key === 'escape' && focus) { next.splitFocus = undefined; next.projectCursor = next.splitList; next.trySelection = undefined; return result(); }
-  if ((key === 'enter' || key === 'activate') && next.projectCursor && intoPreview(next.projectCursor)) return result();
+  if (key === 'enter' || key === 'activate') return enter();
   if (key === 'space' || key === 'try-accept' || key === 'next-trouble') {
     const cursorRow = rows.find((r) => r.item === at && r.tryTarget);
     const row = cursorRow ?? (focus ? undefined : preview?.rows.find((r) => r.tryTarget));
-    // The hub already highlights its next slice. Space on it also takes the keys into the preview to mark more rows.
-    if (key === 'space' && !cursorRow && row?.item) {
-      next.splitList = next.projectCursor;
-      next.splitFocus = 'preview';
-      next.projectCursor = next.splitSub = row.item;
+    if (preview && row?.item) {
+      const index = preview.rows.indexOf(row);
+      if (key === 'space' && !cursorRow) intoPreview(row.item);
+      // For an unmarked decision, show the target's header before accepting a second keypress.
+      if (key !== 'space' && !next.trySelection && index >= 0 && (index < preview.offset || index >= preview.offset + preview.height)) {
+        intoPreview(row.item);
+        next.boardRevealed = undefined;
+        return result();
+      }
     }
     const tried = tryInput(next, key, row);
     if (tried) return tried;

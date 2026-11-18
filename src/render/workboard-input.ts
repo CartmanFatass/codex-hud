@@ -28,7 +28,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     boardFrame = frame?.workboard;
   if (!boardFrame) return null;
   const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.key : '';
-  const main = next.focus === 'agents';
+  const main = next.focus === 'agents', classic = next.panelLayout !== 'split';
   const inspector = next.focus === 'details';
   const home = (tab: 'home' | 'project' = 'home') => {
     next.mainTab = tab;
@@ -44,7 +44,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   };
   // Opening a page keeps where it was left; closing it lands the hub's cursor on that page's row.
   const goProject = (page?: ProjectPage, cursor?: string) => {
-    const from = projectPageOf(next), saved = { ...next.projectSaved }, full = next.projectTry ?? { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
+    const from = projectPageOf(next), saved = { ...next.projectSaved };
+    const full = (classic ? next.projectTry : undefined) ?? { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
     if (from) saved[from] = full;
     next.trySelection = undefined;
     next.projectTry = undefined;
@@ -181,7 +182,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
-      else if (row?.item === 'project:try') tryOnly();
+      else if (classic && row?.item === 'project:try') tryOnly();
       else if (/^project:wait:\d+$/.test(row?.item ?? '')) readWait(Number(row!.item!.slice(13)));
       else if (row?.item?.startsWith('project:fold:')) {
         const folded = new Set(projectFoldedSet(next)), id = row.item.slice(13);
@@ -190,7 +191,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       } else if (row?.files) return { type: 'open-files' as const, files: row.files };
     };
     // The Split layout has its own list and preview; what it does not do is Classic's, below.
-    if (next.panelLayout === 'split' && frame?.panes.some((p) => p.id === 'preview')) {
+    if (!classic && frame?.panes.some((p) => p.id === 'preview')) {
       const out = splitProjectInput(next, input, key, ctx, result, () => result(activate()));
       if (out) return out;
     }
@@ -220,12 +221,12 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
       return result();
     }
-    if (projectPageOf(next) === 'progress') {
+    if (classic && projectPageOf(next) === 'progress') {
       if (input.type === 'key' && input.text === 't') {
         tryOnly();
         return result();
       }
-      const tried = next.panelLayout !== 'split' && next.projectTry && tryInput(next, key, rows[at]);
+      const tried = next.projectTry && tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
     // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
@@ -241,7 +242,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       return result({ type: 'role-edit', role: onPlace[1], index: Number(onPlace[2]), ...place });
     if (key === 'escape' && (projectPageOf(next) || listed || (next.projectBack && frame?.projects))) {
       if (listed) showList(false);
-      else if (next.projectTry) tryOnly();
+      else if (classic && next.projectTry) tryOnly();
       else if (projectPageOf(next)) goProject();
       else showList(true);
       return result();

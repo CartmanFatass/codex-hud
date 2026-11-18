@@ -64,6 +64,17 @@ test('a waiting item flows whole into the hub\'s spare rows, is cut to one row b
   assert.equal(block(kept, /^Waiting for you/).filter((l) => l.startsWith('? ')).length, 3);
 });
 
+test('the 40×24 Classic hub keeps the selected waiting item whole even when the hub must scroll', async (t) => {
+  const waiting = [TRY_LONG, ...Array.from({ length: 22 }, (_, i) => `Choose synthetic option ${i + 1}`)];
+  const f = await fixture(t, { waiting });
+  const frame = f.render(40, 'en', onPage(undefined, { projectCursor: 'project:wait:0' }), 24);
+  assert.ok(frame.panes[0].contentLength > frame.panes[0].height, 'even the smallest tier overflows');
+  const lines = plain(frame);
+  assert.match(lines.join(' ').replace(/\s+/g, ' '), /not on the first one\./);
+  assert.ok(lines.includes('? Choose synthetic option 1'));
+  assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+});
+
 test('Now is work in flight: worktrees with no ledger row leave it, and an empty Now says so', async (t) => {
   const f = await fixture(t);
   const busy = block(plain(f.render(38, 'en', undefined, 46)), /^Now /);

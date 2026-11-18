@@ -994,20 +994,23 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       }
       // The open list reads the light overviews instead of the shown project's full collection (Git included), at most once
       // per five seconds; opening it again reads at once.
-      if (shown && listing(state)) {
+      const full = shown && !listing(state);
+      if (shown && !full) {
         if (Date.now() - overviewAt >= 5000) {
           overviewAt = Date.now();
           overview = await overviews.read(projects.map((p) => p.root), jobPipeline.workboard(tree, panelDelegation), Date.now());
         }
       } else overviewAt = -Infinity;
-      const visit = visits.visit(shown ? shownRoot() : HUD_CWD_REAL);
+      const root = shown ? shownRoot() : HUD_CWD_REAL;
+      const visit = visits.visit(root);
       const projectFacts = await visit.collector.collect(
-        shown ? !listing(state) : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
+        shown ? full : state.focus === 'agents' && !state.help && !settingsPage ? 'home' : false,
         jobPipeline.workboard(tree, panelDelegation),
         Date.now()
       );
       if (projectFacts) visit.snapshot = projectFacts;
-      if (shown) tryBriefs.update(shownRoot(), visit.snapshot?.ledger ?? []);
+      const stillShown = () => !closed && projectShown(state, Boolean(settingsPage)) && !listing(state) && shownRoot() === root;
+      if (full && stillShown()) tryBriefs.update(root, visit.snapshot?.ledger ?? [], stillShown);
       error = settingsError || roleNotice || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });

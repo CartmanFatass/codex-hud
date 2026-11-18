@@ -19,11 +19,11 @@ export const glyph = (state: PlaceState) => ({
   exhausted: () => theme.board.attention(mark('✗', 'x')),
   missing: () => theme.board.muted(mark('−', '-')),
 })[state]();
-export const LEGEND: [PlaceState, string][] = [['active', 'in use'], ['standby', 'standby'], ['exhausted', 'exhausted'], ['missing', 'not installed']];
+const LEGEND: [PlaceState, string][] = [['active', 'in use'], ['standby', 'standby'], ['exhausted', 'exhausted'], ['missing', 'not installed']];
 /** A role needs the owner when one of its places is exhausted or none can run. Healthy roles are the rest. */
 export const needsAttention = (role: RoleFact) =>
   role.places.some((p) => p.state === 'exhausted') || !role.places.some((p) => p.state === 'active');
-export const presetName = (role: RoleFact) => role.preset === undefined ? '' : ` [${role.preset ?? t('custom')}]`;
+const presetName = (role: RoleFact) => role.preset === undefined ? '' : ` [${role.preset ?? t('custom')}]`;
 export const roleName = (role: RoleFact) => monitorText(role.role) + (role.preset === undefined ? '' : theme.board.muted(monitorText(presetName(role))));
 /** `pi  model  thinking`, the model cut in the middle (never the harness or the thinking) when the row is short. */
 export function placeText(p: PlaceFact, room: number, gap: string): string {
@@ -41,7 +41,7 @@ export function placeTarget(role: RoleFact, i: number, data: ProjectSnapshot): P
   return { item: placeItem(role.role, i), files: [role.path], ...(pickable ? { modelPick: { place, lists: data.models } } : {}) };
 }
 /** The place's row: state mark, the role's name on its first place (`↳` on a fallback), then where it runs; a wide row adds the exhausted time. */
-export function placeRow(role: RoleFact, i: number, width: number, now: number, data: ProjectSnapshot): MonitorRow {
+function placeRow(role: RoleFact, i: number, width: number, now: number, data: ProjectSnapshot): MonitorRow {
   const place = role.places[i]!, name = width < 56 ? 9 : 10, gap = width < 56 ? ' ' : '  ';
   // A state that needs the owner's eye, else (on the first place of a wide row) whose file is in force.
   const tag = width < 56 ? '' : place.state === 'exhausted' && place.until !== undefined

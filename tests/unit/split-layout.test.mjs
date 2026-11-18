@@ -191,11 +191,78 @@ test('Project hub: Waiting for you takes the keys into its items; Enter reads on
   assert.match(rule(d), /^Waiting for you ─+/, 'back on the Waiting row');
 });
 
+test('Project list rows use the same Enter path for two clicks and the keyboard', async (t) => {
+  const { busy } = await fixtures(t);
+  for (const [p, item, sub] of [[undefined, 'project:fold:waiting', 'project:wait:0'], ['control', 'project:role:imp', 'project:role:imp:0']]) {
+    const d = driver(busy, { data: busy.control, height: 24 });
+    const state = page(p, { projectCursor: p ? 'split:files' : undefined });
+    d.at(state);
+    const click = (id) => {
+      const pane = d.pane('agents');
+      d.run({ type: 'mouse', x: 4, y: pane.y + pane.rows.findIndex((r) => r.item === id) - pane.offset, button: 'left' });
+    };
+    click(item);
+    assert.equal(d.state.projectCursor, item);
+    assert.equal(d.state.splitFocus, undefined);
+    click(item);
+    assert.equal(d.state.splitFocus, 'preview');
+    assert.equal(d.state.projectCursor, sub);
+    const mouse = d.lines();
+    d.at(page(p, { projectCursor: item }));
+    d.run('enter');
+    assert.deepEqual(d.lines(), mouse);
+  }
+});
+
+test('Split Progress lets the owner select an older to-try slice and read its brief without changing layouts', async (t) => {
+  const { busy } = await fixtures(t);
+  const data = { ...busy.rich, ledger: busy.rich.ledger.map((r) => r.id === 'WATCH-LINK'
+    ? { ...r, brief: { brief: 'Job rows remain visible.', steps: ['Open the synthetic project.'] } } : r) };
+  const d = driver(busy, { data, height: 24 }).at(page(undefined));
+  d.run('enter');
+  for (let n = 0; n < 5; n++) d.run('down');
+  assert.equal(d.state.projectCursor, 'project:slice:WATCH-LINK');
+  assert.match(rule(d), /^WATCH-LINK ─+ to try · M4$/);
+  assert.match(d.lines().join('\n'), /Job rows remain visible\.\n +1\. Open the synthetic project\.\n +the watcher survives a link loop/);
+  assert.deepEqual(d.run('try-accept').action.target.slices.map((r) => r.id), ['WATCH-LINK']);
+});
+
+test('Split hub reveals an off-screen first pending slice before y/n can record it', async (t) => {
+  const { busy } = await fixtures(t);
+  for (const [height, key, action] of [[24, 'try-accept', 'accept'], [12, 'next-trouble', 'flag']]) {
+    const d = driver(busy, { data: busy.control, height }).at(page(undefined));
+    if (height === 24) d.run('page-down');
+    assert.equal(d.state.projectCursor, 'project:page:progress');
+    assert.doesNotMatch(d.lines().join('\n'), /◇ DATA-ONE/);
+    assert.equal(d.run(key).action, undefined, 'the first press only reveals the target');
+    assert.equal(d.state.splitFocus, 'preview');
+    assert.match(d.lines().join('\n'), /◇ DATA-ONE/);
+    const out = d.run(key).action;
+    assert.deepEqual([out.type, out.action, out.target.slices[0].id], ['record-try', action, 'DATA-ONE']);
+  }
+});
+
+test('Split Progress ignores Classic’s t shortcut, leaving the marked batch and cursor in place', async (t) => {
+  const { busy } = await fixtures(t);
+  const d = driver(busy, { data: busy.rich, height: 24 }).at(page('progress', { projectCursor: 'project:slice:DATA-ONE' }));
+  d.run('space');
+  d.run('down');
+  d.run('space');
+  const before = d.lines();
+  assert.match(before.join('\n'), /▣ ◇ DATA-ONE/);
+  assert.match(before.join('\n'), /▣ ◇ NATIVE-ROWS/);
+  d.run({ type: 'key', key: 'settings-test', text: 't' });
+  assert.equal(d.state.projectTry, undefined);
+  assert.deepEqual(d.lines(), before);
+  assert.deepEqual(d.run('try-accept').action.target.slices.map((r) => r.id), ['DATA-ONE', 'NATIVE-ROWS']);
+  assert.equal(d.run('escape').state.projectPage, undefined);
+});
+
 test('Progress page: one ledger list, the cursor slice explained underneath; y and n work on any to-try row; Enter opens STATE.md; History is one folded row', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.rich }).at(page('progress'));
   const list = d.pane('agents').rows.map((r) => stripAnsi(r.text));
-  assert.deepEqual(list.slice(2, 6).map((l) => l.split(' ')[1]), ['PAGE-ONE', 'PAGE-TWO', 'DATA-ONE', 'LATER-ONE'].slice(0, 4).map((x) => x));
+  assert.deepEqual(list.slice(2, 10).map((l) => l.split(' ')[1]), ['PAGE-ONE', 'PAGE-TWO', 'DATA-ONE', 'NATIVE-ROWS', 'SENTENCE-CUT', 'WATCH-LINK', 'NO-HASH', 'LATER-ONE']);
   assert.match(rule(d), /^PAGE-ONE ─+ working · 0\.1\.3$/);
   assert.equal(d.run('try-accept').action, undefined, 'a working slice is not a to-try row');
   d.run('down'); d.run('down');

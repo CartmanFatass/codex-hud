@@ -79,9 +79,11 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
   const total = cur.rows.length - cur.counts.dropped, label = cur.whole || !data.ladder.current ? '' : ` ${monitorText(data.ladder.current)} `, frac = `${cur.counts.accepted}/${total}`;
   if (cur.rows.length) list.push(plain(`  ${label ? theme.board.title(label) + ' ' : ''}${barText({ counts: cur.counts }, Math.max(6, Math.min(24, width - 3 - visualLength(label) - visualLength(frac) - 2)))} ${muted(frac)}`, width), boardRow(''));
   else if (!path) list.push(plain('  ' + muted(t('no STATE.md')), width));
-  const ids = cur.rows.map((r) => visualLength(monitorText(r.id))), col = Math.max(8, Math.min(14, Math.max(0, ...ids)));
+  // The bar counts the current milestone; every slice still to try gets a selectable preview.
+  const slices = cur.whole ? cur.rows : [...cur.rows, ...data.ledger.filter((r) => r.state === 'try' && r.milestone !== data.ladder.current)];
+  const ids = slices.map((r) => visualLength(monitorText(r.id))), col = Math.max(8, Math.min(14, Math.max(0, ...ids)));
   const info = (r: LedgerSlice) => data.slices.find((s) => s.label === r.id), workerOf = (r: LedgerSlice) => board.workers.find((w) => w.evidence[0]?.sourceId === info(r)?.jobId);
-  for (const st of ['working', 'blocked', 'try', 'todo'] as const) for (const r of cur.rows.filter((x) => x.state === st)) {
+  for (const st of ['working', 'blocked', 'try', 'todo'] as const) for (const r of slices.filter((x) => x.state === st)) {
     const s = info(r), role = workerOf(r)?.role ?? s?.role ?? '';
     const right = s?.drift ? theme.board.attention(t(s.drift)) : st === 'working' && s?.jobId ? `${role ? roleInk(role)(monitorText(role)) + ' ' : ''}${muted(minuteAge(s.at ?? null, now))}` : st === 'try' ? muted(sinceText(r.at, now)) : '';
     const item = `project:slice:${r.id}`;
@@ -96,7 +98,7 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
   if (data.next.length) list.push(block('split:next', `${muted(mark('→', '>'))} ${t('Next')}`, String(data.next.length)));
   if (landed.length) list.push(block('split:history', `${muted(mark('▸', '>'))} ${t('History')}`, `${t('{n} landed in 7 days', { n: recent.length })} · ${landed.length - recent.length} ${t('older')}`));
   const preview = (cursor?: string): Shown => {
-    const id = /^project:slice:(.+)$/.exec(cursor ?? '')?.[1], r = cur.rows.find((x) => x.id === id);
+    const id = /^project:slice:(.+)$/.exec(cursor ?? '')?.[1], r = slices.find((x) => x.id === id);
     if (r) {
       // The slice's whole text, with its model brief and steps (a to-try slice, model on) above it.
       const s = info(r), worker = workerOf(r), rows = [...briefRows(r.brief, width).map((l) => plain(l, width)), ...indent(ledgerText(r) || r.text, width, Infinity)];

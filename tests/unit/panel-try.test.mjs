@@ -38,9 +38,10 @@ const until = async (condition, diagnostic) => {
   assert.fail(diagnostic());
 };
 
-function panel(t, f, { layout = 'classic', columns = 80 } = {}) {
+function panel(t, f, { layout = 'classic', columns = 80, prelude = '' } = {}) {
   fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ panelLayout: layout, modelEnabled: false, refreshMs: 100, language: 'en', theme: 'none', icons: 'unicode' }));
   const runner = `process.stdout.columns = ${columns}; process.stdout.rows = 24;
+    ${prelude}
     const { runLivePage } = await import(${JSON.stringify(new URL('../../dist/tree-page.js', import.meta.url).href)});
     await runLivePage(); process.exit(0);`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', runner], {
@@ -167,6 +168,56 @@ test('Space marks two rows, then y writes one try record and one watch line in C
     assert.deepEqual(lines, [`try accepted ${title}: ${slices.join(', ')}`]);
     await close();
   }
+});
+
+test('at 40 columns the Projects list pauses brief scheduling, and a switched project only schedules its own inputs', async (t) => {
+  const f = fixture(t), other = join(f.cwd, 'other-project'), hold = join(f.hud, 'hold'), log = join(f.hud, 'brief-schedule.jsonl');
+  fs.mkdirSync(other);
+  fs.writeFileSync(join(other, 'STATE.md'), 'Milestone: M4\n\n## Slices\n- try · M4 · OTHER · synthetic other work\n');
+  fs.writeFileSync(join(f.hud, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: other }] }));
+  fs.writeFileSync(log, '');
+  const prelude = `
+    import fs from 'node:fs';
+    import { setTimeout as sleep } from 'node:timers/promises';
+    import { ProjectCollector } from ${JSON.stringify(new URL('../../dist/collectors/project-board.js', import.meta.url).href)};
+    import { TryBriefs } from ${JSON.stringify(new URL('../../dist/collectors/try-brief.js', import.meta.url).href)};
+    const log = (event) => fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(event) + '\\n');
+    const held = () => fs.existsSync(${JSON.stringify(hold)});
+    const collect = ProjectCollector.prototype.collect;
+    ProjectCollector.prototype.collect = async function (mode, ...args) {
+      if (mode === true && held()) { log({ held: true }); while (held()) await sleep(10); }
+      if (mode === false) log({ overview: true });
+      return collect.call(this, mode, ...args);
+    };
+    TryBriefs.prototype.update = (root, ledger) => log({ root, ids: ledger.map((r) => r.id) });`;
+  const { key, painted, close } = panel(t, f, { columns: 40, prelude });
+  const events = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+  const waitFor = (condition) => until(() => condition(events()), () => JSON.stringify(events()));
+  key('2');
+  await painted(/project 1\/2/);
+  await waitFor((xs) => xs.some((x) => x.root === f.cwd && x.ids.includes('ONE')));
+  fs.writeFileSync(hold, '');
+  key('g'); // Select the project name and hold the next full collection.
+  await waitFor((xs) => xs.some((x) => x.held));
+  key('\r');
+  await painted(/^‹ Projects/m);
+  fs.unlinkSync(hold);
+  await waitFor((xs) => xs.some((x) => x.overview));
+  key('j');
+  await waitFor((xs) => xs.filter((x) => x.overview).length >= 2);
+  const paused = events().slice(events().findIndex((e) => e.held));
+  assert.ok(!paused.some((e) => e.root), 'the previous snapshot did not schedule requests in the list');
+
+  fs.writeFileSync(hold, '');
+  key('\x1b');
+  await waitFor((xs) => xs.filter((x) => x.held).length >= 2);
+  key(']');
+  await painted(/project 2\/2/);
+  fs.unlinkSync(hold);
+  await waitFor((xs) => xs.some((x) => x.root === other && x.ids.includes('OTHER')));
+  await close();
+  const switched = events().slice(events().findLastIndex((e) => e.held)).filter((e) => e.root);
+  assert.ok(switched.length && switched.every((e) => e.root === other && e.ids.join() === 'OTHER'));
 });
 
 test('hud watch skips reflected tries on catch-up and emits each live record once without waiting for a rescan', async (t) => {

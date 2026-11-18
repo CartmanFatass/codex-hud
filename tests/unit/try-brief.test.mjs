@@ -10,7 +10,7 @@ import { splitFixture, split } from '../fixtures/split-layout.mjs';
 import { plain } from '../fixtures/project-page.mjs';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { SmallModel } from '../../dist/collectors/small-model.js';
-import { TryBriefs } from '../../dist/collectors/try-brief.js';
+import { parseBrief, TryBriefs } from '../../dist/collectors/try-brief.js';
 import { visualLength } from '../../dist/render/colors.js';
 
 const LONG = 'the watcher now survives a link loop and keeps every open job on its row, even when a session file points back at its own folder, ENDOFLEDGER';
@@ -88,7 +88,7 @@ test('a stored brief and steps show above the text: in Split’s preview of the 
 });
 
 /** A real repository with one commit and a ticket, so the collector has something to read; the model is a fake that counts its calls. */
-function service(t, mode) {
+function service(t, mode, reply = () => BRIEF) {
   const root = fs.mkdtempSync(join(tmpdir(), 'try-brief-svc-')), calls = [];
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const git = (...args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: root, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: root } });
@@ -102,7 +102,7 @@ function service(t, mode) {
   const env = { HUD_HOME: root, MISTRAL_API_KEY: 'synthetic-key' };
   const model = new SmallModel({ env, fetch: async (_url, init) => {
     calls.push(JSON.parse(init.body));
-    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(BRIEF) } }] }), { status: 200 });
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(await reply(calls.length)) } }] }), { status: 200 });
   } });
   model.configure({ backend: mode === 'off' ? 'off' : 'api' });
   const briefs = new TryBriefs(model, join(root, 'display/model-cache/try-briefs.json'), () => {}, () => clock.now);
@@ -130,6 +130,44 @@ test('model on: one call per to-try slice from its ledger line, commit and ticke
   const again = new TryBriefs(s.model, join(s.root, 'display/model-cache/try-briefs.json'), () => {}, () => s.clock.now);
   again.configure(true, 'en');
   assert.deepEqual(again.apply(s.root, s.snapshot(s.row(line))).ledger[0].brief, BRIEF, 'the cache survives a restart');
+});
+
+test('a changed ticket hides the old brief during a replacement and after refusal; moving milestones also invalidates it', async (t) => {
+  const { f, data } = await fixture(t);
+  const replacement = Promise.withResolvers();
+  const s = service(t, 'on', (n) => n === 1 ? BRIEF : n === 2 ? replacement.promise : { brief: 'Use the revised procedure.', steps: [] });
+  const row = { ...s.row('the watcher now survives a link loop (.scratch/demo/issues/01-thing.md)'), milestone: '0.1.3' };
+  const snapshot = { ...data, ledger: data.ledger.map((r) => r.id === row.id ? row : r) };
+  const current = (snap = snapshot) => s.briefs.apply(s.root, snap);
+  const frame = (snap = snapshot) => f.render(40, 'en', 24, split(progress({ projectCursor: 'project:slice:DATA-ONE' })), current(snap));
+  s.briefs.update(s.root, [row]);
+  await until(() => current() !== snapshot);
+  assert.match(flat(frame()), /Job rows no longer vanish/);
+  const moved = { ...row, milestone: 'M4' }, movedSnapshot = { ...snapshot, ledger: snapshot.ledger.map((r) => r === row ? moved : r) };
+  assert.doesNotMatch(flat(frame(movedSnapshot)), /Job rows no longer vanish/, 'an existing brief belongs only to its ledger milestone');
+
+  fs.writeFileSync(join(s.root, '.scratch/demo/issues/01-thing.md'), '# 01\nREVISEDTICKET: use a different procedure\n');
+  s.clock.now += 6 * 60_000;
+  s.briefs.update(s.root, [row]);
+  await until(() => s.calls.length === 2);
+  assert.match(JSON.stringify(s.calls[1]), /REVISEDTICKET/);
+  const originalOnly = () => {
+    const visible = flat(frame());
+    assert.match(visible, /the watcher now survives a link loop/);
+    assert.doesNotMatch(visible, /Job rows no longer vanish|Use the revised procedure/);
+  };
+  originalOnly();
+  replacement.resolve({ brief: 'Use the revised procedure.', steps: 'not an array' });
+  await until(() => s.model.diagnostics().lastFailure);
+  assert.ok(s.model.diagnostics().lastFailure, 'the replacement was refused');
+  originalOnly();
+  assert.equal(parseBrief('{"brief":"missing steps"}'), undefined);
+
+  s.briefs.update(s.root, [moved]); // The milestone change bypasses the retry delay for the old line.
+  await until(() => current(movedSnapshot) !== movedSnapshot);
+  assert.equal(s.calls.length, 3);
+  assert.match(JSON.stringify(s.calls[2]), /M4 · the watcher/);
+  assert.match(flat(frame(movedSnapshot)), /Use the revised procedure\./, 'an explicit empty steps array is valid');
 });
 
 test('model off: no call, and the snapshot is the very one it was given', async (t) => {
