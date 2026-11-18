@@ -62,6 +62,15 @@ briefs instead inline the labeled file bodies and send them to the selected brow
 256 KiB total; exceeding either returns `context_too_large`). Attaching a report does not mark it read or close
 its worker. A repeated request key does not revalidate attachments.
 
+`isolation: "worktree"` (default `"none"`) runs the job in a fresh linked checkout of `cwd`'s Git repository:
+`<repo>-wt/<slug>-<id6>` beside the main checkout, branch `wt/<slug>-<id6>` from `cwd`'s HEAD, `node_modules` linked
+from the main checkout when present, and the CLI's existing trust of the main checkout copied to it. It is refused for
+browser places and outside Git with `invalid_arguments`; `job.json` records `worktree`. `hud_read(job)` then adds
+`git_summary` (`branch`, `base_head`, `head`, `ahead_commits`, `changed_files`, `dirty`). After the job is closed and
+reaped, the watcher removes the checkout and its branch only when it has no changes of any kind and its HEAD is the
+base or already merged into the main checkout, without force; otherwise it keeps both and records
+`worktree_kept_reason` in `job.json`.
+
 Both list views return a newest-first `jobs` snapshot without reading report or question bodies or marking them seen.
 Compact rows show `job`, `role` and `state`, plus `report_unread: true`, `blocked: true`, pending `question_ids`
 and a block, wait or failure `reason` when applicable. Closed jobs with unread reports still appear; use `recent`
