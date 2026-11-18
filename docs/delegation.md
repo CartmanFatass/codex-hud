@@ -51,6 +51,12 @@ Every brief states:
   performance tests in the default suite, no real-process tests unless the slice is about processes;
 - `no self-review` unless it is one of the risky cases above.
 
+Design previews (owner, 2026-11-18): a design or options job writes one self-contained HTML page under
+`docs/design/<name>/`. It uses synthetic data, no outside fetches, and works at phone width and in light and dark.
+Keep it small enough for the orchestrator to read whole. The orchestrator reads it and publishes it as a claude.ai
+Artifact (private by default), so the owner opens it on the website. Revisions republish to the same link, and the
+owner's comments on the page are read as feedback.
+
 ## Questions
 
 The implementer asks only when blocked, or when the choice changes what the owner sees or contradicts the spec.
