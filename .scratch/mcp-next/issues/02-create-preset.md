@@ -1,6 +1,6 @@
 # 02: Per-job role preset selection in hud_create
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 01
 
 **What to build:** `docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §2. Allow `hud_create` to pick a named role preset for a single job without editing `$HUD_HOME/roles/*.json`.

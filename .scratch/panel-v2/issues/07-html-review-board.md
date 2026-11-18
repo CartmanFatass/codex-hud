@@ -1,6 +1,6 @@
 # 07: On-demand self-contained static HTML review board (hud board & panel w key)
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 05
 
 **What to build:** `docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §7. Export a rich, zero-server, single-file static HTML board for reviewing project progress, To-try slices (briefs, steps, linked tickets, diff bars), active jobs and milestone reviews in a browser.

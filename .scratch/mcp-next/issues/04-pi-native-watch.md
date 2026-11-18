@@ -1,6 +1,6 @@
 # 04: Native silent event wake for pi main sessions and MCP watcher_alive status
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 01
 
 **What to build:** `docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §4. Deliver async worker questions and settlements natively into pi main sessions without typing into the user's editor draft, and surface `watcher_alive` in MCP responses.
