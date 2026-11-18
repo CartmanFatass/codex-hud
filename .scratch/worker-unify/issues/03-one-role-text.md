@@ -18,6 +18,10 @@
       closed/failed; see `packages/hud-mcp/bin/sonic-jobs.mjs`) is not settled, not auto-reaped and keeps its session;
       when it ends a turn with sonic reports it has not collected, it gets one queued follow-up naming the job ids (the
       CLI side is `hud-cli.mjs`'s one fixed prompt; same wording).
+- [ ] From the 02 live check (2026-11-17, job j7326129a3e1b12d8): a sonic child's settlement and unread report are
+      its parent's to collect, so `hud watch`, MCP `changes` and the bar do not tell the main session about them (no
+      `report` token, no `[✓●]`); its questions and its failure still reach the main session; the panel keeps showing
+      the nested card. `hud_read` by the main session still works on a child.
 - [ ] Tests: pi-roles HUD mode argv and tool list (no helper tools, HUD body present); standalone mode unchanged;
       `dispatchPi` passes the mode; instruction files carry the question rule.
 - [ ] Live check by the main session: a pi imp job's tool list has no `call_*`, and it can still run `hud-sonic`.
