@@ -73,7 +73,7 @@ test('Home progress layout: separator row, milestone on the rule, bar as wide as
     const base = rowsAbove(f, width, lang), at = (data, spare = 24) => plain(f.render(width, lang, base + 2 + spare, undefined, data));
     // The summary's wrapped rows (one to three), then the bar, then the legend rows, then the tickets.
     const shape = (lines) => {
-      const head = lines.findIndex((l) => /^(Progress|进度) ─/.test(l)), bar = lines.findIndex((l, i) => i > head && /^  [█▓░]/.test(l));
+      const head = lines.findIndex((l) => /^(Progress|进度) ─/.test(l)), bar = lines.findIndex((l, i) => i > head && /^  [█▒░]/.test(l));
       const legend = lines.slice(bar + 1).filter((l, i, all) => all.slice(0, i + 1).every((x) => /●/.test(x)));
       return { head, bar, legend, summary: lines.slice(head + 1, bar) };
     };

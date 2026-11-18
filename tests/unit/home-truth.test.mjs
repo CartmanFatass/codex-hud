@@ -42,7 +42,7 @@ test('Home top line counts STATE waiting items with job questions, ✓ only when
     assert.equal(state.projectCursor, 'project:fold:waiting');
     const hub = f.quiet(38, 'en', 46, state);
     assert.equal(hub.state.projectCursor, 'project:fold:waiting', 'the hub keeps the cursor on the Waiting fold');
-    assert.ok(plain(hub).some((l) => /^Waiting for you ─+ 2$/.test(l)));
+    assert.ok(plain(hub).some((l) => /^Waiting for you ─+ 2 · 1 to try$/.test(l)));
   }
 });
 

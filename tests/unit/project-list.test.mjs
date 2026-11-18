@@ -65,7 +65,7 @@ test('Projects list: the panel project first, then waiting, running, then the mo
   assert.deepEqual(latest('old-project'), { state: 'accepted', ids: ['D-ONE'] });
   assert.equal(latest('bare-project'), undefined);
   // A wide row keeps the bar before it.
-  assert.match(text(l.list(80)), /^  [█▓░]{24}  ◐ NATIVE-TREE, ORPHAN working +0m$/m);
+  assert.match(text(l.list(80)), /^  [█▒░]{24}  ◐ NATIVE-TREE, ORPHAN working +0m$/m);
   const zh = text(l.list(40, 'zh'));
   for (const age of ['0分钟', '5小时', '20分钟', '3天', '40天']) assert.match(zh, new RegExp(`${age}$`, 'm'));
   assert.doesNotMatch(zh, /\b\d+[mhd]$/m, 'no English unit left in the Chinese list');
@@ -73,7 +73,7 @@ test('Projects list: the panel project first, then waiting, running, then the mo
   assert.match(plain(frame)[0], /^‹ Projects/);
   assert.match(plain(frame).at(-1), /esc back/);
   // Text icons: no unicode glyph at all.
-  assert.doesNotMatch(text(l.list(40, 'en', undefined, 24, 'text')), /[‹›▾◉█▓░…]/);
+  assert.doesNotMatch(text(l.list(40, 'en', undefined, 24, 'text')), /[‹›▾◉█▒░…]/);
   assert.match(text(l.list(40, 'en', undefined, 24, 'text')), /^demo-project {2}M3b +\? 2 {2}@ 1$/m);
   // The order is a function of what each project shows, not of the list's own order.
   const [own, ...rest] = l.projects;
@@ -86,7 +86,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   const view = (state) => l.render(40, 'en', state, 24, l.data, true, 'unicode', 'none', {
     projects, projectName: (projects.find((p) => p.root === state.projectRoot) ?? projects[0]).name });
   let frame = view(onPage());
-  assert.match(text(frame), /^demo-project ─+ M3b ▾ 1\/6$/m);
+  assert.match(text(frame), /^demo-project ─+ M3b ▾ project 1\/6$/m);
   // Enter on the name row opens the list with the cursor on the shown project.
   frame.state.projectCursor = 'project:switch';
   frame = view(send(frame, '\r').state);
@@ -99,7 +99,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   frame = view(send(frame, '\r').state);
   assert.equal(frame.state.projectRoot, byName('busy-project'));
   assert.deepEqual([frame.state.projectList, frame.state.projectPage], [undefined, undefined]);
-  assert.match(text(frame), /^busy-project ─+ M3b ▾ 4\/6$/m, 'the hub of that project, numbered by the switch order');
+  assert.match(text(frame), /^busy-project ─+ M3b ▾ project 4\/6$/m, 'the hub of that project, numbered by the switch order');
   // Stepping on with ] leaves that hub: Esc no longer goes back to the list it was opened from.
   const stepped = view(send(frame, ']').state);
   assert.equal(stepped.state.projectBack, undefined);
@@ -112,7 +112,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   assert.deepEqual([frame.state.projectList, frame.state.projectRoot], [undefined, byName('busy-project')]);
   // That hub was not reached from the list now: Esc on it does what it always did (nothing here), so keys can be given back.
   assert.equal(esc(frame).state.projectList, undefined);
-  assert.match(text(view(esc(frame).state)), /^busy-project ─+ M3b ▾ 4\/6$/m);
+  assert.match(text(view(esc(frame).state)), /^busy-project ─+ M3b ▾ project 4\/6$/m);
   // One click on an entry opens its hub; a click on the crumb row returns to the shown project's hub.
   frame = view(onPage(undefined, { projectList: true }));
   const at = frame.workboard.rows.findIndex((r) => r.item === `project:list:${byName('waiting-project')}`);
@@ -138,7 +138,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   frame = view(send(view(onPage(undefined, { projectList: true, projectRoot: byName('quiet-project') })), '1').state);
   frame = view(send(frame, '2').state);
   assert.deepEqual([frame.state.projectList, frame.state.projectRoot], [undefined, byName('quiet-project')]);
-  assert.match(text(frame), /^quiet-project ─+ M3b ▾ 2\/6$/m);
+  assert.match(text(frame), /^quiet-project ─+ M3b ▾ project 2\/6$/m);
   // The list survives the panel's own restart: the whole state goes through the reload place.
   const listed = onPage(undefined, { projectList: true, projectRoot: byName('quiet-project') });
   process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: listed }, (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));

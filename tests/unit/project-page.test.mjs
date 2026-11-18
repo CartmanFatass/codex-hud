@@ -29,7 +29,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.deepEqual(projectFrames(f), expected);
   assert.equal(f.data.git.branch, 'synthetic-project');
   assert.equal(f.data.worktreeCount, 2);
-  assert.match(plain(f.render(120)).join('\n'), /Working tree +synthetic-project · \d+ changed · 2 worktrees/);
+  assert.match(plain(f.render(120)).join('\n'), /Working tree +1 unlisted worktree · synthetic-project · \d+ changed · 2 worktrees/);
   assert.match(f.data.last.text, /Synthetic Project baseline/);
   assert.equal(f.data.waiting.length, 2);
   assert.match(f.data.waiting[1].value, /after trying the synthetic setup/);
@@ -103,7 +103,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
       );
       assert.match(text(pages.tickets), lang === 'en' ? /Project › Tickets\n\n  none/ : /项目 › 工单\n\n  无/);
       // The current milestone's bar and counts (STATE has no dates here, so older work is one row a milestone, newest first).
-      assert.match(text(pages.progress), /^ {3}M3b {2}[█▓░]+ 0\/2$/m);
+      assert.match(text(pages.progress), /^ {3}M3b {2}[█▒░]+ 0\/2$/m);
       assert.match(text(pages.progress), /^ {2}1 (working|工作中) {2}1 (to try|待试用)$/m);
       assert.match(text(pages.progress), /^ {2}▸ M3 +✓ 1/m);
       assert.match(text(pages.progress), /^ {2}▸ M3b +◇ 1/m);
@@ -478,7 +478,7 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
     const frame = hub(40, 40, lang), text = plain(frame).join('\n'), word = (en, zh) => (lang === 'en' ? en : zh);
     for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
     const at = (re) => text.search(re);
-    const order = [/^demo-project ─+ 0\.1\.3$/m, new RegExp(`^${word('Waiting for you', '等你处理')} ─+ 2$`, 'm'), new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'),
+    const order = [/^demo-project ─+ 0\.1\.3$/m, new RegExp(`^${word('Waiting for you', '等你处理')} ─+ 2 · 1 ${word('to try', '待试用')}$`, 'm'), new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'),
       new RegExp(`^${word('Latest', '最近完成')} ─+ ${word('newest first', '最新在前')}$`, 'm'), /^(Progress|进度) /m, /^(Working tree|工作区) /m, /^(Docs|文档) /m, /^(Control plane|控制面) /m].map(at);
     assert.ok(order.every((n, i) => n >= 0 && (!i || order[i - 1] < n)), `${lang}: ${order}`);
     // Now: a slice with its text when it fits whole and the word for its state; a job no slice shows with its role and minutes.
@@ -489,7 +489,7 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
     assert.deepEqual(text.match(/^ {2}[◇✓] [A-Z-]+/gm), ['  ◇ DATA-ONE', '  ◇ WATCH-LINK', '  ◇ SENTENCE-CUT']);
     assert.match(text, new RegExp(`^ {2}◇ DATA-ONE {10,}${word('to try 1d', '待试用 1天')}$`, 'm'));
     assert.match(text, new RegExp(`^ {2}◇ SENTENCE-CUT {10,}${word('to try 7d', '待试用 7天')}$`, 'm'));
-    assert.match(text, /^[█▓░]{40}$/m, 'the current milestone\'s bar under Progress');
+    assert.match(text, /^[█▒░]{40}$/m, 'the current milestone\'s bar under Progress');
     // The four rows under Latest each open their page.
     assert.deepEqual([...new Set(frame.workboard.rows.map((r) => r.item).filter((i) => i?.startsWith('project:page:')))], ['progress', 'tree', 'docs', 'control'].map((p) => `project:page:${p}`));
   }
@@ -501,7 +501,7 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
   // then the bar, then the blank rows; Waiting for you, Now and the page rows stay (the page scrolls for the rest).
   const shape = (height) => {
     const rows = hub(40, height).workboard.rows, plainRows = rows.map((r) => stripAnsi(r.text).trimEnd());
-    return { rows: rows.length, latest: plainRows.filter((r) => /^ {2}[◇✓] /.test(r)).length, bar: plainRows.some((r) => /^[█▓░]+$/.test(r)), blank: plainRows.filter((r) => !r).length,
+    return { rows: rows.length, latest: plainRows.filter((r) => /^ {2}[◇✓] /.test(r)).length, bar: plainRows.some((r) => /^[█▒░]+$/.test(r)), blank: plainRows.filter((r) => !r).length,
       kept: ['Waiting for you', 'Now', 'Progress', 'Working tree', 'Docs', 'Control plane'].every((h) => plainRows.some((r) => r.startsWith(h))) && plainRows.filter((r) => /^([?!]|  [◐◆◉]) /.test(r)).length === 5 };
   };
   const shapes = Object.fromEntries([40, 23, 22, 21, 20, 18, 17, 16, 12, 6].map((h) => [h, shape(h)]));
@@ -512,7 +512,7 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
     assert.ok(shapes[h].kept, `${h}: Waiting for you, Now and the pages stay`);
     if (h >= 17) assert.ok(shapes[h].rows <= h - 2, `${h}: the hub fits the room it has`);
   }
-  assert.equal(shapes[40].rows, 21);
+  assert.equal(shapes[40].rows, 22, 'the hub on a tall panel: the one waiting item that needs it has its second row');
   // Nothing landed: no Latest section; nothing waiting: no Waiting for you; the pages never go.
   const quiet = plain(hub(40, 40, 'en', { ...f.rich, ledger: [], waiting: [] })).join('\n');
   assert.doesNotMatch(quiet, /Latest|Waiting for you/);
@@ -583,13 +583,14 @@ test('polish: Next text aligns without filename tails and slice states use the b
   const coloured = f.render(120, 'en', 'progress', 56, f.data, true, 'unicode', 'mocha');
   // The hub's bar counts the whole ledger when no milestone is current: working first, then blocked.
   const whole = f.render(120, 'en', undefined, 56, { ...f.data, ladder: { ...f.data.ladder, current: undefined } }, true, 'unicode', 'mocha');
-  const bar = whole.workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text).trimEnd())).text;
-  const inks = [...bar.matchAll(/(\x1b\[[0-9;]+m)[█▓░]+/g)].map((m) => m[1]);
+  const bar = whole.workboard.rows.find((r) => /^[█▒░]+$/.test(stripAnsi(r.text).trimEnd())).text;
+  const inks = [...bar.matchAll(/(\x1b\[[0-9;]+m)[█▒░]+/g)].map((m) => m[1]);
   const row = (frame, id) =>
     frame.workboard.rows.find((r) => stripAnsi(r.text).includes(id) && /:slice:\d+$/.test(r.item ?? '')).text;
   assert.ok(row(coloured, 'NATIVE-TREE').includes(inks[0] + '◐'));
   assert.ok(row(coloured, 'BLOCKED').includes(inks[1] + '◆'));
-  for (const id of ['ORPHAN', 'NO-JOB']) assert.match(stripAnsi(row(coloured, id)), /^  ! /);
+  assert.match(stripAnsi(row(coloured, 'ORPHAN')), /^  ! /);
+  assert.doesNotMatch(plain(coloured).join('\n'), /NO-JOB/, 'a worktree with no ledger row is not work in flight');
   const ascii = f.render(80, 'en', 'progress', 56, f.data, true, 'text');
   assert.match(stripAnsi(row(ascii, 'NATIVE-TREE')), /^  @ /);
   assert.match(stripAnsi(row(ascii, 'BLOCKED')), /^  ! /);
@@ -605,16 +606,17 @@ test('bar proportions fill the hub row in EN/ZH and text icons; the Progress pag
     for (const s of segments) assert.ok(Math.abs(s.width - (width * f.data.counts[s.state]) / 7) <= 1);
     // The hub's bar is the current milestone's (M3b: one working, one landed), up to 60 cells, and the row is the panel's width.
     for (const lang of ['en', 'zh']) {
-      const bar = f.render(width, lang).workboard.rows.find((r) => /^[█▓░]+$/.test(stripAnsi(r.text).trimEnd()));
+      const bar = f.render(width, lang).workboard.rows.find((r) => /^[█▒░]+$/.test(stripAnsi(r.text).trimEnd()));
       assert.equal(visualLength(bar.text), width);
       assert.equal(stripAnsi(bar.text).trimEnd().length, Math.min(width, 60));
       assert.equal(bar.item, 'project:page:progress');
     }
   }
   const ascii = f.render(80, 'en', undefined, 56, f.data, true, 'text');
-  assert.ok(ascii.workboard.rows.some((r) => stripAnsi(r.text).trimEnd() === '#'.repeat(60)));
-  assert.doesNotMatch(plain(ascii).join('\n'), /[█▓░●]/);
-  assert.doesNotMatch(plain(f.render(80, 'en', 'progress', 56, f.data, true, 'text')).join('\n'), /[█▓░●]/);
+  // One working (#) and one landed to try (=): without colour the glyphs still tell them apart.
+  assert.ok(ascii.workboard.rows.some((r) => /^#{30}={30}$/.test(stripAnsi(r.text).trimEnd())));
+  assert.doesNotMatch(plain(ascii).join('\n'), /[█▒░●]/);
+  assert.doesNotMatch(plain(f.render(80, 'en', 'progress', 56, f.data, true, 'text')).join('\n'), /[█▒░●]/);
   // The Progress page's counts name the states that have slices in the current milestone, none with a zero.
   const text = plain(f.render(120, 'en', 'progress', 56)).join('\n');
   assert.match(text, /^ {2}1 working {2}1 to try$/m);

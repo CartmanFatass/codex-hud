@@ -29,7 +29,7 @@ test('Progress: the current milestone, Now, Next and History from a synthetic le
     for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
     const page = text(frame), word = (en, zh) => (lang === 'en' ? en : zh);
     // The current milestone: its bar with accepted/total, the states that have slices, and what the earlier ones accepted in all.
-    assert.match(page, /^ {3}0\.1\.3 {2}[█▓░]+ 0\/4$/m);
+    assert.match(page, /^ {3}0\.1\.3 {2}[█▒░]+ 0\/4$/m);
     for (const [n, en, zh] of [[1, 'working', '工作中'], [1, 'blocked', '受阻'], [1, 'to try', '待试用'], [1, 'todo', '待办']])
       assert.match(page, new RegExp(`${n} ${word(en, zh)}`));
     assert.doesNotMatch(page, /accepted 0|0 (working|blocked|to try|todo)|已验收 0/);
@@ -60,7 +60,7 @@ test('Progress: the current milestone, Now, Next and History from a synthetic le
     assert.match(stripAnsi(frame.workboard.rows.find((r) => r.item === 'project:fold:next').text), new RegExp(`^  ▸ ${word('2 more', '还有 2 项')}`));
   }
   const ascii = text(f.render(40, 'en', 'progress', 80, f.rich, true, 'text'));
-  assert.doesNotMatch(ascii, /[▸▾→●◐◆◉░▓█─━‹›✓◇○]/);
+  assert.doesNotMatch(ascii, /[▸▾→●◐◆◉░▒█─━‹›✓◇○]/);
   assert.match(ascii, /^  > M4 +\+ 1/m);
   assert.match(ascii, /^  > A long bullet/m);
   assert.match(ascii, /^  o DATA-ONE +to try 1d$/m);
@@ -119,7 +119,7 @@ test('a project with no STATE.md says so on Progress and its other pages work; i
     for (const line of progress.lines) assert.equal(visualLength(line), width);
     assert.match(text(progress), lang === 'en' ? /no STATE\.md/ : /无 STATE\.md/);
     assert.match(text(progress), /◉ imp/);
-    assert.doesNotMatch(text(progress), /\(0\.1\.3\)|[█▓░]|● working|Next|To try/);
+    assert.doesNotMatch(text(progress), /\(0\.1\.3\)|[█▒░]|● working|Next|To try/);
     assert.match(text(f.render(width, lang, undefined, 24, data)), lang === 'en' ? /Progress +no STATE\.md/ : /进度 +无 STATE\.md/);
     for (const page of ['tickets', 'tree', 'docs', 'control']) for (const line of f.render(width, lang, page, 40, data).lines)
       assert.equal(visualLength(line), width);
@@ -179,11 +179,11 @@ test('hub: with several projects the name row reads `▾ i/n` and opens the Proj
   const f = await fixture(t), height = 24;
   const hub = (state) => f.render(40, 'en', state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'demo-project' });
   let frame = hub(onPage());
-  assert.match(text(frame), /^demo-project ─+ M3b ▾ 1\/3$/m);
+  assert.match(text(frame), /^demo-project ─+ M3b ▾ project 1\/3$/m);
   assert.deepEqual(frame.projects, PROJECTS);
   assert.match(plain(frame).at(-1), /\[ \] project/);
   assert.equal(f.render(40, 'en').projects, undefined, 'one project: no switch, no hint');
-  assert.doesNotMatch(text(f.render(40, 'en')), /▾ \d\/\d|\[ \]/);
+  assert.doesNotMatch(text(f.render(40, 'en')), /▾ (project )?\d\/\d|\[ \]/);
   assert.equal(f.render(40, 'en').workboard.rows.find((r) => /^demo-project/.test(stripAnsi(r.text))).item, undefined);
   // Keys: next, next, wraps to the panel's own (stored as none), previous goes round the other way.
   const roots = [];
@@ -225,7 +225,7 @@ test('hub: with several projects the name row reads `▾ i/n` and opens the Proj
   const place = readPanelPlace();
   assert.equal(place.state.projectRoot, PROJECTS[1].root);
   frame = f.render(40, 'en', place.state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'second-project' });
-  assert.match(text(frame), /^second-project ─+ M3b ▾ 2\/3$/m);
+  assert.match(text(frame), /^second-project ─+ M3b ▾ project 2\/3$/m);
   // A root that left projects.json is the panel's own again, not an empty page.
   assert.match(text(f.render(40, 'en', place.state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS.slice(2), projectName: 'x' })), /^x ─+ M3b$/m);
 });
@@ -302,7 +302,7 @@ await runLivePage();
   await until(() => rows().some((r) => /2\/2/.test(r)), 'the switch');
   // The held collection has not finished: the tab still shows a page, and what it shows is the first project's.
   assert.ok(rows().some((r) => /^Progress +M3b/.test(r)), screen.join('\n'));
-  assert.ok(rows().some((r) => /^project ─+ M3b ▾ 2\/2$/.test(r)), 'the first project\'s name goes with its page; the index already says 2/2');
+  assert.ok(rows().some((r) => /^project ─+ M3b ▾ project 2\/2$/.test(r)), 'the first project\'s name goes with its page; the index already says 2/2');
   assert.ok(rows().filter(Boolean).length >= 6, 'not a blank body');
   fs.writeFileSync(release, '');
   await until(() => rows().some((r) => /^Progress +no STATE\.md/.test(r)) && rows().some((r) => /^other-/.test(r)), 'the second project hub');

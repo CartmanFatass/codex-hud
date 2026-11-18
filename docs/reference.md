@@ -307,16 +307,21 @@ what is happening, what landed, then where each page stands. Top to bottom the h
 
 - the project's name row (the panel's directory name; see Switching projects below) with the
   current milestone;
-- **Waiting for you**: STATE's waiting items, folding with Enter;
+- **Waiting for you**: STATE's waiting items, folding with Enter; the header says how many there are
+  and how many of them are tries (`4 · 2 to try`: items that begin `Try`). An item whose text does not
+  fit one row takes a second (the rest cut with `…`) when the hub has rows to spare, top down; a
+  panel too short for that cuts it to one row, before Latest or the page rows give way;
 - **Now**: a row per working or blocked slice (`◐ ID  text`, then the job's role and minutes,
   `asking ?`, `blocked`, or what is out of step), then the project's unsettled HUD jobs that no
-  slice shows (`◉ role  title  age`). A slice's text goes on its row only when it fits whole;
+  slice shows (`◉ role  title  age`). A slice's text goes on its row only when it fits whole.
+  Worktrees with no ledger row are not work in flight: they are counted on the Working tree row.
+  With nothing in flight it says `Nothing in progress`;
 - **Latest**: the newest landed slices (to try, accepted), newest first by the commit date the
   ledger read already has (`◇ ID  text  to try 10h`); three rows at 40 columns, five wider;
 - one row per page with a one-line summary: **Progress** (milestone, working, to try, blocked; the
   current milestone's bar under it), **Tickets** (done/total, working, blocked; absent when the
-  project has no tickets), **Working tree** (branch, changed, worktrees, ahead/behind, editing
-  jobs), **Docs** (spec milestone, newest review) and **Control plane** (roles at their limit,
+  project has no tickets), **Working tree** (worktrees with no ledger row, branch, changed, worktrees,
+  ahead/behind, editing jobs; its page lists the unlisted ones), **Docs** (spec milestone, newest review) and **Control plane** (roles at their limit,
   roles, keys present, browser). A row too short for its facts drops the last ones, never part
   of one.
 
@@ -337,8 +342,9 @@ or the whole ledger when none is current): its name, a bar and `accepted/total`,
 that have slices (`1 working  1 blocked  2 to try  3 todo`, none with a zero), and one row for
 what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`). Then three sections:
 
-- **Now**: ledger slices in `working`/`blocked` (drift marks mean a missing or unlisted
-  worktree or a non-active ledger state, never a write back to STATE), each with its
+- **Now**: ledger slices in `working`/`blocked` (drift marks mean a missing worktree or a
+  non-active ledger state, never a write back to STATE; worktrees with no ledger row are on
+  the Working tree page), each with its
   job's line from Home's card text, then the project's HUD jobs that have not settled
   and no slice shows (role, title, age). A job's title is the workboard's description, else its
   `job.json` title, else the first heading (or line) of its `brief.md`, from the collector's
@@ -445,7 +451,7 @@ cannot be changed here, and a harness switch refuses a place whose file sets lau
 (`split`, `skills`, `args`...), since it would rebuild them: both say so in a line at the top
 until the next key, and `o` opens the file.
 
-**Switching projects.** With more than one project the hub's name row reads `name ▾ i/n`
+**Switching projects.** With more than one project the hub's name row reads `name ▾ project i/n`
 and `[` and `]` step through the panel's own project and the existing roots in
 `$HUD_HOME/projects.json` (deduplicated, at most 16). Enter or a click on the name row
 opens the **Projects list** (`‹ Projects` replaces the tabs; Esc or a click on the crumb
@@ -455,7 +461,7 @@ folds start fresh. The choice belongs to the panel and survives its reload, not
 Settings. Home always stays on the panel's own project, and opening Home's progress block
 returns to it. The panel keeps one collector per visited project (at most four, the
 panel's own never dropped, the oldest other one first) and collects only the shown one.
-With one project there is no `▾ i/n` and no list.
+With one project there is no `▾ project i/n` and no list.
 
 **Projects list.** Two rows per project: its name, current milestone, `?` the count of
 STATE's waiting items and `◉` the count of unsettled HUD jobs under its root; then what it is
