@@ -1,9 +1,6 @@
 /**
- * Tree association for one role job. R5 renders these files. Collectors do not
- * read them yet.
- *
- * Directory: `$HUD_HOME/assoc/<job>.json`
- * One file per job, mode 0600, replaced by rename. `<job>` matches `^j[a-f0-9]{16}$`.
+ * Legacy tree association read by job collectors from `$HUD_HOME/assoc/<job>.json`.
+ * `<job>` matches `^j[a-f0-9]{16}$`.
  *
  * ```json
  * {
@@ -36,15 +33,12 @@
  * `phase` is `propose`, `converge`, or null.
  */
 
-import { join } from 'node:path';
 import { validateSessionRef } from '../core/identity.js';
 import type { SessionRef } from '../core/types/identity.js';
 import { parseRosterRoot } from './selection.js';
-import { dispatchText } from './pi-dispatch.js';
-import type { OraclePhase, RoleName } from './roles.js';
-import { writePrivate } from './job-store.js';
 
-export const ASSOCIATION_DIR = 'assoc';
+type RoleName = 'oracle' | 'imp' | 'reviewer' | 'sonic' | 'jev';
+type OraclePhase = 'propose' | 'converge';
 
 export interface JobAssociation {
   readonly schema: 1;
@@ -78,10 +72,6 @@ export interface JobAssociation {
   readonly helpers?: Readonly<Record<string, SessionRef>>;
   readonly created_at?: string;
   readonly closed_at?: string;
-}
-
-export function associationPath(home: string, job: string): string {
-  return join(home, ASSOCIATION_DIR, `${job}.json`);
 }
 
 export function completeNativeRef(value: unknown): value is SessionRef {
@@ -180,19 +170,4 @@ export function parseAssociation(value: unknown, job: string): JobAssociation | 
     },
     ...associationMetadata(value),
   } as JobAssociation;
-}
-
-export function writeAssociation(home: string, record: JobAssociation): void {
-  if (!/^j[a-f0-9]{16}$/.test(record.job)) throw new Error('invalid_job');
-  const file = associationPath(home, record.job);
-  const previous = dispatchText(file, 16 * 1024);
-  let metadata = {};
-  try {
-    metadata = associationMetadata(previous ? JSON.parse(previous) : null);
-  } catch {
-    /* Never preserve malformed data. */
-  }
-  const { native: _native, helpers: _helpers, created_at: _created, closed_at: _closed, ...base } = record;
-  const next = { ...base, ...metadata, ...associationMetadata(record) };
-  writePrivate(file, JSON.stringify(next) + '\n');
 }

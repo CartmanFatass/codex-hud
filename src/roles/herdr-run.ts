@@ -3,8 +3,6 @@
  * Account homes come from the caller's env map, not from this file.
  */
 
-import type { HerdrHarness } from './routing.js';
-
 export interface HerdrOutcome {
   readonly ok: boolean;
   readonly reason: 'ok' | 'unavailable' | 'lost' | 'failed' | 'timeout' | 'aborted';
@@ -241,37 +239,4 @@ export function agentStatus(stdout: string): string | null {
   const agent = isRecord(result.agent) ? result.agent : result;
   const status = agent.agent_status ?? agent.status;
   return typeof status === 'string' && STATUSES.has(status) ? status : null;
-}
-
-export function tabCreateArgs(
-  cwd: string,
-  label: string,
-  envVars: Readonly<Record<string, string>>,
-  workspace: string | null
-): string[] {
-  const args = ['tab', 'create', '--cwd', cwd, '--label', label, '--no-focus'];
-  if (workspace) args.push('--workspace', workspace);
-  for (const key of Object.keys(envVars).sort()) args.push('--env', `${key}=${envVars[key]}`);
-  return args;
-}
-
-export function agentStartArgs(
-  agent: string,
-  harness: HerdrHarness,
-  paneId: string,
-  agentArgs: readonly string[]
-): string[] {
-  return ['agent', 'start', agent, '--kind', harness, '--pane', paneId, '--timeout', '30000', '--', ...agentArgs];
-}
-
-export function promptArgs(agent: string, text: string, waitForWorking: boolean): string[] {
-  const args = ['agent', 'prompt', agent, text];
-  if (waitForWorking) args.push('--wait', '--until', 'working', '--timeout', '30000');
-  return args;
-}
-
-export function waitArgs(agent: string, timeoutMs: number | null): string[] {
-  const args = ['agent', 'wait', agent, '--until', 'idle', '--until', 'done', '--until', 'blocked'];
-  if (timeoutMs !== null) args.push('--timeout', String(timeoutMs));
-  return args;
 }

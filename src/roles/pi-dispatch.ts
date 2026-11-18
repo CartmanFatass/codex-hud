@@ -1,5 +1,4 @@
-/** Lightweight receipt/SESSION codecs. Legacy ownership is observation-only. */
-import * as fs from 'node:fs';
+/** Legacy Pi receipt metadata, read for observation only. */
 import { isAbsolute, join, resolve } from 'node:path';
 import { isRecord } from './herdr-run.js';
 
@@ -93,23 +92,4 @@ export function validDispatch(value: unknown, role: string, directory?: string):
       return false;
   }
   return true;
-}
-
-/** Bounded regular file, refusing links (including replaced ancestor directories). */
-export function dispatchText(file: string, maxBytes: number): string | null {
-  try {
-    if (fs.realpathSync(file) !== file) return null;
-    const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
-    try {
-      const info = fs.fstatSync(fd);
-      if (!info.isFile() || info.size > maxBytes) return null;
-      const buffer = Buffer.alloc(maxBytes + 1);
-      const size = fs.readSync(fd, buffer, 0, buffer.length, 0);
-      return size <= maxBytes ? buffer.subarray(0, size).toString('utf8') : null;
-    } finally {
-      fs.closeSync(fd);
-    }
-  } catch {
-    return null;
-  }
 }
