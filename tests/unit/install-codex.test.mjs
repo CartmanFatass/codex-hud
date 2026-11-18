@@ -25,7 +25,10 @@ test('Codex registers roles, backs up config before rewrites, warns on comment l
     const config = path.join(codexHome, 'config.toml');
     const configTarget = path.join(temp, 'dotfiles-config.toml');
     const backup = configTarget + '.hud-backup';
-    const original = '# Owner comment\n  # Indented comment\nmodel = "synthetic"\n';
+    const unrelated = 'model = "synthetic"\n[mcp_servers.other]\ncommand = "other"\nenv_vars = ["HERDR_PANE_ID"]\n';
+    const oldEnv = ['HERDR_PANE_ID', 'HERDR_SOCKET_PATH', 'HERDR_ENV', 'HERDR_BIN_PATH', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID'];
+    const hudEntry = '[mcp_servers.hud]\ncommand = "synthetic-hud-mcp"\n';
+    const original = '# Owner comment\n  # Indented comment\n' + unrelated + hudEntry + `env_vars = ${JSON.stringify(oldEnv)}\n`;
     fs.writeFileSync(configTarget, original);
     fs.symlinkSync(configTarget, config);
     fs.copyFileSync(path.join(root, 'install'), path.join(repo, 'install'));
@@ -37,11 +40,18 @@ const fs = require('node:fs');
 fs.appendFileSync(process.env.CODEX_ARGV_LOG, JSON.stringify(process.argv.slice(2)) + '\\n');
 const config = require('node:path').join(process.env.CODEX_HOME, 'config.toml');
 if (!fs.existsSync(fs.realpathSync(config) + '.hud-backup')) throw Error('backup must precede MCP edits');
-fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace(/^\\s*#.*\\n/gm, ''));
+const sections = fs.readFileSync(config, 'utf8').replace(/^\\s*#.*\\n/gm, '').split(/(?=^\\[)/m);
 if (process.argv[3] === 'remove') {
-  console.error('MCP server hud not found');
-  process.exitCode = 1;
+  const hud = sections.findIndex((part) => part.startsWith('[mcp_servers.hud]\\n'));
+  if (hud >= 0) sections.splice(hud, 1);
+  else {
+    console.error('MCP server hud not found');
+    process.exitCode = 1;
+  }
+} else {
+  sections.push(${JSON.stringify(hudEntry)});
 }
+fs.writeFileSync(config, sections.join(''));
 `,
       { mode: 0o755 }
     );
@@ -75,7 +85,9 @@ if (process.argv[3] === 'remove') {
       assert.equal((result.stderr.match(/Warning: Codex/g) ?? []).length, content === null ? 1 : 0);
       if (content === null) assert.ok(result.stderr.includes(backup));
       assert.equal(fs.readFileSync(backup, 'utf8'), original);
-      assert.equal(fs.readFileSync(config, 'utf8'), 'model = "synthetic"\n');
+      assert.equal(fs.readlinkSync(config), configTarget);
+      const envVars = `env_vars = [${[...oldEnv, 'HUD_JOB_DIR'].map((name) => JSON.stringify(name)).join(', ')}]\n`;
+      assert.equal(fs.readFileSync(config, 'utf8'), unrelated + hudEntry.replace('\n', '\n' + envVars));
       for (const [target, link] of skillPaths) assert.equal(fs.readlinkSync(link), target);
       if (content === 'Owner prompt.\n') assert.equal(fs.readFileSync(prompt, 'utf8'), content);
       else assert.equal(fs.existsSync(prompt), false);
@@ -85,6 +97,7 @@ if (process.argv[3] === 'remove') {
     assert.equal((removed.stderr.match(/Warning: Codex/g) ?? []).length, 1);
     assert.ok(removed.stderr.includes(backup));
     assert.equal(fs.readFileSync(backup, 'utf8'), original);
+    assert.equal(fs.readFileSync(config, 'utf8'), unrelated);
     for (const [, link] of skillPaths) assert.throws(() => fs.lstatSync(link), { code: 'ENOENT' });
     assert.equal(fs.readFileSync(prompt, 'utf8'), 'Owner prompt.\n');
     fs.writeFileSync(prompt, promptLine);

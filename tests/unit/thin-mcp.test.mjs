@@ -66,7 +66,7 @@ const cardText = (worker) =>
     .join('\n');
 
 const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
-async function fixture(t, inHerdr = true, probe = '', watcherTickMs) {
+async function fixture(t, inHerdr = true, probe = '', watcherTickMs, worker = false) {
   const root = fs.mkdtempSync(join(tmpdir(), 'thin-mcp-'));
   const bin = join(root, 'bin');
   fs.mkdirSync(bin);
@@ -380,6 +380,8 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
   }
   if (inHerdr) env.HERDR_PANE_ID = 'w4E:p1';
   else delete env.HERDR_PANE_ID;
+  if (worker) env.HUD_JOB_DIR = join(env.HUD_HOME, 'jobs', 'j0000000000000001');
+  else delete env.HUD_JOB_DIR;
   const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
   const child = spawn(process.execPath, [...preload, entry], { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'] });
   const exited = once(child, 'exit');
@@ -1280,6 +1282,7 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     PRIMARY: job.agent,
   });
   assert.ok(commands[1].args.includes('--no-focus'));
+  assert.equal(commands[1].args[commands[1].args.indexOf('--env') + 1], `HUD_JOB_DIR=${job.task_dir}`);
   assert.equal(commands[1].args[commands[1].args.indexOf('--label') + 1], 'imp Synthetic lane');
   assert.equal(commands[1].args[commands[1].args.indexOf('--workspace') + 1], 'w4E');
   assert.deepEqual(commands[2].args.slice(2), [
@@ -1353,6 +1356,46 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   assert.equal(fs.readFileSync(join(job.task_dir, 'qa', 'q1.answer.md'), 'utf8'), answer.answer);
   assert.deepEqual(await f.call('hud_close', { job: job.job }), { exit_code: 0, last_line: 'Synthetic reap complete' });
   assert.deepEqual(f.commands().at(-1), { command: 'pi-role-reap', args: [job.task_dir] });
+});
+
+test('marked worker MCP refuses all dispatch tools but still answers roster and read', async (t) => {
+  const f = await fixture(t, true, '', undefined, true);
+  const dir = f.env.HUD_JOB_DIR;
+  const job = basename(dir);
+  const args = { role: 'imp', request_key: 'worker-child', task: 'Synthetic task.' };
+  const receipt = {
+    job,
+    role: 'imp',
+    request_key: 'worker-self',
+    cwd: f.root,
+    herdr_pane: f.env.HERDR_PANE_ID,
+    created_at: new Date().toISOString(),
+    dispatch_exit_code: 0,
+    message_keys: [],
+    place_key: 'pi:implementer:synthetic/default',
+  };
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify(receipt));
+  fs.writeFileSync(join(dir, 'SESSION.txt'), `PRIMARY=${job}-primary\n`);
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Synthetic question.');
+  assert.ok((await f.call('hud_roster')).roles.some((role) => role.role === 'imp'));
+  const read = await f.call('hud_read', { job });
+  assert.equal(read.state, 'working');
+  assert.deepEqual(read.questions, [{ id: 'q1', text: 'Synthetic question.' }]);
+
+  const refused = { ok: false, code: 'worker_cannot_dispatch' };
+  assert.deepEqual(await f.call('hud_send', { job, message_key: 'worker-send', text: 'Synthetic message.' }), refused);
+  assert.deepEqual(await f.call('hud_respond', { job, request_id: 'q1', answer: 'Synthetic answer.' }), refused);
+  assert.deepEqual(await f.call('hud_close', { job }), refused);
+  // A quota failure in a session row must not be recorded as a side effect of the refusal.
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'quota exceeded' }));
+  assert.deepEqual(await f.call('hud_create', args), refused);
+  assert.deepEqual(f.commands(), []);
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [job]);
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
+  assert.equal(fs.existsSync(join(dir, 'qa', 'q1.answer.md')), false);
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')), receipt);
 });
 
 test('hud_read returns unread reports in idle grace, omits read bodies, supports full and observes a second report', async (t) => {
@@ -1836,14 +1879,10 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   assert.equal(asks[1].args[asks[1].args.indexOf('--effort') + 1], '6 Pro');
   assert.equal(asks[2].args[asks[2].args.indexOf('--answer-file') + 1], join(job.task_dir, 'report.md'));
   assert.equal(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), 'Synthetic Jev answer.');
-  assert.ok(
-    f
-      .commands()
-      .find(
-        ({ args }) =>
-          args[0] === 'tab' && args.includes('--no-focus') && args[args.indexOf('--workspace') + 1] === 'w4E'
-      )
-  );
+  const tab = f.commands().find(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').args;
+  assert.ok(tab.includes('--no-focus'));
+  assert.equal(tab[tab.indexOf('--workspace') + 1], 'w4E');
+  assert.equal(tab[tab.indexOf('--env') + 1], `HUD_JOB_DIR=${job.task_dir}`);
   // Spec §2.1: the end reaches the main session through the job row, never typed into its pane.
   assert.equal(
     f.commands().some(({ command, args }) => command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt'),
@@ -2144,6 +2183,8 @@ test(
       request_key: 'grok-life',
       task: 'Synthetic grok task.',
     });
+    const tab = f.commands().find(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').args;
+    assert.equal(tab[tab.indexOf('--env') + 1], `HUD_JOB_DIR=${job.task_dir}`);
     const start = f.commands().find((c) => c.args[0] === 'agent' && c.args[1] === 'start').args;
     const dash = start.indexOf('--');
     assert.deepEqual(start.slice(0, dash), [

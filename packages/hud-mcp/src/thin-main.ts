@@ -24,6 +24,7 @@ import {
 } from '../../../src/roles/roster.js';
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
 const jobsRoot = join(hudHome, 'jobs');
+const isWorker = process.env.HUD_JOB_DIR !== undefined;
 const { ensureQueueWatcher } = await import(new URL('../../../../bin/hud-notify.mjs', import.meta.url).href);
 const bundled = fileURLToPath(new URL('../../../../', import.meta.url));
 function registry(cwd: string) {
@@ -405,6 +406,8 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace) {
       job.cwd,
       '--label',
       tabName,
+      '--env',
+      `HUD_JOB_DIR=${dir}`,
       '--no-focus',
     ]);
     if (result.exit_code !== 0) return result;
@@ -494,6 +497,8 @@ async function dispatchBro(job: Job) {
     job.cwd,
     '--label',
     tabName,
+    '--env',
+    `HUD_JOB_DIR=${dir}`,
     '--no-focus',
   ]);
   if (result.exit_code !== 0) return result;
@@ -632,6 +637,8 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
       job.cwd,
       '--label',
       tabName,
+      '--env',
+      `HUD_JOB_DIR=${dir}`,
       '--no-focus',
     ]);
     if (result.exit_code !== 0) return result;
@@ -706,12 +713,12 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string) {
     return reject({ exit_code: 1, stdout: '', stderr: String(error) });
   }
 }
-function readRow(job: Job) {
+function readRow(job: Job, markExhaustion = true) {
   const dir = directory(job.job);
   const file = join(dir, 'STATUS.json');
   let status = json<Record<string, unknown> & { state?: string; exit_reason?: string | null; error?: string | null }>(file);
   let row = jobRow(job, status, { dir });
-  if (row.display_state === 'failed' && !job.exhaustion_marked && status && row.reason) {
+  if (markExhaustion && row.display_state === 'failed' && !job.exhaustion_marked && status && row.reason) {
     const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, row.reason);
     if (outcome.marked) {
       job.exhaustion_marked = true;
@@ -1166,7 +1173,7 @@ function sessionRows(): JobRow[] {
     .filter(isSessionJob)
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.job.localeCompare(b.job))
     .slice(0, 200)
-    .map((job) => readRow(job).row);
+    .map((job) => readRow(job, !isWorker).row);
 }
 let cursor = new Map<string, JobRow>(sessionRows().map((row) => [row.job, row]));
 function withChanges(value: unknown): unknown {
@@ -1225,11 +1232,13 @@ async function receive(line: string): Promise<void> {
       }
       const invoke = () => call(name, args);
       try {
+        const readOnly = name === 'hud_read' || name === 'hud_roster';
+        // Refuse before invocation or reporting changes, which can record quota exhaustion.
         const value =
-          name === 'hud_read' || name === 'hud_roster'
-            ? await invoke()
-            : await (mutations = mutations.then(invoke, invoke));
-        result = { content: [{ type: 'text', text: JSON.stringify(withChanges(value)) }] };
+          isWorker && ['hud_create', 'hud_send', 'hud_close', 'hud_respond'].includes(name)
+            ? { ok: false, code: 'worker_cannot_dispatch' }
+            : withChanges(readOnly ? await invoke() : await (mutations = mutations.then(invoke, invoke)));
+        result = { content: [{ type: 'text', text: JSON.stringify(value) }] };
       } catch (error) {
         result = {
           content: [
