@@ -7,6 +7,9 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Waiting for the owner
 
+- Try 0.2.0 (MCP-NEXT, PANEL-V2, MCP-READ-COMPACT, SUPERVISOR-MCP; review docs/reviews/2026-11-18-0.2.0-milestone.md, fixed 3635da5d).
+- Decide: panel question reply stays two keys (, then /0	~/projects/MyHUD) or follows spec §2.2 literally (/0	~/projects/MyHUD on an expanded slab;  are also tab keys).
+- Decide: Split rule drag needs terminal mouse mode 1002 (motion while a button is held); keep it or keys only.
 - Nothing waits: the owner approved all 14 vertical-slice tickets across `mcp-next` (01–07) and `panel-v2` (01–07) on 2026-11-18. Still `try` in the ledger from earlier rounds: HOME-RECOMMEND, SETTLE-FIX, M4-PRUNE, MATT-OFF, SUPERVISOR-FIX.
 
 ## Next
@@ -148,12 +151,12 @@ board counts these; update at every landing or decision. -->
 - accepted · — · SKILL-ROLES · owner 2026-11-17: only to-tickets is in the HUD flow (ticket management and boundaries; spec gaps become owner questions, tickets held); oracle is the strongest-model seat for any read-only judgement (oracle.md, Fishpref architect.md); frontend-imp designs and builds UI; pro research asks for cited primary sources; hud-delegate defers brief contents to the convention; the remaining Matt skills (wayfinder, triage, improve-codebase-architecture, wizard, teach, wait-what, writing-for-agents, to-questionnaire, prototype, retro, pr, codebase-design) copied verbatim into skills-optional; delegation.md role table matches hud_roster
 - accepted · — · ARCH-ALIAS · owner 2026-11-17: hud_create takes `architect` for `oracle` unless a role file defines its own; spec rule: an agent edits docs/spec.md only after telling the owner the change and the reason; spec §2.3 lists the verbatim skills-optional copies and oracle as the strongest-model seat with no default skill; pi extension reinstalled (hud-setup linked)
 - accepted · — · MODELS-6.2 · owner 2026-11-17: sol and astra are 6.2: pi-roles implementer/reviewer → openai/gpt-6.2-sol, architect (oracle presets) → openai/gpt-6.2-astra (Fishpref pi-roles); HUD's PI_ROLE_DEFAULTS match
-- working · 0.2.0 · MCP-NEXT · high-throughput MCP orchestration: fine-grained locks, pre-flight trust, parsed quota TTL, preset dispatch, hud_wait, pi native watch, zero-copy context, hud-progress/hud_peek, managed worktree isolation (.scratch/mcp-next/, 7 tickets)
-- working · 0.2.0 · PANEL-V2 · panel micro-actions (g/QA reply/X), Split V2 cues/ratio/scrollbar, live / filter, sparklines + sonic subtrees, safe --numstat diff bars, Control quota radar, static HTML board (.scratch/panel-v2/, 7 tickets)
+- try · 0.2.0 · MCP-NEXT · high-throughput MCP orchestration: fine-grained locks, pre-flight trust, parsed quota TTL, preset dispatch, hud_wait, pi native watch, zero-copy context, hud-progress/hud_peek, managed worktree isolation (.scratch/mcp-next/, 7 tickets)
+- try · 0.2.0 · PANEL-V2 · panel micro-actions (g/QA reply/X), Split V2 cues/ratio/scrollbar, live / filter, sparklines + sonic subtrees, safe --numstat diff bars, Control quota radar, static HTML board (.scratch/panel-v2/, 7 tickets)
 - try · — · MCP-READ-COMPACT · compact actionable `hud_read()` list; `view:"recent"` retains the newest 20 full rows (separately scheduled, `.scratch/mcp-read-compact/issues/01-compact-hud-read.md`); landed e629b295 (default 327 B vs recent 4,475 B, −92.69%)
 - try · — · SUPERVISOR-MCP · bug 2026-11-18 (live, Claude frontend-imp): a CLI worker stays `working` after its report when its CLI started an MCP server directly (`node …/hud-mcp`) just after the first input; cli-judge counts it as turn work (spec §2.1: MCP servers do not count); landed 2d281b7b: on the first turn a direct non-shell child started within 10 s of the first input is a launch helper (shells and later children still count); live check passed 2026-11-18 (panel-v2 04 frontend-imp j9dbc6abfd9f248a6 reached idle_grace on its own after its report)
 
-## Now (2026-11-18): 0.2.0 all 14 tickets landed; milestone review changes-required (docs/reviews/2026-11-18-0.2.0-milestone.md: 5 blocking — nested git repo deleted by worktree cleanup, board To-try cut at 12, board leaks other projects' jobs, filter joined-role match, radar quiet count); FIX-0.2.0 running (imp jf4663d2435c9b30a); then the owner's try
+## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
 State on 2026-11-18, checked against the ledger below (no working, blocked or todo slice), herdr (only the main session's tab) and origin (in sync).
 
