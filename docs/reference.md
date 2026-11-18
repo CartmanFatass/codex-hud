@@ -617,8 +617,9 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `y` / `n` | Accept / flag marked to-try rows, or the current row if none are marked |
 | `b` | Model text master on/off (also the top-row models word) |
 | `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
+| `/` | Filter rows live on Home (either layout), Project Progress and Project Tickets: a one-row bar `/ query▌  N matches` under the header. A case-insensitive substring over, on Home, a card's package, title, role, harness, model-sentence keywords and status word (`asking`, `failed`, `working`, `stalled`, `done`; a decision's package and title); on Progress a slice's id, milestone, text, role and state (`working`, `blocked`, `to try`, `accepted`, `todo`); on Tickets a ticket's feature, number, title, status and blocker. Only matching rows are drawn, so ↑↓, Enter and Split's preview move over them; a matching card older than Home's fold or hide time stays (shown as its one row, muted), and the waiting, progress and older-count blocks, STATE's Next and its summary are left out while it is on. While typing every printable key goes to the query (`g`, `X`, `w`, `r`, digits, `=`, `-`, `q` do nothing else; Left, Right and Tab wait); Backspace edits; Enter stops typing and keeps the filter; Esc stops typing, then clears it (Split's preview gives Esc back to the list first). Another tab, page, project, Help or the Inspector clears it. Kept across the panel's reload |
 | `,`, `?` | Settings, Help |
-| Esc | Back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
+| Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
 | `q` | Close panel |
 
 Mouse clicks select a row/button, a second click on the selected item runs Enter's

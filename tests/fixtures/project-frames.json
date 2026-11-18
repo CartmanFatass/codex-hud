@@ -159,7 +159,7 @@
     "",
     "",
     "",
-    "                                                                             ↑↓ move  ⏎ open  t to try  esc back  ? help"
+    "                                                                   ↑↓ move  ⏎ open  t to try  esc back  ? help  / filter"
   ],
   "tree-40-en": [
     "‹ Project › Working tree",
@@ -573,7 +573,7 @@
     "",
     "",
     "",
-    "                                                                             ↑↓ 移动  ⏎ 打开  t 待试用  esc 返回  ? 帮助"
+    "                                                                     ↑↓ 移动  ⏎ 打开  t 待试用  esc 返回  ? 帮助  / 筛选"
   ],
   "tree-40-zh": [
     "‹ 项目 › 工作区",
@@ -957,7 +957,7 @@
     "",
     "",
     "",
-    "                                                                             ↑↓ move  ⏎ open  t to try  esc back  ? help"
+    "                                                                   ↑↓ move  ⏎ open  t to try  esc back  ? help  / filter"
   ],
   "progress-rich-40-zh": [
     "‹ 项目 › 进度               更新于 12:35",
@@ -1089,7 +1089,7 @@
     "",
     "",
     "",
-    "                                                                             ↑↓ 移动  ⏎ 打开  t 待试用  esc 返回  ? 帮助"
+    "                                                                     ↑↓ 移动  ⏎ 打开  t 待试用  esc 返回  ? 帮助  / 筛选"
   ],
   "progress-rich-open-40-en": [
     "‹ Project › Progress       updated 12:35",

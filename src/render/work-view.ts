@@ -17,6 +17,7 @@ import { homeScene } from './split-home.js';
 import { projectScene } from './split-project.js';
 import { paintSplit, splitScrolls } from './split-frame.js';
 import { stopPromptRows } from './job-actions.js';
+import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
 export { footHints } from './workboard-rows.js';
 function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const half = width >= 80 ? Math.floor((width - 4) / 2) : width;
@@ -28,6 +29,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['3', 'Changes'],
       ['↑ ↓', 'move'],
       ...(input.state.panelLayout === 'split' ? [['PgUp Dn', 'scroll the preview (Split)'], ['= + -', 'Split: list bigger / smaller (or drag the rule)']] : []),
+      ['/', 'filter rows live'],
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
       ['[ ]', 'switch project (Project)'],
@@ -105,7 +107,17 @@ export function renderWorkboardFrame(
   const home = !sub && !project;
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
-  const board = inspector ? source : visibleWorkboard(input, source, state, now);
+  // The `/` filter: Home's board keeps the cards that match; Progress and Tickets read a snapshot of the slices or tickets that do.
+  const filtering = !!filterScope(state) && (!!state.filterOpen || !!state.filterQuery), needle = filtering ? filterNeedle(state) : '';
+  let matches: number | undefined;
+  if (needle && input.project && (page === 'progress' || page === 'tickets')) {
+    const found = filterProject(input.project, page, needle);
+    input = { ...input, project: found.data };
+    matches = found.count;
+  }
+  const board = inspector ? source : visibleWorkboard(input, source, state, now, home && needle ? homeMatcher(source, needle, now, state.cardStallMinutes) : undefined);
+  if (home && needle) matches = board.workers.length + board.decisions.length;
+  const bar = filtering ? filterRow(state, matches, width) : undefined, top = bar ? 1 : 0;
   const target = state.boardInspect;
   const lane = board.lanes.find((l) => l.id === target?.laneId);
   const decision = target?.kind === 'decision' ? lane?.decisions.find((d) => d.id === target.decisionId) : undefined;
@@ -124,7 +136,7 @@ export function renderWorkboardFrame(
     frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
-    const count = board.workers.filter((w) => w.homeNeedsHuman).length;
+    const count = source.workers.filter((w) => w.homeNeedsHuman).length;
     const title = ` ${t('Home')}${count ? ' ' + theme.board.attention(String(count)) : ''} `;
     const waiting = input.project?.waiting.length ?? 0;
     const projectTitle = ` ${t('Project')}${waiting ? ' ' + theme.board.attention(String(waiting)) : ''} `;
@@ -178,7 +190,7 @@ export function renderWorkboardFrame(
   if (state.panelLayout === 'split' && !sub && !list) {
     const build = (w: number) => home ? homeScene(input, board, state, targets, w, now, doneToday())
       : project && !(page === 'control' && state.projectInput) ? projectScene(input, state, board, page, w, now) : undefined;
-    const notes = [...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x);
+    const notes = [...(bar ? [bar.text] : []), ...stopPromptRows(state, width).map((r) => r.text), input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x);
     let scene = build(width);
     // A preview that scrolls keeps its last cell for the scrollbar: its rows are laid out one cell narrower, so none is cut.
     if (scene && splitScrolls(scene, state, height, notes.length)) scene = { ...scene, preview: build(width - 1)?.preview ?? scene.preview };
@@ -192,7 +204,7 @@ export function renderWorkboardFrame(
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
-              Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
+              Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
           : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
@@ -200,8 +212,8 @@ export function renderWorkboardFrame(
   if (home || inspector) rows.unshift(...stopPromptRows(state, width));
   if (home) {
     // The waiting items and the newest landed slices sit under the cards, progress at the bottom (owner): the work above keeps the room next to it.
-    const spare = height - 2 - rows.length;
-    rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim()));
+    const spare = height - 2 - top - rows.length;
+    if (!needle) rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim()));
   }
   if (state.boardAnchor?.startsWith('home-progress:') && !rows.some((r) => r.item === state.boardAnchor))
     state.boardAnchor = undefined;
@@ -232,7 +244,7 @@ export function renderWorkboardFrame(
   // The model picker is the page while it is open: its picked entry is the cursor, and the page's own scroll and reveal wait.
   const picking = project && page === 'control' && !!state.projectInput;
   const key = picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
-  let room = Math.max(0, height - 2);
+  let room = Math.max(0, height - 2 - top);
   let preview: MonitorRow[] = [];
   if (project && page === 'control' && !picking) {
     const start = rows.findIndex((r) => r.placePreview);
@@ -265,16 +277,17 @@ export function renderWorkboardFrame(
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
   else if (project) { if (!picking) state.projectScroll = offset; }
   else state.homeScroll = offset;
+  if (bar) frame.lines[1] = bar.text;
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
     if (!row) continue;
     const text = fit(row.paint?.() ?? row.text, width);
     // A Projects list entry is two rows and the cursor marks both.
     const marked = offset + i === cursorAt || (list && !!key && row.item === key);
-    frame.lines[i + 1] = !help && !changes && marked ? boardCursor(text) : text;
-    for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 });
+    frame.lines[i + 1 + top] = !help && !changes && marked ? boardCursor(text) : text;
+    for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 + top });
   }
-  preview.forEach((row, i) => { frame.lines[room + 1 + i] = row.text; });
+  preview.forEach((row, i) => { frame.lines[room + 1 + top + i] = row.text; });
   const done = doneToday();
   const hints = help
     ? '↑↓ scroll  esc back'
@@ -292,7 +305,7 @@ export function renderWorkboardFrame(
   if (height > 1)
     frame.lines[height - 1] = footRow(
       !home || !done ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
-      t(hints),
+      filterHints(state, t(hints)),
       width
     );
   // The theme's own text colour under every row, so a row with no ink of its own is not the terminal's.
@@ -300,7 +313,7 @@ export function renderWorkboardFrame(
   frame.panes.push({
     id: inspector ? 'details' : changes ? 'changes' : 'agents',
     x: 0,
-    y: 1,
+    y: 1 + top,
     width,
     height: room,
     offset,

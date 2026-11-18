@@ -11,6 +11,7 @@ import { boardCursor, footRow, mark, section } from './workboard-rows.js';
 import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
 import { fit } from './monitor-text.js';
 import { t } from './i18n.js';
+import { filterHints } from './filter.js';
 
 export interface SplitScene {
   /** Every row of an entry carries the entry's `item` (a reason row too); header and blank rows carry none. */
@@ -104,7 +105,7 @@ export function paintSplit(
     const row = scene.preview[previewAt + i], inThumb = i >= thumbAt && i < thumbAt + thumb;
     if (row) put(previewTop + i, row, previewAt + i === first(scene.preview, band), scrolls ? (inThumb ? theme.board.muted(mark('┃', '#')) : theme.board.frame(mark('│', '|'))) : '');
   }
-  if (height > 1) frame.lines[height - 1] = footRow(scene.left ?? '', t(scene.hints), width);
+  if (height > 1) frame.lines[height - 1] = footRow(scene.left ?? '', filterHints(state, t(scene.hints)), width);
   frame.lines = frame.lines.map((line) => theme.board.text(fit(line, width)));
   frame.panes.push(
     { id: 'agents', x: 0, y: listTop, width, height: listRoom, offset: listAt, contentLength: list.length, rows: list, edge: 0, visible: listRoom },

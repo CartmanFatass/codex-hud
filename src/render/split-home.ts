@@ -55,6 +55,8 @@ export function homeScene(
   input: MonitorData, board: WorkboardSnapshot, state: MonitorState, targets: ReadonlyMap<string, WorkTarget>, width: number, now: number, done: number,
 ): SplitScene {
   markNewest(board, state, now);
+  // With a `/` filter the list is the lanes (and decisions) that match: the waiting and progress blocks are the whole project's.
+  const filtering = !!state.filterQuery;
   const data = input.project, group = (lane: WorkLane) => Math.min(...lane.workers.map((w) => workerPriority(w, now)));
   const lanes = (state.tree.showAll && !board.workers.some((w) => w.homeRank !== undefined) ? board.lanes : orderedLanes(board, now)).filter((l) => l.workers.length);
   const names = lanes.map((l) => monitorText(l.identity.kind === 'native' ? l.label.replace('this session', t('this session')) : l.label));
@@ -83,7 +85,7 @@ export function homeScene(
     } };
   };
   const waits = data?.waiting ?? [];
-  const waiting: Entry[] = !waits.length ? [] : [{ item: WAITING, needs: true, rows: [{ item: WAITING,
+  const waiting: Entry[] = filtering || !waits.length ? [] : [{ item: WAITING, needs: true, rows: [{ item: WAITING,
     text: pair(`${theme.board.attention('?')} ${t('Waiting for you')}`, theme.board.muted([waits.length, tries(waits) && t('{n} to try', { n: tries(waits) })].filter(Boolean).join(' · ')), width) }],
   preview: () => ({ label: t('Waiting for you'), right: [waits.length, tries(waits) && t('{n} to try', { n: tries(waits) })].filter(Boolean).join(' · '), rows: [
     ...waits.flatMap((r, i) => waitingRows(r, i, width, now, Infinity).map((row) => ({ ...row, item: `home-progress:wait:${i}` }))),
@@ -97,7 +99,7 @@ export function homeScene(
   const block = data ? homeProgressRows(data, width, 99, false) : [];
   // Recommended mode's brief paragraph is the Progress row's preview, where the summary is.
   const brief = board.homeBrief ? [...flowLines(monitorText(board.homeBrief), width).map((l) => boardRow(theme.board.text(l))), boardRow('')] : [];
-  const progress: Entry[] = !block.length && !brief.length ? [] : (() => {
+  const progress: Entry[] = filtering || (!block.length && !brief.length) ? [] : (() => {
     const cur = data ? currentRows(data) : undefined, total = cur ? cur.rows.length - cur.counts.dropped : 0, milestone = data?.ladder.current && cur && !(cur.whole && cur.rows.length) ? monitorText(data.ladder.current) : '';
     return [{ item: PROGRESS, needs: false, rows: [{ item: PROGRESS, text: pair(`${theme.board.active(mark('◐', '@'))} ${t('Progress')}${milestone ? '  ' + theme.board.muted(milestone) : ''}`,
       total && cur ? `${barText({ counts: cur.counts }, 14)} ${theme.board.muted(`${cur.counts.accepted}/${total}`)}` : '', width) }],
@@ -118,7 +120,7 @@ export function homeScene(
   state.boardAnchor = at && /^(home-progress:|split:)/.test(at) ? at : undefined;
   if (!state.boardAnchor) state.homeTarget = sub ? targets.get(sub) : lane ? { kind: 'worker', laneId: lane.id, workerId: laneTop(lane, now).id } : state.homeTarget;
   return {
-    list: entries.length ? entries.flatMap((e) => (e.cued && e.item !== cursor ? [e.cued, ...e.rows.slice(1)] : e.rows)) : [boardRow(theme.board.muted(fit('  ' + t('Nothing in progress'), width)))],
+    list: entries.length ? entries.flatMap((e) => (e.cued && e.item !== cursor ? [e.cued, ...e.rows.slice(1)] : e.rows)) : [boardRow(theme.board.muted(fit('  ' + t(filtering ? 'No matches' : 'Nothing in progress'), width)))],
     cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, scope,
     left: done ? theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`) : '',
     hints: sub ? '↑↓ move  ⏎ expand  esc back  PgUp PgDn scroll  o open  v inspect  ? help' : '↑↓ move  ⏎ open  PgUp PgDn scroll  o open  v inspect  a all  , settings  ? help  ←→ tab',

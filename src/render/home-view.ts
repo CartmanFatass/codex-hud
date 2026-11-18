@@ -82,12 +82,14 @@ export function homeRows(
   input?: MonitorData
 ): MonitorRow[] {
   markNewest(board, state, now);
+  // With a `/` filter the board holds only what matches: no summary line, brief, older count or progress block of the whole.
+  const filtering = !!state.filterQuery;
   const rows: MonitorRow[] = [boardRow('')];
   const needs = board.workers.filter((w) => w.homeNeedsHuman)
     .sort((a, b) => Number(b.labels?.category === 'owner authorisation') - Number(a.labels?.category === 'owner authorisation'));
   // STATE's waiting items count with the job questions; with none of either the line says so. Questions already show as cards.
   const waiting = input?.project?.waiting.length ?? 0, running = board.workers.filter((w) => w.settledAt === null).length;
-  if (waiting || !needs.length)
+  if (!filtering && (waiting || !needs.length))
     rows.push(
       {
         ...boardRow(
@@ -100,7 +102,7 @@ export function homeRows(
       boardRow('')
     );
   for (const worker of needs) rows.push(...askSlabRows(worker, board, state, width, now));
-  if (board.homeBrief) rows.push(...flowLines(monitorText(board.homeBrief), width).map((s) => boardRow(theme.board.text(s))), boardRow(''));
+  if (!filtering && board.homeBrief) rows.push(...flowLines(monitorText(board.homeBrief), width).map((s) => boardRow(theme.board.text(s))), boardRow(''));
   if (input)
     for (const lane of state.tree.showAll && !board.workers.some((w) => w.homeRank !== undefined) ? board.lanes : orderedLanes(board, now)) {
       if (!lane.workers.length) continue;
@@ -108,7 +110,8 @@ export function homeRows(
     }
   rows.push(...decisionBlock(board, state, width, now, input?.workboard));
   const source = input?.workboard;
-  const hidden = source
+  if (filtering && !board.workers.length && !board.decisions.length) rows.push(boardRow(theme.board.muted('  ' + t('No matches'))));
+  const hidden = source && !filtering
     ? source.workers.filter((w) => !currentWorker(w, now, state)).length +
       source.decisions.filter((d) => !currentDecision(d, now)).length
     : 0;

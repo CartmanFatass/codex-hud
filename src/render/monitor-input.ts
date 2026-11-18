@@ -4,6 +4,7 @@ import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorRow, MonitorSt
 import { workboardInput } from './workboard-input.js';
 import { modelInputKey } from './model-input.js';
 import { jobModalInput } from './job-actions.js';
+import { filterInput, filterScope } from './filter.js';
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
   if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height) return undefined;
@@ -15,8 +16,18 @@ export function monitorItemAt(pane: MonitorRect, x: number, y: number): string |
   return monitorRowAt(pane, x, y)?.item || undefined;
 }
 export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
+  const out = route(state, input, ctx);
+  // A `/` filter belongs to the view it was typed in: another tab, page, project, Help or the Inspector clears it.
+  if ((out.state.filterQuery !== undefined || out.state.filterOpen) && filterScope(out.state) !== filterScope(state))
+    out.state = { ...out.state, filterQuery: undefined, filterOpen: undefined };
+  return out;
+}
+function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   // The Control plane's model input owns the keyboard (`q` is a letter in it); a click leaves it and is handled as ever.
   if (state.projectInput && input.type === 'key') return modelInputKey(state, input, ctx);
+  // The `/` filter: its typing owns the keyboard, as the model input's does.
+  const filter = filterInput(state, input);
+  if (filter) return filter;
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
   const result = (action?: MonitorOutcome['action'], close = false): MonitorOutcome => ({ state: next, close, action });
   if (input.type === 'mouse' && input.button === 'left') next.projectInput = undefined;

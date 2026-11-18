@@ -57,7 +57,7 @@
     "                                                                                ",
     "                                                                                ",
     "                                                                                ",
-    "✓ 1 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
+    "✓ 1 今日完成     ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  / 筛选"
   ],
   "en-120": [
     " Home  Project                                                                                                models off",
@@ -87,7 +87,7 @@
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
-    "✓ 1 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
+    "✓ 1 done today                         ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  / filter  ←→ tab"
   ],
   "zh-120": [
     " 首页  项目                                                                                                      模型 关",
@@ -117,6 +117,6 @@
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                                                        ",
-    "✓ 1 今日完成                                            ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
+    "✓ 1 今日完成                                    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  / 筛选  ←→ 切页"
   ]
 }

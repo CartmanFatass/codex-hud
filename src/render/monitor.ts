@@ -110,6 +110,9 @@ export interface MonitorState {
   splitRatio?: number;
   /** A drag of the rule is under way (the press was on it). */
   splitDrag?: boolean;
+  /** The `/` filter (`filter.ts`): what is typed, and whether keys still go to it. Cleared on leaving the view; kept across the panel's reload. */
+  filterQuery?: string;
+  filterOpen?: boolean;
   /** What the preview's scroll belongs to; another page or cursor row starts it at the top. */
   splitFor?: string;
 }

@@ -245,7 +245,7 @@
     "",
     "",
     "",
-    "                                               ↑↓ move  ⏎ open  esc back  ? help"
+    "                                     ↑↓ move  ⏎ open  esc back  ? help  / filter"
   ],
   "tickets-120-en": [
     "‹ Project › Tickets                                                                              2 features · 14 tickets",
@@ -319,7 +319,7 @@
     "",
     "",
     "",
-    "                                                                                       ↑↓ move  ⏎ open  esc back  ? help"
+    "                                                                             ↑↓ move  ⏎ open  esc back  ? help  / filter"
   ],
   "hub-120-en": [
     " Home 1  Project 2                                                                                            models off",
@@ -419,7 +419,7 @@
     "",
     "",
     "",
-    "                                                                                       ↑↓ move  ⏎ open  esc back  ? help"
+    "                                                                             ↑↓ move  ⏎ open  esc back  ? help  / filter"
   ],
   "tickets-40-zh": [
     "‹ 项目 › 工单       2 个功能 · 14 个工单",
@@ -667,7 +667,7 @@
     "",
     "",
     "",
-    "                                               ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
+    "                                       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助  / 筛选"
   ],
   "tickets-120-zh": [
     "‹ 项目 › 工单                                                                                       2 个功能 · 14 个工单",
@@ -741,7 +741,7 @@
     "",
     "",
     "",
-    "                                                                                       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
+    "                                                                               ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助  / 筛选"
   ],
   "hub-120-zh": [
     " 首页 1  项目 2                                                                                                  模型 关",
@@ -841,6 +841,6 @@
     "",
     "",
     "",
-    "                                                                                       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
+    "                                                                               ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助  / 筛选"
   ]
 }

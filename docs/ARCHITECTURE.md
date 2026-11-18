@@ -322,6 +322,11 @@ default (outside it `1`–`4` stay the tabs) and become `answer-job`; `X` sets `
 writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
 `PanelActionLog` turns those records into `[role@job] ANSWERED qN from panel: …` lines for `hud watch` and the MCP
 `changes`, as the try log does: only answers made while the reader runs.
+The `/` filter (`render/filter.ts`, `MonitorState.filterQuery`/`filterOpen`, kept across the reload) is pure input plus a pure match: `filterInput`
+runs first in `handleMonitorInput` and owns the keyboard while the bar is open, and a change of `filterScope` (Home, or Progress/Tickets of one
+project) clears it. The views are filtered, not their rows: `renderWorkboardFrame` hands Home a `visibleWorkboard` of the matching cards and
+Progress/Tickets a `filterProject` snapshot, so Classic, Split, the cursor and `workboardInput` all see only what matches. The bar is a
+pinned row under the header (a Split note), never a scrolling one.
 Always retain `frame.state`: reconciliation preserves selection by identity and
 separate scroll/fold state. Cards show a title plus two sentence rows, expanding
 in place; raw workflow files open from the Inspector or `o`.

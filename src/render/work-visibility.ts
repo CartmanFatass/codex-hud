@@ -26,15 +26,17 @@ export function currentDecision(d: DecisionRecord, now: number): boolean {
   const at = callTime(d);
   return at !== null && now - at < (d.departure ? HOME_MS.departure : HOME_MS.decision);
 }
+/** With a `/` filter's `match`, the cards and decisions that match stay however old they are, and no other does. */
 export function visibleWorkboard(
   _input: MonitorData,
   board: WorkboardSnapshot,
   state: MonitorState,
-  now: number
+  now: number,
+  match?: { worker(w: OwnerWorker): boolean; decision(d: DecisionRecord): boolean }
 ): WorkboardSnapshot {
-  const all = state.tree.showAll;
-  const workers = board.workers.filter((w) => all || currentWorker(w, now, state));
-  const decisions = board.decisions.filter((d) => all || currentDecision(d, now));
+  const all = state.tree.showAll || !!match;
+  const workers = board.workers.filter((w) => (match ? match.worker(w) : all || currentWorker(w, now, state)));
+  const decisions = board.decisions.filter((d) => (match ? match.decision(d) : all || currentDecision(d, now)));
   const workerIds = new Set(workers.map((w) => w.id)), decisionIds = new Set(decisions.map((d) => d.id));
   const lanes = board.lanes.map((lane) => ({
     ...lane,
