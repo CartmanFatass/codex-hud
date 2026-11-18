@@ -1,6 +1,6 @@
 # 02: Progress page shows only what is still to try
 
-**Status:** ready-for-agent
+**Status:** done (6c514fdb)
 **Blocked by:** 01
 
 **What to build:** Architect, 2026-11-17: "what else hasn't been tried?". On the Progress page, selecting the to-try
