@@ -600,6 +600,43 @@ action (Project hub links, Inspector file links and Home progress-block links op
 on one click), clicking the top crumb goes back, clicking a tab switches tabs, and
 wheel scrolling moves the viewport without moving the selection.
 
+### Split layout
+
+The saved setting `panelLayout` (`classic` by default; Settings → Panel → Layout) can be `split`:
+Home and Project become **a list above and a preview of the cursor row below**
+(`docs/design/panel-v8/`, option 2). Classic's cards, slab and sentences are the previews, unchanged.
+
+- **Home.** One row per package lane and per block (Waiting for you, Decided for you,
+  Progress), always the same height, whatever runs: mark, name, phase, then the state
+  of the lane's most important job. A question or a failure keeps a reason row, so what
+  needs you is always on screen; the cursor starts on the first such row. Below the
+  list the preview shows that row: the question's slab and the lane's cards, the
+  waiting items with the newest landed slices, the decisions, or the progress block.
+  On a short panel blank rows go first, then the preview from its bottom; the list
+  never gives way (a very short panel scrolls it with its cursor).
+- **Project hub.** Waiting for you and the pages are the list; the preview of the
+  cursor row is that page's substance (Progress: summary, bar, slices to try, Now,
+  latest accepted). Enter on a page opens it, as before.
+- **Progress.** One ledger list (working, blocked, to try, todo; accepted, Next and
+  History are one row each) with the cursor slice explained underneath. `y` / `n`
+  accept / flag a to-try row; on the hub they act on the next slice to try, the first
+  row of its preview that has no mark yet.
+- **Control plane.** Roles on top (those that need you first), the cursor role's
+  places below. Enter takes the keys into the places: ↑↓ choose one, `p m e + - K J x`
+  act on it, Esc returns; `c` / `C` apply a preset to the role from the list.
+- **Tickets, Working tree, Docs.** A row each, the ticket's checklist and latest
+  comment or the fact's whole text underneath; Enter opens the file.
+
+| Key | In Split |
+|---|---|
+| Up/Down | Move in the list (or in the preview, once Enter has taken the keys there) |
+| PgUp/PgDn, wheel over the preview | Scroll the preview; the wheel over the list moves the cursor |
+| Enter | A row with something to act on in its preview (cards, waiting items, places) moves the keys there; there Enter does what it does in Classic. Elsewhere as in Classic |
+| Esc | Back from the preview to the list, then as in Classic |
+| Click | Selects a row (or a preview row); a second click is Enter |
+
+One waiting item's page and the Projects list are Classic's frames in either layout.
+
 ### Help
 
 Press `?` for shortcuts, status marks and the **Backup skills** section. Scroll down

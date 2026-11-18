@@ -37,6 +37,10 @@ const writers = {
     const { pageFixture, pageFrames } = await load('kept-pages.mjs');
     return withHome((h) => pageFrames(pageFixture(h)));
   },
+  'split-frames.json': async () => {
+    const { splitFixture, splitFrames } = await load('split-layout.mjs');
+    return withHome(async (h) => splitFrames(await splitFixture(join(h, 'busy')), await splitFixture(join(h, 'idle'), { idle: true })));
+  },
   'project-frames.json': async () => {
     const { projectFixture, projectFrames } = await load('project-page.mjs');
     return withHome(async (h) => projectFrames({ root: h, ...(await projectFixture(h)) }));

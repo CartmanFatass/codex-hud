@@ -14,6 +14,9 @@ import { pickOf } from './model-input.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
+import { homeScene } from './split-home.js';
+import { projectScene } from './split-project.js';
+import { paintSplit } from './split-frame.js';
 export { footHints } from './workboard-rows.js';
 function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const half = width >= 80 ? Math.floor((width - 4) / 2) : width;
@@ -24,6 +27,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['← → Tab', 'next / previous tab'],
       ['3', 'Changes'],
       ['↑ ↓', 'move'],
+      ...(input.state.panelLayout === 'split' ? [['PgUp Dn', 'scroll the preview (Split)']] : []),
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
       ['[ ]', 'switch project (Project)'],
@@ -65,6 +69,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
         );
   const notes = [
     'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
+    ...(input.state.panelLayout === 'split' ? ['Split: ⏎ opens the row’s preview, Esc comes back; click selects, again opens'] : []),
     'On the Control plane c/C applies the next/previous role preset; p m e + - K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
     'In the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
@@ -148,6 +153,31 @@ export function renderWorkboardFrame(
   }
   // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
   if (state.projectInput && !(project && page === 'control' && pickOf(input.project, state.projectInput))) state.projectInput = undefined;
+  const targets = new Map<string, WorkTarget>();
+  for (const lane of board.lanes) {
+    const all: WorkTarget[] = [
+      { kind: 'lane', laneId: lane.id },
+      ...lane.workers.map((w) => ({ kind: 'worker' as const, laneId: lane.id, workerId: w.id })),
+      ...lane.decisions.map((d) => ({ kind: 'decision' as const, laneId: lane.id, decisionId: d.id })),
+    ];
+    for (const target of all) targets.set(targetKey(target), target);
+  }
+  const doneToday = () => {
+    const today = new Date(now).toDateString();
+    return source.workers.filter(
+      (w) =>
+        ['done', 'completed', 'closed', 'idle_grace'].includes(w.state) &&
+        w.settledAt !== null &&
+        new Date(w.settledAt).toDateString() === today
+    ).length;
+  };
+  // The Split layout draws Home, the hub and the pages that are lists in its own frame (split-*.ts); the rest is Classic's.
+  if (state.panelLayout === 'split' && !sub && !list) {
+    const scene = home ? homeScene(input, board, state, targets, width, now, doneToday())
+      : project && !(page === 'control' && state.projectInput) ? projectScene(input, state, board, page, width, now) : undefined;
+    if (scene) return paintSplit(frame, scene, board, targets, state.homeTarget, width, height,
+      [input.publicationNotice && theme.warning(monitorText(input.publicationNotice)), input.error && theme.error(monitorText(input.error))].filter((x): x is string => !!x));
+  }
   const rows = help
     ? helpRows(input, width)
     : changes
@@ -169,15 +199,6 @@ export function renderWorkboardFrame(
   }
   if (state.boardAnchor?.startsWith('home-progress:') && !rows.some((r) => r.item === state.boardAnchor))
     state.boardAnchor = undefined;
-  const targets = new Map<string, WorkTarget>();
-  for (const lane of board.lanes) {
-    const all: WorkTarget[] = [
-      { kind: 'lane', laneId: lane.id },
-      ...lane.workers.map((w) => ({ kind: 'worker' as const, laneId: lane.id, workerId: w.id })),
-      ...lane.decisions.map((d) => ({ kind: 'decision' as const, laneId: lane.id, decisionId: d.id })),
-    ];
-    for (const target of all) targets.set(targetKey(target), target);
-  }
   let selected = state.homeTarget;
   if (home && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
     const order = source.lanes.flatMap((l) => [
@@ -248,13 +269,7 @@ export function renderWorkboardFrame(
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 });
   }
   preview.forEach((row, i) => { frame.lines[room + 1 + i] = row.text; });
-  const today = new Date(now).toDateString();
-  const done = source.workers.filter(
-    (w) =>
-      ['done', 'completed', 'closed', 'idle_grace'].includes(w.state) &&
-      w.settledAt !== null &&
-      new Date(w.settledAt).toDateString() === today
-  ).length;
+  const done = doneToday();
   const hints = help
     ? '↑↓ scroll  esc back'
     : inspector

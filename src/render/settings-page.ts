@@ -73,7 +73,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'homeMode', group: 'Panel', label: 'Home mode', values: ['default', 'recommended'],
     help: 'Rank Home cards and show a progress brief through models', format: (value) => t(value === 'recommended' ? 'Recommended' : 'Default') },
   { key: 'panelLayout', group: 'Panel', label: 'Layout', values: ['classic', 'inbox', 'split'],
-    help: 'Home and Project: Classic as before; Inbox lists what you owe first, then what runs; Split is not built yet and shows Classic',
+    help: 'Home and Project: Classic as before; Inbox lists what you owe first, then what runs; Split puts a list over a preview of the selected row',
     format: (value) => t(({ classic: 'Classic', inbox: 'Inbox', split: 'Split' } as Record<string, string>)[String(value)] ?? String(value)) },
   {
     key: 'treeWidth',

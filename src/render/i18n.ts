@@ -12,6 +12,7 @@
  */
 
 import { WORKBOARD_ZH } from './workboard-i18n.js';
+import { SPLIT_ZH } from './split-i18n.js';
 
 export type Language = 'en' | 'zh';
 export type LanguageSetting = 'auto' | Language;
@@ -38,6 +39,7 @@ export function language(): Language {
 
 const ZH: Record<string, string> = {
   ...WORKBOARD_ZH,
+  ...SPLIT_ZH,
   'Backup skills': '备用技能',
   'Skills catalog unavailable': '技能目录缺失或无法读取',
   'No backup skills listed': '目录里没有备用技能',

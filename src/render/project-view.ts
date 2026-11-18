@@ -210,7 +210,7 @@ export const inline = (head: string, text: string, right: string, width: number)
 /** Jobs of this project that no slice shows: an imp working in the main checkout, say. */
 export const unsliced = (data: ProjectSnapshot) => data.active.filter((a) => !data.slices.some((r) => r.jobId === a.jobId));
 /** Worktrees with no ledger row: the Working tree page counts and lists them; Now is about work in flight. */
-const unlisted = (data: ProjectSnapshot) => data.slices.filter((r) => r.drift === 'not in ledger');
+export const unlisted = (data: ProjectSnapshot) => data.slices.filter((r) => r.drift === 'not in ledger');
 export const inFlight = (data: ProjectSnapshot) => data.slices.filter((r) => r.drift !== 'not in ledger');
 /** Landed slices (to try or accepted), the newest first by commit date; those with none last, the later ledger rows first. */
 export const landedNewest = (data: ProjectSnapshot) => data.ledger.flatMap((r, i) => r.state === 'try' || r.state === 'accepted' ? [{ r, i }] : [])
@@ -220,6 +220,21 @@ export const landedMark = (r: LedgerSlice, action?: TryAction) => action === 'fl
 /** The hub's Latest and Progress's History share this right side: `to try 10h`, or only the age for an accepted slice on Progress. */
 export const landedAge = (r: LedgerSlice, now: number, word = true) =>
   [r.state === 'try' ? sliceInk('try')(t('to try')) : word ? theme.board.muted(t('accepted')) : '', theme.board.muted(sinceText(r.at, now))].filter(Boolean).join(' ');
+/** What is in flight, a row each: who is on which slice and for how long, then the jobs no slice shows. */
+export function hubNowRows(data: ProjectSnapshot, width: number, now: number, board?: WorkboardSnapshot): MonitorRow[] {
+  return [...inFlight(data).map((r): MonitorRow => {
+    const worker = board?.workers.find((w) => w.evidence[0]?.sourceId === r.jobId), role = worker?.role ?? r.role ?? '';
+    const reason = r.drift === 'ledger' ? t('ledger: {state}', { state: monitorText(t(r.ledgerState ?? '')) }) : r.drift ? t(r.drift) : '';
+    const blocked = r.ledgerState === 'blocked', lead = r.drift ? theme.board.attention('!') : blocked ? sliceInk('blocked')(mark('◆', '!')) : sliceInk('working')(mark('◐', '@'));
+    const who = reason ? theme.board.attention(reason) : r.jobId
+      ? [role && roleInk(role)(monitorText(role)), (worker?.homeNeedsHuman ?? r.asking) ? theme.board.attention(`${t('asking')} ?`) : theme.board.muted(minuteAge(r.at ?? null, now))].filter(Boolean).join(' ')
+      : sliceInk(blocked ? 'blocked' : 'working')(t(r.ledgerState ?? 'working'));
+    return { text: inline(`  ${lead} ${monitorText(r.label)}`, r.value, who, width) };
+  }), ...unsliced(data).map((job): MonitorRow => ({
+    text: pair(`  ${sliceInk('working')(mark('◉', '@'))} ${roleInk(job.role)(monitorText(job.role || job.jobId.slice(-6)))}${job.title ? '  ' + theme.board.muted(monitorText(job.title)) : ''}`,
+      job.asking ? theme.board.attention(`${t('asking')} ?`) : theme.board.muted(minuteAge(job.at ?? null, now)), width),
+  }))];
+}
 /**
  * The hub: the project's name and milestone, what waits for the owner, what is happening now (who is on which slice and for how
  * long), what landed last, then one summary row per page. A panel shorter than all that loses Latest first (to its newest rows,
@@ -249,18 +264,7 @@ function hubRows(
     }
     return [...rows, boardRow('')];
   };
-  const nowRows: MonitorRow[] = [...inFlight(data).map((r): MonitorRow => {
-    const worker = board?.workers.find((w) => w.evidence[0]?.sourceId === r.jobId), role = worker?.role ?? r.role ?? '';
-    const reason = r.drift === 'ledger' ? t('ledger: {state}', { state: monitorText(t(r.ledgerState ?? '')) }) : r.drift ? t(r.drift) : '';
-    const blocked = r.ledgerState === 'blocked', lead = r.drift ? theme.board.attention('!') : blocked ? sliceInk('blocked')(mark('◆', '!')) : sliceInk('working')(mark('◐', '@'));
-    const who = reason ? theme.board.attention(reason) : r.jobId
-      ? [role && roleInk(role)(monitorText(role)), (worker?.homeNeedsHuman ?? r.asking) ? theme.board.attention(`${t('asking')} ?`) : theme.board.muted(minuteAge(r.at ?? null, now))].filter(Boolean).join(' ')
-      : sliceInk(blocked ? 'blocked' : 'working')(t(r.ledgerState ?? 'working'));
-    return { text: inline(`  ${lead} ${monitorText(r.label)}`, r.value, who, width) };
-  }), ...unsliced(data).map((job): MonitorRow => ({
-    text: pair(`  ${sliceInk('working')(mark('◉', '@'))} ${roleInk(job.role)(monitorText(job.role || job.jobId.slice(-6)))}${job.title ? '  ' + theme.board.muted(monitorText(job.title)) : ''}`,
-      job.asking ? theme.board.attention(`${t('asking')} ?`) : theme.board.muted(minuteAge(job.at ?? null, now)), width),
-  }))];
+  const nowRows = hubNowRows(data, width, now, board);
   // Nothing in flight is said, not left blank.
   const nowBlock: MonitorRow[] = [section(t('Now'), width, nowRows.length ? String(nowRows.length) : ''),
     ...(nowRows.length ? nowRows : [boardRow('  ' + theme.board.muted(t('Nothing in progress')))]), boardRow('')];
@@ -364,7 +368,7 @@ function meter(done: number, total: number, cells: number): string {
 const ASKS = /^(needs-triage|needs-info|ready-for-human)$/i;
 /** A ticket that asks for the owner: it waits on an answer or a human, whatever else holds it. */
 export const asksYou = (r: ProjectTicket) => r.state !== 'done' && r.state !== 'dropped' && ASKS.test(r.status);
-const ticketLane = (r: ProjectTicket) => r.state === 'done' || r.state === 'dropped' ? 'done' : asksYou(r) ? 'you' : ticketWorking(r) ? 'working'
+export const ticketLane = (r: ProjectTicket) => r.state === 'done' || r.state === 'dropped' ? 'done' : asksYou(r) ? 'you' : ticketWorking(r) ? 'working'
   : r.state === 'blocked' ? 'blocked' : 'ready';
 const ticketGlyph = (r: ProjectTicket) => r.state === 'done' ? theme.board.success(mark('✓', '+')) : r.state === 'dropped' ? theme.board.muted(mark('–', '-'))
   : r.state === 'blocked' ? theme.board.attention(mark('◆', '!')) : theme.board.active(ticketWorking(r) ? mark('◐', '@') : mark('●', '*'));
@@ -384,7 +388,7 @@ function featureCodes(features: TicketFeature[]): Map<string, string> {
  * The Tickets page: lanes by state across features (For you, Working, Ready, Blocked, Done folded), one row a ticket under the
  * code of its feature; the codes are listed once at the top. Enter on a ticket shows its checklist and latest comment here.
  */
-function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, width: number, now: number): MonitorRow[] {
+export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, width: number, now: number): MonitorRow[] {
   const rows: MonitorRow[] = [], features = data.tickets ?? [], codes = featureCodes(features);
   const all = features.flatMap((f) => f.tickets.map((ticket) => ({ ticket, feature: f })));
   if (!all.length) return rows;
@@ -433,7 +437,7 @@ function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, width: n
   return rows;
 }
 /** One page: today's section content, without the section header (the crumb names the page). */
-function pageRows(
+export function pageRows(
   page: ProjectPage, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
   board?: WorkboardSnapshot, modelEnabled = false, tryMarks?: ReadonlyMap<string, TryAction>
 ): MonitorRow[] {

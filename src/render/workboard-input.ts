@@ -8,6 +8,7 @@ import { cardExpanded } from './work-card.js';
 import { projectFoldedSet, projectPageOf, projectListOpen, type ProjectPage } from './project-view.js';
 import type { PlaceOp } from '../roles/role-control.js';
 import { pickable } from './model-input.js';
+import { splitHomeInput, splitProjectInput } from './split-input.js';
 import { join } from 'node:path';
 /** The Control plane's keys (named by the decoder) and what each asks of the place under the cursor. */
 const PLACE_KEYS: Record<string, { op: PlaceOp; step?: 1 | -1 }> = {
@@ -181,6 +182,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         next.projectFolded = folded;
       } else if (row?.files) return { type: 'open-files' as const, files: row.files };
     };
+    // The Split layout has its own list and preview; what it does not do is Classic's, below.
+    if (next.panelLayout === 'split' && frame?.panes.some((p) => p.id === 'preview')) {
+      const out = splitProjectInput(next, input, key, ctx, result, () => result(activate()));
+      if (out) return out;
+    }
     if (input.type === 'mouse') {
       const pane = frame?.panes.find((p) => p.id === 'agents');
       if (input.button !== 'left') {
@@ -333,6 +339,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (!folded.delete(target.laneId)) folded.add(target.laneId);
     next.boardFolded = folded;
   };
+  if (next.panelLayout === 'split' && main && frame?.panes.some((p) => p.id === 'preview')) {
+    const out = splitHomeInput(next, input, key, ctx, result, { toggle: (item) => toggle(item), openProgress });
+    if (out) return out;
+  }
   if (input.type === 'mouse') {
     const control =
       input.button === 'left'

@@ -266,8 +266,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   Classic: '经典',
   Inbox: '收件箱',
   Split: '分栏',
-  'Home and Project: Classic as before; Inbox lists what you owe first, then what runs; Split is not built yet and shows Classic':
-    '首页和项目：经典不变；收件箱先列等你处理的，再列运行中的；分栏尚未实现，暂显示经典',
+  'Home and Project: Classic as before; Inbox lists what you owe first, then what runs; Split puts a list over a preview of the selected row':
+    '首页和项目：经典不变；收件箱先列等你处理的，再列运行中的；分栏上方列表、下方预览所选行',
   '{n} failed': '{n} 个失败',
   'nothing running': '没有运行中的',
   '{n} done': '{n} 已完成',

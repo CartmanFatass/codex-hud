@@ -71,12 +71,12 @@ test('Home at 24 rows gives way in order and never loses the question, the waiti
   }
 });
 
-test('Classic is untouched: no setting, Classic and Split (not built yet) draw the same frames', (t) => {
+test('Classic is untouched: no setting and Classic draw the same frames; Inbox and Split differ', (t) => {
   const busy = scene(t), idle = scene(t, { idle: true });
   for (const f of [busy, idle]) for (const opts of [{}, { height: 24 }, { tab: 'project', height: 30 }, { tab: 'project', page: 'progress' }]) {
     const bare = plain(f.render(40, { ...opts, state: { ...initialMonitorState(), mainTab: opts.tab ?? 'home', projectPage: opts.page, projectFolded: new Set(['agents', 'healthy', 'files']) }, height: opts.height ?? 48 }));
     assert.deepEqual(plain(f.render(40, { ...opts, layout: 'classic' })), bare);
-    assert.deepEqual(plain(f.render(40, { ...opts, layout: 'split' })), bare);
+    assert.notDeepEqual(plain(f.render(40, { ...opts, layout: 'split' })), bare);
     assert.notDeepEqual(plain(f.render(40, { ...opts, layout: 'inbox' })), bare);
   }
 });

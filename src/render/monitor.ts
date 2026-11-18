@@ -92,6 +92,16 @@ export interface MonitorState {
   cardHideMinutes?: number;
   /** Settings → Panel → Layout; unset is Classic. */
   panelLayout?: HudSettings['panelLayout'];
+  /** Split: the list's cursor (an item id), the preview's cursor while the keys are in the preview, and the preview's scroll. */
+  splitCursor?: string;
+  splitFocus?: 'preview';
+  splitSub?: string;
+  /** Where the list's cursor was while the keys are in the preview (Project has one acting cursor, `projectCursor`). */
+  splitList?: string;
+  splitScroll?: number;
+  splitListScroll?: number;
+  /** What the preview's scroll belongs to; another page or cursor row starts it at the top. */
+  splitFor?: string;
 }
 export interface RowControl {
   kind: MonitorControl['kind'];
@@ -113,7 +123,7 @@ export interface MonitorRow {
   tryTarget?: TryTarget;
 }
 export interface MonitorRect {
-  id: MonitorPane;
+  id: MonitorPane | 'preview';
   x: number;
   y: number;
   width: number;

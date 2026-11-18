@@ -289,6 +289,9 @@ Claude/pi, with the one-row Codex pane falling back to line.
 Settings and Help share exact-width rows, one title band and whole footer hints.
 Callers without a workboard project native cards into the same Home renderer. There
 is no secondary stacked/compact Agents renderer, Timeline or diagnostics page.
+The `split` layout (`panelLayout`, `render/split-*.ts`) draws Home, the hub and the list pages as a list over a preview:
+one scene per view (`split-home.ts`, `split-project.ts`), one painter (`split-frame.ts`) and its own keys (`split-input.ts`);
+`renderWorkboardFrame` and `workboardInput` only branch to them, and what Split does not draw stays Classic's.
 Always retain `frame.state`: reconciliation preserves selection by identity and
 separate scroll/fold state. Cards show a title plus two sentence rows, expanding
 in place; raw workflow files open from the Inspector or `o`.
