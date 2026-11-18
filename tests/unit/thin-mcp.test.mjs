@@ -1068,7 +1068,8 @@ setInterval(() => {
     const poll = setInterval(() => {
       if (!fs.existsSync(files.launch)) return;
       clearInterval(poll);
-      spawn('/bin/sh', ['-c', ${JSON.stringify(entry)}], {
+      // As npm exec does: the bin name single-quoted (seen live 2026-11-18: sh -c 'playwright-mcp').
+      spawn('/bin/sh', ['-c', ${JSON.stringify(`'${entry}'`)}], {
         stdio: 'ignore', env: { ...process.env, PATH: ${JSON.stringify(bin + ':')} + process.env.PATH },
       });
     }, 10);

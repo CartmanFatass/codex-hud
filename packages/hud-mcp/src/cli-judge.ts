@@ -98,7 +98,8 @@ function bootstrap(pid: number, start: string, oldDirect: boolean, parent: numbe
   if (!chain) return false;
   if (chain.stage === 'launcher') {
     // Learn the executable from the shell, not the package spec. Reject arguments and shell syntax.
-    const entry = argv[2]?.trim();
+    // npm exec quotes the bin name (`sh -c 'playwright-mcp'`); one matching pair of quotes is not syntax.
+    const entry = argv[2]?.trim().replace(/^(['"])(.*)\1$/, '$2');
     return base(argv[0]) === 'sh' && argv.length === 3 && argv[1] === '-c' && entry && /^[\w.@%+-]+$/.test(entry)
       ? { stage: 'shell', entry } : false;
   }
