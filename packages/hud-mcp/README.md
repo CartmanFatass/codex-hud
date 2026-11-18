@@ -52,6 +52,15 @@ than assuming a role's model or workflow.
 
 `on` selects a harness or browser provider (`pi`, `agy`, `claude`, `codex`, `grok`, `chatgpt`, `gemini`, `argon`, `flow`) using defaults from shipped [`harnesses.json`](harnesses.json) overridden by `$HUD_HOME/harnesses.json`. Explicit `model` and `thinking` override a `pi` or `cli` place for this job only. `kind` selects `image` (default) or `video` for `flow`. `idle_grace_s` is CLI-only; pi overrides refuse because pi grace follows the model's cache lifetime inside pi-roles, and browser jobs have no idle grace. Other `hud_create` options are `pi`-only: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, and `pi_args`. Omitted switches keep pi-role defaults; `split` defaults to the place. `ui_ext: false` disables UI extensions; `skills: true` includes personal skills. `split: true` reserves a helper pane to the right of the primary worker. `pi_args` passes at most 128 strings of at most 4096 characters verbatim after `--`, never through a shell. `--orchestrator` and `--notify` overrides are reserved and rejected. Browser (`bro`) roles reject pi launch options. CLI places require `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), else `hud_create` returns `unsupported_harness`.
 
+For `hud_create` context, pass `context_files` (up to 32 paths resolved against the job's `cwd`) or `from_jobs`
+(up to 16 job IDs `j[0-9a-f]{16}`, each referring to `$HUD_HOME/jobs/<id>/report.md`), not file bodies.
+Missing files, non-text files, and paths or symlinks resolving outside their respective roots return
+`invalid_arguments` before launch. Pi and CLI briefs carry a `## Context References` block right after the task; the worker reads
+those files directly. `job.json` records the resolved `context_files` and the `from_jobs` IDs. Browser (`bro`)
+briefs instead inline the labeled file bodies and send them to the selected browser service (64 KiB per file,
+256 KiB total; exceeding either returns `context_too_large`). Attaching a report does not mark it read or close
+its worker. A repeated request key does not revalidate attachments.
+
 Both list views return a newest-first `jobs` snapshot without reading report or question bodies or marking them seen.
 Compact rows show `job`, `role` and `state`, plus `report_unread: true`, `blocked: true`, pending `question_ids`
 and a block, wait or failure `reason` when applicable. Closed jobs with unread reports still appear; use `recent`

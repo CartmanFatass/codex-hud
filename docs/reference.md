@@ -131,6 +131,13 @@ defaults; split defaults to the place. `ui_ext: false` disables UI extensions;
 `--orchestrator`/`--notify` pi-argument overrides refuse. Browser (`bro`) places
 reject pi options.
 
+Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `from_jobs` (up to 16 job IDs,
+each referring to its `report.md` in `$HUD_HOME/jobs`). Use readable UTF-8 text files that resolve inside `cwd`
+or `$HUD_HOME/jobs`, respectively; invalid references return `invalid_arguments` before dispatch. Pi and CLI
+workers read the paths listed after the task in their briefs. Browser (`bro`) briefs send the labeled file contents
+to the browser service (64 KiB per file, 256 KiB total; larger context returns `context_too_large`). Attaching
+an upstream report does not mark it read or close its worker.
+
 A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s`
 (default 600), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude`
 or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place

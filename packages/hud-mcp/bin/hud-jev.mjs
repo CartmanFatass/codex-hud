@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
 
-const dir = process.argv[2];
+const [dir, taskLength] = process.argv.slice(2);
 const bundled = fileURLToPath(new URL('..', import.meta.url));
 const hudHome = dirname(dirname(resolve(dir)));
 let job;
@@ -96,9 +96,12 @@ try {
     fs.mkdirSync(media, { mode: 0o700 });
     const args = ['send', '--label', job.job, '--kind', kind, '--prompt-file', brief, '--out-dir', media];
     if (role.model) args.push('--model', role.model);
-    // Only an explicit cost statement in this brief authorizes passing the CLI's credit confirmation.
-    const cost = fs.readFileSync(brief, 'utf8').match(/\bcost:\s*(\d+)\s+credits\b/i)?.[1];
-    if (kind === 'video' && cost !== undefined) args.push('--confirm-credits', cost);
+    // Only the caller's task, not inlined context, can authorize confirming a credit cost.
+    if (kind === 'video') {
+      const task = fs.readFileSync(brief, 'utf8').slice(0, taskLength === undefined ? undefined : Number(taskLength));
+      const cost = task.match(/\bcost:\s*(\d+)\s+credits\b/i)?.[1];
+      if (cost !== undefined) args.push('--confirm-credits', cost);
+    }
     await cli(role.tool, args);
     const files = fs.readdirSync(media).filter((file) => fs.statSync(join(media, file)).isFile());
     fs.writeFileSync(

@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -46,6 +46,8 @@ interface Job extends PiOptions {
   created_at: string;
   package?: string;
   preset?: string;
+  context_files?: string[];
+  from_jobs?: string[];
   model?: string | null;
   thinking?: string | null;
   model_source?: string | null;
@@ -89,6 +91,14 @@ const tools = [
       role: text,
       request_key: text,
       task: text,
+      context_files: {
+        type: 'array', items: text, maxItems: 32,
+        description: 'Text file paths within cwd. Local briefs reference them; browser briefs inline them.',
+      },
+      from_jobs: {
+        type: 'array', items: { ...text, pattern: '^j[0-9a-f]{16}$' }, maxItems: 16,
+        description: 'Use these jobs’ report.md files as context without marking them read.',
+      },
       cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
       idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI-only idle grace override for this job, in seconds.' },
@@ -315,8 +325,8 @@ function cut(text: string, max: number): string {
  * TAB_NAME and pi-role-reap compares it with the tab). A short job suffix is added only when another open job's tab
  * already has the same label.
  */
-function tabLabel(job: Job): string {
-  const lines = (slice(join(directory(job.job), 'brief.md'), 4096)?.text ?? '').split(/\r?\n/);
+function tabLabel(job: Job, task: string): string {
+  const lines = Buffer.from(task.slice(0, 4096)).subarray(0, 4096).toString('utf8').split(/\r?\n/);
   const title =
     job.package?.trim() || (lines.find((line) => /^#{1,6}\s/.test(line)) ?? lines.find((line) => line.trim()) ?? '');
   const label = cut(
@@ -392,7 +402,7 @@ function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
   job.worker_prompt = worker_prompt;
   return args;
 }
-async function dispatchPi(job: Job, role: Role, place: RolePlace) {
+async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) {
   try {
     const resources = piSkillArgs(job, role, place);
     const launcher = executable('pi-role');
@@ -441,7 +451,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace) {
     fs.mkdirSync(join(dir, 'qa'), { recursive: true });
     const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
     const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
-    const tabName = tabLabel(job),
+    const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
     const result = await run('herdr', [
       'tab',
@@ -533,9 +543,9 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace) {
   }
 }
 const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
-async function dispatchBro(job: Job) {
+async function dispatchBro(job: Job, task: string) {
   const dir = directory(job.job),
-    tabName = tabLabel(job);
+    tabName = tabLabel(job, task);
   const result = await run('herdr', [
     'tab',
     'create',
@@ -565,7 +575,7 @@ async function dispatchBro(job: Job) {
     { mode: 0o600 }
   );
   const script = fileURLToPath(new URL('../../../../bin/hud-jev.mjs', import.meta.url));
-  return run('herdr', ['pane', 'run', root_pane.pane_id, [process.execPath, script, dir].map(quote).join(' ')]);
+  return run('herdr', ['pane', 'run', root_pane.pane_id, [process.execPath, script, dir, String(task.length)].map(quote).join(' ')]);
 }
 function paneText(stdout: string): string {
   try {
@@ -666,7 +676,7 @@ function failCli(dir: string, job: Job, place: RolePlace, reason: string) {
   return { exit_code: 1, stdout: '', stderr: reason };
 }
 type DispatchResult = { exit_code: number; stdout: string; stderr: string; code?: 'untrusted_cwd' };
-async function dispatchCli(job: Job, place: RolePlace, instructions: string): Promise<DispatchResult> {
+async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string): Promise<DispatchResult> {
   let openedTab: string | null = null;
   const reject = async (result: DispatchResult) => {
     if (openedTab) await run('herdr', ['tab', 'close', openedTab]);
@@ -681,7 +691,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string): Pr
     }
     const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
     const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
-    const tabName = tabLabel(job),
+    const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
     const result = await run('herdr', [
       'tab',
@@ -971,6 +981,76 @@ function observation(job: Job, full = false) {
     questions,
   };
 }
+async function readContextFile(path: string, limit: number | undefined) {
+  const file = await fs.promises.open(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  try {
+    const stat = await file.stat();
+    if (!stat.isFile()) throw new Error('not a regular file');
+    if (limit !== undefined && stat.size > limit) return null;
+    // Validate the whole file, but only keep the body for browser briefs.
+    const buffer = Buffer.alloc(64 * 1024);
+    const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+    let content = '', bytes = 0;
+    while (true) {
+      const length = limit === undefined ? buffer.length : Math.min(buffer.length, limit - bytes + 1);
+      const { bytesRead } = await file.read(buffer, 0, length, null);
+      if (!bytesRead) break;
+      bytes += bytesRead;
+      if (limit !== undefined && bytes > limit) return null;
+      const text = decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+      if (/[\x00-\x08\x0e-\x1f\x7f]/.test(text)) throw new Error('binary content');
+      if (limit !== undefined) content += text;
+    }
+    decoder.decode(); // Reject an incomplete final UTF-8 sequence.
+    return { bytes, content };
+  } finally {
+    await file.close();
+  }
+}
+
+async function assembleContext(args: Args, cwd: string, inline: boolean) {
+  const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
+  const sections: string[] = [];
+  let remaining = 256 * 1024;
+  for (const [key, root, max] of [['context_files', cwd, 32], ['from_jobs', jobsRoot, 16]] as const) {
+    const values = args[key];
+    if (values === undefined) continue;
+    if (!Array.isArray(values) || values.length > max || values.some((v) =>
+      typeof v !== 'string' || !v || v.includes('\0') || (key === 'from_jobs' && !/^j[0-9a-f]{16}$/.test(v)))) {
+      return { ok: false, code: 'invalid_arguments', error: `invalid ${key} (maximum ${max} entries)` } as const;
+    }
+    const recorded: string[] = metadata[key] = [];
+    if (!values.length) continue;
+    let source: string = key;
+    try {
+      const base = await fs.promises.realpath(root);
+      for (const value of values) {
+        source = `${key}: ${JSON.stringify(value)}`;
+        const path = await fs.promises.realpath(resolve(root, key === 'from_jobs' ? join(value, 'report.md') : value));
+        const rel = relative(base, path);
+        if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('outside its root');
+        const file = await readContextFile(path, inline ? Math.min(64 * 1024, remaining) : undefined);
+        if (!file) return { ok: false, code: 'context_too_large', error: source } as const;
+        const label = `${key === 'from_jobs' ? `${value} report: ` : ''}${JSON.stringify(path)}`;
+        if (inline) {
+          remaining -= file.bytes;
+          let length = 3;
+          for (const run of file.content.matchAll(/`+/g)) length = Math.max(length, run[0].length + 1);
+          const fence = '`'.repeat(length);
+          sections.push(`### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
+        } else sections.push(`- ${label}`);
+        recorded.push(key === 'from_jobs' ? value : path);
+      }
+    } catch {
+      return { ok: false, code: 'invalid_arguments', error: `${source} must resolve to a readable UTF-8 text file inside ${root}` } as const;
+    }
+  }
+  const block = !sections.length ? '' : inline
+    ? `\n## Context\n\n${sections.join('\n\n')}\n`
+    : `## Context References\n\nRead these files for task context:\n\n${sections.join('\n')}\n\n`;
+  return { metadata, block };
+}
+
 export async function dispatchJob(args: Args, pane: string | undefined, parentJob?: string) {
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
@@ -1083,6 +1163,8 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
       };
     }
   }
+  const context = await assembleContext(args, cwd, place.harness === 'bro');
+  if ('code' in context) return context;
   const details = found.placeDetails(definition, place);
   let overrideHarnesses: Record<string, { model?: string }> | null = null;
   if (onName) {
@@ -1112,6 +1194,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     created_at: new Date().toISOString(),
     ...(parentJob ? { parent_job: parentJob } : {}),
     ...options,
+    ...context.metadata,
     ...(args.package === undefined ? {} : { package: args.package as string }),
     ...(presetName === undefined ? {} : { preset: presetName }),
     place,
@@ -1144,15 +1227,16 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   const hudAsk = fileURLToPath(new URL('../../../../bin/hud-ask.mjs', import.meta.url));
   const brief =
     place.harness === 'bro'
-      ? `${task}\n`
+      ? `${task}\n${context.block}`
       : place.harness === 'cli'
-        ? `${task}\n\nWrite your report to ${join(dir, 'report.md')}.\nAsk the orchestrator with: node ${JSON.stringify(hudAsk)} --dir ${JSON.stringify(dir)} --question "..." --default "..."\n`
-        : `${task}\n\nWrite your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
+        ? `${task}\n\n${context.block}Write your report to ${join(dir, 'report.md')}.\nAsk the orchestrator with: node ${JSON.stringify(hudAsk)} --dir ${JSON.stringify(dir)} --question "..." --default "..."\n`
+        : `${task}\n\n${context.block}Write your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
   const ending = place.harness === 'bro' ? '' : `Once the report file is written, end your turn with the single line \`report written: ${join(dir, 'report.md')}\` and do not repeat the report in your final message.\n`;
   const sonicCommand = `node ${JSON.stringify(join(bundled, 'bin', 'hud-sonic.mjs'))}`;
   const sonic = role === 'sonic' || place.harness === 'bro' ? '' :
     `Sonic command: ${sonicCommand} start --dir ${JSON.stringify(dir)} --task-file <file> [--thinking off|low|medium|high]\n` +
     `Collect: ${sonicCommand} wait --dir ${JSON.stringify(dir)} --job <id>\n`;
+  // References follow the task: the panel title, sentence goal and decision labels read the brief's opening lines.
   fs.writeFileSync(join(dir, 'brief.md'), brief + sonic + ending, { flag: 'wx', mode: 0o600 });
   // Persist before dispatch: an interrupted launch must not dispatch again on retry.
   save(job);
@@ -1164,17 +1248,17 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   } else createdJobs.add(job.job);
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
   const launchRole = preset ? { ...definition, skills: effective.skills } : definition;
-  return keyLock(`job:${job.job}`, () => launchJob(job, launchRole, place, dir, instructionsPath));
+  return keyLock(`job:${job.job}`, () => launchJob(job, launchRole, place, dir, instructionsPath, task));
 }
 
-async function launchJob(job: Job, definition: Role, place: RolePlace, dir: string, instructionsPath: string) {
+async function launchJob(job: Job, definition: Role, place: RolePlace, dir: string, instructionsPath: string, task: string) {
   ensureWatcher();
   ensureQueueWatcher(job.herdr_pane, hudHome);
   let result: DispatchResult;
   try {
-    if (place.harness === 'bro') result = await dispatchBro(job);
-    else if (place.harness === 'cli') result = await dispatchCli(job, place, instructionsPath);
-    else result = await dispatchPi(job, definition, place);
+    if (place.harness === 'bro') result = await dispatchBro(job, task);
+    else if (place.harness === 'cli') result = await dispatchCli(job, place, instructionsPath, task);
+    else result = await dispatchPi(job, definition, place, task);
   } catch (error) {
     result = { exit_code: 1, stdout: '', stderr: String(error) };
   }

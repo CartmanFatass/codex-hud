@@ -107,6 +107,14 @@ export const PI_ROLE_TOOLS = [
       role: text,
       request_key: text,
       task: text,
+      context_files: {
+        type: 'array', items: text, maxItems: 32,
+        description: 'Text file paths within cwd. Local briefs reference them; browser briefs inline them.',
+      },
+      from_jobs: {
+        type: 'array', items: { ...text, pattern: '^j[0-9a-f]{16}$' }, maxItems: 16,
+        description: 'Use these jobs’ report.md files as context without marking them read.',
+      },
       cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
       idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI-only idle grace override for this job, in seconds.' },

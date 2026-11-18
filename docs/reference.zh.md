@@ -90,6 +90,12 @@ split 默认取位置设置。`ui_ext: false` 禁用 UI 扩展；`skills: true` 
 split 为 true 时预留右侧助手窗格。拒绝覆盖 `--orchestrator`／`--notify`。
 浏览器（`bro`）位置拒绝这些 pi 选项。
 
+可用 `context_files`（最多 32 个路径，以任务的 `cwd` 为基准解析）和 `from_jobs`（最多 16 个任务 ID，
+各自指向 `$HUD_HOME/jobs` 中该任务的 `report.md`）传递上下文。文件须为可读的 UTF-8 文本，解析后的路径须分别位于
+`cwd` 或 `$HUD_HOME/jobs` 内；无效引用会在启动前返回 `invalid_arguments`。Pi 和 CLI 工作者按简报中任务之后列出的路径读取文件；
+浏览器（`bro`）会把标明来源的文件内容随简报发给浏览器服务（单个文件最多 64 KiB，合计最多 256 KiB，超限返回 `context_too_large`）。
+引用上游报告不会将其标为已读，也不会关闭其工作者。
+
 角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（默认 600）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。内置角色：`imp`（`pi` implementer → `pi` Grok 4.7）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。遇到配额或限流失败会把该位置在 `$HUD_HOME/exhausted.json` 标记耗尽 1 小时并在失败原因写明下次将使用的位置，但不自动重试。另写 `$HUD_HOME/roles/<name>.json` 注册自定义角色，
 例如前端设计角色用 `"agent": "claude"` 和 Claude 模型别名。列模型：`grok models`、
 `agy models`、`claude --help` 或 `codex -m`。HUD 只传模型标志、强度标志、该 CLI 的权限绕过标志

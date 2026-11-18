@@ -40,6 +40,9 @@ or symlinked trust files do not grant trust. Codex skips this check, and the
 other CLIs' screen-dialog checks remain in place. `packages/hud-mcp/bin/hud-cli.mjs` is the per-job
 supervisor; `hud-ask.mjs` writes the question. The HUD passes only model, effort,
 the bypass flag and role `args`. Harness behaviour and session places are untouched.
+`hud_create` validates explicit context file and report references before dispatch.
+Local briefs list resolved paths; browser briefs include those paths and bounded file
+bodies in the prompt sent to the selected browser service.
 
 Claude's statusline, pi's footer and Codex's tmux bar (`src/index.ts`) are the client
 integrations. One standalone panel (`src/tree-page.ts`) serves all three clients

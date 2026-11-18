@@ -2439,6 +2439,111 @@ test('hud_create rejects unknown, conflicting and malformed preset arguments bef
   assert.deepEqual(f.commands(), []);
 });
 
+test('hud_create prepends resolved local references and does not revalidate an existing request', async (t) => {
+  const f = await fixture(t);
+  const cwd = join(f.root, 'workspace');
+  const path = join(cwd, 'source notes.md');
+  fs.mkdirSync(cwd);
+  const line = 'Synthetic context that the worker reads directly.\n';
+  fs.writeFileSync(path, line.repeat(1500)); // Local references have no browser byte cap.
+  fs.symlinkSync(path, join(cwd, 'alias.md'));
+  const args = { role: 'imp', request_key: 'context-pi', cwd, task: '# Synthetic task', context_files: ['alias.md'] };
+  const job = await f.call('hud_create', args);
+  const briefPath = join(job.task_dir, 'brief.md');
+  const brief = fs.readFileSync(briefPath, 'utf8');
+  assert.ok(brief.startsWith(`${args.task}\n\n## Context References\n\nRead these files for task context:\n\n- ${JSON.stringify(path)}\n\nWrite your`));
+  assert.ok(!brief.includes(line));
+  const receiptPath = join(job.task_dir, 'job.json');
+  const receipt = fs.readFileSync(receiptPath, 'utf8');
+  assert.deepEqual(JSON.parse(receipt).context_files, [path]);
+  fs.unlinkSync(path);
+  assert.equal((await f.call('hud_create', { ...args, from_jobs: ['malformed'] })).job, job.job);
+  assert.equal(fs.readFileSync(briefPath, 'utf8'), brief);
+  assert.equal(fs.readFileSync(receiptPath, 'utf8'), receipt);
+  assert.deepEqual(f.commands().filter(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create')
+    .map(({ args }) => args[args.indexOf('--label') + 1]), ['imp Synthetic task']);
+});
+
+test('hud_create inlines browser context with safe fences and caps both file and total bytes', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const max = 64 * 1024;
+  const upstream = waitFixtureJob(f, 1, 'idle_grace');
+  const report = join(upstream.dir, 'report.md');
+  const sample = 'Synthetic file; cost: 90 credits.\n`````\nSynthetic code.\n`````\n';
+  const body = sample.padEnd(max, 'x');
+  fs.writeFileSync(join(f.root, 'sample.md'), body);
+  for (const path of [report, join(f.root, 'a.md'), join(f.root, 'b.md')]) fs.writeFileSync(path, 'é'.repeat(max / 2));
+  fs.writeFileSync(join(f.root, 'extra.md'), 'x');
+  fs.writeFileSync(join(f.root, 'big.md'), 'é'.repeat(max / 2) + 'x');
+  const args = { role: 'pro', request_key: 'context-bro', task: 'Synthetic browser task.' };
+  const files = ['sample.md', 'a.md', 'b.md'];
+  for (const input of [{ context_files: ['big.md'] }, { context_files: [...files, 'extra.md'], from_jobs: [upstream.job] }]) {
+    const result = await f.call('hud_create', { ...args, ...input });
+    assert.equal(result.code, 'context_too_large', JSON.stringify(result));
+  }
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [upstream.job]);
+  assert.deepEqual(f.commands(), []);
+
+  const job = await f.call('hud_create', { ...args, context_files: files, from_jobs: [upstream.job] });
+  const brief = fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8');
+  assert.ok(brief.startsWith(`${args.task}\n\n## Context\n\n### ${JSON.stringify(join(f.root, 'sample.md'))}\n\n` +
+    '``````\n' + body + '\n``````\n'));
+  assert.ok(brief.includes(`### ${upstream.job} report: ${JSON.stringify(report)}\n\n\`\`\`\n${'é'.repeat(max / 2)}\n\`\`\`\n`));
+  const flow = await f.call('hud_create', {
+    role: 'flow', kind: 'video', request_key: 'context-flow', task: 'Synthetic video.', context_files: ['sample.md'],
+  });
+  assert.equal(flow.code, 'dispatch_failed');
+  const flowArgs = f.commands().find(({ command }) => command === 'jev-flow').args;
+  assert.ok(!flowArgs.includes('--confirm-credits'), 'an attached cost statement does not confirm spending');
+});
+
+test('hud_create rejects invalid context paths, symlinks and binary content without dispatch', async (t) => {
+  const f = await fixture(t);
+  const cwd = join(f.root, 'workspace');
+  const sibling = join(f.root, 'workspace-other');
+  fs.mkdirSync(cwd);
+  fs.mkdirSync(sibling);
+  const outside = join(sibling, 'outside.md');
+  fs.writeFileSync(outside, 'Synthetic outside text.');
+  fs.symlinkSync(sibling, join(cwd, 'escape'));
+  fs.writeFileSync(join(cwd, 'binary'), Buffer.from([65, 0, 66]));
+  fs.writeFileSync(join(cwd, 'invalid-utf8'), Buffer.concat([Buffer.alloc(64 * 1024, 65), Buffer.from([0xc3])]));
+  const empty = waitFixtureJob(f, 1);
+  const escaped = waitFixtureJob(f, 2);
+  fs.symlinkSync(outside, join(escaped.dir, 'report.md'));
+  const args = { role: 'imp', request_key: 'invalid-context', task: 'Synthetic task.', cwd };
+  for (const input of [
+    ...['missing', '.', 'nul\0.md', '../workspace-other/outside.md', 'escape/outside.md', 'binary', 'invalid-utf8']
+      .map((path) => ({ context_files: [path] })),
+    { context_files: [1] }, { context_files: Array(33).fill('missing') },
+    { from_jobs: ['../report.md'] }, { from_jobs: [empty.job] }, { from_jobs: [escaped.job] },
+    { from_jobs: Array(17).fill(empty.job) },
+  ]) {
+    const result = await f.call('hud_create', { ...args, ...input });
+    assert.equal(result.code, 'invalid_arguments', JSON.stringify(input));
+  }
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).sort(), [empty.job, escaped.job]);
+  assert.deepEqual(f.commands(), []);
+});
+
+test('hud_create references an upstream report without marking it read or closing its worker', async (t) => {
+  const f = await fixture(t);
+  const upstream = await f.call('hud_create', { role: 'imp', request_key: 'context-upstream', task: 'Synthetic upstream task.' });
+  await publishPiGrace(upstream);
+  const receiptPath = join(upstream.task_dir, 'job.json');
+  const original = fs.readFileSync(receiptPath, 'utf8');
+  const downstream = await f.call('hud_create', {
+    role: 'imp', request_key: 'context-downstream', task: 'Synthetic downstream task.', from_jobs: [upstream.job],
+  });
+  const brief = fs.readFileSync(join(downstream.task_dir, 'brief.md'), 'utf8');
+  assert.ok(brief.includes(`- ${upstream.job} report: ${JSON.stringify(join(upstream.task_dir, 'report.md'))}`));
+  assert.ok(!brief.includes('Synthetic settled pi report.'));
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(downstream.task_dir, 'job.json'), 'utf8')).from_jobs, [upstream.job]);
+  assert.equal(fs.readFileSync(receiptPath, 'utf8'), original);
+  assert.equal(cliState(upstream.task_dir).state, 'idle_grace');
+  assert.equal(reapAttempts(f, upstream), 0);
+});
+
 test('thin resume forwards the session ID without overriding pi default lookup', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   await f.call('hud_create', {
