@@ -1,6 +1,6 @@
 # 03: Keep Split, delete Inbox; mark several rows, one try record
 
-**Status:** ready-for-agent
+**Status:** done (eedb8a46)
 **Blocked by:** none (in parallel with 04; see Comments)
 
 **What to build:** `docs/spec.md` §2.2 (owner, 2026-11-18): the owner kept Split; Inbox is deleted, Classic stays the
