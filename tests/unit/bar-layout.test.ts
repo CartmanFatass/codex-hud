@@ -11,11 +11,11 @@ import { join } from 'node:path';
 
 import { agentEvent, renderBar, NOTICE_MS, type BarFacts } from '../../src/render/layout/bar-fields.js';
 import { fitStatusBar } from '../../src/render/header.js';
-import { setDisplayConfig } from '../../src/render/hud-config.js';
+import { BAR_STYLES, setDisplayConfig } from '../../src/render/hud-config.js';
 import { stripAnsi, visualWidth } from '../../src/render/colors.js';
 import { renderParity } from '../../src/statusline-parity/render.js';
 import { compactWindow } from '../../src/statusline-parity/collect.js';
-import { workSignals } from '../../src/render/work-summary.js';
+import { workSignals, type WorkSignals } from '../../src/render/work-summary.js';
 import { BarNoticeTracker } from '../../src/collectors/bar-notices.js';
 import { shortModel } from '../../src/render/providers.js';
 import { paritySettings } from '../../src/statusline-parity/settings.js';
@@ -219,7 +219,7 @@ test('context and quota bars as claude-hud draws them: cells, colours, one windo
 // ─── What a notice says: the work, not the model (bar-notice 01) ─────────────────────────────────────────────────
 
 /** A synthetic Claude transcript with the given Agent calls, drawn through the statusline's real renderer. */
-function claudeBar(agents: Array<Record<string, unknown>>, width: number, now = NOW) {
+function claudeBar(agents: Array<Record<string, unknown>>, width: number, now = NOW, work?: WorkSignals) {
   const base = { startPos: 1, background: false };
   const transcript = {
     agents: agents.map((a) => ({ ...base, ...a })),
@@ -236,7 +236,7 @@ function claudeBar(agents: Array<Record<string, unknown>>, width: number, now = 
     context_window: { used_percentage: 16, context_window_size: 1_000_000 },
   };
   const evidence = { transcript, counts: { mcpCount: 4 }, git: null } as unknown as Parameters<typeof renderParity>[3];
-  return stripAnsi(renderParity(input, width, paritySettings(OWNER_CONFIG), evidence, now));
+  return stripAnsi(renderParity(input, width, paritySettings(OWNER_CONFIG), evidence, now, undefined, work));
 }
 
 test('Claude subagents read type + the call description; a finished one carries its fixed run time; no model', (t) => {
@@ -290,20 +290,102 @@ test('HUD jobs read role + brief heading (else the package); two imps are two it
   const zone = (jobs: unknown[], width = 160, at = NOW) =>
     stripAnsi(renderBar({ model: { name: 'M' }, events: workSignals(jobs as never, NOW).events }, width, at).line);
   // Two different imp jobs are two items; the finished one carries its run time, fixed at its end.
-  assert.equal(zone([lanes[0]!, lane('pkg-b', [finished])]), 'M │ ✓ imp Fix the panel 12m │ ◐ imp 状态栏TPS');
+  assert.equal(zone([lanes[0]!, lane('pkg-b', [finished])]), 'M │ [✓] imp Fix the panel 12m │ [◐] imp 状态栏TPS');
   assert.equal(
     zone([lanes[0]!, lane('pkg-b', [finished])], 160, NOW + 60_000),
-    'M │ ✓ imp Fix the panel 12m │ ◐ imp 状态栏TPS'
+    'M │ [✓] imp Fix the panel 12m │ [◐] imp 状态栏TPS'
   );
   // No brief heading: the package names it.
-  assert.equal(zone([lanes[1]!]), 'M │ ✓ imp Fix the panel 12m │ ◐ imp pkg-b');
-  assert.doesNotMatch(zone(lanes), /sonnet|gpt|\[|×/);
+  assert.equal(zone([lanes[1]!]), 'M │ [✓] imp Fix the panel 12m │ [◐] imp pkg-b');
+  assert.doesNotMatch(zone(lanes), /sonnet|gpt|\[\d|×/);
   // The same words of one kind group; a package label that only repeats the role or the job id says nothing.
   assert.equal(
     zone([lane('pkg-a', [worker('d1', { briefTitle: 'Same' }), worker('d2', { briefTitle: 'Same' })])]),
-    'M │ ◐ imp Same ×2'
+    'M │ [◐] imp Same ×2'
   );
-  assert.equal(zone([lane('imp', [worker('e1', {})]), lane('ffffff', [worker('ffffff', {})])]), 'M │ ◐ imp ×2');
+  assert.equal(zone([lane('imp', [worker('e1', {})]), lane('ffffff', [worker('ffffff', {})])]), 'M │ [◐] imp ×2');
+});
+
+/** A synthetic HUD job (a thin-job worker) and its lane, for `workSignals`. */
+const hudJob = (id: string, extra: Record<string, unknown> = {}) =>
+  ({ id: `thin-job:${id}`, role: 'imp', startedAt: NOW - 10_000, settledAt: null, work: {}, ...extra }) as never;
+const hudLane = (label: string, workers: unknown[]) => ({ id: `thin-job:package:${label}`, label, workers }) as never;
+
+test('a pinned need names its job; several: the first and +N, then `N needs`; nothing open, nothing pinned', (t) => {
+  noColour(t);
+  const asking = (id: string, briefTitle: string) => hudJob(id, { briefTitle, homeNeedsHuman: true });
+  const lanes = [
+    hudLane('pkg', [asking('aaaaaa', '首页修正'), asking('bbbbbb', 'Fix the panel'), asking('cccccc', '状态栏TPS')]),
+  ];
+  assert.deepEqual(workSignals(lanes, NOW).needs, [
+    'imp 首页修正 asks',
+    'imp Fix the panel asks',
+    'imp 状态栏TPS asks',
+  ]);
+  assert.deepEqual(workSignals([hudLane('pkg', [hudJob('dddddd')])], NOW).needs, []);
+  const loaded = { counts: [['MCP', 4]] as const };
+  const bar = (needs: string[], width: number) =>
+    stripAnsi(
+      renderBar(
+        { model: { name: 'M', effort: 'high' }, context: { percent: 16, shown: '16%', window: 1e6 }, needs, loaded },
+        width,
+        NOW
+      ).line
+    );
+  const three = workSignals(lanes, NOW).needs;
+  // Wide, with the vitals; medium, the vitals shortened; narrow, the count only.
+  assert.match(bar(three, 120), /^M high │ ██░░░░░░░░ 16%\/1M │ ! imp 首页修正 asks \+2 +MCP 4$/);
+  assert.match(bar(three, 44), /^M high │ 16%\/1M │ ! imp 首页修正 asks \+2$/);
+  assert.match(bar(three, 30), /^M high │ 16%\/1M │ ! 3 needs$/);
+  // One need says its job alone; Codex's approvals join the same list.
+  assert.match(bar(three.slice(0, 1), 120), /│ ! imp 首页修正 asks +MCP 4$/);
+  assert.match(bar(['Approve: Bash', ...three.slice(0, 1)], 120), /│ ! Approve: Bash \+1 +MCP 4$/);
+  assert.doesNotMatch(bar([], 120), /!/);
+  // The p10k capsule and a look say the same.
+  for (const style of ['p10k', 'gauge'] as const) {
+    const draw = (width: number) =>
+      stripAnsi(renderBar({ model: { name: 'M' }, needs: three }, width, NOW, style).line).replace(
+        /[\ue0b0\ue0b2]/g,
+        ''
+      );
+    assert.match(draw(120), /! imp 首页修正 asks \+2/);
+    assert.match(draw(24), /! 3 needs/);
+  }
+});
+
+/** The Claude subagent's events, as the statusline makes them. */
+const claudeEvents = (a: { id: string; type: string; description: string; start: number }) => [
+  agentEvent('started', { id: a.id, name: a.type, title: a.description }, a.start),
+];
+
+test('a HUD job and a Claude subagent differ in every look: a boxed mark `[◐]` against `◐`', (t) => {
+  noColour(t);
+  const jobs = workSignals([hudLane('pkg', [hudJob('aaaaaa', { briefTitle: '首页修正' })])], NOW);
+  const sub = { id: 'a', type: 'Explore', description: 'Find where notices are made', start: NOW - 20_000 };
+  assert.match(claudeBar([sub], 200, NOW, jobs), /│ \[◐\] imp 首页修正 │ ◐ Explore Find where notices are made/);
+  // Finished or failed, the same: the state glyph stays, boxed for the job.
+  const ended = workSignals(
+    [
+      hudLane('pkg', [
+        hudJob('bbbbbb', { briefTitle: 'Fix', settledAt: NOW - 5000 }),
+        hudJob('cccccc', { briefTitle: 'Bad', settledAt: NOW - 6000, work: { failed: true } }),
+      ]),
+    ],
+    NOW
+  );
+  assert.match(claudeBar([], 200, NOW, ended), /│ \[✓\] imp Fix 5s │ \[✗\] imp Bad 4s/);
+  // Every look carries it, in icons text too.
+  for (const icons of ['unicode', 'text'] as const) {
+    const previous = setDisplayConfig({ theme: 'terminal', icons, barFields: ['model', 'notice'] });
+    t.after(() => setDisplayConfig(previous));
+    for (const style of BAR_STYLES) {
+      const row = stripAnsi(
+        renderBar({ model: { name: 'M' }, events: [...jobs.events, ...claudeEvents(sub)] }, 120, NOW, style).line
+      );
+      assert.match(row, /\[◐\] imp/, `${style}/${icons}`);
+      assert.match(row, /(^|[^\[])◐ Explore/, `${style}/${icons}`);
+    }
+  }
 });
 
 test('Codex subagents read name + task when known, with the run time they ended at; no model', (t) => {

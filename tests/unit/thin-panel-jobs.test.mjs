@@ -478,7 +478,7 @@ test('statusline notices and explicit detail counts read job folders with no rol
   });
   const result = run();
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Work: 1 needs you/, 'shared bar pins owner questions rather than persistent counts');
+  assert.match(result.stdout, /! imp thin job cards in the panel asks/, 'shared bar pins the asking job by name, not a count');
   const details = run(['--details']);
   assert.equal(details.status, 0, details.stderr);
   // A settled job is done, read or not: no "report ready" count.

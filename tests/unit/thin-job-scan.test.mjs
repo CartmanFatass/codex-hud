@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { jobChanges, jobRow, readThinJobRows, readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { renderBar } from '../../dist/render/layout/bar-fields.js';
+import { workSignals } from '../../dist/render/work-summary.js';
 test('newest 200 jobs: unchanged scan parses no receipts; a changed job appears next scan', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-scan-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -308,4 +311,42 @@ test('readThinJobRows caches unchanged files by signature without reading bodies
   }
   assert.deepEqual(opened, []);
   assert.equal(fs.existsSync(join(home, 'display')), false);
+});
+
+test('a settled job whose report is unread shows [✓●] on the bar until hud_read stamps read_at', (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'thin-unread-'));
+  const config = setDisplayConfig({ theme: 'none', barFields: ['model', 'notice'] });
+  t.after(() => {
+    setDisplayConfig(config);
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const scope = { project: null, pane: 'w4E:p1' };
+  const job = 'j0000000000000a01';
+  const dir = join(home, 'jobs', job);
+  fs.mkdirSync(dir, { recursive: true });
+  const settled = new Date(Date.now() - 5000).toISOString();
+  const write = (name, text) => {
+    fs.writeFileSync(join(dir, name + '.tmp'), text);
+    fs.renameSync(join(dir, name + '.tmp'), join(dir, name));
+  };
+  const created_at = new Date(Date.now() - 60_000).toISOString();
+  const receipt = (extra = {}) =>
+    write('job.json', JSON.stringify({ job, role: 'imp', herdr_pane: scope.pane, created_at, ...extra }));
+  receipt();
+  write('STATUS.json', JSON.stringify({ state: 'closed', settled_at: settled }));
+  write('brief.md', '# Fix the panel');
+  write('report.md', 'Done.');
+  const bar = () => {
+    const now = Date.now();
+    const lanes = readThinJobs(home, scope);
+    const line = renderBar({ model: { name: 'M' }, events: workSignals(lanes, now).events }, 120, now).line;
+    return {
+      unread: lanes[0].workers[0].reportUnread,
+      line: line.replace(/\x1b\[[0-9;]*m/g, '').replace(/ \d+s$/, ''),
+    };
+  };
+  assert.deepEqual(bar(), { unread: true, line: 'M │ [✓●] imp Fix the panel' });
+  // hud_read stamps read_at after the report was written: the dot goes, the report stays.
+  receipt({ read_at: new Date(Date.now() + 1000).toISOString() });
+  assert.deepEqual(bar(), { unread: undefined, line: 'M │ [✓] imp Fix the panel' });
 });

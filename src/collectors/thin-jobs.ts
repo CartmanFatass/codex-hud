@@ -530,6 +530,7 @@ export function readThinJobs(
       task: title,
       ...(briefTitle ? { briefTitle } : {}),
       ...(quietDecision ? { quietDecision } : {}),
+      ...(row.report_unread ? { reportUnread: true as const } : {}),
       state,
       startedAt: when(s.started_at) ?? created,
       settledAt,

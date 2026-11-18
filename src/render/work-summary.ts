@@ -2,7 +2,7 @@
 import type { OwnerWorker, WorkLane } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import { truncateAnsi } from './colors.js';
-import { agentEvent, NOTICE_MS, type BarEvent } from './layout/bar-fields.js';
+import { agentEvent, askOf, NOTICE_MS, type BarEvent } from './layout/bar-fields.js';
 const wordOf = (worker: OwnerWorker, now: number): string => {
   const state = projectWorkCard(worker, now).state;
   return worker.work?.failed
@@ -23,14 +23,20 @@ export interface WorkSignals {
   events: BarEvent[];
 }
 export function workSignals(lanes: readonly WorkLane[], now: number): WorkSignals {
-  const workers = lanes.flatMap((l) => l.workers);
-  const asking = workers.filter((worker) => wordOf(worker, now) === 'needs you').length;
+  const needs: string[] = [];
   const events: BarEvent[] = [];
   for (const lane of lanes)
     for (const worker of lane.workers) {
       // The role and the brief's heading, else the package; a label that only repeats the role or the job id says nothing.
       const label = lane.label === worker.role || worker.id.endsWith(lane.label) ? '' : lane.label;
-      const who = { id: worker.id, name: worker.role || 'job', title: worker.briefTitle || label };
+      const who = {
+        id: worker.id,
+        name: worker.role || 'job',
+        title: worker.briefTitle || label,
+        job: true as const,
+        unread: worker.reportUnread === true,
+      };
+      if (wordOf(worker, now) === 'needs you') needs.push(askOf(who));
       if (worker.startedAt !== null && now - worker.startedAt < NOTICE_MS)
         events.push(agentEvent('started', who, worker.startedAt));
       if (worker.settledAt !== null && now - worker.settledAt < NOTICE_MS) {
@@ -38,7 +44,7 @@ export function workSignals(lanes: readonly WorkLane[], now: number): WorkSignal
         events.push(agentEvent(worker.work?.failed ? 'failed' : 'done', who, worker.settledAt, ran));
       }
     }
-  return { needs: asking ? [`Work: ${asking} needs you`] : [], events };
+  return { needs, events };
 }
 export function renderWorkSummary(lanes: readonly WorkLane[], width: number, now: number): string {
   const counts = new Map<string, number>();

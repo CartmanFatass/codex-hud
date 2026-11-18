@@ -73,6 +73,10 @@ export interface BarEvent {
   ran?: string;
   /** Who it is about: only its latest event shows, so `finished` replaces `started`. Defaults to the text. */
   key?: string;
+  /** A HUD job (its own tab) rather than a subagent inside the session: its mark is boxed, `[✓]` against `✓`. */
+  job?: true;
+  /** A settled job's report has not been read: `[✓●]` until it is. */
+  unread?: boolean;
 }
 
 export interface BarFacts {
@@ -110,7 +114,7 @@ const runTime = (ms: number) => (ms < 60_000 ? `${Math.floor(ms / 1000)}s` : spa
 /** A subagent's or job's event: its type or role, what it works on (when known) and, for an end, how long it ran. */
 export function agentEvent(
   kind: 'started' | 'done' | 'failed',
-  who: { id?: string; name: string; title?: string },
+  who: { id?: string; name: string; title?: string; job?: true; unread?: boolean },
   at: number,
   ranMs?: number
 ): BarEvent {
@@ -123,8 +127,14 @@ export function agentEvent(
     title,
     ran: kind !== 'started' && ranMs !== undefined && ranMs >= 0 ? runTime(ranMs) : undefined,
     key: who.id ?? who.name,
+    ...(who.job ? { job: true as const } : {}),
+    ...(who.job && who.unread ? { unread: true } : {}),
   };
 }
+
+/** A job asking the owner, as the pinned need says it: `imp 首页修正 asks`. */
+export const askOf = (who: { name: string; title?: string }): string =>
+  `${who.name} ${cutWords(clean(who.title ?? ''), TITLE_COLS)} asks`.replace(/ {2,}/g, ' ');
 
 // ─── Painting ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -291,8 +301,10 @@ interface Notice {
   /** An agent's name: it stays whole or the item goes. */
   name?: string;
   title: string;
-  /** ` ×3`: always shown. */
+  /** ` ×3`, or an alert's ` +2` (more needs): always shown. */
   count: string;
+  /** An alert of several needs: what it says when `words` and `count` do not fit (`3 needs`). */
+  short?: string;
   /** ` 12m`: the run time, the first to go. */
   tail: string;
 }
@@ -311,8 +323,10 @@ const MARKS = {
 const clean = (words: string) => words.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
 
 function noticeOf(event: BarEvent, count = 1): Notice {
-  const [mark, tone] = MARKS[event.kind];
+  const [glyph, tone] = MARKS[event.kind];
   const name = event.name && clean(event.name);
+  // A HUD job's mark is boxed; a settled one whose report is unread has a dot in it.
+  const mark = event.job ? `[${glyph}${event.unread && event.kind !== 'started' ? '●' : ''}]` : glyph;
   return {
     mark,
     tone,
@@ -340,12 +354,23 @@ function zoneOf(
   // The same kind of event with the same words (three `Explore ‹title›` started) is one item with `×3`.
   const groups = new Map<string, BarEvent[]>();
   for (const event of [...latest.values()].sort((a, b) => b.at - a.at || a.text.localeCompare(b.text))) {
-    const group = `${event.kind}\u0000${event.text}`;
+    const group = `${event.kind}\u0000${event.job ? 1 : 0}${event.unread ? 1 : 0}\u0000${event.text}`;
     groups.set(group, [...(groups.get(group) ?? []), event]);
   }
   const events = [...groups.values()].map(([newest, ...rest]) => noticeOf(newest, rest.length + 1));
-  const words = facts.needs?.length ? clean(facts.needs.join(' · ')) : '';
-  const alert: Notice | null = words ? { mark: '!', tone: 'alert', words, title: '', count: '', tail: '' } : null;
+  // The first need, `+N` for the others; when that does not fit, `N needs`.
+  const needs = (facts.needs ?? []).map(clean).filter(Boolean);
+  const alert: Notice | null = needs.length
+    ? {
+        mark: '!',
+        tone: 'alert',
+        words: needs[0]!,
+        title: '',
+        count: needs.length > 1 ? ` +${needs.length - 1}` : '',
+        short: needs.length > 1 ? `${needs.length} needs` : undefined,
+        tail: '',
+      }
+    : null;
   return alert || events.length ? { alert, events } : null;
 }
 
@@ -371,6 +396,12 @@ function cutWords(words: string, room: number): string {
  * time, 2: its name alone), the title cut at a word to `room` columns; null when not even the name fits.
  */
 function noticeSeg(notice: Notice, room: number, pad: string, form = 0): Seg | null {
+  // Several needs: `first +2`, and `3 needs` (whole or not at all) when that does not fit.
+  if (
+    notice.short !== undefined &&
+    (form > 0 || visualLength(`${notice.mark} ${notice.words}${notice.count}`) + 2 * pad.length > room)
+  )
+    notice = { ...notice, words: notice.short, name: notice.short, count: '' };
   // Only an alert's badge has the padding inside it.
   const left = (tail: string) =>
     room - visualLength(`${notice.mark} ${notice.count}${tail}`) - (notice.tone === 'alert' ? 2 * pad.length : 0);
@@ -384,7 +415,7 @@ function noticeSeg(notice: Notice, room: number, pad: string, form = 0): Seg | n
   const title = named && !form ? cutWords(notice.title, space - visualLength(words) - 1) : '';
   const parts: Form =
     notice.tone === 'alert'
-      ? [[`${pad}${notice.mark} ${words}${pad}`, pad ? 'alert' : 'warn']]
+      ? [[`${pad}${notice.mark} ${words}${notice.count}${pad}`, pad ? 'alert' : 'warn']]
       : [
           [`${notice.mark} `, notice.tone],
           [words, named ? 'agent' : 'value'],
@@ -850,13 +881,16 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const lone = zone && !zone.alert ? (zone.events[0] ?? null) : null;
   // An alert is a badge on its own colour, with a space inside it; capsules and plain text have none.
   const pad = p10k || themeName === 'none' ? '' : ' ';
+  const alertSeg = zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null;
+  // Several needs: `first +2`, then `N needs` when the notice has to give way.
+  if (alertSeg && zone?.alert?.short) alertSeg.forms.push(noticeSeg(zone.alert, Infinity, pad, 1)!.forms[0]!);
   const left = [
     on.has('model') && facts.model ? modelSeg(facts.model, ascii) : null,
     on.has('context') && facts.context ? contextSeg(facts.context) : null,
     on.has('project') && facts.project?.name ? projectSeg(facts.project) : null,
     on.has('quota') && facts.quota ? quotaSeg(facts.quota) : null,
     on.has('tps') ? tpsSeg(facts.tps) : null,
-    zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null,
+    alertSeg,
   ].filter((seg): seg is Seg => seg !== null);
   const right = on.has('loaded') && facts.loaded ? loadedSeg(facts.loaded) : null;
   const all = right ? [...left, right] : left;
@@ -890,6 +924,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     // The notice gives way here, before the effort: both items at their shortest, else the newest cut at a word to what
     // room is left, if a word fits.
     if (id === 'notice') {
+      if (alertSeg && alertSeg.forms.length > 1) alertSeg.at = 1;
       if (wide() || (lone && noticeSeg(lone, room(1), pad))) break;
       continue;
     }
