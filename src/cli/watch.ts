@@ -155,7 +155,7 @@ export async function watchCommand(
 
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
-  process.on('SIGPIPE', stop);
+  // Leave SIGPIPE ignored by Node: removing its last listener resets it to SIG_DFL.
   process.stdout?.on('error', onStdoutError);
   options.signal?.addEventListener('abort', stop, { once: true });
 
@@ -225,7 +225,6 @@ export async function watchCommand(
     process.off('exit', cleanup);
     process.off('SIGTERM', stop);
     process.off('SIGINT', stop);
-    process.off('SIGPIPE', stop);
     process.stdout?.off('error', onStdoutError);
     options.signal?.removeEventListener('abort', stop);
     if (timer !== undefined) clearTimeout(timer);

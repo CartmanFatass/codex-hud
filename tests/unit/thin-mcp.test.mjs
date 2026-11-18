@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
-import { tmpdir } from 'node:os';
+import { constants, tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
@@ -1783,6 +1783,9 @@ test('failed job without a report catches up once, then hud_read marks attention
     const lines = [], ac = new AbortController();
     const watching = watchCommand([], { env: f.env, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: ac.signal, rescanMs: 60 });
     await new Promise((r) => setTimeout(r, 150)); ac.abort(); await watching;
+    const [, ignored] = fs.readFileSync('/proc/self/status', 'utf8').match(/^SigIgn:\s+([\da-f]+)$/m);
+    const sigpipe = 1n << BigInt(constants.signals.SIGPIPE - 1);
+    assert.equal(BigInt(`0x${ignored}`) & sigpipe, sigpipe, 'watchCommand must leave SIGPIPE ignored');
     return lines;
   };
   assert.deepEqual(await catchup(), [`${id} imp: failed | worker gone`]);
