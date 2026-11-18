@@ -347,10 +347,10 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
   const now = Date.now, timer = globalThis.setTimeout, anchor = Date.now();
   Date.now = () => anchor + (now() - anchor) * 20;
   globalThis.setTimeout = (fn, ms, ...args) => timer(fn, ms === 250 ? 15 : ms / 20, ...args);
-  const readdir = fs.readdirSync;
-  fs.default.readdirSync = (...args) => {
-    if (args[0] === '/proc') fs.appendFileSync(join(process.env.HOME, 'proc-scans'), 'scan\\n');
-    return readdir(...args);
+  const opendir = fs.opendirSync;
+  fs.default.opendirSync = (...args) => {
+    if (/^\\/proc\\/\\d+\\/task$/.test(args[0])) fs.appendFileSync(join(process.env.HOME, 'proc-scans'), 'scan\\n');
+    return opendir(...args);
   };
   const rename = fs.renameSync;
   fs.default.renameSync = (...args) => {
@@ -603,30 +603,62 @@ test('supervisor events: a report with a missed status push settles on the safet
   await until(() => cliState(job.task_dir)?.state === 'idle_grace', 5000);
   assert.equal(cliState(job.task_dir).output_written, true);
 });
-test('supervisor events: done with background tests stays working; report settles even with child alive', { timeout: 10000 }, async (t) => {
-  const f = await fixture(t);
-  const marker = join(f.env.HOME, 'child-ready');
-  const worker = spawn(process.execPath, ['-e', `const fs = require('node:fs'); const {spawn} = require('node:child_process'); let child; process.on('SIGUSR1', () => { child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)']); fs.writeFileSync(${JSON.stringify(marker)}, String(child.pid)); }); process.on('SIGTERM', () => { child?.kill('SIGKILL'); process.exit(); }); setInterval(()=>{},1000);`], { stdio: 'ignore' });
-  t.after(() => worker.kill('SIGTERM'));
+function fakeCliWithChild(t, f) {
+  const worker = spawn(process.execPath, ['-e', `
+    const { spawn } = require('node:child_process');
+    let child;
+    process.on('message', (command) => {
+      if (command === 'start') {
+        child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+        process.send(child.pid);
+      } else child.kill();
+    });
+    process.on('disconnect', () => child?.kill());
+  `], { env: f.env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  const exited = once(worker, 'exit');
+  t.after(async () => { if (worker.connected) worker.disconnect(); await exited; });
   fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(worker.pid));
+  return {
+    pid: worker.pid,
+    async start() {
+      const message = once(worker, 'message');
+      worker.send('start');
+      const [pid] = await message;
+      assert.equal(procStat(pid)?.ppid, worker.pid);
+      return pid;
+    },
+    stop: () => worker.send('stop'),
+  };
+}
+
+const statusQueries = (f, job) => f.socketRequests.filter((r) =>
+  r.method === 'agent.get' && r.params.target === `${job.job}-primary`).length;
+
+test('supervisor events: idle and a stable report do not settle while a pre-turn child lives; the next tick settles after exit', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const worker = fakeCliWithChild(t, f);
+  const child = await worker.start();
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-  writeCliRole(f, 'background-events', 1, false);
+  writeCliRole(f, 'background-events', 4);
   const job = await f.call('hud_create', { role: 'background-events', request_key: 'background-events', task: 'Synthetic background work.' });
-  await until(() => cliState(job.task_dir)?.pid === worker.pid);
-  worker.kill('SIGUSR1');
-  await until(() => fs.existsSync(marker));
-  f.push(job.job, 'done');
-  await new Promise((r) => setTimeout(r, 1800));
-  assert.equal(cliState(job.task_dir).state, 'working');
-  assert.equal(cliState(job.task_dir).quiet_decision, undefined);
+  await until(() => cliState(job.task_dir)?.pid === worker.pid && cliState(job.task_dir)?.agent_session_id);
+  assert.equal(cliState(job.task_dir).pid_start_time, procStat(worker.pid).start);
   fs.writeFileSync(join(job.task_dir, 'report.md'), 'Report while tests finish.\n');
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
-  await new Promise((r) => setTimeout(r, 1200));
-  assert.equal(cliState(job.task_dir).state, 'idle_grace', 'child holds quit, not report settlement');
-  assert.equal(f.commands().some((c) => c.args[3] === '/quit'), false);
-  process.kill(Number(fs.readFileSync(marker)), 'SIGKILL');
-  f.push(job.job, 'done');
-  await until(() => cliState(job.task_dir)?.state === 'closed');
+  f.push(job.job, 'idle');
+  const before = statusQueries(f, job);
+  await until(() => statusQueries(f, job) > before);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(cliState(job.task_dir).state, 'working');
+  assert.equal(cliState(job.task_dir).settled_at, null);
+  assert.equal(cliState(job.task_dir).output_written, false);
+  assert.ok(procStat(child));
+
+  worker.stop();
+  await until(() => procStat(child) === null);
+  const queriesAtExit = statusQueries(f, job);
+  // No pushed status or report file event on child exit; the real safety tick must notice.
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace', 2200);
+  assert.ok(statusQueries(f, job) <= queriesAtExit + 1);
   assert.equal(cliState(job.task_dir).output_written, true);
 });
 
@@ -2173,54 +2205,29 @@ test('an unchanged cli report after continuation stays open without failing', { 
   await until(() => cliState(job.task_dir)?.state === 'idle_grace' && cliState(job.task_dir)?.output_written === true, 5000);
 });
 
-test('a live background child keeps the job busy until it ends', { timeout: 15000 }, async (t) => {
+test('quiet without a report and a live child makes no Decision API call and types no prompt', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'bg-cli', 1, false);
-  const childPidFile = join(f.env.HOME, 'bg-child-pid');
-  const helperReady = join(f.env.HOME, 'helper-ready');
-  const fakeCli = spawn(
-    process.execPath,
-    [
-      '-e',
-      `const { spawn } = require('node:child_process');
-       const fs = require('node:fs');
-       const helper = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)']);
-       let bg = null;
-       process.on('SIGUSR1', () => {
-         bg = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)']);
-         fs.writeFileSync(${JSON.stringify(childPidFile)}, String(bg.pid));
-       });
-       process.on('SIGUSR2', () => {
-         if (bg) bg.kill('SIGKILL');
-       });
-       process.on('SIGTERM', () => {
-         helper.kill('SIGKILL');
-         if (bg) bg.kill('SIGKILL');
-         process.exit(0);
-       });
-       fs.writeFileSync(${JSON.stringify(helperReady)}, String(helper.pid));
-       setInterval(()=>{}, 1000);`,
-    ],
-    { stdio: 'ignore' }
-  );
-  t.after(() => { try { fakeCli.kill('SIGTERM'); } catch {} });
-  await until(() => fs.existsSync(helperReady));
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(fakeCli.pid));
-  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
-  fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
-  const notices = () =>
-    f.commands().filter((c) => c.args[1] === 'prompt' && String(c.args.at(-1)).includes('quiet without a report'));
+  const worker = fakeCliWithChild(t, f);
+  await worker.start();
+  writeCliRole(f, 'bg-cli', 0.25, false);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  fs.writeFileSync(join(f.env.HOME, 'write-on-report-prompt'), '');
+  const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
+  configureFakeDecision(f, server.baseUrl);
   const job = await f.call('hud_create', { role: 'bg-cli', request_key: 'bg-child', task: 'Synthetic bg child.' });
-  await until(() => cliState(job.task_dir)?.pid === fakeCli.pid);
-  fakeCli.kill('SIGUSR1');
-  await until(() => fs.existsSync(childPidFile));
-  fs.writeFileSync(join(f.env.HOME, 'release-turn'), '');
-  await new Promise((done) => setTimeout(done, 1300));
+  await until(() => cliState(job.task_dir)?.agent_session_id);
+  const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && String(c.args[3]).startsWith('Write your report to '));
+  f.push(job.job, 'idle');
+  const before = statusQueries(f, job);
+  await until(() => statusQueries(f, job) > before);
+  assert.equal(server.requests.length, 0);
+  assert.equal(prompts().length, 0);
   assert.equal(cliState(job.task_dir).state, 'working');
-  assert.equal(notices().length, 0);
-  fakeCli.kill('SIGUSR2');
-  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', 5000);
-  assert.equal(notices().length, 0);
+  assert.equal(cliState(job.task_dir).quiet_decision, undefined);
+
+  worker.stop();
+  await until(() => prompts().length === 1, 5000);
+  assert.equal(server.requests.length, 1, 'the real quiet-decision path runs once the child is gone');
 });
 
 test('quiet past grace turns waiting_orchestrator without pane notices and self-wake returns to working', { timeout: 15000 }, async (t) => {
@@ -3591,7 +3598,7 @@ test('report written while working settles only at turn end, not mid-turn slice 
   assert.equal(cliState(job.task_dir).exit_reason, 'settled');
 });
 
-test('no /quit before done and a live background child holds idle_grace until exit', { timeout: 15000 }, async (t) => {
+test('no /quit before done for a noncontinuable CLI', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'no-cont-mid', 1, false);
   fs.writeFileSync(join(f.env.HOME, 'report-while-working'), '');
@@ -3608,53 +3615,30 @@ test('no /quit before done and a live background child holds idle_grace until ex
   await until(() => cliState(noCont.task_dir)?.state === 'closed', 5000);
   assert.equal(cliState(noCont.task_dir).output_written, true);
   assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
+});
 
-  // Now check live background child holding idle_grace past the 1s grace deadline.
-  fs.unlinkSync(join(f.env.HOME, 'report-while-working'));
-  fs.unlinkSync(join(f.env.HOME, 'report-while-working-stage'));
-  fs.unlinkSync(join(f.env.HOME, 'release-done'));
+test('a child that starts during idle grace prevents automatic quit and watcher reap until exit', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t);
+  const worker = fakeCliWithChild(t, f);
   writeCliRole(f, 'grace-bg-cli', 1, true);
-  const childPidFile = join(f.env.HOME, 'grace-bg-child');
-  const helperReady = join(f.env.HOME, 'grace-helper-ready');
-  const fakeCli = spawn(
-    process.execPath,
-    [
-      '-e',
-      `const { spawn } = require('node:child_process');
-       const fs = require('node:fs');
-       const helper = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)']);
-       let bg = null;
-       process.on('SIGUSR1', () => {
-         bg = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)']);
-         fs.writeFileSync(${JSON.stringify(childPidFile)}, String(bg.pid));
-       });
-       process.on('SIGUSR2', () => { if (bg) bg.kill('SIGKILL'); });
-       process.on('SIGTERM', () => { helper.kill('SIGKILL'); if (bg) bg.kill('SIGKILL'); process.exit(0); });
-       fs.writeFileSync(${JSON.stringify(helperReady)}, String(helper.pid));
-       setInterval(()=>{}, 1000);`,
-    ],
-    { stdio: 'ignore' }
-  );
-  t.after(() => { try { fakeCli.kill('SIGTERM'); } catch {} });
-  await until(() => fs.existsSync(helperReady));
-  fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(fakeCli.pid));
-  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const graceJob = await f.call('hud_create', {
     role: 'grace-bg-cli',
     request_key: 'grace-bg-hold',
     task: 'Background child holds grace.',
   });
-  await until(() => cliState(graceJob.task_dir)?.pid === fakeCli.pid);
-  fakeCli.kill('SIGUSR1');
-  await until(() => fs.existsSync(childPidFile));
-  fs.writeFileSync(join(graceJob.task_dir, 'report.md'), 'Report ready.\n');
-  fs.writeFileSync(join(f.env.HOME, 'release-turn'), '');
-  await new Promise((r) => setTimeout(r, 1300));
-  assert.equal(['working', 'idle_grace'].includes(cliState(graceJob.task_dir).state), true);
-  assert.equal(f.commands().some((c) => c.args[1] === 'prompt' && c.args[2] === `${graceJob.job}-primary` && c.args[3] === '/quit'), false);
-  fakeCli.kill('SIGUSR2');
-  await until(() => cliState(graceJob.task_dir)?.state === 'closed', 5000);
-  assert.equal(cliState(graceJob.task_dir).output_written, true);
+  await until(() => cliState(graceJob.task_dir)?.state === 'idle_grace');
+  const child = await worker.start();
+  const quit = () => f.commands().some((c) => c.args[1] === 'prompt' && c.args[2] === `${graceJob.job}-primary` && c.args[3] === '/quit');
+  const reaped = () => f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === graceJob.task_dir);
+  await new Promise((r) => setTimeout(r, 1300)); // Past the 1s accelerated idle deadline.
+  assert.ok(procStat(child));
+  assert.equal(cliState(graceJob.task_dir).state, 'idle_grace');
+  assert.equal(quit(), false);
+  assert.equal(reaped(), false);
+  worker.stop();
+  await until(() => cliState(graceJob.task_dir)?.state === 'closed', 2200);
+  await until(reaped);
+  assert.ok(quit());
 });
 
 test('exit is a /proc pid check: herdr errors keep working while pid lives, PID gone closes or fails, unknown PID asks after 3 ticks', { timeout: 20000 }, async (t) => {

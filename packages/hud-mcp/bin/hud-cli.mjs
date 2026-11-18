@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
-import { judge, procStat, workerAlive, readTurn, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { judge, procStat, workerAlive, workerHasChild, readTurn, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
 
 const dir = fs.realpathSync(process.argv[2]);
 const bundled = fileURLToPath(new URL('..', import.meta.url)), hudHome = dirname(dirname(dir));
@@ -149,31 +149,8 @@ function connect() {
   });
   lines.on('error', unavailable); socket.on('error', unavailable); socket.on('close', unavailable);
 }
-/** Only called at an action boundary or on a quiet tick, never for working/status flaps. */
-function newerChild() {
-  if (!current.pid || workerAlive(current.pid, current.pid_start_time) !== true) return false;
-  const children = new Map(), starts = new Map();
-  const boot = +new Date() - parseFloat(fs.readFileSync('/proc/uptime', 'utf8')) * 1000;
-  const since = Math.floor((Date.parse(turn.sent_at) - boot) / 10);
-  for (const entry of fs.readdirSync('/proc')) {
-    if (!/^\d+$/.test(entry)) continue;
-    const pid = Number(entry), info = procStat(pid);
-    if (!info || info.state === 'Z') continue;
-    starts.set(pid, Number(info.start)); // Linux USER_HZ is 100; include the send's whole tick.
-    const list = children.get(info.ppid) ?? [];
-    list.push(pid); children.set(info.ppid, list);
-  }
-  const queue = [...(children.get(current.pid) ?? [])], seen = new Set();
-  while (queue.length) {
-    const pid = queue.shift();
-    if (seen.has(pid)) continue;
-    seen.add(pid);
-    if (starts.get(pid) >= since) return true;
-    queue.push(...(children.get(pid) ?? []));
-  }
-  return false;
-}
-function collect(isTick) {
+const sampleChild = () => workerHasChild(current.pid, current.pid_start_time);
+function collect(isTick, checkChild = isTick && status !== 'working') {
   if (diskDirty || isTick) {
     turn = readTurn(dir) ?? turn;
     stop = fs.existsSync(join(dir, 'STATUS.json.stop-requested'));
@@ -186,7 +163,7 @@ function collect(isTick) {
   const nextStamp = st ? `${st.mtimeMs}:${st.size}` : null;
   if (nextStamp !== stamp) { signature = reportSignature(dir); stamp = nextStamp; }
   return { turn, reportSig: signature, alive: workerAlive(current.pid, current.pid_start_time), status,
-    newerChild: isTick && status !== 'working' ? newerChild() : null,
+    liveChild: checkChild ? sampleChild() : null,
     stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
     tick: isTick, agentMissing, workingAt, tabClosed };
 }
@@ -223,21 +200,24 @@ async function run() {
     let observed = collect(isTick);
     let next = judge(prev, observed, Date.now());
     if (next.action === 'sample') {
-      observed = { ...observed, newerChild: newerChild() };
+      observed = { ...observed, liveChild: sampleChild() };
       next = judge(prev, observed, Date.now());
     }
     if (next.action === 'decide') {
       const text = effect(['pane', 'read', pane, '--source', 'recent']).body?.result?.read?.text ?? '';
+      // The pane read can block; don't ask using the earlier process sample.
+      const liveChild = sampleChild();
+      if (liveChild !== false) { wake(); return; }
       const decision = quietQuestions >= 3
         ? { choice: null, probability: null, action: 'needs-human', reason: 'max-questions', asked: false }
         : await decideQuietJob({ hudHome, jobId: job.job, role: job.role, agent: cli.agent,
-            jobState: current.state, backgroundChildAlive: observed.newerChild,
+            jobState: current.state, backgroundChildAlive: liveChild,
             minutesQuiet: Math.max(0, Math.round((Date.now() - next.quietSince) / 60000)),
             paneText: text, reportPromptSent, questionIndex: quietQuestions + 1 });
       if (decision.asked) quietQuestions += 1;
       diskDirty = true;
-      const latest = collect(false);
-      if (latest.turn.seq !== observed.turn.seq || latest.reportSig !== observed.reportSig || latest.stop || latest.close || latest.alive === false || latest.status !== observed.status || latest.workingAt !== observed.workingAt || latest.openQuestions || newerChild()) { wake(); return; }
+      const latest = collect(false, true);
+      if (latest.turn.seq !== observed.turn.seq || latest.reportSig !== observed.reportSig || latest.stop || latest.close || latest.alive === false || latest.status !== observed.status || latest.workingAt !== observed.workingAt || latest.openQuestions || latest.liveChild !== false) { wake(); return; }
       current.quiet_decision = { choice: decision.choice, probability: decision.probability, action: decision.action,
         ...(decision.reason ? { reason: decision.reason } : {}), at: new Date().toISOString() };
       if (decision.action === 'prompt-report') {

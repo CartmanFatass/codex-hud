@@ -2,20 +2,28 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { judge, procStat, workerAlive } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
+import { judge, procStat, workerAlive, workerHasChild } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 
 test('worker identity: missing start is unknown for a live PID, but absence is still an exit fact', async () => {
   assert.equal(workerAlive(process.pid, procStat(process.pid).start), true);
   assert.equal(workerAlive(process.pid, null), null);
   assert.equal(workerAlive(process.pid, '0'), false);
   assert.equal(workerAlive(null, null), null);
-  const child = spawn(process.execPath, ['-e', 'process.exit(0)']);
-  await once(child, 'exit');
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
+  const exited = once(child, 'exit');
+  try {
+    assert.equal(workerHasChild(process.pid, null), false);
+    assert.equal(workerHasChild(process.pid, '0'), false, 'a reused worker PID does not count');
+    assert.equal(workerHasChild(process.pid, procStat(process.pid).start), true);
+  } finally {
+    child.kill();
+    await exited;
+  }
   assert.equal(workerAlive(child.pid, null), false);
 });
 
 const turn = { seq: 1, sent_at: new Date(0).toISOString(), report_sig: null };
-const facts = { turn, reportSig: null, alive: true, status: 'working', newerChild: false,
+const facts = { turn, reportSig: null, alive: true, status: 'working', liveChild: false,
   stop: false, close: false, openQuestions: false, canContinue: true, graceMs: 600_000 };
 const initial = judge(null, facts, 0);
 const quiet = judge(initial, { ...facts, status: 'done', reportSig: 'report' }, 1000);
@@ -37,13 +45,13 @@ const rows = [
   ['partial report resets stability', quiet, { status: 'done', reportSig: 'rewritten' }, 11_000, { state: 'working', quietSince: 11_000, wakeAt: 21_000 }],
   ['working flap resets quiet', quiet, { reportSig: 'report' }, 9000, { state: 'working', quietSince: null }],
   ['working push inside debounce resets quiet', quiet, { status: 'done', reportSig: 'report', workingAt: 10_900 }, 11_000, { state: 'working', quietSince: 11_000, wakeAt: 21_000 }],
-  ['unknown child sample cannot settle', quiet, { status: 'done', reportSig: 'report', newerChild: null }, 11_000, { state: 'working', action: 'sample' }],
-  ['child does not hold report from grace', quiet, { status: 'done', reportSig: 'report', newerChild: true }, 11_000, { state: 'idle_grace', outputWritten: true }],
+  ['unsampled child fact cannot settle', quiet, { status: 'done', reportSig: 'report', liveChild: null }, 11_000, { state: 'working', action: 'sample' }],
+  ['child holds report from grace', quiet, { status: 'done', reportSig: 'report', liveChild: true }, 11_000, { state: 'working', settledAt: null, outputWritten: false }],
   ['noncontinuable report closes', quiet, { status: 'done', reportSig: 'report', canContinue: false }, 11_000, { state: 'closed', action: 'quit' }],
-  ['child holds noncontinuable quit, not report', quiet, { status: 'done', reportSig: 'report', canContinue: false, newerChild: true }, 11_000, { state: 'idle_grace', outputWritten: true, deadline: 11_000, wakeAt: null, action: null }],
-  ['no-report child holds quiet clock', noReport, { status: 'done', newerChild: true }, 601_000, { state: 'working', quietSince: null, action: null }],
+  ['child holds noncontinuable settlement and quit', quiet, { status: 'done', reportSig: 'report', canContinue: false, liveChild: true }, 11_000, { state: 'working', outputWritten: false, deadline: null, wakeAt: null, action: null }],
+  ['no-report child holds quiet clock', noReport, { status: 'done', liveChild: true }, 601_000, { state: 'working', quietSince: null, action: null }],
   ['no-report deadline', noReport, { status: 'done' }, 601_000, { state: 'working', action: 'decide' }],
-  ['unknown child cannot decide', noReport, { status: 'done', newerChild: null }, 601_000, { state: 'working', action: 'sample' }],
+  ['unsampled child fact cannot decide', noReport, { status: 'done', liveChild: null }, 601_000, { state: 'working', action: 'sample' }],
   ['decision wait', noReport, { status: 'done', decision: { action: 'wait' } }, 601_000, { state: 'working', wakeAt: 1_201_000 }],
   ['decision prompt', noReport, { status: 'done', decision: { action: 'prompt-report' } }, 601_000, { state: 'working', wakeAt: 1_201_000 }],
   ['decision human', noReport, { status: 'done', decision: { action: 'needs-human' } }, 601_000, { state: 'waiting_orchestrator', quietHandled: true }],
@@ -52,8 +60,8 @@ const rows = [
   ['idle deadline', idle, { status: 'done', reportSig: 'report' }, 611_000, { state: 'closed', action: 'quit' }],
   ['working holds idle deadline', idle, { reportSig: 'report' }, 611_000, { state: 'idle_grace', action: null, wakeAt: null }],
   ['outage does not hold an already-settled idle deadline', idle, { status: null, reportSig: 'report' }, 611_000, { state: 'closed', action: 'quit' }],
-  ['child holds idle deadline', idle, { status: 'done', reportSig: 'report', newerChild: true }, 611_000, { state: 'idle_grace', action: null }],
-  ['idle deadline samples lazily', idle, { status: 'done', reportSig: 'report', newerChild: null }, 611_000, { state: 'idle_grace', action: 'sample' }],
+  ['child holds idle deadline', idle, { status: 'done', reportSig: 'report', liveChild: true }, 611_000, { state: 'idle_grace', action: null }],
+  ['idle deadline samples lazily', idle, { status: 'done', reportSig: 'report', liveChild: null }, 611_000, { state: 'idle_grace', action: 'sample' }],
   ['only explicit turn reopens', idle, { status: 'done', reportSig: 'report', turn: { ...turn, seq: 2, report_sig: 'report' } }, 20_000, { state: 'working', outputWritten: false, settledAt: null, deadline: null }],
   ['error without report never decides', initial, { status: null }, 60_000, { state: 'working', wakeAt: null, action: null }],
   ['supervisor error', initial, { supervisorError: 'supervisor error' }, 2, { state: 'waiting_orchestrator', reason: 'supervisor error' }],
@@ -194,11 +202,11 @@ test('judge: turn trust preserves outage, child, question and working-flap bound
   assert.equal(judge(prev, { ...observed, openQuestions: true }, 3000).state, 'waiting_orchestrator');
   assert.equal(judge(prev, { ...observed, workingAt: 2999 }, 3000).wakeAt, 5000);
   assert.equal(judge(prev, { ...observed, reportSig: 'rewritten' }, 3000).wakeAt, 5000);
-  const held = judge(prev, { ...observed, newerChild: true, canContinue: false }, 3000);
-  assert.equal(held.state, 'idle_grace');
+  const held = judge(prev, { ...observed, liveChild: true, canContinue: false }, 3000);
+  assert.equal(held.state, 'working');
   assert.equal(held.action, null);
-  assert.equal(judge(held, { ...observed, newerChild: true }, 4000).action, null);
-  const noReportFacts = { ...observed, reportSig: null, newerChild: true };
+  assert.equal(judge(held, { ...observed, liveChild: true }, 4000).action, null);
+  const noReportFacts = { ...observed, reportSig: null, liveChild: true };
   assert.equal(judge(initial, noReportFacts, 11_000).quietSince, null);
-  assert.equal(judge(prev, { ...observed, newerChild: null }, 3000).action, 'sample');
+  assert.equal(judge(prev, { ...observed, liveChild: null }, 3000).action, 'sample');
 });
