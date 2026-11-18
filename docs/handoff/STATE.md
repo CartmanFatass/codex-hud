@@ -8,7 +8,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Waiting for the owner
 
 - Try 0.2.0 (MCP-NEXT, PANEL-V2, MCP-READ-COMPACT, SUPERVISOR-MCP; review docs/reviews/2026-11-18-0.2.0-milestone.md, fixed 3635da5d).
-- Decide: panel question reply stays two keys (, then /0	~/projects/MyHUD) or follows spec §2.2 literally (/0	~/projects/MyHUD on an expanded slab;  are also tab keys).
+- Decide: panel question reply stays two keys (`r`, then `1–4`/`d`) or follows spec §2.2 literally (`1–4`/`d` on an expanded slab; `1–4` are also tab keys).
 - Decide: Split rule drag needs terminal mouse mode 1002 (motion while a button is held); keep it or keys only.
 - Nothing waits: the owner approved all 14 vertical-slice tickets across `mcp-next` (01–07) and `panel-v2` (01–07) on 2026-11-18. Still `try` in the ledger from earlier rounds: HOME-RECOMMEND, SETTLE-FIX, M4-PRUNE, MATT-OFF, SUPERVISOR-FIX.
 
