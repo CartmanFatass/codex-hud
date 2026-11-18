@@ -65,18 +65,22 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    selected row, a milestone row meaning all its slices still to try and a slice row that slice; the panel writes only a
    record under `$HUD_HOME` (never a project file) and shows the mark at once, the main session hears it through
    `hud watch` and MCP `changes` and updates STATE (accepted slices become `accepted`; a flagged one goes under
-   Waiting for the owner and the main session asks the owner what is wrong); the control plane opens with what needs attention and the place the next job will use, healthy
+   Waiting for the owner and the main session asks the owner what is wrong); the owner can mark several rows first and
+   `y`/`n` then records them as one record, so the main session hears one line (owner, 2026-11-18). What the owner
+   tries is never cut to a name (owner, 2026-11-18): a to-try slice and a waiting item show their whole text, wrapped,
+   wherever the panel has the rows; with the model on, a slice also gets a short brief (what changed, in plain words)
+   and acceptance steps (how to try it), made from its ledger line, ticket and commits; with the model off the
+   original text shows. This is the one place the progress board uses the model; the control plane opens with what needs attention and the place the next job will use, healthy
    roles folded. Skills list (owner, 2026-11-17; moved from a third main tab into Help, owner, 2026-11-17 second decision: Home and Project are the only main tabs): a section of Help (`?`) lists the backup skills, Matt Pocock
    skills that are not installed (adapted copies in `integrations/skills-optional/` and the upstream text) and that
    the main session reads when the owner asks for one; each skill's name and its whole one-line description in the panel's language, read from a catalog file
    the HUD ships; the description wraps under the name rather than being cut, so the list reads at the owner's 40-column
    panel (owner, 2026-11-17). Display only: no action on a row, no install state, no adopted or dropped skills.
    Panel layouts (owner, 2026-11-17, PANEL-REDESIGN): Settings → Panel → Layout offers Classic (Home and Project as
-   described above, the default), Inbox and Split (options 1 and 2 of `docs/design/panel-v8/`, built as drawn there:
-   Inbox without lanes, `y`/`n` also on the hub's rows, a busy Home counts STATE's waiting items). Inbox and Split
-   depart from this section's Home and Project layout sentences only where `docs/design/panel-v8/notes.md` says so;
-   in every layout what needs the owner is never hidden. The owner tries both and keeps one; the layouts not kept are
-   deleted then.
+   described above, the default) and Split (option 2 of `docs/design/panel-v8/`: a list over a preview of the selected
+   row). Split departs from this section's Home and Project layout sentences only where `docs/design/panel-v8/notes.md` says so;
+   in every layout what needs the owner is never hidden. The owner tried both and kept Split (2026-11-18): Inbox is
+   deleted; Classic stays the default.
 3. **Set up a project's workers in one conversation** (owner, 2026-11-13). `hud setup --detect | --apply PLAN | --remove` writes a project's `.hud/` and is driven by a `hud-setup` skill that asks the owner, as claude-hud's setup does. Customisation is on pi workers only: main sessions and the official harnesses (Claude Code, Codex, Grok Build, Antigravity) keep their behaviour, and their roles are only shown or hidden. A project's `.hud/` loads only once the owner has set that project up (`$HUD_HOME/projects.json`); a cloned repo's `.hud/` does nothing on its own.
    Skills (owner, 2026-11-17, second decision; supersedes the same day's adapted-skills and MATT-PARADIGM
    decisions): the HUD's own flow is the one in `docs/delegation.md`, slicing with `to-tickets` and one review per
