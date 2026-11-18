@@ -287,7 +287,7 @@ test('live panel spawns list commands only on Control plane open and r refresh, 
 
   // Open Control plane (Enter on project:page:control) -> spawns pi, agy, grok once each.
   child.stdin.write('\r');
-  await until(() => stripAnsi(out).includes('Harnesses') && spawns().length === 3, 'Control plane opened & discovered');
+  await until(() => stripAnsi(out).includes('Selected place') && spawns().length === 3, 'Control plane opened & discovered');
   assert.deepEqual([...spawns()].sort(), ['agy', 'grok', 'pi']);
 
   // Sit through multiple refresh ticks -> still 0 extra spawns.
@@ -298,7 +298,7 @@ test('live panel spawns list commands only on Control plane open and r refresh, 
   child.stdin.write('\x1b');
   await until(() => stripAnsi(out).includes('Progress'), 'back to hub');
   child.stdin.write('\r');
-  await until(() => stripAnsi(out).includes('Harnesses'), 'Control plane re-opened');
+  await until(() => stripAnsi(out).includes('Selected place'), 'Control plane re-opened');
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(spawns().length, 3);
 
