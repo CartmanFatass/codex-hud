@@ -89,7 +89,7 @@ export function laneRows(
       ? review
         ? review.includes('accept')
           ? review
-          : `${review.match(/^review r\d+/)?.[0]} · fixing`
+          : `${review.match(/^review r\d+/)?.[0] ?? 'review'} · fixing`
         : (active.phase ?? 'build')
       : 'done';
     lane = { ...lane, phase };
