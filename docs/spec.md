@@ -71,6 +71,12 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    the main session reads when the owner asks for one; each skill's name and its whole one-line description in the panel's language, read from a catalog file
    the HUD ships; the description wraps under the name rather than being cut, so the list reads at the owner's 40-column
    panel (owner, 2026-11-17). Display only: no action on a row, no install state, no adopted or dropped skills.
+   Panel layouts (owner, 2026-11-17, PANEL-REDESIGN): Settings → Panel → Layout offers Classic (Home and Project as
+   described above, the default), Inbox and Split (options 1 and 2 of `docs/design/panel-v8/`, built as drawn there:
+   Inbox without lanes, `y`/`n` also on the hub's rows, a busy Home counts STATE's waiting items). Inbox and Split
+   depart from this section's Home and Project layout sentences only where `docs/design/panel-v8/notes.md` says so;
+   in every layout what needs the owner is never hidden. The owner tries both and keeps one; the layouts not kept are
+   deleted then.
 3. **Set up a project's workers in one conversation** (owner, 2026-11-13). `hud setup --detect | --apply PLAN | --remove` writes a project's `.hud/` and is driven by a `hud-setup` skill that asks the owner, as claude-hud's setup does. Customisation is on pi workers only: main sessions and the official harnesses (Claude Code, Codex, Grok Build, Antigravity) keep their behaviour, and their roles are only shown or hidden. A project's `.hud/` loads only once the owner has set that project up (`$HUD_HOME/projects.json`); a cloned repo's `.hud/` does nothing on its own.
    Skills (owner, 2026-11-17, second decision; supersedes the same day's adapted-skills and MATT-PARADIGM
    decisions): the HUD's own flow is the one in `docs/delegation.md`, slicing with `to-tickets` and one review per
