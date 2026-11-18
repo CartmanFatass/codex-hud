@@ -11,3 +11,5 @@
 - [ ] Add unit tests for `hud-progress` rotation/validation, `hud_read` progress fields, and `hud_peek` non-mutating pane tail inspection.
 
 ## Comments
+
+- Orchestrator 2026-11-18: took over panel-v2 04's milestone line (above), so the panel chain does not wait on this ticket. Progress stays out of the compact `hud_read({})` rows and `hud_wait` rows (MCP-READ-COMPACT: no ordinary working narration); it is in `hud_read(job)` and `hud_peek` only.
