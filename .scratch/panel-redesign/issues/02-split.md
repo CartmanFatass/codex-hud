@@ -1,7 +1,7 @@
 # 02: The Split layout
 
 **Status:** ready-for-agent
-**Blocked by:** 01
+**Blocked by:** none (owner 2026-11-17: in parallel with 01 over a fixed seam; see Comments)
 
 **What to build:** `docs/spec.md` §2.2 "Panel layouts". Option 2 · Split of `docs/design/panel-v8/` (`options.html`,
 `notes.md` "Option 2 · Split"), built as drawn, behind ticket 01's Layout setting.
@@ -17,3 +17,7 @@
 - [ ] Classic and Inbox unchanged; frame tests for Split Home busy/idle/24 rows, hub, Progress and Control plane.
 
 ## Comments
+
+- Main session, 2026-11-17: runs in parallel with 01 (owner). Seam: setting `panelLayout` = `classic` | `inbox` |
+  `split` (01 owns the Settings row); each layout in its own modules (`src/render/inbox-*.ts`,
+  `src/render/split-*.ts`); work-view.ts / project-view.ts only branch on the setting.
