@@ -139,7 +139,7 @@ export const PI_ROLE_TOOLS = [
     },
     ['role', 'request_key', 'task']
   ),
-  tool('hud_read', 'Read a job, optionally waiting for settlement or a question. Reading a settled report closes the worker; omit job for the 20 newest.', {
+  tool('hud_read', 'Read a job, optionally waiting for settlement or a question. Reading a settled report from the main session closes the worker; omit job for the 20 newest.', {
     job: text,
     wait_ms: { type: 'integer', minimum: 0, maximum: 120000 },
     full: { type: 'boolean', description: 'Include the report even if already read.' },

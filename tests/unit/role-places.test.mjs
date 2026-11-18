@@ -375,20 +375,25 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   assert.equal((await f.call('hud_read', { job: alias.job })).role, 'oracle');
 });
 
-test('reviewer uses reviewer.md on CLI; sonic returns unsupported_harness', { timeout: 10000 }, async (t) => {
+test('reviewer and sonic use their instruction files on CLI; a role without one returns unsupported_harness', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, { withPi: false });
-  const rev = await f.call('hud_create', { role: 'reviewer', on: 'claude', request_key: 'rev-cli', task: 'Review diff.' });
   // Routing only: the supervisor's settling is covered in thin-mcp and cli-judge tests.
-  await until(() => f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(rev.job)));
-  const prompt = f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt');
-  assert.match(prompt.args[3], /packages\/hud-mcp\/instructions\/reviewer\.md/);
-
-  for (const role of ['sonic']) {
-    const res = await f.call('hud_create', { role, on: 'claude', request_key: `unsup-${role}`, task: 'Task.' });
-    assert.equal(res.ok, false);
-    assert.equal(res.code, 'unsupported_harness');
-    assert.match(res.path, new RegExp(`instructions/${role}\\.md$`));
+  for (const role of ['reviewer', 'sonic']) {
+    const job = await f.call('hud_create', { role, on: 'claude', request_key: `${role}-cli`, task: 'Task.' });
+    const promptOf = () => f.commands().find((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && String(c.args[2]).startsWith(job.job));
+    await until(promptOf);
+    assert.match(promptOf().args[3], new RegExp(`packages/hud-mcp/instructions/${role}\\.md`));
   }
+
+  // One role, one text on every harness (WORKER-UNIFY): a role whose instruction file is missing has no CLI place.
+  fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
+  fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'textless.json'), JSON.stringify({
+    role: 'textless', instructions: 'textless', can_continue: true, run: [{ harness: 'pi', pi_role: 'implementer' }],
+  }));
+  const res = await f.call('hud_create', { role: 'textless', on: 'claude', request_key: 'unsup-textless', task: 'Task.' });
+  assert.equal(res.ok, false);
+  assert.equal(res.code, 'unsupported_harness');
+  assert.match(res.path, /instructions\/textless\.md$/);
 });
 
 test('legacy role files including harness: jev load and deleted names are absent', () => {
