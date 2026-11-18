@@ -117,6 +117,7 @@ export const PI_ROLE_TOOLS = [
       },
       cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
+      isolation: { type: 'string', enum: ['none', 'worktree'], default: 'none', description: 'Run a local job in a managed Git worktree from HEAD.' },
       idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI-only idle grace override for this job, in seconds.' },
       on: {
         ...text,

@@ -20,6 +20,8 @@ import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PiRoleClient, PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 import { harnessDefaults, markExhausted } from '../../dist/roles/roster.js';
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
+import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 test('CLI state trust defaults, owner overrides, roster facts and dispatch snapshots agree', async (t) => {
   const f = await fixture(t);
   const config = join(f.env.HUD_HOME, 'harnesses.json');
@@ -1288,6 +1290,67 @@ test('supervisor edges: outage with a report settles at 60s, PID death closes wi
   assert.equal(cliState(failed.task_dir).exit_reason, 'worker exited');
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
   assert.equal(f.commands().filter((c) => c.args[0] === 'pane' && c.args[1] === 'read').length, 2, 'only the two dispatch trust reads, no exit scan');
+});
+
+test('worktree isolation validates before dispatch, links dependencies and carries only the selected CLI grant', async (t) => {
+  const f = await fixture(t), cwd = initRepo(f.root);
+  fs.chmodSync(f.env.HUD_HOME, 0o700); // Trust backups require a private HUD home.
+  const args = { role: 'imp', task: 'Synthetic task.', request_key: 'isolated', isolation: 'worktree', package: 'Demo Slice' };
+  assert.equal((await f.call('hud_create', { ...args, on: 'pi', cwd: f.root })).code, 'invalid_arguments');
+  assert.equal((await f.call('hud_create', { ...args, on: 'chatgpt', cwd })).code, 'invalid_arguments');
+  assert.equal(f.commands().length, 0);
+  assert.ok(!fs.existsSync(join(f.env.HUD_HOME, 'jobs')));
+  assert.ok(!fs.existsSync(join(f.root, 'demo-wt')));
+
+  fs.mkdirSync(join(cwd, 'node_modules'));
+  const trust = join(f.env.HOME, '.grok', 'trusted_folders.toml');
+  const original = fs.readFileSync(trust, 'utf8');
+  const claudeFile = join(f.env.CLAUDE_CONFIG_DIR, '.claude.json');
+  const claude = fs.readFileSync(claudeFile, 'utf8');
+  assert.equal((await f.call('hud_create', { ...args, on: 'grok', cwd })).code, 'untrusted_cwd');
+  assert.equal(fs.readFileSync(trust, 'utf8'), original);
+  assert.ok(!fs.existsSync(join(f.root, 'demo-wt')));
+  fs.appendFileSync(trust, `\n[folders.${JSON.stringify(cwd)}]\ntrusted = true\n`);
+  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
+  const create = { ...args, on: 'grok', cwd };
+  const job = await f.call('hud_create', create);
+  const name = `demo-slice-${job.job.slice(-6)}`, root = join(f.root, 'demo-wt', name);
+  const branch = `wt/${name}`, base_head = git(cwd, 'rev-parse', 'HEAD');
+  const record = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+  assert.equal(record.dispatch_exit_code, 0, record.stderr_tail);
+  assert.deepEqual(record.worktree, { main_root: cwd, root, branch, base_head });
+  assert.equal(record.cwd, root);
+  assert.equal(git(root, 'branch', '--show-current'), branch);
+  assert.equal(git(root, 'rev-parse', 'HEAD'), base_head);
+  assert.equal(fs.readlinkSync(join(root, 'node_modules')), join(cwd, 'node_modules'));
+  assert.ok(fs.readFileSync(trust, 'utf8').includes(`[folders.${JSON.stringify(root)}]`));
+  assert.equal(fs.readFileSync(claudeFile, 'utf8'), claude);
+  assert.equal((await f.call('hud_create', create)).job, job.job);
+  assert.deepEqual(fs.readdirSync(join(f.root, 'demo-wt')), [name]);
+  const tabs = f.commands().filter(({ args }) => args[0] === 'tab' && args[1] === 'create');
+  assert.equal(tabs.length, 1);
+  assert.equal(tabs[0].args[tabs[0].args.indexOf('--cwd') + 1], root);
+  const project = await new ProjectCollector(cwd, f.env.HUD_HOME, f.env).collect(true, { workers: [] }, Date.now());
+  assert.equal(project.slices.find((s) => s.label === name)?.jobId, job.job);
+  assert.equal(project.slices.find((s) => s.label === name).drift, undefined);
+});
+
+test('only a one-job read includes a bounded summary of committed and pending worktree changes', async (t) => {
+  const f = await fixture(t), cwd = initRepo(f.root);
+  fs.mkdirSync(join(cwd, 'node_modules'));
+  const job = await f.call('hud_create', { role: 'imp', on: 'pi', cwd, isolation: 'worktree', request_key: 'summary', task: 'Synthetic task.' });
+  const { worktree: { root, branch, base_head } } = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+  fs.writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  git(root, 'commit', '-qam', 'tracked change');
+  fs.appendFileSync(join(root, 'tracked.txt'), 'pending\n');
+  fs.writeFileSync(join(root, 'new.txt'), 'untracked\n');
+  const head = git(root, 'rev-parse', 'HEAD');
+  assert.deepEqual((await f.call('hud_read', { job: job.job })).git_summary,
+    { branch, base_head, head, ahead_commits: 1, changed_files: 2, dirty: true });
+  for (const result of [await f.call('hud_read'), await f.call('hud_read', { view: 'recent' }),
+    await f.call('hud_wait', { jobs: [job.job], wait_ms: 0 })]) {
+    assert.doesNotMatch(JSON.stringify(result), /git_summary/);
+  }
 });
 
 test('pi role tools match the real MCP tools/list', async (t) => {

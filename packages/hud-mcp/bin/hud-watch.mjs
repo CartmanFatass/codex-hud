@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { terminalFact, workerAlive, workerHasChild, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
+import { reapWorktree } from '../dist/packages/hud-mcp/src/managed-worktree.js';
 import { request } from './herdr-request.mjs';
 
 const bundled = fileURLToPath(new URL('..', import.meta.url));
@@ -175,6 +176,18 @@ function readCloseTurn(dir, job, status) {
   const report = fs.statSync(join(dir, 'report.md'), { throwIfNoEntry: false });
   return report?.isFile() && Math.floor(report.mtimeMs) > sent && reportWasRead(job.read_at, report.mtimeMs) ? sentAt : null;
 }
+function saveJob(file, job) {
+  const temp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(job, null, 2) + '\n', { mode: 0o600 });
+  fs.renameSync(temp, file);
+}
+async function finishWorktree(file, id, job) {
+  if (!job?.worktree || job.worktree_removed_at || job.worktree_kept_reason || !fs.lstatSync(file).isFile()) return;
+  const reason = await reapWorktree(id, job);
+  const latest = json(file);
+  if (!latest || latest.worktree_removed_at || latest.worktree_kept_reason) return;
+  saveJob(file, { ...latest, ...(reason ? { worktree_kept_reason: reason } : { worktree_removed_at: new Date().toISOString() }) });
+}
 async function scan(retryWatch = false) {
   if (stopped) return;
   if (scanning) { queued = true; return; }
@@ -259,6 +272,9 @@ async function scan(retryWatch = false) {
           }
         }
       }
+      // With a tab, wait for successful reap; without a session, only a finished failed launch is safe.
+      if (job?.reaped_at || (!session && job?.dispatch_exit_code > 0)) await finishWorktree(jobFile, id, job);
+      if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
       const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at);
       const expires = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + 86400000;
       if (expires < Date.now() && (!tab || job?.reaped_at)) {
@@ -321,11 +337,9 @@ async function scan(retryWatch = false) {
         // Read again: hud_read/send/create may have updated the receipt during reap.
         const latest = json(jobFile);
         if (latest) {
-          const temp = `${jobFile}.${process.pid}.tmp`;
-          fs.writeFileSync(temp, JSON.stringify({ ...latest, reaped_at: new Date().toISOString() }, null, 2) + '\n', {
-            mode: 0o600,
-          });
-          fs.renameSync(temp, jobFile);
+          latest.reaped_at = new Date().toISOString();
+          saveJob(jobFile, latest);
+          await finishWorktree(jobFile, id, latest);
         }
       }
     } catch (error) {

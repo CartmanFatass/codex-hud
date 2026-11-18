@@ -9,7 +9,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 import { procStat, readTurn, saveTurn, workerAlive, writeTurn } from './cli-judge.js';
-import { isCliDirTrusted } from '../../../src/cli/trust.js';
+import { isCliDirTrusted, propagateCliTrust } from '../../../src/cli/trust.js';
+import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
 import { jobChanges, jobRow, readJobProgress, type JobRow } from '../../../src/collectors/thin-jobs.js';
 import { PanelActionLog } from '../../../src/collectors/panel-actions.js';
 import { TryLog } from '../../../src/collectors/try-records.js';
@@ -56,6 +57,9 @@ interface Job extends PiOptions {
   pi_sent_at?: string;
   observed_at?: string;
   reaped_at?: string;
+  worktree?: ManagedWorktree;
+  worktree_removed_at?: string;
+  worktree_kept_reason?: string;
   place?: RolePlace;
   place_key?: string;
   exhaustion_marked?: boolean;
@@ -101,6 +105,7 @@ const tools = [
       },
       cwd: { ...text, description: "Job directory. Roles resolve against this project. Default: the server's cwd." },
       package: { ...text, description: 'Display-only package label.' },
+      isolation: { type: 'string', enum: ['none', 'worktree'], default: 'none', description: 'Run a local job in a managed Git worktree from HEAD.' },
       idle_grace_s: { type: 'integer', minimum: 60, maximum: 3600, description: 'CLI-only idle grace override for this job, in seconds.' },
       on: {
         ...text,
@@ -223,8 +228,9 @@ function save(job: Job): void {
     const at = existing?.[key];
     if (at && (!job[key] || at > job[key])) job[key] = at;
   }
-  const reaped_at = existing?.reaped_at;
-  if (reaped_at) job.reaped_at = reaped_at;
+  for (const key of ['reaped_at', 'worktree_removed_at', 'worktree_kept_reason'] as const) {
+    if (existing?.[key]) job[key] = existing[key];
+  }
   if (existing?.exhaustion_marked) job.exhaustion_marked = true;
   const temp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(job, null, 2) + '\n', { mode: 0o600 });
@@ -291,6 +297,10 @@ function refusedBeforeInput(result: Awaited<ReturnType<typeof run>>): boolean {
   try { code = JSON.parse(result.stdout)?.error?.code; } catch { /* Herdr can also render the error on stderr. */ }
   code ??= /^(?:Error:\s*)?(agent_not_ready|agent_not_found)(?=[:\s]|$)/.exec(result.stderr.trim())?.[1];
   return code === 'agent_not_ready' || code === 'agent_not_found';
+}
+async function dispatchBase(cwd: string): Promise<string> {
+  const git = await run('git', ['rev-parse', 'HEAD'], cwd);
+  return git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
 }
 async function workspaceArgs(job: Job): Promise<string[]> {
   const result = await run('herdr', ['pane', 'get', job.herdr_pane]);
@@ -366,7 +376,7 @@ function skillReason(path: string): string | null {
 }
 /** Role skill dirs and the worker prompt, after `--` and before the caller's `pi_args`. */
 function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
-  const gate = registry(job.cwd).project();
+  const gate = registry(job.worktree?.main_root ?? job.cwd).project();
   const role_skills: { name: string; path: string }[] = [];
   const skipped_skills: { name: string; reason: string }[] = [];
   const args: string[] = [];
@@ -455,8 +465,7 @@ async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string) 
     if (built.exit_code !== 0) return built;
     const piArgs: string[] = JSON.parse(built.stdout);
     fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-    const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
-    const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
+    const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
     const result = await run('herdr', [
@@ -695,8 +704,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
     if (!isCliDirTrusted(place.agent!, job.cwd, process.env)) {
       return { ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' };
     }
-    const git = await run('git', ['rev-parse', 'HEAD'], job.cwd);
-    const base = git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
+    const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
     const result = await run('herdr', [
@@ -1093,7 +1101,9 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     ensureQueueWatcher(pane, hudHome);
     return created(existing);
   }
-  if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
+  const isolation = args.isolation === undefined ? 'none' : args.isolation;
+  if (isolation !== 'none' && isolation !== 'worktree') return { ok: false, code: 'invalid_arguments', error: 'invalid isolation' };
+  if (!herdrId(pane) && isolation === 'none') return { ok: false, code: 'herdr_required' };
   const task = required(args, 'task');
   if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
   if (args.preset !== undefined && args.on !== undefined) {
@@ -1127,6 +1137,16 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
       ...(preset || effective.exhausted.length ? { exhausted: effective.exhausted } : {}),
     };
   }
+  const id = 'j' + randomBytes(8).toString('hex');
+  let worktree: ManagedWorktree | undefined;
+  if (isolation === 'worktree') {
+    if (place.harness === 'bro') return { ok: false, code: 'invalid_arguments', error: 'worktree isolation is local-only' };
+    try { worktree = await planWorktree(cwd, id, (args.package as string | undefined) || role); }
+    catch { return { ok: false, code: 'invalid_arguments', error: 'worktree isolation requires a Git checkout with a HEAD commit' }; }
+    if (place.harness === 'cli' && !isCliDirTrusted(place.agent!, worktree.main_root))
+      return { ok: false, code: 'untrusted_cwd', reason: `${place.agent} has not trusted ${worktree.main_root}; run hud trust ${worktree.main_root}` };
+  }
+  if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
   if (args.idle_grace_s !== undefined) {
     if (!Number.isInteger(args.idle_grace_s) || (args.idle_grace_s as number) < 60 || (args.idle_grace_s as number) > 3600)
       return { ok: false, code: 'invalid_arguments', error: 'idle_grace_s must be an integer from 60 to 3600' };
@@ -1210,7 +1230,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
         : details.model.source;
   const key = placeKey(place, details.model.value);
   const job: Job = {
-    job: 'j' + randomBytes(8).toString('hex'),
+    job: id,
     role,
     request_key,
     cwd,
@@ -1274,14 +1294,22 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   } else createdJobs.add(job.job);
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
   const launchRole = preset ? { ...definition, skills: effective.skills } : definition;
-  return keyLock(`job:${job.job}`, () => launchJob(job, launchRole, place, dir, instructionsPath, task));
+  return keyLock(`job:${job.job}`, () => launchJob(job, launchRole, place, dir, instructionsPath, task, worktree));
 }
 
-async function launchJob(job: Job, definition: Role, place: RolePlace, dir: string, instructionsPath: string, task: string) {
+async function launchJob(job: Job, definition: Role, place: RolePlace, dir: string, instructionsPath: string, task: string, worktree?: ManagedWorktree) {
   ensureWatcher();
   ensureQueueWatcher(job.herdr_pane, hudHome);
   let result: DispatchResult;
   try {
+    if (worktree) {
+      await addWorktree(worktree);
+      job.worktree = worktree;
+      job.cwd = worktree.root;
+      save(job);
+      await populateWorktree(worktree);
+      if (place.harness === 'cli') propagateCliTrust(place.agent!, worktree.main_root, worktree.root);
+    }
     if (place.harness === 'bro') result = await dispatchBro(job, task);
     else if (place.harness === 'cli') result = await dispatchCli(job, place, instructionsPath, task);
     else result = await dispatchPi(job, definition, place, task);
@@ -1365,7 +1393,9 @@ async function call(name: string, args: Args): Promise<unknown> {
     while (true) {
       const { row } = readRow(job, !isWorker);
       if (Date.now() >= end || ready(row)) {
-        const result = observation(json<Job>(join(dir, 'job.json')) ?? job, args.full === true);
+        const receipt = json<Job>(join(dir, 'job.json')) ?? job;
+        const git = receipt.worktree ? { git_summary: await gitSummary(receipt.worktree) } : {};
+        const result = observation(json<Job>(join(dir, 'job.json')) ?? receipt, args.full === true);
         // A question may have been answered or a settled job continued since the lightweight poll.
         const currentRow = jobRow(job, json<Record<string, unknown>>(join(dir, 'STATUS.json')), {
           dir,
@@ -1384,7 +1414,7 @@ async function call(name: string, args: Args): Promise<unknown> {
           if (result.blocked || result.display_state === 'failed') latest.observed_at = at;
           save(latest);
         }
-        return result;
+        return { ...result, ...git };
       }
       await sleep(Math.min(500, end - Date.now()));
     }
@@ -1410,7 +1440,7 @@ async function call(name: string, args: Args): Promise<unknown> {
       job.bro ||
       job.jev ||
       !agent ||
-      !(queued || (state === 'idle_grace' && !readReport && registry(job.cwd).roles().get(job.role)?.can_continue))
+      !(queued || (state === 'idle_grace' && !readReport && registry(job.worktree?.main_root ?? job.cwd).roles().get(job.role)?.can_continue))
     )
       return { ok: false, code: 'not_continuable' };
     // Record the attempt first, so a lost reply cannot cause a duplicate prompt.

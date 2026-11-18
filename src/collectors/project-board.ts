@@ -326,7 +326,8 @@ export class ProjectCollector {
       if (!id || !/^j[0-9a-f]{16}$/.test(id)) continue;
       const job = this.read(join(this.hudHome, 'jobs', id, 'job.json'));
       try {
-        if (job && !job.truncated && resolve(JSON.parse(job.text).cwd) === resolve(this.cwd)) {
+        const record = job && !job.truncated ? JSON.parse(job.text) : null;
+        if (record && resolve(record.worktree?.main_root ?? record.cwd) === resolve(this.cwd)) {
           const label = board.lanes.find((l) => l.id === w.laneId)?.label ?? '';
           out.editing.push({
             label: 'editing', value: `${w.role ?? ''} · ${label}  ${w.task}`,
@@ -391,13 +392,17 @@ export class ProjectCollector {
     const inRoot = (path: string) => insideRoot(root, path);
     const jobsRoot = join(this.hudHome, 'jobs'), jobs = this.recentJobs();
     const byTree = new Map<string, { jobId: string; role: string; asking: boolean; path?: string; at?: number; created: number }>();
+    const managed = new Map<string, string>();
     const active: { created: number; entry: ActiveJob }[] = [];
     const json = this.json;
     for (const { id } of jobs) {
       const dir = join(jobsRoot, id), job = json(join(dir, 'job.json'));
       if (!job || typeof job.cwd !== 'string') continue;
       const cwd = canonical(job.cwd);
-      const inside = inRoot(cwd);
+      const wt = job.worktree;
+      const isolated = wt?.root === cwd && typeof wt.branch === 'string' && typeof wt.main_root === 'string';
+      if (isolated) managed.set(cwd, wt.branch);
+      const inside = inRoot(cwd) || (isolated && inRoot(wt.main_root));
       const created = Date.parse(job.created_at) || 0;
       const feature = out.tickets.find((f) => f.slug === job.package);
       if (!inside && !feature && (byTree.get(cwd)?.created ?? -Infinity) >= created) continue;
@@ -445,11 +450,11 @@ export class ProjectCollector {
     for (const slice of out.slices) if (ledger.get(slice.label)?.state === 'working' &&
       !this.worktrees.some((tree) => basename(tree.path) === slice.label)) slice.drift = 'no worktree';
     for (const tree of this.worktrees) {
-      const id = basename(tree.path), job = byTree.get(canonical(tree.path)), entry = ledger.get(id);
+      const path = canonical(tree.path), id = basename(path), job = byTree.get(path), entry = ledger.get(id);
       let slice = out.slices.find((r) => r.label === id);
       if (!slice) {
         slice = { label: id, value: entry?.text ?? '', path: statePath,
-          drift: entry ? 'ledger' : 'not in ledger', ledgerState: entry?.state };
+          drift: managed.get(path) === tree.branch ? undefined : entry ? 'ledger' : 'not in ledger', ledgerState: entry?.state };
         out.slices.push(slice);
       }
       if (job) Object.assign(slice, job, { path: job.path ?? statePath });

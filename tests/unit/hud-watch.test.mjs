@@ -10,6 +10,7 @@ import { main } from '../../dist/cli/hud-main.js';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
+import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 
 function writeJob(hudHome, id, pane, pkg, status, report = false, parent_job) {
   const dir = join(hudHome, 'jobs', id);
@@ -47,6 +48,42 @@ async function until(check, timeoutMs = 4000) {
   }
   assert.fail('timed out waiting for expected watcher output');
 }
+
+for (const scenario of ['merged', 'dirty', 'unmerged']) test(`watcher preserves data when cleaning a ${scenario} managed worktree`, (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-worktree-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const main_root = initRepo(home), base_head = git(main_root, 'rev-parse', 'HEAD');
+  const id = 'j00000000000000f1', branch = 'wt/imp-0000f1', root = join(home, 'demo-wt', 'imp-0000f1');
+  git(main_root, 'worktree', 'add', '-qb', branch, root, base_head);
+  fs.mkdirSync(join(main_root, 'node_modules'));
+  fs.symlinkSync(join(main_root, 'node_modules'), join(root, 'node_modules'));
+  if (scenario === 'dirty') fs.writeFileSync(join(root, 'ignored.txt'), 'keep this ignored file');
+  else {
+    fs.appendFileSync(join(root, 'tracked.txt'), 'new commit\n');
+    git(root, 'commit', '-qam', 'job work');
+    if (scenario === 'merged') git(main_root, 'merge', '-q', branch);
+  }
+  fs.writeFileSync(join(home, 'pi-role-reap'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), PATH: `${home}:${process.env.PATH}` };
+  const dir = writeJob(env.HUD_HOME, id, 'w4E:p1', 'imp', { state: 'closed', ended_at: new Date().toISOString() });
+  const file = join(dir, 'job.json'), job = JSON.parse(fs.readFileSync(file));
+  fs.writeFileSync(file, JSON.stringify({ ...job, cwd: root, worktree: { main_root, root, branch, base_head } }));
+  fs.writeFileSync(join(dir, 'SESSION.txt'), 'TAB=w4E:t2\n');
+  const watcher = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env, encoding: 'utf8', timeout: 10000 });
+  assert.equal(watcher.status, 0, watcher.stderr || String(watcher.error));
+  const result = JSON.parse(fs.readFileSync(file));
+  assert.ok(result.reaped_at);
+  assert.equal(fs.existsSync(root), scenario !== 'merged');
+  assert.equal(!!git(main_root, 'branch', '--list', branch), scenario !== 'merged');
+  assert.ok(fs.statSync(join(main_root, 'node_modules')).isDirectory());
+  if (scenario === 'merged') {
+    assert.equal(result.worktree_kept_reason, undefined);
+    assert.ok(result.worktree_removed_at);
+  } else {
+    assert.match(result.worktree_kept_reason, new RegExp(scenario));
+    assert.equal(fs.readlinkSync(join(root, 'node_modules')), join(main_root, 'node_modules'));
+  }
+});
 
 test('dead supervisor watcher preserves a live worker; both gone fail or close by the explicit report baseline', { timeout: 10000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'dead-supervisor-'));

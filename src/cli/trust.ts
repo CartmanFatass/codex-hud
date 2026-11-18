@@ -1,4 +1,4 @@
-/** `hud trust <dir>` writes grok, agy and claude trust files. Dispatch never calls this. */
+/** CLI trust checks and backed-up writes for `hud trust` and managed worktrees. */
 import * as fs from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import * as TOML from '@iarna/toml';
@@ -34,6 +34,11 @@ export function isCliDirTrusted(agent: string, dir: string, env = process.env): 
   } catch {
     return false;
   }
+}
+
+/** Only copy a grant for the same CLI and an already trusted checkout. */
+export function propagateCliTrust(agent: string, main: string, root: string, env = process.env): void {
+  if (isCliDirTrusted(agent, main, env)) trustAgent(agent, resolveDir(root), env);
 }
 
 function resolveDir(arg: string): string {
