@@ -1,6 +1,6 @@
 # 06: Worker progress heartbeats (hud-progress) and read-only hud_peek tool
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 05
 
 **What to build:** `docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §6. Give workers a zero-friction CLI to log milestone steps and give main sessions `hud_peek` to inspect live pane output and progress without disturbing job state.
