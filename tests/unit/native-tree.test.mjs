@@ -638,23 +638,32 @@ test('Codex caller binds via herdr pane current or CODEX_THREAD_ID, passes --har
   const codexSession = '22222222-2222-4222-8222-222222222222';
   const childSession = '33333333-3333-4333-8333-333333333333';
   const codexHome = f.env.CODEX_HOME;
-  const now = new Date();
-  const [yyyy, mm, dd] = now.toISOString().slice(0, 10).split('-');
-  const stamp = now.toISOString();
-  const sessionDir = join(codexHome, 'sessions', yyyy, mm, dd);
+  f.env.TZ = process.env.TZ;
+  const started = new Date(2026, 10, 17, 23, 29);
+  const stamp = started.toISOString();
+  // Codex puts rollouts under the local calendar date, even though event timestamps are UTC.
+  const pad = (n) => String(n).padStart(2, '0');
+  const date = [String(started.getFullYear()), pad(started.getMonth() + 1), pad(started.getDate())];
+  const time = [started.getHours(), started.getMinutes(), started.getSeconds()].map(pad).join('-');
+  const sessionDir = join(codexHome, 'sessions', ...date);
   fs.mkdirSync(sessionDir, { recursive: true });
-  fs.writeFileSync(join(sessionDir, `rollout-${yyyy}-${mm}-${dd}T07-00-00-${codexSession}.jsonl`), [
+  const writeRollout = (id, lines) => {
+    const file = join(sessionDir, `rollout-${date.join('-')}T${time}-${id}.jsonl`);
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    fs.utimesSync(file, started, started);
+  };
+  writeRollout(codexSession, [
     JSON.stringify({ type: 'session_meta', timestamp: stamp, payload: { id: codexSession, cwd: f.home, model: 'gpt-5' } }),
     JSON.stringify({ type: 'event_msg', timestamp: stamp, payload: { type: 'task_started' } }),
-  ].join('\n') + '\n');
-  fs.writeFileSync(join(sessionDir, `rollout-${yyyy}-${mm}-${dd}T07-00-01-${childSession}.jsonl`), [
+  ]);
+  writeRollout(childSession, [
     JSON.stringify({ type: 'session_meta', timestamp: stamp, payload: {
       id: childSession, cwd: f.home, model: 'gpt-5',
       source: { subagent: { thread_spawn: { parent_thread_id: codexSession, depth: 1 } } },
       parent_thread_id: codexSession, agent_nickname: 'codex-sub', agent_role: 'reviewer',
     } }),
     JSON.stringify({ type: 'event_msg', timestamp: stamp, payload: { type: 'task_started' } }),
-  ].join('\n') + '\n');
+  ]);
 
   // 1) pane.agent_session reports codex (even if pane.agent is omitted or 'codex')
   f.setReply({ result: { type: 'pane_current', pane: { pane_id: 'w4E:p1', cwd: f.home, agent_session: { agent: 'codex', kind: 'id', source: 'herdr:codex', value: codexSession } } } });
@@ -671,8 +680,15 @@ test('Codex caller binds via herdr pane current or CODEX_THREAD_ID, passes --har
   assert.ok(runCmd.includes(`'--session' '${codexSession}'`), runCmd);
   assert.ok(runCmd.includes(`'--source' '${codexHome}'`), runCmd);
 
-  // Foreground panel binds to the Codex session in --source and displays Codex
-  assert.match(await foregroundCaller(t, f, ['--here'], 'Codex'), /Codex/);
+  // Pin only the child clock so the parent's foreground wait still has a real timeout.
+  for (const [day, hour] of [[17, 23], [18, 0]]) {
+    const now = new Date(2026, 10, day, hour, 30).getTime();
+    const clock = encodeURIComponent(`import { mock } from 'node:test';
+mock.timers.enable({ apis: ['Date'], now: ${now} });`);
+    const env = { ...f.env, NODE_OPTIONS: `--import=data:text/javascript,${clock}` };
+    assert.match(await foregroundCaller(t, { ...f, env }, ['--here'], 'Codex'), /Codex/,
+      `Codex lane at ${pad(hour)}:30 local time`);
+  }
 
   // 2) Fallback via CODEX_THREAD_ID inside a herdr pane when agent_session is absent
   f.setReply({ result: { type: 'pane_current', pane: { pane_id: 'w4E:p1', cwd: f.home } } });
