@@ -1,6 +1,6 @@
 # 01: MCP startup is not work; stop, cleanup and refused sends record the truth
 
-**Status:** ready-for-agent
+**Status:** done (1c4530ce + 32e26e4f; live check 2026-11-18: a Claude worker settled 10 s after its report, read-close reaped it, hud_close recorded stopped)
 **Blocked by:** none
 
 **What to build:** `docs/spec.md` §2.1 (owner, 2026-11-18). Evidence and design: the oracle report
