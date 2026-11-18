@@ -100,8 +100,8 @@ export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, 
     return [{ ...head, item }, ...shown, ...(hidden > 0 && slots > 2 ? [{ text: fit('  ' + theme.board.muted(t('+{n} more', { n: hidden })), width), item }] : [])];
   };
   const lists = [
-    (room: number) => list(section(t('Waiting for you'), width, String(data.waiting.length)), 'waiting', data.waiting.slice(0, HOME_WAITING).map((r): MonitorRow => ({
-      ...itemRow(theme.board.attention('?'), monitorText(r.value), '', width), item: 'home-progress:waiting' })), data.waiting.length, room),
+    (room: number) => list(section(t('Waiting for you'), width, String(data.waiting.length)), 'waiting', data.waiting.slice(0, HOME_WAITING).map((r, i): MonitorRow => ({
+      ...itemRow(theme.board.attention('?'), monitorText(r.value), '', width), item: `home-progress:wait:${i}` })), data.waiting.length, room),
     (room: number) => {
       const landed = landedNewest(data).slice(0, width < 56 ? 3 : 5).map(({ r }): MonitorRow => ({
         text: inline(`  ${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now), width), item: 'home-progress:latest' }));
@@ -117,12 +117,13 @@ export function homeSpareRows(data: ProjectSnapshot | undefined, width: number, 
   return progress.length ? fill(out.length && !gap ? [boardRow(''), ...progress] : progress) : out;
 }
 export const PROJECT_PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'] as const;
-export type ProjectPage = (typeof PROJECT_PAGES)[number];
+/** The hub's pages, and the page of one waiting item (`MonitorState.projectWait`), which a row opens and the hub does not list. */
+export type ProjectPage = (typeof PROJECT_PAGES)[number] | 'waiting';
 const PAGE_WORD: Record<ProjectPage, string> = {
-  progress: 'Progress', tickets: 'Tickets', tree: 'Working tree', docs: 'Docs', control: 'Control plane',
+  progress: 'Progress', tickets: 'Tickets', tree: 'Working tree', docs: 'Docs', control: 'Control plane', waiting: 'Waiting',
 };
 /** The open page; none, or a name this build does not know, is the hub. */
-export const projectPageOf = (state: MonitorState) => PROJECT_PAGES.find((p) => p === state.projectPage);
+export const projectPageOf = (state: MonitorState) => [...PROJECT_PAGES, 'waiting' as const].find((p) => p === state.projectPage);
 /** What starts folded: the Control plane's healthy roles, its files and the native-agents list (a page's own header is its crumb). */
 export const projectFoldedSet = (state: MonitorState): ReadonlySet<string> => state.projectFolded ?? new Set(['agents', 'healthy', 'files']);
 const ticketWorking = (r: ProjectTicket) => !['done', 'dropped', 'blocked'].includes(r.state)
@@ -184,9 +185,9 @@ const projectItem = (r: ProjectItem, i: number, glyph: string, width: number, no
   const left = `${r.label ? fit(t(r.label), 10) + ' ' : ''}${monitorText(r.value)}`;
   return { ...itemRow(glyph, left, itemRight(r, width, now), width), ...(r.path ? { item: `project:file:${r.path}:${i}`, files: [r.path] } : {}) };
 };
-/** A waiting item (`? text`): one row, cut when too long; wrapped, a text that does not fit takes a second row (cut there), under its first word. */
+/** A waiting item (`? text`): one row, cut when too long; wrapped, a text that does not fit takes a second row (cut there), under its first word. Enter opens it whole. */
 function waitingRows(r: ProjectItem, i: number, width: number, now: number, wrap: boolean): MonitorRow[] {
-  const glyph = theme.board.attention('?'), row = projectItem(r, i, glyph, width, now), right = itemRight(r, width, now);
+  const glyph = theme.board.attention('?'), row = { ...projectItem(r, i, glyph, width, now), item: `project:wait:${i}` }, right = itemRight(r, width, now);
   const room = width - 2 - (right ? visualLength(right) + 1 : 0), body = monitorText(r.value);
   return !wrap || visualLength(body) <= room ? [row]
     : clampClean(body, room, 2).lines.map((line, k) => ({ ...row, text: k ? fit('  ' + line, width) : pair(`${glyph} ${line}`, theme.board.muted(right), width) }));
@@ -525,6 +526,19 @@ function pageRows(
       const lead = `  ${open ? mark('▾', 'v') : mark('▸', '>')} ${fit(monitorText(milestone) || t('other'), column)} `, words = visualLength(lead + counts(true)) + visualLength(span) + 1 <= width;
       rows.push({ text: pair(lead + counts(words), theme.board.muted(span), width), item: `project:fold:${id}` });
       if (open) items.forEach((x) => entry(x, 4));
+    }
+  } else if (page === 'waiting') {
+    // One waiting item, in STATE's words and order: a line that continues a sentence flows on, a list line starts a paragraph of its own;
+    // every wrapped row is a stop, so the movement keys scroll it, and `o` opens STATE.md.
+    const r = data.waiting[state.projectWait ?? -1], paragraphs: string[] = [];
+    for (const line of (r?.text ?? r?.value ?? '').split('\n').map((l) => l.trim()).filter(Boolean))
+      if (!paragraphs.length || /^([-*]|\d+[.)])\s/.test(line)) paragraphs.push(line);
+      else paragraphs[paragraphs.length - 1] += ' ' + line;
+    for (const [k, paragraph] of paragraphs.entries()) {
+      const marker = k ? paragraph.match(/^([-*]|\d+[.)])\s+/)?.[0] ?? '' : '', hang = 2 + marker.length;
+      flowLines(monitorText(paragraph.slice(marker.length)), width - hang).forEach((line, n) => rows.push({
+        text: fit((n ? ' '.repeat(hang) : k ? '  ' + marker : theme.board.attention('?') + ' ') + line, width),
+        item: `project:wait:${state.projectWait}:${rows.length - 1}`, ...(r.path ? { files: [r.path] } : {}) }));
     }
   } else if (page === 'tickets') {
     rows.push(...ticketRows(data, folded, width, now));

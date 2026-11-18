@@ -11,6 +11,8 @@ export interface ProjectItem {
   value: string;
   path?: string;
   at?: number;
+  /** A waiting item's whole bullet as STATE writes it (continuation lines kept, one per line); `value` is the same words on one line. */
+  text?: string;
 }
 export const SLICE_STATES = ['working', 'blocked', 'try', 'todo', 'accepted', 'dropped'] as const;
 export type SliceState = typeof SLICE_STATES[number];
@@ -219,13 +221,13 @@ export class ProjectCollector {
     };
     const statePath = [join(this.cwd, 'docs/handoff/STATE.md'), join(this.cwd, 'STATE.md')].find((p) => this.read(p));
     const state = statePath ? this.read(statePath)!.text : '';
-    const bullets = (heading: string) => {
+    const bullets = (heading: string, whole = false) => {
       const section = state.split(new RegExp(`^## ${heading}[ \\t]*\\r?$`, 'm'))[1]?.split(/^## /m)[0] ?? '';
       return [...section.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].map((m) => ({
-        label: '', value: m[1].replace(/\s+/g, ' ').trim(), path: statePath,
+        label: '', value: m[1].replace(/\s+/g, ' ').trim(), path: statePath, ...(whole ? { text: m[1].replace(/\r/g, '') } : {}),
       }));
     };
-    out.waiting = bullets('Waiting for the owner');
+    out.waiting = bullets('Waiting for the owner', true);
     out.next = bullets('Next');
     out.statePath = statePath;
     try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }

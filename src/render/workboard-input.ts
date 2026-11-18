@@ -45,9 +45,14 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const kept = page && !cursor ? saved[page] : undefined;
     next.projectSaved = saved;
     next.projectPage = page;
-    next.projectCursor = page ? cursor ?? kept?.cursor : from && `project:page:${from}`;
+    next.projectCursor = page ? cursor ?? kept?.cursor : from && (from === 'waiting' ? `project:wait:${next.projectWait}` : `project:page:${from}`);
     next.projectScroll = kept?.scroll ?? 0;
     next.boardRevealed = kept?.cursor;
+  };
+  // A waiting item's whole text; closing the page puts the cursor back on the item's row.
+  const readWait = (i: number) => {
+    next.projectWait = i;
+    goProject('waiting', `project:wait:${i}:0`);
   };
   // Another project for the tab: its pages start fresh (cursor, scroll, folds), the open page stays open.
   const useProject = (root?: string) => {
@@ -158,6 +163,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
+      else if (/^project:wait:\d+$/.test(row?.item ?? '')) readWait(Number(row!.item!.slice(13)));
       else if (row?.item?.startsWith('project:fold:')) {
         const folded = new Set(projectFoldedSet(next)), id = row.item.slice(13);
         if (!folded.delete(id)) folded.add(id);
@@ -175,7 +181,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           const again = row.item === next.projectCursor;
           next.projectCursor = row.item;
           // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
-          return result(again || /^project:(page:|list:|switch$)/.test(row.item) ? activate(row) : undefined);
+          return result(again || /^project:(page:|list:|switch$|wait:\d+$)/.test(row.item) ? activate(row) : undefined);
         }
       }
       return result();
@@ -289,6 +295,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       next.projectScroll = 0;
       return;
     }
+    if (/^wait:\d+$/.test(id)) return readWait(Number(id.slice(5)));
     if (id === 'progress' || id === 'latest') return goProject('progress');
     // A ticket row opens the Tickets page where it was left: its lanes cross features, so no feature row is there to rest on.
     goProject('tickets');

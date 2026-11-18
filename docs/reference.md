@@ -297,8 +297,8 @@ bar/legend and up to six open tickets per feature. The block counts the current 
 slices exactly as the Project hub does; with no current milestone it counts the whole ledger and
 is titled `All slices`. The block takes its rows before the two lists, which take what is left.
 As height falls the latest list shrinks first, then waiting, tickets, the summary's extra
-rows, legend, summary, bar and the block. Enter on the waiting block opens the hub's Waiting
-block, on the latest or progress block the Project Progress page; on a ticket row, the Tickets page.
+rows, legend, summary, bar and the block. Enter or a click on a waiting item opens its page (Esc
+returns to its row on the hub), on the Waiting header the hub's Waiting block, on the latest or progress block the Project Progress page; on a ticket row, the Tickets page.
 
 ## Project
 
@@ -310,7 +310,12 @@ what is happening, what landed, then where each page stands. Top to bottom the h
 - **Waiting for you**: STATE's waiting items, folding with Enter; the header says how many there are
   and how many of them are tries (`4 · 2 to try`: items that begin `Try`). An item whose text does not
   fit one row takes a second (the rest cut with `…`) when the hub has rows to spare, top down; a
-  panel too short for that cuts it to one row, before Latest or the page rows give way;
+  panel too short for that cuts it to one row, before Latest or the page rows give way. Enter or a
+  click on an item opens its whole text on a page (`‹ Project › Waiting`): the bullet as STATE
+  writes it, continuation lines included, in its own words and order (a line that continues a
+  sentence flows on; a numbered or `-` line starts a paragraph of its own). The page scrolls with the
+  movement keys and the wheel; Esc or a click on the crumb returns with the cursor on the same item;
+  `o` opens STATE.md. No model call;
 - **Now**: a row per working or blocked slice (`◐ ID  text`, then the job's role and minutes,
   `asking ?`, `blocked`, or what is out of step), then the project's unsettled HUD jobs that no
   slice shows (`◉ role  title  age`). A slice's text goes on its row only when it fits whole.

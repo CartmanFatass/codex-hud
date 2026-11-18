@@ -149,6 +149,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Home · Project': '首页 · 项目',
   'next / previous tab': '下一页 / 上一页',
   'Waiting for you': '等你处理',
+  Waiting: '等你处理',
+  '↑↓ scroll  o open  esc back  ? help': '↑↓ 滚动  o 打开  esc 返回  ? 帮助',
   'Working tree': '工作区',
   Progress: '进度',
   Tickets: '工单',

@@ -18,12 +18,18 @@ const LEDGER = [
   '- todo · 0.2 · QUEUE · a later slice',
 ];
 
-/** `idle`: no slice in flight and no job, so Now is empty; the unlisted worktrees stay (NO-JOB and two more). */
-export async function hubFixture(root, { idle = false } = {}) {
+/** A waiting bullet with continuation lines, as STATE wraps them: a sentence that flows on, then numbered checks. */
+export const TRY_LONG = 'Try 0.3 PANEL-NEXT, a synthetic try with several checks, each of which the owner reads to its end:\n'
+  + '  open the Project hub, then press Enter on this item.\n'
+  + '  1. The whole text opens on a page of its own, continuation lines and all.\n'
+  + '  2. Scroll it with the arrow keys or the wheel; the last check is further down than the first rows show.\n'
+  + '  3. Press Esc: the hub comes back with the cursor on this very item, not on the first one.';
+/** `idle`: no slice in flight and no job, so Now is empty; the unlisted worktrees stay (NO-JOB and two more). `waiting`: STATE's waiting bullets (a bullet may have continuation lines). */
+export async function hubFixture(root, { idle = false, waiting = WAITING } = {}) {
   const f = await projectFixture(root);
   const state = join(f.cwd, 'docs/handoff/STATE.md');
   const ledger = (idle ? LEDGER.slice(1) : LEDGER).join('\n');
-  f.put(state, `# State\n\nMilestone: 0.2 · Panel tidy\n\n## Waiting for the owner\n\n${WAITING.map((w) => `- ${w}`).join('\n')}\n\n## Slices\n\n${ledger}\n\n## Now (2026-11-17): Synthetic tidy\n`);
+  f.put(state, `# State\n\nMilestone: 0.2 · Panel tidy\n\n## Waiting for the owner\n\n${waiting.map((w) => `- ${w}`).join('\n')}\n\n## Slices\n\n${ledger}\n\n## Now (2026-11-17): Synthetic tidy\n`);
   for (const name of ['EXTRA-ONE', 'EXTRA-TWO']) {
     const path = join(root, name), admin = join(f.cwd, '.git/worktrees', name);
     f.put(join(path, '.git'), `gitdir: ${admin}\n`);

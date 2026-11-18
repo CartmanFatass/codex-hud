@@ -55,6 +55,8 @@ export interface MonitorState {
   projectBack?: boolean;
   projectCursor?: string;
   projectScroll?: number;
+  /** The waiting item (its index in STATE's list) the `waiting` page shows. */
+  projectWait?: number;
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;

@@ -46,6 +46,30 @@ test('Home top line counts STATE waiting items with job questions, ✓ only when
   }
 });
 
+test('Enter or a click on a waiting item on Home opens its whole text on the Project tab\'s page, and Esc returns to the item\'s row on the hub', async (t) => {
+  const f = await fixture(t);
+  assert.equal(f.data.waiting[1].text, 'Choose the browser profile\n  after trying the synthetic setup', 'the Home read keeps continuation lines too');
+  for (const lang of ['en', 'zh']) {
+    // The top line and the block's header are one stop; each waiting item is a stop of its own.
+    let frame = f.quiet(38, lang, 46);
+    for (const stop of ['wait:0', 'wait:1']) frame = f.quiet(38, lang, 46, press(frame, { type: 'key', key: 'down' }).state), assert.equal(frame.state.boardAnchor, `home-progress:${stop}`);
+    const row = frame.workboard.rows.findIndex((r) => r.item === 'home-progress:wait:1') + 1;
+    for (const input of [{ type: 'key', key: 'enter' }, { type: 'mouse', button: 'left', x: 4, y: row }]) {
+      const state = press(input.type === 'key' ? frame : f.quiet(38, lang, 46), input).state;
+      assert.equal(state.mainTab, 'project');
+      assert.equal(state.projectPage, 'waiting');
+      assert.equal(state.projectWait, 1);
+      const page = f.quiet(38, lang, 46, state), lines = plain(page);
+      assert.equal(lines[0], lang === 'en' ? '‹ Project › Waiting' : '‹ 项目 › 等你处理');
+      assert.deepEqual(lines.slice(2, 4), ['? Choose the browser profile after', '  trying the synthetic setup']);
+      const hub = f.quiet(38, lang, 46, press(page, { type: 'key', key: 'escape' }).state);
+      assert.equal(hub.state.projectPage, undefined);
+      assert.equal(hub.state.projectCursor, 'project:wait:1');
+      assert.equal(plain(hub).findIndex((l) => l.startsWith('? Choose the browser profile')) >= 0, true, 'the item is on the hub');
+    }
+  }
+});
+
 test('Home counts the current milestone\'s slices as the hub does; without one the block is the whole ledger and says so', async (t) => {
   const f = await fixture(t);
   for (const width of [38, 80]) {

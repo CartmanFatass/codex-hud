@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hubFixture } from '../fixtures/project-hub.mjs';
-import { plain, onPage, PROJECTS } from '../fixtures/project-page.mjs';
+import { hubFixture, WAITING, TRY_LONG } from '../fixtures/project-hub.mjs';
+import { plain, onPage, PROJECTS, NOW, TREE } from '../fixtures/project-page.mjs';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { workboardPalette } from '../../dist/render/palette.js';
 import { THEMES, setDisplayConfig } from '../../dist/render/hud-config.js';
 import { visualLength } from '../../dist/render/colors.js';
@@ -16,6 +17,7 @@ async function fixture(t, options) {
   return hubFixture(root, options);
 }
 /** The rows of a block: those after its header up to the next blank row. */
+const press = (frame, input) => handleMonitorInput(frame.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame, nowMs: NOW, standalone: true });
 const block = (lines, header) => {
   const start = lines.findIndex((l) => header.test(l));
   assert.ok(start >= 0, `${header} is in the frame`);
@@ -96,6 +98,74 @@ test('the name row says what its count counts, and a bar tells to try from accep
       assert.ok(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) >= 45, `${theme}: to try (the identifier ink) and accepted (success) are far apart`);
     } finally {
       setDisplayConfig(previous);
+    }
+  }
+});
+
+test('Enter or a click on a waiting item opens its whole STATE text on a page, in STATE\'s words; `o` opens STATE.md', async (t) => {
+  const f = await fixture(t, { waiting: [WAITING[2], TRY_LONG, WAITING[3]] });
+  // The parse keeps the continuation lines as written; the hub still shows the item on one row.
+  assert.equal(f.data.waiting[1].text, TRY_LONG);
+  const hubAt = (lang, state) => f.render(38, lang, state ?? onPage(undefined, { projectCursor: 'project:wait:1' }), 24);
+  assert.match(plain(hubAt('en'))[6], /^\? Try 0\.3 PANEL-NEXT, a synthetic try…$/);
+  const key = press(hubAt('en'), 'enter'), click = press(hubAt('en'), { type: 'mouse', button: 'left', x: 4, y: 6 });
+  for (const opened of [key, click]) {
+    assert.equal(opened.state.projectPage, 'waiting');
+    assert.equal(opened.state.projectWait, 1);
+    assert.equal(opened.action, undefined, 'it reads here; it does not open the editor');
+  }
+  assert.deepEqual(press(hubAt('en'), 'open-session').action, { type: 'open-files', files: [f.data.statePath] });
+  for (const [lang, crumb, hint] of [['en', '‹ Project › Waiting', '↑↓ scroll  o open  esc back  ? help'], ['zh', '‹ 项目 › 等你处理', '↑↓ 滚动  o 打开  esc 返回  ? 帮助']]) {
+    const page = f.render(38, lang, key.state, 30), lines = plain(page);
+    assert.equal(lines[0], crumb);
+    assert.equal(lines.at(-1).trim(), hint);
+    assert.ok(page.lines.every((l) => visualLength(l.replace(/\x1b\[[0-9;]*m/g, '')) === 38), 'every row is the frame width');
+    // The first sentence flows over its continuation line; each numbered check is a paragraph of its own, wrapped under its text.
+    assert.deepEqual(lines.slice(2, 13), [
+      '? Try 0.3 PANEL-NEXT, a synthetic try',
+      '  with several checks, each of which',
+      '  the owner reads to its end: open the',
+      '  Project hub, then press Enter on',
+      '  this item.',
+      '  1. The whole text opens on a page of',
+      '     its own, continuation lines and',
+      '     all.',
+      '  2. Scroll it with the arrow keys or',
+      '     the wheel; the last check is',
+      '     further down than the first rows',
+    ]);
+    // Every word of the bullet, in its order, is on the page.
+    const all = plain(f.render(38, lang, key.state, 60)).slice(2, -1).filter(Boolean).map((l) => l.trim().replace(/^\? /, '')).join(' ');
+    assert.equal(all, TRY_LONG.replace(/\s+/g, ' '));
+  }
+  assert.deepEqual(press(f.render(38, 'en', key.state, 30), 'open-session').action, { type: 'open-files', files: [f.data.statePath] }, '`o` in the page opens STATE.md');
+});
+
+test('the page scrolls with the movement keys and the wheel; Esc or a click on the crumb returns with the cursor on the same item', async (t) => {
+  const f = await fixture(t, { waiting: [WAITING[2], TRY_LONG, WAITING[3]] });
+  for (const lang of ['en', 'zh']) {
+    let frame = f.render(38, lang, press(f.render(38, lang, onPage(undefined, { projectCursor: 'project:wait:1' }), 24), 'enter').state, 12);
+    const top = plain(frame), rows = 12 - 2;
+    assert.equal(frame.state.projectScroll, 0);
+    // End moves the cursor to the last row, and the page scrolls to show it: the end of the text is what matters.
+    frame = f.render(38, lang, press(frame, 'end').state, 12);
+    const end = plain(frame);
+    assert.ok(frame.state.projectScroll > 0);
+    assert.match(end.slice(1, rows + 1).join(' '), /not on the first one\.$/);
+    assert.notDeepEqual(end.slice(1, rows + 1), top.slice(1, rows + 1));
+    // The wheel moves three rows at a time and stays inside the text.
+    const up = f.render(38, lang, press(frame, { type: 'mouse', button: 'wheel-up', x: 4, y: 5 }).state, 12);
+    assert.equal(up.state.projectScroll, frame.state.projectScroll - 3);
+    const down = f.render(38, lang, press(up, { type: 'mouse', button: 'wheel-down', x: 4, y: 5 }).state, 12);
+    assert.equal(down.state.projectScroll, frame.state.projectScroll);
+    assert.equal(f.render(38, lang, press(down, { type: 'mouse', button: 'wheel-down', x: 4, y: 5 }).state, 12).state.projectScroll, frame.state.projectScroll, 'not past the end');
+    // Esc and a click on the crumb row both land on the item's own row, which the hub keeps in view.
+    for (const back of ['escape', { type: 'mouse', button: 'left', x: 6, y: 0 }]) {
+      const hub = f.render(38, lang, press(frame, back).state, 24);
+      assert.equal(hub.state.projectPage, undefined);
+      assert.equal(hub.state.projectCursor, 'project:wait:1');
+      assert.match(plain(hub)[6], /^\? Try 0\.3 PANEL-NEXT/);
+      assert.equal(hub.state.projectScroll, 0);
     }
   }
 });
