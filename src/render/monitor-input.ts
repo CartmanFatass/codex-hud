@@ -36,7 +36,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
         (c) => c.kind === 'help' && input.y === c.y && input.x >= c.x && input.x < c.x + c.width
       );
     if (back || ['escape', 'help', 'enter'].includes(key)) next.help = false;
-    else {
+    else if (input.type === 'key' || input.button !== 'left') {
       const direction = input.type === 'mouse' ? (input.button === 'wheel-down' ? 'down' : 'up') : key;
       const page = Math.max(1, ctx.frame?.helpPage?.count ?? 1);
       const delta =

@@ -1,6 +1,6 @@
 {
   "home-80-en": [
-    " Home 1  Project  Skills                                               models on",
+    " Home 1  Project                                                       models on",
     "",
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -42,7 +42,7 @@
     "✓ 3 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "home-80-zh": [
-    " 首页 1  项目  技能                                                      模型 开",
+    " 首页 1  项目                                                            模型 开",
     "",
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -84,7 +84,7 @@
     "✓ 3 今日完成    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "older-80-en": [
-    " Home 1  Project  Skills                                               models on",
+    " Home 1  Project                                                       models on",
     "",
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -126,7 +126,7 @@
     "✓ 3 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "older-80-zh": [
-    " 首页 1  项目  技能                                                      模型 开",
+    " 首页 1  项目                                                            模型 开",
     "",
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -381,7 +381,7 @@
     "‹ Help",
     "",
     "Keys ─────────────────────────────────    Marks ────────────────────────────────",
-    "1 2 5   Home · Project · Skills           ✓ done      ◉ running   ? asking you",
+    "1 2     Home · Project                    ✓ done      ◉ running   ? asking you",
     "← → Tab next / previous tab               ✗ failed    − stopped   ◷ stalled",
     "3       Changes                           ◆ answer differs from the default",
     "↑ ↓     move                              ◇ answer as proposed",
@@ -415,8 +415,8 @@
     "In the Inspector ⏎ opens the file",
     "click selects · again expands · wheel scrolls",
     "",
-    "",
-    "",
+    "Backup skills ─────────────────────────────────────────────────────────────── 17",
+    "  Matt Pocock skills kept as backups, not installed. Ask the main session to",
     "                                                             ↑↓ scroll  esc back"
   ],
   "changes-80-en": [
@@ -462,7 +462,7 @@
     "                                                             ↑↓ scroll  esc back"
   ],
   "home-120-en": [
-    " Home 1  Project  Skills                                                                                       models on",
+    " Home 1  Project                                                                                               models on",
     "",
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -504,7 +504,7 @@
     "✓ 3 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "home-120-zh": [
-    " 首页 1  项目  技能                                                                                              模型 开",
+    " 首页 1  项目                                                                                                    模型 开",
     "",
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -546,7 +546,7 @@
     "✓ 3 今日完成                                            ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  ←→ 切页"
   ],
   "older-120-en": [
-    " Home 1  Project  Skills                                                                                       models on",
+    " Home 1  Project                                                                                               models on",
     "",
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -588,7 +588,7 @@
     "✓ 3 done today                                   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab"
   ],
   "older-120-zh": [
-    " 首页 1  项目  技能                                                                                              模型 开",
+    " 首页 1  项目                                                                                                    模型 开",
     "",
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -843,7 +843,7 @@
     "‹ Help",
     "",
     "Keys ─────────────────────────────────────────────────────    Marks ────────────────────────────────────────────────────",
-    "1 2 5   Home · Project · Skills                               ✓ done      ◉ running   ? asking you",
+    "1 2     Home · Project                                        ✓ done      ◉ running   ? asking you",
     "← → Tab next / previous tab                                   ✗ failed    − stopped   ◷ stalled",
     "3       Changes                                               ◆ answer differs from the default",
     "↑ ↓     move                                                  ◇ answer as proposed",
@@ -872,13 +872,13 @@
     "In the Inspector ⏎ opens the file",
     "click selects · again expands · wheel scrolls",
     "",
+    "Backup skills ─────────────────────────────────────────────────────────────────────────────────────────────────────── 17",
+    "  Matt Pocock skills kept as backups, not installed. Ask the main session to read one when you want it.",
     "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
+    "  wayfinder                      Map a large, foggy effort as decision tickets and settle them one at a time",
+    "  grill-with-docs                Interview the owner on a fuzzy idea, keeping a glossary and decision records",
+    "  to-spec                        Turn the conversation into a spec with user stories and testing seams",
+    "  hud-build                      Build a spec's tickets as a task graph, one imp per ready ticket",
     "                                                                                                     ↑↓ scroll  esc back"
   ],
   "changes-120-en": [

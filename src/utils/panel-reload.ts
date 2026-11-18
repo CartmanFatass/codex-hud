@@ -10,7 +10,11 @@ export function readPanelPlace(): Place | undefined {
   delete process.env[PLACE];
   try {
     const place: Place | undefined = raw ? JSON.parse(raw, (_key, value) => value?.panelSet ? new Set(value.panelSet) : value) : undefined;
-    if (place) place.openedAt ??= Date.now(); // Legacy handoffs start their lifetime when consumed.
+    if (place) {
+      // Older builds saved Skills as a main tab; it now lives in Help.
+      if ((place.state?.mainTab as string | undefined) === 'skills') place.state.mainTab = 'home';
+      place.openedAt ??= Date.now(); // Legacy handoffs start their lifetime when consumed.
+    }
     return place;
   } catch { return undefined; }
 }

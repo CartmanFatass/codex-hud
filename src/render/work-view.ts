@@ -19,7 +19,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const keys = [
     section(t('Keys'), half),
     ...[
-      ['1 2 5', 'Home · Project · Skills'],
+      ['1 2', 'Home · Project'],
       ['← → Tab', 'next / previous tab'],
       ['3', 'Changes'],
       ['↑ ↓', 'move'],
@@ -68,7 +68,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
   rows.push(boardRow(''), ...notes.flatMap((s) => flowLines(t(s), width).map((s) => boardRow(theme.board.muted(s)))));
-  return [boardRow(''), ...rows];
+  return [boardRow(''), ...rows, ...skillsRows(input.backupSkills, width)];
 }
 export function renderWorkboardFrame(
   input: MonitorData,
@@ -91,8 +91,7 @@ export function renderWorkboardFrame(
     changes = !help && state.focus === 'changes';
   const sub = inspector || help || changes;
   const project = !sub && state.mainTab === 'project';
-  const skills = !sub && state.mainTab === 'skills';
-  const home = !sub && !project && !skills;
+  const home = !sub && !project;
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
   const board = inspector ? source : visibleWorkboard(input, source, state, now);
@@ -118,14 +117,12 @@ export function renderWorkboardFrame(
     const title = ` ${t('Home')}${count ? ' ' + theme.board.attention(String(count)) : ''} `;
     const waiting = input.project?.waiting.length ?? 0;
     const projectTitle = ` ${t('Project')}${waiting ? ' ' + theme.board.attention(String(waiting)) : ''} `;
-    const skillsTitle = ` ${t('Skills')} `;
     const models = t(input.modelEnabled === false ? 'models off' : 'models on');
     const modelsWidth = visualLength(models);
     const leftRoom = Math.max(0, width - modelsWidth - 1);
     frame.lines[0] = pair(
       (home ? theme.board.title : theme.board.muted)(title) +
-        (project ? theme.board.title : theme.board.muted)(projectTitle) +
-        (skills ? theme.board.title : theme.board.muted)(skillsTitle),
+        (project ? theme.board.title : theme.board.muted)(projectTitle),
       (input.modelEnabled === false ? theme.board.attention : theme.board.muted)(models),
       width
     );
@@ -133,7 +130,6 @@ export function renderWorkboardFrame(
     for (const [kind, label] of [
       ['board-home', title],
       ['board-project', projectTitle],
-      ['board-skills', skillsTitle],
     ] as const) {
       const span = visualLength(label);
       const clipped = Math.max(0, Math.min(leftRoom, x + span) - x);
@@ -155,8 +151,6 @@ export function renderWorkboardFrame(
       ? [boardRow(''), ...changesRows(input, state, width, now)]
       : inspector
         ? boardInspectorRows(lane, state.boardInspect, state, width, now)
-        : skills
-          ? skillsRows(input.backupSkills, width, Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)))
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)))
@@ -205,7 +199,7 @@ export function renderWorkboardFrame(
     state.projectCursor = (rows.find((r) => r.item?.startsWith('project:page:')) ?? rows.find((r) => r.item))?.item;
   // The model picker is the page while it is open: its picked entry is the cursor, and the page's own scroll and reveal wait.
   const picking = project && page === 'control' && !!state.projectInput;
-  const key = skills ? '' : picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
+  const key = picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
   let room = Math.max(0, height - 2);
   let preview: MonitorRow[] = [];
   if (project && page === 'control' && !picking) {
@@ -226,7 +220,7 @@ export function renderWorkboardFrame(
     : picking ? 0
     : sub
       ? state.scroll[changes ? 'changes' : 'details']
-      : skills ? (state.skillsScroll ?? 0) : project ? (state.projectScroll ?? 0) : (state.homeScroll ?? 0);
+      : project ? (state.projectScroll ?? 0) : (state.homeScroll ?? 0);
   let offset = Math.max(0, Math.min(max, scroll));
   if (!help && !changes && !picking && key && state.boardRevealed !== key && room) {
     if (cursorAt < offset) offset = cursorAt;
@@ -238,7 +232,6 @@ export function renderWorkboardFrame(
     frame.helpPage = { count: room, total: rows.length };
   } else if (sub) state.scroll[changes ? 'changes' : 'details'] = offset;
   else if (project) { if (!picking) state.projectScroll = offset; }
-  else if (skills) state.skillsScroll = offset;
   else state.homeScroll = offset;
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
@@ -263,7 +256,6 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
-        : skills ? '↑↓ scroll  ←→ tab  , settings  ? help'
         : project ? (state.projectInput ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back'
           : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'

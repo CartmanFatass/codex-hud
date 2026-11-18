@@ -221,8 +221,7 @@ test('2 and arrows/Tab cycle main tabs with independent Project cursor/scroll; 3
   assert.equal(projectShown(frame.state), true);
   frame.state.projectCursor = 'project:page:docs';
   for (const raw of ['\x1b[D', '\x1b[C', '\t', '\x1b[Z']) {
-    const order = raw === '\x1b[D' || raw === '\x1b[Z' ? ['home', 'skills', 'project'] : ['skills', 'home', 'project'];
-    for (const tab of order) {
+    for (const tab of ['home', 'project']) {
       frame = f.render(80, 'en', send(frame, raw).state);
       assert.equal(frame.state.mainTab, tab);
     }

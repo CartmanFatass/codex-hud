@@ -44,8 +44,7 @@ export type MonitorPane = (typeof MONITOR_PANES)[number];
 export type PaneMode = 'open' | 'closed';
 export type MonitorModes = Record<MonitorPane, PaneMode>;
 export interface MonitorState {
-  mainTab?: 'home' | 'project' | 'skills';
-  skillsScroll?: number;
+  mainTab?: 'home' | 'project';
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
   /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
@@ -124,7 +123,6 @@ export interface MonitorControl {
   kind:
     | 'board-home'
     | 'board-project'
-    | 'board-skills'
     | 'board-back'
     | 'board-pick'
     | 'board-activate'

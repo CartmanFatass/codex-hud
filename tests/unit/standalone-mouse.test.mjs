@@ -51,7 +51,7 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
 
   // 1. Tab click switches main tabs
   let frame = draw(initialMonitorState());
-  for (const [kind, tab] of [['board-project', 'project'], ['board-skills', 'skills'], ['board-home', 'home']]) {
+  for (const [kind, tab] of [['board-project', 'project'], ['board-home', 'home']]) {
     const control = frame.controls.find((c) => c.kind === kind);
     assert.ok(control, `missing control ${kind}`);
     frame = draw(send(frame, { type: 'mouse', button: 'left', x: control.x, y: control.y }).state);

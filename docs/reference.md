@@ -487,7 +487,7 @@ Git is gated to at most once per five seconds. Reads do not start a browser or M
 
 ### Frame and reload
 
-Home, Project and Skills are the three tabs. Inspector, Changes, Settings and Help share
+Home and Project are the only main tabs. Inspector, Changes, Settings and Help share
 one title band, exact-width rows and whole footer hints (rightmost hints drop when
 narrow). There is no Agents pane, stacked/compact layout, Timeline, activity hub,
 agent log, Summary or diagnostics page. Each page retains its scroll/selection.
@@ -495,7 +495,8 @@ Icons are `unicode` or `text`; old nerd/emoji values load as unicode.
 
 After a new installed entry is stable for two seconds, a bounded child import
 validates it before the panel restarts in the same pane. Selection, scroll, folds,
-show-all, modal, Settings cursor, opening time and width override survive. Unsaved
+show-all, modal, Settings cursor, opening time and width override survive. A saved
+Skills tab from an older build falls back to Home. Unsaved
 Settings delay reload; a bad build leaves the old panel and a dim notice. Bars are
 separate and need restarting for new code. Quiet, positively idle observations can
 back off to five-second collection; input/redraw remain independent.
@@ -506,8 +507,8 @@ Standalone panels consume their own keys and SGR mouse events directly.
 
 | Key | Action |
 |---|---|
-| `1`, `2`, `3`, `5` | Home, Project, Changes summary, Skills (`4` remains Inspector) |
-| Tab/Shift-Tab, Left/Right | Cycle Home → Project → Skills → Home, or reverse |
+| `1`, `2`, `3` | Home, Project, Changes summary (`4` remains Inspector) |
+| Tab/Shift-Tab, Left/Right | Switch between Home and Project |
 | `[`, `]` | Project: previous/next project (not on the Projects list) |
 | `p` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
 | `c` / `C` | Control plane: apply the next / previous role preset |
@@ -526,24 +527,24 @@ Standalone panels consume their own keys and SGR mouse events directly.
 Mouse clicks select a row/button, a second click on the selected item runs Enter's
 action (Project hub links, Inspector file links and Home progress-block links open
 on one click), clicking the top crumb goes back, clicking a tab switches tabs, and
-wheel scrolling moves the viewport without moving the selection. Help lists current shortcuts.
+wheel scrolling moves the viewport without moving the selection.
 
-### Skills
+### Help
 
-Skills lists the shipped backup-skills catalog (`integrations/skills/backup-skills.json`):
+Press `?` for shortcuts, status marks and the **Backup skills** section. Scroll down
+with the movement keys or wheel to see the list.
+
+The section lists the shipped backup-skills catalog (`integrations/skills/backup-skills.json`):
 Matt Pocock skills not installed: the adapted copies in `integrations/skills-optional/`
 and the upstream text, which the main session reads when asked. Under a `Backup skills` header with the count, a muted line says what the list
 is, then each skill's name and its whole one-line description in the panel's language.
-Descriptions wrap, never cut, so the tab reads at a 40-column panel. A panel under 103
+Descriptions wrap, never cut, so the list reads at a 40-column panel. A panel under 103
 columns (with the shipped names) stacks them: the name in the identifier ink on its own
 row, the description under it two cells further in, nearly the panel's width. One of 103
 or more puts the description beside the name in its own column, wrapped rows hanging
-under the first. A name longer than the row breaks after a hyphen. The wrapped list is longer
-than most panels, so the intro stays and the tab scrolls (movement keys or the wheel);
-only where dropping the intro, then the blank row above the header, lets the whole tab
-fit does it go. Display only: Enter and clicking a row do nothing; no install state or
-adopted/dropped skills. A missing or unreadable catalog shows a muted notice, an empty
-one another.
+under the first. A name longer than the row breaks after a hyphen. Skill rows are
+read-only, with no row actions, install state or adopted/dropped skills. A missing
+or unreadable catalog shows a muted notice, an empty one another.
 
 ### Inspector
 

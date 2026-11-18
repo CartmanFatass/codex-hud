@@ -2,6 +2,7 @@
 import { mkdirSync, writeFileSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { readBackupSkills } from '../../dist/collectors/backup-skills.js';
 import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { defaultSettings } from '../../dist/settings.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
@@ -9,6 +10,7 @@ import { setLanguage } from '../../dist/render/i18n.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { withDisplaySettings } from '../../dist/settings-runtime.js';
 import { stripAnsi } from '../../dist/render/colors.js';
+const backupSkills = readBackupSkills();
 export const NOW = Date.parse('2026-11-12T12:35:00Z');
 export const TREE = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(NOW) };
 export function pageFixture(home) {
@@ -180,6 +182,7 @@ export function pageFixture(home) {
         tree: TREE,
         workboard: board,
         worktrees,
+        backupSkills,
         state: { ...states[page], tree: { ...states[page].tree }, scroll: { ...states[page].scroll } },
         width,
         height,

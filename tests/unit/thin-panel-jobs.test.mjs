@@ -215,7 +215,7 @@ test('Home shows questions, lanes with cards, then decisions; Enter reveals the 
     const decided = home.findIndex((l) => l.startsWith('Decided for you'));
     assert.ok(at < lane && lane < decided);
     assert.match(home[lane + 1], /thin job cards/);
-    assert.match(home[0], /^ Home 1\s+Project\s+Skills\s+models on$/);
+    assert.match(home[0], /^ Home 1\s+Project\s+models on$/);
     assert.match(home[decided + 1], /^◆ PANEL-THIN · imp q2 .*…/);
     assert.match(home[decided + 1], /\d+m\s*$/);
     assert.equal(home[decided + 2].trim(), '');
@@ -296,7 +296,7 @@ test('Home Enter toggles cards, decisions and lanes; navigation opens Project; a
   assert.match(text(press(folded, '\r')), /thin job cards/);
   const before = rendered(card).state;
   for (const key of ['2', '\x1b[D', '\x1b[C', '\t', '\x1b[Z']) {
-    assert.equal(press(before, key).mainTab, key === '\x1b[D' || key === '\x1b[Z' ? 'skills' : 'project');
+    assert.equal(press(before, key).mainTab, 'project');
     assert.deepEqual(press(before, key).homeTarget, before.homeTarget);
   }
   assert.equal(press(before, '1').mainTab, 'home');
