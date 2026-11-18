@@ -1,6 +1,6 @@
 # 03: Multi-job event-driven hud_wait tool
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 02
 
 **What to build:** `docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §3. Add `hud_wait` so main sessions can wait on several concurrent workers at once without blind serial polling.
