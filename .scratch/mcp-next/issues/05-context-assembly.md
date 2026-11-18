@@ -1,6 +1,6 @@
 # 05: Zero-copy context assembly in hud_create (context_files and from_jobs)
 
-**Status:** ready-for-agent
+**Status:** claimed
 **Blocked by:** 03
 
 **What to build:** `docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §5. Let `hud_create` attach local files and upstream job reports directly into worker briefs without round-tripping large bodies through the main session's LLM output.
