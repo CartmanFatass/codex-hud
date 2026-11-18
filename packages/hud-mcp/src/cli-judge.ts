@@ -78,22 +78,24 @@ export function workerAlive(pid: number | null, start: string | null): boolean |
 
 type Bootstrap = { stage: 'launcher' } | { stage: 'shell' | 'server'; entry: string };
 const base = (path = '') => path.split('/').at(-1);
-function bootstrap(pid: number, start: string, oldDirect: boolean, parent: number, chain?: Bootstrap): Bootstrap | boolean {
+function bootstrap(pid: number, start: string, launchDirect: boolean, parent: number, chain?: Bootstrap): Bootstrap | boolean {
   let argv;
   try { argv = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0+$/, '').split('\0'); }
   catch { return false; }
   if (workerAlive(pid, start) !== true) return false;
-  if (oldDirect) {
+  if (launchDirect) {
+    const command = base(argv[0]);
+    if (!command || /^(sh|bash|zsh|dash|fish)$/.test(command)) return false;
     // npm normally retitles itself to one argv element; other launchers may retain the original argv.
     if (argv.length === 1 && argv[0]?.startsWith('npm exec ')) argv = argv[0].split(' ');
     if (base(argv[0]) === 'node') argv.shift();
     const launcher = base(argv.shift());
-    if (launcher === 'npm' || launcher === 'npm-cli.js') { if (argv.shift() !== 'exec') return false; }
-    else if (launcher === 'pnpm' || launcher === 'pnpm.cjs') { if (argv.shift() !== 'dlx') return false; }
-    else if (launcher !== 'npx' && launcher !== 'npx-cli.js' && launcher !== 'uvx') return false;
+    if (launcher === 'npm' || launcher === 'npm-cli.js') { if (argv.shift() !== 'exec') return true; }
+    else if (launcher === 'pnpm' || launcher === 'pnpm.cjs') { if (argv.shift() !== 'dlx') return true; }
+    else if (launcher !== 'npx' && launcher !== 'npx-cli.js' && launcher !== 'uvx') return true;
     while (['-y', '--yes', '--'].includes(argv[0] ?? '')) argv.shift();
     const spec = argv[0];
-    return argv.length === 1 && spec && !spec.startsWith('-') && !/\s/.test(spec) ? { stage: 'launcher' } : false;
+    return argv.length === 1 && spec && !spec.startsWith('-') && !/\s/.test(spec) ? { stage: 'launcher' } : true;
   }
   if (!chain) return false;
   if (chain.stage === 'launcher') {
@@ -111,7 +113,7 @@ function bootstrap(pid: number, start: string, oldDirect: boolean, parent: numbe
     (argv.includes(`--parent-pid=${parent}`) || argv.some((arg, i) => arg === '--parent-pid' && argv[i + 1] === String(parent)));
 }
 
-/** Exempt only identified MCP bootstrap processes, not the work started below them. */
+/** Exempt launch helpers and their known bootstrap steps, not the work started below them. */
 export function workerHasChild(pid: number | null, start: string | null, sentAt: string, firstSentAt?: string): boolean | 'unknown' {
   if (pid === null || workerAlive(pid, start) !== true) return false;
   const buffer = Buffer.alloc(4096);
@@ -121,6 +123,8 @@ export function workerHasChild(pid: number | null, start: string | null, sentAt:
     const boot = +new Date() - parseFloat(fs.readFileSync('/proc/uptime', 'utf8')) * 1000;
     const since = Math.floor((Date.parse(sentAt) - boot) / 10); // Linux USER_HZ is 100; include the send's whole tick.
     const first = Math.floor((Date.parse(firstSentAt ?? '') - boot) / 10);
+    // First input can race helper startup. A continuation does not get a launch window.
+    const launchThrough = sentAt === firstSentAt ? first + 1000 : first - 1; // 10 s in USER_HZ ticks.
     if (!Number.isFinite(since)) return 'unknown';
     for (let item; (item = parents.pop()) !== undefined;) {
       const { pid: parent, chain } = item;
@@ -152,9 +156,10 @@ export function workerHasChild(pid: number | null, start: string | null, sentAt:
             if (--budget < 0) return 'unknown';
             const child = procStat(Number(id));
             if (child?.ppid !== parent || (child.threads <= 1 && /^[ZXx]$/.test(child.state ?? ''))) continue;
-            const oldDirect = parent === pid && Number(child.start) < first;
-            const match = oldDirect || chain ? bootstrap(Number(id), child.start, oldDirect, parent, chain) : false;
-            if (!match && Number(child.start) >= since) return workerAlive(pid, start) === true;
+            const childStart = Number(child.start);
+            const launchDirect = parent === pid && childStart <= launchThrough;
+            const match = launchDirect || chain ? bootstrap(Number(id), child.start, launchDirect, parent, chain) : false;
+            if (!match && childStart >= since) return workerAlive(pid, start) === true;
             parents.push({ pid: Number(id), start: child.start, ...(typeof match === 'object' ? { chain: match } : {}) });
           }
           if (size === buffer.length) return 'unknown';

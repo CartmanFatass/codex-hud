@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { judge, procStat, workerAlive, workerHasChild } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 
 test('worker identity: missing start is unknown for a live PID, but absence is still an exit fact', async () => {
@@ -24,6 +25,26 @@ test('worker identity: missing start is unknown for a live PID, but absence is s
   }
   assert.equal(workerAlive(child.pid, null), false);
 });
+
+const mcpArgs = ['-e', 'setInterval(() => {}, 1000)', 'hud-mcp'];
+for (const [label, command, args, ageMs, busy] of [
+  ['direct MCP server during launch is not busy', process.execPath, mcpArgs, 500, false],
+  ['shell during launch is busy', '/bin/bash', ['-c', 'read -r line'], 500, true],
+  ['non-shell after the launch window is busy', process.execPath, mcpArgs, 20_000, true],
+]) {
+  test(`worker child: ${label}`, async () => {
+    const child = spawn(command, args);
+    const exited = once(child, 'exit');
+    try {
+      const boot = Date.now() - parseFloat(readFileSync('/proc/uptime', 'utf8')) * 1000;
+      const sentAt = new Date(boot + Number(procStat(child.pid).start) * 10 - ageMs).toISOString();
+      assert.equal(workerHasChild(process.pid, procStat(process.pid).start, sentAt, sentAt), busy);
+    } finally {
+      child.kill();
+      await exited;
+    }
+  });
+}
 
 const turn = { seq: 1, sent_at: new Date(0).toISOString(), report_sig: null };
 const facts = { turn, reportSig: null, reportRead: false, alive: true, status: 'working', liveChild: false,

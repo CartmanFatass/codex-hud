@@ -810,7 +810,7 @@ function fakeCliWithChild(t, f) {
     let latest;
     process.on('message', ({ command, args, detached }) => {
       if (command) {
-        const child = spawn(command, args, { stdio: 'ignore', detached });
+        const child = spawn(command, args, { stdio: ['pipe', 'ignore', 'ignore'], detached });
         latest = child.pid;
         children.set(latest, detached);
         child.once('exit', () => children.delete(child.pid));
@@ -826,7 +826,8 @@ function fakeCliWithChild(t, f) {
   fs.writeFileSync(join(f.env.HOME, 'cli-pid'), String(worker.pid));
   return {
     pid: worker.pid,
-    async start(command = process.execPath, args = ['-e', 'setTimeout(() => {}, 30000)'], detached = false) {
+    // Model a tool shell that stays live until stopped, without leaving an orphan child.
+    async start(command = '/bin/bash', args = ['-c', 'read -r line'], detached = false) {
       const message = once(worker, 'message');
       worker.send({ command, args, detached });
       const [pid] = await message;
@@ -1155,12 +1156,15 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
       assert.equal(readCloseQuit(f, job), false);
       return;
     }
-    let work;
-    if (scenario === 'sleep under old MCP server') {
+    // Exercise non-shell work on a continuation, where no direct child gets a launch exemption.
+    if (['sleep under old MCP server', 'direct sleep', 'same-named runner'].includes(scenario)) {
       fs.writeFileSync(report, 'First synthetic report.\n');
       f.push(job.job, 'idle');
       await until(() => cliState(dir)?.state === 'idle_grace');
       assert.equal((await f.call('hud_send', { job: job.job, message_key: 'repair', text: 'Synthetic continuation.' })).sent, true);
+    }
+    let work;
+    if (scenario === 'sleep under old MCP server') {
       work = await mcp.work();
       assert.equal(procStat(work)?.ppid, pids[2]);
     } else if (scenario === 'direct sleep') work = await worker.start('sleep', ['30']);
