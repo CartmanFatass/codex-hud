@@ -1,5 +1,5 @@
 /** Pure Project rows, using the same kit as Home and the Inspector. */
-import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice } from '../collectors/project-board.js';
+import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice, type TryBrief } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { TryAction } from '../collectors/try-records.js';
 import { projectWorkCard } from '../collectors/work-card.js';
@@ -186,12 +186,13 @@ export const projectItem = (r: ProjectItem, i: number, glyph: string, width: num
   const left = `${r.label ? fit(t(r.label), 10) + ' ' : ''}${monitorText(r.value)}`;
   return { ...itemRow(glyph, left, itemRight(r, width, now), width), ...(r.path ? { item: `project:file:${r.path}:${i}`, files: [r.path] } : {}) };
 };
-/** A waiting item (`? text`): one row, cut when too long; wrapped, a text that does not fit takes a second row (cut there), under its first word. Enter opens it whole. */
-export function waitingRows(r: ProjectItem, i: number, width: number, now: number, wrap: boolean): MonitorRow[] {
+/** A waiting item (`? text`): one row, cut when too long; given `wrap` rows (`Infinity`: all it needs; `true`, Inbox's old form: two), a text that does not fit flows on under its first word, the last row cut when they run out. */
+export function waitingRows(r: ProjectItem, i: number, width: number, now: number, wrap: number | boolean = 1): MonitorRow[] {
+  const rows = typeof wrap === 'number' ? wrap : wrap ? 2 : 1;
   const glyph = theme.board.attention('?'), row = { ...projectItem(r, i, glyph, width, now), item: `project:wait:${i}` }, right = itemRight(r, width, now);
   const room = width - 2 - (right ? visualLength(right) + 1 : 0), body = monitorText(r.value);
-  return !wrap || visualLength(body) <= room ? [row]
-    : clampClean(body, room, 2).lines.map((line, k) => ({ ...row, text: k ? fit('  ' + line, width) : pair(`${glyph} ${line}`, theme.board.muted(right), width) }));
+  return rows < 2 || visualLength(body) <= room ? [row]
+    : clampClean(body, room, rows).lines.map((line, k) => ({ ...row, text: k ? fit('  ' + line, width) : pair(`${glyph} ${line}`, theme.board.muted(right), width) }));
 }
 export const roleInk = (role: string) => (theme.board.roleInk as Record<string, (s: string) => string>)[role] ?? ((s: string) => s);
 const DAY = 864e5;
@@ -252,14 +253,14 @@ function hubRows(
       [data.ladder.current && theme.board.active(monitorText(data.ladder.current)), many && `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}`].filter(Boolean).join(' ')),
     ...(many ? { item: 'project:switch' } : {}),
   }];
-  // The header counts the items and how many of them are tries; `wrap` items that need it take a second row, top down.
+  // The header counts the items and how many of them are tries; the items flow into `wrap` spare rows, top down, and the one the cursor is on keeps its whole text.
   const tries = data.waiting.filter((r) => /^try\b/i.test(r.value)).length;
-  const waitingBlock = (wrap: number): MonitorRow[] => {
+  const waitingBlock = (wrap: number, keep = false): MonitorRow[] => {
     if (!data.waiting.length) return [];
     const rows = [foldRow(folded, 'waiting', 'Waiting for you', width, [data.waiting.length, tries && t('{n} to try', { n: tries })].filter(Boolean).join(' · '))];
     if (!folded.has('waiting')) for (const [i, r] of data.waiting.entries()) {
-      const item = waitingRows(r, i, width, now, wrap > 0);
-      if (item.length > 1) wrap--;
+      const item = waitingRows(r, i, width, now, keep && state.projectCursor === `project:wait:${i}` ? Infinity : 1 + Math.max(0, wrap));
+      wrap -= item.length - 1;
       rows.push(...item);
     }
     return [...rows, boardRow('')];
@@ -284,13 +285,13 @@ function hubRows(
     if (bar && page === 'progress' && progressSegments(counts, cells).some((s) => s.width)) rows.push({ text: fit(barText({ counts }, cells), width), item });
     return rows;
   });
-  const build = (n: number, bar: boolean, gaps: boolean, wrap = 0) => [...top, ...waitingBlock(wrap), ...nowBlock, ...latest(n), ...pages(bar)]
+  const build = (n: number, bar: boolean, gaps: boolean, wrap = 0, keep = false) => [...top, ...waitingBlock(wrap, keep), ...nowBlock, ...latest(n), ...pages(bar)]
     .filter((r) => gaps || r.text !== '' || r.item);
   const tiers: [number, boolean, boolean][] = [...landed.map((_, i): [number, boolean, boolean] => [landed.length - i, true, true]), [0, true, true], [0, false, true], [0, false, false]];
   for (const [k, [n, bar, gaps]] of tiers.entries()) {
     const rows = build(n, bar, gaps);
-    // Only the spare rows of the whole hub wrap waiting items; a shorter panel cuts them to one row before Latest or the bar give way.
-    if (room === undefined || rows.length <= room) return k ? rows : build(n, bar, gaps, room === undefined ? Infinity : room - rows.length);
+    // Only the spare rows of the whole hub flow waiting items; a shorter panel cuts them to one row before Latest or the bar give way (the cursor's item stays whole).
+    if (room === undefined || rows.length <= room) return build(n, bar, gaps, k ? 0 : room === undefined ? Infinity : room - rows.length, true);
   }
   return build(0, false, false);
 }
@@ -359,6 +360,12 @@ function stacked(head: string, text: string, right: string, width: number, inden
   if (!body) return [pair(head, right, width)];
   if (one && visualLength(head) + 2 + visualLength(body) + (right ? visualLength(right) + 1 : 0) <= width) return [pair(`${head}  ${body}`, right, width)];
   return [pair(head, right, width), ...clampClean(body, width - indent, max).lines.map((line) => ' '.repeat(indent) + line)];
+}
+/** A to-try slice's model brief and its numbered steps, flowed whole at `indent`: what the expanded row and Split's preview show above the slice's own text. */
+export function briefRows(b: TryBrief | undefined, width: number, indent = 2): string[] {
+  const pad = ' '.repeat(indent);
+  return !b ? [] : [...clampLines(b.brief, width - indent, Infinity).lines.map((l) => pad + l),
+    ...b.steps.flatMap((s, i) => clampLines(s, width - indent - 3, Infinity).lines.map((l, k) => pad + (k ? '   ' : `${i + 1}. `) + l))];
 }
 /** A done/total meter `cells` wide, as thin as the panel's other meters; a started one shows at least a cell, an unfinished one never looks full. */
 function meter(done: number, total: number, cells: number): string {
@@ -439,7 +446,7 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
 /** One page: today's section content, without the section header (the crumb names the page). */
 export function pageRows(
   page: ProjectPage, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false, tryMarks?: ReadonlyMap<string, TryAction>
+  board?: WorkboardSnapshot, modelEnabled = false, tryMarks?: ReadonlyMap<string, TryAction>, room?: number
 ): MonitorRow[] {
   const rows: MonitorRow[] = [boardRow('')], folded = projectFoldedSet(state);
   const item = (r: ProjectItem, i: number, glyph = '') => rows.push(projectItem(r, i, glyph, width, now));
@@ -450,16 +457,20 @@ export function pageRows(
     const head = (label: string, right: string | number) => rows.push(boardRow(''), section(t(label), width, String(right)));
     // Landed slices as rows: each a row Enter opens (its milestone, commit and day), the milestones one row each that Enter opens into its slices.
     const landed = landedNewest(data), recent = landed.filter(({ r }) => r.at !== undefined && now - r.at <= 7 * DAY), older = landed.filter((x) => !recent.includes(x));
-    const entry = ({ r }: { r: LedgerSlice }, indent: number, right = landedAge(r, now, false), tried = false) => {
+    // A to-try slice shows its whole text; short of room (`short`) the rows the cursor is not on keep two rows of it. Expanded (Enter), its brief
+    // and steps come above its text, which then starts under the head row.
+    const entry = ({ r }: { r: LedgerSlice }, indent: number, right = landedAge(r, now, false), tried = false, short = false) => {
       const action = tried ? tryMarks?.get(r.id) : undefined;
       const tryTarget = tried ? { milestone: r.milestone, slices: [r] } : undefined;
       const id = `hist:${r.id}`, item = `project:fold:${id}`, selected = tried ? trySelectionMark(state, item) : '';
-      const lines = stacked(`${' '.repeat(indent)}${selected}${landedMark(r, action)} ${monitorText(r.id)}`, ledgerText(r), right, width, indent + 4, 2);
-      if (folded.has(id)) lines.splice(1, 0, ' '.repeat(indent + 4) + theme.board.muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at, now) : ''].filter(Boolean).join(' · ')));
+      const brief = tried && folded.has(id) ? briefRows(r.brief, width, indent + 4) : [];
+      const lines = stacked(`${' '.repeat(indent)}${selected}${landedMark(r, action)} ${monitorText(r.id)}`, ledgerText(r), right, width, indent + 4,
+        tried && !(short && state.projectCursor !== item) ? Infinity : 2, !brief.length);
+      if (folded.has(id)) lines.splice(1, 0, ' '.repeat(indent + 4) + theme.board.muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at, now) : ''].filter(Boolean).join(' · ')), ...brief);
       for (const line of lines) rows.push({ text: fit(line, width), item, tryTarget, ...(data.statePath ? { files: [data.statePath] } : {}) });
     };
     // Newest milestone first; the newest to-try milestone is selectable but stays open.
-    const byMilestone = (list: typeof landed, prefix: string, tried = false) => {
+    const byMilestone = (list: typeof landed, prefix: string, tried = false, short = false) => {
       const order = milestoneOrder(data), buckets = new Map<string, typeof landed>();
       const name = (m: string) => NO_MILESTONE.test(m) ? t('other') : monitorText(m);
       for (const x of list) { const m = !tried && NO_MILESTONE.test(x.r.milestone) ? '' : x.r.milestone; buckets.set(m, [...(buckets.get(m) ?? []), x]); }
@@ -479,7 +490,7 @@ export function pageRows(
         const lead = `  ${selected}${open ? mark('▾', 'v') : mark('▸', '>')} ${fit(name(milestone), column)} `, words = visualLength(lead + counts(true)) + visualLength(span) + 1 <= width;
         const tryTarget = tried ? { milestone, slices: items.map(({ r }) => r) } : undefined;
         rows.push({ text: pair(lead + counts(words), theme.board.muted(span), width), item, tryTarget });
-        if (open) items.forEach((x) => entry(x, 4, tried ? theme.board.muted(sinceText(x.r.at, now)) : undefined, tried));
+        if (open) items.forEach((x) => entry(x, 4, tried ? theme.board.muted(sinceText(x.r.at, now)) : undefined, tried, short));
       }
     };
     if (!data.statePath) rows.push(boardRow('  ' + theme.board.muted(t('no STATE.md'))));
@@ -488,7 +499,9 @@ export function pageRows(
       const tries = landed.filter(({ r }) => r.state === 'try');
       rows.push({ ...section(t('Only to try'), width, String(tries.length)), item: 'project:try', files: [data.statePath] });
       if (!tries.length) rows.push(boardRow('  ' + theme.board.muted(t('Nothing to try'))));
+      const from = rows.length;
       byMilestone(tries, 'try:m:', true);
+      if (room !== undefined && rows.length > room) { rows.length = from; byMilestone(tries, 'try:m:', true, true); }
       return rows;
     } else {
       if (data.summary) for (const line of clampLines(data.summary, width - 2, 2).lines) fileRow('  ' + line, 'summary');
@@ -616,5 +629,5 @@ export function projectRows(
   if (!data) return [];
   // The model picker is the Control plane while it is open.
   if (page === 'control' && state.projectInput && pickOf(data, state.projectInput)) return pickerRows(data, state.projectInput, width, room ?? 24);
-  return page ? pageRows(page, data, state, width, now, board, modelEnabled, tryMarks) : hubRows(data, state, width, now, name, projects, board, room);
+  return page ? pageRows(page, data, state, width, now, board, modelEnabled, tryMarks, room) : hubRows(data, state, width, now, name, projects, board, room);
 }

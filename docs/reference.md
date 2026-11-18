@@ -313,8 +313,9 @@ what is happening, what landed, then where each page stands. Top to bottom the h
   current milestone;
 - **Waiting for you**: STATE's waiting items, folding with Enter; the header says how many there are
   and how many of them are tries (`4 · 2 to try`: items that begin `Try`). An item whose text does not
-  fit one row takes a second (the rest cut with `…`) when the hub has rows to spare, top down; a
-  panel too short for that cuts it to one row, before Latest or the page rows give way. Enter or a
+  fit one row flows on under its first word, whole, into the hub's spare rows, top down (what the owner tries is
+  never cut to a name); a panel too short for that cuts it to one row, before Latest or the page rows give way,
+  except the item the cursor is on, which keeps its whole text. Enter or a
   click on an item opens its whole text on a page (`‹ Project › Waiting`): the bullet as STATE
   writes it, continuation lines included, in its own words and order (a line that continues a
   sentence flows on; a numbered or `-` line starts a paragraph of its own). The page scrolls with the
@@ -372,8 +373,11 @@ what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`)
 **To try only.** Enter or a click on the to-try count (`2 to try`, a stop of its own), or `t`, filters the
 page to what is still to try: the header `Only to try ── n` replaces everything below the crumb, then
 the ledger's slices in state `try` (never matched by their words, whatever the milestone) grouped by
-milestone, newest first: the newest is open (`◇ DATA-ONE  text  1d`, Enter shows milestone, commit and day), each older one
-a folded row (`▸ M3b  ◇ 1 to try  19d`) that Enter opens. `t`, Enter or a click on the header, or Esc
+milestone, newest first: the newest is open (`◇ DATA-ONE  text  1d`), each older one
+a folded row (`▸ M3b  ◇ 1 to try  19d`) that Enter opens. A slice shows its whole ledger text, wrapped under its id; a panel
+too short for all of them keeps two rows for the slices the cursor is not on. Enter on a slice shows its milestone, commit and
+day and, with the model on, its **brief** (what changed in plain words, at most two sentences) and numbered **acceptance steps**
+(how to try it, at most four) above the original text; a pending or failed call, or the model off, shows the original text only. `t`, Enter or a click on the header, or Esc
 returns to the full feed with the cursor and scroll where they were; leaving the page or switching project clears the
 filter. No extra read: the ledger is the one already parsed.
 
@@ -581,9 +585,11 @@ Home and Project become **a list above and a preview of the cursor row below**
   never gives way (a very short panel scrolls it with its cursor).
 - **Project hub.** Waiting for you and the pages are the list; the preview of the
   cursor row is that page's substance (Progress: summary, bar, slices to try, Now,
-  latest accepted). Enter on a page opens it, as before.
+  latest accepted). Enter on a page opens it, as before. A waiting item and a slice to try
+  show their whole text, wrapped (the preview scrolls with PgUp/PgDn when it is long).
 - **Progress.** One ledger list (working, blocked, to try, todo; accepted, Next and
-  History are one row each) with the cursor slice explained underneath. In the hub's
+  History are one row each) with the cursor slice explained underneath: its whole ledger
+  text and, for a slice to try with the model on, its brief and acceptance steps above it. In the hub's
   Progress preview, Space starts on the highlighted to-try row and moves the keys into
   the preview. Without Space marks, `y` / `n` on the hub still act on the next slice to try.
 - **Control plane.** Roles on top (those that need you first), the cursor role's
@@ -691,6 +697,7 @@ One successful final sentence freezes that settlement; a continuation can settle
 | Feature | Input |
 |---|---|
 | Thin-job sentence/name | Brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, four settled report lines, four public text/tool blocks from a 32 KiB working-session tail |
+| To-try brief and steps | One per slice still to try, only while the Project tab shows it: its ledger line, the subjects and bodies of up to 5 commits it names (1200 chars each), up to 4 ticket files (3000 bytes each) under the `.scratch/<slug>/` it names; cached per slice by a hash of those inputs |
 | Native sentence/name/result/cause | Name/role (80 chars each), public task/charge (400), report (600), action (200), result (8000 head/tail), error (2000); settled Codex may use a safe 32 KiB tail, Claude reuses collected text |
 | Decision title/localized detail | Question and answer, 4096 bytes each; ≤8-word title plus faithful question/answer/instead/why |
 | Outcome label | Final state + first 12 report lines (4096-byte head), once per settlement |

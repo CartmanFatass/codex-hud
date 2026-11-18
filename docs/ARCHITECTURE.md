@@ -243,6 +243,7 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 |---|---|
 | `JobSentences`, thin jobs | Brief title/goal (1500-byte head), state/phase, question (2 KiB), review verdict, four settled report lines, four public text/tool blocks from a safe 32 KiB working-session tail |
 | `JobSentences`, native agents | Name/role (80 chars each), task/charge (400), report (600), action (200), final result (8000 head/tail), error (2000); a settled Codex agent may use one safe 32 KiB tail |
+| `TryBriefs` | One call per to-try slice, only while the Project tab shows it (newest 12 slices): its ledger line, up to 5 commits' messages (1200 chars each), up to 4 ticket files (3000 bytes each) under a `.scratch/<slug>/` the line names |
 | `DecisionTitles` | That job's question and answer, 4096 bytes each; one response includes ≤8-word title and localized question/answer/instead/why |
 | `DecisionLabels`, outcome/kind | Final state + first 12 report lines (4096-byte head), or brief title/goal (1500-byte head); once per settlement/job respectively |
 | `DecisionLabels`, looping | Latest 12 public tool/result pairs, 600 chars each part, from the same safe session tail |
@@ -255,7 +256,11 @@ there is no agent-log writer. Names and keyword-marked sentences share a request
 Running changed inputs follow Summary interval (default five minutes); finals keep
 a two-minute floor and freeze after one success per settlement. At most three
 pending sentence handles share the service. `DecisionTitles` uses the same queue;
-its revision/language-keyed cache survives reopen. Keyword painting is shared by
+its revision/language-keyed cache survives reopen.
+`TryBriefs` (`collectors/try-brief.ts`) is the same shape for the slices still to try: one call writes a brief and acceptance
+steps from the ledger line, its commits and tickets; stored per slice and language under a hash of that input, laid on the
+ledger rows only while the ledger line is unchanged (`LedgerSlice.brief`), so an unchanged slice costs no call and a pending,
+failed or master-off state leaves the original text. Keyword painting is shared by
 cards, decisions and Inspector (`utils/keyword-marks.ts`), never lifecycle evidence.
 
 Decision labels and Home ranking use `selectDecisionProvider`, not the chat endpoint.

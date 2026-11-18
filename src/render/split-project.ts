@@ -9,7 +9,7 @@ import type { LedgerSlice, SliceState, ProjectSnapshot } from '../collectors/pro
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, asksYou, barText, clampLines, currentRows, hubNowRows, inFlight, inline, landedAge, landedMark, landedNewest,
+import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, asksYou, barText, briefRows, clampClean, clampLines, currentRows, hubNowRows, inFlight, inline, landedAge, landedMark, landedNewest,
   ledgerText, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
   type ProjectPage } from './project-view.js';
 import { glyph, needsAttention, placeTarget, placeText, roleName } from './control-view.js';
@@ -46,7 +46,7 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
     return { item: `project:page:${page}`, text: fit(`${mark_(page)} ${theme.board.title(fit(t(PAGE_WORD[page]), 14))}${facts.join(' · ') || mark('–', '-')}`, width) };
   });
   const preview = (cursor?: string): Shown => {
-    if (cursor === 'project:fold:waiting') return { label: t('Waiting for you'), right: waitFacts, rows: data.waiting.flatMap((r, i) => waitingRows(r, i, width, now, true)) };
+    if (cursor === 'project:fold:waiting') return { label: t('Waiting for you'), right: waitFacts, rows: data.waiting.flatMap((r, i) => waitingRows(r, i, width, now, Infinity)) };
     const page = /^project:page:(.+)$/.exec(cursor ?? '')?.[1] as ProjectPage | undefined;
     if (page && page !== 'progress') return { label: t(PAGE_WORD[page]), right: t('⏎ open page'), rows: bare(pageRows(page, data, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1)) };
     const rows: MonitorRow[] = [...indent(data.summary, width, 2)];
@@ -54,12 +54,15 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
     if (progressSegments(cur.counts, cells).some((s) => s.width)) rows.push(plain(`  ${barText({ counts: cur.counts }, cells)} ${muted(`${cur.counts.accepted}/${total}`)}`, width));
     const landed = landedNewest(data), marks = input.tryMarks, queue = landed.filter(({ r }) => r.state === 'try');
     const todo = queue.filter(({ r }) => !marks?.get(r.id)), done = queue.filter(({ r }) => marks?.get(r.id));
-    const tryRow = ({ r }: { r: LedgerSlice }, act: boolean): MonitorRow => {
+    // A to-try slice is its row (the id and age, the text beside them when it fits) and the rest of its whole text wrapped under it; the preview scrolls.
+    const tryRows = ({ r }: { r: LedgerSlice }, act: boolean): MonitorRow[] => {
       const item = `project:try:${r.id}`;
-      return { item, ...(data.statePath ? { files: [data.statePath] } : {}), ...(act ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}),
-        text: inline(`  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now), width) };
+      const head = `  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`, age = landedAge(r, now), body = monitorText(ledgerText(r));
+      const fits = visualLength(head) + 2 + visualLength(body) + visualLength(age) + 1 <= width;
+      const lines = fits || !body ? [inline(head, body, age, width)] : [pair(head, age, width), ...clampClean(body, width - 4, Infinity).lines.map((l) => fit('    ' + muted(l), width))];
+      return lines.map((text) => ({ item, ...(data.statePath ? { files: [data.statePath] } : {}), ...(act ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text }));
     };
-    if (queue.length) rows.push(boardRow(''), plain(muted(`${t('To try')}   ${t('y accept  n flag')}`), width), ...todo.map((x) => tryRow(x, true)), ...done.map((x) => tryRow(x, false)));
+    if (queue.length) rows.push(boardRow(''), plain(muted(`${t('To try')}   ${t('y accept  n flag')}`), width), ...todo.flatMap((x) => tryRows(x, true)), ...done.flatMap((x) => tryRows(x, false)));
     if (inFlight(data).length || unsliced(data).length) rows.push(boardRow(''), plain(muted(t('Now')), width), ...hubNowRows(data, width, now, board));
     const accepted = landed.filter(({ r }) => r.state === 'accepted').slice(0, 3);
     if (accepted.length) rows.push(boardRow(''), plain(muted(t('Latest accepted')), width), ...accepted.map(({ r }): MonitorRow => ({ text: inline(`  ${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now), width) })));
@@ -95,7 +98,8 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
   const preview = (cursor?: string): Shown => {
     const id = /^project:slice:(.+)$/.exec(cursor ?? '')?.[1], r = cur.rows.find((x) => x.id === id);
     if (r) {
-      const s = info(r), worker = workerOf(r), rows = indent(ledgerText(r) || r.text, width, 3);
+      // The slice's whole text, with its model brief and steps (a to-try slice, model on) above it.
+      const s = info(r), worker = workerOf(r), rows = [...briefRows(r.brief, width).map((l) => plain(l, width)), ...indent(ledgerText(r) || r.text, width, Infinity)];
       if (worker && s) {
         rows.push(plain(`  ${muted(t('now:'))} ${roleInk(worker.role ?? '')(monitorText(worker.role ?? ''))} ${muted(worker.homeNeedsHuman ? `${t('asking')} ?` : minuteAge(s.at ?? null, now))}`, width));
         rows.push(...(input.modelEnabled && worker.modelSentence ? jobSentenceRows(worker.modelSentence, width, theme.board.muted, true).map((l) => plain(l, width))

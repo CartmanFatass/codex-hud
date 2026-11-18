@@ -64,7 +64,7 @@ export function homeScene(
   const waiting: Entry[] = !waits.length ? [] : [{ item: WAITING, needs: true, rows: [{ item: WAITING,
     text: pair(`${theme.board.attention('?')} ${t('Waiting for you')}`, theme.board.muted([waits.length, tries(waits) && t('{n} to try', { n: tries(waits) })].filter(Boolean).join(' · ')), width) }],
   preview: () => ({ label: t('Waiting for you'), right: [waits.length, tries(waits) && t('{n} to try', { n: tries(waits) })].filter(Boolean).join(' · '), rows: [
-    ...waits.flatMap((r, i) => waitingRows(r, i, width, now, true).map((row) => ({ ...row, item: `home-progress:wait:${i}` }))),
+    ...waits.flatMap((r, i) => waitingRows(r, i, width, now, Infinity).map((row) => ({ ...row, item: `home-progress:wait:${i}` }))),
     ...(landedNewest(data!).length ? [boardRow(''), section(t('Latest'), width, t('newest first')), ...landedNewest(data!).slice(0, width < 56 ? 3 : 5).map(({ r }): MonitorRow => ({
       text: inline(`  ${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now), width), item: 'home-progress:latest' }))] : [])] }) }];
   const departures = board.decisions.filter((d) => d.departure).length;

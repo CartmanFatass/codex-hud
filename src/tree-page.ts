@@ -83,6 +83,7 @@ import { readAgentTokens, type AgentTokens } from './collectors/agent-context.js
 import { SmallModel, modelHttpRequest } from './collectors/small-model.js';
 import { ModelProbe, apiSettings } from './collectors/model-probe.js';
 import { JobSentences } from './collectors/job-sentences.js';
+import { TryBriefs } from './collectors/try-brief.js';
 import { DecisionLabels } from './collectors/decision-labels.js';
 import { HomeRecommendation } from './collectors/home-recommendation.js';
 import { DecisionTitles } from './collectors/decision-titles.js';
@@ -577,6 +578,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     path.join(getHudDisplayHome(), 'model-cache', 'job-sentences.json'),
     () => render()
   );
+  const tryBriefs = new TryBriefs(model, path.join(getHudDisplayHome(), 'model-cache', 'try-briefs.json'), () => render());
   const decisionTitles = new DecisionTitles(
     model,
     path.join(getHudDisplayHome(), 'model-cache', 'decision-titles.json'),
@@ -601,6 +603,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     decisionLabels.configure(settings.modelEnabled, settings.decisionCallsPerHour);
     homeRecommendation.configure(settings.homeMode === 'recommended' && settings.modelEnabled, resolveLanguage(settings.language), settings.decisionCallsPerHour, settings.decisionApi, settings.summaryIntervalMinutes, settings);
     jobSentences.configure(modelOn, resolveLanguage(settings.language), settings.summaryIntervalMinutes);
+    tryBriefs.configure(modelOn, resolveLanguage(settings.language));
     decisionTitles.configure(modelOn, resolveLanguage(settings.language));
   };
   configureModel();
@@ -678,7 +681,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           mouse: settings.mouse,
           state,
           worktrees,
-          project: shown.snapshot,
+          project: tryBriefs.apply(shown.root, shown.snapshot),
           tryMarks,
           backupSkills,
           projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
@@ -942,6 +945,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         decisionLabels.stop();
         homeRecommendation.stop();
         jobSentences.stop();
+        tryBriefs.stop();
         agentContext.clear();
         agentContextReadAt.clear();
         tree = { rootId, nodes: [], totalCount: 0, updatedAt: new Date() };
@@ -1003,6 +1007,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         Date.now()
       );
       if (projectFacts) visit.snapshot = projectFacts;
+      if (shown) tryBriefs.update(shownRoot(), visit.snapshot?.ledger ?? []);
       error = settingsError || roleNotice || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });
@@ -1072,6 +1077,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     jobPipeline.dispose();
 
     jobSentences.stop();
+    tryBriefs.stop();
     decisionTitles.stop();
     decisionLabels.stop();
     homeRecommendation.stop();

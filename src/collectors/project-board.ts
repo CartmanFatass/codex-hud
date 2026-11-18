@@ -17,8 +17,12 @@ export interface ProjectItem {
 }
 export const SLICE_STATES = ['working', 'blocked', 'try', 'todo', 'accepted', 'dropped'] as const;
 export type SliceState = typeof SLICE_STATES[number];
+/** What a to-try slice's model brief says (spec §2.2): what changed in plain words, and how to try it. Display only. */
+export interface TryBrief { brief: string; steps: string[] }
 export interface LedgerSlice {
   id: string; state: SliceState; milestone: string; text: string; commit?: string; at?: number;
+  /** Laid on by the panel from its stored briefs (`TryBriefs.apply`), never collected. */
+  brief?: TryBrief;
 }
 export interface ActiveJob {
   jobId: string; role: string; state: string; package?: string; title?: string; at?: number; asking: boolean;

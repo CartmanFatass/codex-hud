@@ -25,33 +25,43 @@ const block = (lines, header) => {
   return lines.slice(start, end < 0 ? undefined : end);
 };
 
-test('a waiting item takes a second row when the hub has spare rows, and is cut to one row before Latest or the page rows give way', async (t) => {
+test('a waiting item flows whole into the hub\'s spare rows, is cut to one row before Latest or the page rows give way, and stays whole under the cursor', async (t) => {
   const f = await fixture(t);
   const tall = plain(f.render(38, 'en', undefined, 46));
-  // Two tries of four items, said in the header; each text that does not fit one row wraps under its `?`, the second row cut with `…`.
+  // Two tries of four items, said in the header; each text that does not fit one row flows on under its `?`, to its last word (spec §2.2).
   assert.deepEqual(block(tall, /^Waiting for you/), [
     'Waiting for you ───────── 4 · 2 to try',
     '? Try 0.2 PANEL-TIDY: open the Project',
-    '  tab; every waiting item shows its w…',
+    '  tab; every waiting item shows its',
+    '  whole text and Now lists only work',
+    '  in flight; then say whether the bars',
+    '  read.',
     '? Try the synthetic setup, then reopen',
-    '  `/hud` in a Claude pane and check t…',
+    '  `/hud` in a Claude pane and check',
+    '  the lines come back.',
     '? Choose the browser profile for the',
     '  synthetic flow',
     '? Decide whether the hub keeps its',
-    '  Latest block on a short panel, and …',
+    '  Latest block on a short panel, and',
+    '  say so in this file when you have.',
   ]);
   assert.ok(tall.every((l) => visualLength(l) <= 38));
   assert.equal(block(plain(f.render(38, 'zh', undefined, 46)), /^等你处理/)[0], '等你处理 ──────────────── 4 · 2 待试用');
-  // Rows are given to the waiting items only once Latest and the page rows have theirs: a row at a time, top down.
+  // Rows are given to the waiting items only once Latest and the page rows have theirs: the spare rows top down, an item as many as it needs.
   const shape = (height) => {
     const lines = plain(f.render(38, 'en', undefined, height));
     return { wrapped: block(lines, /^Waiting for you/).filter((l) => l.startsWith('  ')).length, latest: lines.filter((l) => /^  [✓◇] /.test(l)).length,
       pages: lines.filter((l) => /^(Progress|Working tree|Docs|Control plane) /.test(l)).length };
   };
   assert.deepEqual(shape(24), { wrapped: 0, latest: 3, pages: 4 }, 'a short panel keeps one cut row each');
-  assert.deepEqual(shape(26), { wrapped: 2, latest: 3, pages: 4 }, 'two spare rows wrap the first two');
-  assert.deepEqual(shape(30), { wrapped: 4, latest: 3, pages: 4 });
+  assert.deepEqual(shape(26), { wrapped: 2, latest: 3, pages: 4 }, 'two spare rows go to the first item, the rest of its text cut');
+  assert.deepEqual(shape(30), { wrapped: 6, latest: 3, pages: 4 }, 'six spare rows: the first item whole, the second too');
   assert.deepEqual(shape(22), { wrapped: 0, latest: 1, pages: 4 }, 'Latest gives way after, never before, the wrapping');
+  // The item the cursor is on keeps its whole text whatever the panel has, and the others stay one row.
+  const long = await fixture(t, { waiting: [WAITING[2], TRY_LONG, WAITING[3]] });
+  const kept = plain(long.render(38, 'en', onPage(undefined, { projectCursor: 'project:wait:1' }), 24));
+  assert.ok(kept.join(' ').replace(/\s+/g, ' ').includes('not on the first one.'), 'the cursor item is whole');
+  assert.equal(block(kept, /^Waiting for you/).filter((l) => l.startsWith('? ')).length, 3);
 });
 
 test('Now is work in flight: worktrees with no ledger row leave it, and an empty Now says so', async (t) => {
@@ -104,10 +114,10 @@ test('the name row says what its count counts, and a bar tells to try from accep
 
 test('Enter or a click on a waiting item opens its whole STATE text on a page, in STATE\'s words; `o` opens STATE.md', async (t) => {
   const f = await fixture(t, { waiting: [WAITING[2], TRY_LONG, WAITING[3]] });
-  // The parse keeps the continuation lines as written; the hub still shows the item on one row.
+  // The parse keeps the continuation lines as written; the hub shows the item whole under the cursor.
   assert.equal(f.data.waiting[1].text, TRY_LONG);
   const hubAt = (lang, state) => f.render(38, lang, state ?? onPage(undefined, { projectCursor: 'project:wait:1' }), 24);
-  assert.match(plain(hubAt('en'))[6], /^\? Try 0\.3 PANEL-NEXT, a synthetic try…$/);
+  assert.match(plain(hubAt('en'))[6], /^\? Try 0\.3 PANEL-NEXT, a synthetic try$/);
   const key = press(hubAt('en'), 'enter'), click = press(hubAt('en'), { type: 'mouse', button: 'left', x: 4, y: 6 });
   for (const opened of [key, click]) {
     assert.equal(opened.state.projectPage, 'waiting');

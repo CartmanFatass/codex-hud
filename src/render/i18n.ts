@@ -72,6 +72,7 @@ const ZH: Record<string, string> = {
   'Decision calls this hour': '本小时决策调用',
   'Job sentence': '任务句子',
   'Native sentence': '原生句子',
+  'Try brief': '试用简报',
   'Decision title': '决定标题',
   'Home brief': '首页简报',
   Probe: '测试',
