@@ -207,12 +207,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
       return result();
     }
-    if (input.type === 'key' && input.text === 't' && projectPageOf(next) === 'progress') {
+    if (input.type === 'key' && input.text === 't' && projectPageOf(next) === 'progress' && next.panelLayout !== 'inbox') {
       tryOnly();
       return result();
     }
     const target = rows[at]?.tryTarget;
-    if (next.projectTry && projectPageOf(next) === 'progress' && target && (key === 'try-accept' || key === 'next-trouble'))
+    // Inbox has no to-try view: every to-try row of the hub and Progress takes `y` and `n`.
+    if ((next.panelLayout === 'inbox' || (next.projectTry && projectPageOf(next) === 'progress')) && target && (key === 'try-accept' || key === 'next-trouble'))
       return result({ type: 'record-try', action: key === 'try-accept' ? 'accept' : 'flag', target });
     // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
     if (key === 'reset' && projectPageOf(next) === 'control') return result({ type: 'refresh-models' });

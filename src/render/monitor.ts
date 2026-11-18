@@ -90,6 +90,8 @@ export interface MonitorState {
   /** A settled card folds to one row after this, and leaves Home after the hide time (Settings). */
   cardFoldMinutes?: number;
   cardHideMinutes?: number;
+  /** Settings → Panel → Layout; unset is Classic. */
+  panelLayout?: HudSettings['panelLayout'];
 }
 export interface RowControl {
   kind: MonitorControl['kind'];
@@ -215,7 +217,7 @@ export function monitorModes(settings: HudSettings): MonitorModes {
   return { agents: 'open', changes: settings.changesPane, details: settings.detailsPane };
 }
 export function monitorSettings(settings: HudSettings): Partial<MonitorState> {
-  return { cardStallMinutes: settings.cardStallMinutes, cardFoldMinutes: settings.cardFoldMinutes, cardHideMinutes: settings.cardHideMinutes };
+  return { cardStallMinutes: settings.cardStallMinutes, cardFoldMinutes: settings.cardFoldMinutes, cardHideMinutes: settings.cardHideMinutes, panelLayout: settings.panelLayout };
 }
 export function monitorPreferences(state: MonitorState): Partial<HudSettings> {
   return { changesPane: state.modes.changes, detailsPane: state.modes.details };

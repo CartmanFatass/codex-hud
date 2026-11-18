@@ -72,6 +72,9 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   },
   { key: 'homeMode', group: 'Panel', label: 'Home mode', values: ['default', 'recommended'],
     help: 'Rank Home cards and show a progress brief through models', format: (value) => t(value === 'recommended' ? 'Recommended' : 'Default') },
+  { key: 'panelLayout', group: 'Panel', label: 'Layout', values: ['classic', 'inbox', 'split'],
+    help: 'Home and Project: Classic as before; Inbox lists what you owe first, then what runs; Split is not built yet and shows Classic',
+    format: (value) => t(({ classic: 'Classic', inbox: 'Inbox', split: 'Split' } as Record<string, string>)[String(value)] ?? String(value)) },
   {
     key: 'treeWidth',
     group: 'Panel',
@@ -181,7 +184,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['homeMode', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
+  Panel: ['homeMode', 'panelLayout', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
   Models: ['modelEnabled', 'decisionCallsPerHour', 'summaryIntervalMinutes'],
   Codex: ['statusline'],
 };

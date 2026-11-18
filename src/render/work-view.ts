@@ -4,6 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { boardInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
+import { inboxHomeRows } from './inbox-home.js';
 import { skillsRows } from './skills-view.js';
 import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
@@ -26,7 +27,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
       ['[ ]', 'switch project (Project)'],
-      ['y n', 'accept / flag (to-try view)'],
+      ['y n', input.state.panelLayout === 'inbox' ? 'accept / flag (to-try rows)' : 'accept / flag (to-try view)'],
       ['c C', 'role: next / previous preset'],
       ['p e', 'place: harness, thinking (capitals go back)'],
       ['m', 'place: pick a model (provider, then model; type to filter)'],
@@ -93,6 +94,7 @@ export function renderWorkboardFrame(
   const sub = inspector || help || changes;
   const project = !sub && state.mainTab === 'project';
   const home = !sub && !project;
+  const inbox = state.panelLayout === 'inbox';
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
   const board = inspector ? source : visibleWorkboard(input, source, state, now);
@@ -155,10 +157,12 @@ export function renderWorkboardFrame(
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
               Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
-          : homeRows(board, state, width, now, input);
+          : inbox
+            ? inboxHomeRows(board, state, width, now, input, Math.max(0, height - 2 - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)))
+            : homeRows(board, state, width, now, input);
   if (input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
-  if (home) {
+  if (home && !inbox) {
     // The waiting items and the newest landed slices sit under the cards, progress at the bottom (owner): the work above keeps the room next to it.
     const spare = height - 2 - rows.length;
     rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim()));
@@ -197,7 +201,7 @@ export function renderWorkboardFrame(
         ?.item ?? files[0]?.item;
   // A new hub or page starts on its first destination (a page row, not the Waiting fold).
   if (project && (!state.projectCursor || !rows.some((r) => r.item === state.projectCursor)))
-    state.projectCursor = (rows.find((r) => r.item?.startsWith('project:page:')) ?? rows.find((r) => r.item))?.item;
+    state.projectCursor = ((inbox && rows.find((r) => r.tryTarget)) || rows.find((r) => r.item?.startsWith('project:page:')) || rows.find((r) => r.item))?.item;
   // The model picker is the page while it is open: its picked entry is the cursor, and the page's own scroll and reveal wait.
   const picking = project && page === 'control' && !!state.projectInput;
   const key = picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
@@ -257,6 +261,8 @@ export function renderWorkboardFrame(
       ? '↑↓ move  ⏎ open  esc back'
       : changes
         ? '↑↓ scroll  esc back'
+        : project && inbox && (!page || page === 'progress') && rows.find((r) => r.item === state.projectCursor)?.tryTarget
+          ? (page ? 'y accept  n flag  ⏎ open  esc back  ? help' : frame.projects ? 'y accept  n flag  ⏎ open  ←→ tab  [ ] project' : 'y accept  n flag  ⏎ open  ←→ tab  ? help')
         : project ? (state.projectInput ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back'
           : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
