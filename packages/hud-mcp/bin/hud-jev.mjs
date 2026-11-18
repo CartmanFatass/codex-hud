@@ -108,6 +108,7 @@ try {
     );
   }
   if (!fs.existsSync(output)) throw new Error('report missing');
+  if (!fs.statSync(output).size) throw new Error('report empty');
   fs.chmodSync(output, 0o600);
   status('closed', 'settled');
 } catch (error) {
@@ -116,10 +117,5 @@ try {
   status('failed', failure);
   process.exitCode = 1;
 }
-const message = `[${job.role}@${job.job}] ${failure ? `FAILED ${failure}` : `DONE ${output}`}`;
-console.log(message);
-try {
-  await cli('herdr', ['agent', 'prompt', job.herdr_pane, message]);
-} catch (error) {
-  console.error(`Completion notification failed: ${error.message}`);
-}
+// The main session hears the end through STATUS.json (MCP changes, hud watch); nothing is typed into its pane.
+console.log(`[${job.role}@${job.job}] ${failure ? `FAILED ${failure}` : `DONE ${output}`}`);

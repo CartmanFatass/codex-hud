@@ -28,7 +28,7 @@ talk to an end user; the orchestrator reads your report.
 
 ## Report
 
-End your turn with a plain-text report and write the same text to the report path the brief names:
+Write a plain-text report to the report path the brief names, then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
 
 1. The result: what you produced or found (files changed one per line, or findings with `file:line` / sources).
 2. Checks run, with the command and the actual result.

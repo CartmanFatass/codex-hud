@@ -1844,16 +1844,10 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
           args[0] === 'tab' && args.includes('--no-focus') && args[args.indexOf('--workspace') + 1] === 'w4E'
       )
   );
-  assert.ok(
-    f
-      .commands()
-      .find(
-        ({ command, args }) =>
-          command === 'herdr' &&
-          args[0] === 'agent' &&
-          args[2] === 'w4E:p1' &&
-          args[3] === `[pro@${job.job}] DONE ${job.task_dir}/report.md`
-      )
+  // Spec §2.1: the end reaches the main session through the job row, never typed into its pane.
+  assert.equal(
+    f.commands().some(({ command, args }) => command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt'),
+    false
   );
   const state = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
   assert.equal(state.state, 'closed');
