@@ -123,11 +123,20 @@ const tools = [
     },
     ['role', 'request_key', 'task']
   ),
-  tool('hud_read', 'Read a job, optionally waiting for settlement or a question. Reading a settled report from the main session closes the worker; omit job for the 20 newest.', {
-    job: text,
-    wait_ms: { type: 'integer', minimum: 0, maximum: 120000 },
-    full: { type: 'boolean', description: 'Include the report even if already read.' },
-  }),
+  tool(
+    'hud_read',
+    'List running jobs and jobs that need attention, or read one job, optionally waiting for settlement or a question. Reading a settled report from the main session closes the worker.',
+    {
+      job: text,
+      wait_ms: { type: 'integer', minimum: 0, maximum: 120000 },
+      full: { type: 'boolean', description: 'Include the report even if already read.' },
+      view: {
+        type: 'string',
+        enum: ['compact', 'recent'],
+        description: 'List only, without a job. Default: compact. Use recent for the newest 20 full rows.',
+      },
+    }
+  ),
   tool(
     'hud_send',
     'Send a message to a pi or CLI job: queued while it works, or continued during idle_grace before the report is read (roles that can continue); message_key deduplicates sends.',
@@ -777,6 +786,64 @@ function readRow(job: Job, markExhaustion = true) {
   }
   return { row, status };
 }
+
+function failureUnobserved(job: Job): boolean {
+  // As in hud watch catch-up, a newer STATUS needs attention again.
+  const observed = Date.parse(job.observed_at ?? '');
+  if (!Number.isFinite(observed)) return true;
+  try {
+    return fs.statSync(join(directory(job.job), 'STATUS.json')).mtimeMs > observed;
+  } catch {
+    return true;
+  }
+}
+
+function listJobs(recent: boolean) {
+  const newest = jobs().sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const recentLimit = 20;
+  if (recent) {
+    return newest.slice(0, recentLimit).map((job) => {
+      const { row } = readRow(job, !isWorker);
+      return {
+        job: row.job,
+        role: row.role,
+        state: row.state,
+        display_state: row.display_state,
+        reason: row.reason,
+        blocked: row.blocked,
+        open_questions: row.open_questions,
+        report_present: row.report_present,
+        report_unread: row.report_unread,
+        created_at: job.created_at,
+      };
+    });
+  }
+  return newest.flatMap((job, index) => {
+    // Scanning beyond recent history must not widen the list's quota side effects.
+    const { row } = readRow(job, !isWorker && index < recentLimit);
+    const failed = row.display_state === 'failed';
+    if (
+      row.display_state !== 'working' &&
+      !row.blocked &&
+      !row.report_unread &&
+      !row.question_ids.length &&
+      !(failed && failureUnobserved(job))
+    ) return [];
+    const reason = row.blocked || row.state === 'waiting_orchestrator' || failed ? row.reason : null;
+    return [
+      {
+        job: row.job,
+        role: row.role,
+        state: row.state ?? row.display_state,
+        ...(row.report_unread ? { report_unread: true } : {}),
+        ...(row.blocked ? { blocked: true } : {}),
+        ...(row.question_ids.length ? { question_ids: row.question_ids } : {}),
+        ...(reason ? { reason } : {}),
+      },
+    ];
+  });
+}
+
 function openQuestions(dir: string): string[] {
   const qa = join(dir, 'qa');
   return entries(qa)
@@ -1078,27 +1145,14 @@ async function call(name: string, args: Args): Promise<unknown> {
     };
   }
   if (name === 'hud_create') return dispatchJob(args, process.env.HERDR_PANE_ID);
-  if (name === 'hud_read' && args.job === undefined)
-    return {
-      jobs: jobs()
-        .sort((a, b) => b.created_at.localeCompare(a.created_at))
-        .slice(0, 20)
-        .map((job) => {
-          const { row } = readRow(job, !isWorker);
-          return {
-            job: row.job,
-            role: row.role,
-            state: row.state,
-            display_state: row.display_state,
-            reason: row.reason,
-            blocked: row.blocked,
-            open_questions: row.open_questions,
-            report_present: row.report_present,
-            report_unread: row.report_unread,
-            created_at: job.created_at,
-          };
-        }),
-    };
+  if (name === 'hud_read') {
+    const { view } = args;
+    if (view !== undefined) {
+      if (view !== 'compact' && view !== 'recent') throw new Error('invalid_arguments: view');
+      if (args.job !== undefined) throw new Error('invalid_arguments: view is list-only');
+    }
+    if (args.job === undefined) return { jobs: listJobs(view === 'recent') };
+  }
   if (!tools.some((tool) => tool.name === name)) throw new Error('unknown_tool');
   const id = required(args, 'job');
   const job = /^j[0-9a-f]{16}$/.test(id) ? json<Job>(join(directory(id), 'job.json')) : null;

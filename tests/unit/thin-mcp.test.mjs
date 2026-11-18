@@ -996,7 +996,9 @@ test('read-close: listing an unread report leaves the CLI grace deadline in plac
   const job = await f.call('hud_create', { role: 'unread-close-cli', request_key: 'unread-close', task: 'Synthetic task.' });
   await until(() => cliState(job.task_dir)?.state === 'idle_grace');
   const { idle_deadline_at } = cliState(job.task_dir);
-  assert.equal((await f.call('hud_read')).jobs.find((row) => row.job === job.job).report_unread, true);
+  for (const args of [{}, { view: 'recent' }]) {
+    assert.equal((await f.call('hud_read', args)).jobs.find((row) => row.job === job.job).report_unread, true);
+  }
   await new Promise((done) => setTimeout(done, 300));
   assert.equal(cliState(job.task_dir).state, 'idle_grace');
   assert.equal(readCloseQuit(f, job), false);
@@ -1816,6 +1818,80 @@ test('marked worker MCP refuses all dispatch tools but still answers roster and 
   assert.deepEqual(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')), receipt);
 });
 
+test('hud_read compact lists actionable jobs without losing unread reports or hidden changes', async (t) => {
+  const f = await fixture(t);
+  assert.deepEqual(await f.call('hud_read'), { jobs: [] });
+  function seed(n) {
+    const job = `j${n.toString(16).padStart(16, '0')}`;
+    const created_at = new Date(n * 1000).toISOString();
+    const role = n === 1 ? 'sonic' : 'imp';
+    const working = n >= 2 && n <= 5;
+    const state = working ? 'working' : 'closed';
+    const reason = working ? 'Reading synthetic files' : 'settled';
+    const dir = join(f.env.HUD_HOME, 'jobs', job);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
+      job, role, created_at, herdr_pane: 'w4E:p1',
+      ...(n === 1 ? { parent_job: 'j0000000000000002' } : {}),
+      ...(n > 5 ? { read_at: created_at } : {}),
+    }));
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state, reason }));
+    if (!working) {
+      const report = join(dir, 'report.md');
+      fs.writeFileSync(report, 'Synthetic report.');
+      fs.utimesSync(report, n, n);
+    }
+    return {
+      job, role, state, display_state: working ? 'working' : 'done', reason,
+      blocked: false, open_questions: 0, report_present: !working, report_unread: n === 1, created_at,
+    };
+  }
+  const legacy = Array.from({ length: 20 }, (_, i) => seed(i + 1)).reverse();
+  const expected = legacy.slice(-5).map(({ job, role, state, report_unread }) => ({
+    job, role, state, ...(report_unread ? { report_unread: true } : {}),
+  }));
+  assert.deepEqual((await f.call('hud_read')).jobs, expected);
+
+  // Measure the model-visible text of both quiet polls on exactly the same fixture.
+  async function listText(args) {
+    const response = await f.rpc('tools/call', { name: 'hud_read', arguments: args });
+    assert.equal(response.error, undefined);
+    assert.equal(response.result.isError, undefined);
+    return response.result.content[0].text;
+  }
+  const compactText = await listText({});
+  const recentText = await listText({ view: 'recent' });
+  assert.deepEqual(JSON.parse(compactText), { jobs: expected }, 'quiet poll keeps the report unread');
+  assert.deepEqual(JSON.parse(recentText), { jobs: legacy });
+  const compactBytes = Buffer.byteLength(compactText, 'utf8');
+  const recentBytes = Buffer.byteLength(recentText, 'utf8');
+  t.diagnostic(`hud_read quiet list UTF-8 bytes: default=${compactBytes}, recent=${recentBytes}, saved=${((1 - compactBytes / recentBytes) * 100).toFixed(2)}%`);
+
+  const newer = Array.from({ length: 6 }, (_, i) => seed(i + 21)).reverse();
+  assert.deepEqual(await f.call('hud_read', { view: 'compact' }), {
+    jobs: expected,
+    changes: newer.map(({ job }) => `${job} imp: closed | settled`),
+  });
+  assert.deepEqual(await f.call('hud_read', { view: 'recent' }), { jobs: [...newer, ...legacy].slice(0, 20) });
+  assert.deepEqual(await f.call('hud_read'), { jobs: expected });
+  const receipt = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'jobs', expected.at(-1).job, 'job.json')));
+  assert.equal(receipt.read_at, undefined);
+  assert.equal(receipt.observed_at, undefined);
+});
+
+test('hud_read rejects invalid views and views on single-job reads', async (t) => {
+  const f = await fixture(t);
+  for (const [args, error] of [
+    [{ view: 'history' }, 'invalid_arguments: view'],
+    [{ view: null }, 'invalid_arguments: view'],
+    [{ view: 'recent', job: 'j0000000000000001' }, 'invalid_arguments: view is list-only'],
+  ]) {
+    const response = await f.rpc('tools/call', { name: 'hud_read', arguments: args });
+    assert.equal(response.result.isError, true);
+    assert.deepEqual(JSON.parse(response.result.content[0].text), { ok: false, code: 'tool_error', error });
+  }
+});
+
 test('hud_read returns unread reports in idle grace, omits read bodies, supports full and observes a second report', async (t) => {
   const f = await fixture(t), id = 'j0000000000000099';
   const dir = join(f.env.HUD_HOME, 'jobs', id);
@@ -1824,10 +1900,10 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   fs.writeFileSync(join(dir, 'report.md'), 'First report.');
   fs.writeFileSync(join(dir, 'qa/q1.md'), 'Question?');
-  const compact = (await f.call('hud_read')).jobs[0];
-  assert.equal(compact.open_questions, 1);
-  assert.equal(compact.report_unread, true);
-  assert.equal(compact.report, undefined);
+  const recent = (await f.call('hud_read', { view: 'recent' })).jobs[0];
+  assert.equal(recent.open_questions, 1);
+  assert.equal(recent.report_unread, true);
+  assert.equal(recent.report, undefined);
   const first = await f.call('hud_read', { job: id });
   assert.equal(first.report, 'First report.');
   assert.equal(first.idle_grace_s, 120);
@@ -1837,7 +1913,8 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   assert.equal(unchanged.report, undefined);
   assert.equal(unchanged.report_unchanged, true);
   assert.equal(unchanged.observed_at, undefined);
-  assert.equal((await f.call('hud_read')).jobs[0].report_unread, false);
+  assert.equal((await f.call('hud_read', { view: 'recent' })).jobs[0].report_unread, false);
+  assert.deepEqual((await f.call('hud_read')).jobs, [{ job: id, role: 'imp', state: 'idle_grace', question_ids: ['q1'] }]);
   assert.equal((await f.call('hud_read', { job: id, full: true })).report, 'First report.');
   await new Promise((r) => setTimeout(r, 10));
   fs.writeFileSync(join(dir, 'report.md'), 'Second report.');
@@ -1862,6 +1939,8 @@ test('failed job without a report catches up once, then hud_read marks attention
     return lines;
   };
   assert.deepEqual(await catchup(), [`${id} imp: failed | worker gone`]);
+  assert.deepEqual((await f.call('hud_read')).jobs, [{ job: id, role: 'imp', state: 'failed', reason: 'worker gone' }]);
+  assert.equal(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).observed_at, undefined);
   const read = await f.call('hud_read', { job: id });
   assert.equal(read.report_exists, false);
   assert.equal(read.observed_at, undefined);
@@ -1869,8 +1948,11 @@ test('failed job without a report catches up once, then hud_read marks attention
   assert.ok(receipt.observed_at);
   assert.equal(receipt.read_at, undefined);
   assert.deepEqual(await catchup(), []);
+  assert.deepEqual((await f.call('hud_read')).jobs, []);
+  assert.equal((await f.call('hud_read', { view: 'recent' })).jobs[0].state, 'failed');
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', reason: 'new failure' }));
   assert.deepEqual(await catchup(), [`${id} imp: failed | new failure`]);
+  assert.deepEqual((await f.call('hud_read')).jobs, [{ job: id, role: 'imp', state: 'failed', reason: 'new failure' }]);
 });
 
 test('hud_create idle_grace_s overrides CLI grace at both bounds and refuses invalid/pi/browser overrides', async (t) => {
@@ -1925,8 +2007,12 @@ syncBuiltinESMExports();`
   status('working');
   fs.writeFileSync(join(dir, 'report.md'), 'r'.repeat(65537));
   fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Synthetic question.');
-  assert.equal((await f.call('hud_read')).jobs[0].state, 'working');
+  assert.deepEqual((await f.call('hud_read')).jobs, [{
+    job, role: 'imp', state: 'working', report_unread: true, question_ids: ['q1'],
+  }]);
+  assert.equal((await f.call('hud_read', { view: 'recent' })).jobs[0].open_questions, 1);
   assert.deepEqual(reads(), []);
+  assert.deepEqual(JSON.parse(fs.readFileSync(join(dir, 'job.json'))), receipt);
   const question = await read();
   assert.deepEqual(question.questions, [{ id: 'q1', text: 'Synthetic question.' }]);
   await f.call('hud_respond', { job, request_id: 'q1', answer: 'Synthetic answer.' });
@@ -3962,8 +4048,15 @@ test('STATUS table matches across the panel reader and hud_read', async (t) => {
     if (entry.status !== null) fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(entry.status));
     return { id, entry };
   });
-  const listed = (await f.call('hud_read')).jobs;
+  const listed = (await f.call('hud_read', { view: 'recent' })).jobs;
+  const compact = (await f.call('hud_read')).jobs;
   for (const { id, entry } of ids) {
+    if (entry.raw === 'waiting_orchestrator') {
+      assert.deepEqual(compact.find((row) => row.job === id), {
+        job: id, role: 'imp', state: entry.raw, reason: entry.reason,
+        ...(entry.blocked ? { blocked: true } : {}),
+      });
+    }
     const panel = workerFor(f, id);
     const single = await f.call('hud_read', { job: id });
     const row = listed.find((item) => item.job === id);

@@ -100,7 +100,12 @@ herdr 经交互 shell 启动 CLI，所以该 shell 的函数仍生效。
 `hud trust <dir>` 把该目录加入 grok、agy 和 claude 的信任文件（先在 `$HUD_HOME` 下备份）。
 文件不存在则不创建。codex 跳过。
 
-`hud_read` 不带任务列最新 20 个；带任务读取 STATUS、未读报告（最多 64 KiB）与待答问题。报告比 `read_at` 新，或尚无 `read_at`，即为未读。
+`hud_read({})`（或 `view: "compact"`）按从新到旧列出运行中或仍需处理的任务。每行包含 `job`、`role`、`state`，
+并在适用时带上 `report_unread: true`、`blocked: true`、待答问题编号 `question_ids`、受阻、等待或失败的原因 `reason`。
+任务已关闭但报告未读时仍会列出。`view: "recent"` 保留最新 20 个任务的完整列表，包括已处理的历史任务。
+两种列表都不会标记已读；未出现在列表中的任务仍可通过 `changes` 报告变化。`view` 不能与 `job` 同用。
+
+带 `job` 时读取 STATUS、未读报告（最多 64 KiB）与待答问题。报告比 `read_at` 新，或尚无 `read_at`，即为未读。
 已读报告只返回 `report_unchanged: true`，`full: true` 可再次读取正文。`wait_ms` 最多等 120000 毫秒，结算、问题或超时即返回。
 返回报告正文时记录 `read_at`（包括工作中和空闲宽限期），不代表验收。已结算的 pi 或 CLI 工作者在当前回合的报告被读取后关闭
 （`closed after report read`）；续写后读取上一回合的报告不会关闭工作者，未读报告仍保留原有的空闲期限。读取失败或受阻状态会单独标记为已查看。

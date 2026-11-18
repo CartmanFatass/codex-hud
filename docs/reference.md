@@ -152,10 +152,15 @@ herdr starts the CLI through the interactive shell, so that shell's functions ap
 `hud trust <dir>` adds that directory to the trust files of grok, agy and claude
 after a backup under `$HUD_HOME`. A missing CLI file is not created. Codex is skipped.
 
-`hud_read` without a job lists the newest 20 with `open_questions` and `report_unread`; with a job it reads
-STATUS, open questions and an unread report (up to 64 KiB). A report is unread when newer than `read_at`, or no
-`read_at` exists. Already-read reports return `report_unchanged: true` without a body; `full: true` includes it
-again. CLI jobs show effective `idle_grace_s`. `wait_ms` waits at most 120000 ms, stopping at settlement, a
+`hud_read({})` (or `view: "compact"`) lists running jobs and jobs that still need attention, newest first. It shows
+`job`, `role`, `state` and, when applicable, `report_unread: true`, `blocked: true`, pending `question_ids` and a
+block, wait or failure `reason`. A closed job with an unread report still appears. Use `view: "recent"` for the
+newest 20 full rows, including handled history. Neither list marks anything read; `changes` still includes events
+for jobs hidden from the snapshot. `view` cannot be combined with `job`.
+
+With a `job`, `hud_read` reads STATUS, open questions and an unread report (up to 64 KiB). A report is unread when
+newer than `read_at`, or when no `read_at` exists. Already-read reports return `report_unchanged: true` without a
+body; `full: true` includes it again. CLI jobs show effective `idle_grace_s`. `wait_ms` waits at most 120000 ms, stopping at settlement, a
 question or timeout. Every returned report body stamps `read_at` (including during work and idle grace), not
 acceptance. A settled pi or CLI worker closes when its current turn's report is read (`closed after report read`);
 reading an earlier turn's report after a continuation does not close the worker. An unread report keeps the usual

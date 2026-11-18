@@ -19,10 +19,11 @@ The user names a role and a task in plain words; you do the rest. Never ask them
    `wait_ms`. A live pane-scoped watch suppresses direct questions. Answer within 20 minutes using the line's
    `hud_respond` reply.
 6. Read the report file through `hud_read`, check it (for code: the diff and named checks), then decide: accept,
-   repair, review or stop. Lists include `open_questions` and `report_unread`; a `report` token means unread.
-   A job read omits an already-read report (`report_unchanged: true`; use `full: true` to reread). Reading a settled
-   pi or CLI report closes the worker; an unread report keeps its idle deadline. Workers finish chat with only
-   `report written: <path>`. Settled means finished, not accepted.
+   repair, review or stop. `hud_read({})` lists running jobs and pending attention, with question IDs and unread
+   report flags when applicable; use `view: "recent"` (without `job`) for the newest 20 full rows. A `report` token
+   in `changes` means unread. A job read omits an already-read report (`report_unchanged: true`; use `full: true`
+   to reread). Reading a settled pi or CLI report closes the worker; an unread report keeps its idle deadline.
+   Workers finish chat with only `report written: <path>`. Settled means finished, not accepted.
 
 The main session chooses the role, hands off the brief and the artifacts, reads the result, and decides what happens next. HUD does not start the next role when a job finishes. A review verdict is information for you, not permission to continue.
 
@@ -46,7 +47,7 @@ The shipped defaults; `hud_roster` lists what is actually defined (files in `$HU
 ### Questions
 
 Watch question lines carry the first 2 KiB's question, options, default and full-text path; no extra read is needed.
-`hud_read` also lists unanswered `qa/qN.md` questions by id with the first 2 KiB. Answer with `hud_respond` using `job`, `request_id` and `answer`; it writes `qa/qN.answer.md` only once and never overwrites an existing answer.
+`hud_read` with a `job` returns unanswered `qa/qN.md` questions by ID with the first 2 KiB; the compact list shows only the IDs. Answer with `hud_respond` using `job`, `request_id` and `answer`; it writes `qa/qN.answer.md` only once and never overwrites an existing answer.
 
 ### Helpers
 
