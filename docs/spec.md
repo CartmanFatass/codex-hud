@@ -61,7 +61,11 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    Now (who is on which slice, for how long) and Latest (the last landed slices, their age and whether they wait for a
    try) above the page rows, and when the panel is short Latest folds first; the hub's bar is the current milestone's;
    Progress is a dated feed of the last 7 days with older work one row per milestone; Tickets are lanes by state with
-   a For-you lane; the control plane opens with what needs attention and the place the next job will use, healthy
+   a For-you lane; try records (owner, 2026-11-17): on the Progress page's to-try view `y` accepts and `n` flags the
+   selected row, a milestone row meaning all its slices still to try and a slice row that slice; the panel writes only a
+   record under `$HUD_HOME` (never a project file) and shows the mark at once, the main session hears it through
+   `hud watch` and MCP `changes` and updates STATE (accepted slices become `accepted`; a flagged one goes under
+   Waiting for the owner and the main session asks the owner what is wrong); the control plane opens with what needs attention and the place the next job will use, healthy
    roles folded. Skills list (owner, 2026-11-17; moved from a third main tab into Help, owner, 2026-11-17 second decision: Home and Project are the only main tabs): a section of Help (`?`) lists the backup skills, Matt Pocock
    skills that are not installed (adapted copies in `integrations/skills-optional/` and the upstream text) and that
    the main session reads when the owner asks for one; each skill's name and its whole one-line description in the panel's language, read from a catalog file

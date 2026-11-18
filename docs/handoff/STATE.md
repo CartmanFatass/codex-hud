@@ -8,7 +8,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Waiting for the owner
 
 - Try 2026-11-17 (all landed on universal-hud): Home top line counts what waits for you, progress counts the current milestone, an idle Home shows waiting items and latest done (PANEL-TIDY 01); Project hub wraps waiting items, Now omits unlisted worktrees (02); Skills moved into Help, two main tabs (03); Progress `t`/Enter shows only what is still to try, and Enter on a waiting item reads it in place (PANEL-NEXT); control plane previews the selected place, Inspector shows run time; bar notices say role + title + time, no model, a pinned need names its job, unread report `[✓●]` (BAR-NOTICE); `~N t/s` on Claude's statusline and Codex's bar (STATUSLINE-TPS); a live child process keeps a CLI worker open, a read report closes it (WORKER-CLOSE: run an agy job with a background command, then a Claude or Codex job and read its report); presets with `c`/`C` (ROLE-PRESETS); one sidebar with mouse (SIDEBAR-ONE); Skills page readable at 40 columns (SKILLS-READ).
-- Owner questions open (2026-11-18): (1) record a try with `y`/`n` in the panel, by milestone, through an inbox file? Needs a spec change; architect and the main session advise waiting until the in-place read has been used. (2) Keep `[✓●]` until the report is read (now it hides after 3 minutes)? (3) M5 candidate not ticketed: reopening a long session's panel shows recent activity first.
+- Owner questions open (2026-11-18): (1) Keep `[✓●]` until the report is read (now it hides after 3 minutes)? (2) M5 candidate not ticketed: reopening a long session's panel shows recent activity first.
 - Try 0.1.4 (review accepted): Control plane opens on what needs you; switch a role's place (provider → model
   picker; owner: picker ok 2026-11-14), add/reorder a fallback, clear an exhausted mark; the next hud_create uses it.
   CLI jobs end only on facts, and a live child process the worker started in its current turn counts as still working (WORKER-CLOSE, 2026-11-17); `hud watch` under Monitor hears every change (orchestrator live-checked dispatch
@@ -31,7 +31,8 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Next
 
 - The owner tries what is under Waiting for the owner, the 2026-11-17 items first, then 0.1.4, 0.1.3, 0.1.2, 0.1.1, M4; what a try finds goes here first.
-- The owner answers the open questions under Waiting (`y`/`n` try records, `[✓●]` lifetime).
+- The owner answers the open question under Waiting (`[✓●]` lifetime).
+- PANEL-TRY: one ticket, .scratch/panel-try/.
 - WORKER-UNIFY: tickets 01 and 04 first (independent), then 02, then 03; one milestone review; the owner tries a worker that hands work to sonic.
 - After the tries: the owner picks from the M5 candidates (docs/spec.md §5: retention periods, tail-first transcript read, Advanced settings).
 - Release rule: keep main fast-forwarded to universal-hud at each release (v0.1.4: tag and GitHub release with `hud-0.1.4.tar.gz`, sha256 33f0c04f…, 2026-11-14).
@@ -156,6 +157,7 @@ board counts these; update at every landing or decision. -->
 - dropped · — · ORACLE-SKILL · owner 2026-11-17: oracle loading an adapted codebase-design dropped with MATT-OFF; then oracle became the strongest-model seat with no default skill, a brief names a method skill by path (SKILL-ROLES); the imp's work (dacf135e, worktree and branch wt/ORACLE-SKILL deleted) never landed
 - dropped · — · MATT-PARADIGM · owner 2026-11-17 chose paradigm B (report docs/reviews/2026-11-17-matt-paradigm-oracle.md), then superseded the same day by MATT-OFF
 - working · — · WORKER-UNIFY · owner 2026-11-17 decided (all of the main session's recommendations, plus: workers call sonic freely, choosing its thinking, without blocking): one worker form on every harness; spec §2.1 "Workers are neutral" rewritten; .scratch/worker-unify/ (spec + 4 tickets): 01 worker marker, MCP refuses dispatch from a worker; 02 `hud-sonic` start/wait (non-blocking, parallel, parent unsettled while a child is open); 03 HUD-run pi jobs use the HUD role text, no call_sonic/call_reviewer, one question rule; 04 delete dead execution code (oracle report §A5). Landed ahead of the tickets: browser completion no longer typed into the main pane, empty browser report fails, general.md report wording (main session); imp jobs: 01 j03e828514171d388 (MyHUD-wt/WORKER-UNIFY-01), 04 j4f467942b0fa4f3b (MyHUD-wt/WORKER-UNIFY-04)
+- working · — · PANEL-TRY · owner 2026-11-17: on Progress's to-try view `y` accepts, `n` flags a milestone or slice; the panel writes only $HUD_HOME/tries.jsonl, the main session updates STATE from the watch line (spec §2.2); .scratch/panel-try/ 01
 - try · — · GENERAL · owner 2026-11-16: `general` role for ad-hoc dispatch, model/thinking per job (cb0d67a9; pi-roles general.md in Fishpref)
 - dropped · — · MATT-FLOW · owner 2026-11-17: the convention keeps only HUD mechanics (a convention absorbing Matt's flow was written and reverted the same day); hud-build no longer installed (MATT-OFF)
 - try · — · MATT-OFF · owner 2026-11-17: Matt skills are an inactive collection taken on demand; the HUD flow is delegation.md (to-tickets + one milestone review). Only to-tickets installed (Claude, Codex); grill-with-docs, to-spec, hud-build, tdd, diagnosing-bugs moved to integrations/skills-optional/ and listed in the Skills tab; global links and JevDev's pi-worker links removed
@@ -180,7 +182,7 @@ State on 2026-11-18, checked against the ledger below (no working, blocked or to
   already show ahead/behind). A status-bar job counter and an always-shown running job were declined (docs/reference.md: the bar shows no task count).
 - The owner's workflow changes: reviews run one reviewer with no model-family rule (docs/delegation.md); a read report closes its worker and a live
   child process counts as still working (WORKER-CLOSE, spec 38a27e21).
-- Not decided: the panel `y`/`n` try record (see Waiting for the owner). WORKER-UNIFY decided late 2026-11-17 (ledger).
+- WORKER-UNIFY and PANEL-TRY decided late 2026-11-17 (ledger).
 
 ### 2026-11-14 (was Next)
 
