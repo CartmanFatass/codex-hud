@@ -153,7 +153,7 @@ board counts these; update at every landing or decision. -->
 - try · — · MCP-READ-COMPACT · compact actionable `hud_read()` list; `view:"recent"` retains the newest 20 full rows (separately scheduled, `.scratch/mcp-read-compact/issues/01-compact-hud-read.md`); landed e629b295 (default 327 B vs recent 4,475 B, −92.69%)
 - try · — · SUPERVISOR-MCP · bug 2026-11-18 (live, Claude frontend-imp): a CLI worker stays `working` after its report when its CLI started an MCP server directly (`node …/hud-mcp`) just after the first input; cli-judge counts it as turn work (spec §2.1: MCP servers do not count); landed 2d281b7b: on the first turn a direct non-shell child started within 10 s of the first input is a launch helper (shells and later children still count); live check passed 2026-11-18 (panel-v2 04 frontend-imp j9dbc6abfd9f248a6 reached idle_grace on its own after its report)
 
-## Now (2026-11-18): 0.2.0 12/14 tickets landed (mcp-next 01–06; panel-v2 01, 02, 03, 05, 06, 07) + MCP-READ-COMPACT 01, SUPERVISOR-MCP (try); in flight (different files): panel-v2 04 sparklines + sonic trees (frontend-imp j9dbc6abfd9f248a6, also the SUPERVISOR-MCP live check), mcp-next 07 worktree isolation (imp jb489fcbcd1e4c50f); then the full suite and the milestone review
+## Now (2026-11-18): 0.2.0 all 14 tickets landed (mcp-next 01–07, panel-v2 01–07) + MCP-READ-COMPACT 01 and SUPERVISOR-MCP; full suite 86+757 green and check:fixtures OK on 7a3da0d0; milestone review running (reviewer j12b20efb9f14274c, brief tmp/tasks/review-0.2.0/brief.md); then one fix pass, then the owner's try
 
 State on 2026-11-18, checked against the ledger below (no working, blocked or todo slice), herdr (only the main session's tab) and origin (in sync).
 
