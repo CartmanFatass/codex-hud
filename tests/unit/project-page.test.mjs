@@ -315,7 +315,7 @@ console.log(JSON.stringify({result}));
 test('Enter and o open the exact Project file in its own focused workspace tab; default editor is vim', async (t) => {
   const f = await fixture(t),
     { env, calls } = editorHerdr(f);
-  // Files open from the hub's Waiting items (with o: Enter reads the item on its page) and from every page.
+  // Files open from the hub's Waiting items (with o: Enter reads the item on its page) and from every page (the to-try count too: Enter filters there).
   const found = [undefined, 'progress', 'tree', 'docs', 'control'].flatMap((page) => {
     const frame = f.render(80, 'en', page === 'control' ? onPage('control', { projectFolded: new Set(['agents']) }) : page, 80);
     return frame.workboard.rows.filter((r) => r.files).map((row) => ({ frame, row }));
@@ -323,7 +323,7 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
   assert.ok(found.length > 20);
   for (const { frame, row } of found) {
     frame.state.projectCursor = row.item;
-    for (const key of row.item.startsWith('project:wait:') ? ['open-session'] : ['enter', 'open-session'])
+    for (const key of /^project:(wait:|try$)/.test(row.item) ? ['open-session'] : ['enter', 'open-session'])
       assert.deepEqual(press(frame, key).action, { type: 'open-files', files: row.files });
   }
   const { frame, row: file } = found.find(({ row }) => row.files[0] === join(f.sliceJob, 'report.md'));

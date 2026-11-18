@@ -57,6 +57,8 @@ export interface MonitorState {
   projectScroll?: number;
   /** The waiting item (its index in STATE's list) the `waiting` page shows. */
   projectWait?: number;
+  /** Progress shows only the slices in state `try`; where the full feed's cursor and scroll were, so clearing it lands there. */
+  projectTry?: { cursor?: string; scroll: number };
   /** Where each page the owner left was, so opening it again finds the same row and scroll. */
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;

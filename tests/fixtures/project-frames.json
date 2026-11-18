@@ -117,7 +117,7 @@
     "",
     "",
     "",
-    "       ↑↓ move  ⏎ open  esc back  ? help"
+    "     ↑↓ move  ⏎ open  t to try  esc back"
   ],
   "progress-120-en": [
     "‹ Project › Progress                                                                                 updated 12:35 · ! 1",
@@ -159,7 +159,7 @@
     "",
     "",
     "",
-    "                                                                                       ↑↓ move  ⏎ open  esc back  ? help"
+    "                                                                             ↑↓ move  ⏎ open  t to try  esc back  ? help"
   ],
   "tree-40-en": [
     "‹ Project › Working tree",
@@ -531,7 +531,7 @@
     "",
     "",
     "",
-    "       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
+    "     ↑↓ 移动  ⏎ 打开  t 待试用  esc 返回"
   ],
   "progress-120-zh": [
     "‹ 项目 › 进度                                                                                         更新于 12:35 · ! 1",
@@ -573,7 +573,7 @@
     "",
     "",
     "",
-    "                                                                                       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
+    "                                                                             ↑↓ 移动  ⏎ 打开  t 待试用  esc 返回  ? 帮助"
   ],
   "tree-40-zh": [
     "‹ 项目 › 工作区",
@@ -891,7 +891,7 @@
     "",
     "",
     "",
-    "       ↑↓ move  ⏎ open  esc back  ? help"
+    "     ↑↓ move  ⏎ open  t to try  esc back"
   ],
   "progress-rich-120-en": [
     "‹ Project › Progress                                                                                       updated 12:35",
@@ -957,7 +957,7 @@
     "",
     "",
     "",
-    "                                                                                       ↑↓ move  ⏎ open  esc back  ? help"
+    "                                                                             ↑↓ move  ⏎ open  t to try  esc back  ? help"
   ],
   "progress-rich-40-zh": [
     "‹ 项目 › 进度               更新于 12:35",
@@ -1023,7 +1023,7 @@
     "",
     "",
     "",
-    "       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
+    "     ↑↓ 移动  ⏎ 打开  t 待试用  esc 返回"
   ],
   "progress-rich-120-zh": [
     "‹ 项目 › 进度                                                                                               更新于 12:35",
@@ -1089,7 +1089,7 @@
     "",
     "",
     "",
-    "                                                                                       ↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助"
+    "                                                                             ↑↓ 移动  ⏎ 打开  t 待试用  esc 返回  ? 帮助"
   ],
   "progress-rich-open-40-en": [
     "‹ Project › Progress       updated 12:35",
@@ -1171,7 +1171,7 @@
     "",
     "",
     "",
-    "       ↑↓ move  ⏎ open  esc back  ? help"
+    "     ↑↓ move  ⏎ open  t to try  esc back"
   ],
   "progress-rich-40-text": [
     "< Project > Progress       updated 12:35",
@@ -1237,7 +1237,7 @@
     "",
     "",
     "",
-    "       ↑↓ move  ⏎ open  esc back  ? help"
+    "     ↑↓ move  ⏎ open  t to try  esc back"
   ],
   "hub-switch-40-en": [
     " Home 1  Project 2             models on",
@@ -1303,7 +1303,7 @@
     "  ◐ NATIVE-TREE",
     "    native subagents on Home, one lane",
     "    per main session",
-    "       ↑↓ move  ⏎ open  esc back  ? help"
+    "     ↑↓ move  ⏎ open  t to try  esc back"
   ],
   "hub-rich-40-40-en": [
     " Home 1  Project 2             models on",
@@ -2141,6 +2141,6 @@
     "",
     "",
     "",
-    "       ↑↓ move  ⏎ open  esc back  ? help"
+    "     ↑↓ move  ⏎ open  t to try  esc back"
   ]
 }

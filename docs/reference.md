@@ -365,6 +365,14 @@ what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`)
   guessed and sits under its milestone. The date is the ledger row's last hash (7-40 hex) read
   through the safe Git policy, in the one batched `git log` the collector already runs.
 
+**To try only.** Enter or a click on the to-try count (`2 to try`, a stop of its own), or `t`, filters the
+page to what is still to try: the header `Only to try ── n` replaces everything below the crumb, then
+the ledger's slices in state `try` (never matched by their words, whatever the milestone) grouped by
+milestone, newest first: the newest is open (`◇ DATA-ONE  text  1d`, Enter shows milestone, commit and day), each older one
+a folded row (`▸ M3b  ◇ 1 to try  19d`) that Enter opens. `t`, Enter or a click on the header, or Esc
+returns to the full feed with the cursor and scroll where they were; leaving the page or switching project clears the
+filter. No extra read: the ledger is the one already parsed.
+
 Rows wrap onto a second row rather than cut their only line at 40 columns. Enter or `o`
 on a row opens STATE.md; on a fold, Enter folds and `o` folds only where the row has no file.
 

@@ -260,6 +260,7 @@ export function renderWorkboardFrame(
           : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
           : page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
+          : page === 'progress' ? (state.projectTry ? '↑↓ move  ⏎ open  t all  esc back  ? help' : '↑↓ move  ⏎ open  t to try  esc back  ? help')
           : page || list ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
   if (height > 1)

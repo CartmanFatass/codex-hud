@@ -40,14 +40,23 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   };
   // Opening a page keeps where it was left; closing it lands the hub's cursor on that page's row.
   const goProject = (page?: ProjectPage, cursor?: string) => {
-    const from = projectPageOf(next), saved = { ...next.projectSaved };
-    if (from) saved[from] = { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
+    const from = projectPageOf(next), saved = { ...next.projectSaved }, full = next.projectTry ?? { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
+    if (from) saved[from] = full;
+    next.projectTry = undefined;
     const kept = page && !cursor ? saved[page] : undefined;
     next.projectSaved = saved;
     next.projectPage = page;
     next.projectCursor = page ? cursor ?? kept?.cursor : from && (from === 'waiting' ? `project:wait:${next.projectWait}` : `project:page:${from}`);
     next.projectScroll = kept?.scroll ?? 0;
     next.boardRevealed = kept?.cursor;
+  };
+  // Progress's to-try filter: on, it keeps where the full feed was; off (the same key, Enter on its header or Esc), the feed is back there.
+  const tryOnly = () => {
+    const full = next.projectTry;
+    next.projectTry = full ? undefined : { cursor: next.projectCursor, scroll: next.projectScroll ?? 0 };
+    next.projectCursor = full ? full.cursor : 'project:try';
+    next.projectScroll = full?.scroll ?? 0;
+    next.boardRevealed = full?.cursor;
   };
   // A waiting item's whole text; closing the page puts the cursor back on the item's row.
   const readWait = (i: number) => {
@@ -61,6 +70,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // Esc goes back to the list only from a hub opened out of it, not from one stepped to with `[` and `]`.
     next.projectBack = undefined;
     next.projectSaved = {};
+    next.projectTry = undefined;
     // Resting on the name row, `[` and `]` keep it there.
     if (next.projectCursor !== 'project:switch') next.projectCursor = undefined;
     next.projectScroll = 0;
@@ -163,6 +173,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectPage);
+      else if (row?.item === 'project:try') tryOnly();
       else if (/^project:wait:\d+$/.test(row?.item ?? '')) readWait(Number(row!.item!.slice(13)));
       else if (row?.item?.startsWith('project:fold:')) {
         const folded = new Set(projectFoldedSet(next)), id = row.item.slice(13);
@@ -181,7 +192,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           const again = row.item === next.projectCursor;
           next.projectCursor = row.item;
           // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
-          return result(again || /^project:(page:|list:|switch$|wait:\d+$)/.test(row.item) ? activate(row) : undefined);
+          return result(again || /^project:(page:|list:|switch$|try$|wait:\d+$)/.test(row.item) ? activate(row) : undefined);
         }
       }
       return result();
@@ -194,6 +205,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
       const step = key === 'up' ? -1 : key === 'page-up' ? -5 : key === 'page-down' ? 5 : 1;
       next.projectCursor = rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item;
+      return result();
+    }
+    if (input.type === 'key' && input.text === 't' && projectPageOf(next) === 'progress') {
+      tryOnly();
       return result();
     }
     // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
@@ -209,6 +224,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       return result({ type: 'role-edit', role: onPlace[1], index: Number(onPlace[2]), ...place });
     if (key === 'escape' && (projectPageOf(next) || listed || (next.projectBack && frame?.projects))) {
       if (listed) showList(false);
+      else if (next.projectTry) tryOnly();
       else if (projectPageOf(next)) goProject();
       else showList(true);
       return result();

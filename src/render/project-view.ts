@@ -441,8 +441,39 @@ function pageRows(
       text: fit(text, width), ...(path ? { item: `project:file:${path}:${key}`, files: [path] } : {}),
     });
     const head = (label: string, right: string | number) => rows.push(boardRow(''), section(t(label), width, String(right)));
+    // Landed slices as rows: each a row Enter opens (its milestone, commit and day), the milestones one row each that Enter opens into its slices.
+    const landed = landedNewest(data), recent = landed.filter(({ r }) => r.at !== undefined && now - r.at <= 7 * DAY), older = landed.filter((x) => !recent.includes(x));
+    const entry = ({ r }: { r: LedgerSlice }, indent: number, right = landedAge(r, now, false)) => {
+      const id = `hist:${r.id}`, lines = stacked(`${' '.repeat(indent)}${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), right, width, indent + 4, 2);
+      if (folded.has(id)) lines.splice(1, 0, ' '.repeat(indent + 4) + theme.board.muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at, now) : ''].filter(Boolean).join(' · ')));
+      for (const line of lines) rows.push({ text: fit(line, width), item: `project:fold:${id}`, ...(data.statePath ? { files: [data.statePath] } : {}) });
+    };
+    // Newest milestone first; `prefix` keeps each list's folds its own. Of the to-try list (`tried`) the newest milestone is open and has no fold.
+    const byMilestone = (list: typeof landed, prefix: string, tried = false) => {
+      const order = milestoneOrder(data), buckets = new Map<string, typeof landed>();
+      for (const x of list) { const m = NO_MILESTONE.test(x.r.milestone) ? '' : x.r.milestone; buckets.set(m, [...(buckets.get(m) ?? []), x]); }
+      const names = [...buckets.keys()].map((m) => m || t('other')), column = Math.min(10, Math.max(...names.map(visualLength), 0));
+      for (const [at, [milestone, items]] of [...buckets].sort((a, b) => order.indexOf(b[0]) - order.indexOf(a[0])).entries()) {
+        const id = `${prefix}${milestone}`, newest = tried && !at, open = newest || folded.has(id), accepted = items.filter(({ r }) => r.state === 'accepted').length, tries = items.length - accepted;
+        const days = items.flatMap(({ r }) => r.at === undefined ? [] : [Math.floor((now - r.at) / DAY)]), lo = Math.min(...days), hi = Math.max(...days);
+        const span = !days.length ? '' : lo === hi ? t('{n}d', { n: lo }) : `${lo}–${t('{n}d', { n: hi })}`;
+        // Counts with their words; a row too short for them keeps the marks and the numbers.
+        const counts = (words: boolean) => [accepted && sliceInk('accepted')(`${mark('✓', '+')} ${accepted}${words ? ' ' + t('accepted') : ''}`),
+          tries && sliceInk('try')(`${mark('◇', 'o')} ${tries}${words ? ' ' + t('to try') : ''}`)].filter(Boolean).join('  ');
+        const lead = `  ${open ? mark('▾', 'v') : mark('▸', '>')} ${fit(monitorText(milestone) || t('other'), column)} `, words = visualLength(lead + counts(true)) + visualLength(span) + 1 <= width;
+        rows.push({ text: pair(lead + counts(words), theme.board.muted(span), width), ...(newest ? {} : { item: `project:fold:${id}` }) });
+        if (open) items.forEach((x) => entry(x, 4, tried ? theme.board.muted(sinceText(x.r.at, now)) : undefined));
+      }
+    };
     if (!data.statePath) rows.push(boardRow('  ' + theme.board.muted(t('no STATE.md'))));
-    else {
+    else if (state.projectTry) {
+      // Only what the ledger says is `try`, whatever the milestone: the header is the way back (Enter, a click or `t`).
+      const tries = landed.filter(({ r }) => r.state === 'try');
+      rows.push({ ...section(t('Only to try'), width, String(tries.length)), item: 'project:try', files: [data.statePath] });
+      if (!tries.length) rows.push(boardRow('  ' + theme.board.muted(t('Nothing to try'))));
+      byMilestone(tries, 'try:m:', true);
+      return rows;
+    } else {
       if (data.summary) for (const line of clampLines(data.summary, width - 2, 2).lines) fileRow('  ' + line, 'summary');
       // The current milestone: its bar with accepted/total, its counts, and what the earlier ones accepted in all.
       const cur = currentRows(data), total = cur.rows.length - cur.counts.dropped;
@@ -451,7 +482,8 @@ function pageRows(
         const cells = Math.max(6, Math.min(24, width - 3 - visualLength(label) - visualLength(frac) - 2));
         fileRow(`  ${label ? theme.board.title(label) + ' ' : ''}${barText({ counts: cur.counts }, cells)} ${theme.board.muted(frac)}`, 'bar');
         const words = SLICE_STATES.filter((s) => s !== 'accepted' && cur.counts[s]).map((s) => sliceInk(s)(`${cur.counts[s]} ${t(s === 'try' ? 'to try' : s)}`));
-        for (const line of pack(words, width)) fileRow(line, 'counts');
+        // The to-try count is the way into the to-try filter; `o` still opens STATE.md from it.
+        for (const line of pack(words, width)) cur.counts.try ? rows.push({ text: fit(line, width), item: 'project:try', files: [data.statePath] }) : fileRow(line, 'counts');
         const order = milestoneOrder(data), before = order.slice(0, Math.max(0, order.indexOf(data.ladder.current ?? ''))), earlier = data.ledger.filter((r) => r.state === 'accepted' && before.includes(r.milestone));
         const places = new Set(earlier.map((r) => r.milestone)).size;
         if (!cur.whole && earlier.length) fileRow(`  ${sliceInk('accepted')(mark('✓', '+'))} ${theme.board.muted(t(places === 1 ? '{n} accepted in {m} earlier milestone' : '{n} accepted in {m} earlier milestones', { n: earlier.length, m: places }))}`, 'earlier');
@@ -503,30 +535,10 @@ function pageRows(
       });
     });
     if (more > 0) rows.push({ text: fit(`  ${theme.board.muted(`${all ? mark('▾', 'v') : mark('▸', '>')} ${all ? t('fewer') : t('{n} more', { n: more })}`)}`, width), item: 'project:fold:next' });
-    // History: the last seven days in full, newest first, each landed slice a row that Enter opens (its milestone, commit and day);
-    // everything older, and whatever has no commit date, one row a milestone that Enter opens into its slices.
-    const landed = landedNewest(data), recent = landed.filter(({ r }) => r.at !== undefined && now - r.at <= 7 * DAY), older = landed.filter((x) => !recent.includes(x));
+    // History: the last seven days in full, newest first (`recent`); everything older, and whatever has no commit date, one row a milestone.
     if (landed.length) head('History', t('newest first'));
-    const entry = ({ r }: { r: LedgerSlice }, indent: number) => {
-      const id = `hist:${r.id}`, lines = stacked(`${' '.repeat(indent)}${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now, false), width, indent + 4, 2);
-      if (folded.has(id)) lines.splice(1, 0, ' '.repeat(indent + 4) + theme.board.muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at, now) : ''].filter(Boolean).join(' · ')));
-      for (const line of lines) rows.push({ text: fit(line, width), item: `project:fold:${id}`, ...(data.statePath ? { files: [data.statePath] } : {}) });
-    };
     recent.forEach((x) => entry(x, 2));
-    const order = milestoneOrder(data), buckets = new Map<string, typeof landed>();
-    for (const x of older) buckets.set(NO_MILESTONE.test(x.r.milestone) ? '' : x.r.milestone, [...(buckets.get(NO_MILESTONE.test(x.r.milestone) ? '' : x.r.milestone) ?? []), x]);
-    const names = [...buckets.keys()].map((m) => m || t('other')), column = Math.min(10, Math.max(...names.map(visualLength), 0));
-    for (const [milestone, items] of [...buckets].sort((a, b) => order.indexOf(b[0]) - order.indexOf(a[0]))) {
-      const id = `hist:m:${milestone}`, open = folded.has(id), accepted = items.filter(({ r }) => r.state === 'accepted').length, tries = items.length - accepted;
-      const days = items.flatMap(({ r }) => r.at === undefined ? [] : [Math.floor((now - r.at) / DAY)]), lo = Math.min(...days), hi = Math.max(...days);
-      const span = !days.length ? '' : lo === hi ? t('{n}d', { n: lo }) : `${lo}–${t('{n}d', { n: hi })}`;
-      // Counts with their words; a row too short for them keeps the marks and the numbers.
-      const counts = (words: boolean) => [accepted && sliceInk('accepted')(`${mark('✓', '+')} ${accepted}${words ? ' ' + t('accepted') : ''}`),
-        tries && sliceInk('try')(`${mark('◇', 'o')} ${tries}${words ? ' ' + t('to try') : ''}`)].filter(Boolean).join('  ');
-      const lead = `  ${open ? mark('▾', 'v') : mark('▸', '>')} ${fit(monitorText(milestone) || t('other'), column)} `, words = visualLength(lead + counts(true)) + visualLength(span) + 1 <= width;
-      rows.push({ text: pair(lead + counts(words), theme.board.muted(span), width), item: `project:fold:${id}` });
-      if (open) items.forEach((x) => entry(x, 4));
-    }
+    byMilestone(older, 'hist:m:');
   } else if (page === 'waiting') {
     // One waiting item, in STATE's words and order: a line that continues a sentence flows on, a list line starts a paragraph of its own;
     // every wrapped row is a stop, so the movement keys scroll it, and `o` opens STATE.md.
