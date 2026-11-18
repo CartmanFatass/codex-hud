@@ -8,6 +8,7 @@ import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit,
 import type { WorkboardSnapshot } from './workboard-types.js';
 import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
+import { collectControlRadar, type ControlRadar } from './control-radar.js';
 export interface ProjectItem {
   label: string;
   value: string;
@@ -53,6 +54,7 @@ export interface ProjectSnapshot {
   keys: [string, boolean][];
   browser: boolean;
   roleCount: number;
+  radar?: ControlRadar;
   git?: WorktreeStatus;
   gitDiff?: DiffStatSummary;
   /** Linked worktrees besides the main one; with `git`, one Git read per five seconds. */
@@ -256,6 +258,8 @@ export class ProjectCollector {
       for (const path of this.cache.keys()) if (!this.seen.has(path)) this.cache.delete(path);
       return out;
     }
+    const radar = collectControlRadar(this.hudHome, this.env, now);
+    if (radar) out.radar = radar;
     const spec = this.read(join(this.cwd, 'docs/spec.md'))?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
     out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M[^,\s*]+),/gm)].map((m) => m[1]);
     if (milestone) out.docs.push({ label: 'spec', value: milestone, path: join(this.cwd, 'docs/spec.md') });

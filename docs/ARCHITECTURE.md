@@ -340,6 +340,7 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | `exhausted.json` | Quota marks on places until the parsed reset (1 minute to 24 hours; 1 hour by default); cleared by the Control plane page |
 | `credentials.env`, `config.json` | Owner keys and Decision API/configuration |
 | `display/state/<session>.json` | Active Codex bar/panel snapshot; atomic inode ownership prevents outgoing writers deleting replacements |
+| `display/state/claude-quota.json` | Last reported quota windows only; optional private cache from Claude statusline stdin |
 | `display/scan/`, `display/thin-jobs.json` | Rebuildable observation caches |
 | `display/model-cache/` | Shared text replies/reservations and revision-keyed overlays; Decision reservations have their own subdirectory |
 | `display/profile.log` | Optional stage timings |

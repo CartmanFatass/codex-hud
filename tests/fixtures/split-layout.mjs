@@ -53,7 +53,7 @@ export function splitFrames(busy, idle) {
     frames[`hub-40-${lang}`] = plain(busy.render(40, lang, 40, page(undefined), busy.control));
     frames[`hub-short-40-${lang}`] = plain(busy.render(40, lang, 24, page(undefined), busy.control));
     frames[`progress-40-${lang}`] = plain(busy.render(40, lang, 40, page('progress'), busy.rich));
-    frames[`control-40-${lang}`] = plain(busy.render(40, lang, 40, page('control'), busy.control));
+    frames[`control-40-${lang}`] = plain(busy.render(40, lang, 40, page('control'), { ...busy.control, radar: undefined }));
     frames[`tickets-40-${lang}`] = plain(busy.render(40, lang, 40, page('tickets')));
     frames[`tree-40-${lang}`] = plain(busy.render(40, lang, 40, page('tree')));
     frames[`docs-40-${lang}`] = plain(busy.render(40, lang, 40, page('docs')));

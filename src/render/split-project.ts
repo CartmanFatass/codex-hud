@@ -12,7 +12,7 @@ import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, asksYou, barText, briefRows, clampClean, clampLines, currentRows, hubNowRows, inFlight, inline, landedAge, landedMark, landedNewest,
   ledgerText, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
   type ProjectPage } from './project-view.js';
-import { glyph, needsAttention, placeTarget, placeText, roleName } from './control-view.js';
+import { glyph, needsAttention, placeTarget, placeText, radarFacts, radarRows, radarSummary, roleName, roleToday } from './control-view.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { splitItems, splitScope, splitSubValid, type SplitScene } from './split-frame.js';
 import { boardRow, kvRows, mark, minuteAge, pack, section } from './workboard-rows.js';
@@ -150,10 +150,18 @@ function controlPart(data: ProjectSnapshot, width: number, now: number): Part {
   if (sick.length + invalid.length) list.push(section(t('Needs attention'), width, theme.board.attention(String(sick.length + invalid.length))), ...sick.flatMap((r) => roleRows(r, true)),
     ...invalid.map((r, i): MonitorRow => ({ item: `project:file:${r.path}:invalid:${i}`, files: r.path ? [r.path] : [], text: pair(`${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, muted(monitorText(r.value)), width) })), boardRow(''));
   if (healthy.length) list.push(section(t('Roles'), width, String(healthy.length)), ...healthy.flatMap((r) => roleRows(r, false)), boardRow(''));
+  const radar = radarFacts(data.radar), summary = radarSummary(radar, false);
+  if (radar.roles.length) summary.push(t('{n} jobs', { n: radar.roles.reduce((n, [, s]) => n + s.total, 0) }));
+  if (summary.length) {
+    const left = `${muted(mark('◐', '@'))} ${t('Radar')}`;
+    while (summary.length > 1 && visualLength([left, summary.join(' · ')].join(' ')) > width) summary.pop();
+    list.push({ item: 'split:radar', text: pair(left, muted(summary.join(' · ')), width) });
+  }
   if (data.harnesses.length) list.push({ item: 'split:harnesses', text: pair(`${muted(mark('▸', '>'))} ${t('Harnesses')}`, muted(data.harnesses.map((h) => `${h.name} ${ok(h.ok)}`).join(' ')), width) });
   list.push({ item: 'split:files', text: pair(`${muted(mark('▸', '>'))} ${t('Files')}`, muted([data.keys.length && `${t('keys')} ${have}/${data.keys.length}`, `${t('browser')} ${mark(data.browser ? '✓' : '−', data.browser ? '+' : '-')}`].filter(Boolean).join(' · ')), width) });
   const preview = (cursor?: string): Shown => {
     const role = data.roles.find((r) => `project:role:${r.role}` === cursor);
+    if (cursor === 'split:radar') return { label: t('Radar'), rows: radarRows(radar, width, true) };
     if (cursor === 'split:harnesses') return { label: t('Harnesses'), rows: pack(data.harnesses.map((h) => `${monitorText(h.name)} ${ok(h.ok)}`), width).map((l) => plain(l, width)) };
     if (cursor === 'split:files') return { label: t('Files'), right: String(files.length + data.agents.length), rows: [...files.map((r, i) => projectItem(r.label === 'convention' ? { ...r, value: t(r.value) + ' · ' + basename(r.path!) } : r, i, '', width, now)),
       ...data.agents.map((r, i) => projectItem(r, i, '', width, now)), ...kvRows('keys', data.keys.map(([n, p]) => `${n} ${mark(p ? '✓' : '−', p ? '+' : '-')}`).join('  '), width)] };
@@ -163,8 +171,10 @@ function controlPart(data: ProjectSnapshot, width: number, now: number): Part {
         : p.state === 'active' && role.places.findIndex((x) => x.state === 'active') === i ? theme.board.active(t('next job')) : '';
       return { ...placeTarget(role, i, data), text: pair(`  ${glyph(p.state)} ${(p.state === 'active' ? (s: string) => s : muted)(placeText(p, width - 6 - visualLength(tag), '  '))}`, tag, width) };
     };
+    const today = radar.roles.find(([name]) => name === role.role)?.[1];
     return { label: monitorText(role.role), right: [t('{n} places', { n: role.places.length }), role.preset === undefined ? '' : `${t('preset')}: ${monitorText(role.preset ?? t('custom'))}`].filter(Boolean).join(' · '),
-      rows: [...role.places.map((_, i) => place(i)), boardRow(''), ...kvRows('source file', `${t(role.source)} · ${basename(role.path)}`, width, undefined, 11)] };
+      rows: [...role.places.map((_, i) => place(i)), boardRow(''), ...kvRows('source file', `${t(role.source)} · ${basename(role.path)}`, width, undefined, 11),
+        ...(today ? kvRows('today', roleToday(today), width, undefined, 6) : [])] };
   };
   return { list, preview, start: list.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ places  c C preset  PgUp PgDn scroll  esc back  ? help',
     focusHints: '↑↓ place  p harness  m model  e thinking  + - fallback  K J move  x clear  esc back  ? help' };

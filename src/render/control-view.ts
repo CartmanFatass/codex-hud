@@ -4,11 +4,13 @@
  * one line a place, grouped as roles, project roles and browser tasks; then which harnesses exist. Pure.
  */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
+import type { ControlRadar, RoleRadar } from '../collectors/control-radar.js';
+import { formatTokenCount } from './lines/activity-line.js';
 import { placeItem, placeModels, type PlaceFact, type PlaceState, type RoleFact } from '../roles/role-control.js';
 import type { MonitorRow } from './monitor.js';
 import { pickOf, pickView, type ModelInput } from './model-input.js';
 import { boardRow, section, mark, pack, kvRows } from './workboard-rows.js';
-import { monitorText, fit, pair, squeeze } from './monitor-text.js';
+import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { basename } from 'node:path';
 import { t } from './i18n.js';
@@ -99,6 +101,48 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
       : [boardRow(fit('  ' + theme.board.muted(t('none')), width))]),
   ];
 }
+export function radarFacts(radar: ControlRadar | undefined) {
+  const quotas = (['codex', 'claude'] as const).flatMap((client) => {
+    const windows = radar?.quotas?.[client];
+    return windows?.length ? [{ client, windows }] : [];
+  });
+  const roles = Object.entries(radar?.roleStats ?? {}).filter(([, s]) => s.total > 0).sort(([a], [b]) => a.localeCompare(b));
+  const pi = radar?.piToday?.sessions ? radar.piToday : undefined;
+  return { quotas, roles, pi };
+}
+type RadarFacts = ReturnType<typeof radarFacts>;
+const remaining = (p: number) => `${Math.round(p)}%`;
+const usd = (p: NonNullable<RadarFacts['pi']>) => `${p.sampled ? '≥' : ''}$${p.costUsd.toFixed(2)}`;
+const tokens = (p: NonNullable<RadarFacts['pi']>) => t('{n} tok', { n: (p.sampled ? '≥' : '') + formatTokenCount(p.tokens) });
+export function radarSummary({ quotas, pi }: RadarFacts, withTokens: boolean): string[] {
+  return [...quotas.map(({ client, windows }) => `${t(client)} ${remaining(Math.min(...windows.map((w) => w.remaining)))}`),
+    ...(pi ? [`${t('pi')} ${usd(pi)}${withTokens ? ` (${tokens(pi)})` : ''}`] : [])];
+}
+export function roleToday(s: RoleRadar, compact = false): string {
+  return [compact ? `${s.ok}${mark('✓', '+')} ${s.failed}${mark('✗', 'x')}` : t('{ok} ok · {failed} failed', { ok: s.ok, failed: s.failed }),
+    s.avgMinutes === null ? '' : t('avg {time}', { time: t('{n}m', { n: Math.round(s.avgMinutes) }) }),
+    s.quietEscalated ? t('quiet {n}', { n: s.quietEscalated }) : ''].filter(Boolean).join(' · ');
+}
+export function radarRows(facts: RadarFacts, width: number, detail = false): MonitorRow[] {
+  const { quotas, pi, roles } = facts, out: MonitorRow[] = [];
+  const line = (value: string) => flowLines(value, Math.max(1, width - 2)).map((s) => boardRow(fit('  ' + s, width)));
+  if (detail) {
+    if (quotas.length) out.push(section(t('Quota'), width), ...quotas.flatMap(({ client, windows }) => windows.flatMap((w) => {
+      const reset = w.resetsAt === undefined ? '' : t('resets {time}', { time: new Date(w.resetsAt).toISOString().slice(0, 16).replace('T', ' ') + 'Z' });
+      return kvRows(client, [[w.label, t('{n} left', { n: remaining(w.remaining) })].filter(Boolean).join(' '), reset].filter(Boolean).join(' · '), width);
+    })));
+    if (pi) out.push(section(t('Pi today'), width), ...line([usd(pi), tokens(pi), t('{n} sessions', { n: pi.sessions })].join(' · ')));
+    if (roles.length) out.push(section(t('Dispatch today'), width));
+  } else {
+    let row = '';
+    for (const part of radarSummary(facts, true)) {
+      if (row && visualLength(`${row} · ${part}`) > width - 2) { out.push(...line(row)); row = ''; }
+      row = row ? `${row} · ${part}` : part;
+    }
+    if (row) out.push(...line(row));
+  }
+  return out.concat(roles.flatMap(([role, s]) => line(`${monitorText(role)}  ${detail ? t('{n} jobs', { n: s.total }) + ' · ' : ''}${roleToday(s, !detail)}`)));
+}
 export function controlRows(data: ProjectSnapshot, width: number, now: number, healthyOpen: boolean, cursor?: string): MonitorRow[] {
   const out: MonitorRow[] = [], nameWidth = width < 56 ? 9 : 10, push = (row: MonitorRow) => out.push(row);
   const gap = () => { if (out.length) out.push(boardRow('')); };
@@ -144,6 +188,11 @@ export function controlRows(data: ProjectSnapshot, width: number, now: number, h
   // Preview the same default stop that the frame selects when the old cursor is gone.
   const selected = out.find((r) => r.item === cursor && r.item) ?? out.find((r) => r.item);
   out.push(...placePreview(data, selected?.item, width));
+  const radar = radarRows(radarFacts(data.radar), width);
+  if (radar.length) {
+    gap();
+    out.push(section(t('Radar'), width), ...radar);
+  }
   if (data.harnesses.length) {
     gap();
     out.push(section(t('Harnesses'), width));

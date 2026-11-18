@@ -11,6 +11,7 @@ import type { HudIO } from './hud.js';
 import { loadParitySettings, paritySettings } from '../statusline-parity/settings.js';
 import { collectAndRenderParity } from '../statusline-parity/collect.js';
 import { forwardInput } from '../statusline-parity/forward.js';
+import { recordClaudeQuota } from '../statusline-parity/quota-cache.js';
 
 export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--source ABSOLUTE_CLAUDE_ROOT]
        hud statusline --details [--lang en|zh] [--width COLUMNS] [--source ABSOLUTE_CLAUDE_ROOT]
@@ -21,7 +22,8 @@ export const STATUSLINE_HELP = `Usage: hud statusline [--width COLUMNS] [--sourc
        hud-statusline [same arguments]
 
 Render stdin Claude facts, with Work counts from this pane's job folders.
-No transcript reading, collection, network access or installation by default.
+Reported quota windows may be cached locally for the panel.
+No network access or installation by default.
 The shared bar uses HUD config.json statusline preferences, or defaults when absent.
 Import previews that section without writes; --apply writes HUD configuration only.
 Settings commands are explicit Linux opt-in operations under HOME/.claude.
@@ -132,6 +134,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO): Pro
     stderr: io.stderr,
     render: async (value, width) => {
       const now = Date.now();
+      recordClaudeQuota(value, io.env, now);
       const lanes = readThinJobs(getHudHome(io.env), { project: null, pane: io.env.HERDR_PANE_ID ?? null }, undefined,
         parity && !options.details ? { settledBefore: now - NOTICE_MS } : undefined);
       // The bar is one line: what the jobs ask and just did are events of its notice zone, not a row below.
