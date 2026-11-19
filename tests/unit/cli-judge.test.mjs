@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { readFileSync } from 'node:fs';
-import { judge, procStat, workerAlive, workerHasChild } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { reapWorkerTree, rememberWorkerTree } from '../../dist/roles/worker-tree.js';
+import { judge, procStat, reportMarker, workerAlive, workerHasChild } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 
 test('worker identity: missing start is unknown for a live PID, but absence is still an exit fact', async () => {
   assert.equal(workerAlive(process.pid, procStat(process.pid).start), true);
@@ -24,6 +27,47 @@ test('worker identity: missing start is unknown for a live PID, but absence is s
     await exited;
   }
   assert.equal(workerAlive(child.pid, null), false);
+});
+
+test('worker reap: cleans orphaned group members and detached descendants, not an unrelated group', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'hud-worker-tree-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const pane = 'w4E:p2';
+  writeFileSync(join(dir, 'SESSION.txt'), `LEFT=${pane}\nORCH=w4E:p1\n`);
+  const env = { ...process.env, HUD_JOB_DIR: dir, HERDR_PANE_ID: pane };
+  const script = `
+    const { spawn } = require('node:child_process');
+    const children = [false, true].map(detached => spawn(process.execPath,
+      ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'], { detached, stdio: 'ignore' }));
+    process.send(children.map(child => child.pid));
+  `;
+  const worker = spawn(process.execPath, ['-e', script], { detached: true, env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, env, stdio: 'ignore' });
+  const rootExit = once(worker, 'exit'), unrelatedExit = once(unrelated, 'exit');
+  let stamps = [];
+  t.after(async () => {
+    for (const child of [worker, unrelated]) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    for (const [pid, start] of stamps) if (workerAlive(pid, start)) process.kill(pid, 'SIGKILL');
+    await Promise.all([rootExit, unrelatedExit]);
+  });
+  const [[groupChild, detachedChild]] = await once(worker, 'message');
+  stamps = [groupChild, detachedChild].map((pid) => [pid, procStat(pid).start]);
+  const status = { slot: 'primary', task_dir: dir, pid: worker.pid, pid_start_time: procStat(worker.pid).start };
+  assert.equal(procStat(groupChild).pgid, worker.pid);
+  assert.equal(procStat(detachedChild).pgid, detachedChild);
+  rememberWorkerTree(dir, status);
+  // Model entry into the watcher after /quit, with only the detached child's pre-quit identity known.
+  const file = join(dir, 'worker-tree.json');
+  const snapshot = JSON.parse(readFileSync(file, 'utf8'));
+  snapshot.members = snapshot.members.filter(({ pid }) => pid !== groupChild);
+  writeFileSync(file, JSON.stringify(snapshot));
+  worker.kill('SIGTERM');
+  await rootExit;
+  assert.ok(stamps.every(([pid, start]) => workerAlive(pid, start)), 'both would survive worker-only reap');
+  const { complete } = await reapWorkerTree(dir, status, () => true, Boolean);
+  assert.equal(complete, true);
+  assert.ok(stamps.every(([pid, start]) => !workerAlive(pid, start)));
+  assert.ok(workerAlive(unrelated.pid, procStat(unrelated.pid).start));
 });
 
 const mcpArgs = ['-e', 'setInterval(() => {}, 1000)', 'hud-mcp'];
@@ -53,6 +97,51 @@ const initial = judge(null, facts, 0);
 const quiet = judge(initial, { ...facts, status: 'done', reportSig: 'report' }, 1000);
 const idle = judge(quiet, { ...facts, status: 'done', reportSig: 'report' }, 11_000);
 const noReport = judge(initial, { ...facts, status: 'done' }, 1000);
+
+test('judge: fresh report and stable done after its write settle and close with live children', () => {
+  for (const stateTrust of ['turn', 'advisory']) {
+    const observed = { ...facts, stateTrust, workingAt: 0, status: 'done', idleAt: 1000,
+      reportMtime: 900, reportSig: 'report', liveChild: true };
+    const first = judge(initial, observed, 1000);
+    const due = stateTrust === 'turn' ? 3000 : 11_000;
+    assert.equal(judge(first, observed, due - 1).state, 'working');
+    const settled = judge(first, observed, due);
+    assert.equal(settled.state, 'idle_grace');
+    assert.equal(settled.outputWritten, true);
+    assert.equal(judge(settled, { ...observed, reportRead: true }, due + 1).state, 'closed');
+    assert.equal(judge(first, { ...observed, reportRead: true }, due).action, 'quit');
+  }
+});
+
+test('judge: a stale report, stale completion marker or done before the report cannot override live children', () => {
+  const observed = { ...facts, status: 'done', idleAt: 500, reportMtime: 600, reportSig: 'report', liveChild: true };
+  assert.equal(judge(judge(initial, observed, 1000), observed, 21_000).state, 'working');
+  const old = { ...observed, idleAt: 2000, reportRead: true, reportMarker: 'prior',
+    turn: { ...turn, seq: 2, report_sig: 'report', report_marker: 'prior' } };
+  const held = judge(idle, old, 21_000);
+  assert.equal(held.state, 'working');
+  assert.equal(held.quietSince, null);
+  assert.equal(judge(held, old, 700_000).action, null);
+  const rewritten = { ...old, idleAt: 500, reportSig: 'rewritten' };
+  assert.equal(judge(judge(held, rewritten, 21_000), rewritten, 32_000).state, 'working');
+});
+
+test('judge: the worker marker can finish despite working status; later output invalidates it', () => {
+  const path = '/synthetic/job/report.md';
+  assert.equal(reportMarker(`worker instructions say report written: ${path}`, path), null);
+  const marker = reportMarker(`input\n⏺ report written: ${path}\n2 shells still running`, path);
+  assert.ok(marker);
+  const observed = { ...facts, reportSig: 'report', reportMarker: marker, paneSig: 'before', liveChild: true };
+  const first = judge(initial, observed, 1000);
+  const settled = judge(first, observed, 3000);
+  assert.equal(settled.state, 'idle_grace');
+  const more = { ...observed, paneSig: 'after', reportRead: true };
+  const reopened = judge(settled, more, 4000);
+  assert.equal(reopened.state, 'working');
+  assert.equal(reopened.outputWritten, false);
+  assert.equal(reopened.deadline, null);
+  assert.equal(judge(reopened, more, 15_000).state, 'working');
+});
 
 const rows = [
   ['working at rest', initial, facts, 30_000, { state: 'working', wakeAt: null, action: null }],

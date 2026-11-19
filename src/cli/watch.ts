@@ -47,7 +47,9 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: JobRo
       const dir = join(home, 'jobs', row.job);
       try {
         const observed = Date.parse(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).observed_at);
-        attentionUnread = !Number.isFinite(observed) || fs.statSync(join(dir, 'STATUS.json')).mtimeMs > observed;
+        // Failed dispatch may have only a job receipt. Compare timestamps at receipt precision.
+        const status = fs.statSync(join(dir, 'STATUS.json'), { throwIfNoEntry: false });
+        attentionUnread = !Number.isFinite(observed) || (status !== undefined && Math.floor(status.mtimeMs) > observed);
       } catch { /* unread */ }
     }
     const pending = (!row.parent_job && settled(row) && row.report_unread) || (attentionUnread && (row.blocked || row.display_state === 'failed'));

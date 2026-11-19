@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** One CLI job: pushed facts -> pure judge -> effects. No subprocesses or STATUS writes at rest. */
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, join } from 'node:path';
@@ -8,7 +9,8 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
-import { firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, reportMarker, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { rememberWorkerTree } from '../dist/src/roles/worker-tree.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { request } from './herdr-request.mjs';
 import { sonicChildren, sonicCollectPrompt } from './sonic-jobs.mjs';
@@ -43,7 +45,7 @@ let current = {
   settled_at: null, idle_deadline_at: null,
   ended_at: null, exit_reason: null, error: null, supervisor_pid: process.pid,
 };
-let prev = null, status = null, agentMissing = false, workingAt = null, tabClosed = false;
+let prev = null, status = null, agentMissing = false, workingAt = null, idleAt = null, tabClosed = false;
 let turn = readTurn(dir) ?? writeTurn(dir), signature = null, stamp;
 let stop = false, close = false, openQuestions = false, diskDirty = true, sendInFlight = false;
 let socket, lines, reconnectTimer, debounce, deadline, tickTimer, dirWatch, qaWatch;
@@ -90,14 +92,18 @@ function tick() {
   watchDir(); watchQa(); wake(true);
   tickTimer = setTimeout(tick, 30000);
 }
+function observeStatus(next) {
+  if (next === 'working' && (status !== 'working' || (workingAt ?? -Infinity) < Date.parse(turn.sent_at))) workingAt = Date.now();
+  if (next === 'done' || next === 'idle') idleAt = Date.now();
+  status = next;
+}
 async function seed() {
   const epoch = generation;
   const got = await request('agent.get', { target: name });
   if (stopped || epoch !== generation) return;
   agentMissing = got?.error?.code === 'agent_not_found';
   const agent = got?.result?.agent;
-  status = agent?.agent_status ?? null;
-  if (status === 'working') workingAt = Date.now();
+  observeStatus(agent?.agent_status ?? null);
   if (agent?.agent_session?.kind === 'id') current.agent_session_id = agent.agent_session.value;
 }
 function connect() {
@@ -129,8 +135,7 @@ function connect() {
     if (!data || (data.pane_id !== pane && !(kind === 'tab_closed' && data.tab_id === session.TAB))) return;
     generation += 1;
     if (kind === 'pane_agent_status_changed') {
-      status = data.agent_status; agentMissing = false;
-      if (status === 'working') workingAt = Date.now();
+      observeStatus(data.agent_status); agentMissing = false;
     } else if (kind === 'pane_closed' || kind === 'tab_closed') {
       tabClosed = true; diskDirty = true; // Read stop intent even if the file event has not arrived.
     } else if (kind === 'pane_agent_detected') { await seed(); }
@@ -155,14 +160,14 @@ function collect(isTick, checkChild = isTick && status !== 'working') {
     diskDirty = false;
   }
   const st = fs.statSync(output, { throwIfNoEntry: false });
-  const nextStamp = st ? `${st.mtimeMs}:${st.size}` : null;
+  const nextStamp = st ? `${st.mtimeMs}:${st.ctimeMs}:${st.ino}:${st.size}` : null;
   if (nextStamp !== stamp) { signature = reportSignature(dir); stamp = nextStamp; }
   return { turn, reportSig: signature, reportRead: reportWasRead(readAt, st?.isFile() ? st.mtimeMs : null),
     alive: workerAlive(current.pid, current.pid_start_time), status,
     liveChild: checkChild ? sampleChild() : null,
     sonic: sonicChildren(dir),
     stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
-    tick: isTick, agentMissing, workingAt, tabClosed };
+    tick: isTick, agentMissing, workingAt, idleAt, reportMtime: st && Math.floor(st.mtimeMs), tabClosed };
 }
 function write(result) {
   const terminal = ['closed', 'failed', 'stopped'].includes(result.state);
@@ -196,6 +201,16 @@ async function run() {
     }
     let observed = collect(isTick);
     if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
+    if (observed.reportSig && observed.reportSig !== observed.turn.report_sig && !observed.close && !terminalFact(observed)) {
+      const sample = observed;
+      const text = (await request('pane.read', { pane_id: pane, source: 'recent_unwrapped', lines: 40 }))?.result?.read?.text;
+      observed = collect(isTick);
+      if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
+      if (typeof text === 'string' && sample.turn.seq === observed.turn.seq && sample.reportSig === observed.reportSig) {
+        observed.paneSig = createHash('sha256').update(text.trimEnd()).digest('hex');
+        observed.reportMarker = reportMarker(text, output);
+      }
+    }
     let next = judge(prev, observed, Date.now());
     if (next.action === 'sample') {
       observed = { ...observed, liveChild: sampleChild() };
@@ -205,7 +220,7 @@ async function run() {
       const { open, uncollected } = sonicChildren(dir);
       if (open || !uncollected.length) { wake(); return; }
       const prompt = sonicCollectPrompt(dir, output, uncollected);
-      writeTurn(dir);
+      writeTurn(dir, false, undefined, observed.reportMarker);
       if (!effect(['agent', 'prompt', name, prompt]).ok) throw new Error('sonic collect prompt failed');
       diskDirty = true; wake(); return;
     }
@@ -228,7 +243,7 @@ async function run() {
         ...(decision.reason ? { reason: decision.reason } : {}), at: new Date().toISOString() };
       if (decision.action === 'prompt-report') {
         reportPromptSent = true;
-        const sent = writeTurn(dir, true);
+        const sent = writeTurn(dir, true, undefined, reportMarker(text, output));
         if (!effect(['agent', 'prompt', name, `Write your report to ${output} now; if work remains, finish it first.`]).ok) {
           decision.action = 'needs-human'; decision.reason = 'prompt-failed';
           current.quiet_decision = { ...current.quiet_decision, action: 'needs-human', reason: 'prompt-failed' };
@@ -241,7 +256,10 @@ async function run() {
       next = judge(prev, { ...observed, decision }, Date.now());
     }
     // Settlement is independent of /quit delivery; the global watcher owns cleanup and retries.
-    if (next.action === 'quit' && observed.alive !== false) effect(['agent', 'prompt', name, '/quit']);
+    if (next.action === 'quit' && observed.alive !== false) {
+      rememberWorkerTree(dir, current);
+      effect(['agent', 'prompt', name, '/quit']);
+    }
     write(next);
     if (stopped) return;
     prev = next;

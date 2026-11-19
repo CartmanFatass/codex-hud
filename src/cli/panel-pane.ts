@@ -5,6 +5,7 @@ import { loadSettings } from '../settings.js';
 import { panelWidth, DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { truncateAnsi } from '../render/colors.js';
 import { runHerdr, runCommand, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
+import { reapWorkerTree } from '../roles/worker-tree.js';
 
 async function command(argv: string[], env: NodeJS.ProcessEnv) {
   const result = await runHerdr(argv, env);
@@ -53,12 +54,17 @@ const readJson = (file: string): Record<string, unknown> | null => {
 };
 /** Stop a HUD job as `hud_close` does: a CLI job already in its idle grace is asked to quit, then `pi-role-reap` reaps it. */
 export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
-  if (isRecord(readJson(join(jobDir, 'job.json'))?.cli) && readJson(join(jobDir, 'STATUS.json'))?.state === 'idle_grace') {
-    try { fs.writeFileSync(join(jobDir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 }); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return { ok: false, reason: 'close request failed' }; }
-  }
-  const result = await runCommand('pi-role-reap', [jobDir], env, { budgetMs: 60_000 });
-  return result.ok ? { ok: true } : { ok: false, reason: result.reason === 'unavailable' ? 'pi-role-reap missing' : 'reap failed' };
+  const status = readJson(join(jobDir, 'STATUS.json'));
+  try {
+    const { result, complete } = await reapWorkerTree(jobDir, status, () => {
+      if (isRecord(readJson(join(jobDir, 'job.json'))?.cli) && status?.state === 'idle_grace') {
+        try { fs.writeFileSync(join(jobDir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 }); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+      }
+      return runCommand('pi-role-reap', [jobDir], env, { budgetMs: 60_000 });
+    }, (run) => run.ok);
+    return complete ? { ok: true } : { ok: false, reason: result.reason === 'unavailable' ? 'pi-role-reap missing' : 'reap failed' };
+  } catch { return { ok: false, reason: 'reap failed' }; }
 }
 
 export async function closePanelPane(pane: string, env: NodeJS.ProcessEnv): Promise<void> {

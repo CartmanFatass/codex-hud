@@ -8,7 +8,8 @@ import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
-import { terminalFact, workerAlive, workerHasChild, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { reapWorkerTree } from '../dist/src/roles/worker-tree.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { reapWorktree } from '../dist/packages/hud-mcp/src/managed-worktree.js';
 import { request } from './herdr-request.mjs';
@@ -298,10 +299,10 @@ async function scan(retryWatch = false) {
         const target = session.match(/^PRIMARY=([^\r\n]+)$/m)?.[1];
         const agent = target && (await request('agent.get', { target }))?.result?.agent;
         const latest = json(statusFile);
+        // Pi publishes idle_grace with output_written only after agent_settled and a changed report.
+        // Still recheck herdr and the receipt in case a new turn has started.
         if (!['idle', 'done'].includes(agent?.agent_status) || closedTabs.has(tab) ||
-            readCloseTurn(dir, json(jobFile), latest) !== readInGrace ||
-            workerHasChild(latest.pid ?? null, latest.pid_start_time ?? null, readInGrace) !== false) continue;
-        // The check isn't atomic with the external reaper; a later start can still race it.
+            readCloseTurn(dir, json(jobFile), latest) !== readInGrace) continue;
       }
       const ownership = JSON.stringify([session, status.pid, status.pid_start_time]);
       const retry = reapRetries.get(id);
@@ -309,9 +310,10 @@ async function scan(retryWatch = false) {
         nearest = Math.min(nearest, retry.at);
         continue;
       }
-      const result = spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000 });
-      const message = `reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}`;
-      if (result.status === 0) { reapRetries.delete(id); log(message); }
+      const { result, complete } = await reapWorkerTree(dir, status,
+        () => spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000 }), (run) => run.status === 0);
+      const message = `reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}${result.status === 0 && !complete ? ' descendants still running' : ''}`;
+      if (complete) { reapRetries.delete(id); log(message); }
       else {
         warn(`reap ${id}`, message);
         if (!readInGrace) {
@@ -324,7 +326,7 @@ async function scan(retryWatch = false) {
           nearest = Math.min(nearest, at);
         }
       }
-      if (result.status === 0 && readInGrace) {
+      if (complete && readInGrace) {
         // Pi may have published shutdown STATUS during reap. Preserve those facts and name the trigger.
         const latest = json(statusFile);
         if (latest && ['idle_grace', 'closed'].includes(latest.state)) {
@@ -333,7 +335,7 @@ async function scan(retryWatch = false) {
           fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);
         }
       }
-      if (result.status === 0 && job) {
+      if (complete && job) {
         // Read again: hud_read/send/create may have updated the receipt during reap.
         const latest = json(jobFile);
         if (latest) {

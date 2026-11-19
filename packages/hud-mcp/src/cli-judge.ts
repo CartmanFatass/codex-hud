@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { QuietDecision } from './quiet-decision.js';
+import { procStat } from '../../../src/roles/worker-tree.js';
+export { procStat };
 
 export interface Turn {
   seq: number;
   sent_at: string;
   report_sig: string | null;
+  report_marker?: string | null;
   report_prompt_sent?: boolean;
   first_sent_at?: string;
   send?: { key: string; pid: number; start: string | null };
@@ -35,14 +38,26 @@ export function readTurn(dir: string): Turn | null {
   }
 }
 
+/** Hash the last matching completion line with its local context, not the volatile footer. */
+export function reportMarker(text: string, path: string): string | null {
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const matches = lines.flatMap((line, index) => line.replace(/^[⏺●•]\s+/, '') === `report written: ${path}`
+    ? [index] : []);
+  const last = matches.at(-1);
+  // An older marker in scrollback is not the last response if another answer or tool block follows it.
+  if (last === undefined || lines.slice(last + 1).some((line) => /^[⏺●•]\s+\S/.test(line))) return null;
+  return createHash('sha256').update(JSON.stringify([matches.length, ...lines.slice(Math.max(0, last - 2), last)])).digest('hex');
+}
+
 /** Publish before input: a fast report must differ from the send-time baseline. */
-export function writeTurn(dir: string, reportPromptSent?: boolean, send?: Turn['send']): Turn {
+export function writeTurn(dir: string, reportPromptSent?: boolean, send?: Turn['send'], marker?: string | null): Turn {
   const prev = readTurn(dir);
   const sent = reportPromptSent || prev?.report_prompt_sent;
   const turn: Turn = {
     seq: (prev?.seq ?? 0) + 1,
     sent_at: new Date().toISOString(),
     report_sig: reportSignature(dir),
+    report_marker: marker,
     ...(sent ? { report_prompt_sent: true } : {}),
     ...(prev && firstInput(prev) ? { first_sent_at: firstInput(prev) } : {}),
     ...(send ? { send } : {}),
@@ -55,18 +70,6 @@ export function saveTurn(dir: string, turn: Turn): void {
   const file = join(dir, 'turn.json');
   fs.writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(turn) + '\n', { mode: 0o600 });
   fs.renameSync(`${file}.${process.pid}.tmp`, file);
-}
-
-export function procStat(pid: number) {
-  try {
-    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    const fields = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/);
-    return /^\d+$/.test(fields[19] ?? '')
-      ? { state: fields[0], ppid: Number(fields[1]), threads: Number(fields[17]), start: fields[19]! }
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 export function workerAlive(pid: number | null, start: string | null): boolean | null {
@@ -189,6 +192,12 @@ export interface Judgment {
   decisionWait?: boolean; // A quiet decision's wait still uses the full idle grace.
   missingTicks: number;
   wakeAt: number | null;
+  paneSig?: string;
+  declaredAt?: number;
+  invalidatedAt?: number;
+  rejectedMarker?: string | null;
+  marker?: string | null;
+  idleSince?: number;
 }
 export const REPORT_READ_EXIT = 'closed after report read';
 
@@ -209,6 +218,10 @@ export interface Facts {
   tick?: boolean;
   agentMissing?: boolean;
   workingAt?: number | null;
+  idleAt?: number | null;
+  reportMtime?: number;
+  paneSig?: string;
+  reportMarker?: string | null;
   tabClosed?: boolean;
   decision?: QuietDecision & { failReason?: string };
   supervisorError?: string;
@@ -233,8 +246,26 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   } : { ...prev, action: null, blocked: false, reason: null, wakeAt: null };
   const report = facts.reportSig !== null && facts.reportSig !== facts.turn.report_sig;
   const readReport = report && facts.reportRead;
-  if (next.reportSig !== facts.reportSig || (next.quietSince !== null && (facts.workingAt ?? -Infinity) > next.quietSince)) next.quietSince = null;
+  const reportChanged = next.reportSig !== facts.reportSig;
+  const paneChanged = facts.paneSig !== undefined && next.paneSig !== undefined && facts.paneSig !== next.paneSig;
+  const worked = (at: number) => (facts.workingAt ?? -Infinity) > at;
+  if (next.declaredAt !== undefined && (paneChanged || reportChanged || worked(next.declaredAt))) {
+    next.rejectedMarker = next.marker;
+    next.invalidatedAt = now;
+    next.declaredAt = undefined;
+    next.state = 'working';
+    next.outputWritten = false;
+    next.settledAt = next.deadline = null;
+  }
+  const interrupted = next.quietSince !== null && worked(next.quietSince);
+  if ((paneChanged || interrupted) && next.marker === facts.reportMarker) next.rejectedMarker = next.marker;
+  if (reportChanged || paneChanged || interrupted || (facts.reportMarker != null && facts.reportMarker !== next.marker)) {
+    next.quietSince = null;
+    next.idleSince = undefined;
+  }
+  next.marker = facts.reportMarker ?? next.marker;
   next.reportSig = facts.reportSig;
+  next.paneSig = facts.paneSig ?? next.paneSig;
   const end = (state: Judgment['state'], reason: string, quit = false): Judgment => ({
     ...next, state, exitReason: reason, outputWritten: report,
     settledAt: next.settledAt ?? now, action: quit ? 'quit' : null, wakeAt: null,
@@ -256,27 +287,36 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     return { ...next, state: 'waiting_orchestrator', blocked: facts.status === 'blocked', quietSince: null };
   }
   if (facts.sonic?.open) return { ...next, state: 'working', quietSince: null, quietHandled: false, decisionWait: false };
-  // Only explicit input or new sonic work reopens a settled turn. Advisory flapping cannot re-baseline it.
-  if (!newTurn && prev?.state === 'idle_grace' && !collectSonic) {
+  if (next.state === 'idle_grace' && !collectSonic) {
     if (!readReport && now < next.deadline!)
       return { ...next, state: 'idle_grace', wakeAt: next.deadline };
-    if (facts.status === 'working' || facts.liveChild) return { ...next, state: 'idle_grace' };
-    if (facts.liveChild === null) return { ...next, state: 'idle_grace', action: 'sample' };
+    if (next.declaredAt === undefined) {
+      if (facts.status === 'working' || facts.liveChild) return { ...next, state: 'idle_grace' };
+      if (facts.liveChild === null) return { ...next, state: 'idle_grace', action: 'sample' };
+    }
     return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
   }
-  const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= Date.parse(facts.turn.sent_at)
-    && (facts.status === 'done' || facts.status === 'idle');
-  const quiet = facts.status !== 'working' && (facts.status !== null || report);
+  const idle = facts.status === 'done' || facts.status === 'idle';
+  const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= Date.parse(facts.turn.sent_at) && idle;
+  const marker = report && facts.reportMarker != null && facts.reportMarker !== next.rejectedMarker &&
+    (facts.turn.seq === 1 || facts.turn.report_marker !== undefined) && facts.reportMarker !== facts.turn.report_marker;
+  const ended = idle && (facts.idleAt ?? -Infinity) >= Math.max(facts.reportMtime ?? Infinity, next.invalidatedAt ?? -Infinity);
+  next.idleSince = ended ? next.idleSince ?? now : undefined;
+  const quiet = marker || (facts.status !== 'working' && (facts.status !== null || report));
   next.quietSince = quiet ? (next.quietSince ?? now) : null;
   if (!report && facts.liveChild) next.quietSince = null;
   if (next.quietSince === null) return { ...next, state: 'working', quietHandled: false, decisionWait: false };
   if (report || collectSonic) {
     // A trusted turn end shortens stability; errors retain the full 60s outage window.
-    const due = Math.max(next.quietSince + (trustedEnd ? 2000 : 10_000), facts.status === null ? next.errorsSince! + 60_000 : 0);
+    const stableFrom = !marker && ended && report ? Math.max(next.quietSince, next.idleSince!) : next.quietSince;
+    const due = Math.max(stableFrom + (trustedEnd || marker ? 2000 : 10_000),
+      facts.status === null && !marker ? next.errorsSince! + 60_000 : 0);
     if (now < due) return { ...next, state: 'working', wakeAt: due };
-    if (facts.liveChild === null) return { ...next, state: 'working', action: 'sample' };
-    if (facts.liveChild) return { ...next, state: 'working' };
+    const declared = report && (marker || ended);
+    if (!declared && facts.liveChild === null) return { ...next, state: 'working', action: 'sample' };
+    if (!declared && facts.liveChild) return { ...next, state: 'working' };
     if (collectSonic) return { ...next, state: 'working', action: 'collect-sonic' };
+    if (declared) next.declaredAt = now;
     if (readReport || !facts.canContinue) return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
     return { ...next, state: 'idle_grace', outputWritten: true, settledAt: now,
       deadline: now + facts.graceMs, wakeAt: now + facts.graceMs };

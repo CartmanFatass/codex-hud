@@ -8,7 +8,8 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { procStat, readTurn, saveTurn, workerAlive, writeTurn } from './cli-judge.js';
+import { procStat, readTurn, reportMarker, saveTurn, workerAlive, writeTurn } from './cli-judge.js';
+import { reapWorkerTree } from '../../../src/roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../../../src/cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
 import { jobChanges, jobRow, readJobProgress, type JobRow } from '../../../src/collectors/thin-jobs.js';
@@ -821,14 +822,12 @@ function readRow(job: Job, markExhaustion = true) {
 }
 
 function failureUnobserved(job: Job): boolean {
-  // As in hud watch catch-up, a newer STATUS needs attention again.
   const observed = Date.parse(job.observed_at ?? '');
   if (!Number.isFinite(observed)) return true;
   try {
-    return fs.statSync(join(directory(job.job), 'STATUS.json')).mtimeMs > observed;
-  } catch {
-    return true;
-  }
+    const status = fs.statSync(join(directory(job.job), 'STATUS.json'), { throwIfNoEntry: false });
+    return status !== undefined && Math.floor(status.mtimeMs) > observed;
+  } catch { return true; }
 }
 
 function compactRow(row: JobRow) {
@@ -1430,7 +1429,14 @@ async function call(name: string, args: Args): Promise<unknown> {
         : { ok: false, sent: false, code: 'send_failed', ...outcome };
     }
     const agent = primary(dir);
-    const { row, status } = readRow(job);
+    const prior = job.cli ? readTurn(dir) : null;
+    const pane = prior && slice(join(dir, 'SESSION.txt'), 16384)?.text.match(/^LEFT=([^\r\n]+)$/m)?.[1];
+    let marker: string | null | undefined;
+    if (pane) {
+      const snapshot = await runHerdr(['pane', 'read', pane, '--source', 'recent-unwrapped', '--lines', '40'], process.env, { budgetMs: 1000 });
+      if (snapshot.ok) marker = reportMarker(paneText(snapshot.stdout), join(dir, 'report.md'));
+    }
+    const { row, status } = readRow(json<Job>(join(dir, 'job.json')) ?? job);
     const state = row.state ?? '';
     // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
     // continues in its idle grace when the role allows (owner, 2026-11-11).
@@ -1450,8 +1456,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     if (!job.cli) job.pi_sent_at = new Date().toISOString();
     save(job);
     // Baseline before typing: even a fast report belongs to this explicit turn.
-    const prior = job.cli ? readTurn(dir) : null;
-    const turn = job.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }) : null;
+    const turn = job.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }, marker) : null;
     // agent prompt types the text and submits it with Enter.
     const result = await run('herdr', ['agent', 'prompt', agent, message]);
     if (turn && refusedBeforeInput(result)) {
@@ -1502,18 +1507,26 @@ async function call(name: string, args: Args): Promise<unknown> {
       return { ok: true, written: false };
     }
   }
-  // Idle grace already finished: reap quits and the supervisor closes. A working job is stop-requested and SIGTERMed.
-  if (job.cli && readRow(job).row.state === 'idle_grace') {
-    try {
-      fs.writeFileSync(join(dir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+  const { row, status } = readRow(job);
+  const { result, complete } = await reapWorkerTree(dir, status, () => {
+    // Idle grace already finished: reap quits and the supervisor closes. A working job is stopped.
+    if (job.cli && row.state === 'idle_grace') {
+      try {
+        fs.writeFileSync(join(dir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
     }
+    return run('pi-role-reap', [dir]);
+  }, (run) => run.exit_code === 0);
+  if (!isWorker && complete && row.display_state === 'failed') {
+    const latest = json<Job>(join(dir, 'job.json')) ?? job;
+    save({ ...latest, observed_at: new Date().toISOString() });
   }
-  const result = await run('pi-role-reap', [dir]);
   return {
-    exit_code: result.exit_code,
-    last_line: (result.stdout.trim() || result.stderr.trim()).split('\n').at(-1) ?? '',
+    exit_code: complete ? 0 : result.exit_code || 1,
+    last_line: !complete && result.exit_code === 0 ? 'worker descendants still running' :
+      (result.stdout.trim() || result.stderr.trim()).split('\n').at(-1) ?? '',
   };
 }
 

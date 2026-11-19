@@ -498,6 +498,8 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
           if (has('herdr-errors') || has('no-pid')) { socket.write(JSON.stringify({ id: req.id, error: { code: 'agent_not_found' } }) + '\n'); return; }
           reply({ agent: { agent_status: sub?.state ?? 'working', agent_session: has('late-session') && !has('exit-after-done') && !has('socket-got-session') ? null : { kind: 'id', value: 'synthetic-grok-session' } } });
           fs.writeFileSync(join(env.HOME, 'socket-got-session'), '');
+        } else if (req.method === 'pane.read') {
+          reply({ read: { text: has('pane-read') ? fs.readFileSync(join(env.HOME, 'pane-read'), 'utf8') : 'synthetic pane' } });
         } else if (req.method === 'pane.process_info') {
           const pidFile = ['cli-pid', 'fake-agent-pid'].map((file) => join(env.HOME, file)).find((file) => fs.existsSync(file));
           const id = [...subscribers].filter((item) => item.supervisor).at(-1)?.id;
@@ -967,30 +969,17 @@ test('read-close: rejected CLI quit keeps closed while the watcher retries termi
   await until(() => !procStat(worker.pid));
 });
 
-test('read-close: Pi ignores pre-dispatch children but waits for current-turn children', { timeout: 10000 }, async (t) => {
+test('read-close: a settled Pi with a fresh report closes and reaps a current-turn child', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, true, '', 200);
   const worker = fakeCliWithChild(t, f);
   await f.startCliSocket();
-  const oldChild = await worker.start();
-  const first = await f.call('hud_create', { role: 'imp', request_key: 'pi-old-child', task: 'Synthetic task.' });
-  await publishPiGrace(first, worker);
-  assert.match((await f.call('hud_read', { job: first.job })).report, /^Synthetic /);
-  await until(() => readCloseReaped(first));
-  assert.ok(procStat(oldChild));
-  worker.stop();
-  await until(() => procStat(oldChild) === null);
-
-  const second = await f.call('hud_create', { role: 'imp', request_key: 'pi-new-child', task: 'Synthetic task.' });
-  const newChild = await worker.start();
-  await publishPiGrace(second, worker);
-  assert.match((await f.call('hud_read', { job: second.job })).report, /^Synthetic /);
-  await until(() => statusQueries(f, second) >= 2);
-  assert.equal(reapAttempts(f, second), 0);
-  assert.equal(cliState(second.task_dir).state, 'idle_grace');
-  worker.stop();
-  await until(() => procStat(newChild) === null);
-  await until(() => readCloseReaped(second));
-  assert.equal(cliState(second.task_dir).exit_reason, 'closed after report read');
+  const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-new-child', task: 'Synthetic task.' });
+  const child = await worker.start();
+  await publishPiGrace(job, worker);
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  await until(() => readCloseReaped(job));
+  assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
+  await until(() => procStat(child) === null);
 });
 
 test('read-close: listing an unread report leaves the CLI grace deadline in place', { timeout: 10000 }, async (t) => {
@@ -1014,27 +1003,28 @@ test('read-close: listing an unread report leaves the CLI grace deadline in plac
   await until(() => readCloseReaped(job));
 });
 
-test('read-close: a live CLI child holds the close until the safety tick sees it exit', { timeout: 10000 }, async (t) => {
+test('read-close: the CLI end line settles a worker still marked working, and output reopens it', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'child-read-cli', 8);
   const job = await f.call('hud_create', { role: 'child-read-cli', request_key: 'child-read-close', task: 'Synthetic task.' });
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(job.task_dir)?.pid === worker.pid);
   const child = await worker.start();
-  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
-  const queries = statusQueries(f, job);
-  await until(() => statusQueries(f, job) > queries);
+  const report = join(job.task_dir, 'report.md'), pane = join(f.env.HOME, 'pane-read');
+  fs.writeFileSync(pane, `⏺ report written: ${report}\n2 shells still running\n`);
+  fs.writeFileSync(report, 'Synthetic report.\n');
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
   assert.ok(procStat(child));
-  assert.equal(cliState(job.task_dir).state, 'idle_grace');
+  // A read wakes the supervisor; it must resample the pane before closing.
+  fs.appendFileSync(pane, 'More worker output.\n');
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  await until(() => cliState(job.task_dir)?.state === 'working');
   assert.equal(readCloseQuit(f, job), false);
-  assert.equal(readCloseReaped(job), undefined);
-  assert.equal((await f.call('hud_send', { job: job.job, message_key: 'repair', text: 'Synthetic repair.' })).code, 'not_continuable');
-  worker.stop();
-  await until(() => procStat(child) === null);
-  await until(() => cliState(job.task_dir)?.state === 'closed', 1650);
-  assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
-  assert.ok(readCloseQuit(f, job));
+  f.push(job.job, 'done');
   await until(() => readCloseReaped(job));
+  assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
+  await until(() => procStat(child) === null);
 });
 
 test('read-close: a live pre-turn CLI child does not block settlement or close', { timeout: 10000 }, async (t) => {
@@ -1048,10 +1038,10 @@ test('read-close: a live pre-turn CLI child does not block settlement or close',
   await until(() => readCloseReaped(job));
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
   assert.ok(readCloseQuit(f, job));
-  assert.ok(procStat(child), 'the older child was still alive at close');
+  await until(() => procStat(child) === null);
 });
 
-test('supervisor events: an in-turn child holds settlement until the safety tick sees it exit', { timeout: 10000 }, async (t) => {
+test('supervisor events: herdr idle after a fresh report settles with an in-turn child', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -1062,20 +1052,8 @@ test('supervisor events: an in-turn child holds settlement until the safety tick
   const child = await worker.start();
   fs.writeFileSync(join(job.task_dir, 'report.md'), 'Report while tests finish.\n');
   f.push(job.job, 'idle');
-  const before = statusQueries(f, job);
-  await until(() => statusQueries(f, job) > before);
-  await new Promise((r) => setTimeout(r, 100));
-  assert.equal(cliState(job.task_dir).state, 'working');
-  assert.equal(cliState(job.task_dir).settled_at, null);
-  assert.equal(cliState(job.task_dir).output_written, false);
-  assert.ok(procStat(child));
-
-  worker.stop();
-  await until(() => procStat(child) === null);
-  const queriesAtExit = statusQueries(f, job);
-  // No pushed status or report file event on child exit; the real safety tick must notice.
   await until(() => cliState(job.task_dir)?.state === 'idle_grace', 2200);
-  assert.ok(statusQueries(f, job) <= queriesAtExit + 1);
+  assert.ok(procStat(child), 'unread report keeps the worker available');
   assert.equal(cliState(job.task_dir).output_written, true);
 });
 
@@ -1185,15 +1163,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
     f.push(job.job, 'idle');
     if (work) {
       assert.match((await f.call('hud_read', { job: job.job })).report, /Synthetic fresh report/);
-      const queries = statusQueries(f, job);
-      await until(() => statusQueries(f, job) > queries);
-      await new Promise((r) => setTimeout(r, 100));
-      assert.equal(cliState(dir).state, 'working');
-      assert.equal(cliState(dir).output_written, false);
-      assert.equal(readCloseQuit(f, job), false);
-      assert.equal(readCloseReaped(job), undefined);
-      process.kill(work);
-      await until(() => !procStat(work));
+      assert.ok(procStat(work));
     } else {
       await until(() => cliState(dir)?.state === 'idle_grace');
       const listing = await f.call('hud_read');
@@ -1206,7 +1176,8 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
     assert.equal(cliState(dir).output_written, true);
     assert.match((await f.call('hud_read')).changes.find((line) => line.startsWith(job.job)), /: closed/);
     await until(() => readCloseReaped(job));
-    assert.ok(pids.every((pid) => procStat(pid)), 'bootstrap was alive during closure');
+    assert.ok([...pids, ...(work ? [work] : [])].every((pid) => !procStat(pid) || procStat(pid)?.state === 'Z'),
+      'cleanup reaps both bootstrap helpers and turn work');
   });
 }
 
@@ -3287,6 +3258,35 @@ test('local CLI trust refuses missing grants without creating a tab', async (t) 
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
 });
 
+test('hud watch catch-up does not replay reportless failures after hud_read or hud_close', async (t) => {
+  const f = await fixture(t);
+  const cwd = join(f.root, 'untrusted checkout');
+  fs.mkdirSync(cwd);
+  const jobs = [];
+  for (const method of ['hud_read', 'hud_close', 'unhandled']) {
+    const job = await f.call('hud_create', { role: 'imp', on: 'claude', request_key: method, task: 'Synthetic attempt.', cwd });
+    assert.equal(job.code, 'untrusted_cwd');
+    jobs.push(job);
+    if (method === 'hud_read') {
+      // A failed dispatch can also have only a job receipt, not a STATUS file.
+      fs.unlinkSync(join(job.task_dir, 'STATUS.json'));
+      assert.equal((await f.call(method, { job: job.job })).display_state, 'failed');
+    } else if (method === 'hud_close') {
+      assert.equal((await f.call(method, { job: job.job })).exit_code, 0);
+    }
+  }
+  for (let i = 0; i < 2; i++) {
+    const lines = [], ac = new AbortController();
+    t.after(() => ac.abort());
+    const watch = watchCommand([], { env: f.env, stdout: (line) => lines.push(line.trim()), stderr: () => {} }, { signal: ac.signal });
+    await until(() => lines.length);
+    ac.abort();
+    await watch;
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], new RegExp(jobs[2].job));
+  }
+});
+
 test('a grok trust dialog is declined and the job fails naming the directory', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'trust-dialog'), '');
@@ -4920,7 +4920,7 @@ test('no /quit before done for a noncontinuable CLI', { timeout: 15000 }, async 
   assert.ok(f.commands().some((c) => c.args[1] === 'prompt' && c.args[3] === '/quit'));
 });
 
-test('a child that starts during idle grace prevents automatic quit and watcher reap until exit', { timeout: 10000 }, async (t) => {
+test('an unread declared report closes at the idle deadline and reaps leftovers', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   writeCliRole(f, 'grace-bg-cli', 1, true);
@@ -4933,15 +4933,11 @@ test('a child that starts during idle grace prevents automatic quit and watcher 
   const child = await worker.start();
   const quit = () => f.commands().some((c) => c.args[1] === 'prompt' && c.args[2] === `${graceJob.job}-primary` && c.args[3] === '/quit');
   const reaped = () => f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === graceJob.task_dir);
-  await new Promise((r) => setTimeout(r, 1300)); // Past the 1s accelerated idle deadline.
   assert.ok(procStat(child));
-  assert.equal(cliState(graceJob.task_dir).state, 'idle_grace');
-  assert.equal(quit(), false);
-  assert.equal(reaped(), false);
-  worker.stop();
   await until(() => cliState(graceJob.task_dir)?.state === 'closed', 2200);
   await until(reaped);
   assert.ok(quit());
+  await until(() => procStat(child) === null);
 });
 
 test('exit is a /proc pid check: herdr errors keep working while pid lives, PID gone closes or fails, unknown PID asks after 3 ticks', { timeout: 20000 }, async (t) => {
