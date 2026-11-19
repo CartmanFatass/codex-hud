@@ -251,7 +251,8 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   if (awaitingReceipt || (next.declared && (!declared || reportChanged))) {
     next.state = 'working';
     next.outputWritten = false;
-    next.settledAt = next.deadline = next.quietSince = null;
+    next.settledAt = next.deadline = null;
+    if (next.declared) next.quietSince = null;
   }
   next.declared = declared;
   if (reportChanged || (next.quietSince !== null && (facts.workingAt ?? -Infinity) > next.quietSince)) next.quietSince = null;
@@ -276,7 +277,11 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   if (facts.openQuestions || (!receipt && facts.status === 'blocked')) {
     return { ...next, state: 'waiting_orchestrator', blocked: facts.status === 'blocked', quietSince: null };
   }
-  if (awaitingReceipt || facts.sonic?.open) return { ...next, state: 'working', quietSince: null, quietHandled: false, decisionWait: false };
+  if (facts.sonic?.open) return { ...next, state: 'working', quietSince: null, quietHandled: false, decisionWait: false };
+  if (awaitingReceipt) {
+    next.quietHandled = false;
+    next.decisionWait = false;
+  }
   if (next.state === 'idle_grace' && !collectSonic) {
     if (!readReport && now < next.deadline!)
       return { ...next, state: 'idle_grace', wakeAt: next.deadline };
@@ -290,16 +295,22 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     && (facts.status === 'done' || facts.status === 'idle');
   const quiet = declared || (facts.status !== 'working' && (facts.status !== null || report));
   next.quietSince = quiet ? (next.quietSince ?? now) : null;
-  if (!report && facts.liveChild) next.quietSince = null;
+  if ((!report || awaitingReceipt) && facts.liveChild) next.quietSince = null;
   if (next.quietSince === null) return { ...next, state: 'working', quietHandled: false, decisionWait: false };
-  if (report || collectSonic) {
-    // A trusted turn end shortens stability; errors retain the full 60s outage window.
+  if (report || collectSonic || awaitingReceipt) {
+    // A trusted turn end shortens stability, not the fresh-receipt grace or the outage window.
     if (!declared) {
-      const due = Math.max(next.quietSince + (trustedEnd ? 2000 : 10_000), facts.status === null ? next.errorsSince! + 60_000 : 0);
+      const stableMs = trustedEnd ? 2000 : 10_000;
+      const due = Math.max(next.quietSince + Math.max(stableMs, awaitingReceipt ? facts.graceMs : 0),
+        facts.status === null ? next.errorsSince! + 60_000 : 0);
       if (now < due) return { ...next, state: 'working', wakeAt: due };
       if (facts.liveChild === null) return { ...next, state: 'working', action: 'sample' };
       if (facts.liveChild) return { ...next, state: 'working' };
     }
+    if (awaitingReceipt) return {
+      ...next, state: 'waiting_orchestrator',
+      reason: 'report changed after done receipt; no new receipt (hud_send to continue or hud_close to stop)',
+    };
     if (collectSonic) return { ...next, state: 'working', action: 'collect-sonic' };
     if (readReport || !facts.canContinue) return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
     return { ...next, state: 'idle_grace', outputWritten: true, settledAt: now,

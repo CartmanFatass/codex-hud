@@ -158,18 +158,45 @@ test('judge: matching receipt settles; shell counter changes and missing pane re
   assert.equal(judge(initial, { ...declared, canContinue: false }, 1000).action, 'quit');
 });
 
-for (const liveChild of [true, false]) test(`judge: rewritten report requires a fresh receipt (liveChild=${liveChild})`, () => {
+const rewritten = { ...declared, reportSig: 'rewrite', reportRead: true, status: 'idle', liveChild: false,
+  stateTrust: 'turn', workingAt: 0 };
+
+test('judge: rewritten report hands a quiet turn to the main session after the role grace', () => {
   const settled = judge(initial, declared, 1000);
-  const updated = { ...declared, reportSig: 'rewrite', reportRead: true, status: 'idle', liveChild };
+  const due = 2000 + facts.graceMs;
   for (const previous of [settled, null]) { // A restarted supervisor still sees the old receipt on disk.
-    const reopened = judge(previous, updated, 2000);
+    const reopened = judge(previous, rewritten, 2000);
     assert.equal(reopened.state, 'working');
-    assert.equal(reopened.outputWritten, false);
-    assert.equal(reopened.deadline, null);
-    const later = judge(reopened, updated, 32_000);
-    assert.equal(later.state, 'working');
-    assert.equal(later.action, null);
-    assert.equal(judge(later, { ...updated, done: { ...done, report_sig: 'rewrite' } }, 32_000).action, 'quit');
+    assert.equal(reopened.wakeAt, due);
+    const beforeDue = judge(reopened, rewritten, due - 1);
+    assert.equal(beforeDue.state, 'working');
+    assert.equal(judge(beforeDue, { ...rewritten, liveChild: null }, due).action, 'sample');
+    const handedOff = judge(beforeDue, rewritten, due);
+    assert.equal(handedOff.state, 'waiting_orchestrator');
+    assert.equal(handedOff.reason, 'report changed after done receipt; no new receipt (hud_send to continue or hud_close to stop)');
+    assert.equal(handedOff.action, null);
+    assert.equal(handedOff.outputWritten, false);
+    assert.equal(handedOff.settledAt, null);
+    assert.equal(handedOff.deadline, null);
+    assert.deepEqual(judge(handedOff, rewritten, due + 30_000), handedOff);
+    const replacement = { ...rewritten, reportRead: false, done: { ...done, report_sig: 'rewrite' } };
+    assert.equal(judge(handedOff, replacement, due + 1).state, 'idle_grace');
+  }
+});
+
+test('judge: work or another rewrite restarts the fresh-receipt grace', () => {
+  const quiet = judge(initial, rewritten, 2000);
+  const due = 2000 + facts.graceMs;
+  for (const [patch, quietAt] of [
+    [{ status: 'working' }, due + 1], [{ liveChild: true }, due + 1],
+    [{ workingAt: due - 1 }, due], [{ reportSig: 'rewrite again' }, due],
+  ]) {
+    const active = judge(quiet, { ...rewritten, ...patch }, due);
+    assert.equal(active.state, 'working');
+    assert.equal(active.action, null);
+    const next = judge(active, { ...rewritten, ...patch, status: 'idle', liveChild: false }, due + 1);
+    assert.equal(next.state, 'working');
+    assert.equal(next.wakeAt, quietAt + facts.graceMs);
   }
 });
 

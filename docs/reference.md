@@ -216,7 +216,9 @@ trust, on a turn that never issued a receipt, a new report settles the turn when
 has been stable for 10 s, provided there is no live in-turn child. Such children also defer quiet decisions and
 automatic close. `hud-progress --done` binds the CLI report's signature to the turn in the worker's prompt.
 A continuation invalidates the old receipt; rewriting a declared report requires a fresh receipt for that turn.
-Changes in terminal output do not affect the receipt. With a matching
+If the turn stays quiet for the role's grace period without a fresh matching receipt, it goes to
+`waiting_orchestrator` without settling or calling the Decision API. The main session can use `hud_send`
+to continue or `hud_close` to stop. Changes in terminal output do not affect the receipt. With a matching
 receipt (or pi's native settled turn with a changed report), leftover children do not block closure. For a
 continuable worker, idle grace ends when the report is read or the deadline passes; a deadline close says `settled`.
 The watcher reaps the worker and descendants with captured ancestry, records that unverified processes were left

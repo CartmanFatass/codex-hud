@@ -171,8 +171,10 @@ recorded pid gone or replaced, its tab closed, or dispatch rejected before input
 The worker's `--done --turn` command writes a private `done.json` receipt with the prompt's turn sequence and
 send time, the current report signature, and the receipt time. A matching receipt for a fresh report settles
 without waiting for leftover children or herdr idle. A new turn invalidates the old receipt; a report rewrite
-on a declared turn reopens it until the worker issues a fresh receipt, even if no child is live. Terminal
-output does not affect receipt validity. `idle_grace` keeps a continuable worker with an unread report; reading
+on a declared turn reopens it. If the turn stays quiet for the role's grace period without a fresh matching
+receipt, it goes to `waiting_orchestrator` (`hud_send` to continue or `hud_close` to stop), without settling
+or calling the Decision API. Terminal output does not affect receipt validity.
+`idle_grace` keeps a continuable worker with an unread report; reading
 the report or reaching the deadline quits and reaps it. An unread deadline close has `exit_reason` `settled`.
 For a turn that never issued a receipt, a live in-turn child still defers CLI settlement, the quiet decision
 and automatic close. With `advisory` trust, the ordinary no-child path requires herdr not `working` and a fresh report
