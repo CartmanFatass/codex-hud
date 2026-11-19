@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
-import { reapWorkerTree } from '../dist/src/roles/worker-tree.js';
+import { reapWorkerTree, UNVERIFIED_TREE_NOTE } from '../dist/src/roles/worker-tree.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { reapWorktree } from '../dist/packages/hud-mcp/src/managed-worktree.js';
 import { request } from './herdr-request.mjs';
@@ -54,7 +54,10 @@ const oldLog = read(logFile) ?? '';
 fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), {
   mode: 0o600,
 });
-const log = (message) => fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`);
+const log = (message) => {
+  try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); }
+  catch (error) { console.error(`watch log: ${error.message}; ${message}`); }
+};
 const warnings = new Map();
 function warn(kind, message) {
   const now = Date.now();
@@ -173,9 +176,13 @@ function readCloseTurn(dir, job, status) {
   const sentAt = job.pi_sent_at ?? (job.message_keys?.length ? null : job.created_at);
   const sent = Date.parse(sentAt);
   // Reading the previous turn's report after a send is not a receipt for the new turn.
-  if (!(Date.parse(status.settled_at) >= sent && Date.parse(job.read_at) > sent)) return null;
+  const settled = Date.parse(status.settled_at);
+  if (!(settled >= sent && Date.parse(job.read_at) > sent)) return null;
   const report = fs.statSync(join(dir, 'report.md'), { throwIfNoEntry: false });
-  return report?.isFile() && Math.floor(report.mtimeMs) > sent && reportWasRead(job.read_at, report.mtimeMs) ? sentAt : null;
+  if (!report?.isFile() || Math.floor(report.mtimeMs) <= sent || Math.floor(report.mtimeMs) > settled ||
+      !reportWasRead(job.read_at, report.mtimeMs)) return null;
+  const sig = reportSignature(dir);
+  return sig ? JSON.stringify([sentAt, status.settled_at, sig]) : null;
 }
 function saveJob(file, job) {
   const temp = `${file}.${process.pid}.tmp`;
@@ -294,38 +301,38 @@ async function scan(retryWatch = false) {
           continue;
         }
       }
-      if (readInGrace) {
-        safetyCheck = true; // Revisit a busy worker or a failed reap on the existing slow tick.
-        const target = session.match(/^PRIMARY=([^\r\n]+)$/m)?.[1];
-        const agent = target && (await request('agent.get', { target }))?.result?.agent;
-        const latest = json(statusFile);
-        // Pi publishes idle_grace with output_written only after agent_settled and a changed report.
-        // Still recheck herdr and the receipt in case a new turn has started.
-        if (!['idle', 'done'].includes(agent?.agent_status) || closedTabs.has(tab) ||
-            readCloseTurn(dir, json(jobFile), latest) !== readInGrace) continue;
-      }
       const ownership = JSON.stringify([session, status.pid, status.pid_start_time]);
-      const retry = reapRetries.get(id);
-      if (!readInGrace && retry?.ownership === ownership && retry.at > Date.now()) {
+      const previous = reapRetries.get(id);
+      const retry = previous?.ownership === ownership && previous.readInGrace === readInGrace ? previous : null;
+      if (retry?.at > Date.now()) {
         nearest = Math.min(nearest, retry.at);
         continue;
       }
-      const { result, complete } = await reapWorkerTree(dir, status,
-        () => spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000 }), (run) => run.status === 0);
-      const message = `reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}${result.status === 0 && !complete ? ' descendants still running' : ''}`;
-      if (complete) { reapRetries.delete(id); log(message); }
-      else {
-        warn(`reap ${id}`, message);
-        if (!readInGrace) {
-          // The reaper has no distinct exit code for an ownership refusal. Stop only on an explicit refusal
-          // with no other reported cleanup error; otherwise let the same reaper recheck ownership on retry.
-          const refusal = result.status === 1 && result.stderr?.trimEnd().endsWith(`: TAB ${tab} name changed or missing; not closing`)
-            && !result.stderr.trim().includes('\n');
-          const at = refusal ? Infinity : Date.now() + cliCheck;
-          reapRetries.set(id, { ownership, at });
-          nearest = Math.min(nearest, at);
+      if (readInGrace) {
+        safetyCheck = true; // Revisit a busy worker or a failed reap on the existing slow tick.
+        // Native pi settlement comes from agent_settled after a per-turn report baseline. Herdr is only
+        // a last check for resumed work. After a partial reap, agent_not_found cannot strand captured children.
+        if (!(retry && status.pid_start_time && workerAlive(status.pid, status.pid_start_time) === false)) {
+          const target = session.match(/^PRIMARY=([^\r\n]+)$/m)?.[1];
+          const agent = target && (await request('agent.get', { target }))?.result?.agent;
+          const latest = json(statusFile);
+          if (!['idle', 'done'].includes(agent?.agent_status) || closedTabs.has(tab) ||
+              latest?.pid !== status.pid || latest?.pid_start_time !== status.pid_start_time ||
+              readCloseTurn(dir, json(jobFile), latest) !== readInGrace) continue;
         }
       }
+      const { result, complete, issue, snapshot } = await reapWorkerTree(dir, status,
+        () => spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000, killSignal: 'SIGKILL' }), (run) => run.status === 0,
+        previous?.ownership === ownership ? previous.snapshot : undefined);
+      // A tab ownership refusal is final only when there is no unresolved descendant cleanup.
+      const refusal = !issue && !readInGrace && result.status === 1 &&
+        result.stderr?.trimEnd().endsWith(`: TAB ${tab} name changed or missing; not closing`) && !result.stderr.trim().includes('\n');
+      const at = refusal ? Infinity : Date.now() + cliCheck;
+      reapRetries.set(id, { ownership, readInGrace, at, snapshot });
+      if (!complete) nearest = Math.min(nearest, at);
+      const message = `reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}; ${issue ? `${issue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
+      if (complete) log(message);
+      else warn(`reap ${id}`, message);
       if (complete && readInGrace) {
         // Pi may have published shutdown STATUS during reap. Preserve those facts and name the trigger.
         const latest = json(statusFile);
@@ -344,8 +351,13 @@ async function scan(retryWatch = false) {
           await finishWorktree(jobFile, id, latest);
         }
       }
+      if (complete) reapRetries.delete(id);
     } catch (error) {
-      if (error.code !== 'ENOENT') warn(`keep ${id} scan`, `keep ${id} scan: ${error.message}`);
+      if (error.code !== 'ENOENT') {
+        const retry = reapRetries.get(id);
+        if (retry) nearest = Math.min(nearest, retry.at);
+        warn(`keep ${id} scan`, `keep ${id} scan: ${error.message}`);
+      }
     }
   }
   for (const file of cache.keys()) if (!seen.has(file)) cache.delete(file);

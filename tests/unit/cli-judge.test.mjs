@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import fs, { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reapWorkerTree, rememberWorkerTree } from '../../dist/roles/worker-tree.js';
-import { judge, procStat, reportMarker, workerAlive, workerHasChild } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
+import { judge, procStat, workerAlive, workerHasChild } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 
 test('worker identity: missing start is unknown for a live PID, but absence is still an exit fact', async () => {
   assert.equal(workerAlive(process.pid, procStat(process.pid).start), true);
@@ -29,7 +30,7 @@ test('worker identity: missing start is unknown for a live PID, but absence is s
   assert.equal(workerAlive(child.pid, null), false);
 });
 
-test('worker reap: cleans orphaned group members and detached descendants, not an unrelated group', async (t) => {
+test('worker reap: cleans captured descendants after root exit, including detached ones', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'hud-worker-tree-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const pane = 'w4E:p2';
@@ -53,14 +54,9 @@ test('worker reap: cleans orphaned group members and detached descendants, not a
   const [[groupChild, detachedChild]] = await once(worker, 'message');
   stamps = [groupChild, detachedChild].map((pid) => [pid, procStat(pid).start]);
   const status = { slot: 'primary', task_dir: dir, pid: worker.pid, pid_start_time: procStat(worker.pid).start };
-  assert.equal(procStat(groupChild).pgid, worker.pid);
-  assert.equal(procStat(detachedChild).pgid, detachedChild);
-  rememberWorkerTree(dir, status);
-  // Model entry into the watcher after /quit, with only the detached child's pre-quit identity known.
-  const file = join(dir, 'worker-tree.json');
-  const snapshot = JSON.parse(readFileSync(file, 'utf8'));
-  snapshot.members = snapshot.members.filter(({ pid }) => pid !== groupChild);
-  writeFileSync(file, JSON.stringify(snapshot));
+  const { snapshot, issue } = rememberWorkerTree(dir, status);
+  assert.equal(issue, undefined);
+  assert.deepEqual(snapshot.members.map(({ pid }) => pid).sort(), [groupChild, detachedChild].sort());
   worker.kill('SIGTERM');
   await rootExit;
   assert.ok(stamps.every(([pid, start]) => workerAlive(pid, start)), 'both would survive worker-only reap');
@@ -68,6 +64,40 @@ test('worker reap: cleans orphaned group members and detached descendants, not a
   assert.equal(complete, true);
   assert.ok(stamps.every(([pid, start]) => !workerAlive(pid, start)));
   assert.ok(workerAlive(unrelated.pid, procStat(unrelated.pid).start));
+});
+
+test('worker reap: a same-group, tagged sibling is not a descendant; PID reuse suppresses each signal', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'hud-worker-tree-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, 'SESSION.txt'), 'LEFT=w4E:p2\nORCH=w4E:p1\n');
+  const [root, child, reused, sibling] = [91_001, 91_002, 91_003, 91_004];
+  const procs = new Map([[root, [50, 100]], [child, [root, 101]], [reused, [root, 102]], [sibling, [50, 103]]]);
+  const signals = [];
+  const { readFileSync, readdirSync } = fs;
+  t.mock.method(fs, 'readdirSync', (path, ...args) => path === '/proc' ? [...procs.keys()].map(String) : readdirSync(path, ...args));
+  t.mock.method(fs, 'readFileSync', (path, ...args) => {
+    const pid = Number(/^\/proc\/(\d+)\/(?:stat|environ)$/.exec(String(path))?.[1]);
+    if (pid < root || pid > sibling || !Number.isFinite(pid)) return readFileSync(path, ...args);
+    if (!procs.has(pid)) throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+    const [parent, start] = procs.get(pid);
+    if (path.endsWith('/environ')) return `HUD_JOB_DIR=${dir}\0HERDR_PANE_ID=w4E:p2\0`;
+    return `${pid} (synthetic) S ${parent} ${root} ${'0 '.repeat(16)}${start}\n`;
+  });
+  t.mock.method(process, 'kill', (pid, signal) => {
+    signals.push([pid, signal]);
+    if (pid === child && signal === 'SIGTERM') procs.set(child, [50, 201]); // Reuse during the TERM/KILL wait.
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const status = { slot: 'primary', task_dir: dir, pid: root, pid_start_time: '100' };
+  const { complete } = await reapWorkerTree(dir, status, () => {
+    procs.delete(root);
+    procs.set(child, [1, 101]);
+    procs.set(reused, [50, 202]); // Reuse before the initial TERM.
+    return false; // Even on a tab ownership refusal, only proof can authorize a signal.
+  }, Boolean);
+  assert.equal(complete, false);
+  assert.deepEqual(signals, [[child, 'SIGTERM']]);
 });
 
 const mcpArgs = ['-e', 'setInterval(() => {}, 1000)', 'hud-mcp'];
@@ -98,49 +128,54 @@ const quiet = judge(initial, { ...facts, status: 'done', reportSig: 'report' }, 
 const idle = judge(quiet, { ...facts, status: 'done', reportSig: 'report' }, 11_000);
 const noReport = judge(initial, { ...facts, status: 'done' }, 1000);
 
-test('judge: fresh report and stable done after its write settle and close with live children', () => {
-  for (const stateTrust of ['turn', 'advisory']) {
-    const observed = { ...facts, stateTrust, workingAt: 0, status: 'done', idleAt: 1000,
-      reportMtime: 900, reportSig: 'report', liveChild: true };
-    const first = judge(initial, observed, 1000);
-    const due = stateTrust === 'turn' ? 3000 : 11_000;
-    assert.equal(judge(first, observed, due - 1).state, 'working');
-    const settled = judge(first, observed, due);
-    assert.equal(settled.state, 'idle_grace');
-    assert.equal(settled.outputWritten, true);
-    assert.equal(judge(settled, { ...observed, reportRead: true }, due + 1).state, 'closed');
-    assert.equal(judge(first, { ...observed, reportRead: true }, due).action, 'quit');
-  }
+const done = { seq: turn.seq, sent_at: turn.sent_at, report_sig: 'report', at: new Date(1000).toISOString() };
+const declared = { ...facts, reportSig: 'report', done, liveChild: true };
+
+test('judge: scrolling a stale marker out of view never declares a draft', () => {
+  const draft = { ...facts, turn: { ...turn, seq: 3 }, reportSig: 'draft', reportRead: true,
+    liveChild: true, reportMarker: 'two old markers' };
+  const before = judge(initial, draft, 1000);
+  const later = { ...draft, reportMarker: 'one old marker' };
+  assert.equal(judge(judge(before, later, 2000), later, 32_000).state, 'working');
 });
 
-test('judge: a stale report, stale completion marker or done before the report cannot override live children', () => {
-  const observed = { ...facts, status: 'done', idleAt: 500, reportMtime: 600, reportSig: 'report', liveChild: true };
-  assert.equal(judge(judge(initial, observed, 1000), observed, 21_000).state, 'working');
-  const old = { ...observed, idleAt: 2000, reportRead: true, reportMarker: 'prior',
-    turn: { ...turn, seq: 2, report_sig: 'report', report_marker: 'prior' } };
-  const held = judge(idle, old, 21_000);
-  assert.equal(held.state, 'working');
-  assert.equal(held.quietSince, null);
-  assert.equal(judge(held, old, 700_000).action, null);
-  const rewritten = { ...old, idleAt: 500, reportSig: 'rewritten' };
-  assert.equal(judge(judge(held, rewritten, 21_000), rewritten, 32_000).state, 'working');
+test('judge: renewed old idle cannot waive a live child even on a read draft', () => {
+  const draft = { ...facts, stateTrust: 'turn', workingAt: 0, status: 'idle', idleAt: 500,
+    reportMtime: 600, reportSig: 'draft', reportRead: true, liveChild: true };
+  const before = judge(initial, draft, 1000);
+  const later = { ...draft, idleAt: 31_000 };
+  assert.equal(judge(judge(before, later, 31_000), later, 42_000).state, 'working');
 });
 
-test('judge: the worker marker can finish despite working status; later output invalidates it', () => {
-  const path = '/synthetic/job/report.md';
-  assert.equal(reportMarker(`worker instructions say report written: ${path}`, path), null);
-  const marker = reportMarker(`input\n⏺ report written: ${path}\n2 shells still running`, path);
-  assert.ok(marker);
-  const observed = { ...facts, reportSig: 'report', reportMarker: marker, paneSig: 'before', liveChild: true };
-  const first = judge(initial, observed, 1000);
-  const settled = judge(first, observed, 3000);
+test('judge: matching receipt settles; shell counter changes and missing pane reads cannot invalidate it', () => {
+  const settled = judge(initial, { ...declared, paneSig: '2 shells' }, 1000);
   assert.equal(settled.state, 'idle_grace');
-  const more = { ...observed, paneSig: 'after', reportRead: true };
-  const reopened = judge(settled, more, 4000);
+  assert.equal(settled.outputWritten, true);
+  const changed = judge(settled, { ...declared, paneSig: '1 shell' }, 2000);
+  assert.equal(changed.deadline, settled.deadline);
+  assert.equal(judge(changed, { ...declared, status: null, reportRead: true }, 3000).action, 'quit');
+  assert.equal(judge(changed, declared, changed.deadline).state, 'closed');
+  assert.equal(judge(initial, { ...declared, canContinue: false }, 1000).action, 'quit');
+});
+
+test('judge: rewritten report goes back to working until a fresh receipt', () => {
+  const settled = judge(initial, declared, 1000);
+  const updated = { ...declared, reportSig: 'rewrite', reportRead: true, status: 'done' };
+  const reopened = judge(settled, updated, 2000);
   assert.equal(reopened.state, 'working');
   assert.equal(reopened.outputWritten, false);
   assert.equal(reopened.deadline, null);
-  assert.equal(judge(reopened, more, 15_000).state, 'working');
+  assert.equal(judge(reopened, updated, 32_000).state, 'working');
+  assert.equal(judge(reopened, { ...updated, done: { ...done, report_sig: 'rewrite' } }, 32_000).action, 'quit');
+});
+
+test('judge: new turn or a reused sequence with a different send time invalidates a receipt', () => {
+  const settled = judge(initial, declared, 1000);
+  for (const newTurn of [{ ...turn, seq: 2 }, { ...turn, sent_at: new Date(2000).toISOString() }]) {
+    assert.equal(judge(settled, { ...declared, turn: newTurn }, 3000).state, 'working');
+  }
+  const stale = { ...declared, turn: { ...turn, report_sig: 'report' }, status: 'idle' };
+  assert.equal(judge(initial, stale, 1000).quietSince, null, 'unchanged report does not count even with a receipt');
 });
 
 const rows = [

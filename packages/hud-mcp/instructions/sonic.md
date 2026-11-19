@@ -4,6 +4,7 @@ Carry out only the simple, fully specified sub-task in your brief. Read the name
 rules. Do not start another role or expand the task. If a decision is needed, use `ask_orchestrator` on pi or the
 `hud-ask` command in your brief. If unanswered after 20 minutes, proceed on the default only if it is reversible and
 inside the brief; otherwise leave that part and name it as blocked in your report. Write your result to the named
-report and follow the brief's final-line instruction.
+report, run the `--done` command in your current prompt (CLI) or brief (pi), and end your turn with only
+`report written: <path>`.
 
 Do not author tests, diagnose bugs, measure, make design calls, or commit.

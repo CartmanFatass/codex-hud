@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-import { procStat, readTurn, reportMarker, saveTurn, workerAlive, writeTurn } from './cli-judge.js';
+import { procStat, readTurn, saveTurn, withDonePrompt, workerAlive, writeTurn } from './cli-judge.js';
 import { reapWorkerTree } from '../../../src/roles/worker-tree.js';
 import { isCliDirTrusted, propagateCliTrust } from '../../../src/cli/trust.js';
 import { addWorktree, gitSummary, planWorktree, populateWorktree, type ManagedWorktree } from './managed-worktree.js';
@@ -16,7 +16,7 @@ import { jobChanges, jobRow, readJobProgress, type JobRow } from '../../../src/c
 import { PanelActionLog } from '../../../src/collectors/panel-actions.js';
 import { TryLog } from '../../../src/collectors/try-records.js';
 import { cliKinds, type CliAgent } from '../../../src/roles/cli-kinds.js';
-import { herdrId, runHerdr } from '../../../src/roles/herdr-run.js';
+import { herdrId, runCommand, runHerdr } from '../../../src/roles/herdr-run.js';
 import {
   roleRegistry,
   harnessDefaults,
@@ -772,8 +772,7 @@ async function dispatchCli(job: Job, place: RolePlace, instructions: string, tas
       const settled = await settlePhantomWorking(name);
       if (settled) return reject(settled);
     }
-    const prompt = `Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`;
-    writeTurn(dir);
+    const prompt = withDonePrompt(`Read ${instructions} and then ${join(dir, 'brief.md')} and do exactly what the brief asks.`, bundled, dir, writeTurn(dir));
     const submitted = await run('herdr', [
       'agent',
       'prompt',
@@ -1274,7 +1273,9 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
       : place.harness === 'cli'
         ? `${task}\n\n${context.block}Write your report to ${join(dir, 'report.md')}.\nAsk the orchestrator with: node ${JSON.stringify(hudAsk)} --dir ${JSON.stringify(dir)} --question "..." --default "..."\n`
         : `${task}\n\n${context.block}Write your final answer to ${join(dir, 'report.md')}; the job fails without that file.\n`;
-  const ending = place.harness === 'bro' ? '' : `Once the report file is written, end your turn with the single line \`report written: ${join(dir, 'report.md')}\` and do not repeat the report in your final message.\n`;
+  const done = place.harness === 'cli' ? 'After writing the report, run the --done command from the prompt you are answering.\n' :
+    `After writing the report, run: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)}\n`;
+  const ending = place.harness === 'bro' ? '' : `${done}Then end your turn with the single line \`report written: ${join(dir, 'report.md')}\` and do not repeat the report in your final message.\n`;
   const sonicCommand = `node ${JSON.stringify(join(bundled, 'bin', 'hud-sonic.mjs'))}`;
   const sonic = role === 'sonic' || place.harness === 'bro' ? '' :
     `Sonic command: ${sonicCommand} start --dir ${JSON.stringify(dir)} --task-file <file> [--thinking off|low|medium|high]\n` +
@@ -1421,44 +1422,38 @@ async function call(name: string, args: Args): Promise<unknown> {
   if (name === 'hud_send') {
     const key = required(args, 'message_key');
     const message = required(args, 'text');
-    if (job.message_keys.includes(key)) {
-      const outcome = job.send_outcomes?.find((outcome) => outcome.key === key);
+    const current = json<Job>(join(dir, 'job.json')) ?? job;
+    if (current.message_keys.includes(key)) {
+      const outcome = current.send_outcomes?.find((outcome) => outcome.key === key);
       if (outcome?.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
       return outcome?.exit_code === 0
         ? { ok: true, sent: false }
         : { ok: false, sent: false, code: 'send_failed', ...outcome };
     }
     const agent = primary(dir);
-    const prior = job.cli ? readTurn(dir) : null;
-    const pane = prior && slice(join(dir, 'SESSION.txt'), 16384)?.text.match(/^LEFT=([^\r\n]+)$/m)?.[1];
-    let marker: string | null | undefined;
-    if (pane) {
-      const snapshot = await runHerdr(['pane', 'read', pane, '--source', 'recent-unwrapped', '--lines', '40'], process.env, { budgetMs: 1000 });
-      if (snapshot.ok) marker = reportMarker(paneText(snapshot.stdout), join(dir, 'report.md'));
-    }
-    const { row, status } = readRow(json<Job>(join(dir, 'job.json')) ?? job);
+    const { row, status } = readRow(current);
     const state = row.state ?? '';
     // A working pi or CLI job queues the message (the worker takes it after its current step); a settled one
     // continues in its idle grace when the role allows (owner, 2026-11-11).
     const queued = ['working', 'waiting_helper', 'waiting_orchestrator'].includes(state);
     const readReport = row.report_mtime !== null && !row.report_unread;
     if (
-      job.bro ||
-      job.jev ||
+      current.bro ||
+      current.jev ||
       !agent ||
-      !(queued || (state === 'idle_grace' && !readReport && registry(job.worktree?.main_root ?? job.cwd).roles().get(job.role)?.can_continue))
+      !(queued || (state === 'idle_grace' && !readReport && registry(current.worktree?.main_root ?? current.cwd).roles().get(current.role)?.can_continue))
     )
       return { ok: false, code: 'not_continuable' };
     // Record the attempt first, so a lost reply cannot cause a duplicate prompt.
-    job.message_keys.push(key);
+    current.message_keys.push(key);
     const outcome = { key, exit_code: null as number | null, stderr_tail: '' };
-    (job.send_outcomes ??= []).push(outcome);
-    if (!job.cli) job.pi_sent_at = new Date().toISOString();
-    save(job);
-    // Baseline before typing: even a fast report belongs to this explicit turn.
-    const turn = job.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }, marker) : null;
-    // agent prompt types the text and submits it with Enter.
-    const result = await run('herdr', ['agent', 'prompt', agent, message]);
+    (current.send_outcomes ??= []).push(outcome);
+    if (!current.cli) current.pi_sent_at = new Date().toISOString();
+    save(current);
+    // Read the rollback baseline at mutation time, with no pane query between it and the write.
+    const prior = current.cli ? readTurn(dir) : null;
+    const turn = current.cli ? writeTurn(dir, false, { key, pid: process.pid, start: procStat(process.pid)?.start ?? null }) : null;
+    const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn) : message]);
     if (turn && refusedBeforeInput(result)) {
       const active = readTurn(dir);
       if (active?.seq === turn.seq && active.send?.key === key && active.send.pid === process.pid) {
@@ -1466,13 +1461,13 @@ async function call(name: string, args: Args): Promise<unknown> {
         else fs.unlinkSync(join(dir, 'turn.json'));
       }
     }
-    const latest = json<Job>(join(dir, 'job.json')) ?? job;
+    const latest = json<Job>(join(dir, 'job.json')) ?? current;
     const attempted = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
     attempted.exit_code = result.exit_code;
     attempted.stderr_tail = result.stderr;
     save(latest);
     if (result.exit_code === 0) ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
-    if (result.exit_code === 0 && job.cli) {
+    if (result.exit_code === 0 && current.cli) {
       const supPid = supervisorPid(dir, status);
       if (
         supPid &&
@@ -1508,7 +1503,7 @@ async function call(name: string, args: Args): Promise<unknown> {
     }
   }
   const { row, status } = readRow(job);
-  const { result, complete } = await reapWorkerTree(dir, status, () => {
+  const { result, complete, issue } = await reapWorkerTree(dir, status, () => {
     // Idle grace already finished: reap quits and the supervisor closes. A working job is stopped.
     if (job.cli && row.state === 'idle_grace') {
       try {
@@ -1517,16 +1512,17 @@ async function call(name: string, args: Args): Promise<unknown> {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
     }
-    return run('pi-role-reap', [dir]);
-  }, (run) => run.exit_code === 0);
+    return runCommand('pi-role-reap', [dir], process.env, { budgetMs: 135_000 });
+  }, (run) => run.ok);
+  if (issue) ensureWatcher();
   if (!isWorker && complete && row.display_state === 'failed') {
     const latest = json<Job>(join(dir, 'job.json')) ?? job;
     save({ ...latest, observed_at: new Date().toISOString() });
   }
   return {
-    exit_code: complete ? 0 : result.exit_code || 1,
-    last_line: !complete && result.exit_code === 0 ? 'worker descendants still running' :
-      (result.stdout.trim() || result.stderr.trim()).split('\n').at(-1) ?? '',
+    exit_code: complete ? 0 : result.exitCode || 1,
+    last_line: issue ?? (result.reason === 'timeout' ? 'pi-role-reap timed out' :
+      (result.stdout.trim() || result.stderr.trim()).split('\n').at(-1) ?? ''),
   };
 }
 

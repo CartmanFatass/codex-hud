@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /** One CLI job: pushed facts -> pure judge -> effects. No subprocesses or STATUS writes at rest. */
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, join } from 'node:path';
@@ -9,7 +8,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { decideQuietJob } from '../dist/packages/hud-mcp/src/quiet-decision.js';
-import { firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, reportMarker, reportSignature, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
+import { firstInput, judge, procStat, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, reportSignature, withDonePrompt, writeTurn } from '../dist/packages/hud-mcp/src/cli-judge.js';
 import { rememberWorkerTree } from '../dist/src/roles/worker-tree.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { request } from './herdr-request.mjs';
@@ -45,8 +44,8 @@ let current = {
   settled_at: null, idle_deadline_at: null,
   ended_at: null, exit_reason: null, error: null, supervisor_pid: process.pid,
 };
-let prev = null, status = null, agentMissing = false, workingAt = null, idleAt = null, tabClosed = false;
-let turn = readTurn(dir) ?? writeTurn(dir), signature = null, stamp;
+let prev = null, status = null, agentMissing = false, workingAt = null, tabClosed = false;
+let turn = readTurn(dir) ?? writeTurn(dir), done = null, signature = null, stamp;
 let stop = false, close = false, openQuestions = false, diskDirty = true, sendInFlight = false;
 let socket, lines, reconnectTimer, debounce, deadline, tickTimer, dirWatch, qaWatch;
 let stopped = false, busy = false, pending = false, tickPending = false, reconnectMs = 5000, generation = 0;
@@ -78,7 +77,7 @@ function watchDir() {
     dirWatch = fs.watch(dir, (_event, filename) => {
       const file = filename?.toString();
       if (file && (file === 'STATUS.json' || file === 'supervisor.pid' || file.endsWith('.tmp'))) return;
-      if (!file || ['report.md', 'job.json', 'turn.json', 'qa', '.sonic', 'STATUS.json.stop-requested', 'STATUS.json.close-requested'].includes(file)) {
+      if (!file || ['report.md', 'job.json', 'turn.json', DONE_FILE, 'qa', '.sonic', 'STATUS.json.stop-requested', 'STATUS.json.close-requested'].includes(file)) {
         diskDirty = true; watchQa(); wake();
       }
     });
@@ -94,7 +93,6 @@ function tick() {
 }
 function observeStatus(next) {
   if (next === 'working' && (status !== 'working' || (workingAt ?? -Infinity) < Date.parse(turn.sent_at))) workingAt = Date.now();
-  if (next === 'done' || next === 'idle') idleAt = Date.now();
   status = next;
 }
 async function seed() {
@@ -148,6 +146,7 @@ const sampleChild = () => workerHasChild(current.pid, current.pid_start_time, tu
 function collect(isTick, checkChild = isTick && status !== 'working') {
   if (diskDirty || isTick) {
     turn = readTurn(dir) ?? turn;
+    done = readDone(dir);
     const receipt = JSON.parse(fs.readFileSync(jobFile, 'utf8'));
     readAt = receipt.read_at;
     // Keep the prior settlement while the sender can still cancel this baseline. If it dies, assume delivery is possible.
@@ -167,7 +166,7 @@ function collect(isTick, checkChild = isTick && status !== 'working') {
     liveChild: checkChild ? sampleChild() : null,
     sonic: sonicChildren(dir),
     stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
-    tick: isTick, agentMissing, workingAt, idleAt, reportMtime: st && Math.floor(st.mtimeMs), tabClosed };
+    tick: isTick, agentMissing, workingAt, done, tabClosed };
 }
 function write(result) {
   const terminal = ['closed', 'failed', 'stopped'].includes(result.state);
@@ -178,7 +177,6 @@ function write(result) {
     error: result.state === 'failed' ? result.exitReason : null };
   const changed = JSON.stringify(row);
   if (changed === rowStamp) return;
-  current = row; rowStamp = changed;
   const file = join(dir, 'STATUS.json');
   // A watcher may have reached a terminal verdict while this socket was down.
   try {
@@ -186,6 +184,7 @@ function write(result) {
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   fs.writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify({ ...row, updated_at: iso(Date.now()) }) + '\n', { mode: 0o600 });
   fs.renameSync(`${file}.${process.pid}.tmp`, file);
+  current = row; rowStamp = changed;
 }
 async function run() {
   if (stopped || !pending || busy) return;
@@ -201,16 +200,6 @@ async function run() {
     }
     let observed = collect(isTick);
     if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
-    if (observed.reportSig && observed.reportSig !== observed.turn.report_sig && !observed.close && !terminalFact(observed)) {
-      const sample = observed;
-      const text = (await request('pane.read', { pane_id: pane, source: 'recent_unwrapped', lines: 40 }))?.result?.read?.text;
-      observed = collect(isTick);
-      if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
-      if (typeof text === 'string' && sample.turn.seq === observed.turn.seq && sample.reportSig === observed.reportSig) {
-        observed.paneSig = createHash('sha256').update(text.trimEnd()).digest('hex');
-        observed.reportMarker = reportMarker(text, output);
-      }
-    }
     let next = judge(prev, observed, Date.now());
     if (next.action === 'sample') {
       observed = { ...observed, liveChild: sampleChild() };
@@ -219,8 +208,7 @@ async function run() {
     if (next.action === 'collect-sonic') {
       const { open, uncollected } = sonicChildren(dir);
       if (open || !uncollected.length) { wake(); return; }
-      const prompt = sonicCollectPrompt(dir, output, uncollected);
-      writeTurn(dir, false, undefined, observed.reportMarker);
+      const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected), bundled, dir, writeTurn(dir));
       if (!effect(['agent', 'prompt', name, prompt]).ok) throw new Error('sonic collect prompt failed');
       diskDirty = true; wake(); return;
     }
@@ -243,8 +231,9 @@ async function run() {
         ...(decision.reason ? { reason: decision.reason } : {}), at: new Date().toISOString() };
       if (decision.action === 'prompt-report') {
         reportPromptSent = true;
-        const sent = writeTurn(dir, true, undefined, reportMarker(text, output));
-        if (!effect(['agent', 'prompt', name, `Write your report to ${output} now; if work remains, finish it first.`]).ok) {
+        const sent = writeTurn(dir, true);
+        const prompt = withDonePrompt(`Write your report to ${output} now; if work remains, finish it first.`, bundled, dir, sent);
+        if (!effect(['agent', 'prompt', name, prompt]).ok) {
           decision.action = 'needs-human'; decision.reason = 'prompt-failed';
           current.quiet_decision = { ...current.quiet_decision, action: 'needs-human', reason: 'prompt-failed' };
           turn = sent;
@@ -256,11 +245,23 @@ async function run() {
       next = judge(prev, { ...observed, decision }, Date.now());
     }
     // Settlement is independent of /quit delivery; the global watcher owns cleanup and retries.
+    let deferredQuit = false;
     if (next.action === 'quit' && observed.alive !== false) {
-      rememberWorkerTree(dir, current);
-      effect(['agent', 'prompt', name, '/quit']);
+      const { issue } = rememberWorkerTree(dir, current);
+      // On capture failure let the reaper try again with the root still in place.
+      if (issue) {
+        deferredQuit = true;
+        console.error(`pre-quit snapshot: ${issue}; deferring quit to watcher`);
+      } else effect(['agent', 'prompt', name, '/quit']);
     }
-    write(next);
+    try { write(next); }
+    catch (error) {
+      // A full disk can block STATUS as well. Don't exit before the watcher can see the terminal state.
+      if (!deferredQuit) throw error;
+      clearTimeout(deadline);
+      deadline = setTimeout(() => { diskDirty = true; wake(); }, 30000);
+      return;
+    }
     if (stopped) return;
     prev = next;
     clearTimeout(deadline);

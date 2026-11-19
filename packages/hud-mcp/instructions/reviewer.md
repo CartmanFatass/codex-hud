@@ -40,7 +40,7 @@ Report the two axes separately:
 
 ## Report
 
-Write a plain-text report to the report path the brief names, then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
+Write a plain-text report to the report path the brief names. Run the `--done` command in your current prompt (CLI) or brief (pi), then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
 
 1. `Verdict: accept` or `Verdict: changes-required`.
 2. **Spec** findings (blocking, or none).

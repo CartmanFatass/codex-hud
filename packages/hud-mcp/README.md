@@ -129,8 +129,9 @@ nor a particular role's responsibilities.
 `report.md` and `qa/` pairs. Pi-roles owns pi lifecycle and grace; the browser
 wrapper records browser-job STATUS and saves the CLI result. Mutations serialize
 within an MCP process; waiting reads do not block answers. A report is unread when its mtime is newer than
-`read_at` (or no stamp exists). CLI/pi briefs tell workers to write the file and end with only
-`report written: <path>`; HUD readers use the file, not that final chat line.
+`read_at` (or no stamp exists). Workers write the report, run the `hud-progress --done` command named
+in the prompt (CLI) or brief (pi), then end with only `report written: <path>`. HUD readers use the report file,
+not that final chat line.
 
 Every MCP response carries the session's `changes` since its last call (omitted when empty).
 `hud watch` under a command monitor pushes less: full one-line questions, settlements/unread reports,
@@ -146,21 +147,29 @@ and remove it at exit. Other main sessions keep typed questions and can use `hud
 `hud_create` starts the on-demand `hud-watch.mjs` if needed. It reacts to job-file
 and herdr tab-close events, invokes `pi-role-reap` when a pi report in idle grace
 is read or after normal closure, and exits when no open job or failed-job deadline remains.
-The read-close reason is `closed after report read`. Unread pi reports keep the pi-roles
-deadline; a live child blocks the watcher's read-triggered reap. Failed tabs are retained
-for two hours before automatic reap. Failed file watching falls back to polling
+The read-close reason is `closed after report read`. Pi declares completion natively at `agent_settled`
+with a report changed since `before_agent_start`. Pi's `--done` captures descendants before that native
+event can cause shutdown; it does not declare pi settlement. Unread pi reports keep the pi-roles deadline.
+Closing reaps the recorded worker and only descendants with captured PID/start-time ancestry; unverified
+processes are left alone and noted in `watch.log`. Each signal rechecks `/proc` start time, but Node's
+numeric PID kill is not atomic with that check: exit and PID reuse between the check and signal remain
+possible. Snapshot or cleanup failures retry on the slow tick. Failed tabs are retained for two hours
+before automatic reap. Failed file watching falls back to polling
 and retries the watch. `watch.pid` and `watch.log` live under HUD home.
 
 A CLI job has one supervisor (`hud-cli.mjs`); it only observes, and its one pure
 `judge` (`src/cli-judge.ts`) decides every state. Only facts end a job: the worker's
 recorded pid gone or replaced, its tab closed, or dispatch rejected before input
 (`failed`, or `closed` when a new report is on disk). Dispatch and every non-duplicate
-`hud_send` write `turn.json` before the prompt. With `advisory` trust, a report that differs from the turn's
-baseline settles the turn once herdr is not `working` and the report has been stable
-for 10 s: `idle_grace` when the role can continue and the report is unread, otherwise `/quit` and closed.
-Reading the report or reaching the idle deadline sends `/quit` and the watcher reaps the tab.
-An unread deadline close has `exit_reason` `settled`. A live child defers CLI settlement,
-the quiet decision and automatic close. A turn quiet past
+`hud_send` write `turn.json` before the prompt (internal continuations also start a new turn).
+The worker's `--done --turn` command writes a private `done.json` receipt with the prompt's turn sequence and
+send time, the current report signature, and the receipt time. A matching receipt for a fresh report settles
+without waiting for leftover children or herdr idle; a new turn or report rewrite invalidates it, regardless
+of terminal output. `idle_grace` keeps a continuable worker with an unread report; reading the report or
+reaching the deadline quits and reaps it. An unread deadline close has `exit_reason` `settled`.
+Without a valid receipt, a live in-turn child still defers CLI settlement, the quiet decision and automatic
+close. With `advisory` trust, the ordinary no-child path requires herdr not `working` and a fresh report
+stable for 10 s. A turn quiet past
 the grace without a report gets one Decision API choice (see the reference); anything
 unclear is `waiting_orchestrator` with a reason. Herdr's status alone never fails a live worker.
 CLI `state_trust` has two levels: `advisory` keeps those timings, while `turn`, after herdr has been seen `working`

@@ -18,7 +18,7 @@ import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, theme } from '../../dist/render/colors.js';
 import { PiRoleClient, PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
-import { procStat } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
+import { procStat, reportSignature, turnToken } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 import { harnessDefaults, markExhausted } from '../../dist/roles/roster.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
@@ -347,7 +347,10 @@ if (command === 'pi-dispatch') {
 } else if (command === 'pi-role-reap') {
   const dir = args[0], fail = join(dir, 'fail-reap-once');
   if (fs.existsSync(fail)) { fs.unlinkSync(fail); process.exit(1); }
-  if (fs.existsSync(join(dir, 'reap-worker'))) process.kill(Number(fs.readFileSync(join(process.env.HOME, 'cli-pid'))), 'SIGTERM');
+  if (fs.existsSync(join(dir, 'reap-worker'))) {
+    try { process.kill(Number(fs.readFileSync(join(process.env.HOME, 'cli-pid'))), 'SIGTERM'); }
+    catch (error) { if (error.code !== 'ESRCH') throw error; }
+  }
   try {
     const status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
     if (status && !['closed', 'failed', 'stopped', 'idle_grace'].includes(status.state))
@@ -380,6 +383,21 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
   fs.default.renameSync = (...args) => {
     if (args[1].endsWith('/STATUS.json')) fs.appendFileSync(join(process.env.HOME, 'status-writes'), args[1] + '\\n');
     return rename(...args);
+  };
+  const { syncBuiltinESMExports } = await import('node:module');
+  syncBuiltinESMExports();
+}
+const isWatcher = process.argv[1]?.endsWith('/hud-watch.mjs');
+if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
+  const flag = join(process.env.HOME, 'snapshot-enospc'), rename = fs.renameSync, kill = process.kill;
+  fs.default.renameSync = (from, to) => {
+    if (to.endsWith('/worker-tree.json') && fs.existsSync(flag))
+      throw Object.assign(new Error('synthetic ENOSPC'), { code: 'ENOSPC' });
+    return rename(from, to);
+  };
+  if (isWatcher) process.kill = (pid, signal) => {
+    if (signal && fs.existsSync(flag) && String(pid) === fs.readFileSync(flag, 'utf8')) return false;
+    return kill(pid, signal);
   };
   const { syncBuiltinESMExports } = await import('node:module');
   syncBuiltinESMExports();
@@ -490,7 +508,9 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
           const id = req.params.target.replace(/-primary$/, '');
           const jobFile = join(env.HUD_HOME, 'jobs', id, 'job.json');
           if (fs.existsSync(jobFile) && !JSON.parse(fs.readFileSync(jobFile)).cli) {
-            reply({ agent: { agent_status: piStatus() } });
+            const state = piStatus();
+            if (state === 'agent_not_found') socket.write(JSON.stringify({ id: req.id, error: { code: state } }) + '\n');
+            else reply({ agent: { agent_status: state } });
             return;
           }
           const sub = [...subscribers].reverse().find((item) => item.supervisor && !item.id) ?? [...subscribers].find((item) => item.supervisor && item.id === id);
@@ -499,6 +519,7 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
           reply({ agent: { agent_status: sub?.state ?? 'working', agent_session: has('late-session') && !has('exit-after-done') && !has('socket-got-session') ? null : { kind: 'id', value: 'synthetic-grok-session' } } });
           fs.writeFileSync(join(env.HOME, 'socket-got-session'), '');
         } else if (req.method === 'pane.read') {
+          if (has('pane-read-timeout')) return;
           reply({ read: { text: has('pane-read') ? fs.readFileSync(join(env.HOME, 'pane-read'), 'utf8') : 'synthetic pane' } });
         } else if (req.method === 'pane.process_info') {
           const pidFile = ['cli-pid', 'fake-agent-pid'].map((file) => join(env.HOME, file)).find((file) => fs.existsSync(file));
@@ -850,11 +871,22 @@ const readCloseQuit = (f, job) => f.commands().some((c) =>
   c.command === 'herdr' && c.args[1] === 'prompt' && c.args[2] === job.agent && c.args[3] === '/quit');
 const readCloseReaped = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).reaped_at;
 const reapAttempts = (f, job) => f.commands().filter((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir).length;
+const progressCommand = resolve('packages/hud-mcp/bin/hud-progress.mjs');
+const cliToken = (dir) => turnToken(JSON.parse(fs.readFileSync(join(dir, 'turn.json'), 'utf8')));
+const runProgress = (f, dir, ...args) => spawnSync(process.execPath, [progressCommand, ...args], {
+  env: { ...f.env, HUD_JOB_DIR: dir }, encoding: 'utf8',
+});
+function declareDone(f, job, cli = true) {
+  const dir = job.task_dir;
+  const result = runProgress(f, dir, '--done', ...(cli ? ['--turn', cliToken(dir)] : []));
+  assert.equal(result.status, 0, result.stderr);
+}
 
 async function publishPiGrace(job, worker) {
-  const dir = job.task_dir, now = Date.now();
+  const dir = job.task_dir;
   const report = join(dir, 'report.md');
   fs.writeFileSync(report, 'Synthetic settled pi report.\n');
+  const now = Date.now();
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({
     version: 1, task_dir: dir, slot: 'primary', state: 'idle_grace', output_written: true,
     ...(worker ? { pid: worker.pid, pid_start_time: procStat(worker.pid).start } : {}),
@@ -947,6 +979,54 @@ test('read-close: failed Pi reap is retried on the slow safety tick without a fi
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
 });
 
+test('read-close: Pi retries captured children after root exit and snapshot ENOSPC', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t, true, '', 350);
+  const worker = fakeCliWithChild(t, f);
+  await f.startCliSocket();
+  const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-partial-reap', task: 'Synthetic task.' });
+  const child = await worker.start(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], true);
+  const start = procStat(child).start;
+  t.after(() => { if (procStat(child)?.start === start) process.kill(child, 'SIGKILL'); });
+  await publishPiGrace(job, worker);
+  const flag = join(f.env.HOME, 'snapshot-enospc');
+  fs.writeFileSync(flag, String(child));
+  fs.writeFileSync(join(job.task_dir, 'reap-worker'), '');
+  f.piStatus(() => procStat(worker.pid) ? 'idle' : 'agent_not_found');
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  const log = join(f.env.HUD_HOME, 'watch.log');
+  await until(() => fs.readFileSync(log, 'utf8').includes('synthetic ENOSPC'));
+  assert.equal(procStat(worker.pid), null);
+  assert.equal(procStat(child)?.start, start);
+  assert.equal(cliState(job.task_dir).state, 'idle_grace');
+  assert.equal(readCloseReaped(job), undefined);
+  // No relevant file event: the slow retry must run despite agent_not_found and absent on-disk proof.
+  fs.unlinkSync(flag);
+  await until(() => readCloseReaped(job));
+  assert.ok(reapAttempts(f, job) >= 2);
+  assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
+  assert.ok(!procStat(child) || procStat(child).state === 'Z');
+});
+
+for (const trigger of ['native deadline', 'native one-shot']) test(`pi reap: ${trigger} retains ancestry captured before shutdown`, { timeout: 10000 }, async (t) => {
+  const f = await fixture(t, true, '', 200);
+  const worker = fakeCliWithChild(t, f);
+  const job = await f.call('hud_create', { role: 'imp', request_key: trigger, task: 'Synthetic task.' });
+  const child = await worker.start(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], true);
+  const start = procStat(child).start;
+  t.after(() => { if (procStat(child)?.start === start) process.kill(child, 'SIGKILL'); });
+  await publishPiGrace(job, worker);
+  if (trigger === 'native one-shot') fs.writeFileSync(join(job.task_dir, 'STATUS.json'), JSON.stringify({ ...cliState(job.task_dir), state: 'working' }));
+  declareDone(f, job, false);
+  process.kill(worker.pid, 'SIGTERM');
+  await until(() => !procStat(worker.pid));
+  assert.equal(procStat(child)?.start, start);
+  const file = join(job.task_dir, 'STATUS.json');
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...cliState(job.task_dir), state: 'closed', exit_reason: 'settled' }));
+  fs.renameSync(`${file}.tmp`, file);
+  await until(() => readCloseReaped(job));
+  assert.ok(!procStat(child) || procStat(child).state === 'Z');
+});
+
 test('read-close: rejected CLI quit keeps closed while the watcher retries terminal reap', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, true, '', 450);
   const worker = fakeCliWithChild(t, f);
@@ -967,6 +1047,30 @@ test('read-close: rejected CLI quit keeps closed while the watcher retries termi
   assert.equal(reapAttempts(f, job), 2);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
   await until(() => !procStat(worker.pid));
+});
+
+test('read-close: CLI pre-quit snapshot failure hands cleanup to the watcher and retries', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t, true, '', 350);
+  const worker = fakeCliWithChild(t, f);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  writeCliRole(f, 'cli-snapshot-failure', 30);
+  const job = await f.call('hud_create', { role: 'cli-snapshot-failure', request_key: 'cli-snapshot-failure', task: 'Synthetic task.' });
+  await until(() => cliState(job.task_dir)?.pid === worker.pid);
+  const child = await worker.start();
+  fs.writeFileSync(join(job.task_dir, 'report.md'), 'Synthetic report.\n');
+  declareDone(f, job);
+  await until(() => cliState(job.task_dir)?.state === 'idle_grace');
+  const flag = join(f.env.HOME, 'snapshot-enospc');
+  fs.writeFileSync(flag, '');
+  assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
+  await until(() => fs.readFileSync(join(f.env.HUD_HOME, 'watch.log'), 'utf8').includes('synthetic ENOSPC'));
+  assert.equal(readCloseQuit(f, job), false, 'keep the root in place for the watcher to capture');
+  assert.equal(cliState(job.task_dir).state, 'closed');
+  assert.equal(readCloseReaped(job), undefined);
+  await until(() => !procStat(child)); // Verified descendants are cleaned even though capture cannot persist yet.
+  fs.unlinkSync(flag);
+  await until(() => readCloseReaped(job));
+  assert.ok(reapAttempts(f, job) >= 2);
 });
 
 test('read-close: a settled Pi with a fresh report closes and reaps a current-turn child', { timeout: 10000 }, async (t) => {
@@ -1003,7 +1107,7 @@ test('read-close: listing an unread report leaves the CLI grace deadline in plac
   await until(() => readCloseReaped(job));
 });
 
-test('read-close: the CLI end line settles a worker still marked working, and output reopens it', { timeout: 10000 }, async (t) => {
+test('read-close: the CLI receipt survives a shell-counter change and needs no pane read', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -1014,15 +1118,15 @@ test('read-close: the CLI end line settles a worker still marked working, and ou
   const report = join(job.task_dir, 'report.md'), pane = join(f.env.HOME, 'pane-read');
   fs.writeFileSync(pane, `⏺ report written: ${report}\n2 shells still running\n`);
   fs.writeFileSync(report, 'Synthetic report.\n');
+  declareDone(f, job);
   await until(() => cliState(job.task_dir)?.state === 'idle_grace');
   assert.ok(procStat(child));
-  // A read wakes the supervisor; it must resample the pane before closing.
-  fs.appendFileSync(pane, 'More worker output.\n');
+  fs.writeFileSync(pane, `⏺ report written: ${report}\n1 shell still running\n`);
+  fs.writeFileSync(join(f.env.HOME, 'pane-read-timeout'), '');
   assert.match((await f.call('hud_read', { job: job.job })).report, /^Synthetic /);
-  await until(() => cliState(job.task_dir)?.state === 'working');
-  assert.equal(readCloseQuit(f, job), false);
-  f.push(job.job, 'done');
   await until(() => readCloseReaped(job));
+  assert.ok(readCloseQuit(f, job));
+  assert.equal(f.socketRequests.filter(({ method }) => method === 'pane.read').length, 0);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
   await until(() => procStat(child) === null);
 });
@@ -1041,7 +1145,7 @@ test('read-close: a live pre-turn CLI child does not block settlement or close',
   await until(() => procStat(child) === null);
 });
 
-test('supervisor events: herdr idle after a fresh report settles with an in-turn child', { timeout: 10000 }, async (t) => {
+test('supervisor events: renewed idle and stale scrollback do not settle a draft with an in-turn child', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
@@ -1050,11 +1154,17 @@ test('supervisor events: herdr idle after a fresh report settles with an in-turn
   await until(() => cliState(job.task_dir)?.pid === worker.pid && cliState(job.task_dir)?.agent_session_id);
   assert.equal(cliState(job.task_dir).pid_start_time, procStat(worker.pid).start);
   const child = await worker.start();
-  fs.writeFileSync(join(job.task_dir, 'report.md'), 'Report while tests finish.\n');
+  const report = join(job.task_dir, 'report.md');
+  const marker = `⏺ report written: ${report}\n`;
   f.push(job.job, 'idle');
-  await until(() => cliState(job.task_dir)?.state === 'idle_grace', 2200);
-  assert.ok(procStat(child), 'unread report keeps the worker available');
-  assert.equal(cliState(job.task_dir).output_written, true);
+  fs.writeFileSync(join(f.env.HOME, 'pane-read'), marker.repeat(2));
+  fs.writeFileSync(report, 'Report while tests finish.\n');
+  fs.writeFileSync(join(f.env.HOME, 'pane-read'), marker);
+  const queries = statusQueries(f, job);
+  await until(() => statusQueries(f, job) >= queries + 2);
+  assert.ok(procStat(child));
+  assert.equal(cliState(job.task_dir).state, 'working');
+  assert.equal(cliState(job.task_dir).output_written, false);
 });
 
 async function fakeMcpBootstrap(f, worker, generic = false) {
@@ -1164,6 +1274,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
     if (work) {
       assert.match((await f.call('hud_read', { job: job.job })).report, /Synthetic fresh report/);
       assert.ok(procStat(work));
+      declareDone(f, job);
     } else {
       await until(() => cliState(dir)?.state === 'idle_grace');
       const listing = await f.call('hud_read');
@@ -1643,7 +1754,8 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
     `Sonic command: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} start --dir ${JSON.stringify(job.task_dir)} --task-file <file> [--thinking off|low|medium|high]\n` +
     `Collect: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-sonic.mjs'))} wait --dir ${JSON.stringify(job.task_dir)} --job <id>\n` +
     `Optional milestone: node ${JSON.stringify(resolve('packages/hud-mcp/bin/hud-progress.mjs'))} --dir ${JSON.stringify(job.task_dir)} "message"\n` +
-    `Once the report file is written, end your turn with the single line \`report written: ${join(job.task_dir, 'report.md')}\` and do not repeat the report in your final message.\n`
+    `After writing the report, run: node ${JSON.stringify(progressCommand)} --done --dir ${JSON.stringify(job.task_dir)}\n` +
+    `Then end your turn with the single line \`report written: ${join(job.task_dir, 'report.md')}\` and do not repeat the report in your final message.\n`
   );
   assert.deepEqual(f.commands()[0].args, ['pane', 'get', 'w4E:p1']);
   const commands = f.commands().filter((c) => c.args[1] !== 'get');
@@ -1953,9 +2065,7 @@ test('hud-progress validates the job directory, normalizes text, and retains the
   const f = await fixture(t);
   const { dir, job } = waitFixtureJob(f, 1);
   const log = join(dir, 'progress.jsonl');
-  const run = (...args) => spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-progress.mjs'), ...args], {
-    env: { ...f.env, HUD_JOB_DIR: dir }, encoding: 'utf8',
-  });
+  const run = (...args) => runProgress(f, dir, ...args);
   const outside = join(f.root, job);
   fs.cpSync(dir, outside, { recursive: true });
   assert.notEqual(run('--dir', outside, 'outside').status, 0);
@@ -1975,6 +2085,38 @@ test('hud-progress validates the job directory, normalizes text, and retains the
   assert.equal(rotated.status, 0, rotated.stderr);
   assert.notEqual(fs.statSync(log).ino, inode, 'rotation publishes a fresh inode');
   assert.deepEqual(read().map((r) => r.text), [...seed.map((r) => r.text), '进'.repeat(240)]);
+});
+
+test('hud-progress --done binds a fresh report to the turn token in the current CLI prompt', async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  writeCliRole(f, 'done-command', 20);
+  const job = await f.call('hud_create', { role: 'done-command', request_key: 'done-command', task: 'Synthetic task.' });
+  const dir = job.task_dir, file = join(dir, 'done.json'), report = join(dir, 'report.md');
+  const first = cliToken(dir);
+  const prompts = () => f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'prompt');
+  assert.ok(prompts()[0].args[3].includes(`--turn ${first}`));
+  assert.notEqual(runProgress(f, dir, '--done', '--turn', first).status, 0, 'missing report');
+  assert.equal(fs.existsSync(file), false);
+  fs.writeFileSync(report, 'Synthetic first turn.\n');
+  assert.notEqual(runProgress(f, dir, '--done').status, 0, 'must supply the prompt token');
+  declareDone(f, job);
+  const done = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(turnToken(done), first);
+  assert.equal(done.report_sig, reportSignature(dir));
+  assert.ok(Number.isFinite(Date.parse(done.at)));
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  await until(() => cliState(dir)?.state === 'idle_grace');
+  assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).sent, true);
+  const second = cliToken(dir);
+  assert.notEqual(first, second);
+  assert.ok(prompts().at(-1).args[3].includes(`--turn ${second}`));
+  assert.notEqual(runProgress(f, dir, '--done', '--turn', second).status, 0, 'unchanged baseline report');
+  fs.writeFileSync(report, 'Synthetic second turn.\n');
+  assert.notEqual(runProgress(f, dir, '--done', '--turn', first).status, 0, 'old turn cannot declare the new one');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), done, 'rejection leaves the previous receipt untouched');
+  declareDone(f, job);
+  assert.equal(turnToken(JSON.parse(fs.readFileSync(file, 'utf8'))), second);
 });
 
 test('single-job reads and the panel get progress without changes or narration in list/wait rows', async (t) => {
@@ -3400,8 +3542,9 @@ for (const mode of ['rejected-prompt', 'fast-ambiguous-prompt']) {
     const prior = turn(), grace = cliState(dir);
     const args = { job: job.job, message_key: 'cont', text: 'Synthetic continuation.' };
     fs.writeFileSync(join(f.env.HOME, mode), '');
+    const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3]?.split('\n')[0] === args.text);
     const sent = f.call('hud_send', args);
-    await until(() => f.commands().some((c) => c.args.at(-1) === args.text));
+    await until(() => prompts().length > 0);
     const provisional = turn();
     assert.equal(provisional.seq, prior.seq + 1);
     assert.equal(receipt().send_outcomes.at(-1).exit_code, null);
@@ -3411,7 +3554,7 @@ for (const mode of ['rejected-prompt', 'fast-ambiguous-prompt']) {
     fs.writeFileSync(join(f.env.HOME, 'release-prompt-result'), '');
     assert.equal((await sent).code, 'send_failed');
     assert.equal((await f.call('hud_send', args)).code, 'send_failed');
-    assert.equal(f.commands().filter((c) => c.args.at(-1) === args.text).length, 1);
+    assert.equal(prompts().length, 1);
     assert.equal(receipt().send_outcomes.at(-1).exit_code, 1);
     if (mode === 'rejected-prompt') {
       assert.deepEqual(turn(), prior);
@@ -3511,7 +3654,7 @@ test('hud_send queues into a working cli job', { timeout: 15000 }, async (t) => 
       .commands()
       .filter((c) => c.args[1] === 'prompt')
       .at(-1)
-      .args.at(-1),
+      .args[3].split('\n')[0],
     'Synthetic addendum.'
   );
 });
@@ -4711,7 +4854,7 @@ test('quiet decision finished-no-report sends fixed prompt once per job and sett
   const job = await f.call('hud_create', { role: 'qd-prompt', request_key: 'qd-prompt-1', task: 'Synthetic report prompt.' });
   await until(() => cliState(job.task_dir)?.state === 'closed', 10000);
   const expectedPrompt = `Write your report to ${join(job.task_dir, 'report.md')} now; if work remains, finish it first.`;
-  const prompts = f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3] === expectedPrompt);
+  const prompts = f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3]?.split('\n')[0] === expectedPrompt);
   assert.equal(prompts.length, 1);
   assert.equal(cliState(job.task_dir).quiet_decision.choice, 'finished-no-report');
   assert.equal(cliState(job.task_dir).quiet_decision.probability, 0.93);
@@ -4726,7 +4869,7 @@ test('quiet decision finished-no-report sends fixed prompt once per job and sett
   const job2 = await f2.call('hud_create', { role: 'qd-prompt2', request_key: 'qd-prompt-2', task: 'Synthetic no repeat.' });
   await until(() => cliState(job2.task_dir)?.state === 'waiting_orchestrator', 10000);
   const expectedPrompt2 = `Write your report to ${join(job2.task_dir, 'report.md')} now; if work remains, finish it first.`;
-  const prompts2 = f2.commands().filter((c) => c.args[1] === 'prompt' && c.args[3] === expectedPrompt2);
+  const prompts2 = f2.commands().filter((c) => c.args[1] === 'prompt' && c.args[3]?.split('\n')[0] === expectedPrompt2);
   assert.equal(prompts2.length, 1);
   assert.equal(server2.requests.length, 2);
   const status2 = cliState(job2.task_dir);
@@ -4923,14 +5066,18 @@ test('no /quit before done for a noncontinuable CLI', { timeout: 15000 }, async 
 test('an unread declared report closes at the idle deadline and reaps leftovers', { timeout: 10000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'grace-bg-cli', 1, true);
   const graceJob = await f.call('hud_create', {
     role: 'grace-bg-cli',
     request_key: 'grace-bg-hold',
     task: 'Background child holds grace.',
   });
-  await until(() => cliState(graceJob.task_dir)?.state === 'idle_grace');
+  await until(() => cliState(graceJob.task_dir)?.pid === worker.pid);
   const child = await worker.start();
+  fs.writeFileSync(join(graceJob.task_dir, 'report.md'), 'Synthetic report with leftover child.\n');
+  declareDone(f, graceJob);
+  await until(() => cliState(graceJob.task_dir)?.state === 'idle_grace');
   const quit = () => f.commands().some((c) => c.args[1] === 'prompt' && c.args[2] === `${graceJob.job}-primary` && c.args[3] === '/quit');
   const reaped = () => f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === graceJob.task_dir);
   assert.ok(procStat(child));
@@ -5136,7 +5283,7 @@ test('reportPromptSent persists across supervisor restart via hud_send', { timeo
 
   const job = await f.call('hud_create', { role: 'qd-prompt-respawn', request_key: 'qd-prompt-respawn', task: 'Synthetic respawn no repeat.' });
   const expectedPrompt = `Write your report to ${join(job.task_dir, 'report.md')} now; if work remains, finish it first.`;
-  const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3] === expectedPrompt);
+  const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3]?.split('\n')[0] === expectedPrompt);
   await until(() => prompts().length === 1 && cliState(job.task_dir)?.supervisor_pid, 10000);
   const oldSupPid = cliState(job.task_dir).supervisor_pid;
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'turn.json'), 'utf8')).report_prompt_sent, true);

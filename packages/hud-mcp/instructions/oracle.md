@@ -36,7 +36,7 @@ user; the orchestrator reads your report.
 
 ## Report
 
-Write a plain-text report to the report path the brief names, then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
+Write a plain-text report to the report path the brief names. Run the `--done` command in your current prompt (CLI) or brief (pi), then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
 
 1. Direct answer and recommendation.
 2. Supporting facts with `file:line` references (guesses explicitly marked).

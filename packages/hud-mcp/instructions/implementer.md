@@ -32,7 +32,7 @@ out end to end in the working tree and report back. You never talk to an end use
 
 ## Report
 
-Write a plain-text report to the report path the brief names, then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
+Write a plain-text report to the report path the brief names. Run the `--done` command in your current prompt (CLI) or brief (pi), then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
 
 1. Files changed, one line each with what changed.
 2. Checks run, with the command and the actual result.

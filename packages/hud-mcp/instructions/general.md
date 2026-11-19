@@ -33,7 +33,7 @@ talk to an end user; the orchestrator reads your report.
 
 ## Report
 
-Write a plain-text report to the report path the brief names, then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
+Write a plain-text report to the report path the brief names. Run the `--done` command in your current prompt (CLI) or brief (pi), then end your turn with the single line `report written: <path>`. Do not repeat the report in chat:
 
 1. The result: what you produced or found (files changed one per line, or findings with `file:line` / sources).
 2. Checks run, with the command and the actual result.

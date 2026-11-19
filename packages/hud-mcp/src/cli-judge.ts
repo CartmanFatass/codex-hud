@@ -9,7 +9,6 @@ export interface Turn {
   seq: number;
   sent_at: string;
   report_sig: string | null;
-  report_marker?: string | null;
   report_prompt_sent?: boolean;
   first_sent_at?: string;
   send?: { key: string; pid: number; start: string | null };
@@ -38,26 +37,30 @@ export function readTurn(dir: string): Turn | null {
   }
 }
 
-/** Hash the last matching completion line with its local context, not the volatile footer. */
-export function reportMarker(text: string, path: string): string | null {
-  const lines = text.split(/\r?\n/).map((line) => line.trim());
-  const matches = lines.flatMap((line, index) => line.replace(/^[⏺●•]\s+/, '') === `report written: ${path}`
-    ? [index] : []);
-  const last = matches.at(-1);
-  // An older marker in scrollback is not the last response if another answer or tool block follows it.
-  if (last === undefined || lines.slice(last + 1).some((line) => /^[⏺●•]\s+\S/.test(line))) return null;
-  return createHash('sha256').update(JSON.stringify([matches.length, ...lines.slice(Math.max(0, last - 2), last)])).digest('hex');
+export const DONE_FILE = 'done.json';
+export type DoneReceipt = Pick<Turn, 'seq' | 'sent_at'> & { report_sig: string; at: string };
+export const turnToken = (turn: Turn) => `${turn.seq}@${turn.sent_at}`;
+export const withDonePrompt = (text: string, bundled: string, dir: string, turn: Turn) =>
+  `${text}\n\nAfter writing the report for this turn, run: node ${JSON.stringify(join(bundled, 'bin', 'hud-progress.mjs'))} --done --dir ${JSON.stringify(dir)} --turn ${turnToken(turn)}\nThen end with only \`report written: ${join(dir, 'report.md')}\`. Use the command from the prompt you are answering, not a newer turn.\n`;
+
+export function readDone(dir: string): DoneReceipt | null {
+  try {
+    const fd = fs.openSync(join(dir, DONE_FILE), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    try {
+      const st = fs.fstatSync(fd);
+      return st.isFile() && st.size <= 1024 ? JSON.parse(fs.readFileSync(fd, 'utf8')) as DoneReceipt : null;
+    } finally { fs.closeSync(fd); }
+  } catch { return null; } // Missing or unreadable evidence does not authorize a close.
 }
 
 /** Publish before input: a fast report must differ from the send-time baseline. */
-export function writeTurn(dir: string, reportPromptSent?: boolean, send?: Turn['send'], marker?: string | null): Turn {
+export function writeTurn(dir: string, reportPromptSent?: boolean, send?: Turn['send']): Turn {
   const prev = readTurn(dir);
   const sent = reportPromptSent || prev?.report_prompt_sent;
   const turn: Turn = {
     seq: (prev?.seq ?? 0) + 1,
     sent_at: new Date().toISOString(),
     report_sig: reportSignature(dir),
-    report_marker: marker,
     ...(sent ? { report_prompt_sent: true } : {}),
     ...(prev && firstInput(prev) ? { first_sent_at: firstInput(prev) } : {}),
     ...(send ? { send } : {}),
@@ -192,12 +195,7 @@ export interface Judgment {
   decisionWait?: boolean; // A quiet decision's wait still uses the full idle grace.
   missingTicks: number;
   wakeAt: number | null;
-  paneSig?: string;
-  declaredAt?: number;
-  invalidatedAt?: number;
-  rejectedMarker?: string | null;
-  marker?: string | null;
-  idleSince?: number;
+  declared?: boolean;
 }
 export const REPORT_READ_EXIT = 'closed after report read';
 
@@ -218,10 +216,7 @@ export interface Facts {
   tick?: boolean;
   agentMissing?: boolean;
   workingAt?: number | null;
-  idleAt?: number | null;
-  reportMtime?: number;
-  paneSig?: string;
-  reportMarker?: string | null;
+  done?: DoneReceipt | null;
   tabClosed?: boolean;
   decision?: QuietDecision & { failReason?: string };
   supervisorError?: string;
@@ -247,25 +242,17 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   const report = facts.reportSig !== null && facts.reportSig !== facts.turn.report_sig;
   const readReport = report && facts.reportRead;
   const reportChanged = next.reportSig !== facts.reportSig;
-  const paneChanged = facts.paneSig !== undefined && next.paneSig !== undefined && facts.paneSig !== next.paneSig;
-  const worked = (at: number) => (facts.workingAt ?? -Infinity) > at;
-  if (next.declaredAt !== undefined && (paneChanged || reportChanged || worked(next.declaredAt))) {
-    next.rejectedMarker = next.marker;
-    next.invalidatedAt = now;
-    next.declaredAt = undefined;
+  const done = facts.done;
+  const declared = report && done?.seq === facts.turn.seq && done.sent_at === facts.turn.sent_at &&
+    done.report_sig === facts.reportSig && Number.isFinite(Date.parse(done.at));
+  if (next.declared && (!declared || reportChanged)) {
     next.state = 'working';
     next.outputWritten = false;
-    next.settledAt = next.deadline = null;
+    next.settledAt = next.deadline = next.quietSince = null;
   }
-  const interrupted = next.quietSince !== null && worked(next.quietSince);
-  if ((paneChanged || interrupted) && next.marker === facts.reportMarker) next.rejectedMarker = next.marker;
-  if (reportChanged || paneChanged || interrupted || (facts.reportMarker != null && facts.reportMarker !== next.marker)) {
-    next.quietSince = null;
-    next.idleSince = undefined;
-  }
-  next.marker = facts.reportMarker ?? next.marker;
+  next.declared = declared;
+  if (reportChanged || (next.quietSince !== null && (facts.workingAt ?? -Infinity) > next.quietSince)) next.quietSince = null;
   next.reportSig = facts.reportSig;
-  next.paneSig = facts.paneSig ?? next.paneSig;
   const end = (state: Judgment['state'], reason: string, quit = false): Judgment => ({
     ...next, state, exitReason: reason, outputWritten: report,
     settledAt: next.settledAt ?? now, action: quit ? 'quit' : null, wakeAt: null,
@@ -290,33 +277,27 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   if (next.state === 'idle_grace' && !collectSonic) {
     if (!readReport && now < next.deadline!)
       return { ...next, state: 'idle_grace', wakeAt: next.deadline };
-    if (next.declaredAt === undefined) {
+    if (!declared) {
       if (facts.status === 'working' || facts.liveChild) return { ...next, state: 'idle_grace' };
       if (facts.liveChild === null) return { ...next, state: 'idle_grace', action: 'sample' };
     }
     return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
   }
-  const idle = facts.status === 'done' || facts.status === 'idle';
-  const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= Date.parse(facts.turn.sent_at) && idle;
-  const marker = report && facts.reportMarker != null && facts.reportMarker !== next.rejectedMarker &&
-    (facts.turn.seq === 1 || facts.turn.report_marker !== undefined) && facts.reportMarker !== facts.turn.report_marker;
-  const ended = idle && (facts.idleAt ?? -Infinity) >= Math.max(facts.reportMtime ?? Infinity, next.invalidatedAt ?? -Infinity);
-  next.idleSince = ended ? next.idleSince ?? now : undefined;
-  const quiet = marker || (facts.status !== 'working' && (facts.status !== null || report));
+  const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= Date.parse(facts.turn.sent_at)
+    && (facts.status === 'done' || facts.status === 'idle');
+  const quiet = declared || (facts.status !== 'working' && (facts.status !== null || report));
   next.quietSince = quiet ? (next.quietSince ?? now) : null;
   if (!report && facts.liveChild) next.quietSince = null;
   if (next.quietSince === null) return { ...next, state: 'working', quietHandled: false, decisionWait: false };
   if (report || collectSonic) {
     // A trusted turn end shortens stability; errors retain the full 60s outage window.
-    const stableFrom = !marker && ended && report ? Math.max(next.quietSince, next.idleSince!) : next.quietSince;
-    const due = Math.max(stableFrom + (trustedEnd || marker ? 2000 : 10_000),
-      facts.status === null && !marker ? next.errorsSince! + 60_000 : 0);
-    if (now < due) return { ...next, state: 'working', wakeAt: due };
-    const declared = report && (marker || ended);
-    if (!declared && facts.liveChild === null) return { ...next, state: 'working', action: 'sample' };
-    if (!declared && facts.liveChild) return { ...next, state: 'working' };
+    if (!declared) {
+      const due = Math.max(next.quietSince + (trustedEnd ? 2000 : 10_000), facts.status === null ? next.errorsSince! + 60_000 : 0);
+      if (now < due) return { ...next, state: 'working', wakeAt: due };
+      if (facts.liveChild === null) return { ...next, state: 'working', action: 'sample' };
+      if (facts.liveChild) return { ...next, state: 'working' };
+    }
     if (collectSonic) return { ...next, state: 'working', action: 'collect-sonic' };
-    if (declared) next.declaredAt = now;
     if (readReport || !facts.canContinue) return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
     return { ...next, state: 'idle_grace', outputWritten: true, settledAt: now,
       deadline: now + facts.graceMs, wakeAt: now + facts.graceMs };

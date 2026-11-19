@@ -56,14 +56,14 @@ const readJson = (file: string): Record<string, unknown> | null => {
 export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
   const status = readJson(join(jobDir, 'STATUS.json'));
   try {
-    const { result, complete } = await reapWorkerTree(jobDir, status, () => {
+    const { result, complete, issue } = await reapWorkerTree(jobDir, status, () => {
       if (isRecord(readJson(join(jobDir, 'job.json'))?.cli) && status?.state === 'idle_grace') {
         try { fs.writeFileSync(join(jobDir, 'STATUS.json.close-requested'), '', { flag: 'wx', mode: 0o600 }); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
       }
       return runCommand('pi-role-reap', [jobDir], env, { budgetMs: 60_000 });
     }, (run) => run.ok);
-    return complete ? { ok: true } : { ok: false, reason: result.reason === 'unavailable' ? 'pi-role-reap missing' : 'reap failed' };
+    return complete ? { ok: true } : { ok: false, reason: issue ?? (result.reason === 'unavailable' ? 'pi-role-reap missing' : 'reap failed') };
   } catch { return { ok: false, reason: 'reap failed' }; }
 }
 
