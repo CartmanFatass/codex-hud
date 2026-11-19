@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isQuotaFailure, recordFailureExhaustion } from '../dist/src/roles/roster.js';
 import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT } from '../dist/packages/hud-mcp/src/cli-judge.js';
-import { reapWorkerTree, UNVERIFIED_TREE_NOTE } from '../dist/src/roles/worker-tree.js';
+import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../dist/src/roles/worker-tree.js';
 import { reportWasRead } from '../dist/src/collectors/thin-jobs.js';
 import { reapWorktree } from '../dist/packages/hud-mcp/src/managed-worktree.js';
 import { request } from './herdr-request.mjs';
@@ -258,17 +258,24 @@ async function scan(retryWatch = false) {
         if (job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) open = true;
         continue;
       }
+      const ownership = JSON.stringify([session, status.pid, status.pid_start_time]);
+      const previous = reapRetries.get(id);
+      const retry = !job?.reaped_at && previous?.ownership === ownership ? previous : null;
+      safetyCheck ||= Boolean(retry?.readClose); // The root may still exit after report eligibility changes.
+      // After a read-close has started and its root is gone, cleanup belongs to that worker, not the report.
+      const resumeReadReap = retry?.readClose && workerTreeRootGone(status.pid, status.pid_start_time);
       let readInGrace = null;
-      if (status.state === 'idle_grace') {
+      if (!resumeReadReap && status.state === 'idle_grace') {
         open = true;
         // Pi owns the unread deadline. CLI grace always goes through its supervisor.
         if (!tab || !(readInGrace = readCloseTurn(dir, job, status))) continue;
       }
-      if (status.state === 'working' || status.state?.startsWith('waiting')) {
+      if (!resumeReadReap && (status.state === 'working' || status.state?.startsWith('waiting'))) {
         open = true;
         continue;
       }
-      if (!readInGrace && !['closed', 'failed', 'stopped'].includes(status.state)) continue;
+      const readClose = Boolean(resumeReadReap || readInGrace);
+      if (!readClose && !['closed', 'failed', 'stopped'].includes(status.state)) continue;
       if (status.state === 'failed' && job && !job.exhaustion_marked) {
         const text = String(status.exit_reason ?? status.error ?? '');
         if (isQuotaFailure(text)) {
@@ -293,7 +300,7 @@ async function scan(retryWatch = false) {
         continue;
       }
       if (job?.reaped_at || !tab) continue;
-      if (status.state === 'failed') {
+      if (status.state === 'failed' && !resumeReadReap) {
         const ended = Date.parse(status.ended_at);
         const deadline = (Number.isFinite(ended) ? ended : fs.statSync(statusFile).mtimeMs) + retention;
         if (deadline > Date.now()) {
@@ -301,42 +308,39 @@ async function scan(retryWatch = false) {
           continue;
         }
       }
-      const ownership = JSON.stringify([session, status.pid, status.pid_start_time]);
-      const previous = reapRetries.get(id);
-      const retry = previous?.ownership === ownership && previous.readInGrace === readInGrace ? previous : null;
       if (retry?.at > Date.now()) {
         nearest = Math.min(nearest, retry.at);
         continue;
       }
       if (readInGrace) {
-        safetyCheck = true; // Revisit a busy worker or a failed reap on the existing slow tick.
-        // Native pi settlement comes from agent_settled after a per-turn report baseline. Herdr is only
-        // a last check for resumed work. After a partial reap, agent_not_found cannot strand captured children.
-        if (!(retry && status.pid_start_time && workerAlive(status.pid, status.pid_start_time) === false)) {
-          const target = session.match(/^PRIMARY=([^\r\n]+)$/m)?.[1];
-          const agent = target && (await request('agent.get', { target }))?.result?.agent;
-          const latest = json(statusFile);
-          if (!['idle', 'done'].includes(agent?.agent_status) || closedTabs.has(tab) ||
-              latest?.pid !== status.pid || latest?.pid_start_time !== status.pid_start_time ||
-              readCloseTurn(dir, json(jobFile), latest) !== readInGrace) continue;
-        }
+        safetyCheck = true; // Revisit a busy worker on the existing slow tick.
+        const target = session.match(/^PRIMARY=([^\r\n]+)$/m)?.[1];
+        const agent = target && (await request('agent.get', { target }))?.result?.agent;
+        const latest = json(statusFile);
+        if (!['idle', 'done'].includes(agent?.agent_status) || closedTabs.has(tab) ||
+            latest?.pid !== status.pid || latest?.pid_start_time !== status.pid_start_time ||
+            readCloseTurn(dir, json(jobFile), latest) !== readInGrace) continue;
       }
+      // Only native Pi can finish and exit after a worker-side capture the watcher never saw.
+      const expectSnapshot = job && !job.cli && !job.bro && !job.jev;
       const { result, complete, issue, snapshot } = await reapWorkerTree(dir, status,
         () => spawnSync('pi-role-reap', [dir], { encoding: 'utf8', timeout: 135000, killSignal: 'SIGKILL' }), (run) => run.status === 0,
-        previous?.ownership === ownership ? previous.snapshot : undefined);
+        { carry: retry?.snapshot, expectSnapshot });
       // A tab ownership refusal is final only when there is no unresolved descendant cleanup.
-      const refusal = !issue && !readInGrace && result.status === 1 &&
+      const refusal = !issue && !readClose && result.status === 1 &&
         result.stderr?.trimEnd().endsWith(`: TAB ${tab} name changed or missing; not closing`) && !result.stderr.trim().includes('\n');
       const at = refusal ? Infinity : Date.now() + cliCheck;
-      reapRetries.set(id, { ownership, readInGrace, at, snapshot });
+      reapRetries.set(id, { ownership, readClose, at, snapshot });
       if (!complete) nearest = Math.min(nearest, at);
       const message = `reap ${id} state=${status.state} exit=${result.status ?? result.error?.message}; ${issue ? `${issue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
       if (complete) log(message);
       else warn(`reap ${id}`, message);
-      if (complete && readInGrace) {
+      if (complete && readClose) {
         // Pi may have published shutdown STATUS during reap. Preserve those facts and name the trigger.
         const latest = json(statusFile);
-        if (latest && ['idle_grace', 'closed'].includes(latest.state)) {
+        if (latest && latest.pid === status.pid && latest.pid_start_time === status.pid_start_time &&
+            (['idle_grace', 'closed'].includes(latest.state) || resumeReadReap &&
+              (latest.state === 'working' || latest.state?.startsWith('waiting')))) {
           status = { ...latest, state: 'closed', exit_reason: REPORT_READ_EXIT, ended_at: latest.ended_at ?? new Date().toISOString() };
           fs.writeFileSync(`${statusFile}.${process.pid}.tmp`, JSON.stringify(status) + '\n', { mode: 0o600 });
           fs.renameSync(`${statusFile}.${process.pid}.tmp`, statusFile);

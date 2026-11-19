@@ -44,8 +44,8 @@ async function main() {
       if (values.turn || !reportSignature(dir)) throw new Error('write the pi report first; pi does not use --turn');
       const { rememberWorkerTree } = await import('../dist/src/roles/worker-tree.js');
       const status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
-      const { issue } = rememberWorkerTree(dir, status);
-      if (issue) console.error(`hud-progress: ${issue}; the watcher will retry cleanup`);
+      const { snapshot, issue } = rememberWorkerTree(dir, status);
+      if (issue || !snapshot) throw new Error(issue ?? 'worker-tree snapshot unresolved: no ancestry snapshot could be captured');
     }
     return;
   }

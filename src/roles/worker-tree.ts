@@ -21,12 +21,22 @@ export function procStat(pid: number) {
 
 type Stamp = { pid: number; start: string };
 type Snapshot = { version: 2; bootId: string; pid: number; start: string; members: Stamp[] };
-type Capture = { snapshot?: Snapshot; issue?: string };
+type Capture = { snapshot?: Snapshot; issue?: string; missingAfterExit?: boolean };
 const validPid = (pid: unknown): pid is number => typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 1;
 const validStart = (start: unknown): start is string => typeof start === 'string' && /^\d+$/.test(start);
 const active = (state: string | undefined) => !/^[ZXx]$/.test(state ?? '');
 const boot = () => fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
 export const UNVERIFIED_TREE_NOTE = 'descendants without captured ancestry left alone';
+
+function recordedRootAlive(pid: number, start: string) {
+  const stat = readProcStat(pid);
+  return stat?.start === start && active(stat.state);
+}
+
+export function workerTreeRootGone(pid: unknown, start: unknown) {
+  try { return validPid(pid) && validStart(start) && !recordedRootAlive(pid, start); }
+  catch { return false; } // Unreadable /proc is not confirmation of exit.
+}
 
 /** Capture only individually verified parent/child links, before quit or native shutdown can orphan them. */
 export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapshot): Capture {
@@ -43,28 +53,43 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
     if (!pane || pane === /^ORCH=([^\r\n]+)$/m.exec(session)?.[1]) return {};
     const bootId = boot(), file = join(dir, 'worker-tree.json');
     if (!bootId) throw Error('boot identity unavailable');
-    const matches = (value: Snapshot | undefined) => value?.version === 2 && value.bootId === bootId &&
+    // Version 1 included group/tag guesses; none of that evidence is eligible for signalling.
+    const matches = (value: Snapshot | undefined): value is Snapshot => value?.version === 2 && value.bootId === bootId &&
       value.pid === pid && value.start === start && Array.isArray(value.members);
-    snapshot = { version: 2, bootId, pid, start, members: [] };
     const add = (member: Stamp) => {
       if (!member || !validPid(member.pid) || !validStart(member.start) || member.pid === pid || member.pid === process.pid) return;
-      owned.set(member.pid, member);
+      const previous = owned.get(member.pid);
+      if (!previous || Number(member.start) > Number(previous.start)) owned.set(member.pid, member);
     };
-    if (carry && matches(carry)) for (const member of carry.members) add(member);
-    let prior;
-    try {
-      const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    const recover = (value: Snapshot | undefined) => {
+      if (!matches(value)) return false;
+      snapshot ??= { version: 2, bootId, pid, start, members: [] };
+      for (const member of value.members) add(member);
+      return true;
+    };
+    const readSnapshot = (path: string): Snapshot | undefined => {
       try {
-        if (!fs.fstatSync(fd).isFile()) throw Error('worker-tree.json is not a regular file');
-        prior = JSON.parse(fs.readFileSync(fd, 'utf8')) as Snapshot;
-      } finally { fs.closeSync(fd); }
-    } catch (error) {
-      // Failed disk reads must not discard ownership we can still prove from the live root.
-      if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== 'ENOENT') issue = unresolved(error);
+        const fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+        try {
+          if (!fs.fstatSync(fd).isFile()) throw Error('worker-tree snapshot is not a regular file');
+          return JSON.parse(fs.readFileSync(fd, 'utf8')) as Snapshot;
+        } finally { fs.closeSync(fd); }
+      } catch (error) {
+        // Incomplete staged files cannot authorize signalling. Other I/O failures remain unresolved.
+        if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== 'ENOENT') issue ??= unresolved(error);
+      }
+    };
+    recover(carry);
+    const prior = readSnapshot(file);
+    recover(prior);
+    const staged = new Map<string, string>();
+    for (const name of fs.readdirSync(dir)) {
+      if (!/^worker-tree\.json\.[0-9a-f-]{36}\.tmp$/.test(name)) continue;
+      const path = join(dir, name), value = readSnapshot(path);
+      if (recover(value)) staged.set(JSON.stringify(value), path);
     }
-    // Version 1 included group/tag guesses; none of that evidence is eligible for signalling.
-    if (prior && matches(prior)) for (const member of prior.members) if (!owned.has(member?.pid)) add(member);
-    if (readProcStat(pid)?.start === start) {
+    if (recordedRootAlive(pid, start)) {
+      snapshot ??= { version: 2, bootId, pid, start, members: [] };
       const children = new Map<number, Stamp[]>();
       for (const name of fs.readdirSync('/proc')) {
         const id = Number(name);
@@ -84,15 +109,19 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
         add(child);
       }
     }
+    if (!snapshot) return { issue, missingAfterExit: true };
     snapshot.members = [...owned.values()];
     const data = JSON.stringify(snapshot);
     if (!issue && JSON.stringify(prior) !== data) {
-      const temp = `${file}.${randomUUID()}.tmp`;
-      const fd = fs.openSync(temp, 'wx', 0o600);
-      try {
-        try { fs.writeFileSync(fd, data); } finally { fs.closeSync(fd); }
-        fs.renameSync(temp, file);
-      } finally { fs.rmSync(temp, { force: true }); }
+      let temp = staged.get(data);
+      if (!temp) {
+        temp = `${file}.${randomUUID()}.tmp`;
+        const fd = fs.openSync(temp, 'wx', 0o600);
+        try { try { fs.writeFileSync(fd, data); } finally { fs.closeSync(fd); } }
+        catch (error) { fs.rmSync(temp, { force: true }); throw error; }
+      }
+      // If rename fails (e.g. ENOSPC), keep the complete private file for a later reaper.
+      fs.renameSync(temp, file);
     }
     return { snapshot, issue };
   } catch (error) {
@@ -102,12 +131,15 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
 }
 
 /** Keep the external reaper's worker/tab checks; clean only descendants with captured ancestry. */
-export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () => T | Promise<T>, ok: (result: T) => boolean, carry?: Snapshot) {
+export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () => T | Promise<T>, ok: (result: T) => boolean,
+  { carry, expectSnapshot }: { carry?: Snapshot; expectSnapshot?: boolean } = {}) {
   const before = rememberWorkerTree(dir, status, carry);
   const result = await reap();
   const after = rememberWorkerTree(dir, status, before.snapshot ?? carry);
   const snapshot = after.snapshot ?? before.snapshot;
   let issue = before.issue ?? after.issue;
+  if (!snapshot && expectSnapshot && (before.missingAfterExit || after.missingAfterExit))
+    issue ??= 'worker-tree snapshot unresolved: recorded root exited before any matching ancestry snapshot could be recovered';
   if (snapshot) {
     const protectedPids = new Set<number>();
     try {

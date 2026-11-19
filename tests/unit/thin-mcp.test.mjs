@@ -387,6 +387,22 @@ if (process.argv[1]?.endsWith('/hud-cli.mjs')) {
   const { syncBuiltinESMExports } = await import('node:module');
   syncBuiltinESMExports();
 }
+if (process.argv[1]?.endsWith('/hud-progress.mjs')) {
+  const fault = join(process.env.HOME, 'progress-snapshot-enospc');
+  const rename = fs.renameSync, open = fs.openSync;
+  const enospc = () => Object.assign(new Error('synthetic ENOSPC in hud-progress'), { code: 'ENOSPC' });
+  fs.default.renameSync = (from, to) => {
+    if (to.endsWith('/worker-tree.json') && fs.existsSync(fault)) throw enospc();
+    return rename(from, to);
+  };
+  fs.default.openSync = (file, ...args) => {
+    if (typeof file === 'string' && file.includes('/worker-tree.json.') && fs.existsSync(fault) &&
+        fs.readFileSync(fault, 'utf8') === 'open') throw enospc();
+    return open(file, ...args);
+  };
+  const { syncBuiltinESMExports } = await import('node:module');
+  syncBuiltinESMExports();
+}
 const isWatcher = process.argv[1]?.endsWith('/hud-watch.mjs');
 if (isWatcher || process.argv[1]?.endsWith('/hud-cli.mjs')) {
   const flag = join(process.env.HOME, 'snapshot-enospc'), rename = fs.renameSync, kill = process.kill;
@@ -979,7 +995,7 @@ test('read-close: failed Pi reap is retried on the slow safety tick without a fi
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
 });
 
-test('read-close: Pi retries captured children after root exit and snapshot ENOSPC', { timeout: 10000 }, async (t) => {
+for (const rewrite of [false, true]) test(`read-close: Pi retries captured children after root exit and snapshot ENOSPC (rewrite=${rewrite})`, { timeout: 10000 }, async (t) => {
   const f = await fixture(t, true, '', 350);
   const worker = fakeCliWithChild(t, f);
   await f.startCliSocket();
@@ -999,7 +1015,14 @@ test('read-close: Pi retries captured children after root exit and snapshot ENOS
   assert.equal(procStat(child)?.start, start);
   assert.equal(cliState(job.task_dir).state, 'idle_grace');
   assert.equal(readCloseReaped(job), undefined);
-  // No relevant file event: the slow retry must run despite agent_not_found and absent on-disk proof.
+  if (rewrite) {
+    const report = join(job.task_dir, 'report.md');
+    fs.writeFileSync(report, 'Synthetic rewritten report.\n');
+    assert.ok(Math.floor(fs.statSync(report).mtimeMs) > Date.parse(cliState(job.task_dir).settled_at));
+    await until(() => Date.now() > fs.statSync(report).mtimeMs);
+    assert.match((await f.call('hud_read', { job: job.job })).report, /rewritten report/);
+  }
+  // No relevant file event on fault removal: the slow retry must work without a live agent or eligible report.
   fs.unlinkSync(flag);
   await until(() => readCloseReaped(job));
   assert.ok(reapAttempts(f, job) >= 2);
@@ -1025,6 +1048,38 @@ for (const trigger of ['native deadline', 'native one-shot']) test(`pi reap: ${t
   fs.renameSync(`${file}.tmp`, file);
   await until(() => readCloseReaped(job));
   assert.ok(!procStat(child) || procStat(child).state === 'Z');
+});
+
+for (const fault of ['rename', 'open']) test(`pi reap: --done snapshot ${fault} ENOSPC before native shutdown`, { timeout: 10000 }, async (t) => {
+  const f = await fixture(t, true, '', 200);
+  const worker = fakeCliWithChild(t, f);
+  const job = await f.call('hud_create', { role: 'imp', request_key: `pi-done-${fault}`, task: 'Synthetic task.' });
+  const child = await worker.start(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], true);
+  const start = procStat(child).start;
+  t.after(() => { if (procStat(child)?.start === start) process.kill(child, 'SIGKILL'); });
+  await publishPiGrace(job, worker);
+  const file = join(job.task_dir, 'STATUS.json');
+  fs.writeFileSync(file, JSON.stringify({ ...cliState(job.task_dir), state: 'working' }));
+  fs.writeFileSync(join(f.env.HOME, 'progress-snapshot-enospc'), fault);
+  const done = runProgress(f, job.task_dir, '--done');
+  assert.equal(fs.existsSync(join(job.task_dir, 'worker-tree.json')), false);
+  process.kill(worker.pid, 'SIGTERM');
+  await until(() => !procStat(worker.pid));
+  assert.equal(procStat(child)?.start, start);
+  fs.writeFileSync(`${file}.tmp`, JSON.stringify({ ...cliState(job.task_dir), state: 'closed', exit_reason: 'settled' }));
+  fs.renameSync(`${file}.tmp`, file);
+  if (fault === 'rename') {
+    await until(() => readCloseReaped(job));
+    assert.ok(!procStat(child) || procStat(child).state === 'Z', 'watcher recovered the captured orphan');
+  } else {
+    const log = join(f.env.HUD_HOME, 'watch.log');
+    await until(() => readCloseReaped(job) || reapAttempts(f, job) >= 2);
+    assert.equal(readCloseReaped(job), undefined, 'missing proof must not be recorded as a successful reap');
+    assert.match(fs.readFileSync(log, 'utf8'), /worker-tree snapshot unresolved/);
+    assert.equal(procStat(child)?.start, start, 'unprovable child was left alone');
+  }
+  assert.equal(done.status, 1, done.stderr);
+  assert.match(done.stderr, /synthetic ENOSPC in hud-progress/);
 });
 
 test('read-close: rejected CLI quit keeps closed while the watcher retries terminal reap', { timeout: 10000 }, async (t) => {

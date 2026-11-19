@@ -243,9 +243,12 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   const readReport = report && facts.reportRead;
   const reportChanged = next.reportSig !== facts.reportSig;
   const done = facts.done;
-  const declared = report && done?.seq === facts.turn.seq && done.sent_at === facts.turn.sent_at &&
-    done.report_sig === facts.reportSig && Number.isFinite(Date.parse(done.at));
-  if (next.declared && (!declared || reportChanged)) {
+  const receipt = done?.seq === facts.turn.seq && done.sent_at === facts.turn.sent_at &&
+    typeof done.report_sig === 'string' && done.report_sig !== facts.turn.report_sig && Number.isFinite(Date.parse(done.at));
+  const declared = report && receipt && done.report_sig === facts.reportSig;
+  // A stale receipt for this turn is evidence that it declared, not permission to settle as a legacy turn.
+  const awaitingReceipt = receipt && !declared;
+  if (awaitingReceipt || (next.declared && (!declared || reportChanged))) {
     next.state = 'working';
     next.outputWritten = false;
     next.settledAt = next.deadline = next.quietSince = null;
@@ -270,10 +273,10 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     next.outputWritten = false;
     next.settledAt = next.deadline = null;
   }
-  if (facts.status === 'blocked' || facts.openQuestions) {
+  if (facts.openQuestions || (!receipt && facts.status === 'blocked')) {
     return { ...next, state: 'waiting_orchestrator', blocked: facts.status === 'blocked', quietSince: null };
   }
-  if (facts.sonic?.open) return { ...next, state: 'working', quietSince: null, quietHandled: false, decisionWait: false };
+  if (awaitingReceipt || facts.sonic?.open) return { ...next, state: 'working', quietSince: null, quietHandled: false, decisionWait: false };
   if (next.state === 'idle_grace' && !collectSonic) {
     if (!readReport && now < next.deadline!)
       return { ...next, state: 'idle_grace', wakeAt: next.deadline };

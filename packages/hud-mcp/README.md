@@ -148,8 +148,14 @@ and remove it at exit. Other main sessions keep typed questions and can use `hud
 and herdr tab-close events, invokes `pi-role-reap` when a pi report in idle grace
 is read or after normal closure, and exits when no open job or failed-job deadline remains.
 The read-close reason is `closed after report read`. Pi declares completion natively at `agent_settled`
-with a report changed since `before_agent_start`. Pi's `--done` captures descendants before that native
-event can cause shutdown; it does not declare pi settlement. Unread pi reports keep the pi-roles deadline.
+with a report changed since `before_agent_start`. Pi's pending-message and turn-start signals are internal to
+Pi; the watcher's pi-roles STATUS and herdr checks do not identify delivery of a queued `hud_send`. A prior
+turn can settle before the queued prompt reaches Pi, even after HUD recorded the send time. Unread pi reports
+keep the pi-roles deadline. Pi's `--done` captures descendants before native shutdown; it does not declare pi
+settlement. A snapshot write failure returns nonzero; a complete staged snapshot is recoverable if only the
+final rename failed. If the recorded root is gone and no matching proof can be recovered, cleanup remains
+unresolved and the slow retry stays armed. After a partial read-close, cleanup of captured descendants of a
+confirmed-dead root does not depend on the report still qualifying.
 Closing reaps the recorded worker and only descendants with captured PID/start-time ancestry; unverified
 processes are left alone and noted in `watch.log`. Each signal rechecks `/proc` start time, but Node's
 numeric PID kill is not atomic with that check: exit and PID reuse between the check and signal remain
@@ -164,11 +170,12 @@ recorded pid gone or replaced, its tab closed, or dispatch rejected before input
 `hud_send` write `turn.json` before the prompt (internal continuations also start a new turn).
 The worker's `--done --turn` command writes a private `done.json` receipt with the prompt's turn sequence and
 send time, the current report signature, and the receipt time. A matching receipt for a fresh report settles
-without waiting for leftover children or herdr idle; a new turn or report rewrite invalidates it, regardless
-of terminal output. `idle_grace` keeps a continuable worker with an unread report; reading the report or
-reaching the deadline quits and reaps it. An unread deadline close has `exit_reason` `settled`.
-Without a valid receipt, a live in-turn child still defers CLI settlement, the quiet decision and automatic
-close. With `advisory` trust, the ordinary no-child path requires herdr not `working` and a fresh report
+without waiting for leftover children or herdr idle. A new turn invalidates the old receipt; a report rewrite
+on a declared turn reopens it until the worker issues a fresh receipt, even if no child is live. Terminal
+output does not affect receipt validity. `idle_grace` keeps a continuable worker with an unread report; reading
+the report or reaching the deadline quits and reaps it. An unread deadline close has `exit_reason` `settled`.
+For a turn that never issued a receipt, a live in-turn child still defers CLI settlement, the quiet decision
+and automatic close. With `advisory` trust, the ordinary no-child path requires herdr not `working` and a fresh report
 stable for 10 s. A turn quiet past
 the grace without a report gets one Decision API choice (see the reference); anything
 unclear is `waiting_orchestrator` with a reason. Herdr's status alone never fails a live worker.

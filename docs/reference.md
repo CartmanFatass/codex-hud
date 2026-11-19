@@ -212,10 +212,11 @@ Jobs are plain files in `$HUD_HOME/jobs/<job>/`. Pi history stays in
 primary/helper files. A CLI job's supervisor only observes; only facts end a job: the
 worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or
 `closed` when a new report is on disk). Each dispatch and `hud_send` starts a turn (`turn.json`). With `advisory`
-trust, without a valid done receipt a new report settles the turn when herdr is not `working` and the report
+trust, on a turn that never issued a receipt, a new report settles the turn when herdr is not `working` and the report
 has been stable for 10 s, provided there is no live in-turn child. Such children also defer quiet decisions and
-automatic close. `hud-progress --done` binds the CLI report's signature to the turn in the worker's prompt;
-a continuation or a report rewrite invalidates that receipt, not changes in terminal output. With a matching
+automatic close. `hud-progress --done` binds the CLI report's signature to the turn in the worker's prompt.
+A continuation invalidates the old receipt; rewriting a declared report requires a fresh receipt for that turn.
+Changes in terminal output do not affect the receipt. With a matching
 receipt (or pi's native settled turn with a changed report), leftover children do not block closure. For a
 continuable worker, idle grace ends when the report is read or the deadline passes; a deadline close says `settled`.
 The watcher reaps the worker and descendants with captured ancestry, records that unverified processes were left

@@ -158,15 +158,28 @@ test('judge: matching receipt settles; shell counter changes and missing pane re
   assert.equal(judge(initial, { ...declared, canContinue: false }, 1000).action, 'quit');
 });
 
-test('judge: rewritten report goes back to working until a fresh receipt', () => {
+for (const liveChild of [true, false]) test(`judge: rewritten report requires a fresh receipt (liveChild=${liveChild})`, () => {
   const settled = judge(initial, declared, 1000);
-  const updated = { ...declared, reportSig: 'rewrite', reportRead: true, status: 'done' };
-  const reopened = judge(settled, updated, 2000);
-  assert.equal(reopened.state, 'working');
-  assert.equal(reopened.outputWritten, false);
-  assert.equal(reopened.deadline, null);
-  assert.equal(judge(reopened, updated, 32_000).state, 'working');
-  assert.equal(judge(reopened, { ...updated, done: { ...done, report_sig: 'rewrite' } }, 32_000).action, 'quit');
+  const updated = { ...declared, reportSig: 'rewrite', reportRead: true, status: 'idle', liveChild };
+  for (const previous of [settled, null]) { // A restarted supervisor still sees the old receipt on disk.
+    const reopened = judge(previous, updated, 2000);
+    assert.equal(reopened.state, 'working');
+    assert.equal(reopened.outputWritten, false);
+    assert.equal(reopened.deadline, null);
+    const later = judge(reopened, updated, 32_000);
+    assert.equal(later.state, 'working');
+    assert.equal(later.action, null);
+    assert.equal(judge(later, { ...updated, done: { ...done, report_sig: 'rewrite' } }, 32_000).action, 'quit');
+  }
+});
+
+test('judge: advisory blocked does not hold a valid receipt, but an open question does', () => {
+  const blocked = { ...declared, status: 'blocked' };
+  const settled = judge(initial, blocked, 1000);
+  assert.equal(settled.state, 'idle_grace');
+  assert.equal(settled.wakeAt, settled.deadline);
+  assert.equal(judge(settled, { ...blocked, openQuestions: true }, 2000).state, 'waiting_orchestrator');
+  assert.equal(judge(settled, blocked, settled.deadline).action, 'quit');
 });
 
 test('judge: new turn or a reused sequence with a different send time invalidates a receipt', () => {
