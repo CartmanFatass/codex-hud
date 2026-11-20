@@ -70,8 +70,6 @@ export interface MonitorState {
    * default one until the arrows move it), the provider it has opened (pi: providers first), and whether it lists all.
    */
   projectInput?: { role: string; index: number; text: string; pick?: number; provider?: string; all?: boolean };
-  /** The open question of a HUD job the owner is answering from the panel (`r`): `1`–`4` pick an option, `d` the default, anything else cancels. */
-  reply?: { jobId: string; qid: string };
   /** A HUD job the owner asked to stop (`X`): a one-row prompt waits for `y` or Enter, any other input cancels. */
   confirmStop?: { jobId: string; role: string; dir: string };
   homeTarget?: WorkTarget;
@@ -106,10 +104,8 @@ export interface MonitorState {
   splitList?: string;
   splitScroll?: number;
   splitListScroll?: number;
-  /** The list's share of the list-and-preview rows, set with `=` `+` `-` or by dragging the rule; unset, the list is as tall as it needs. Kept across the panel's reload. */
+  /** The list's share of the list-and-preview rows, set with `=` `+` `-`; unset, the list is as tall as it needs. Kept across the panel's reload. */
   splitRatio?: number;
-  /** A drag of the rule is under way (the press was on it). */
-  splitDrag?: boolean;
   /** The `/` filter (`filter.ts`): what is typed, and whether keys still go to it. Cleared on leaving the view; kept across the panel's reload. */
   filterQuery?: string;
   filterOpen?: boolean;

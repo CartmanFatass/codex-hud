@@ -2,14 +2,14 @@
 import { targetKey, type OwnerWorker, type WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { boardRow, minuteAge, decisionBlock, mark } from './workboard-rows.js';
+import { boardRow, minuteAge, decisionBlock, mark, footHints } from './workboard-rows.js';
 import { laneRows, orderedLanes } from './work-lanes.js';
 import { quietDecisionSummary, requestLines, stemLines } from './work-card.js';
-import { theme } from './colors.js';
+import { theme, visualLength } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { currentWorker, currentDecision, foldedWorker } from './work-visibility.js';
-import { answerable, replyHint } from './job-actions.js';
+import { answerable, answerKeys } from './job-actions.js';
 /** One open question as its slab: the amber title, the question and its options (the whole text once expanded), the file and the hints, a blank row. */
 export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
   const rows: MonitorRow[] = [];
@@ -19,8 +19,8 @@ export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state
   const lane = board.lanes.find((l) => l.id === worker.laneId);
   // Collapsed, the short card; Enter expands it to the question whole, the context and every option.
   const open = state.boardExpanded?.has(targetKey(target)) === true;
-  // Open and answerable, the footer offers `r`; while the reply is open it says what its keys take instead.
-  const hint = (open && replyHint(worker, state)) || `${t(open ? '⏎ collapse' : '⏎ expand')}  ${t('o open')}${open && answerable(worker) ? `  ${t('r reply')}` : ''}`;
+  // Open and answerable, the footer leads with the answer keys; the rest drops first when the row is short.
+  const keys = [...(open ? answerKeys(worker) : []), t(open ? '⏎ collapse' : '⏎ expand'), t('o open')];
   rows.push(
     boardRow(
       theme.board.askTitle(
@@ -54,7 +54,7 @@ export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state
     boardRow(
       theme.board.slab(
         fit(
-          `${theme.board.attention(mark('┃', '|'))} ${pair(monitorText(r?.evidence?.relativePath ?? ''), hint, Math.max(0, width - 2))}`,
+          `${theme.board.attention(mark('┃', '|'))} ${pair(monitorText(r?.evidence?.relativePath ?? ''), footHints(keys.join('  '), Math.max(0, width - 2 - visualLength(monitorText(r?.evidence?.relativePath ?? '')) - 1)), Math.max(0, width - 2))}`,
           width
         )
       ),

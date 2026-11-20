@@ -201,7 +201,7 @@ workers ask through the same `QUESTION` line and `hud_respond` flow (`hud-ask`,
 20 minutes, then the default). A blocked CLI marks the job as needing the owner;
 the session learns it through `changes`, Claude's `hud watch`, Codex's automatic queue or pi's native follow-up messages. `hud_respond` writes a
 `qN.answer.md` once. `hud_close` reaps early; normal cleanup belongs to the watcher. The owner can also answer
-an open question from the panel (`r`, then a number or `d`); the session hears it as one `changes` / `hud watch` line,
+an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line,
 `[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the
 reader runs; a question answered earlier is simply gone).
 The main session chooses all next steps; the MCP knows no workflow.
@@ -370,7 +370,7 @@ what is happening, what landed, then where each page stands. Top to bottom the h
 - the project's name row (the panel's directory name; see Switching projects below) with the
   current milestone;
 - **Waiting for you**: STATE's waiting items, folding with Enter; the header says how many there are
-  and how many of them are tries (`4 · 2 to try`: items that begin `Try`). An item whose text does not
+  and how many slices are still to try (`4 · 5 to try`: the ledger's slices in state `try`, whatever the milestone; the Progress row and the Projects list say the same number). An item whose text does not
   fit one row flows on under its first word, whole, into the hub's spare rows, top down (what the owner tries is
   never cut to a name); a panel too short for that cuts it to one row, before Latest or the page rows give way,
   except the item the cursor is on, which keeps its whole text. Enter or a
@@ -385,8 +385,8 @@ what is happening, what landed, then where each page stands. Top to bottom the h
   Worktrees with no ledger row are not work in flight: they are counted on the Working tree row.
   With nothing in flight it says `Nothing in progress`;
 - **Latest**: the newest landed slices (to try, accepted), newest first by the commit date the
-  ledger read already has (`◇ ID  text  to try 10h`); three rows at 40 columns, five wider;
-- one row per page with a one-line summary: **Progress** (milestone, working, to try, blocked; the
+  ledger read already has (`◇ ID  text  to try 10h`; with the model on, a to-try slice's text is its brief's first sentence, cut with `…` to the room); three rows at 40 columns, five wider;
+- one row per page with a one-line summary: **Progress** (milestone, to try, blocked, working: the last facts drop first on a short row; the
   current milestone's bar under it), **Tickets** (done/total, working, blocked; absent when the
   project has no tickets), **Working tree** (worktrees with no ledger row, branch, changed, worktrees,
   ahead/behind, editing jobs; its page lists the unlisted ones), **Docs** (spec milestone, newest review) and **Control plane** (roles at their limit,
@@ -432,10 +432,10 @@ what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`)
 page to what is still to try: the header `Only to try ── n` replaces everything below the crumb, then
 the ledger's slices in state `try` (never matched by their words, whatever the milestone) grouped by
 milestone, newest first: the newest is open (`◇ DATA-ONE  text  1d`), each older one
-a folded row (`▸ M3b  ◇ 1 to try  19d`) that Enter opens. A slice shows its whole ledger text, wrapped under its id; a panel
-too short for all of them keeps two rows for the slices the cursor is not on. Enter on a slice shows its milestone, commit and
-day and, with the model on, its **brief** (what changed in plain words, at most two sentences) and numbered **acceptance steps**
-(how to try it, at most four) above the original text; a pending or failed call, or the model off, shows the original text only. `t`, Enter or a click on the header, or Esc
+a folded row (`▸ M3b  ◇ 1 to try  19d`) that Enter opens. With the model on and a brief stored, a slice is one row: its id and its brief's first sentence (cut with `…`). Without a brief (model off, pending or failed) it shows its whole ledger text, wrapped under its id (a break falls at a space or after a `/`, `-`, `_` or `.`, never inside a word); a panel
+too short for all of them keeps two rows for those slices the cursor is not on. Enter on a slice shows its milestone, commit and
+day and, with a brief, the whole **brief** (what changed in plain words, at most two sentences) and numbered **acceptance steps**
+(how to try it, at most four); the original ledger text, written for agents, is folded under them (`▸ Ledger line`, Enter unfolds it). `t`, Enter or a click on the header, or Esc
 returns to the full feed with the cursor and scroll where they were; leaving the page or switching project clears the
 filter. No extra read: the ledger is the one already parsed.
 
@@ -625,19 +625,19 @@ Standalone panels consume their own keys and SGR mouse events directly.
 
 | Key | Action |
 |---|---|
-| `1`, `2`, `3` | Home, Project, Changes summary (`4` remains Inspector) |
-| Tab/Shift-Tab, Left/Right | Switch between Home and Project |
+| Tab/Shift-Tab, Left/Right, a click on the tab | Switch between Home and Project (the digits switch no tab: `1`–`4` answer an open question). The tab's count is `?` and a number (`Project ?4`: what waits for you) |
+| `f` | Changes summary (once `3`) |
 | `[`, `]` | Project: previous/next project (not on the Projects list) |
 | `p` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
 | `c` / `C` | Control plane: apply the next / previous role preset |
 | `m` (`M`) | Control plane: pick the model of the place under the cursor: provider, then model on `pi`; type to filter, ↑↓ pick, Enter sets (an open provider, or the model), Tab shows every model, ← back, Esc cancels |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last (`g` on a HUD job card is the next row) |
 | `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else `g` is Home (first row), and the Home key always is |
-| `r`, then `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default): `r` opens the question whole with its options numbered `[1]`…; while the reply is open, `1`–`4` pick that option and `d` the worker's default, Esc or any other key cancels. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else; `1`–`4` stay the tabs when no reply is open |
+| `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) once its slab is expanded (Enter; always in the Inspector), where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | On an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then `pi-role-reap <dir>` runs and the panel reads again); any other key cancels |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |
-| `v`, `4` | Inspector |
+| `v` | Inspector |
 | `a` | Show/hide older jobs and decisions |
 | `n`/`N` | Next/previous trouble |
 | Space | Toggle a mark on the to-try row under the cursor; on Home, open Inspector |
@@ -673,11 +673,11 @@ Home and Project become **a list above and a preview of the cursor row below**
   six cells, nothing.
 - **Project hub.** Waiting for you and the pages are the list; the preview of the
   cursor row is that page's substance (Progress: summary, bar, slices to try, Now,
-  latest accepted). Enter on a page opens it, as before. A waiting item and a slice to try
-  show their whole text, wrapped (the preview scrolls with PgUp/PgDn when it is long).
+  latest accepted). Enter on a page opens it, as before. A waiting item shows its whole text, wrapped, and a slice to try its
+  brief's first sentence on one row (or, without a brief, its whole text wrapped); the preview scrolls with PgUp/PgDn when it is long.
 - **Progress.** One ledger list (working, blocked, to try, todo; accepted, Next and
   History are one row each) with the cursor slice explained underneath: its whole ledger
-  text and, for a slice to try with the model on, its brief and acceptance steps above it. In the hub's
+  text and, for a slice to try with a brief, its brief and acceptance steps with the original ledger text folded below them (Enter on the slice takes the keys into the preview, Enter on the fold row unfolds it; `o` opens STATE.md). A to-try slice's list row is its id and the brief's first sentence. In the hub's
   Progress preview, Space starts on the highlighted to-try row and moves the keys into
   the preview. Without Space marks, `y` / `n` on the hub still act on the next slice to try.
 - **Control plane.** Roles on top (those that need you first), the cursor role's
@@ -692,7 +692,6 @@ Home and Project become **a list above and a preview of the cursor row below**
 | PgUp/PgDn, wheel over the preview | Scroll the preview; the wheel over the list moves the cursor |
 | Enter | A row with something to act on in its preview (cards, waiting items, places) moves the keys there; there Enter does what it does in Classic. Elsewhere as in Classic |
 | `=` `+` / `-` | Grow the list / the preview by a row (the list's share stays between a fifth and four fifths of the rows and is kept when the panel reloads). `+` `-` stay the Control plane's place keys once Enter has taken the keys to a place |
-| Drag the rule | Press on the rule row (the label line above the preview) and drag: the list ends where the pointer is. Needs a terminal that reports motion with a button held |
 | Esc | Back from the preview to the list, then as in Classic |
 | Click | Selects a row (or a preview row); a second click is Enter |
 

@@ -8,9 +8,7 @@ export type WorkbenchInput =
    * keyboard), for the Control plane's model picker and confirmation dialog.
    */
   | { type: 'key'; key: string; text?: string }
-  | { type: 'mouse'; x: number; y: number; button: 'left' | 'wheel-up' | 'wheel-down' }
-  /** The pointer moved with the left button held (button-event tracking); only Split's rule divider answers it. */
-  | { type: 'drag'; x: number; y: number };
+  | { type: 'mouse'; x: number; y: number; button: 'left' | 'wheel-up' | 'wheel-down' };
 
 const KEYS: Record<string, string> = {
   j: 'down',
@@ -102,9 +100,12 @@ export class WorkbenchInputDecoder {
           this.profile === 'workboard'
             ? ((
                 {
-                  '1': 'home-tab',
-                  '2': 'project-tab',
-                  '4': 'inspect',
+                  // The digits switch no tab: `1`–`4` pick an option of an open question (`text` carries which); `f` is the Changes page `3` used to open.
+                  '1': 'option',
+                  '2': 'option',
+                  '3': 'option',
+                  '4': 'option',
+                  f: 'changes',
                   '[': 'project-prev',
                   ']': 'project-next',
                   y: 'try-accept',
@@ -157,11 +158,7 @@ export class WorkbenchInputDecoder {
             : (code & 3) === 0
               ? 'left'
               : null;
-        if (button && mouse[4] === 'M' && !(code & 32)) {
-          inputs.push({ type: 'mouse', button, x: Number(mouse[2]) - 1, y: Number(mouse[3]) - 1 });
-        } else if (mouse[4] === 'M' && (code & 35) === 32) {
-          inputs.push({ type: 'drag', x: Number(mouse[2]) - 1, y: Number(mouse[3]) - 1 });
-        }
+        if (button && mouse[4] === 'M' && !(code & 32)) inputs.push({ type: 'mouse', button, x: Number(mouse[2]) - 1, y: Number(mouse[3]) - 1 });
         this.pending = this.pending.slice(mouse[0].length);
         continue;
       }

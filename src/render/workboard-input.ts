@@ -151,19 +151,12 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           ?.item;
       return result();
     }
-    if (['home-tab', 'project-tab', 'left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
-  }
-  if (key === 'home-tab') {
-    home();
-    return result();
+    if (['left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
   }
   const tab = input.type === 'mouse' && input.button === 'left'
     ? frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : '';
-  if (key === 'project-tab' || tab === 'board-home' || tab === 'board-project' ||
-    (main && ['left', 'right', 'tab', 'shift-tab'].includes(key))) {
-    const to = tab === 'board-home' ? 'home'
-      : tab === 'board-project' || key === 'project-tab' ? 'project'
-      : next.mainTab === 'project' ? 'home' : 'project';
+  if (tab === 'board-home' || tab === 'board-project' || (main && ['left', 'right', 'tab', 'shift-tab'].includes(key))) {
+    const to = tab === 'board-home' ? 'home' : tab === 'board-project' ? 'project' : next.mainTab === 'project' ? 'home' : 'project';
     home(to);
     return result();
   }

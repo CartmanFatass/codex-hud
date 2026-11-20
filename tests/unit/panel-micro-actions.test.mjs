@@ -1,4 +1,4 @@
-/** The owner's micro-actions on a HUD job from the panel (spec §2.2): `g` its tab, `r` then `1`–`4` / `d` to answer, `X` to stop. */
+/** The owner's micro-actions on a HUD job from the panel (spec §2.2): `g` its tab, `1`–`4` / `d` on its expanded question to answer, `X` to stop. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -58,9 +58,11 @@ function fixture(t) {
   return { home, board, worker, render, press, dir: (id) => join(home, 'jobs', id) };
 }
 
-test('the decoder names the new keys and keeps the tab digits', () => {
+test('the decoder names the new keys; the digits are options, not tabs, and Changes has a letter', () => {
   assert.deepEqual([key('g'), key('d'), key('X'), key('r')].map((k) => [k.key, k.text]), [['home', 'g'], ['answer-default', 'd'], ['stop-job', 'X'], ['reset', 'r']]);
-  assert.deepEqual(['1', '2', '3', '4'].map((c) => key(c).key), ['home-tab', 'project-tab', 'changes', 'inspect']);
+  assert.deepEqual(['1', '2', '3', '4'].map((c) => [key(c).key, c]), ['1', '2', '3', '4'].map((c) => ['option', c]));
+  assert.deepEqual(['1', '2', '3', '4'].map((c) => key(c).text), ['1', '2', '3', '4']);
+  assert.equal(key('f').key, 'changes');
   assert.deepEqual(decoder.push(Buffer.from('\x1b[H')).map((k) => [k.key, k.text]), [['home', undefined]]);
 });
 
@@ -127,59 +129,53 @@ test('g on a HUD job card (Home and Inspector) focuses its tab; elsewhere it sta
   assert.equal(handleMonitorInput({ ...header.state, homeTarget: target, boardAnchor: 'home-progress:progress' }, key('g'), ctx).action, undefined);
 });
 
-test('1–4 switch tabs as ever; r opens the reply on an answerable question, where 1–4 pick an option and d the default', (t) => {
-  const f = fixture(t);
-  // Outside a reply the digits are the tabs, even on an expanded question.
-  const asked = f.worker(ASKING), open = { boardExpanded: new Set([targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id })]) };
-  for (const [c, tab] of [['1', 'home'], ['2', 'project']]) {
-    const out = f.press(ASKING, c, open);
-    assert.equal(out.out.action, undefined);
-    assert.equal(out.out.state.mainTab, tab);
-    assert.equal(out.out.state.reply, undefined);
-  }
-  const { out, frame } = f.press(ASKING, 'r');
-  assert.deepEqual(out.state.reply, { jobId: ASKING, qid: 'q1' });
-  const text = plain(frame).join('\n');
+test('1–4 switch no tab; on an expanded answerable question they pick an option and d the default, with no r first', (t) => {
+  const f = fixture(t), asked = f.worker(ASKING), target = targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id });
+  const open = { boardExpanded: new Set([target]) };
+  // The slab says its keys once it is open, and offers them nowhere else.
+  const closed = plain(f.press(ASKING, 'x').frame).join('\n');
+  assert.doesNotMatch(closed, /\[1\]|1-2 answer|r reply/);
+  assert.match(closed, /┃ qa\/q1\.md +⏎ expand {2}o open/);
+  const { out, frame } = f.press(ASKING, 'x', open);
+  const text = plain(f.render({ ...initialMonitorState(), homeTarget: out.state.homeTarget, ...open })).join('\n');
   assert.match(text, /┃ \[1\] keep it\n┃ \[2\] remove it now/);
-  assert.match(text, /┃ qa\/q1\.md +1-2 answer {2}d default {2}Esc cancel/);
-  assert.doesNotMatch(text, /r reply/, 'the reply keys replace the offer while it is open');
-  const opened = plain(f.render({ ...initialMonitorState(), homeTarget: out.state.homeTarget, boardExpanded: out.state.boardExpanded })).join('\n');
-  assert.match(opened, /┃ qa\/q1\.md +⏎ collapse {2}o open {2}r reply/);
-  const asking = f.worker(ASKING), reply = out.state;
-  const next = (bytes, state = reply) => handleMonitorInput(state, key(bytes), { tree: TREE, frame, nowMs: NOW });
+  assert.match(text, /┃ qa\/q1\.md +1-2 answer {2}d default {2}⏎ collapse {2}o open/);
+  assert.doesNotMatch(text, /r reply/);
   const action = (answer) => ({ type: 'answer-job', home: f.home, jobId: ASKING, qid: 'q1', answer, role: 'imp' });
-  assert.deepEqual(next('1').action, action('keep it'));
-  assert.deepEqual(next('2').action, action('remove it now'));
-  assert.deepEqual(next('d').action, action('keep it'));
-  assert.equal(next('1').state.reply, undefined, 'answering closes the reply');
-  // No third option: the key waits, the reply stays open.
-  const three = next('3');
-  assert.equal(three.action, undefined);
-  assert.deepEqual(three.state.reply, reply.reply);
-  assert.equal(asking.work.requestInfo.options.length, 2);
-  // Anything else cancels and does nothing more.
-  for (const no of [handleMonitorInput(reply, { type: 'key', key: 'escape' }, { tree: TREE, frame, nowMs: NOW }), next('x'), next('j')]) {
-    assert.equal(no.action, undefined);
-    assert.equal(no.state.reply, undefined);
+  assert.deepEqual(f.press(ASKING, '1', open).out.action, action('keep it'));
+  assert.deepEqual(f.press(ASKING, '2', open).out.action, action('remove it now'));
+  assert.deepEqual(f.press(ASKING, 'd', open).out.action, action('keep it'));
+  // No third option: nothing happens. No digit changes the tab, on the slab or off it.
+  for (const c of ['1', '2', '3', '4']) assert.equal(f.press(ASKING, c, open).out.state.mainTab, 'home', `${c} leaves the tab alone`);
+  assert.equal(f.press(ASKING, '3', open).out.action, undefined);
+  // A collapsed question is not answered by a stray digit, and the digits are no tabs there either.
+  for (const c of ['1', '2', 'd']) {
+    const closedOut = f.press(ASKING, c).out;
+    assert.equal(closedOut.action, undefined, c);
+    assert.equal(closedOut.state.mainTab, 'home', c);
   }
-  assert.equal(handleMonitorInput(reply, { type: 'mouse', button: 'left', x: 3, y: 5 }, { tree: TREE, frame, nowMs: NOW }).state.reply, undefined);
-  assert.equal(next('q').close, true, 'q still closes the panel');
+  // r no longer opens anything on the job: it is the Settings and Control plane key only.
+  const reset = f.press(ASKING, 'r', open);
+  assert.equal(reset.out.action, undefined);
+  assert.equal('reply' in reset.out.state && reset.out.state.reply !== undefined, false);
+  // The Inspector shows the question whole, so the keys answer there too.
+  const w = f.worker(ASKING), inspect = { focus: 'details', boardInspect: { kind: 'worker', laneId: w.laneId, workerId: w.id } };
+  assert.deepEqual(f.press(ASKING, '2', inspect).out.action, action('remove it now'));
+  assert.match(plain(f.render({ ...initialMonitorState(), ...inspect })).join('\n'), /1-2 answer d default/);
+  // The tabs are the arrows, Tab and a click: still switching.
+  for (const bytes of ['\x1b[C', '\t']) assert.equal(f.press(ASKING, bytes).out.state.mainTab, 'project', JSON.stringify(bytes));
+  assert.equal(frame.lines.length > 0, true);
 });
 
-test('r and the answer keys do nothing on a job with no answerable question; a reply for another question is dropped', (t) => {
-  const f = fixture(t);
-  assert.equal(f.press(RUNNING, 'r').out.state.reply, undefined);
-  assert.equal(f.press(DONE, 'r').out.state.reply, undefined);
+test('the answer keys do nothing on a job with no answerable question; a pane ask has no file to answer', (t) => {
+  const f = fixture(t), expanded = (id) => ({ boardExpanded: new Set([targetKey({ kind: 'worker', laneId: f.worker(id).laneId, workerId: f.worker(id).id })]) });
+  for (const id of [RUNNING, DONE]) for (const c of ['1', 'd']) assert.equal(f.press(id, c, expanded(id)).out.action, undefined, `${id} ${c}`);
   // A pane ask (no qN file to answer) is not answerable here either.
   const asked = f.worker(ASKING), saved = asked.work.requestInfo;
   asked.work.requestInfo = { ...saved, id: 'blocked', evidence: { ...saved.evidence, relativePath: 'STATUS.json' } };
-  assert.equal(f.press(ASKING, 'r').out.state.reply, undefined);
+  assert.equal(f.press(ASKING, '1', expanded(ASKING)).out.action, undefined);
   asked.work.requestInfo = saved;
-  const { out, frame } = f.press(ASKING, 'r');
-  const stale = { ...out.state, reply: { jobId: ASKING, qid: 'q7' } };
-  const dropped = handleMonitorInput(stale, key('1'), { tree: TREE, frame, nowMs: NOW });
-  assert.equal(dropped.action, undefined);
-  assert.equal(dropped.state.reply, undefined);
+  assert.notEqual(f.press(ASKING, '1', expanded(ASKING)).out.action, undefined);
 });
 
 test('X asks before stopping an unsettled job: y or Enter stops it, any other input cancels, a settled job has nothing to stop', (t) => {
@@ -209,32 +205,32 @@ test('the Split layout takes the same keys for the job its list cursor is on', (
   let frame = f.render(split, 60, 'en', 30);
   const ctx = () => ({ tree: TREE, frame, nowMs: NOW });
   const run = (bytes, state = frame.state) => { const out = handleMonitorInput(state, typeof bytes === 'string' ? key(bytes) : bytes, ctx()); frame = f.render(out.state, 60, 'en', 30); return out; };
-  // The cursor starts on the lane that asks.
+  // The cursor starts on the lane that asks: a digit does nothing until its slab is expanded.
   assert.deepEqual(run('g').action, { type: 'focus-job-tab', dir: f.dir(ASKING) });
-  assert.deepEqual(run('r').state.reply, { jobId: ASKING, qid: 'q1' });
+  assert.equal(run('2').action, undefined);
+  assert.equal(frame.state.mainTab, 'home');
+  const asked = f.worker(ASKING);
+  frame = f.render({ ...frame.state, boardExpanded: new Set([targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id })]) }, 60, 'en', 30);
   const text = plain(frame).join('\n');
   assert.match(text, /┃ \[2\] remove it now/);
-  assert.match(text, /1-2 answer {2}d default {2}Esc cancel/);
+  assert.match(text, /1-2 answer {2}d default/);
   assert.deepEqual(run('2').action, { type: 'answer-job', home: f.home, jobId: ASKING, qid: 'q1', answer: 'remove it now', role: 'imp' });
-  assert.equal(frame.state.reply, undefined);
   frame = f.render({ ...frame.state, splitCursor: targetKey({ kind: 'lane', laneId: f.worker(RUNNING).laneId }) }, 60, 'en', 30);
   assert.equal(run('X').state.confirmStop?.jobId, RUNNING);
   assert.equal(plain(frame)[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
   assert.deepEqual(run('y').action, { type: 'stop-job', dir: f.dir(RUNNING) });
   // The Home key still moves the list's cursor.
   assert.equal(run('\x1b[H').action, undefined);
-  const asking = f.render(split, 60, 'en', 30), opened = handleMonitorInput(asking.state, key('r'), { tree: TREE, frame: asking, nowMs: NOW }).state;
-  const zh = f.render(opened, 60, 'zh', 30);
-  assert.match(plain(zh).join('\n'), /1-2 答复 {2}d 默认 {2}Esc 取消/);
+  const zh = f.render({ ...split, boardExpanded: new Set([targetKey({ kind: 'worker', laneId: asked.laneId, workerId: asked.id })]) }, 60, 'zh', 30);
+  assert.match(plain(zh).join('\n'), /1-2 答复 {2}d 默认/);
 });
 
-test('every row is exactly the panel width with a reply open, a stop prompt open and the Inspector showing a question, in both layouts and languages', (t) => {
+test('every row is exactly the panel width with the question expanded, a stop prompt open and the Inspector showing a question, in both layouts and languages', (t) => {
   const f = fixture(t), asking = f.worker(ASKING), running = f.worker(RUNNING);
   const at = (w) => ({ homeTarget: { kind: 'worker', laneId: w.laneId, workerId: w.id } });
   const states = [
-    { ...at(asking), reply: { jobId: ASKING, qid: 'q1' }, boardExpanded: new Set([targetKey({ kind: 'worker', laneId: asking.laneId, workerId: asking.id })]) },
+    { ...at(asking), boardExpanded: new Set([targetKey({ kind: 'worker', laneId: asking.laneId, workerId: asking.id })]) },
     { ...at(running), confirmStop: { jobId: RUNNING, role: 'reviewer', dir: f.dir(RUNNING) } },
-    { ...at(asking), focus: 'details', boardInspect: { kind: 'worker', laneId: asking.laneId, workerId: asking.id }, reply: { jobId: ASKING, qid: 'q1' } },
     { ...at(asking), focus: 'details', boardInspect: { kind: 'worker', laneId: asking.laneId, workerId: asking.id } },
   ];
   for (const layout of [undefined, 'split']) for (const lang of ['en', 'zh']) for (const width of [24, 32, 40, 60, 100]) for (const [i, state] of states.entries()) {

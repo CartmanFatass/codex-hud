@@ -3,6 +3,7 @@ export const SPLIT_ZH: Record<string, string> = {
   '{n} jobs': '{n} 个任务',
   '{n} worth a look': '{n} 项值得一看',
   '{n} accepted': '{n} 个已验收',
+  '{done}/{total} accepted': '{done}/{total} 已验收',
   '{n} places': '{n} 个位置',
   '{n} landed in 7 days': '7 天内落地 {n} 个',
   'preset': '预设',
@@ -20,8 +21,11 @@ export const SPLIT_ZH: Record<string, string> = {
   '↑↓ move  ⏎ places  c C preset  PgUp PgDn scroll  esc back  ? help': '↑↓ 移动  ⏎ 位置  c C 预设  PgUp PgDn 滚动  esc 返回  ? 帮助',
   '↑↓ place  p harness  m model  e thinking  + - fallback  K J move  x clear  esc back  ? help':
     '↑↓ 位置  p 宿主  m 模型  e 思考  + - 备选  K J 移动  x 清除  esc 返回  ? 帮助',
+  '↑↓ move  Space mark  y accept  n flag  ⏎ details  o open file  PgUp PgDn scroll  esc back  ? help':
+    '↑↓ 移动  Space 勾选  y 验收  n 标记  ⏎ 详情  o 打开文件  PgUp PgDn 滚动  esc 返回  ? 帮助',
+  '↑↓ move  ⏎ fold / unfold the ledger line  esc back  ? help': '↑↓ 移动  ⏎ 折叠／展开台账原文  esc 返回  ? 帮助',
   '↑↓ move  ⏎ open file  PgUp PgDn scroll  esc back  ? help': '↑↓ 移动  ⏎ 打开文件  PgUp PgDn 滚动  esc 返回  ? 帮助',
   'scroll the preview (Split)': '滚动下方预览（分栏）',
-  'Split: list bigger / smaller (or drag the rule)': '分栏：列表变大／变小（或拖动分隔线）',
+  'Split: list bigger / smaller': '分栏：列表变大／变小',
   'Split: ⏎ opens the row’s preview, Esc comes back; click selects, again opens': '分栏：⏎ 进入所选行的预览，Esc 返回；点击选中，再点击打开',
 };

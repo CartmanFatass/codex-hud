@@ -272,7 +272,10 @@ its revision/language-keyed cache survives reopen.
 `TryBriefs` (`collectors/try-brief.ts`) is the same shape for the slices still to try: one call writes a brief and acceptance
 steps from the ledger line, its commits and tickets; stored per slice and language under a hash of that input, laid on the
 ledger rows only while the ledger line is unchanged (`LedgerSlice.brief`), so an unchanged slice costs no call and a pending,
-failed or master-off state leaves the original text. Keyword painting is shared by
+failed or master-off state leaves the original text. The panel shows a briefed slice as its id and the brief's first sentence on one row, and
+in its preview (Split) or expanded row (Classic) the whole brief, the steps and the original ledger text folded below them
+(`project-view.ts` `tryDetailRows`, `landedInline`); one `tryCount` (the ledger's `try` slices) is the number the Waiting row, the Progress row
+and the Projects list all say. Keyword painting is shared by
 cards, decisions and Inspector (`utils/keyword-marks.ts`), never lifecycle evidence.
 
 Decision labels and Home ranking use `selectDecisionProvider`, not the chat endpoint.
@@ -309,15 +312,15 @@ is no secondary stacked/compact Agents renderer, Timeline or diagnostics page.
 The `split` layout (`panelLayout`, `render/split-*.ts`) draws Home, the hub and the list pages as a list over a preview:
 one scene per view (`split-home.ts`, `split-project.ts`), one painter (`split-frame.ts`) and its own keys (`split-input.ts`);
 `renderWorkboardFrame` and `workboardInput` only branch to them, and what Split does not draw stays Classic's.
-The list is as tall as it needs, at most `MonitorState.splitRatio` of the list-and-preview rows (`=` `+` `-` and a drag of the rule,
-`resize` in `split-input.ts`; the decoder's `drag` input needs the mouse mode 1002 `tree-page.ts` enables; the state travels in the
+The list is as tall as it needs, at most `MonitorState.splitRatio` of the list-and-preview rows (`=` `+` `-`,
+`resize` in `split-input.ts`; keys only, no divider drag, so `tree-page.ts` asks the terminal for clicks and the wheel (mode 1000) and no motion reports; the state travels in the
 reload's JSON), and three rows around the cursor while `splitFocus` is `preview`. A preview with more rows than its room
 (`splitScrolls`) is built again one cell narrower and paints its scrollbar in the freed last cell; a Home lane at work that
 the cursor is not on may add a cue (`laneCue`) to its row.
 The owner's micro-actions on a HUD job (`render/job-actions.ts`, spec §2.2) are pure input: `g` becomes
-`focus-job-tab`; `r` opens a reply (`MonitorState.reply`) in which `1`–`4` and `d` pick an option or the worker's
-default (outside it `1`–`4` stay the tabs) and become `answer-job`; `X` sets `confirmStop`, whose `y`/Enter becomes
-`stop-job`. Any other input cancels either modal state. `tree-page.ts` does the I/O: `focusJobTab` and `stopJob`
+`focus-job-tab`; `1`–`4` and `d` on an expanded question slab (or in the Inspector) pick an option or the worker's
+default and become `answer-job` (the digits switch no tab, so they mean nothing elsewhere: tabs are ←→, Tab and a click); `X` sets `confirmStop`, whose `y`/Enter becomes
+`stop-job`. Any other input cancels the stop prompt. `tree-page.ts` does the I/O: `focusJobTab` and `stopJob`
 (`cli/panel-pane.ts`: `herdr tab focus`, `pi-role-reap`) and `answerJobQuestion` (`collectors/panel-actions.ts`), which
 writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
 `PanelActionLog` turns those records into `[role@job] ANSWERED qN from panel: …` lines for `hud watch` and the MCP

@@ -24,11 +24,10 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const keys = [
     section(t('Keys'), half),
     ...[
-      ['1 2', 'Home · Project'],
-      ['← → Tab', 'next / previous tab'],
-      ['3', 'Changes'],
+      ['← → Tab', 'switch tab (a click too)'],
+      ['f', 'Changes'],
       ['↑ ↓', 'move'],
-      ...(input.state.panelLayout === 'split' ? [['PgUp Dn', 'scroll the preview (Split)'], ['= + -', 'Split: list bigger / smaller (or drag the rule)']] : []),
+      ...(input.state.panelLayout === 'split' ? [['PgUp Dn', 'scroll the preview (Split)'], ['= + -', 'Split: list bigger / smaller']] : []),
       ['/', 'filter rows live'],
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
@@ -41,7 +40,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['x', 'place: clear its exhausted mark'],
       ['r', 'place: refresh model lists'],
       ['g', 'job: go to its herdr tab'],
-      ['r 1-4 d', 'job: answer its question'],
+      ['1-4 d', 'job: answer its open question'],
       ['X', 'job: stop it (y confirms)'],
       ['v', 'inspect: details and files'],
       ['a', 'show / hide older jobs and decisions (Home)'],
@@ -137,9 +136,10 @@ export function renderWorkboardFrame(
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
     const count = source.workers.filter((w) => w.homeNeedsHuman).length;
-    const title = ` ${t('Home')}${count ? ' ' + theme.board.attention(String(count)) : ''} `;
-    const waiting = input.project?.waiting.length ?? 0;
-    const projectTitle = ` ${t('Project')}${waiting ? ' ' + theme.board.attention(String(waiting)) : ''} `;
+    // A count is a `?` and its number, the mark of what waits for the owner everywhere else: a bare number beside a tab reads as its key.
+    const badge = (n: number) => (n ? ' ' + theme.board.attention(`?${n}`) : '');
+    const title = ` ${t('Home')}${badge(count)} `;
+    const projectTitle = ` ${t('Project')}${badge(input.project?.waiting.length ?? 0)} `;
     const models = t(input.modelEnabled === false ? 'models off' : 'models on');
     const modelsWidth = visualLength(models);
     const leftRoom = Math.max(0, width - modelsWidth - 1);

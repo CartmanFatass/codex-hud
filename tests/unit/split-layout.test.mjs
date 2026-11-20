@@ -54,7 +54,7 @@ test('Home: the list has a row per lane and block, a question and a failure keep
   const { busy, idle } = await fixtures(t);
   const d = driver(busy), lines = d.lines();
   // Needs first (asking, the failure), then what runs, then Waiting, Decided and Progress; the preview is the cursor lane's slab and cards.
-  assert.deepEqual(lines.slice(2, 12).map((l) => l.slice(0, 14)), ['? NATIVE-TREE ', '┃ Question: Wh', '✗ EXPORT-CSV  ', '┃ HTTP 429, no', '◉ M4-PROJECT  ', '◉ AUTH-REFRESH', '◉ this session', '? Waiting for ', '◇ Decided for ', '◐ Progress  M3']);
+  assert.deepEqual(lines.slice(2, 12).map((l) => l.slice(0, 14)), ['? NATIVE-TREE ', '┃ Question: Wh', '✗ EXPORT-CSV  ', '┃ HTTP 429, no', '◉ M4-PROJECT  ', '◉ AUTH-REFRESH', '◉ this session', '? Waiting for ', '◇ Decided for ', '◐ Progress    ']);
   assert.match(rule(d), /^NATIVE-TREE ─+ asking · 2 jobs$/);
   assert.equal(d.state.splitCursor, d.frame.workboard.rows[0].item);
   // Idle: nothing runs, the first row that needs the owner is Waiting for you, whose preview lists the items and the latest slices.
@@ -186,7 +186,7 @@ test('Project hub: a list of Waiting and the pages with the cursor page previewe
 test('Project hub: Waiting for you takes the keys into its items; Enter reads one, Esc lands back on the Waiting row', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.control }).at(page(undefined, { projectCursor: 'project:fold:waiting' }));
-  assert.match(rule(d), /^Waiting for you ─+ 2 · 1 to try$/);
+  assert.match(rule(d), /^Waiting for you ─+ 2 · 5 to try$/);
   d.run('enter');
   assert.equal(d.state.splitFocus, 'preview');
   assert.equal(d.state.projectCursor, d.state.splitSub);
@@ -229,7 +229,9 @@ test('Split Progress lets the owner select an older to-try slice and read its br
   for (let n = 0; n < 5; n++) d.run('down');
   assert.equal(d.state.projectCursor, 'project:slice:WATCH-LINK');
   assert.match(rule(d), /^WATCH-LINK ─+ to try · M4$/);
-  assert.match(d.lines().join('\n'), /Job rows remain visible\.\n +1\. Open the synthetic project\.\n +the watcher survives a link loop/);
+  // The brief and steps; the original ledger text waits behind its fold, which Enter on the row goes into the preview to open.
+  assert.match(d.lines().join('\n'), /Job rows remain visible\.\n +How to try\n +1\. Open the synthetic project\.\n +▸ Ledger line/);
+  assert.doesNotMatch(d.lines().join('\n'), /the watcher survives a link loop/);
   assert.deepEqual(d.run('try-accept').action.target.slices.map((r) => r.id), ['WATCH-LINK']);
 });
 
@@ -359,9 +361,9 @@ const agentsRows = (frame) => frame.panes.find((p) => p.id === 'agents').rows.ma
 const lastCells = (d) => { const p = d.pane('preview'); return d.lines().slice(p.y, p.y + p.height).map((l) => [...l].at(-1)); };
 const keysOf = (text) => new WorkbenchInputDecoder('workboard').push(Buffer.from(text));
 
-test('Split V2 input: = + - and a drag of the rule are named by the decoder; the drag is only a motion with the left button held', () => {
+test('Split V2 input: = + - are named by the decoder; a pointer motion with the left button held is no input (no drag of the rule)', () => {
   assert.deepEqual(keysOf('=+-'), [{ type: 'key', key: 'list-grow', text: '=' }, { type: 'key', key: 'place-add', text: '+' }, { type: 'key', key: 'place-remove', text: '-' }]);
-  assert.deepEqual(keysOf('\x1b[<0;5;7M\x1b[<32;5;4M\x1b[<35;5;4M\x1b[<0;5;4m'), [{ type: 'mouse', button: 'left', x: 4, y: 6 }, { type: 'drag', x: 4, y: 3 }]);
+  assert.deepEqual(keysOf('\x1b[<0;5;7M\x1b[<32;5;4M\x1b[<35;5;4M\x1b[<0;5;4m'), [{ type: 'mouse', button: 'left', x: 4, y: 6 }]);
 });
 
 test('Home: a working lane the cursor is not on shows its model keywords in the row’s free cells, only when the width allows', async (t) => {
@@ -379,7 +381,7 @@ test('Home: a working lane the cursor is not on shows its model keywords in the 
   for (const lang of ['en', 'zh']) for (const width of [20, 26, 40, 52, 80, 120]) for (const line of at(width, lang).lines) assert.equal(visualLength(line), width, `${lang} ${width}`);
 });
 
-test('Split ratio: = and + grow the list, - grows the preview, a drag of the rule follows the pointer, and the share survives a reload', async (t) => {
+test('Split ratio: = and + grow the list, - grows the preview, a press on the rule is an ordinary click, and the share survives a reload', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy, { height: 24 });
   const rows = () => [d.pane('agents').height, d.pane('preview').height];
@@ -400,29 +402,19 @@ test('Split ratio: = and + grow the list, - grows the preview, a drag of the rul
   const place = readPanelPlace();
   if (held === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE; else process.env.HUD_PANEL_RELOAD_PLACE = held;
   assert.equal(place.state.splitRatio, saved);
-  const reloaded = driver(busy, { height: 24 }).at({ ...place.state, splitDrag: undefined });
+  const reloaded = driver(busy, { height: 24 }).at(place.state);
   assert.deepEqual([reloaded.pane('agents').height, reloaded.pane('preview').height], [list - 3, preview + 3]);
-  // Dragging the rule: the press is on it, the motion moves it, the list never goes below a fifth of the rows or above what it needs.
-  const rule = () => d.pane('preview').y - 1, total = list + preview;
+  // The rule is not a handle: a press on it moves nothing, and no state of a drag exists.
+  const rule = () => d.pane('preview').y - 1, ratio = d.state.splitRatio;
   d.run({ type: 'mouse', x: 5, y: rule(), button: 'left' });
-  assert.equal(d.state.splitDrag, true);
-  d.run({ type: 'drag', x: 5, y: d.pane('agents').y + 4 });
-  assert.deepEqual(rows(), [4, total - 4 + 0], 'the rule is under the fourth list row');
-  d.run({ type: 'drag', x: 5, y: 2 });
-  assert.equal(d.pane('agents').height, Math.round(total * 0.2), 'a fifth of the rows at least');
-  d.run({ type: 'drag', x: 5, y: 23 });
-  assert.equal(d.pane('agents').height, list, 'no taller than the list needs');
-  d.run('down');
-  assert.equal(d.state.splitDrag, undefined, 'any other input ends the drag');
-  const before = d.state.splitRatio;
-  d.run({ type: 'drag', x: 5, y: 6 });
-  assert.equal(d.state.splitRatio, before, 'a motion that did not start on the rule moves nothing');
-  // A press on a list row is a click as ever, not a drag.
+  assert.equal(d.state.splitRatio, ratio);
+  assert.equal('splitDrag' in d.state, false);
+  // A press on a list row is a click as ever.
   d.run({ type: 'mouse', x: 5, y: d.pane('agents').y + 2, button: 'left' });
-  assert.equal(d.state.splitDrag, undefined);
+  assert.equal(d.state.splitRatio, ratio);
   // Classic has no rule: the same inputs change nothing there.
   const classic = busy.render(40, 'en', 24, initialMonitorState());
-  for (const input of ['list-grow', 'place-remove', { type: 'drag', x: 2, y: 5 }]) {
+  for (const input of ['list-grow', 'place-remove']) {
     const out = handleMonitorInput(classic.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame: classic, nowMs: NOW, standalone: true });
     assert.equal(out.state.splitRatio, undefined);
   }

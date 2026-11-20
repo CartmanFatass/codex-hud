@@ -130,13 +130,13 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   assert.equal(frame.state.projectPage, undefined);
   frame = view(esc(frame).state);
   assert.equal(frame.state.projectList, true);
-  // 2 opens the hub of the project shown last, not the list; so does 1 then 2.
-  frame = view(send(frame, '1').state);
+  // The right arrow opens the hub of the project shown last, not the list; so does the left arrow then the right one.
+  frame = view(send(frame, '\x1b[D').state);
   assert.equal(frame.state.mainTab, 'home');
-  frame = view(send(frame, '2').state);
+  frame = view(send(frame, '\x1b[C').state);
   assert.deepEqual([frame.state.mainTab, frame.state.projectList, frame.state.projectRoot], ['project', undefined, undefined]);
-  frame = view(send(view(onPage(undefined, { projectList: true, projectRoot: byName('quiet-project') })), '1').state);
-  frame = view(send(frame, '2').state);
+  frame = view(send(view(onPage(undefined, { projectList: true, projectRoot: byName('quiet-project') })), '\x1b[D').state);
+  frame = view(send(frame, '\x1b[C').state);
   assert.deepEqual([frame.state.projectList, frame.state.projectRoot], [undefined, byName('quiet-project')]);
   assert.match(text(frame), /^quiet-project ─+ M3b ▾ project 2\/6$/m);
   // The list survives the panel's own restart: the whole state goes through the reload place.
@@ -245,7 +245,7 @@ await runLivePage();
   child.stdin.write('\r');
   await until(() => collects().slice(reopen).some((c) => c.cwd !== own && c.shown === 'home'), 'the list again');
   // Home: the overviews stop and Home reads only its own project.
-  child.stdin.write('1');
+  child.stdin.write('\x1b[D');
   await until(() => collects().slice(-1)[0].cwd === own && collects().slice(-1)[0].shown === 'home', 'Home');
   const home = collects().length;
   await pause(400);

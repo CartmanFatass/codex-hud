@@ -1,6 +1,6 @@
 {
   "home-80-en": [
-    " Home 1  Project                                                       models on",
+    " Home ?1  Project                                                      models on",
     "",
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -42,7 +42,7 @@
     "✓ 3 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "home-80-zh": [
-    " 首页 1  项目                                                            模型 开",
+    " 首页 ?1  项目                                                           模型 开",
     "",
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -84,7 +84,7 @@
     "✓ 3 今日完成     ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  / 筛选"
   ],
   "older-80-en": [
-    " Home 1  Project                                                       models on",
+    " Home ?1  Project                                                      models on",
     "",
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -126,7 +126,7 @@
     "✓ 3 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
   ],
   "older-80-zh": [
-    " 首页 1  项目                                                            模型 开",
+    " 首页 ?1  项目                                                           模型 开",
     "",
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -218,7 +218,7 @@
     "┃ [1] a: keep it for one more release",
     "┃ [2] b: remove it now",
     "┃ default: a: keep it for one more release",
-    "┃ r reply",
+    "┃ 1-2 answer d default",
     "",
     "role      imp · pi                      model     ◎ gpt-6.1-sol · high",
     "package   R5-UX                         state     working · asking",
@@ -381,14 +381,13 @@
     "‹ Help",
     "",
     "Keys ─────────────────────────────────    Marks ────────────────────────────────",
-    "1 2     Home · Project                    ✓ done      ◉ running   ? asking you",
-    "← → Tab next / previous tab               ✗ failed    − stopped   ◷ stalled",
-    "3       Changes                           ◆ answer differs from the default",
-    "↑ ↓     move                              ◇ answer as proposed",
-    "/       filter rows live                  ┃ body of a card",
-    "⏎       expand / collapse in place        dim rows are older ones, shown with a",
-    "o       open the file in $EDITOR          lavender words are marked by the model",
-    "[ ]     switch project (Project)",
+    "← → Tab switch tab (a click too)          ✓ done      ◉ running   ? asking you",
+    "f       Changes                           ✗ failed    − stopped   ◷ stalled",
+    "↑ ↓     move                              ◆ answer differs from the default",
+    "/       filter rows live                  ◇ answer as proposed",
+    "⏎       expand / collapse in place        ┃ body of a card",
+    "o       open the file in $EDITOR          dim rows are older ones, shown with a",
+    "[ ]     switch project (Project)          lavender words are marked by the model",
     "Space   mark to try; y/n accept/flag",
     "c C     role: next / previous preset",
     "p e     place: harness, thinking",
@@ -401,7 +400,7 @@
     "        mark",
     "r       place: refresh model lists",
     "g       job: go to its herdr tab",
-    "r 1-4 d job: answer its question",
+    "1-4 d   job: answer its open question",
     "X       job: stop it (y confirms)",
     "v       inspect: details and files",
     "a       show / hide older jobs and",
@@ -424,6 +423,7 @@
     "",
     "Backup skills ─────────────────────────────────────────────────────────────── 17",
     "  Matt Pocock skills kept as backups, not installed. Ask the main session to",
+    "  read one when you want it.",
     "                                                             ↑↓ scroll  esc back"
   ],
   "changes-80-en": [
@@ -469,7 +469,7 @@
     "                                                             ↑↓ scroll  esc back"
   ],
   "home-120-en": [
-    " Home 1  Project                                                                                               models on",
+    " Home ?1  Project                                                                                              models on",
     "",
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -511,7 +511,7 @@
     "✓ 3 done today                         ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  / filter  ←→ tab"
   ],
   "home-120-zh": [
-    " 首页 1  项目                                                                                                    模型 开",
+    " 首页 ?1  项目                                                                                                   模型 开",
     "",
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -553,7 +553,7 @@
     "✓ 3 今日完成                                    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  / 筛选  ←→ 切页"
   ],
   "older-120-en": [
-    " Home 1  Project                                                                                               models on",
+    " Home ?1  Project                                                                                              models on",
     "",
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -595,7 +595,7 @@
     "✓ 3 done today                         ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  / filter  ←→ tab"
   ],
   "older-120-zh": [
-    " 首页 1  项目                                                                                                    模型 开",
+    " 首页 ?1  项目                                                                                                   模型 开",
     "",
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -687,7 +687,7 @@
     "┃ [1] a: keep it for one more release",
     "┃ [2] b: remove it now",
     "┃ default: a: keep it for one more release",
-    "┃ r reply",
+    "┃ 1-2 answer d default",
     "",
     "role       imp · pi                                         model      ◎ gpt-6.1-sol · high",
     "package    R5-UX                                            state      working · asking",
@@ -850,14 +850,13 @@
     "‹ Help",
     "",
     "Keys ─────────────────────────────────────────────────────    Marks ────────────────────────────────────────────────────",
-    "1 2     Home · Project                                        ✓ done      ◉ running   ? asking you",
-    "← → Tab next / previous tab                                   ✗ failed    − stopped   ◷ stalled",
-    "3       Changes                                               ◆ answer differs from the default",
-    "↑ ↓     move                                                  ◇ answer as proposed",
-    "/       filter rows live                                      ┃ body of a card",
-    "⏎       expand / collapse in place                            dim rows are older ones, shown with a",
-    "o       open the file in $EDITOR                              lavender words are marked by the model",
-    "[ ]     switch project (Project)",
+    "← → Tab switch tab (a click too)                              ✓ done      ◉ running   ? asking you",
+    "f       Changes                                               ✗ failed    − stopped   ◷ stalled",
+    "↑ ↓     move                                                  ◆ answer differs from the default",
+    "/       filter rows live                                      ◇ answer as proposed",
+    "⏎       expand / collapse in place                            ┃ body of a card",
+    "o       open the file in $EDITOR                              dim rows are older ones, shown with a",
+    "[ ]     switch project (Project)                              lavender words are marked by the model",
     "Space   mark to try; y/n accept/flag",
     "c C     role: next / previous preset",
     "p e     place: harness, thinking (capitals go back)",
@@ -867,7 +866,7 @@
     "x       place: clear its exhausted mark",
     "r       place: refresh model lists",
     "g       job: go to its herdr tab",
-    "r 1-4 d job: answer its question",
+    "1-4 d   job: answer its open question",
     "X       job: stop it (y confirms)",
     "v       inspect: details and files",
     "a       show / hide older jobs and decisions (Home)",
@@ -893,6 +892,7 @@
     "  to-spec                        Turn the conversation into a spec with user stories and testing seams",
     "  hud-build                      Build a spec's tickets as a task graph, one imp per ready ticket",
     "  tdd                            Red-green-refactor at the seams the spec agreed",
+    "  diagnosing-bugs                A feedback loop first, then reproduce, hypothesise and fix",
     "                                                                                                     ↑↓ scroll  esc back"
   ],
   "changes-120-en": [

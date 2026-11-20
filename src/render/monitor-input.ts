@@ -40,7 +40,7 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
           : 'up'
         : '';
   if (key === 'close') return result(undefined, true);
-  const modal = jobModalInput(state, input, ctx);
+  const modal = jobModalInput(state, input);
   if (modal) return modal;
   if (next.help) {
     const back =

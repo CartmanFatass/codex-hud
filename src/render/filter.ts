@@ -93,7 +93,7 @@ export function filterInput(state: MonitorState, input: WorkbenchInput): Monitor
     if (input.key === 'enter' || input.key === 'escape') return to({ filterOpen: undefined });
     return ['left', 'right', 'tab', 'shift-tab'].includes(input.key) ? to({}) : null;
   }
-  if (!filterScope(state) || state.reply || state.confirmStop) return null;
+  if (!filterScope(state) || state.confirmStop) return null;
   if (input.text === '/') return to({ filterOpen: true });
   // Split's preview gives Esc back to the list first; then it clears the filter before the page is left.
   if (input.key === 'escape' && state.filterQuery && !(state.panelLayout === 'split' && state.splitFocus === 'preview')) return to({ filterQuery: undefined });

@@ -28,9 +28,9 @@ const block = (lines, header) => {
 test('a waiting item flows whole into the hub\'s spare rows, is cut to one row before Latest or the page rows give way, and stays whole under the cursor', async (t) => {
   const f = await fixture(t);
   const tall = plain(f.render(38, 'en', undefined, 46));
-  // Two tries of four items, said in the header; each text that does not fit one row flows on under its `?`, to its last word (spec §2.2).
+  // Four items and the slices still to try (one in the ledger), said in the header; each text that does not fit one row flows on under its `?`, to its last word (spec §2.2).
   assert.deepEqual(block(tall, /^Waiting for you/), [
-    'Waiting for you ───────── 4 · 2 to try',
+    'Waiting for you ───────── 4 · 1 to try',
     '? Try 0.2 PANEL-TIDY: open the Project',
     '  tab; every waiting item shows its',
     '  whole text and Now lists only work',
@@ -46,7 +46,7 @@ test('a waiting item flows whole into the hub\'s spare rows, is cut to one row b
     '  say so in this file when you have.',
   ]);
   assert.ok(tall.every((l) => visualLength(l) <= 38));
-  assert.equal(block(plain(f.render(38, 'zh', undefined, 46)), /^等你处理/)[0], '等你处理 ──────────────── 4 · 2 待试用');
+  assert.equal(block(plain(f.render(38, 'zh', undefined, 46)), /^等你处理/)[0], '等你处理 ──────────────── 4 · 1 待试用');
   // Rows are given to the waiting items only once Latest and the page rows have theirs: the spare rows top down, an item as many as it needs.
   const shape = (height) => {
     const lines = plain(f.render(38, 'en', undefined, height));

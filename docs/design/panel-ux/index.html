@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel To-Try Rows</title>
+<style>
+/* Layout: one column of review sections; each pairs a 40-column terminal pane with the notes that explain it. */
+:root {
+  --page: #f5f5f9;
+  --ink: #1b1d2b;
+  --ink-2: #565a70;
+  --rule: #dcdde8;
+  --accent: #4a4fc4;
+  --chip: #e7e8f5;
+  --term-edge: #c9cbe0;
+  --font-display: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', 'PingFang SC', 'Microsoft YaHei', monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #12131c; --ink: #e6e7f2; --ink-2: #9a9db5; --rule: #2a2c3e; --accent: #9aa2ff; --chip: #23253a; --term-edge: #30324a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #12131c; --ink: #e6e7f2; --ink-2: #9a9db5; --rule: #2a2c3e; --accent: #9aa2ff; --chip: #23253a; --term-edge: #30324a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--page); color: var(--ink); font: 15px/1.55 var(--font-body);
+  padding-block: 40px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 48px; }
+header { display: flex; flex-direction: column; gap: 10px; max-width: 62ch; }
+h1 { font: 600 30px/1.15 var(--font-display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font: 600 19px/1.25 var(--font-display); margin: 0; text-wrap: balance; }
+p { margin: 0; }
+.lede { color: var(--ink-2); max-width: 62ch; }
+.tag { font: 600 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+section { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 28px 40px; align-items: start; padding-top: 28px; border-top: 1px solid var(--rule); }
+.notes { display: flex; flex-direction: column; gap: 14px; max-width: 52ch; }
+.notes ul { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 8px; }
+.notes li::marker { color: var(--ink-2); }
+.panes { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+code, kbd { font: 500 0.86em/1 var(--font-mono); background: var(--chip); padding: 0.18em 0.45em; border-radius: 4px; white-space: nowrap; }
+.term { margin: 0; background: #1e1e2e; border: 1px solid var(--term-edge); border-radius: 6px; overflow: hidden; width: max-content; max-width: 100%; }
+.term figcaption { display: flex; justify-content: space-between; gap: 16px; width: 0; min-width: 100%; white-space: nowrap; overflow: hidden; padding: 6px 12px; font: 500 11px/1.2 var(--font-mono); color: #8a8fb0; background: #181825; border-bottom: 1px solid #2c2e44; }
+.grid { margin: 0; padding: 10px 12px 12px; font: 400 13px/1.45 var(--font-mono); color: #cdd6f4; overflow-x: auto; white-space: pre; tab-size: 1; font-variant-ligatures: none; }
+.grid i { display: inline-block; font-style: normal; text-align: center; overflow: visible; vertical-align: top; }
+.grid i.w1 { width: 1ch; }
+.grid i.w2 { width: 2ch; }
+.keys { display: grid; grid-template-columns: max-content 1fr; gap: 8px 20px; margin: 0; }
+.keys dt { font: 500 13px/1.5 var(--font-mono); white-space: nowrap; }
+.keys dd { margin: 0; color: var(--ink-2); }
+footer { color: var(--ink-2); font-size: 13px; border-top: 1px solid var(--rule); padding-top: 20px; max-width: 70ch; }
+@media (max-width: 860px) { section { grid-template-columns: minmax(0, 1fr); } .term { width: 100%; } }
+</style>
+
+</head>
+<body>
+<main>
+<header>
+  <span class="tag">PANEL-UX-01</span>
+  <h1>Panel to-try rows, counts and tabs</h1>
+  <p class="lede">These panes are the panel's real renderer output at 40 columns in Chinese, with synthetic data and the Mocha theme. A to-try slice reads as a short brief; one number says how many are left to try; the digit keys leave the tabs.</p>
+</header>
+
+<section>
+  <div class="panes"><figure class="term"><figcaption><span>Tab bar</span><span>40 × 3</span></figcaption><pre class="grid" role="img" aria-label="Tab bar"><span style="color:#a6adc8"> <i class="w2">首</i><i class="w2">页</i> </span><span style="color:#f9e2af">?1</span><span style="color:#cdd6f4"> </span><span style="color:#cdd6f4;background:#313244"> <i class="w2">项</i><i class="w2">目</i> </span><span style="color:#f9e2af;background:#313244">?2</span><span style="color:#cdd6f4;background:#313244"> </span><span style="color:#cdd6f4">               </span><span style="color:#a6adc8"><i class="w2">模</i><i class="w2">型</i> <i class="w2">开</i></span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#cdd6f4;background:#313244">demo-project</span><span style="color:#cdd6f4"> </span><span style="color:#585b70"><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i></span><span style="color:#cdd6f4"> </span><span style="color:#89b4fa">0.1.3</span></pre></figure></div>
+  <div class="notes">
+    <h2>Tabs have no number keys</h2>
+    <ul>
+      <li>Switch with <kbd>←</kbd> <kbd>→</kbd>, <kbd>Tab</kbd> or a click on the tab.</li>
+      <li>A <code>?N</code> badge counts what waits on you in that tab. It is a count and never a key hint.</li>
+      <li>The Changes page that <kbd>3</kbd> used to open is now <kbd>f</kbd>.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="panes"><figure class="term"><figcaption><span>Project tab, hub</span><span>40 × 34</span></figcaption><pre class="grid" role="img" aria-label="Project tab, hub"><span style="color:#a6adc8"> <i class="w2">首</i><i class="w2">页</i> </span><span style="color:#f9e2af">?1</span><span style="color:#cdd6f4"> </span><span style="color:#cdd6f4;background:#313244"> <i class="w2">项</i><i class="w2">目</i> </span><span style="color:#f9e2af;background:#313244">?2</span><span style="color:#cdd6f4;background:#313244"> </span><span style="color:#cdd6f4">               </span><span style="color:#a6adc8"><i class="w2">模</i><i class="w2">型</i> <i class="w2">开</i></span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#cdd6f4;background:#313244">demo-project</span><span style="color:#cdd6f4"> </span><span style="color:#585b70"><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i></span><span style="color:#cdd6f4"> </span><span style="color:#89b4fa">0.1.3</span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#f9e2af">?</span><span style="color:#cdd6f4"> </span><span style="color:#cdd6f4;background:#313244"><i class="w2">等</i><i class="w2">你</i><i class="w2">处</i><i class="w2">理</i></span><span style="color:#cdd6f4">                  </span><span style="color:#9aa5b8">2 <i class="w1">·</i> 5 <i class="w2">待</i><i class="w2">试</i><i class="w2">用</i></span>
+<span style="color:#89b4fa;background:#45475a"><i class="w1">◐</i></span><span style="color:#cdd6f4;background:#45475a"> <i class="w2">进</i><i class="w2">度</i>          </span><span style="color:#cdd6f4;background:#45475a">0.1.3 <i class="w1">·</i> 5 <i class="w2">待</i><i class="w2">试</i><i class="w2">用</i>        </span>
+<span style="color:#f9e2af">?</span><span style="color:#cdd6f4"> </span><span style="color:#cdd6f4;background:#313244"><i class="w2">工</i><i class="w2">单</i>          </span><span style="color:#cdd6f4">3/14 <i class="w2">完</i><i class="w2">成</i> <i class="w1">·</i> 2 <i class="w2">工</i><i class="w2">作</i><i class="w2">中</i>    </span>
+<span style="color:#9aa5b8"><i class="w1">○</i></span><span style="color:#cdd6f4"> </span><span style="color:#cdd6f4;background:#313244"><i class="w2">工</i><i class="w2">作</i><i class="w2">区</i>        </span><span style="color:#cdd6f4">synthetic-project       </span>
+<span style="color:#9aa5b8"><i class="w1">○</i></span><span style="color:#cdd6f4"> </span><span style="color:#cdd6f4;background:#313244"><i class="w2">文</i><i class="w2">档</i>          </span><span style="color:#cdd6f4">M3b <i class="w1">·</i> AI-THIN           </span>
+<span style="color:#f9e2af">!</span><span style="color:#cdd6f4"> </span><span style="color:#cdd6f4;background:#313244"><i class="w2">控</i><i class="w2">制</i><i class="w2">面</i>        </span><span style="color:#cdd6f4">7 <i class="w2">角</i><i class="w2">色</i> <i class="w1">·</i> <i class="w2">密</i><i class="w2">钥</i> 3/5       </span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#cdd6f4"><i class="w2">进</i><i class="w2">度</i> </span><span style="color:#585b70"><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i></span><span style="color:#cdd6f4"> </span><span style="color:#9aa5b8"><i class="w1">⏎</i> <i class="w2">打</i><i class="w2">开</i><i class="w2">页</i><i class="w2">面</i></span>
+<span style="color:#cdd6f4">  Synthetic hub work in two worktrees  </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">  </span><span style="color:#89b4fa"><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i></span><span style="color:#f9e2af"><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i></span><span style="color:#cba6f7"><i class="w1">▒</i><i class="w1">▒</i><i class="w1">▒</i><i class="w1">▒</i><i class="w1">▒</i></span><span style="color:#a6adc8"><i class="w1">░</i><i class="w1">░</i><i class="w1">░</i><i class="w1">░</i><i class="w1">░</i><i class="w1">░</i></span><span style="color:#cdd6f4"> </span><span style="color:#9aa5b8">0/4 <i class="w2">已</i><i class="w2">验</i><i class="w2">收</i></span><span style="color:#cdd6f4">   </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">                                       </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#9aa5b8"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i>   y <i class="w2">验</i><i class="w2">收</i>  n <i class="w2">标</i><i class="w2">记</i></span><span style="color:#cdd6f4">                </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4;background:#45475a">  </span><span style="color:#cba6f7;background:#45475a"><i class="w1">◇</i></span><span style="color:#cdd6f4;background:#45475a"> DATA-ONE  </span><span style="color:#a6adc8;background:#45475a"><i class="w2">台</i><i class="w2">账</i><i class="w2">历</i><i class="w2">史</i><i class="w2">、</i><i class="w2">进</i><i class="w2">行</i><i class="w2">中</i><i class="w2">的</i><i class="w2">任</i><i class="w1">…</i></span><span style="color:#cdd6f4;background:#45475a"> </span><span style="color:#9aa5b8;background:#45475a">1<i class="w2">天</i></span><span style="color:#a6adc8;background:#45475a"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">  </span><span style="color:#cba6f7"><i class="w1">◇</i></span><span style="color:#cdd6f4"> WATCH-LINK  </span><span style="color:#a6adc8"><i class="w2">会</i><i class="w2">话</i><i class="w2">文</i><i class="w2">件</i><i class="w2">指</i><i class="w2">回</i><i class="w2">自</i><i class="w2">己</i><i class="w2">的</i><i class="w1">…</i></span><span style="color:#cdd6f4"> </span><span style="color:#9aa5b8">5<i class="w2">天</i></span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">  </span><span style="color:#cba6f7"><i class="w1">◇</i></span><span style="color:#cdd6f4"> SENTENCE-CUT             </span><span style="color:#cba6f7"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i></span><span style="color:#cdd6f4"> </span><span style="color:#a6adc8">7<i class="w2">天</i></span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">    </span><span style="color:#9aa5b8">job sentences are cut at a word,</span><span style="color:#cdd6f4">   </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">    </span><span style="color:#9aa5b8">never between a name and its flag</span><span style="color:#cdd6f4">  </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">  </span><span style="color:#cba6f7"><i class="w1">◇</i></span><span style="color:#cdd6f4"> NATIVE-ROWS             </span><span style="color:#cba6f7"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i></span><span style="color:#cdd6f4"> </span><span style="color:#a6adc8">19<i class="w2">天</i></span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">    </span><span style="color:#9aa5b8">native rows keep one order</span><span style="color:#cdd6f4">         </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">  </span><span style="color:#cba6f7"><i class="w1">◇</i></span><span style="color:#cdd6f4"> NO-HASH                     </span><span style="color:#cba6f7"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i></span><span style="color:#cdd6f4"> </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">    </span><span style="color:#9aa5b8">landed with no commit in its text</span><span style="color:#cdd6f4">  </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">                                       </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#9aa5b8"><i class="w2">现</i><i class="w2">在</i></span><span style="color:#cdd6f4">                                   </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">  </span><span style="color:#89b4fa"><i class="w1">◐</i></span><span style="color:#cdd6f4"> PAGE-ONE                     </span><span style="color:#89b4fa"><i class="w2">工</i><i class="w2">作</i><i class="w2">中</i></span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">  </span><span style="color:#f9e2af"><i class="w1">◆</i></span><span style="color:#cdd6f4"> PAGE-TWO  </span><span style="color:#a6adc8">waits for page one</span><span style="color:#cdd6f4">   </span><span style="color:#f9e2af"><i class="w2">受</i><i class="w2">阻</i></span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">  </span><span style="color:#89b4fa"><i class="w1">◉</i></span><span style="color:#cdd6f4"> </span><span style="color:#4cc3ea">imp</span><span style="color:#cdd6f4">  </span><span style="color:#a6adc8">Tidy the synthetic docs<i class="w1">…</i></span><span style="color:#cdd6f4"> </span><span style="color:#a6adc8">5<i class="w2">分</i><i class="w2">钟</i></span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#cdd6f4">                                       </span><span style="color:#a6adc8"><i class="w1">┃</i></span>
+<span style="color:#9aa5b8"><i class="w2">最</i><i class="w2">近</i><i class="w2">验</i><i class="w2">收</i></span><span style="color:#cdd6f4">                               </span><span style="color:#585b70"><i class="w1">│</i></span>
+<span style="color:#cdd6f4">  </span><span style="color:#a6e3a1"><i class="w1">✓</i></span><span style="color:#cdd6f4"> REVIEW-ONE               </span><span style="color:#a6adc8"><i class="w2">已</i><i class="w2">验</i><i class="w2">收</i></span><span style="color:#cdd6f4"> </span><span style="color:#a6adc8">8<i class="w2">天</i></span><span style="color:#585b70"><i class="w1">│</i></span>
+<span style="color:#cdd6f4">     </span><span style="color:#a6adc8"><i class="w1">↑</i><i class="w1">↓</i> <i class="w2">移</i><i class="w2">动</i>  Space <i class="w2">勾</i><i class="w2">选</i>  y <i class="w2">验</i><i class="w2">收</i>  n <i class="w2">标</i><i class="w2">记</i></span></pre></figure></div>
+  <div class="notes">
+    <h2>One number for what is left to try</h2>
+    <ul>
+      <li>The Waiting row says <code>2 · 5 待试用</code> and the Progress row says <code>0.1.3 · 5 待试用</code>. Both count every to-try slice in the ledger, whatever its milestone.</li>
+      <li>The Progress row has a single form: the milestone, then the counts that are not zero, dropping the last ones when the row is narrow.</li>
+      <li>The meter reads <code>0/4 已验收</code>, so its n/m says it counts accepted slices of the milestone. Tickets read <code>3/14 完成</code>.</li>
+      <li>A slice with a brief shows its first sentence right beside its ID. A slice without one keeps the ledger text, wrapped whole under the row.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="panes"><figure class="term"><figcaption><span>Progress page, first slice selected</span><span>40 × 30</span></figcaption><pre class="grid" role="img" aria-label="Progress page, first slice selected"><span style="color:#cdd6f4;background:#313244"><i class="w1">‹</i> <i class="w2">项</i><i class="w2">目</i> <i class="w1">›</i> <i class="w2">进</i><i class="w2">度</i>               <i class="w2">更</i><i class="w2">新</i><i class="w2">于</i> 12:35</span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#cdd6f4">  </span><span style="color:#cdd6f4;background:#313244"> 0.1.3 </span><span style="color:#cdd6f4"> </span><span style="color:#89b4fa"><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i></span><span style="color:#f9e2af"><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i><i class="w1">█</i></span><span style="color:#cba6f7"><i class="w1">▒</i><i class="w1">▒</i><i class="w1">▒</i><i class="w1">▒</i><i class="w1">▒</i></span><span style="color:#a6adc8"><i class="w1">░</i><i class="w1">░</i><i class="w1">░</i><i class="w1">░</i></span><span style="color:#cdd6f4"> </span><span style="color:#9aa5b8">0/4 <i class="w2">已</i><i class="w2">验</i><i class="w2">收</i></span><span style="color:#cdd6f4"> </span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#89b4fa"><i class="w1">◐</i></span><span style="color:#cdd6f4"> PAGE-ONE     </span><span style="color:#9aa5b8"><i class="w2">工</i><i class="w2">作</i><i class="w2">中</i></span><span style="color:#cdd6f4">                   </span>
+<span style="color:#f9e2af"><i class="w1">◆</i></span><span style="color:#cdd6f4"> PAGE-TWO     </span><span style="color:#9aa5b8"><i class="w2">受</i><i class="w2">阻</i></span><span style="color:#cdd6f4">                     </span>
+<span style="color:#cba6f7;background:#45475a"><i class="w1">◇</i></span><span style="color:#cdd6f4;background:#45475a"> DATA-ONE     </span><span style="color:#a6adc8;background:#45475a"><i class="w2">台</i><i class="w2">账</i><i class="w2">历</i><i class="w2">史</i><i class="w2">、</i><i class="w2">进</i><i class="w2">行</i><i class="w2">中</i><i class="w2">的</i><i class="w2">任</i><i class="w1">…</i></span><span style="color:#cdd6f4;background:#45475a"> </span><span style="color:#9aa5b8;background:#45475a">1<i class="w2">天</i></span>
+<span style="color:#cba6f7"><i class="w1">◇</i></span><span style="color:#cdd6f4"> NATIVE-ROWS  </span><span style="color:#9aa5b8"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i></span><span style="color:#cdd6f4">               </span><span style="color:#9aa5b8">19<i class="w2">天</i></span>
+<span style="color:#cba6f7"><i class="w1">◇</i></span><span style="color:#cdd6f4"> SENTENCE-CUT </span><span style="color:#9aa5b8"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i></span><span style="color:#cdd6f4">                </span><span style="color:#9aa5b8">7<i class="w2">天</i></span>
+<span style="color:#cba6f7"><i class="w1">◇</i></span><span style="color:#cdd6f4"> WATCH-LINK   </span><span style="color:#a6adc8"><i class="w2">会</i><i class="w2">话</i><i class="w2">文</i><i class="w2">件</i><i class="w2">指</i><i class="w2">回</i><i class="w2">自</i><i class="w2">己</i><i class="w2">的</i><i class="w2">目</i><i class="w1">…</i></span><span style="color:#cdd6f4"> </span><span style="color:#9aa5b8">5<i class="w2">天</i></span>
+<span style="color:#cba6f7"><i class="w1">◇</i></span><span style="color:#cdd6f4"> NO-HASH      </span><span style="color:#9aa5b8"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i></span><span style="color:#cdd6f4">                   </span>
+<span style="color:#9aa5b8"><i class="w1">○</i></span><span style="color:#cdd6f4"> LATER-ONE    </span><span style="color:#9aa5b8"><i class="w2">待</i><i class="w2">办</i></span><span style="color:#cdd6f4">                     </span>
+<span style="color:#89b4fa"><i class="w1">◉</i></span><span style="color:#cdd6f4"> </span><span style="color:#4cc3ea">imp</span><span style="color:#cdd6f4"> </span><span style="color:#9aa5b8">Tidy the synthetic docs in <i class="w1">…</i></span><span style="color:#cdd6f4"> </span><span style="color:#9aa5b8">5<i class="w2">分</i><i class="w2">钟</i></span>
+<span style="color:#9aa5b8"><i class="w1">→</i></span><span style="color:#cdd6f4"> <i class="w2">下</i><i class="w2">一</i><i class="w2">步</i>                               </span><span style="color:#9aa5b8">4</span>
+<span style="color:#9aa5b8"><i class="w1">▸</i></span><span style="color:#cdd6f4"> <i class="w2">历</i><i class="w2">史</i>        </span><span style="color:#9aa5b8">7 <i class="w2">天</i><i class="w2">内</i><i class="w2">落</i><i class="w2">地</i> 3 <i class="w2">个</i> <i class="w1">·</i> 7 <i class="w2">已</i><i class="w2">收</i><i class="w2">起</i></span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#cdd6f4">DATA-ONE </span><span style="color:#585b70"><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i></span><span style="color:#cdd6f4"> </span><span style="color:#a6adc8"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i> <i class="w1">·</i> 0.1.3</span>
+<span style="color:#cdd6f4">  <i class="w2">台</i><i class="w2">账</i><i class="w2">历</i><i class="w2">史</i><i class="w2">、</i><i class="w2">进</i><i class="w2">行</i><i class="w2">中</i><i class="w2">的</i><i class="w2">任</i><i class="w2">务</i><i class="w2">和</i><i class="w2">工</i><i class="w2">单</i><i class="w2">详</i><i class="w2">情</i><i class="w2">现</i><i class="w2">在</i><i class="w2">都</i></span>
+<span style="color:#cdd6f4">  <i class="w2">能</i><i class="w2">在</i><i class="w2">进</i><i class="w2">度</i><i class="w2">页</i><i class="w2">直</i><i class="w2">接</i><i class="w2">看</i><i class="w2">到</i><i class="w2">。</i><i class="w2">其</i><i class="w2">余</i><i class="w2">页</i><i class="w2">面</i><i class="w2">不</i><i class="w2">变</i><i class="w2">。</i>    </span>
+<span style="color:#cdd6f4">  </span><span style="color:#a6adc8"><i class="w2">试</i><i class="w2">用</i><i class="w2">步</i><i class="w2">骤</i></span><span style="color:#cdd6f4">                              </span>
+<span style="color:#cdd6f4">  1. <i class="w2">打</i><i class="w2">开</i><i class="w2">项</i><i class="w2">目</i><i class="w2">页</i><i class="w2">，</i><i class="w2">进</i><i class="w2">入</i><i class="w2">进</i><i class="w2">度</i><i class="w2">。</i>             </span>
+<span style="color:#cdd6f4">  2. <i class="w2">选</i><i class="w2">中</i> DATA-ONE<i class="w2">，</i><i class="w2">确</i><i class="w2">认</i><i class="w2">摘</i><i class="w2">要</i><i class="w2">、</i><i class="w2">步</i><i class="w2">骤</i><i class="w2">和</i><i class="w2">台</i><i class="w2">账</i></span>
+<span style="color:#cdd6f4">     <i class="w2">原</i><i class="w2">文</i><i class="w2">都</i><i class="w2">在</i><i class="w2">。</i>                         </span>
+<span style="color:#cdd6f4">  3. <i class="w2">按</i> Enter <i class="w2">展</i><i class="w2">开</i><i class="w2">台</i><i class="w2">账</i><i class="w2">原</i><i class="w2">文</i><i class="w2">。</i>            </span>
+<span style="color:#cdd6f4">  </span><span style="color:#a6adc8"><i class="w1">▸</i> <i class="w2">台</i><i class="w2">账</i><i class="w2">原</i><i class="w2">文</i></span><span style="color:#cdd6f4">                            </span>
+<span style="color:#cdd6f4">  </span><span style="color:#9aa5b8">0.1.3 <i class="w1">·</i> d0e1f2a <i class="w1">·</i> 11-11</span><span style="color:#cdd6f4">               </span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#cdd6f4">                                        </span>
+<span style="color:#cdd6f4">     </span><span style="color:#a6adc8"><i class="w1">↑</i><i class="w1">↓</i> <i class="w2">移</i><i class="w2">动</i>  Space <i class="w2">勾</i><i class="w2">选</i>  y <i class="w2">验</i><i class="w2">收</i>  n <i class="w2">标</i><i class="w2">记</i></span></pre></figure></div>
+  <div class="notes">
+    <h2>The Progress page reads as briefs</h2>
+    <ul>
+      <li>Each to-try row is one line: ID, then the brief's first sentence, cut with an ellipsis when it does not fit.</li>
+      <li>Rows with no brief keep the state word, so the list stays aligned.</li>
+      <li>The preview below the list shows the whole brief, the numbered steps and the ledger line, folded.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="panes">
+    <figure class="term"><figcaption><span>Preview, ledger line folded</span><span>40 × 11</span></figcaption><pre class="grid" role="img" aria-label="Preview, ledger line folded"><span style="color:#cdd6f4">DATA-ONE </span><span style="color:#585b70"><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i></span><span style="color:#cdd6f4"> </span><span style="color:#a6adc8"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i> <i class="w1">·</i> 0.1.3</span>
+<span style="color:#cdd6f4">  <i class="w2">台</i><i class="w2">账</i><i class="w2">历</i><i class="w2">史</i><i class="w2">、</i><i class="w2">进</i><i class="w2">行</i><i class="w2">中</i><i class="w2">的</i><i class="w2">任</i><i class="w2">务</i><i class="w2">和</i><i class="w2">工</i><i class="w2">单</i><i class="w2">详</i><i class="w2">情</i><i class="w2">现</i><i class="w2">在</i><i class="w2">都</i></span>
+<span style="color:#cdd6f4">  <i class="w2">能</i><i class="w2">在</i><i class="w2">进</i><i class="w2">度</i><i class="w2">页</i><i class="w2">直</i><i class="w2">接</i><i class="w2">看</i><i class="w2">到</i><i class="w2">。</i><i class="w2">其</i><i class="w2">余</i><i class="w2">页</i><i class="w2">面</i><i class="w2">不</i><i class="w2">变</i><i class="w2">。</i>    </span>
+<span style="color:#cdd6f4">  </span><span style="color:#a6adc8"><i class="w2">试</i><i class="w2">用</i><i class="w2">步</i><i class="w2">骤</i></span><span style="color:#cdd6f4">                              </span>
+<span style="color:#cdd6f4">  1. <i class="w2">打</i><i class="w2">开</i><i class="w2">项</i><i class="w2">目</i><i class="w2">页</i><i class="w2">，</i><i class="w2">进</i><i class="w2">入</i><i class="w2">进</i><i class="w2">度</i><i class="w2">。</i>             </span>
+<span style="color:#cdd6f4">  2. <i class="w2">选</i><i class="w2">中</i> DATA-ONE<i class="w2">，</i><i class="w2">确</i><i class="w2">认</i><i class="w2">摘</i><i class="w2">要</i><i class="w2">、</i><i class="w2">步</i><i class="w2">骤</i><i class="w2">和</i><i class="w2">台</i><i class="w2">账</i></span>
+<span style="color:#cdd6f4">     <i class="w2">原</i><i class="w2">文</i><i class="w2">都</i><i class="w2">在</i><i class="w2">。</i>                         </span>
+<span style="color:#cdd6f4">  3. <i class="w2">按</i> Enter <i class="w2">展</i><i class="w2">开</i><i class="w2">台</i><i class="w2">账</i><i class="w2">原</i><i class="w2">文</i><i class="w2">。</i>            </span>
+<span style="color:#cdd6f4">  </span><span style="color:#a6adc8"><i class="w1">▸</i> <i class="w2">台</i><i class="w2">账</i><i class="w2">原</i><i class="w2">文</i></span><span style="color:#cdd6f4">                            </span>
+<span style="color:#cdd6f4">  </span><span style="color:#9aa5b8">0.1.3 <i class="w1">·</i> d0e1f2a <i class="w1">·</i> 11-11</span><span style="color:#cdd6f4">               </span>
+<span style="color:#cdd6f4">     </span><span style="color:#a6adc8"><i class="w1">↑</i><i class="w1">↓</i> <i class="w2">移</i><i class="w2">动</i>  Space <i class="w2">勾</i><i class="w2">选</i>  y <i class="w2">验</i><i class="w2">收</i>  n <i class="w2">标</i><i class="w2">记</i></span></pre></figure>
+    <figure class="term"><figcaption><span>Preview, after Enter on that line</span><span>40 × 13</span></figcaption><pre class="grid" role="img" aria-label="Preview, after Enter on that line"><span style="color:#cdd6f4">DATA-ONE </span><span style="color:#585b70"><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i><i class="w1">─</i></span><span style="color:#cdd6f4"> </span><span style="color:#a6adc8"><i class="w2">待</i><i class="w2">试</i><i class="w2">用</i> <i class="w1">·</i> 0.1.3</span>
+<span style="color:#cdd6f4">  <i class="w2">台</i><i class="w2">账</i><i class="w2">历</i><i class="w2">史</i><i class="w2">、</i><i class="w2">进</i><i class="w2">行</i><i class="w2">中</i><i class="w2">的</i><i class="w2">任</i><i class="w2">务</i><i class="w2">和</i><i class="w2">工</i><i class="w2">单</i><i class="w2">详</i><i class="w2">情</i><i class="w2">现</i><i class="w2">在</i><i class="w2">都</i></span>
+<span style="color:#cdd6f4">  <i class="w2">能</i><i class="w2">在</i><i class="w2">进</i><i class="w2">度</i><i class="w2">页</i><i class="w2">直</i><i class="w2">接</i><i class="w2">看</i><i class="w2">到</i><i class="w2">。</i><i class="w2">其</i><i class="w2">余</i><i class="w2">页</i><i class="w2">面</i><i class="w2">不</i><i class="w2">变</i><i class="w2">。</i>    </span>
+<span style="color:#cdd6f4">  </span><span style="color:#a6adc8"><i class="w2">试</i><i class="w2">用</i><i class="w2">步</i><i class="w2">骤</i></span><span style="color:#cdd6f4">                              </span>
+<span style="color:#cdd6f4">  1. <i class="w2">打</i><i class="w2">开</i><i class="w2">项</i><i class="w2">目</i><i class="w2">页</i><i class="w2">，</i><i class="w2">进</i><i class="w2">入</i><i class="w2">进</i><i class="w2">度</i><i class="w2">。</i>             </span>
+<span style="color:#cdd6f4">  2. <i class="w2">选</i><i class="w2">中</i> DATA-ONE<i class="w2">，</i><i class="w2">确</i><i class="w2">认</i><i class="w2">摘</i><i class="w2">要</i><i class="w2">、</i><i class="w2">步</i><i class="w2">骤</i><i class="w2">和</i><i class="w2">台</i><i class="w2">账</i></span>
+<span style="color:#cdd6f4">     <i class="w2">原</i><i class="w2">文</i><i class="w2">都</i><i class="w2">在</i><i class="w2">。</i>                         </span>
+<span style="color:#cdd6f4">  3. <i class="w2">按</i> Enter <i class="w2">展</i><i class="w2">开</i><i class="w2">台</i><i class="w2">账</i><i class="w2">原</i><i class="w2">文</i><i class="w2">。</i>            </span>
+<span style="color:#cdd6f4">  </span><span style="color:#a6adc8"><i class="w1">▾</i> <i class="w2">台</i><i class="w2">账</i><i class="w2">原</i><i class="w2">文</i></span><span style="color:#cdd6f4">                            </span>
+<span style="color:#cdd6f4">    </span><span style="color:#a6adc8">ledger history, live jobs and ticket</span>
+<span style="color:#cdd6f4">    </span><span style="color:#a6adc8">detail</span><span style="color:#cdd6f4">                              </span>
+<span style="color:#cdd6f4">  </span><span style="color:#9aa5b8">0.1.3 <i class="w1">·</i> d0e1f2a <i class="w1">·</i> 11-11</span><span style="color:#cdd6f4">               </span>
+<span style="color:#cdd6f4">     </span><span style="color:#a6adc8"><i class="w1">↑</i><i class="w1">↓</i> <i class="w2">移</i><i class="w2">动</i>  Space <i class="w2">勾</i><i class="w2">选</i>  y <i class="w2">验</i><i class="w2">收</i>  n <i class="w2">标</i><i class="w2">记</i></span></pre></figure>
+  </div>
+  <div class="notes">
+    <h2>The preview keeps the original text one key away</h2>
+    <ul>
+      <li>Brief first, then <b>试用步骤</b> as numbered steps. The ledger text sits under <b>▸ 台账原文</b>.</li>
+      <li><kbd>Enter</kbd> on that line unfolds it; the same key folds it again. Nothing is rewritten: the ledger keeps its own words.</li>
+      <li>With no brief, or with the model off, the preview shows the whole original text wrapped, never broken inside a word or a path.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="notes" style="grid-column: 1 / -1; max-width: none">
+    <h2>Other keys that changed</h2>
+    <dl class="keys">
+      <dt>1–4, d</dt><dd>On an expanded question, answer its options directly; <kbd>d</kbd> takes the default. No <kbd>r</kbd> first.</dd>
+      <dt>= + -</dt><dd>Resize the Split list. The divider can no longer be dragged, and the panel no longer asks the terminal for drag events. Clicks and the wheel stay.</dd>
+      <dt>← → Tab</dt><dd>Switch tab, as before, plus a click.</dd>
+    </dl>
+  </div>
+</section>
+
+<footer>Frames come from <code>renderMonitor</code> with a fixed clock, so this page shows what the panel draws and not a mock-up.</footer>
+</main>
+</body>
+</html>

@@ -12,7 +12,7 @@ import { laneRows, orderedLanes, workerPriority } from './work-lanes.js';
 import type { WorkCard } from '../collectors/work-card.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
-import { barText, currentRows, homeProgressRows, inline, landedAge, landedMark, landedNewest, ledgerText, roleInk, waitingRows } from './project-view.js';
+import { currentRows, homeProgressRows, landedAge, landedInline, landedMark, landedNewest, pageSummary, roleInk, tryCount, waitingRows } from './project-view.js';
 import { boardRow, decisionBlock, mark, minuteAge, section } from './workboard-rows.js';
 import { splitScope, splitSubValid, type SplitScene } from './split-frame.js';
 import { fit, flowLines, monitorText, pair } from './monitor-text.js';
@@ -46,7 +46,6 @@ function laneCue(card: WorkCard, room: number): string {
   const fact = monitorText(card.reason ? t(card.reason) : card.phases.length > 1 ? phaseChain(card) : '');
   return fact ? theme.board.muted(truncateAnsi(fact, room)) : '';
 }
-const tries = (waiting: readonly { value: string }[]) => waiting.filter((r) => /^try\b/i.test(r.value)).length;
 /** The target the lane's acting job is: the one that asks, else the most important. */
 export const laneTop = (lane: WorkLane, now: number): OwnerWorker =>
   [...lane.workers].sort((a, b) => workerPriority(a, now) - workerPriority(b, now))[0];
@@ -84,13 +83,13 @@ export function homeScene(
       return { label: names[i], right: [mid, t('{n} jobs', { n: lane.workers.length })].join(' · '), rows: [...slabs, ...cards] };
     } };
   };
-  const waits = data?.waiting ?? [];
+  const waits = data?.waiting ?? [], waitFacts = [waits.length, data && tryCount(data) && t('{n} to try', { n: tryCount(data) })].filter(Boolean).join(' · ');
   const waiting: Entry[] = filtering || !waits.length ? [] : [{ item: WAITING, needs: true, rows: [{ item: WAITING,
-    text: pair(`${theme.board.attention('?')} ${t('Waiting for you')}`, theme.board.muted([waits.length, tries(waits) && t('{n} to try', { n: tries(waits) })].filter(Boolean).join(' · ')), width) }],
-  preview: () => ({ label: t('Waiting for you'), right: [waits.length, tries(waits) && t('{n} to try', { n: tries(waits) })].filter(Boolean).join(' · '), rows: [
+    text: pair(`${theme.board.attention('?')} ${t('Waiting for you')}`, theme.board.muted(waitFacts), width) }],
+  preview: () => ({ label: t('Waiting for you'), right: waitFacts, rows: [
     ...waits.flatMap((r, i) => waitingRows(r, i, width, now, Infinity).map((row) => ({ ...row, item: `home-progress:wait:${i}` }))),
     ...(landedNewest(data!).length ? [boardRow(''), section(t('Latest'), width, t('newest first')), ...landedNewest(data!).slice(0, width < 56 ? 3 : 5).map(({ r }): MonitorRow => ({
-      text: inline(`  ${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now), width), item: 'home-progress:latest' }))] : [])] }) }];
+      text: landedInline(r, `  ${landedMark(r)} ${monitorText(r.id)}`, landedAge(r, now), width), item: 'home-progress:latest' }))] : [])] }) }];
   const departures = board.decisions.filter((d) => d.departure).length;
   const decided: Entry[] = !board.decisions.length ? [] : [{ item: DECIDED, needs: false, rows: [{ item: DECIDED,
     text: pair(`${departures ? theme.board.attention(mark('◆', '*')) : theme.board.muted(mark('◇', 'o'))} ${t('Decided for you')}`,
@@ -100,9 +99,11 @@ export function homeScene(
   // Recommended mode's brief paragraph is the Progress row's preview, where the summary is.
   const brief = board.homeBrief ? [...flowLines(monitorText(board.homeBrief), width).map((l) => boardRow(theme.board.text(l))), boardRow('')] : [];
   const progress: Entry[] = filtering || (!block.length && !brief.length) ? [] : (() => {
-    const cur = data ? currentRows(data) : undefined, total = cur ? cur.rows.length - cur.counts.dropped : 0, milestone = data?.ladder.current && cur && !(cur.whole && cur.rows.length) ? monitorText(data.ladder.current) : '';
-    return [{ item: PROGRESS, needs: false, rows: [{ item: PROGRESS, text: pair(`${theme.board.active(mark('◐', '@'))} ${t('Progress')}${milestone ? '  ' + theme.board.muted(milestone) : ''}`,
-      total && cur ? `${barText({ counts: cur.counts }, 14)} ${theme.board.muted(`${cur.counts.accepted}/${total}`)}` : '', width) }],
+    const cur = data ? currentRows(data) : undefined, milestone = data?.ladder.current && cur && !(cur.whole && cur.rows.length) ? monitorText(data.ladder.current) : '';
+    // One form, the one the hub's Progress row has: the page's facts in words, the last ones dropped first when the row is short.
+    const lead = `${theme.board.active(mark('◐', '@'))} ${t('Progress')}`, facts = data ? pageSummary('progress', data, now) : [];
+    while (facts.length > 1 && visualLength(lead) + 2 + visualLength(facts.join(' · ')) > width) facts.pop();
+    return [{ item: PROGRESS, needs: false, rows: [{ item: PROGRESS, text: pair(lead, theme.board.muted(facts.join(' · ')), width) }],
     preview: () => ({ label: t('Progress'), right: milestone && `${t('Milestone')} ${milestone}`, rows: [...brief, ...block.slice(1)] }) }];
   })();
   const entries = [...lanes.flatMap((l, i) => (group(l) <= 4 ? [laneEntry(l, i)] : [])), ...waiting,

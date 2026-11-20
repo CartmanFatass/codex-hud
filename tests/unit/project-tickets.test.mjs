@@ -117,7 +117,7 @@ test('tickets are lanes by state: For you first, then Working, Ready, Blocked; D
   const lines = plain(frame), at = (re) => lines.findIndex((l) => re.test(l));
   // The lanes in order, each with its count; the meter counts the done tickets of every feature, the codes name the features.
   assert.ok(at(/^For you ─+ 3$/) < at(/^Working ─+ 2$/) && at(/^Working ─+ 2$/) < at(/^Ready ─+ 3$/) && at(/^Ready ─+ 3$/) < at(/^Blocked ─+ 2$/) && at(/^Blocked ─+ 2$/) < at(/^▸ Done ─+ 4$/));
-  assert.match(lines.join('\n'), /^ {2}━{3}─{13} 3\/14$/m);
+  assert.match(lines.join('\n'), /^ {2}━{3}─{13} 3\/14 done$/m);
   assert.match(lines.join('\n'), /^ {2}nt native-tree 1\/12 {2}rt retired-tools 2\/2$/m);
   // For you holds what waits on a person, ahead of anything its blockers say; a blocked ticket names its blockers.
   const lane = (name) => lines.slice(at(new RegExp(`^${name} ─`)) + 1).slice(0, 6).filter((l) => /^ {2}\S/.test(l)).join('\n');
@@ -181,8 +181,8 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
   assert.match(plain(bare).join('\n'), /● nt 06 Polish +triaging +0\/0\n +no checklist/);
   assert.match(plain(bare).join('\n'), /◆ nt 04 Settings cleanup +← 02, 03 +0\/2\n/, 'the blockers share the row at 40 columns');
   // One meter for every ticket: thin, as full as the done share (a started one never empty, an unfinished one never full).
-  assert.match(plain(f.render(120, 'en', 'tickets')).join('\n'), /^ {2}━{3}─{13} 3\/14$/m);
-  assert.match(plain(f.render(40, 'en', 'tickets')).join('\n'), /^ {2}━{3}─{13} 3\/14$/m, 'the same at 40 columns');
+  assert.match(plain(f.render(120, 'en', 'tickets')).join('\n'), /^ {2}━{3}─{13} 3\/14 done$/m);
+  assert.match(plain(f.render(40, 'en', 'tickets')).join('\n'), /^ {2}━{3}─{13} 3\/14 done$/m, 'the same at 40 columns');
 });
 test('Home collects no tickets; warm signatures read/parse nothing, changes unblock and reorder without cached overlays', async (t) => {
   const f = await fixture(t), calls = observe(t);

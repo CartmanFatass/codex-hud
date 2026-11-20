@@ -232,7 +232,7 @@ test('Home shows questions, lanes with cards, then decisions; Enter reveals the 
     const decided = home.findIndex((l) => l.startsWith('Decided for you'));
     assert.ok(at < lane && lane < decided);
     assert.match(home[lane + 1], /thin job cards/);
-    assert.match(home[0], /^ Home 1\s+Project\s+models on$/);
+    assert.match(home[0], /^ Home \?1\s+Project\s+models on$/);
     assert.match(home[decided + 1], /^◆ PANEL-THIN · imp q2 .*…/);
     assert.match(home[decided + 1], /\d+m\s*$/);
     assert.equal(home[decided + 2].trim(), '');
@@ -312,11 +312,11 @@ test('Home Enter toggles cards, decisions and lanes; navigation opens Project; a
   assert.doesNotMatch(text(folded), /thin job cards/);
   assert.match(text(press(folded, '\r')), /thin job cards/);
   const before = rendered(card).state;
-  for (const key of ['2', '\x1b[D', '\x1b[C', '\t', '\x1b[Z']) {
+  for (const key of ['\x1b[D', '\x1b[C', '\t', '\x1b[Z']) {
     assert.equal(press(before, key).mainTab, 'project');
     assert.deepEqual(press(before, key).homeTarget, before.homeTarget);
   }
-  assert.equal(press(before, '1').mainTab, 'home');
+  for (const digit of ['1', '2']) assert.equal(press(before, digit).mainTab, 'home', 'the digits switch no tab');
   assert.equal(press(before, 'n').mainTab, 'home');
   assert.equal(press(before, 'N').mainTab, 'home');
   assert.doesNotMatch(text(before), /imp q0/);
@@ -478,7 +478,7 @@ test('Home → thin-job Inspector → Changes preserves summary mouse controls w
   assert.ok(act({ type: 'mouse', button: 'wheel-down', x: pane.x + 1, y: pane.y + 1 }).scroll.changes > 0);
   const title = frame.controls.find((c) => c.kind === 'board-back');
   assert.equal(act({ type: 'mouse', button: 'left', x: title.x, y: title.y }).focus, 'agents');
-  frame = render(act({ type: 'key', key: 'home-tab' }));
+  frame = render(act({ type: 'key', key: 'escape' }));
   assert.equal(frame.state.focus, 'agents');
 });
 

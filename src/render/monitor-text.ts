@@ -123,10 +123,13 @@ export function flowLines(text: string, width: number): string[] {
     const piece = (space ? ' ' : '') + token;
     space = false;
     if (visualLength(token) > width) {
-      [...token].forEach((char, i) => {
-        const bit = i ? char : piece.slice(0, piece.length - token.length) + char;
-        if (parts.length && used() + visualLength(bit) > width) push();
-        add(bit);
+      // A token longer than a line (a path, a long name) breaks after a `/`, `-`, `_` or `.` where it can, between characters only
+      // inside a piece that is itself longer than a line.
+      const lead = piece.slice(0, piece.length - token.length);
+      token.split(/(?<=[/\-_.])/).flatMap((chunk) => (visualLength(chunk) > width ? [...chunk] : [chunk])).forEach((bit, i) => {
+        const text = i ? bit : lead + bit;
+        if (parts.length && used() + visualLength(text) > width) push();
+        add(text);
       });
       continue;
     }

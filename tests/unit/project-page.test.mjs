@@ -103,7 +103,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
       );
       assert.match(text(pages.tickets), lang === 'en' ? /Project › Tickets\n\n  none/ : /项目 › 工单\n\n  无/);
       // The current milestone's bar and counts (STATE has no dates here, so older work is one row a milestone, newest first).
-      assert.match(text(pages.progress), /^ {3}M3b {2}[█▒░]+ 0\/2$/m);
+      assert.match(text(pages.progress), lang === 'en' ? /^ {3}M3b {2}[█▒░]+ 0\/2 accepted$/m : /^ {3}M3b {2}[█▒░]+ 0\/2 已验收$/m);
       assert.match(text(pages.progress), /^ {2}1 (working|工作中) {2}1 (to try|待试用)$/m);
       assert.match(text(pages.progress), /^ {2}▸ M3 +✓ 1/m);
       assert.match(text(pages.progress), /^ {2}▸ M3b +◇ 1/m);
@@ -114,7 +114,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
         assert.match(text(pages.control), /bad\.json/);
       }
       if (lang === 'zh') {
-        assert.match(text(hub), /^ 首页 1  项目 2/m);
+        assert.match(text(hub), /^ 首页 \?1  项目 \?2/m);
         assert.doesNotMatch(text(hub, ...Object.values(pages)), /\bProject 2\b|3 agent\b/);
         assert.ok(pages.control.workboard.rows.some((r) => stripAnsi(r.text).startsWith('▸ 文件')));
       }
@@ -210,13 +210,15 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 6$/m, 'a second Enter folds the roles again');
 });
-test('2 and arrows/Tab cycle main tabs with independent Project cursor/scroll; 3 stays Changes', async (t) => {
+test('arrows/Tab cycle main tabs with independent Project cursor/scroll; the digits switch none and f opens Changes', async (t) => {
   const f = await fixture(t),
     decoder = new WorkbenchInputDecoder('workboard');
   const send = (frame, raw) => handleMonitorInput(frame.state, decoder.push(Buffer.from(raw))[0], ctx(frame));
   let frame = f.render(80, 'en', { ...initialMonitorState(), homeScroll: 3 });
   assert.equal(projectShown(frame.state), false);
   frame = f.render(80, 'en', send(frame, '2').state);
+  assert.equal(frame.state.mainTab, 'home', 'a digit is no tab key');
+  frame = f.render(80, 'en', send(frame, '\x1b[C').state);
   assert.equal(frame.state.mainTab, 'project');
   assert.equal(projectShown(frame.state), true);
   frame.state.projectCursor = 'project:page:docs';
@@ -242,6 +244,8 @@ test('2 and arrows/Tab cycle main tabs with independent Project cursor/scroll; 3
   );
   assert.equal(frame.state.mainTab, 'project');
   frame = f.render(80, 'en', send(frame, '3').state);
+  assert.equal(frame.state.focus, 'agents', 'a digit opens no page');
+  frame = f.render(80, 'en', send(frame, 'f').state);
   assert.equal(frame.state.focus, 'changes');
   assert.equal(projectShown(frame.state), false);
 });
@@ -428,7 +432,7 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   assert.deepEqual(hubEntries(frame), ['progress', 'tree', 'docs', 'control'].map((p) => `project:page:${p}`), 'no tickets: no Tickets entry');
   assert.equal(frame.state.projectCursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
-  assert.match(plain(frame).join('\n'), /Progress +M3b · 1 working · 1 to try/);
+  assert.match(plain(frame).join('\n'), /Progress +M3b · 1 to try · 1 working/);
   assert.match(plain(frame).join('\n'), /Control plane +7 roles · keys 3\/5 · browser ✓/);
   frame.state.projectCursor = 'project:fold:waiting';
   frame = f.render(80, 'en', press(frame, 'enter').state);
@@ -455,7 +459,7 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
     frame = f.render(80, 'en', press(frame, 'escape').state);
     assert.equal(frame.state.projectPage, undefined);
     assert.equal(frame.state.projectCursor, `project:page:${page}`);
-    assert.match(stripAnsi(frame.lines[0]), /^ Home 1  Project 2/);
+    assert.match(stripAnsi(frame.lines[0]), /^ Home \?1  Project \?2/);
     frame = f.render(80, 'en', press(frame, 'enter').state);
     frame = f.render(80, 'en', click(frame, 33, 0).state);
     assert.equal(frame.state.projectPage, undefined, 'a click anywhere on the crumb returns');
@@ -478,7 +482,7 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
     const frame = hub(40, 40, lang), text = plain(frame).join('\n'), word = (en, zh) => (lang === 'en' ? en : zh);
     for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
     const at = (re) => text.search(re);
-    const order = [/^demo-project ─+ 0\.1\.3$/m, new RegExp(`^${word('Waiting for you', '等你处理')} ─+ 2 · 1 ${word('to try', '待试用')}$`, 'm'), new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'),
+    const order = [/^demo-project ─+ 0\.1\.3$/m, new RegExp(`^${word('Waiting for you', '等你处理')} ─+ 2 · 5 ${word('to try', '待试用')}$`, 'm'), new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'),
       new RegExp(`^${word('Latest', '最近完成')} ─+ ${word('newest first', '最新在前')}$`, 'm'), /^(Progress|进度) /m, /^(Working tree|工作区) /m, /^(Docs|文档) /m, /^(Control plane|控制面) /m].map(at);
     assert.ok(order.every((n, i) => n >= 0 && (!i || order[i - 1] < n)), `${lang}: ${order}`);
     // Now: a slice with its text when it fits whole and the word for its state; a job no slice shows with its role and minutes.

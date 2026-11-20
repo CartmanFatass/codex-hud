@@ -1,12 +1,12 @@
 /**
- * The owner's micro-actions on a HUD job (spec §2.2): `g` focuses its herdr tab, `r` opens a reply on its open question where
- * `1`–`4` pick an option and `d` the default, `X` asks to stop it. Pure: input here becomes an outcome, `tree-page.ts` does the I/O.
- * `1`–`4` switch tabs everywhere else, so an answer is two keys and the second one is only an answer while the reply is open.
+ * The owner's micro-actions on a HUD job (spec §2.2): `g` focuses its herdr tab, `1`–`4` and `d` answer its open question
+ * straight away while the question slab is expanded (or in the Inspector), `X` asks to stop it. Pure: input here becomes an
+ * outcome, `tree-page.ts` does the I/O. No digit switches a tab, so an expanded slab is the only place a digit means anything.
  */
 import { join } from 'node:path';
 import { targetKey, type OwnerWorker, type WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
+import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 import { theme } from './colors.js';
 import { fit, monitorText } from './monitor-text.js';
 import { boardRow } from './workboard-rows.js';
@@ -34,11 +34,10 @@ export function answerable(worker: OwnerWorker): { jobId: string; qid: string; o
   return options.length || r.suggested ? { jobId, qid: r.id, options, suggested: r.suggested } : undefined;
 }
 
-/** What the footer of a question being answered says: the keys the reply takes. Empty unless its reply is open. */
-export function replyHint(worker: OwnerWorker, state: MonitorState): string {
+/** The keys an open question takes, for the slab's footer and the Inspector: `1-2 answer  d default`. Empty without an option or a default. */
+export function answerKeys(worker: OwnerWorker): string[] {
   const a = answerable(worker);
-  if (!a || state.reply?.jobId !== a.jobId || state.reply.qid !== a.qid) return '';
-  return [a.options.length ? `1-${a.options.length} ${t('answer')}` : '', a.suggested ? `d ${t('default')}` : '', t('Esc cancel')].filter(Boolean).join('  ');
+  return !a ? [] : [a.options.length ? `${a.options.length === 1 ? '1' : `1-${a.options.length}`} ${t('answer')}` : '', a.suggested ? `d ${t('default')}` : ''].filter(Boolean);
 }
 /** The one-row prompt above the page while a stop waits for its answer. */
 export function stopPromptRows(state: MonitorState, width: number): MonitorRow[] {
@@ -46,9 +45,11 @@ export function stopPromptRows(state: MonitorState, width: number): MonitorRow[]
   return stop ? [boardRow(fit(theme.board.attention(t('Stop {role} {id}?  y confirm · Esc cancel', { role: monitorText(stop.role), id: stop.jobId.slice(0, 8) })), width))] : [];
 }
 
-/** `g`, `r` and `X` on the job under the cursor. Anything else (including `g` with no job: the top of the list) is Home's own. */
+/** `g`, `X` and the answer keys on the job under the cursor. Anything else (including `g` with no job: the top of the list) is Home's own. */
 export function openJobAction(next: MonitorState, input: WorkbenchInput, key: string, board: WorkboardSnapshot | undefined, result: (action?: MonitorOutcome['action']) => MonitorOutcome): MonitorOutcome | undefined {
-  if (input.type !== 'key' || !['home', 'reset', 'stop-job'].includes(key) || (key === 'home' && input.text !== 'g')) return undefined;
+  if (input.type !== 'key') return undefined;
+  const digit = /^[1-4]$/.exec(input.text ?? '')?.[0], answering = digit !== undefined || key === 'answer-default';
+  if (!answering && !(key === 'stop-job' || (key === 'home' && input.text === 'g'))) return undefined;
   const job = jobUnderCursor(next, board);
   if (!job) return undefined;
   if (key === 'home') return result({ type: 'focus-job-tab', dir: job.dir });
@@ -57,24 +58,17 @@ export function openJobAction(next: MonitorState, input: WorkbenchInput, key: st
     next.confirmStop = { jobId: job.jobId, role: job.worker.role ?? 'job', dir: job.dir };
     return result();
   }
+  // The slab has to be open (its options are numbered there): a digit on a collapsed card is not an answer.
   const a = answerable(job.worker);
-  if (!a) return undefined;
-  // The reply shows the whole question and its options, so the card is opened for it.
-  next.boardExpanded = new Set([...(next.boardExpanded ?? []), targetKey(job.target)]);
-  next.reply = { jobId: a.jobId, qid: a.qid };
-  return result();
+  if (!a || (next.focus !== 'details' && !next.boardExpanded?.has(targetKey(job.target)))) return undefined;
+  const answer = digit ? a.options[Number(digit) - 1] : a.suggested;
+  return answer ? result({ type: 'answer-job', home: job.home, jobId: a.jobId, qid: a.qid, answer, role: job.worker.role }) : undefined;
 }
 
-/** While a reply or a stop prompt is open it owns the keyboard: its keys act, `1`–`4` past the options wait, anything else cancels. */
-export function jobModalInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | null {
-  const { reply, confirmStop } = state;
-  if (!reply && !confirmStop) return null;
-  const done = (action?: MonitorOutcome['action'], keep = false): MonitorOutcome => ({ state: keep ? state : { ...state, reply: undefined, confirmStop: undefined }, close: false, action });
-  if (confirmStop) return done(input.type === 'key' && (input.key === 'enter' || input.text === 'y') ? { type: 'stop-job', dir: confirmStop.dir } : undefined);
-  const job = jobUnderCursor(state, ctx.frame?.workboard?.snapshot), a = job && answerable(job.worker);
-  const digit = input.type === 'key' ? /^[1-4]$/.exec(input.text ?? '')?.[0] : undefined;
-  const wants = digit ? 'option' : input.type === 'key' && input.key === 'answer-default' ? 'default' : undefined;
-  if (!job || !a || a.jobId !== reply!.jobId || a.qid !== reply!.qid || !wants) return done();
-  const answer = wants === 'default' ? a.suggested : a.options[Number(digit) - 1];
-  return answer ? done({ type: 'answer-job', home: job.home, jobId: a.jobId, qid: a.qid, answer, role: job.worker.role }) : done(undefined, true);
+/** While a stop prompt is open it owns the keyboard: `y` or Enter stops, anything else cancels. */
+export function jobModalInput(state: MonitorState, input: WorkbenchInput): MonitorOutcome | null {
+  const { confirmStop } = state;
+  if (!confirmStop) return null;
+  const confirmed = input.type === 'key' && (input.key === 'enter' || input.text === 'y');
+  return { state: { ...state, confirmStop: undefined }, close: false, action: confirmed ? { type: 'stop-job', dir: confirmStop.dir } : undefined };
 }

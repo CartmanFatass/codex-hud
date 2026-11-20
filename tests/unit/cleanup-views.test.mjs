@@ -48,7 +48,7 @@ test('Settings → Models shows real hourly usage/cap, including zero and with m
   }
 });
 
-test('Changes keeps key 3 and repository/worktree summary; no file selection, previews or diffs', async (t) => {
+test('Changes keeps key f and repository/worktree summary; no file selection, previews or diffs', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'hud-changes-'));
   const previous = setLanguage('en');
   t.after(() => {
@@ -85,7 +85,7 @@ test('Changes keeps key 3 and repository/worktree summary; no file selection, pr
     width: 56,
     height: 24,
   });
-  const [key] = new WorkbenchInputDecoder('workboard').push(Buffer.from('3'));
+  const [key] = new WorkbenchInputDecoder('workboard').push(Buffer.from('f'));
   const state = handleMonitorInput(home.state, key, { tree, frame: home }).state;
   assert.equal(state.focus, 'changes');
   const frame = renderMonitor({ tree, worktrees, state, width: 120, height: 30 });

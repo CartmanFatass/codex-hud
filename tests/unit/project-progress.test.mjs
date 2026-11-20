@@ -29,7 +29,7 @@ test('Progress: the current milestone, Now, Next and History from a synthetic le
     for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
     const page = text(frame), word = (en, zh) => (lang === 'en' ? en : zh);
     // The current milestone: its bar with accepted/total, the states that have slices, and what the earlier ones accepted in all.
-    assert.match(page, /^ {3}0\.1\.3 {2}[█▒░]+ 0\/4$/m);
+    assert.match(page, new RegExp(`^ {3}0\\.1\\.3 {2}[█▒░]+ 0/4 ${word('accepted', '已验收')}$`, 'm'));
     for (const [n, en, zh] of [[1, 'working', '工作中'], [1, 'blocked', '受阻'], [1, 'to try', '待试用'], [1, 'todo', '待办']])
       assert.match(page, new RegExp(`${n} ${word(en, zh)}`));
     assert.doesNotMatch(page, /accepted 0|0 (working|blocked|to try|todo)|已验收 0/);
@@ -332,7 +332,7 @@ await runLivePage();
   const own = fs.realpathSync(f.cwd), mark = () => collects().length;
   await until(() => mark() > 0, 'the first collection');
   assert.ok(collects().every((c) => c.cwd === own && c.shown !== true), 'Home collects only the cheap read of its own project');
-  child.stdin.write('2');
+  child.stdin.write('\x1b[C'); // → opens the Project tab
   await until(() => collects().some((c) => c.shown === true), 'the Project tab');
   assert.ok(collects().filter((c) => c.shown === true).every((c) => c.cwd === own));
   const before = mark();
@@ -341,7 +341,7 @@ await runLivePage();
   await new Promise((r) => setTimeout(r, 400));
   assert.ok(collects().slice(before).every((c) => c.cwd === other && c.shown === true), 'only the shown project is collected');
   const leave = mark();
-  child.stdin.write('1');
+  child.stdin.write('\x1b[D'); // ← is Home again
   await until(() => collects().slice(leave).some((c) => c.cwd === own && c.shown === 'home'), 'Home again');
   const home = mark();
   await new Promise((r) => setTimeout(r, 400));

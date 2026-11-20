@@ -131,11 +131,11 @@ test('while typing every printable key is the query\'s, and a tab or page switch
   assert.equal(d.press('\x03').close, true, 'Ctrl-C still closes the panel');
   const k = drive(f, classic());
   k.press('/'); k.type('re'); k.enter();
-  k.press('2');
+  k.press('\x1b[C');
   assert.deepEqual([k.state.mainTab, k.state.filterQuery, k.state.filterOpen], ['project', undefined, undefined]);
   const p = drive(f, page('progress'), { data: f.rich });
   p.press('/'); p.type('try'); p.enter();
-  p.press('1');
+  p.press('\x1b[D');
   assert.deepEqual([p.state.mainTab, p.state.filterQuery], ['home', undefined]);
 });
 

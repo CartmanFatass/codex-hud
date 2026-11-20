@@ -139,6 +139,8 @@ test('bounded safe numstat for working tree and newest 12 tries, with native pat
       assert.ok(shown > 0, `${panelLayout} ${page} shows the diff`);
       assert.ok(rows.slice(0, shown).some((row) => row.text.includes(page === 'progress' ? 'synthetic edit' : 'changed')));
       if (panelLayout === 'split') frame = render(enter(frame).state);
+      // A briefed to-try slice's preview opens on its folded ledger line (the Enter that toggles it); the diff is the next row down.
+      if (frame.state.projectCursor !== item) frame = render(action(frame, { type: 'key', key: 'down' }).state);
       assert.equal(frame.state.projectCursor, item);
       assertOpens(frame, file);
     }

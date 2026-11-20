@@ -204,4 +204,5 @@ sys.stderr.write(f"EXIT={rc}\\n")
   assert.match(run.stderr, /EXIT=0/);
   assert.ok(run.stdout.includes('\x1b[?1000h\x1b[?1006h'), 'enables SGR mouse');
   assert.ok(run.stdout.includes('\x1b[?1000l\x1b[?1006l'), 'restores SGR mouse on exit');
+  assert.ok(!run.stdout.includes('?1002'), 'asks for clicks and the wheel only, no motion reports');
 });

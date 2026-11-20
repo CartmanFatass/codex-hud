@@ -69,7 +69,7 @@ test('the live panel records y/n on milestone and slice rows and paints the late
   const f = fixture(t);
   const { key, frame, painted, recorded, close } = panel(t, f);
 
-  key('2');
+  key('\x1b[C');
   await painted(/^Progress +0\.1\.4/m);
   key('\r');
   await painted(/Progress.*updated/);
@@ -120,7 +120,7 @@ test('Space marks two rows, then y writes one try record and one watch line in C
   for (const view of ['classic', 'split-hub', 'split-progress']) {
     const f = fixture(t);
     const { key, frame, painted, recorded, close } = panel(t, f, { layout: view === 'classic' ? 'classic' : 'split', columns: 40 });
-    key('2');
+    key('\x1b[C');
     await painted(/^.*Progress.*0\.1\.4/m);
     let slices = ['TWO', 'ONE'];
     if (view === 'classic') {
@@ -193,7 +193,7 @@ test('at 40 columns the Projects list pauses brief scheduling, and a switched pr
   const { key, painted, close } = panel(t, f, { columns: 40, prelude });
   const events = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   const waitFor = (condition) => until(() => condition(events()), () => JSON.stringify(events()));
-  key('2');
+  key('\x1b[C');
   await painted(/project 1\/2/);
   await waitFor((xs) => xs.some((x) => x.root === f.cwd && x.ids.includes('ONE')));
   fs.writeFileSync(hold, '');

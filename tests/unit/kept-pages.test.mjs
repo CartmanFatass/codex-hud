@@ -57,11 +57,12 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
       assert.doesNotMatch(text, /Preview|Reset all|HUD read the session/);
     }
     if (page === 'help') {
-      assert.match(text, /1 2\s+Home · Project/);
+      assert.doesNotMatch(text, /Home · Project/);
       assert.match(text, /Backup skills ─+ 17/);
       assert.match(text, /Space\s+mark to try; y\/n accept\/flag/);
-      assert.match(text, /3\s+Changes/);
-      assert.match(text, /← → Tab\s+next \/ previous tab/);
+      assert.match(text, /f\s+Changes/);
+      assert.match(text, /← → Tab\s+switch tab \(a click too\)/);
+      assert.match(text, /1-4 d\s+job: answer its open question/);
       assert.doesNotMatch(text, /Timeline|Mouse\s+Legend/);
     }
     if (page === 'changes') {
@@ -376,7 +377,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   const body = plainFrame(help).join('\n');
   assert.match(body, /\+ done\s+@ running/);
   assert.doesNotMatch(body, /click selects|Codex's own panel|Timeline|press .* first/);
-  assert.match(body, /Home · Project/);
+  assert.match(body, /switch tab \(a click too\)/);
   assert.equal(help.state.inspectCursor, cursor);
   const returned = handleMonitorInput(help.state, { type: 'key', key: 'escape' }, ctx(help)).state;
   assert.equal(returned.help, false);
