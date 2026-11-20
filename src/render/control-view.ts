@@ -4,7 +4,7 @@ import type { ControlRadar, RoleRadar } from '../collectors/control-radar.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { placeItem, placeModels, type PlaceFact, type PlaceState, type RoleFact } from '../roles/role-control.js';
 import type { MonitorRow } from './monitor.js';
-import { pickOf, pickView, type ModelInput } from './model-input.js';
+import { pickOf, pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
 import { boardRow, section, mark, kvRows, minuteAge } from './workboard-rows.js';
 import { MODEL_CACHE_TTL_MS } from '../roles/model-discovery.js';
 import { monitorText, fit, flowLines, pair, squeeze } from './monitor-text.js';
@@ -49,14 +49,53 @@ export function placeTarget(role: RoleFact, i: number, data: ProjectSnapshot): P
   const place = role.places[i]!, pickable = role.source !== 'project' && placeModels(place, data.models) !== undefined;
   return { item: placeItem(role.role, i), files: [role.path], ...(pickable ? { modelPick: { place, lists: data.models } } : {}) };
 }
-/** One list and cursor in both layouts. Keep the query and selected ID outside the scrolling list. */
+export function pickerStatus({ place, lists }: ModelPick): { fetchedAt?: number; failed: boolean } | undefined {
+  return place.harness === 'pi' ? lists.piStatus : place.label === 'agy' || place.label === 'grok' ? lists.cliStatus?.[place.label] : undefined;
+}
+export const pickerAge = (fetchedAt: number, now: number) => now - fetchedAt >= 3600000
+  ? t('{n}h', { n: Math.floor((now - fetchedAt) / 3600000) }) : minuteAge(fetchedAt, now);
+
+export function pickerFact(entry: PickEntry, now: number, detail = false) {
+  if (entry.fact === 'off') {
+    const off = mark('⊘', 'x');
+    return theme.board.muted(detail ? t('{mark} off', { mark: off }) : off);
+  }
+  if (entry.fact === 'unknown') return theme.board.attention(`?${detail || entry.tags?.length ? ` ${t('unknown')}` : ''}`);
+  if (entry.until !== undefined && entry.until > now) {
+    const n = Math.ceil((entry.until - now) / 60000);
+    const reset = detail ? t('resets in {n}m', { n }) : t('{n}m', { n });
+    return detail ? `${glyph('exhausted')} ${theme.board.attention(t('exhausted'))} ${theme.board.muted(`· ${reset}`)}`
+      : `${glyph('exhausted')} ${theme.board.attention(reset)}`;
+  }
+  return '';
+}
+export const pickerCap = (yes: boolean | undefined) => yes === undefined ? theme.board.muted('?')
+  : yes ? theme.board.success(mark('✓', '+')) : theme.board.muted(mark('–', '-'));
+
+export function pickerListWindow(list: MonitorRow[], input: ModelInput, size: number) {
+  const max = Math.max(0, list.length - size), at = list.findIndex((row) => row.item === 'project:pick');
+  const first = input.scroll === undefined ? Math.max(0, Math.min(max, at - Math.floor(size / 2)))
+    : Math.max(0, Math.min(input.clicked ? Math.max(0, list.length - 1) : max, input.scroll));
+  return { first, max };
+}
+export function pickerQuery(input: ModelInput, pick: ModelPick, window: NonNullable<MonitorRow['modelWindow']>, count: string, width: number): MonitorRow {
+  const queryRoom = width - visualLength(count) - 4;
+  let tail = monitorText(input.text);
+  if (queryRoom > 1 && visualLength(tail) > queryRoom) {
+    const chars = [...tail];
+    let kept = '';
+    while (chars.length && visualLength(chars.at(-1)! + kept) < queryRoom) kept = chars.pop()! + kept;
+    tail = mark('…', '~') + kept;
+  }
+  return { text: pair(`${theme.board.muted('/')} ${tail}${theme.board.active(mark('▌', '_'))}`, theme.board.muted(count), width),
+    item: placeItem(input.role, input.index), modelPick: pick, modelWindow: window };
+}
+
+/** Narrow picker: keep the query and selected ID outside the scrolling list. */
 export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: number, room: number, now: number, inPreview = false): MonitorRow[] {
   const pick = pickOf(data, input)!, view = pickView(pick, input), { place, lists } = pick;
-  const pi = place.harness === 'pi', status = pi ? lists.piStatus : place.label === 'agy' || place.label === 'grok' ? lists.cliStatus?.[place.label] : undefined;
-  const fetchedAt = status?.fetchedAt;
-  const age = fetchedAt === undefined ? '' : t('list {age} old', {
-    age: now - fetchedAt >= 3600000 ? t('{n}h', { n: Math.floor((now - fetchedAt) / 3600000) }) : minuteAge(fetchedAt, now),
-  });
+  const pi = place.harness === 'pi', status = pickerStatus(pick), fetchedAt = status?.fetchedAt;
+  const age = fetchedAt === undefined ? '' : t('list {age} old', { age: pickerAge(fetchedAt, now) });
   const where = monitorText(input.role), role = data.roles.find((role) => role.role === input.role);
   const rows = pi ? [...(inPreview ? [] : [section(where, width, pickerPlace(input, role?.preset))]),
     section(t('Model'), width, [place.label, age].filter(Boolean).join(' · '))]
@@ -66,21 +105,9 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   if (status?.failed) rows.push(notice([t('Refresh failed'), pi ? '' : age].filter(Boolean).join(' · ')));
   else if (status?.fetchedAt !== undefined && now - status.fetchedAt >= MODEL_CACHE_TTL_MS) rows.push(notice(t('List is stale')));
   if (piStatus?.offline) rows.push(notice(t('Limited offline catalog')));
-  type Entry = (typeof view.entries)[number];
-  const stateOf = (entry: Entry, detail = false) => {
-    if (entry.fact === 'off') {
-      const off = mark('⊘', 'x');
-      return theme.board.muted(detail ? t('{mark} off', { mark: off }) : off);
-    }
-    if (entry.fact === 'unknown') return theme.board.attention(`?${detail || entry.tags?.length ? ` ${t('unknown')}` : ''}`);
-    const until = entry.until;
-    if (until !== undefined && until > now) {
-      const n = Math.ceil((until - now) / 60000);
-      const reset = detail ? t('resets in {n}m', { n }) : t('{n}m', { n });
-      return detail ? `${glyph('exhausted')} ${theme.board.attention(t('exhausted'))} ${theme.board.muted(`· ${reset}`)}`
-        : `${glyph('exhausted')} ${theme.board.attention(reset)}`;
-    }
-    if (!detail) return '';
+  const stateOf = (entry: PickEntry, detail = false) => {
+    const fact = pickerFact(entry, now, detail);
+    if (fact || !detail) return fact;
     if (!entry.current) return theme.board.muted(t('Enter sets it · not the current model'));
     const label = t('current');
     const extra = `${where}${role?.preset ? ` [${monitorText(role.preset)}]` : ''} ${t('place #{n}', { n: input.index + 1 })}`;
@@ -95,9 +122,8 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
     if (pi) {
       const id = selected?.model, facts = id ? lists.piFacts?.[id] : undefined;
       const [ctx, out, thinking, images] = facts ?? [];
-      const cap = (yes: boolean | undefined) => yes === undefined ? theme.board.muted('?') : yes ? theme.board.success(mark('✓', '+')) : theme.board.muted(mark('–', '-'));
       const muted = theme.board.muted;
-      const fields = [muted(`${ctx ?? '?'} ${t('ctx')}`), muted(`${out ?? '?'} ${t('out')}`), `${muted(t('think'))} ${cap(thinking)}`, `${muted(t('img'))} ${cap(images)}`];
+      const fields = [muted(`${ctx ?? '?'} ${t('ctx')}`), muted(`${out ?? '?'} ${t('out')}`), `${muted(t('think'))} ${pickerCap(thinking)}`, `${muted(t('img'))} ${pickerCap(images)}`];
       let line = '';
       for (const field of fields) {
         if (line && visualLength(`${line}  ${field}`) > width - 2) {
@@ -129,17 +155,9 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   // On short panes, the list and bottom strip take precedence over opening context.
   rows.length = Math.min(rows.length, Math.max(0, room - detail.length - 2 - Number(!!offLine)));
   const count = selected?.id === 'typed' ? t('as typed') : pi && !input.text.trim() ? String(view.total) : t('{n} matches', { n: view.total });
-  const queryRoom = width - visualLength(count) - 4;
-  let tail = monitorText(input.text);
-  if (queryRoom > 1 && visualLength(tail) > queryRoom) {
-    const chars = [...tail];
-    let kept = '';
-    while (chars.length && visualLength(chars.at(-1)! + kept) < queryRoom) kept = chars.pop()! + kept;
-    tail = mark('…', '~') + kept;
-  }
   const empty = piStatus?.runnerOff ? 'pi is off' : piStatus?.empty ? 'No discovered models' : 'No matching models';
   const list: MonitorRow[] = [];
-  const add = (entry: Entry) => {
+  const add = (entry: PickEntry) => {
     const cursor = selected?.id === entry.id;
     const lead = `${cursor ? theme.board.active(mark('›', '>')) : ' '} ${entry.current ? theme.board.active(mark('◉', '@')) : ' '} `;
     const defaultId = entry.value === '' && entry.model ? ` → ${monitorText(entry.model)}` : '';
@@ -169,13 +187,9 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   if (selected?.id === 'typed') add(selected);
   else if ((!selected && !view.groups.length) || piStatus?.empty) list.push(notice(t(empty)));
   const size = Math.max(0, room - detail.length - Number(!!offLine) - rows.length - 1);
-  const max = Math.max(0, list.length - size);
-  const at = list.findIndex((row) => row.item === 'project:pick');
-  const first = input.scroll === undefined ? Math.max(0, Math.min(max, at - Math.floor(size / 2)))
-    : Math.max(0, Math.min(input.clicked ? Math.max(0, list.length - 1) : max, input.scroll));
-  rows.push({ text: pair(`${theme.board.muted('/')} ${tail}${theme.board.active(mark('▌', '_'))}`, theme.board.muted(count), width),
-    item: placeItem(input.role, input.index), modelPick: pick, modelWindow: { first, max } });
-  rows.push(...list.slice(first, first + size));
+  const window = pickerListWindow(list, input, size);
+  rows.push(pickerQuery(input, pick, window, count, width));
+  rows.push(...list.slice(window.first, window.first + size));
   if (offLine) rows.push(offLine);
   while (rows.length + detail.length < room) rows.push(boardRow(''));
   rows.push(...detail);

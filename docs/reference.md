@@ -516,18 +516,24 @@ model lists from `pi`, `agy` and `grok`.
 Click `[model ▾]` (or `[default ▾]` when unset) on an editable pi or CLI place to open the model picker.
 The `m` (or `M`) shortcut still works. Project-locked places show plain text; Flow keeps its image/video shortcut.
 With an empty query, the picker pins the current model and compatible models from this role's named
-presets, tagged by preset. No recent history is kept. Pi's enabled-provider groups start folded with
-counts; pinned models also stay in their groups. Type any part of the full `provider/model` (any case)
-to hide the pins and open matching groups. In Classic and Split, a provider-header click toggles its
-group; clicking a model selects it and clicking the same row again sets it. The wheel scrolls the list
-without moving the cursor, query or bottom strip. ↑↓/PgUp/PgDn select and Enter sets. Esc clears a typed
-filter first, then closes without setting; Ctrl+C closes immediately.
-`◉` marks the current assignment and `›` marks the cursor. A long model is shortened in the middle;
-the bottom strip wraps the whole selected ID and shows its state. For pi models the strip also shows
-context, max output, thinking and images from `pi --list-models`; missing columns show `?`.
-Pi rows mark observed exhaustion with `✗` and time to reset. `⊘` means off and `?` means an unknown
-provider. One muted line names off providers; their models are not offered. An off or unattributable
-explicit current model can be inspected on its read-only current row; Enter there does nothing.
+presets, tagged by preset. No recent history is kept. Pinned models also stay in their provider groups.
+Opening the picker asks herdr to zoom the panel's own pane. Closing restores the split only if this
+picker zoomed it; an already zoomed pane stays zoomed. At 100 columns or more after a confirmed zoom,
+pi provider groups start open. Their rows show context, max output, thinking, images and HUD state.
+The read-only right column wraps the full model ID and shows those facts, whether it is current, which
+roles and presets use it, list age, and what Enter will do. Below 100 columns, outside herdr, or if zoom
+fails, the narrow picker keeps provider groups folded with counts and puts the selected ID and facts
+in the bottom strip. Missing pi facts show `?`.
+
+Type any part of the full `provider/model` (any case) to hide the pins and open matching groups.
+In either layout, click a provider header to fold or unfold it; click a model to select it and click the
+same row again to set it. The wheel scrolls only the list. ↑↓/PgUp/PgDn select and Enter sets. Esc clears
+a typed filter first, then closes without setting; Ctrl+C closes immediately. `◉` marks the current
+assignment and `›` marks the cursor. A long model ID is shortened in the middle in the list.
+Pi rows mark exhaustion with `✗` and time to reset. `⊘` means off and `?` means an unknown provider.
+One muted line names off providers; their models are not offered. A read-only current model stays
+visible; if its provider is off, the wide detail explains why the place is skipped. Enter on a read-only
+current row in the wide view closes the picker without writing; in the narrow view it does nothing.
 The default row, when eligible, removes the explicit model and shows the effective default and its
 source when known. No pi match writes nothing; manual model IDs in role files and
 one-job overrides still work. The old `catalog.pi.include` key no longer filters the picker and is

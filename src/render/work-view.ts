@@ -23,6 +23,7 @@ import { controlNavigation, storeControlNavigation } from './control-navigation.
 import { controlHeader, controlHints, controlPickerScene, controlRows, controlScene, presetFooterControls } from './control-page.js';
 import { presetSheet } from './preset-input.js';
 import { pickerRows } from './control-view.js';
+import { MODEL_PICKER_WIDE, paintZoomedPicker } from './model-picker-view.js';
 import { harnessAddRows, harnessFooterControls, harnessHints, harnessRows, harnessScene } from './harness-page.js';
 import { expHints, expRows } from './exp-view.js';
 export { footHints } from './workboard-rows.js';
@@ -127,6 +128,13 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   const project = !sub && state.mainTab === 'project';
   const control = controlShown(state), exp = expShown(state);
   const harnesses = control && state.controlHarnesses, addingHarness = harnesses && !!state.controlHarnessAdd;
+  // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
+  if (state.projectInput) {
+    const pick = control && !harnesses ? pickOf(input.project, state.projectInput) : undefined;
+    if (!pick) state.projectInput = undefined;
+    else if (input.modelPickerZoomed && width >= MODEL_PICKER_WIDE && height >= 4)
+      return paintZoomedPicker(frame, input.project!, state.projectInput, pick, width, height, now);
+  }
   const experiment = exp ? { ...state.expPage } : undefined;
   if (exp) frame.expData = input.expData;
   const home = !sub && !project && !control && !exp;
@@ -200,8 +208,6 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     }
     if (models) frame.controls.push({ kind: 'brief', x: Math.max(0, width - modelsWidth), y: 0, width: Math.min(width, modelsWidth) });
   }
-  // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
-  if (state.projectInput && !(control && !harnesses && pickOf(input.project, state.projectInput))) state.projectInput = undefined;
   const picking = control && !!state.projectInput;
   if (control && !harnesses && state.controlPresetInput) {
     const captured = state.controlPresetInput.role;

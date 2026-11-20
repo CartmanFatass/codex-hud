@@ -256,14 +256,14 @@ export function pickerFrames(f, control = richControl(f.data), layout = 'split')
 
 /** The sample's roles and model counts, without the superseded Recent rows. */
 export function modelPickerSample(f) {
-  const current = { imp: 'daily', 'frontend-imp': 'default', oracle: 'fable' };
+  const current = { imp: 'daily', 'frontend-imp': 'default', oracle: 'fable', reviewer: 'pi' };
   const cutoff = NOW + 42 * 60000;
   const placesOf = (name, preset) => ROLES[name].presets[preset].map((p, i) => ({
     harness: p.h, label: p.h === 'pi' ? 'pi' : p.agent, thinking: p.think ?? null,
     model: p.prov ? `${p.prov}/${p.model}` : p.model, provider: p.h === 'pi' ? p.prov || null : undefined,
     state: name === 'imp' && preset === 'default' && i === 0 ? 'exhausted' : i === 0 ? 'active' : 'standby',
   }));
-  const roles = ['frontend-imp', 'imp', 'oracle'].map((name) => ({
+  const roles = ['frontend-imp', 'imp', 'reviewer', 'oracle'].map((name) => ({
     role: name, source: 'yours', group: 'roles', path: `/synthetic/roles/${name}.json`,
     preset: current[name], places: placesOf(name, current[name]),
     presets: ROLES[name].order.map((preset) => ({ name: preset, places: placesOf(name, preset) })),

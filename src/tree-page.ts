@@ -1,4 +1,5 @@
 import { openEditorPane, closePanelPane, watchPanelCaller, focusJobTab, stopJob } from './cli/panel-pane.js';
+import { modelPickerZoom } from './cli/model-picker-zoom.js';
 import { openBoard, writeBoard } from './cli/board.js';
 import { ProjectCollector, projectShown } from './collectors/project-board.js';
 import { appendTry, TryLog } from './collectors/try-records.js';
@@ -552,7 +553,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     return { ...next, ...monitorSettings(settings) };
   };
   const availableDecisionKeys = () => { try { return decisionKeys(readHudCredentials()); } catch { return undefined; } };
-  let state: MonitorState = { ...configuredState(), ...place?.state, experiments: settings.experiments };
+  let state: MonitorState = { ...configuredState(), ...place?.state, experiments: settings.experiments, projectInput: undefined };
   let expData = expShown(state) ? readExpData(jobPipeline.home) : undefined;
   let settingsPage: SettingsPageState | null = place?.settings
     ? { ...place.settings, draft: { ...settings }, original: { ...settings }, decisionKeys: availableDecisionKeys(), message: '' } : null;
@@ -667,6 +668,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   let repaintTimer: ReturnType<typeof setTimeout> | undefined;
   let resolveDone = () => {};
 
+  const pickerZoom = modelPickerZoom(process.env, () => render());
   const backupSkills = readBackupSkills();
   const render = () => {
     if (closed || (place && !collected)) return;
@@ -679,6 +681,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const showTries = state.panelLayout === 'split' || state.projectLayout === 'board' || state.projectLayout === 'inbox' ? !page || page === 'progress' : !!state.projectTry;
     const tryMarks = projectShown(state, !!settingsPage) && !listing(state) && showTries && shown.snapshot
       ? tries.marks(shown.root, shown.snapshot.ledger) : undefined;
+    const pickerWasOpen = !!state.projectInput;
     const output = time('render', () => {
       let lines: string[];
       if (settingsPage) {
@@ -713,6 +716,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
           tree,
           workboard: state.mainTab === 'home' && state.focus === 'agents' && !state.help ? homeRecommendation.apply(displayBoard()) : displayBoard(),
           modelEnabled: settings.modelEnabled,
+          modelPickerZoomed: pickerZoom.zoomed,
           mouse: settings.mouse,
           state,
           worktrees,
@@ -742,6 +746,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     const update = frameDiff(lastPaint, output);
     lastPaint = output;
     if (update) time('write', () => process.stdout.write(update));
+    // Reconciliation may close the picker when the place disappears from the Control snapshot.
+    if (pickerWasOpen && !state.projectInput) void pickerZoom.close();
   };
   modelChanged = () => {
     adaptive = forceAdaptivePoll(adaptive);
@@ -877,7 +883,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       collectionEpoch++;
     }
     if (closed || collecting) return;
-    const ready = await reload.poll(() => Boolean((settingsPage && settingsDirty(settingsPage)) || state.expPage?.edit || state.controlPresetInput));
+    const ready = await reload.poll(() => Boolean((settingsPage && settingsDirty(settingsPage)) || state.expPage?.edit ||
+      state.controlPresetInput || state.projectInput || pickerZoom.restoring));
     if (closed) return;
     if (ready) {
       restarting = reload.restart({ state, openedAt, widthOverride: widthOverride ?? null,
@@ -1148,8 +1155,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     process.stdin.pause();
     process.stdout.write(LEAVE);
     snapshotWriter.remove();
-    if (callerGone) void closePanelPane(process.env.HERDR_PANE_ID!, process.env).catch(() => {}).finally(resolveDone);
-    else resolveDone();
+    void pickerZoom.close().then(() => {
+      if (callerGone) return closePanelPane(process.env.HERDR_PANE_ID!, process.env).catch(() => {});
+    }).finally(resolveDone);
   };
   const applySettingsDraft = (): boolean => {
     const page = settingsPage;
@@ -1292,6 +1300,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         navigationOverlay: fromSettings,
       });
       state = result.state;
+      if (!state.projectInput && previous.projectInput) void pickerZoom.close();
+      else if (state.projectInput && !previous.projectInput) pickerZoom.open();
       if (expShown(state) && !expShown(previous)) expData = readExpData(jobPipeline.home);
       syncPanelView();
       if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
@@ -1452,7 +1462,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     // wait for the burst of resizes to settle, then take back the policy width.
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      void widthKeeper?.follow().catch(() => {});
+      if (!pickerZoom.zoomed && !pickerZoom.restoring) void widthKeeper?.follow().catch(() => {});
     }, 150);
   };
   await new Promise<void>((resolve) => {

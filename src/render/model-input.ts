@@ -15,7 +15,7 @@ export interface ModelPick {
   presets?: RoleFact['presets'];
   preset?: string | null;
 }
-interface PickEntry {
+export interface PickEntry {
   id: string;
   label: string;
   /** What Enter sets: a model ID, empty to unset, or absent for a read-only reference. */
@@ -37,7 +37,7 @@ export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput): Mo
 
 export const pickerHints = (input: ModelInput) => `↑↓ pick  ⏎ set  ${input.text ? 'esc clear' : 'esc cancel'}  ^R refresh`;
 
-export function pickView(pick: ModelPick, input: ModelInput) {
+export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
   const { place, lists, presets } = pick, typed = input.text.trim(), needle = typed.toLowerCase();
   const pi = place.harness === 'pi', currentId = place.piModel?.current ?? place.model;
   const isDefault = place.piModel?.isDefault ?? !place.model;
@@ -80,7 +80,8 @@ export function pickView(pick: ModelPick, input: ModelInput) {
     const slash = value.indexOf('/'), provider = value.slice(0, slash);
     let group = groups.get(provider);
     if (!group) {
-      group = { provider, open: !!needle !== !!input.groups?.includes(provider), entries: [] };
+      const open = input.groups && Object.hasOwn(input.groups, provider) ? input.groups[provider] : wide || !!needle;
+      group = { provider, open, entries: [] };
       groups.set(provider, group);
     }
     group.entries.push({ ...entry, label: value.slice(slash + 1) });
@@ -107,9 +108,12 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
     next.projectInput = undefined;
     return input.type === 'key' ? done() : undefined;
   }
-  const view = pickView(pick, typed);
+  const view = pickView(pick, typed, window.wide);
   const set = (entry = view.selected) => {
-    if (entry?.value === undefined) return done();
+    if (entry?.value === undefined) {
+      if (window.wide && entry?.current) next.projectInput = undefined;
+      return done();
+    }
     next.projectInput = undefined;
     return done({ type: 'role-edit', role: open.role, index: open.index, op: 'model', value: entry.value });
   };
@@ -119,7 +123,11 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
       typed.clicked = undefined;
       return done();
     }
-    if (!pane || input.x < pane.x || input.x >= pane.x + pane.width || input.y < pane.y || input.y >= pane.y + pane.height) return;
+    if (!pane || input.x < pane.x || input.x >= pane.x + pane.width || input.y < pane.y || input.y >= pane.y + pane.height) {
+      // The wide picker fills the panel, but only the left column has hit targets.
+      if (window.wide) { typed.clicked = undefined; return done(); }
+      return;
+    }
     const hit = monitorRowAt(pane, input.x, input.y)?.modelHit;
     if (hit && 'entry' in hit) {
       const entry = view.entries.find((e) => e.id === hit.entry) ?? (hit.entry === view.selected?.id ? view.selected : undefined);
@@ -129,9 +137,10 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
     } else {
       typed.clicked = undefined;
       if (hit && 'provider' in hit) {
-        const toggled = typed.groups ?? [], provider = hit.provider;
-        typed.groups = toggled.includes(provider) ? toggled.filter((name) => name !== provider) : [...toggled, provider];
-        const changed = pickView(pick, typed);
+        const group = view.groups.find((g) => g.provider === hit.provider);
+        if (!group) return done();
+        typed.groups = { ...typed.groups, [group.provider]: !group.open };
+        const changed = pickView(pick, typed, window.wide);
         if (typed.pick && !changed.entries.some((entry) => entry.id === typed.pick)) typed.pick = undefined;
         typed.scroll = window.first;
       }

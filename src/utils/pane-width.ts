@@ -59,7 +59,7 @@ function herdrWidthKeeper(requested: () => number): TreeWidthKeeper | null {
   return new TreeWidthKeeper(async () => {
     const reply = await runHerdr(['pane', 'layout', '--pane', pane], env, { budgetMs: 2000 });
     const layout = reply.ok ? herdrResult(reply.stdout)?.layout : null;
-    if (!isRecord(layout) || !Array.isArray(layout.panes) || !Array.isArray(layout.splits)) return null;
+    if (!isRecord(layout) || layout.zoomed === true || !Array.isArray(layout.panes) || !Array.isArray(layout.splits)) return null;
     const own = layout.panes.find((p) => p.pane_id === pane)?.rect;
     const agent = layout.panes.find((p) => p.pane_id === caller)?.rect;
     if (!own || !agent || own.x !== agent.x + agent.width || own.y !== agent.y || own.height !== agent.height) return null;
