@@ -174,6 +174,9 @@ board counts these; update at every landing or decision. -->
 - done · — · REVIEW-CONTROL-EXP · review on 2e4b45d3: changes-required, 5 blocking (EXP-02 native bar never reaches EXP, EXP-03 7d dropped, EXP-04/05 duplicate ledger lines, draft rows lose [model ▾], focused chain lacks provider unknown) · docs/reviews/2026-11-20-control-exp-review.md
 - accepted · — · REVIEW-FIX-CONTROL-EXP · review fixes: native bar seen per Codex profile (EXP switch = tracking), pi footer 5h + 7d (≈ for proxy, second window dropped only when narrow), ledger one line per event ID on disk, draft rows keep [model ▾], focused chain says provider unknown; superseded immediate-edit paths deleted (imp) (5d39de2c; 86+853)
 - try · — · NO-DEFAULT-LABELS · Control drops [default]/[Custom] tags; unset model/thinking show the effective value muted ([▾] / blank when unknown); picker's clear row says role's model (…) / clear; no-selector choice is "file chain" (imp) (aeb74f31; test fix)
+- working · — · UX-PASS-01 · pi footer quota in Claude's style (imp sol j6c3f1c1a28301b51, wt/ux-pass-01)
+- working · — · UX-PASS-02 · m on the role row changes a model in 2 keys (imp sol j16a11d3766e2ef14, wt/ux-pass-02)
+- working · — · UX-PASS-06 · one footer rule everywhere (imp sol jda484729fb8d0ac1, wt/ux-pass-06)
 - done · — · UX-PASS-DESIGN · model selection + pi footer quota design: S1 FOOTER-QUOTA, S2 QUICK-MODEL, S3 PICKER-PANE, S4 PICKER-ORDER, S5 PICKER-FLAT (opt); 4 owner decisions · docs/design/ux-pass/model-selection.md
 - done · — · UX-PASS-OVERALL · overall design: 1 FOOTER, 2 SAY-ONCE, 3 HELP, 4 EXP-FORM, 5 HARNESS-ROWS, 6 TOP-ROW; 4 owner decisions · docs/design/ux-pass/overall.md
 
