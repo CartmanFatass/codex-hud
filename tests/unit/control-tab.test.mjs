@@ -89,12 +89,13 @@ test('legacy Project/control continuation returns to the selected role on Contro
 
 test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN and ZH', async (t) => {
   const f = await fixture(t);
-  for (const name of ['agy', 'grok', 'herdr', 'claude', 'jev-aistudio', 'jev-flow']) {
+  for (const name of ['agy', 'herdr', 'claude']) {
     const path = join(f.root, 'bin', name);
     f.put(path, '#!/bin/sh\nexit 99\n');
     fs.chmodSync(path, 0o700);
   }
-  const run = [{ harness: 'pi', model: 'xai/grok-4.7', thinking: 'high' }, { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' }];
+  const run = [{ harness: 'pi', model: 'xai/grok-4.7', thinking: 'high' }, { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' },
+    { harness: 'pi', model: 'synthetic/unseen' }];
   f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', instructions: 'implementer', can_continue: true, run, presets: [{ name: 'daily', run }] });
   f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: NOW, pi: ['openai/gpt-6.1-sol', 'xai/grok-4.7', 'anthropic/opus'] });
   const caption = (frame) => plain(frame).join('\n');
@@ -119,11 +120,25 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
     assert.equal(frame.state.mainTab, 'control');
     assert.equal(frame.state.controlHarnesses, true);
     assert.match(caption(frame), zh ? /本机 · 所有项目/ : /This machine · all projects/);
-    assert.match(caption(frame), /jev-ask +chatgpt gemini/);
+    assert.match(caption(frame), /^  ◉ pi$/m);
+    assert.match(caption(frame), /^  ◉ jev-ask  chatgpt gemini$/m);
+    assert.match(caption(frame), /^  ◉ openai$/m);
+    assert.match(caption(frame), zh ? /^  ◉ codex +未安装$/m : /^  ◉ codex +not installed$/m);
+    assert.match(caption(frame), zh ? /^  ◉ synthetic +未见$/m : /^  ◉ synthetic +not seen$/m);
     assert.match(caption(frame), zh ? /▸ 已停用.*2/ : /▸ Off.*2/);
     assert.doesNotMatch(caption(frame), /cli:grok|pi:xai/);
+    if (!classic) assert.match(caption(frame), zh ? /^状态 +已启用 · 已安装$/m : /^state +on · installed$/m);
     if (process.env.HUD_HARNESS_REPORT_FRAMES && zh) console.log(`${panelLayout} folded:\n${frame.lines.map(stripAnsi).join('\n')}`);
     frame = draw(send(frame, 'end').state);
+    if (!classic) {
+      const preview = frame.panes.find((p) => p.id === 'preview');
+      assert.match(plain(frame)[preview.y - 1], zh ? /^已停用 ─+ 2$/ : /^Off ─+ 2$/);
+      assert.match(plain(frame)[preview.y], zh ? /^  ⊘ cli:grok +未安装$/ : /^  ⊘ cli:grok +not installed$/);
+      assert.equal(plain(frame)[preview.y + 1], '  ⊘ pi:xai');
+      const clickPreview = send(frame, { type: 'mouse', button: 'left', x: 4, y: preview.y });
+      assert.equal(clickPreview.action, undefined);
+      assert.equal(clickPreview.state.controlHarnessNav.projectCursor, 'project:fold:harness-off');
+    }
     frame = draw(send(frame, 'enter').state);
     assert.match(caption(frame), /⊘ cli:grok[\s\S]*⊘ pi:xai/);
     frame = draw(send(frame, 'end').state);
@@ -261,6 +276,15 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
       apply(send(frame, { type: 'mouse', button: 'left', x: c.x, y: c.y }));
     };
     assert.match(text(), zh ? /imp \[daily\] → 无/ : /imp \[daily\] → none/);
+    if (layout === 'classic' && zh) {
+      const rename = frame.controls.find((c) => c.kind === 'preset-rename');
+      const del = frame.controls.find((c) => c.kind === 'preset-delete');
+      assert.equal(plain(frame)[rename.y], '  预设  复制预设  空白预设  重命名');
+      assert.equal(del.y, rename.y + 1);
+      assert.equal(plain(frame)[del.y], '  删除');
+      assert.equal(del.width, visualLength('删除'));
+      assert.equal(send(frame, { type: 'mouse', button: 'left', x: del.x + del.width - 1, y: del.y }).state.controlPresetInput.mode, 'delete');
+    }
     click('preset-list');
     assert.match(text(), zh ? /选择预设/ : /choose preset/);
     assert.match(text(), zh ? /daily +→ 无/ : /daily +→ none/);

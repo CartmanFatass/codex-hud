@@ -24,7 +24,7 @@ const target = placeDestination;
 const active = (role: RoleFact) => role.places.find((p) => p.state === 'active');
 const quota = (place: PlaceFact, now: number) => place.until === undefined ? '' :
   `${t('exhausted')} ${t('{n}m', { n: Math.max(1, Math.ceil((place.until - now) / 60000)) })}`;
-const reason = (place: PlaceFact, now: number) => place.state === 'off' ? `${t('Switched off')} · ${place.offBy}`
+const reason = (place: PlaceFact, now: number) => place.state === 'off' ? t('off · {detail}', { detail: String(place.offBy) })
   : place.state === 'exhausted' ? quota(place, now) || t('exhausted')
   : place.state === 'missing' ? [t('not installed'), place.missing].filter(Boolean).join(' · ') : '';
 
@@ -38,7 +38,7 @@ export function controlHeader(input: MonitorData, state: MonitorState, width: nu
     ? t('{role} #{n} → {model}', { role, n: selected.index + 1, model: selected.model ? monitorText(selected.model) : t('clear') })
     : name ? t('{role} → preset {name}', { role, name }) : t('{role} · preset applied', { role }));
   const scope = t('This machine · all projects');
-  const caption = change ? pair(theme.board.success(`${mark('✓', '+')} ${t(change.off ? 'Switched off' : 'Restored')} ${monitorText(change.id)}`), muted(scope), width)
+  const caption = change ? pair(theme.board.success(`${mark('✓', '+')} ${t(change.off ? 'off {id}' : 'Restored {id}', { id: monitorText(change.id) })}`), muted(scope), width)
     : muted(scope);
   return [section(monitorText(input.projectName ?? '') || t('Project'), width,
     projects.length > 1 ? `${t('project')} ${at + 1}/${projects.length}` : ''), {
@@ -76,7 +76,7 @@ export function roleRows(role: RoleFact, width: number, now: number): MonitorRow
   const id = to === model ? name : squeeze(name, Math.max(4, ids - Math.min(visualLength(preset), Math.floor(ids / 2))));
   const shownPreset = preset ? ` [${squeeze(preset, Math.max(4, ids - visualLength(id)))}]` : '';
   const line = `${lead}${theme.board.title(id)}${muted(shownPreset + arrow)}${next ? to : theme.board.attention(to)}`;
-  const note = why ? why.offBy ? `${why.offBy} ${t('Switched off')}` : `${target(why)} ${reason(why, now)}` : '';
+  const note = why ? why.offBy ? t('{id} off', { id: why.offBy }) : `${target(why)} ${reason(why, now)}` : '';
   const missing = role.missingPreset ? t('Preset {name} missing; using file chain', { name: monitorText(role.missingPreset) }) : '';
   return [{ ...extra, text: pair(line, tag, width) }, ...[note && monitorText(note), missing].filter(Boolean)
     .flatMap((message) => flowLines(message, width - 6).map((part) => ({ ...extra, text: fit(`      ${theme.board.attention(part)}`, width) })))];
@@ -200,7 +200,7 @@ function roleActions(role: RoleFact, width: number): MonitorRow[] {
   let controls: NonNullable<MonitorRow['controls']> = [];
   for (const [kind, label] of actions) {
     const word = t(label), span = visualLength(word);
-    if (visualLength(text) + span > width) {
+    if (visualLength(text) + span + 2 > width) {
       rows.push({ text: fit(text, width), controls });
       text = '  ';
       controls = [];

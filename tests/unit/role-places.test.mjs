@@ -290,7 +290,7 @@ test('machine switches: panel, roster and create use the same daily chain, witho
   const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout: 'split' });
   const panel = plain(renderMonitor({ state, tree: TREE, project: snapshot, projectName: 'harbor-api', width: 40, height: 38 }));
   assert.match(panel.join('\n'), /imp \[daily\] → agy/);
-  assert.match(panel.join('\n'), /1 ⊘ pi\/xai +\[grok-4.7 ▾\][\s\S]*Switched off · pi:xai/);
+  assert.match(panel.join('\n'), /1 ⊘ pi\/xai +\[grok-4.7 ▾\][\s\S]*off · pi:xai/);
   for (const [key, options] of [['on-off', { on: 'pi' }], ['model-off', { model: 'xai/other' }],
     ['preset-model-off', { preset: 'daily', model: 'xai/other' }], ['cli-off', { on: 'grok' }]]) {
     const res = await create(key, options);

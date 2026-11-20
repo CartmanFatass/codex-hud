@@ -18,19 +18,22 @@ export const restoreId = (item?: string) => /^control:restore:(.+)$/.exec(item ?
 
 const scope = () => t('This machine · all projects');
 const presence = (h: HarnessSwitchFact) => t(h.group === 'provider' ? h.present ? 'listed' : 'not seen' : h.present ? 'installed' : 'not installed');
-const currentSwitch = (h: HarnessSwitchFact) => t(h.off ? 'Switched off' : 'Switched on');
 const target = (id: string | null) => id ?? t('none');
 const offFolded = (state: MonitorState) => state.projectFolded?.has(HARNESS_OFF) ?? true;
 const offSwitches = (data: ProjectSnapshot) => (data.harnessSwitches ?? []).filter((h) => h.off).sort((a, b) => a.id.localeCompare(b.id));
 
-function switchRow(h: HarnessSwitchFact, width: number, restore = false): MonitorRow {
+function switchText(h: HarnessSwitchFact, width: number, showPresence = false): string {
   const icon = h.off ? muted(mark('⊘', 'x')) : theme.board.active(mark('◉', '@'));
-  const right = presence(h) + (!h.off && h.runnerOff ? ` · ${t('pi off')}` : '');
+  const right = [showPresence || !h.present ? presence(h) : '', !h.off && h.runnerOff ? t('pi off') : ''].filter(Boolean).join(' · ');
   const lead = `  ${icon} `, id = monitorText(h.off ? h.id : h.name), sites = h.sites?.join(' ');
-  const room = width - visualLength(lead) - visualLength(right) - 1;
+  const room = width - visualLength(lead) - (right ? visualLength(right) + 1 : 0);
   const left = lead + squeeze(id, Math.max(1, room));
   const extra = sites && visualLength(`${id}  ${sites}`) <= room ? `  ${muted(sites)}` : '';
-  return { text: pair(left + extra, muted(right), width),
+  return pair(left + extra, right ? muted(right) : '', width);
+}
+
+function switchRow(h: HarnessSwitchFact, width: number, restore = false): MonitorRow {
+  return { text: switchText(h, width, h.off),
     item: restore ? `control:restore:${h.id}` : harnessItem(h.id), harnessOff: h.off };
 }
 
@@ -58,7 +61,7 @@ export function harnessRows(data: ProjectSnapshot, state: MonitorState, width: n
 
 function harnessDetail(h: HarnessSwitchFact, width: number): MonitorRow[] {
   const detail = [
-    ...kvRows('state', `${currentSwitch(h)} · ${presence(h)}`, width),
+    ...kvRows('state', t(h.off ? 'off · {detail}' : 'on · {detail}', { detail: presence(h) }), width),
     ...(!h.off && h.runnerOff ? kvRows('effect', t('pi off'), width) : []),
     ...(h.group === 'runner' && h.off ? kvRows('effect', t('Pi providers keep their own switches'), width) : []),
     ...(h.sites ? kvRows('sites', h.sites.join('  '), width) : []),
@@ -102,8 +105,12 @@ export function harnessScene(data: ProjectSnapshot, state: MonitorState, width: 
   const preview = (item?: string): Shown => {
     const hints = harnessHints(data, state, item);
     const h = data.harnessSwitches?.find((h) => h.id === harnessId(item));
-    return h ? { label: monitorText(h.id), rows: harnessDetail(h, previewWidth), hints }
-      : { label: item === harnessFold ? t('Off') : '', rows: [], hints };
+    if (h) return { label: monitorText(h.id), rows: harnessDetail(h, previewWidth), hints };
+    if (item === harnessFold) {
+      const off = offSwitches(data);
+      return { label: t('Off'), right: String(off.length), rows: off.map((entry) => boardRow(switchText(entry, previewWidth))), hints };
+    }
+    return { label: '', rows: [], hints };
   };
   const add = state.controlHarnessAdd;
   const scene = projectSplitScene(state, { list, preview, hints: harnessHints(data, state), start: list.find((r) => r.item)?.item },
