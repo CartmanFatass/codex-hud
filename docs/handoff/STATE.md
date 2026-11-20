@@ -164,8 +164,8 @@ board counts these; update at every landing or decision. -->
 - try · — · CONTROL-TAB-01 · Control as its own main tab, Roles landing per the sample (imp) (1e6334dd; test fix 1446ff59)
 - try · — · CONTROL-TAB-02 · harness switches end to end: Harnesses view (h), disabled IDs in harnesses.json, one shared chain evaluation for panel/roster/create; off overrides refused (imp) (74810834)
 - try · — · CONTROL-TAB-03 · full pi model picker (m on a place): every model of the providers that are on, grouped, typed filter, discovery on open/r only; include curation removed (imp) (550da5a8; flake fix hud-watch)
-- working · — · CONTROL-TAB-04 · presets on the role row: c/C switch, p list, N/R/D, active_preset/hidden_presets (imp j63a2d6038c881c4f)
-- working · — · MODEL-PICKER-01 · model facts in the discovery cache, strip and row facts, off-provider line, ^R / Esc clears filter (imp jef1768db247c8c2d)
+- try · — · CONTROL-TAB-04 · presets on the role row: c/C switch, p list, N copy / R rename / D delete with preview; active_preset + hidden_presets, project roles locked (imp) (41dd0030)
+- try · — · MODEL-PICKER-01 · picker model facts (ctx/out/think/img from the same pi --list-models call), strip, ✗/⊘/? row facts, off-provider line, ^R, Esc clears filter first (imp) (b1d81f98)
 - try · — · PI-ASYNC-HUD · pi main session gets HUD notices natively: steer at the next model boundary, idle wake, draft untouched, session fence (pi imp) (86445c1f; merged f7fcd0fa; Fishpref worker async ask 5e4b6d8 on main 2026-11-20)
 - try · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
 
