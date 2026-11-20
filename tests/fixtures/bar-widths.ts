@@ -2,12 +2,50 @@
  * The default look's bars at the widths a main pane has beside the open panel (BAR-NARROW): 184 columns less the
  * 40-column panel is 144, then smaller windows 120, 100 and 80. Plain text, synthetic facts only.
  */
-import { renderBar, agentEvent, type BarFacts } from '../../src/render/layout/bar-fields.js';
+import { renderBar, agentEvent, type BarFacts, type BarQuotaWindow } from '../../src/render/layout/bar-fields.js';
+import { renderPiBar } from '../../src/harness/pi/p10k-footer.js';
 import { setDisplayConfig, BAR_FIELDS } from '../../src/render/hud-config.js';
 import { stripAnsi } from '../../src/render/colors.js';
 import { barThemeScene, THEME_NOW } from './bar-themes.js';
 
 export const BAR_WIDTHS = [144, 120, 100, 80] as const;
+export const PI_QUOTA_WIDTHS = [144, 120, 80, 36] as const;
+
+const fiveHour = { label: '5h', percent: 11, reset: '3h12m' };
+const sevenDay = { label: '7d', percent: 43, reset: '2d4h', shown: '≈43%' };
+const piFacts: BarFacts = {
+  model: { name: '6.2-sol', id: 'gpt-6.2-sol', effort: 'high' },
+  context: { percent: 72, shown: '72%', window: 200_000 },
+  project: { name: 'example', branch: 'synthetic-main', marks: ' +1 *1 ?1', dirty: true },
+  loaded: {
+    counts: [
+      ['MCP', 2],
+      ['skills', 3],
+    ],
+    words: [[['lens', 'dim'], [' '], ['✓', 'ok']]],
+  },
+};
+const piWindows = (...windows: BarQuotaWindow[]): BarFacts => ({ ...piFacts, quota: { windows, trailing: true } });
+export const PI_QUOTA_SCENES = {
+  'pi-quota': piWindows(fiveHour, sevenDay),
+  'pi-quota-high': piWindows({ label: '5h', percent: 92, reset: '41m' }, sevenDay),
+  'pi-quota-stale': piWindows(
+    { ...fiveHour, shown: '≈11%?', quiet: true, reset: '' },
+    { ...sevenDay, shown: '≈43%?', quiet: true, reset: '' }
+  ),
+  'pi-quota-pending': piWindows({ label: '5h', shown: '↻', quiet: true }, sevenDay),
+  'pi-api': piWindows({ label: 'API', percent: 75, shown: '≈$12.34', reset: '12d' }),
+  'pi-api-high': piWindows({ label: 'API', percent: 96, shown: '≈$2.05', reset: '3d' }),
+};
+
+function piQuotaFrames(width: number) {
+  return Object.fromEntries(
+    Object.entries(PI_QUOTA_SCENES).map(([name, facts]) => [
+      name,
+      [stripAnsi(renderPiBar(facts, width, THEME_NOW, 'line'))],
+    ])
+  );
+}
 
 const vitals: BarFacts = {
   model: { name: 'opus-5.5', id: 'claude-opus-5-5', effort: 'high' },
@@ -74,8 +112,10 @@ export function widthFrames(): Record<string, Record<string, string[]>> {
         claude: claude.map(stripAnsi),
         pi: pi.map(stripAnsi),
         codex: codex.map(stripAnsi),
+        ...(width !== 100 ? piQuotaFrames(width) : {}),
       };
     }
+    frames['36'] = piQuotaFrames(36);
     return frames;
   } finally {
     scene.dispose();

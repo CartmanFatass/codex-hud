@@ -615,7 +615,7 @@ test('40-column pi footer switches among subscription proxy, oapi, and Anthropic
     await h.emit('model_select', c.ctx);
   };
   const api = /API ≈\$12\.75/;
-  const proxy = /5h ≈72%/;
+  const proxy = /5h ≈28%/;
   assert.match(row(), api);
   await select('openai');
   assert.doesNotMatch(row(), /API/, 'switching to subscription immediately drops the ledger');

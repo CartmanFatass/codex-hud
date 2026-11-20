@@ -43,6 +43,7 @@ export interface FitResult {
 type Role =
   | 'alert'
   | 'dim'
+  | 'quiet'
   | 'value'
   | 'name'
   | 'project'
@@ -79,6 +80,15 @@ export interface BarEvent {
   unread?: boolean;
 }
 
+export interface BarQuotaWindow {
+  label: string;
+  /** Percent used; absent when there is no reading to meter. */
+  percent?: number;
+  reset?: string;
+  shown?: string;
+  quiet?: boolean;
+}
+
 export interface BarFacts {
   model?: { name: string; effort?: string; id?: string; provider?: string; baseUrl?: string };
   /** `shown` is the reading as words (`40%`, or `?` before pi's first reply); `window` is the model's or where it compacts. */
@@ -86,7 +96,7 @@ export interface BarFacts {
   /** `marks` follow the branch name (`*↑2`, ` +1 *1 ?1`). */
   project?: { name: string; branch: string | null; marks?: string; dirty?: boolean };
   /** Usage windows, or one reading of its own (`credits 31.8K`, pi's `$0.420`). */
-  quota?: { windows: Array<{ label: string; percent: number; reset?: string }> } | { label?: string; text: string; shortText?: string };
+  quota?: { windows: BarQuotaWindow[]; trailing?: boolean } | { label?: string; text: string; shortText?: string };
   /** Latest available output-rate estimate, in tokens per second. */
   tps?: number;
   /** What needs the owner now (an approval, a job's question): pinned while it is open. */
@@ -144,6 +154,7 @@ const plain = (code: number) => (text: string) =>
 
 const INK: Record<Role, (text: string) => string> = {
   dim: colors.dim,
+  quiet: colors.dim,
   value: theme.value,
   name: theme.model,
   project: theme.projectName,
@@ -202,6 +213,7 @@ interface Seg {
   ink: Ink;
   /** The provider's mark colour, p10k only. */
   lead?: number;
+  meter?: { percent: number; role: Role };
   at: number;
 }
 
@@ -249,22 +261,29 @@ function quotaSeg(q: NonNullable<BarFacts['quota']>): Seg {
     const form = reading(q.text);
     return { id: 'quota', forms: [form, form, q.shortText ? reading(q.shortText) : form], ink: P10K.quota, at: 0 };
   }
-  // One window only, the one with the least left (owner, 2026-11-11); the first wins a tie.
-  const shown = q.windows.length ? [q.windows.reduce((a, b) => (b.percent > a.percent ? b : a))] : [];
-  const reading = (bars: boolean, reset: boolean): Form =>
-    shown.flatMap((w, i) => [
-      ...(i ? ([['  ']] as Form) : []),
-      ...(w.label ? ([[w.label, 'dim'], [' ']] as Form) : []),
-      ...(bars ? cells(w.percent, quotaRole(w.percent)) : []),
-      [`${w.percent}%`, quotaRole(w.percent)] as const,
-      ...(reset && w.reset ? ([[` (${w.reset})`, 'value']] as Form) : []),
-    ]);
-  const worst = quotaRole(Math.max(...shown.map((w) => w.percent)));
+  // Tightest first, with pending windows behind any reading; the first wins a tie.
+  const lead = q.windows.reduce<BarQuotaWindow | undefined>(
+    (a, b) => (!a || (b.percent ?? -Infinity) > (a.percent ?? -Infinity) ? b : a),
+    undefined
+  );
+  const roleOf = (w: BarQuotaWindow): Role =>
+    w.quiet ? 'quiet' : w.percent === undefined ? 'value' : quotaRole(w.percent);
+  const reading = (w: BarQuotaWindow, bars = false, reset = false): Form => [
+    ...(w.label ? ([[w.label, 'dim'], [' ']] as Form) : []),
+    ...(bars && w.percent !== undefined ? cells(w.percent, roleOf(w)) : []),
+    [w.shown ?? (w.percent === undefined ? '' : `${w.percent}%`), roleOf(w)],
+    ...(reset && w.reset ? ([[` (${w.reset})`, 'value']] as Form) : []),
+  ];
+  const tail: Form = q.trailing ? q.windows.filter((w) => w !== lead).flatMap((w) => [['  '], ...reading(w)]) : [];
+  const role = lead ? roleOf(lead) : 'usage';
   return {
     id: 'quota',
-    // The bar goes first (with the context's), then the reset.
-    forms: [reading(true, true), reading(false, true), reading(false, false)],
-    ink: worst === 'usage' ? P10K.quota : P10K[worst === 'usageHigh' ? 'warn' : (worst as 'bad')],
+    // The bar goes first (with the context's), then the reset and trailing windows.
+    forms: lead
+      ? [[...reading(lead, true, true), ...tail], [...reading(lead, false, true), ...tail], reading(lead)]
+      : [],
+    ink: role === 'quiet' ? P10K.loaded : role === 'usageHigh' ? P10K.warn : role === 'bad' ? P10K.bad : P10K.quota,
+    meter: lead?.percent === undefined ? undefined : { percent: lead.percent, role },
     at: 0,
   };
 }
@@ -478,7 +497,7 @@ const light = isLightTheme;
 const track = () => (light() ? 252 : 236);
 const raised = () => (light() ? 254 : 235);
 const LEVEL_INKS: Partial<Record<Role, number>> = { ok: 71, warn: 179, bad: 167, usage: 69, usageHigh: 170 };
-const levelInk = (role: Role): number => LEVEL_INKS[role] ?? 75;
+const levelInk = (role: Role): number => (role === 'quiet' ? (light() ? 245 : 243) : (LEVEL_INKS[role] ?? 75));
 const levelGlyph = (p: number) => '▁▂▃▄▅▆▇█'[Math.min(7, Math.floor((clamp(p) * 8) / 100))];
 /** The looks' own 256-colour inks from the approved concepts, [dark, light]: the panel palette does not drive them. */
 const LOOK_INKS: Partial<Record<Role, readonly [number, number]>> = {
@@ -486,6 +505,7 @@ const LOOK_INKS: Partial<Record<Role, readonly [number, number]>> = {
   name: [252, 235],
   project: [252, 235],
   dim: [243, 245],
+  quiet: [243, 245],
   branch: [176, 133],
   agent: [176, 133],
   info: [75, 25],
@@ -661,11 +681,7 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
   const reading = (s: Seg): { percent: number; role: Role } | null => {
     if (s.id === 'context' && facts.context)
       return { percent: facts.context.percent, role: contextRole(facts.context.percent) };
-    if (s.id === 'quota' && facts.quota && 'windows' in facts.quota && facts.quota.windows.length) {
-      const percent = Math.max(...facts.quota.windows.map((w) => w.percent));
-      return { percent, role: quotaRole(percent) };
-    }
-    return null;
+    return s.meter ?? null;
   };
   const isTag = (s: Seg) =>
     style === 'headline' &&
@@ -749,15 +765,17 @@ function renderLook(facts: BarFacts, width: number, now: number, style: BarStyle
     const forms = rows(s);
     const r = reading(s);
     if (zone?.alert && s === noticeSegments[0]) return [`\x1b[1m${bg(209)}${fg(233)} ${text(forms[0])} ${RESET}`, ''];
-    if (style === 'gauge' && r) return [plate(` ${text(forms[0])} `, r.percent, r.role), ''];
+    if (r && (style === 'gauge' || isTag(s))) {
+      // A trailing quota window has its own ink, outside the leading reading's plate or tag.
+      const split = s.id === 'quota' ? forms[0].findIndex(([part]) => part === '  ') : -1;
+      const primary = split < 0 ? text(forms[0]) : text(forms[0].slice(0, split));
+      const tail = split < 0 ? '' : paintForm(forms[0].slice(split), style);
+      const tagged = `\x1b[1m${bg(r.role === 'bad' && !light() ? 203 : levelInk(r.role))}${fg(233)} ▲ ${primary} ${RESET}`;
+      return [(style === 'gauge' ? plate(` ${primary} `, r.percent, r.role) : tagged) + tail, ''];
+    }
     if (style === 'gauge' && s.id === 'notice')
       return [
         `${bg(raised())}${lookInk(forms[0]![0]![1]!, '▌', style)}${paintForm(forms[0], style).replaceAll(RESET, RESET + bg(raised()))} ${RESET}`,
-        '',
-      ];
-    if (isTag(s) && r)
-      return [
-        `\x1b[1m${bg(r.role === 'bad' && !light() ? 203 : levelInk(r.role))}${fg(233)} ▲ ${text(forms[0])} ${RESET}`,
         '',
       ];
     return forms.map((f) => paintForm(f, style, s.lead, style === 'triptych' ? track() : undefined));
@@ -1004,7 +1022,10 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const paint = (seg: Seg): string =>
     form(seg)
       .map(([part, role]) => {
-        if (p10k) return role === 'lead' && seg.lead !== undefined ? `${fg(seg.lead)}${part}${fg(seg.ink[1])}` : part;
+        if (p10k) {
+          if (role === 'quiet') return `\x1b[2m${part}\x1b[22m`;
+          return role === 'lead' && seg.lead !== undefined ? `${fg(seg.lead)}${part}${fg(seg.ink[1])}` : part;
+        }
         if (role === 'lead' && seg.lead !== undefined && themeName !== 'none') return `${fg(seg.lead)}${part}${RESET}`;
         return role ? INK[role](part) : part;
       })

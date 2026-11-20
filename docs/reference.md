@@ -654,13 +654,15 @@ The form is the same in Classic and Split. Settings apply to all projects on thi
 
 In **pi subscription proxy**, choose a Codex profile and turn on Auto-refresh. When pi draws its HUD footer, a due refresh uses
 that profile's existing login to read quota from Codex; it sends no prompt and does not run while pi is unused. The `openai`
-OAuth footer shows approximate remaining quota (`5h ≈72%`); a reading from the current request takes precedence (`5h left 72%`).
-Other routes such as `oapi` do not show it. Old readings are marked stale, and a window past its reset says `refresh pending`.
+OAuth footer shows percent used. The tightest window leads with a bar and time to reset (`7d ████░░░░░░ ≈43% (2d4h)`);
+when there is room, the other window follows. A reading from the current request takes precedence and has no `≈` (`5h 11%`).
+Stale estimates are dim and end in `?`; a window past its reset shows `↻`. Other routes such as `oapi` do not show subscription quota.
 Open **Proxy readings** for both windows and their reset times, source, last success and error, and next eligible attempt.
 If the proxy pauses for sign-in, sign in to the bound profile and turn Auto-refresh off and back on. Experiments off stops refreshes.
 
-**API grants** shows the two ledgers together. The pi footer shows only the enabled ledger for the current API route
-(`API ≈$12.75`, for example), not subscription quota. `openai-api` counts `oapi` requests; `anthropic-api` counts only
+**API grants** shows the two ledgers together. The pi footer shows only the enabled ledger for the current API route,
+with a bar for the share spent, approximate dollars left and days to renewal (`API ████████░░ ≈$12.34 (12d)`, for example).
+`openai-api` counts `oapi` requests; `anthropic-api` counts only
 requests the installed pi HUD can identify as direct Anthropic API-key usage. Claude OAuth, third-party gateways,
 and unknown routes are not charged. The Claude Code status line is unchanged. Turning Experiments off preserves
 both ledgers and stops collection.

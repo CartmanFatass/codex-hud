@@ -1,4 +1,24 @@
 {
+  "36": {
+    "pi-quota": [
+      "◎ 6.2-sol │ 72% │ example │ 7d ≈43%"
+    ],
+    "pi-quota-high": [
+      "◎ 6.2-sol │ 72% │ example │ 5h 92%"
+    ],
+    "pi-quota-stale": [
+      "◎ 6.2-sol │ 72% │ example │ 7d ≈43%?"
+    ],
+    "pi-quota-pending": [
+      "◎ 6.2-sol │ 72% │ example │ 7d ≈43%"
+    ],
+    "pi-api": [
+      "◎ 6.2-sol │ 72%/200K │ API ≈$12.34"
+    ],
+    "pi-api-high": [
+      "◎ 6.2-sol │ 72%/200K │ API ≈$2.05"
+    ]
+  },
   "80": {
     "quiet": [
       "✻ opus-5.5 high │ 41%/1M │ example wt/BAR-NARROW*↑2 │ 5h 62% (1h19m) │ ~42.7 t/s"
@@ -17,6 +37,24 @@
     ],
     "codex": [
       "◎ 5.6-astra xhigh │ 88%/400K │ example main* │ 5h 78% │ ◐ explorer │ ✓ worker 1m"
+    ],
+    "pi-quota": [
+      "◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ≈43%"
+    ],
+    "pi-quota-high": [
+      "◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h 92%"
+    ],
+    "pi-quota-stale": [
+      "◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ≈43%?  5h ≈11%?"
+    ],
+    "pi-quota-pending": [
+      "◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ≈43%"
+    ],
+    "pi-api": [
+      "◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ≈$12.34 (12d)"
+    ],
+    "pi-api-high": [
+      "◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ≈$2.05 (3d)"
     ]
   },
   "100": {
@@ -57,6 +95,24 @@
     ],
     "codex": [
       "◎ 5.6-astra xhigh │ 88%/400K │ example main*↑2 │ 5h 78% (1h19m) │ ◐ explorer Synthetic search │ ✓ worker 1m"
+    ],
+    "pi-quota": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43% (2d4h)  5h 11%"
+    ],
+    "pi-quota-high": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h █████████░ 92% (41m)  7d ≈43%"
+    ],
+    "pi-quota-stale": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43%?  5h ≈11%?   MCP 2  skills 3"
+    ],
+    "pi-quota-pending": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43% (2d4h)  5h ↻"
+    ],
+    "pi-api": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ████████░░ ≈$12.34 (12d)    MCP 2  skills 3"
+    ],
+    "pi-api-high": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ██████████ ≈$2.05 (3d)      MCP 2  skills 3"
     ]
   },
   "144": {
@@ -77,6 +133,24 @@
     ],
     "codex": [
       "◎ 5.6-astra xhigh │ █████████░ 88%/400K │ example main*↑2 │ 5h ████████░░ 78% (1h19m) │ ◐ explorer Synthetic… │ ✓ worker 1m      MCP 2  skills 5"
+    ],
+    "pi-quota": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43% (2d4h)  5h 11%               lens ✓  MCP 2  skills 3"
+    ],
+    "pi-quota-high": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h █████████░ 92% (41m)  7d ≈43%                lens ✓  MCP 2  skills 3"
+    ],
+    "pi-quota-stale": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43%?  5h ≈11%?                   lens ✓  MCP 2  skills 3"
+    ],
+    "pi-quota-pending": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43% (2d4h)  5h ↻                 lens ✓  MCP 2  skills 3"
+    ],
+    "pi-api": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ████████░░ ≈$12.34 (12d)                    lens ✓  MCP 2  skills 3"
+    ],
+    "pi-api-high": [
+      "◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ██████████ ≈$2.05 (3d)                      lens ✓  MCP 2  skills 3"
     ]
   }
 }

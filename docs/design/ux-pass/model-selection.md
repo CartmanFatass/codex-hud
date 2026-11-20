@@ -121,9 +121,9 @@ I did not watch the zoom live; the two redraws are read from the code, not obser
 Rendered with the built renderer, same facts, `line` style:
 
 ```
-120  ◎ gpt-6.1-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h left 89% · 7d ≈57%       MCP 2  skills 3
- 80  ◎ gpt-6.1-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h left 89%
- 36  ◎ gpt-6.1-sol │ 72% │ 5h left 89%
+120  ◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h left 89% · 7d ≈57%   lens ✓  MCP 2  skills 3
+ 80  ◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h left 89%
+ 36  ◎ 6.2-sol │ 72%/200K │ 5h left 89%
 ```
 
 Claude's statusline, fixture `bar-widths.json` (120, quiet):
@@ -172,52 +172,52 @@ Checks for every slice run from the slice's worktree through `tmp/env.sh` (temp 
 | reset time passed, no new reading yet | `↻` in place of the number, dim, no bar cells | `refresh pending` |
 | grant not calibrated | `API uncalibrated` (unchanged) | same |
 
-**Exact strings.** Rendered by a scratch copy of the built `bar-fields.js` with the change below, `line` style. Facts: 5h measured 11% used, resets in 3h12m; 7d proxy 43% used, resets in 2d4h.
+**Exact strings.** `line` style, with pi's existing short name for `gpt-6.2-sol`. Facts: 5h measured 11% used, resets in 3h12m; 7d proxy 43% used, resets in 2d4h.
 
 ```
-before 120  ◎ gpt-6.1-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h left 89% · 7d ≈57%       MCP 2  skills 3
-after  120  ◎ gpt-6.1-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43% (2d4h)  5h 11%
+before 120  ◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h left 89% · 7d ≈57%   lens ✓  MCP 2  skills 3
+after  120  ◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ████░░░░░░ ≈43% (2d4h)  5h 11%
 
-before  80  ◎ gpt-6.1-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h left 89%
-after   80  ◎ gpt-6.1-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ≈43%
+before  80  ◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h left 89%
+after   80  ◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 7d ≈43%
 
-before  36  ◎ gpt-6.1-sol │ 72% │ 5h left 89%
-after   36  ◎ gpt-6.1-sol │ 72%/200K │ 7d ≈43%
+before  36  ◎ 6.2-sol │ 72%/200K │ 5h left 89%
+after   36  ◎ 6.2-sol │ 72% │ example │ 7d ≈43%
 ```
 
 5h at 92% (red), 41 minutes to reset:
 
 ```
-after  120  ◎ gpt-6.1-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h █████████░ 92% (41m)  7d ≈43%
-after   80  ◎ gpt-6.1-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h 92%
-after   36  ◎ gpt-6.1-sol │ 72%/200K │ 5h 92%
+after  120  ◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h █████████░ 92% (41m)  7d ≈43%
+after   80  ◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ 5h 92%
+after   36  ◎ 6.2-sol │ 72% │ example │ 5h 92%
 ```
 
 Stale, and 5h reset pending:
 
 ```
-after  120  … │ 7d ████░░░░░░ ≈43%?  5h ≈11%?
+after  120  … │ 7d ████░░░░░░ ≈43%?  5h ≈11%?   MCP 2  skills 3
 after  120  … │ 7d ████░░░░░░ ≈43% (2d4h)  5h ↻
-after   36  ◎ gpt-6.1-sol │ 72%/200K │ 7d ≈43%?
+after   36  ◎ 6.2-sol │ 72% │ example │ 7d ≈43%?
 ```
 
 API grant, 75% spent, 12 days to renewal; then 96% spent:
 
 ```
-before 120  ◎ gpt-6.1-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ≈$12.34         lens ✓  MCP 2  skills 3
-after  120  ◎ gpt-6.1-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ████████░░ ≈$12.34 (12d)
-after   80  ◎ gpt-6.1-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ≈$12.34
-after   36  ◎ gpt-6.1-sol │ 72% │ API ≈$12.34
-after  120  … │ API ██████████ ≈$2.05 (3d)
+before 120  ◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ≈$12.34             lens ✓  MCP 2  skills 3
+after  120  ◎ 6.2-sol high │ ███████░░░ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ████████░░ ≈$12.34 (12d)    MCP 2  skills 3
+after   80  ◎ 6.2-sol high │ 72%/200K │ example synthetic-main +1 *1 ?1 │ API ≈$12.34 (12d)
+after   36  ◎ 6.2-sol │ 72%/200K │ API ≈$12.34
+after  120  … │ API ██████████ ≈$2.05 (3d)      MCP 2  skills 3
 ```
 
-The other looks follow with no extra work, because they already draw the windows form. From the same prototype at 120:
+The other looks already draw the windows form. At 120 (p10k shown without capsule separators):
 
 ```
-p10k      ◎ gpt-6.1-sol high  72%/200K  example synthetic-main +1 *1 ?1  7d ≈43% (2d4h)  5h 11%     lens ✓  MCP 2  skills 3
-micro    ◎ gpt-6.1-sol high  ⋔ example synthetic-main +1 *1 ?1  ███████▎░░ 72%/200K  7d ████▎░░░░░ ≈43% ↻2d4h  5h 11%
-stacked  ◎ gpt-6.1-sol   ctx 72%           example                   7d ≈43%  5h 11%                             lens ✓  MCP 2
-           high          ━━━━━━━─── 200K   synthetic-main +1 *1 ?1   ━━━━╸───── (2d4h)                                   skills 3
+p10k     ◎ 6.2-sol high  72%/200K  example synthetic-main +1 *1 ?1  7d ≈43% (2d4h)  5h 11%     lens ✓  MCP 2  skills 3
+micro    ◎ 6.2-sol high  ⋔ example synthetic-main +1 *1 ?1  ███████▎░░ 72%/200K  7d ████▎░░░░░ ≈43% ↻2d4h  5h 11%
+stacked  ◎ 6.2-sol   ctx 72%           example                   7d ≈43%  5h 11%                                 lens ✓  MCP 2
+           high      ━━━━━━━─── 200K   synthetic-main +1 *1 ?1   ━━━━╸───── (2d4h)                                       skills 3
 ```
 
 A pending window has no reading, so it draws no bar and is never the leading window while the other one has a reading (`docs/ARCHITECTURE.md` §8: no fabricated zero).
@@ -244,7 +244,7 @@ Then the footer's own rule still drops the project, then the context, before the
 - `refresh pending` becomes `↻`; ` · stale` becomes `?` and dim ink.
 - At narrow widths the kept window is the tightest, not the shortest.
 - The API reading gains a bar and the days to renewal.
-- The segment is wider, so the loaded counts (`lens ✓  MCP 2  skills 3`) give way earlier: at 120 with a long branch they are gone (rows above).
+- The segment is wider, so loaded indicators give way earlier. At 120 with a long branch, the fresh subscription row above has none; the API row keeps `MCP 2  skills 3` but loses `lens ✓`.
 
 **Acceptance.**
 

@@ -113,7 +113,7 @@ test('footer paint starts a private, allowlisted first refresh and expires windo
   assert.equal(calls().length, 0, 'draw returns before any RPC');
   const plain = await until(() => {
     const row = p.draw();
-    return row.includes('5h ≈72%') && row;
+    return row.includes('7d ≈43%') && row;
   });
   assert.ok(visualLength(plain) <= 40, plain);
   assert.deepEqual(calls(), [
@@ -133,13 +133,13 @@ test('footer paint starts a private, allowlisted first refresh and expires windo
   assert.equal(inode.mode & 0o777, 0o600);
 
   const beforeReset = p.draw(100);
-  assert.match(beforeReset, /5h ≈72% · 7d ≈57%/);
+  assert.match(beforeReset, /7d ████░░░░░░ ≈43% \(7d\)  5h ≈28%$/);
   f.advance(6 * MIN);
-  assert.match(p.draw(100), /5h refresh pending · 7d ≈57%/);
-  assert.doesNotMatch(p.draw(100), /100%/);
+  assert.match(p.draw(100), /7d ████░░░░░░ ≈43% \(6d23h\)  5h ↻$/);
+  assert.doesNotMatch(p.draw(100), /100%|5h [█░]/);
   f.advance(5 * MIN);
-  assert.match(p.draw(100), /5h refresh pending · stale/);
-  assert.doesNotMatch(beforeReset, /pending|stale/);
+  assert.match(p.draw(100), /7d ████░░░░░░ ≈43%\?  5h ↻$/);
+  assert.doesNotMatch(beforeReset, /\?|↻/);
   await until(() => f.snapshot()?.observedAtMs === f.now());
   assert.notEqual(fs.statSync(f.file).ino, inode.ino, 'new snapshot replaces the old inode');
   assert.equal(calls().length, 2);
@@ -241,7 +241,7 @@ test('only openai OAuth shows windows; direct data wins and never survives its m
   const f = fixture(t);
   const p = proxyFooter(f.env, { now: f.now, rpc: async () => ({ windows }) });
   t.after(p.stop);
-  await until(() => /5h ≈72%/.test(p.draw(100)));
+  await until(() => /5h ≈28%/.test(p.draw(100)));
   p.controller.requestStarted(p.ctx);
   p.controller.requestWindows(
     p.ctx,
@@ -254,14 +254,15 @@ test('only openai OAuth shows windows; direct data wins and never survives its m
     },
     false
   );
-  const normal = p.draw(100), narrow = p.draw(36);
-  assert.match(normal, /5h left 89% · 7d ≈57%/);
-  assert.match(narrow, /5h left 89%/);
-  assert.doesNotMatch(narrow, /7d/);
+  const normal = p.draw(100),
+    narrow = p.draw(36);
+  assert.match(normal, /7d ████░░░░░░ ≈43% \(7d\)  5h 11%$/);
+  assert.match(narrow, /7d ≈43%$/);
+  assert.doesNotMatch(narrow, /5h/);
   assert.ok(visualLength(narrow) <= 36);
   t.diagnostic(`pi footer 100 columns: ${normal}\npi footer 36 columns: ${narrow}`);
   p.controller.requestStarted(p.ctx);
-  assert.match(p.draw(100), /5h ≈72%/);
+  assert.match(p.draw(100), /5h ≈28%/);
   p.controller.requestWindows(
     p.ctx,
     {
@@ -271,30 +272,36 @@ test('only openai OAuth shows windows; direct data wins and never survives its m
     },
     true
   );
-  assert.match(p.draw(100), /5h left 88% · 7d ≈57%/);
+  assert.match(p.draw(100), /≈43% \(7d\)  5h 12%$/);
   p.controller.requestStarted(p.ctx);
-  p.controller.requestWindows(p.ctx, {
-    provider: 'openai', model: p.ctx.model.id,
-    data: { type: 'codex.rate_limits', rate_limits: { primary: { used_percent: 32, window_minutes: 10080 } } },
-  }, true);
-  assert.match(p.draw(100), /5h ≈72% · 7d left 68%/, 'evidence matches measured duration, not array position');
+  p.controller.requestWindows(
+    p.ctx,
+    {
+      provider: 'openai',
+      model: p.ctx.model.id,
+      data: { type: 'codex.rate_limits', rate_limits: { primary: { used_percent: 32, window_minutes: 10080 } } },
+    },
+    true
+  );
+  assert.match(p.draw(100), /7d ███░░░░░░░ 32%  5h ≈28%$/, 'evidence matches measured duration, not array position');
   p.ctx.model.id = 'a-different-model';
   p.controller.modelChanged();
   p.controller.update();
-  assert.match(p.draw(100), /5h ≈72%/);
+  assert.match(p.draw(100), /5h ≈28%/);
   p.ctx.model.provider = 'oapi';
-  assert.doesNotMatch(p.draw(100), /≈|left/);
+  const quota = /(?:5h|7d) /;
+  assert.doesNotMatch(p.draw(100), quota);
   p.ctx.model.provider = 'openai';
   p.oauth(false);
-  assert.doesNotMatch(p.draw(100), /≈|left/);
+  assert.doesNotMatch(p.draw(100), quota);
   p.oauth(true);
-  assert.match(p.draw(100), /5h ≈72%/);
+  assert.match(p.draw(100), /5h ≈28%/);
   f.edit('binding', f.other);
-  await until(() => !/≈|left/.test(p.draw(100)) || f.snapshot()?.profile === f.other);
+  await until(() => !quota.test(p.draw(100)) || f.snapshot()?.profile === f.other);
   // The proxy refreshes on footer draws only, so keep drawing while waiting.
   await until(() => (p.draw(100), f.snapshot()?.profile === f.other));
   f.edit('binding', null);
-  await until(() => !/≈|left/.test(p.draw(100)));
+  await until(() => !quota.test(p.draw(100)));
 });
 
 test('EXP off or unbound causes zero RPCs and leaves the 40-column footer unchanged', async (t) => {

@@ -155,11 +155,23 @@ export function parseProxySnapshot(raw: string, proxy: ExpConfig['proxy']): ExpP
 
 const legacySavedAt = (grant: ExpGrant, savedAt?: number) => (grant.enabled && !grant.schedule ? savedAt : undefined);
 
-export function readExpGrantBalance(hudHome: string, account: ExpAccount, now: number, enabledOnly = false) {
+function grantBalance(hudHome: string, account: ExpAccount, now: number, enabledOnly: boolean) {
   const { config, savedAt } = expConfigFile(hudHome);
   const grant = config.grants[account];
   if (enabledOnly && !grant.enabled) return;
-  return readExpBalance(hudHome, account, grant, now, legacySavedAt(grant, savedAt));
+  const legacy = legacySavedAt(grant, savedAt);
+  const balance = readExpBalance(hudHome, account, grant, now, legacy);
+  if (balance) return { balance, grant, legacy };
+}
+
+export function readExpGrantBalance(hudHome: string, account: ExpAccount, now: number, enabledOnly = false) {
+  return grantBalance(hudHome, account, now, enabledOnly)?.balance;
+}
+
+/** The footer also needs the amount applicable to the balance's cycle, not a scheduled future amount. */
+export function readExpFooterGrant(hudHome: string, account: ExpAccount, now: number) {
+  const result = grantBalance(hudHome, account, now, true);
+  if (result) return { ...result.balance, grantMicros: grantTerms(result.grant, now, result.legacy).grantMicros };
 }
 
 export function readExpData(hudHome: string, env = process.env, now = Date.now()): ExpData {

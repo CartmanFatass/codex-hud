@@ -14,10 +14,10 @@ import {
   proxyWindow,
   windowLabel,
   windowPending,
-  windowRemaining,
   type ExpProxyWindow,
   type ExpProxyWindows,
 } from '../../exp-proxy.js';
+import { span, type BarQuotaWindow } from '../../render/layout/bar-fields.js';
 import type { FooterContext } from './footer-host.js';
 
 function route(ctx: FooterContext | null): string | undefined {
@@ -152,7 +152,7 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
       expWatch?.close();
       settingsWatch = expWatch = undefined;
     },
-    draw(ctx: FooterContext): string[] {
+    draw(ctx: FooterContext): BarQuotaWindow[] {
       observe();
       if (!reading) return [];
       const key = route(ctx);
@@ -174,15 +174,23 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
       }
       const at = now();
       return [...byWindow.entries()]
-        .sort(([a], [b]) => typeof a === 'number' && typeof b === 'number' ? a - b : 0)
+        .sort(([a], [b]) => (typeof a === 'number' && typeof b === 'number' ? a - b : 0))
         .map(([, value]) => {
           const { window } = value;
-          const label = windowLabel(window);
-          const suffix = proxyStale(value.at, intervalMinutes, at) ? ' · stale' : '';
-          const text = windowPending(window, at)
-            ? 'refresh pending'
-            : `${value.direct ? 'left ' : '≈'}${windowRemaining(window)}%`;
-          return `${label ? label + ' ' : ''}${text}${suffix}`;
+          const label = windowLabel(window) ?? '';
+          if (windowPending(window, at)) return { label, shown: '↻', quiet: true };
+          const quiet = proxyStale(value.at, intervalMinutes, at);
+          const percent = Math.min(100, window.usedPercent);
+          return {
+            label,
+            percent,
+            shown: `${value.direct && !quiet ? '' : '≈'}${Math.round(percent)}%${quiet ? '?' : ''}`,
+            quiet,
+            reset:
+              !quiet && window.resetsAt !== undefined
+                ? span(Math.ceil((window.resetsAt * 1000 - at) / 60_000))
+                : undefined,
+          };
         });
     },
     modelChanged: clearRequest,

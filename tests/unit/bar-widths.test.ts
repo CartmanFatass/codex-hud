@@ -8,19 +8,29 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BAR_WIDTHS, widthFrames } from '../fixtures/bar-widths.js';
+import { BAR_WIDTHS, PI_QUOTA_WIDTHS, widthFrames } from '../fixtures/bar-widths.js';
 import { visualWidth } from '../../src/render/colors.js';
+import { setLanguage } from '../../src/render/i18n.js';
 
 const golden = JSON.parse(readFileSync(join(process.cwd(), 'tests/fixtures/bar-widths.json'), 'utf8'));
 
 test('default look at 144/120/100/80: golden frames, one row that fits, Claude, pi and Codex alike', () => {
   const frames = widthFrames();
   assert.deepEqual(frames, golden);
-  for (const width of BAR_WIDTHS)
+  for (const width of new Set([...BAR_WIDTHS, ...PI_QUOTA_WIDTHS]))
     for (const [name, rows] of Object.entries(frames[String(width)]!)) {
       assert.equal(rows.length, 1, `${name} at ${width}: one row`);
       assert.ok(visualWidth(rows[0]!) <= width, `${name} at ${width}: fits`);
     }
+});
+
+test('pi quota golden rows stay English when the panel language is Chinese', (t) => {
+  const previous = setLanguage('zh');
+  t.after(() => setLanguage(previous));
+  const frames = widthFrames();
+  for (const width of PI_QUOTA_WIDTHS)
+    for (const [name, rows] of Object.entries(frames[String(width)]!))
+      if (name.startsWith('pi-')) assert.deepEqual(rows, golden[width][name]);
 });
 
 test('a notice gives up its title before the vitals give up their numbers', () => {

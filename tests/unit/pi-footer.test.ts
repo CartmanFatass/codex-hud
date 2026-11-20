@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { parityFixture } from '../fixtures/pi-footer.js';
+import { PI_QUOTA_WIDTHS } from '../fixtures/bar-widths.js';
 import { HUD_STATUS_KEY } from '../../src/harness/pi/segment.js';
 import { stripAnsi, visualWidth } from '../../src/render/colors.js';
+import { expProxyPath, readExpConfig, saveExpEdit } from '../../src/collectors/exp-store.js';
 
 function fixture(t: test.TestContext, settings?: unknown, env?: Record<string, string>) {
   const f = parityFixture({ name: 'ribbon', width: 160, settings, env });
@@ -66,6 +69,100 @@ test('cost is in the ribbon only; bottom stays one shared bar with context', (t)
   assert.equal(bottom.length, 1);
   assert.match(stripAnsi(bottom[0]!), /synthetic-model.*42%\/200K.*example.*MCP 2.*skills 3/);
   assert.doesNotMatch(stripAnsi(bottom[0]!), /\$|cache |tok |t\/s|TTFT/);
+});
+
+const quotaNow = Date.parse('2026-11-19T10:30:00Z');
+const quotaGolden = JSON.parse(readFileSync(join(process.cwd(), 'tests/fixtures/bar-widths.json'), 'utf8'));
+
+function quotaFixture(t: test.TestContext) {
+  t.mock.timers.enable({ apis: ['Date'], now: quotaNow });
+  const f = fixture(t, undefined, { NO_COLOR: '1' });
+  const home = join(f.ctx.sessionManager.getCwd(), '../..');
+  writeFileSync(join(home, 'hud-settings.json'), JSON.stringify({ experiments: true }), { mode: 0o600 });
+  f.ctx.model!.id = 'gpt-6.2-sol';
+  f.ctx.getContextUsage = () => ({ percent: 72, contextWindow: 200_000 });
+  f.bus.get('pi-lens/analysis-complete')?.({ filePath: 'synthetic.ts', diagnostics: [] });
+  const expectQuota = (scene: string) => {
+    for (const width of PI_QUOTA_WIDTHS)
+      assert.deepEqual(f.render(width), quotaGolden[width][scene], `${scene} at ${width}`);
+  };
+  return { f, home, expectQuota };
+}
+
+test('the actual subscription footer matches S1 at 144, 120, 80 and 36 with pi’s short model name', async (t) => {
+  const { f, home, expectQuota } = quotaFixture(t);
+  const profile = join(home, '.codex');
+  const min = 60_000;
+  mkdirSync(profile);
+  writeFileSync(join(profile, 'config.toml'), '# synthetic profile\n');
+  saveExpEdit(home, { field: 'binding', value: profile }, quotaNow, { HOME: home, CODEX_HOME: profile });
+  saveExpEdit(home, { field: 'proxy-enabled', value: true }, quotaNow);
+  writeFileSync(
+    expProxyPath(home),
+    JSON.stringify({
+      profile,
+      bindingVersion: readExpConfig(home).proxy.bindingVersion,
+      secondary: { usedPercent: 43, windowDurationMins: 10_080, resetsAt: (quotaNow + 52 * 60 * min) / 1000 },
+      observedAtMs: quotaNow,
+      // Retain the last snapshot but do not start a subprocess in this rendering fixture.
+      error: 'not_logged_in',
+      failures: 1,
+      nextAttemptMs: null,
+    }),
+    { mode: 0o600 }
+  );
+  f.ctx.modelRegistry = { isUsingOAuth: () => true };
+  f.controller.update();
+  for (let attempt = 0; attempt < 100 && !f.render(120)[0]?.includes('≈43%'); attempt++) await sleep(5);
+  assert.match(f.render(120)[0]!, /^◎ 6\.2-sol high .*≈43%/);
+  const direct = (percent: number, resetInMinutes: number) => {
+    f.controller.requestStarted(f.ctx);
+    f.controller.requestWindows(
+      f.ctx,
+      {
+        headers: {
+          'x-codex-primary-used-percent': String(percent),
+          'x-codex-primary-window-minutes': '300',
+          'x-codex-primary-reset-at': String((Date.now() + resetInMinutes * min) / 1000),
+        },
+      },
+      false
+    );
+  };
+  direct(11, 192);
+  expectQuota('pi-quota');
+  direct(92, 41);
+  expectQuota('pi-quota-high');
+  direct(92, 0);
+  expectQuota('pi-quota-pending');
+  direct(11, 192);
+  t.mock.timers.tick(31 * min);
+  expectQuota('pi-quota-stale');
+});
+
+test('the API footer keeps uncalibrated text, then meters the grant and redraws days to renewal', async (t) => {
+  const { f, home, expectQuota } = quotaFixture(t);
+  const now = quotaNow;
+  f.ctx.model!.provider = 'oapi';
+  const account = 'openai-api';
+  saveExpEdit(home, { account, field: 'zone', value: 'UTC' }, now);
+  saveExpEdit(home, { account, field: 'grant', value: 49_360_000 }, now);
+  saveExpEdit(home, { account, field: 'grant-enabled', value: true }, now);
+  f.controller.update();
+  assert.match(f.render()[0]!, /API uncalibrated/);
+  assert.doesNotMatch(f.render()[0]!, /API [█░]|\x1b/);
+  await saveExpEdit(home, { account, field: 'calibration', value: 12_340_000 }, now);
+  // A scheduled change to the configured grant is for the next cycle, not this meter.
+  saveExpEdit(home, { account, field: 'grant', value: 100_000_000 }, now);
+  f.controller.update();
+  expectQuota('pi-api');
+  t.mock.timers.setTime(now + 86_400_000);
+  assert.match(f.render(120)[0]!, /API ████████░░ ≈\$12\.34 \(11d\)/);
+  assert.match(f.render(36)[0]!, /API ≈\$12\.34$/);
+  t.mock.timers.setTime(now + 9 * 86_400_000);
+  await saveExpEdit(home, { account, field: 'calibration', value: 2_050_000 }, Date.now());
+  f.controller.update();
+  expectQuota('pi-api-high');
 });
 
 test('other extension statuses survive at 100 columns alongside lens, MCP and skills', async (t) => {

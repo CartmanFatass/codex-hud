@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { OWNER_CONFIG } from '../fixtures/claude-hud-parity/fixture.js';
 import { barThemeScene, THEME_NOW } from '../fixtures/bar-themes.js';
+import { PI_QUOTA_SCENES } from '../fixtures/bar-widths.js';
 import { parityFixture } from '../fixtures/pi-footer.js';
 import {
   BAR_STYLES,
@@ -15,7 +16,7 @@ import {
   barStyleOf,
 } from '../../src/render/hud-config.js';
 import { renderBar, agentEvent, type BarFacts } from '../../src/render/layout/bar-fields.js';
-import { stripAnsi, visualWidth } from '../../src/render/colors.js';
+import { colors, stripAnsi, theme, visualWidth } from '../../src/render/colors.js';
 import { applyBarSettings } from '../../src/bar-settings.js';
 import { loadSettings } from '../../src/settings.js';
 
@@ -267,6 +268,43 @@ test('each look keeps its concept idiom: ctx label, group order, aligned columns
   assert.match(conceptRows('triptych').rows[0]!, /example main\* ·{5,} /);
   const needs = conceptRows('headline', { needs: ['Work: 1 needs you'] }).rows[0]!;
   assert.match(needs, /^ ! Work: 1 needs you {5,}✻ opus-5\.5/, 'the alert leads and the vitals stay flush right');
+});
+
+test('pi quota uses Claude level inks; dim and pending states stay legible without color', (t) => {
+  const previous = setDisplayConfig({ theme: 'terminal', icons: 'unicode', barFields: [...BAR_FIELDS] });
+  t.after(() => setDisplayConfig(previous));
+  const line = (scene: keyof typeof PI_QUOTA_SCENES) => renderBar(PI_QUOTA_SCENES[scene], 120, THEME_NOW, 'line').line;
+  assert.ok(line('pi-quota').includes('\x1b[94m≈43%\x1b[0m'));
+  assert.ok(line('pi-quota-high').includes(theme.error('92%')));
+  assert.ok(line('pi-api').includes('\x1b[95m≈$12.34\x1b[0m'));
+  assert.ok(line('pi-api-high').includes(theme.error('≈$2.05')));
+  assert.ok(line('pi-quota-stale').includes(colors.dim('≈43%?')));
+  assert.ok(line('pi-quota-pending').includes(colors.dim('↻')));
+
+  setDisplayConfig({ theme: 'none' });
+  const stale = line('pi-quota-stale');
+  const pending = line('pi-quota-pending');
+  assert.doesNotMatch(stale + pending, /\x1b/);
+  assert.match(stale, /7d ████░░░░░░ ≈43%\?  5h ≈11%\?(?:\s|$)/);
+  assert.match(pending, /7d ████░░░░░░ ≈43% \(2d4h\)  5h ↻(?:\s|$)/);
+});
+
+test('pi quota uses the existing capsule, Micro and Stacked forms; pending alone never gets a meter', (t) => {
+  const previous = setDisplayConfig({ theme: 'terminal', icons: 'unicode', barFields: [...BAR_FIELDS] });
+  t.after(() => setDisplayConfig(previous));
+  const line = (style: (typeof BAR_STYLES)[number]) =>
+    stripAnsi(renderBar(PI_QUOTA_SCENES['pi-quota'], 120, THEME_NOW, style).line);
+  assert.match(line('p10k'), /7d ≈43% \(2d4h\)  5h 11%/);
+  assert.match(line('micro'), /7d ████▎░░░░░ ≈43% ↻2d4h  5h 11%/);
+  assert.match(line('stacked'), /7d ≈43%  5h 11%[^\n]*\n.*━━━━╸───── \(2d4h\)/);
+
+  setDisplayConfig({ barFields: ['quota'] });
+  const pending: BarFacts = { quota: { windows: [{ label: '5h', shown: '↻', quiet: true }] } };
+  for (const style of BAR_STYLES) {
+    const row = stripAnsi(renderBar(pending, 120, THEME_NOW, style).line);
+    assert.match(row, /5h ↻/, style);
+    assert.doesNotMatch(row, /[█░━╸%]/, style);
+  }
 });
 
 test('the six looks fit every width, in both light and dark', (t) => {

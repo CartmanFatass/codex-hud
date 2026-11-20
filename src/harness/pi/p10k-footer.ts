@@ -14,12 +14,12 @@ import { safeGitEnv, SAFE_GIT_ARGS, neutralizeFilters } from '../../utils/git-sa
 import * as bar from '../../render/layout/bar-fields.js';
 import { shortModel } from '../../render/providers.js';
 import { stripAnsi } from '../../render/colors.js';
-import { activeBarStyle, displayConfig } from '../../render/hud-config.js';
+import { activeBarStyle, displayConfig, type BarStyle } from '../../render/hud-config.js';
 import { monitorText } from '../../render/monitor-text.js';
 import { formatTokenCount } from '../../render/lines/activity-line.js';
 import type { WorkSignals } from '../../render/work-summary.js';
 import { applyBarSettings } from '../../bar-settings.js';
-import { readExpGrantBalance } from '../../collectors/exp-store.js';
+import { readExpFooterGrant } from '../../collectors/exp-store.js';
 import { expApproxUsd, type ExpAccount } from '../../exp-config.js';
 import { experimentsEnabled } from '../../settings.js';
 import { getHudHome } from '../../hud-home.js';
@@ -30,6 +30,18 @@ import { piExpAccount } from './exp-route.js';
 import { createPiSubscription } from './subscription.js';
 import type { ProxyRefreshOptions } from '../../collectors/exp-proxy-refresh.js';
 export type { FooterHost } from './footer-host.js';
+
+/** In a narrow pi pane, prefer the current route's quota reading to the path and context. */
+export function renderPiBar(facts: bar.BarFacts, width: number, now: number, style: BarStyle): string {
+  const first = bar.renderBar(facts, width, now, style);
+  if (facts.quota && displayConfig().barFields.includes('quota') && !first.kept.includes('quota')) {
+    for (const context of [facts.context, undefined]) {
+      const fitted = bar.renderBar({ ...facts, project: undefined, context }, width, now, style);
+      if (fitted.kept.includes('quota')) return fitted.line;
+    }
+  }
+  return first.line;
+}
 
 /** One ordinary package instance; no process-global state or host SDK dependency. */
 export function createP10kFooter(
@@ -533,20 +545,27 @@ export function createP10kFooter(
   let view: FooterContext | null = null;
   let stats: Stats | undefined;
   let capturedViz: string | undefined;
-  let apiQuota: { account: ExpAccount; quota: NonNullable<bar.BarFacts['quota']> } | undefined;
+  let apiQuota: { account: ExpAccount; at: (now: number) => NonNullable<bar.BarFacts['quota']> } | undefined;
   function readApiQuota(ctx: FooterContext | null): typeof apiQuota {
     try {
       const account = piExpAccount(ctx);
       if (!account || !experimentsEnabled(env)) return;
-      const balance = readExpGrantBalance(getHudHome(env), account, Date.now(), true);
-      if (balance)
-        return {
-          account,
-          quota: {
-            label: 'API',
-            text: balance.remainingMicros === null ? 'uncalibrated' : expApproxUsd(Math.max(0, balance.remainingMicros)),
-          },
-        };
+      const balance = readExpFooterGrant(getHudHome(env), account, Date.now());
+      if (!balance) return;
+      const { remainingMicros, grantMicros, endDate, timeZone } = balance;
+      if (remainingMicros === null) return { account, at: () => ({ label: 'API', text: 'uncalibrated' }) };
+      const shown = expApproxUsd(Math.max(0, remainingMicros));
+      const percent = grantMicros > 0 ? 100 * (1 - remainingMicros / grantMicros) : undefined;
+      const end = Date.parse(endDate);
+      const calendar = new Intl.DateTimeFormat('en-CA', { timeZone, dateStyle: 'short' });
+      return {
+        account,
+        at(now) {
+          // Use the grant's local calendar days, not 24-hour spans across a clock change.
+          const days = (end - Date.parse(calendar.format(now))) / 86_400_000;
+          return { windows: [{ label: 'API', percent, shown, reset: days > 0 ? `${days}d` : undefined }] };
+        },
+      };
     } catch {
       return;
     }
@@ -609,27 +628,16 @@ export function createP10kFooter(
   function line(width: number, ctx: FooterContext): string {
     if (!view || !stats || !mounted || width <= 0) return '';
     const subscriptionQuota = subscription.draw(ctx);
+    const now = Date.now();
     const quota =
       apiQuota && apiQuota.account === piExpAccount(ctx)
-        ? apiQuota.quota
+        ? apiQuota.at(now)
         : subscriptionQuota.length
-          ? { text: subscriptionQuota.join(' · '), shortText: subscriptionQuota[0] }
+          ? { windows: subscriptionQuota, trailing: true }
           : undefined;
     const facts = buildFacts(view, pi, quota);
-    const now = Date.now();
     const style = noColor() ? 'line' : activeBarStyle();
-    let { line: text, kept } = bar.renderBar(facts, width, now, style);
-    // In a narrow pi pane, prefer the current route's reading to the path and context.
-    if (quota && displayConfig().barFields.includes('quota') && !kept.includes('quota')) {
-      for (const context of [facts.context, undefined]) {
-        const fitted = bar.renderBar({ ...facts, project: undefined, context }, width, now, style);
-        if (fitted.kept.includes('quota')) {
-          text = fitted.line;
-          break;
-        }
-      }
-    }
-    return text
+    return renderPiBar(facts, width, now, style)
       .split('\n')
       .map((row) => {
         const plain = noColor() ? stripAnsi(row) : row;
