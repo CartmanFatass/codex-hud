@@ -187,7 +187,7 @@ board counts these; update at every landing or decision. -->
 - try · — · PROJECT-CLI-PLACES · a registered project's role chain may name CLI places (agent, model, thinking; no args, no bro); hud setup plan `runs`, skill asks (imp sol) (d13a16a6)
 - try · UX-PASS · UX-PASS-05 · CLI and AI Studio places open the same picker, flat; the inline quick list is gone (imp sol) (2ebfb5f2)
 - try · OWNER-VIEW · OWNER-VIEW · Decided for you hidden (still collected); to-try rows grouped per milestone task by default, Settings → Acceptance switches to per slice (imp sol) (cf70780d; tests after it)
-- working · OWNER-VIEW · OWNER-VIEW-2 · Tickets per feature and Progress per milestone at task level; commit dates cached by hash; no model titles for hidden decisions (imp sol j22d61e89b5451d19, wt/owner-view-2)
+- try · OWNER-VIEW · OWNER-VIEW-2 · Tickets per feature and Progress per milestone at task detail (Settings → Detail/粒度); Home commit dates cached by hash; decision titles asked only for the Inspector (imp sol) (8f71a605, 72a72e88)
 - try · UX-PASS · UX-PASS-REVIEW-FIX · review fixes: current provider via resolved bare ID; ? help opens over a Control draft; string hints removed (imp sol) (3534b622)
 - done · — · UX-PASS-DESIGN · model selection + pi footer quota design: S1 FOOTER-QUOTA, S2 QUICK-MODEL, S3 PICKER-PANE, S4 PICKER-ORDER, S5 PICKER-FLAT (opt); 4 owner decisions · docs/design/ux-pass/model-selection.md
 - done · — · UX-PASS-OVERALL · overall design: 1 FOOTER, 2 SAY-ONCE, 3 HELP, 4 EXP-FORM, 5 HARNESS-ROWS, 6 TOP-ROW; 4 owner decisions · docs/design/ux-pass/overall.md
