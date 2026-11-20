@@ -194,7 +194,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   frame.state.controlNav.projectCursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^Healthy ─+ 6$/m);
-  assert.match(plain(frame).join('\n'), /imp → pi\/synthetic/);
+  assert.match(plain(frame).join('\n'), /imp → synthetic\/model/);
   frame.state.controlNav.projectCursor = 'project:fold:files';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ agents/);

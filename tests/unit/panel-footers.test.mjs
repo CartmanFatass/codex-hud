@@ -22,7 +22,7 @@ const narrow = {
   'classic Project switch': ['⏎ open  [ ] project  ? help', '⏎ 打开  [ ] 项目  ? 帮助'],
   'classic Progress': ['t to try  ⏎ open  Esc back  ? help', 't 待试用  ⏎ 打开  Esc 返回  ? 帮助'],
   'split Progress': ['⏎ open file  Esc back  / filter  ? help', '⏎ 打开文件  Esc 返回  / 筛选  ? 帮助'],
-  Roles: ['c C preset  p presets  ⏎ chain  ? help', 'c C 预设  p 选预设  ⏎ 备选链  ? 帮助'],
+  Roles: ['m model  c C preset  p presets  ? help', 'm 模型  c C 预设  p 选预设  ? 帮助'],
   Harnesses: ['Space on/off  i add back  ? help', 'Space 开关  i 添加回  h 角色  ? 帮助'],
   Inspector: ['⏎ open  Esc back  ? help', '⏎ 打开  Esc 返回  ? 帮助'],
   Settings: ['←→ change  s save  Esc back  ? help', '←→ 修改  s 保存  Esc 返回  ? 帮助'],
