@@ -4,7 +4,7 @@ import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { placeDestination, type PlaceFact, type RoleFact } from '../roles/role-control.js';
 import type { MonitorControl, MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { CONTROL_FOLDS, controlRoleItem, controlRoleOf } from './control-navigation.js';
-import { glyph, needsAttention, pickerPlace, pickerRows, placeTarget, radarFacts, radarRows, radarSummary, roleName, roleToday, shortModel } from './control-view.js';
+import { glyph, needsAttention, pickerPlace, pickerRows, placeTarget, radarFacts, radarRows, radarSummary, roleName, roleToday, modelFieldRows } from './control-view.js';
 import { pickerHints, type ModelInput } from './model-input.js';
 import { projectItem } from './project-view.js';
 import { projectSplitScene, type Shown } from './split-project.js';
@@ -14,6 +14,7 @@ import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { HARNESS_OFF, harnessErrorRow } from './harness-page.js';
 import { presetSheet } from './preset-input.js';
+import { chainSheet } from './chain-input.js';
 import { splitPreviewRoom } from './split-frame.js';
 
 const muted = theme.board.muted;
@@ -46,25 +47,18 @@ export function controlHeader(input: MonitorData, state: MonitorState, width: nu
 
 export function controlHints(data: ProjectSnapshot | undefined, item?: string, inChain = false): string {
   const role = data?.roles.find((r) => r.role === controlRoleOf(item));
-  const index = /:(\d+)$/.exec(item ?? '')?.[1];
-  if (role && index !== undefined) {
-    const place = role.places[Number(index)], clear = place?.until !== undefined ? '  x clear' : '';
-    const model = place?.harness === 'pi' || place?.harness === 'cli' ? 'm model  ↑↓ place  p harness' : '↑↓ place  p harness  m model';
-    return role.source === 'project' ? `↑↓ place  o open file${clear}  esc back  ? help`
-      : `${model}  e thinking  i add  Del remove  K J move${clear}  esc back  ? help`;
-  }
   if (role) {
     const enter = inChain ? '⏎ chain' : '⏎ open';
     if (role.source === 'project') return `↑↓ move  o open file  ${enter}  h harnesses  ? help`;
     const names = role.presets?.length ? '  c C preset  p presets' : '';
     const manage = role.preset ? '  R rename  D delete' : '';
-    return `↑↓ move  ${enter}${names}  N copy${manage}  h harnesses  o open file  r refresh  ? help`;
+    return `↑↓ move  ${enter}${names}  N copy  I empty${manage}  h harnesses  o open file  r refresh  ? help`;
   }
   const enter = item?.startsWith('project:file:') ? '  ⏎ open file' : item?.startsWith('project:fold:') ? '  ⏎ open' : '';
   return `↑↓ move${enter}  h harnesses  r refresh  ←→ tab  [ ] project  ? help`;
 }
 
-function roleRows(role: RoleFact, width: number, now: number): MonitorRow[] {
+export function roleRows(role: RoleFact, width: number, now: number): MonitorRow[] {
   const next = active(role), dead = role.places.find((p) => p.state === 'exhausted'), why = dead ?? (!next ? role.places[0] : undefined);
   const extra = { item: controlRoleItem(role.role), files: [role.path], roleFact: role };
   const tag = role.source === 'project' ? muted(t('project')) : '';
@@ -82,7 +76,7 @@ function roleRows(role: RoleFact, width: number, now: number): MonitorRow[] {
     .flatMap((message) => flowLines(message, width - 6).map((part) => ({ ...extra, text: fit(`      ${theme.board.attention(part)}`, width) })))];
 }
 
-function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: number, selected?: string, classic = false): MonitorRow[] {
+function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: number): MonitorRow[] {
   const next = active(role), today = radarFacts(data.radar).roles.find(([name]) => name === role.role)?.[1];
   const source = `${t(role.source)} · ${role.source === 'project' ? '.hud/roles/' : ''}${basename(role.path)}`;
   const locked = t('project file · read-only here');
@@ -94,22 +88,18 @@ function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: n
   ];
   const actions = role.source === 'project' ? [] : roleActions(role, width);
   const chain = role.places.flatMap<MonitorRow>((place, i) => {
-    const prefix = `${classic ? '    ' : '  '}${i + 1} ${glyph(place.state)} `, indent = ' '.repeat(visualLength(prefix));
+    const prefix = `  ${i + 1} ${glyph(place.state)} `, indent = ' '.repeat(visualLength(prefix));
     const label = place.harness === 'pi' && !place.model?.includes('/') ? target(place) : place.label;
     const body = [label, place.model ?? place.kind ?? (place.harness === 'bro' ? '' : t('default')), place.thinking].filter(Boolean).join('  ');
     const ink = place.state === 'active' ? (s: string) => s : muted;
     const extra = placeTarget(role, i, data), why = reason(place, now);
     const notes = [why, place.state === 'off' ? quota(place, now) : '', place.provider === null ? t('provider unknown') : ''];
     const rows = extra.modelPick && (place.harness === 'pi' || place.harness === 'cli')
-      ? modelFieldRows(place, selected === extra.item ? theme.board.active(mark('›', '>')) + prefix.slice(1) : prefix, width, extra, ink)
+      ? modelFieldRows(place, prefix, width, extra, ink)
       : flowLines(monitorText(body), Math.max(1, width - indent.length)).map((line, n) => ({ ...extra, text: fit((n ? indent : prefix) + ink(line), width) }));
     return [...rows, ...notes.filter(Boolean).flatMap((note) => flowLines(monitorText(note), Math.max(1, width - indent.length))
         .map((line) => ({ ...extra, text: fit(indent + muted(line), width) })))];
   });
-  if (classic) return [...chain, ...[`${t('source')} ${monitorText(source)}`, ...(role.source === 'project' ? [`${t('pinned')} ${locked}`,
-    ...(available ? [`${t('Presets')} ${monitorText(available)}`] : [])] : []), ...(role.chainPath ? [`${t('chain source')} ${monitorText(role.chainPath)}`] : []),
-    ...(today ? [`${t('today')} ${roleToday(today)}`] : [])]
-    .flatMap((line) => flowLines(line, Math.max(1, width - 4)).map((text) => boardRow('    ' + muted(text)))), ...actions];
   const hasFields = chain.some((row) => row.controls?.length);
   return [
     ...kvRows('next job', next ? target(next) : t('none'), width),
@@ -121,20 +111,6 @@ function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: n
     ...(today ? kvRows('today', roleToday(today), width) : []),
     ...(!hasFields ? [boardRow(''), section(t('Chain'), width, String(role.places.length)), ...chain] : []), ...actions,
   ];
-}
-
-function modelFieldRows(place: PlaceFact, prefix: string, width: number, extra: Pick<MonitorRow, 'item' | 'files' | 'modelPick'>, ink: (s: string) => string): MonitorRow[] {
-  const current = place.piModel?.isDefault || !place.model ? t('default') : shortModel(place.model).replace(/^[^/]+\//, '');
-  const arrow = mark('▾', 'v'), label = monitorText(target(place)), effort = monitorText(place.thinking ?? '');
-  const normal = `[${current} ${arrow}]`, aligned = prefix + ink(fit(label, Math.max(7, visualLength(label)))) + ' ';
-  const lead = visualLength(aligned + normal) <= width ? aligned : prefix + ink(label) + ' ';
-  const two = visualLength(lead + normal) > width;
-  const fieldLead = two ? ' '.repeat(visualLength(prefix)) : lead;
-  const x = visualLength(fieldLead);
-  const field = `[${squeeze(current, width - x - 4)} ${arrow}]`;
-  const control = { kind: 'control-model' as const, item: extra.item, x, width: visualLength(field) };
-  return [...(two ? [{ ...extra, text: pair(prefix + ink(label), muted(effort), width) }] : []),
-    { ...extra, text: pair(fieldLead + theme.board.identifier(field), !two && visualLength(lead + field + effort) < width ? muted(effort) : '', width), controls: [control] }];
 }
 
 function controlList(data: ProjectSnapshot, state: MonitorState, width: number, now: number, classic: boolean): MonitorRow[] {
@@ -154,7 +130,7 @@ function controlList(data: ProjectSnapshot, state: MonitorState, width: number, 
     return { ...section(left, width, parts.join(' · ')), item: `project:fold:${id}` };
   };
   const entries = (role: RoleFact) => [...roleRows(role, width, now),
-    ...(classic && folded.has(`role:${role.role}`) ? roleDetail(data, role, width, now, state.projectCursor, true) : [])];
+    ...(classic && role.source !== 'project' && state.projectCursor === controlRoleItem(role.role) ? roleActions(role, width) : [])];
   const radar = radarFacts(data.radar), usage = radarSummary(radar, false);
   if (radar.roles.length) usage.push(t('{n} jobs', { n: radar.roles.reduce((n, [, s]) => n + s.total, 0) }));
   const ok = (yes: boolean) => yes ? theme.board.success(mark('✓', '+')) : muted(mark('−', '-'));
@@ -189,16 +165,16 @@ export function controlScene(data: ProjectSnapshot, state: MonitorState, listWid
   const preview = (item?: string): Shown => {
     const role = data.roles.find((r) => controlRoleItem(r.role) === item);
     const hints = controlHints(data, item, true);
-    return role ? { label: roleName(role), right: `[${monitorText(preset(role))}]`, rows: roleDetail(data, role, previewWidth, now, state.projectCursor), hints }
+    return role ? { label: roleName(role), right: `[${monitorText(preset(role))}]`, rows: roleDetail(data, role, previewWidth, now), hints }
       : { label: '', rows: [], hints };
   };
   const hints = controlHints(data);
   const scene = projectSplitScene(state, { list, preview, hints, start: list.find((r) => r.item)?.item },
     `control|${state.projectRoot ?? ''}|${state.controlPresetInput?.mode ?? ''}`);
-  if (scene.sub) scene.hints = controlHints(data, scene.sub, true);
-  if (state.controlPresetInput) {
+  if (state.controlChain || state.controlPresetInput) {
     const room = splitPreviewRoom({ ...scene, compact: true }, state, height, notes);
-    const sheet = presetSheet(state.controlPresetInput, previewWidth, room);
+    const sheet = state.controlChain ? chainSheet(state.controlChain, data.models, previewWidth, room, now)
+      : presetSheet(state.controlPresetInput!, previewWidth, room);
     return { ...scene, rule: sheet.rule, preview: sheet.rows, sub: sheet.cursor, hints: sheet.hints, compact: true };
   }
   return scene;
@@ -206,9 +182,10 @@ export function controlScene(data: ProjectSnapshot, state: MonitorState, listWid
 
 /** A narrow Split picker keeps the role context when there is room for the query, list and strip. */
 export function controlPickerScene(data: ProjectSnapshot, state: MonitorState, input: ModelInput, width: number, now: number, height: number, notes: number) {
-  const role = data.roles.find((r) => r.role === input.role)!;
+  const role = state.controlChain?.role ?? data.roles.find((r) => r.role === input.role)!;
   const scene = { list: controlList(data, state, width, now, false), cursor: controlRoleItem(role.role),
-    rule: { label: roleName(role), right: pickerPlace(input, role.preset) }, preview: [] as MonitorRow[],
+    rule: { label: roleName(role), right: state.controlChain?.draft
+      ? `${monitorText(state.controlChain.draft.name ?? role.preset ?? t('Custom'))} · ${t('Not saved')}` : pickerPlace(input, role.preset) }, preview: [] as MonitorRow[],
     scope: 'control-picker', compact: true, sub: 'project:pick', hints: pickerHints(input) };
   const room = splitPreviewRoom(scene, state, height, notes);
   if (room < 13) return;
@@ -218,7 +195,7 @@ export function controlPickerScene(data: ProjectSnapshot, state: MonitorState, i
 function roleActions(role: RoleFact, width: number): MonitorRow[] {
   const actions = [
     ...(!role.presets?.length ? [] : [['preset-list', 'Presets'] as const]),
-    ['preset-copy', 'Copy preset'] as const,
+    ['preset-copy', 'Copy preset'] as const, ['preset-empty', 'Empty preset'] as const,
     ...(role.preset ? [['preset-rename', 'Rename'] as const, ['preset-delete', 'Delete'] as const] : []),
   ];
   const rows: MonitorRow[] = [];
@@ -240,17 +217,23 @@ function roleActions(role: RoleFact, width: number): MonitorRow[] {
 /** Match the footer's whole translated hints and their cells (same alignment as footRow). */
 export function presetFooterControls(frame: MonitorFrame, hints: string, width: number, y: number) {
   const kinds: Record<string, MonitorControl['kind']> = {
-    'p presets': 'preset-list', 'N copy': 'preset-copy', 'R rename': 'preset-rename', 'D delete': 'preset-delete',
-    '⏎ apply': 'preset-accept', '⏎ delete': 'preset-accept', '⏎ rename': 'preset-accept', 's save': 'preset-accept',
-    '⏎ continue': 'preset-accept', 'esc cancel': 'preset-cancel', 'esc discard': 'preset-cancel', 'o open file': 'control-open-file',
+    'p presets': 'preset-list', 'N copy': 'preset-copy', 'I empty': 'preset-empty', 'R rename': 'preset-rename', 'D delete': 'preset-delete',
+    '⏎ apply': 'preset-accept', '⏎ delete': 'preset-accept', '⏎ rename': 'preset-accept',
+    '⏎ continue': 'preset-accept', 'esc cancel': 'preset-cancel', 'o open file': 'control-open-file',
+    'i add': 'chain-add', 's save': 'chain-save', '⏎ edit': 'chain-edit', '⏎ choose': 'chain-edit', '⏎ fill': 'chain-accept',
+    'Del remove': 'chain-remove', 'm model': 'control-model',
+    'esc back': 'chain-back', 'esc discard': 'chain-back', '⏎ discard': 'chain-accept', 'esc resume': 'chain-back',
   };
   const labels = hints.split('  '), shown = footHints(hintText(hints), width);
   let x = width - visualLength(shown);
   for (const [i, label] of shown.split('  ').entries()) {
     const span = visualLength(label), kind = kinds[labels[i]!];
     if (kind) frame.controls.push({ kind, x, width: span, y });
-    if (labels[i] === 'c C preset') frame.controls.push({ kind: 'preset-next', x, width: 1, y },
-      { kind: 'preset-prev', x: x + 2, width: 1, y }, { kind: 'preset-next', x: x + 4, width: Math.max(0, span - 4), y });
+    if (labels[i] === 'c C preset' || labels[i] === 'K J move') {
+      const [first, second] = labels[i] === 'c C preset' ? ['preset-next', 'preset-prev'] as const : ['chain-up', 'chain-down'] as const;
+      frame.controls.push({ kind: first, x, width: 1, y }, { kind: second, x: x + 2, width: 1, y },
+        { kind: first, x: x + 4, width: Math.max(0, span - 4), y });
+    }
     x += span + 2;
   }
 }

@@ -2,7 +2,7 @@
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { ControlRadar, RoleRadar } from '../collectors/control-radar.js';
 import { formatTokenCount } from './lines/activity-line.js';
-import { placeItem, placeModels, type PlaceFact, type PlaceState, type RoleFact } from '../roles/role-control.js';
+import { placeDestination, placeItem, placeModels, type PlaceFact, type PlaceState, type RoleFact } from '../roles/role-control.js';
 import type { MonitorRow } from './monitor.js';
 import { pickOf, pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
 import { boardRow, section, mark, kvRows, minuteAge } from './workboard-rows.js';
@@ -44,6 +44,20 @@ export function placeRows(lead: string, p: PlaceFact, width: number, gap: string
   return [{ ...extra, text: tag ? pair(first, tag, width) : fit(first, width) },
     ...(two ? [{ ...extra, text: fit('    ' + ink(squeeze(model, width - 5)), width) }] : [])];
 }
+export function modelFieldRows(place: PlaceFact, prefix: string, width: number, extra: Pick<MonitorRow, 'item' | 'files' | 'modelPick'>, ink: (s: string) => string): MonitorRow[] {
+  const current = place.piModel?.isDefault || !place.model ? t('default') : shortModel(place.model).replace(/^[^/]+\//, '');
+  const arrow = mark('▾', 'v'), label = monitorText(placeDestination(place)), effort = monitorText(place.thinking ?? '');
+  const normal = `[${current} ${arrow}]`, aligned = prefix + ink(fit(label, Math.max(7, visualLength(label)))) + ' ';
+  const lead = visualLength(aligned + normal) <= width ? aligned : prefix + ink(label) + ' ';
+  const two = visualLength(lead + normal) > width;
+  const fieldLead = two ? ' '.repeat(visualLength(prefix)) : lead;
+  const x = visualLength(fieldLead);
+  const field = `[${squeeze(current, width - x - 4)} ${arrow}]`;
+  const control = { kind: 'control-model' as const, item: extra.item, x, width: visualLength(field) };
+  return [...(two ? [{ ...extra, text: pair(prefix + ink(label), theme.board.muted(effort), width) }] : []),
+    { ...extra, text: pair(fieldLead + theme.board.identifier(field), !two && visualLength(lead + field + effort) < width ? theme.board.muted(effort) : '', width), controls: [control] }];
+}
+
 /** What a row of a place carries for the keys: its id, its role file, and what the model picker needs when the place can have a model. */
 export function placeTarget(role: RoleFact, i: number, data: ProjectSnapshot): Pick<MonitorRow, 'item' | 'files' | 'modelPick'> {
   const place = role.places[i]!, pickable = role.source !== 'project' && placeModels(place, data.models) !== undefined;

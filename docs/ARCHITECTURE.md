@@ -220,17 +220,14 @@ each role's active/standby/off/exhausted/missing places and the machine's Harnes
 Control's Harnesses preview also uses that evaluation to show what a switch would change. Local pi
 settings (bounded, signature-cached) and the unfiltered discovery cache only supply provider attribution;
 there is no new outbound input or discovery on dispatch. The `harness-switch` action updates only
-`$HUD_HOME/harnesses.json` (`disabled`) via `roles/harness-switches.ts`, by private atomic replacement. A key on a place row becomes a `role-edit` action
-from the pure input handler; `tree-page.ts` applies it with `editPlaces`, which edits the
-places with the shipped catalog and `harnesses.json`, then writes through
-`writeRolePlaces`/`clearExhausted` (`$HUD_HOME/roles/<role>.json`, `exhausted.json`).
-A role file under the project's `.hud/roles` wins in the roster, so it is shown apart and
-refused; the place-replacement keys refuse a place with launch options they would lose. Machine switches never rewrite role files.
-The model is chosen in a picker (`MonitorState.projectInput`, `render/model-input.ts`; rows
-in `render/control-view.ts`): the place and the merged model lists ride on the place rows
-(`MonitorRow.modelPick`, from `ControlFacts.models`) so the handler does no I/O, typing
-reaches it as `text` on the decoder's key input (the panel's own keyboard only), and
-Enter returns the same `role-edit` action with the model id as `value`. Pi's picker groups
+`$HUD_HOME/harnesses.json` (`disabled`) via `roles/harness-switches.ts`, by private atomic replacement. Machine switches never rewrite role files. The in-place chain editor
+(`render/chain-input.ts`) works on an in-memory draft of raw places and uses snapshot facts for
+its preview. The field sheet feeds the existing pi picker (`MonitorState.projectInput`,
+`render/model-input.ts`), which returns a model ID to the sheet, not to disk. Save sends one
+`preset-edit` with the whole chain and the captured role revision; `tree-page.ts` applies it through
+`editPreset` and the existing atomic role writer. Project-pinned roles are read-only; target changes
+that would lose launch options are refused. `editPlaces` handles preset cycling and immediate quota
+clears separately. Pi's picker groups
 one list of exact IDs from the unfiltered discovery cache, skipping off providers for display only.
 Discovery keeps the last successful list and timestamp per source. The same cache holds optional
 pi capability facts from the same `pi --list-models` call and supplies unfiltered provider attribution.
@@ -358,7 +355,7 @@ All standalone panels decode their own keys and SGR mouse events through
 before writing (erasing after a full-width row would wipe its last cell).
 
 The panel polls its own installed entry signature per collection. A change must be
-quiet for two seconds and pass a bounded child import before reload. Dirty Settings
+quiet for two seconds and pass a bounded child import before reload. Dirty Settings and Control drafts
 delay replacement; a bad generation leaves the old panel running. Restart preserves
 argv/env, view/selection/scroll/expansion, Settings cursor, opening time and width
 override. `process.execve` replaces the process when available; otherwise one

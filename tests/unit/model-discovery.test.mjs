@@ -16,7 +16,7 @@ import {
   parsePiModels,
   readModelListCache,
 } from '../../dist/roles/model-discovery.js';
-import { controlFacts, editPlaces } from '../../dist/roles/role-control.js';
+import { controlFacts } from '../../dist/roles/role-control.js';
 import { placeCatalog, roleRegistry, writeRolePlaces } from '../../dist/roles/roster.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { MODEL_LISTS } from '../fixtures/project-page.mjs';
@@ -166,20 +166,11 @@ test('pi/agy/grok discovery caches under $HUD_HOME/display for a day, merges in 
   assert.deepEqual(catalog.cli.models.claude, ['opus', 'sonnet', 'haiku', 'fable', 'claude-typed-1']);
   assert.deepEqual(catalog.cli.models.codex, ['gpt-6.1-sol', 'gpt-6-luna']);
 
-  // editPlaces cycles discovered -> catalog -> typed -> unset.
-  const cycled = editPlaces(s.hud, s.cwd, s.env, { role: 'imp', index: 0, op: 'model', step: 1 }, NOW + 60_000, bundled);
-  assert.deepEqual(cycled, { ok: true, index: 0 });
-  assert.equal(JSON.parse(fs.readFileSync(join(s.hud, 'roles/imp.json'), 'utf8')).run[0].model, undefined);
-  editPlaces(s.hud, s.cwd, s.env, { role: 'imp', index: 0, op: 'model', step: 1 }, NOW + 60_000, bundled);
-  assert.equal(JSON.parse(fs.readFileSync(join(s.hud, 'roles/imp.json'), 'utf8')).run[0].model, 'arena/arena-fresh-1');
-  editPlaces(s.hud, s.cwd, s.env, { role: 'imp', index: 0, op: 'model', step: 1 }, NOW + 60_000, bundled);
-  assert.equal(JSON.parse(fs.readFileSync(join(s.hud, 'roles/imp.json'), 'utf8')).run[0].model, 'openai/gpt-6.1-sol');
-
   // Expiring the day cache triggers refresh on open, but does not discard the last-good data.
   assert.ok(readModelListCache(s.hud, NOW + MODEL_CACHE_TTL_MS - 1));
   assert.equal(readModelListCache(s.hud, NOW + MODEL_CACHE_TTL_MS), null);
   const expired = placeCatalog(s.hud, bundled, undefined, NOW + MODEL_CACHE_TTL_MS);
-  assert.deepEqual(expired.pi.models, catalog.pi.models.filter((id) => id !== 'custom/typed-pi'));
+  assert.deepEqual(expired.pi.models, catalog.pi.models);
   assert.deepEqual(expired.cli, catalog.cli);
 });
 
@@ -309,7 +300,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
       state: {
         ...initialMonitorState(),
         mainTab: 'project',
-        controlNav: { projectCursor: 'project:role:imp:0', projectFolded: new Set(['agents', 'files', 'usage', 'role:imp']) },
+        controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files', 'usage']) },
       },
     },
     (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v)
@@ -350,7 +341,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
 
   // Open Control with Tab -> spawns pi, agy, grok once each.
   child.stdin.write('\t');
-  await until(() => /1 ◉ pi/.test(stripAnsi(out)) && spawns().length === 3, 'Control opened & started discovery');
+  await until(() => /imp \[default\]/.test(stripAnsi(out)) && spawns().length === 3, 'Control opened & started discovery');
   assert.deepEqual([...spawns()].sort(), ['agy', 'grok', 'pi']);
 
   // Sit through multiple refresh ticks -> still 0 extra spawns.
@@ -363,7 +354,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   await until(() => stripAnsi(out.slice(left)).includes('Progress'), 'back to hub');
   const back = out.length;
   child.stdin.write('\t');
-  await until(() => /1 ◉ pi/.test(stripAnsi(out.slice(back))), 'Control re-opened');
+  await until(() => /imp \[default\]/.test(stripAnsi(out.slice(back))), 'Control re-opened');
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(spawns().length, 3);
 
@@ -372,7 +363,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   fs.writeFileSync(hold, 'hold');
   child.stdin.write('rrr');
   await until(() => spawns().length === 6, 'r started a single refresh');
-  child.stdin.write('rrmGPT-LIVE');
+  child.stdin.write('rr\rmGPT-LIVE');
   await until(() => /Selected ─/.test(stripAnsi(out)) && /gpt-live-1/.test(stripAnsi(out)), 'picker filters the last-good list during the refresh');
   child.stdin.write('\x12');
   await new Promise((r) => setTimeout(r, 100));
@@ -395,7 +386,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   assert.deepEqual(spawns().slice(-3).sort(), ['agy', 'grok', 'pi']);
   fs.unlinkSync(hold);
   await until(() => readModelListCache(s.hud)?.fetchedAt > secondList, 'picker refresh finished');
-  child.stdin.write('\x7f\x7f\x7fOPENAI/GPT-LIVE\r');
+  child.stdin.write('\x7f\x7f\x7fOPENAI/GPT-LIVE\r\x1b[F\rs');
   await until(
     () => fs.existsSync(join(s.hud, 'roles/imp.json')) && JSON.parse(fs.readFileSync(join(s.hud, 'roles/imp.json'), 'utf8')).run[0].model === 'openai/gpt-live-1',
     'm selects discovered model'

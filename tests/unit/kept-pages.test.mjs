@@ -370,7 +370,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
     setLanguage(lang);
   });
   const draw = (state, options = {}) =>
-    renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 51, nowMs: NOW, ...options });
+    renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 58, nowMs: NOW, ...options });
   const home = draw(f.states.home),
     text = plainFrame(home).join('\n');
   assert.match(text, /@ imp  Retry/);
@@ -395,7 +395,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   setLanguage('zh');
   const chinese = plainFrame(draw({ ...opened, focus: 'agents' })).join('\n');
   assert.doesNotMatch(chinese, /在 Codex 自带的面板中|press .*first/);
-  assert.match(chinese, /c C\s+角色：下一个／上一个预设[\s\S]*m\s+位置：选择模型/);
-  assert.match(chinese, /在控制标签中 Enter 展开折叠项或备选链。/);
+  assert.match(chinese, /c C\s+角色：下一个／上一个预设[\s\S]*m\s+位置：打开模型字段/);
+  assert.match(chinese, /在控制的备选链中，按 Enter 编辑位置/);
   assert.doesNotMatch(chinese, /On Control|pick a model/);
 });

@@ -10,8 +10,9 @@ import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ProjectPage } from './project-view.js';
-import type { PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
+import type { ModelLists, PlaceEdit, PlaceFact, PresetEdit, RoleFact } from '../roles/role-control.js';
 import type { PresetInput } from './preset-input.js';
+import type { ChainInput } from './chain-input.js';
 import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
 import type { TryAction, TryTarget } from '../collectors/try-records.js';
@@ -59,6 +60,7 @@ export interface MonitorState {
   controlHarnessAdd?: { text: string; pick?: string };
   controlHarnessNotice?: { id: string; off: boolean };
   controlPresetInput?: PresetInput;
+  controlChain?: ChainInput;
   controlPresetNotice?: { role: string; name: string | null };
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
@@ -80,7 +82,7 @@ export interface MonitorState {
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;
   /** Model picker on this place. Group overrides belong to the current query; the wheel moves the window, not the cursor. */
-  projectInput?: { role: string; index: number; text: string; pick?: string; groups?: Record<string, boolean>; scroll?: number; clicked?: string };
+  projectInput?: { role: string; index: number; text: string; pick?: string; groups?: Record<string, boolean>; scroll?: number; clicked?: string; sheetPlace?: PlaceFact };
   /** A HUD job the owner asked to stop (`X`): a one-row prompt waits for `y` or Enter, any other input cancels. */
   confirmStop?: { jobId: string; role: string; dir: string };
   homeTarget?: WorkTarget;
@@ -179,7 +181,8 @@ export interface MonitorControl {
     | 'harness-restore'
     | 'harness-back'
     | 'harness-refresh'
-    | `preset-${'list' | 'copy' | 'rename' | 'delete' | 'next' | 'prev' | 'accept' | 'cancel'}`
+    | `preset-${'list' | 'copy' | 'empty' | 'rename' | 'delete' | 'next' | 'prev' | 'accept' | 'cancel'}`
+    | `chain-${'add' | 'edit' | 'remove' | 'up' | 'down' | 'save' | 'back' | 'accept'}`
     | 'settings'
     | 'help'
     | 'brief';
@@ -203,6 +206,8 @@ export interface MonitorFrame {
   projects?: ProjectChoice[];
   helpPage?: { count: number; total: number };
   expData?: ExpData;
+  controlModels?: ModelLists;
+  controlNow?: number;
   /** Root whose Project rows are painted (may lag the requested Project root). */
   projectDisplayRoot?: string;
 }
@@ -251,6 +256,7 @@ export interface MonitorOutcome {
     /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
     | ({ type: 'role-edit' } & PlaceEdit)
     | ({ type: 'preset-edit' } & PresetEdit)
+    | { type: 'model-picked'; value: string }
     | { type: 'harness-switch'; id: string; off: boolean }
     | { type: 'record-try'; action: TryAction; target: TryTarget }
     | { type: 'refresh-models' }

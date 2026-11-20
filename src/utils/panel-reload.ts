@@ -20,17 +20,13 @@ export function readPanelPlace(): Place | undefined {
         const old = state.projectCursor?.replace('project:fold:role:', 'project:role:');
         const role = controlRoleOf(old), roleItem = role && controlRoleItem(role);
         const folded = new Set<string>(CONTROL_FOLDS);
-        if (role) {
-          folded.delete('healthy');
-          if (state.panelLayout !== 'split' && old !== roleItem) folded.add(`role:${role}`);
-        }
+        if (role) folded.delete('healthy');
         for (const key of ['files', 'agents']) if (state.projectFolded?.has && !state.projectFolded.has(key)) folded.delete(key);
         place.state = storeControlNavigation({}, {
           ...state, mainTab: state.mainTab === 'project' ? 'control' : state.mainTab, projectPage: undefined,
           projectList: undefined, projectBack: undefined,
-          projectCursor: old === 'split:radar' ? 'project:fold:usage' : old === 'split:files' ? 'project:fold:files' : old,
-          projectFolded: folded, splitList: roleItem, splitFocus: state.panelLayout === 'split' && roleItem && old !== roleItem ? 'preview' : undefined,
-          splitSub: old, boardRevealed: undefined,
+          projectCursor: old === 'split:radar' ? 'project:fold:usage' : old === 'split:files' ? 'project:fold:files' : roleItem ?? old,
+          projectFolded: folded, splitList: undefined, splitFocus: undefined, splitSub: undefined, boardRevealed: undefined,
         });
       }
       place.openedAt ??= Date.now(); // Legacy handoffs start their lifetime when consumed.
@@ -69,7 +65,8 @@ export class PanelReload {
     return ok;
   }
   async restart(place: Place, finish: () => void): Promise<void> {
-    const { trySelection: _marks, ...state } = place.state;
+    // Drafts delay reload; a clean focus can be reopened from its role row. Never put raw launch options in the handoff environment.
+    const { trySelection: _marks, controlChain: _chain, ...state } = place.state;
     const saved = JSON.stringify({ ...place, state }, (_key, value) => value instanceof Set ? { panelSet: [...value] } : value);
     const env: NodeJS.ProcessEnv = { ...this.env, [PLACE]: saved };
     if (this.env[SUPERVISED]) {

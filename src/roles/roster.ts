@@ -317,6 +317,7 @@ type ChainChoice = { preset: string | null } | { run: RolePlace[] };
 export type PresetChange =
   | { op: 'select'; name: string | null }
   | { op: 'copy' | 'rename'; name: string }
+  | { op: 'create'; name: string; run: RolePlace[] }
   | { op: 'delete' }
   | { op: 'run'; run: RolePlace[] };
 function namedRole(value: unknown): string | undefined {
@@ -770,8 +771,8 @@ export function roleRegistry(
         if (!validPresetName(name)) throw new Error('bad preset name');
         if (change.op !== 'run' && presets.has(name)) throw new Error('preset name already exists');
         // Rename the saved definition, not a legacy file chain which only compares equal to it.
-        const run = change.op === 'run' ? change.run : editableRun(role, change.op === 'rename' ? active! : undefined);
-        const updated = { ...(change.op === 'copy' ? undefined : saved?.raw), name, run };
+        const run = change.op === 'run' || change.op === 'create' ? change.run : editableRun(role, change.op === 'rename' ? active! : undefined);
+        const updated = { ...(change.op === 'run' || change.op === 'rename' ? saved?.raw : undefined), name, run };
         const at = local.findIndex((p) => p.name === name);
         if (at < 0) local.push(updated);
         else local[at] = updated;

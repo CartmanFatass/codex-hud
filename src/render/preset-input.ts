@@ -11,8 +11,7 @@ import { t } from './i18n.js';
 
 export type PresetInput = { role: RoleFact; error?: string } & (
   | { mode: 'list'; text: string; at: number }
-  | { mode: 'copy' | 'rename'; text: string }
-  | { mode: 'draft'; name: string; scroll?: number }
+  | { mode: 'copy' | 'empty' | 'rename'; text: string }
   | { mode: 'delete'; scroll?: number }
 );
 const muted = theme.board.muted;
@@ -42,16 +41,17 @@ export function presetInputKey(state: MonitorState, input: WorkbenchInput, ctx: 
   const choose = (at = sheet.mode === 'list' ? sheet.at : 0) => {
     if (sheet.mode === 'list') return entries[at] ? commit({ op: 'select', name: entries[at].name }) : out();
     if (sheet.mode === 'delete') return commit({ op: 'delete' });
-    if (sheet.mode === 'draft') return commit({ op: 'copy', name: sheet.name });
     const { text } = sheet;
     if (!validPresetName(text)) return out({ ...sheet, error: 'bad preset name' });
     if (sheet.role.presets?.some((p) => p.name === text)) return out({ ...sheet, error: 'preset name already exists' });
-    return sheet.mode === 'rename' ? commit({ op: 'rename', name: text }) : out({ role: sheet.role, mode: 'draft', name: text });
+    if (sheet.mode === 'rename') return commit({ op: 'rename', name: text });
+    return { state: { ...state, controlPresetInput: undefined, controlChain: { role: sheet.role, at: 0,
+      draft: { name: text, run: sheet.mode === 'empty' ? [] : sheet.role.editor?.places ?? [] } } }, close: false };
   };
   const pane = ctx.frame?.panes.find((p) => p.id === 'preview') ?? ctx.frame?.panes.find((p) => p.id === 'agents');
   const page = Math.max(1, (pane?.height ?? 1) - 2);
   const step = (by: number) => sheet.mode === 'list' ? pick(sheet.at + by)
-    : sheet.mode === 'draft' || sheet.mode === 'delete'
+    : sheet.mode === 'delete'
       ? out({ ...sheet, scroll: Math.max(0, Math.min(pane ? presetSheet(sheet, pane.width, pane.height - Number(pane.id === 'agents')).scrollMax ?? 0 : 0,
         (sheet.scroll ?? 0) + by)) }) : out();
   if (input.type === 'mouse') {
@@ -64,8 +64,8 @@ export function presetInputKey(state: MonitorState, input: WorkbenchInput, ctx: 
     return at === undefined || sheet.mode !== 'list' ? out() : Number(at) === sheet.at ? choose(sheet.at) : pick(Number(at));
   }
   if (input.key === 'escape' || (input.key === 'close' && !input.text)) return cancel();
-  if (sheet.mode === 'draft' || sheet.mode === 'delete') {
-    if (sheet.mode === 'draft' ? input.key === 'settings-save' : input.key === 'enter' && !input.text) return choose();
+  if (sheet.mode === 'delete') {
+    if (input.key === 'enter' && !input.text) return choose();
     if (input.key === 'page-up' || input.key === 'page-down') return step(input.key === 'page-up' ? -page : page);
     if (!input.text && (input.key === 'up' || input.key === 'down')) return step(input.key === 'up' ? -1 : 1);
     return out();
@@ -92,7 +92,7 @@ export function presetSheet(sheet: PresetInput, width: number, room: number): {
 } {
   const name = sheet.role.preset ?? null;
   const label = monitorText(sheet.role.role);
-  const right = t({ list: 'choose preset', copy: 'new · from current chain', rename: 'rename preset', delete: 'delete preset', draft: 'Not saved' }[sheet.mode]);
+  const right = t({ list: 'choose preset', copy: 'new · from current chain', empty: 'new · from empty', rename: 'rename preset', delete: 'delete preset' }[sheet.mode]);
   const rule = { label, right };
   const error = sheet.error ? flowLines(t(sheet.error), width).map((line) => boardRow(fit(theme.board.attention(line), width))) : [];
   const field = (lead: string, text: string, count: string) => boardRow(pair(
@@ -122,22 +122,19 @@ export function presetSheet(sheet: PresetInput, width: number, room: number): {
     return { rule, hints, cursor: item(sheet.at), rows: [field('/ ', sheet.text, String(entries.length)), ...error,
       ...(entries.length ? entries.slice(start, start + size) : lines(t('No matching presets'))), ...full, ...tail] };
   }
-  if (sheet.mode === 'delete' || sheet.mode === 'draft') {
-    const deleting = sheet.mode === 'delete';
-    const chain = deleting ? sheet.role.fileChain ?? sheet.role.places : sheet.role.places;
-    const header = deleting ? [...lines(t('Delete {name}?', { name: nameOf(name) })),
-      ...lines(t('Use file chain next')), ...lines(saved(null, nextOf(chain))), boardRow('')]
-      : [...lines(`[${nameOf(sheet.name)}] · ${t('Not saved')}`), ...lines(`${t('saved')}  ${saved(name)}`),
-        ...lines(`${t('Chain')} · ${chain.length}`)];
+  if (sheet.mode === 'delete') {
+    const chain = sheet.role.fileChain ?? sheet.role.places;
+    const header = [...lines(t('Delete {name}?', { name: nameOf(name) })),
+      ...lines(t('Use file chain next')), ...lines(saved(null, nextOf(chain))), boardRow('')];
     const places = chain.flatMap((p, i) => {
       const token = (p.provider && p.model?.startsWith(`${p.provider}/`) ? p.model.slice(p.provider.length + 1) : p.model) ?? p.kind;
       const place = monitorText([placeDestination(p), token, p.thinking].filter(Boolean).join('  '));
-      const lead = `  ${i + 1} ${deleting ? glyph(p.state) + ' ' : ''}`, indent = ' '.repeat(visualLength(lead));
+      const lead = `  ${i + 1} ${glyph(p.state)} `, indent = ' '.repeat(visualLength(lead));
       return flowLines(place, width - indent.length).map((line, n) => boardRow(fit((n ? indent : lead) + line, width)));
     });
     const available = Math.max(1, room - header.length - error.length);
     const scroll = Math.min(sheet.scroll ?? 0, Math.max(0, places.length - available));
-    const hints = deleting ? '⏎ delete  esc cancel' : 's save  esc discard';
+    const hints = '⏎ delete  esc cancel';
     return { rule, hints: hints + (places.length > available ? '  PgUp PgDn scroll' : ''),
       rows: [...error, ...header, ...places.slice(scroll, scroll + available),
         ...(places.length < available ? lines(muted(t('Global role · all projects'))) : [])],
@@ -145,7 +142,7 @@ export function presetSheet(sheet: PresetInput, width: number, room: number): {
       scrollMax: Math.max(0, places.length - available) };
   }
   return { rule, hints: sheet.mode === 'rename' ? 'type a name  ⏎ rename  esc cancel' : 'type a name  ⏎ continue  esc cancel',
-    rows: [field(`${t('name')}  `, sheet.text, `${sheet.text.length}/32`), ...error,
-      ...lines(t('A–Z a–z 0–9 . _ - · 1–32 chars')), ...lines(`${t('saved')}  ${saved(name)}`),
-      ...lines(muted(t('Global role · all projects')))] };
+    rows: [...(sheet.mode === 'rename' ? [] : lines(t('New preset'))), field(`${t('name')}  `, sheet.text, `${sheet.text.length}/32`), ...error,
+      ...lines(t('A–Z a–z 0–9 . _ - · 1–32 chars')),
+      ...lines(muted(t('must differ from {role}’s names', { role: label }))), boardRow(''), ...lines(`${t('saved')}  ${saved(name)}`)] };
 }

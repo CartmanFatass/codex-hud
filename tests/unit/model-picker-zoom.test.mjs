@@ -96,14 +96,16 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     const zh = lang === 'zh', drawing = (state, width = 120, zoomed, data = sample.data) => f.render(width, lang, state, 36, data, true, 'unicode', 'none', { modelPickerZoomed: zoomed });
     const entry = sample.draw(lang, sample.state(layout), 24), opening = send(entry, 'place-model');
     assert.ok(opening.state.projectInput);
+    // The view's live-data cases below test the picker itself; the real sheet/zoom handoff is tested separately.
+    const picker = { ...opening.state, controlChain: undefined, projectInput: { ...opening.state.projectInput, sheetPlace: undefined } };
     const confirmed = fake(() => reply(true)), preexisting = fake(() => reply(false)), refused = fake(() => ({ ok: false }));
     for (const { zoom } of [confirmed, preexisting, refused]) zoom.open();
     await nextTurn();
     const draw = (state, data = sample.data) => drawing(state, 120, confirmed.zoom.zoomed, data);
-    const a = draw(opening.state);
+    const a = draw(picker);
     assert.equal(a.lines.length, 36);
     assert.ok(a.lines.every((line) => visualLength(line) === 120));
-    assert.deepEqual(cells(a), cells(drawing(opening.state, 120, preexisting.zoom.zoomed)));
+    assert.deepEqual(cells(a), cells(drawing(picker, 120, preexisting.zoom.zoomed)));
     assert.match(left(a).join('\n'), /^▾ anthropic ─+ 9\n +claude-opus-5-5 +500K +64K +✓ +✓/m);
     assert.match(left(a).join('\n'), /openai\/gpt-6.1-sol +1M +128K +✓ +✓ +✗/);
     assert.match(right(a), /xai\/grok-4.7/);
@@ -112,10 +114,10 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     const normalized = (line) => line.trim().replace(/ +/g, ' ');
     const modelHeader = build(lang).frames.find((frame) => frame.id === '3e').frame.rows[2].segs.map((s) => s.t).join('').split('│')[0];
     assert.equal(normalized(left(a)[1]), normalized(modelHeader));
-    const pending = drawing(opening.state);
-    assert.deepEqual(cells(drawing(opening.state, 120, refused.zoom.zoomed)), cells(pending));
-    assert.deepEqual(cells(drawing(opening.state, 99, confirmed.zoom.zoomed)), cells(drawing(opening.state, 99)));
-    assert.notDeepEqual(cells(drawing(opening.state, 100, true)), cells(drawing(opening.state, 100)));
+    const pending = drawing(picker);
+    assert.deepEqual(cells(drawing(picker, 120, refused.zoom.zoomed)), cells(pending));
+    assert.deepEqual(cells(drawing(picker, 99, confirmed.zoom.zoomed)), cells(drawing(picker, 99)));
+    assert.notDeepEqual(cells(drawing(picker, 100, true)), cells(drawing(picker, 100)));
     assert.match(cells(pending).join('\n'), /^▸ anthropic ─+/m);
 
     const bSelected = click(a, 5, yOf(a, /openai\/gpt-6.1-sol/));
@@ -141,7 +143,7 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     assert.match(right(selected), /arena\/grok-4.7/);
     assert.match(right(selected), /xai\/grok-4.7/);
     assert.match(right(selected), /imp \[lab\]/);
-    assert.deepEqual(send(selected, 'enter').action, { type: 'role-edit', role: 'imp', index: 0, op: 'model', value: 'arena/grok-4.7' });
+    assert.deepEqual(send(selected, 'enter').action, { type: 'model-picked', value: 'arena/grok-4.7' });
     assert.equal(send(selected, 'enter').state.projectInput, undefined);
     assert.deepEqual(send(selected, 'model-refresh').action, { type: 'refresh-models' });
     const cleared = send(selected, 'escape');
@@ -152,9 +154,9 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     assert.match(left(d).join('\n'), /^› +meta-llama\/.*….*-fp8 +1M +16K +– +✓/m);
     assert.equal(right(d).split('\n').slice(0, 2).map((s) => s.trim()).join(''), 'arena/meta-llama/llama-4-maverick-17b-128e-instruct-fp8');
 
-    const allOpenOff = draw(opening.state, dataOff);
+    const allOpenOff = draw(picker, dataOff);
     const groups = { anthropic: false, arena: false, google: false, mistral: false, openai: false };
-    const e = draw({ ...opening.state, projectInput: { ...opening.state.projectInput, groups } }, dataOff);
+    const e = draw({ ...picker, projectInput: { ...picker.projectInput, groups } }, dataOff);
     for (const frame of [allOpenOff, e]) {
       assert.ok(frame.lines.every((line) => visualLength(line) === 120));
       assert.match(left(frame).join('\n'), /› ◉ xai\/grok-4.7 +256K +64K +✓ +✓ +⊘/);
@@ -182,7 +184,7 @@ test('live panel wiring opens with herdr on PATH and restores its own pane on sh
   f.put(herdr, `#!${process.execPath}\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\n` +
     `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');\nconsole.log(${JSON.stringify(reply(true).stdout)});\n`);
   chmodSync(herdr, 0o700);
-  const state = onControl({ projectCursor: 'project:role:imp:0', projectFolded: new Set(['role:imp', 'usage', 'files']) });
+  const state = onControl({ projectCursor: 'project:role:imp' });
   const place = JSON.stringify({ state, settings: null }, (_k, v) => v instanceof Set ? { panelSet: [...v] } : v);
   const entry = pathToFileURL(resolve('dist/tree-page.js')).href;
   const child = spawn(process.execPath, ['--input-type=module', '-e',
@@ -203,10 +205,17 @@ test('live panel wiring opens with herdr on PATH and restores its own pane on sh
     }
     assert.fail(`missing ${re}: ${stderr}\n${stripAnsi(output)}`);
   };
-  await waitFor(/\[current ▾\]/);
+  await waitFor(/imp \[Custom\]/);
+  child.stdin.write('\rm');
+  await waitFor(/1 model · list .* old · zoomed/);
+  output = '';
+  child.stdin.write('\r');
+  await waitFor(/Edit place/);
+  const role = JSON.parse(readFileSync(join(f.hud, 'roles/imp.json'), 'utf8'));
+  assert.equal(role.run[0].model, 'synthetic/current');
   child.stdin.write('m');
   await waitFor(/1 model · list .* old · zoomed/);
   child.kill('SIGTERM');
   assert.deepEqual(await exited, { code: 0, signal: null }, stderr);
-  assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse).filter((args) => args[1] === 'zoom'), [on, off]);
+  assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse).filter((args) => args[1] === 'zoom'), [on, off, on, off]);
 });

@@ -1,4 +1,4 @@
-/** Pure picker input: every pi provider in one list; Enter emits the existing role edit. */
+/** Pure picker input: every pi provider in one list; Enter returns the chosen model to its caller. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { MODEL_ID_MAX } from '../roles/model-discovery.js';
 import { qualifiedPiProvider } from '../roles/roster.js';
@@ -27,11 +27,8 @@ export interface PickEntry {
   tags?: string[];
 }
 
-/** Pi and CLI fields open even on an empty or single-model list; browser places keep their existing shortcut. */
-export const pickable = (pick: ModelPick) =>
-  pick.place.harness !== 'bro' || (placeModels(pick.place, pick.lists)?.length ?? 0) > 1;
 export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput): ModelPick | undefined {
-  const role = data?.roles.find((r) => r.role === input.role), place = role?.places[input.index];
+  const role = data?.roles.find((r) => r.role === input.role), place = input.sheetPlace ?? role?.places[input.index];
   return data && role && place && role.source !== 'project' && placeModels(place, data.models) ? { place, lists: data.models, presets: role.presets, preset: role.preset } : undefined;
 }
 
@@ -115,7 +112,7 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
       return done();
     }
     next.projectInput = undefined;
-    return done({ type: 'role-edit', role: open.role, index: open.index, op: 'model', value: entry.value });
+    return done({ type: 'model-picked', value: entry.value });
   };
   if (input.type === 'mouse') {
     if (input.button !== 'left') {

@@ -10,7 +10,10 @@ import { EXHAUSTED_TTL_MS, parseQuotaResetMs } from '../../dist/roles/exhausted.
 import { clearExhausted, markExhausted, placeKey, readExhausted, roleRegistry } from '../../dist/roles/roster.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
-import { renderMonitor } from '../../dist/render/monitor.js';
+import { handleMonitorInput, renderMonitor } from '../../dist/render/monitor.js';
+import { finishChain } from '../../dist/render/chain-input.js';
+import { editPreset } from '../../dist/roles/role-control.js';
+import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { plain, onControl, TREE } from '../fixtures/project-page.mjs';
 
 const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
@@ -183,6 +186,74 @@ async function until(check, timeout = 3000) {
     await new Promise((done) => setTimeout(done, 20));
   }
 }
+
+test('empty draft cancel writes nothing; a reordered two-place draft is the chain used by roster and create', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t), home = f.env.HUD_HOME, file = join(home, 'roles/owner-imp.json');
+  const put = (path, json) => { fs.mkdirSync(join(path, '..'), { recursive: true }); fs.writeFileSync(path, JSON.stringify(json)); };
+  const pi = { harness: 'pi', model: 'xai/grok-4.7', thinking: 'high' };
+  const cli = { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' };
+  const saved = { role: 'imp', instructions: 'implementer', can_continue: true, run: [{ harness: 'pi', model: 'synthetic/file-chain' }],
+    active_preset: 'daily', presets: [{ name: 'daily', run: [pi, cli] }], unknown: { keep: true } };
+  put(file, saved);
+  const now = Date.now();
+  put(join(home, 'display/model-lists.json'), { version: 1, fetchedAt: now, pi: [pi.model] });
+  setHarnessDisabled(home, 'cli:grok', true);
+  const before = fs.readFileSync(file), inode = fs.statSync(file).ino;
+  const collector = new ProjectCollector(f.root, home, f.env, f.env.HOME), data = await collector.collect('control', {}, now);
+  const decoder = new WorkbenchInputDecoder('workboard');
+  let state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout: 'split' });
+  const frame = () => renderMonitor({ state, tree: TREE, project: data, projectName: 'harbor-api', width: 40, height: 28, nowMs: now });
+  const keys = (raw) => {
+    for (const input of [...decoder.push(Buffer.from(raw)), ...decoder.flushEscape()]) {
+      const view = frame(), out = handleMonitorInput(view.state, input, { frame: view, tree: TREE, nowMs: now });
+      state = out.state;
+      if (out.action?.type === 'preset-edit') {
+        const done = editPreset(home, f.root, f.env, out.action);
+        assert.equal(done.ok, true, JSON.stringify(done));
+        state = finishChain(state);
+        collector.refreshRoles(data, now);
+      } else assert.equal(out.action, undefined);
+    }
+  };
+  keys('Icancelled\r');
+  assert.match(plain(frame()).join('\n'), /Not saved · needs a place to save/);
+  keys('\x1b');
+  assert.match(plain(frame()).join('\n'), /Discard edits\?/);
+  keys('\r');
+  assert.equal(state.controlChain, undefined);
+  assert.deepEqual(fs.readFileSync(file), before);
+  assert.equal(fs.statSync(file).ino, inode);
+
+  const DOWN = '\x1b[B', END = '\x1b[F';
+  keys('Inightly\ri\rgrok\r');
+  assert.match(plain(frame()).join('\n'), /Off targets cannot be selected/);
+  assert.equal(state.controlChain.sheet.place, undefined);
+  keys('\x1b');
+  keys(`\rpi\r${DOWN}\r${pi.model}\r${DOWN}\rhigh\r${END}\r`);
+  keys(`i\ragy\r${DOWN}\rhydrogen\r${END}\r`);
+  assert.deepEqual(state.controlChain.draft.run.map((p) => p.raw.harness), ['pi', 'cli']);
+  keys('K');
+  assert.match(plain(frame()).join('\n'), /saved +\[daily\] → pi\/xai\ndraft +agy \(unsaved\)/);
+  assert.deepEqual(fs.readFileSync(file), before, 'no write before the whole draft is saved');
+  assert.deepEqual(f.commands(), [], 'typing and Save preparation launch nothing');
+  keys('s');
+  assert.equal(state.controlChain, undefined);
+  const disk = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual(disk, { ...saved, active_preset: 'nightly', presets: [saved.presets[0], { name: 'nightly', run: [cli, { ...pi, pi_role: 'implementer', split: false }] }] });
+  assert.deepEqual(fs.readdirSync(join(home, 'roles')), ['owner-imp.json']);
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.notEqual(fs.statSync(file).ino, inode);
+  const roster = async () => (await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === 'imp');
+  const create = (request_key) => f.call('hud_create', { role: 'imp', request_key, task: 'Synthetic draft order check.' });
+  const role = await roster();
+  assert.deepEqual([role.preset, role.run.map((p) => p.harness), role.runs_on.agent], ['nightly', ['cli', 'pi'], 'agy']);
+  const first = await create('draft-order-cli');
+  assert.equal(JSON.parse(fs.readFileSync(join(first.task_dir, 'job.json'), 'utf8')).place.agent, 'agy');
+  markExhausted(home, placeKey(cli), 'HTTP 429', Date.now());
+  const fallback = await create('draft-order-pi');
+  assert.equal(JSON.parse(fs.readFileSync(join(fallback.task_dir, 'job.json'), 'utf8')).place_key, 'pi:xai/grok-4.7');
+  assert.equal((await roster()).runs_on.harness, 'pi');
+});
 
 test('machine switches: panel, roster and create use the same daily chain, without editing it', { timeout: 15000 }, async (t) => {
   const f = await fixture(t), home = f.env.HUD_HOME;

@@ -34,7 +34,7 @@ function driver(f, { width = 40, height = 40, data = f.data, state = split(), bo
 test('a printable key is one decoder name, and the Help page lists no key twice', async (t) => {
   // Lower case n flags, while the upper-case preset management keys act only on role rows.
   assert.deepEqual([...'n<>'].map((c) => decode(c)[0].key), ['try-flag', 'previous-trouble', 'next-trouble']);
-  assert.deepEqual([...'NRDg'].map((c) => decode(c)[0].key), ['preset-copy', 'preset-rename', 'preset-delete', '']);
+  assert.deepEqual([...'NIRDgpPeE'].map((c) => decode(c)[0].key), ['preset-copy', 'preset-empty', 'preset-rename', 'preset-delete', '', 'preset-list', '', '', '']);
   assert.deepEqual(['i', '\x1b[3~', '+', '-', '='].map((c) => decode(c)[0].key), ['place-add', 'place-remove', 'list-grow', 'list-shrink', 'list-grow']);
   // `+` and `=` are one physical key and one meaning; no key besides them names the same action.
   const named = new Map();
@@ -80,15 +80,16 @@ test('the Control plane’s place keys are not the Split ratio’s: i and Delete
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.control, state: split({ mainTab: 'control' }) });
   d.run('enter');
-  assert.equal(d.state.controlNav.splitFocus, 'preview', 'the keys are on the places');
+  assert.equal(d.state.controlChain.at, 0, 'the keys are on the places');
   const ratio = d.state.splitRatio;
   for (const key of ['list-grow', 'list-shrink']) {
     const out = d.run(key);
     assert.equal(out.action, undefined, `${key} edits no place`);
   }
   assert.equal(d.state.splitRatio, ratio, 'and in the preview the ratio keys leave the share alone');
-  assert.equal(d.run('place-add').action.op, 'add');
-  assert.equal(d.run('place-remove').action.op, 'remove');
+  assert.equal(d.run('place-add').state.controlChain.sheet.field, 'target');
+  d.run('escape');
+  assert.equal(d.run('place-remove').state.controlChain.draft.run.length, 2);
 });
 
 test('g means one thing: a HUD job’s tab; the top of the list is the Home key', async (t) => {
@@ -126,7 +127,7 @@ test('the footer shows the keys the selected row accepts', async (t) => {
   assert.doesNotMatch(foot(control), /c C preset|⏎ places/);
   const places = driver(busy, { width: 120, data: busy.control, state: split({ mainTab: 'control' }) });
   places.run('enter');
-  assert.match(foot(places), /i add {2}Del remove/);
+  assert.match(foot(places), /i add.*Del remove/);
   assert.doesNotMatch(foot(places), /\+ -/);
 });
 
@@ -157,7 +158,8 @@ test('at 40 columns the role row retains the preset and next target; detail reta
   const { busy } = await fixtures(t);
   const control = { ...busy.control, radar: undefined };
   for (const lang of ['en', 'zh']) for (const panelLayout of ['split', 'classic']) {
-    const state = split({ mainTab: 'control', panelLayout, controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'usage', 'files', 'role:imp']) } });
+    const state = split({ mainTab: 'control', panelLayout, controlNav: { projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'usage', 'files']) },
+      ...(panelLayout === 'classic' ? { controlChain: { role: control.roles.find((r) => r.role === 'imp'), at: 0 } } : {}) });
     const frame = busy.render(40, lang, 60, state, control), text = plain(frame).join('\n');
     assert.match(text, lang === 'en' ? /imp \[Custom\] → agy/ : /imp \[自定义\] → agy/);
     assert.match(text, /pi\/openai +\[gpt-6\.1-sol ▾\]/);

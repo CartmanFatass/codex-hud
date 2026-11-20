@@ -369,7 +369,7 @@
     "",
     "",
     "",
-    "    ↑↓ move  ⏎ open  N copy  h harnesses"
+    "        ↑↓ move  ⏎ open  N copy  I empty"
   ],
   "control-120-en": [
     " Home ?1  Project ?2  Control                                                                                  models on",
@@ -411,7 +411,7 @@
     "",
     "",
     "",
-    "                                                    ↑↓ move  ⏎ open  N copy  h harnesses  o open file  r refresh  ? help"
+    "                                           ↑↓ move  ⏎ open  N copy  I empty  h harnesses  o open file  r refresh  ? help"
   ],
   "hub-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 开",
@@ -783,7 +783,7 @@
     "",
     "",
     "",
-    "         ↑↓ 移动  ⏎ 打开  N 复制  h 宿主"
+    " ↑↓ 移动  ⏎ 打开  N 复制  I 空白  h 宿主"
   ],
   "control-120-zh": [
     " 首页 ?1  项目 ?2  控制                                                                                          模型 开",
@@ -825,7 +825,7 @@
     "",
     "",
     "",
-    "                                                             ↑↓ 移动  ⏎ 打开  N 复制  h 宿主  o 打开文件  r 刷新  ? 帮助"
+    "                                                     ↑↓ 移动  ⏎ 打开  N 复制  I 空白  h 宿主  o 打开文件  r 刷新  ? 帮助"
   ],
   "progress-rich-40-en": [
     "‹ Project › Progress       updated 12:35",
@@ -1583,7 +1583,7 @@
     "",
     "",
     "",
-    "                             ↑↓ move  ⏎ open  c C preset  p presets  N copy  h harnesses  o open file  r refresh  ? help"
+    "                    ↑↓ move  ⏎ open  c C preset  p presets  N copy  I empty  h harnesses  o open file  r refresh  ? help"
   ],
   "control-rich-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 开",
@@ -1683,7 +1683,7 @@
     "",
     "",
     "",
-    "                                         ↑↓ 移动  ⏎ 打开  c C 预设  p 选预设  N 复制  h 宿主  o 打开文件  r 刷新  ? 帮助"
+    "                                 ↑↓ 移动  ⏎ 打开  c C 预设  p 选预设  N 复制  I 空白  h 宿主  o 打开文件  r 刷新  ? 帮助"
   ],
   "control-rich-open-40-en": [
     " Home ?1  Project ?2  Control  models on",
@@ -1747,16 +1747,18 @@
     " Home ?1  Project ?2  Control  models on",
     "demo-project ───────────────────────────",
     " Roles  Harnesses",
-    "",
-    "Needs attention ────────────────────── 4",
     "  ✗ imp [Custom] → agy",
     "      pi/openai exhausted 42m",
-    "    1 ✗ pi/openai [gpt-6.1-sol ▾]   high",
-    "        exhausted 42m",
-    "    2 ◉ agy [gemini-4-hydrogen-high ▾]",
-    "    3 ○ claude  [opus ▾]            high",
-    "    source yours · imp.json",
-    "  Presets  Copy preset",
+    "imp ───────────────────────────── Custom",
+    "next job  agy",
+    "source    yours · imp.json",
+    "scope     Global role · all projects",
+    "",
+    "Chain ──────────────────────────────── 3",
+    "› 1 ✗ pi/openai [gpt-6.1-sol ▾]     high",
+    "      exhausted",
+    "  2 ◉ agy     [gemini-4-hydrogen-high ▾]",
+    "  3 ○ claude  [opus ▾]              high",
     "  ✗ pro [Custom] → gemini",
     "      chatgpt exhausted 5m",
     "  − flow [Custom] → none",
@@ -1767,9 +1769,7 @@
     "  ◉ reviewer [default] → pi/mistral",
     "  ◉ sonic [Custom] → pi",
     "  ◉ oracle [fable] → claude",
-    "  ◉ fro…nd [Custom] → pi/project project",
-    "",
-    "  ↑↓ move  ⏎ open  c C preset  p presets"
+    "        m model  ↑↓ place  ⏎ edit  i add"
   ],
   "control-rich-open-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 开",
@@ -1833,16 +1833,18 @@
     " 首页 ?1  项目 ?2  控制          模型 开",
     "demo-project ───────────────────────────",
     " 角色  宿主",
-    "",
-    "需要处理 ───────────────────────────── 4",
     "  ✗ imp [自定义] → agy",
     "      pi/openai 已耗尽 42分钟",
-    "    1 ✗ pi/openai [gpt-6.1-sol ▾]   high",
-    "        已耗尽 42分钟",
-    "    2 ◉ agy [gemini-4-hydrogen-high ▾]",
-    "    3 ○ claude  [opus ▾]            high",
-    "    来源 用户 · imp.json",
-    "  预设  复制预设",
+    "imp ───────────────────────────── 自定义",
+    "下个任务  agy",
+    "来源      用户 · imp.json",
+    "范围      全局角色 · 所有项目",
+    "",
+    "备选链 ─────────────────────────────── 3",
+    "› 1 ✗ pi/openai [gpt-6.1-sol ▾]     high",
+    "      已耗尽",
+    "  2 ◉ agy     [gemini-4-hydrogen-high ▾]",
+    "  3 ○ claude  [opus ▾]              high",
     "  ✗ pro [自定义] → gemini",
     "      chatgpt 已耗尽 5分钟",
     "  − flow [自定义] → 无",
@@ -1853,9 +1855,7 @@
     "  ◉ reviewer [default] → pi/mistral",
     "  ◉ sonic [自定义] → pi",
     "  ◉ oracle [fable] → claude",
-    "  ◉ frontend [自定义] → pi/project  项目",
-    "",
-    "     ↑↓ 移动  ⏎ 打开  c C 预设  p 选预设"
+    " m 模型  ↑↓ 位置  ⏎ 编辑  i 添加  x 清除"
   ],
   "control-rich-open-120-en": [
     " Home ?1  Project ?2  Control                                                                                  models on",
@@ -1913,7 +1913,7 @@
     "",
     "",
     "",
-    "                             ↑↓ move  ⏎ open  c C preset  p presets  N copy  h harnesses  o open file  r refresh  ? help"
+    "                    ↑↓ move  ⏎ open  c C preset  p presets  N copy  I empty  h harnesses  o open file  r refresh  ? help"
   ],
   "control-rich-40-text": [
     " Home ?1  Project ?2  Control  models on",
@@ -2273,7 +2273,7 @@
     "                                       ┃",
     "  click [model ▾] or press m to choose ┃",
     "model     xai/grok-4.7                 ┃",
-    "thinking  high                         ┃",
+    "thinking  high                         │",
     "source    yours · imp.json             │",
     " ↑↓ move  ⏎ chain  c C preset  p presets"
   ],
@@ -2359,7 +2359,7 @@
     "                                       ┃",
     "  点 [模型 ▾] 或按 m：选择模型         ┃",
     "模型      xai/grok-4.7                 ┃",
-    "思考      high                         ┃",
+    "思考      high                         │",
     "来源      用户 · imp.json              │",
     "   ↑↓ 移动  ⏎ 备选链  c C 预设  p 选预设"
   ],
@@ -2427,6 +2427,8 @@
     "",
     "Healthy ────────────────────────────── 5",
     "  ◉ imp [daily] → pi/xai",
+    "  Presets  Copy preset  Empty preset",
+    "  Rename  Delete",
     "  ◉ reviewer [default] → pi/mistral",
     "  ◉ sonic [Custom] → pi",
     "  ◉ oracle [fable] → claude",
@@ -2434,8 +2436,6 @@
     "",
     "▸ Usage ────────────────────────────────",
     "▸ Files ─────────── keys 3/5 · browser ✓",
-    "",
-    "",
     "",
     "",
     "",
@@ -2513,6 +2513,7 @@
     "",
     "正常 ───────────────────────────────── 5",
     "  ◉ imp [daily] → pi/xai",
+    "  预设  复制预设  空白预设  重命名  删…",
     "  ◉ reviewer [default] → pi/mistral",
     "  ◉ sonic [自定义] → pi",
     "  ◉ oracle [fable] → claude",
@@ -2520,7 +2521,6 @@
     "",
     "▸ 用量 ─────────────────────────────────",
     "▸ 文件 ───────────── 密钥 3/5 · 浏览器 ✓",
-    "",
     "",
     "",
     "",
@@ -2617,7 +2617,7 @@
     "                                       ┃",
     "  click [model ▾] or press m to choose ┃",
     "model     openai/gpt-6.1-sol           ┃",
-    "thinking  xhigh                        ┃",
+    "thinking  xhigh                        │",
     "source    yours · imp.json             │",
     " ↑↓ move  ⏎ chain  c C preset  p presets"
   ],
@@ -2653,7 +2653,7 @@
     "                                       ┃",
     "  点 [模型 ▾] 或按 m：选择模型         ┃",
     "模型      openai/gpt-6.1-sol           ┃",
-    "思考      xhigh                        ┃",
+    "思考      xhigh                        │",
     "来源      用户 · imp.json              │",
     "   ↑↓ 移动  ⏎ 备选链  c C 预设  p 选预设"
   ],

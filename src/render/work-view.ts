@@ -20,8 +20,9 @@ import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
 import { controlShown, expShown, mainTabs } from './main-tabs.js';
 import { controlNavigation, storeControlNavigation } from './control-navigation.js';
-import { controlHeader, controlHints, controlPickerScene, controlRows, controlScene, presetFooterControls } from './control-page.js';
+import { controlHeader, controlHints, controlPickerScene, controlRows, controlScene, presetFooterControls, roleRows } from './control-page.js';
 import { presetSheet } from './preset-input.js';
+import { chainSheet } from './chain-input.js';
 import { pickerRows } from './control-view.js';
 import { MODEL_PICKER_WIDE, paintZoomedPicker } from './model-picker-view.js';
 import { harnessAddRows, harnessFooterControls, harnessHints, harnessRows, harnessScene } from './harness-page.js';
@@ -37,16 +38,17 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['↑ ↓', 'move'],
       ...(input.state.panelLayout === 'split' ? [['PgUp Dn', 'scroll the preview (Split)'], ['= + -', 'Split: list bigger / smaller']] : []),
       ['/', 'filter rows live'],
-      ['⏎', 'expand / fold or toggle switch'],
+      ['⏎', 'expand / fold, edit a place, or toggle switch'],
       ['o', 'open the file in $EDITOR'],
       ['[ ]', 'Project/Control: switch project'],
       ['Space', 'mark a try / toggle a harness'],
       ['y n', 'accept / flag the marked to-try rows'],
       ['c C', 'role: next / previous preset'],
-      ['p P', 'role: preset list · place: harness'],
-      ['N R D', 'role: copy (s saves), rename, preview deletion'],
-      ['e E', 'place: thinking (capital goes back)'],
-      ['m', 'pick model; pi groups; type to filter'],
+      ['p', 'role: filter and choose a preset'],
+      ['N I', 'role: start a copied or empty draft'],
+      ['R D', 'role: rename or preview deletion'],
+      ['m', 'place: open the model field; type to filter'],
+      ['s', 'chain: save and select the draft'],
       ['i Del', 'add / remove place or switch'],
       ['K J', 'place: move up, move down'],
       ['x', 'place: clear its exhausted mark'],
@@ -62,7 +64,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['w', 'export a review board (HTML) and open it'],
       [',', 'Settings'],
       ['?', 'this page'],
-      ['Esc', 'back; picker: clear then exit'],
+      ['Esc', 'back; confirm discarding a draft; picker: clear then exit'],
     ].flatMap(([key, label]) => kvRows(key, t(label), half, undefined, 7)),
   ];
   const marks = [
@@ -88,7 +90,8 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const notes = [
     'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
     ...(input.state.panelLayout === 'split' ? ['Split: ⏎ opens the row’s preview, Esc comes back; click selects, again opens'] : []),
-    'On Control, Enter opens a fold or chain. Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).',
+    'In a Control chain, Enter edits a place. Choose Target, Model or Flow kind, Thinking where offered, then Done. Nothing changes on disk until Save.',
+    'Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).',
     'In the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls', 'Control: click [model ▾] to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.'] : []),
     'Model picker: current and preset models are pinned until you type. Typing opens matching groups.',
@@ -128,6 +131,15 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   const project = !sub && state.mainTab === 'project';
   const control = controlShown(state), exp = expShown(state);
   const harnesses = control && state.controlHarnesses, addingHarness = harnesses && !!state.controlHarnessAdd;
+  const chain = control && !harnesses ? state.controlChain : undefined;
+  if (control && !harnesses) {
+    frame.controlModels = input.project?.models;
+    frame.controlNow = now;
+    if (chain && !chain.draft && !chain.sheet) {
+      const latest = input.project?.roles.find((r) => r.role === chain.role.role);
+      if (latest) state.controlChain = { ...chain, role: latest };
+    }
+  }
   // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
   if (state.projectInput) {
     const pick = control && !harnesses ? pickOf(input.project, state.projectInput) : undefined;
@@ -260,8 +272,24 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
       return paintSplit(frame, scene, board, targets, state.homeTarget, width, height, notes);
     }
   }
-  const sheet = presetInput && presetSheet(presetInput, width, height - 3 - top - Number(!!input.publicationNotice));
-  const rows = help
+  const anchor = chain && !picking && roleRows(state.controlChain!.role, width, now);
+  const sheetRoom = height - 3 - top - Number(!!input.publicationNotice) - (anchor ? anchor.length : 0);
+  const sheet = anchor && input.project ? chainSheet(state.controlChain!, input.project.models, width, sheetRoom, now)
+    : presetInput && presetSheet(presetInput, width, sheetRoom);
+  const sheetRows = sheet ? [section(sheet.rule.label, width, sheet.rule.right), ...sheet.rows] : undefined;
+  let chainTop = 0;
+  if (anchor && sheetRows) {
+    const list = controlRows(input.project, state, width, now);
+    const at = list.findIndex((r) => r.item === anchor[0]!.item);
+    if (at < 0) sheetRows.unshift(...anchor);
+    else {
+      const after = list.findIndex((r, i) => i >= at + anchor.length && !r.controls?.some((c) => c.item === anchor[0]!.item));
+      sheetRows.unshift(...list.slice(0, at), ...anchor);
+      if (after >= 0) sheetRows.push(...list.slice(after));
+      chainTop = at;
+    }
+  }
+  const rows: MonitorRow[] = help
     ? helpRows(input, width)
     : changes
       ? [boardRow(''), ...changesRows(input, state, width, now)]
@@ -273,7 +301,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
           : control ? picking ? pickerRows(input.project!, state.projectInput!, width, height - 2 - top - (input.publicationNotice ? 1 : 0), now)
             : harnesses && input.project ? addingHarness
               ? [section(t('Add back'), width), ...harnessAddRows(input.project, state, width)] : harnessRows(input.project, state, width)
-            : sheet ? [section(sheet.rule.label, width, sheet.rule.right), ...sheet.rows] : controlRows(input.project, state, width, now)
+            : sheetRows ?? controlRows(input.project, state, width, now)
           : experiment ? expRows(experiment, input.expData, width, now) : homeRows(board, state, width, now, input);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
@@ -324,11 +352,13 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(0, rows.length - room);
   const scroll = help
     ? (state.helpScroll ?? 0)
-    : picking || addingHarness || sheet ? 0
+    : sheet ? chainTop + Number(!!input.publicationNotice && !!anchor)
+    : picking || addingHarness ? 0
     : sub
       ? state.scroll[changes ? 'changes' : 'details']
       : project || control ? (state.projectScroll ?? 0) : experiment ? (experiment.scroll ?? 0) : (state.homeScroll ?? 0);
   let offset = Math.max(0, Math.min(max, scroll));
+  if (anchor && key && cursorAt >= offset + room) offset = Math.max(0, cursorAt - room + 1);
   if (!help && !changes && !picking && !sheet && key && (addingHarness || state.boardRevealed !== key) && room) {
     if (cursorAt < offset) offset = cursorAt;
     else if (cursorAt >= offset + room) offset = cursorAt - room + 1;

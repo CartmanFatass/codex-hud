@@ -122,10 +122,14 @@ export function richProgress(data) {
     next: ['A short bullet', long, 'Another short bullet that still fits in two rows at forty columns', 'Last: ' + long].map((value) => ({ label: '', value, path })) };
 }
 /** Control plane material the base fixture has too little of, all synthetic: fallbacks, every mark, a project role, a long model. */
+const mockEditor = (places) => ({ places: places.map((fact) => ({ fact, raw: { harness: fact.harness,
+  ...(fact.harness === 'pi' ? { pi_role: 'implementer' } : fact.harness === 'cli' ? { agent: fact.label } : {}),
+  ...(fact.model ? { model: fact.model } : {}), ...(fact.thinking ? { thinking: fact.thinking } : {}) } })), targets: [] });
 export function richControl(data) {
   const place = (harness, label, model, thinking, state, extra = {}) => ({ harness, label, model, thinking, state,
     ...(harness === 'pi' ? { provider: model?.split('/')[0] ?? null } : {}), ...extra });
   const role = (name, group, source, places) => ({ role: name, group, source, path: `/synthetic/${source}/roles/${name}.json`, places,
+    ...(source !== 'project' ? { editor: mockEditor(places) } : {}),
     ...(['imp', 'reviewer', 'oracle'].includes(name) ? { preset: name === 'imp' ? null : name === 'oracle' ? 'fable' : 'default' } : {}),
     ...(name === 'imp' ? { presets: [{ name: 'default', next: 'pi/openai' }, { name: 'grok', next: 'pi/xai' }] }
       : name === 'reviewer' ? { presets: [{ name: 'default', next: 'pi/mistral' }] }
@@ -188,7 +192,8 @@ export function projectFrames(f) {
   for (const lang of ['en', 'zh']) {
     frames[`control-rich-open-40-${lang}`] = plain(f.render(40, lang, opened, 56, control));
     frames[`control-chain-40-${lang}`] = plain(f.render(40, lang,
-      onControl({ projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files', 'usage', 'role:imp']) }), 26, control));
+      onControl({ projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files', 'usage']) },
+        { controlChain: { role: control.roles.find((r) => r.role === 'imp'), at: 0 } }), 26, control));
   }
   frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
@@ -265,7 +270,7 @@ export function modelPickerSample(f) {
   }));
   const roles = ['frontend-imp', 'imp', 'reviewer', 'oracle'].map((name) => ({
     role: name, source: 'yours', group: 'roles', path: `/synthetic/roles/${name}.json`,
-    preset: current[name], places: placesOf(name, current[name]),
+    preset: current[name], places: placesOf(name, current[name]), editor: mockEditor(placesOf(name, current[name])),
     presets: ROLES[name].order.map((preset) => ({ name: preset, places: placesOf(name, preset) })),
   }));
   const pi = [], piFacts = {};
@@ -279,11 +284,9 @@ export function modelPickerSample(f) {
   }
   const data = { ...f.data, control: [], roles, models: { ...MODEL_LISTS, pi, piFacts, piExhausted: { 'openai/gpt-6.1-sol': cutoff } },
     harnessSwitches: [{ id: 'pi:deepseek', name: 'deepseek', group: 'provider', off: true }], radar: undefined };
-  const item = placeItem('imp', 0);
   const state = (layout = 'split') => onControl({
-    projectFolded: new Set(['role:imp', 'usage', 'files']), projectCursor: item,
-    ...(layout === 'split' ? { splitFocus: 'preview', splitList: 'project:role:imp', splitSub: item } : {}),
-  }, { panelLayout: layout, experiments: true });
+    projectFolded: new Set(['usage', 'files']), projectCursor: 'project:role:imp',
+  }, { panelLayout: layout, experiments: true, controlChain: { role: roles.find((r) => r.role === 'imp'), at: 0 } });
   const draw = (lang, state, height = 28, snapshot = data) => f.render(40, lang, state, height, snapshot, true, 'unicode', 'none', {
     projectName: 'harbor-api', projects: PROJECTS, projectWaiting: 2,
   });

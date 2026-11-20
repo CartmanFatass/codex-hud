@@ -501,20 +501,27 @@ off target is refused, not silently rerouted. If no place can run, `hud_create` 
 
 Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → registered project. At each layer, `hidden_presets` removes inherited names, then local definitions replace or append names. The winning role file's `active_preset` selects a name; `null` selects **Custom** (the file's own `run`). Without this field, the file chain still runs and the first exact normalized match still supplies the displayed name. If an explicitly selected name is missing, the file chain runs and Control and the roster report the missing name. A detailed `hud_roster` returns the effective `run`, `preset` and merged `presets`. `hud_create(preset: …)` uses that named chain for one job without saving it.
 
-On a **role row**, `c`/`C` immediately selects the next/previous named preset, wrapping in displayed order (from Custom, first/last). `p` opens one list including Custom: type to filter, ↑↓ to choose, Enter to apply, Esc or Ctrl+C to cancel. The list shows where each chain runs next; an all-off preset remains selectable and shows **none**. `N` copies the current chain: name it, press Enter to preview the unsaved copy, then `s` to save and select it or Esc to discard. `R` renames the selected named preset on Enter. `D` previews deletion of the selected named preset and the file chain that will run next; Enter confirms, Esc cancels. Selection, copy, rename and deletion never launch a job or overwrite `run`. Quota marks stay with their places.
+On a **role row**, `c`/`C` immediately selects the next/previous named preset, wrapping in displayed order (from Custom, first/last). `p` opens one list including Custom: type to filter, ↑↓ to choose, Enter to apply, Esc or Ctrl+C to cancel. The list shows where each chain runs next; an all-off preset remains selectable and shows **none**. `N` starts a draft copied from the current chain; `I` starts empty. Enter a unique name and press Enter to open the draft. `R` renames the selected named preset on Enter. `D` previews deletion of the selected named preset and the file chain that will run next; Enter confirms, Esc cancels. Selection, copy, rename and deletion never launch a job or overwrite `run`. Quota marks stay with their places.
 
 Only explicit edits write the global owner role file (`$HUD_HOME/roles`, atomically, mode 0600), even when viewing a registered project. An inherited rename or deletion hides the old name in the owner layer instead of changing a shipped file. Project-pinned roles show the source and a lock; `o` opens the file but the panel offers no preset or place edits there. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
 
-On a place row (Control only): `p`/`P` next/previous harness (`pi`, then each CLI agent for a
-role that has CLI instructions; a browser role walks chatgpt, gemini, aistudio) with that harness's
-default model from `harnesses.json`; `e`/`E` thinking (a Flow place: image/video with `m`). Each cycle
-passes through "unset" (the role's or harness's own default) before it wraps. `i` adds a fallback at
-the end (the first harness not yet listed, else another model of the same one); `Del` removes the
-place (one always stays); `K`/`J` move it earlier/later; `x` clears its exhausted mark; `r` refreshes
-model lists from `pi`, `agy` and `grok`.
+Enter on a role focuses its chain in place (Split preview or Classic expansion). It stays read-only
+until you make a change. `i` adds a place at the end; Enter on a place edits it. In the sheet, move
+between Target, Model or Flow kind, Thinking (or browser Effort) where applicable, and Done. Enter
+opens a field's list; type to filter, use ↑↓ or PgUp/PgDn to select, and press Enter to fill it. Esc
+cancels the field or the sheet. Off targets cannot be selected; missing executables are marked.
+Existing off places remain in the chain. Replacing a target that has launch options (`skills`,
+`pi_args`, `args`, `split: true` or other fields the sheet cannot preserve) is refused; `o` opens its source.
 
-Click `[model ▾]` (or `[default ▾]` when unset) on an editable pi or CLI place to open the model picker.
-The `m` (or `M`) shortcut still works. Project-locked places show plain text; Flow keeps its image/video shortcut.
+`K`/`J` move a place earlier/later and `Del` removes it. The **Not saved** draft shows its next
+place separately from the saved chain. `s` saves the whole nonempty chain and selects it; if validation
+or the write fails, or if the role changed on disk, the draft stays open. To leave a dirty draft,
+confirm **Discard edits?** with Enter or resume with Esc. Panel reload waits until the draft is closed.
+Outside a draft, `x` clears the selected place's quota mark and `o` opens the role file. `r` refreshes model lists.
+
+Click `[model ▾]` (or `[default ▾]` when unset), or press `m` on a focused editable place, to open
+its Model field. The pi Model field uses the picker below. Enter fills the field; choose Done to
+put the place in the draft and `s` in the chain to save it. Project-locked places show plain text.
 With an empty query, the picker pins the current model and compatible models from this role's named
 presets, tagged by preset. No recent history is kept. Pinned models also stay in their provider groups.
 Opening the picker asks herdr to zoom the panel's own pane. Closing restores the split only if this
@@ -545,13 +552,10 @@ with an absent or stale pi list (one-day cache), or on `r` in Control outside th
 (`^R`) inside it. Overlapping refreshes coalesce; typing, redraws and ticks never run them. The same
 cache under `$HUD_HOME/display` holds the last good results and pi model facts; older caches still open. On failure the picker shows their age; without a
 successful pi list it labels the limited offline catalog. A successful empty pi list is shown as
-empty. Other harnesses keep their separate catalogs and picker behavior, merging discovered models
-where supported, then shipped and owner catalog models, then models from owner role files. A change writes `$HUD_HOME/roles/<role>.json` (atomic, 0600, seeded from
-the shipped role, other fields and place keys kept) or `$HUD_HOME/exhausted.json`; the next `hud_roster`
-and `hud_create` read them, so the page shows what the next job uses. A role from the project's file
-cannot be changed here, and `p`/`P` refuses to replace a place whose file sets launch options
-(`split`, `skills`, `args`...), since it would rebuild them: both say so in a line at the top
-until the next key, and `o` opens the file.
+empty. Other harnesses' fields use their separate catalogs, merging discovered models where supported,
+then shipped and owner catalog models, then models from owner role files. A chain save updates only its
+owner role file, keeping unrelated fields and presets. `x` writes `$HUD_HOME/exhausted.json`, not the
+role. The next `hud_roster` and `hud_create` read these same files.
 
 **Switching projects.** With more than one project the hub's name row reads `name ▾ project i/n`
 and `[` and `]` step through the panel's own project and the existing roots in
@@ -690,12 +694,12 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Control → EXP (if enabled). Digits switch no tab: `f` opens Changes and `1`–`4` answer an open question. The tab's count is `?` and a number (`Project ?4`: what waits for you) |
 | `f` | Changes summary (once `3`) |
 | `[`, `]` | Project or Control: previous/next project (not on the Projects list) |
-| `p` `e` (capitals back), `i` `Del` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
+| Enter, `i` `Del` `K` `J`, `s`, `x`, `r` | Control: focus the chain / edit the place; add / remove / move up / move down; save the draft; clear the saved place's quota mark; refresh model lists |
 | `c` / `C`, `p` | Control role row: next / previous named preset, or filter presets and choose a name or Custom |
-| `N`, `R`, `D` | Control role row: copy the current chain, rename the selected preset, or preview and confirm deletion |
+| `N`, `I`, `R`, `D` | Control role row: start a copied or empty draft, rename the selected preset, or preview and confirm deletion |
 | `h` | Control: switch Roles / Harnesses (or click the view heading) |
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
-| `m` (`M`) | Control: open the model picker (or click `[model ▾]`). Type to filter, ↑↓ or click to pick, Enter or click again to set, Esc clears then closes, Ctrl+R refreshes the lists |
+| `m` | Control place: open the Model field (or click `[model ▾]`). In the pi picker, type to filter, ↑↓ or click to pick, Enter or click again to fill, Esc clears then closes, Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
 | `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else it does nothing: the first row is the Home key |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) once its slab is expanded (Enter; always in the Inspector), where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
@@ -745,7 +749,7 @@ Home, Project and Control become **a list above and a preview of the cursor row 
   text and, for a slice to try with a brief, its brief and acceptance steps with the original ledger text folded below them (Enter on the slice takes the keys into the preview, Enter on the fold row unfolds it; `o` opens STATE.md). A to-try slice's list row is its id and the brief's first sentence. In the hub's
   Progress preview, Space starts on the highlighted to-try row and moves the keys into
   the preview. Without Space marks, `y` / `n` on the hub still act on the next slice to try.
-- **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the places: ↑↓ selects one, `p m e i Del K J x` act on it, Esc returns; on a role row, `c` / `C` switch presets and `p` opens the preset list. `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
+- **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the chain and opens the place sheet on the next Enter. Drafts and discard confirmation stay in the preview. On a role row, `c` / `C` switch presets and `p` opens the preset list. `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
 - **Tickets, Working tree, Docs.** A row each, the ticket's checklist and latest
   comment or the fact's whole text underneath; Enter opens the file.
 

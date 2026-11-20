@@ -231,7 +231,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Invalid or unreadable harnesses.json': 'harnesses.json 无效或无法读取',
   'Could not save harness switch': '无法保存宿主开关',
   'Control: Roles / Harnesses': '控制：角色／宿主',
-  'expand / fold or toggle switch': '展开／折叠，或开关宿主',
+  'expand / fold, edit a place, or toggle switch': '展开／折叠、编辑位置，或开关宿主',
   'mark a try / toggle a harness': '勾选待试用项／开关宿主',
   'add / remove place or switch': '添加／移除位置或宿主',
   'In Harnesses, remove means off. Add back: type to filter, Enter restores, Esc cancels.':
@@ -258,13 +258,11 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'pi role': '角色定义',
   custom: '自定义',
   'role: next / previous preset': '角色：下一个／上一个预设',
-  '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  i add  Del remove  x clear  r refresh':
-    '↑↓ 移动  ⏎ 打开  c C 预设  ? 帮助  p 宿主  m 模型  e 思考  i 添加  Del 删除  x 清除  r 刷新',
   'type filter': '输入筛选',
   '⏎ set': '⏎ 设为',
   '^R refresh': '^R 刷新',
-  'back; picker: clear then exit': '返回；选择器：先清空筛选，再关闭',
-  'pick model; pi groups; type to filter': '位置：选择模型（pi 按提供方分组；输入筛选）',
+  'back; confirm discarding a draft; picker: clear then exit': '返回；放弃草稿需确认；选择器：先清空筛选，再关闭',
+  'place: open the model field; type to filter': '位置：打开模型字段；输入筛选',
   'click [model ▾] or press m to choose': '点 [模型 ▾] 或按 m：选择模型',
   'Control: click [model ▾] to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.':
     '控制：点 [模型 ▾] 打开。单击模型选中，再点一次设定；点提供方标题折叠或展开，滚轮滚动列表。',
@@ -326,11 +324,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'click a header: fold': '点标题 折叠',
   'esc close and restore': 'esc 关闭并还原',
   'Enter sets it · not the current model': 'Enter 设定 · 与当前不同',
-  'place: harness, thinking (capitals go back)': '位置：宿主、思考（大写键反向）',
   'as typed': '按输入设置',
   provider: '提供方',
-  'no model for this place': '这个位置没有模型可填',
-  'not a model id': '不是有效的模型 ID',
   missing: '缺',
   // The Timeline layout: Now and Latest on the hub, History on Progress, ticket lanes, the Control plane's attention.
   'to try': '待试用',
@@ -374,16 +369,13 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Already answered': '已有答复',
   'Could not answer': '无法答复',
   'Could not stop': '无法停止',
-  'On Control, Enter opens a fold or chain. Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).':
-    '在控制标签中 Enter 展开折叠项或备选链。改动写入 $HUD_HOME/roles，下一个任务即用；项目角色文件只读（按 o 打开）。',
+  'In a Control chain, Enter edits a place. Choose Target, Model or Flow kind, Thinking where offered, then Done. Nothing changes on disk until Save.':
+    '在控制的备选链中，按 Enter 编辑位置。选择目标、模型或 Flow 类型、可用的思考档位，再选「完成」。保存之前不会改写文件。',
+  'Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).':
+    '改动写入 $HUD_HOME/roles，下一个任务即用；项目角色文件只读（按 o 打开）。',
   'role not found': '没有这个角色',
   'the project file is in force: o opens it': '项目文件生效中：按 o 打开它',
-  'no other harness for this role': '该角色没有别的宿主可选',
   'launch options are set in the file: o opens it': '文件里设了启动选项：按 o 打开它',
-  'no other model to pick': '没有别的模型可选',
-  'no thinking setting here': '这里没有思考档位',
-  'no other place to add': '没有别的位置可加',
-  'keep at least one place': '至少保留一个位置',
   'not marked exhausted': '没有耗尽标记',
   'could not save the change': '无法保存改动',
   Layout: '布局',

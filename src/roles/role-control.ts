@@ -8,7 +8,7 @@ import * as fs from 'node:fs';
 import { isAbsolute, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cliAgents } from './cli-kinds.js';
-import { isModelToken, MODEL_ID_MAX, modelSourceStatus, type ModelListCache } from './model-discovery.js';
+import { isModelToken, modelSourceStatus, type ModelListCache } from './model-discovery.js';
 import { placeKey } from './exhausted.js';
 import {
   attributePiModel,
@@ -72,6 +72,14 @@ export interface RoleFact {
   chainPath?: string;
   missingPreset?: string;
   revision?: string;
+  editor?: { places: DraftPlace[]; targets: DraftPlace[] };
+}
+export interface DraftPlace {
+  raw: RolePlace;
+  fact: PlaceFact;
+  defaultModel?: string | null;
+  defaultProvider?: string | null;
+  defaultThinking?: string | null;
 }
 export interface HarnessFact {
   name: string;
@@ -97,6 +105,13 @@ export interface ModelLists {
   cliStatus?: Partial<Record<'agy' | 'grok', ReturnType<typeof modelSourceStatus>>>;
   cli: Record<string, string[]>;
   bro: Record<string, string[]>;
+  editor?: {
+    off: string[];
+    quota: Record<string, number>;
+    piThinking: string[];
+    cliThinking: string[];
+    flowKinds: NonNullable<RolePlace['kind']>[];
+  };
 }
 export interface ControlFacts {
   roles: RoleFact[];
@@ -138,16 +153,19 @@ export function controlFacts(
   const roles: RoleFact[] = [];
   const piRoleFiles = new Set<string>();
   const context = registry.routing(now), { disabled, has, providers } = context;
+  const { modelLists } = context;
+  const catalog = placeCatalog(hudHome, BUNDLED, readJson, now, list, modelLists);
+  const table = harnessDefaults(hudHome, BUNDLED, readJson);
   const referenced = new Set(providers.keys());
   const uses = new Map<string, HarnessSwitchFact['uses']>();
   const destination = (p?: { place: RolePlace; provider?: string | null }) =>
     p ? placeDestination({ ...p.place, label: placeLabel(p.place), provider: p.provider }) : null;
   for (const role of registry.roles().values()) {
     const assigned = registry.assignment(role, now, undefined, context);
-    const toFact = (entry: (typeof assigned.places)[number]): PlaceFact => {
+    const toFact = (entry: (typeof assigned.places)[number], collect = true): PlaceFact => {
       const { place, model, thinking, provider, state, until, missing, off_by } = entry;
-      if (entry.pi_role_file) piRoleFiles.add(entry.pi_role_file);
-      if (provider) referenced.add(provider);
+      if (collect && entry.pi_role_file) piRoleFiles.add(entry.pi_role_file);
+      if (collect && provider) referenced.add(provider);
       let piModel: PlaceFact['piModel'];
       if (place.harness === 'pi') {
         const fallback = place.model === undefined ? model : registry.placeDetails(role, { ...place, model: undefined }).model;
@@ -172,10 +190,10 @@ export function controlFacts(
         ...(provider === undefined ? {} : { provider }),
         ...(until ? { until: Date.parse(until) } : {}),
         ...(off_by ? { offBy: off_by } : {}),
-        ...(state === 'missing' ? { missing } : {}),
+        ...(missing ? { missing } : {}),
       };
     };
-    const places = assigned.places.map(toFact);
+    const places = assigned.places.map((entry) => toFact(entry));
     for (const { run } of role.presets ?? []) for (const place of run) {
       const provider = place.harness === 'pi' ? qualifiedPiProvider(place.model) : undefined;
       if (provider) referenced.add(provider);
@@ -191,7 +209,19 @@ export function controlFacts(
       uses.set(id, list);
     }
     const pinned = projectPinned(registry, role);
+    const editorPlace = (raw: RolePlace, fact: PlaceFact): DraftPlace => {
+      if (raw.harness !== 'pi') return { raw, fact };
+      const defaults = registry.placeDetails(role, { ...raw, model: undefined, thinking: undefined });
+      return { raw, fact, defaultModel: defaults.model.value, defaultThinking: defaults.thinking.value,
+        defaultProvider: attributePiModel(defaults.model.value, context).provider };
+    };
+    const editor = pinned ? undefined : {
+      places: registry.editableRun(role).map((raw, i) => editorPlace(raw, places[i]!)),
+      targets: harnessOptions(role, table, catalog, BUNDLED).map((raw) => editorPlace(raw,
+        toFact(registry.assignment(role, now, undefined, context, { run: [raw] }).places[0]!, false))),
+    };
     roles.push({
+      editor,
       role: role.role,
       path: role.source_file,
       source: pinned ? 'project' : inside(join(hudHome, 'roles'), role.source_file) ? 'yours' : 'default',
@@ -204,16 +234,14 @@ export function controlFacts(
       presets: (role.presets ?? []).map(({ name, run }) => {
         const reviewed = run === role.run ? assigned : registry.assignment(role, now, undefined, context, { preset: name });
         return { name, next: destination(reviewed.places.find((p) => p.state === 'active')),
-          places: reviewed === assigned ? places : reviewed.places.map(toFact),
+          places: reviewed === assigned ? places : reviewed.places.map((entry) => toFact(entry)),
           ...(reviewed.places.every((p) => p.state === 'off') ? { offBy: [...new Set(reviewed.places.map((p) => p.off_by))].join(' ') } : {}) };
       }),
       fileChain: role.presets?.some((p) => p.run === role.run)
-        ? registry.assignment(role, now, undefined, context, { preset: null }).places.map(toFact) : places,
+        ? registry.assignment(role, now, undefined, context, { preset: null }).places.map((entry) => toFact(entry)) : places,
     });
   }
   roles.sort((a, b) => rank(a.role) - rank(b.role) || a.role.localeCompare(b.role));
-  const { modelLists } = context;
-  const catalog = placeCatalog(hudHome, BUNDLED, readJson, now, list, modelLists);
   const sites = { 'jev-ask': ['chatgpt', 'gemini'], 'jev-aistudio': ['argon'], 'jev-flow': ['flow'] };
   const ids = new Set(['pi', ...[...cliAgents].sort().map((id) => `cli:${id}`), ...BRO_TOOLS.map((id) => `bro:${id}`),
     ...[...referenced].sort().map((id) => `pi:${id}`), ...disabled]);
@@ -242,6 +270,8 @@ export function controlFacts(
         empty: modelLists?.pi?.length === 0, runnerOff: disabled.has('pi') },
       cliStatus: { agy: modelSourceStatus(modelLists, 'agy'), grok: modelSourceStatus(modelLists, 'grok') },
       cli: catalog.cli.models, bro: catalog.bro.models,
+      editor: { off: [...disabled], quota: Object.fromEntries([...context.exhausted].map(([id, mark]) => [id, Date.parse(mark.until)])),
+        piThinking: catalog.pi.thinking, cliThinking: catalog.cli.thinking, flowKinds: catalog.bro.kinds },
     },
     piRoleFiles: [...piRoleFiles],
     harnessSwitches,
@@ -263,17 +293,15 @@ export function placeModels(place: PlaceFact, lists: ModelLists): string[] | und
 /** A place's row id on the Control plane page: the role and the place's index in its run list. */
 export const placeItem = (role: string, index: number) => `project:role:${role}:${index}`;
 
-export type PlaceOp = 'preset' | 'harness' | 'model' | 'thinking' | 'add' | 'remove' | 'up' | 'down' | 'clear';
+export type PlaceOp = 'preset' | 'clear';
 export interface PlaceEdit {
   role: string;
   /** The place under the cursor: 0 is the primary, the rest are fallbacks in order. */
   index: number;
   op: PlaceOp;
-  /** Which way `preset`, `harness`, `model` and `thinking` cycle; forward when absent. */
+  /** Which way presets cycle; forward when absent. */
   step?: 1 | -1;
   revision?: string;
-  /** A model chosen in the Control plane's picker: `model` sets it (`''` unsets it, back to the role's default) instead of cycling. */
-  value?: string;
 }
 /** `message` is a panel word (through `t()`); `reason` is the system's own text. `index` is where the cursor goes. */
 export interface EditOutcome {
@@ -283,7 +311,7 @@ export interface EditOutcome {
   index?: number;
   preset?: string | null;
 }
-export type PresetEdit = { role: string; revision?: string } & Exclude<PresetChange, { op: 'run' }>;
+export type PresetEdit = { role: string; revision?: string } & PresetChange;
 export function editPreset(hudHome: string, cwd: string, env: NodeJS.ProcessEnv, edit: PresetEdit, bundled = BUNDLED): EditOutcome {
   try {
     const registry = roleRegistry(hudHome, cwd, env, undefined, undefined, bundled);
@@ -292,22 +320,22 @@ export function editPreset(hudHome: string, cwd: string, env: NodeJS.ProcessEnv,
     if (projectPinned(registry, role)) return { ok: false, message: 'the project file is in force: o opens it' };
     if (edit.revision !== undefined && edit.revision !== registry.revision(role))
       return { ok: false, message: 'Role changed on disk; reopen the action' };
-    if (edit.op !== 'select' && edit.op !== 'delete') {
+    if (edit.op !== 'select' && edit.op !== 'delete' && edit.op !== 'run') {
       if (!validPresetName(edit.name)) return { ok: false, message: 'bad preset name' };
       if (role.presets?.some((p) => p.name === edit.name)) return { ok: false, message: 'preset name already exists' };
     }
     registry.savePreset(role, edit);
-    return { ok: true, preset: edit.op === 'delete' ? null : edit.name };
+    return { ok: true, preset: edit.op === 'run' ? undefined : edit.op === 'delete' ? null : edit.name };
   } catch (error) {
     return { ok: false, message: 'could not save the change', reason: error instanceof Error ? error.message : String(error) };
   }
 }
 
-const kindKey = (p: RolePlace) =>
+export const targetKey = (p: RolePlace) =>
   p.harness === 'cli' ? `cli:${p.agent}` : p.harness === 'bro' ? `bro:${p.tool}:${p.provider ?? ''}` : 'pi';
 /** What a harness switch can rebuild without losing anything the owner typed. */
 const PLAIN = new Set(['harness', 'pi_role', 'agent', 'tool', 'provider', 'model', 'thinking', 'effort', 'kind', 'split']);
-const plain = (p: RolePlace) => Object.keys(p).every((k) => PLAIN.has(k)) && p.split !== true;
+export const replaceableTarget = (p: RolePlace) => Object.keys(p).every((k) => PLAIN.has(k)) && p.split !== true;
 const instructionsFile = (role: Role, bundled: string) => {
   const name = role.instructions ?? role.role;
   return /^[A-Za-z0-9._-]+$/.test(name) ? join(bundled, 'instructions', `${name}.md`) : null;
@@ -318,34 +346,34 @@ function fromTable(entry: HarnessDefault | undefined, place: RolePlace): RolePla
   return out as unknown as RolePlace;
 }
 /** The places a role can run on, in the harness table's order: browser places for a browser role, else pi and each CLI it has instructions for. */
-function harnessOptions(role: Role, here: RolePlace, table: Record<string, HarnessDefault>, catalog: PlaceCatalog, bundled: string): RolePlace[] {
-  if (here.harness === 'bro') {
-    if (here.tool === 'jev-flow') return [here];
-    return Object.values(table)
-      .filter((e) => e.harness === 'bro' && e.tool !== 'jev-flow')
-      .map((e) => fromTable(e, { harness: 'bro', tool: e.tool, ...(e.provider ? { provider: e.provider } : {}) }));
+function harnessOptions(role: Role, table: Record<string, HarnessDefault>, catalog: PlaceCatalog, bundled: string): RolePlace[] {
+  if (role.run.every((p) => p.harness === 'bro')) {
+    const flow = role.run.every((p) => p.tool === 'jev-flow');
+    return flow ? [fromTable(table.flow, { harness: 'bro', tool: 'jev-flow' })] : [
+      ...catalog.bro.providers.map((provider) => fromTable(table[provider], { harness: 'bro', tool: 'jev-ask', provider })),
+      fromTable(table.argon, { harness: 'bro', tool: 'jev-aistudio' }),
+    ];
   }
   const options: RolePlace[] = [];
-  const piRole = role.run.find((p) => p.harness === 'pi')?.pi_role ?? role.instructions;
+  const piRole = role.run.find((p) => p.harness === 'pi')?.pi_role ?? role.instructions ??
+    role.presets?.flatMap((p) => p.run).find((p) => p.harness === 'pi')?.pi_role;
   if (piRole) options.push({ harness: 'pi', pi_role: piRole, split: false });
   const file = instructionsFile(role, bundled);
   if (file && fs.existsSync(file))
     for (const agent of catalog.cli.agents) options.push(fromTable(table[agent], { harness: 'cli', agent }));
   return options;
 }
-/** What the `model` key cycles: the catalog's models for this place (a Flow place's kinds). */
-function modelField(place: RolePlace, catalog: PlaceCatalog): { field: 'model' | 'kind'; values: string[] } {
-  if (place.harness === 'pi') return { field: 'model', values: catalog.pi.models };
-  if (place.harness === 'cli') return { field: 'model', values: catalog.cli.models[place.agent!] ?? [] };
-  if (place.tool === 'jev-flow') return { field: 'kind', values: catalog.bro.kinds };
-  return { field: 'model', values: catalog.bro.models[place.tool === 'jev-ask' ? place.provider ?? '' : place.tool!] ?? [] };
+/** The same routing order as a saved chain, using the Control snapshot rather than doing I/O during paint. */
+export function previewDraft(run: DraftPlace[], lists: ModelLists, now: number): PlaceFact[] {
+  const { quota = {}, off = [] } = lists.editor ?? {};
+  return evaluatePlaces(run.map(({ raw, fact }) => {
+    const mark = quota[placeKey(raw, fact.model)];
+    return { place: raw, fact, missing: fact.missing,
+      switch_ids: raw.harness === 'pi' ? ['pi', ...(fact.provider ? [`pi:${fact.provider}`] : [])] : [placeSwitch(raw)],
+      until: mark !== undefined && mark > now ? new Date(mark).toISOString() : undefined };
+  }), new Set(off)).map(({ fact, state, off_by, until }) => ({ ...fact, state, offBy: off_by, until: until ? Date.parse(until) : undefined }));
 }
-/** The catalog's values, then "unset" (the role's or harness's own default), then round again. */
-function cycle(values: string[], current: string | undefined, step: number): string | undefined {
-  const slots = [...values, undefined];
-  const at = current === undefined ? values.length : values.indexOf(current);
-  return slots[(((at < 0 ? values.length : at) + step) % slots.length + slots.length) % slots.length];
-}
+export const placeSwitch = (raw: RolePlace) => raw.harness === 'pi' ? 'pi' : raw.harness === 'cli' ? `cli:${raw.agent}` : `bro:${raw.tool}`;
 export function editPlaces(
   hudHome: string,
   cwd: string,
@@ -360,6 +388,7 @@ export function editPlaces(
     const role = registry.roles().get(edit.role);
     if (!role) return refuse('role not found');
     const i = edit.index, step = edit.step ?? 1;
+    if (edit.revision !== undefined && edit.revision !== registry.revision(role)) return refuse('Role changed on disk; reopen the action');
     // A mark is not part of a role file, so the project's file in force does not stand in the way of clearing one.
     if (edit.op === 'clear') {
       const mark = registry.assignment(role, now).exhausted.find((e) => e.place === role.run[i]);
@@ -368,73 +397,13 @@ export function editPlaces(
       return { ok: true, index: i };
     }
     if (projectPinned(registry, role)) return refuse('the project file is in force: o opens it');
-    if (edit.op === 'preset') {
-      if (edit.revision !== undefined && edit.revision !== registry.revision(role)) return refuse('Role changed on disk; reopen the action');
-      const presets = role.presets ?? [];
-      if (!presets.length) return { ok: true, index: i };
-      const at = presets.findIndex((p) => p.name === currentPreset(role));
-      const next = presets[at < 0 ? (step > 0 ? 0 : presets.length - 1) : (at + step + presets.length) % presets.length]!;
-      if (next.name === currentPreset(role)) return { ok: true, index: i };
-      registry.savePreset(role, { op: 'select', name: next.name });
-      return { ok: true, index: 0, preset: next.name };
-    }
-    const run = registry.editableRun(role), here = run[i];
-    if (!here) return refuse('role not found');
-    const catalog = placeCatalog(hudHome, bundled, undefined, now);
-    const table = harnessDefaults(hudHome, bundled);
-    let index = i;
-    if (edit.op === 'harness') {
-      const options = harnessOptions(role, here, table, catalog, bundled);
-      if (options.length < 2) return refuse('no other harness for this role');
-      if (!plain(here)) return refuse('launch options are set in the file: o opens it');
-      const at = options.findIndex((o) => kindKey(o) === kindKey(here));
-      run[i] = options[at < 0 ? (step > 0 ? 0 : options.length - 1) : (at + step + options.length) % options.length]!;
-    } else if (edit.op === 'model' && edit.value !== undefined) {
-      const value = edit.value.trim(), place: Record<string, unknown> = { ...here };
-      if (modelField(here, catalog).field !== 'model') return refuse('no model for this place');
-      const max = here.harness === 'pi' ? MODEL_ID_MAX : 120;
-      if (value.length > max || /[\x00-\x1f\x7f]/.test(value)) return refuse('not a model id');
-      if (value) place.model = value;
-      else delete place.model;
-      run[i] = place as unknown as RolePlace;
-    } else if (edit.op === 'model' || edit.op === 'thinking') {
-      const { field, values } =
-        edit.op === 'model'
-          ? modelField(here, catalog)
-          : { field: 'thinking' as const, values: here.harness === 'pi' ? catalog.pi.thinking : here.harness === 'cli' ? catalog.cli.thinking : [] };
-      if (!values.length) return refuse(edit.op === 'model' ? 'no other model to pick' : 'no thinking setting here');
-      // From what the page shows (the pi role's own default, say) when the file sets nothing.
-      const shown = role.run[i]!, details = registry.placeDetails(role, shown);
-      const current = here[field] ?? (field === 'kind' ? shown.kind : (field === 'model' ? details.model : details.thinking).value) ?? undefined;
-      const next = cycle(values, current, step);
-      const place: Record<string, unknown> = { ...here };
-      if (next === undefined) delete place[field];
-      else place[field] = next;
-      run[i] = place as unknown as RolePlace;
-    } else if (edit.op === 'add') {
-      const used = new Set(run.map(kindKey));
-      let fresh = harnessOptions(role, here, table, catalog, bundled).find((o) => !used.has(kindKey(o)));
-      if (!fresh) {
-        // Every harness is listed: another model on this one.
-        const { field, values } = modelField(here, catalog);
-        const other = values.find((v) => !run.some((p) => kindKey(p) === kindKey(here) && p[field] === v));
-        if (other) fresh = { ...here, [field]: other };
-      }
-      if (!fresh) return refuse('no other place to add');
-      run.push(fresh);
-      index = run.length - 1;
-    } else if (edit.op === 'remove') {
-      if (run.length < 2) return refuse('keep at least one place');
-      run.splice(i, 1);
-      index = Math.min(i, run.length - 1);
-    } else {
-      const to = edit.op === 'up' ? i - 1 : i + 1;
-      if (to < 0 || to >= run.length) return { ok: true, index };
-      [run[i], run[to]] = [run[to]!, run[i]!];
-      index = to;
-    }
-    registry.savePreset(role, { op: 'run', run });
-    return { ok: true, index };
+    const presets = role.presets ?? [];
+    if (!presets.length) return { ok: true, index: i };
+    const at = presets.findIndex((p) => p.name === currentPreset(role));
+    const next = presets[at < 0 ? (step > 0 ? 0 : presets.length - 1) : (at + step + presets.length) % presets.length]!;
+    if (next.name === currentPreset(role)) return { ok: true, index: i };
+    registry.savePreset(role, { op: 'select', name: next.name });
+    return { ok: true, index: 0, preset: next.name };
   } catch (error) {
     return refuse('could not save the change', error instanceof Error ? error.message : String(error));
   }

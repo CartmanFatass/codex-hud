@@ -150,7 +150,7 @@ test('cycling one already active preset does not rewrite the role file', (t) => 
   assert.equal(fs.statSync(f.file).ino, inode);
 });
 
-test('copy and old place keys only materialize the changed named chain and preserve raw options', (t) => {
+test('copy and whole-chain saves only materialize the changed named chain and preserve raw options', (t) => {
   const f = fixture(t), { presets: _, ...shipped } = stored(join(bundled, 'roles/imp.json'));
   assert.equal(edit(f, { op: 'select', name: 'grok' }).ok, true);
   assert.deepEqual(stored(f.file), { ...shipped, active_preset: 'grok' });
@@ -160,7 +160,9 @@ test('copy and old place keys only materialize the changed named chain and prese
   assert.equal(edit(f, { op: 'copy', name: 'copy', revision }).ok, true);
   assert.deepEqual(stored(f.file).presets, [authored, { ...authored, name: 'copy' }]);
   assert.equal(edit(f, { op: 'delete', revision }).message, 'Role changed on disk; reopen the action');
-  assert.equal(editPlaces(f.hud, f.cwd, { PATH: '' }, { role: 'imp', index: 0, op: 'model', value: 'synthetic/new' }).ok, true);
+  const current = f.registry(), role = current.roles().get('imp');
+  const run = current.editableRun(role).map((place) => ({ ...place, model: 'synthetic/new' }));
+  assert.equal(edit(f, { op: 'run', run, revision: current.revision(role) }).ok, true);
   assert.deepEqual(stored(f.file), { ...f.own, active_preset: 'copy',
     presets: [authored, { name: 'copy', run: [{ ...authored.run[0], model: 'synthetic/new' }] }] });
 });

@@ -214,8 +214,13 @@ test('Project list rows use the same Enter path for two clicks and the keyboard'
     assert.equal(nav().projectCursor, item);
     assert.equal(nav().splitFocus, undefined);
     click(item);
-    assert.equal(nav().splitFocus, 'preview');
-    assert.equal(nav().projectCursor, sub);
+    if (p) {
+      assert.equal(d.state.controlChain.at, 0);
+      assert.equal(nav().projectCursor, item);
+    } else {
+      assert.equal(nav().splitFocus, 'preview');
+      assert.equal(nav().projectCursor, sub);
+    }
     const mouse = d.lines();
     d.at(at(item));
     d.run('enter');
@@ -294,19 +299,22 @@ test('Control plane: roles on top, the cursor role’s places below; Enter takes
   assert.match(rule(d), /^imp ─+ \[Custom\]$/);
   const preset = d.run('role-preset');
   assert.deepEqual([preset.action.type, preset.action.role, preset.action.op], ['role-edit', 'imp', 'preset']);
-  const list = d.run('place-harness');
+  const list = d.run('preset-list');
   assert.equal(list.action, undefined, 'p on the role does not edit a place');
   assert.equal(list.state.controlPresetInput.mode, 'list');
   d.run('escape');
   d.run('enter');
-  assert.equal(d.state.controlNav.splitFocus, 'preview');
-  assert.equal(d.state.controlNav.projectCursor, 'project:role:imp:0');
+  assert.equal(d.state.controlChain.at, 0);
+  assert.equal(d.state.controlChain.draft, undefined);
   d.run('down');
-  const edit = d.run('place-harness');
-  assert.deepEqual([edit.action.type, edit.action.role, edit.action.index, edit.action.op], ['role-edit', 'imp', 1, 'harness']);
-  assert.equal(d.run('place-remove').action.op, 'remove');
+  assert.equal(d.run('enter').state.controlChain.sheet.index, 1);
   d.run('escape');
-  assert.equal(d.state.controlNav.splitFocus, undefined);
+  assert.equal(d.run('place-remove').action, undefined);
+  assert.equal(d.state.controlChain.draft.run.length, 2);
+  d.run('escape');
+  assert.match(d.lines().join('\n'), /Discard edits\?/);
+  d.run('enter');
+  assert.equal(d.state.controlChain, undefined);
   assert.equal(d.state.controlNav.projectCursor, 'project:role:imp');
 });
 
@@ -435,8 +443,9 @@ test('One meaning per key on the Control plane: = + - size the Split, i and Dele
   assert.ok(d.state.splitRatio);
   const before = d.state.splitRatio;
   d.run('enter');
-  assert.equal(d.run('place-add').action.op, 'add', 'on a place i adds one');
-  assert.equal(d.run('place-remove').action.op, 'remove', 'Delete removes it');
+  assert.equal(d.run('place-add').state.controlChain.sheet.field, 'target', 'on a place i opens the add sheet');
+  d.run('escape');
+  assert.equal(d.run('place-remove').state.controlChain.draft.run.length, 2, 'Delete removes a place from the draft');
   assert.equal(d.state.splitRatio, before);
 });
 

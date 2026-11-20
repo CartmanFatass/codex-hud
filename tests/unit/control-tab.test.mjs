@@ -10,6 +10,7 @@ import { build } from '../../docs/design/control-tab/gen/frames.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { readPanelPlace } from '../../dist/utils/panel-reload.js';
+import { finishChain } from '../../dist/render/chain-input.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { editPreset } from '../../dist/roles/role-control.js';
@@ -72,7 +73,7 @@ test('Project hubs have no Control row; Inbox alert links to its role on the sam
   }
 });
 
-test('legacy Project/control continuation reopens the selected role place on Control, in Classic and Split', async (t) => {
+test('legacy Project/control continuation returns to the selected role on Control, in Classic and Split', async (t) => {
   const f = await fixture(t), data = richControl(f.data);
   for (const panelLayout of ['classic', 'split']) {
     const projectCursor = 'project:role:reviewer:0';
@@ -82,7 +83,7 @@ test('legacy Project/control continuation reopens the selected role place on Con
     assert.equal(place.state.mainTab, 'control');
     assert.equal(place.state.projectPage, undefined);
     assert.equal(place.state.projectRoot, PROJECTS[1].root);
-    assert.equal(f.render(40, 'en', place.state, 36, data).state.controlNav.projectCursor, projectCursor);
+    assert.equal(f.render(40, 'en', place.state, 36, data).state.controlNav.projectCursor, 'project:role:reviewer');
   }
 });
 
@@ -187,7 +188,8 @@ test('40-column preset row, successful switch and chooser text match the sample 
 test('project role at 40 columns shows source and lock, with open but no preset controls', async (t) => {
   const f = await fixture(t), data = richControl(f.data);
   for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
-    const state = onControl({ projectCursor: 'project:role:frontend', projectFolded: new Set(['role:frontend', 'usage', 'files']) }, { panelLayout });
+    const state = onControl({ projectCursor: 'project:role:frontend' }, { panelLayout,
+      controlChain: { role: data.roles.find((r) => r.role === 'frontend'), at: 0 } });
     const frame = f.render(40, lang, state, 34, data);
     assert.ok(frame.lines.every((line) => visualLength(line) === 40));
     const content = plain(frame).join('\n');
@@ -227,7 +229,7 @@ test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Cl
         const done = editPreset(f.hud, f.cwd, f.env, out.action);
         assert.equal(done.ok, true, JSON.stringify(done));
         f.collector.refreshRoles(snap, NOW);
-        state = { ...state, controlPresetInput: undefined };
+        state = state.controlChain ? finishChain(state) : { ...state, controlPresetInput: undefined };
       } else assert.equal(out.action, undefined);
       frame = draw(state);
     };
