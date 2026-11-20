@@ -1,6 +1,6 @@
 # 01: pi footer quota in Claude's style (M-S1 FOOTER-QUOTA)
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Blocked by:** none
 
 **What to build:** `docs/design/ux-pass/model-selection.md` §4 S1. pi's 5h/7d subscription windows and the API ≈$ grant
