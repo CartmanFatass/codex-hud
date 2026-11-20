@@ -78,6 +78,10 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    the main session reads when the owner asks for one; each skill's name and its whole one-line description in the panel's language, read from a catalog file
    the HUD ships; the description wraps under the name rather than being cut, so the list reads at the owner's 40-column
    panel (owner, 2026-11-17). Display only: no action on a row, no install state, no adopted or dropped skills.
+   Project layouts (owner, 2026-11-20): Settings → Panel → Project layout offers Timeline (the Project tab described
+   above, the default), Board and Inbox (PROJECT-UX directions B and C, `docs/design/project-ux/`, detailed in
+   `.scratch/project-layouts/spec.md`), in Split and Classic. A Project layout arranges the Project tab's pages only:
+   counts, keys, to-try rows, cuts and words are the same in every layout, Home and Tickets do not change.
    Panel layouts (owner, 2026-11-17, PANEL-REDESIGN): Settings → Panel → Layout offers Classic (Home and Project as
    described above, the default) and Split (option 2 of `docs/design/panel-v8/`: a list over a preview of the selected
    row). Split departs from this section's Home and Project layout sentences only where `docs/design/panel-v8/notes.md` says so;
