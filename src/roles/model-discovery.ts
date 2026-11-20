@@ -126,14 +126,15 @@ function cleanList(value: unknown): string[] | undefined {
 export function readModelListCache(
   hudHome: string,
   now = Date.now(),
-  readJson: (file: string) => unknown = defaultReadJson
+  readJson: (file: string) => unknown = defaultReadJson,
+  includeStale = false
 ): ModelListCache | null {
   try {
     const raw = readJson(modelListCachePath(hudHome));
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const obj = raw as Record<string, unknown>;
     if (obj.version !== 1 || typeof obj.fetchedAt !== 'number' || !Number.isFinite(obj.fetchedAt)) return null;
-    if (now - obj.fetchedAt >= MODEL_CACHE_TTL_MS) return null;
+    if (!includeStale && now - obj.fetchedAt >= MODEL_CACHE_TTL_MS) return null;
     const pi = cleanList(obj.pi);
     const cliObj = obj.cli && typeof obj.cli === 'object' && !Array.isArray(obj.cli) ? (obj.cli as Record<string, unknown>) : {};
     const agy = cleanList(cliObj.agy);

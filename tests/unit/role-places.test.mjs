@@ -7,7 +7,11 @@ import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { EXHAUSTED_TTL_MS, parseQuotaResetMs } from '../../dist/roles/exhausted.js';
-import { markExhausted, placeKey, readExhausted, roleRegistry } from '../../dist/roles/roster.js';
+import { clearExhausted, markExhausted, placeKey, readExhausted, roleRegistry } from '../../dist/roles/roster.js';
+import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
+import { renderMonitor } from '../../dist/render/monitor.js';
+import { plain, onControl, TREE } from '../fixtures/project-page.mjs';
 
 const entry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
 const bundled = resolve('packages/hud-mcp');
@@ -179,6 +183,116 @@ async function until(check, timeout = 3000) {
     await new Promise((done) => setTimeout(done, 20));
   }
 }
+
+test('machine switches: panel, roster and create use the same daily chain, without editing it', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t), home = f.env.HUD_HOME;
+  const roleFile = join(home, 'roles', 'imp.json'), switches = join(home, 'harnesses.json'), jobs = join(home, 'jobs');
+  const run = [{ harness: 'pi', model: 'xai/grok-4.7', lens: false, pi_args: ['--synthetic-flag'] },
+    { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' }];
+  const roleBytes = JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true, run,
+    presets: [{ name: 'daily', run }] }, null, 2) + '\n';
+  fs.mkdirSync(join(home, 'roles'));
+  fs.writeFileSync(roleFile, roleBytes);
+  const other = { grok: { state_trust: 'advisory' }, catalog: { pi: { include: {} } }, unknown: { keep: true } };
+  fs.writeFileSync(switches, JSON.stringify(other), { mode: 0o644 });
+  const inode = fs.statSync(switches).ino;
+  const roster = async (detail = true) => (await f.call('hud_roster', { detail })).roles.find((r) => r.role === 'imp');
+  const create = (key, extras) => f.call('hud_create', { role: 'imp', request_key: key, task: 'Synthetic task.', ...extras });
+  assert.equal((await roster()).places[0].state, 'active');
+  setHarnessDisabled(home, 'cli:grok', true);
+  assert.equal((await roster()).places[0].state, 'active', 'CLI Grok is not the xai provider');
+  setHarnessDisabled(home, 'pi:xai', true);
+  assert.notEqual(fs.statSync(switches).ino, inode);
+  assert.equal(fs.statSync(switches).mode & 0o777, 0o600);
+  assert.deepEqual(JSON.parse(fs.readFileSync(switches, 'utf8')), { ...other, disabled: ['cli:grok', 'pi:xai'] });
+  const assigned = await roster();
+  assert.equal(assigned.preset, 'daily');
+  assert.equal(assigned.runs_on.agent, 'agy');
+  assert.deepEqual(assigned.places.map((p) => [p.state, p.off_by ?? null]), [['off', 'pi:xai'], ['active', null]]);
+  assert.equal((await roster(false)).places[0].off_by, 'pi:xai');
+  const snapshot = await new ProjectCollector(f.root, home, f.env, f.env.HOME).collect('control', {}, Date.now());
+  const role = snapshot.roles.find((r) => r.role === 'imp');
+  assert.deepEqual(role.places.map((p) => p.state), assigned.places.map((p) => p.state));
+  const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout: 'split' });
+  const panel = plain(renderMonitor({ state, tree: TREE, project: snapshot, projectName: 'harbor-api', width: 40, height: 38 }));
+  assert.match(panel.join('\n'), /imp \[daily\] → agy/);
+  assert.match(panel.join('\n'), /1 ⊘ pi xai\/[\s\S]*Switched off · pi:xai/);
+  for (const [key, options] of [['on-off', { on: 'pi' }], ['model-off', { model: 'xai/other' }],
+    ['preset-model-off', { preset: 'daily', model: 'xai/other' }], ['cli-off', { on: 'grok' }]]) {
+    const res = await create(key, options);
+    assert.equal(res.code, 'no_available_place');
+    assert.equal(res.places[0].state, 'off');
+    assert.ok(!fs.existsSync(jobs) || fs.readdirSync(jobs).length === 0, 'no job created for a refused override');
+  }
+  assert.deepEqual(f.commands(), [], 'roster and refusals run no commands or discovery');
+  const fallback = await create('daily', { preset: 'daily' });
+  assert.equal(JSON.parse(fs.readFileSync(join(fallback.task_dir, 'job.json'), 'utf8')).place.agent, 'agy');
+  const enabledOverride = await create('model-on', { model: 'other/new-model' });
+  const job = JSON.parse(fs.readFileSync(join(enabledOverride.task_dir, 'job.json'), 'utf8'));
+  assert.equal(job.place_key, 'pi:other/new-model');
+  assert.equal(job.lens, false);
+  assert.ok(f.commands().some(({ command, args }) => command === 'pi-role' && args.includes('--synthetic-flag')));
+  const key = placeKey(assigned.run[0]);
+  markExhausted(home, key, 'quota exceeded');
+  const both = await roster();
+  assert.equal(both.places[0].state, 'off');
+  assert.equal(both.exhausted[0].key, key);
+  const quotaFile = join(home, 'exhausted.json'), quotaBytes = fs.readFileSync(quotaFile);
+  setHarnessDisabled(home, 'pi', true);
+  setHarnessDisabled(home, 'pi', false);
+  assert.deepEqual(JSON.parse(fs.readFileSync(switches, 'utf8')).disabled, ['cli:grok', 'pi:xai']);
+  setHarnessDisabled(home, 'pi:xai', false);
+  assert.deepEqual(fs.readFileSync(quotaFile), quotaBytes);
+  assert.equal((await roster()).places[0].state, 'exhausted');
+  assert.equal((await create('on-quota', { on: 'pi' })).code, 'no_available_place');
+  clearExhausted(home, key);
+  assert.equal((await roster()).places[0].state, 'active');
+  const restored = await create('restored');
+  assert.equal(JSON.parse(fs.readFileSync(join(restored.task_dir, 'job.json'), 'utf8')).place_key, key);
+  assert.equal(fs.readFileSync(roleFile, 'utf8'), roleBytes);
+});
+
+test('provider attribution uses local settings or the unfiltered cache; unknown still dispatches', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t), home = f.env.HUD_HOME, settings = join(f.env.PI_CODING_AGENT_DIR, 'settings.json');
+  const put = (path, value) => fs.writeFileSync(path, JSON.stringify(value));
+  const roster = async (name) => (await f.call('hud_roster', { detail: true })).roles.find((r) => r.role === name).places[0];
+  const create = (role, request_key, other) => f.call('hud_create', { role, request_key, task: 'Synthetic task.', ...other });
+  put(settings, { defaultProvider: 'xai', defaultModel: 'settings-model' });
+  fs.mkdirSync(join(home, 'roles'));
+  put(join(home, 'roles', 'defaulted.json'), { role: 'defaulted', instructions: 'implementer', can_continue: true,
+    run: [{ harness: 'pi', pi_role: 'without-model' }] });
+  const unknown = await roster('imp'); // frontmatter has a bare ID and there is no cache yet
+  assert.equal(unknown.provider, null);
+  assert.equal(unknown.state, 'active');
+  const fresh = await create('imp', 'without-cache');
+  assert.ok(fresh.task_dir);
+  setHarnessDisabled(home, 'pi:xai', true);
+  const configured = await roster('defaulted');
+  assert.equal(configured.provider_source, 'pi_settings');
+  assert.equal(configured.off_by, 'pi:xai');
+  assert.equal(configured.key, 'pi:', 'settings attribution preserves the quota key of a place that passes no model');
+  put(settings, { defaultProvider: 'other', defaultModel: 'settings-model' });
+  assert.equal((await roster('defaulted')).provider, 'other', 'settings edits invalidate the cached signature');
+  fs.mkdirSync(join(home, 'display'));
+  const cache = join(home, 'display', 'model-lists.json');
+  put(cache, { version: 1, fetchedAt: Date.now(), pi: ['xai/gpt-6.1-sol'] });
+  assert.equal((await roster('imp')).off_by, 'pi:xai');
+  put(cache, { version: 1, fetchedAt: Date.now(), pi: ['xai/gpt-6.1-sol', 'other/gpt-6.1-sol'] });
+  assert.equal((await roster('imp')).provider, null, 'off providers still count toward ambiguity');
+  assert.ok((await create('imp', 'ambiguous-cache', { model: 'gpt-6.1-sol' })).task_dir);
+  setHarnessDisabled(home, 'pi', true);
+  assert.equal((await roster('imp')).off_by, 'pi');
+  assert.equal((await create('imp', 'runner-off')).code, 'no_available_place');
+  setHarnessDisabled(home, 'bro:jev-ask', true);
+  for (const on of ['chatgpt', 'gemini']) assert.equal((await create('pro', `alias-${on}`, { on })).places[0].off_by, 'bro:jev-ask');
+  const bad = join(home, 'harnesses.json');
+  fs.writeFileSync(bad, '{"disabled":null}');
+  assert.throws(() => setHarnessDisabled(home, 'pi', false), { code: 'invalid_harness_switches' });
+  assert.equal(fs.readFileSync(bad, 'utf8'), '{"disabled":null}');
+  assert.equal((await f.call('hud_roster')).code, 'invalid_harness_switches');
+  assert.equal((await create('imp', 'invalid-switch-file')).code, 'invalid_harness_switches');
+  assert.equal((await create('imp', 'without-cache')).job, fresh.job, 'retry returns the already-created job');
+});
 
 /** The owner's own imp: pi first, agy as fallback. */
 function ownImp(f) {

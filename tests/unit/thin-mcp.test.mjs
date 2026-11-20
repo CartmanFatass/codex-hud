@@ -2891,6 +2891,10 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
       presets: [],
       preset: null,
       runs_on: place,
+      places: [{ index: 0, place, state: 'active', key: 'pi:synthetic/override', provider: 'synthetic', provider_source: 'model',
+        switch_ids: ['pi', 'pi:synthetic'], pi_role_file: join(f.root, 'roles', 'implementer.md'),
+        model: { value: 'synthetic/override', source: join(f.env.HUD_HOME, 'roles', 'writer.json') },
+        thinking: { value: 'high', source: join(f.env.HUD_HOME, 'roles', 'writer.json') } }],
       exhausted: [],
       accepts_options: ['on', 'model', 'thinking', 'lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split', 'pi_args'],
       available: true,
@@ -3034,17 +3038,22 @@ test('hud_create uses a merged preset for one job and falls back within it witho
 
   markExhausted(f.env.HUD_HOME, 'pi:synthetic/primary', 'rate limit');
   const fallback = await f.call('hud_create', {
-    ...args, request_key: 'preset-fallback', model: 'synthetic/override', lens: false, split: false,
+    ...args, request_key: 'preset-fallback', lens: false, split: false,
   });
   const record = receipt(fallback);
   assert.equal(record.dispatch_exit_code, 0);
   assert.equal(record.preset, 'default');
   assert.equal(record.place.pi_role, 'reviewer');
-  assert.equal(record.model_source, 'hud_create');
-  assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/override', '--thinking', 'high']);
+  assert.equal(record.model_source, file);
+  assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/backup', '--thinking', 'high']);
   assert.ok(piArgv().includes('--no-lens'));
   const read = await f.call('hud_read', { job: fallback.job, detail: true });
-  assert.deepEqual([read.preset, read.model, read.split], ['default', 'synthetic/override', false]);
+  assert.deepEqual([read.preset, read.model, read.split], ['default', 'synthetic/backup', false]);
+  const override = await f.call('hud_create', { ...args, request_key: 'preset-override', model: 'synthetic/override' });
+  assert.equal(receipt(override).place.pi_role, 'implementer', 'quota on the old model does not exhaust an override');
+  assert.equal(receipt(override).place_key, 'pi:synthetic/override');
+  assert.equal(receipt(override).model_source, 'hud_create');
+  assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/override', '--thinking', 'low']);
   assert.equal((await f.call('hud_create', { ...args, request_key: 'preset-fallback', preset: 'grok' })).job, fallback.job);
 
   markExhausted(f.env.HUD_HOME, 'pi:synthetic/backup', 'rate limit');
@@ -3052,7 +3061,7 @@ test('hud_create uses a merged preset for one job and falls back within it witho
   assert.equal(unavailable.ok, false);
   assert.equal(unavailable.code, 'no_available_place');
   assert.deepEqual(unavailable.exhausted.map((p) => p.key), ['pi:synthetic/primary', 'pi:synthetic/backup']);
-  assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 2);
+  assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 3);
   assert.deepEqual(await roster(), before);
   assert.deepEqual(fs.readdirSync(roles), ['imp.json']);
   assert.equal(fs.readFileSync(file, 'utf8'), original);

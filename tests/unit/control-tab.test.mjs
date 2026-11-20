@@ -10,6 +10,7 @@ import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { readPanelPlace } from '../../dist/utils/panel-reload.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
+import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'control-tab-'));
@@ -83,6 +84,88 @@ test('legacy Project/control continuation reopens the selected role place on Con
   }
 });
 
+test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN and ZH', async (t) => {
+  const f = await fixture(t);
+  for (const name of ['agy', 'grok', 'herdr', 'claude', 'jev-aistudio', 'jev-flow']) {
+    const path = join(f.root, 'bin', name);
+    f.put(path, '#!/bin/sh\nexit 99\n');
+    fs.chmodSync(path, 0o700);
+  }
+  const run = [{ harness: 'pi', model: 'xai/grok-4.7', thinking: 'high' }, { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' }];
+  f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', instructions: 'implementer', can_continue: true, run, presets: [{ name: 'daily', run }] });
+  f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: NOW, pi: ['openai/gpt-6.1-sol', 'xai/grok-4.7', 'anthropic/opus'] });
+  const caption = (frame) => plain(frame).join('\n');
+  const click = (frame, kind) => {
+    const c = frame.controls.find((c) => c.kind === kind);
+    assert.ok(c, kind);
+    return { type: 'mouse', button: 'left', x: c.x, y: c.y };
+  };
+  for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+    f.put(join(f.hud, 'harnesses.json'), { disabled: ['cli:grok', 'pi:xai'] });
+    const data = await f.collector.collect('control', f.board, NOW);
+    const roles = { projectCursor: 'project:role:imp' };
+    const draw = (state) => {
+      const frame = f.render(40, lang, state, 38, data, true, 'unicode', 'none', { projectName: 'harbor-api', experiments: true });
+      assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+      return frame;
+    };
+    const decoder = new WorkbenchInputDecoder('workboard');
+    const h = decoder.push(Buffer.from('h'))[0];
+    const classic = panelLayout === 'classic', zh = lang === 'zh';
+    let frame = draw(send(draw(onControl(roles, { panelLayout, experiments: true })), h).state);
+    assert.equal(frame.state.mainTab, 'control');
+    assert.equal(frame.state.controlHarnesses, true);
+    assert.match(caption(frame), zh ? /本机 · 所有项目/ : /This machine · all projects/);
+    assert.match(caption(frame), /jev-ask +chatgpt gemini/);
+    assert.match(caption(frame), zh ? /▸ 已停用.*2/ : /▸ Off.*2/);
+    assert.doesNotMatch(caption(frame), /cli:grok|pi:xai/);
+    if (process.env.HUD_HARNESS_REPORT_FRAMES && zh) console.log(`${panelLayout} folded:\n${frame.lines.map(stripAnsi).join('\n')}`);
+    frame = draw(send(frame, 'end').state);
+    frame = draw(send(frame, 'enter').state);
+    assert.match(caption(frame), /⊘ cli:grok[\s\S]*⊘ pi:xai/);
+    frame = draw(send(frame, 'end').state);
+    if (process.env.HUD_HARNESS_REPORT_FRAMES && zh) console.log(`${panelLayout} expanded:\n${frame.lines.map(stripAnsi).join('\n')}`);
+    assert.equal(send(frame, 'place-remove').action, undefined, 'Del does not restore an off item');
+    assert.deepEqual(send(frame, 'enter').action, { type: 'harness-switch', id: 'pi:xai', off: false });
+    frame = draw(send(frame, click(frame, 'harness-add')).state);
+    assert.match(caption(frame), zh ? /添加回/ : /Add back/);
+    for (const input of decoder.push(Buffer.from('qjk7'))) frame = draw(send(frame, input).state);
+    assert.equal(frame.state.controlHarnessAdd.text, 'qjk7');
+    assert.match(caption(frame), zh ? /没有匹配/ : /No matching switches/);
+    assert.equal(send(frame, 'enter').action, undefined);
+    // Cancel restores the list. Backspacing and filtering never start discovery or a write.
+    frame = draw(send(frame, 'escape').state);
+    const cursor = frame.state.controlHarnessNav.projectCursor;
+    frame = draw(send(frame, 'place-add').state);
+    for (const input of decoder.push(Buffer.from('xaz\x7fi'))) frame = draw(send(frame, input).state);
+    assert.equal(frame.state.controlHarnessAdd.text, 'xai');
+    assert.deepEqual(send(frame, 'enter').action, { type: 'harness-switch', id: 'pi:xai', off: false });
+    frame = draw(send(frame, 'escape').state);
+    assert.equal(frame.state.controlHarnessNav.projectCursor, cursor);
+    frame = draw(send(frame, click(frame, 'control-roles')).state);
+    assert.match(caption(frame), /imp \[daily\] → agy/);
+    frame = draw(send(frame, click(frame, 'control-harnesses')).state);
+    frame = draw(send(frame, 'home').state);
+    const pane = frame.panes.find((p) => p.id === 'agents');
+    const item = pane.rows.findIndex((r) => r.item === 'control:harness:pi');
+    const rowClick = { type: 'mouse', button: 'left', x: 3, y: pane.y + item - pane.offset };
+    assert.deepEqual(send(frame, rowClick).action, { type: 'harness-switch', id: 'pi', off: true });
+    assert.deepEqual(send(frame, 'place-remove').action, { type: 'harness-switch', id: 'pi', off: true });
+    setHarnessDisabled(f.hud, 'pi', true);
+    f.collector.refreshRoles(data, NOW);
+    frame = draw(frame.state);
+    assert.match(caption(frame), zh ? /pi 已停用/ : /pi off/);
+    assert.ok(data.harnessSwitches.find((s) => s.id === 'pi:xai').off);
+    assert.equal(data.harnessSwitches.find((s) => s.id === 'pi:openai').off, false);
+    setHarnessDisabled(f.hud, 'pi:lost', true);
+    f.collector.refreshRoles(data, NOW);
+    frame = draw(send(frame, 'place-add').state);
+    for (const input of decoder.push(Buffer.from('lost'))) frame = draw(send(frame, input).state);
+    assert.match(caption(frame), zh ? /pi:lost +未见/ : /pi:lost +not seen/);
+    assert.deepEqual(send(frame, 'enter').action, { type: 'harness-switch', id: 'pi:lost', off: false });
+  }
+});
+
 test('live panel: no discovery on Home or Project, Control reads only the displayed root, r refreshes', async (t) => {
   const f = await fixture(t), other = join(f.root, 'other-project'), own = f.cwd;
   const gate = join(f.root, 'released'), collects = join(f.root, 'collects'), probes = join(f.root, 'probes');
@@ -140,6 +223,18 @@ test('live panel: no discovery on Home or Project, Control reads only the displa
   await wait(() => fs.existsSync(join(f.hud, 'display/model-lists.json')), 'first discovery finished');
   child.stdin.write('r');
   await wait(() => count() === 2, 'Control r refreshed discovery');
+  const switches = join(f.hud, 'harnesses.json'), role = join(other, '.hud/roles/other-role.json');
+  const roleBytes = fs.readFileSync(role);
+  assert.equal(fs.existsSync(switches), false, 'opening Control and refreshing do not write switches');
+  const disabled = () => fs.existsSync(switches) ? JSON.parse(fs.readFileSync(switches, 'utf8')).disabled : [];
+  child.stdin.write('h\x1b[Fk '); // Harnesses, Off fold, previous row (pi:demo), Space
+  await wait(() => disabled().includes('pi:demo'), 'provider was disabled from the panel');
+  assert.equal(fs.statSync(switches).mode & 0o777, 0o600);
+  child.stdin.write('idemo\n');
+  await wait(() => !disabled().includes('pi:demo'), 'Add back restored provider from the panel');
+  assert.deepEqual(fs.readFileSync(role), roleBytes, 'project role stays byte-identical');
+  assert.equal(count(), 2, 'Harnesses and Add back did not run discovery');
+  child.stdin.write('h');
   const left = stdout.length;
   child.stdin.write('['); // Control can change the same choice without leaving
   await wait(() => /own-role/.test(stripAnsi(stdout.slice(left))), 'own role displayed');

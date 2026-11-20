@@ -468,11 +468,36 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
 
 **Control tab.** Control is a main tab after Project. It names and follows the project selected in Project; `[`/`]` change that same selection without changing Home's root. Control reads that root's role and file facts without collecting its Git status, worktrees or tickets. The Roles view starts with:
 
-- **Needs attention**: roles with exhausted places or no available place, plus invalid role files. A role reads `imp [daily] → agy`, with the limit or missing runtime explained underneath; an invalid file opens with Enter or `o`.
+- **Needs attention**: roles with exhausted places that are enabled, or with no available place, plus invalid role files. A role reads `imp [daily] → agy`; when a reason needs attention, it is explained underneath. An invalid file opens with Enter or `o`.
 - **Healthy**: folded to role names. Enter shows one row per role, with its active preset or `Custom`, the next target, and a `project` tag on project-owned roles.
 - **Usage** and **Files**: both folded. Usage opens quota windows, pi spend and dispatch health. Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
 
-Split previews the selected role's next model, thinking, source and numbered chain; Enter focuses its places and Esc returns to the list. Classic expands the numbered chain and its source under the role with Enter. `o` on a role or place opens its source. Chain marks: `◉` next, `○` standby, `✗` exhausted and `−` not installed.
+Split previews the selected role's next model, thinking, source and numbered chain; Enter focuses its places and Esc returns to the list. Classic expands the numbered chain and its source under the role with Enter. `o` on a role or place opens its source. Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed. `x` clears a real quota mark, even on a switched-off place; it does not turn that place on.
+
+**Harnesses** (`h`, or click the Roles / Harnesses headings) lists the pi runner, compiled CLI agents,
+browser tools and pi providers for **this machine, all projects**. Space or Enter toggles the selected
+switch; Del removes an enabled entry by turning it off, not uninstalling it. Enter on **Off** expands
+or folds the disabled entries. `i` opens **Add back**: type part of a switch ID, use ↑↓ to select,
+Enter to restore or Esc to cancel. These controls work in Classic and Split. Presence is separate
+from the switch: installed means the executable was found, and a provider being listed is not proof
+of login or quota. A provider under an off runner keeps its switch and shows `pi off`. `jev-ask`
+switches both ChatGPT and Gemini; `jev-aistudio` switches Argon. `r` refreshes the local model lists.
+
+An explicit switch action writes only the `disabled` property in `$HUD_HOME/harnesses.json`
+(atomically, mode 0600), retaining other keys and leaving every role file byte-for-byte unchanged.
+IDs are `pi`, `pi:<provider>`, `cli:<agent>` and `bro:<tool>`; absent means on, including newly
+discovered or unlisted targets. `cli:grok` and `pi:xai` are independent. Invalid or unreadable
+switch data is a configuration error, not an all-on default.
+
+Roles, `hud_roster` and `hud_create` use the same next-place evaluation: off, live quota and missing
+executables are skipped in order. With `pi:xai` off, `imp [daily]` can go to `agy` without changing
+the preset or deleting the pi place. Restoring xai lets it return to its original position, but not
+until any real quota mark is cleared or expires. A pi provider comes from a qualified explicit or
+pi-role model, a unique exact bare model match in the unfiltered cache, or pi settings when no model
+is set. Unknown providers are shown and do not block dispatch. `pi_args` are not read for attribution.
+The same policy applies to a requested `preset` and to resolved `on` and `model` overrides; an explicit
+off target is refused, not silently rerouted. If no place can run, `hud_create` returns
+`no_available_place` before creating a job.
 
 Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → project file in force; more specific wins, omission inherits. `hud_roster` returns `presets` and `preset` (matching name or null). Pass a name from `presets` to `hud_create` to use it for one job only.
 
@@ -516,7 +541,7 @@ and `codex` always use), then any models set in `$HUD_HOME/roles/*.json`; the pi
 merged list and never changes it. A change writes `$HUD_HOME/roles/<role>.json` (atomic, 0600, seeded from
 the shipped role, other fields and place keys kept) or `$HUD_HOME/exhausted.json`; the next `hud_roster`
 and `hud_create` read them, so the page shows what the next job uses. A role from the project's file
-cannot be changed here, and a harness switch refuses a place whose file sets launch options
+cannot be changed here, and `p`/`P` refuses to replace a place whose file sets launch options
 (`split`, `skills`, `args`...), since it would rebuild them: both say so in a line at the top
 until the next key, and `o` opens the file.
 
@@ -659,6 +684,8 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `[`, `]` | Project or Control: previous/next project (not on the Projects list) |
 | `p` `e` (capitals back), `i` `Del` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
 | `c` / `C` | Control plane: apply the next / previous role preset |
+| `h` | Control: switch Roles / Harnesses (or click the view heading) |
+| Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
 | `m` (`M`) | Control plane: pick the model of the place under the cursor: provider, then model on `pi`; type to filter, ↑↓ pick, Enter sets (an open provider, or the model), Tab shows every model, ← back, Esc cancels |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
 | `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else it does nothing: the first row is the Home key |
@@ -709,7 +736,7 @@ Home, Project and Control become **a list above and a preview of the cursor row 
   text and, for a slice to try with a brief, its brief and acceptance steps with the original ledger text folded below them (Enter on the slice takes the keys into the preview, Enter on the fold row unfolds it; `o` opens STATE.md). A to-try slice's list row is its id and the brief's first sentence. In the hub's
   Progress preview, Space starts on the highlighted to-try row and moves the keys into
   the preview. Without Space marks, `y` / `n` on the hub still act on the next slice to try.
-- **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the places: ↑↓ selects one, `p m e i Del K J x` act on it, Esc returns; `c` / `C` apply a preset to the role from the list.
+- **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the places: ↑↓ selects one, `p m e i Del K J x` act on it, Esc returns; `c` / `C` apply a preset to the role from the list. `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
 - **Tickets, Working tree, Docs.** A row each, the ticket's checklist and latest
   comment or the fact's whole text underneath; Enter opens the file.
 

@@ -7,6 +7,8 @@ import { readBackupSkills } from './collectors/backup-skills.js';
 import { readExpData, saveExpEdit } from './collectors/exp-store.js';
 import { controlShown, expShown } from './render/main-tabs.js';
 import { controlRoleItem } from './render/control-navigation.js';
+import { HARNESS_OFF, harnessItem } from './render/harness-page.js';
+import { HarnessSwitchError, setHarnessDisabled } from './roles/harness-switches.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
 import { editPlaces, placeItem } from './roles/role-control.js';
@@ -1215,6 +1217,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       .finally(() => render());
   };
   const processInput = (inputs: WorkbenchInput[]) => {
+    if (state.controlHarnessNotice && inputs.length) state = { ...state, controlHarnessNotice: undefined };
     if (boardNotice && inputs.length) boardNotice = '';
     if (roleNotice && inputs.length) {
       if (error === roleNotice) error = settingsError || null;
@@ -1349,6 +1352,22 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       }
       if (result.action?.type === 'refresh-models') refreshModelLists(true);
       if (result.action?.type === 'export-board') exportBoard();
+      if (result.action?.type === 'harness-switch') {
+        const { id, off } = result.action;
+        const visit = visits.visit(shownRoot());
+        try {
+          setHarnessDisabled(jobPipeline.home, id, off);
+          const nav = state.controlHarnessNav;
+          state = { ...state, controlHarnessAdd: undefined, controlHarnessNotice: { id, off }, controlHarnessNav: {
+            ...nav, projectCursor: harnessItem(id), boardRevealed: undefined, splitFocus: undefined,
+            projectFolded: off ? new Set() : nav?.projectFolded,
+          } };
+          notice('');
+        } catch (err) {
+          notice(t(err instanceof HarnessSwitchError ? err.message : 'Could not save harness switch'));
+        }
+        if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
+      }
       if (result.action?.type === 'role-edit') {
         const { type: _type, ...edit } = result.action;
         const done = editPlaces(jobPipeline.home, shownRoot(), process.env, edit);
@@ -1389,10 +1408,10 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   };
   /** Pass unnamed text when an editor is open or could be opened in this batch. */
   const editorInput = (inputs: WorkbenchInput[]) => {
-    let picking = Boolean(state.projectInput || state.expPage?.edit);
+    let picking = Boolean(state.projectInput || state.expPage?.edit || state.controlHarnessAdd);
     return inputs.filter((i) => {
-      if (i.type !== 'key') { picking ||= !!state.experiments && i.button === 'left'; return true; }
-      if (i.key.startsWith('place-model') || (state.experiments && i.key === 'enter')) picking = true;
+      if (i.type !== 'key') { picking ||= (!!state.experiments || controlShown(state)) && i.button === 'left'; return true; }
+      if (i.key.startsWith('place-model') || i.key === 'place-add' || (state.experiments && i.key === 'enter')) picking = true;
       return Boolean(i.key) || picking;
     });
   };

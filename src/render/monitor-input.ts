@@ -1,7 +1,7 @@
 /** Shared passive-page input; Home owns all card navigation. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
-import { workboardInput } from './workboard-input.js';
+import { harnessAddInput, workboardInput } from './workboard-input.js';
 import { modelInputKey } from './model-input.js';
 import { jobModalInput } from './job-actions.js';
 import { filterInput, filterScope } from './filter.js';
@@ -26,6 +26,8 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
 }
 function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   if (expShown(state) && state.expPage?.edit) return expInput(state, input, ctx)!;
+  const add = harnessAddInput(state, input, ctx);
+  if (add) return add;
   // The Control plane's model input owns the keyboard (`q` is a letter in it); a click leaves it and is handled as ever.
   if (state.projectInput && input.type === 'key') return modelInputKey(state, input, ctx);
   // The `/` filter: its typing owns the keyboard, as the model input's does.

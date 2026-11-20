@@ -1,7 +1,7 @@
 /** The standalone Control tab uses the same role rows and chain detail in Classic and Split. */
 import { basename } from 'node:path';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
-import type { PlaceFact, RoleFact } from '../roles/role-control.js';
+import { placeDestination, type PlaceFact, type RoleFact } from '../roles/role-control.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { CONTROL_FOLDS, controlRoleItem, controlRoleOf } from './control-navigation.js';
 import { glyph, needsAttention, placeTarget, radarFacts, radarRows, radarSummary, roleName, roleToday } from './control-view.js';
@@ -11,38 +11,49 @@ import { boardRow, kvRows, mark, pack, section } from './workboard-rows.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
+import { HARNESS_OFF, harnessErrorRow } from './harness-page.js';
 
 const muted = theme.board.muted;
-export const controlFolded = (state: MonitorState): ReadonlySet<string> => state.projectFolded ?? new Set(CONTROL_FOLDS);
+export const controlFolded = (state: MonitorState): ReadonlySet<string> => state.projectFolded ?? new Set(state.controlHarnesses ? [HARNESS_OFF] : CONTROL_FOLDS);
 const preset = (role: RoleFact) => role.preset ?? t('Custom');
-const target = (place: PlaceFact) => place.harness === 'pi' && place.model?.includes('/') ? `pi/${place.model.split('/')[0]}` : place.label;
+const target = placeDestination;
 const active = (role: RoleFact) => role.places.find((p) => p.state === 'active');
-const reason = (place: PlaceFact, now: number) => place.state === 'exhausted'
-  ? [t('exhausted'), place.until === undefined ? '' : t('{n}m', { n: Math.max(1, Math.ceil((place.until - now) / 60000)) })].filter(Boolean).join(' ')
-  : place.state === 'missing' ? t('not installed') : '';
+const quota = (place: PlaceFact, now: number) => place.until === undefined ? '' :
+  `${t('exhausted')} ${t('{n}m', { n: Math.max(1, Math.ceil((place.until - now) / 60000)) })}`;
+const reason = (place: PlaceFact, now: number) => place.state === 'off' ? `${t('Switched off')} · ${place.offBy}`
+  : place.state === 'exhausted' ? quota(place, now) || t('exhausted')
+  : place.state === 'missing' ? [t('not installed'), place.missing].filter(Boolean).join(' · ') : '';
 
-export function controlHeader(input: MonitorData, state: MonitorState, width: number): string[] {
+export function controlHeader(input: MonitorData, state: MonitorState, width: number): MonitorRow[] {
   const projects = input.projects ?? [], at = Math.max(0, projects.findIndex((p) => p.root === state.projectRoot));
+  const roles = ` ${t('Roles')} `, harnesses = ` ${t('Harnesses')} `, x = visualLength(roles);
+  const change = state.controlHarnessNotice;
+  const scope = t('This machine · all projects');
+  const caption = change ? pair(theme.board.success(`${mark('✓', '+')} ${t(change.off ? 'Switched off' : 'Restored')} ${monitorText(change.id)}`), muted(scope), width)
+    : muted(scope);
   return [section(monitorText(input.projectName ?? '') || t('Project'), width,
-    projects.length > 1 ? `${t('project')} ${at + 1}/${projects.length}` : '').text,
-  theme.board.title(` ${t('Roles')} `)];
+    projects.length > 1 ? `${t('project')} ${at + 1}/${projects.length}` : ''), {
+    text: (state.controlHarnesses ? muted : theme.board.title)(roles) + (state.controlHarnesses ? theme.board.title : muted)(harnesses),
+    controls: [{ kind: 'control-roles', x: 0, width: Math.min(width, x) },
+      ...(width > x ? [{ kind: 'control-harnesses' as const, x, width: Math.min(width - x, visualLength(harnesses)) }] : [])],
+  }, ...(state.controlHarnesses ? [boardRow(caption)] : [])];
 }
 
 export function controlHints(data: ProjectSnapshot | undefined, item?: string, inChain = false): string {
   const role = data?.roles.find((r) => r.role === controlRoleOf(item));
   const index = /:(\d+)$/.exec(item ?? '')?.[1];
   if (role && index !== undefined) {
-    const clear = role.places[Number(index)]?.state === 'exhausted' ? '  x clear' : '';
+    const clear = role.places[Number(index)]?.until !== undefined ? '  x clear' : '';
     return role.source === 'project' ? `↑↓ place  o open file${clear}  esc back  ? help`
       : `↑↓ place  p harness  m model  e thinking  i add  Del remove  K J move${clear}${role.preset !== undefined ? '  c C preset' : ''}  esc back  ? help`;
   }
-  if (role) return `↑↓ move  ${inChain ? '⏎ places' : '⏎ open'}${role.source !== 'project' && role.preset !== undefined ? '  c C preset' : ''}  o open file  r refresh  ? help`;
+  if (role) return `↑↓ move  ${inChain ? '⏎ places' : '⏎ open'}${role.source !== 'project' && role.preset !== undefined ? '  c C preset' : ''}  h harnesses  o open file  r refresh  ? help`;
   const enter = item?.startsWith('project:file:') ? '  ⏎ open file' : item?.startsWith('project:fold:') ? '  ⏎ open' : '';
-  return `↑↓ move${enter}  r refresh  ←→ tab  [ ] project  ? help`;
+  return `↑↓ move${enter}  h harnesses  r refresh  ←→ tab  [ ] project  ? help`;
 }
 
 function roleRows(role: RoleFact, width: number, now: number): MonitorRow[] {
-  const next = active(role), dead = role.places.find((p) => p.state === 'exhausted'), why = dead ?? (!next ? role.places.find((p) => p.state === 'missing') : undefined);
+  const next = active(role), dead = role.places.find((p) => p.state === 'exhausted'), why = dead ?? (!next ? role.places[0] : undefined);
   const extra = { item: controlRoleItem(role.role), files: [role.path] };
   const tag = role.source === 'project' ? muted(t('project')) : '';
   const room = width - (tag ? visualLength(tag) + 1 : 0), lead = `  ${glyph(!next ? 'missing' : dead ? 'exhausted' : 'active')} `;
@@ -52,7 +63,8 @@ function roleRows(role: RoleFact, width: number, now: number): MonitorRow[] {
   const id = squeeze(name, Math.max(4, ids - Math.min(visualLength(presetName), Math.floor(ids / 2))));
   const shownPreset = squeeze(presetName, Math.max(4, ids - visualLength(id)));
   const line = `${lead}${theme.board.title(id)} ${muted(`[${shownPreset}]${arrow}`)}${next ? to : theme.board.attention(to)}`;
-  return [{ ...extra, text: pair(line, tag, width) }, ...(why ? [{ ...extra, text: fit(`      ${muted(monitorText(target(why)))} ${theme.board.attention(reason(why, now))}`, width) }] : [])];
+  const note = why ? why.offBy ? `${why.offBy} ${t('Switched off')}` : `${target(why)} ${reason(why, now)}` : '';
+  return [{ ...extra, text: pair(line, tag, width) }, ...(note ? [{ ...extra, text: fit(`      ${theme.board.attention(monitorText(note))}`, width) }] : [])];
 }
 
 function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: number, classic = false): MonitorRow[] {
@@ -60,11 +72,14 @@ function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: n
   const source = `${t(role.source)} · ${basename(role.path)}`;
   const chain = role.places.flatMap((place, i) => {
     const prefix = `${classic ? '    ' : '  '}${i + 1} ${glyph(place.state)} `, indent = ' '.repeat(visualLength(prefix));
-    const body = [place.label, place.model ?? place.kind ?? (place.harness === 'bro' ? '' : t('default')), place.thinking].filter(Boolean).join('  ');
+    const label = place.harness === 'pi' && !place.model?.includes('/') ? target(place) : place.label;
+    const body = [label, place.model ?? place.kind ?? (place.harness === 'bro' ? '' : t('default')), place.thinking].filter(Boolean).join('  ');
     const ink = place.state === 'active' ? (s: string) => s : muted;
     const extra = placeTarget(role, i, data), why = reason(place, now);
+    const notes = [why, place.state === 'off' ? quota(place, now) : '', place.provider === null ? t('provider unknown') : ''];
     return [...flowLines(monitorText(body), Math.max(1, width - indent.length)).map((line, n) => ({ ...extra, text: fit((n ? indent : prefix) + ink(line), width) })),
-      ...(why ? [{ ...extra, text: fit(indent + theme.board.attention(why), width) }] : [])];
+      ...notes.filter(Boolean).flatMap((note) => flowLines(monitorText(note), Math.max(1, width - indent.length))
+        .map((line) => ({ ...extra, text: fit(indent + muted(line), width) })))];
   });
   if (classic) return [...chain, ...[`${t('source')} ${monitorText(source)}`, ...(today ? [`${t('today')} ${roleToday(today)}`] : [])]
     .flatMap((line) => flowLines(line, Math.max(1, width - 4)).map((text) => boardRow('    ' + muted(text))))];
@@ -100,8 +115,8 @@ function controlList(data: ProjectSnapshot, state: MonitorState, width: number, 
   const ok = (yes: boolean) => yes ? theme.board.success(mark('✓', '+')) : muted(mark('−', '-'));
   const files = data.control.filter((r) => r.label !== 'invalid'), have = data.keys.filter(([, present]) => present).length;
   return [
-    ...(classic ? [boardRow('')] : []), section(t('Needs attention'), width, theme.board.attention(String(attention.length + invalid.length))),
-    ...attention.flatMap(entries),
+    ...(classic ? [boardRow('')] : []), section(t('Needs attention'), width, theme.board.attention(String(attention.length + invalid.length + Number(!!data.harnessSwitchError)))),
+    ...harnessErrorRow(data, width), ...attention.flatMap(entries),
     ...invalid.map((r, i): MonitorRow => ({ item: `project:file:${r.path}:invalid:${i}`, files: r.path ? [r.path] : undefined,
       text: pair(`  ${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, muted(t(r.value)), width) })),
     boardRow(''), fold('healthy', 'Healthy', [String(healthy.length)]),

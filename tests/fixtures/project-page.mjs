@@ -122,7 +122,8 @@ export function richProgress(data) {
 }
 /** Control plane material the base fixture has too little of, all synthetic: fallbacks, every mark, a project role, a long model. */
 export function richControl(data) {
-  const place = (harness, label, model, thinking, state, extra = {}) => ({ harness, label, model, thinking, state, ...extra });
+  const place = (harness, label, model, thinking, state, extra = {}) => ({ harness, label, model, thinking, state,
+    ...(harness === 'pi' ? { provider: model?.split('/')[0] ?? null } : {}), ...extra });
   const role = (name, group, source, places) => ({ role: name, group, source, path: `/synthetic/${source}/roles/${name}.json`, places,
     ...(['imp', 'reviewer', 'oracle'].includes(name) ? { preset: name === 'imp' ? null : name === 'oracle' ? 'fable' : 'default' } : {}) });
   const roles = [

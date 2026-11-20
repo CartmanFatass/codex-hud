@@ -52,7 +52,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.next[0].value, 'NATIVE-TREE: native subagents on Home beside package lanes');
   assert.match(f.data.docs[1].path, /2026-11-12-review.md$/);
   const first = (name) => f.data.roles.find((r) => r.role === name);
-  assert.deepEqual(first('imp').places, [{ harness: 'pi', label: 'pi', model: 'synthetic/model', thinking: 'high', state: 'active' }]);
+  assert.deepEqual(first('imp').places, [{ harness: 'pi', label: 'pi', model: 'synthetic/model', thinking: 'high', state: 'active', provider: 'synthetic' }]);
   assert.deepEqual(
     f.data.control.find((r) => r.label === 'invalid'),
     {

@@ -16,6 +16,44 @@ import { controlShown, mainTabOf, mainTabs, type MainTab } from './main-tabs.js'
 import { controlNavigation, controlRoleItem, controlRoleOf, storeControlNavigation } from './control-navigation.js';
 import { controlFolded } from './control-page.js';
 import { expInput } from './exp-view.js';
+import { harnessFold, harnessId, restoreId } from './harness-page.js';
+
+const clickKind = (input: WorkbenchInput, ctx: MonitorContext) => input.type === 'mouse' && input.button === 'left'
+  ? ctx.frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : undefined;
+
+/** While Add back owns the keyboard, printable shortcuts are filter text. */
+export function harnessAddInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome | undefined {
+  const add = state.controlHarnessAdd;
+  if (!add || !state.controlHarnesses || !controlShown(state)) return;
+  const out = (value: MonitorState['controlHarnessAdd'], action?: MonitorOutcome['action']): MonitorOutcome => ({
+    state: { ...state, controlHarnessAdd: value }, close: false, action,
+  });
+  const pane = ctx.frame?.panes.find((p) => p.id === 'preview') ?? ctx.frame?.panes.find((p) => p.id === 'agents');
+  const items = (pane?.rows ?? []).flatMap((r) => restoreId(r.item) ? [r.item!] : []);
+  const at = Math.max(0, items.indexOf(add.pick ?? ''));
+  const select = (i: number) => out({ ...add, pick: items[Math.max(0, Math.min(items.length - 1, i))] });
+  const restore = (item = items[at]) => {
+    const id = restoreId(item);
+    return out(add, id ? { type: 'harness-switch', id, off: false } : undefined);
+  };
+  if (input.type === 'mouse') {
+    const hit = clickKind(input, ctx);
+    if (hit === 'harness-back') return out(undefined);
+    if (hit === 'harness-restore') return restore();
+    if (input.button !== 'left') return select(at + (input.button === 'wheel-down' ? 1 : -1));
+    const item = pane && monitorRowAt(pane, input.x, input.y)?.item;
+    return item && items.includes(item) ? item === add.pick ? restore(item) : out({ ...add, pick: item }) : out(add);
+  }
+  if (input.text) return out({ text: (add.text + input.text).slice(0, 128) });
+  if (input.key === 'escape' || input.key === 'close') return out(undefined);
+  if (input.key === 'backspace') return out({ text: [...add.text].slice(0, -1).join('') });
+  if (input.key === 'enter') return restore();
+  const page = Math.max(1, (pane?.height ?? 1) - 2);
+  if (input.key === 'home' || input.key === 'end') return select(input.key === 'home' ? 0 : items.length - 1);
+  if (/^(?:up|down|page-up|page-down)$/.test(input.key))
+    return select(at + (input.key.endsWith('up') ? -1 : 1) * (input.key.startsWith('page') ? page : 1));
+  return out(add);
+}
 
 /** The Control plane's keys (named by the decoder) and what each asks of the place under the cursor. */
 const PLACE_KEYS: Record<string, { op: PlaceOp; step?: 1 | -1 }> = {
@@ -163,8 +201,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     if (['left', 'right', 'tab', 'shift-tab'].includes(key)) return result();
   }
-  const tab = input.type === 'mouse' && input.button === 'left'
-    ? frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : '';
+  const tab = clickKind(input, ctx);
+  const control = controlShown(next);
+  const harnessKey = input.type === 'key' && input.text === 'h';
+  if (control && (harnessKey || tab === 'control-roles' || tab === 'control-harnesses')) {
+    next.controlHarnesses = harnessKey ? !next.controlHarnesses : tab === 'control-harnesses';
+    return result();
+  }
   const tabs = mainTabs(next), clicked = tabs.find(({ id }) => tab === `board-${id}`);
   if (clicked || (main && ['left', 'right', 'tab', 'shift-tab'].includes(key))) {
     const at = tabs.findIndex(({ id }) => id === mainTabOf(next));
@@ -187,7 +230,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (key === 'brief-toggle' || tab === 'brief') return result({ type: 'brief-toggle' });
-  const control = controlShown(next);
   if (control && (key === 'project-prev' || key === 'project-next')) {
     cycleProject(key === 'project-next' ? 1 : -1);
     return result();
@@ -206,15 +248,40 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // A hub entry may span two rows (the bar); the cursor visits it once.
     const rows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i),
       at = rows.findIndex((r) => r.item === next.projectCursor);
+    const harnesses = control && next.controlHarnesses;
+    const switchAction = (row: typeof rows[number] | undefined, remove = false): MonitorOutcome['action'] => {
+      const id = harnessId(row?.item);
+      if (id && row?.harnessOff !== undefined && (!remove || !row.harnessOff))
+        return { type: 'harness-switch', id, off: !row.harnessOff };
+    };
+    if (harnesses) {
+      if (key === 'place-add' || tab === 'harness-add') {
+        next.controlHarnessAdd = { text: '' };
+        return result();
+      }
+      if (key === 'space' || key === 'place-remove' || tab === 'harness-toggle' || tab === 'harness-remove')
+        return result(switchAction(rows[at], key === 'place-remove' || tab === 'harness-remove'));
+      if (tab === 'harness-fold') {
+        if (rows[at]?.item === harnessFold) toggleFold(harnessFold.slice('project:fold:'.length));
+        return result();
+      }
+      if (tab === 'harness-refresh') return result({ type: 'refresh-models' });
+      if (tab === 'help') { next.help = true; next.helpScroll = 0; return result(); }
+    }
     // `o` opens a row's file even where Enter folds (a ticket, a long Next bullet); folds with no file toggle on either.
     const activate = (row = rows[at], open = false) => {
-      if (open && row?.files) return { type: 'open-files' as const, files: row.files };
+      if (open) {
+        if (row?.files) return { type: 'open-files' as const, files: row.files };
+        if (harnesses) return;
+      }
+      if (harnesses && harnessId(row?.item)) return switchAction(row);
       const role = /^inbox:role:(.+)$/.exec(row?.item ?? '')?.[1];
       if (role) {
         const selectedRoot = next.projectRoot ?? frame?.projects?.[0].root;
         // Project can still be rendering the previous root while a switch is loading.
         if (selectedRoot && frame?.projectDisplayRoot && frame.projectDisplayRoot !== selectedRoot) return;
         goTab('control');
+        next.controlHarnesses = false;
         next.controlNav = { ...next.controlNav, projectCursor: controlRoleItem(role), projectScroll: 0,
           splitFocus: undefined, splitList: undefined, splitSub: undefined, boardRevealed: undefined };
       } else if (control && /^project:role:[^:]+$/.test(row?.item ?? '')) {

@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { executable, roleRegistry } from '../roles/roster.js';
-import { controlFacts, type HarnessFact, type ModelLists, type RoleFact } from '../roles/role-control.js';
+import { controlFacts, type HarnessFact, type HarnessSwitchFact, type ModelLists, type RoleFact } from '../roles/role-control.js';
+import { HarnessSwitchError } from '../roles/harness-switches.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 import { parseLedger, STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
@@ -48,6 +49,8 @@ export interface ProjectSnapshot {
   /** Role places and installed harnesses. Full Project and Control collection only. */
   roles: RoleFact[];
   harnesses: HarnessFact[];
+  harnessSwitches?: HarnessSwitchFact[];
+  harnessSwitchError?: string;
   /** The merged model lists behind the Control plane's typed model input (the same ones `m` cycles). */
   models: ModelLists;
   agents: ProjectItem[];
@@ -223,18 +226,24 @@ export class ProjectCollector {
   /** The roles and harnesses again at once (signature-cached reads): a Control plane key shows its result before the next full collection. */
   refreshRoles(snapshot: ProjectSnapshot, now: number): void {
     try {
-      const facts = controlFacts(this.registry(), this.hudHome, this.env, now, this.readJson, this.names);
-      Object.assign(snapshot, { roles: facts.roles, harnesses: facts.harnesses, models: facts.models, roleCount: facts.roles.length });
-    } catch { /* The next collection reads them again. */ }
+      const facts = controlFacts(this.registry(), this.hudHome, now, this.readJson, this.names);
+      Object.assign(snapshot, { roles: facts.roles, harnesses: facts.harnesses, harnessSwitches: facts.harnessSwitches,
+        harnessSwitchError: undefined, models: facts.models, roleCount: facts.roles.length });
+    } catch (error) { this.switchError(snapshot, error); }
+  }
+  private switchError(snapshot: ProjectSnapshot, error: unknown): void {
+    if (error instanceof HarnessSwitchError)
+      Object.assign(snapshot, { roles: [], harnessSwitches: [], roleCount: 0, harnessSwitchError: error.path });
   }
   private collectControl(out: ProjectSnapshot, now: number): void {
     const radar = collectControlRadar(this.hudHome, this.env, now);
     if (radar) out.radar = radar;
     const registry = this.registry();
     try {
-      const facts = controlFacts(registry, this.hudHome, this.env, now, this.readJson, this.names);
+      const facts = controlFacts(registry, this.hudHome, now, this.readJson, this.names);
       out.roles = facts.roles;
       out.harnesses = facts.harnesses;
+      out.harnessSwitches = facts.harnessSwitches;
       out.models = facts.models;
       out.roleCount = facts.roles.length;
       for (const bad of registry.invalid()) out.control.push({ label: 'invalid', value: bad.reason, path: bad.path });
@@ -246,7 +255,7 @@ export class ProjectCollector {
         : c.path === join(this.hudHome, 'hud-convention.md') ? 'yours' : 'default';
       out.control.push({ label: 'convention', value: source, path: c.path });
       for (const path of facts.piRoleFiles) out.control.push({ label: 'pi role', value: basename(path, '.md'), path });
-    } catch { /* Invalid/unavailable registry is not an invented assignment. */ }
+    } catch (error) { this.switchError(out, error); }
     for (const name of ['CLAUDE.md', 'AGENTS.md']) {
       const path = join(this.cwd, name);
       try { if (fs.statSync(path).isFile()) out.control.push({ label: 'files', value: name, path }); }

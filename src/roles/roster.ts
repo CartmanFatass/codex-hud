@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import * as fs from 'node:fs';
+import { homedir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cliAgents, type CliAgent } from './cli-kinds.js';
@@ -17,6 +18,7 @@ import {
 } from './exhausted.js';
 import { registeredProject } from './projects.js';
 import { readModelListCache } from './model-discovery.js';
+import { HarnessSwitchError, piProviderId, readHarnessSwitches } from './harness-switches.js';
 
 export {
   clearExhausted,
@@ -362,21 +364,81 @@ function frontmatterValue(frontmatter: string | undefined, key: 'model' | 'think
   const value = frontmatter?.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim();
   return value ? value.replace(/^(['"])(.*)\1$/, '$2') : null;
 }
-function missingCommand(place: RolePlace, env: NodeJS.ProcessEnv): string | undefined {
-  if (place.harness === 'pi') return executable('pi-role', env) ? undefined : 'pi-role';
+function missingCommand(place: RolePlace, has: (command: string) => boolean): string | undefined {
+  if (place.harness === 'pi') return has('pi-role') ? undefined : 'pi-role';
   if (place.harness === 'cli') {
-    if (!executable('herdr', env)) return 'herdr';
-    return place.agent && executable(place.agent, env) ? undefined : place.agent ?? 'CLI agent';
+    if (!has('herdr')) return 'herdr';
+    return place.agent && has(place.agent) ? undefined : place.agent ?? 'CLI agent';
   }
-  return place.tool && executable(place.tool, env) ? undefined : place.tool ?? 'browser tool';
+  return place.tool && has(place.tool) ? undefined : place.tool ?? 'browser tool';
 }
-export function placeAvailable(
-  place: RolePlace,
-  env: NodeJS.ProcessEnv,
-  exhausted: Map<string, ExhaustedMark>,
-  resolvedModel?: string | null
-): boolean {
-  return !exhausted.has(placeKey(place, resolvedModel)) && !missingCommand(place, env);
+
+export function qualifiedPiProvider(model?: string | null): string | undefined {
+  const slash = model?.indexOf('/') ?? -1;
+  if (slash <= 0 || slash === model!.length - 1) return;
+  const id = model!.slice(0, slash);
+  if (piProviderId(id)) return id;
+}
+
+type PiSettings = { provider: string | null; model: string | null };
+// One local, bounded read per settings signature; cache only the two routing fields.
+let lastPiSettings: { path: string; signature: string; value?: PiSettings } | undefined;
+function piSettings(env: NodeJS.ProcessEnv): PiSettings | undefined {
+  const path = join(env.PI_CODING_AGENT_DIR || join(env.HOME || homedir(), '.pi', 'agent'), 'settings.json');
+  try {
+    const stat = fs.statSync(path, { bigint: true });
+    if (!stat.isFile() || stat.size > 65536n) return;
+    const signature = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    if (lastPiSettings?.path === path && lastPiSettings.signature === signature) return lastPiSettings.value;
+    lastPiSettings = { path, signature };
+    const file = slice(path, 65536);
+    if (!file || file.truncated) return;
+    const data = JSON.parse(file.text) as Record<string, unknown> | null;
+    const provider = data?.defaultProvider, model = data?.defaultModel;
+    return (lastPiSettings.value = {
+      provider: piProviderId(provider) ? provider : null,
+      model: typeof model === 'string' && model ? model : null,
+    });
+  } catch { /* No settings evidence. An unknown provider does not block dispatch. */ }
+}
+
+export type PlaceState = 'active' | 'standby' | 'off' | 'exhausted' | 'missing';
+/** The same ordered decision is used for a live chain and the Harnesses what-if preview. */
+export function evaluatePlaces<P extends { place: RolePlace; switch_ids: string[]; until?: string; missing?: string }>(
+  candidates: readonly P[], disabled: ReadonlySet<string>, explicitModel = false
+) {
+  let decided = false;
+  return candidates.map((candidate) => {
+    const off_by = candidate.switch_ids.find((id) => disabled.has(id));
+    const state: PlaceState = off_by ? 'off'
+      : candidate.until ? 'exhausted' : candidate.missing ? 'missing' : decided ? 'standby' : 'active';
+    // Exhausted or missing candidates can fall through, but an explicitly targeted off model cannot.
+    if (!decided && (state === 'active' || (state === 'off' && explicitModel && candidate.place.harness !== 'bro')))
+      decided = true;
+    return { ...candidate, state, off_by };
+  });
+}
+
+function routingContext(hudHome: string, env: NodeJS.ProcessEnv, now: number) {
+  const disabled = readHarnessSwitches(hudHome);
+  const models = readModelListCache(hudHome, now, undefined, true)?.pi ?? [];
+  const providers = new Map<string, number>();
+  const byId = new Map<string, string | null>();
+  for (const id of models) {
+    const provider = qualifiedPiProvider(id);
+    if (!provider) continue;
+    providers.set(provider, (providers.get(provider) ?? 0) + 1);
+    const bare = id.slice(provider.length + 1);
+    byId.set(bare, byId.has(bare) ? null : provider);
+  }
+  const commands = new Map<string, boolean>();
+  const has = (cmd: string) => {
+    if (!commands.has(cmd)) commands.set(cmd, !!executable(cmd, env));
+    return commands.get(cmd)!;
+  };
+  let settings: { value: PiSettings | undefined } | undefined;
+  return { disabled, providers, byId, has, exhausted: readExhausted(hudHome, now),
+    settings: () => (settings ??= { value: piSettings(env) }).value };
 }
 /** Project injects bounded signature-cached readers; the MCP keeps its original readers. */
 export function roleRegistry(
@@ -478,19 +540,32 @@ export function roleRegistry(
         : undefined;
     return { pi_role_file: piInfo.pi_role_file, model, thinking, state_trust };
   }
-  function assignment(role: Role, nowMs = Date.now()) {
-    const exhaustedMap = readExhausted(hudHome, nowMs);
-    const evaluated = role.run.map((place) => {
+  const routing = (now = Date.now()) => routingContext(hudHome, env, now);
+  function assignment(role: Role, nowMs = Date.now(), overrideModel?: string, context = routing(nowMs)) {
+    const evaluated = evaluatePlaces(role.run.map((configured, index) => {
+      const overridden = overrideModel !== undefined && configured.harness !== 'bro';
+      const place = overridden ? { ...configured, model: overrideModel } : configured;
       const details = placeDetails(role, place);
+      const settings = place.harness === 'pi' && details.model.value === null ? context.settings() : undefined;
+      const explicit = place.harness === 'pi' ? qualifiedPiProvider(details.model.value) : undefined;
+      const provider = place.harness === 'pi' ? explicit ?? (details.model.value === null
+        ? settings?.provider ?? qualifiedPiProvider(settings?.model) ?? context.byId.get(settings?.model ?? '') ?? null
+        : context.byId.get(details.model.value) ?? null) : undefined;
+      const provider_source = !provider ? undefined : explicit ? (place.model === undefined ? 'pi_role' : 'model')
+        : settings?.provider || qualifiedPiProvider(settings?.model) ? 'pi_settings' : 'cache';
+      if (overridden) details.model.source = 'hud_create';
+      // Pi settings attribute an external default; they do not change the HUD's model argument or its existing quota key.
       const key = placeKey(place, details.model.value);
-      const mark = exhaustedMap.get(key) ?? null;
-      const missing = mark ? undefined : missingCommand(place, env);
-      return { place, details, key, mark, missing };
-    });
-    const chosen = evaluated.find((entry) => !entry.mark && !entry.missing) ?? null;
+      const mark = context.exhausted.get(key);
+      const switch_ids = place.harness === 'pi' ? provider ? ['pi', `pi:${provider}`] : ['pi']
+        : place.harness === 'cli' ? [`cli:${place.agent}`] : [`bro:${place.tool}`];
+      return { index, place, ...details, key, until: mark?.until, quota_reason: mark?.reason,
+        missing: missingCommand(place, context.has), switch_ids, provider, provider_source };
+    }), context.disabled, overrideModel !== undefined);
+    const chosen = evaluated.find((entry) => entry.state === 'active') ?? null;
     const activeEntry = chosen ?? evaluated[0]!;
     const active = activeEntry.place;
-    const { pi_role_file, model, thinking } = activeEntry.details;
+    const { pi_role_file, model, thinking } = activeEntry;
     return {
       ...role,
       harness: active.harness,
@@ -509,7 +584,7 @@ export function roleRegistry(
       thinking_source: thinking.source,
       pi_role_file,
       agent: active.harness === 'cli' ? active.agent : undefined,
-      ...(active.harness === 'cli' ? { state_trust: activeEntry.details.state_trust } : {}),
+      ...(active.harness === 'cli' ? { state_trust: activeEntry.state_trust } : {}),
       accepts_options: [
         'on',
         ...((role.presets?.length ?? 0) > 0 ? ['preset'] : []),
@@ -523,18 +598,18 @@ export function roleRegistry(
       ],
       available: chosen !== null,
       ...(chosen ? {} : {
-        reason: evaluated.map(({ place, details, mark, missing }) =>
-          `${describePlace(place, details.model.value)}: ${mark ? `${mark.reason} (until ${mark.until})` : `missing ${missing} on PATH`}`
+        reason: evaluated.map(({ place, model, state, off_by, until, quota_reason, missing }) =>
+          `${describePlace(place, model.value)}: ${state === 'off' ? `off (${off_by})` : state === 'exhausted'
+            ? `${quota_reason} (until ${until})` : state === 'missing' ? `missing ${missing} on PATH` : 'not used for the explicit model override'}`
         ).join('; '),
       }),
       run: role.run,
       presets: role.presets ?? [],
       preset: currentPreset(role),
       runs_on: chosen ? chosen.place : null,
-      exhausted: evaluated.flatMap((entry) =>
-        entry.mark
-          ? [{ place: entry.place, key: entry.key, until: entry.mark.until, reason: entry.mark.reason }]
-          : []
+      places: evaluated,
+      exhausted: evaluated.flatMap(({ place, key, until, quota_reason }) =>
+        until ? [{ place, key, until, reason: quota_reason! }] : []
       ),
     };
   }
@@ -552,7 +627,7 @@ export function roleRegistry(
     }
     throw new Error('convention_not_found');
   }
-  return { roles, invalid, invalidRole, assignment, placeDetails, convention, project, projectConfigIgnored };
+  return { roles, invalid, invalidRole, assignment, routing, placeDetails, convention, project, projectConfigIgnored };
 }
 
 export function recordFailureExhaustion(
@@ -586,7 +661,9 @@ export function recordFailureExhaustion(
   markExhausted(hudHome, key, reason, nowMs);
   const reg = roleRegistry(hudHome, job.cwd ?? process.cwd(), env, undefined, undefined, bundled);
   const roleDef = reg.roles().get(job.role);
-  const nextInfo = roleDef ? reg.assignment(roleDef, nowMs) : null;
+  let nextInfo: ReturnType<typeof reg.assignment> | null = null;
+  try { if (roleDef) nextInfo = reg.assignment(roleDef, nowMs); }
+  catch (error) { if (!(error instanceof HarnessSwitchError)) throw error; }
   const nextPlace = nextInfo?.runs_on ?? null;
   const suffix = nextPlace
     ? `; next dispatch will use ${describePlace(nextPlace, nextInfo?.model ?? null)}`
@@ -619,7 +696,7 @@ export interface PlaceCatalog {
   };
 }
 
-const BRO_TOOLS = ['jev-ask', 'jev-aistudio', 'jev-flow'] as const;
+export const BRO_TOOLS = ['jev-ask', 'jev-aistudio', 'jev-flow'] as const;
 const BRO_PROVIDERS = ['chatgpt', 'gemini'] as const;
 const BRO_KINDS = ['image', 'video'] as const;
 const LEGACY_PLACE_KEYS = [

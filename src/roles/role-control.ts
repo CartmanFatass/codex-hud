@@ -7,16 +7,20 @@
 import * as fs from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cliAgents } from './cli-kinds.js';
 import {
   clearExhausted,
   currentPreset,
   harnessDefaults,
-  placeAvailable,
+  BRO_TOOLS,
+  evaluatePlaces,
+  qualifiedPiProvider,
   placeCatalog,
   roleRegistry,
   writeRolePlaces,
   type HarnessDefault,
   type PlaceCatalog,
+  type PlaceState,
   type Role,
   type RolePlace,
 } from './roster.js';
@@ -24,7 +28,7 @@ import {
 type Registry = ReturnType<typeof roleRegistry>;
 const BUNDLED = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url));
 
-export type PlaceState = 'active' | 'standby' | 'exhausted' | 'missing';
+export type { PlaceState };
 export interface PlaceFact {
   harness: RolePlace['harness'];
   /** `pi`, an agent (`agy`), or a browser place (`chatgpt`, `gemini`, `aistudio`, `flow`). */
@@ -32,9 +36,13 @@ export interface PlaceFact {
   model: string | null;
   thinking: string | null;
   kind?: 'image' | 'video';
-  /** `active` is where the next `hud_create` runs; `exhausted` carries `until`. */
+  /** `active` is where the next `hud_create` runs. A real quota mark can coexist with `off`. */
   state: PlaceState;
   until?: number;
+  offBy?: string;
+  missing?: string;
+  /** null = an unattributable pi provider; undefined = not a pi place. */
+  provider?: string | null;
 }
 export interface RoleFact {
   role: string;
@@ -52,6 +60,17 @@ export interface HarnessFact {
   name: string;
   ok: boolean;
 }
+export interface HarnessSwitchFact {
+  id: string;
+  name: string;
+  group: 'runner' | 'cli' | 'browser' | 'provider';
+  off: boolean;
+  present: boolean;
+  runnerOff?: boolean;
+  models?: number;
+  sites?: readonly string[];
+  uses: { role: string; preset: string | null; index: number; next: string | null; switchedNext: string | null }[];
+}
 /** The merged model lists the picker works from: pi's (with the include list that curates them), each CLI agent's, each browser provider's or tool's. */
 export interface ModelLists {
   pi: string[];
@@ -62,6 +81,7 @@ export interface ModelLists {
 export interface ControlFacts {
   roles: RoleFact[];
   harnesses: HarnessFact[];
+  harnessSwitches: HarnessSwitchFact[];
   models: ModelLists;
   /** pi role definitions behind the pi places (their model and thinking defaults). */
   piRoleFiles: string[];
@@ -74,6 +94,9 @@ export function placeLabel(place: RolePlace): string {
   if (place.harness === 'cli') return place.agent ?? 'cli';
   if (place.tool === 'jev-ask') return place.provider ?? 'jev-ask';
   return place.tool === 'jev-aistudio' ? 'aistudio' : 'flow';
+}
+export function placeDestination(place: Pick<PlaceFact, 'label' | 'harness' | 'provider'>): string {
+  return place.harness === 'pi' && place.provider ? `pi/${place.provider}` : place.label;
 }
 const inside = (dir: string, path: string) => {
   const rel = relative(dir, path);
@@ -88,37 +111,46 @@ const projectPinned = (registry: Registry, role: Role) => {
 export function controlFacts(
   registry: Registry,
   hudHome: string,
-  env: NodeJS.ProcessEnv,
   now: number,
   readJson?: (file: string) => unknown,
   list?: (directory: string) => string[]
 ): ControlFacts {
   const roles: RoleFact[] = [];
   const piRoleFiles = new Set<string>();
-  const none = new Map();
+  const context = registry.routing(now), { disabled, has, providers } = context;
+  const referenced = new Set(providers.keys());
+  const uses = new Map<string, HarnessSwitchFact['uses']>();
+  const destination = (p?: { place: RolePlace; provider?: string | null }) =>
+    p ? placeDestination({ ...p.place, label: placeLabel(p.place), provider: p.provider }) : null;
   for (const role of registry.roles().values()) {
-    const assigned = registry.assignment(role, now);
-    const places = role.run.map((place): PlaceFact => {
-      const details = registry.placeDetails(role, place);
-      if (details.pi_role_file) piRoleFiles.add(details.pi_role_file);
-      const mark = assigned.exhausted.find((e) => e.place === place);
-      const state: PlaceState = mark
-        ? 'exhausted'
-        : !placeAvailable(place, env, none, details.model.value)
-          ? 'missing'
-          : place === assigned.runs_on
-            ? 'active'
-            : 'standby';
+    const assigned = registry.assignment(role, now, undefined, context);
+    const places = assigned.places.map((entry): PlaceFact => {
+      const { place, model, thinking, provider, state, until, missing, off_by } = entry;
+      if (entry.pi_role_file) piRoleFiles.add(entry.pi_role_file);
+      if (provider) referenced.add(provider);
       return {
-        harness: place.harness,
-        label: placeLabel(place),
-        model: details.model.value,
-        thinking: details.thinking.value,
+        harness: place.harness, label: placeLabel(place), model: model.value, thinking: thinking.value, state,
         ...(place.kind ? { kind: place.kind } : {}),
-        state,
-        ...(mark ? { until: Date.parse(mark.until) } : {}),
+        ...(provider === undefined ? {} : { provider }),
+        ...(until ? { until: Date.parse(until) } : {}),
+        ...(off_by ? { offBy: off_by } : {}),
+        ...(state === 'missing' ? { missing } : {}),
       };
     });
+    for (const { run } of role.presets ?? []) for (const place of run) {
+      const provider = place.harness === 'pi' ? qualifiedPiProvider(place.model) : undefined;
+      if (provider) referenced.add(provider);
+    }
+    const next = destination(assigned.places.find((p) => p.state === 'active'));
+    for (const id of new Set(assigned.places.flatMap((p) => p.switch_ids))) {
+      const changed = new Set(disabled);
+      if (!changed.delete(id)) changed.add(id);
+      const switched = evaluatePlaces(assigned.places, changed).find((p) => p.state === 'active');
+      const list = uses.get(id) ?? [];
+      list.push({ role: role.role, preset: assigned.preset, index: assigned.places.findIndex((p) => p.switch_ids.includes(id)),
+        next, switchedNext: destination(switched) });
+      uses.set(id, list);
+    }
     const pinned = projectPinned(registry, role);
     roles.push({
       role: role.role,
@@ -131,15 +163,29 @@ export function controlFacts(
   }
   roles.sort((a, b) => rank(a.role) - rank(b.role) || a.role.localeCompare(b.role));
   const catalog = placeCatalog(hudHome, BUNDLED, readJson, now, list);
-  const has = (place: RolePlace) => placeAvailable(place, env, none, null);
+  const sites = { 'jev-ask': ['chatgpt', 'gemini'], 'jev-aistudio': ['argon'], 'jev-flow': ['flow'] };
+  const ids = new Set(['pi', ...[...cliAgents].sort().map((id) => `cli:${id}`), ...BRO_TOOLS.map((id) => `bro:${id}`),
+    ...[...referenced].sort().map((id) => `pi:${id}`), ...disabled]);
+  const harnessSwitches: HarnessSwitchFact[] = [...ids].map((id) => {
+    const colon = id.indexOf(':'), prefix = id.slice(0, colon);
+    const name = id.slice(colon + 1), group = id === 'pi' ? 'runner' : prefix === 'cli' ? 'cli' : prefix === 'bro' ? 'browser' : 'provider';
+    const present = group === 'provider' ? providers.has(name) : group === 'runner' ? has('pi-role')
+      : group === 'cli' ? cliAgents.includes(name as (typeof cliAgents)[number]) && has(name)
+      : BRO_TOOLS.includes(name as (typeof BRO_TOOLS)[number]) && has(name);
+    return { id, name, group, off: disabled.has(id), present, uses: uses.get(id) ?? [],
+      ...(group === 'provider' ? { models: providers.get(name), runnerOff: disabled.has('pi') } : {}),
+      ...(group === 'browser' ? { sites: sites[name as keyof typeof sites] } : {}),
+    };
+  });
   return {
     roles,
     models: { pi: catalog.pi.models, include: catalog.pi.include, cli: catalog.cli.models, bro: catalog.bro.models },
     piRoleFiles: [...piRoleFiles],
+    harnessSwitches,
     harnesses: [
-      { name: 'pi', ok: has({ harness: 'pi' }) },
-      ...catalog.cli.agents.map((name) => ({ name, ok: has({ harness: 'cli', agent: name }) })),
-      ...catalog.bro.tools.map((name) => ({ name, ok: has({ harness: 'bro', tool: name }) })),
+      { name: 'pi', ok: has('pi-role') },
+      ...catalog.cli.agents.map((name) => ({ name, ok: has('herdr') && has(name) })),
+      ...catalog.bro.tools.map((name) => ({ name, ok: has(name) })),
     ],
   };
 }

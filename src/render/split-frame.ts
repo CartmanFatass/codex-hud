@@ -23,6 +23,8 @@ export interface SplitScene {
   preview: MonitorRow[];
   /** While the keys are in the preview: the row under its cursor. */
   sub?: string;
+  /** A picker in the preview can give its space to the picker without changing the saved list focus. */
+  compact?: boolean;
   /** Outside it: the preview row `y` and `n` act on (the next to-try slice), painted as the cursor is. */
   act?: string;
   /** What the preview's scroll belongs to: another page or entry starts it at the top. */
@@ -55,7 +57,7 @@ function rooms(scene: SplitScene, state: MonitorState, body: number) {
   const list = gaps ? scene.list : scene.list.filter((r) => !blank(r));
   const lead = gaps ? 1 : 0, rest = body - lead - (gaps ? 1 : 0) - 1;
   // The list is as tall as it needs, at most the chosen share; in the preview it gives its rows up (Esc restores the share).
-  const compact = state.splitFocus === 'preview', share = Math.min(state.splitRatio ? Math.round(rest * state.splitRatio) : Infinity, compact ? COMPACT : Infinity);
+  const compact = scene.compact || state.splitFocus === 'preview', share = Math.min(state.splitRatio ? Math.round(rest * state.splitRatio) : Infinity, compact ? COMPACT : Infinity);
   const listRoom = Math.max(0, Math.min(list.length, rest - MIN_PREVIEW, share));
   return { gaps, list, lead, compact, listRoom, previewRoom: Math.max(0, rest - listRoom) };
 }

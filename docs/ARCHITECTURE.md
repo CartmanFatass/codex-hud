@@ -215,13 +215,17 @@ and writes with `writePrivateFile`). No model call, no server; its text and sect
 
 Control is a top-level tab. It follows Project's selected root, but has its own cursor, folds and scroll. Its narrow `ProjectCollector` mode reads only that root's Control facts (no STATE, tickets or Git worktree/status collection) and caches them separately from Project's snapshot. Unlike Project's hub, Control never paints the previous root's snapshot while a new root loads. Local model list discovery starts only on entering Control or pressing `r` there, not on Home or on a collection tick.
 `roles/role-control.ts` has both halves: `controlFacts` (read-only, called by the collector:
-each role's places with in-use/standby/exhausted/missing and the harnesses on PATH) and
-`editPlaces` (the panel's only write). A key on a place row becomes a `role-edit` action
+each role's active/standby/off/exhausted/missing places and the machine's Harnesses inventory) and
+`editPlaces` (role and quota edits). `roleRegistry.assignment` resolves the chain for Control, roster and create;
+Control's Harnesses preview also uses that evaluation to show what a switch would change. Local pi
+settings (bounded, signature-cached) and the unfiltered discovery cache only supply provider attribution;
+there is no new outbound input or discovery on dispatch. The `harness-switch` action updates only
+`$HUD_HOME/harnesses.json` (`disabled`) via `roles/harness-switches.ts`, by private atomic replacement. A key on a place row becomes a `role-edit` action
 from the pure input handler; `tree-page.ts` applies it with `editPlaces`, which edits the
 places with the shipped catalog and `harnesses.json`, then writes through
 `writeRolePlaces`/`clearExhausted` (`$HUD_HOME/roles/<role>.json`, `exhausted.json`).
 A role file under the project's `.hud/roles` wins in the roster, so it is shown apart and
-refused, and a harness switch refuses a place with launch options it would lose.
+refused; the place-replacement keys refuse a place with launch options they would lose. Machine switches never rewrite role files.
 The model is chosen in a picker (`MonitorState.projectInput`, `render/model-input.ts`; rows
 in `render/control-view.ts`): the place and the merged model lists ride on the place rows
 (`MonitorRow.modelPick`, from `ControlFacts.models`) so the handler does no I/O, typing

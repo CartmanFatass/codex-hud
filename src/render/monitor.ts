@@ -53,6 +53,10 @@ export interface MonitorState {
   experiments?: boolean;
   expPage?: ExpPage;
   controlNav?: ControlNavigation;
+  controlHarnesses?: boolean;
+  controlHarnessNav?: ControlNavigation;
+  controlHarnessAdd?: { text: string; pick?: string };
+  controlHarnessNotice?: { id: string; off: boolean };
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
   /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
@@ -136,6 +140,7 @@ export interface MonitorRow {
   files?: string[];
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;
+  harnessOff?: boolean;
   tryTarget?: TryTarget;
 }
 export interface MonitorRect {
@@ -160,6 +165,15 @@ export interface MonitorControl {
     | 'board-pick'
     | 'board-activate'
     | 'board-inspect'
+    | 'control-roles'
+    | 'control-harnesses'
+    | 'harness-add'
+    | 'harness-toggle'
+    | 'harness-remove'
+    | 'harness-fold'
+    | 'harness-restore'
+    | 'harness-back'
+    | 'harness-refresh'
     | 'settings'
     | 'help'
     | 'brief';
@@ -228,6 +242,7 @@ export interface MonitorOutcome {
     | { type: 'open-files'; files: string[] }
     /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
     | ({ type: 'role-edit' } & PlaceEdit)
+    | { type: 'harness-switch'; id: string; off: boolean }
     | { type: 'record-try'; action: TryAction; target: TryTarget }
     | { type: 'refresh-models' }
     | { type: 'brief-toggle' }

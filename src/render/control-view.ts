@@ -14,6 +14,7 @@ export const glyph = (state: PlaceState) => ({
   active: () => theme.board.active(mark('◉', '@')),
   standby: () => theme.board.muted(mark('○', 'o')),
   exhausted: () => theme.board.attention(mark('✗', 'x')),
+  off: () => theme.board.muted(mark('⊘', 'x')),
   missing: () => theme.board.muted(mark('−', '-')),
 })[state]();
 /** A role needs the owner when one of its places is exhausted or none can run. Healthy roles are the rest. */

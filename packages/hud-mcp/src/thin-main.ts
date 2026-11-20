@@ -21,13 +21,13 @@ import { herdrId, runCommand, runHerdr } from '../../../src/roles/herdr-run.js';
 import {
   roleRegistry,
   harnessDefaults,
-  placeKey,
   recordFailureExhaustion,
   executable,
   piSwitches,
   type Role,
   type RolePlace,
 } from '../../../src/roles/roster.js';
+import { HarnessSwitchError } from '../../../src/roles/harness-switches.js';
 import { ROLE_TOOLS as tools } from '../../../src/roles/tool-definitions.js';
 
 const hudHome = resolve(process.env.HUD_HOME || join(homedir(), '.hud'));
@@ -1017,7 +1017,6 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   }
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
   if (isolation !== 'none' && isolation !== 'worktree') return { ok: false, code: 'invalid_arguments', error: 'invalid isolation' };
-  if (!herdrId(pane) && isolation === 'none') return { ok: false, code: 'herdr_required' };
   const task = required(args, 'task');
   if (args.package !== undefined && typeof args.package !== 'string') throw new Error('invalid_arguments: package');
   if (args.preset !== undefined && args.on !== undefined) {
@@ -1027,6 +1026,13 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   const preset = definition.presets?.find((p) => p.name === presetName);
   if (presetName !== undefined && !preset) {
     return { ok: false, code: 'invalid_arguments', error: `unknown preset: ${presetName}` };
+  }
+  const now = Date.now();
+  let routing;
+  try { routing = found.routing(now); }
+  catch (error) {
+    if (error instanceof HarnessSwitchError) return harnessSwitchFailure(error);
+    throw error;
   }
   const onName = args.on !== undefined ? required(args, 'on') : null;
   const defaults = onName ? harnessDefaults(hudHome, bundled) : null;
@@ -1038,20 +1044,15 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     p.harness === target.harness &&
     (target.harness !== 'cli' || p.agent === target.agent) &&
     (target.harness !== 'bro' || (p.tool === target.tool && (!target.provider || p.provider === target.provider)));
-  const effective = found.assignment(preset ? { ...definition, run: preset.run } : definition);
-  let place: RolePlace | null = onEntry
-    ? { ...(definition.run.find((p) => matchPlace(p, onEntry)) ?? {}), ...onEntry }
-    : effective.runs_on
-      ? { ...effective.runs_on }
-      : null;
-  if (!place) {
-    return {
-      ok: false,
-      code: 'no_available_place',
-      reason: effective.reason,
-      ...(preset || effective.exhausted.length ? { exhausted: effective.exhausted } : {}),
-    };
+  const modelOverride = args.model === undefined ? undefined : required(args, 'model');
+  if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
+  const run = onEntry ? [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] : preset?.run ?? definition.run;
+  const effective = found.assignment({ ...definition, run }, now, modelOverride, routing);
+  const details = effective.places.find((p) => p.state === 'active');
+  if (!details) {
+    return { ok: false, code: 'no_available_place', reason: effective.reason, places: effective.places, exhausted: effective.exhausted };
   }
+  let place: RolePlace = { ...details.place };
   const id = 'j' + randomBytes(8).toString('hex');
   let worktree: ManagedWorktree | undefined;
   if (isolation === 'worktree') {
@@ -1078,17 +1079,16 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   } else if (place.harness === 'bro' && place.tool === 'jev-flow' && !place.kind) {
     place = { ...place, kind: 'image' };
   }
-  for (const key of ['model', 'thinking'] as const) {
-    if (args[key] === undefined) continue;
-    if (place.harness !== 'pi' && place.harness !== 'cli') return { ok: false, code: 'invalid_arguments' };
-    place = { ...place, [key]: required(args, key) };
-  }
-  const options: PiOptions = place.harness === 'pi' ? { split: place.split ?? false, pi_args: [] } : {};
+  if (place.harness === 'bro' && (modelOverride !== undefined || args.thinking !== undefined))
+    return { ok: false, code: 'invalid_arguments' };
+  if (args.thinking !== undefined) place = { ...place, thinking: required(args, 'thinking') };
+  const options: PiOptions = place.harness === 'pi' ? { split: place.split ?? false, pi_args: place.pi_args ?? [] } : {};
   for (const key of piSwitches) {
     const value = args[key];
-    if (value === undefined) continue;
-    if (place.harness !== 'pi' || typeof value !== 'boolean') return { ok: false, code: 'invalid_arguments' };
-    options[key] = value;
+    if (value !== undefined) {
+      if (place.harness !== 'pi' || typeof value !== 'boolean') return { ok: false, code: 'invalid_arguments' };
+      options[key] = value;
+    } else if (key !== 'skills' && place.harness === 'pi' && place[key] !== undefined) options[key] = place[key];
   }
   if (args.pi_args !== undefined) {
     if (
@@ -1098,14 +1098,10 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
       args.pi_args.some((value) => typeof value !== 'string' || value.length > 4096)
     )
       return { ok: false, code: 'invalid_arguments' };
-    if (args.pi_args.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
-      return {
-        ok: false,
-        code: 'invalid_arguments',
-        error: 'pi_args cannot override --orchestrator or --notify caller binding',
-      };
     options.pi_args = args.pi_args;
   }
+  if (options.pi_args?.some((value) => /^--(?:orchestrator|notify)(?:=|$)/.test(value)))
+    return { ok: false, code: 'invalid_arguments', error: 'pi_args cannot override --orchestrator or --notify caller binding' };
   let instructionsPath = '';
   if (place.harness === 'cli') {
     const instructionsName = definition.instructions ?? definition.role;
@@ -1124,7 +1120,6 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
   }
   const context = await assembleContext(args, cwd, place.harness === 'bro');
   if ('code' in context) return context;
-  const details = found.placeDetails(definition, place);
   let overrideHarnesses: Record<string, { model?: string }> | null = null;
   if (onName) {
     try {
@@ -1143,7 +1138,6 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
       : onEntry && onEntry.model !== undefined
         ? harnessesSource
         : details.model.source;
-  const key = placeKey(place, details.model.value);
   const job: Job = {
     job: id,
     role,
@@ -1157,7 +1151,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     ...(args.package === undefined ? {} : { package: args.package as string }),
     ...(presetName === undefined ? {} : { preset: presetName }),
     place,
-    place_key: key,
+    place_key: details.key,
     ...(place.harness === 'bro' ? { bro: place } : {}),
     ...(place.harness === 'cli'
       ? {
@@ -1172,7 +1166,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     ...(place.harness === 'pi' || place.harness === 'cli'
       ? {
           model: details.model.value,
-          thinking: details.thinking.value,
+          thinking: place.thinking ?? details.thinking.value,
           model_source: modelSource,
         }
       : {}),
@@ -1264,8 +1258,12 @@ async function launchJob(job: Job, definition: Role, place: RolePlace, dir: stri
   return out;
 }
 
+function harnessSwitchFailure(error: HarnessSwitchError) {
+  return { ok: false, code: error.code, error: error.message, path: error.path };
+}
+
 function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['assignment']>) {
-  const { role, instructions, available, can_continue, runs_on, model, thinking, reason } = assignment;
+  const { role, instructions, available, can_continue, runs_on, model, thinking, reason, places, preset } = assignment;
   const place = runs_on && {
     harness: runs_on.harness,
     pi_role: runs_on.pi_role,
@@ -1279,6 +1277,9 @@ function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['a
   };
   return {
     role, available, can_continue, runs_on: place,
+    ...(preset ? { preset } : {}),
+    places: places.map(({ index, state, off_by, until, missing, provider, provider_source }) =>
+      ({ index, state, off_by, until, missing, provider, provider_source })),
     ...(instructions && instructions !== role && instructions !== runs_on?.pi_role ? { instructions } : {}),
     ...(reason ? { reason } : {}),
   };
@@ -1300,9 +1301,16 @@ async function call(name: string, args: Args): Promise<unknown> {
     const stat = convention.truncated ? fs.statSync(convention.path, { bigint: true, throwIfNoEntry: false }) : undefined;
     const beyondCap = stat && `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
     const convention_version = createHash('sha256').update(JSON.stringify([project, convention, beyondCap])).digest('hex');
+    const now = Date.now();
+    let routing;
+    try { routing = found.routing(now); }
+    catch (error) {
+      if (error instanceof HarnessSwitchError) return harnessSwitchFailure(error);
+      throw error;
+    }
     return {
       roles: [...found.roles().values()].map((role) => {
-        const assignment = found.assignment(role);
+        const assignment = found.assignment(role, now, undefined, routing);
         return detail ? assignment : compactAssignment(assignment);
       }),
       ...(detail || invalid.length ? { invalid } : {}),
