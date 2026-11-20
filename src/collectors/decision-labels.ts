@@ -88,9 +88,11 @@ export class DecisionLabels {
           const brief = readJobFile(join(dir, 'brief.md'), 1500).text.split(/\r?\n\s*\r?\n/).slice(0, 2).join('\n');
           if (brief) add(w.id + ':kind', brief, JOB_KINDS.map((kind) => question(kind, `Does this job's title and goal describe ${kind} work?`, ['included', 'excluded'])), 'once');
         }
-        for (const f of (w.files ?? []).filter((f) => f.kind === 'question').slice(0, 100)) {
-          const q = readJobFile(join(dir, f.rel));
-          if (q.text) add(w.id + ':' + f.rel, q.text, [question('category', 'What does this question need from the owner? Permission to act requires owner authorisation.', CATEGORIES)], q.stamp);
+        const pending = w.files?.find((f) => f.kind === 'question' && f.state === 'open' &&
+          f.rel === w.work?.requestInfo?.evidence?.relativePath);
+        if (pending) {
+          const q = readJobFile(join(dir, pending.rel));
+          if (q.text) add(w.id + ':' + pending.rel, q.text, [question('category', 'What does this question need from the owner? Permission to act requires owner authorisation.', CATEGORIES)], q.stamp);
         }
         const review = (w.files ?? []).filter((f) => f.kind === 'review').at(-1) ??
           (/review/.test(w.role ?? '') && w.settledAt !== null ? w.files?.find((f) => f.kind === 'report') : undefined);
@@ -169,8 +171,6 @@ export class DecisionLabels {
   apply(board: WorkboardSnapshot): WorkboardSnapshot {
     if (!this.enabled) return board;
     const value = (key: string) => this.answers(key).find((a) => a.kind === 'choice') as Extract<Answer, { kind: 'choice' }> | undefined;
-    const decision = (d: WorkboardSnapshot['decisions'][number]) => ({ ...d,
-      category: value('thin-job:' + d.evidence[0]?.sourceId + ':' + d.evidence[0]?.relativePath)?.choice });
     const worker = (w: OwnerWorker): OwnerWorker => {
       const outcome = value(w.id + ':outcome'), loop = w.settledAt === null ? value(w.id + ':loop') : undefined;
       const findings = this.answers(w.id + ':severity');
@@ -182,7 +182,7 @@ export class DecisionLabels {
         severity: findings.length ? SEVERITIES.map((s) => findings.filter((a) => a.kind === 'choice' && a.choice === s).length) : undefined,
       } };
     };
-    const lanes = board.lanes.map((l) => ({ ...l, workers: l.workers.map(worker), decisions: l.decisions.map(decision) }));
-    return { ...board, lanes, workers: lanes.flatMap((l) => l.workers), decisions: lanes.flatMap((l) => l.decisions) };
+    const lanes = board.lanes.map((l) => ({ ...l, workers: l.workers.map(worker) }));
+    return { ...board, lanes, workers: lanes.flatMap((l) => l.workers) };
   }
 }

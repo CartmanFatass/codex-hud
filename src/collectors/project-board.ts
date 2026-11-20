@@ -111,7 +111,8 @@ export class ProjectCollector {
   private last?: ProjectSnapshot['last'];
   private worktrees: WorktreeInfo[] = [];
   private commitAt = new Map<string, number>();
-  private homeTryDates?: { key: string; at: number; dates: Map<string, number> };
+  private homeTryDates = new Map<string, number>();
+  private homePendingHashes = '';
   private diffs = new DiffStatCollector();
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) {}
   private cached<T>(path: string, load: (st: fs.Stats) => T): T | null {
@@ -360,13 +361,17 @@ export class ProjectCollector {
     out.ladder.current = milestone?.split(/\s+/)[0];
     if (shown === 'home' || shown === 'home-tasks') {
       if (shown === 'home-tasks') {
-        const tries = out.ledger.filter((r) => r.state === 'try'), hashes = [...new Set(tries.flatMap((r) => r.commit ? [r.commit.toLowerCase()] : []))];
+        const tries = out.ledger.filter((r) => r.state === 'try');
+        const hashes = [...new Set(tries.flatMap((r) => r.commit ? [r.commit.toLowerCase()] : []))]
+          .filter((hash) => !this.homeTryDates.has(hash)).sort();
         const key = hashes.join(' ');
-        if (!this.homeTryDates || this.homeTryDates.key !== key || now - this.homeTryDates.at >= 5000) {
-          this.homeTryDates = { key, at: now, dates: await this.commitDates(hashes) };
+        if (key !== this.homePendingHashes) {
+          // Unknown commits stay undated; don't retry an unchanged set of misses on the clock.
+          for (const [hash, at] of await this.commitDates(hashes)) this.homeTryDates.set(hash, at);
+          this.homePendingHashes = hashes.filter((hash) => !this.homeTryDates.has(hash)).join(' ');
         }
         for (const row of tries) {
-          const at = row.commit ? this.homeTryDates.dates.get(row.commit.toLowerCase()) : undefined;
+          const at = row.commit ? this.homeTryDates.get(row.commit.toLowerCase()) : undefined;
           if (at !== undefined) row.at = at;
         }
       }

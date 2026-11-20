@@ -997,6 +997,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         if (treeBuiltFor !== null) state = configuredState();
         worktrees = null;
         // Cancel old-root writers before loading the next root's model log.
+        decisionTitles.stop();
         decisionLabels.stop();
         homeRecommendation.stop();
         jobSentences.stop();
@@ -1034,7 +1035,8 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       treeBuiltFor = rootId;
       applyAgentContext();
       state = reconcileMonitor(state, tree, Date.now(), delegation);
-      decisionTitles.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home);
+      decisionTitles.inspect(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home,
+        !settingsPage && !state.help && state.focus === 'details' ? state.boardInspect : undefined);
       decisionLabels.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       jobSentences.update(jobPipeline.workboard(tree, panelDelegation), jobPipeline.home, tree);
       homeRecommendation.update(displayBoard());
@@ -1324,7 +1326,9 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       syncPanelView();
       if (previous.focus !== 'changes' && state.focus === 'changes') void refreshGit();
       if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state))) ||
-        (controlShown(state) && (!controlShown(previous) || state.projectRoot !== previous.projectRoot))) void collect(true);
+        (controlShown(state) && (!controlShown(previous) || state.projectRoot !== previous.projectRoot)) ||
+        ((state.focus === 'details' || previous.focus === 'details') &&
+          (state.focus !== previous.focus || state.help !== previous.help || state.boardInspect !== previous.boardInspect))) void collect(true);
       if (result.close) {
         finish();
         break;

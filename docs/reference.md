@@ -900,11 +900,11 @@ One successful final sentence freezes that settlement; a continuation can settle
 | Thin-job sentence/name | Brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, four settled report lines, four public text/tool blocks from a 32 KiB working-session tail |
 | To-try brief and steps | One per slice still to try, only while the Project tab shows it: its ledger line, the subjects and bodies of up to 5 commits it names (1200 chars each), up to 4 ticket files (3000 bytes each) under the `.scratch/<slug>/` it names; cached per slice by a hash of those inputs |
 | Native sentence/name/result/cause | Name/role (80 chars each), public task/charge (400), report (600), action (200), result (8000 head/tail), error (2000); settled Codex may use a safe 32 KiB tail, Claude reuses collected text |
-| Decision title/localized detail | Question and answer, 4096 bytes each; ≤8-word title plus faithful question/answer/instead/why |
+| Decision title | Only for the inspected job's answered questions in Files: question and answer, 4096 bytes each; ≤8-word title plus localized fields |
 | Outcome label | Final state + first 12 report lines (4096-byte head), once per settlement |
 | Kind label | First two brief paragraphs (1500-byte head), once per running/job settled within one day |
 | Looping label | Last 12 public tool/result pairs (600 chars each part) from the same safe tail; after 3 quiet minutes, at most once per 5 minutes, unchanged input never repeats |
-| Question category | 4096-byte question head; ≤100 questions per observed job |
+| Question category | 4096-byte head of the job's current open question |
 | Review severity | ≤24 list items (400 chars each) from newest 32 KiB review head or settled reviewer report |
 | Home ranking/brief | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240), question flag, outcome; no bodies |
 | Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |

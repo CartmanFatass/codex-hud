@@ -261,3 +261,31 @@ test('home-mode collection spawns no git or job reads; full collection gates git
   assert.ok(spawned.length > spawnsAfterCold);
   assert.equal('at' in expired.ledger[0], false);
 });
+
+test('Home task ages query only uncached hashes, never an unchanged set of misses', async (t) => {
+  const f = makeTemp(t), dateA = '2026-11-12T10:00:00Z', dateB = '2026-11-13T10:00:00Z';
+  const [a, b] = initRepo(f.cwd, [
+    { file: 'a.txt', msg: 'first', date: dateA }, { file: 'b.txt', msg: 'second', date: dateB },
+  ]);
+  const calls = [], orig = childProcess.execFile;
+  childProcess.execFile = (file, args, ...rest) => { calls.push(args); return orig(file, args, ...rest); };
+  syncBuiltinESMExports();
+  t.after(() => { childProcess.execFile = orig; syncBuiltinESMExports(); });
+  const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
+  const write = (...hashes) => f.put(join(f.cwd, 'STATE.md'), '## Slices\n' + hashes.map((hash, i) =>
+    `- try · M4 · SLICE-${i} · landed (${hash})`).join('\n'));
+  const tick = (ms) => collector.collect('home-tasks', EMPTY_BOARD, NOW + ms);
+  write(a, '0000000');
+  assert.deepEqual((await tick(0)).ledger.map((r) => r.at), [Date.parse(dateA), undefined]);
+  await tick(5000);
+  write('0000000', a.toUpperCase());
+  assert.deepEqual((await tick(10000)).ledger.map((r) => r.at), [undefined, Date.parse(dateA)]);
+  assert.equal(calls.length, 1);
+  write(b, a);
+  assert.deepEqual((await tick(15000)).ledger.map((r) => r.at), [Date.parse(dateB), Date.parse(dateA)]);
+  write(); await tick(20000);
+  write(a, b); await tick(25000);
+  assert.deepEqual(calls.map((args) => args.slice(args.indexOf('--format=%h%x00%ct') + 1)), [
+    ['0000000', a, '--'], [b, '--'],
+  ]);
+});

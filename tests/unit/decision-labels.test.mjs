@@ -163,25 +163,26 @@ test('04: HUD job uses the same public activity input as its sentence', async (t
   sentences.stop(); model.cancelAll();
 });
 
-test('05: question revisions, pending and decided chips, permission first without answering', async (t) => {
+test('05: only current open questions get labels; permission first without answering', async (t) => {
   const f = fixture(t), a = f.job(1, 'working'), b = f.job(2, 'working');
   f.put(a, 'qa/q1.md', '# Question\nQuestion: clarify the width?\n' + 'x'.repeat(5000) + 'NOT-OUTBOUND');
   f.put(b, 'qa/q1.md', '# Question\nQuestion: authorise deleting the synthetic fixture?\nDefault if unanswered: B');
   f.put(b, 'qa/q2.md', 'Question: authorise a synthetic change?\nDefault if unanswered: A\nOptions:\nA: keep\nB: change');
   f.put(b, 'qa/q2.answer.md', 'B: change');
-  let board = await f.pump(); assert.equal(f.calls.length, 3);
-  assert.deepEqual(f.service.usage().byFeature, { 'question-category': 3 });
+  let board = await f.pump(); assert.equal(f.calls.length, 2);
+  assert.deepEqual(f.service.usage().byFeature, { 'question-category': 2 });
   assert.equal(board.workers.find((w) => w.id.endsWith(b)).labels.category, 'owner authorisation');
-  assert.equal(board.decisions[0].category, 'owner authorisation');
-  assert.doesNotMatch(JSON.stringify(f.calls), /NOT-OUTBOUND/);
+  assert.equal(board.decisions.length, 1, 'the answer is still collected');
+  assert.equal(board.decisions[0].category, undefined);
+  assert.doesNotMatch(JSON.stringify(f.calls), /NOT-OUTBOUND|authorise a synthetic change/);
   const state = initialMonitorState();
   const text = homeRows(board, state, 120, f.now, { workboard: board }).map((r) => stripAnsi(r.text)).join('\n');
   assert.ok(text.indexOf('authorise deleting') < text.indexOf('clarify the width'));
   assert.match(text, /owner authorisation/);
   assert.equal(fs.existsSync(join(f.home, 'jobs', a, 'qa/q1.answer.md')), false);
-  f.open(); await f.pump(); assert.equal(f.calls.length, 3);
+  f.open(); await f.pump(); assert.equal(f.calls.length, 2);
   f.now += 1000; f.put(a, 'qa/q1.md', 'Question: authorise a revised synthetic fixture?');
-  board = await f.pump(); assert.equal(f.calls.length, 4); assert.equal(board.workers.find((w) => w.id.endsWith(a)).labels.category, 'owner authorisation');
+  board = await f.pump(); assert.equal(f.calls.length, 3); assert.equal(board.workers.find((w) => w.id.endsWith(a)).labels.category, 'owner authorisation');
 });
 
 test('06: findings split independently of headings, bounded, revision cached, empty means no counts/call', async (t) => {

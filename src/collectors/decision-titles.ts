@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { readJobFile } from './job-sentences.js';
 import { writePrivateFile, type SmallModel, type ModelHandle } from './small-model.js';
-import { targetKey, type DecisionRecord, type WorkboardSnapshot } from './workboard-types.js';
+import { targetKey, type DecisionRecord, type WorkboardSnapshot, type WorkTarget } from './workboard-types.js';
 import type { Language } from '../render/i18n.js';
 import { summarySentence } from '../utils/summary-sentence.js';
 import { keywordPrompt, markedTitle } from '../utils/keyword-marks.js';
@@ -37,6 +37,25 @@ export class DecisionTitles {
     this.active.clear();
   }
   private key = (d: DecisionRecord) => JSON.stringify([2, d.id, d.evidence[1]?.revision, this.language]);
+  /** Only the worker Inspector's Files rows still show answer titles. */
+  inspect(board: WorkboardSnapshot, home: string, target?: WorkTarget): void {
+    const lane = target?.kind === 'worker' ? board.lanes.find((l) => l.id === target.laneId) : undefined;
+    const worker = target?.kind === 'worker' ? lane?.workers.find((w) => w.id === target.workerId) : undefined;
+    const sourceId = worker?.evidence[0]?.sourceId;
+    const files = new Set(worker?.files?.filter((f) => f.qid).map((f) => f.rel));
+    const decisions = lane?.decisions.filter((d) => {
+      const q = d.evidence[0];
+      return d.kind === 'answer' && q && q.sourceId === sourceId && files.has(q.relativePath);
+    }) ?? [];
+    const keys = new Set(decisions.map(this.key));
+    for (const [key, handle] of this.active) if (!keys.has(key)) {
+      handle.cancel();
+      this.active.delete(key);
+      this.rows.delete(key); // a cancelled attempt isn't a retry cooldown
+    }
+    const visible = new Set(decisions.map((d) => targetKey({ kind: 'decision', laneId: d.laneId, decisionId: d.id })));
+    this.update({ ...board, decisions }, home, visible);
+  }
   update(board: WorkboardSnapshot, home: string, visible = new Set<string>()): void {
     if (!this.enabled) return;
     const shown = (d: DecisionRecord) =>

@@ -473,6 +473,22 @@ function decisionFixture(t, mode = 'on') {
   f.reply = 'Use the durable parser for all future input processing tasks';
   return f;
 }
+test('decision title requests are scoped to the inspected worker’s Files', async (t) => {
+  const f = decisionFixture(t), board = f.board(), worker = board.workers[0];
+  const target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
+  f.service.inspect(board, f.home);
+  f.service.inspect(board, f.home, { kind: 'lane', laneId: worker.laneId });
+  f.service.inspect(board, f.home, { ...target, workerId: 'another-worker' });
+  await settle();
+  assert.equal(f.calls.length, 0);
+  assert.equal(board.decisions.length, 1);
+  f.service.inspect(board, f.home, target);
+  await settle();
+  assert.equal(f.calls.length, 1);
+  const state = { ...initialMonitorState(), focus: 'details', boardInspect: target };
+  const frame = renderMonitor({ state, workboard: f.service.apply(board), width: 90, height: 40, now: f.now });
+  assert.match(stripAnsi(frame.lines.join('\n')), /Use the durable parser for all future input/);
+});
 test('decision title collection: eight words, dedupe, persisted reopen, new answer and Chinese', async (t) => {
   const f = decisionFixture(t),
     factual = decisionTitle(f.board().decisions[0]);

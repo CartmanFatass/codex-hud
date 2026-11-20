@@ -259,10 +259,10 @@ Userinfo and redirects refuse. Wrong-language text is rejected rather than cache
 | `JobSentences`, thin jobs | Brief title/goal (1500-byte head), state/phase, question (2 KiB), review verdict, four settled report lines, four public text/tool blocks from a safe 32 KiB working-session tail |
 | `JobSentences`, native agents | Name/role (80 chars each), task/charge (400), report (600), action (200), final result (8000 head/tail), error (2000); a settled Codex agent may use one safe 32 KiB tail |
 | `TryBriefs` | One call per to-try slice, only while the Project tab shows it (newest 12 slices): its ledger line, up to 5 commits' messages (1200 chars each), up to 4 ticket files (3000 bytes each) under a `.scratch/<slug>/` the line names |
-| `DecisionTitles` | That job's question and answer, 4096 bytes each; one response includes ≤8-word title and localized question/answer/instead/why |
+| `DecisionTitles` | Only for an inspected job's answered question in Files: question and answer, 4096 bytes each; one response includes ≤8-word title and localized question/answer/instead/why |
 | `DecisionLabels`, outcome/kind | Final state + first 12 report lines (4096-byte head), or brief title/goal (1500-byte head); once per settlement/job respectively |
 | `DecisionLabels`, looping | Latest 12 public tool/result pairs, 600 chars each part, from the same safe session tail |
-| `DecisionLabels`, question/review | Question head (4096 bytes, ≤100 per job), or ≤24 list items of 400 chars from a 32 KiB review head |
+| `DecisionLabels`, question/review | Current open question head (4096 bytes), or ≤24 list items of 400 chars from a 32 KiB review head |
 | `HomeRecommendation` | ≤200 cards' ids, lanes, state, role (80), title (160), age, sentence/reason (240), question flag and outcome; no file bodies |
 | Settings Test API | Fixed synthetic messages only |
 
