@@ -162,8 +162,8 @@ board counts these; update at every landing or decision. -->
 - accepted · 0.2.0 · PROJECT-LAYOUTS-02 · the Inbox layout: Needs you first, Running, Progress by To try; Project tab only (imp neon) (8b0aba6c)
 - try · — · EXP-01 · experimental EXP tab behind Settings → Panel → Experiments (实验功能): Codex, pi proxy and API grant settings; readings say 未接入 until 02–05 (imp) (2cc3760c; test fix 1f10549a)
 - try · — · EXP-02 · Codex native status line: hud-mcp serves a compact MyHUD row (model, context, quota, pane's HUD reminder); pick it in Codex /statusline; codexH bar unchanged (imp) (b0801952)
-- working · — · EXP-03 · pi subscription proxy: footer shows a bound Codex profile's windows, refreshed while pi is used (imp)
-- working · — · EXP-04 · oapi grant ledger: per-request cost JSONL, balance on read, footer API ≈$ (imp)
+- try · — · EXP-03 · pi subscription proxy: bind a Codex profile in EXP; pi footer on openai+OAuth shows its 5h/7d windows (≈), refreshed only while a pi footer draws (no timer) (imp) (67811752)
+- working · — · EXP-04 · oapi grant ledger: per-request cost JSONL, balance on read, footer API ≈$; built (8443db91), being rebased onto EXP-03 (imp)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
