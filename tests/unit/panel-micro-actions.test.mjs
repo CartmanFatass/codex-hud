@@ -134,13 +134,13 @@ test('1–4 switch no tab; on an expanded answerable question they pick an optio
   const open = { boardExpanded: new Set([target]) };
   // The slab says its keys once it is open, and offers them nowhere else.
   const closed = plain(f.press(ASKING, 'x').frame).join('\n');
-  assert.doesNotMatch(closed, /\[1\]|1-2 answer|r reply/);
-  assert.match(closed, /┃ qa\/q1\.md +⏎ expand {2}o open/);
+  assert.doesNotMatch(closed, /\[1\]|1-2 answer|r reply|qa\/q1\.md/);
+  assert.deepEqual(f.press(ASKING, 'o').out.action, { type: 'open-files', files: [join(f.dir(ASKING), 'qa/q1.md')] });
   const { out, frame } = f.press(ASKING, 'x', open);
   const text = plain(f.render({ ...initialMonitorState(), homeTarget: out.state.homeTarget, ...open })).join('\n');
   assert.match(text, /┃ \[1\] keep it\n┃ \[2\] remove it now/);
-  assert.match(text, /┃ qa\/q1\.md +1-2 answer {2}d default {2}⏎ collapse {2}o open/);
-  assert.doesNotMatch(text, /r reply/);
+  assert.match(text, /^┃ 1-2 answer {2}d default$/m);
+  assert.doesNotMatch(text, /r reply|qa\/q1\.md/);
   const action = (answer) => ({ type: 'answer-job', home: f.home, jobId: ASKING, qid: 'q1', answer, role: 'imp' });
   assert.deepEqual(f.press(ASKING, '1', open).out.action, action('keep it'));
   assert.deepEqual(f.press(ASKING, '2', open).out.action, action('remove it now'));
@@ -243,12 +243,19 @@ test('every row is exactly the panel width with the question expanded, a stop pr
   assert.equal(split[1], 'Stop reviewer j1111111?  y confirm · Esc cancel');
 });
 
-test('with no reply and no stop prompt open, a collapsed question and Home are drawn as before', (t) => {
+test('Classic Home at 40 columns keeps the collapsed slab’s lane, question and choices, without a file or hint row', (t) => {
   const f = fixture(t);
-  const text = plain(f.render(initialMonitorState(), 60)).join('\n');
-  assert.match(text, /┃ Keep the v1 shim for one more release\?/);
-  assert.doesNotMatch(text, /\[1\]|r reply|Stop /);
-  assert.match(text, /⏎ expand {2}o open/);
+  for (const lang of ['en', 'zh']) {
+    const frame = f.render(initialMonitorState(), 40, lang), rows = plain(frame);
+    const at = rows.findIndex((line) => line.startsWith('? imp · IMP'));
+    assert.ok(at >= 0);
+    assert.match(rows[at], lang === 'en' ? /asking 4m$/ : /提问中 4分钟$/);
+    assert.deepEqual(rows.slice(at + 1, at + 3), ['┃ Keep the v1 shim for one more', '┃ release?']);
+    assert.match(rows[at + 3], lang === 'en' ? /^┃ 2 options · default:/ : /^┃ 2 个选项 · 默认:/);
+    assert.equal(rows[at + 4], '');
+    assert.doesNotMatch(rows.join('\n'), /qa\/q1\.md|\[1\]|r reply|Stop /);
+    for (const row of frame.lines) assert.equal(visualLength(row), 40);
+  }
 });
 
 /** A herdr and a pi-role-reap that only record what they were asked. */

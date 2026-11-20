@@ -157,10 +157,10 @@ export function projectCrumb(page: ProjectPage, data: ProjectSnapshot | undefine
   return { crumb, right: (data && pageMeta(page, data, now).find((r) => r && visualLength(crumb) + 4 + visualLength(r) <= width)) || '' };
 }
 /** One line per page, most important fact first: a row too short for all of them drops the last, not part of one. */
-export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: number): string[] {
+export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: number, showMilestone = true): string[] {
   const c = currentRows(data).counts, tickets = data.tickets.flatMap((f) => f.tickets), g = data.git;
   // What the owner acts on first: the slices to try (the ledger's whole count, as Waiting says it), then what is blocked, then what works.
-  if (page === 'progress') return parts(data.ladder.current && monitorText(data.ladder.current),
+  if (page === 'progress') return parts(showMilestone && data.ladder.current && monitorText(data.ladder.current),
     tryCount(data) && t('{n} to try', { n: tryCount(data) }), c.blocked && `${c.blocked} ${t('blocked')}`,
     c.working && `${c.working} ${t('working')}`, !data.statePath && t('no STATE.md'));
   if (page === 'tickets') {
@@ -213,6 +213,13 @@ export const inline = (head: string, text: string, right: string, width: number,
   const body = monitorText(text), room = width - visualLength(head) - gap - (right ? visualLength(right) + 1 : 0);
   return pair(body && (visualLength(body) <= room || (cut && room >= CUT_MIN)) ? `${head}${' '.repeat(gap)}${theme.board.muted(truncateAnsi(body, room))}` : head, right, width);
 };
+/** Split Progress: fit the ledger's prose between the id and the age or live-job facts. */
+export function sliceLedgerLine(r: LedgerSlice, head: string, right: string, width: number, gap = 1): string {
+  const rightWidth = visualLength(right), room = width - visualLength(head) - gap - (rightWidth ? rightWidth + 1 : 0);
+  const body = monitorText(ledgerText(r));
+  const text = body && room > 0 ? cutWords(body, room) || mark('…', '~') : '';
+  return pair(text ? `${head}${' '.repeat(gap)}${theme.board.muted(text)}` : head, rightWidth ? right : '', width);
+}
 /** A brief's first sentence: up to the first `。！？` or `.!?` that ends a word, with any closing quote or bracket after it. */
 export const firstSentence = (text: string): string => /^.*?(?:[。！？]|[.!?](?=\s|$))[”’」』）)\]]*/su.exec(text.trim())?.[0] ?? text.trim();
 /** A to-try slice's sentence for its list row: its brief's first, or nothing (the row then says the ledger's text). */
@@ -298,12 +305,12 @@ function hubRows(
   const landed = landedNewest(data).slice(0, width < 56 ? 3 : 5).map(({ r }): MonitorRow => ({
     text: landedInline(r, `  ${landedMark(r)} ${monitorText(r.id)}`, landedAge(r, now), width),
   }));
-  const latest = (n: number): MonitorRow[] => n ? [section(t('Latest'), width, t('newest first')), ...landed.slice(0, n), boardRow('')] : [];
+  const latest = (n: number): MonitorRow[] => n ? [section(t('Latest'), width), ...landed.slice(0, n), boardRow('')] : [];
   const column = Math.max(...PROJECT_PAGES.map((p) => visualLength(t(PAGE_WORD[p])))) + 1, space = Math.max(1, width - column);
   const pages = (bar: boolean): MonitorRow[] => PROJECT_PAGES.flatMap((page) => {
     // A project with no tickets has no Tickets entry, as it had no empty section before.
     if (page === 'tickets' && !data.tickets?.length) return [];
-    const facts = pageSummary(page, data, now);
+    const facts = pageSummary(page, data, now, false);
     while (facts.length > 1 && visualLength(facts.join(' · ')) > space) facts.pop();
     const item = `project:page:${page}`, rows: MonitorRow[] = [{ text: fit(`${theme.board.title(fit(t(PAGE_WORD[page]), column))}${facts.join(' · ') || mark('–', '-')}`, width), item }];
     // The bar is the current milestone's, under its row; it opens the same page.
@@ -504,7 +511,7 @@ export function pageRows(
     const fileRow = (text: string, key: string, path = data.statePath) => rows.push({
       text: fit(text, width), ...(path ? { item: `project:file:${path}:${key}`, files: [path] } : {}),
     });
-    const head = (label: string, right: string | number) => rows.push(boardRow(''), section(t(label), width, String(right)));
+    const head = (label: string, right: string | number = '') => rows.push(boardRow(''), section(t(label), width, String(right)));
     // Landed slices as rows: each a row Enter opens (its milestone, commit and day), the milestones one row each that Enter opens into its slices.
     const landed = landedNewest(data), recent = landed.filter(({ r }) => r.at !== undefined && now - r.at <= 7 * DAY), older = landed.filter((x) => !recent.includes(x));
     // A to-try slice with a brief is one row, its first sentence beside its id; without one it shows its whole text, and short of room
@@ -540,10 +547,10 @@ export function pageRows(
         const flagged = items.filter(({ r }) => action(r) === 'flag').length, tries = items.length - accepted - flagged;
         const days = items.flatMap(({ r }) => r.at === undefined ? [] : [Math.floor((now - r.at) / DAY)]), lo = Math.min(...days), hi = Math.max(...days);
         const span = !days.length ? '' : lo === hi ? t('{n}d', { n: lo }) : `${lo}–${t('{n}d', { n: hi })}`;
-        // Counts with their words; a row too short for them keeps the marks and the numbers.
+        // The filter heading names the to-try state; keep words for exceptions and in mixed History.
         const counts = (words: boolean) => [accepted && sliceInk('accepted')(`${mark('✓', '+')} ${accepted}${words ? ' ' + t('accepted') : ''}`),
           flagged && theme.board.attention(`${mark('⚑', '!')} ${flagged}${words ? ' ' + t('flagged') : ''}`),
-          tries && sliceInk('try')(`${mark('◇', 'o')} ${tries}${words ? ' ' + t('to try') : ''}`)].filter(Boolean).join('  ');
+          tries && sliceInk('try')(`${mark('◇', 'o')} ${tries}${words && !tried ? ' ' + t('to try') : ''}`)].filter(Boolean).join('  ');
         const item = newest ? `project:${id}` : `project:fold:${id}`, selected = tried ? trySelectionMark(state, item) : '';
         const lead = `  ${selected}${open ? mark('▾', 'v') : mark('▸', '>')} ${fit(name(milestone), column)} `, words = visualLength(lead + counts(true)) + visualLength(span) + 1 <= width;
         const tryTarget = tried ? { milestone, slices: items.map(({ r }) => r) } : undefined;
@@ -628,7 +635,7 @@ export function pageRows(
     });
     if (more > 0) rows.push({ text: fit(`  ${theme.board.muted(`${all ? mark('▾', 'v') : mark('▸', '>')} ${all ? t('fewer') : t('{n} more', { n: more })}`)}`, width), item: 'project:fold:next' });
     // History: the last seven days in full, newest first (`recent`); everything older, and whatever has no commit date, one row a milestone.
-    if (landed.length) head('History', t('newest first'));
+    if (landed.length) head('History');
     recent.forEach((x) => entry(x, 2));
     byMilestone(older, 'hist:m:');
   } else if (page === 'waiting') {

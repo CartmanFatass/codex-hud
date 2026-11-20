@@ -12,7 +12,7 @@ import type { MonitorData, MonitorRow, MonitorState, ProjectChoice } from './mon
 import {
   NO_MILESTONE, PAGE_WORD, PROJECT_PAGES, acceptedText, asksYou, barText, briefStack, clampClean, clampLines,
   currentRows, dateText, featureCodes, inFlight, inline, landedAge, landedMark, landedNewest, ledgerText, pageRows,
-  pageSummary, progressSegments, projectFoldedSet, projectOrder, roleInk, sinceText, sliceInk, stacked, ticketRows,
+  pageSummary, progressSegments, projectFoldedSet, projectOrder, roleInk, sinceText, sliceInk, sliceLedgerLine, stacked, ticketRows,
   tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted, unsliced, waitingRows, type ProjectPage,
 } from './project-view.js';
 import { glyph, roleName } from './control-view.js';
@@ -142,9 +142,9 @@ function hubPageRows(data: ProjectSnapshot, width: number, now: number, withMark
   const col = Math.max(...shown.map((p) => visualLength(t(PAGE_WORD[p])))) + 1, space = Math.max(1, width - col - (withMarks ? 2 : 0));
   const markOf = (page: ProjectPage) => !withMarks ? '' : (page === 'progress' && cur.counts.working ? theme.board.active(mark('◐', '@'))
     : (page === 'tickets' && tickets.some(asksYou)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
-    : muted(mark('○', 'o'))) + ' ';
+    : page === 'tree' || page === 'docs' ? ' ' : muted(mark('○', 'o'))) + ' ';
   return shown.map((page) => {
-    const facts = pageSummary(page, data, now);
+    const facts = pageSummary(page, data, now, !withMarks);
     while (facts.length > 1 && visualLength(facts.join(' · ')) > space) facts.pop();
     return { item: `project:page:${page}`, text: fit(`${markOf(page)}${theme.board.title(fit(t(PAGE_WORD[page]), col))}${facts.join(' · ') || mark('–', '-')}`, width) };
   });
@@ -222,7 +222,7 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
     const page = /^project:page:(.+)$/.exec(cursor ?? '')?.[1] as ProjectPage | undefined;
     if (page && page !== 'progress') {
       const facts = page === 'tree' ? { ...data, gitDiff: undefined } : data;
-      return { label: t(PAGE_WORD[page]), right: t('⏎ open page'), rows: bare(pageRows(page, facts, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1)) };
+      return { label: t(PAGE_WORD[page]), rows: bare(pageRows(page, facts, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1)) };
     }
     const cur = currentRows(data), cells = Math.max(6, Math.min(60, width - 16)), tries = hubTryRows(data, state, width, now, input.tryMarks);
     const rows: MonitorRow[] = [
@@ -230,7 +230,7 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
       ...(progressSegments(cur.counts, cells).some((s) => s.width) ? [plain(`  ${barText({ counts: cur.counts }, cells)} ${muted(acceptedText(cur.counts, cur.rows.length))}`, width)] : []),
       ...tries.rows, ...(live.length ? [boardRow(''), plain(muted(t('Running')), width), ...bare(live)] : []), ...(last ? [plain(last.text, width)] : []),
     ];
-    return { label: t('Progress'), right: muted(t('⏎ open page')), rows, ...(tries.act ? { act: tries.act, hints: HUB_TRY_HINTS } : {}) };
+    return { label: t('Progress'), rows, ...(tries.act ? { act: tries.act, hints: HUB_TRY_HINTS } : {}) };
   };
   return {
     list, preview, start: list.find((r) => r.item && r.item !== 'project:switch')?.item ?? list.find((r) => r.item)?.item,
@@ -337,20 +337,20 @@ export function inboxProgressPart(input: MonitorData, data: ProjectSnapshot, sta
     for (const { r } of tries) {
       const item = `project:slice:${r.id}`, sentence = trySentence(r), head = `  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`;
       const right = muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), sinceText(r.at, now)].filter(Boolean).join(' '));
-      for (const text of sentence ? briefStack(head, sentence, right, width, 4) : [pair(head, right, width)]) list.push({ item, ...files, tryTarget: { milestone: r.milestone, slices: [r] }, text });
+      for (const text of sentence ? briefStack(head, sentence, right, width, 4) : [sliceLedgerLine(r, head, right, width, 2)]) list.push({ item, ...files, tryTarget: { milestone: r.milestone, slices: [r] }, text });
     }
   }
   if (blocked.length) {
     gap();
     list.push(section(t('Blocked'), width, String(blocked.length)));
-    for (const r of blocked) list.push({ item: `project:slice:${r.id}`, ...files, text: pair(`  ${sliceInk('blocked')(mark('◆', '!'))} ${monitorText(r.id)}`, sliceRight(data.slices.find((x) => x.label === r.id), undefined, now), width) });
+    for (const r of blocked) list.push({ item: `project:slice:${r.id}`, ...files, text: sliceLedgerLine(r, `  ${sliceInk('blocked')(mark('◆', '!'))} ${monitorText(r.id)}`, sliceRight(data.slices.find((x) => x.label === r.id), undefined, now), width, 2) });
   }
   if (working.length + jobs.length) {
     gap();
     list.push(section(t('Working'), width, String(working.length + jobs.length)));
     for (const r of working) {
       const s = data.slices.find((x) => x.label === r.id);
-      list.push({ item: `project:slice:${r.id}`, ...files, text: pair(`  ${s?.drift ? theme.board.attention('!') : sliceInk('working')(mark('◐', '@'))} ${monitorText(r.id)}`, sliceRight(s, workerOf(s?.jobId, board), now), width) });
+      list.push({ item: `project:slice:${r.id}`, ...files, text: sliceLedgerLine(r, `  ${s?.drift ? theme.board.attention('!') : sliceInk('working')(mark('◐', '@'))} ${monitorText(r.id)}`, sliceRight(s, workerOf(s?.jobId, board), now), width, 2) });
     }
     for (const j of jobs) list.push(unslicedRow(j, width, now, true));
   }

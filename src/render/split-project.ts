@@ -10,7 +10,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, briefStack, clampClean, clampLines, currentRows, cutTicketTitle, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
-  ledgerText, ledgerFoldItem, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, tryCount, tryDetailRows, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
+  ledgerText, ledgerFoldItem, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, sliceLedgerLine, tryCount, tryDetailRows, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
   type ProjectPage } from './project-view.js';
 import { glyph, placeRows, placeTarget, radarFacts, roleToday } from './control-view.js';
 import { boardHubPart, boardProgressPart } from './board-project.js';
@@ -44,13 +44,14 @@ export function hubTryRows(data: ProjectSnapshot, state: MonitorState, width: nu
   const todo = queue.filter(({ r }) => !marks?.get(r.id)), done = queue.filter(({ r }) => marks?.get(r.id));
   const tryRows = ({ r }: { r: LedgerSlice }, act: boolean): MonitorRow[] => {
     const item = `project:try:${r.id}`, sentence = trySentence(r);
-    const head = `  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`, age = sentence ? muted(sinceText(r.at, now)) : landedAge(r, now), body = monitorText(ledgerText(r));
+    const head = `  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`, age = muted(sinceText(r.at, now)), body = monitorText(ledgerText(r));
     const fits = visualLength(head) + 2 + visualLength(body) + visualLength(age) + 1 <= width;
-    const lines = sentence ? briefStack(head, sentence, age, width) : fits || !body ? [inline(head, body, age, width)] : [pair(head, age, width), ...clampClean(body, width - 4, Infinity).lines.map((l) => fit('    ' + muted(l), width))];
+    const lines = sentence ? briefStack(head, sentence, age, width) : fits && body ? [pair(`${head}  ${muted(body)}`, age, width)]
+      : [pair(head, age, width), ...clampClean(body, width - 4, Infinity).lines.map((l) => fit('    ' + muted(l), width))];
     return lines.map((text) => ({ item, ...(data.statePath ? { files: [data.statePath] } : {}), ...(act ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text }));
   };
   return {
-    rows: queue.length ? [boardRow(''), plain(muted(`${t('To try')}   ${t('y accept  n flag')}`), width), ...todo.flatMap((x) => tryRows(x, true)), ...done.flatMap((x) => tryRows(x, false))] : [],
+    rows: queue.length ? [boardRow(''), plain(muted(t('To try')), width), ...todo.flatMap((x) => tryRows(x, true)), ...done.flatMap((x) => tryRows(x, false))] : [],
     act: todo.length ? `project:try:${todo[0].r.id}` : undefined,
   };
 }
@@ -65,9 +66,9 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
   const cur = currentRows(data), tickets = data.tickets.flatMap((f) => f.tickets);
   const mark_ = (page: ProjectPage) => page === 'progress' && cur.counts.working ? theme.board.active(mark('◐', '@'))
     : (page === 'tickets' && tickets.some(asksYou)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
-    : muted(mark('○', 'o'));
+    : page === 'tree' || page === 'docs' ? ' ' : muted(mark('○', 'o'));
   const pages = PROJECT_PAGES.filter((p) => p !== 'tickets' || data.tickets?.length).map((page): MonitorRow => {
-    const facts = pageSummary(page, data, now), room = width - 2 - 14 - 1;
+    const facts = pageSummary(page, data, now, false), room = width - 2 - 14 - 1;
     while (facts.length > 1 && visualLength(facts.join(' · ')) > room) facts.pop();
     return { item: `project:page:${page}`, text: fit(`${mark_(page)} ${theme.board.title(fit(t(PAGE_WORD[page]), 14))}${facts.join(' · ') || mark('–', '-')}`, width) };
   });
@@ -76,7 +77,7 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
     const page = /^project:page:(.+)$/.exec(cursor ?? '')?.[1] as ProjectPage | undefined;
     if (page && page !== 'progress') {
       const facts = page === 'tree' ? { ...data, gitDiff: undefined } : data;
-      return { label: t(PAGE_WORD[page]), right: t('⏎ open page'), rows: bare(pageRows(page, facts, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1)) };
+      return { label: t(PAGE_WORD[page]), rows: bare(pageRows(page, facts, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1)) };
     }
     const rows: MonitorRow[] = [...indent(data.summary, width, 2)];
     const cells = Math.max(6, Math.min(HOME_BLOCK, width - 16));
@@ -85,8 +86,8 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
     if (tries.rows.length) rows.push(...tries.rows);
     if (inFlight(data).length || unsliced(data).length) rows.push(boardRow(''), plain(muted(t('Now')), width), ...hubNowRows(data, width, now, board));
     const accepted = landed.filter(({ r }) => r.state === 'accepted').slice(0, 3);
-    if (accepted.length) rows.push(boardRow(''), plain(muted(t('Latest accepted')), width), ...accepted.map(({ r }): MonitorRow => ({ text: landedInline(r, `  ${landedMark(r)} ${monitorText(r.id)}`, landedAge(r, now), width) })));
-    return { label: t('Progress'), right: muted(t('⏎ open page')), rows, ...(tries.act ? { act: tries.act, hints: HUB_TRY_HINTS } : {}) };
+    if (accepted.length) rows.push(boardRow(''), plain(muted(t('Latest accepted')), width), ...accepted.map(({ r }): MonitorRow => ({ text: landedInline(r, `  ${landedMark(r)} ${monitorText(r.id)}`, muted(sinceText(r.at, now)), width) })));
+    return { label: t('Progress'), rows, ...(tries.act ? { act: tries.act, hints: HUB_TRY_HINTS } : {}) };
   };
   return { list: [name, boardRow(''), ...waiting, ...pages], preview,
     start: pages.find((r) => r.item)?.item, hints: HUB_HINTS, focusHints: ['⏎ open', 'Esc back'] };
@@ -108,7 +109,7 @@ export function slicePreview(input: MonitorData, data: ProjectSnapshot, state: M
         : stemLines(workCardDetail(projectWorkCard(worker, now)), width, theme.board.muted, 3).map((l) => plain(l, width))));
       const labels = labelSummary(worker.labels);
       if (labels) rows.push(plain('  ' + labels, width));
-    } else rows.push(plain('  ' + muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at) : ''].filter(Boolean).join(' · ')), width));
+    } else if (r.commit || r.at !== undefined) rows.push(plain('  ' + muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at) : ''].filter(Boolean).join(' · ')), width));
     return { label: monitorText(r.id), right: `${t(r.state === 'try' ? 'to try' : r.state)}${NO_MILESTONE.test(r.milestone) ? '' : ' · ' + monitorText(r.milestone)}`, rows,
       ...(r.state !== 'try' ? {} : { hints: rows.some((x) => x.item === ledgerFoldItem(r)) ? PROGRESS_FOLD_HINTS : TRY_HINTS }) };
   }
@@ -131,9 +132,9 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
     const s = info(r), role = workerOf(r)?.role ?? s?.role ?? '';
     const right = s?.drift ? theme.board.attention(t(s.drift)) : st === 'working' && s?.jobId ? `${role ? roleInk(role)(monitorText(role)) + ' ' : ''}${muted(minuteAge(s.at ?? null, now))}` : st === 'try' ? muted(sinceText(r.at, now)) : '';
     const item = `project:slice:${r.id}`;
-    // A to-try slice with a brief says its first sentence where the state word would be.
+    // Keep a stored brief's first sentence; otherwise give the room to the ledger text.
     const head = `${trySelectionMark(state, item)}${st === 'try' ? landedMark(r, marks?.get(r.id)) : SLICE_MARK[st]!()} ${fit(monitorText(r.id), col)}`, sentence = trySentence(r);
-    for (const text of sentence ? briefStack(head, sentence, right, width, 2) : [pair(`${head} ${muted(t(st === 'try' ? 'to try' : st))}`, right, width)])
+    for (const text of sentence ? briefStack(head, sentence, right, width, 2) : [sliceLedgerLine(r, head, right, width)])
       list.push({ item, ...files, ...(st === 'try' ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text });
   }
   for (const job of unsliced(data)) list.push({ item: `project:job:${job.jobId}`, ...(job.path ? { files: [job.path] } : {}),
@@ -149,7 +150,7 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
     if (cursor === 'split:history') {
       const old = landed.filter((x) => !recent.includes(x)), by = new Map<string, number>();
       for (const { r } of old) by.set(r.milestone, (by.get(r.milestone) ?? 0) + 1);
-      return { label: t('History'), right: t('newest first'), rows: [...recent.map(({ r }): MonitorRow => ({ text: inline(`  ${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now, false), width) })),
+      return { label: t('History'), rows: [...recent.map(({ r }): MonitorRow => ({ text: inline(`  ${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now, false), width) })),
         ...[...by].map(([m, n]) => plain(`  ${muted(mark('▸', '>'))} ${NO_MILESTONE.test(m) ? t('other') : monitorText(m)}  ${sliceInk('accepted')(`${mark('✓', '+')} ${n}`)}`, width))] };
     }
     return slicePreview(input, data, state, board, width, now, cursor);

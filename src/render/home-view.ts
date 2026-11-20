@@ -5,27 +5,26 @@ import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { boardRow, minuteAge, decisionBlock, mark, footHints } from './workboard-rows.js';
 import { laneRows, orderedLanes } from './work-lanes.js';
 import { quietDecisionSummary, requestLines, stemLines } from './work-card.js';
-import { theme, visualLength } from './colors.js';
+import { theme } from './colors.js';
 import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { currentWorker, currentDecision, foldedWorker } from './work-visibility.js';
 import { answerable, answerKeys } from './job-actions.js';
-/** One open question as its slab: the amber title, the question and its options (the whole text once expanded), the file and the hints, a blank row. */
-export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
+/** The amber question title and options, with the answer keys beside the expanded options. */
+export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state: MonitorState, width: number, now: number, underLane = false): MonitorRow[] {
   const rows: MonitorRow[] = [];
   const card = projectWorkCard(worker, now),
     r = worker.work?.requestInfo;
   const target = { kind: 'worker' as const, laneId: worker.laneId, workerId: worker.id };
-  const lane = board.lanes.find((l) => l.id === worker.laneId);
+  const lane = underLane ? undefined : board.lanes.find((l) => l.id === worker.laneId);
   // Collapsed, the short card; Enter expands it to the question whole, the context and every option.
   const open = state.boardExpanded?.has(targetKey(target)) === true;
-  // Open and answerable, the footer leads with the answer keys; the rest drops first when the row is short.
-  const keys = [...(open ? answerKeys(worker) : []), t(open ? '⏎ collapse' : '⏎ expand'), t('o open')];
+  const keys = open ? footHints(answerKeys(worker).join('  '), width - 2) : '';
   rows.push(
     boardRow(
       theme.board.askTitle(
         pair(
-          `? ${worker.labels?.category ? `[${t(worker.labels.category)}] ` : ''}${monitorText(worker.role ?? '')} · ${monitorText(lane?.label ?? '')}`,
+          `? ${worker.labels?.category ? `[${t(worker.labels.category)}] ` : ''}${monitorText(worker.role ?? '')}${underLane ? '' : ` · ${monitorText(lane?.label ?? '')}`}`,
           `${t('asking')} ${minuteAge(worker.humanEndedAt, now)}`,
           width
         )
@@ -50,18 +49,8 @@ export function askSlabRows(worker: OwnerWorker, board: WorkboardSnapshot, state
           ...(choices ? stemLines(choices, width, theme.board.attention, 1) : []),
         ];
   rows.push(...lines.map((line) => boardRow(theme.board.slab(line), target)));
-  rows.push(
-    boardRow(
-      theme.board.slab(
-        fit(
-          `${theme.board.attention(mark('┃', '|'))} ${pair(monitorText(r?.evidence?.relativePath ?? ''), footHints(keys.join('  '), Math.max(0, width - 2 - visualLength(monitorText(r?.evidence?.relativePath ?? '')) - 1)), Math.max(0, width - 2))}`,
-          width
-        )
-      ),
-      target
-    ),
-    boardRow('')
-  );
+  if (keys) rows.push(boardRow(theme.board.slab(fit(`${theme.board.attention(mark('┃', '|'))} ${keys}`, width)), target));
+  rows.push(boardRow(''));
   return rows;
 }
 /** Only the newest result opens by itself, and only before its fold time: running cards change activity constantly and would make Home jump. */

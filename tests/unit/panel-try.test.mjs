@@ -70,7 +70,7 @@ test('the live panel records y/n on milestone and slice rows and paints the late
   const { key, frame, painted, recorded, close } = panel(t, f);
 
   key('\x1b[C');
-  await painted(/^Progress +0\.1\.4/m);
+  await painted(/^Progress +3 to try/m);
   key('\r');
   await painted(/Progress.*updated/);
   key('ynt'); // Neither result key acts in the full feed.
@@ -112,7 +112,7 @@ test('the live panel records y/n on milestone and slice rows and paints the late
   assert.match(frame(), /⚑ ONE/, 'another ledger line changing does not clear a flag');
   fs.writeFileSync(f.state, fs.readFileSync(f.state, 'utf8').replace('first slice', 'updated first slice'));
   await painted(/◇ ONE/);
-  await painted(/▾ 0\.1\.4 +◇ 1 to try/);
+  await painted(/▾ 0\.1\.4 +◇ 1$/m);
   await close();
 });
 
@@ -121,7 +121,7 @@ test('Space marks two rows, then y writes one try record and one watch line in C
     const f = fixture(t);
     const { key, frame, painted, recorded, close } = panel(t, f, { layout: view === 'classic' ? 'classic' : 'split', columns: 40 });
     key('\x1b[C');
-    await painted(/^.*Progress.*0\.1\.4/m);
+    await painted(/^.*Progress +3 to try/m);
     let slices = ['TWO', 'ONE'];
     if (view === 'classic') {
       key('\rt');

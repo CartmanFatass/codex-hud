@@ -310,6 +310,7 @@ available. Enter expands the complete sentence and factual details in place.
 Brief headings supply job titles; otherwise a model name or first task line fits
 the width. Only the newest current settled card initially expands, until its fold
 time; explicit choices win for that panel lifetime. Enter on a lane folds it.
+Question slabs show answer keys beside the expanded options; `o` still opens the question file.
 
 **Sonic children.** A `sonic` job a HUD job dispatched (its `parent_job`) is not a card: it is one row under the parent's
 card, `├─ ⚡ sonic · short title  3m ◉` (the last `└─`, ascii `|-` and `` `- ``), with its elapsed time and state glyph, in
@@ -390,7 +391,7 @@ what is happening, what landed, then where each page stands. Top to bottom the h
   With nothing in flight it says `Nothing in progress`;
 - **Latest**: the newest landed slices (to try, accepted), newest first by the commit date the
   ledger read already has (`◇ ID  text  to try 10h`; with the model on, a to-try slice's text is its brief's first sentence, cut with `…` to the room); three rows at 40 columns, five wider;
-- one row per page with a one-line summary: **Progress** (milestone, to try, blocked, working: the last facts drop first on a short row; the
+- one row per page with a one-line summary: **Progress** (to try, blocked, working: the milestone is already on the project name row, and the last facts drop first on a short row; the
   current milestone's bar under it), **Tickets** (done/total, working, blocked; absent when the
   project has no tickets), **Working tree** (worktrees with no ledger row, branch, changed, worktrees,
   ahead/behind, editing jobs; its page lists the unlisted ones), and **Docs** (spec milestone, newest review). A row too short for its facts drops the last ones, never part
@@ -435,7 +436,7 @@ what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`)
 page to what is still to try: the header `Only to try ── n` replaces everything below the crumb, then
 the ledger's slices in state `try` (never matched by their words, whatever the milestone) grouped by
 milestone, newest first: the newest is open (`◇ DATA-ONE  text  1d`), each older one
-a folded row (`▸ M3b  ◇ 1 to try  19d`) that Enter opens. With the model on and a brief stored, a slice is one row: its id and its brief's first sentence (cut with `…`). Without a brief (model off, pending or failed) it shows its whole ledger text, wrapped under its id (a break falls at a space or after a `/`, `-`, `_` or `.`, never inside a word); a briefed row whose id leaves little room for its sentence (a long id) puts the sentence on its own line under the id; a panel
+a folded row (`▸ M3b  ◇ 1  19d`) that Enter opens. With the model on and a brief stored, a slice is one row: its id and its brief's first sentence (cut with `…`). Without a brief (model off, pending or failed) it shows its whole ledger text, wrapped under its id (a break falls at a space or after a `/`, `-`, `_` or `.`, never inside a word); a briefed row whose id leaves little room for its sentence (a long id) puts the sentence on its own line under the id; a panel
 too short for all of them keeps two rows for those slices the cursor is not on. Enter on a slice shows its milestone, commit and
 day and, with a brief, the whole **brief** (what changed in plain words, at most two sentences) and numbered **acceptance steps**
 (how to try it, at most four); the original ledger text, written for agents, is folded under them (`▸ Ledger line`, Enter unfolds it). `t`, Enter or a click on the header, or Esc
@@ -737,7 +738,7 @@ wheel scrolling moves the viewport without moving the selection.
 
 The saved setting `panelLayout` (`classic` by default; Settings → Panel → Layout) can be `split`:
 Home, Project and Control become **a list above and a preview of the cursor row below**
-(`docs/design/panel-v8/`, option 2). Classic's cards, slab and sentences are the previews, unchanged.
+(`docs/design/panel-v8/`, option 2). The preview uses Classic's cards and sentences; a question slab doesn't repeat the lane name from its preview rule.
 
 - **Home.** One row per package lane and per block (Waiting for you, Decided for you,
   Progress), always the same height, whatever runs: mark, name, phase, then the state
@@ -752,11 +753,11 @@ Home, Project and Control become **a list above and a preview of the cursor row 
   six cells, nothing.
 - **Project hub.** Waiting for you and the pages are the list; the preview of the
   cursor row is that page's substance (Progress: summary, bar, slices to try, Now,
-  latest accepted). Enter on a page opens it, as before. A waiting item shows its whole text, wrapped, and a slice to try its
-  brief's first sentence on one row (or, without a brief, its whole text wrapped); the preview scrolls with PgUp/PgDn when it is long.
+  latest accepted). Rows in those two state groups keep their marks and ages without repeating the state word. Enter on a page opens it, as before. A waiting item shows its whole text, wrapped, and a slice to try its
+  brief's first sentence (or, without a brief, its whole text wrapped); the preview scrolls with PgUp/PgDn when it is long.
 - **Progress.** One ledger list (working, blocked, to try, todo; accepted, Next and
   History are one row each) with the cursor slice explained underneath: its whole ledger
-  text and, for a slice to try with a brief, its brief and acceptance steps with the original ledger text folded below them (Enter on the slice takes the keys into the preview, Enter on the fold row unfolds it; `o` opens STATE.md). A to-try slice's list row is its id and the brief's first sentence. In the hub's
+  text and state (on the preview rule). On the list row, the mark carries the state and the ledger text is cut at a word boundary. For a slice to try with a stored brief, the list still shows its first sentence instead; the preview shows the brief and acceptance steps with the ledger text folded below them (Enter on the slice takes the keys into the preview, Enter on the fold row unfolds it; `o` opens STATE.md). In the hub's
   Progress preview, Space starts on the highlighted to-try row and moves the keys into
   the preview. Without Space marks, `y` / `n` on the hub still act on the next slice to try.
 - **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the chain and opens the place sheet on the next Enter. Drafts and discard confirmation stay in the preview. On a role row, `c` / `C` switch presets and `p` opens the preset list. `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.

@@ -37,7 +37,7 @@ test('Progress: the current milestone, Now, Next and History from a synthetic le
     assert.match(page, new RegExp(width < 40 ? word('^  ✓ 4 accepted in 3 ', '^  ✓ 此前 3 个') : word('^  ✓ 4 accepted in 3 earlier milestones$', '^  ✓ 此前 3 个里程碑已验收 4 项$'), 'm'));
     assert.match(page, new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'));
     assert.match(page, new RegExp(`^${word('Next', '下一步')} ─+ 4$`, 'm'));
-    assert.match(page, new RegExp(`^${word('History', '历史')} ─+ ${word('newest first', '最新在前')}$`, 'm'));
+    assert.match(page, new RegExp(`^${word('History', '历史')} ─+$`, 'm'));
     // History: the last seven days in full, newest first (a landed slice with its age), then one row a milestone with its days.
     assert.deepEqual(page.match(/DATA-ONE|WATCH-LINK|SENTENCE-CUT/g), ['DATA-ONE', 'WATCH-LINK', 'SENTENCE-CUT']);
     assert.match(page, new RegExp(`^  ◇ DATA-ONE\\b.* ${word('to try 1d', '待试用 1天')}$`, 'm'));
@@ -297,11 +297,11 @@ await runLivePage();
     assert.fail(`${what}: ${stderr}\n${screen.join('\n')}`);
   };
   const rows = () => screen.filter((r) => r !== undefined);
-  await until(() => rows().some((r) => /^Progress +M3b/.test(r)), 'the own project hub');
+  await until(() => rows().some((r) => /^Progress +1 to try/.test(r)), 'the own project hub');
   child.stdin.write(']');
   await until(() => rows().some((r) => /2\/2/.test(r)), 'the switch');
   // The held collection has not finished: the tab still shows a page, and what it shows is the first project's.
-  assert.ok(rows().some((r) => /^Progress +M3b/.test(r)), screen.join('\n'));
+  assert.ok(rows().some((r) => /^Progress +1 to try/.test(r)), screen.join('\n'));
   assert.ok(rows().some((r) => /^project ─+ M3b ▾ project 2\/2$/.test(r)), 'the first project\'s name goes with its page; the index already says 2/2');
   assert.ok(rows().filter(Boolean).length >= 6, 'not a blank body');
   fs.writeFileSync(release, '');
@@ -371,12 +371,16 @@ test('Progress to try: Enter on the count shows only the ledger\'s `try` slices 
     // The header says the page is filtered. The newest milestone is open, the older one folded; the ledger's state decides, never the prose.
     if (lang === 'en') assert.deepEqual(lines.slice(2, 8), [
       'Only to try ──────────────────────── 2',
-      '  ▾ 0.1.3 ◇ 1 to try                1d',
+      '  ▾ 0.1.3 ◇ 1                       1d',
       '    ◇ DATA-ONE                      1d',
       '        ledger history, live jobs and',
       '        ticket detail',
-      '  ▸ M3b   ◇ 1 to try               19d']);
-    else assert.match(lines[2], /^仅待试用 ─+ 2$/);
+      '  ▸ M3b   ◇ 1                      19d']);
+    else {
+      assert.match(lines[2], /^仅待试用 ─+ 2$/);
+      assert.match(lines[3], /^  ▾ 0\.1\.3 +◇ 1 +1天$/);
+      assert.match(lines[7], /^  ▸ M3b +◇ 1 +19天$/);
+    }
     assert.match(lines.at(-1), new RegExp(word('Space mark  y accept  n flag  \\? help', 'Space 勾选  y 验收  n 标记  \\? 帮助')));
     assert.doesNotMatch(lines.join('\n'), /NATIVE-ROWS|PAGE-ONE|LATER-ONE|ONE-PAGE|still to try|Now|Next|History|现在|下一步|历史|[█▒░]/);
     // Enter on the older milestone's row opens it into its slice; again folds it.

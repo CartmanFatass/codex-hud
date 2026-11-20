@@ -5,7 +5,6 @@
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
     "┃ 2 options · default: a: keep it for one more release",
-    "┃ qa/q3.md                                                      ⏎ expand  o open",
     "",
     "R5-UX  asking                                                              ? imp",
     "? imp  Dedupe the sync queue                                           asking 4m",
@@ -39,6 +38,7 @@
     "",
     "",
     "",
+    "",
     "✓ 3 done today              ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-80-zh": [
@@ -47,7 +47,6 @@
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
     "┃ 2 个选项 · 默认: a: keep it for one more release",
-    "┃ qa/q3.md                                                        ⏎ 展开  o 打开",
     "",
     "R5-UX  提问中                                                              ? imp",
     "? imp  Dedupe the sync queue                                        提问中 4分钟",
@@ -81,6 +80,7 @@
     "",
     "",
     "",
+    "",
     "✓ 3 今日完成                      ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "older-80-en": [
@@ -89,7 +89,6 @@
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
     "┃ 2 options · default: a: keep it for one more release",
-    "┃ qa/q3.md                                                      ⏎ expand  o open",
     "",
     "R5-API  review r1 · fixing                                           ✗ ✓ ◉ ✓ imp",
     "✓ imp  Check the retry tests                                             done 2m",
@@ -123,6 +122,7 @@
     "",
     "",
     "",
+    "",
     "✓ 3 done today              ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "older-80-zh": [
@@ -131,7 +131,6 @@
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
     "┃ 2 个选项 · 默认: a: keep it for one more release",
-    "┃ qa/q3.md                                                        ⏎ 展开  o 打开",
     "",
     "R5-API  评审 r1 · 修复中                                             ✗ ✓ ◉ ✓ imp",
     "✓ imp  Check the retry tests                                          完成 2分钟",
@@ -154,6 +153,7 @@
     "◆ R5-UX · imp q2  keep the v1 shim for one more release                 3小时5分",
     "◇ R5-API · imp q1  keep the card at three lines                        3小时12分",
     "已显示 5 项较早 · a 收起",
+    "",
     "",
     "",
     "",
@@ -477,7 +477,6 @@
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
     "┃ 2 options · default: a: keep it for one more release",
-    "┃ qa/q3.md                                                                                              ⏎ expand  o open",
     "",
     "R5-UX  asking                                                                                                      ? imp",
     "? imp  Dedupe the sync queue                                                                                   asking 4m",
@@ -511,6 +510,7 @@
     "",
     "",
     "",
+    "",
     "✓ 3 done today                                                      ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "home-120-zh": [
@@ -519,7 +519,6 @@
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
     "┃ 2 个选项 · 默认: a: keep it for one more release",
-    "┃ qa/q3.md                                                                                                ⏎ 展开  o 打开",
     "",
     "R5-UX  提问中                                                                                                      ? imp",
     "? imp  Dedupe the sync queue                                                                                提问中 4分钟",
@@ -553,6 +552,7 @@
     "",
     "",
     "",
+    "",
     "✓ 3 今日完成                                                              ⏎ 展开  o 文件  v 详情  / 筛选  a 全部  ? 帮助"
   ],
   "older-120-en": [
@@ -561,7 +561,6 @@
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
     "┃ 2 options · default: a: keep it for one more release",
-    "┃ qa/q3.md                                                                                              ⏎ expand  o open",
     "",
     "R5-API  review r1 · fixing                                                                                   ✗ ✓ ◉ ✓ imp",
     "✓ imp  Check the retry tests                                                                                     done 2m",
@@ -595,6 +594,7 @@
     "",
     "",
     "",
+    "",
     "✓ 3 done today                                                      ⏎ expand  o file  v inspect  / filter  a all  ? help"
   ],
   "older-120-zh": [
@@ -603,7 +603,6 @@
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
     "┃ 2 个选项 · 默认: a: keep it for one more release",
-    "┃ qa/q3.md                                                                                                ⏎ 展开  o 打开",
     "",
     "R5-API  评审 r1 · 修复中                                                                                     ✗ ✓ ◉ ✓ imp",
     "✓ imp  Check the retry tests                                                                                  完成 2分钟",
@@ -626,6 +625,7 @@
     "◆ R5-UX · imp q2  keep the v1 shim for one more release                                                         3小时5分",
     "◇ R5-API · imp q1  keep the card at three lines                                                                3小时12分",
     "已显示 5 项较早 · a 收起",
+    "",
     "",
     "",
     "",

@@ -63,7 +63,7 @@ test('Home: the list has a row per lane and block, a question and a failure keep
   const calm = driver(idle), quiet = calm.lines();
   assert.match(quiet[2], /^\? Waiting for you +2 · 1 to try$/);
   assert.match(rule(calm), /^Waiting for you ─+ 2 · 1 to try$/);
-  assert.ok(quiet.some((l) => /^Latest ─+ newest first$/.test(l)) && quiet.some((l) => /◇ LANDING/.test(l)));
+  assert.ok(quiet.some((l) => /^Latest ─+$/.test(l)) && quiet.some((l) => /◇ LANDING/.test(l)));
 });
 
 test('Home: the list keeps its height whatever the preview does, and gives way last (24 rows)', async (t) => {
@@ -164,13 +164,16 @@ test('Project hub: a list of Waiting and the pages with the cursor page previewe
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.control }).at(page(undefined));
   const lines = d.lines();
-  assert.match(lines[5], /^◐ Progress/);
-  assert.match(rule(d), /^Progress ─+ ⏎ open page$/);
+  assert.match(lines[4], /^\? Waiting for you +2 · 5 to try$/);
+  assert.match(lines[5], /^◐ Progress +5 to try · 1 blocked$/);
+  assert.equal(lines.filter((line) => line.includes('0.1.3')).length, 1, 'only the name row says the current milestone');
+  assert.match(rule(d), /^Progress ─+$/);
   assert.equal(d.state.projectCursor, 'project:page:progress', 'it starts on the first page, as Classic does');
-  assert.ok(lines.some((l) => /^To try {3}y accept {2}n flag/.test(l)) && lines.some((l) => /^Now$/.test(l)) && lines.some((l) => /^Latest accepted$/.test(l)));
+  assert.ok(lines.includes('To try') && lines.includes('Now') && lines.includes('Latest accepted'));
+  assert.ok(lines.some((l) => /^  ◇ DATA-ONE +1d$/.test(l)) && lines.some((l) => /^  ✓ REVIEW-ONE +8d$/.test(l)));
   d.run('down');
   assert.equal(d.state.projectCursor, 'project:page:tickets');
-  assert.match(rule(d), /^Tickets ─+ ⏎ open page$/);
+  assert.match(rule(d), /^Tickets ─+$/);
   d.run('up');
   const out = d.run('try-accept');
   assert.deepEqual([out.action.type, out.action.action, out.action.target.slices[0].id], ['record-try', 'accept', 'DATA-ONE']);
@@ -258,6 +261,28 @@ test('Split hub reveals an off-screen first pending slice before y/n can record 
   }
 });
 
+test('Split Progress lists word-cut ledger text but keeps a stored brief and the whole preview', async (t) => {
+  const { busy } = await fixtures(t);
+  const projectCursor = 'project:slice:DATA-ONE';
+  const briefed = { ...busy.rich, ledger: busy.rich.ledger.map((r) => r.id === 'DATA-ONE'
+    ? { ...r, brief: { brief: 'Read the new rows. More details follow.', steps: ['Open the synthetic project.'] } } : r) };
+  for (const lang of ['en', 'zh']) for (const projectLayout of ['timeline', 'board', 'inbox']) {
+    const render = (data, modelEnabled) => busy.render(40, lang, 40, page('progress', { projectCursor, projectLayout }), data, { modelEnabled });
+    const listRows = (frame) => frame.panes.find((p) => p.id === 'agents').rows.filter((r) => r.item === projectCursor).map((r) => stripAnsi(r.text).trim());
+    const preview = (frame) => frame.panes.find((p) => p.id === 'preview').rows.map((r) => stripAnsi(r.text).trim()).join(' ');
+    const off = render(busy.rich, false), on = render(briefed, true);
+    const row = listRows(off).join(' '), cut = /^◇ DATA-ONE +(.+?)… +(?:0\.1\.3 )?1(?:d|天)$/.exec(row);
+    assert.ok(cut && 'ledger history, live jobs and ticket detail'.startsWith(`${cut[1]} `), row);
+    assert.match(preview(off), /ledger history, live jobs and ticket detail/);
+    assert.match(preview(off), /0\.1\.3 · [0-9a-f]{7} · \d{2}-\d{2}/, 'keep commit and date metadata');
+    assert.match(listRows(on).join(' '), /Read the new rows\./);
+    assert.doesNotMatch(listRows(on).join(' '), /ledger history|More details follow/);
+    assert.match(preview(on), /Read the new rows\. More details follow\./);
+    assert.match(preview(on), /Open the synthetic project\./);
+    for (const frame of [off, on]) for (const line of frame.lines) assert.equal(visualLength(line), 40);
+  }
+});
+
 test('Split Progress ignores Classic’s t shortcut, leaving the marked batch and cursor in place', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.rich, height: 24 }).at(page('progress', { projectCursor: 'project:slice:DATA-ONE' }));
@@ -288,7 +313,7 @@ test('Progress page: one ledger list, the cursor slice explained underneath; y a
   assert.equal(d.run('open-session').action.type, 'open-files');
   d.run('end');
   assert.equal(d.state.projectCursor, 'split:history');
-  assert.match(rule(d), /^History ─+ newest first$/);
+  assert.match(rule(d), /^History ─+$/);
   assert.equal(d.run('escape').state.projectPage, undefined, 'Esc goes back to the hub');
 });
 
@@ -495,7 +520,7 @@ test('Preview scrollbar: a thumb over a dim track in the last cell of the scroll
   assert.ok(tall.pane('preview').contentLength <= tall.pane('preview').height);
   assert.ok(lastCells(tall).every((c) => c !== '┃' && c !== '│'));
   const hub = driver(busy, { data: busy.control, height: 24 }).at(page(undefined));
-  assert.ok(hub.lines().some((l) => /^  ◇ DATA-ONE +to try 1d[┃│]$/.test(l)), 'a right-aligned age keeps its unit beside the bar');
+  assert.ok(hub.lines().some((l) => /^  ◇ DATA-ONE +1d[┃│]$/.test(l)), 'a right-aligned age keeps its unit beside the bar');
   assert.ok(hub.lines().some((l) => /^    ledger history, live jobs and +[┃│]$/.test(l)), hub.lines().join('\n'));
   const zh = busy.render(40, 'zh', 40, page('progress'), busy.rich);
   for (const line of zh.lines) assert.equal(visualLength(line), 40);

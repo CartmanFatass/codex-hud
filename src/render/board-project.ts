@@ -13,7 +13,7 @@ import {
   NO_MILESTONE, PAGE_WORD, PROJECT_PAGES, asksYou, barText, briefStack, clampClean, clampLines,
   currentRows, dateText, foldRow, inFlight, inline, landedAge, landedInline, landedMark, landedNewest, ledgerText,
   meter, milestoneOrder, pageRows, pageSummary, progressSegments, projectFoldedSet, projectOrder, roleInk,
-  sinceText, sliceInk, stacked, ticketWorking, tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted,
+  sinceText, sliceInk, sliceLedgerLine, stacked, ticketWorking, tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted,
   unsliced, waitingRows, type ProjectPage,
 } from './project-view.js';
 import { HUB_HINTS, HUB_TRY_HINTS, LEDGER_FOCUS_HINTS, PROJECT_FILE_HINTS, TRY_ACTIONS, hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
@@ -206,7 +206,7 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
   const cur = currentRows(data), tickets = data.tickets.flatMap((f) => f.tickets);
   const mark_ = (page: ProjectPage) => page === 'progress' && cur.counts.working ? theme.board.active(mark('◐', '@'))
     : (page === 'tickets' && tickets.some(asksYou)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
-    : muted(mark('○', 'o'));
+    : page === 'tree' || page === 'docs' ? ' ' : muted(mark('○', 'o'));
   const shownPages = PROJECT_PAGES.filter((p) => p !== 'tickets' || data.tickets?.length);
   const col = Math.max(...shownPages.map((p) => visualLength(t(PAGE_WORD[p])))) + 1;
   const pages = shownPages.map((p) => gaugeRow(p, data, width, now, col, `${mark_(p)} `, input.tryMarks));
@@ -216,7 +216,7 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
     if (page && page !== 'progress') {
       const facts = page === 'tree' ? { ...data, gitDiff: undefined } : data;
       const body = pageRows(page, facts, state, width, now, board, input.modelEnabled, input.tryMarks).slice(1);
-      return { label: t(PAGE_WORD[page]), right: t('⏎ open page'), rows: body.map(({ item: _i, files: _f, ...row }) => row) };
+      return { label: t(PAGE_WORD[page]), rows: body.map(({ item: _i, files: _f, ...row }) => row) };
     }
     const milestones = boardMilestones(data), cols = mapCols(milestones, now), latest = boardLatestRow(data, width, now, input.tryMarks);
     const rows: MonitorRow[] = [...milestones.map((m) => milestoneMapRow(m, cols, width, now, input.tryMarks)), ...(latest ? [latest] : []), ...(milestones.length ? [boardLegendRow(width)] : [])];
@@ -225,7 +225,7 @@ export function boardHubPart(input: MonitorData, data: ProjectSnapshot, state: M
     if (tryRows.length) rows.push(...tryRows);
     if (live.length) rows.push(boardRow(''), plain(muted(t('In flight')), width), ...live);
     return {
-      label: t('Progress'), right: muted([tries && t('{n} to try', { n: tries }), t('⏎ open page')].filter(Boolean).join(' · ')), rows,
+      label: t('Progress'), right: tries ? muted(t('{n} to try', { n: tries })) : '', rows,
       ...(act ? { act, hints: HUB_TRY_HINTS } : {}),
     };
   };
@@ -312,13 +312,14 @@ export function boardProgressPart(input: MonitorData, data: ProjectSnapshot, sta
     const item = `project:slice:${r.id}`, lead = `  ${r.state === 'try' ? trySelectionMark(state, item) : ''}${sliceCell(r, marks)} ${monitorText(r.id)}`;
     if (r.state === 'try') {
       const sentence = trySentence(r), age = muted(sinceText(r.at, now));
-      const lines = sentence ? briefStack(lead, sentence, age, width, 4) : [pair(`${lead}  ${muted(t('to try'))}`, age, width)];
+      const lines = sentence ? briefStack(lead, sentence, age, width, 4) : [sliceLedgerLine(r, lead, age, width, 2)];
       for (const text of lines) list.push({ item, ...files, tryTarget: { milestone: r.milestone, slices: [r] }, text });
       return;
     }
     const s = data.slices.find((x) => x.label === r.id), worker = board.workers.find((w) => w.evidence[0]?.sourceId === s?.jobId);
-    const right = r.state === 'accepted' ? muted(sinceText(r.at, now)) : r.state === 'todo' ? '' : sliceRight(r.state, s, worker, now);
-    list.push({ item, ...files, text: pair(lead, right, width) });
+    const right = r.state === 'accepted' ? muted(sinceText(r.at, now))
+      : s?.drift || (r.state === 'working' && s?.jobId) ? sliceRight(r.state, s, worker, now) : '';
+    list.push({ item, ...files, text: sliceLedgerLine(r, lead, right, width, 2) });
   };
   if (milestones.length) {
     list.push(section(t('Milestones'), width, [String(milestones.length), tries && t('{n} to try', { n: tries })].filter(Boolean).join(' · ')));

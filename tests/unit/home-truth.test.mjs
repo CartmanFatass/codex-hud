@@ -75,8 +75,9 @@ test('Home counts the current milestone\'s slices as the hub does; without one t
   for (const width of [38, 80]) {
     const home = plain(f.quiet(width, 'en', 46)), hub = plain(f.quiet(width, 'en', 46, { ...initialMonitorState(), mainTab: 'project' }));
     const progress = hub.find((l) => /^Progress /.test(l));
-    // The hub row: `M3b · 1 to try · 1 working` (every to-try slice first, then the milestone's other states); STATE's whole ledger has 2 working, 1 blocked, 1 todo, 1 accepted, 1 dropped.
-    assert.match(progress, width === 80 ? /M3b · 1 to try · 1 working/ : /M3b · 1 to try/);
+    // The name row already shows the milestone, so both facts fit on the Progress row.
+    assert.match(hub.find((l) => l.startsWith('Project ─')), / M3b$/);
+    assert.match(progress, /^Progress +1 to try · 1 working$/);
     assert.match(legend(home), /working 1/);
     assert.match(legend(home), /landed, to try 1/);
     assert.doesNotMatch(legend(home), /blocked|todo|accepted|dropped/);

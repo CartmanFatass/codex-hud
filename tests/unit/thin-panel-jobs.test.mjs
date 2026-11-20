@@ -222,12 +222,11 @@ test('Home shows questions, lanes with cards, then decisions; Enter reveals the 
     const home = plain(f.render(board, 180, width));
     for (const line of home) assert.equal(visualLength(line), width, line);
     const at = home.findIndex((l) => l.startsWith('? imp · PANEL-THIN')),
-      card = home.slice(at, home.findIndex((l, i) => i > at && l.includes('⏎ expand')) + 1);
-    assert.ok(card.length >= 3 && card.length <= 6, `${width} columns: ${card.length} rows\n${card.join('\n')}`);
-    assert.match(card.join('\n'), /┃ 3 options · default: a\)/);
-    assert.match(card.at(-1), /┃ qa\/q3\.md\s+⏎ expand  o open$/);
-    assert.doesNotMatch(card.join('\n'), /blocked|b\) beside/);
-    if (width === 40) assert.match(card.at(-3), /…\s*$/, 'a long question is cut with an ellipsis');
+      card = home.slice(at, home.findIndex((l, i) => i > at && !l.trim()));
+    assert.ok(card.length >= 3 && card.length <= 5, `${width} columns: ${card.length} rows\n${card.join('\n')}`);
+    assert.match(card.at(-1), /┃ 3 options · default: a\)/);
+    assert.doesNotMatch(card.join('\n'), /blocked|b\) beside|qa\/q3\.md|⏎/);
+    if (width === 40) assert.match(card.at(-2), /…\s*$/, 'a long question is cut with an ellipsis');
     const lane = home.findIndex((l) => l.startsWith('PANEL-THIN  '));
     const decided = home.findIndex((l) => l.startsWith('Decided for you'));
     assert.ok(at < lane && lane < decided);

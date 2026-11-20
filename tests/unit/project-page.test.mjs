@@ -433,7 +433,7 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   assert.deepEqual(hubEntries(frame), ['progress', 'tree', 'docs'].map((p) => `project:page:${p}`), 'no tickets: no Tickets entry');
   assert.equal(frame.state.projectCursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
-  assert.match(plain(frame).join('\n'), /Progress +M3b · 1 to try · 1 working/);
+  assert.match(plain(frame).join('\n'), /^Progress +1 to try · 1 working$/m);
   assert.doesNotMatch(plain(frame).join('\n'), /^Control plane /m);
   frame.state.projectCursor = 'project:fold:waiting';
   frame = f.render(80, 'en', press(frame, 'enter').state);
@@ -484,7 +484,7 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
     for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
     const at = (re) => text.search(re);
     const order = [/^demo-project ─+ 0\.1\.3$/m, new RegExp(`^${word('Waiting for you', '等你处理')} ─+ 2 · 5 ${word('to try', '待试用')}$`, 'm'), new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'),
-      new RegExp(`^${word('Latest', '最近完成')} ─+ ${word('newest first', '最新在前')}$`, 'm'), /^(Progress|进度) /m, /^(Working tree|工作区) /m, /^(Docs|文档) /m].map(at);
+      new RegExp(`^${word('Latest', '最近完成')} ─+$`, 'm'), /^(Progress|进度) /m, /^(Working tree|工作区) /m, /^(Docs|文档) /m].map(at);
     assert.ok(order.every((n, i) => n >= 0 && (!i || order[i - 1] < n)), `${lang}: ${order}`);
     // Now: a slice with its text when it fits whole and the word for its state; a job no slice shows with its role and minutes.
     assert.match(text, new RegExp(`^ {2}◐ PAGE-ONE {10,}${word('working', '工作中')}$`, 'm'));

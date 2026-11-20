@@ -83,7 +83,7 @@ export function homeScene(
     const why = top.homeNeedsHuman ? top.work?.requestInfo?.question ?? top.ask ?? card.reason ?? '' : failed(card) ? workCardDetail(card) : '';
     if (why) rows.push({ text: stemLines(why, width, ink, 1)[0], item });
     return { item, needs: group(lane) <= 2, rows, cued: cue ? { text: pair(`${lead} ${cue}`, right, width), item } : undefined, preview: () => {
-      const slabs = board.workers.filter((w) => w.homeNeedsHuman && w.laneId === lane.id).flatMap((w) => askSlabRows(w, board, state, width, now));
+      const slabs = board.workers.filter((w) => w.homeNeedsHuman && w.laneId === lane.id).flatMap((w) => askSlabRows(w, board, state, width, now, true));
       // The asking job's pointer card is the slab above it; every other card is today's, and no fold hides one here.
       const cards = laneRows(input, { ...lane, workers: lane.workers.filter((w) => !w.homeNeedsHuman) }, { ...state, boardFolded: undefined }, width, now).slice(1, -1);
       return { label: names[i], right: [mid, mid === jobs ? '' : jobs].filter(Boolean).join(' · '), rows: [...slabs, ...cards] };
@@ -94,7 +94,7 @@ export function homeScene(
     text: pair(`${theme.board.attention('?')} ${t('Waiting for you')}`, theme.board.muted(waitFacts), width) }],
   preview: () => ({ label: t('Waiting for you'), right: waitFacts, rows: [
     ...waits.flatMap((r, i) => waitingRows(r, i, width, now, Infinity).map((row) => ({ ...row, item: `home-progress:wait:${i}` }))),
-    ...(landedNewest(data!).length ? [boardRow(''), section(t('Latest'), width, t('newest first')), ...landedNewest(data!).slice(0, width < 56 ? 3 : 5).flatMap(({ r }) => (trySentence(r) ? briefStack(`  ${landedMark(r)} ${monitorText(r.id)}`, trySentence(r), landedAge(r, now), width) : [landedInline(r, `  ${landedMark(r)} ${monitorText(r.id)}`, landedAge(r, now), width)])
+    ...(landedNewest(data!).length ? [boardRow(''), section(t('Latest'), width), ...landedNewest(data!).slice(0, width < 56 ? 3 : 5).flatMap(({ r }) => (trySentence(r) ? briefStack(`  ${landedMark(r)} ${monitorText(r.id)}`, trySentence(r), landedAge(r, now), width) : [landedInline(r, `  ${landedMark(r)} ${monitorText(r.id)}`, landedAge(r, now), width)])
       .map((text): MonitorRow => ({ text, item: 'home-progress:latest' })))] : [])] }) }];
   const departures = board.decisions.filter((d) => d.departure).length;
   const decided: Entry[] = !board.decisions.length ? [] : [{ item: DECIDED, needs: false, rows: [{ item: DECIDED,
