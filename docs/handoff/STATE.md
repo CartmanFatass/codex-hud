@@ -10,6 +10,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 
 ## Next
 
+- EXP (`.scratch/exp/`, owner 2026-11-20): experimental top-level tab behind Settings → Panel → Experiments; 01 tab + settings, 02 Codex native status line, 03 pi subscription proxy (refresh while used, no timer) ← 01, 04 oapi grant ledger (JSONL) ← 01, 05 Anthropic ledger ← 04. Ready for imp.
 - CONTROL-TAB (owner 2026-11-20): Control plane becomes its own main tab; harness on/off at CLI and pi-provider level (off = skipped like exhausted, files untouched); full pi model list for providers that are on; per-role presets created, reordered and switched from the panel. Oracle design job jfa9221b3ebab17b0 → HTML sample → tickets.
 - PROJECT-LAYOUTS (`.scratch/project-layouts/`, owner 2026-11-20: PROJECT-UX B and C back as Project layouts, consistent with PANEL-UX): 01 Board and 02 Inbox landed; both to try.
 - PANEL-UX (`.scratch/panel-ux/`, from the owner's UI/UX review 2026-11-19): 01 to-try briefs in rows, one count, number keys off the tabs, direct `1–4`/`d` answers, no divider drag (frontend-imp) → 02 one meaning per key, no repeated status, 40-column rows, one language.

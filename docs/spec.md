@@ -76,7 +76,7 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    brief's first sentence, and its preview (or expanded row) shows the whole brief, the steps and, folded below them,
    the original ledger text (owner, 2026-11-19: the ledger text is written for agents). With the model off, or before
    its brief exists, the row shows the whole original text, wrapped. This is the one place the progress board uses the model; the control plane opens with what needs attention and the place the next job will use, healthy
-   roles folded. Skills list (owner, 2026-11-17; moved from a third main tab into Help, owner, 2026-11-17 second decision: Home and Project are the only main tabs): a section of Help (`?`) lists the backup skills, Matt Pocock
+   roles folded. Skills list (owner, 2026-11-17; moved from a third main tab into Help, owner, 2026-11-17 second decision: Home and Project are the only main tabs; 2026-11-20: a Control tab and the experimental EXP tab join them): a section of Help (`?`) lists the backup skills, Matt Pocock
    skills that are not installed (adapted copies in `integrations/skills-optional/` and the upstream text) and that
    the main session reads when the owner asks for one; each skill's name and its whole one-line description in the panel's language, read from a catalog file
    the HUD ships; the description wraps under the name rather than being cut, so the list reads at the owner's 40-column
@@ -85,6 +85,15 @@ One HUD for Claude Code, Codex and pi, used by one person (the owner) on one Lin
    above, the default), Board and Inbox (PROJECT-UX directions B and C, `docs/design/project-ux/`, detailed in
    `.scratch/project-layouts/spec.md`), in Split and Classic. A Project layout arranges the Project tab's pages only:
    counts, keys, to-try rows, cuts and words are the same in every layout, Home and Tickets do not change.
+   EXP (owner, 2026-11-20, experimental; plan `docs/design/exp-usage-plan.md`, tickets `.scratch/exp/`): a main tab shown
+   only when Settings → Panel → Experiments is on (default off; off means no tab, no collection, no refresh). It holds
+   the HUD's own usage settings for this machine and all projects: a Codex native status line (beside `codexH`'s tmux
+   bar, which stays), a pi subscription proxy (a bound Codex profile's rate-limit windows, shown in pi's footer as an
+   approximation with its source), and API grant ledgers (anthropic-api, openai-api: monthly grant, renewal day, manual
+   calibration, estimated remaining USD). The proxy refreshes only while used: a pi session drawing its footer starts
+   one locked asynchronous refresh when the reading is older than the interval; no timer, no resident service. Ledgers
+   are append-only JSONL under `$HUD_HOME/exp/` with a dedup key per request; balances are computed on read. No vendor
+   billing sync, balance scraping, request blocking or admin keys; a zero estimate never stops a CLI.
    Panel layouts (owner, 2026-11-17, PANEL-REDESIGN): Settings → Panel → Layout offers Classic (Home and Project as
    described above, the default) and Split (option 2 of `docs/design/panel-v8/`: a list over a preview of the selected
    row). Split departs from this section's Home and Project layout sentences only where `docs/design/panel-v8/notes.md` says so;
