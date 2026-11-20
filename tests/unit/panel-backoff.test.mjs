@@ -203,7 +203,7 @@ test(
         await p.until(() => p.collections().length >= 5);
         assert.ok(
           p.collections().at(-1).at - p.collections().at(-2).at >= 3900,
-          'quiet curve reached max after base-grid observations, then 2s and 4s'
+          `quiet curve reached max after base-grid observations, then 2s and 4s; collected at +${p.collections().map((e) => e.at - p.collections()[0].at).join(', +')}ms`
         );
         p.child.send('gate');
         const start = Date.now();
