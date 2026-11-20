@@ -40,6 +40,7 @@ interface Entry {
   id: string;
   label: string;
   value?: string;
+  reading?: [string, string];
   edit?: Editor;
   detail?: Detail;
 }
@@ -171,6 +172,7 @@ function groups(
           'In ordinary Codex, open /experimental and enable custom status lines, then restart.',
           'Open /statusline. Choose MyHUD once it is available.',
           'To restore, select the previous status line in /statusline or use codexH. The tmux bar stays unchanged.',
+          'Tracking records observations only; /statusline controls what Codex displays.',
         ],
       },
     ];
@@ -234,22 +236,23 @@ function groups(
     {
       label: 'Codex native status line',
       entries: [
-        toggle('codex-enabled', t('Show native status line'), config.codex.enabled, (value) => ({
+        toggle('codex-enabled', t('Track native status line'), config.codex.enabled, (value) => ({
           field: 'codex-enabled',
           value,
         })),
-        ...profiles.map(({ home }): Entry =>
-          input(
+        ...profiles.map(({ home, lastNativeSeenAt }): Entry => ({
+          ...input(
             `alias:${home}`,
             profileLabel(data, home),
-            offline(),
+            '',
             'Enter an alias; empty restores the directory name',
             (value) => (expAlias(value) ? { field: 'alias', profile: home, value } : undefined)
-          )
-        ),
+          ),
+          reading: ['Last native bar seen', time(lastNativeSeenAt)],
+        })),
         link('codex-help', t('Codex setup / restore')),
       ],
-      readings: profiles.length ? ['Last native bar seen'] : ['Local Codex profiles', 'Last native bar seen'],
+      readings: profiles.length ? [] : ['Local Codex profiles'],
     },
     {
       label: 'pi subscription proxy',
@@ -351,9 +354,10 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number,
     ...(data.unreadable ? text(t('Could not read EXP configuration'), theme.board.danger) : []),
     ...sections.flatMap(({ label, entries, notes, readings }) => [
       section(t(label), width),
-      ...(entries ?? []).flatMap((entry) =>
-        labeled(entry.label, entry.value).map((row, i) => (i ? row : { ...row, item: entry.id }))
-      ),
+      ...(entries ?? []).flatMap((entry) => [
+        ...labeled(entry.label, entry.value).map((row, i) => (i ? row : { ...row, item: entry.id })),
+        ...(entry.reading ? labeled(t(entry.reading[0]), entry.reading[1]) : []),
+      ]),
       ...(readings ?? []).flatMap((reading) =>
         typeof reading === 'string' ? labeled(t(reading), offline()) : labeled(t(reading[0]), reading[1])
       ),

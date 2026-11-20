@@ -1,6 +1,4 @@
 import * as fs from 'node:fs';
-import { createHash } from 'node:crypto';
-import { createServer } from 'node:net';
 import { getHudHome } from '../hud-home.js';
 import { settingsPath } from '../settings.js';
 import type { ExpConfig } from '../exp-config.js';
@@ -19,6 +17,7 @@ import {
   readExpConfigAsync,
 } from './exp-store.js';
 import { readCodexProxy, type ProxyRpcResult } from './exp-codex-rpc.js';
+import { tryExpLock } from './exp-lock.js';
 import { writePrivateFile } from './small-model.js';
 
 const stamp = (s: fs.Stats) => `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`;
@@ -62,21 +61,6 @@ export async function observeProxy(
   }
 }
 
-/** Linux/WSL abstract socket: bind is non-waiting and the kernel releases it on exit, even after a crash. */
-async function tryLock(home: string): Promise<(() => Promise<void>) | undefined> {
-  const key = createHash('sha256')
-    .update(await fs.promises.realpath(home))
-    .digest('hex');
-  return new Promise((resolve) => {
-    const server = createServer((connection) => connection.destroy());
-    server.once('error', () => resolve(undefined));
-    server.listen(`\0myhud-exp-proxy-${key}`, () => {
-      server.unref();
-      resolve(() => new Promise<void>((done) => server.close(() => done())));
-    });
-  });
-}
-
 const due = (reading: ExpProxyReading, now: number) => {
   const at = proxyDueAt(reading.snapshot, reading.intervalMinutes);
   return at !== null && at <= now;
@@ -95,7 +79,7 @@ export async function refreshProxyIfDue(
 ): Promise<boolean> {
   if (!due(observed, now())) return false;
   const home = getHudHome(env);
-  const release = await tryLock(home).catch(() => undefined);
+  const release = await fs.promises.realpath(home).then((key) => tryExpLock('proxy', key)).catch(() => undefined);
   if (!release) return false;
   try {
     const current = await observeProxy(env);

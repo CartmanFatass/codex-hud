@@ -316,7 +316,7 @@ function mergePresets(layers: RoleLayer[]) {
 type ChainChoice = { preset: string | null } | { run: RolePlace[] };
 export type PresetChange =
   | { op: 'select'; name: string | null }
-  | { op: 'copy' | 'rename'; name: string }
+  | { op: 'rename'; name: string }
   | { op: 'create'; name: string; run: RolePlace[] }
   | { op: 'delete' }
   | { op: 'run'; run: RolePlace[] };
@@ -771,7 +771,7 @@ export function roleRegistry(
         if (!validPresetName(name)) throw new Error('bad preset name');
         if (change.op !== 'run' && presets.has(name)) throw new Error('preset name already exists');
         // Rename the saved definition, not a legacy file chain which only compares equal to it.
-        const run = change.op === 'run' || change.op === 'create' ? change.run : editableRun(role, change.op === 'rename' ? active! : undefined);
+        const run = change.op === 'rename' ? editableRun(role, active!) : change.run;
         const updated = { ...(change.op === 'run' || change.op === 'rename' ? saved?.raw : undefined), name, run };
         const at = local.findIndex((p) => p.name === name);
         if (at < 0) local.push(updated);
@@ -982,32 +982,6 @@ function lstatKind(path: string, wantDir: boolean, label: string): boolean {
   if (wantDir ? !st.isDirectory() : !st.isFile()) throw new Error(`refusing non-${wantDir ? 'directory' : 'file'}: ${label}`);
   return true;
 }
-function readRoleRecord(file: string, label: string): Record<string, unknown> {
-  if (!lstatKind(file, false, label)) return {};
-  const parsed = json(file);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`invalid role JSON: ${label}`);
-  return parsed as Record<string, unknown>;
-}
-export function writeRolePlaces(
-  hudHome: string,
-  role: string,
-  run: readonly RolePlace[],
-  bundled = fileURLToPath(new URL('../../packages/hud-mcp/', import.meta.url))
-): string {
-  if (typeof role !== 'string' || !VALID_ROLE.test(role)) throw new Error(`invalid role name: ${String(role)}`);
-  if (!Array.isArray(run) || run.length === 0) throw new Error('run must be a non-empty array');
-  const rolesDir = join(hudHome, 'roles');
-  const target = join(rolesDir, `${role}.json`);
-  lstatKind(rolesDir, true, rolesDir);
-  const hasHome = lstatKind(target, false, target);
-  const base = hasHome
-    ? readRoleRecord(target, target)
-    : readRoleRecord(join(bundled, 'roles', `${role}.json`), `shipped/${role}.json`);
-  const next: Record<string, unknown> = { ...base, role };
-  const derived = !Array.isArray(base.run) && roleReason(base) === null ? normalizeRole(base, target).instructions : undefined;
-  replaceFileRun(next, run, derived);
-  return writeRoleRecord(rolesDir, target, role, next);
-}
 function replaceFileRun(next: Record<string, unknown>, run: readonly RolePlace[], instructions?: string) {
   if (!Array.isArray(next.run) && next.harness !== undefined) {
     // A single-place file becomes a run list; keep derived instructions and remove the old place keys.
@@ -1018,7 +992,7 @@ function replaceFileRun(next: Record<string, unknown>, run: readonly RolePlace[]
   if (next.can_continue === undefined && run.some((p) => p && (p.harness === 'pi' || p.harness === 'cli')))
     next.can_continue = false;
 }
-function writeRoleRecord(rolesDir: string, target: string, role: string, next: Record<string, unknown>, expected?: Record<string, unknown> | null): string {
+function writeRoleRecord(rolesDir: string, target: string, role: string, next: Record<string, unknown>, expected: Record<string, unknown> | null) {
   const err = roleReason(next);
   if (err) throw new Error(`invalid role places: ${err}`);
   fs.mkdirSync(rolesDir, { recursive: true, mode: 0o700 });
@@ -1028,7 +1002,7 @@ function writeRoleRecord(rolesDir: string, target: string, role: string, next: R
     fs.chmodSync(temp, 0o600);
     lstatKind(rolesDir, true, rolesDir);
     const exists = lstatKind(target, false, target);
-    if (expected !== undefined && (expected === null ? exists : !exists || !isDeepStrictEqual(json(target), expected)))
+    if (expected === null ? exists : !exists || !isDeepStrictEqual(json(target), expected))
       throw new Error('Role changed on disk; reopen the action');
     fs.renameSync(temp, target);
   } finally {
@@ -1038,5 +1012,4 @@ function writeRoleRecord(rolesDir: string, target: string, role: string, next: R
       /* Renamed or failed before creation. */
     }
   }
-  return target;
 }

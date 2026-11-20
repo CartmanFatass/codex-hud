@@ -20,6 +20,7 @@ import {
 import { expCycle, grantCycle, grantTerms } from '../exp-cycle.js';
 import { PROXY_ERRORS, proxyTime, proxyWindows, type ExpProxySnapshot } from '../exp-proxy.js';
 import { appendExpEvent, prepareExpDir, readExpBalance } from './exp-ledger.js';
+import { expNativePath, readExpNativeSeen } from './exp-native.js';
 import { writePrivateFile } from './small-model.js';
 
 const expConfigPath = (hudHome: string) => join(hudHome, 'exp', 'config.json');
@@ -179,6 +180,10 @@ export function readExpData(hudHome: string, env = process.env, now = Date.now()
       const grant = config.grants[account];
       balances[account] = readExpBalance(hudHome, account, grant, now, legacySavedAt(grant, savedAt));
     }
+    for (const profile of profiles) {
+      const seen = readExpNativeSeen(expNativePath(hudHome, profile.home));
+      if (seen !== undefined) profile.lastNativeSeenAt = seen;
+    }
     return { config, profiles, proxySnapshot, balances };
   } catch {
     return { config: defaultExpConfig(), profiles, unreadable: true };
@@ -186,7 +191,7 @@ export function readExpData(hudHome: string, env = process.env, now = Date.now()
 }
 
 /** Saves only the edited field against the latest config. A calibration never rewrites configuration. */
-export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env = process.env): void {
+export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env = process.env): void | Promise<void> {
   const { config, savedAt } = expConfigFile(hudHome);
   for (const account of EXP_ACCOUNTS) {
     const grant = config.grants[account];
@@ -261,7 +266,7 @@ export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env =
     writePrivateFile(expConfigPath(hudHome), JSON.stringify(config, null, 2) + '\n');
     return;
   }
-  appendExpEvent(hudHome, edit.account, {
+  return appendExpEvent(hudHome, edit.account, {
     type: 'calibration',
     id: randomUUID(),
     at: new Date(nowMs).toISOString(),

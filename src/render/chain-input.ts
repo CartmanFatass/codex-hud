@@ -270,18 +270,24 @@ export function chainSheet(chain: ChainInput, models: ModelLists, width: number,
   const rows = places.flatMap((p, i) => {
     const extra = { item: placeItem(role.role, i), files: [role.path] };
     const status = p.state === 'off' ? t('Switched off') : p.state === 'missing' ? t('not installed') : p.state === 'exhausted' ? t('exhausted') : '';
+    const unknown = p.provider === null ? t('provider unknown') : '';
     const lead = `${i === chain.at ? mark('›', '>') : ' '} ${i + 1} ${glyph(p.state)} `;
-    if (draft || role.source === 'project' || p.harness === 'bro') {
+    if (!role.editor || role.source === 'project' || p.harness === 'bro') {
       const shown = p.provider ? { ...p, label: placeDestination(p), model: p.model?.replace(`${p.provider}/`, '') ?? null } : p;
-      return placeRows(lead, shown, width, '  ', muted(status), extra);
+      return [...placeRows(lead, shown, width, '  ', muted(status), extra),
+        ...(unknown ? [{ ...extra, text: fit('      ' + muted(unknown), width) }] : [])];
     }
+    const note = [status, unknown].filter(Boolean).join(' · ');
     return [...modelFieldRows(p, lead, width, extra, p.state === 'active' ? (text) => text : muted),
-      ...(status ? [{ ...extra, text: fit('      ' + muted(status), width) }] : [])];
+      ...(note ? [{ ...extra, text: fit('      ' + muted(note), width) }] : [])];
   });
   const messages = chain.error && chain.error !== EMPTY ? error(chain.error) : [];
   const top = [...messages, ...header, boardRow(''), section(t('Chain'), width, String(places.length))];
   const size = Math.max(1, room - top.length), at = rows.findIndex((row) => row.item === cursor);
-  const start = Math.max(0, Math.min(rows.length - size, at - Math.floor(size / 2)));
+  let end = at;
+  while (rows[end + 1] && rows[end + 1]!.item === cursor) end++;
+  // Keep the selected place's continuation and notes in view when they fit together.
+  const start = Math.max(0, Math.min(rows.length - size, at, Math.max(end - size + 1, at - Math.floor(size / 2))));
   const clear = !draft && places[chain.at]?.until !== undefined ? '  x clear' : '';
   const move = places.length > 1 ? '  K J move' : '', edit = cursor ? '  ⏎ edit' : '';
   const model = places[chain.at] && (places[chain.at]!.harness !== 'bro' || places[chain.at]!.label === 'aistudio') ? '  m model' : '';

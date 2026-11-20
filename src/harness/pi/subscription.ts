@@ -15,6 +15,7 @@ import {
   windowLabel,
   windowPending,
   windowRemaining,
+  type ExpProxyWindow,
   type ExpProxyWindows,
 } from '../../exp-proxy.js';
 import type { FooterContext } from './footer-host.js';
@@ -65,7 +66,9 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
   let refresh: Promise<boolean> | undefined;
   let reading: ProxyObservation | undefined;
   let request: string | undefined;
-  let direct: { route: string; windows: ExpProxyWindows; at: number } | undefined;
+  type WindowReading = { window: ExpProxyWindow; at: number | null; direct?: true };
+  const slots = ['primary', 'secondary'] as const;
+  let direct: Partial<Record<(typeof slots)[number], WindowReading>> = {};
 
   function watchDir(dir: string, change: (file: string | null) => void, closed: () => void) {
     try {
@@ -137,7 +140,7 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
   }
   function clearRequest() {
     request = undefined;
-    direct = undefined;
+    direct = {};
   }
   return {
     stop() {
@@ -149,26 +152,42 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
       expWatch?.close();
       settingsWatch = expWatch = undefined;
     },
-    draw(ctx: FooterContext): string | undefined {
+    draw(ctx: FooterContext): string[] {
       observe();
-      if (!reading) return;
+      if (!reading) return [];
       const key = route(ctx);
       if (request !== key) clearRequest();
-      if (!key) return;
-      const own = direct;
-      const windows = own?.windows ?? reading.snapshot;
-      const window = windows?.primary ?? windows?.secondary;
-      if (!window) return;
-      const label = windowLabel(window);
-      const prefix = label ? `${label} ` : '';
+      if (!key) return [];
+      const { snapshot, intervalMinutes } = reading;
+      const byWindow = new Map<number | string, WindowReading>();
+      // Match measured durations across sources; fall back to the slot when a duration is absent.
+      for (const slot of slots) {
+        const proxy = snapshot?.[slot];
+        if (proxy) {
+          const key = proxy.windowDurationMins ?? direct[slot]?.window.windowDurationMins ?? slot;
+          byWindow.set(key, { window: proxy, at: snapshot.observedAtMs });
+        }
+      }
+      for (const slot of slots) {
+        const own = direct[slot];
+        if (own) byWindow.set(own.window.windowDurationMins ?? snapshot?.[slot]?.windowDurationMins ?? slot, own);
+      }
       const at = now();
-      const stale = proxyStale(own?.at ?? reading.snapshot?.observedAtMs ?? null, reading.intervalMinutes, at);
-      if (windowPending(window, at)) return `${prefix}refresh pending${stale ? ' · stale' : ''}`;
-      return `${prefix}${own ? 'left ' : '≈'}${windowRemaining(window)}%${stale ? ' · stale' : ''}`;
+      return [...byWindow.entries()]
+        .sort(([a], [b]) => typeof a === 'number' && typeof b === 'number' ? a - b : 0)
+        .map(([, value]) => {
+          const { window } = value;
+          const label = windowLabel(window);
+          const suffix = proxyStale(value.at, intervalMinutes, at) ? ' · stale' : '';
+          const text = windowPending(window, at)
+            ? 'refresh pending'
+            : `${value.direct ? 'left ' : '≈'}${windowRemaining(window)}%`;
+          return `${label ? label + ' ' : ''}${text}${suffix}`;
+        });
     },
     modelChanged: clearRequest,
     requestStarted(ctx: FooterContext) {
-      const hadDirect = !!direct;
+      const hadDirect = direct.primary || direct.secondary;
       clearRequest();
       if (reading) request = route(ctx);
       if (hadDirect) repaint();
@@ -177,14 +196,11 @@ export function createPiSubscription(env: NodeJS.ProcessEnv, repaint: () => void
       if (!reading || !request || request !== route(ctx)) return;
       const windows = stream ? streamWindows(event, ctx.model) : responseWindows(event);
       if (!windows.primary && !windows.secondary) return;
-      direct = {
-        route: request,
-        windows: {
-          primary: windows.primary ?? direct?.windows.primary,
-          secondary: windows.secondary ?? direct?.windows.secondary,
-        },
-        at: now(),
-      };
+      const at = now();
+      for (const slot of slots) {
+        const window = windows[slot];
+        if (window) direct[slot] = { window, at, direct: true };
+      }
       repaint();
     },
   };

@@ -142,7 +142,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   }
   // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
   if (state.projectInput) {
-    const pick = control && !harnesses ? pickOf(input.project, state.projectInput) : undefined;
+    const pick = chain?.sheet ? pickOf(input.project, state.projectInput) : undefined;
     if (!pick) state.projectInput = undefined;
     else if (input.modelPickerZoomed && width >= MODEL_PICKER_WIDE && height >= 4)
       return paintZoomedPicker(frame, input.project!, state.projectInput, pick, width, height, now);

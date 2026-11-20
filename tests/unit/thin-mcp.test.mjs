@@ -9,14 +9,17 @@ import test from 'node:test';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { readThinJobs, runningVerb } from '../../dist/collectors/thin-jobs.js';
+import { expNativePath } from '../../dist/collectors/exp-native.js';
+import { readExpData } from '../../dist/collectors/exp-store.js';
+import { defaultExpConfig } from '../../dist/exp-config.js';
 import { cliKinds } from '../../dist/roles/cli-kinds.js';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { answerJobQuestion } from '../../dist/collectors/panel-actions.js';
 import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { renderWorkCard, workStateInk } from '../../dist/render/work-card.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
-import { initialMonitorState } from '../../dist/render/monitor.js';
-import { stripAnsi, theme } from '../../dist/render/colors.js';
+import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
+import { stripAnsi, theme, visualLength } from '../../dist/render/colors.js';
 import { PiRoleClient, PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 import { procStat, reportSignature, turnToken } from '../../packages/hud-mcp/dist/packages/hud-mcp/src/cli-judge.js';
 import { harnessDefaults, markExhausted, placeKey } from '../../dist/roles/roster.js';
@@ -1712,10 +1715,11 @@ test('Codex native footer discovers MyHUD and serves ordered, request-local fact
   assert.deepEqual(f.socketRequests, []);
 });
 
-test('Codex footer last-seen is opt-in, private and throttled', { timeout: 8000 }, async (t) => {
+test('Codex footer last-seen is opt-in, private, throttled and reaches only its canonical local EXP profile', { timeout: 8000 }, async (t) => {
   const f = await fixture(t, false, `
     import { readFileSync } from 'node:fs';
     import { join } from 'node:path';
+    process.env.CODEX_HOME = join(process.env.HOME, '.codex-link');
     const now = Date.now;
     Date.now = () => {
       try { return Number(readFileSync(join(process.env.HOME, 'footer-clock'), 'utf8')); }
@@ -1723,11 +1727,23 @@ test('Codex footer last-seen is opt-in, private and throttled', { timeout: 8000 
     };
   `);
   const exp = join(f.env.HUD_HOME, 'exp');
-  const seen = join(exp, 'codex-native.json');
+  const own = join(f.env.HOME, '.codex-local'), other = join(f.env.HOME, '.codex-other');
+  for (const dir of [own, other]) {
+    fs.mkdirSync(dir);
+    fs.writeFileSync(join(dir, 'config.toml'), '# synthetic\n');
+  }
+  fs.symlinkSync(own, join(f.env.HOME, '.codex-link'));
+  const seen = expNativePath(f.env.HUD_HOME, fs.realpathSync(own));
   const clock = (now) => fs.writeFileSync(join(f.env.HOME, 'footer-clock'), String(now));
-  const config = (enabled) => fs.writeFileSync(join(exp, 'config.json'), JSON.stringify({ version: 1, codex: { enabled } }));
+  const config = (enabled) => {
+    const data = defaultExpConfig();
+    data.codex.enabled = enabled;
+    data.proxy.profile = other;
+    data.codex.aliases[fs.realpathSync(own)] = 'Local';
+    fs.writeFileSync(join(exp, 'config.json'), JSON.stringify(data));
+  };
   const master = (experiments) => fs.writeFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ experiments }));
-  const state = { thread: { model: { display_name: 'Example' } } };
+  const state = { config: { profile: other }, thread: { model: { display_name: 'Example' } } };
   const firstAt = 1_768_000_000_000;
   clock(firstAt);
   master(true);
@@ -1743,6 +1759,8 @@ test('Codex footer last-seen is opt-in, private and throttled', { timeout: 8000 
   assert.equal(fs.existsSync(seen), false);
   master(true);
 
+  await readFooter(f);
+  assert.equal(fs.existsSync(seen), false, 'a discovery read without statusline state is not a native observation');
   await readFooter(f, state);
   assert.deepEqual(JSON.parse(fs.readFileSync(seen, 'utf8')), { version: 1, lastSeenAt: firstAt });
   const first = fs.statSync(seen);
@@ -1759,7 +1777,22 @@ test('Codex footer last-seen is opt-in, private and throttled', { timeout: 8000 
   clock(firstAt + 120_000);
   await readFooter(f, state);
   assert.equal(fs.statSync(seen).ino, second.ino);
-  assert.deepEqual(fs.readdirSync(exp).sort(), ['codex-native.json', 'config.json']);
+  assert.deepEqual(fs.readdirSync(exp).sort(), [basename(seen), 'config.json']);
+  const expData = readExpData(f.env.HUD_HOME, f.env, firstAt + 120_000);
+  assert.deepEqual(expData.profiles.map(({ home, lastNativeSeenAt }) => [home, lastNativeSeenAt]), [
+    [fs.realpathSync(own), firstAt + 60_000], [fs.realpathSync(other), undefined],
+  ]);
+  const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(0) };
+  const frame = renderMonitor({ tree, state: { ...initialMonitorState(), experiments: true, mainTab: 'exp' },
+    expData, width: 40, height: 24, nowMs: firstAt + 120_000 });
+  const date = new Date(firstAt + 60_000).toISOString().slice(0, 16).replace('T', ' ') + 'Z';
+  const lines = frame.lines.map((line) => stripAnsi(line).trimEnd()).join('\n');
+  assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+  assert.match(lines, /Track native status line\s+on/);
+  assert.match(lines, new RegExp(`Local \\(\\.codex-link\\)\\nLast native bar seen\\s+${date}`));
+  assert.match(lines, /\.codex-other\nLast native bar seen\s+—/);
+  assert.equal(fs.readFileSync(join(own, 'config.toml'), 'utf8'), '# synthetic\n');
+  assert.equal(fs.readFileSync(join(other, 'config.toml'), 'utf8'), '# synthetic\n');
 });
 
 test('working worker STATUS survives a nonzero prompt result', { timeout: 7000 }, async (t) => {

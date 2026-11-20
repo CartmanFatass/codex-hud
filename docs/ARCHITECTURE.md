@@ -383,6 +383,8 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | `display/state/<session>.json` | Active Codex bar/panel snapshot; atomic inode ownership prevents outgoing writers deleting replacements |
 | `display/state/claude-quota.json` | Last reported quota windows only; optional private cache from Claude statusline stdin |
 | `exp/config.json`, `exp/proxy.json` | Private EXP settings and the bound Codex profile's quota snapshot (windows, binding revision, observation time and retry state) |
+| `exp/codex-native-<profile hash>.json` | Last native MyHUD bar observed for that canonical local Codex profile (opt-in) |
+| `exp/ledger-<account>.jsonl` | Append-only private API grant events; a per-ledger writer lock excludes duplicate IDs, and reads deduplicate legacy entries |
 | `display/scan/`, `display/thin-jobs.json` | Rebuildable observation caches |
 | `display/model-cache/` | Shared text replies/reservations and revision-keyed overlays; Decision reservations have their own subdirectory |
 | `display/profile.log` | Optional stage timings |

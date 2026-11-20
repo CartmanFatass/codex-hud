@@ -86,7 +86,7 @@ export interface BarFacts {
   /** `marks` follow the branch name (`*↑2`, ` +1 *1 ?1`). */
   project?: { name: string; branch: string | null; marks?: string; dirty?: boolean };
   /** Usage windows, or one reading of its own (`credits 31.8K`, pi's `$0.420`). */
-  quota?: { windows: Array<{ label: string; percent: number; reset?: string }> } | { label?: string; text: string };
+  quota?: { windows: Array<{ label: string; percent: number; reset?: string }> } | { label?: string; text: string; shortText?: string };
   /** Latest available output-rate estimate, in tokens per second. */
   tps?: number;
   /** What needs the owner now (an approval, a job's question): pinned while it is open. */
@@ -245,9 +245,9 @@ function projectSeg(p: NonNullable<BarFacts['project']>): Seg {
 
 function quotaSeg(q: NonNullable<BarFacts['quota']>): Seg {
   if ('text' in q) {
-    const form: Form = [...(q.label ? ([[q.label, 'dim'], [' ']] as Form) : []), [q.text, 'value']];
-    // The same three times: the segment goes only at the ladder's last quota step, as the windows' does.
-    return { id: 'quota', forms: [form, form, form], ink: P10K.quota, at: 0 };
+    const reading = (text: string): Form => [...(q.label ? ([[q.label, 'dim'], [' ']] as Form) : []), [text, 'value']];
+    const form = reading(q.text);
+    return { id: 'quota', forms: [form, form, q.shortText ? reading(q.shortText) : form], ink: P10K.quota, at: 0 };
   }
   // One window only, the one with the least left (owner, 2026-11-11); the first wins a tie.
   const shown = q.windows.length ? [q.windows.reduce((a, b) => (b.percent > a.percent ? b : a))] : [];

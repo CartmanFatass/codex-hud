@@ -324,7 +324,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'click a header: fold': '点标题 折叠',
   'esc close and restore': 'esc 关闭并还原',
   'Enter sets it · not the current model': 'Enter 设定 · 与当前不同',
-  'as typed': '按输入设置',
   provider: '提供方',
   missing: '缺',
   // The Timeline layout: Now and Latest on the hub, History on Progress, ticket lanes, the Control plane's attention.

@@ -373,7 +373,7 @@ test('delegation collects live oapi requests, using request-time prices and pers
   await finish(reply({ stopReason: 'aborted' }));
   assert.equal(fs.existsSync(pathToLedger), false, 'non-oapi and incomplete requests');
 
-  grant('calibration', 13_400_000);
+  await grant('calibration', 13_400_000);
   await start();
   c.ctx.model.cost.input = 500; // in-flight edits cannot reprice the request
   t.mock.timers.setTime(now + 1000);
@@ -396,13 +396,13 @@ test('delegation collects live oapi requests, using request-time prices and pers
   });
   await start();
   await h.emit('message_end', c.ctx, { message: fallback });
-  assert.equal(lines().length, 3, 'fallback waits for native message ID');
+  assert.equal(lines().length, 2, 'the replay did not append, and fallback waits for native message ID');
   t.mock.timers.setTime(now + 90_000);
   await h.emit('turn_end', c.ctx, { message: { ...fallback }, messageEntryId: 'stable-entry' });
   assert.equal(lines().at(-1).at, new Date(now + 1000).toISOString(), 'tool time is not completion time');
   await start();
   await finish({ ...fallback }, 'stable-entry');
-  assert.equal(lines().at(-1).id, lines().at(-2).id);
+  assert.equal(lines().length, 3, 'replaying the fallback ID did not append');
   assert.equal(lines().at(-1).source, 'unpriced');
   assert.equal(lines().at(-1).costMicros, null);
   await start();
@@ -516,8 +516,8 @@ test('delegation isolates the Anthropic API-key ledger from OAuth, gateways, unk
   assert.equal(fs.existsSync(ledger(anthropic)), false, 'unattributable requests write nothing');
   assert.equal(fs.existsSync(ledger(oapi)), false, 'neither does the other ledger');
 
-  edit(anthropic, 'calibration', 8_000_000);
-  edit(oapi, 'calibration', 15_000_000);
+  await edit(anthropic, 'calibration', 8_000_000);
+  await edit(oapi, 'calibration', 15_000_000);
   await start();
   await finish(); // 100000 input + 100000 output + 25000 reads + 100000 short writes + 40000 long writes.
   assert.equal(balance(anthropic).remainingMicros, 7_635_000);
@@ -538,7 +538,7 @@ test('delegation isolates the Anthropic API-key ledger from OAuth, gateways, unk
   assert.equal(balance(oapi).remainingMicros, 13_000_000);
   const lines = fs.readFileSync(ledger(anthropic), 'utf8').trimEnd().split('\n').map(JSON.parse);
   assert.deepEqual(lines.slice(1).map(({ source, costMicros }) => [source, costMicros]), [
-    ['priced', 365_000], ['priced', 365_000], ['reported', 500_000], ['reported', 500_000],
+    ['priced', 365_000], ['reported', 500_000],
   ]);
   assert.equal(h.calls.footer, 0);
 });
@@ -564,11 +564,11 @@ test('40-column pi footer switches among subscription proxy, oapi, and Anthropic
   const change = (field, value) =>
     saveExpEdit(home, { field, account: 'openai-api', value }, Date.now(), f.env);
   change('grant-enabled', true);
-  change('calibration', 13_400_000);
+  await change('calibration', 13_400_000);
   change('binding', profile);
   change('proxy-enabled', true);
   saveExpEdit(home, { field: 'grant-enabled', account: 'anthropic-api', value: true }, Date.now(), f.env);
-  saveExpEdit(home, { field: 'calibration', account: 'anthropic-api', value: 8_000_000 }, Date.now(), f.env);
+  await saveExpEdit(home, { field: 'calibration', account: 'anthropic-api', value: 8_000_000 }, Date.now(), f.env);
   fs.writeFileSync(
     expProxyPath(home),
     JSON.stringify({

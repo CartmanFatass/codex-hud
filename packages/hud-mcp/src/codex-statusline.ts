@@ -1,6 +1,8 @@
 /** Codex 0.171's native statusline. Request facts never fall back to another thread or account. */
 import * as fs from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { expNativePath, readExpNativeSeen } from '../../../src/collectors/exp-native.js';
 import { writePrivateFile } from '../../../src/collectors/small-model.js';
 import { jobRow } from '../../../src/collectors/thin-jobs.js';
 import { truncateAnsi } from '../../../src/render/colors.js';
@@ -110,7 +112,6 @@ function workReminder(home: string, pane: string | null, now: number): string | 
 
 function recordLastSeen(home: string, now: number): void {
   const dir = join(home, 'exp');
-  const file = join(dir, 'codex-native.json');
   const enabled = () => {
     const config = obj(readJson(join(dir, 'config.json'), 65_536));
     return (
@@ -119,13 +120,15 @@ function recordLastSeen(home: string, now: number): void {
       obj(readJson(settingsPath(), 65_536))?.experiments === true
     );
   };
-  const due = () => {
-    const seen = obj(readJson(file, 1024))?.lastSeenAt;
-    return !nonnegative(seen) || now - seen >= 60_000;
-  };
   try {
-    if (!fs.lstatSync(dir).isDirectory() || !enabled() || !due()) return;
-    // Non-blocking across MCP processes/profiles. Recheck after acquiring the writer slot.
+    if (!fs.lstatSync(dir).isDirectory() || !enabled()) return;
+    // Codex's profile name in request metadata is not a local profile directory.
+    const profile = fs.realpathSync(process.env.CODEX_HOME || join(homedir(), '.codex'));
+    if (!fs.statSync(profile).isDirectory()) return;
+    const file = expNativePath(home, profile);
+    const due = () => now - (readExpNativeSeen(file) ?? -Infinity) >= 60_000;
+    if (!due()) return;
+    // Recheck after acquiring this profile's non-blocking writer slot.
     const lock = `${file}.lock`;
     const fd = fs.openSync(lock, 'wx', 0o600);
     try {
@@ -177,6 +180,6 @@ export function readCodexStatusline(meta: unknown, home: string, pane: string | 
   const reminder = workReminder(home, pane, now);
   if (reminder) children.push(text('status-state', reminder));
   const tree = { type: 'row', props: { gap: 2, wrap: 'nowrap' }, children };
-  recordLastSeen(home, now);
+  if (state) recordLastSeen(home, now);
   return { contents: [{ uri: URI, mimeType: MIME, text: JSON.stringify(tree) }] };
 }

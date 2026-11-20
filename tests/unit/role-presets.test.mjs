@@ -150,14 +150,14 @@ test('cycling one already active preset does not rewrite the role file', (t) => 
   assert.equal(fs.statSync(f.file).ino, inode);
 });
 
-test('copy and whole-chain saves only materialize the changed named chain and preserve raw options', (t) => {
+test('create and whole-chain saves only materialize the changed named chain and preserve raw options', (t) => {
   const f = fixture(t), { presets: _, ...shipped } = stored(join(bundled, 'roles/imp.json'));
   assert.equal(edit(f, { op: 'select', name: 'grok' }).ok, true);
   assert.deepEqual(stored(f.file), { ...shipped, active_preset: 'grok' });
   const authored = { name: 'own', run: [{ harness: 'pi', pi_args: ['--verbose'], extra: { nested: true } }] };
   f.put(f.file, { ...f.own, presets: [authored], active_preset: 'own' });
-  const old = f.registry(), revision = old.revision(old.roles().get('imp'));
-  assert.equal(edit(f, { op: 'copy', name: 'copy', revision }).ok, true);
+  const old = f.registry(), original = old.roles().get('imp'), revision = old.revision(original);
+  assert.equal(edit(f, { op: 'create', name: 'copy', revision, run: old.editableRun(original) }).ok, true);
   assert.deepEqual(stored(f.file).presets, [authored, { ...authored, name: 'copy' }]);
   assert.equal(edit(f, { op: 'delete', revision }).message, 'Role changed on disk; reopen the action');
   const current = f.registry(), role = current.roles().get('imp');

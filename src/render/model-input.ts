@@ -28,24 +28,24 @@ export interface PickEntry {
 }
 
 export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput): ModelPick | undefined {
-  const role = data?.roles.find((r) => r.role === input.role), place = input.sheetPlace ?? role?.places[input.index];
-  return data && role && place && role.source !== 'project' && placeModels(place, data.models) ? { place, lists: data.models, presets: role.presets, preset: role.preset } : undefined;
+  const role = data?.roles.find((r) => r.role === input.role), place = input.sheetPlace;
+  return data && role && place?.harness === 'pi' && role.source !== 'project' ? { place, lists: data.models, presets: role.presets, preset: role.preset } : undefined;
 }
 
 export const pickerHints = (input: ModelInput) => `↑↓ pick  ⏎ set  ${input.text ? 'esc clear' : 'esc cancel'}  ^R refresh`;
 
 export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
   const { place, lists, presets } = pick, typed = input.text.trim(), needle = typed.toLowerCase();
-  const pi = place.harness === 'pi', currentId = place.piModel?.current ?? place.model;
+  const currentId = place.piModel?.current ?? place.model;
   const isDefault = place.piModel?.isDefault ?? !place.model;
   const reference = (model: string, p: PlaceFact): PickEntry => {
-    const fact = pi && (p.state === 'off' || lists.piStatus?.runnerOff) ? 'off'
-      : pi && !qualifiedPiProvider(model) ? 'unknown' : undefined;
-    return { id: `pin:${model}`, label: model, model, fact, until: pi ? p.until ?? lists.piExhausted?.[model] : undefined,
+    const fact = p.state === 'off' || lists.piStatus?.runnerOff ? 'off'
+      : !qualifiedPiProvider(model) ? 'unknown' : undefined;
+    return { id: `pin:${model}`, label: model, model, fact, until: p.until ?? lists.piExhausted?.[model],
       value: fact ? undefined : model };
   };
   const current = currentId ? { ...reference(currentId, place), current: true } : undefined;
-  const canUnset = !place.piModel?.defaultOff && !(pi && lists.piStatus?.runnerOff);
+  const canUnset = !place.piModel?.defaultOff && !lists.piStatus?.runnerOff;
   const defaultId = place.piModel?.defaultId ?? undefined;
   const unset: PickEntry = { id: 'default', label: t('default'), model: defaultId, value: '', current: isDefault,
     fact: defaultId && !qualifiedPiProvider(defaultId) ? 'unknown' : undefined, until: place.piModel?.defaultUntil };
@@ -65,15 +65,10 @@ export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
     pins.set(id, pin);
   }
   const groups = new Map<string, { provider: string; open: boolean; entries: PickEntry[] }>();
-  const loose: PickEntry[] = [];
   const ids = [...new Set((placeModels(place, lists) ?? []).filter((id) => id.toLowerCase().includes(needle)))];
   for (const value of ids) {
     const entry: PickEntry = { id: `model:${value}`, label: value, model: value, value,
-      current: !isDefault && value === currentId, until: pi ? lists.piExhausted?.[value] : undefined };
-    if (!pi) {
-      if (!pins.has(value)) loose.push(entry);
-      continue;
-    }
+      current: !isDefault && value === currentId, until: lists.piExhausted?.[value] };
     const slash = value.indexOf('/'), provider = value.slice(0, slash);
     let group = groups.get(provider);
     if (!group) {
@@ -85,13 +80,12 @@ export function pickView(pick: ModelPick, input: ModelInput, wide = false) {
   }
   const byProvider = [...groups.values()].sort((a, b) => a.provider.localeCompare(b.provider) || (a.provider < b.provider ? -1 : 1));
   for (const group of byProvider) group.entries.sort((a, b) => a.label.localeCompare(b.label));
-  if (!needle && canUnset && !(current && isDefault)) loose.push(unset);
+  const fallback = !needle && canUnset && !(current && isDefault) ? unset : undefined;
   const pinned = [...pins.values()];
-  const entries = [...pinned, ...byProvider.flatMap((g) => g.open ? g.entries : []), ...loose];
-  const free = !pi && !entries.length && typed ? typed : undefined;
+  const entries = [...pinned, ...byProvider.flatMap((g) => g.open ? g.entries : []), ...(fallback ? [fallback] : [])];
   const selected = entries.find((entry) => entry.id === input.pick) ?? (!needle ? entries.find((entry) => entry.current) : undefined)
-    ?? entries[0] ?? (free ? { id: 'typed', label: free, value: free, model: free } : undefined);
-  return { entries, pinned, groups: byProvider, loose, selected, current, total: ids.length };
+    ?? entries[0];
+  return { entries, pinned, groups: byProvider, fallback, selected, current, total: ids.length };
 }
 
 /** The picker owns keys and its viewport. Outside clicks still go through the existing panel routing. */
@@ -127,7 +121,7 @@ export function modelInputEvent(state: MonitorState, input: WorkbenchInput, ctx:
     }
     const hit = monitorRowAt(pane, input.x, input.y)?.modelHit;
     if (hit && 'entry' in hit) {
-      const entry = view.entries.find((e) => e.id === hit.entry) ?? (hit.entry === view.selected?.id ? view.selected : undefined);
+      const entry = view.entries.find((e) => e.id === hit.entry);
       if (entry && typed.clicked === entry.id && view.selected?.id === entry.id) return set(entry);
       typed.pick = typed.clicked = hit.entry;
       typed.scroll = window.first;

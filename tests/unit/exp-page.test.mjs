@@ -51,9 +51,13 @@ function panel(f, state = { ...initialMonitorState(), mainTab: 'exp', experiment
     const out = send(frame, typeof input === 'string' ? key(input) : input);
     frame = draw(out.state, expData);
     if (out.action?.type === 'exp-save') {
-      saveExpEdit(f.env.HUD_HOME, out.action.edit, NOW, f.env);
-      expData = data();
-      frame = draw({ ...out.state, expPage: { ...out.state.expPage, edit: undefined, notice: 'Saved' } }, expData);
+      const saved = () => {
+        expData = data();
+        frame = draw({ ...out.state, expPage: { ...out.state.expPage, edit: undefined, notice: 'Saved' } }, expData);
+        return out.action;
+      };
+      const pending = saveExpEdit(f.env.HUD_HOME, out.action.edit, NOW, f.env);
+      return pending ? pending.then(saved) : saved();
     }
     return out.action;
   };
@@ -230,7 +234,7 @@ test('EXP edits every group, Esc drops drafts, and another project sees the same
   assert.equal(fs.readFileSync(join(f.other, 'config.toml'), 'utf8'), 'synthetic marker\n');
 });
 
-test('calibration previews before any write, cancels cleanly, then appends one private timestamped line per save', (t) => {
+test('calibration previews before any write, cancels cleanly, then appends one private timestamped line per save', async (t) => {
   const f = fixture(t);
   const p = panel(f);
   p.select('openai-api');
@@ -249,7 +253,7 @@ test('calibration previews before any write, cancels cleanly, then appends one p
   const before = fs.readFileSync(configFile, 'utf8');
   for (const amount of ['13.40', '0']) {
     p.edit('calibration', amount);
-    assert.equal(p.press('enter')?.edit.field, 'calibration');
+    assert.equal((await p.press('enter'))?.edit.field, 'calibration');
   }
   const lines = fs.readFileSync(file, 'utf8').split('\n');
   assert.equal(lines.pop(), '');
@@ -269,7 +273,7 @@ test('calibration previews before any write, cancels cleanly, then appends one p
   assert.equal(fs.statSync(f.dir).mode & 0o777, 0o700);
 });
 
-test('40 columns in EN and ZH: both layouts show whole labels, both ledgers, and the calibration preview', (t) => {
+test('40 columns in EN and ZH: both layouts show whole labels, both ledgers, and the calibration preview', async (t) => {
   const f = fixture(t);
   const oldLanguage = setLanguage('en');
   const oldDisplay = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
@@ -285,9 +289,9 @@ test('40 columns in EN and ZH: both layouts show whole labels, both ledgers, and
   );
   for (const [account, value] of [['anthropic-api', 8_000_000], ['openai-api', 12_750_000]]) {
     saveExpEdit(f.env.HUD_HOME, { field: 'grant-enabled', account, value: true }, NOW - 1000, f.env);
-    saveExpEdit(f.env.HUD_HOME, { field: 'calibration', account, value }, NOW - 1000, f.env);
+    await saveExpEdit(f.env.HUD_HOME, { field: 'calibration', account, value }, NOW - 1000, f.env);
   }
-  appendExpEvent(f.env.HUD_HOME, 'anthropic-api', {
+  await appendExpEvent(f.env.HUD_HOME, 'anthropic-api', {
     type: 'cost', id: 'synthetic-cost', at: new Date(NOW).toISOString(), model: 'synthetic-claude',
     tokens: { input: 10, output: 3, cacheRead: 2, cacheWrite: 5 }, source: 'priced', costMicros: 350_000,
   });

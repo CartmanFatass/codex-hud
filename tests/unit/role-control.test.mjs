@@ -14,7 +14,9 @@ import { editPlaces, editPreset, placeItem } from '../../dist/roles/role-control
 import { build as controlSample } from '../../docs/design/control-tab/gen/frames.mjs';
 import { finishChain } from '../../dist/render/chain-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
-import { markExhausted, placeKey, roleRegistry, writeRolePlaces } from '../../dist/roles/roster.js';
+import { markExhausted, placeKey, roleRegistry } from '../../dist/roles/roster.js';
+
+const saveRun = (s, role, run) => assert.equal(editPreset(s.hud, s.cwd, s.env, { role, op: 'run', run }).ok, true);
 
 function select(state, item) {
   return { ...state, controlChain: undefined, controlNav: { ...state.controlNav, projectCursor: item } };
@@ -81,7 +83,7 @@ const discover = (s, pi = MODEL_LISTS.pi) => {
 test('Control plane: what needs the owner first with the place the next job uses; healthy roles fold to names', async (t) => {
   const s = await setup(t, { healthyOpen: false });
   // reviewer gets a fallback; pro's first place is exhausted, so its next one is the one in use.
-  writeRolePlaces(s.hud, 'reviewer', [{ harness: 'pi', pi_role: 'reviewer', split: false }, { harness: 'cli', agent: 'claude', model: 'opus', thinking: 'high' }]);
+  saveRun(s, 'reviewer', [{ harness: 'pi', pi_role: 'reviewer', split: false }, { harness: 'cli', agent: 'claude', model: 'opus', thinking: 'high' }]);
   markExhausted(s.hud, placeKey({ harness: 'bro', tool: 'jev-ask', provider: 'chatgpt', model: '6 Pro' }), 'quota exceeded', NOW);
   s.session.snap = await s.collector.collect(true, s.board, NOW);
   // Folded: a place at its limit (and where the next job goes), a role with nowhere to run, a role file that does not load; the rest are names.
@@ -123,7 +125,7 @@ test('Control plane keeps the long model field usable when the role list scrolls
   const s = await setup(t);
   const model = 'synthetic-provider/very-long-model-identifier-for-place-preview-20261117';
   const exhausted = { harness: 'cli', agent: 'claude', model, thinking: 'high' };
-  writeRolePlaces(s.hud, 'reviewer', [exhausted, { harness: 'pi', pi_role: 'reviewer', split: false },
+  saveRun(s, 'reviewer', [exhausted, { harness: 'pi', pi_role: 'reviewer', split: false },
     { harness: 'cli', agent: 'agy', model: 'synthetic-fallback', thinking: 'low' }]);
   markExhausted(s.hud, placeKey(exhausted), 'quota exceeded', NOW);
   s.collector.refreshRoles(s.session.snap, NOW);
@@ -175,10 +177,42 @@ test('Classic expands only the selected role’s numbered chain; o opens a role�
   await s.press(ESC);
   assert.doesNotMatch(s.text(), /^› 1 ◉/m);
 });
+test('focused editable and project-pinned chains report unknown providers without blocking assignment', async (t) => {
+  const s = await setup(t);
+  const model = 'ambiguous-model';
+  discover(s, [`alpha/${model}`, `beta/${model}`]);
+  const role = { role: 'imp', can_continue: true, run: [{ harness: 'pi', pi_role: 'implementer', model }] };
+  saveRun(s, 'imp', role.run);
+  for (const pinned of [false, true]) {
+    if (pinned) {
+      s.put(join(s.hud, 'projects.json'), { version: 1, projects: [{ root: fs.realpathSync(s.cwd) }] });
+      s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'secret'] });
+      s.put(join(s.cwd, '.hud/roles/imp.json'), role);
+    }
+    s.collector.refreshRoles(s.session.snap, NOW);
+    const fact = s.session.snap.roles.find((r) => r.role === 'imp');
+    assert.equal(fact.source, pinned ? 'project' : 'yours');
+    assert.equal(fact.places[0].provider, null);
+    assert.equal(fact.places[0].state, 'active');
+    assert.equal(s.assignment('imp').model, model);
+    assert.equal(s.assignment('imp').available, true);
+    for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+      s.session.state = onControl(undefined, { panelLayout });
+      focus(s);
+      const frame = s.frame(40, lang, 22), rows = plain(frame).join('\n');
+      assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+      assert.match(rows, lang === 'en' ? /^ +provider unknown$/m : /^ +提供方未知$/m);
+      assert.match(rows, /◉ pi.*ambiguous-model/);
+      assert.equal(frame.controls.some((c) => c.kind === 'control-model'), !pinned);
+      if (process.env.CONTROL_REVIEW_FRAMES && panelLayout === 'classic') t.diagnostic(`${lang} ${pinned ? 'locked' : 'editable'}:\n${rows}`);
+    }
+  }
+});
+
 test('x clears a real quota mark immediately, but never from a draft index', async (t) => {
   const s = await setup(t);
   const first = { harness: 'cli', agent: 'agy', model: 'demo/cli' };
-  writeRolePlaces(s.hud, 'imp', [first, { harness: 'pi', pi_role: 'implementer', model: 'demo/pi' }]);
+  saveRun(s, 'imp', [first, { harness: 'pi', pi_role: 'implementer', model: 'demo/pi' }]);
   markExhausted(s.hud, placeKey(first), 'HTTP 429', NOW);
   s.collector.refreshRoles(s.session.snap, NOW);
   focus(s);
@@ -326,11 +360,11 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   assert.equal(s.assignment('imp').model, 'synthetic/model');
   focus(s);
   await s.press('m');
-  for (const raw of ['q', 'p', 'e', 'i', 'r', 'K', 'o', 'j']) {
+  for (const raw of ['q', 'p', 'e', 'i', 'r', 'K', 'o', 'j', 'w']) {
     const out = await s.press(raw);
     assert.deepEqual([out.action, out.close], [undefined, false], raw);
   }
-  assert.equal(s.session.state.projectInput.text, 'qpeirKoj');
+  assert.equal(s.session.state.projectInput.text, 'qpeirKojw');
   const view = s.frame();
   const tab = view.controls.find((c) => c.kind === 'board-project');
   const click = handleMonitorInput(view.state, { type: 'mouse', button: 'left', x: tab.x, y: tab.y }, { tree: TREE, frame: view, nowMs: NOW, standalone: true });
@@ -340,7 +374,7 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
 test('CLI model and thinking fields list catalog entries inline and a miss leaves the place alone', async (t) => {
   const s = await setup(t);
   discover(s);
-  writeRolePlaces(s.hud, 'imp', [{ harness: 'cli', agent: 'agy', model: 'gemini-4-argon-high' }]);
+  saveRun(s, 'imp', [{ harness: 'cli', agent: 'agy', model: 'gemini-4-argon-high' }]);
   s.collector.refreshRoles(s.session.snap, NOW);
   await s.press('m');
   const page = lines40(s).join('\n');
@@ -356,20 +390,28 @@ test('CLI model and thinking fields list catalog entries inline and a miss leave
   const inputs = ['', '探'.repeat(90), 'maverick', 'openai'];
   for (const pi of [false, true]) {
     if (pi) {
-      writeRolePlaces(s.hud, 'imp', [{ harness: 'pi', pi_role: 'implementer', split: false, model: 'openai/gpt-6.1-sol' }]);
+      saveRun(s, 'imp', [{ harness: 'pi', pi_role: 'implementer', split: false, model: 'openai/gpt-6.1-sol' }]);
       s.collector.refreshRoles(s.session.snap, NOW);
       assert.equal(s.assignment('imp').harness, 'pi');
     }
-    for (const text of inputs) for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) for (const width of [32, 40, 56, 80, 120]) {
-      s.session.state = select(onControl(undefined, { panelLayout, projectInput: { role: 'imp', index: 0, text } }), placeItem('imp', 0));
-      const view = s.frame(width, lang, 14);
-      for (const line of view.lines) assert.equal(visualLength(line), width, stripAnsi(line));
-      for (const row of view.workboard.rows) assert.doesNotMatch(row.text, /\n/);
-      assert.equal(view.lines.length, 14);
-      assert.equal(view.workboard.rows.filter((r) => r.item === 'project:pick').length <= 1, true);
+    for (const text of inputs) for (const panelLayout of ['classic', 'split']) {
+      s.session.state = onControl(undefined, { panelLayout });
+      focus(s);
+      await s.press('m');
+      if (text) {
+        const frame = s.frame();
+        s.session.state = handleMonitorInput(frame.state, { type: 'key', key: '', text }, { tree: TREE, frame, nowMs: NOW }).state;
+      }
+      for (const lang of ['en', 'zh']) for (const width of [32, 40, 56, 80, 120]) {
+        const view = s.frame(width, lang, 14);
+        for (const line of view.lines) assert.equal(visualLength(line), width, stripAnsi(line));
+        for (const row of view.workboard.rows) assert.doesNotMatch(row.text, /\n/);
+        assert.equal(view.lines.length, 14);
+        assert.equal(view.workboard.rows.filter((r) => r.item === 'project:pick').length <= 1, true);
+      }
     }
   }
-  s.session.state = select(onControl(undefined, { projectInput: { role: 'imp', index: 0, text: 'openai' } }), placeItem('imp', 0));
+  s.session.state = { ...s.session.state, panelLayout: 'classic' };
   const zh = plain(s.frame(40, 'zh', 14));
   assert.match(zh.join('\n'), /^模型 ─+ pi · 列表 0分钟前$/m);
   assert.match(zh[0], /首页.*项目.*控制/);
@@ -406,7 +448,7 @@ test('pi picker paints live quota, off and unknown facts without offering off or
   const s = await setup(t);
   const model = (id) => ({ harness: 'pi', pi_role: 'implementer', split: false, model: id });
   const current = (id) => {
-    writeRolePlaces(s.hud, 'imp', [model(id)]);
+    saveRun(s, 'imp', [model(id)]);
     s.collector.refreshRoles(s.session.snap, NOW);
   };
   const exhausted = 'openai/gpt-6.1-sol';
@@ -628,8 +670,11 @@ test('40-col EN/ZH frames 5a–5e follow the Control sample; Classic and Split u
         });
         assert.ok(view.lines.every((line) => visualLength(line) === 40));
         const actual = body(plain(view));
-        if (panelLayout === 'split') assert.deepEqual(actual, body(expected), `${id} ${lang}`);
-        else assert.deepEqual(actual.slice(0, body(expected).length), body(expected), `${id} ${lang} Classic sheet`);
+        // The original diagram predates clickable draft fields. Keep its layout/content checks,
+        // but require the newer model affordance on its editable rows.
+        const wanted = body(expected).map((row) => id === '5e' ? row.replace(/\b(grok-4\.7|gemini-4-hydrogen-high)\b/, '[$1 ▾]') : row);
+        if (panelLayout === 'split') assert.deepEqual(actual, wanted, `${id} ${lang}`);
+        else assert.deepEqual(actual.slice(0, wanted.length), wanted, `${id} ${lang} Classic sheet`);
         if (panelLayout === 'split' && process.env.HUD_CHAIN_REPORT_FRAMES) console.log(`${lang} ${id}\n${view.lines.map(stripAnsi).join('\n')}\n`);
       }
     }

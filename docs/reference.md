@@ -946,7 +946,9 @@ other extensions' statuses remain visible. The bars stay English-only apart from
 In ordinary Codex with the `hud` MCP server registered, open `/experimental`,
 turn on **Custom status line**, then restart Codex. Open `/statusline` →
 **Choose a status line provider** → **MyHUD**. To switch back, select
-**Default status line** from the same picker.
+**Default status line** from the same picker. EXP’s **Track native status line**
+switch only records when MyHUD was last seen for each local profile; it does not
+change what Codex displays.
 
 The compact footer puts model and effort, context, then quota first. A HUD work
 reminder, when available, is scoped to the pane. On a narrow footer, Codex cuts

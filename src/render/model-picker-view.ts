@@ -4,7 +4,7 @@ import { MODEL_CACHE_TTL_MS } from '../roles/model-discovery.js';
 import { placeModels, type PlaceFact } from '../roles/role-control.js';
 import { qualifiedPiProvider } from '../roles/roster.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
-import { pickerAge, pickerCap, pickerFact, pickerListWindow, pickerQuery, pickerStatus } from './control-view.js';
+import { pickerAge, pickerCap, pickerFact, pickerListWindow, pickerQuery } from './control-view.js';
 import { t } from './i18n.js';
 import { pickView, type ModelInput, type ModelPick, type PickEntry } from './model-input.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
@@ -15,13 +15,12 @@ export const MODEL_PICKER_WIDE = 100;
 const muted = (s: string) => theme.board.muted(s);
 const placeName = (role: string, preset: string | null | undefined) => monitorText(role) + (preset ? ` [${monitorText(preset)}]` : '');
 const location = (role: string, preset: string | null | undefined, index: number) => `${placeName(role, preset)} ${t('#{n}', { n: index + 1 })}`;
-const capsOf = (pick: ModelPick, entry: PickEntry) => entry.model && pick.place.harness === 'pi' ? pick.lists.piFacts?.[entry.model] : undefined;
+const capsOf = (pick: ModelPick, entry: PickEntry) => entry.model ? pick.lists.piFacts?.[entry.model] : undefined;
 const end = (s: string, n: number) => ' '.repeat(Math.max(0, n - visualLength(s))) + truncateAnsi(s, n);
 const center = (s: string, n: number) => fit(' '.repeat(Math.max(0, Math.floor((n - visualLength(s)) / 2))) + s, n);
 const note = (entry: PickEntry, now: number) => entry.fact === 'off' ? pickerFact(entry, now, true) : pickerFact(entry, now);
-const listedStatus = (entry: PickEntry, pick: ModelPick) => pick.place.harness === 'pi'
-  ? pick.lists.pi.includes(entry.model ?? '') ? pick.lists.piStatus?.offline ? 'offline catalog' : 'listed' : 'not listed'
-  : undefined;
+const listedStatus = (entry: PickEntry, pick: ModelPick) =>
+  pick.lists.pi.includes(entry.model ?? '') ? pick.lists.piStatus?.offline ? 'offline catalog' : 'listed' : 'not listed';
 
 /** Resolved IDs are exact; an ambiguous bare ID is a separate reference, not a use of either provider. */
 function uses(data: ProjectSnapshot, model: string, place: PlaceFact, bare?: string) {
@@ -49,9 +48,9 @@ function detail(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, view:
   if (!entry) return [muted(t('No selection'))];
   const model = entry.model, full = model ? monitorText(model) : t('default');
   const target = location(input.role, pick.preset, input.index);
-  const pi = pick.place.harness === 'pi', provider = pi ? qualifiedPiProvider(model) : undefined;
+  const provider = qualifiedPiProvider(model);
   const off = entry.fact === 'off', offBy = pick.lists.piStatus?.runnerOff ? 'pi' : provider;
-  const status = pickerStatus(pick);
+  const status = pick.lists.piStatus;
   const listed = listedStatus(entry, pick), fact = pickerFact(entry, now, true);
   const valueRows = (label: string, value: string, ink = theme.board.text) =>
     flowLines(value, width - 11).map((line, i) => `${muted(fit(i ? '' : t(label), 10))} ${ink(line)}`);
@@ -61,24 +60,22 @@ function detail(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, view:
   const nextProvider = next?.provider && monitorText(next.provider);
   const destination = next && `${monitorText(next.label)}${nextProvider ? `/${nextProvider}` : ''}`;
   const header = [...flowLines(full, width).map(theme.board.identifier), theme.board.frame(mark('─', '-').repeat(width - 1))];
-  const providerState = off ? t('{mark} off (in Harnesses)', { mark: mark('⊘', 'x') }) : t('on · {status}', { status: t(listed ?? 'not listed') });
-  const top = pi ? valueRows('provider', provider ? `${monitorText(provider)} · ${providerState}`
-    : off ? t('pi is off') : t('provider unknown'), off ? muted : theme.board.text) : valueRows('harness', monitorText(pick.place.label));
-  if (pi) {
-    const [ctx, out, thinking, images] = capsOf(pick, entry) ?? [];
-    const fields = `${monitorText(ctx ?? '?')}    ${t('max out')} ${monitorText(out ?? '?')}`;
-    // The field names are short enough to fit together even at the minimum zoom width.
-    top.push(`${muted(fit(t('context'), 10))} ${fields}`,
-      `${muted(fit(t('features'), 10))} ${t('thinking')} ${pickerCap(thinking)}    ${t('images')} ${pickerCap(images)}`);
-    if (entry.value === '' && pick.place.piModel?.defaultSource) top.push(...valueRows('', t(pick.place.piModel.defaultSource), muted));
-  }
+  const providerState = off ? t('{mark} off (in Harnesses)', { mark: mark('⊘', 'x') }) : t('on · {status}', { status: t(listed) });
+  const top = valueRows('provider', provider ? `${monitorText(provider)} · ${providerState}`
+    : off ? t('pi is off') : t('provider unknown'), off ? muted : theme.board.text);
+  const [ctx, out, thinking, images] = capsOf(pick, entry) ?? [];
+  const fields = `${monitorText(ctx ?? '?')}    ${t('max out')} ${monitorText(out ?? '?')}`;
+  // The field names are short enough to fit together even at the minimum zoom width.
+  top.push(`${muted(fit(t('context'), 10))} ${fields}`,
+    `${muted(fit(t('features'), 10))} ${t('thinking')} ${pickerCap(thinking)}    ${t('images')} ${pickerCap(images)}`);
+  if (entry.value === '' && pick.place.piModel?.defaultSource) top.push(...valueRows('', t(pick.place.piModel.defaultSource), muted));
   top.push('');
   if (off && entry.current) {
     top.push(...valueRows('state', destination ? t('this place is skipped: {role} → {next}', { role: name, next: destination })
       : t('this place is skipped'), theme.board.attention));
     if (offBy) top.push(...valueRows('', t('⏎ keeps it; pick another model or restore {provider} in Harnesses.', { provider: monitorText(offBy) }), muted));
   } else if (fact) top.push(`${muted(fit(t('state'), 10))} ${fact}`);
-  else top.push(...valueRows('state', t(entry.current && pick.place.state === 'missing' ? 'not installed' : listed ?? 'catalog')));
+  else top.push(...valueRows('state', t(entry.current && pick.place.state === 'missing' ? 'not installed' : listed)));
   if (!entry.fact && entry.until !== undefined && entry.until > now) {
     top.push(...valueRows('', t('it can still be set; the place is skipped until then'), muted));
   }
@@ -109,12 +106,12 @@ function detail(data: ProjectSnapshot, input: ModelInput, pick: ModelPick, view:
 
 export function paintZoomedPicker(frame: MonitorFrame, data: ProjectSnapshot, input: ModelInput, pick: ModelPick, width: number, height: number, now: number) {
   const left = Math.floor(width * 7 / 12), rightWidth = width - left - 1, room = height - 2;
-  const view = pickView(pick, input, true), pi = pick.place.harness === 'pi', status = pickerStatus(pick);
+  const view = pickView(pick, input, true), status = pick.lists.piStatus;
   const age = status?.fetchedAt === undefined ? '' : t('list {age} old', { age: pickerAge(status.fetchedAt, now) });
   const filtered = !!input.text.trim(), count = filtered ? new Set(placeModels(pick.place, pick.lists)).size : view.total;
   const total = t(count === 1 ? '{n} model' : '{n} models', { n: count });
-  const provider = pi && view.current?.fact === 'off' ? qualifiedPiProvider(view.current.model) : undefined;
-  const off = pi ? data.harnessSwitches?.filter((s) => s.group === 'provider' && s.off).map((s) => s.name).sort() : undefined;
+  const provider = view.current?.fact === 'off' ? qualifiedPiProvider(view.current.model) : undefined;
+  const off = data.harnessSwitches?.filter((s) => s.group === 'provider' && s.off).map((s) => s.name).sort();
   if (provider && off?.includes(provider)) off.unshift(...off.splice(off.indexOf(provider), 1));
   const offLine = off?.length ? muted(`${mark('⊘', 'x')} ${t('off, not listed: {names}', { names: off.map(monitorText).join(' · ') })}`) : '';
   const offBadge = provider ? `${monitorText(provider)} ${mark('⊘', 'x')}` : '';
@@ -123,8 +120,8 @@ export function paintZoomedPicker(frame: MonitorFrame, data: ProjectSnapshot, in
   const shorter = [total, age, t('zoomed')].filter(Boolean).join(' · ');
   frame.lines[0] = theme.board.title(fit(pair(where, `${visualLength(where) + visualLength(titles) + 2 <= width ? titles : shorter} `, width), width));
 
-  const idWidth = left - (pi ? 38 : 17), cols = (ctx: string, out: string, thinking: string, images: string) =>
-    pi ? ` ${end(ctx, 6)} ${end(out, 5)} ${center(thinking, 5)} ${center(images, 4)}` : '';
+  const idWidth = left - 38, cols = (ctx: string, out: string, thinking: string, images: string) =>
+    ` ${end(ctx, 6)} ${end(out, 5)} ${center(thinking, 5)} ${center(images, 4)}`;
   const columns = `    ${fit(t('Model'), idWidth)}${cols(t('ctx'), t('out'), t('think'), t('img'))} ${t('note')}`;
   const list: MonitorRow[] = [];
   const add = (entry: PickEntry) => {
@@ -149,10 +146,9 @@ export function paintZoomedPicker(frame: MonitorFrame, data: ProjectSnapshot, in
       String(group.entries.length)), modelHit: { provider: group.provider } });
     if (group.open) group.entries.forEach(add);
   }
-  view.loose.forEach(add);
-  if (view.selected?.id === 'typed') add(view.selected);
-  else if (pi && pick.lists.piStatus?.runnerOff) list.push({ text: muted(t('pi is off')) });
-  else if (pi && pick.lists.piStatus?.empty) list.push({ text: muted(t('No discovered models')) });
+  if (view.fallback) add(view.fallback);
+  if (pick.lists.piStatus?.runnerOff) list.push({ text: muted(t('pi is off')) });
+  else if (pick.lists.piStatus?.empty) list.push({ text: muted(t('No discovered models')) });
   else if (!view.groups.length && !view.selected) list.push({ text: muted(t('No matching models')) });
   const size = Math.max(0, room - 2 - Number(!!offLine));
   const window = pickerListWindow(list, input, size);

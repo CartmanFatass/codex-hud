@@ -97,9 +97,9 @@ export function piExpUsage(hudHome: string, env: NodeJS.ProcessEnv) {
       // Unknown settings do not authorize collection.
     }
   };
-  const record = (account: ExpAccount, cost: Cost, id: string) => {
+  const record = async (account: ExpAccount, cost: Cost, id: string) => {
     try {
-      appendExpEvent(hudHome, account, { ...cost, id });
+      await appendExpEvent(hudHome, account, { ...cost, id }, () => activeGrants()?.[account].enabled === true);
     } catch {
       // Accounting is best-effort and must never interrupt Pi's request/session.
     }
@@ -145,8 +145,8 @@ export function piExpUsage(hudHome: string, env: NodeJS.ProcessEnv) {
       if (!activeGrants()?.[account].enabled) return;
       const cost = completed(reply, isOapi ? started.oapiModel : started.anthropicModel, Date.now());
       if (!cost) return;
-      if (validId(reply.responseId)) record(account, cost, stableId('response', reply.responseId));
-      else pending = { account, session: started.session, cost };
+      if (validId(reply.responseId)) return record(account, cost, stableId('response', reply.responseId));
+      pending = { account, session: started.session, cost };
     },
     turnEnd(event: unknown, ctx: PiPackageContext) {
       // Pi emits one turn_end for the request before the next context hook, with its persisted ID.
@@ -165,7 +165,7 @@ export function piExpUsage(hudHome: string, env: NodeJS.ProcessEnv) {
         entry.session === ctx.sessionManager.getSessionId() &&
         activeGrants()?.[entry.account].enabled
       )
-        record(entry.account, entry.cost, stableId('entry', entry.session, messageEntryId));
+        return record(entry.account, entry.cost, stableId('entry', entry.session, messageEntryId));
     },
   };
 }

@@ -63,9 +63,6 @@ export function placeTarget(role: RoleFact, i: number, data: ProjectSnapshot): P
   const place = role.places[i]!, pickable = role.source !== 'project' && placeModels(place, data.models) !== undefined;
   return { item: placeItem(role.role, i), files: [role.path], ...(pickable ? { modelPick: { place, lists: data.models } } : {}) };
 }
-export function pickerStatus({ place, lists }: ModelPick): { fetchedAt?: number; failed: boolean } | undefined {
-  return place.harness === 'pi' ? lists.piStatus : place.label === 'agy' || place.label === 'grok' ? lists.cliStatus?.[place.label] : undefined;
-}
 export const pickerAge = (fetchedAt: number, now: number) => now - fetchedAt >= 3600000
   ? t('{n}h', { n: Math.floor((now - fetchedAt) / 3600000) }) : minuteAge(fetchedAt, now);
 
@@ -108,16 +105,14 @@ export function pickerQuery(input: ModelInput, pick: ModelPick, window: NonNulla
 /** Narrow picker: keep the query and selected ID outside the scrolling list. */
 export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: number, room: number, now: number, inPreview = false): MonitorRow[] {
   const pick = pickOf(data, input)!, view = pickView(pick, input), { place, lists } = pick;
-  const pi = place.harness === 'pi', status = pickerStatus(pick), fetchedAt = status?.fetchedAt;
+  const piStatus = lists.piStatus, fetchedAt = piStatus?.fetchedAt;
   const age = fetchedAt === undefined ? '' : t('list {age} old', { age: pickerAge(fetchedAt, now) });
   const where = monitorText(input.role), role = data.roles.find((role) => role.role === input.role);
-  const rows = pi ? [...(inPreview ? [] : [section(where, width, pickerPlace(input, role?.preset))]),
-    section(t('Model'), width, [place.label, age].filter(Boolean).join(' · '))]
-    : [boardRow(''), section(`${where} · ${monitorText(place.label)}`, width, t('model'))];
+  const rows = [...(inPreview ? [] : [section(where, width, pickerPlace(input, role?.preset))]),
+    section(t('Model'), width, [place.label, age].filter(Boolean).join(' · '))];
   const notice = (text: string) => boardRow(fit('  ' + theme.board.attention(text), width));
-  const piStatus = pi ? lists.piStatus : undefined;
-  if (status?.failed) rows.push(notice([t('Refresh failed'), pi ? '' : age].filter(Boolean).join(' · ')));
-  else if (status?.fetchedAt !== undefined && now - status.fetchedAt >= MODEL_CACHE_TTL_MS) rows.push(notice(t('List is stale')));
+  if (piStatus?.failed) rows.push(notice(t('Refresh failed')));
+  else if (fetchedAt !== undefined && now - fetchedAt >= MODEL_CACHE_TTL_MS) rows.push(notice(t('List is stale')));
   if (piStatus?.offline) rows.push(notice(t('Limited offline catalog')));
   const stateOf = (entry: PickEntry, detail = false) => {
     const fact = pickerFact(entry, now, detail);
@@ -133,21 +128,19 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   const detailLine = (line: string) => boardRow(fit('  ' + line, width));
   if (full) {
     detail.push(...flowLines(full, width - 2).map(detailLine));
-    if (pi) {
-      const id = selected?.model, facts = id ? lists.piFacts?.[id] : undefined;
-      const [ctx, out, thinking, images] = facts ?? [];
-      const muted = theme.board.muted;
-      const fields = [muted(`${ctx ?? '?'} ${t('ctx')}`), muted(`${out ?? '?'} ${t('out')}`), `${muted(t('think'))} ${pickerCap(thinking)}`, `${muted(t('img'))} ${pickerCap(images)}`];
-      let line = '';
-      for (const field of fields) {
-        if (line && visualLength(`${line}  ${field}`) > width - 2) {
-          detail.push(detailLine(line));
-          line = '';
-        }
-        line += (line ? '  ' : '') + field;
+    const id = selected?.model, facts = id ? lists.piFacts?.[id] : undefined;
+    const [ctx, out, thinking, images] = facts ?? [];
+    const muted = theme.board.muted;
+    const fields = [muted(`${ctx ?? '?'} ${t('ctx')}`), muted(`${out ?? '?'} ${t('out')}`), `${muted(t('think'))} ${pickerCap(thinking)}`, `${muted(t('img'))} ${pickerCap(images)}`];
+    let line = '';
+    for (const field of fields) {
+      if (line && visualLength(`${line}  ${field}`) > width - 2) {
+        detail.push(detailLine(line));
+        line = '';
       }
-      detail.push(detailLine(line));
+      line += (line ? '  ' : '') + field;
     }
+    detail.push(detailLine(line));
     if (selected) {
       detail.push(detailLine(stateOf(selected, true)));
       if (selected.tags?.length) {
@@ -158,7 +151,7 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   } else detail.push(detailLine(theme.board.muted(t('No selection'))));
   // If the pane is too short even for the query and strip, drop the strip's heading first.
   if (room <= detail.length) detail.shift();
-  const off = pi ? data.harnessSwitches?.filter((item) => item.group === 'provider' && item.off).map((item) => monitorText(item.name)).sort() : undefined;
+  const off = data.harnessSwitches?.filter((item) => item.group === 'provider' && item.off).map((item) => monitorText(item.name)).sort();
   const offLine = off?.length && room >= detail.length + 2
     ? boardRow(fit(theme.board.muted(`${mark('⊘', 'x')} ${t('off, not listed: {names}', { names: off.join(' · ') })}`), width)) : undefined;
   if (input.text.trim() && view.current?.fact && room >= rows.length + detail.length + 4 + Number(!!offLine)) {
@@ -168,7 +161,7 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
   }
   // On short panes, the list and bottom strip take precedence over opening context.
   rows.length = Math.min(rows.length, Math.max(0, room - detail.length - 2 - Number(!!offLine)));
-  const count = selected?.id === 'typed' ? t('as typed') : pi && !input.text.trim() ? String(view.total) : t('{n} matches', { n: view.total });
+  const count = !input.text.trim() ? String(view.total) : t('{n} matches', { n: view.total });
   const empty = piStatus?.runnerOff ? 'pi is off' : piStatus?.empty ? 'No discovered models' : 'No matching models';
   const list: MonitorRow[] = [];
   const add = (entry: PickEntry) => {
@@ -197,9 +190,8 @@ export function pickerRows(data: ProjectSnapshot, input: ModelInput, width: numb
       modelHit: { provider: group.provider } });
     if (group.open) for (const entry of group.entries) add(entry);
   }
-  for (const entry of view.loose) add(entry);
-  if (selected?.id === 'typed') add(selected);
-  else if ((!selected && !view.groups.length) || piStatus?.empty) list.push(notice(t(empty)));
+  if (view.fallback) add(view.fallback);
+  if ((!selected && !view.groups.length) || piStatus?.empty) list.push(notice(t(empty)));
   const size = Math.max(0, room - detail.length - Number(!!offLine) - rows.length - 1);
   const window = pickerListWindow(list, input, size);
   rows.push(pickerQuery(input, pick, window, count, width));

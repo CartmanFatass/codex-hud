@@ -30,6 +30,7 @@ export interface ExpConfig {
 export interface ExpProfile {
   home: string;
   name: string;
+  lastNativeSeenAt?: number;
 }
 export interface ExpData {
   config: ExpConfig;

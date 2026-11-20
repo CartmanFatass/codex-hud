@@ -612,8 +612,8 @@ export function createP10kFooter(
     const quota =
       apiQuota && apiQuota.account === piExpAccount(ctx)
         ? apiQuota.quota
-        : subscriptionQuota
-          ? { text: subscriptionQuota }
+        : subscriptionQuota.length
+          ? { text: subscriptionQuota.join(' · '), shortText: subscriptionQuota[0] }
           : undefined;
     const facts = buildFacts(view, pi, quota);
     const now = Date.now();

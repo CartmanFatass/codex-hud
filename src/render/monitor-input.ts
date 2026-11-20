@@ -2,7 +2,6 @@
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
 import { harnessAddInput, workboardInput } from './workboard-input.js';
-import { modelInputEvent } from './model-input.js';
 import { presetInputKey } from './preset-input.js';
 import { chainInputKey } from './chain-input.js';
 import { jobModalInput } from './job-actions.js';
@@ -32,17 +31,11 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
   if (state.controlChain) return chainInputKey(state, input, ctx, route);
   const add = harnessAddInput(state, input, ctx);
   if (add) return add;
-  // The Control picker owns its own mouse targets and printable keys (`q` is a letter in it).
-  if (state.projectInput) {
-    const picked = modelInputEvent(state, input, ctx);
-    if (picked) return picked;
-  }
   // The `/` filter: its typing owns the keyboard, as the model input's does.
   const filter = filterInput(state, input);
   if (filter) return filter;
   const next = { ...state, tree: { ...state.tree }, modes: { ...state.modes }, scroll: { ...state.scroll } };
   const result = (action?: MonitorOutcome['action'], close = false): MonitorOutcome => ({ state: next, close, action });
-  if (input.type === 'mouse' && input.button === 'left') next.projectInput = undefined;
   const key =
     input.type === 'key'
       ? input.key

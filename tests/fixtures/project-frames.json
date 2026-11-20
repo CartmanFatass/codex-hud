@@ -2223,24 +2223,6 @@
     "  No selection",
     "   ↑↓ pick  ⏎ set  esc clear  ^R refresh"
   ],
-  "pick-cli-40-en": [
-    " Home ?1  Project ?2  Control  models on",
-    "demo-project ───────────────────────────",
-    " Roles  Harnesses",
-    "",
-    "imp · agy ──────────────────────── model",
-    "/ ▌                            3 matches",
-    "Pinned ─────────────────────────────── 1",
-    "› ◉ gemini-4-hydrogen-high",
-    "    gemini-4-argon-high",
-    "    gemini-3.8-flash-high",
-    "    default",
-    "",
-    "Selected ───────────────────────────────",
-    "  gemini-4-hydrogen-high",
-    "  ◉ current · imp place #2",
-    "  ↑↓ pick  ⏎ set  esc cancel  ^R refresh"
-  ],
   "preset-row-40-split-en": [
     " Home ?1  Project ?2  Control  EXP",
     "harbor-api ─────────────────────────────",

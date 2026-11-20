@@ -88,7 +88,7 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
   const f = await fixture(t), sample = modelPickerSample(f);
   const dataOff = {
     ...sample.data,
-    models: { ...sample.data.models, pi: sample.data.models.pi.filter((id) => !id.startsWith('xai/')) },
+    models: { ...sample.data.models, pi: sample.data.models.pi.filter((id) => !id.startsWith('xai/')), editor: { off: ['pi:xai'] } },
     harnessSwitches: [...sample.data.harnessSwitches, { id: 'pi:xai', name: 'xai', group: 'provider', off: true }],
     roles: sample.data.roles.map((r) => r.role !== 'imp' ? r : { ...r, places: r.places.map((p, i) => i === 0 ? { ...p, state: 'off' } : i === 1 ? { ...p, state: 'active' } : p) }),
   };
@@ -96,8 +96,7 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     const zh = lang === 'zh', drawing = (state, width = 120, zoomed, data = sample.data) => f.render(width, lang, state, 36, data, true, 'unicode', 'none', { modelPickerZoomed: zoomed });
     const entry = sample.draw(lang, sample.state(layout), 24), opening = send(entry, 'place-model');
     assert.ok(opening.state.projectInput);
-    // The view's live-data cases below test the picker itself; the real sheet/zoom handoff is tested separately.
-    const picker = { ...opening.state, controlChain: undefined, projectInput: { ...opening.state.projectInput, sheetPlace: undefined } };
+    const picker = opening.state;
     const confirmed = fake(() => reply(true)), preexisting = fake(() => reply(false)), refused = fake(() => ({ ok: false }));
     for (const { zoom } of [confirmed, preexisting, refused]) zoom.open();
     await nextTurn();
@@ -127,7 +126,9 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     for (const role of ['imp \\[default\\]', 'reviewer \\[pi\\]', 'oracle \\[fable\\][\\s\\S]*\\[architect\\]']) assert.match(right(b), new RegExp(role));
     assert.match(right(b), zh ? /2小时前发现/ : /discovered 2h ago/);
     assert.equal(click(b, 75, yOf(b, /openai\/gpt-6.1-sol/)).state.projectInput.pick, b.state.projectInput.pick, 'detail is not a second list');
-    assert.equal(click(b, 5, yOf(b, /openai\/gpt-6.1-sol/)).action?.value, 'openai/gpt-6.1-sol');
+    const picked = click(b, 5, yOf(b, /openai\/gpt-6.1-sol/));
+    assert.equal(picked.action, undefined);
+    assert.equal(picked.state.controlChain.sheet.place.raw.model, 'openai/gpt-6.1-sol');
     const wheel = draw(click(b, 2, 4, 'wheel-down').state);
     assert.notDeepEqual(left(wheel), left(b));
     assert.equal(right(wheel), right(b));
@@ -143,8 +144,10 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     assert.match(right(selected), /arena\/grok-4.7/);
     assert.match(right(selected), /xai\/grok-4.7/);
     assert.match(right(selected), /imp \[lab\]/);
-    assert.deepEqual(send(selected, 'enter').action, { type: 'model-picked', value: 'arena/grok-4.7' });
-    assert.equal(send(selected, 'enter').state.projectInput, undefined);
+    const set = send(selected, 'enter');
+    assert.equal(set.action, undefined);
+    assert.equal(set.state.controlChain.sheet.place.raw.model, 'arena/grok-4.7');
+    assert.equal(set.state.projectInput, undefined);
     assert.deepEqual(send(selected, 'model-refresh').action, { type: 'refresh-models' });
     const cleared = send(selected, 'escape');
     assert.equal(cleared.state.projectInput.text, '');
@@ -154,9 +157,10 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     assert.match(left(d).join('\n'), /^› +meta-llama\/.*….*-fp8 +1M +16K +– +✓/m);
     assert.equal(right(d).split('\n').slice(0, 2).map((s) => s.trim()).join(''), 'arena/meta-llama/llama-4-maverick-17b-128e-instruct-fp8');
 
-    const allOpenOff = draw(picker, dataOff);
+    const pickerOff = send(sample.draw(lang, sample.state(layout), 24, dataOff), 'place-model').state;
+    const allOpenOff = draw(pickerOff, dataOff);
     const groups = { anthropic: false, arena: false, google: false, mistral: false, openai: false };
-    const e = draw({ ...picker, projectInput: { ...picker.projectInput, groups } }, dataOff);
+    const e = draw({ ...pickerOff, projectInput: { ...pickerOff.projectInput, groups } }, dataOff);
     for (const frame of [allOpenOff, e]) {
       assert.ok(frame.lines.every((line) => visualLength(line) === 120));
       assert.match(left(frame).join('\n'), /› ◉ xai\/grok-4.7 +256K +64K +✓ +✓ +⊘/);

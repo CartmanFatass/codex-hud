@@ -73,6 +73,37 @@ test('40-column entry, pinned and typed frames follow the sample in EN/ZH and bo
   }
 });
 
+test('draft reorder keeps clickable pi and CLI model fields in the in-memory chain', async (t) => {
+  const f = await fixture(t), { draw, state } = modelPickerSample(f);
+  for (const layout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+    const render = (next) => draw(lang, next, 24);
+    const entry = render(state(layout));
+    const draft = render(send(entry, 'place-down').state);
+    assert.ok(draft.state.controlChain.draft, 'moving a place starts an unsaved draft');
+    assert.ok(draft.lines.every((line) => visualLength(line) === 40));
+    const cliField = field(draft), piField = field(draft, 1);
+    assert.ok(cliField && piField, plain(draft).join('\n'));
+    for (const hit of [cliField, piField]) assert.match(plain(draft)[hit.y], /\[.* ▾\]/);
+    const cli = click(draft, cliField.x, cliField.y);
+    assert.equal(cli.action, undefined);
+    assert.equal(cli.state.projectInput, undefined);
+    assert.equal(cli.state.controlChain.sheet.place.raw.harness, 'cli');
+    assert.ok(cli.state.controlChain.sheet.choice, 'CLI uses the inline catalog');
+    const pi = click(draft, piField.x, piField.y);
+    assert.equal(pi.action, undefined);
+    assert.equal(pi.state.projectInput.index, 1);
+    const filtered = render(type(render(pi.state), 'grok-4.7-fast').state);
+    const filledModel = send(filtered, 'enter');
+    filled(filledModel, 'xai/grok-4.7-fast');
+    assert.equal(filledModel.state.controlChain.draft.run[1].raw.model, 'xai/grok-4.7');
+    const done = render(send(render(filledModel.state), 'end').state);
+    const updated = send(done, 'enter');
+    assert.equal(updated.action, undefined, 'Done updates only the draft');
+    assert.equal(updated.state.controlChain.draft.run[1].raw.model, 'xai/grok-4.7-fast');
+    if (process.env.CONTROL_REVIEW_FRAMES && layout === 'classic') t.diagnostic(`${lang} draft:\n${plain(draft).join('\n')}`);
+  }
+});
+
 test('picker mouse folds off-cursor headers, scrolls only the list, and requires a second click to set', async (t) => {
   const f = await fixture(t), { draw, state } = modelPickerSample(f);
   for (const layout of ['classic', 'split']) {

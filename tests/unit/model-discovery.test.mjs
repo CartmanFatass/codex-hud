@@ -16,8 +16,8 @@ import {
   parsePiModels,
   readModelListCache,
 } from '../../dist/roles/model-discovery.js';
-import { controlFacts } from '../../dist/roles/role-control.js';
-import { placeCatalog, roleRegistry, writeRolePlaces } from '../../dist/roles/roster.js';
+import { controlFacts, editPreset } from '../../dist/roles/role-control.js';
+import { placeCatalog, roleRegistry } from '../../dist/roles/roster.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { MODEL_LISTS } from '../fixtures/project-page.mjs';
 import { stripAnsi } from '../../dist/render/colors.js';
@@ -135,16 +135,11 @@ test('pi/agy/grok discovery caches under $HUD_HOME/display for a day, merges in 
   assert.equal(fs.existsSync(join(s.root, 'codex-called')), false);
 
   // Typed models in role files come after discovered and catalog ids.
-  writeRolePlaces(
-    s.hud,
-    'imp',
-    [
-      { harness: 'pi', pi_role: 'implementer', split: false, model: 'custom/typed-pi' },
-      { harness: 'cli', agent: 'agy', model: 'agy-typed-1' },
-      { harness: 'cli', agent: 'claude', model: 'claude-typed-1' },
-    ],
-    bundled
-  );
+  assert.equal(editPreset(s.hud, s.cwd, s.env, { role: 'imp', op: 'run', run: [
+    { harness: 'pi', pi_role: 'implementer', split: false, model: 'custom/typed-pi' },
+    { harness: 'cli', agent: 'agy', model: 'agy-typed-1' },
+    { harness: 'cli', agent: 'claude', model: 'claude-typed-1' },
+  ] }, bundled).ok, true);
 
   const catalog = placeCatalog(s.hud, bundled, undefined, NOW + 60_000);
   assert.deepEqual(catalog.pi.models, [

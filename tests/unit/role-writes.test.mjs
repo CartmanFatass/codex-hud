@@ -14,8 +14,8 @@ import {
   placeKey,
   readExhausted,
   roleRegistry,
-  writeRolePlaces,
 } from '../../dist/roles/roster.js';
+import { editPreset } from '../../dist/roles/role-control.js';
 
 const bundled = resolve('packages/hud-mcp');
 const mcpEntry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
@@ -126,7 +126,7 @@ test('placeCatalog returns shipped defaults and merges HUD_HOME catalog addition
   assert.equal(defaults.catalog, undefined);
 });
 
-test('writeRolePlaces seeds from shipped role, preserves existing fields, sets 0600, and leaves shipped/project untouched', async (t) => {
+test('chain saves seed from the shipped role, preserve existing fields, set 0600 and leave shipped/project untouched', async (t) => {
   const s = makeSandbox(t);
   const shippedImpBefore = fs.readFileSync(join(bundled, 'roles', 'imp.json'), 'utf8');
 
@@ -145,17 +145,17 @@ test('writeRolePlaces seeds from shipped role, preserves existing fields, sets 0
   fs.writeFileSync(projImpPath, projImpText);
   fs.writeFileSync(join(s.hud, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: s.cwd }] }));
 
-  // 1. No $HUD_HOME/roles/imp.json yet -> starts from shipped imp.json fields.
-  const writtenPath = writeRolePlaces(
-    s.hud,
-    'imp',
-    [
-      { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high', thinking: 'high' },
-      { harness: 'pi', pi_role: 'implementer', split: false, model: 'openai/gpt-6.1-sol' },
-    ],
-    bundled
-  );
-  assert.equal(writtenPath, join(s.hud, 'roles', 'imp.json'));
+  // 1. The project pin refuses writes; a global Save starts from the shipped role.
+  const run = [
+    { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high', thinking: 'high' },
+    { harness: 'pi', pi_role: 'implementer', split: false, model: 'openai/gpt-6.1-sol' },
+  ];
+  const otherCwd = join(s.root, 'plain-cwd');
+  fs.mkdirSync(otherCwd);
+  const create = { role: 'imp', op: 'create', name: 'daily', run };
+  assert.equal(editPreset(s.hud, s.cwd, s.env, create, bundled).ok, false);
+  assert.deepEqual(editPreset(s.hud, otherCwd, s.env, create, bundled), { ok: true, preset: 'daily' });
+  const writtenPath = join(s.hud, 'roles', 'imp.json');
   assert.equal(fs.statSync(writtenPath).mode & 0o777, 0o600);
   assert.deepEqual(
     fs.readdirSync(join(s.hud, 'roles')).filter((name) => name.endsWith('.tmp')),
@@ -168,8 +168,8 @@ test('writeRolePlaces seeds from shipped role, preserves existing fields, sets 0
   assert.equal(written1.can_continue, true);
   assert.equal(written1.idle_grace_s, 600);
   assert.equal(written1.project_only, undefined);
-  assert.equal(written1.run.length, 2);
-  assert.equal(written1.run[0].agent, 'agy');
+  assert.deepEqual(written1.presets, [{ name: 'daily', run }]);
+  assert.equal(written1.active_preset, 'daily');
 
   // Shipped and project files were never modified.
   assert.equal(fs.readFileSync(join(bundled, 'roles', 'imp.json'), 'utf8'), shippedImpBefore);
@@ -180,21 +180,16 @@ test('writeRolePlaces seeds from shipped role, preserves existing fields, sets 0
     writtenPath,
     JSON.stringify({ ...written1, idle_grace_s: 1200, custom_note: 'keep-me', nested: { a: 1 } }, null, 2)
   );
-  writeRolePlaces(
-    s.hud,
-    'imp',
-    [{ harness: 'cli', agent: 'claude', model: 'sonnet', thinking: 'medium' }],
-    bundled
-  );
+  const updated = [{ harness: 'cli', agent: 'claude', model: 'sonnet', thinking: 'medium' }];
+  assert.equal(editPreset(s.hud, otherCwd, s.env, { role: 'imp', op: 'run', run: updated }, bundled).ok, true);
   const written2 = JSON.parse(fs.readFileSync(writtenPath, 'utf8'));
   assert.equal(written2.idle_grace_s, 1200);
   assert.equal(written2.custom_note, 'keep-me');
   assert.deepEqual(written2.nested, { a: 1 });
-  assert.deepEqual(written2.run, [{ harness: 'cli', agent: 'claude', model: 'sonnet', thinking: 'medium' }]);
+  assert.deepEqual(written2.presets, [{ name: 'daily', run: updated }]);
+  assert.deepEqual(written2.run, written1.run);
 
   // 3. hud_roster (through real MCP) sees the written place when no project override hides it.
-  const otherCwd = join(s.root, 'plain-cwd');
-  fs.mkdirSync(otherCwd);
   const child = spawn(process.execPath, [mcpEntry], {
     cwd: otherCwd,
     env: { ...process.env, HUD_MCP_SURFACE: 'roles', HUD_HOME: s.hud, PATH: s.bin },
@@ -218,8 +213,11 @@ test('writeRolePlaces seeds from shipped role, preserves existing fields, sets 0
   assert.equal(imp.source_file, writtenPath);
 });
 
-test('writeRolePlaces refuses symlinks, non-files, bad role names, and invalid run lists', (t) => {
+test('chain save refuses symlinks, non-files, bad role names, and invalid run lists', (t) => {
   const s = makeSandbox(t);
+  const registry = roleRegistry(s.hud, s.cwd, s.env, undefined, undefined, bundled);
+  const opened = registry.roles().get('imp');
+  const save = (run = [{ harness: 'cli', agent: 'agy' }]) => registry.savePreset(opened, { op: 'run', run });
   const rolesDir = join(s.hud, 'roles');
   fs.mkdirSync(rolesDir, { recursive: true });
   const decoy = join(s.root, 'decoy.json');
@@ -228,17 +226,17 @@ test('writeRolePlaces refuses symlinks, non-files, bad role names, and invalid r
   // Symlink target (real target and dangling).
   const linkPath = join(rolesDir, 'imp.json');
   fs.symlinkSync(decoy, linkPath);
-  assert.throws(() => writeRolePlaces(s.hud, 'imp', [{ harness: 'cli', agent: 'agy' }], bundled), /symlink/);
+  assert.throws(() => save(), /symlink/);
   assert.equal(fs.readFileSync(decoy, 'utf8'), '{"role":"imp","can_continue":true}');
   fs.unlinkSync(linkPath);
 
   fs.symlinkSync(join(s.root, 'missing.json'), linkPath);
-  assert.throws(() => writeRolePlaces(s.hud, 'imp', [{ harness: 'cli', agent: 'agy' }], bundled), /symlink/);
+  assert.throws(() => save(), /symlink/);
   fs.unlinkSync(linkPath);
 
   // Non-file target (directory).
   fs.mkdirSync(linkPath);
-  assert.throws(() => writeRolePlaces(s.hud, 'imp', [{ harness: 'cli', agent: 'agy' }], bundled), /non-file/);
+  assert.throws(() => save(), /non-file/);
   fs.rmdirSync(linkPath);
 
   // Symlink roles directory.
@@ -246,15 +244,16 @@ test('writeRolePlaces refuses symlinks, non-files, bad role names, and invalid r
   const realDir = join(s.root, 'real-roles');
   fs.mkdirSync(realDir);
   fs.symlinkSync(realDir, rolesDir);
-  assert.throws(() => writeRolePlaces(s.hud, 'imp', [{ harness: 'cli', agent: 'agy' }], bundled), /symlink/);
+  assert.throws(() => save(), /symlink/);
   fs.unlinkSync(rolesDir);
 
   // Bad role names and invalid run arrays.
   for (const badRole of ['', '.', '..', '../imp', 'a/b']) {
-    assert.throws(() => writeRolePlaces(s.hud, badRole, [{ harness: 'cli', agent: 'agy' }], bundled), /invalid role/);
+    assert.equal(editPreset(s.hud, s.cwd, s.env, { role: badRole, op: 'run', run: [] }, bundled).ok, false);
   }
-  assert.throws(() => writeRolePlaces(s.hud, 'imp', [], bundled), /non-empty/);
-  assert.throws(() => writeRolePlaces(s.hud, 'imp', [{ harness: 'cli' }], bundled), /invalid role places/);
+  assert.throws(() => save([]), /invalid role places/);
+  assert.throws(() => save([{ harness: 'cli' }]), /invalid role places/);
+  assert.equal(fs.existsSync(rolesDir), false);
 });
 
 test('clearExhausted removes the mark, keeps other marks, makes the place available again, and refuses symlinks', (t) => {
@@ -263,15 +262,10 @@ test('clearExhausted removes the mark, keeps other marks, makes the place availa
   assert.equal(clearExhausted(s.hud, 'pi:gpt-6.1-sol', now), false);
   assert.equal(fs.existsSync(join(s.hud, 'exhausted.json')), false);
 
-  writeRolePlaces(
-    s.hud,
-    'imp',
-    [
-      { harness: 'pi', pi_role: 'implementer', split: false, model: 'openai/gpt-6.1-sol' },
-      { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' },
-    ],
-    bundled
-  );
+  assert.equal(editPreset(s.hud, s.cwd, s.env, { role: 'imp', op: 'run', run: [
+    { harness: 'pi', pi_role: 'implementer', split: false, model: 'openai/gpt-6.1-sol' },
+    { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' },
+  ] }, bundled).ok, true);
   const piKey = placeKey({ harness: 'pi', model: 'openai/gpt-6.1-sol' });
   const agyKey = placeKey({ harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' });
   markExhausted(s.hud, piKey, 'HTTP 429 rate limit', now);

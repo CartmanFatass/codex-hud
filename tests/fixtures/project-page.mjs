@@ -5,11 +5,10 @@ import { createHash } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
-import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
+import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi } from '../../dist/render/colors.js';
-import { placeItem } from '../../dist/roles/role-control.js';
 import { LISTED, PROVIDER_COUNT, ROLES } from '../../docs/design/model-picker/gen/world.mjs';
 export const NOW = Date.parse('2026-11-12T12:35:00Z');
 export const TREE = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(NOW) };
@@ -229,33 +228,38 @@ export function presetFrames(f, control) {
 
 export function pickerFrames(f, control = richControl(f.data), layout = 'split') {
   const frames = {};
-  const pick = (index, text = '', pick) => onControl({ projectCursor: placeItem('imp', index) }, {
-    panelLayout: layout, projectInput: { role: 'imp', index, text, pick },
-  });
+  const draw = (lang, snapshot, height, text = '', pick) => {
+    const role = snapshot.roles.find((r) => r.role === 'imp');
+    const state = onControl({ projectCursor: 'project:role:imp' }, { panelLayout: layout, controlChain: { role, at: 0 } });
+    const frame = f.render(40, lang, state, height, snapshot);
+    const opened = handleMonitorInput(frame.state, { type: 'key', key: 'place-model' }, { frame, tree: TREE, nowMs: NOW }).state;
+    return plain(f.render(40, lang, { ...opened, projectInput: { ...opened.projectInput, text, pick } }, height, snapshot));
+  };
   const scenario = (isDefault, current = isDefault ? 'openai/gpt-6.1-sol' : 'xai/grok-4.7', state = 'active', off = []) => ({
     ...control,
     models: { ...control.models, pi: control.models.pi.filter((id) => !off.includes(id.split('/')[0])),
       piFacts: {
         'openai/gpt-6.1-sol': ['272K', '128K', true, true], 'xai/grok-4.7': ['2M', '32K', true, true],
         'xai/grok-4.7-fast': ['2M', '32K', true, true], [`${MAVERICK}-fp8`]: ['1M', '16K', false, true],
-      }, piExhausted: { 'openai/gpt-6.1-sol': NOW + 42 * 60000 } },
+      }, piExhausted: { 'openai/gpt-6.1-sol': NOW + 42 * 60000 }, editor: { off: off.map((provider) => `pi:${provider}`) } },
     harnessSwitches: off.map((name) => ({ id: `pi:${name}`, name, group: 'provider', off: true, present: false, uses: [] })),
-    roles: control.roles.map((role) => role.role !== 'imp' ? role : {
-      ...role, preset: 'daily', places: [{ ...role.places[0], state, until: undefined, provider: current.includes('/') ? current.split('/')[0] : null,
+    roles: control.roles.map((role) => {
+      if (role.role !== 'imp') return role;
+      const places = [{ ...role.places[0], state, until: undefined, provider: current.includes('/') ? current.split('/')[0] : null,
         model: isDefault ? null : current, piModel: { current, isDefault, defaultId: 'openai/gpt-6.1-sol', defaultSource: 'from pi settings', defaultOff: false },
-      }, ...role.places.slice(1)],
+      }, ...role.places.slice(1)];
+      return { ...role, preset: 'daily', places, editor: mockEditor(places) };
     }),
   });
   for (const lang of ['en', 'zh']) {
-    frames[`pick-grouped-40-${lang}`] = plain(f.render(40, lang, pick(0), 24, scenario(true)));
-    frames[`pick-filter-40-${lang}`] = plain(f.render(40, lang, pick(0, 'grok', 'model:xai/grok-4.7-fast'), 20, scenario(false)));
-    frames[`pick-long-40-${lang}`] = plain(f.render(40, lang, pick(0, 'maverick', `model:${MAVERICK}-fp8`), 16, scenario(false)));
-    frames[`pick-exhausted-40-${lang}`] = plain(f.render(40, lang, pick(0, 'openai/gpt-6.1-sol'), 16, scenario(false, undefined, 'active', ['deepseek'])));
-    frames[`pick-unknown-40-${lang}`] = plain(f.render(40, lang, pick(0), 16, scenario(false, 'grok-4.7', 'active', ['deepseek'])));
-    frames[`pick-off-40-${lang}`] = plain(f.render(40, lang, pick(0), 16, scenario(false, 'xai/grok-4.7', 'off', ['deepseek', 'xai'])));
+    frames[`pick-grouped-40-${lang}`] = draw(lang, scenario(true), 24);
+    frames[`pick-filter-40-${lang}`] = draw(lang, scenario(false), 20, 'grok', 'model:xai/grok-4.7-fast');
+    frames[`pick-long-40-${lang}`] = draw(lang, scenario(false), 16, 'maverick', `model:${MAVERICK}-fp8`);
+    frames[`pick-exhausted-40-${lang}`] = draw(lang, scenario(false, undefined, 'active', ['deepseek']), 16, 'openai/gpt-6.1-sol');
+    frames[`pick-unknown-40-${lang}`] = draw(lang, scenario(false, 'grok-4.7', 'active', ['deepseek']), 16);
+    frames[`pick-off-40-${lang}`] = draw(lang, scenario(false, 'xai/grok-4.7', 'off', ['deepseek', 'xai']), 16);
   }
-  frames['pick-no-match-40-en'] = plain(f.render(40, 'en', pick(0, 'zz-new'), 16, scenario(false)));
-  frames['pick-cli-40-en'] = plain(f.render(40, 'en', pick(1), 16, control));
+  frames['pick-no-match-40-en'] = draw('en', scenario(false), 16, 'zz-new');
   return frames;
 }
 

@@ -36,22 +36,25 @@ const cost = (id, at, costMicros = 650_000) => ({
   ...(costMicros === null ? { source: 'unpriced', costMicros } : { source: 'priced', costMicros }),
 });
 
-test('balance dedups, uses completion time against the latest calibration, keeps cycle costs and displays in 40 columns', (t) => {
+test('balance dedups, uses completion time against the latest calibration, keeps cycle costs and displays in 40 columns', async (t) => {
   const f = fixture(t);
   const read = () => readOpenAiBalance(f.hud, Date.parse('2026-11-20T11:00:00Z'));
   assert.equal(read().remainingMicros, null, 'first enable mid-cycle requires calibration');
-  f.edit('calibration', 13_400_000);
+  await f.edit('calibration', 13_400_000);
   const append = (event) => appendExpEvent(f.hud, account, event);
   const newer = cost('vendor-a', '2026-11-20T10:31:00.000Z');
-  append(newer);
-  append(newer);
+  await append(newer);
+  fs.appendFileSync(f.path, JSON.stringify(newer) + '\n'); // History from before writer-side dedup.
+  const legacy = fs.readFileSync(f.path, 'utf8');
+  await append(newer);
+  assert.equal(fs.readFileSync(f.path, 'utf8'), legacy, 'replay does not add or rewrite a legacy line');
   const first = read();
   assert.equal(first.remainingMicros, 12_750_000);
   assert.equal(read(), first, 'unchanged ledger reuses its small snapshot');
-  append(cost('late', '2026-11-20T10:29:00.000Z', 100_000));
-  append(cost('at-calibration', now, 25_000));
-  append(cost('unknown', '2026-11-20T10:31:00.000Z', null));
-  append(cost('older-cycle', '2026-10-20T10:31:00.000Z', 3_000_000));
+  await append(cost('late', '2026-11-20T10:29:00.000Z', 100_000));
+  await append(cost('at-calibration', now, 25_000));
+  await append(cost('unknown', '2026-11-20T10:31:00.000Z', null));
+  await append(cost('older-cycle', '2026-10-20T10:31:00.000Z', 3_000_000));
   assert.deepEqual(read(), {
     startDate: '2026-11-01',
     endDate: '2026-12-01',
@@ -85,13 +88,13 @@ test('balance dedups, uses completion time against the latest calibration, keeps
       assert.match(rows, /2026-11-20 10:30 UTC · \$13\.40/);
       if (process.env.EXP_EXAMPLES && lang === 'en' && panelLayout === 'classic') t.diagnostic(rows);
     }
-  f.edit('calibration', 1_000_000, '2026-11-20T10:45:00Z');
-  f.edit('calibration', 2_000_000, '2026-11-20T10:45:00Z');
+  await f.edit('calibration', 1_000_000, '2026-11-20T10:45:00Z');
+  await f.edit('calibration', 2_000_000, '2026-11-20T10:45:00Z');
   assert.equal(read().remainingMicros, 2_000_000, 'latest calibration wins ties in append order');
   assert.equal(read().billedMicros, 775_000, 'calibration never rewrites cycle totals');
 });
 
-test('29–31 renew at short month end in their own time zone, reset without carry-over, and apply future terms at renewal', (t) => {
+test('29–31 renew at short month end in their own time zone, reset without carry-over, and apply future terms at renewal', async (t) => {
   for (const renewalDay of [29, 30, 31]) {
     const cycle = (at) => expCycle({ renewalDay, timeZone: 'America/New_York' }, Date.parse(at));
     assert.equal(cycle('2027-02-28T04:59:59.999Z').end, Date.parse('2027-02-28T05:00:00Z'));
@@ -113,12 +116,12 @@ test('29–31 renew at short month end in their own time zone, reset without car
     const f = fixture(t, account);
     const balance = (iso) => readExpGrantBalance(f.hud, account, Date.parse(iso));
     assert.equal(balance(now).remainingMicros, null, 'first enable is uncalibrated');
-    f.edit('calibration', 13_400_000);
+    await f.edit('calibration', 13_400_000);
     f.edit('grant', 25_000_000);
     f.edit('renewal', 31);
     f.edit('zone', 'America/New_York');
-    appendExpEvent(f.hud, account, cost('pre-renewal', '2026-11-30T23:59:59.999Z'));
-    appendExpEvent(f.hud, account, cost('at-renewal', '2026-12-01T00:00:00.000Z'));
+    await appendExpEvent(f.hud, account, cost('pre-renewal', '2026-11-30T23:59:59.999Z'));
+    await appendExpEvent(f.hud, account, cost('at-renewal', '2026-12-01T00:00:00.000Z'));
     assert.equal(balance('2026-11-30T23:59:59.999Z').remainingMicros, 12_750_000);
     assert.equal(balance('2026-11-30T23:59:59.999Z').timeZone, 'UTC');
     assert.equal(balance('2026-12-01T00:00:00Z').remainingMicros, 24_350_000);
@@ -128,9 +131,9 @@ test('29–31 renew at short month end in their own time zone, reset without car
   }
 });
 
-test('four concurrent JSONL writers keep intact lines and double-count no request', async (t) => {
+test('four concurrent JSONL writers persist one intact line per ID and double-count no request', async (t) => {
   const f = fixture(t);
-  f.edit('calibration', 13_400_000);
+  await f.edit('calibration', 13_400_000);
   const at = '2026-11-20T10:31:00.000Z';
   const record = cost('example', at, 10_000);
   const url = new URL('../../dist/collectors/exp-ledger.js', import.meta.url).href;
@@ -142,8 +145,8 @@ test('four concurrent JSONL writers keep intact lines and double-count no reques
         `import { appendExpEvent } from ${JSON.stringify(url)};
       const record = ${JSON.stringify(record)};
       for (let i = 0; i < 75; i++) {
-        appendExpEvent(process.argv[1], 'openai-api', { ...record, id: 'shared-' + i });
-        appendExpEvent(process.argv[1], 'openai-api', { ...record, id: process.argv[2] + '-' + i });
+        await appendExpEvent(process.argv[1], 'openai-api', { ...record, id: 'shared-' + i });
+        await appendExpEvent(process.argv[1], 'openai-api', { ...record, id: process.argv[2] + '-' + i });
       }`,
         f.hud,
         String(writer),
@@ -151,7 +154,8 @@ test('four concurrent JSONL writers keep intact lines and double-count no reques
     )
   );
   const lines = fs.readFileSync(f.path, 'utf8').trimEnd().split('\n').map(JSON.parse);
-  assert.equal(lines.length, 601);
+  assert.equal(lines.length, 376);
+  assert.equal(new Set(lines.map(({ id }) => id)).size, lines.length);
   for (const line of lines.slice(1)) assert.equal(line.costMicros, 10_000);
   assert.equal(readOpenAiBalance(f.hud, Date.parse(at)).remainingMicros, 9_650_000);
   assert.equal(fs.statSync(f.path).mode & 0o777, 0o600);

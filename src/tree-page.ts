@@ -1225,6 +1225,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       .catch(() => { boardNotice = t('Could not export board'); })
       .finally(() => render());
   };
+  let expSaving = false;
   const processInput = (inputs: WorkbenchInput[]) => {
     if (state.controlHarnessNotice && inputs.length) state = { ...state, controlHarnessNotice: undefined };
     if (boardNotice && inputs.length) boardNotice = '';
@@ -1234,6 +1235,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
     for (let input of inputs) {
       if (closed) break;
+      if (expSaving && expShown(state)) continue;
       if (input.type === 'mouse' && !settings.mouse) continue;
       // Editors own unnamed printable keys; nowhere else do they trigger an action.
       if (input.type === 'key' && !input.key && !state.projectInput && !state.expPage?.edit && !state.controlPresetInput && !state.controlChain?.sheet && !state.controlHarnessAdd) continue;
@@ -1355,11 +1357,21 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         });
       }
       if (result.action?.type === 'exp-save' && expShown(state)) {
-        try {
-          saveExpEdit(jobPipeline.home, result.action.edit, Date.now());
+        const saved = () => {
           expData = readExpData(jobPipeline.home);
           state.expPage = { ...state.expPage, edit: undefined, notice: 'Saved' };
-        } catch { state.expPage = { ...state.expPage, notice: 'Could not save EXP setting' }; }
+        };
+        const failed = () => { state.expPage = { ...state.expPage, notice: 'Could not save EXP setting' }; };
+        try {
+          const pending = saveExpEdit(jobPipeline.home, result.action.edit, Date.now());
+          if (pending) {
+            expSaving = true;
+            void pending.then(saved, failed).finally(() => {
+              expSaving = false;
+              if (!closed) render();
+            });
+          } else saved();
+        } catch { failed(); }
       }
       if (result.action?.type === 'refresh-models') refreshModelLists(true);
       if (result.action?.type === 'export-board') exportBoard();

@@ -146,8 +146,6 @@ test('w is the panel key for the board, on Home and Project only', () => {
   assert.equal(press(initialMonitorState(), { focus: 'changes' }), undefined);
   assert.equal(press(initialMonitorState(), { focus: 'details' }), undefined);
   assert.equal(press(initialMonitorState(), { help: true }), undefined);
-  // The model picker types the letter.
-  assert.equal(press(onPage('control'), { projectInput: { role: 'imp', index: 0, text: '' } }), undefined);
 });
 
 test('the Help page lists w and the saved board shows at the top in both languages', async (t) => {

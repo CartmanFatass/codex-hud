@@ -133,8 +133,9 @@ test('footer paint starts a private, allowlisted first refresh and expires windo
   assert.equal(inode.mode & 0o777, 0o600);
 
   const beforeReset = p.draw(100);
+  assert.match(beforeReset, /5h ≈72% · 7d ≈57%/);
   f.advance(6 * MIN);
-  assert.match(p.draw(100), /5h refresh pending/);
+  assert.match(p.draw(100), /5h refresh pending · 7d ≈57%/);
   assert.doesNotMatch(p.draw(100), /100%/);
   f.advance(5 * MIN);
   assert.match(p.draw(100), /5h refresh pending · stale/);
@@ -253,7 +254,12 @@ test('only openai OAuth shows windows; direct data wins and never survives its m
     },
     false
   );
-  assert.match(p.draw(100), /5h left 89%/);
+  const normal = p.draw(100), narrow = p.draw(36);
+  assert.match(normal, /5h left 89% · 7d ≈57%/);
+  assert.match(narrow, /5h left 89%/);
+  assert.doesNotMatch(narrow, /7d/);
+  assert.ok(visualLength(narrow) <= 36);
+  t.diagnostic(`pi footer 100 columns: ${normal}\npi footer 36 columns: ${narrow}`);
   p.controller.requestStarted(p.ctx);
   assert.match(p.draw(100), /5h ≈72%/);
   p.controller.requestWindows(
@@ -265,7 +271,13 @@ test('only openai OAuth shows windows; direct data wins and never survives its m
     },
     true
   );
-  assert.match(p.draw(100), /5h left 88%/);
+  assert.match(p.draw(100), /5h left 88% · 7d ≈57%/);
+  p.controller.requestStarted(p.ctx);
+  p.controller.requestWindows(p.ctx, {
+    provider: 'openai', model: p.ctx.model.id,
+    data: { type: 'codex.rate_limits', rate_limits: { primary: { used_percent: 32, window_minutes: 10080 } } },
+  }, true);
+  assert.match(p.draw(100), /5h ≈72% · 7d left 68%/, 'evidence matches measured duration, not array position');
   p.ctx.model.id = 'a-different-model';
   p.controller.modelChanged();
   p.controller.update();
@@ -317,7 +329,7 @@ test('EXP shows live proxy and OpenAI grant readings at 40 columns', async (t) =
     { field: 'grant-enabled', account: 'openai-api', value: true },
     { field: 'calibration', account: 'openai-api', value: 12_750_000 },
   ])
-    saveExpEdit(f.env.HUD_HOME, edit, f.now(), f.env);
+    await saveExpEdit(f.env.HUD_HOME, edit, f.now(), f.env);
   const expData = readExpData(f.env.HUD_HOME, f.env, f.now());
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(0) };
   const old = setLanguage('en');
