@@ -21,10 +21,10 @@ const skillSection = (frame) => {
   return rows.slice(at);
 };
 
-test('main tabs cycle Home ↔ Project; 5 does not switch and old Skills reloads onto Home', (t) => {
+test('main tabs cycle Home → Project → Control; 5 does not switch and old Skills reloads onto Home', (t) => {
   for (const [direction, order] of [
-    ['right', ['project', 'home']], ['tab', ['project', 'home']],
-    ['left', ['project', 'home']], ['shift-tab', ['project', 'home']],
+    ['right', ['project', 'control', 'home']], ['tab', ['project', 'control', 'home']],
+    ['left', ['control', 'project', 'home']], ['shift-tab', ['control', 'project', 'home']],
   ]) {
     let frame = render(initialMonitorState());
     for (const tab of order) {
@@ -33,7 +33,7 @@ test('main tabs cycle Home ↔ Project; 5 does not switch and old Skills reloads
     }
   }
   const frame = render(initialMonitorState(), { width: 40 });
-  assert.deepEqual(frame.controls.filter((c) => c.kind.startsWith('board-')).map((c) => c.kind), ['board-home', 'board-project']);
+  assert.deepEqual(frame.controls.filter((c) => c.kind.startsWith('board-')).map((c) => c.kind), ['board-home', 'board-project', 'board-control']);
   const decoder = new WorkbenchInputDecoder('workboard');
   const five = send(frame, decoder.push(Buffer.from('5'))[0]);
   assert.equal(five.state.mainTab, 'home');
@@ -47,7 +47,7 @@ test('main tabs cycle Home ↔ Project; 5 does not switch and old Skills reloads
   assert.equal(readPanelPlace().state.mainTab, 'home');
   const before = setLanguage('en');
   try {
-    const narrow = render(initialMonitorState(), { width: 30 }), brief = narrow.controls.find((c) => c.kind === 'brief');
+    const narrow = render(initialMonitorState(), { width: 36 }), brief = narrow.controls.find((c) => c.kind === 'brief');
     assert.ok(narrow.controls.filter((c) => c.kind.startsWith('board-')).every((c) => c.x + c.width < brief.x));
     assert.deepEqual(send(narrow, { type: 'mouse', button: 'left', x: brief.x, y: 0 }).action, { type: 'brief-toggle' });
   } finally { setLanguage(before); }
