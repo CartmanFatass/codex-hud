@@ -154,12 +154,10 @@ test('a registered project shows its roles, hides the rest and uses its conventi
   });
   f.put(join(f.cwd, '.hud/roles/cli.json'), {
     role: 'local-cli',
-    harness: 'cli',
-    agent: 'grok',
     can_continue: true,
-    note: 'NEVER_RENDER_CLI_BODY',
+    run: [{ harness: 'cli', agent: 'grok', model: 'project-cli', thinking: 'high' }],
   });
-  f.put(join(f.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'missing'] });
+  f.put(join(f.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'local-cli', 'missing'] });
   f.put(join(f.cwd, '.hud/hud-convention.md'), '# Registered project convention');
   const data = await f.collector.collect(true, f.board, NOW + 1);
   const role = (name) => data.roles.find((r) => r.role === name);
@@ -170,12 +168,10 @@ test('a registered project shows its roles, hides the rest and uses its conventi
   assert.equal(data.control.some((r) => r.label === 'ignored'), false);
   assert.equal(data.control.find((r) => r.label === 'convention').value, 'project');
   assert.equal(data.control.find((r) => r.label === 'convention').path, join(root, '.hud/hud-convention.md'));
-  assert.ok(
-    data.control.some(
-      (r) =>
-        r.label === 'invalid' && r.value === 'project roles are pi only' && r.path === join(root, '.hud/roles/cli.json')
-    )
-  );
+  const cli = role('local-cli');
+  assert.deepEqual([cli.group, cli.source, cli.path, cli.editor], ['project', 'project', join(root, '.hud/roles/cli.json'), undefined]);
+  assert.deepEqual(cli.places.map((p) => [p.harness, p.label, p.model, p.thinking]), [['cli', 'grok', 'project-cli', 'high']]);
+  assert.equal(data.control.some((r) => r.label === 'invalid' && r.path === cli.path), false);
   assert.doesNotMatch(JSON.stringify(data), /NEVER_RENDER/);
 });
 test('Control plane page: what needs the owner first, healthy roles and files folded; Enter opens them, the agents fold inside Files', async (t) => {

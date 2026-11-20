@@ -180,7 +180,7 @@ hud setup --remove [--cwd DIR]
 它负责询问，这些命令只读或只写。
 
 `--detect` 打印一份 JSON，不写任何文件。它给出 `--cwd` 的 git 顶层（否则就是 `--cwd`）、
-该根是否已注册、参考角色（内置与 `$HUD_HOME/roles`）、项目角色、启用集合、无效角色文件、
+该根是否已注册、参考角色（内置与 `$HUD_HOME/roles`）、项目角色及其有序的 `run` 链、启用集合、无效角色文件、
 技能，以及工作者技能链接。技能根目录来自 `$HUD_HOME/setup.json` 的 `skill_roots`
 （默认 `~/.pi/agent/skills`、`~/.claude/skills` 和 `~/.agents/skills`），其后总是包含本仓库自带的
 `integrations/skills`。技能是含 `SKILL.md`
@@ -192,23 +192,27 @@ hud setup --remove [--cwd DIR]
 
 ```
 .hud/project.json          启用的角色，以及 apply 自己创建的链接、角色文件和提示
-.hud/roles/<name>.json     仅当 pi 角色与参考角色不同
+.hud/roles/<name>.json     项目指定的运行链，或与参考角色不同的 pi 角色
 .hud/skills/<name>         指向技能目录的符号链接（仅工作者）
 .hud/agents/<role>.md      可选的仅工作者提示
 .hud/hud-convention.md     可选，内置约定的副本
 ```
 
 计划为 version 1：`roles`（启用的名字）、`pi_roles`（只调 pi：`from`、`pi_role`、`model`、
-`thinking`、`split`、`can_continue`、`skills`）、`skills`（名字到技能目录的绝对路径）、
-`agents`（角色到 markdown）和 `convention`（`keep` 或 `copy-default`）。打印 `removed`、
+`thinking`、`split`、`can_continue`、`skills`）、可选的 `runs`（角色名到非空的有序运行位置列表）、
+`skills`（名字到技能目录的绝对路径）、`agents`（角色到 markdown）和 `convention`（`keep` 或
+`copy-default`）。`runs` 可指定参考角色或 `pi_roles` 中复制的角色。若两处都指定同一角色，`runs`
+决定顺序，`pi_roles` 为其中每个 pi 位置补充默认设置。打印 `removed`、
 `wrote`、`linked`、`skipped (exists)`、`registered`，或 `no changes`。同一计划再跑一次不会改任何东西。
 不是本命令创建的文件或链接会留下，并报 `skipped (exists)`。
 
 apply 把项目根记入 `$HUD_HOME/projects.json`。项目配置只有注册之后才加载。
 `--remove` 去掉注册，留下 `.hud/`。克隆来的 `.hud/` 在该克隆里跑过 setup 之前不起作用。
 
-只调 pi。其他 harness 的角色只能显示或隐藏，不改它们的文件。本命令不运行 `hud trust`。
-若所选 CLI 角色的目录未被信任，请自行运行 `hud trust <dir>`。
+已注册项目的角色文件可在 `run` 和 `presets[].run` 中列出 pi 与 CLI 位置。CLI 位置只接受
+`harness: "cli"`、`agent`、`model` 和 `thinking`，不接受额外参数；不允许浏览器（`bro`）位置。
+设置、技能和提示等工作者定制仍只适用于 pi。setup 不修改任何 CLI 自己的文件，也不运行 `hud trust`。
+若 CLI 位置需要信任该项目目录，请自行运行 `hud trust <dir>`。
 
 ## 首页
 

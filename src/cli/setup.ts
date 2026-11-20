@@ -4,14 +4,14 @@ import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getHudHome } from '../hud-home.js';
 import { projectRoot, registeredProject } from '../roles/projects.js';
-import { executable, roleRegistry, type Role } from '../roles/roster.js';
+import { executable, projectReason, roleRegistry, type Role } from '../roles/roster.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 
 const USAGE = 'usage: hud setup --detect [--cwd DIR] | --apply PLAN [--cwd DIR] | --remove [--cwd DIR]';
 const DEFAULT_SKILL_ROOTS = ['~/.pi/agent/skills', '~/.claude/skills', '~/.agents/skills'];
 const NAME = /^(?!\.\.?$)[A-Za-z0-9._-]+$/;
-const PLAN_FIELDS = new Set(['version', 'roles', 'pi_roles', 'skills', 'agents', 'convention']);
+const PLAN_FIELDS = new Set(['version', 'roles', 'pi_roles', 'runs', 'skills', 'agents', 'convention']);
 const ROLE_FIELDS = new Set(['from', 'pi_role', 'model', 'thinking', 'split', 'can_continue', 'skills']);
 type Registry = ReturnType<typeof roleRegistry>;
 type Kind = 'missing' | 'file' | 'link' | 'dir' | 'other';
@@ -24,9 +24,10 @@ interface PlanRole {
   can_continue?: boolean;
   skills?: string[];
 }
+type RoleBody = { text: string; differs: boolean };
 interface Plan {
   roles: string[];
-  pi_roles: Record<string, PlanRole>;
+  roleFiles: Map<string, RoleBody>;
   skills: Record<string, string>;
   agents: Record<string, string>;
   convention: 'keep' | 'copy-default';
@@ -116,7 +117,7 @@ function detect(cwd: string, env: NodeJS.ProcessEnv) {
     },
     pi: { installed: pi !== null, pi_role: pi },
     reference_roles: listed(reference, [...reference.roles().values()], bundled, hudHome),
-    project_roles: listed(open, projectFiles, bundled, hudHome),
+    project_roles: listed(open, projectFiles, bundled, hudHome, true),
     enabled_roles: [...full.roles().keys()].sort(cmp),
     invalid: full.invalid().map(({ path, reason }) => ({ path, reason })),
     skills: skills(roots),
@@ -127,9 +128,12 @@ function detect(cwd: string, env: NodeJS.ProcessEnv) {
   };
 }
 
-function listed(found: Registry, roles: Role[], bundled: string, hudHome: string) {
+function listed(found: Registry, roles: Role[], bundled: string, hudHome: string, includeRun = false) {
   return roles
-    .map((role) => roleRow(found.assignment(role), roleSource(role.source_file, bundled, hudHome)))
+    .map((role) => ({
+      ...roleRow(found.assignment(role), roleSource(role.source_file, bundled, hudHome)),
+      ...(includeRun ? { run: role.run } : {}),
+    }))
     .sort((a, b) => cmp(a.role, b.role));
 }
 
@@ -384,7 +388,30 @@ function loadPlan(path: string, hudHome: string, root: string, env: NodeJS.Proce
   const convention = parsed.convention === undefined ? 'keep' : parsed.convention;
   if (convention !== 'keep' && convention !== 'copy-default') bad('convention');
   if (convention === 'copy-default' && fileKind(join(bundledRoot(), 'hud-convention.md')) !== 'file') bad('convention');
-  return { roles: parsed.roles as string[], pi_roles, skills, agents, convention };
+  const roleFiles = loadRuns(parsed.runs, known, pi_roles, reference);
+  for (const [name, entry] of Object.entries(pi_roles)) {
+    if (!roleFiles.has(name)) roleFiles.set(name, roleBody(name, entry, reference));
+  }
+  return { roles: parsed.roles as string[], roleFiles, skills, agents, convention };
+}
+function loadRuns(value: unknown, known: Set<string>, piRoles: Record<string, PlanRole>, reference: Registry) {
+  const files = new Map<string, RoleBody>();
+  if (value === undefined) return files;
+  if (!isRecord(value)) bad('runs');
+  for (const [name, chain] of Object.entries(value)) {
+    if (!NAME.test(name) || !known.has(name) || !Array.isArray(chain)) bad(`runs.${name}`);
+    const entry = Object.hasOwn(piRoles, name) ? piRoles[name] : undefined;
+    const base = reference.roles().get(entry?.from ?? name);
+    const { role: _, can_continue, ...tuning } = entry
+      ? tunedPiRole(name, entry, reference)
+      : { can_continue: base?.can_continue ?? false };
+    const run = chain.map((place) => isRecord(place) && place.harness === 'pi' ? { ...tuning, ...place } : place);
+    const body = { role: name, instructions: base?.instructions, can_continue, run };
+    const reason = projectReason(body);
+    if (reason) bad(`runs.${name}: ${reason}`);
+    files.set(name, { text: JSON.stringify(body, null, 2) + '\n', differs: true });
+  }
+  return files;
 }
 function loadSkills(value: unknown): Record<string, string> {
   if (value === undefined) return {};
@@ -460,7 +487,7 @@ function piRoleShape(role: Role, name = role.role): Record<string, unknown> {
   if (pi.pi_args !== undefined) shape.pi_args = [...pi.pi_args];
   return shape;
 }
-function roleBody(name: string, entry: PlanRole, reference: Registry): { text: string; differs: boolean } {
+function tunedPiRole(name: string, entry: PlanRole, reference: Registry) {
   const base = reference.roles().get(entry.from ?? name);
   if (!base || base.harness !== 'pi') bad(`pi_roles.${name}.from`);
   const next = piRoleShape(base, name);
@@ -470,6 +497,10 @@ function roleBody(name: string, entry: PlanRole, reference: Registry): { text: s
   if (entry.split !== undefined) next.split = entry.split;
   if (entry.can_continue !== undefined) next.can_continue = entry.can_continue;
   if (entry.skills !== undefined) next.skills = [...entry.skills];
+  return next;
+}
+function roleBody(name: string, entry: PlanRole, reference: Registry): RoleBody {
+  const next = tunedPiRole(name, entry, reference);
   const same = reference.roles().get(name);
   return {
     text: JSON.stringify(next, null, 2) + '\n',
@@ -629,7 +660,7 @@ async function apply(planPath: string, cwd: string, env: NodeJS.ProcessEnv, io: 
     throw new CliError('refusing: .hud/project.json is not a file');
   const records = loadRecords(projectFile);
   const parents = [
-    ...(Object.keys(plan.pi_roles).length || records.role_files.size
+    ...(plan.roleFiles.size || records.role_files.size
       ? [['.hud/roles', join(hud, 'roles')] as const]
       : []),
     ...(Object.keys(plan.skills).length || records.links.size ? [['.hud/skills', join(hud, 'skills')] as const] : []),
@@ -638,19 +669,17 @@ async function apply(planPath: string, cwd: string, env: NodeJS.ProcessEnv, io: 
   for (const [label, path] of parents) refuseParent(path, label);
   const projectsFile = join(hudHome, 'projects.json');
   const projects = readProjects(projectsFile, true);
-  const reference = referenceRegistry(hudHome, root, env);
   const lines: string[] = [];
   const next: Records = { links: new Set(), role_files: new Set(), agents: new Set(), convention: false };
   ensureDir(hud);
-  for (const name of [...new Set([...Object.keys(plan.pi_roles), ...records.role_files])].sort(cmp)) {
+  for (const name of [...new Set([...plan.roleFiles.keys(), ...records.role_files])].sort(cmp)) {
     const rel = join('.hud', 'roles', `${name}.json`);
     const abs = join(root, rel);
-    const entry = plan.pi_roles[name];
-    if (!entry) {
+    const body = plan.roleFiles.get(name);
+    if (!body) {
       if (records.role_files.has(name)) removeManaged(abs, rel, lines, next.role_files, name);
       continue;
     }
-    const body = roleBody(name, entry, reference);
     if (!body.differs) {
       if (records.role_files.has(name)) removeManaged(abs, rel, lines, next.role_files, name);
       else if (fileKind(abs) !== 'missing') lines.push(`skipped (exists) ${rel}`);

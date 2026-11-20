@@ -50,7 +50,10 @@ export const SPLIT_ZH: Record<string, string> = {
   'choose…': '选择…', 'Choose a target first': '请先选择目标', 'after target and model': '目标和模型填好后可用',
   'No matching choices': '没有匹配的选项', 'Off targets cannot be selected': '不能选择已停用的目标',
   'off: not selectable · missing: marked': '已停用的不能选 · 未安装的会标明',
-  'bad run places': 'run 位置无效', 'bad model/thinking/effort': 'model/thinking/effort 无效', 'project roles are pi only': '项目角色只能用 pi',
+  'bad run places': 'run 位置无效', 'bad model/thinking/effort': 'model/thinking/effort 无效',
+  'project roles are pi only in single-place format': '项目角色的单位置格式只支持 pi',
+  'project roles are pi or CLI only': '项目角色只支持 pi 或 CLI',
+  'project CLI places take agent, model and thinking only': '项目 CLI 位置只接受 agent、model 和 thinking',
   'mark a to-try row': '勾选一个待试用行', 'accept / flag the marked to-try rows': '验收／标记已勾选的待试用行（没勾选则当前行）', 'place: add, remove': '位置：添加、删除',
   'place: move up, move down': '位置：上移、下移', 'next / previous card that needs you (Home)': '下一个／上一个需要你的卡片（首页）',
 };

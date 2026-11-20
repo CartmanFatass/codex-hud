@@ -200,6 +200,45 @@ test('apply writes the plan, is idempotent, and detect and roster show it', asyn
   assert.equal(tree(f.project), before);
 });
 
+test('apply writes project chains and combines pi tuning with the ordered places', async (t) => {
+  const f = fixture(t);
+  const cli = { harness: 'cli', agent: 'claude', model: 'synthetic-cli', thinking: 'high' };
+  const tickets = skill(join(f.root, 'skills', 'to-tickets'));
+  const plan = writePlan(f.root, {
+    version: 1,
+    roles: ['reviewer', 'frontend'],
+    runs: { reviewer: [cli], frontend: [cli, { harness: 'pi', model: 'synthetic/explicit' }] },
+    pi_roles: { frontend: { from: 'imp', model: 'synthetic/default', thinking: 'low', skills: ['to-tickets'] } },
+    skills: { 'to-tickets': tickets },
+  });
+  assert.equal(await main(['setup', '--apply', plan, '--cwd', f.project], f.io), 0, f.err());
+  assert.match(f.out(), /wrote \.hud\/roles\/reviewer\.json/);
+  assert.deepEqual(read(join(f.project, '.hud/roles/reviewer.json')).run, [cli]);
+  const frontend = read(join(f.project, '.hud/roles/frontend.json'));
+  assert.equal(frontend.role, 'frontend');
+  assert.equal(frontend.can_continue, true);
+  assert.deepEqual(frontend.run, [cli, {
+    harness: 'pi', pi_role: 'implementer', split: false, model: 'synthetic/explicit', thinking: 'low', skills: ['to-tickets'],
+  }]);
+  assert.deepEqual(read(join(f.project, '.hud/project.json')).role_files, ['frontend', 'reviewer']);
+
+  f.reset();
+  assert.equal(await main(['setup', '--apply', plan, '--cwd', f.project], f.io), 0, f.err());
+  assert.equal(f.out(), 'no changes\n');
+  f.reset();
+  const before = tree(f.project);
+  assert.equal(await main(['setup', '--detect', '--cwd', f.project], f.io), 0, f.err());
+  const doc = JSON.parse(f.out());
+  assert.deepEqual(doc.project_roles.map((role: { role: string; run: unknown }) => [role.role, role.run]), [
+    ['frontend', frontend.run], ['reviewer', [cli]],
+  ]);
+  assert.deepEqual(doc.invalid, []);
+  f.reset();
+  assert.equal(await main(['setup', '--remove', '--cwd', f.project], f.io), 0, f.err());
+  assert.equal(f.out(), 'unregistered\n');
+  assert.equal(tree(f.project), before);
+});
+
 test('plan change removes owned links, role files and agents, and copy-default is kept', async (t) => {
   const f = fixture(t);
   gitInit(f.project);
@@ -352,6 +391,17 @@ test('invalid plans write nothing', async (t) => {
     ['pi_roles.imp.skills', { version: 1, roles: ['imp'], pi_roles: { imp: { skills: ['missing'] } } }],
     ['pi_roles.imp.skills', { version: 1, roles: ['imp'], pi_roles: { imp: { skills: 'to-tickets' } } }],
     ['pi_roles...', { version: 1, roles: ['imp'], pi_roles: { '..': { from: 'imp' } } }],
+    ['runs', { version: 1, roles: ['imp'], runs: [] }],
+    ['runs.imp: bad run places', { version: 1, roles: ['imp'], runs: { imp: [] } }],
+    ['runs.imp: bad cli fields', {
+      version: 1, roles: ['imp'], runs: { imp: [{ harness: 'cli', agent: 'invalid' }] },
+    }],
+    ['runs.imp: project CLI places take agent, model and thinking only', {
+      version: 1, roles: ['imp'], runs: { imp: [{ harness: 'cli', agent: 'claude', args: ['--extra'] }] },
+    }],
+    ['runs.imp: project roles are pi or CLI only', {
+      version: 1, roles: ['imp'], runs: { imp: [{ harness: 'bro', tool: 'jev-ask', provider: 'gemini' }] },
+    }],
     ['skills', { version: 1, roles: ['imp'], skills: [] }],
     ['skills.bad name', { version: 1, roles: ['imp'], skills: { 'bad name': tickets } }],
     ['skills...', { version: 1, roles: ['imp'], skills: { '..': tickets } }],

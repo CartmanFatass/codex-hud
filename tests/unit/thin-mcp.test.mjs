@@ -4696,17 +4696,13 @@ test('hud_roster cwd and hud_create use a registered project role', async (t) =>
   fs.mkdirSync(join(proj, '.hud/roles'), { recursive: true });
   fs.writeFileSync(join(proj, '.hud/roles/frontend.json'), JSON.stringify(role));
   fs.writeFileSync(join(proj, '.hud/roles/imp.json'), JSON.stringify({ ...role, role: 'imp', model: 'project/imp' }));
+  const cli = { harness: 'cli', agent: 'grok', model: 'synthetic-cli', thinking: 'high' };
+  const fallback = { harness: 'pi', pi_role: 'implementer', split: false };
   fs.writeFileSync(
     join(proj, '.hud/roles/cli.json'),
-    JSON.stringify({
-      role: 'local-cli',
-      harness: 'cli',
-      agent: 'grok',
-      can_continue: true,
-      note: 'SECRET_PROJECT_ROLE_BODY',
-    })
+    JSON.stringify({ role: 'local-cli', instructions: 'implementer', can_continue: true, run: [cli, fallback] })
   );
-  fs.writeFileSync(join(proj, '.hud/project.json'), JSON.stringify({ version: 1, roles: ['frontend', 'nope'] }));
+  fs.writeFileSync(join(proj, '.hud/project.json'), JSON.stringify({ version: 1, roles: ['frontend', 'local-cli', 'nope'] }));
   fs.writeFileSync(join(proj, '.hud/hud-convention.md'), 'Project convention only.');
   fs.writeFileSync(join(proj, 'hud-convention.md'), 'Cwd convention must lose.');
   const roster = await f.call('hud_roster', { cwd: join(proj, 'sub'), detail: true });
@@ -4722,8 +4718,19 @@ test('hud_roster cwd and hud_create use a registered project role', async (t) =>
     roster.roles.some((entry) => entry.role === 'imp'),
     false
   );
-  assert.deepEqual(roster.invalid, [{ path: join(root, '.hud/roles/cli.json'), reason: 'project roles are pi only' }]);
-  assert.equal(JSON.stringify(roster.invalid).includes('SECRET_PROJECT_ROLE_BODY'), false);
+  assert.deepEqual(roster.invalid, []);
+  const projectCli = roster.roles.find((entry) => entry.role === 'local-cli');
+  assert.equal(projectCli.source_file, join(root, '.hud/roles/cli.json'));
+  assert.deepEqual(projectCli.run, [cli, fallback]);
+  const compact = await f.call('hud_roster', { cwd: proj });
+  assert.deepEqual(compact.roles.find((entry) => entry.role === 'local-cli'), {
+    role: 'local-cli', instructions: 'implementer', available: true, can_continue: true, runs_on: cli,
+    places: [{ index: 0, state: 'active' }, { index: 1, state: 'standby', provider: 'synthetic', provider_source: 'pi_role' }],
+  });
+  const untrusted = await f.call('hud_create', {
+    role: 'local-cli', request_key: 'project-cli-untrusted', task: 'Synthetic CLI task.', cwd: proj,
+  });
+  assert.equal(untrusted.code, 'untrusted_cwd');
   assert.equal(roster.convention.path, join(root, '.hud/hud-convention.md'));
   assert.equal(roster.convention.text, 'Project convention only.');
   const server = await f.call('hud_roster');

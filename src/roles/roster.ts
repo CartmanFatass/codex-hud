@@ -214,20 +214,23 @@ function roleReason(value: unknown): string | null {
     return checked.harness === 'pi' ? 'bad pi fields' : 'bad cli fields';
   return null;
 }
-function projectReason(value: unknown): string | null {
+export function projectReason(value: unknown): string | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unparseable JSON';
   const raw = value as Record<string, unknown>;
   if (typeof raw.role !== 'string' || !raw.role.trim()) return 'missing role';
-  if (Array.isArray(raw.run)) {
-    if (raw.run.some((p) => !p || typeof p !== 'object' || normalizeHarness((p as { harness?: unknown }).harness) !== 'pi'))
-      return 'project roles are pi only';
-  } else if (normalizeHarness(raw.harness) !== 'pi') {
-    return 'project roles are pi only';
-  }
+  if (raw.run === undefined && normalizeHarness(raw.harness) !== 'pi')
+    return 'project roles are pi only in single-place format';
   const reason = roleReason(value);
   if (reason) return reason;
-  if (((raw.presets ?? []) as RolePreset[]).some((p) => p.run.some((place) => normalizeHarness(place.harness) !== 'pi')))
-    return 'project roles are pi only';
+  const runs = [raw.run as RolePlace[] | undefined, ...((raw.presets ?? []) as RolePreset[]).map((p) => p.run)];
+  for (const run of runs) {
+    for (const place of run ?? []) {
+      const harness = normalizeHarness(place.harness);
+      if (harness === 'bro') return 'project roles are pi or CLI only';
+      if (harness === 'cli' && Object.keys(place).some((key) => !['harness', 'agent', 'model', 'thinking'].includes(key)))
+        return 'project CLI places take agent, model and thinking only';
+    }
+  }
   return null;
 }
 function normalizePlace(raw: Partial<RolePlace>, instructions?: string): RolePlace {

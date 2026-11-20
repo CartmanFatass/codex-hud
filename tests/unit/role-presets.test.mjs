@@ -54,8 +54,17 @@ test('presets merge shipped, owner, registered project by name; omission inherit
   assert.deepEqual(editPlaces(f.hud, f.cwd, { PATH: '' }, { role: 'imp', index: 0, op: 'preset' }), { ok: false, message: 'the project file is in force: o opens it' });
   assert.equal(fs.readFileSync(f.file, 'utf8'), before);
   const projectFile = join(f.cwd, '.hud/roles/imp.json');
-  f.put(projectFile, { ...f.own, presets: [{ name: 'cli', run: [{ harness: 'cli', agent: 'agy' }] }] });
-  assert.deepEqual(f.registry().invalid(), [{ path: projectFile, reason: 'project roles are pi only' }]);
+  const run = [{ harness: 'cli', agent: 'agy', model: 'project-cli', thinking: 'high' }];
+  f.put(projectFile, { ...f.own, active_preset: 'cli', presets: [{ name: 'cli', run }] });
+  assert.deepEqual(f.registry().invalid(), []);
+  assert.deepEqual(f.role().run, run);
+  for (const [place, reason] of [
+    [{ ...run[0], args: ['--extra'] }, 'project CLI places take agent, model and thinking only'],
+    [{ harness: 'bro', tool: 'jev-ask', provider: 'gemini' }, 'project roles are pi or CLI only'],
+  ]) {
+    f.put(projectFile, { ...f.own, presets: [{ name: 'invalid', run: [place] }] });
+    assert.deepEqual(f.registry().invalid(), [{ path: projectFile, reason }]);
+  }
 });
 
 test('switch writes a selector, not its run; legacy equality ignores key order but not place order', (t) => {

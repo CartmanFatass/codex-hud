@@ -262,8 +262,8 @@ Codex and pi, asks; these commands only read or write.
 
 `--detect` prints one JSON document and writes nothing. It names the git root of
 `--cwd` (or `--cwd` itself), whether that root is registered, reference roles
-(shipped and `$HUD_HOME/roles`), project roles, the enabled set, invalid role files,
-skills and worker-skill links. Skill roots come from `$HUD_HOME/setup.json`
+(shipped and `$HUD_HOME/roles`), project roles with their ordered `run` chains,
+the enabled set, invalid role files, skills and worker-skill links. Skill roots come from `$HUD_HOME/setup.json`
 `skill_roots` (defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and
 `~/.agents/skills`), always followed by the checkout's `integrations/skills`. A skill is a directory with `SKILL.md`; its name is the
 frontmatter `name`. Each skill includes `model_invocable`: false when that
@@ -275,16 +275,19 @@ be committed:
 
 ```
 .hud/project.json          enabled roles, and the links, role files and prompts apply made
-.hud/roles/<name>.json     only a pi role that differs from its reference
+.hud/roles/<name>.json     a project chain or a pi role that differs from its reference
 .hud/skills/<name>         symlink to the skill directory (workers only)
 .hud/agents/<role>.md      optional worker-only prompt
 .hud/hud-convention.md     optional copy of the shipped convention
 ```
 
 The plan is version 1: `roles` (enabled names), `pi_roles` (pi tuning only: `from`,
-`pi_role`, `model`, `thinking`, `split`, `can_continue`, `skills`), `skills` (name
-to an absolute skill directory), `agents` (role to markdown) and `convention`
-(`keep` or `copy-default`). It prints `removed`, `wrote`, `linked`,
+`pi_role`, `model`, `thinking`, `split`, `can_continue`, `skills`), optional `runs`
+(role name to a non-empty ordered list of places), `skills` (name to an absolute
+skill directory), `agents` (role to markdown) and `convention` (`keep` or
+`copy-default`). `runs` can name reference roles or copies in `pi_roles`. If both
+fields name a role, `runs` sets its order and `pi_roles` fills in defaults for each
+pi place. It prints `removed`, `wrote`, `linked`,
 `skipped (exists)`, `registered`, or `no changes`. The same plan again changes
 nothing. A file or link apply did not make is left in place and reported as skipped.
 
@@ -292,9 +295,12 @@ Applying records the root in `$HUD_HOME/projects.json`. Project config loads onl
 after that. `--remove` drops the registration and leaves `.hud/` alone. A clone's
 `.hud/` does nothing until the owner runs setup there.
 
-Tuning is pi only. Other harnesses' roles can be shown or hidden; their files are
-not edited. This command does not run `hud trust`. If a chosen CLI role's directory
-is untrusted, run `hud trust <dir>` yourself.
+A registered project's role file may list pi and CLI places in `run` and in
+`presets[].run`. A CLI place accepts only `harness: "cli"`, `agent`, `model` and
+`thinking`; no extra arguments. Browser (`bro`) places are not allowed.
+Worker tuning (settings, skills and prompts) is still pi only; setup does not edit
+any CLI's own files or run `hud trust`. If a CLI place needs a trust grant for the
+project directory, run `hud trust <dir>` yourself.
 
 ## Home
 

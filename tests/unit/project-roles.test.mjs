@@ -134,22 +134,21 @@ test('an unregistered .hud is ignored', () => {
   rm();
 });
 
-test('a non-pi project role is invalid and skills are validated', () => {
+test('project chains allow CLI routing only and still validate pi skills', () => {
   const { hud, bundled, project, rm } = layout();
   register(hud, project);
   fs.mkdirSync(join(project, '.hud/roles'), { recursive: true });
-  const cli = join(project, '.hud/roles/cli.json');
-  fs.writeFileSync(
-    cli,
-    JSON.stringify({
-      role: 'local',
-      harness: 'cli',
-      agent: 'grok',
-      can_continue: true,
-      skills: ['x'],
-      note: 'SECRET_BODY',
-    })
-  );
+  const writeChain = (role, place) => {
+    const file = join(project, '.hud/roles', `${role}.json`);
+    fs.writeFileSync(file, JSON.stringify({ role, can_continue: true, run: [place] }));
+    return file;
+  };
+  const cli = { harness: 'cli', agent: 'grok', model: 'synthetic-cli', thinking: 'high' };
+  writeChain('local', cli);
+  const cliArgs = writeChain('cli-args', { ...cli, args: ['--extra'] });
+  const cliExtra = writeChain('cli-extra', { ...cli, note: 'SECRET_BODY' });
+  const cliEffort = writeChain('cli-effort', { ...cli, effort: 'high' });
+  const bro = writeChain('browser', { harness: 'bro', tool: 'jev-ask', provider: 'gemini' });
   const odd = join(project, '.hud/roles/odd.json');
   fs.writeFileSync(odd, JSON.stringify({ role: 'odd', harness: 'SECRET_HARNESS_VALUE', pi_role: 'implementer' }));
   const badPi = join(project, '.hud/roles/bad.json');
@@ -170,13 +169,16 @@ test('a non-pi project role is invalid and skills are validated', () => {
   fs.writeFileSync(good, JSON.stringify(pi('skilled', { skills: ['to-tickets'] })));
   const registry = roleRegistry(hud, project, {}, undefined, undefined, bundled);
   const reason = (path) => registry.invalid().find((item) => item.path === path);
-  assert.deepEqual(reason(cli), { path: cli, reason: 'project roles are pi only' });
-  assert.deepEqual(reason(odd), { path: odd, reason: 'project roles are pi only' });
+  for (const path of [cliArgs, cliExtra, cliEffort])
+    assert.deepEqual(reason(path), { path, reason: 'project CLI places take agent, model and thinking only' });
+  assert.deepEqual(reason(bro), { path: bro, reason: 'project roles are pi or CLI only' });
+  assert.deepEqual(reason(odd), { path: odd, reason: 'project roles are pi only in single-place format' });
   assert.deepEqual(reason(badPi), { path: badPi, reason: 'bad pi fields' });
   assert.deepEqual(reason(notArray), { path: notArray, reason: 'bad pi fields' });
   assert.deepEqual(reason(homeCli), { path: homeCli, reason: 'bad cli fields' });
   assert.deepEqual(reason(homeJev), { path: homeJev, reason: 'bad bro fields' });
-  assert.equal(registry.roles().has('local'), false);
+  assert.deepEqual(registry.roles().get('local').run, [cli]);
+  for (const name of ['cli-args', 'cli-extra', 'cli-effort', 'browser']) assert.equal(registry.roles().has(name), false);
   assert.deepEqual(registry.roles().get('skilled').skills, ['to-tickets']);
   assert.equal(JSON.stringify(registry.invalid()).includes('SECRET_BODY'), false);
   assert.equal(JSON.stringify(registry.invalid()).includes('SECRET_HARNESS_VALUE'), false);
