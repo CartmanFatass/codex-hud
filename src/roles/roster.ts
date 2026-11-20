@@ -457,7 +457,7 @@ export function roleRegistry(
   function invalid(): InvalidRole[] {
     return scan().invalid.map(({ path, reason }) => ({ path, reason }));
   }
-  /** Last invalid file that names this role, when no valid file does. */
+  /** Last invalid file that names this role; callers ask only when no valid file defines it. */
   function invalidRole(name: string): InvalidRole | undefined {
     const item = scan().invalid.filter((item) => item.role === name).at(-1);
     if (item) return { path: item.path, reason: item.reason };

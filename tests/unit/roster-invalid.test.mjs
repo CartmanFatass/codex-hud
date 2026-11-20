@@ -39,14 +39,12 @@ test('a later valid role file overrides; a later invalid file does not remove it
   assert.equal(registry.roles().get('writer').source_file, late);
   assert.deepEqual(registry.invalid(), [{ path: bad, reason: 'unknown harness nope' }]);
   assert.equal(JSON.stringify(registry.invalid()).includes('SECRET_ROLE_FILE_BODY'), false);
-  assert.equal(registry.invalidPath('writer'), null);
 
   const reversed = { [join(bundled, 'roles')]: ['early.json'], [join(hud, 'roles')]: ['late.json', 'bad.json'] };
   const after = roleRegistry(hud, root, {}, undefined, (dir) => reversed[dir] ?? [], bundled);
   assert.equal(after.roles().get('writer').model, 'late');
   assert.equal(after.roles().get('writer').source_file, late);
   assert.deepEqual(after.invalid(), [{ path: bad, reason: 'unknown harness nope' }]);
-  assert.equal(after.invalidPath('writer'), null);
 
   const namedOnly = roleRegistry(
     hud,
@@ -57,7 +55,7 @@ test('a later valid role file overrides; a later invalid file does not remove it
     bundled
   );
   assert.equal(namedOnly.roles().has('writer'), false);
-  assert.equal(namedOnly.invalidPath('writer'), bad);
+  assert.deepEqual(namedOnly.invalidRole('writer'), { path: bad, reason: 'unknown harness nope' });
   fs.writeFileSync(join(hud, 'roles', 'also.json'), JSON.stringify({ role: 'writer', harness: 'cli' }));
   const both = roleRegistry(
     hud,
@@ -67,7 +65,7 @@ test('a later valid role file overrides; a later invalid file does not remove it
     (dir) => (dir === join(hud, 'roles') ? ['bad.json', 'also.json'] : []),
     bundled
   );
-  assert.equal(both.invalidPath('writer'), join(hud, 'roles', 'also.json'));
+  assert.deepEqual(both.invalidRole('writer'), { path: join(hud, 'roles', 'also.json'), reason: 'bad cli fields' });
   assert.equal(both.invalid()[1].reason, 'bad cli fields');
   fs.rmSync(root, { recursive: true, force: true });
 });
