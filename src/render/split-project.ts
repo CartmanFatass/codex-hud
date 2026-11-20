@@ -9,7 +9,7 @@ import type { LedgerSlice, SliceState, ProjectSnapshot } from '../collectors/pro
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, briefStack, clampClean, clampLines, currentRows, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
+import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, briefStack, clampClean, clampLines, currentRows, cutTicketTitle, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
   ledgerText, ledgerFoldItem, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, tryCount, tryDetailRows, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
   type ProjectPage } from './project-view.js';
 import { glyph, needsAttention, placeRows, placeTarget, radarFacts, radarRows, radarSummary, roleName, roleToday } from './control-view.js';
@@ -227,7 +227,9 @@ function ticketsPart(data: ProjectSnapshot, state: MonitorState, width: number, 
     const ticket = data.tickets.flatMap((f) => f.tickets.map((x) => ({ x, key: `${f.slug}:${basename(x.path)}` }))).find((o) => o.key === key)?.x;
     if (!key || !ticket) return { label: '', rows: [] };
     const rows = ticketRows(data, new Set([...folded, `ticket:${key}`]), width, now).filter((r) => r.item === prefix + key).slice(1);
-    return { label: monitorText(`${ticket.number} ${ticket.title}`), right: monitorText(ticket.status), rows: bare(rows) };
+    const number = monitorText(ticket.number), right = monitorText(ticket.status);
+    const room = width - visualLength(number) - 1 - (right ? visualLength(right) + 2 : 1);
+    return { label: `${number} ${cutTicketTitle(ticket.title, room)}`, right, rows: bare(rows) };
   };
   return { list, preview, start: list.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ open file  PgUp PgDn scroll  esc back  ? help' };
 }

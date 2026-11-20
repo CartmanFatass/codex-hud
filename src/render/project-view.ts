@@ -83,8 +83,11 @@ export function homeProgressRows(data: ProjectSnapshot | undefined, width: numbe
     rows.push({ ...section(`${t('Tickets')} · ${monitorText(feature.slug)}`, width,
       t('{done}/{total} done', { done, total: feature.tickets.length })), item: `home-progress:${id}` });
     const cut = open.length > slots && slots > 2, shown = open.slice(0, cut ? slots - 1 : slots);
-    for (const ticket of shown) rows.push(row(pair(
-      `  ${monitorText(ticket.number + ' ' + ticket.title)}`, theme.board.muted(t(ticket.state)), width), id));
+    for (const ticket of shown) {
+      const right = theme.board.muted(t(ticket.state)), lead = `  ${monitorText(ticket.number)} `;
+      const room = width - visualLength(lead) - visualLength(right) - 1;
+      rows.push(row(pair(`${lead}${cutTicketTitle(ticket.title, room)}`, right, width), id));
+    }
     if (cut) rows.push(row('  ' + theme.board.muted(t('+{n} more', { n: open.length - shown.length })), id));
   }
   return rows;
@@ -377,6 +380,11 @@ export function dateText(at: number, now: number): string {
 export function clampLines(text: string, room: number, max: number) {
   return clampClean(monitorText(text), room, max);
 }
+/** Cut a ticket's title to `room` cells at a word end (Chinese at a character), falling back to cell cut when not even the first word fits. */
+export const cutTicketTitle = (title: string, room: number) => {
+  const clean = monitorText(title);
+  return room > 0 ? cutWords(clean, room) || clean : clean;
+};
 /** `clampLines` for text already through `monitorText`. */
 export function clampClean(body: string, room: number, max: number) {
   const lines = flowLines(body, Math.max(1, room)), more = lines.length > max;
@@ -465,8 +473,10 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
       !known && lane !== 'you' ? theme.board.muted(monitorText(ticket.status)) : '',
       theme.board.muted(`${ticket.checked}/${ticket.total}`),
     ].filter(Boolean).join('  ');
-    const title = monitorText(`${ticket.number} ${ticket.title}`), tid = `ticket:${feature.slug}:${basename(ticket.path)}`, at = { item: `project:fold:${tid}`, files: [ticket.path] };
-    rows.push({ text: pair(`  ${lane === 'you' ? theme.board.attention('?') : ticketGlyph(ticket)} ${theme.board.muted(fit(codes.get(feature.slug)!, column))} ${dropped ? theme.board.muted(title) : title}`, right, width), ...at });
+    const lead = `  ${lane === 'you' ? theme.board.attention('?') : ticketGlyph(ticket)} ${theme.board.muted(fit(codes.get(feature.slug)!, column))} `;
+    const number = monitorText(ticket.number), room = width - visualLength(lead) - visualLength(number) - 1 - (right ? visualLength(right) + 1 : 0);
+    const title = `${number} ${cutTicketTitle(ticket.title, room)}`, tid = `ticket:${feature.slug}:${basename(ticket.path)}`, at = { item: `project:fold:${tid}`, files: [ticket.path] };
+    rows.push({ text: pair(`${lead}${dropped ? theme.board.muted(title) : title}`, right, width), ...at });
     // For you: the latest comment is why, under the row. Enter shows what is checked and the whole comment here; o opens the file.
     const sub = (text: string) => rows.push({ text: fit(text, width), ...at });
     if (!folded.has(tid)) return lane === 'you' && ticket.comment ? sub(`      ${theme.board.muted(`${mark('“', '"')}${clampLines(ticket.comment, width - 9, 1).lines[0]}${mark('”', '"')}`)}`) : undefined;

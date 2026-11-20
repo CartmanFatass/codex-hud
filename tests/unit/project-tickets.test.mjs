@@ -7,6 +7,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import { ticketFixture, ticketFrames, ticketVocabulary } from '../fixtures/project-tickets.mjs';
 import { plain, onPage, NOW, TREE } from '../fixtures/project-page.mjs';
 import { initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
+import { homeProgressRows } from '../../dist/render/project-view.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -256,4 +257,57 @@ test('tickets reuse only the newest 64 job directories, even when an older match
   const opened = calls.openSync.map((a) => String(a[0])).filter((p) => p.includes('/jobs/'));
   assert.equal(new Set(opened.map((p) => p.match(/\/jobs\/(j[0-9a-f]+)\//)[1])).size, 64);
   assert.ok(opened.every((p) => /\/(job|STATUS)\.json$/.test(p)));
+});
+test('40-column Tickets frame (EN and ZH) cuts titles at whole words or CJK characters, falling back to cell cut only when the first word cannot fit', async (t) => {
+  const f = await fixture(t), wide = /[\u2e80-\u9fff\uff00-\uffef]/;
+  // Build tickets whose first word fits at 40 columns (English), Chinese titles, and a long first word that must fall back to cell cut.
+  f.issue('native-tree', '20', 'words-triage', 'Panel layout needs triage soon', 'needs-triage');
+  f.issue('native-tree', '21', 'words-human', 'Brief ready for human review', 'ready-for-human');
+  f.issue('native-tree', '22', 'cjk-info', '工单标题中文截断验证需要更多信息', 'needs-info');
+  f.issue('native-tree', '23', 'long-word', 'Supercalifragilisticexpialidocious', 'needs-info');
+  const data = await f.collector.collect(true, f.board, NOW + 6);
+  const byNumber = new Map(data.tickets.flatMap((feat) => feat.tickets).map((tk) => [tk.number, tk.title]));
+  const checkCut = (line, num, title) => {
+    const match = new RegExp(`\\b${num} ([^\\n]*?)…`).exec(line);
+    if (!match) return;
+    const prefix = match[1];
+    assert.ok(prefix.length > 0, `non-empty title for ${num}: ${line}`);
+    const first = title.split(' ')[0];
+    // Whole word (next char in full title is a space) or CJK character before `…`, unless even the first word does not fit.
+    const wholeWord = title.startsWith(prefix) && title[prefix.length] === ' ';
+    const cjk = wide.test(prefix.at(-1) ?? '') || wide.test(title[prefix.length] ?? '');
+    if (visualLength(first) < visualLength(prefix) + 1) assert.ok(wholeWord || cjk, `title cut inside a word for ${num}: ${line}`);
+  };
+  for (const lang of ['en', 'zh']) {
+    for (const layout of ['classic', 'split']) {
+      const state = onPage('tickets', { panelLayout: layout });
+      const frame = f.render(40, lang, state, data);
+      const lines = plain(frame);
+      for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
+      for (const line of lines) {
+        const num = /^  \S \S+ (\d+) /.exec(line)?.[1];
+        if (num && byNumber.has(num)) checkCut(line, num, byNumber.get(num));
+      }
+      const joined = lines.join('\n');
+      assert.match(joined, /\? nt 10 Vocabulary…  needs-triage  0\/1/);
+      assert.match(joined, /\? nt 11 Vocabulary…    needs-info  0\/1/);
+      assert.match(joined, /\? nt 12 Vocabula… ready-for-human  0\/1/, 'first word longer than 9-cell room falls back to cell cut');
+      assert.match(joined, /\? nt 20 Panel…       needs-triage  0\/1/);
+      assert.match(joined, /\? nt 21 Brief…    ready-for-human  0\/1/);
+      assert.match(joined, /\? nt 22 工单标题中文…  needs-info  0\/1/);
+      assert.match(joined, /\? nt 23 Supercalifrag… needs-info  0\/1/);
+      if (lang === 'en') assert.match(joined, /◐ nt 09 Vocabulary…       working  0\/1/);
+    }
+    // Split preview rule for a selected long-titled ticket cuts at a word boundary too.
+    const previewed = plain(f.render(40, lang, onPage('tickets', { panelLayout: 'split', projectCursor: 'project:tk:native-tree:12-ready-for-human.md' }), data)).join('\n');
+    assert.match(previewed, /^12 Vocabulary… ─+ ready-for-human$/m);
+  }
+  // Home's open-tickets rows cut at a word boundary when narrow, and fall back to cell cut when the first word cannot fit.
+  const homeLines = homeProgressRows(data, 28, 30, false).map((r) => stripAnsi(r.text));
+  for (const line of homeLines) {
+    assert.equal(visualLength(line), 28, line);
+    const num = /^  (\d+) /.exec(line)?.[1];
+    if (num && byNumber.has(num)) checkCut(line, num, byNumber.get(num));
+  }
+  assert.ok(homeLines.some((l) => /^  09 Vocabulary… +working$/.test(l)));
 });
