@@ -2,7 +2,7 @@
  * Inbox project layout (PROJECT-UX direction C, `.scratch/project-layouts/spec.md`):
  * ranked Needs you, Running, `last accepted` line and page rows on the hub; To try (every milestone, newest first),
  * Blocked, Working, Next and Done folded to one row on Progress; Needs you / Running / Quiet on the Projects list.
- * Control plane and Tickets stay Timeline's. Pure.
+ * Tickets stay Timeline's; role alerts link to Control. Pure.
  */
 import { SLICE_STATES, type ActiveJob, type LedgerSlice, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
@@ -15,8 +15,8 @@ import {
   pageSummary, progressSegments, projectFoldedSet, projectOrder, roleInk, sinceText, sliceInk, stacked, ticketRows,
   tryCount, tryDetailRows, trySelectionMark, trySentence, unlisted, unsliced, waitingRows, type ProjectPage,
 } from './project-view.js';
-import { glyph, needsAttention, roleName } from './control-view.js';
-import { controlPreview, hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
+import { glyph, roleName } from './control-view.js';
+import { inboxRolePreview, hubTryRows, slicePreview, type Part, type Shown } from './split-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { jobSentenceLine, labelSummary, workCardDetail } from './work-card.js';
 import { boardRow, mark, minuteAge, pack, section } from './workboard-rows.js';
@@ -141,7 +141,7 @@ function hubPageRows(data: ProjectSnapshot, width: number, now: number, withMark
   const shown = PROJECT_PAGES.filter((p) => p !== 'tickets' || data.tickets?.length);
   const col = Math.max(...shown.map((p) => visualLength(t(PAGE_WORD[p])))) + 1, space = Math.max(1, width - col - (withMarks ? 2 : 0));
   const markOf = (page: ProjectPage) => !withMarks ? '' : (page === 'progress' && cur.counts.working ? theme.board.active(mark('◐', '@'))
-    : (page === 'tickets' && tickets.some(asksYou)) || (page === 'control' && data.roles.some(needsAttention)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
+    : (page === 'tickets' && tickets.some(asksYou)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
     : muted(mark('○', 'o'))) + ' ';
   return shown.map((page) => {
     const facts = pageSummary(page, data, now);
@@ -210,8 +210,8 @@ export function inboxHubPart(input: MonitorData, data: ProjectSnapshot, state: M
     }
     const roleId = /^inbox:role:(.+)$/.exec(cursor ?? '')?.[1];
     if (roleId) {
-      const shownRole = controlPreview(data, width, now)(`project:role:${roleId}`);
-      return { ...shownRole, rows: bare(shownRole.rows), hints: '↑↓ move  ⏎ open file  ? help  ←→ tab  [ ] project' };
+      const shownRole = inboxRolePreview(data, width, now)(`project:role:${roleId}`);
+      return { ...shownRole, rows: bare(shownRole.rows), hints: '↑↓ move  ⏎ Control  o open file  ? help  ←→ tab  [ ] project' };
     }
     if (cursor === 'project:fold:inbox:more') return { label: t('Needs you'), right: waitFacts(data), rows: bare(needs.slice(NEEDS_CAP).flatMap((n) => n.rows)) };
     if (cursor?.startsWith('project:slice:') || cursor?.startsWith('project:job:')) {

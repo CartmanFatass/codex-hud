@@ -15,6 +15,7 @@ import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
 import type { TryAction, TryTarget } from '../collectors/try-records.js';
 import { mainTabOf, type MainTab } from './main-tabs.js';
+import type { ControlNavigation } from './control-navigation.js';
 import type { ExpPage } from './exp-view.js';
 import type { ExpData, ExpEdit } from '../exp-config.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
@@ -51,6 +52,7 @@ export interface MonitorState {
   mainTab?: MainTab;
   experiments?: boolean;
   expPage?: ExpPage;
+  controlNav?: ControlNavigation;
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
   /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
@@ -132,8 +134,6 @@ export interface MonitorRow {
   key?: string;
   controls?: RowControl[];
   files?: string[];
-  /** Display-only detail row that can pin below the Control plane's scrolling list. */
-  placePreview?: true;
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;
   tryTarget?: TryTarget;
@@ -183,12 +183,16 @@ export interface MonitorFrame {
   projects?: ProjectChoice[];
   helpPage?: { count: number; total: number };
   expData?: ExpData;
+  /** Root whose Project rows are painted (may lag the requested Project root). */
+  projectDisplayRoot?: string;
 }
 export interface MonitorData {
   hud?: HudData & HudDelegationData;
   tree: SubagentTree;
   workboard?: WorkboardSnapshot;
   project?: ProjectSnapshot;
+  projectDisplayRoot?: string;
+  projectWaiting?: number;
   tryMarks?: ReadonlyMap<string, TryAction>;
   backupSkills?: BackupSkill[] | null;
   /** The shown project's own name, for the hub's top row. */

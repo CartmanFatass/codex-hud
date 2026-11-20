@@ -51,7 +51,7 @@ test('Inbox leaves Home, Control plane and Tickets identical to Timeline in both
     for (const [label, extra, snap] of [
       ['Home', { mainTab: 'home' }, busy.data],
       ['Tickets', { mainTab: 'project', projectPage: 'tickets' }, busy.data],
-      ['Control plane', { mainTab: 'project', projectPage: 'control' }, control],
+      ['Control plane', { mainTab: 'control' }, control],
     ]) {
       assert.deepEqual(
         plain(busy.render(40, 'en', 36, base({ ...extra, projectLayout: 'inbox' }), snap)),

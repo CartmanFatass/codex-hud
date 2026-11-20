@@ -1,6 +1,6 @@
 {
   "home-80-en": [
-    " Home ?1  Project                                                      models on",
+    " Home ?1  Project  Control                                             models on",
     "",
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -42,7 +42,7 @@
     "✓ 3 done today     ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all"
   ],
   "home-80-zh": [
-    " 首页 ?1  项目                                                           模型 开",
+    " 首页 ?1  项目  控制                                                     模型 开",
     "",
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -84,7 +84,7 @@
     "✓ 3 今日完成     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置"
   ],
   "older-80-en": [
-    " Home ?1  Project                                                      models on",
+    " Home ?1  Project  Control                                             models on",
     "",
     "? imp · R5-UX                                                          asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -126,7 +126,7 @@
     "✓ 3 done today     ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all"
   ],
   "older-80-zh": [
-    " 首页 ?1  项目                                                           模型 开",
+    " 首页 ?1  项目  控制                                                     模型 开",
     "",
     "? imp · R5-UX                                                       提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -387,7 +387,8 @@
     "/       filter rows live                  ◇ answer as proposed",
     "⏎       expand / collapse in place        ┃ body of a card",
     "o       open the file in $EDITOR          dim rows are older ones, shown with a",
-    "[ ]     switch project (Project)          lavender words are marked by the model",
+    "[ ]     Project/Control: switch           lavender words are marked by the model",
+    "        project",
     "Space   mark a to-try row",
     "y n     accept / flag the marked",
     "        to-try rows",
@@ -400,7 +401,7 @@
     "K J     place: move up, move down",
     "x       place: clear its exhausted",
     "        mark",
-    "r       place: refresh model lists",
+    "r       Control: refresh model lists",
     "g       job: go to its herdr tab",
     "1-4 d   job: answer its open question",
     "X       job: stop it (y confirms)",
@@ -417,16 +418,15 @@
     "Esc     back",
     "",
     "In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back",
-    "On the Control plane c/C applies the next/previous role preset; p m e i Del K J",
-    "x change the place under the cursor (m picks a model, r refreshes model lists):",
-    "written to $HUD_HOME/roles, used by the next job; a project role file in force",
-    "is only opened",
+    "On Control, Enter opens a fold or chain. Edits in $HUD_HOME/roles take effect on",
+    "the next job; project role files are read-only (o opens them).",
     "In the Inspector ⏎ opens the file",
     "click selects · again expands · wheel scrolls",
     "",
     "Backup skills ─────────────────────────────────────────────────────────────── 17",
     "  Matt Pocock skills kept as backups, not installed. Ask the main session to",
     "  read one when you want it.",
+    "",
     "                                                             ↑↓ scroll  esc back"
   ],
   "changes-80-en": [
@@ -472,7 +472,7 @@
     "                                                             ↑↓ scroll  esc back"
   ],
   "home-120-en": [
-    " Home ?1  Project                                                                                              models on",
+    " Home ?1  Project  Control                                                                                     models on",
     "",
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -514,7 +514,7 @@
     "✓ 3 done today                         ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "home-120-zh": [
-    " 首页 ?1  项目                                                                                                   模型 开",
+    " 首页 ?1  项目  控制                                                                                             模型 开",
     "",
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -556,7 +556,7 @@
     "✓ 3 今日完成                                    ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "older-120-en": [
-    " Home ?1  Project                                                                                              models on",
+    " Home ?1  Project  Control                                                                                     models on",
     "",
     "? imp · R5-UX                                                                                                  asking 4m",
     "┃ Keep the v1 shim for one more release?",
@@ -598,7 +598,7 @@
     "✓ 3 done today                         ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "older-120-zh": [
-    " 首页 ?1  项目                                                                                                   模型 开",
+    " 首页 ?1  项目  控制                                                                                             模型 开",
     "",
     "? imp · R5-UX                                                                                               提问中 4分钟",
     "┃ Keep the v1 shim for one more release?",
@@ -859,7 +859,7 @@
     "/       filter rows live                                      ◇ answer as proposed",
     "⏎       expand / collapse in place                            ┃ body of a card",
     "o       open the file in $EDITOR                              dim rows are older ones, shown with a",
-    "[ ]     switch project (Project)                              lavender words are marked by the model",
+    "[ ]     Project/Control: switch project                       lavender words are marked by the model",
     "Space   mark a to-try row",
     "y n     accept / flag the marked to-try rows",
     "c C     role: next / previous preset",
@@ -869,7 +869,7 @@
     "i Del   place: add, remove",
     "K J     place: move up, move down",
     "x       place: clear its exhausted mark",
-    "r       place: refresh model lists",
+    "r       Control: refresh model lists",
     "g       job: go to its herdr tab",
     "1-4 d   job: answer its open question",
     "X       job: stop it (y confirms)",
@@ -883,9 +883,8 @@
     "Esc     back",
     "",
     "In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back",
-    "On the Control plane c/C applies the next/previous role preset; p m e i Del K J x change the place under the cursor (m",
-    "picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force",
-    "is only opened",
+    "On Control, Enter opens a fold or chain. Edits in $HUD_HOME/roles take effect on the next job; project role files are",
+    "read-only (o opens them).",
     "In the Inspector ⏎ opens the file",
     "click selects · again expands · wheel scrolls",
     "",
@@ -899,6 +898,7 @@
     "  tdd                            Red-green-refactor at the seams the spec agreed",
     "  diagnosing-bugs                A feedback loop first, then reproduce, hypothesise and fix",
     "  triage                         Sort issues others filed: reproduce, dedupe, turn into agent-ready briefs",
+    "  prototype                      Throwaway code that answers one design question, logic or UI",
     "                                                                                                     ↑↓ scroll  esc back"
   ],
   "changes-120-en": [

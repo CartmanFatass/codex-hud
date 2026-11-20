@@ -239,14 +239,11 @@ test('live panel spawns list commands only on Control plane open and r refresh, 
     `import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};\nawait runLivePage();\nprocess.exit(0);\n`
   );
   const place = JSON.stringify(
-    // The healthy roles start folded on the Control plane: they are open here, and the page opens with the cursor on imp's row.
     {
       state: {
         ...initialMonitorState(),
         mainTab: 'project',
-        projectCursor: 'project:page:control',
-        projectFolded: new Set(['agents', 'files']),
-        projectSaved: { control: { cursor: 'project:role:imp:0', scroll: 0 } },
+        controlNav: { projectCursor: 'project:role:imp:0', projectFolded: new Set(['agents', 'files', 'usage', 'role:imp']) },
       },
     },
     (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v)
@@ -281,24 +278,26 @@ test('live panel spawns list commands only on Control plane open and r refresh, 
   };
 
   // Hub opens first: wait across several refreshMs=60ms ticks -> 0 spawns.
-  await until(() => stripAnsi(out).includes('Control plane'), 'Project hub rendered');
+  await until(() => stripAnsi(out).includes('Progress'), 'Project hub rendered');
   await new Promise((r) => setTimeout(r, 300));
   assert.deepEqual(spawns(), []);
 
-  // Open Control plane (Enter on project:page:control) -> spawns pi, agy, grok once each.
-  child.stdin.write('\r');
-  await until(() => stripAnsi(out).includes('Selected place') && spawns().length === 3, 'Control plane opened & discovered');
+  // Open Control with Tab -> spawns pi, agy, grok once each.
+  child.stdin.write('\t');
+  await until(() => /1 ◉ pi/.test(stripAnsi(out)) && spawns().length === 3, 'Control opened & discovered');
   assert.deepEqual([...spawns()].sort(), ['agy', 'grok', 'pi']);
 
   // Sit through multiple refresh ticks -> still 0 extra spawns.
   await new Promise((r) => setTimeout(r, 350));
   assert.equal(spawns().length, 3);
 
-  // Leave Control plane and open it again within 1 day -> cache hit, 0 extra spawns.
-  child.stdin.write('\x1b');
-  await until(() => stripAnsi(out).includes('Progress'), 'back to hub');
-  child.stdin.write('\r');
-  await until(() => stripAnsi(out).includes('Selected place'), 'Control plane re-opened');
+  // Leave Control and open it again within 1 day -> cache hit, 0 extra spawns.
+  const left = out.length;
+  child.stdin.write('\x1b[D');
+  await until(() => stripAnsi(out.slice(left)).includes('Progress'), 'back to hub');
+  const back = out.length;
+  child.stdin.write('\t');
+  await until(() => /1 ◉ pi/.test(stripAnsi(out.slice(back))), 'Control re-opened');
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(spawns().length, 3);
 

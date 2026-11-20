@@ -181,7 +181,7 @@ place. Decisions hide after 30 minutes, departures after two hours. Enter toggle
 cards/questions/decisions; only the newest current settled card opens automatically,
 and explicit choices win. All states and lifetimes are presentation, not acceptance.
 
-### 4.6 Project and Changes
+### 4.6 Project, Control and Changes
 
 `ProjectCollector` reads STATE, spec milestone, reviews, roles/convention/instructions,
 key-presence booleans, local tickets, current jobs and Git/worktree facts. Full reads
@@ -213,7 +213,7 @@ Project opens files through the existing `$EDITOR` herdr-tab action.
 one escaped, script-free page out; `cli/board.ts` collects once with a fresh `ProjectCollector` and the stored `TryBriefs`,
 and writes with `writePrivateFile`). No model call, no server; its text and sections are in the reference.
 
-The Control plane page is where the owner switches where each role runs.
+Control is a top-level tab. It follows Project's selected root, but has its own cursor, folds and scroll. Its narrow `ProjectCollector` mode reads only that root's Control facts (no STATE, tickets or Git worktree/status collection) and caches them separately from Project's snapshot. Unlike Project's hub, Control never paints the previous root's snapshot while a new root loads. Local model list discovery starts only on entering Control or pressing `r` there, not on Home or on a collection tick.
 `roles/role-control.ts` has both halves: `controlFacts` (read-only, called by the collector:
 each role's places with in-use/standby/exhausted/missing and the harnesses on PATH) and
 `editPlaces` (the panel's only write). A key on a place row becomes a `role-edit` action
@@ -374,8 +374,8 @@ panels on Save and containing-window resize, not unrelated saves or border drags
 | Path under HUD home | Contents / writer |
 |---|---|
 | `jobs/<job>/` | Plain job/brief/STATUS/report/QA and session links; MCP, pi-roles, CLI supervisor or browser wrapper |
-| `roles/`, `hud-convention.md` | Owner overrides; read by roster; `roles/<role>.json` places are also written by the Control plane page |
-| `exhausted.json` | Quota marks on places until the parsed reset (1 minute to 24 hours; 1 hour by default); cleared by the Control plane page |
+| `roles/`, `hud-convention.md` | Owner overrides; read by roster; `roles/<role>.json` places are also written by the Control tab |
+| `exhausted.json` | Quota marks on places until the parsed reset (1 minute to 24 hours; 1 hour by default); cleared by the Control tab |
 | `credentials.env`, `config.json` | Owner keys and Decision API/configuration |
 | `display/state/<session>.json` | Active Codex bar/panel snapshot; atomic inode ownership prevents outgoing writers deleting replacements |
 | `display/state/claude-quota.json` | Last reported quota windows only; optional private cache from Claude statusline stdin |

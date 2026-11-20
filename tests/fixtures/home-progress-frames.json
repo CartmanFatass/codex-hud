@@ -1,6 +1,6 @@
 {
   "home-52-en-tall": [
-    " Home ?1  Project ?2                      models off",
+    " Home ?1  Project ?2  Control             models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -40,7 +40,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect"
   ],
   "home-52-en-tickets-short": [
-    " Home ?1  Project ?2                      models off",
+    " Home ?1  Project ?2  Control             models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -75,7 +75,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect"
   ],
   "home-52-en-legend-short": [
-    " Home ?1  Project ?2                      models off",
+    " Home ?1  Project ?2  Control             models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -107,7 +107,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect"
   ],
   "home-52-en-bar-short": [
-    " Home ?1  Project ?2                      models off",
+    " Home ?1  Project ?2  Control             models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -137,7 +137,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect"
   ],
   "home-52-en-gone": [
-    " Home ?1  Project ?2                      models off",
+    " Home ?1  Project ?2  Control             models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -165,7 +165,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect"
   ],
   "home-52-zh-tall": [
-    " 首页 ?1  项目 ?2                            模型 关",
+    " 首页 ?1  项目 ?2  控制                      模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -205,7 +205,7 @@
     "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
   ],
   "home-52-zh-tickets-short": [
-    " 首页 ?1  项目 ?2                            模型 关",
+    " 首页 ?1  项目 ?2  控制                      模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -240,7 +240,7 @@
     "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
   ],
   "home-52-zh-legend-short": [
-    " 首页 ?1  项目 ?2                            模型 关",
+    " 首页 ?1  项目 ?2  控制                      模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -272,7 +272,7 @@
     "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
   ],
   "home-52-zh-bar-short": [
-    " 首页 ?1  项目 ?2                            模型 关",
+    " 首页 ?1  项目 ?2  控制                      模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -302,7 +302,7 @@
     "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
   ],
   "home-52-zh-gone": [
-    " 首页 ?1  项目 ?2                            模型 关",
+    " 首页 ?1  项目 ?2  控制                      模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -330,7 +330,7 @@
     "     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动"
   ],
   "home-80-en-tall": [
-    " Home ?1  Project ?2                                                  models off",
+    " Home ?1  Project ?2  Control                                         models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -370,7 +370,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
   ],
   "home-80-en-tickets-short": [
-    " Home ?1  Project ?2                                                  models off",
+    " Home ?1  Project ?2  Control                                         models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -405,7 +405,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
   ],
   "home-80-en-legend-short": [
-    " Home ?1  Project ?2                                                  models off",
+    " Home ?1  Project ?2  Control                                         models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -437,7 +437,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
   ],
   "home-80-en-bar-short": [
-    " Home ?1  Project ?2                                                  models off",
+    " Home ?1  Project ?2  Control                                         models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -467,7 +467,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
   ],
   "home-80-en-gone": [
-    " Home ?1  Project ?2                                                  models off",
+    " Home ?1  Project ?2  Control                                         models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -495,7 +495,7 @@
     "       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings"
   ],
   "home-80-zh-tall": [
-    " 首页 ?1  项目 ?2                                                        模型 关",
+    " 首页 ?1  项目 ?2  控制                                                  模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -535,7 +535,7 @@
     "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "home-80-zh-tickets-short": [
-    " 首页 ?1  项目 ?2                                                        模型 关",
+    " 首页 ?1  项目 ?2  控制                                                  模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -570,7 +570,7 @@
     "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "home-80-zh-legend-short": [
-    " 首页 ?1  项目 ?2                                                        模型 关",
+    " 首页 ?1  项目 ?2  控制                                                  模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -602,7 +602,7 @@
     "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "home-80-zh-bar-short": [
-    " 首页 ?1  项目 ?2                                                        模型 关",
+    " 首页 ?1  项目 ?2  控制                                                  模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -632,7 +632,7 @@
     "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "home-80-zh-gone": [
-    " 首页 ?1  项目 ?2                                                        模型 关",
+    " 首页 ?1  项目 ?2  控制                                                  模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -660,7 +660,7 @@
     "        ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "home-120-en-tall": [
-    " Home ?1  Project ?2                                                                                          models off",
+    " Home ?1  Project ?2  Control                                                                                 models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -700,7 +700,7 @@
     "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "home-120-en-tickets-short": [
-    " Home ?1  Project ?2                                                                                          models off",
+    " Home ?1  Project ?2  Control                                                                                 models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -735,7 +735,7 @@
     "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "home-120-en-legend-short": [
-    " Home ?1  Project ?2                                                                                          models off",
+    " Home ?1  Project ?2  Control                                                                                 models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -767,7 +767,7 @@
     "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "home-120-en-bar-short": [
-    " Home ?1  Project ?2                                                                                          models off",
+    " Home ?1  Project ?2  Control                                                                                 models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -797,7 +797,7 @@
     "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "home-120-en-gone": [
-    " Home ?1  Project ?2                                                                                          models off",
+    " Home ?1  Project ?2  Control                                                                                 models off",
     "",
     "? 3 waiting for you · 3 running",
     "",
@@ -825,7 +825,7 @@
     "                                       ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "home-120-zh-tall": [
-    " 首页 ?1  项目 ?2                                                                                                模型 关",
+    " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -865,7 +865,7 @@
     "                                                ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "home-120-zh-tickets-short": [
-    " 首页 ?1  项目 ?2                                                                                                模型 关",
+    " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -900,7 +900,7 @@
     "                                                ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "home-120-zh-legend-short": [
-    " 首页 ?1  项目 ?2                                                                                                模型 关",
+    " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -932,7 +932,7 @@
     "                                                ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "home-120-zh-bar-short": [
-    " 首页 ?1  项目 ?2                                                                                                模型 关",
+    " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",
@@ -962,7 +962,7 @@
     "                                                ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "home-120-zh-gone": [
-    " 首页 ?1  项目 ?2                                                                                                模型 关",
+    " 首页 ?1  项目 ?2  控制                                                                                          模型 关",
     "",
     "? 3 项等你处理 · 3 运行中",
     "",

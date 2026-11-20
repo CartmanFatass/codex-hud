@@ -232,7 +232,7 @@ test('Home shows questions, lanes with cards, then decisions; Enter reveals the 
     const decided = home.findIndex((l) => l.startsWith('Decided for you'));
     assert.ok(at < lane && lane < decided);
     assert.match(home[lane + 1], /thin job cards/);
-    assert.match(home[0], /^ Home \?1\s+Project\s+models on$/);
+    assert.match(home[0], /^ Home \?1\s+Project\s+Control\s+models on$/);
     assert.match(home[decided + 1], /^◆ PANEL-THIN · imp q2 .*…/);
     assert.match(home[decided + 1], /\d+m\s*$/);
     assert.equal(home[decided + 2].trim(), '');
@@ -312,8 +312,8 @@ test('Home Enter toggles cards, decisions and lanes; navigation opens Project; a
   assert.doesNotMatch(text(folded), /thin job cards/);
   assert.match(text(press(folded, '\r')), /thin job cards/);
   const before = rendered(card).state;
-  for (const key of ['\x1b[D', '\x1b[C', '\t', '\x1b[Z']) {
-    assert.equal(press(before, key).mainTab, 'project');
+  for (const [key, tab] of [['\x1b[D', 'control'], ['\x1b[C', 'project'], ['\t', 'project'], ['\x1b[Z', 'control']]) {
+    assert.equal(press(before, key).mainTab, tab);
     assert.deepEqual(press(before, key).homeTarget, before.homeTarget);
   }
   for (const digit of ['1', '2']) assert.equal(press(before, digit).mainTab, 'home', 'the digits switch no tab');

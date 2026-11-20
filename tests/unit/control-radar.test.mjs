@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { collectControlRadar } from '../../dist/collectors/control-radar.js';
 import { recordClaudeQuota } from '../../dist/statusline-parity/quota-cache.js';
 import { visualLength } from '../../dist/render/colors.js';
-import { NOW, onPage, plain, projectFixture, richControl } from '../fixtures/project-page.mjs';
+import { NOW, onControl, plain, projectFixture, richControl } from '../fixtures/project-page.mjs';
 
 const MINUTE = 60_000, DAY = 86_400_000;
 const now = new Date(2030, 8, 24, 12).getTime(), iso = (at) => new Date(at).toISOString();
@@ -129,19 +129,18 @@ test('full Project collection and both Control views include radar without chang
     piToday: { costUsd: 1.42, tokens: 184000, sessions: 2 },
     roleStats: { imp: { total: 6, ok: 5, failed: 1, quietEscalated: 1, avgMinutes: 6 } },
   } };
-  const split = (projectCursor) => onPage('control', { panelLayout: 'split', projectCursor });
+  const split = (projectCursor, projectFolded) => onControl({ projectCursor, projectFolded }, { panelLayout: 'split' });
   for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
     const render = (snapshot, state) => f.render(width, lang, state, 80, snapshot);
     for (const state of ['control', split('project:role:imp')]) assert.deepEqual(render(empty, state).lines, render(baseline, state).lines);
-    const classic = render(rich, 'control'), radar = render(rich, split('split:radar')), role = render(rich, split('project:role:imp'));
+    const classic = render(rich, 'control'), radar = render(rich, split('project:fold:usage', new Set(['healthy', 'files', 'agents']))), role = render(rich, split('project:role:imp'));
     for (const frame of [classic, radar, role]) assert.ok(frame.lines.every((line) => visualLength(line) === width));
     const lines = plain(classic), i = lines.findIndex((line) => /^(Usage|用量)/.test(line));
-    assert.ok(i >= 0 && i < lines.findIndex((line) => /^(Harnesses|宿主) ─/.test(line)), `${lang} ${width}\n${lines.join('\n')}`);
-    assert.match(lines.join('\n'), /68%.*82%/);
-    assert.match(lines.join('\n'), /\$1\.42 \(184K (tok|词元)\)/);
-    assert.match(lines.join('\n'), /5✓ 1✗/);
+    assert.ok(i === -1 && lines.some((line) => /^▸ (Usage|用量) .*68%/.test(line)), lines.join('\n'));
     const preview = plain(radar).join('\n');
-    assert.equal(radar.state.projectCursor, 'split:radar');
+    assert.equal(radar.state.controlNav.projectCursor, 'project:fold:usage');
+    assert.match(preview, /\$1\.42.*184K/);
+    assert.match(preview, /5 ok · 1 failed|5 成功 · 1 失败/);
     assert.match(preview, /Quota|额度/);
     assert.match(preview, /2026-11-12\s+12:36Z/);
     assert.match(preview, /Pi today|pi 今日/);

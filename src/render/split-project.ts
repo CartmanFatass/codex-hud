@@ -1,7 +1,7 @@
 /**
  * Split Project: the hub and each page as a list over a preview of the cursor row. The hub lists Waiting for you and the pages
  * (Progress previews Now, To try and Latest, so the common question needs no Enter); Progress is one ledger list with the cursor
- * slice explained underneath; the Control plane lists roles with the cursor role's places below, where the place keys act.
+ * slice explained underneath. The standalone Control tab also uses the shared list/preview machinery here.
  * Rows keep Classic's item ids where Classic acts on them (a page, a waiting item, a file, a place), so Enter, `o` and the place
  * keys are the ones Classic has.
  */
@@ -12,13 +12,13 @@ import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, briefStack, clampClean, clampLines, currentRows, cutTicketTitle, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
   ledgerText, ledgerFoldItem, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, tryCount, tryDetailRows, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
   type ProjectPage } from './project-view.js';
-import { glyph, needsAttention, placeRows, placeTarget, radarFacts, radarRows, radarSummary, roleName, roleToday } from './control-view.js';
-import { boardControlPart, boardHubPart, boardProgressPart } from './board-project.js';
+import { glyph, placeRows, placeTarget, radarFacts, roleToday } from './control-view.js';
+import { boardHubPart, boardProgressPart } from './board-project.js';
 import { inboxHubPart, inboxProgressPart } from './inbox-project.js';
 import type { TryAction } from '../collectors/try-records.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { splitItems, splitScope, splitSubValid, type SplitScene } from './split-frame.js';
-import { boardRow, kvRows, mark, minuteAge, pack, section } from './workboard-rows.js';
+import { boardRow, kvRows, mark, minuteAge, section } from './workboard-rows.js';
 import { jobSentenceRows, labelSummary, stemLines, workCardDetail } from './work-card.js';
 import { fit, flowLines, monitorText, pair } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
@@ -59,7 +59,7 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
   const waiting: MonitorRow[] = data.waiting.length ? [{ item: 'project:fold:waiting', text: pair(`${theme.board.attention('?')} ${theme.board.title(t('Waiting for you'))}`, muted(waitFacts), width) }] : [];
   const cur = currentRows(data), tickets = data.tickets.flatMap((f) => f.tickets);
   const mark_ = (page: ProjectPage) => page === 'progress' && cur.counts.working ? theme.board.active(mark('◐', '@'))
-    : (page === 'tickets' && tickets.some(asksYou)) || (page === 'control' && data.roles.some(needsAttention)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
+    : (page === 'tickets' && tickets.some(asksYou)) || (page === 'tree' && unlisted(data).length) ? theme.board.attention(page === 'tickets' ? '?' : '!')
     : muted(mark('○', 'o'));
   const pages = PROJECT_PAGES.filter((p) => p !== 'tickets' || data.tickets?.length).map((page): MonitorRow => {
     const facts = pageSummary(page, data, now), room = width - 2 - 14 - 1;
@@ -155,36 +155,12 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
 const NO_MILESTONE = /^[—–-]*$/;
 const dateText = (at: number) => new Date(at).toISOString().slice(5, 10);
 
-/** Shared Usage / Harnesses / Files list rows for Split Control plane (Timeline and Board). */
-export function controlTail(data: ProjectSnapshot, width: number): MonitorRow[] {
-  const have = data.keys.filter((k) => k[1]).length, ok = (yes: boolean) => (yes ? theme.board.success(mark('✓', '+')) : muted(mark('−', '-')));
-  const radar = radarFacts(data.radar), summary = radarSummary(radar, false), out: MonitorRow[] = [];
-  if (radar.roles.length) summary.push(t('{n} jobs', { n: radar.roles.reduce((n, [, s]) => n + s.total, 0) }));
-  if (summary.length) {
-    const left = `${muted(mark('◐', '@'))} ${t('Usage')}`;
-    while (summary.length > 1 && visualLength([left, summary.join(' · ')].join(' ')) > width) summary.pop();
-    out.push({ item: 'split:radar', text: pair(left, muted(summary.join(' · ')), width) });
-  }
-  if (data.harnesses.length) {
-    const left = `${muted(mark('▸', '>'))} ${t('Harnesses')}`, names = data.harnesses.map((h) => `${h.name} ${ok(h.ok)}`);
-    while (names.length > 1 && visualLength([left, names.join(' ')].join(' ')) > width) names.pop();
-    out.push({ item: 'split:harnesses', text: pair(left, muted(names.join(' ')), width) });
-  }
-  out.push({ item: 'split:files', text: pair(`${muted(mark('▸', '>'))} ${t('Files')}`, muted([data.keys.length && `${t('keys')} ${have}/${data.keys.length}`, `${t('browser')} ${mark(data.browser ? '✓' : '−', data.browser ? '+' : '-')}`].filter(Boolean).join(' · ')), width) });
-  return out;
-}
-/** Shared preview for Split Control plane: Usage, Harnesses, Files, or the selected role's places. */
-export function controlPreview(data: ProjectSnapshot, width: number, now: number): (cursor?: string) => Shown {
+/** Keep Inbox's role-alert preview as it was; Enter on the alert now goes to Control. */
+export function inboxRolePreview(data: ProjectSnapshot, width: number, now: number): (cursor?: string) => Shown {
   const mins = (until: number) => t('{n}m', { n: Math.max(1, Math.ceil((until - now) / 60000)) });
-  const files = data.control.filter((r) => r.label !== 'invalid'), radar = radarFacts(data.radar);
-  const ok = (yes: boolean) => (yes ? theme.board.success(mark('✓', '+')) : muted(mark('−', '-')));
+  const radar = radarFacts(data.radar);
   return (cursor?: string): Shown => {
     const role = data.roles.find((r) => `project:role:${r.role}` === cursor);
-    const plain_ = '↑↓ move  PgUp PgDn scroll  esc back  ? help';
-    if (cursor === 'split:radar') return { label: t('Usage'), rows: radarRows(radar, width, true), hints: plain_ };
-    if (cursor === 'split:harnesses') return { label: t('Harnesses'), rows: pack(data.harnesses.map((h) => `${monitorText(h.name)} ${ok(h.ok)}`), width).map((l) => plain(l, width)), hints: plain_ };
-    if (cursor === 'split:files') return { label: t('Files'), right: String(files.length + data.agents.length), rows: [...files.map((r, i) => projectItem(r.label === 'convention' ? { ...r, value: t(r.value) + ' · ' + basename(r.path!) } : r, i, '', width, now)),
-      ...data.agents.map((r, i) => projectItem(r, i, '', width, now)), ...kvRows('keys', data.keys.map(([n, p]) => `${n} ${mark(p ? '✓' : '−', p ? '+' : '-')}`).join('  '), width)], hints: '↑↓ move  ⏎ open file  PgUp PgDn scroll  esc back  ? help' };
     if (!role) return { label: '', rows: [] };
     const place = (i: number): MonitorRow[] => {
       const p = role.places[i], tag = p.state === 'exhausted' ? theme.board.attention(`${t('exhausted')}${p.until === undefined ? '' : ' ' + mins(p.until)}`) : p.state === 'missing' ? muted(t('not installed'))
@@ -196,26 +172,6 @@ export function controlPreview(data: ProjectSnapshot, width: number, now: number
       rows: [...role.places.flatMap((_, i) => place(i)), boardRow(''), ...kvRows('source file', `${t(role.source)} · ${basename(role.path)}`, width, undefined, 11),
         ...(today ? kvRows('today', roleToday(today), width, undefined, 6) : [])] };
   };
-}
-
-function controlPart(data: ProjectSnapshot, width: number, now: number): Part {
-  const col = Math.max(8, Math.min(16, Math.max(0, ...data.roles.map((r) => visualLength(roleName(r)))))), mins = (until: number) => t('{n}m', { n: Math.max(1, Math.ceil((until - now) / 60000)) });
-  const roleRows = (role: (typeof data.roles)[number], attention: boolean): MonitorRow[] => {
-    const item = `project:role:${role.role}`, dead = role.places.find((p) => p.state === 'exhausted'), next = role.places.find((p) => p.state === 'active');
-    const lead = `${glyph(!attention ? 'active' : dead ? 'exhausted' : 'missing')} ${fit(roleName(role), col)} `;
-    const rows: MonitorRow[] = dead || !next ? [{ item, text: fit(lead + (dead ? theme.board.attention(`${dead.label} ${t('exhausted')}${dead.until === undefined ? '' : ' ' + mins(dead.until)}`) : muted(t('not installed'))), width) }]
-      : placeRows(lead, next, width, ' ', '', { item }, muted);
-    if (attention && dead && next) rows.push(...placeRows(`  ${muted(`${t('next job')} ${mark('→', '>')}`)} ${glyph('active')} `, next, width, ' ', '', { item }));
-    return rows;
-  };
-  const sick = data.roles.filter(needsAttention), healthy = data.roles.filter((r) => !needsAttention(r)), invalid = data.control.filter((r) => r.label === 'invalid');
-  const list: MonitorRow[] = [];
-  if (sick.length + invalid.length) list.push(section(t('Needs attention'), width, theme.board.attention(String(sick.length + invalid.length))), ...sick.flatMap((r) => roleRows(r, true)),
-    ...invalid.map((r, i): MonitorRow => ({ item: `project:file:${r.path}:invalid:${i}`, files: r.path ? [r.path] : [], text: pair(`${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, muted(monitorText(t(r.value))), width) })), boardRow(''));
-  if (healthy.length) list.push(section(t('Roles'), width, String(healthy.length)), ...healthy.flatMap((r) => roleRows(r, false)), boardRow(''));
-  list.push(...controlTail(data, width));
-  return { list, preview: controlPreview(data, width, now), start: list.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ places  c C preset  ? help  PgUp PgDn scroll  esc back',
-    focusHints: '↑↓ place  p harness  m model  e thinking  i add  Del remove  K J move  x clear  esc back  ? help' };
 }
 
 /** Tickets: a ticket a row under its lane (as Classic), the cursor ticket's checklist and latest comment below; Enter opens its file. */
@@ -259,8 +215,12 @@ export function projectScene(input: MonitorData, state: MonitorState, board: Wor
   const layout = state.projectLayout;
   const part = !page ? (layout === 'board' ? boardHubPart(input, data, state, board, width, now) : layout === 'inbox' ? inboxHubPart(input, data, state, board, width, now) : hubPart(input, data, state, board, width, now))
     : page === 'progress' ? (layout === 'board' ? boardProgressPart(input, data, state, board, width, now) : layout === 'inbox' ? inboxProgressPart(input, data, state, board, width, now) : progressPart(input, data, state, board, width, now))
-    : page === 'control' ? (layout === 'board' ? boardControlPart(data, width, now) : controlPart(data, width, now))
     : page === 'tickets' ? ticketsPart(data, state, width, now) : factsPart(page, data, width, now);
+  return projectSplitScene(state, part, `project|${page ?? 'hub'}|${state.projectRoot ?? ''}`, !page);
+}
+
+/** Shared cursor/preview machinery; Control supplies its own navigation state and rows. */
+export function projectSplitScene(state: MonitorState, part: Part, view: string, hub = false): SplitScene {
   const items = splitItems(part.list), wait = (at?: string) => (at?.startsWith('project:wait:') && items.includes('project:fold:waiting') ? 'project:fold:waiting' : at);
   let focus = state.splitFocus === 'preview', cursor = wait(focus ? state.splitList : state.projectCursor);
   cursor = cursor && items.includes(cursor) ? cursor : part.start;
@@ -270,10 +230,10 @@ export function projectScene(input: MonitorData, state: MonitorState, board: Wor
     if (splitItems(shown.rows).includes(state.projectCursor ?? '')) state.splitSub = state.projectCursor;
     else { focus = false; cursor = wait(state.projectCursor); cursor = cursor && items.includes(cursor) ? cursor : part.start; shown = part.preview(cursor); }
   }
-  const scope = `project|${page ?? 'hub'}|${state.projectRoot ?? ''}|${cursor}`;
+  const scope = `${view}|${cursor}`;
   splitScope(state, scope);
   const sub = focus ? splitSubValid(state, shown.rows) : undefined;
-  if (!page && state.splitFocus && !sub) state.trySelection = undefined;
+  if (hub && state.splitFocus && !sub) state.trySelection = undefined;
   state.splitFocus = sub ? 'preview' : undefined;
   state.splitList = cursor;
   state.projectCursor = sub ?? cursor;

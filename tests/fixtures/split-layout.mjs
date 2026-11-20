@@ -7,7 +7,7 @@ import { renderMonitor, initialMonitorState } from '../../dist/render/monitor.js
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { ticketFixture } from './project-tickets.mjs';
-import { NOW, TREE, plain, onPage, richProgress, richControl } from './project-page.mjs';
+import { NOW, TREE, plain, onControl, richProgress, richControl } from './project-page.mjs';
 
 export const split = (extra) => ({ ...initialMonitorState(), panelLayout: 'split', ...extra });
 /** `idle`: every job has settled and nothing asks, so Home's list is what finished plus Waiting, Decided and Progress. */
@@ -53,7 +53,10 @@ export function splitFrames(busy, idle) {
     frames[`hub-40-${lang}`] = plain(busy.render(40, lang, 40, page(undefined), busy.control));
     frames[`hub-short-40-${lang}`] = plain(busy.render(40, lang, 24, page(undefined), busy.control));
     frames[`progress-40-${lang}`] = plain(busy.render(40, lang, 40, page('progress'), busy.rich));
-    frames[`control-40-${lang}`] = plain(busy.render(40, lang, 40, page('control'), { ...busy.control, radar: undefined }));
+    const control = { ...busy.control, radar: undefined };
+    frames[`control-40-${lang}`] = plain(busy.render(40, lang, 40, onControl(undefined, split({ mainTab: 'control' })), control));
+    const unfolded = onControl({ projectCursor: 'project:role:reviewer', projectFolded: new Set(['agents', 'usage', 'files']) }, split({ mainTab: 'control' }));
+    frames[`control-unfolded-40-${lang}`] = plain(busy.render(40, lang, 40, unfolded, control));
     frames[`tickets-40-${lang}`] = plain(busy.render(40, lang, 40, page('tickets')));
     frames[`tree-40-${lang}`] = plain(busy.render(40, lang, 40, page('tree')));
     frames[`docs-40-${lang}`] = plain(busy.render(40, lang, 40, page('docs')));

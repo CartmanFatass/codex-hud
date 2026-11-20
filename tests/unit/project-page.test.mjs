@@ -184,29 +184,28 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   let text = plain(frame).join('\n');
   // flow has nowhere to run and bad.json does not load: they come first; the other roles are one folded row of names.
   assert.match(text, /^Needs attention ─+ 2$/m);
-  assert.match(text, /^ {2}− flow +flow image not installed$/m);
+  assert.match(text, /^ {2}− flow \[Custom\] → none$/m);
   assert.match(text, /^ {2}! bad\.json +unparseable JSON$/m);
   assert.match(text, /^▸ Healthy ─+ 6$/m);
-  assert.match(text, /^ {2}◉ imp reviewer sonic oracle pro general$/m);
-  assert.match(text, /^▸ Files ─+ 8$/m);
-  assert.match(text, /^ {2}keys 3\/5 · browser ✓ · missing GEMINI OPENAI$/m);
+  assert.match(text, /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general {2}pro$/m);
+  assert.match(text, /^▸ Files ─+ keys 3\/5 · browser ✓$/m);
   assert.doesNotMatch(text, /synthetic\/model|project-agent\.md|▸ agents/);
-  frame.state.projectCursor = 'project:fold:healthy';
+  frame.state.controlNav.projectCursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^Healthy ─+ 6$/m);
-  assert.match(plain(frame).join('\n'), /synthetic\/model/);
-  frame.state.projectCursor = 'project:fold:files';
+  assert.match(plain(frame).join('\n'), /imp \[Custom\] → pi\/synthetic/);
+  frame.state.controlNav.projectCursor = 'project:fold:files';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ agents/);
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
-  frame.state.projectCursor = 'project:fold:agents';
+  frame.state.controlNav.projectCursor = 'project:fold:agents';
   frame = render(press(frame, 'enter').state);
   for (const name of ['user-agent.md', 'project-agent.md', 'codex-agent.toml'])
     assert.match(plain(frame).join('\n'), new RegExp(name));
-  frame.state.projectCursor = 'project:fold:agents';
+  frame.state.controlNav.projectCursor = 'project:fold:agents';
   frame = render(press(frame, 'enter').state);
   assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
-  frame.state.projectCursor = 'project:fold:healthy';
+  frame.state.controlNav.projectCursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^▸ Healthy ─+ 6$/m, 'a second Enter folds the roles again');
 });
@@ -222,8 +221,8 @@ test('arrows/Tab cycle main tabs with independent Project cursor/scroll; the dig
   assert.equal(frame.state.mainTab, 'project');
   assert.equal(projectShown(frame.state), true);
   frame.state.projectCursor = 'project:page:docs';
-  for (const raw of ['\x1b[D', '\x1b[C', '\t', '\x1b[Z']) {
-    for (const tab of ['home', 'project']) {
+  for (const [raw, order] of [['\x1b[D', ['home', 'control', 'project']], ['\x1b[C', ['control', 'home', 'project']], ['\t', ['control', 'home', 'project']], ['\x1b[Z', ['home', 'control', 'project']]]) {
+    for (const tab of order) {
       frame = f.render(80, 'en', send(frame, raw).state);
       assert.equal(frame.state.mainTab, tab);
     }
@@ -321,13 +320,14 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
     { env, calls } = editorHerdr(f);
   // Files open from the hub's Waiting items (with o: Enter reads the item on its page) and from every page (the to-try count too: Enter filters there).
   const found = [undefined, 'progress', 'tree', 'docs', 'control'].flatMap((page) => {
-    const frame = f.render(80, 'en', page === 'control' ? onPage('control', { projectFolded: new Set(['agents']) }) : page, 80);
+    const frame = f.render(80, 'en', page === 'control' ? { ...initialMonitorState(), mainTab: 'control', controlNav: { projectFolded: new Set(['agents']) } } : page, 80);
     return frame.workboard.rows.filter((r) => r.files).map((row) => ({ frame, row }));
   });
   assert.ok(found.length > 20);
   for (const { frame, row } of found) {
-    frame.state.projectCursor = row.item;
-    for (const key of /^project:(wait:|try$)/.test(row.item) ? ['open-session'] : ['enter', 'open-session'])
+    if (frame.state.mainTab === 'control') frame.state.controlNav.projectCursor = row.item;
+    else frame.state.projectCursor = row.item;
+    for (const key of /^project:(wait:|try$|role:[^:]+$)/.test(row.item) ? ['open-session'] : ['enter', 'open-session'])
       assert.deepEqual(press(frame, key).action, { type: 'open-files', files: row.files });
   }
   const { frame, row: file } = found.find(({ row }) => row.files[0] === join(f.sliceJob, 'report.md'));
@@ -429,11 +429,11 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
   const f = await fixture(t);
   let frame = f.render(80);
   assert.match(plain(frame).join('\n'), /^demo-project ─/m);
-  assert.deepEqual(hubEntries(frame), ['progress', 'tree', 'docs', 'control'].map((p) => `project:page:${p}`), 'no tickets: no Tickets entry');
+  assert.deepEqual(hubEntries(frame), ['progress', 'tree', 'docs'].map((p) => `project:page:${p}`), 'no tickets: no Tickets entry');
   assert.equal(frame.state.projectCursor, 'project:page:progress', 'the cursor starts on a page, not on the Waiting fold');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
   assert.match(plain(frame).join('\n'), /Progress +M3b · 1 to try · 1 working/);
-  assert.match(plain(frame).join('\n'), /Control plane +7 roles · keys 3\/5 · browser ✓/);
+  assert.doesNotMatch(plain(frame).join('\n'), /^Control plane /m);
   frame.state.projectCursor = 'project:fold:waiting';
   frame = f.render(80, 'en', press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ Waiting for you/);
@@ -447,8 +447,8 @@ test('Hub: project name, Waiting folds, one entry per page; Enter opens a page; 
     frame = f.render(80, 'en', press(frame, 'down').state);
     visited.push(frame.state.projectCursor);
   }
-  assert.deepEqual(visited, ['tree', 'docs', 'control', 'control'].map((p) => `project:page:${p}`));
-  for (const page of ['progress', 'tree', 'docs', 'control']) {
+  assert.deepEqual(visited, ['tree', 'docs', 'docs', 'docs'].map((p) => `project:page:${p}`));
+  for (const page of ['progress', 'tree', 'docs']) {
     frame.state.projectCursor = `project:page:${page}`;
     frame = f.render(80, 'en', press(frame, 'enter').state);
     assert.equal(frame.state.projectPage, page);
@@ -483,7 +483,7 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
     for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
     const at = (re) => text.search(re);
     const order = [/^demo-project ─+ 0\.1\.3$/m, new RegExp(`^${word('Waiting for you', '等你处理')} ─+ 2 · 5 ${word('to try', '待试用')}$`, 'm'), new RegExp(`^${word('Now', '现在')} ─+ 3$`, 'm'),
-      new RegExp(`^${word('Latest', '最近完成')} ─+ ${word('newest first', '最新在前')}$`, 'm'), /^(Progress|进度) /m, /^(Working tree|工作区) /m, /^(Docs|文档) /m, /^(Control plane|控制面) /m].map(at);
+      new RegExp(`^${word('Latest', '最近完成')} ─+ ${word('newest first', '最新在前')}$`, 'm'), /^(Progress|进度) /m, /^(Working tree|工作区) /m, /^(Docs|文档) /m].map(at);
     assert.ok(order.every((n, i) => n >= 0 && (!i || order[i - 1] < n)), `${lang}: ${order}`);
     // Now: a slice with its text when it fits whole and the word for its state; a job no slice shows with its role and minutes.
     assert.match(text, new RegExp(`^ {2}◐ PAGE-ONE {10,}${word('working', '工作中')}$`, 'm'));
@@ -494,8 +494,8 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
     assert.match(text, new RegExp(`^ {2}◇ DATA-ONE {10,}${word('to try 1d', '待试用 1天')}$`, 'm'));
     assert.match(text, new RegExp(`^ {2}◇ SENTENCE-CUT {10,}${word('to try 7d', '待试用 7天')}$`, 'm'));
     assert.match(text, /^[█▒░]{40}$/m, 'the current milestone\'s bar under Progress');
-    // The four rows under Latest each open their page.
-    assert.deepEqual([...new Set(frame.workboard.rows.map((r) => r.item).filter((i) => i?.startsWith('project:page:')))], ['progress', 'tree', 'docs', 'control'].map((p) => `project:page:${p}`));
+    // The rows under Latest each open their page.
+    assert.deepEqual([...new Set(frame.workboard.rows.map((r) => r.item).filter((i) => i?.startsWith('project:page:')))], ['progress', 'tree', 'docs'].map((p) => `project:page:${p}`));
   }
   // Wider: five rows of Latest, accepted ones with their word; an accepted slice and its text on one row.
   const wide = plain(hub(120, 40)).join('\n');
@@ -506,57 +506,58 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
   const shape = (height) => {
     const rows = hub(40, height).workboard.rows, plainRows = rows.map((r) => stripAnsi(r.text).trimEnd());
     return { rows: rows.length, latest: plainRows.filter((r) => /^ {2}[◇✓] /.test(r)).length, bar: plainRows.some((r) => /^[█▒░]+$/.test(r)), blank: plainRows.filter((r) => !r).length,
-      kept: ['Waiting for you', 'Now', 'Progress', 'Working tree', 'Docs', 'Control plane'].every((h) => plainRows.some((r) => r.startsWith(h))) && plainRows.filter((r) => /^([?!]|  [◐◆◉]) /.test(r)).length === 5 };
+      kept: ['Waiting for you', 'Now', 'Progress', 'Working tree', 'Docs'].every((h) => plainRows.some((r) => r.startsWith(h))) && plainRows.filter((r) => /^([?!]|  [◐◆◉]) /.test(r)).length === 5 };
   };
-  const shapes = Object.fromEntries([40, 23, 22, 21, 20, 18, 17, 16, 12, 6].map((h) => [h, shape(h)]));
-  assert.deepEqual([40, 23, 22, 21, 20].map((h) => shapes[h].latest), [3, 3, 2, 1, 0], 'Latest folds to its newest rows first');
-  assert.ok([40, 23, 22, 21, 20, 18].every((h) => shapes[h].bar), 'the bar stays while Latest folds');
-  assert.deepEqual([18, 17, 16, 12, 6].map((h) => [shapes[h].bar, shapes[h].blank]), [[true, 3], [false, 3], [false, 0], [false, 0], [false, 0]], 'then the bar, then the gaps');
-  for (const h of [40, 23, 22, 21, 20, 18, 17, 16, 12, 6]) {
+  const heights = [40, 22, 21, 20, 19, 17, 16, 15, 12, 6];
+  const shapes = Object.fromEntries(heights.map((h) => [h, shape(h)]));
+  assert.deepEqual([40, 22, 21, 20, 19].map((h) => shapes[h].latest), [3, 3, 2, 1, 0], 'Latest folds to its newest rows first');
+  assert.ok([40, 22, 21, 20, 19, 17].every((h) => shapes[h].bar), 'the bar stays while Latest folds');
+  assert.deepEqual([17, 16, 15, 12, 6].map((h) => [shapes[h].bar, shapes[h].blank]), [[true, 3], [false, 3], [false, 0], [false, 0], [false, 0]], 'then the bar, then the gaps');
+  for (const h of heights) {
     assert.ok(shapes[h].kept, `${h}: Waiting for you, Now and the pages stay`);
-    if (h >= 17) assert.ok(shapes[h].rows <= h - 2, `${h}: the hub fits the room it has`);
+    if (h >= 16) assert.ok(shapes[h].rows <= h - 2, `${h}: the hub fits the room it has`);
   }
-  assert.equal(shapes[40].rows, 22, 'the hub on a tall panel: the one waiting item that needs it has its second row');
+  assert.equal(shapes[40].rows, 21, 'the hub on a tall panel: the one waiting item that needs it has its second row');
   // Nothing landed: no Latest section; nothing waiting: no Waiting for you; the pages never go.
   const quiet = plain(hub(40, 40, 'en', { ...f.rich, ledger: [], waiting: [] })).join('\n');
   assert.doesNotMatch(quiet, /Latest|Waiting for you/);
-  assert.match(quiet, /^Control plane /m);
+  assert.match(quiet, /^Docs /m);
   // The shortest panel scrolls: the cursor goes down to the last page row and the view follows it.
   let frame = hub(40, 8);
-  frame.state.projectCursor = 'project:page:control';
+  frame.state.projectCursor = 'project:page:docs';
   frame = f.render(40, 'en', frame.state, 8, f.rich);
-  assert.match(plain(frame).join('\n'), /^Control plane /m);
+  assert.match(plain(frame).join('\n'), /^Docs /m);
 });
 test('Each Project page keeps its own cursor and scroll, leaving it and across a panel reload', async (t) => {
   const f = await fixture(t), height = 8;
-  // The healthy roles and the files are open, so the page is longer than the panel.
-  let frame = f.render(80, 'en', onPage('control', { projectFolded: new Set(['agents']) }), height);
-  for (let i = 0; i < 12; i++) frame = f.render(80, 'en', press(frame, 'down').state, height);
+  let frame = f.render(80, 'en', onPage('progress'), height, f.rich);
+  const draw = (state) => f.render(80, 'en', state, height, f.rich);
+  for (let i = 0; i < 12; i++) frame = draw(press(frame, 'down').state);
   const { projectCursor: cursor, projectScroll: scroll } = frame.state;
   assert.ok(scroll > 0 && cursor.startsWith('project:') && !cursor.startsWith('project:page:'), 'a short panel scrolls the page with the cursor');
   const before = plain(frame);
-  frame = f.render(80, 'en', press(frame, 'escape').state, height);
-  assert.equal(frame.state.projectCursor, 'project:page:control');
+  frame = draw(press(frame, 'escape').state);
+  assert.equal(frame.state.projectCursor, 'project:page:progress');
   frame.state.projectCursor = 'project:page:docs';
-  frame = f.render(80, 'en', press(frame, 'enter').state, height);
-  frame = f.render(80, 'en', press(frame, 'down').state, height);
+  frame = draw(press(frame, 'enter').state);
+  frame = draw(press(frame, 'down').state);
   assert.equal(frame.state.projectCursor.endsWith(':1'), true, 'Docs has its own cursor');
-  frame = f.render(80, 'en', press(frame, 'escape').state, height);
-  frame.state.projectCursor = 'project:page:control';
-  frame = f.render(80, 'en', press(frame, 'enter').state, height);
+  frame = draw(press(frame, 'escape').state);
+  frame.state.projectCursor = 'project:page:progress';
+  frame = draw(press(frame, 'enter').state);
   assert.deepEqual([frame.state.projectCursor, frame.state.projectScroll], [cursor, scroll]);
   assert.deepEqual(plain(frame), before);
   // The panel restarts itself with the whole state, sets included.
   process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: frame.state }, (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
   const place = readPanelPlace();
-  assert.equal(place.state.projectPage, 'control');
-  frame = f.render(80, 'en', place.state, height);
+  assert.equal(place.state.projectPage, 'progress');
+  frame = draw(place.state);
   assert.deepEqual([frame.state.projectCursor, frame.state.projectScroll], [cursor, scroll]);
   assert.deepEqual(plain(frame), before);
   // Esc, then the same page again from the hub, still finds its place; so does a reload on the hub.
   frame = f.render(80, 'en', press(frame, 'escape').state, height);
   assert.equal(frame.state.projectPage, undefined);
-  assert.equal(frame.state.projectSaved.control.cursor, cursor);
+  assert.equal(frame.state.projectSaved.progress.cursor, cursor);
 });
 test('polish: Next text aligns without filename tails and slice states use the bar colours', async (t) => {
   const f = await fixture(t);

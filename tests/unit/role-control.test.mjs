@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { projectFixture, plain, onPage, NOW, TREE, MODEL_LISTS } from '../fixtures/project-page.mjs';
+import { projectFixture, plain, onPage, onControl, NOW, TREE, MODEL_LISTS } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -15,6 +15,12 @@ import { editPlaces, placeItem } from '../../dist/roles/role-control.js';
 import { markExhausted, placeKey, roleRegistry, writeRolePlaces } from '../../dist/roles/roster.js';
 
 const mcpEntry = resolve('packages/hud-mcp/bin/hud-mcp.mjs');
+function select(state, item) {
+  const projectFolded = new Set(state.controlNav?.projectFolded ?? ['healthy', 'usage', 'files', 'agents']);
+  const role = /^project:role:([^:]+):\d+$/.exec(item)?.[1];
+  if (role) projectFolded.add(`role:${role}`);
+  return { ...state, controlNav: { ...state.controlNav, projectCursor: item, projectFolded } };
+}
 
 /** The synthetic Project fixture with every CLI and browser tool but `codex` and `jev-flow` on PATH, and the shipped `imp`. */
 async function setup(t, { shippedImp = true, healthyOpen = true } = {}) {
@@ -24,9 +30,7 @@ async function setup(t, { shippedImp = true, healthyOpen = true } = {}) {
   for (const name of ['herdr', 'agy', 'claude', 'grok', 'jev-aistudio'])
     fs.writeFileSync(join(root, 'bin', name), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   if (shippedImp) fs.rmSync(join(f.hud, 'roles/imp.json'));
-  // The page starts with the healthy roles folded; most of what is tried here is on a healthy role's row, so they start open.
-  const folded = healthyOpen ? new Set(['agents', 'files']) : undefined;
-  const session = { state: onPage('control', { projectCursor: placeItem('imp', 0), ...(folded ? { projectFolded: folded } : {}) }), snap: await f.collector.collect(true, f.board, NOW), done: null };
+  const session = { state: healthyOpen ? select(onControl(), placeItem('imp', 0)) : onControl(), snap: await f.collector.collect(true, f.board, NOW), done: null };
   const decoder = new WorkbenchInputDecoder('workboard');
   const frame = (width = 80, lang = 'en', height = 64) => f.render(width, lang, session.state, height, session.snap);
   /** One key as the panel gets it: decoded, handled against the frame on screen, and a role edit applied as the panel does. */
@@ -40,7 +44,7 @@ async function setup(t, { shippedImp = true, healthyOpen = true } = {}) {
     if (out.action?.type === 'role-edit') {
       const { type: _type, ...edit } = out.action;
       session.done = editPlaces(f.hud, f.cwd, f.env, edit, NOW);
-      if (session.done.ok) session.state = { ...session.state, projectCursor: placeItem(edit.role, session.done.index) };
+      if (session.done.ok) session.state = select(session.state, placeItem(edit.role, session.done.index));
       // As the panel does: the roles are read again at once, the full collection follows the key.
       f.collector.refreshRoles(session.snap, NOW);
     }
@@ -76,44 +80,34 @@ test('Control plane: what needs the owner first with the place the next job uses
   // Folded: a place at its limit (and where the next job goes), a role with nowhere to run, a role file that does not load; the rest are names.
   const lines = plain(s.frame(80, 'en', 64));
   const at = (re) => lines.findIndex((l) => re.test(l));
-  assert.deepEqual(s.rows().map((r) => r.item), ['pro:0', 'pro:1', 'pro:2', 'flow:0'].map((x) => `project:role:${x}`));
+  assert.deepEqual([...new Set(s.rows().map((r) => r.item))], ['project:role:pro', 'project:role:flow']);
   assert.match(lines[at(/^Needs attention ─/)], / 3$/);
-  assert.match(lines[at(/ pro /)], /^ {2}✗ pro +chatgpt exhausted 60m$/);
-  assert.match(lines[at(/ pro /) + 1], /^ {6}next job → ◉ gemini$/);
-  assert.match(lines[at(/ flow /)], /^ {2}− flow +flow image not installed$/);
+  assert.match(lines[at(/ pro /)], /^ {2}✗ pro \[Custom\] → gemini$/);
+  assert.match(lines[at(/ pro /) + 1], /^ {6}chatgpt exhausted 60m$/);
+  assert.match(lines[at(/ flow /)], /^ {2}− flow \[Custom\] → none$/);
   assert.match(lines[at(/bad\.json/)], /^ {2}! bad\.json +unparseable JSON$/);
   assert.match(lines[at(/^▸ Healthy ─/)], / 5$/);
-  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp reviewer sonic oracle general$/);
-  assert.ok(at(/^Needs attention ─/) < at(/^▸ Healthy ─/) && at(/^▸ Healthy ─/) < at(/^Harnesses ─/));
-  assert.doesNotMatch(lines.join('\n'), /synthetic\/model|^Roles ─|^Browser tasks ─/m);
-  assert.match(lines[at(/^Harnesses ─/) + 1], /pi ✓ +agy ✓ +claude ✓ +codex − +grok ✓ +jev-ask ✓ +jev-aistudio ✓ +jev-flow −/);
-  assert.match(lines.join('\n'), /◉ in use +○ standby +✗ exhausted +− not installed/);
+  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general$/);
+  assert.ok(at(/^Needs attention ─/) < at(/^▸ Healthy ─/) && at(/^▸ Healthy ─/) < at(/^▸ Usage/));
+  assert.doesNotMatch(lines.join('\n'), /synthetic\/model|^Harnesses ─/m);
   // One line a row at every width and language; at 40 columns a long model is cut in the middle, never the harness or the thinking.
   for (const lang of ['en', 'zh'])
     for (const width of [32, 40, 56, 80, 120])
-      for (const state of [onPage('control'), onPage('control', { projectFolded: new Set(['agents']) })]) {
+      for (const state of [onControl(), onControl({ projectFolded: new Set(['agents']) })]) {
         s.session.state = state;
         const view = s.frame(width, lang, 64);
         for (const line of view.lines) assert.equal(visualLength(line), width, stripAnsi(line));
         for (const row of view.workboard.rows) assert.doesNotMatch(row.text, /\n/);
       }
-  s.session.state = onPage('control');
+  s.session.state = onControl();
   const narrow = plain(s.frame(40, 'zh', 64)).join('\n');
   assert.match(narrow, /^需要处理 ─+ 3$/m);
-  assert.match(narrow, /^ {2}✗ pro +chatgpt 已耗尽 60分钟$/m);
-  assert.match(narrow, /^ {6}下个任务 → ◉ gemini$/m);
+  assert.match(narrow, /^ {2}✗ pro \[自定义\] → gemini$/m);
+  assert.match(narrow, /^ {6}chatgpt 已耗尽 60分钟$/m);
   assert.match(narrow, /^▸ 正常 ─+ 5$/m);
-  assert.match(narrow, /◉ 使用中 +○ 备选 +✗ 已耗尽/);
-  // `next job` is a stop that takes the place keys, for the place it names; the healthy roles are one Enter away.
-  s.session.state = { ...s.session.state, projectCursor: placeItem('pro', 1) };
-  await s.press('m');
-  assert.deepEqual([s.session.done.message, s.session.state.projectInput], ['no other model to pick', undefined], 'a web place with no model to choose opens no picker');
-  await s.press('p');
-  assert.equal(s.assignment('pro').runs_on.tool, 'jev-aistudio', 'the key acts on the place the row names');
-  // The healthy roles are one Enter away, and all one row a place again.
-  s.session.state = { ...s.session.state, projectCursor: 'project:fold:healthy' };
+  s.session.state = select(s.session.state, 'project:fold:healthy');
   await s.press('\r');
-  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow):/.test(i)), ['imp:0', 'imp:1', 'reviewer:0', 'reviewer:1', 'sonic:0', 'oracle:0', 'oracle:1', 'general:0'].map((x) => `project:role:${x}`));
+  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow)$/.test(i)), ['imp', 'reviewer', 'sonic', 'oracle', 'general'].map((x) => `project:role:${x}`));
   assert.match(s.text(), /^Healthy ─+ 5$/m);
   await s.press('\r');
   assert.match(s.text(), /^▸ Healthy ─+ 5$/m, 'Enter again folds them');
@@ -127,8 +121,8 @@ test('Control plane previews the selected place in full, even when the role list
   markExhausted(s.hud, placeKey(exhausted), 'quota exceeded', NOW);
   s.collector.refreshRoles(s.session.snap, NOW);
   const before = stored(s, 'reviewer');
-  s.session.state = onPage('control', { projectFolded: new Set(['agents', 'files']) });
-  const draw = () => s.frame(40, 'en', 16);
+  s.session.state = select(onControl(), placeItem('reviewer', 0));
+  const draw = () => s.frame(40, 'en', 24);
   const choose = (frame, input) => {
     const out = handleMonitorInput(frame.state, input, { tree: TREE, frame, nowMs: NOW, standalone: true });
     assert.equal(out.action, undefined);
@@ -136,56 +130,44 @@ test('Control plane previews the selected place in full, even when the role list
     return draw();
   };
   let frame = draw();
-  assert.equal(frame.state.projectCursor, placeItem('reviewer', 0));
-  const lines = plain(frame), at = lines.findIndex((line) => line.startsWith('model '));
-  assert.ok(lines.findIndex((line) => line.startsWith('Selected place')) > lines.findIndex((line) => /✗ reviewer/.test(line)));
-  assert.match(lines.join('\n'), /role +reviewer \[custom\][\s\S]*state +exhausted until 13:35[\s\S]*harness +cli · claude/);
-  const modelLines = lines.slice(at, lines.findIndex((line) => line.startsWith('thinking ')));
-  assert.ok(modelLines.length > 1);
-  assert.equal(modelLines.map((line) => line.slice(10).trim()).join(''), model);
-  assert.match(lines.join('\n'), /thinking +high\nsource file +yours · reviewer\.json/);
+  assert.equal(frame.state.controlNav.projectCursor, placeItem('reviewer', 0));
+  const lines = plain(frame), chain = lines.findIndex((line) => /^ {4}1 ✗/.test(line));
+  assert.ok(chain > lines.findIndex((line) => /✗ reviewer/.test(line)));
+  assert.match(lines.join('\n'), /source +yours · reviewer\.json/);
+  assert.ok(lines.slice(chain).map((line) => line.trim()).join('').includes(model), 'the entire long model wraps in the chain');
   frame = choose(frame, { type: 'key', key: 'down' });
-  assert.equal(frame.state.projectCursor, placeItem('reviewer', 1));
-  assert.match(plain(frame).join('\n'), /state +next job runs here/);
-  const y = plain(frame).findIndex((line) => /↳ +agy/.test(line));
+  assert.equal(frame.state.controlNav.projectCursor, placeItem('reviewer', 1));
+  const y = plain(frame).findIndex((line) => /3 ○ agy/.test(line));
   assert.ok(y > 0);
   frame = choose(frame, { type: 'mouse', button: 'left', x: 4, y });
-  assert.equal(frame.state.projectCursor, placeItem('reviewer', 2));
-  assert.match(plain(frame).join('\n'), /state +fallback 2[\s\S]*model +synthetic-fallback/);
-  const zh = s.frame(38, 'zh', 16);
-  assert.match(plain(zh).join('\n'), /所选位置[\s\S]*角色 +reviewer \[自定义\][\s\S]*状态 +备选 2[\s\S]*思考 +low/);
+  assert.equal(frame.state.controlNav.projectCursor, placeItem('reviewer', 2));
+  const zh = s.frame(38, 'zh', 24);
+  assert.match(plain(zh).join('\n'), /^ {4}3 ○ agy synthetic-fallback low$/m);
   for (const line of zh.lines) assert.equal(visualLength(line), 38, stripAnsi(line));
   assert.deepEqual(stored(s, 'reviewer'), before);
 });
 
-test('Control plane, opened: each role once with its place and fallbacks, browser tasks apart', async (t) => {
-  const s = await setup(t);
-  writeRolePlaces(s.hud, 'reviewer', [{ harness: 'pi', pi_role: 'reviewer', split: false }, { harness: 'cli', agent: 'claude', model: 'opus', thinking: 'high' }]);
-  s.session.snap = await s.collector.collect(true, s.board, NOW);
-  // Nothing is exhausted here, but flow has nowhere to run: it is the one role up top; everyone else is a healthy place row.
-  assert.deepEqual(s.rows().map((r) => r.item), ['flow:0', 'imp:0', 'imp:1', 'reviewer:0', 'reviewer:1', 'sonic:0', 'oracle:0', 'oracle:1', 'general:0', 'pro:0', 'pro:1', 'pro:2'].map((x) => `project:role:${x}`));
-  const lines = plain(s.frame(80, 'en', 64));
-  const at = (re) => lines.findIndex((l) => re.test(l));
-  // Groups in order under Healthy; pro only under Browser tasks; the harnesses after them.
-  assert.ok(at(/^Healthy ─/) < at(/^Roles ─/) && at(/^Roles ─/) < at(/ imp /) && at(/ oracle /) < at(/^Browser tasks ─/));
-  assert.ok(at(/^Browser tasks ─/) < at(/ pro /) && at(/ pro /) < at(/^Harnesses ─/));
-  // Wide rows say whose file is in force: the shipped one, or the owner's once a switch (or the reviewer's fallback) wrote it.
-  assert.match(lines[at(/ imp /)], /◉ imp +pi +synthetic\/model +high +default$/);
-  assert.match(lines[at(/ reviewer /)], /◉ reviewer +pi +default +yours$/);
-  assert.match(lines[at(/ reviewer /) + 1], /○ ↳ +claude +opus +high/);
-  assert.match(lines[at(/ oracle /)], /◉ oracle +claude +fable +high +default$/);
-  assert.match(lines[at(/ oracle /) + 1], /○ ↳ +pi +default/);
-  assert.match(lines[at(/ pro /)], /◉ pro +chatgpt +6 Pro/);
-  assert.match(lines[at(/ pro /) + 1], /○ ↳ +gemini/);
-  assert.match(lines[at(/ pro /) + 2], /○ ↳ +aistudio +gemini-4-argon/);
-  // flow is a role with nowhere to run, so it is under Needs attention with the kind of its place, not among the healthy ones.
-  assert.match(lines[at(/^Needs attention ─/) + 1], /^ {2}− flow +flow image not installed$/);
+test('Classic expands only the selected role’s numbered chain; o opens a role’s file without expanding', async (t) => {
+  const s = await setup(t, { healthyOpen: false });
+  await s.press(DOWN); // invalid file
+  await s.press(DOWN); // Healthy
+  await s.press(ENTER);
+  await s.press(DOWN); // imp
+  assert.match(s.text(), /imp \[default\] → pi\/synthetic/);
+  assert.doesNotMatch(s.text(), /^ {4}1 ◉/m);
+  assert.deepEqual((await s.press('o')).action, { type: 'open-files', files: [resolve('packages/hud-mcp/roles/imp.json')] });
+  await s.press(ENTER);
+  assert.match(s.text(), /^ {4}1 ◉ pi synthetic\/model high$/m);
+  assert.match(s.text(), /^ {4}2 ○/m);
+  assert.match(s.text(), /source +default · imp\.json/);
+  await s.press(ESC);
+  assert.doesNotMatch(s.text(), /^ {4}1 ◉/m);
 });
 test('a key on a place is written to the role file and is what the roster, hud_roster and so the next hud_create use', async (t) => {
   const s = await setup(t);
   assert.equal(s.assignment('imp').runs_on.harness, 'pi');
   // Keep this place-edit exercise on one primary; presets themselves are exercised below.
-  s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 1) };
+  s.session.state = select(s.session.state, placeItem('imp', 1));
   await s.press('\x1b[3~');
   // p: the harness of the primary place. The shipped table gives the agent its model; a CLI place has no pi role.
   await s.press('p');
@@ -193,7 +175,8 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   let imp = s.assignment('imp');
   assert.deepEqual([imp.harness, imp.agent, imp.model, imp.runs_on.agent, imp.available], ['cli', 'agy', 'gemini-4-argon-high', 'agy', true]);
   assert.equal(imp.source_file, join(s.hud, 'roles/imp.json'));
-  assert.match(s.text(), /◉ imp +agy +gemini-4-argon-high/);
+  assert.match(s.text(), /◉ imp \[Custom\] → agy/);
+  assert.match(s.text(), /1 ◉ agy gemini-4-argon-high/);
   const file = join(s.hud, 'roles/imp.json');
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   assert.deepEqual(fs.readdirSync(join(s.hud, 'roles')).filter((n) => n.endsWith('.tmp')), []);
@@ -225,19 +208,19 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   // +: a fallback after the last place, the cursor on it; K and J move it; - removes it.
   await s.press('i');
   assert.deepEqual(s.session.done, { ok: true, index: 1 });
-  assert.equal(s.session.state.projectCursor, placeItem('imp', 1));
-  assert.equal(s.frame().state.projectCursor, placeItem('imp', 1), 'the cursor is on the new row in the very next frame');
+  assert.equal(s.session.state.controlNav.projectCursor, placeItem('imp', 1));
+  assert.equal(s.frame().state.controlNav.projectCursor, placeItem('imp', 1), 'the cursor is on the new row in the very next frame');
   assert.deepEqual(stored(s, 'imp').run.map((p) => p.harness === 'pi' ? 'pi' : p.agent), ['agy', 'pi']);
-  assert.match(s.text(), /○ ↳ +pi +synthetic\/model +high/);
+  assert.match(s.text(), /2 ○ pi synthetic\/model high/);
   await s.press('K');
   assert.deepEqual(stored(s, 'imp').run.map((p) => p.harness === 'pi' ? 'pi' : p.agent), ['pi', 'agy']);
-  assert.equal(s.session.state.projectCursor, placeItem('imp', 0));
+  assert.equal(s.session.state.controlNav.projectCursor, placeItem('imp', 0));
   imp = s.assignment('imp');
   assert.deepEqual([imp.harness, imp.runs_on.harness], ['pi', 'pi']);
   await s.press('K');
   assert.deepEqual(s.session.done, { ok: true, index: 0 }, 'at the top K stays and writes nothing');
   await s.press('J');
-  assert.equal(s.session.state.projectCursor, placeItem('imp', 1));
+  assert.equal(s.session.state.controlNav.projectCursor, placeItem('imp', 1));
   await s.press('\x1b[3~');
   assert.equal(stored(s, 'imp').run.length, 1);
   await s.press('\x1b[3~');
@@ -249,11 +232,11 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   markExhausted(s.hud, placeKey({ harness: 'cli', agent: first.agent, model: first.model }), 'HTTP 429', NOW);
   s.session.snap = await s.collector.collect(true, s.board, NOW);
   assert.equal(s.assignment('imp').runs_on.harness, 'pi', 'the next place is in use while the first is exhausted');
-  assert.match(s.text(), /✗ imp +agy/);
-  s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 0) };
+  assert.match(s.text(), /✗ imp \[[^\]]+\] → pi/);
+  s.session.state = select(s.session.state, placeItem('imp', 0));
   await s.press('x');
   assert.equal(s.assignment('imp').runs_on.agent, 'agy');
-  assert.match(s.text(), /◉ imp +agy/);
+  assert.match(s.text(), /◉ imp \[[^\]]+\] → agy/);
   await s.press('x');
   assert.equal(s.session.done.message, 'not marked exhausted');
   // The MCP reads the same files: hud_roster shows what the page shows.
@@ -281,22 +264,22 @@ test('c/C apply a whole role preset through the real key path; rows show default
   await s.press('c');
   assert.match(s.text(), /imp \[hydrogen\]/);
   await s.press('C');
-  assert.match(s.text(), /✗ imp +pi/);
+  assert.match(s.text(), /− imp \[grok\] → none/);
   assert.equal(s.assignment('imp').exhausted.length, 1);
   await s.press('C');
   await s.press('e');
-  assert.match(s.text(), /imp \[custom\]/);
+  assert.match(s.text(), /imp \[Custom\]/);
   await s.press('c');
   assert.equal(s.assignment('imp').preset, 'default', 'custom starts at first');
-  assert.doesNotMatch(s.text(), /sonic \[/);
-  s.session.state = { ...s.session.state, projectCursor: placeItem('sonic', 0) };
+  assert.match(s.text(), /sonic \[Custom\]/);
+  s.session.state = select(s.session.state, placeItem('sonic', 0));
   await s.press('c');
   assert.equal(fs.existsSync(join(s.hud, 'roles/sonic.json')), false, 'no presets writes nothing');
 });
 
 test('browser places: p walks the web models, a second place can be promoted, a Flow place cycles its kind', async (t) => {
   const s = await setup(t);
-  s.session.state = { ...s.session.state, projectCursor: placeItem('pro', 0) };
+  s.session.state = select(s.session.state, placeItem('pro', 0));
   await s.press('p');
   assert.deepEqual([s.assignment('pro').runs_on.provider, s.assignment('pro').runs_on.tool], ['gemini', 'jev-ask']);
   await s.press('p');
@@ -305,7 +288,7 @@ test('browser places: p walks the web models, a second place can be promoted, a 
   await s.press('P');
   assert.equal(s.assignment('pro').runs_on.provider, 'chatgpt');
   assert.equal(s.assignment('pro').runs_on.model, '6 Pro');
-  s.session.state = { ...s.session.state, projectCursor: placeItem('pro', 1) };
+  s.session.state = select(s.session.state, placeItem('pro', 1));
   await s.press('K');
   assert.deepEqual(stored(s, 'pro').run.map((p) => p.provider ?? p.tool), ['gemini', 'chatgpt', 'jev-aistudio']);
   assert.equal(s.assignment('pro').runs_on.provider, 'gemini');
@@ -314,10 +297,10 @@ test('browser places: p walks the web models, a second place can be promoted, a 
   assert.equal(s.session.done.message, 'no thinking setting here');
   await s.press('m');
   assert.equal(s.session.done.message, 'no other model to pick');
-  s.session.state = { ...s.session.state, projectCursor: placeItem('flow', 0) };
+  s.session.state = select(s.session.state, placeItem('flow', 0));
   await s.press('m');
   assert.equal(stored(s, 'flow').run[0].kind, 'video');
-  assert.match(s.text(), /flow +flow video not installed/);
+  assert.match(s.text(), /flow video\n +not installed/);
   await s.press('p');
   assert.equal(s.session.done.message, 'no other harness for this role');
 });
@@ -361,7 +344,7 @@ test('the model picker: curated providers first, then one provider\'s newest mod
   assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6.1-luna');
   assert.equal(s.assignment('imp').model, 'openai/gpt-6.1-luna');
   assert.equal(s.session.state.projectInput, undefined);
-  assert.equal(s.session.state.projectCursor, placeItem('imp', 0), 'the cursor is on the place again');
+  assert.equal(s.session.state.controlNav.projectCursor, placeItem('imp', 0), 'the cursor is on the place again');
   // The role's current model is picked when the picker opens, and shown with ◉.
   await s.press('m');
   page = lines40(s).join('\n');
@@ -409,7 +392,7 @@ test('the model picker: Tab shows every provider and model, `default` unsets, a 
   await s.keys('m', ENTER, UP, ENTER);
   assert.equal(stored(s, 'imp').run[0].model, undefined);
   assert.equal(s.assignment('imp').model, 'synthetic/model', 'the pi role\'s own model is what the next job gets');
-  assert.match(s.text(), /◉ imp +pi +synthetic\/model +high +yours$/m, 'the row shows that model, and the owner\'s file is the one in force');
+  assert.match(s.text(), /1 ◉ pi synthetic\/model high\n[\s\S]*source +yours · imp\.json/, 'the detail shows that model and the owner’s file');
   // While the picker is open every key is its own: q, p, e, i and x type or move, and nothing else happens.
   await s.press('m');
   for (const raw of ['q', 'p', 'e', 'i', 'x', 'K', 'o', 'j']) {
@@ -449,7 +432,7 @@ test('the model picker on a CLI place lists that harness\'s models at once, one 
       assert.equal(s.assignment('imp').harness, 'pi');
     }
     for (const input of inputs) for (const extra of [{}, { provider: 'openai' }, { provider: 'arena', text: 'opus' }]) for (const lang of ['en', 'zh']) for (const width of [32, 40, 56, 80, 120]) {
-      s.session.state = { ...onPage('control', { projectFolded: new Set(['agents', 'files']) }), projectCursor: placeItem('imp', 0), projectInput: { ...input, ...extra } };
+      s.session.state = select(onControl(undefined, { projectInput: { ...input, ...extra } }), placeItem('imp', 0));
       const view = s.frame(width, lang, 14);
       for (const line of view.lines) assert.equal(visualLength(line), width, stripAnsi(line));
       for (const row of view.workboard.rows) assert.doesNotMatch(row.text, /\n/);
@@ -457,10 +440,10 @@ test('the model picker on a CLI place lists that harness\'s models at once, one 
       assert.equal(view.workboard.rows.filter((r) => r.item === 'project:pick').length <= 1, true);
     }
   }
-  s.session.state = { ...onPage('control', { projectFolded: new Set(['agents', 'files']) }), projectCursor: placeItem('imp', 0), projectInput: { role: 'imp', index: 0, text: '', provider: 'openai' } };
+  s.session.state = select(onControl(undefined, { projectInput: { role: 'imp', index: 0, text: '', provider: 'openai' } }), placeItem('imp', 0));
   const zh = plain(s.frame(40, 'zh', 14));
   assert.match(zh.join('\n'), /^imp · pi › openai ─+ 模型$/m);
-  assert.match(zh[0], /^‹ 项目 › 控制面/);
+  assert.match(zh[0], /首页.*项目.*控制/);
   assert.match(zh.at(-1), /输入筛选 +↑↓ 选择 +⏎ 设置 +esc 取消/);
   assert.match(plain(s.frame(40, 'en', 14)).at(-1), /type filter +↑↓ pick +⏎ set +esc cancel/);
   assert.match(plain(s.frame(120, 'en', 14)).at(-1), /type filter +↑↓ pick +⏎ set +esc cancel +tab all +← back/);
@@ -491,11 +474,11 @@ test('editPlaces sets a model id exactly as typed, clears it with an empty one, 
 });
 test('Enter and o on a place open the role file in force, a fallback row included', async (t) => {
   const s = await setup(t);
-  s.session.state = { ...s.session.state, projectCursor: placeItem('pro', 2) };
+  s.session.state = select(s.session.state, placeItem('pro', 2));
   const shipped = resolve('packages/hud-mcp/roles/pro.json');
   for (const raw of ['\r', 'o']) assert.deepEqual((await s.press(raw)).action, { type: 'open-files', files: [shipped] });
   // After a switch the file in force is the owner's.
-  s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 0) };
+  s.session.state = select(s.session.state, placeItem('imp', 0));
   await s.press('e');
   for (const raw of ['\r', 'o']) assert.deepEqual((await s.press(raw)).action, { type: 'open-files', files: [join(s.hud, 'roles/imp.json')] });
 });
@@ -510,11 +493,11 @@ test('a project role file in force is shown apart and never written past', async
   s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'reviewer', 'sonic'] });
   s.session.snap = await s.collector.collect(true, s.board, NOW + 1);
   const lines = plain(s.frame(80));
-  assert.ok(lines.findIndex((l) => /^Project roles ─+ 2$/.test(l)) > lines.findIndex((l) => / sonic /.test(l)));
-  assert.match(s.text(), /◉ frontend +pi +project\/model/);
-  assert.match(s.text(), /◉ imp +pi +project\/imp/);
+  assert.ok(lines.findIndex((l) => /frontend.*project$/.test(l)) > lines.findIndex((l) => / sonic /.test(l)));
+  assert.match(s.text(), /◉ frontend \[Custom\] → pi\/project +project/);
+  assert.match(s.text(), /◉ imp \[[^\]]+\] → pi\/project +project/);
   const before = fs.readFileSync(join(s.cwd, '.hud/roles/imp.json'), 'utf8');
-  s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 0) };
+  s.session.state = select(s.session.state, placeItem('imp', 0));
   for (const raw of ['p', 'm', 'e', 'i', '\x1b[3~', 'K', 'c', 'C']) {
     await s.press(raw);
     assert.deepEqual(s.session.done, { ok: false, message: 'the project file is in force: o opens it' }, raw);
@@ -522,15 +505,15 @@ test('a project role file in force is shown apart and never written past', async
   // A mark is not in a role file: clearing one works on a project role too.
   markExhausted(s.hud, placeKey({ harness: 'pi', model: 'project/model' }), 'HTTP 429', NOW);
   s.session.snap = await s.collector.collect(true, s.board, NOW + 1);
-  s.session.state = { ...s.session.state, projectCursor: placeItem('frontend', 0) };
-  assert.match(s.text(), /✗ frontend/);
+  s.session.state = select(s.session.state, placeItem('frontend', 0));
+  assert.match(s.text(), /− frontend/);
   await s.press('x');
   assert.deepEqual(s.session.done, { ok: true, index: 0 });
   assert.match(s.text(), /◉ frontend/);
   assert.equal(fs.readFileSync(join(s.cwd, '.hud/roles/imp.json'), 'utf8'), before);
   assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false);
   assert.equal(fs.existsSync(join(s.hud, 'roles/frontend.json')), false);
-  s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 0) };
+  s.session.state = select(s.session.state, placeItem('imp', 0));
   assert.deepEqual((await s.press('o')).action, { type: 'open-files', files: [join(root, '.hud/roles/imp.json')] });
 });
 
@@ -574,7 +557,7 @@ test('Control plane keys: decoded names, only on a place row of the Control plan
   assert.deepEqual(decoded('\x1b[B'), [{ type: 'key', key: 'down' }]);
   assert.deepEqual(decoded('Z', 'monitor'), []);
   // Elsewhere they do nothing: the hub, another page, a row of the Control plane that is not a place.
-  for (const state of [onPage(), onPage('progress'), onPage('control', { projectCursor: 'project:fold:healthy' })]) {
+  for (const state of [onPage(), onPage('progress'), onControl({ projectCursor: 'project:fold:healthy' })]) {
     s.session.state = state;
     for (const raw of ['p', 'm', 'x', 'i']) assert.equal((await s.press(raw)).action, undefined);
   }
@@ -602,9 +585,9 @@ test('the live panel applies a Control plane key to the role files, and says why
   t.after(() => child.kill('SIGKILL'));
   const until = async (ok, what) => {
     for (const end = Date.now() + 15000; Date.now() < end; await new Promise((r) => setTimeout(r, 25))) if (ok()) return;
-    assert.fail(`${what}: ${err}`);
+    assert.fail(`${what}: ${err}\n${stripAnsi(out).slice(-2500)}`);
   };
-  await until(() => stripAnsi(out).includes('Control plane'), 'the Control plane page');
+  await until(() => stripAnsi(out).includes('Roles'), 'the migrated Control tab');
   // m opens the picker (providers first), typing filters, Enter goes in and Enter sets: only then is a file written.
   child.stdin.write('m');
   await until(() => /provider/.test(stripAnsi(out)), 'the picker');
@@ -613,9 +596,9 @@ test('the live panel applies a Control plane key to the role files, and says why
   await until(() => / model\b/.test(stripAnsi(out)) && /gpt-6\.1-sol/.test(stripAnsi(out)), 'the models of the provider');
   child.stdin.write('sol\r');
   await until(() => fs.existsSync(join(s.hud, 'roles/imp.json')) && stored(s, 'imp').run[0].model === 'openai/gpt-6.1-sol', 'the model written');
-  // Down to the project's own role: imp fallback, sonic, then frontend (reviewer is hidden: the 30-cell page is short, and a notice scrolls away with the rows).
+  // Down to the project's own role: imp's fallback, sonic, then frontend; open its chain and attempt an edit.
   const mark = out.length;
-  child.stdin.write('jjjp');
+  child.stdin.write('jjj\rjp');
   // The panel here is 30 columns wide, so the notice is cut to what fits.
   await until(() => /the project file is in/.test(stripAnsi(out.slice(mark))), 'the notice');
   assert.equal(fs.existsSync(join(s.hud, 'roles/frontend.json')), false);

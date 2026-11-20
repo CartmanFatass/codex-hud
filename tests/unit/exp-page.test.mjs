@@ -93,9 +93,9 @@ test('Experiments is a saved Panel switch, and arrows, Tab and clicks reach EXP 
   assert.equal(frame.expData, undefined);
   assert.deepEqual(
     frame.controls.filter((c) => c.kind.startsWith('board-')).map((c) => c.kind),
-    ['board-home', 'board-project']
+    ['board-home', 'board-project', 'board-control']
   );
-  assert.equal(send(frame, key('left')).state.mainTab, 'project');
+  assert.equal(send(frame, key('left')).state.mainTab, 'control');
 
   const selected = SETTING_ROWS.findIndex((row) => row.key === 'experiments');
   assert.equal(SETTING_ROWS[selected].group, 'Panel');
@@ -112,13 +112,14 @@ test('Experiments is a saved Panel switch, and arrows, Tab and clicks reach EXP 
     return frame.state.mainTab;
   };
   assert.equal(go(key('right')), 'project');
+  assert.equal(go(key('tab')), 'control');
   assert.equal(go(key('tab')), 'exp');
   assert.match(plain(frame), /Codex native status line/);
   const decoder = new WorkbenchInputDecoder('workboard');
   for (const input of decoder.push(Buffer.from('1234567890'))) assert.equal(go(input), 'exp');
   assert.equal(go(key('right')), 'home');
   assert.equal(go(key('shift-tab')), 'exp');
-  assert.equal(go(key('left')), 'project');
+  assert.equal(go(key('left')), 'control');
   const { x, y } = frame.controls.find((c) => c.kind === 'board-exp');
   assert.equal(go({ type: 'mouse', button: 'left', x, y }), 'exp');
   assert.equal(go(key('escape')), 'home');
@@ -302,7 +303,7 @@ test('40 columns in EN and ZH: both layouts show whole labels, both ledgers, and
         return plain(frame);
       };
       const overview = exact();
-      assert.match(overview, lang === 'en' ? /Home\s+Project\s+EXP exp/ : /首页\s+项目\s+EXP 实验/);
+      assert.match(overview, lang === 'en' ? /Home\s+Project\s+Control\s+EXP/ : /首页\s+项目\s+控制\s+EXP/);
       assert.match(overview, /Secondary work profile for\s+documentation\s+\(\.codex-secondary\)/);
       assert.match(overview, /anthropic-api\s+(on|开) · ≈\$7\.65\s+openai-api\s+(on|开) · ≈\$12\.75/);
       p.select('proxy-status');

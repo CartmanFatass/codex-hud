@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { splitFixture, splitFrames, split } from '../fixtures/split-layout.mjs';
-import { NOW, TREE, plain, onPage } from '../fixtures/project-page.mjs';
+import { NOW, TREE, plain, onPage, onControl } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
 import { defaultSettings, loadSettings } from '../../dist/settings.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
@@ -22,6 +22,7 @@ async function fixtures(t) {
   return { busy: await splitFixture(join(root, 'busy')), idle: await splitFixture(join(root, 'idle'), { idle: true }) };
 }
 const page = (p, extra) => split({ mainTab: 'project', projectPage: p, projectFolded: new Set(['agents', 'healthy', 'files']), ...extra });
+const control = (projectCursor) => onControl({ projectCursor }, { panelLayout: 'split' });
 /** One input against a frame, then the next frame from the state it left. */
 function driver(f, { width = 40, height = 40, data = f.data } = {}) {
   let frame = f.render(width, 'en', height, undefined, data);
@@ -44,7 +45,7 @@ test('Split frames at 40 columns, English and Chinese: Home busy, idle and short
   // Every row of every frame is exactly as wide as the panel, at any width and in either language.
   for (const lang of ['en', 'zh']) for (const width of [40, 52, 80, 120]) for (const height of [12, 24, 40]) {
     const views = [[busy, undefined, busy.data], [idle, undefined, idle.data], [busy, page(undefined), busy.control], [busy, page('progress'), busy.rich],
-      [busy, page('control'), busy.control], [busy, page('tickets'), busy.data], [busy, page('tree'), busy.data], [busy, page('docs'), busy.data]];
+      [busy, control(), busy.control], [busy, page('tickets'), busy.data], [busy, page('tree'), busy.data], [busy, page('docs'), busy.data]];
     for (const [f, state, data] of views) for (const line of f.render(width, lang, height, state, data).lines)
       assert.equal(visualLength(line), width, `${lang} ${width}x${height}: ${stripAnsi(line)}`);
   }
@@ -202,20 +203,21 @@ test('Project list rows use the same Enter path for two clicks and the keyboard'
   const { busy } = await fixtures(t);
   for (const [p, item, sub] of [[undefined, 'project:fold:waiting', 'project:wait:0'], ['control', 'project:role:imp', 'project:role:imp:0']]) {
     const d = driver(busy, { data: busy.control, height: 24 });
-    const state = page(p, { projectCursor: p ? 'split:files' : undefined });
-    d.at(state);
+    const at = (projectCursor) => p ? control(projectCursor) : page(p, { projectCursor });
+    const nav = () => p ? d.state.controlNav : d.state;
+    d.at(at(p ? 'project:fold:healthy' : undefined));
     const click = (id) => {
       const pane = d.pane('agents');
       d.run({ type: 'mouse', x: 4, y: pane.y + pane.rows.findIndex((r) => r.item === id) - pane.offset, button: 'left' });
     };
     click(item);
-    assert.equal(d.state.projectCursor, item);
-    assert.equal(d.state.splitFocus, undefined);
+    assert.equal(nav().projectCursor, item);
+    assert.equal(nav().splitFocus, undefined);
     click(item);
-    assert.equal(d.state.splitFocus, 'preview');
-    assert.equal(d.state.projectCursor, sub);
+    assert.equal(nav().splitFocus, 'preview');
+    assert.equal(nav().projectCursor, sub);
     const mouse = d.lines();
-    d.at(page(p, { projectCursor: item }));
+    d.at(at(item));
     d.run('enter');
     assert.deepEqual(d.lines(), mouse);
   }
@@ -287,22 +289,22 @@ test('Progress page: one ledger list, the cursor slice explained underneath; y a
 
 test('Control plane: roles on top, the cursor role’s places below; Enter takes the place keys into them; c and C apply a preset from the list', async (t) => {
   const { busy } = await fixtures(t);
-  const d = driver(busy, { data: busy.control }).at(page('control'));
-  assert.match(d.state.projectCursor ?? '', /^project:role:imp$/);
-  assert.match(rule(d), /^imp ─+ 3 places · preset: custom$/);
+  const d = driver(busy, { data: busy.control }).at(control());
+  assert.match(d.state.controlNav.projectCursor ?? '', /^project:role:imp$/);
+  assert.match(rule(d), /^imp ─+ \[Custom\]$/);
   const preset = d.run('role-preset');
   assert.deepEqual([preset.action.type, preset.action.role, preset.action.op], ['role-edit', 'imp', 'preset']);
   assert.equal(d.run('place-harness').action, undefined, 'a place key waits for a place');
   d.run('enter');
-  assert.equal(d.state.splitFocus, 'preview');
-  assert.equal(d.state.projectCursor, 'project:role:imp:0');
+  assert.equal(d.state.controlNav.splitFocus, 'preview');
+  assert.equal(d.state.controlNav.projectCursor, 'project:role:imp:0');
   d.run('down');
   const edit = d.run('place-harness');
   assert.deepEqual([edit.action.type, edit.action.role, edit.action.index, edit.action.op], ['role-edit', 'imp', 1, 'harness']);
   assert.equal(d.run('place-remove').action.op, 'remove');
   d.run('escape');
-  assert.equal(d.state.splitFocus, undefined);
-  assert.equal(d.state.projectCursor, 'project:role:imp');
+  assert.equal(d.state.controlNav.splitFocus, undefined);
+  assert.equal(d.state.controlNav.projectCursor, 'project:role:imp');
 });
 
 test('Tickets, Working tree and Docs: a row each, the whole text or the checklist underneath; Enter opens the file', async (t) => {
@@ -335,7 +337,7 @@ test('a saved retired layout renders Classic, Split keeps its Home frame, and th
     const frame = withDisplaySettings(draft, () => renderSettingsPage({ draft, selected, offset: 0, message: '' }, 40, 24));
     const text = plain(frame).join('\n');
     assert.match(text, new RegExp(`Layout +‹ ${label} ›`));
-    assert.match(text, /Classic is the\n┃ default; Split/);
+    assert.match(text, /Home, Project and Control: Classic is\n┃ the default; Split/);
     assert.doesNotMatch(text, /Inbox/);
   }
 });
@@ -423,7 +425,7 @@ test('Split ratio: = and + grow the list, - grows the preview, a press on the ru
 
 test('One meaning per key on the Control plane: = + - size the Split, i and Delete add and remove a place, and the ratio never moves with them', async (t) => {
   const { busy } = await fixtures(t);
-  const d = driver(busy, { data: busy.control }).at(page('control'));
+  const d = driver(busy, { data: busy.control }).at(control());
   assert.equal(d.run('place-add').action, undefined, 'from the role list no place is under i');
   assert.equal(d.state.splitRatio, undefined, 'and i is not a ratio key');
   d.run('list-grow');
@@ -482,7 +484,7 @@ test('Preview scrollbar: a thumb over a dim track in the last cell of the scroll
   assert.ok(lastCells(tall).every((c) => c !== '┃' && c !== '│'));
   const hub = driver(busy, { data: busy.control, height: 24 }).at(page(undefined));
   assert.ok(hub.lines().some((l) => /^  ◇ DATA-ONE +to try 1d[┃│]$/.test(l)), 'a right-aligned age keeps its unit beside the bar');
-  assert.ok(hub.lines().some((l) => /^    ledger history, live jobs and +│$/.test(l)), 'a wrapped line is wrapped one cell narrower, not cut');
+  assert.ok(hub.lines().some((l) => /^    ledger history, live jobs and +[┃│]$/.test(l)), hub.lines().join('\n'));
   const zh = busy.render(40, 'zh', 40, page('progress'), busy.rich);
   for (const line of zh.lines) assert.equal(visualLength(line), 40);
 });

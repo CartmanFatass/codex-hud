@@ -51,12 +51,12 @@ test('a waiting item flows whole into the hub\'s spare rows, is cut to one row b
   const shape = (height) => {
     const lines = plain(f.render(38, 'en', undefined, height));
     return { wrapped: block(lines, /^Waiting for you/).filter((l) => l.startsWith('  ')).length, latest: lines.filter((l) => /^  [✓◇] /.test(l)).length,
-      pages: lines.filter((l) => /^(Progress|Working tree|Docs|Control plane) /.test(l)).length };
+      pages: lines.filter((l) => /^(Progress|Working tree|Docs) /.test(l)).length };
   };
-  assert.deepEqual(shape(24), { wrapped: 0, latest: 3, pages: 4 }, 'a short panel keeps one cut row each');
-  assert.deepEqual(shape(26), { wrapped: 2, latest: 3, pages: 4 }, 'two spare rows go to the first item, the rest of its text cut');
-  assert.deepEqual(shape(30), { wrapped: 6, latest: 3, pages: 4 }, 'six spare rows: the first item whole, the second too');
-  assert.deepEqual(shape(22), { wrapped: 0, latest: 1, pages: 4 }, 'Latest gives way after, never before, the wrapping');
+  assert.deepEqual(shape(23), { wrapped: 0, latest: 3, pages: 3 }, 'a short panel keeps one cut row each');
+  assert.deepEqual(shape(25), { wrapped: 2, latest: 3, pages: 3 }, 'two spare rows go to the first item, the rest of its text cut');
+  assert.deepEqual(shape(29), { wrapped: 6, latest: 3, pages: 3 }, 'six spare rows: the first item whole, the second too');
+  assert.deepEqual(shape(21), { wrapped: 0, latest: 1, pages: 3 }, 'Latest gives way after, never before, the wrapping');
   // The item the cursor is on keeps its whole text whatever the panel has, and the others stay one row.
   const long = await fixture(t, { waiting: [WAITING[2], TRY_LONG, WAITING[3]] });
   const kept = plain(long.render(38, 'en', onPage(undefined, { projectCursor: 'project:wait:1' }), 24));
@@ -89,7 +89,7 @@ test('Now is work in flight: worktrees with no ledger row leave it, and an empty
 test('the Working tree row counts the worktrees with no ledger row, and its page lists them', async (t) => {
   const f = await fixture(t);
   const rows = (lang, state) => plain(f.render(38, lang, state, 46));
-  assert.ok(rows('en').includes('Working tree  3 unlisted worktrees'));
+  assert.ok(rows('en').some((line) => /^Working tree +3 unlisted worktrees$/.test(line)));
   assert.ok(rows('zh').includes('工作区 3 个未登记工作树'));
   assert.deepEqual(block(rows('en', 'tree'), /^Unlisted worktrees/), ['Unlisted worktrees ───────────────── 3',
     '  ! EXTRA-ONE            not in ledger', '  ! EXTRA-TWO            not in ledger', '  ! NO-JOB               not in ledger']);

@@ -102,12 +102,16 @@ export function splitProjectInput(next: MonitorState, input: WorkbenchInput, key
       if (focus && at === got.click) return enter();
       intoPreview(got.click);
     } else if (got.click === at && !focus) return enter();
-    else { next.splitFocus = undefined; next.projectCursor = got.click; if (focus) next.trySelection = undefined; }
+    else { next.splitFocus = undefined; next.projectCursor = got.click; if (focus && next.mainTab === 'project') next.trySelection = undefined; }
     return result();
   }
   if (got === 'done') return result();
   if (MOVE.includes(key)) { move(splitItems(focus ? preview?.rows : list?.rows), key); return result(); }
-  if (key === 'escape' && focus) { next.splitFocus = undefined; next.projectCursor = next.splitList; next.trySelection = undefined; return result(); }
+  if (key === 'escape' && focus) {
+    next.splitFocus = undefined; next.projectCursor = next.splitList;
+    if (next.mainTab === 'project') next.trySelection = undefined;
+    return result();
+  }
   if (key === 'enter' || key === 'activate') return enter();
   if (key === 'space' || key === 'try-accept' || key === 'try-flag') {
     const cursorRow = rows.find((r) => r.item === at && r.tryTarget);
@@ -125,8 +129,5 @@ export function splitProjectInput(next: MonitorState, input: WorkbenchInput, key
     const tried = tryInput(next, key, row);
     if (tried) return tried;
   }
-  // `c` and `C` apply a preset to the role under the cursor, from the list; the place keys act in the preview, on a place.
-  const role = /^project:role:([^:]+)$/.exec(next.projectCursor ?? '')?.[1];
-  if (role && !focus && (key === 'role-preset' || key === 'role-preset-prev')) return result({ type: 'role-edit', role, index: 0, op: 'preset', ...(key === 'role-preset-prev' ? { step: -1 as const } : {}) });
   return undefined;
 }

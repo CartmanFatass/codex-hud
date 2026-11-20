@@ -393,8 +393,7 @@ what is happening, what landed, then where each page stands. Top to bottom the h
 - one row per page with a one-line summary: **Progress** (milestone, to try, blocked, working: the last facts drop first on a short row; the
   current milestone's bar under it), **Tickets** (done/total, working, blocked; absent when the
   project has no tickets), **Working tree** (worktrees with no ledger row, branch, changed, worktrees,
-  ahead/behind, editing jobs; its page lists the unlisted ones), **Docs** (spec milestone, newest review) and **Control plane** (roles at their limit,
-  roles, keys present, browser). A row too short for its facts drops the last ones, never part
+  ahead/behind, editing jobs; its page lists the unlisted ones), and **Docs** (spec milestone, newest review). A row too short for its facts drops the last ones, never part
   of one.
 
 A panel shorter than the hub loses **Latest** first (to its newest rows, then whole), then the
@@ -467,34 +466,19 @@ blockers (`← 03 ●`, the mark that of the blocker); **Done** starts folded (E
 Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under
 `## Comments`) under it, a second Enter folds it; `o` opens the ticket file.
 
-**Control plane page.** What needs you first, then the roles, then the files.
+**Control tab.** Control is a main tab after Project. It names and follows the project selected in Project; `[`/`]` change that same selection without changing Home's root. Control reads that root's role and file facts without collecting its Git status, worktrees or tickets. The Roles view starts with:
 
-- **Needs attention** (with its count): a role with a place at its limit (`✗ imp  pi exhausted 42m`)
-  and, under it, `next job → ◉ agy gemini-4 high`, the place the next `hud_create` will use (`none`
-  when there is none); a role with nowhere to run (`− flow  flow image not installed`); a role file
-  that does not load (`! bad.json  unparseable JSON`). Each row is a stop that takes the place keys.
-- **Healthy** (folded to one row of names; Enter opens it): the other roles, one row per place
-  under **Roles** (imp, reviewer, sonic, oracle and any other role), **Project roles** (roles
-  whose file comes from the project's own `.hud/roles`, which wins) and **Browser tasks** (roles that
-  run only on browser places: pro, flow). A role is one row per place on one
-  line: the first is the primary, `↳` rows are its fallbacks in order. A row reads mark, role,
-  harness, model, thinking (the model by its short name: no `vendor/` and no snapshot date; a row
-  that would cut the name keeps it whole on a second line first; the role's preset is not on its
-  rows, it is in the selected role's heading, `imp ── 3 places · preset: custom`); marks are `◉` in use (where the next `hud_create` runs: the first place
-  that is installed and not exhausted), `○` standby, `✗` exhausted (rows of 56+ columns add the time
-  left) and `−` harness not installed. Rows of 80+ columns end with whose file is in force:
-  `default` (shipped), `yours` (`$HUD_HOME/roles/<role>.json`) or `project`. Enter and `o` open that
-  role file.
-- **Harnesses**: which of `pi`, `agy`, `claude`, `codex`, `grok`, `jev-ask`, `jev-aistudio`,
-  `jev-flow` this machine has, with the mark legend.
-- **Files** (folded to `keys 3/5 · browser ✓ · missing …`; Enter opens it): invalid or ignored role files, the
-  convention, pi role definitions, instruction files, native agents (folded inside), keys, browser.
+- **Needs attention**: roles with exhausted places or no available place, plus invalid role files. A role reads `imp [daily] → agy`, with the limit or missing runtime explained underneath; an invalid file opens with Enter or `o`.
+- **Healthy**: folded to role names. Enter shows one row per role, with its active preset or `Custom`, the next target, and a `project` tag on project-owned roles.
+- **Usage** and **Files**: both folded. Usage opens quota windows, pi spend and dispatch health. Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
+
+Split previews the selected role's next model, thinking, source and numbered chain; Enter focuses its places and Esc returns to the list. Classic expands the numbered chain and its source under the role with Enter. `o` on a role or place opens its source. Chain marks: `◉` next, `○` standby, `✗` exhausted and `−` not installed.
 
 Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → project file in force; more specific wins, omission inherits. `hud_roster` returns `presets` and `preset` (matching name or null). Pass a name from `presets` to `hud_create` to use it for one job only.
 
-On a role's place row, `c`/`C` applies the next/previous preset in one step (from `custom`, first/last), writing its run to the owner's file and keeping other fields, including presets. The preset's name is shown in the selected role's heading and its `role` line (`[name]` or `[custom]`), not on each row; exhausted marks remain per place. Project-pinned roles refuse as for other edits; `o` opens the file. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
+On a role or place row, `c`/`C` applies the next/previous preset in one step (from `Custom`, first/last), writing its run to the owner's file and keeping other fields, including presets. Exhausted marks remain per place. Project-pinned roles refuse as for other edits; `o` opens the file. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
 
-On a place row (Control plane only): `p`/`P` next/previous harness (`pi`, then each CLI agent for a
+On a place row (Control only): `p`/`P` next/previous harness (`pi`, then each CLI agent for a
 role that has CLI instructions; a browser role walks chatgpt, gemini, aistudio) with that harness's
 default model from `harnesses.json`; `e`/`E` thinking (a Flow place: image/video with `m`). Each cycle
 passes through "unset" (the role's or harness's own default) before it wraps. `i` adds a fallback at
@@ -525,7 +509,7 @@ provider in `$HUD_HOME/harnesses.json`: `{"catalog":{"pi":{"include":{"arena":["
 
 For `pi`, `agy` and `grok`,
 models come first from each harness's own list command (`pi --list-models`, `agy models`,
-`grok models`), run only when the Control plane page opens or on `r` (never on the refresh tick)
+`grok models`), run only when Control opens or on `r` (never on Home or on the refresh tick)
 and cached under `$HUD_HOME/display` for a day (failed or missing commands fall back silently);
 next come shipped `catalog.json` and `$HUD_HOME/harnesses.json`'s `catalog` key (which `claude`
 and `codex` always use), then any models set in `$HUD_HOME/roles/*.json`; the picker curates that
@@ -540,7 +524,7 @@ until the next key, and `o` opens the file.
 and `[` and `]` step through the panel's own project and the existing roots in
 `$HUD_HOME/projects.json` (deduplicated, at most 16). Enter or a click on the name row
 opens the **Projects list** (`‹ Projects` replaces the tabs; Esc or a click on the crumb
-returns to the hub). `2` opens the project shown last (at the page it had open, else its hub), never the list.
+returns to the hub).
 On a page `[`/`]` work too and its crumb shows the project's name; its cursor, scroll and
 folds start fresh. The choice belongs to the panel and survives its reload, not
 Settings. Home always stays on the panel's own project, and opening Home's progress block
@@ -569,7 +553,7 @@ A project without STATE.md says `no STATE.md` on Progress; its other pages work.
 
 On a page Enter folds a header, shows a ticket's detail or opens a row's file, and `o`
 opens it in `$EDITOR` (default vim), in a herdr tab that closes with the editor; failed workspace lookup falls back to a
-split. Home and Project retain separate cursor/scroll state. Full Project collection
+split. Home, Project and Control retain separate cursor/scroll state. Full Project collection
 runs while the hub or a page is visible, not behind modals; Home reuses only cached
 STATE/ticket reads.
 Git is gated to at most once per five seconds. Reads do not start a browser or MCP.
@@ -598,23 +582,21 @@ shows `Board saved: <file>` at the top until the next key.
 
 ## Panel layouts
 
-Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classic`, `split`) chooses how Home and
-Project are laid out; saving switches the open panel at once, no restart. **Classic** is the default described above.
+Settings → Panel → **Layout** (`panelLayout` in `hud-settings.json`: `classic`, `split`) chooses how Home, Project and
+Control are laid out; saving switches the open panel at once, no restart. **Classic** is the default described above.
 **Split** puts a list over a preview of the selected row (see [Split layout](#split-layout)).
 
 Settings → Panel → **Project layout** (`projectLayout` in `hud-settings.json`: `timeline`, `board`, `inbox`) arranges
-the Project tab's pages in both Classic and Split without changing Home, Tickets, counts or keys; saving applies live.
+the Project tab's pages in both Classic and Split without changing Home, Control, Tickets, counts or keys; saving applies live.
 **Timeline** is the default. **Board** draws a milestone map (one row per milestone, one cell per slice with `n/m`, age
 and `+N` when full), a `latest` line, a one-row legend, In flight and gauge page rows on the hub; opens the current
-milestone into its slices in cell order on Progress (older milestones as map rows, jobs outside the ledger, Next); shows
-one fallback chain row per role on the Control plane with its places in the preview (Split) or expanded on Enter
-(Classic), where all place keys act; and draws the Projects list as a one-row-per-project table (`ms`, `ledger`, `?`,
+milestone into its slices in cell order on Progress (older milestones as map rows, jobs outside the ledger, Next); and draws the Projects list as a one-row-per-project table (`ms`, `ledger`, `?`,
 `◉`, `age`). **Inbox** opens the hub with a ranked Needs you list (questions and STATE's waiting items, to-try slices
 newest first, tickets asking for an answer, blocked slices, roles at their limit, each with its reason word on the
 right and the same `N · M to try` header figures as Timeline), followed by Running, a `last accepted` line and the page
 rows; orders Progress as To try (every milestone, newest first), Blocked, Working, Next and Done folded to one row;
-groups the Projects list into Needs you, Running and Quiet (one row per quiet project); and keeps Timeline's Control
-plane and Tickets.
+groups the Projects list into Needs you, Running and Quiet (one row per quiet project); and keeps Timeline's Tickets.
+Enter on an Inbox role alert opens that role on Control; `o` still opens its file.
 
 In Classic's to-try view and on Split's to-try rows, Space toggles a mark (`▣`, or `*` with text icons).
 `y` accepts and `n` flags the marked rows, or the current row if nothing is marked. All affected slices go into
@@ -625,7 +607,7 @@ or leaving the view clears the Space marks.
 
 ### Frame and reload
 
-Home and Project are the default main tabs. Settings → Panel → **Experiments** (`experiments` in `hud-settings.json`,
+Home, Project, and Control are the default main tabs. Settings → Panel → **Experiments** (`experiments` in `hud-settings.json`,
 off by default) adds the experimental **EXP** tab. Use ↑/↓ to select and Enter to edit or open an account;
 Enter saves, and Esc cancels. For calibration, Enter first previews the change, then Enter saves the new base.
 The form is the same in Classic and Split. Settings apply to all projects on this machine, and are stored under
@@ -661,7 +643,7 @@ Icons are `unicode` or `text`; old nerd/emoji values load as unicode.
 After a new installed entry is stable for two seconds, a bounded child import
 validates it before the panel restarts in the same pane. Selection, scroll, folds,
 show-all, modal, Settings cursor, opening time and width override survive. A saved
-Skills tab from an older build falls back to Home. Unsaved
+Skills tab from an older build falls back to Home; a saved Project/Control page reopens on Control. Unsaved
 Settings delay reload; a bad build leaves the old panel and a dim notice. Bars are
 separate and need restarting for new code. Quiet, positively idle observations can
 back off to five-second collection; input/redraw remain independent.
@@ -672,9 +654,9 @@ Standalone panels consume their own keys and SGR mouse events directly.
 
 | Key | Action |
 |---|---|
-| Tab/Shift-Tab, Left/Right, a click on the tab | Switch between Home and Project (the digits switch no tab: `1`–`4` answer an open question). The tab's count is `?` and a number (`Project ?4`: what waits for you) |
+| Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Control → EXP (if enabled). Digits switch no tab: `f` opens Changes and `1`–`4` answer an open question. The tab's count is `?` and a number (`Project ?4`: what waits for you) |
 | `f` | Changes summary (once `3`) |
-| `[`, `]` | Project: previous/next project (not on the Projects list) |
+| `[`, `]` | Project or Control: previous/next project (not on the Projects list) |
 | `p` `e` (capitals back), `i` `Del` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
 | `c` / `C` | Control plane: apply the next / previous role preset |
 | `m` (`M`) | Control plane: pick the model of the place under the cursor: provider, then model on `pi`; type to filter, ↑↓ pick, Enter sets (an open provider, or the model), Tab shows every model, ← back, Esc cancels |
@@ -704,7 +686,7 @@ wheel scrolling moves the viewport without moving the selection.
 ### Split layout
 
 The saved setting `panelLayout` (`classic` by default; Settings → Panel → Layout) can be `split`:
-Home and Project become **a list above and a preview of the cursor row below**
+Home, Project and Control become **a list above and a preview of the cursor row below**
 (`docs/design/panel-v8/`, option 2). Classic's cards, slab and sentences are the previews, unchanged.
 
 - **Home.** One row per package lane and per block (Waiting for you, Decided for you,
@@ -727,9 +709,7 @@ Home and Project become **a list above and a preview of the cursor row below**
   text and, for a slice to try with a brief, its brief and acceptance steps with the original ledger text folded below them (Enter on the slice takes the keys into the preview, Enter on the fold row unfolds it; `o` opens STATE.md). A to-try slice's list row is its id and the brief's first sentence. In the hub's
   Progress preview, Space starts on the highlighted to-try row and moves the keys into
   the preview. Without Space marks, `y` / `n` on the hub still act on the next slice to try.
-- **Control plane.** Roles on top (those that need you first), the cursor role's
-  places below. Enter takes the keys into the places: ↑↓ choose one, `p m e + - K J x`
-  act on it, Esc returns; `c` / `C` apply a preset to the role from the list.
+- **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the places: ↑↓ selects one, `p m e i Del K J x` act on it, Esc returns; `c` / `C` apply a preset to the role from the list.
 - **Tickets, Working tree, Docs.** A row each, the ticket's checklist and latest
   comment or the fact's whole text underneath; Enter opens the file.
 
