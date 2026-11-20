@@ -1785,12 +1785,12 @@ test('Codex footer last-seen is opt-in, private, throttled and reaches only its 
   const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(0) };
   const frame = renderMonitor({ tree, state: { ...initialMonitorState(), experiments: true, mainTab: 'exp' },
     expData, width: 40, height: 24, nowMs: firstAt + 120_000 });
-  const date = new Date(firstAt + 60_000).toISOString().slice(0, 16).replace('T', ' ') + 'Z';
+  const date = new Date(firstAt + 60_000).toISOString().slice(5, 16).replace('T', ' ');
   const lines = frame.lines.map((line) => stripAnsi(line).trimEnd()).join('\n');
   assert.ok(frame.lines.every((line) => visualLength(line) === 40));
-  assert.match(lines, /Track native status line\s+on/);
-  assert.match(lines, new RegExp(`Local \\(\\.codex-link\\)\\nLast native bar seen\\s+${date}`));
-  assert.match(lines, /\.codex-other\nLast native bar seen\s+—/);
+  assert.match(lines, /Track native status line +on/);
+  assert.match(lines, new RegExp(`^  Local \\(\\.codex-link\\) +seen ${date}$`, 'm'));
+  assert.match(lines, /^  \.codex-other +bar not seen yet$/m);
   assert.equal(fs.readFileSync(join(own, 'config.toml'), 'utf8'), '# synthetic\n');
   assert.equal(fs.readFileSync(join(other, 'config.toml'), 'utf8'), '# synthetic\n');
 });

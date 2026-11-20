@@ -307,7 +307,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
             : harnesses && input.project ? addingHarness
               ? [section(t('Add back'), width), ...harnessAddRows(input.project, state, width)] : harnessRows(input.project, state, width)
             : sheetRows ?? controlRows(input.project, state, width, now)
-          : experiment ? expRows(experiment, input.expData, width, now) : homeRows(board, state, width, now, input);
+          : experiment ? expRows(experiment, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.error) - Number(!!input.publicationNotice))) : homeRows(board, state, width, now, input);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   // A stop waiting for its answer is the top row of Home and the Inspector, where the job under the cursor is.

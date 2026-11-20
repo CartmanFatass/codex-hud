@@ -273,7 +273,95 @@ test('calibration previews before any write, cancels cleanly, then appends one p
   assert.equal(fs.statSync(f.dir).mode & 0o777, 0o700);
 });
 
-test('40 columns in EN and ZH: both layouts show whole labels, both ledgers, and the calibration preview', async (t) => {
+test('40-column EXP form indents its rows and gives up blanks before sections in both languages and layouts', (t) => {
+  const f = fixture(t);
+  const data = readExpData(f.env.HUD_HOME, f.env, NOW);
+  const expData = { ...data, profiles: data.profiles.slice(0, 1) };
+  const oldLanguage = setLanguage('en');
+  const oldDisplay = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
+  t.after(() => {
+    setLanguage(oldLanguage);
+    setDisplayConfig(oldDisplay);
+  });
+  for (const lang of ['en', 'zh']) {
+    setLanguage(lang);
+    const en = lang === 'en';
+    for (const panelLayout of ['classic', 'split']) {
+      const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout };
+      const frame = draw(state, expData);
+      const lines = plain(frame).split('\n');
+      assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+      assert.equal(lines[1], en ? 'This machine · all projects' : '本机 · 所有项目');
+      assert.deepEqual([lines[2], lines[7], lines[13]], ['', '', '']);
+      assert.match(lines[3], en ? /^Codex native status line ─+$/ : /^Codex 原生栏 ─+$/);
+      assert.match(lines[4], en ? /^  Track native status line +off$/ : /^  记录原生状态栏 +关$/);
+      assert.match(lines[5], en ? /^  \.codex +bar not seen yet$/ : /^  \.codex +尚未见到原生栏$/);
+      assert.match(lines[8], en ? /^pi subscription proxy ─+$/ : /^pi 订阅代理 ─+$/);
+      assert.match(lines[14], en ? /^API grants ─+$/ : /^API 赠额 ─+$/);
+      assert.match(lines[16], en ? /^  openai-api +off · uncalibrated$/ : /^  openai-api +关 · 未校准$/);
+      assert.match(lines.at(-1), en ? /⏎ edit  \? help$/ : /⏎ 编辑  \? 帮助$/);
+
+      const short = draw(state, expData, 16);
+      assert.equal(short.lines.length, 16);
+      assert.ok(short.lines.every((line) => visualLength(line) === 40));
+      const compact = plain(short).split('\n');
+      assert.deepEqual(compact.filter(Boolean), lines.filter(Boolean));
+      assert.equal(compact.filter((line) => !line).length, 1);
+
+      const observed = { ...expData, profiles: [{ ...expData.profiles[0], lastNativeSeenAt: NOW - 18 * 60_000 }] };
+      assert.match(plain(draw(state, observed)), en ? /^  \.codex +seen 11-20 10:12$/m : /^  \.codex +已见 11-20 10:12$/m);
+    }
+  }
+});
+
+test('EXP options show every profile with a count and separate cursor/current marks; a second click saves', (t) => {
+  const f = fixture(t);
+  saveExpEdit(f.env.HUD_HOME, {
+    field: 'alias', profile: f.other, value: 'Documentation Account for Model Experiments',
+  }, NOW, f.env);
+  const expData = readExpData(f.env.HUD_HOME, f.env, NOW);
+  const oldLanguage = setLanguage('en');
+  const oldDisplay = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
+  t.after(() => {
+    setLanguage(oldLanguage);
+    setDisplayConfig(oldDisplay);
+  });
+  for (const lang of ['en', 'zh']) {
+    setLanguage(lang);
+    const en = lang === 'en';
+    for (const panelLayout of ['classic', 'split']) {
+      const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, panelLayout, expPage: { cursor: 'binding' } };
+      const opened = send(draw(state, expData), key('enter'));
+      assert.equal(opened.action, undefined);
+      const sheet = draw(opened.state, expData, 16);
+      const lines = plain(sheet).split('\n');
+      assert.ok(sheet.lines.every((line) => visualLength(line) === 40));
+      assert.match(lines[1], en ? /^Codex profile ─+ 4$/ : /^Codex 配置 ─+ 4$/);
+      assert.deepEqual(lines.slice(2, 4), [en ? '› ◉ Unbound' : '› ◉ 未绑定', '    .codex']);
+      assert.match(lines[4], /^    Documentation Account…[^…]+secondary\)$/);
+      assert.equal(lines[5], '    selected');
+      assert.match(lines.at(-1), en ? /⏎ save  Esc cancel$/ : /⏎ 保存  Esc 取消$/);
+      const clicked = { type: 'mouse', button: 'left', x: 4, y: 4 };
+      assert.equal(send(sheet, { ...clicked, y: 2 }).action, undefined, 'even the initial choice requires confirmation');
+      const selected = send(sheet, clicked);
+      assert.equal(selected.action, undefined, 'the first click only moves the cursor');
+      const moved = draw(selected.state, expData, 16);
+      assert.match(plain(moved), en ? /^  ◉ Unbound$/m : /^  ◉ 未绑定$/m);
+      assert.match(plain(moved), /^›   Documentation Account…[^…]+secondary\)$/m);
+      assert.deepEqual(send(moved, clicked).action, { type: 'exp-save', edit: { field: 'binding', value: f.other } });
+      assert.equal(send(moved, key('escape')).state.expPage.edit, undefined);
+    }
+  }
+
+  const crowded = { ...expData, profiles: Array.from({ length: 20 }, (_, i) => ({ home: `/synthetic/profile-${i}`, name: `profile-${i}` })) };
+  const state = { ...initialMonitorState(), mainTab: 'exp', experiments: true, expPage: { cursor: 'binding' } };
+  const sheet = draw(send(draw(state, crowded), key('enter')).state, crowded, 16);
+  const wrapped = draw(send(sheet, key('up')).state, crowded, 16);
+  assert.match(plain(wrapped), /^Codex 配置 ─+ 21$/m);
+  assert.match(plain(wrapped), /^›   profile-19$/m);
+});
+
+test('40 columns in EN and ZH: both layouts show whole control labels, both ledgers, and the calibration preview', async (t) => {
   const f = fixture(t);
   const oldLanguage = setLanguage('en');
   const oldDisplay = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
@@ -303,16 +391,17 @@ test('40 columns in EN and ZH: both layouts show whole labels, both ledgers, and
         const frame = p.frame();
         assert.equal(frame.lines.length, 24);
         for (const line of frame.lines) assert.equal(visualLength(line), 40, stripAnsi(line));
-        assert.doesNotMatch(plain(frame), /…/);
         return plain(frame);
       };
       const overview = exact();
       assert.match(overview, lang === 'en' ? /Home\s+Project\s+Control\s+EXP/ : /首页\s+项目\s+控制\s+EXP/);
-      assert.match(overview, /Secondary work profile for\s+documentation\s+\(\.codex-secondary\)/);
+      assert.match(overview, /^  Secondary wor?…[^…]+\) +(?:bar not seen yet|尚未见到原生栏)$/m);
       assert.match(overview, /anthropic-api\s+(on|开) · ≈\$7\.65\s+openai-api\s+(on|开) · ≈\$12\.75/);
       p.select('proxy-status');
       p.press('enter');
-      assert.match(exact(), lang === 'en' ? /Next attempt\s+—/ : /下次尝试\s+—/);
+      const proxy = exact();
+      assert.match(proxy, lang === 'en' ? /Next attempt\s+—/ : /下次尝试\s+—/);
+      assert.doesNotMatch(proxy, /…/);
       p.press('escape');
       for (const [account, remaining, billed] of [['anthropic-api', '7.65', '0.35'], ['openai-api', '12.75', '0.00']]) {
         p.select(account);
@@ -320,7 +409,8 @@ test('40 columns in EN and ZH: both layouts show whole labels, both ledgers, and
         const detail = exact();
         assert.ok(detail.includes(`≈$${remaining}`));
         assert.match(detail, lang === 'en' ? /Unpriced requests\s+0/ : /未计价请求数\s+0/);
-        const line = detail.split('\n').find((row) => row.startsWith(lang === 'en' ? 'Billed this period' : '本期已计费用'));
+        assert.doesNotMatch(detail, /…/);
+        const line = detail.split('\n').find((row) => row.startsWith(lang === 'en' ? '  Billed this period' : '  本期已计费用'));
         assert.ok(line?.endsWith(`$${billed}`), line);
         p.edit('calibration', '13.40');
         const preview = exact();

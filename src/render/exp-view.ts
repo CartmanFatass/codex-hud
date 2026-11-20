@@ -26,8 +26,8 @@ import {
 import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 import { monitorRowAt } from './monitor-input.js';
 import { theme, visualLength } from './colors.js';
-import { flowLines, monitorText, pair } from './monitor-text.js';
-import { boardRow, section, type FooterHints } from './workboard-rows.js';
+import { flowLines, monitorText, pair, squeeze } from './monitor-text.js';
+import { boardRow, mark, section, type FooterHints } from './workboard-rows.js';
 import { t } from './i18n.js';
 
 type Detail = ExpAccount | 'codex-help' | 'proxy-status';
@@ -40,13 +40,14 @@ interface Entry {
   id: string;
   label: string;
   value?: string;
-  reading?: [string, string];
+  reading?: string;
   edit?: Editor;
   detail?: Detail;
 }
 interface Draft {
   text: string;
   pick: number;
+  clicked?: boolean;
   preview?: Extract<ExpEdit, { field: 'grant' | 'renewal' | 'calibration' }>;
 }
 export interface ExpPage {
@@ -57,6 +58,7 @@ export interface ExpPage {
   notice?: 'Saved' | 'Could not save EXP setting' | 'Invalid value';
 }
 
+const choiceItem = (i: number) => `exp:choice:${i}`;
 const enabled = (on: boolean) => t(on ? 'on' : 'off');
 const offline = () => t('not connected');
 const remaining = (balance: ExpBalance | undefined) =>
@@ -248,7 +250,10 @@ function groups(
             'Enter an alias; empty restores the directory name',
             (value) => (expAlias(value) ? { field: 'alias', profile: home, value } : undefined)
           ),
-          reading: ['Last native bar seen', time(lastNativeSeenAt)],
+          reading:
+            lastNativeSeenAt == null
+              ? t('bar not seen yet')
+              : t('seen {time}', { time: time(lastNativeSeenAt).slice(5, 16) }),
         })),
         link('codex-help', t('Codex setup / restore')),
       ],
@@ -303,14 +308,23 @@ function groups(
   ];
 }
 
-export function expRows(page: ExpPage, data: ExpData | undefined, width: number, nowMs: number): MonitorRow[] {
-  const text = (s: string, ink = theme.board.text) => flowLines(s, width).map((line) => boardRow(ink(line)));
+export function expRows(
+  page: ExpPage,
+  data: ExpData | undefined,
+  width: number,
+  nowMs: number,
+  room: number
+): MonitorRow[] {
+  const text = (s: string, ink = theme.board.text, indent = '') =>
+    flowLines(s, width - indent.length).map((line) => boardRow(indent + ink(line)));
   if (!data) return [];
   const sections = groups(data, page.detail);
-  const labeled = (label: string, value = '') =>
-    value && visualLength(label) + visualLength(value) + 2 <= width
-      ? [boardRow(pair(label, theme.board.muted(value), width))]
-      : [...text(label), ...text(value, theme.board.muted)];
+  const labeled = (label: string, value = '', inline = false) => {
+    const maxLabel = width - visualLength(value) - 4;
+    if (value && maxLabel > 0 && (inline || visualLength(label) <= maxLabel))
+      return [boardRow(pair(`  ${inline ? squeeze(label, maxLabel) : label}`, theme.board.muted(value), width))];
+    return [...text(label, theme.board.text, '  '), ...text(value, theme.board.muted, '  ')];
+  };
   const entry = sections.flatMap((g) => g.entries ?? []).find((e) => e.id === page.cursor);
   if (page.edit && entry?.edit) {
     const { edit } = page;
@@ -328,12 +342,17 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number,
       ];
     }
     if ('choices' in entry.edit) {
-      const { choices } = entry.edit;
+      const { choices, initial } = entry.edit;
+      const size = Math.max(0, room - 1);
+      const start = Math.max(0, Math.min(choices.length - size, edit.pick - Math.floor(size / 2)));
       return [
-        ...rows,
-        boardRow(''),
-        ...text(`${edit.pick + 1}/${choices.length}`, theme.board.muted),
-        ...text(choices[edit.pick]?.label ?? '', theme.board.active),
+        section(entry.label, width, String(choices.length)),
+        ...choices.slice(start, start + size).map(({ label }, offset) => {
+          const i = start + offset;
+          const cursor = i === edit.pick ? theme.board.active(mark('›', '>')) : ' ';
+          const current = i === initial ? theme.board.active(mark('◉', '@')) : ' ';
+          return { item: choiceItem(i), text: `${cursor} ${current} ${squeeze(label, width - 4)}` };
+        }),
       ];
     }
     const account = page.detail === 'openai-api' || page.detail === 'anthropic-api' ? page.detail : undefined;
@@ -349,24 +368,27 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number,
       ...text(`> ${monitorText(edit.text)}${edit.text ? ' ' : ''}▌`, theme.board.active),
     ];
   }
-  return [
-    ...text(t('Local · all projects'), theme.board.muted),
+  const header = [
+    ...text(t('This machine · all projects'), theme.board.muted),
     ...(data.unreadable ? text(t('Could not read EXP configuration'), theme.board.danger) : []),
-    ...sections.flatMap(({ label, entries, notes, readings }) => [
-      section(t(label), width),
-      ...(entries ?? []).flatMap((entry) => [
-        ...labeled(entry.label, entry.value).map((row, i) => (i ? row : { ...row, item: entry.id })),
-        ...(entry.reading ? labeled(t(entry.reading[0]), entry.reading[1]) : []),
-      ]),
-      ...(readings ?? []).flatMap((reading) =>
-        typeof reading === 'string' ? labeled(t(reading), offline()) : labeled(t(reading[0]), reading[1])
-      ),
-      ...(page.detail === 'proxy-status'
-        ? proxyReadings(data, nowMs).flatMap(([name, value]) => labeled(name, value))
-        : []),
-      ...(notes ?? []).flatMap((note) => text(t(note))),
-    ]),
   ];
+  const blocks = sections.map(({ label, entries, notes, readings }) => [
+    section(t(label), width),
+    ...(entries ?? []).flatMap((entry) =>
+      labeled(entry.label, entry.reading ?? entry.value, !!entry.reading).map((row, i) =>
+        i ? row : { ...row, item: entry.id }
+      )
+    ),
+    ...(readings ?? []).flatMap((reading) =>
+      typeof reading === 'string' ? labeled(t(reading), offline()) : labeled(t(reading[0]), reading[1])
+    ),
+    ...(page.detail === 'proxy-status'
+      ? proxyReadings(data, nowMs).flatMap(([name, value]) => labeled(name, value))
+      : []),
+    ...(notes ?? []).flatMap((note) => text(t(note), theme.board.text, '  ')),
+  ]);
+  const spare = room - header.length - blocks.reduce((total, rows) => total + rows.length, 0);
+  return [...header, ...blocks.flatMap((rows, i) => (i < spare ? [boardRow(''), ...rows] : rows))];
 }
 
 export const expHints = (page: ExpPage): FooterHints => {
@@ -400,20 +422,27 @@ export function expInput(state: MonitorState, key: WorkbenchInput, ctx: MonitorC
       leave();
       return out();
     }
-    if (key.type !== 'key') return out();
+    const item =
+      key.type === 'mouse' && key.button === 'left' && pane ? monitorRowAt(pane, key.x, key.y)?.item : undefined;
+    const option = item && 'choices' in editor ? editor.choices.findIndex((_, i) => choiceItem(i) === item) : -1;
+    if (key.type !== 'key' && option < 0) return out();
     page.edit = draft;
     page.notice = undefined;
-    if (name === 'enter') {
+    if (option >= 0 && (option !== draft.pick || !draft.clicked)) {
+      draft.pick = option;
+      draft.clicked = true;
+    } else if (name === 'enter' || option >= 0) {
       const change =
         draft.preview ?? ('choices' in editor ? editor.choices[draft.pick]?.change : editor.parse(draft.text.trim()));
       if (!change) page.notice = 'Invalid value';
       else if (change.field === 'calibration' && !draft.preview) draft.preview = change;
       else return out(change); // The panel closes the editor only after a successful write.
-    } else if (!draft.preview) {
+    } else if (!draft.preview && key.type === 'key') {
       if ('choices' in editor) {
         if (['up', 'down', 'left', 'right'].includes(name)) {
           const n = editor.choices.length;
           draft.pick = (draft.pick + n + (name === 'up' || name === 'left' ? -1 : 1)) % n;
+          draft.clicked = undefined;
         }
       } else if (name === 'backspace') draft.text = [...draft.text].slice(0, -1).join('');
       else if (key.text !== undefined && draft.text.length < 80) draft.text += key.text;
