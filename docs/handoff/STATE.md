@@ -11,7 +11,7 @@ Older sections (2026-11-03 to 2026-11-14: the R0–R7 queue, merge rules, review
 ## Next
 
 - EXP (`.scratch/exp/`, owner 2026-11-20): experimental top-level tab behind Settings → Panel → Experiments; 01 tab + settings, 02 Codex native status line, 03 pi subscription proxy (refresh while used, no timer) ← 01, 04 oapi grant ledger (JSONL) ← 01, 05 Anthropic ledger ← 04. 01 and 02 dispatched (imp).
-- CONTROL-TAB (owner 2026-11-20): Control plane becomes its own main tab; harness on/off at CLI and pi-provider level (off = skipped like exhausted, files untouched); full pi model list for providers that are on; per-role presets created, reordered and switched from the panel. Design: docs/design/control-tab/design.md (oracle); HTML sample by frontend-imp (j41ba40a6ecb95cd6) → owner settles → 5 tickets (standalone tab, harness switches, full pi picker, role-row presets, chain editing).
+- CONTROL-TAB (owner 2026-11-20): Control plane becomes its own main tab; harness on/off at CLI and pi-provider level (off = skipped like exhausted, files untouched); full pi model list for providers that are on; per-role presets created, reordered and switched from the panel. Design: docs/design/control-tab/design.md (oracle); HTML sample docs/design/control-tab/index.html (10 open points on the page) → owner settles → 5 tickets (standalone tab, harness switches, full pi picker, role-row presets, chain editing).
 - PROJECT-LAYOUTS (`.scratch/project-layouts/`, owner 2026-11-20: PROJECT-UX B and C back as Project layouts, consistent with PANEL-UX): 01 Board and 02 Inbox landed; both to try.
 - PANEL-UX (`.scratch/panel-ux/`, from the owner's UI/UX review 2026-11-19): 01 to-try briefs in rows, one count, number keys off the tabs, direct `1–4`/`d` answers, no divider drag (frontend-imp) → 02 one meaning per key, no repeated status, 40-column rows, one language.
 - MCP-NEXT (`.scratch/mcp-next/`, 7 tickets): 01 fine-grained locks + pre-flight trust + parsed quota TTL → 02 `hud_create` preset + 04 pi native silent watch → 03 `hud_wait` → 05 `context_files`/`from_jobs` → 06 `hud-progress` + `hud_peek` → 07 managed `worktree` isolation.
@@ -160,8 +160,8 @@ board counts these; update at every landing or decision. -->
 - accepted · 0.2.0 · PANEL-UX-TITLES · ticket titles cut at a word, never inside one (imp neon) (1234b2a0; clamped sentences 9d60eec7)
 - accepted · 0.2.0 · PROJECT-LAYOUTS-01 · Settings → Panel → Project layout (Timeline | Board | Inbox); the Board layout (imp neon) (f9aa6dda)
 - accepted · 0.2.0 · PROJECT-LAYOUTS-02 · the Inbox layout: Needs you first, Running, Progress by To try; Project tab only (imp neon) (8b0aba6c)
-- working · — · EXP-01 · experimental EXP tab behind Settings → Panel → Experiments, settings page (imp)
-- working · — · EXP-02 · Codex native status line from hud-mcp: compact row, important fields first (owner: Codex sends no width) (imp)
+- try · — · EXP-01 · experimental EXP tab behind Settings → Panel → Experiments (实验功能): Codex, pi proxy and API grant settings; readings say 未接入 until 02–05 (imp) (3c96f3e4 → 2cc3760c)
+- try · — · EXP-02 · Codex native status line: hud-mcp serves a compact MyHUD row (model, context, quota, pane's HUD reminder); pick it in Codex /statusline; codexH bar unchanged (imp) (b0801952)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
