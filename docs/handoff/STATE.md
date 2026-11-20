@@ -166,7 +166,7 @@ board counts these; update at every landing or decision. -->
 - try · — · CONTROL-TAB-03 · full pi model picker (m on a place): every model of the providers that are on, grouped, typed filter, discovery on open/r only; include curation removed (imp) (550da5a8; flake fix hud-watch)
 - try · — · CONTROL-TAB-04 · presets on the role row: c/C switch, p list, N copy / R rename / D delete with preview; active_preset + hidden_presets, project roles locked (imp) (41dd0030)
 - try · — · MODEL-PICKER-01 · picker model facts (ctx/out/think/img from the same pi --list-models call), strip, ✗/⊘/? row facts, off-provider line, ^R, Esc clears filter first (imp) (b1d81f98)
-- working · — · MODEL-PICKER-02 · visible [model ▾] field, pinned current + preset models, folded groups, mouse (imp j93cabe55962299a3, wt/model-picker-02)
+- try · — · MODEL-PICKER-02 · clickable [model ▾] on editable pi/cli places (locked rows plain, Flow keeps m), pinned current + this role's preset models, folded groups open on typing, mouse select/set/wheel/header fold (imp) (094c514a)
 - try · — · PI-ASYNC-HUD · pi main session gets HUD notices natively: steer at the next model boundary, idle wake, draft untouched, session fence (pi imp) (86445c1f; merged f7fcd0fa; Fishpref worker async ask 5e4b6d8 on main 2026-11-20)
 - try · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
 
