@@ -172,7 +172,7 @@ board counts these; update at every landing or decision. -->
 - try · — · PI-ASYNC-HUD · pi main session gets HUD notices natively: steer at the next model boundary, idle wake, draft untouched, session fence (pi imp) (86445c1f; merged f7fcd0fa; Fishpref worker async ask 5e4b6d8 on main 2026-11-20)
 - try · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
 - done · — · REVIEW-CONTROL-EXP · review on 2e4b45d3: changes-required, 5 blocking (EXP-02 native bar never reaches EXP, EXP-03 7d dropped, EXP-04/05 duplicate ledger lines, draft rows lose [model ▾], focused chain lacks provider unknown) · docs/reviews/2026-11-20-control-exp-review.md
-- working · — · REVIEW-FIX-CONTROL-EXP · the review's 5 findings + delete superseded immediate-edit paths (imp j4a264374cc2ba6ad, wt/review-fix-control-exp)
+- try · — · REVIEW-FIX-CONTROL-EXP · review fixes: native bar seen per Codex profile (EXP switch = tracking), pi footer 5h + 7d (≈ for proxy, second window dropped only when narrow), ledger one line per event ID on disk, draft rows keep [model ▾], focused chain says provider unknown; superseded immediate-edit paths deleted (imp) (5d39de2c; 86+853)
 
 ## Now (2026-11-18): 0.2.0 ready for the owner's try: all 14 tickets + MCP-READ-COMPACT 01 + SUPERVISOR-MCP landed; milestone review changes-required → FIX-0.2.0 landed 3635da5d; full suite 86+762 and check:fixtures OK; not pushed
 
