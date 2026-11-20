@@ -19,13 +19,10 @@ const step = (items: string[], at: string | undefined, key: string): string | un
   items[key === 'home' ? 0 : key === 'end' ? items.length - 1 : Math.max(0, Math.min(items.length - 1, items.indexOf(at ?? '') + (key === 'up' ? -1 : 1)))];
 const panes = (ctx: MonitorContext) => ({ list: ctx.frame?.panes.find((p) => p.id === 'agents'), preview: ctx.frame?.panes.find((p) => p.id === 'preview') });
 const inside = (pane: MonitorRect | undefined, y: number) => !!pane && y >= pane.y && y < pane.y + pane.height;
-/**
- * `=` `+` grow the list by a row, `-` grows the preview. Only while the list has the keys: with them in the preview the list is
- * compact (Esc restores the share), and `+` `-` there are the Control plane's place keys. True when the input was one of these.
- */
+/** `=` `+` grow the list by a row, `-` grows the preview. Only while the list has the keys (with them in the preview the list is compact; Esc restores the share). True when the input was one of these. */
 function resize(next: MonitorState, key: string, ctx: MonitorContext): boolean {
   const { list, preview } = panes(ctx), total = list && preview && next.splitFocus !== 'preview' ? list.height + preview.height : 0;
-  const step = key === 'list-grow' || key === 'place-add' ? 1 : key === 'place-remove' ? -1 : 0;
+  const step = key === 'list-grow' ? 1 : key === 'list-shrink' ? -1 : 0;
   if (total && step) next.splitRatio = Math.round(Math.max(RATIO[0], Math.min(RATIO[1], (list!.height + step) / total)) * 1000) / 1000;
   return total > 0 && step !== 0;
 }
@@ -112,7 +109,7 @@ export function splitProjectInput(next: MonitorState, input: WorkbenchInput, key
   if (MOVE.includes(key)) { move(splitItems(focus ? preview?.rows : list?.rows), key); return result(); }
   if (key === 'escape' && focus) { next.splitFocus = undefined; next.projectCursor = next.splitList; next.trySelection = undefined; return result(); }
   if (key === 'enter' || key === 'activate') return enter();
-  if (key === 'space' || key === 'try-accept' || key === 'next-trouble') {
+  if (key === 'space' || key === 'try-accept' || key === 'try-flag') {
     const cursorRow = rows.find((r) => r.item === at && r.tryTarget);
     const row = cursorRow ?? (focus ? undefined : preview?.rows.find((r) => r.tryTarget));
     if (preview && row?.item) {

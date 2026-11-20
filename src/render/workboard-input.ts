@@ -228,7 +228,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.
     if (key === 'reset' && projectPageOf(next) === 'control') return result({ type: 'refresh-models' });
-    const place = PLACE_KEYS[key], onPlace = /^project:role:(.+):(\d+)$/.exec(next.projectCursor ?? '');
+    const place = PLACE_KEYS[key === 'backspace' ? 'place-remove' : key], onPlace = /^project:role:(.+):(\d+)$/.exec(next.projectCursor ?? '');
     // `m` opens the model picker where there is something to pick; elsewhere it is the old key (a Flow place's kind, the project file's refusal).
     const pick = rows[at]?.modelPick;
     if ((key === 'place-model' || key === 'place-model-prev') && onPlace && projectPageOf(next) === 'control' && pick && pickable(pick)) {

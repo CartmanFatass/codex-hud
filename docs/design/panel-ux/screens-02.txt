@@ -1,0 +1,223 @@
+PANEL-UX-02 screens: zh, 40 columns, synthetic data.
+Plain-text frames from renderMonitor (tests/fixtures/split-layout.mjs + project-page.mjs fixtures). Colour is dropped; every line is 40 columns.
+
+== Home: a question, a failure, a running job, a native session (cursor on the asking lane) (40 x 22) ==
+   Each row says its state once: 提问中, 失败; the running lanes carry role, phase and age instead. The footer lists the keys of the selected row: a HUD job adds g (its tab) and X (stop) right after ⏎.
+
++----------------------------------------+
+| 首页 ?1  项目 ?2                模型 关|
+|                                        |
+|? NATIVE-TREE  imp          提问中 0分钟|
+|┃ Question: Which synthetic option?     |
+|✗ EXPORT-CSV   sonic          失败 9分钟|
+|┃ HTTP 429, no report was written       |
+|◉ M4-PROJECT   实现           imp 20分钟|
+|◉ AUTH-REFRESH           reviewer 26分钟|
+|  评审中 · 修复中                       |
+|◉ 本次会话     原生会话         1 运行中|
+|? 等你处理                  2 · 1 待试用|
+|◇ 已替你决定                           1|
+|◐ 进度         M3b · 1 待试用 · 1 工作中|
+|                                        |
+|NATIVE-TREE ───────────── imp · 2 个任务|
+|? imp · NATIVE-TREE         提问中 0分钟|
+|┃ Question: Which synthetic option?     |
+|┃ qa/q1.md                ⏎ 展开  o 打开|
+|                                        |
+|✓ reviewer  NATIVE-TREE: re…  完成 2分钟|
+|┃ tests pass; two minor items left      |
+|✓ 1 今日完成    ⏎ 打开  g 任务页  X 停止|
++----------------------------------------+
+
+== Home: every job done (40 x 19) ==
+   A finished lane says 完成 once and counts its jobs; no [完成] mark repeats it.
+
++----------------------------------------+
+| 首页  项目 ?2                   模型 关|
+|                                        |
+|? 等你处理                  2 · 1 待试用|
+|✓ NATIVE-TREE  2 个任务       完成 8分钟|
+|✓ M4-PROJECT   imp            完成 8分钟|
+|✓ AUTH-REFRESH reviewer       完成 6分钟|
+|✓ EXPORT-CSV   sonic          完成 9分钟|
+|◇ 已替你决定                           2|
+|◐ 进度         M3b · 1 待试用 · 1 工作中|
+|                                        |
+|等你处理 ────────────────── 2 · 1 待试用|
+|? Try the Project tab                   |
+|? Choose the browser profile after      |
+|  trying the synthetic setup            |
+|                                        |
+|最近完成 ────────────────────── 最新在前|
+|  ✓ SHIPPED  an accepted slice    已验收|
+|  ◇ LANDING  a landed slice       待试用|
+|✓ 5 今日完成      ⏎ 打开  ? 帮助  / 筛选|
++----------------------------------------+
+
+== Control plane (Split): places by short model name (40 x 29) ==
+   No preset tag in a role row; a model that would be cut goes on a second line first. The preset is in the selected role heading. Labels and reasons follow the panel language (用量, JSON 无法解析).
+
++----------------------------------------+
+|‹ 项目 › 控制面          7 角色 · 3 代理|
+|                                        |
+|需要处理 ───────────────────────────── 4|
+|✗ imp      pi 已耗尽 42分钟             |
+|  下个任务 → ◉ agy xhigh                |
+|    gemini-4-hydrogen-high              |
+|✗ pro      chatgpt 已耗尽 5分钟         |
+|  下个任务 → ◉ gemini                   |
+|− flow     未安装                       |
+|! bad.json                 JSON 无法解析|
+|                                        |
+|角色 ───────────────────────────────── 4|
+|◉ reviewer pi deepseek-v4-1-flash xhigh |
+|◉ sonic    pi 默认                      |
+|◉ oracle   claude fable high            |
+|◉ frontend pi project/model high        |
+|                                        |
+|◐ 用量   Codex 剩余 71% · Claude 剩余 7%|
+|▸ 宿主       pi ✓ agy − claude − codex −|
+|▸ 文件               密钥 3/5 · 浏览器 ✓|
+|                                        |
+|imp ──────────── 3 个位置 · 预设: 自定义|
+|  ✗ pi  gpt-6.1-sol  high  已耗尽 42分钟|
+|  ◉ agy  xhigh                  下个任务|
+|    gemini-4-hydrogen-high              |
+|  ○ claude  opus  high                  |
+|                                        |
+|来源文件    用户 · imp.json             |
+|       ↑↓ 移动  ⏎ 位置  c C 预设  ? 帮助|
++----------------------------------------+
+
+== Control plane: Enter on a role puts the keys on its places (40 x 15) ==
+   The keys are on the places: the footer lists ↑↓ place, then p m e i; Del (remove), K J (move), x and ? help follow as the panel widens. + - = never touch the places.
+
++----------------------------------------+
+|‹ 项目 › 控制面          7 角色 · 3 代理|
+|                                        |
+|✗ imp      pi 已耗尽 42分钟             |
+|  下个任务 → ◉ agy xhigh                |
+|    gemini-4-hydrogen-high              |
+|                                        |
+|imp ──────────── 3 个位置 · 预设: 自定义|
+|  ✗ pi  gpt-6.1-sol  high  已耗尽 42分钟|
+|  ◉ agy  xhigh                  下个任务|
+|    gemini-4-hydrogen-high              |
+|  ○ claude  opus  high                  |
+|                                        |
+|来源文件    用户 · imp.json             |
+|今日   0 成功 · 0 失败                  |
+| ↑↓ 位置  p 宿主  m 模型  e 思考  i 添加|
++----------------------------------------+
+
+== Hub: to-try rows, one with a long ID and a brief (40 x 36) ==
+   A long ID leaves little room beside it, so its sentence goes on its own line under the ID. Footer: the keys of a to-try row.
+
++----------------------------------------+
+| 首页 ?1  项目 ?2                模型 关|
+|                                        |
+|demo-project ───────────────────── 0.1.3|
+|                                        |
+|? 等你处理                  2 · 5 待试用|
+|◐ 进度          0.1.3 · 5 待试用        |
+|? 工单          3/14 完成 · 2 工作中    |
+|○ 工作区        synthetic-project       |
+|○ 文档          M3b · AI-THIN           |
+|! 控制面        2 个已耗尽 · 7 角色     |
+|                                        |
+|进度 ──────────────────────── ⏎ 打开页面|
+|  Synthetic hub work in two worktrees  ┃|
+|  ████████████▒▒▒▒▒░░░░░░ 0/4 已验收   ┃|
+|                                       ┃|
+|待试用   y 验收  n 标记                ┃|
+|  ◇ SUPERVISOR-MCP-LONG-ID          1天┃|
+|    会话文件回环时，任务行不再消失。   ┃|
+|  ◇ WATCH-LINK               待试用 5天┃|
+|    the watcher survives a link loop   ┃|
+|  ◇ SENTENCE-CUT             待试用 7天┃|
+|    job sentences are cut at a word,   ┃|
+|    never between a name and its flag  ┃|
+|  ◇ NATIVE-ROWS             待试用 19天┃|
+|    native rows keep one order         ┃|
+|  ◇ NO-HASH                      待试用┃|
+|    landed with no commit in its text  ┃|
+|                                       ┃|
+|现在                                   ┃|
+|  ◐ PAGE-ONE                     工作中┃|
+|  ◆ PAGE-TWO  waits for page one   受阻┃|
+|  ◉ imp  Tidy the synthetic docs… 5分钟┃|
+|                                       ┃|
+|最近验收                               │|
+|  ✓ REVIEW-ONE               已验收 8天│|
+|     ↑↓ 移动  Space 勾选  y 验收  n 标记|
++----------------------------------------+
+
+== Help (40 x 64) ==
+   Every key is on one row; n flags, > < move between cards that need you, i Del change places, g opens a job tab.
+
++----------------------------------------+
+|‹ 帮助                                  |
+|                                        |
+|按键 ───────────────────────────────────|
+|← → Tab 切换页面（也可点击）            |
+|f       改动                            |
+|↑ ↓     移动                            |
+|PgUp Dn 滚动下方预览（分栏）            |
+|= + -   分栏：列表变大／变小            |
+|/       实时筛选行                      |
+|⏎       就地展开 / 收起                 |
+|o       在 $EDITOR 打开文件             |
+|[ ]     切换项目（项目页）              |
+|Space   勾选一个待试用行                |
+|y n     验收／标记已勾选的待试用行（没勾|
+|        选则当前行）                    |
+|c C     角色：下一个／上一个预设        |
+|p e     位置：宿主、思考（大写键反向）  |
+|m       位置：选择模型（先选提供方，再选|
+|        模型；输入即筛选）              |
+|i Del   位置：添加、删除                |
+|K J     位置：上移、下移                |
+|x       位置：清除耗尽标记              |
+|r       位置：刷新模型列表              |
+|g       任务：切换到它的 herdr 标签页   |
+|1-4 d   任务：回答它的提问              |
+|X       任务：停止它（y 确认）          |
+|v       查看详情和文件                  |
+|a       显示 / 收起较早的作业和决定（   |
+|        首页）                          |
+|> <     下一个／上一个需要你的卡片（    |
+|        首页）                          |
+|b       模型 开 / 关                    |
+|w       导出审阅看板（HTML）并打开      |
+|,       设置                            |
+|?       本页                            |
+|Esc     返回                            |
+|                                        |
+|图例 ───────────────────────────────────|
+|✓ 完成      ◉ 运行中   ? 等你回答       |
+|✗ 失败    − 已停止   ◷ 停滞             |
+|◆ 答复与默认不同                        |
+|◇ 答复与建议一致                        |
+|┃ 卡片正文                              |
+|暗色行是较早的，按 a 显示               |
+|紫色字是模型标出的关键词                |
+|                                        |
+|在项目页中 ⏎ 先打开子页，再打开其中的行 |
+|或折叠；o 打开其文件；Esc 返回          |
+|分栏：⏎ 进入所选行的预览，Esc 返回；点击|
+|选中，再点击打开                        |
+|在控制面中 c/C 应用下一个／上一个角色预 |
+|设；p m e i Del K J x 修改光标所在的位置|
+|（m 选择模型，r 刷新模型列表）：写入    |
+|$HUD_HOME/roles，下一个任务即用；项目自 |
+|己的角色文件优先，只能打开              |
+|在详情页中 ⏎ 打开文件                   |
+|点击选中 · 再点展开 · 滚轮滚动          |
+|                                        |
+|备用技能 ───────────────────────────────|
+|  Matt Pocock 的备用技能，未安装。想用哪|
+|  一个，让主会话去读它的上游原文。      |
+|                                        |
+|  技能目录缺失或无法读取                |
+|                       ↑↓ 滚动  esc 返回|
++----------------------------------------+

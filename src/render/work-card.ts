@@ -193,8 +193,9 @@ export function labelSummary(labels: WorkCard['worker']['labels']): string {
 }
 function workCardName(card: WorkCard, _state: MonitorState, width: number, badge = '') {
   const labels = card.worker.labels;
-  const right = [badge, labels?.looping !== undefined ? `${mark('⚠', '!')} ${t('looping')}` : '',
-    labels?.outcome ? `[${t(labels.outcome.value)}]` : '', workStateWord(card), ageText(card.elapsedMinutes ?? 0)].filter(Boolean).join(' ');
+  // The model's outcome mark joins the state word only when it says something else (`[partial] done`, not `[done] done`).
+  const word = workStateWord(card), outcome = labels?.outcome && t(labels.outcome.value) !== word ? `[${t(labels.outcome.value)}]` : '';
+  const right = [badge, labels?.looping !== undefined ? `${mark('⚠', '!')} ${t('looping')}` : '', outcome, word, ageText(card.elapsedMinutes ?? 0)].filter(Boolean).join(' ');
   const role = monitorText(card.role),
     x = 2 + visualLength(role) + 2;
   return {

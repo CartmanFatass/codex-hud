@@ -197,7 +197,7 @@ test('at 40 columns the Projects list pauses brief scheduling, and a switched pr
   await painted(/project 1\/2/);
   await waitFor((xs) => xs.some((x) => x.root === f.cwd && x.ids.includes('ONE')));
   fs.writeFileSync(hold, '');
-  key('g'); // Select the project name and hold the next full collection.
+  key('\x1b[H'); // Home selects the project name and hold the next full collection.
   await waitFor((xs) => xs.some((x) => x.held));
   key('\r');
   await painted(/^‹ Projects/m);

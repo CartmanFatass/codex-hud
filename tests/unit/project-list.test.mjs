@@ -239,7 +239,7 @@ await runLivePage();
   await pause(400);
   assert.ok(collects().slice(hub).every((c) => c.cwd === own && c.shown === true), 'only the shown project is collected on the hub');
   // The name row opens the list again (g goes to the first row, the name row).
-  child.stdin.write('g');
+  child.stdin.write('\x1b[H');
   await pause(150);
   const reopen = collects().length;
   child.stdin.write('\r');

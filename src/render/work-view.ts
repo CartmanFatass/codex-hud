@@ -7,7 +7,7 @@ import { homeRows } from './home-view.js';
 import { skillsRows } from './skills-view.js';
 import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { visibleWorkboard } from './work-visibility.js';
-import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, mark } from './workboard-rows.js';
+import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, hintText, mark } from './workboard-rows.js';
 import { changesRows } from './monitor-panes.js';
 import { pickOf } from './model-input.js';
 import { theme, visualLength, stripAnsi } from './colors.js';
@@ -16,7 +16,7 @@ import { t } from './i18n.js';
 import { homeScene } from './split-home.js';
 import { projectScene } from './split-project.js';
 import { paintSplit, splitScrolls } from './split-frame.js';
-import { stopPromptRows } from './job-actions.js';
+import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterNeedle, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
 export { footHints } from './workboard-rows.js';
 function helpRows(input: MonitorData, width: number): MonitorRow[] {
@@ -32,11 +32,13 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['⏎', 'expand / collapse in place'],
       ['o', 'open the file in $EDITOR'],
       ['[ ]', 'switch project (Project)'],
-      ['Space', 'mark to try; y/n accept/flag'],
+      ['Space', 'mark a to-try row'],
+      ['y n', 'accept / flag the marked to-try rows'],
       ['c C', 'role: next / previous preset'],
       ['p e', 'place: harness, thinking (capitals go back)'],
       ['m', 'place: pick a model (provider, then model; type to filter)'],
-      ['+ - K J', 'place: add, remove, move up, move down'],
+      ['i Del', 'place: add, remove'],
+      ['K J', 'place: move up, move down'],
       ['x', 'place: clear its exhausted mark'],
       ['r', 'place: refresh model lists'],
       ['g', 'job: go to its herdr tab'],
@@ -44,7 +46,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['X', 'job: stop it (y confirms)'],
       ['v', 'inspect: details and files'],
       ['a', 'show / hide older jobs and decisions (Home)'],
-      ['n N', 'next / previous trouble (Home)'],
+      ['> <', 'next / previous card that needs you (Home)'],
       ['b', 'models on / off'],
       ['w', 'export a review board (HTML) and open it'],
       [',', 'Settings'],
@@ -75,7 +77,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
   const notes = [
     'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
     ...(input.state.panelLayout === 'split' ? ['Split: ⏎ opens the row’s preview, Esc comes back; click selects, again opens'] : []),
-    'On the Control plane c/C applies the next/previous role preset; p m e + - K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
+    'On the Control plane c/C applies the next/previous role preset; p m e i Del K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened',
     'In the Inspector ⏎ opens the file',
     ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls'] : []),
   ];
@@ -296,16 +298,16 @@ export function renderWorkboardFrame(
       : changes
         ? '↑↓ scroll  esc back'
         : project ? (state.projectInput ? 'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back'
-          : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh'
+          : page === 'control' && state.projectCursor?.startsWith('project:role:') ? '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  i add  Del remove  x clear  r refresh'
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
           : page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
           : page === 'progress' ? (state.projectTry ? 'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help' : '↑↓ move  ⏎ open  t to try  esc back  ? help')
           : page || list ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
-        : '↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  ←→ tab';
+        : homeKeys(state, source, 'expand');
   if (height > 1)
     frame.lines[height - 1] = footRow(
       !home || !done ? '' : theme.board.success(`${mark('✓', '+')} ${t('{n} done today', { n: done })}`),
-      filterHints(state, t(hints)),
+      filterHints(state, hintText(hints)),
       width
     );
   // The theme's own text colour under every row, so a row with no ink of its own is not the terminal's.

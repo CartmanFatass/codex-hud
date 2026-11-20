@@ -168,7 +168,7 @@ test('Settings EN/ZH at 80 columns: cycle, no-key marker, save single source of 
     state = handleSettingsInput(state, { type: 'key', key: 'right' }, renderSettingsPage(state, 80, 40)).state as typeof state;
     assert.equal(state.draft.decisionApi, expected);
     const text = renderSettingsPage(state, 80, 40).lines.join('\n');
-    if (expected === 'typesafe') assert.match(text, /TypeSafe.*（无 key）/);
+    if (expected === 'typesafe') assert.match(text, /TypeSafe \(无 key\)/);
     const action = handleSettingsInput(state, { type: 'key', key: 'settings-save' }, renderSettingsPage(state, 80, 40)).action;
     assert.equal(action, 'save');
     saveSettings(state.draft);

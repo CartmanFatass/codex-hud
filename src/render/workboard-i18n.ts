@@ -127,7 +127,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'open the file in $EDITOR': '在 $EDITOR 打开文件',
   'inspect: details and files': '查看详情和文件',
   'show / hide older jobs and decisions (Home)': '显示 / 收起较早的作业和决定（首页）',
-  'next / previous trouble (Home)': '下一个 / 上一个问题（首页）',
   'models on / off': '模型 开 / 关',
   'asking you': '等你回答',
   running: '运行中',
@@ -213,8 +212,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'pi role': '角色定义',
   custom: '自定义',
   'role: next / previous preset': '角色：下一个／上一个预设',
-  '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  + - fallback  x clear  r refresh':
-    '↑↓ 移动  ⏎ 打开  c C 预设  ? 帮助  p 宿主  m 模型  e 思考  + - 备选  x 清除  r 刷新',
+  '↑↓ move  ⏎ open  c C preset  ? help  p harness  m model  e thinking  i add  Del remove  x clear  r refresh':
+    '↑↓ 移动  ⏎ 打开  c C 预设  ? 帮助  p 宿主  m 模型  e 思考  i 添加  Del 删除  x 清除  r 刷新',
   'type filter  ↑↓ pick  ⏎ set  esc cancel  tab all  ← back': '输入筛选  ↑↓ 选择  ⏎ 设置  esc 取消  tab 全部  ← 返回',
   'place: pick a model (provider, then model; type to filter)': '位置：选择模型（先选提供方，再选模型；输入即筛选）',
   'place: harness, thinking (capitals go back)': '位置：宿主、思考（大写键反向）',
@@ -229,7 +228,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Nothing to try': '没有待试用的',
   '↑↓ move  ⏎ open  t to try  esc back  ? help': '↑↓ 移动  ⏎ 打开  t 待试用  esc 返回  ? 帮助',
   'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help': 'Space 勾选  y 验收  n 标记  t 全部  ↑↓ 移动  esc 返回  ⏎ 打开  ? 帮助',
-  'mark to try; y/n accept/flag': '勾选待试用行；y/n 验收／标记',
   flagged: '已标记',
   'Could not record try': '无法记录试用结果',
   Latest: '最近完成',
@@ -247,7 +245,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   Healthy: '正常',
   'next job': '下个任务',
   '↑↓ move  ⏎ open  esc back  ? help  r refresh': '↑↓ 移动  ⏎ 打开  esc 返回  ? 帮助  r 刷新',
-  'place: add, remove, move up, move down': '位置：添加、删除、上移、下移',
   'place: clear its exhausted mark': '位置：清除耗尽标记',
   'place: refresh model lists': '位置：刷新模型列表',
   'job: go to its herdr tab': '任务：切换到它的 herdr 标签页',
@@ -267,8 +264,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Already answered': '已有答复',
   'Could not answer': '无法答复',
   'Could not stop': '无法停止',
-  'On the Control plane c/C applies the next/previous role preset; p m e + - K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened':
-    '在控制面中 c/C 应用下一个／上一个角色预设；p m e + - K J x 修改光标所在的位置（m 选择模型，r 刷新模型列表）：写入 $HUD_HOME/roles，下一个任务即用；项目自己的角色文件优先，只能打开',
+  'On the Control plane c/C applies the next/previous role preset; p m e i Del K J x change the place under the cursor (m picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force is only opened':
+    '在控制面中 c/C 应用下一个／上一个角色预设；p m e i Del K J x 修改光标所在的位置（m 选择模型，r 刷新模型列表）：写入 $HUD_HOME/roles，下一个任务即用；项目自己的角色文件优先，只能打开',
   'role not found': '没有这个角色',
   'the project file is in force: o opens it': '项目文件生效中：按 o 打开它',
   'no other harness for this role': '该角色没有别的宿主可选',

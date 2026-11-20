@@ -135,7 +135,7 @@ test('full Project collection and both Control views include radar without chang
     for (const state of ['control', split('project:role:imp')]) assert.deepEqual(render(empty, state).lines, render(baseline, state).lines);
     const classic = render(rich, 'control'), radar = render(rich, split('split:radar')), role = render(rich, split('project:role:imp'));
     for (const frame of [classic, radar, role]) assert.ok(frame.lines.every((line) => visualLength(line) === width));
-    const lines = plain(classic), i = lines.findIndex((line) => /^(Radar|雷达)/.test(line));
+    const lines = plain(classic), i = lines.findIndex((line) => /^(Usage|用量)/.test(line));
     assert.ok(i >= 0 && i < lines.findIndex((line) => /^(Harnesses|宿主) ─/.test(line)), `${lang} ${width}\n${lines.join('\n')}`);
     assert.match(lines.join('\n'), /68%.*82%/);
     assert.match(lines.join('\n'), /\$1\.42 \(184K (tok|词元)\)/);

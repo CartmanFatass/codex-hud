@@ -26,16 +26,29 @@ const LEGEND: [PlaceState, string][] = [['active', 'in use'], ['standby', 'stand
 export const needsAttention = (role: RoleFact) =>
   role.places.some((p) => p.state === 'exhausted') || !role.places.some((p) => p.state === 'active');
 const presetName = (role: RoleFact) => role.preset === undefined ? '' : ` [${role.preset ?? t('custom')}]`;
-export const roleName = (role: RoleFact) => monitorText(role.role) + (role.preset === undefined ? '' : theme.board.muted(monitorText(presetName(role))));
-/** `pi  model  thinking`, the model cut in the middle (never the harness or the thinking) when the row is short. */
+/** A role row says the role and nothing else: its preset is in the preview's rule and the selected place, never in a row that has to fit. */
+export const roleName = (role: RoleFact) => monitorText(role.role);
+/** A model as it reads: no snapshot date (`-20261101`, `-2026-11-01`, `-1017`), which the picker and the selected place still show whole. */
+export const shortModel = (model: string) => monitorText(model).replace(/-(?:\d{8}|\d{4}-\d{2}-\d{2}|\d{4})$/, '');
+const placeJoin = (p: PlaceFact, model: string, gap: string) => [p.label, p.model ? model : model && theme.board.muted(model), monitorText(p.thinking ?? p.kind ?? '')].filter(Boolean).join(gap);
+const modelOf = (p: PlaceFact) => (p.model ? shortModel(p.model) : p.harness === 'bro' ? '' : t('default'));
+/** `pi  model  thinking`, the model short when the row is short of room: the vendor goes first (`openai/gpt-6.1-sol`), then the middle of the name. */
 export function placeText(p: PlaceFact, room: number, gap: string): string {
-  const tail = monitorText(p.thinking ?? p.kind ?? ''), cells = (model: string) =>
-    visualLength(p.label) + (tail ? gap.length + visualLength(tail) : 0) + (model ? gap.length + visualLength(model) : 0);
-  let model = p.model ? monitorText(p.model) : p.harness === 'bro' ? '' : t('default');
-  // Short of room: the vendor goes first (`openai/gpt-6.1-sol`), then the middle of the name.
-  if (p.model && cells(model) > room) model = model.replace(/^[^/]+\//, '');
-  if (p.model && cells(model) > room) model = squeeze(model, Math.max(4, visualLength(model) - (cells(model) - room)));
-  return [p.label, p.model ? model : model && theme.board.muted(model), tail].filter(Boolean).join(gap);
+  let model = modelOf(p);
+  if (p.model && visualLength(placeJoin(p, model, gap)) > room) model = model.replace(/^[^/]+\//, '');
+  if (p.model && visualLength(placeJoin(p, model, gap)) > room) model = squeeze(model, Math.max(4, visualLength(model) - (visualLength(placeJoin(p, model, gap)) - room)));
+  return placeJoin(p, model, gap);
+}
+/**
+ * A place as one row, or as two when its model does not fit whole: `lead  pi  xhigh` and the model under it, cut in the middle only
+ * when even a row of its own is too short. `tag` sits at the right of the first row; `ink` paints the place (standby ones are dim).
+ */
+export function placeRows(lead: string, p: PlaceFact, width: number, gap: string, tag: string, extra: Partial<MonitorRow>, ink: (s: string) => string = (s) => s): MonitorRow[] {
+  const room = width - visualLength(lead) - (tag ? visualLength(tag) + 1 : 0), model = modelOf(p).replace(/^[^/]+\//, '');
+  const two = !!p.model && visualLength(placeJoin(p, model, gap)) > room;
+  const first = lead + ink(two ? placeJoin({ ...p, model: null }, '', gap) : placeText(p, room, gap));
+  return [{ ...extra, text: tag ? pair(first, tag, width) : fit(first, width) },
+    ...(two ? [{ ...extra, text: fit('    ' + ink(squeeze(model, width - 5)), width) }] : [])];
 }
 /** What a row of a place carries for the keys: its id, its role file, and what the model picker needs when the place can have a model. */
 export function placeTarget(role: RoleFact, i: number, data: ProjectSnapshot): Pick<MonitorRow, 'item' | 'files' | 'modelPick'> {
@@ -43,7 +56,7 @@ export function placeTarget(role: RoleFact, i: number, data: ProjectSnapshot): P
   return { item: placeItem(role.role, i), files: [role.path], ...(pickable ? { modelPick: { place, lists: data.models } } : {}) };
 }
 /** The place's row: state mark, the role's name on its first place (`↳` on a fallback), then where it runs; a wide row adds the exhausted time. */
-function placeRow(role: RoleFact, i: number, width: number, now: number, data: ProjectSnapshot): MonitorRow {
+function placeRow(role: RoleFact, i: number, width: number, now: number, data: ProjectSnapshot): MonitorRow[] {
   const place = role.places[i]!, name = width < 56 ? 9 : 10, gap = width < 56 ? ' ' : '  ';
   // A state that needs the owner's eye, else (on the first place of a wide row) whose file is in force.
   const tag = width < 56 ? '' : place.state === 'exhausted' && place.until !== undefined
@@ -51,9 +64,7 @@ function placeRow(role: RoleFact, i: number, width: number, now: number, data: P
     : place.state === 'missing' ? theme.board.muted(t('not installed'))
     : i === 0 && width >= 80 ? theme.board.muted(t(role.source)) : '';
   const lead = `  ${glyph(place.state)} ${fit(i ? theme.board.muted(mark('↳', '>')) : theme.board.title(roleName(role)), Math.max(name, visualLength(roleName(role))))} `;
-  const text = placeText(place, width - visualLength(lead) - (tag ? visualLength(tag) + 1 : 0), gap);
-  const left = lead + (place.state === 'active' ? text : theme.board.muted(text));
-  return { text: tag ? pair(left, tag, width) : fit(left, width), ...placeTarget(role, i, data) };
+  return placeRows(lead, place, width, gap, tag, placeTarget(role, i, data), place.state === 'active' ? undefined : theme.board.muted);
 }
 function placePreview(data: ProjectSnapshot, item: string | undefined, width: number): MonitorRow[] {
   const id = /^project:role:(.+):(\d+)$/.exec(item ?? '');
@@ -115,7 +126,7 @@ const remaining = (p: number) => `${Math.round(p)}%`;
 const usd = (p: NonNullable<RadarFacts['pi']>) => `${p.sampled ? '≥' : ''}$${p.costUsd.toFixed(2)}`;
 const tokens = (p: NonNullable<RadarFacts['pi']>) => t('{n} tok', { n: (p.sampled ? '≥' : '') + formatTokenCount(p.tokens) });
 export function radarSummary({ quotas, pi }: RadarFacts, withTokens: boolean): string[] {
-  return [...quotas.map(({ client, windows }) => `${t(client)} ${remaining(Math.min(...windows.map((w) => w.remaining)))}`),
+  return [...quotas.map(({ client, windows }) => `${t(client)} ${t('{n} left', { n: remaining(Math.min(...windows.map((w) => w.remaining))) })}`),
     ...(pi ? [`${t('pi')} ${usd(pi)}${withTokens ? ` (${tokens(pi)})` : ''}`] : [])];
 }
 export function roleToday(s: RoleRadar, compact = false): string {
@@ -163,13 +174,13 @@ export function controlRows(data: ProjectSnapshot, width: number, now: number, h
       else {
         const prefix = `      ${theme.board.muted(`${t('next job')} ${mark('→', '>')}`)} `;
         const place = role.places[next];
-        push({ text: fit(prefix + (place ? `${glyph('active')} ${placeText(place, width - visualLength(prefix) - 2, ' ')}` : theme.board.muted(t('none'))), width),
-          ...(next >= 0 ? placeTarget(role, next, data) : {}) });
+        if (!place) push({ text: fit(prefix + theme.board.muted(t('none')), width) });
+        else out.push(...placeRows(`${prefix}${glyph('active')} `, place, width, ' ', '', placeTarget(role, next, data)));
       }
-      role.places.forEach((p, i) => { if (p.state === 'standby') push(placeRow(role, i, width, now, data)); });
+      role.places.forEach((p, i) => { if (p.state === 'standby') out.push(...placeRow(role, i, width, now, data)); });
     }
     invalid.forEach((r, i) => out.push({
-      text: pair(`  ${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, theme.board.muted(monitorText(r.value)), width),
+      text: pair(`  ${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, theme.board.muted(monitorText(t(r.value))), width),
       item: `project:file:${r.path}:invalid:${i}`, files: r.path ? [r.path] : [],
     }));
   }
@@ -177,12 +188,13 @@ export function controlRows(data: ProjectSnapshot, width: number, now: number, h
   if (healthy.length) {
     gap();
     out.push({ ...section(`${healthyOpen ? '' : mark('▸', '>') + ' '}${t('Healthy')}`, width, String(healthy.length)), item: 'project:fold:healthy' });
-    if (!healthyOpen) out.push({ text: fit(`  ${glyph('active')} ${healthy.map(roleName).join(' ')}`, width), item: 'project:fold:healthy' });
+    // The folded names wrap onto a second row rather than lose the last ones to a cut.
+    if (!healthyOpen) pack(healthy.map(roleName), width - 4).forEach((line, i) => out.push({ text: fit(`${i ? '    ' : `  ${glyph('active')} `}${line.trim().replace(/ {2}/g, ' ')}`, width), item: 'project:fold:healthy' }));
     else for (const [title, group] of [['Roles', 'roles'], ['Project roles', 'project'], ['Browser tasks', 'browser']] as const) {
       const roles = healthy.filter((r) => r.group === group);
       if (!roles.length) continue;
       out.push(section(t(title), width, String(roles.length)));
-      for (const role of roles) role.places.forEach((_, i) => push(placeRow(role, i, width, now, data)));
+      for (const role of roles) role.places.forEach((_, i) => out.push(...placeRow(role, i, width, now, data)));
     }
   }
   // Preview the same default stop that the frame selects when the old cursor is gone.
@@ -191,7 +203,7 @@ export function controlRows(data: ProjectSnapshot, width: number, now: number, h
   const radar = radarRows(radarFacts(data.radar), width);
   if (radar.length) {
     gap();
-    out.push(section(t('Radar'), width), ...radar);
+    out.push(section(t('Usage'), width), ...radar);
   }
   if (data.harnesses.length) {
     gap();

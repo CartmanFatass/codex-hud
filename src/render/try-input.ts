@@ -10,7 +10,7 @@ export function tryInput(next: MonitorState, key: string, row?: MonitorRow): Mon
     next.trySelection = marked.size ? marked : undefined;
     return { state: next, close: false };
   }
-  if (key !== 'try-accept' && key !== 'next-trouble') return;
+  if (key !== 'try-accept' && key !== 'try-flag') return;
   let batch = target;
   if (next.trySelection) {
     const slices = new Map<string, { slice: TryTarget['slices'][number]; milestone: string }>();

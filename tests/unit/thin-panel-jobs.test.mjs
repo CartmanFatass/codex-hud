@@ -273,9 +273,9 @@ test('`o` opens a job card file on Home, footer hints never cut a word', async (
       .at(-1)
       .trimEnd();
   assert.deepEqual([56, 40, 30, 20].map(foot), [
-    '✓ 2 done today      ↑↓ move  ⏎ expand  o open  v inspect',
-    '✓ 2 done today         ↑↓ move  ⏎ expand',
-    '✓ 2 done today         ↑↓ move',
+    '✓ 2 done today        ⏎ expand  ? help  / filter  o open',
+    '✓ 2 done today          ⏎ expand  ? help',
+    '✓ 2 done today        ⏎ expand',
     '✓ 2 done today',
   ]);
   // The row is erased before it is written: a full-width row would lose its last cell to an erase after it.

@@ -204,7 +204,8 @@ export function currentRows(data: ProjectSnapshot) {
   const counts = Object.fromEntries(SLICE_STATES.map((s) => [s, rows.filter((r) => r.state === s).length])) as ProjectSnapshot['counts'];
   return { rows, counts, whole: !mine.length };
 }
-const CUT_MIN = 6;
+/** A brief's sentence cut onto a row beside its id keeps at least this many cells, or the row says the id alone: a few words and `…` tell nothing. */
+const CUT_MIN = 14;
 /**
  * `head` and `text` on one row when the text fits whole beside `right`; else the head alone (a hub row never wraps or cuts its text).
  * A brief's sentence (`cut`) is cut with an ellipsis instead, while a few cells of it fit.
@@ -217,6 +218,12 @@ export const inline = (head: string, text: string, right: string, width: number,
 export const firstSentence = (text: string): string => /^.*?(?:[。！？]|[.!?](?=\s|$))[”’」』）)\]]*/su.exec(text.trim())?.[0] ?? text.trim();
 /** A to-try slice's sentence for its list row: its brief's first, or nothing (the row then says the ledger's text). */
 export const trySentence = (r: LedgerSlice): string => (r.state === 'try' && r.brief ? firstSentence(r.brief.brief) : '');
+/** A briefed to-try slice: its id and age on one row, with its brief's first sentence beside them when the whole of it fits, else under them (two rows at most, cut with `…`): a long id never leaves the sentence a few cells. */
+export const briefStack = (head: string, sentence: string, right: string, width: number, indent = 4, max = 2): string[] => {
+  const body = monitorText(sentence);
+  return visualLength(head) + 2 + visualLength(body) + (right ? visualLength(right) + 1 : 0) <= width ? [pair(`${head}  ${theme.board.muted(body)}`, right, width)]
+    : [pair(head, right, width), ...clampClean(body, width - indent, max).lines.map((l) => fit(' '.repeat(indent) + theme.board.muted(l), width))];
+};
 /** A landed slice on one row: a to-try slice's brief sentence (cut to the room), else the ledger's text, whole or not at all. */
 export const landedInline = (r: LedgerSlice, head: string, right: string, width: number) => {
   const sentence = trySentence(r);
@@ -502,7 +509,7 @@ export function pageRows(
       const open = folded.has(id), head = `${' '.repeat(indent)}${selected}${landedMark(r, action)} ${monitorText(r.id)}`;
       const meta = ' '.repeat(indent + 4) + theme.board.muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at, now) : ''].filter(Boolean).join(' · '));
       const row = (text: string, own?: string): MonitorRow => ({ text: fit(text, width), item: own ?? item, tryTarget, ...(data.statePath ? { files: [data.statePath] } : {}) });
-      if (trySentence(r) && !open) rows.push(row(landedInline(r, head, right, width)));
+      if (trySentence(r) && !open) rows.push(...briefStack(head, trySentence(r), right, width, indent + 2).map((line) => row(line)));
       else if (trySentence(r)) rows.push(row(pair(head, right, width)), row(meta),
         ...tryDetailRows(r, width, indent + 4, folded.has(`ledger:${r.id}`)).map((d) => row(d.text, d.item)));
       else {

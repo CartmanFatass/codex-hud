@@ -101,7 +101,7 @@ const ZH: Record<string, string> = {
   Default: '默认',
   Recommended: '模型推荐',
   'Rank Home cards and show a progress brief through models': '模型排序首页卡片并显示进度简报',
-  '(no key)': '（无 key）',
+  '(no key)': '(无 key)',
   'Primary for Jev and display labels; automatic fallback uses another keyed provider': 'Jev 和显示标签共用的首选 API；自动回退到有 key 的其他提供方',
   'Sends public agent material for display text; off sends nothing': '发送 agent 公开材料以生成显示文字；关闭时不发送',
   'Chat-completions model; edit model in hud-settings.json for another ID':
@@ -179,7 +179,7 @@ const ZH: Record<string, string> = {
   // Status card
   Status: '状态',
   Quota: '额度',
-  Radar: '雷达',
+  Usage: '用量',
   codex: 'Codex',
   claude: 'Claude',
   pi: 'pi',

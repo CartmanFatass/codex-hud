@@ -9,10 +9,10 @@ import type { LedgerSlice, SliceState, ProjectSnapshot } from '../collectors/pro
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
-import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, clampClean, clampLines, currentRows, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
+import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, briefStack, clampClean, clampLines, currentRows, hubNowRows, inFlight, inline, landedAge, landedInline, landedMark, landedNewest,
   ledgerText, ledgerFoldItem, pageRows, pageSummary, progressSegments, projectFoldedSet, roleInk, sinceText, sliceInk, tryCount, tryDetailRows, trySentence, ticketRows, unlisted, unsliced, waitingRows, projectItem, trySelectionMark,
   type ProjectPage } from './project-view.js';
-import { glyph, needsAttention, placeTarget, placeText, radarFacts, radarRows, radarSummary, roleName, roleToday } from './control-view.js';
+import { glyph, needsAttention, placeRows, placeTarget, radarFacts, radarRows, radarSummary, roleName, roleToday } from './control-view.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { splitItems, splitScope, splitSubValid, type SplitScene } from './split-frame.js';
 import { boardRow, kvRows, mark, minuteAge, pack, section } from './workboard-rows.js';
@@ -64,20 +64,21 @@ function hubPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState,
       const item = `project:try:${r.id}`, sentence = trySentence(r);
       const head = `  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`, age = sentence ? muted(sinceText(r.at, now)) : landedAge(r, now), body = monitorText(ledgerText(r));
       const fits = visualLength(head) + 2 + visualLength(body) + visualLength(age) + 1 <= width;
-      const lines = sentence ? [inline(head, sentence, age, width, true)] : fits || !body ? [inline(head, body, age, width)] : [pair(head, age, width), ...clampClean(body, width - 4, Infinity).lines.map((l) => fit('    ' + muted(l), width))];
+      const lines = sentence ? briefStack(head, sentence, age, width) : fits || !body ? [inline(head, body, age, width)] : [pair(head, age, width), ...clampClean(body, width - 4, Infinity).lines.map((l) => fit('    ' + muted(l), width))];
       return lines.map((text) => ({ item, ...(data.statePath ? { files: [data.statePath] } : {}), ...(act ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text }));
     };
     if (queue.length) rows.push(boardRow(''), plain(muted(`${t('To try')}   ${t('y accept  n flag')}`), width), ...todo.flatMap((x) => tryRows(x, true)), ...done.flatMap((x) => tryRows(x, false)));
     if (inFlight(data).length || unsliced(data).length) rows.push(boardRow(''), plain(muted(t('Now')), width), ...hubNowRows(data, width, now, board));
     const accepted = landed.filter(({ r }) => r.state === 'accepted').slice(0, 3);
     if (accepted.length) rows.push(boardRow(''), plain(muted(t('Latest accepted')), width), ...accepted.map(({ r }): MonitorRow => ({ text: landedInline(r, `  ${landedMark(r)} ${monitorText(r.id)}`, landedAge(r, now), width) })));
-    return { label: t('Progress'), right: muted(t('⏎ open page')), rows, ...(todo.length ? { act: `project:try:${todo[0].r.id}` } : {}) };
+    return { label: t('Progress'), right: muted(t('⏎ open page')), rows, ...(todo.length ? { act: `project:try:${todo[0].r.id}`, hints: '↑↓ move  Space mark  y accept  n flag  ⏎ open  ? help  ←→ tab  [ ] project' } : {}) };
   };
   return { list: [name, boardRow(''), ...waiting, ...pages], preview,
-    start: pages.find((r) => r.item)?.item, hints: '↑↓ move  Space mark  y accept  n flag  ⏎ open  ←→ tab  [ ] project  ? help', focusHints: '↑↓ move  ⏎ open  esc back  ? help' };
+    start: pages.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ open  ? help  ←→ tab  [ ] project', focusHints: '↑↓ move  ⏎ open  esc back  ? help' };
 }
 
-const PROGRESS_FOLD_HINTS = '↑↓ move  Space mark  y accept  n flag  ⏎ details  o open file  PgUp PgDn scroll  esc back  ? help';
+const PROGRESS_FOLD_HINTS = '↑↓ move  Space mark  y accept  n flag  ⏎ details  ? help  o open file  esc back';
+const TRY_HINTS = '↑↓ move  Space mark  y accept  n flag  ⏎ open file  ? help  esc back';
 const SLICE_MARK: Partial<Record<SliceState, () => string>> = { working: () => sliceInk('working')(mark('◐', '@')), blocked: () => sliceInk('blocked')(mark('◆', '!')), todo: () => muted(mark('○', '-')) };
 function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState, board: WorkboardSnapshot, width: number, now: number): Part {
   const cur = currentRows(data), marks = input.tryMarks, path = data.statePath, files = path ? { files: [path] } : {};
@@ -95,8 +96,8 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
     const item = `project:slice:${r.id}`;
     // A to-try slice with a brief says its first sentence where the state word would be.
     const head = `${trySelectionMark(state, item)}${st === 'try' ? landedMark(r, marks?.get(r.id)) : SLICE_MARK[st]!()} ${fit(monitorText(r.id), col)}`, sentence = trySentence(r);
-    list.push({ item, ...files, ...(st === 'try' ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}),
-      text: sentence ? inline(head, sentence, right, width, true, 1) : pair(`${head} ${muted(t(st === 'try' ? 'to try' : st))}`, right, width) });
+    for (const text of sentence ? briefStack(head, sentence, right, width, 2) : [pair(`${head} ${muted(t(st === 'try' ? 'to try' : st))}`, right, width)])
+      list.push({ item, ...files, ...(st === 'try' ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text });
   }
   for (const job of unsliced(data)) list.push({ item: `project:job:${job.jobId}`, ...(job.path ? { files: [job.path] } : {}),
     text: pair(`${sliceInk('working')(mark('◉', '@'))} ${roleInk(job.role)(monitorText(job.role || job.jobId.slice(-6)))} ${muted(monitorText(job.title ?? job.package ?? ''))}`, job.asking ? theme.board.attention(`${t('asking')} ?`) : muted(minuteAge(job.at ?? null, now)), width) });
@@ -119,7 +120,7 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
         if (labels) rows.push(plain('  ' + labels, width));
       } else rows.push(plain('  ' + muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? dateText(r.at) : ''].filter(Boolean).join(' · ')), width));
       return { label: monitorText(r.id), right: `${t(r.state === 'try' ? 'to try' : r.state)}${NO_MILESTONE.test(r.milestone) ? '' : ' · ' + monitorText(r.milestone)}`, rows,
-        ...(rows.some((x) => x.item === ledgerFoldItem(r)) ? { hints: PROGRESS_FOLD_HINTS } : {}) };
+        ...(r.state !== 'try' ? {} : { hints: rows.some((x) => x.item === ledgerFoldItem(r)) ? PROGRESS_FOLD_HINTS : TRY_HINTS }) };
     }
     if (cursor === 'split:accepted') return { label: t('accepted'), right: String(cur.counts.accepted), rows: landed.filter(({ r }) => r.state === 'accepted' && cur.rows.includes(r))
       .map(({ r }): MonitorRow => ({ text: inline(`  ${landedMark(r)} ${monitorText(r.id)}`, ledgerText(r), landedAge(r, now, false), width) })) };
@@ -133,7 +134,7 @@ function progressPart(input: MonitorData, data: ProjectSnapshot, state: MonitorS
     const job = unsliced(data).find((j) => `project:job:${j.jobId}` === cursor);
     return { label: monitorText(job?.role ?? ''), rows: job ? indent(job.title ?? job.package ?? '', width, 3) : [] };
   };
-  const hints = '↑↓ move  Space mark  y accept  n flag  ⏎ open file  PgUp PgDn scroll  esc back  ? help';
+  const hints = '↑↓ move  ⏎ open file  ? help  PgUp PgDn scroll  esc back';
   return { list, preview, start: list.find((r) => r.item)?.item, hints, focusHints: '↑↓ move  ⏎ fold / unfold the ledger line  esc back  ? help' };
 }
 const NO_MILESTONE = /^[—–-]*$/;
@@ -143,9 +144,10 @@ function controlPart(data: ProjectSnapshot, width: number, now: number): Part {
   const col = Math.max(8, Math.min(16, Math.max(0, ...data.roles.map((r) => visualLength(roleName(r)))))), mins = (until: number) => t('{n}m', { n: Math.max(1, Math.ceil((until - now) / 60000)) });
   const roleRows = (role: (typeof data.roles)[number], attention: boolean): MonitorRow[] => {
     const item = `project:role:${role.role}`, dead = role.places.find((p) => p.state === 'exhausted'), next = role.places.find((p) => p.state === 'active');
-    const mid = dead ? theme.board.attention(`${dead.label} ${t('exhausted')}${dead.until === undefined ? '' : ' ' + mins(dead.until)}`) : next ? muted(placeText(next, width - col - 5, ' ')) : muted(t('not installed'));
-    const rows: MonitorRow[] = [{ item, text: fit(`${glyph(!attention ? 'active' : dead ? 'exhausted' : 'missing')} ${fit(roleName(role), col)} ${mid}`, width) }];
-    if (attention && dead && next) rows.push({ item, text: fit(`  ${muted(`${t('next job')} ${mark('→', '>')}`)} ${glyph('active')} ${placeText(next, width - 20, ' ')}`, width) });
+    const lead = `${glyph(!attention ? 'active' : dead ? 'exhausted' : 'missing')} ${fit(roleName(role), col)} `;
+    const rows: MonitorRow[] = dead || !next ? [{ item, text: fit(lead + (dead ? theme.board.attention(`${dead.label} ${t('exhausted')}${dead.until === undefined ? '' : ' ' + mins(dead.until)}`) : muted(t('not installed'))), width) }]
+      : placeRows(lead, next, width, ' ', '', { item }, muted);
+    if (attention && dead && next) rows.push(...placeRows(`  ${muted(`${t('next job')} ${mark('→', '>')}`)} ${glyph('active')} `, next, width, ' ', '', { item }));
     return rows;
   };
   const sick = data.roles.filter(needsAttention), healthy = data.roles.filter((r) => !needsAttention(r)), invalid = data.control.filter((r) => r.label === 'invalid');
@@ -153,36 +155,43 @@ function controlPart(data: ProjectSnapshot, width: number, now: number): Part {
   const ok = (yes: boolean) => (yes ? theme.board.success(mark('✓', '+')) : muted(mark('−', '-')));
   const list: MonitorRow[] = [];
   if (sick.length + invalid.length) list.push(section(t('Needs attention'), width, theme.board.attention(String(sick.length + invalid.length))), ...sick.flatMap((r) => roleRows(r, true)),
-    ...invalid.map((r, i): MonitorRow => ({ item: `project:file:${r.path}:invalid:${i}`, files: r.path ? [r.path] : [], text: pair(`${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, muted(monitorText(r.value)), width) })), boardRow(''));
+    ...invalid.map((r, i): MonitorRow => ({ item: `project:file:${r.path}:invalid:${i}`, files: r.path ? [r.path] : [], text: pair(`${theme.board.attention('!')} ${monitorText(basename(r.path ?? r.value))}`, muted(monitorText(t(r.value))), width) })), boardRow(''));
   if (healthy.length) list.push(section(t('Roles'), width, String(healthy.length)), ...healthy.flatMap((r) => roleRows(r, false)), boardRow(''));
   const radar = radarFacts(data.radar), summary = radarSummary(radar, false);
   if (radar.roles.length) summary.push(t('{n} jobs', { n: radar.roles.reduce((n, [, s]) => n + s.total, 0) }));
   if (summary.length) {
-    const left = `${muted(mark('◐', '@'))} ${t('Radar')}`;
+    const left = `${muted(mark('◐', '@'))} ${t('Usage')}`;
     while (summary.length > 1 && visualLength([left, summary.join(' · ')].join(' ')) > width) summary.pop();
     list.push({ item: 'split:radar', text: pair(left, muted(summary.join(' · ')), width) });
   }
-  if (data.harnesses.length) list.push({ item: 'split:harnesses', text: pair(`${muted(mark('▸', '>'))} ${t('Harnesses')}`, muted(data.harnesses.map((h) => `${h.name} ${ok(h.ok)}`).join(' ')), width) });
+  if (data.harnesses.length) {
+    // The label stays whole: the harnesses that do not fit are in the preview.
+    const left = `${muted(mark('▸', '>'))} ${t('Harnesses')}`, names = data.harnesses.map((h) => `${h.name} ${ok(h.ok)}`);
+    while (names.length > 1 && visualLength([left, names.join(' ')].join(' ')) > width) names.pop();
+    list.push({ item: 'split:harnesses', text: pair(left, muted(names.join(' ')), width) });
+  }
   list.push({ item: 'split:files', text: pair(`${muted(mark('▸', '>'))} ${t('Files')}`, muted([data.keys.length && `${t('keys')} ${have}/${data.keys.length}`, `${t('browser')} ${mark(data.browser ? '✓' : '−', data.browser ? '+' : '-')}`].filter(Boolean).join(' · ')), width) });
   const preview = (cursor?: string): Shown => {
     const role = data.roles.find((r) => `project:role:${r.role}` === cursor);
-    if (cursor === 'split:radar') return { label: t('Radar'), rows: radarRows(radar, width, true) };
-    if (cursor === 'split:harnesses') return { label: t('Harnesses'), rows: pack(data.harnesses.map((h) => `${monitorText(h.name)} ${ok(h.ok)}`), width).map((l) => plain(l, width)) };
+    // Only a role has places and presets: the other rows take the plain page keys.
+    const plain_ = '↑↓ move  PgUp PgDn scroll  esc back  ? help';
+    if (cursor === 'split:radar') return { label: t('Usage'), rows: radarRows(radar, width, true), hints: plain_ };
+    if (cursor === 'split:harnesses') return { label: t('Harnesses'), rows: pack(data.harnesses.map((h) => `${monitorText(h.name)} ${ok(h.ok)}`), width).map((l) => plain(l, width)), hints: plain_ };
     if (cursor === 'split:files') return { label: t('Files'), right: String(files.length + data.agents.length), rows: [...files.map((r, i) => projectItem(r.label === 'convention' ? { ...r, value: t(r.value) + ' · ' + basename(r.path!) } : r, i, '', width, now)),
-      ...data.agents.map((r, i) => projectItem(r, i, '', width, now)), ...kvRows('keys', data.keys.map(([n, p]) => `${n} ${mark(p ? '✓' : '−', p ? '+' : '-')}`).join('  '), width)] };
+      ...data.agents.map((r, i) => projectItem(r, i, '', width, now)), ...kvRows('keys', data.keys.map(([n, p]) => `${n} ${mark(p ? '✓' : '−', p ? '+' : '-')}`).join('  '), width)], hints: '↑↓ move  ⏎ open file  PgUp PgDn scroll  esc back  ? help' };
     if (!role) return { label: '', rows: [] };
-    const place = (i: number): MonitorRow => {
+    const place = (i: number): MonitorRow[] => {
       const p = role.places[i], tag = p.state === 'exhausted' ? theme.board.attention(`${t('exhausted')}${p.until === undefined ? '' : ' ' + mins(p.until)}`) : p.state === 'missing' ? muted(t('not installed'))
         : p.state === 'active' && role.places.findIndex((x) => x.state === 'active') === i ? theme.board.active(t('next job')) : '';
-      return { ...placeTarget(role, i, data), text: pair(`  ${glyph(p.state)} ${(p.state === 'active' ? (s: string) => s : muted)(placeText(p, width - 6 - visualLength(tag), '  '))}`, tag, width) };
+      return placeRows(`  ${glyph(p.state)} `, p, width, '  ', tag, placeTarget(role, i, data), p.state === 'active' ? undefined : muted);
     };
     const today = radar.roles.find(([name]) => name === role.role)?.[1];
     return { label: monitorText(role.role), right: [t('{n} places', { n: role.places.length }), role.preset === undefined ? '' : `${t('preset')}: ${monitorText(role.preset ?? t('custom'))}`].filter(Boolean).join(' · '),
-      rows: [...role.places.map((_, i) => place(i)), boardRow(''), ...kvRows('source file', `${t(role.source)} · ${basename(role.path)}`, width, undefined, 11),
+      rows: [...role.places.flatMap((_, i) => place(i)), boardRow(''), ...kvRows('source file', `${t(role.source)} · ${basename(role.path)}`, width, undefined, 11),
         ...(today ? kvRows('today', roleToday(today), width, undefined, 6) : [])] };
   };
-  return { list, preview, start: list.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ places  c C preset  PgUp PgDn scroll  esc back  ? help',
-    focusHints: '↑↓ place  p harness  m model  e thinking  + - fallback  K J move  x clear  esc back  ? help' };
+  return { list, preview, start: list.find((r) => r.item)?.item, hints: '↑↓ move  ⏎ places  c C preset  ? help  PgUp PgDn scroll  esc back',
+    focusHints: '↑↓ place  p harness  m model  e thinking  i add  Del remove  K J move  x clear  esc back  ? help' };
 }
 
 /** Tickets: a ticket a row under its lane (as Classic), the cursor ticket's checklist and latest comment below; Enter opens its file. */

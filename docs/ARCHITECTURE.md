@@ -317,7 +317,15 @@ The list is as tall as it needs, at most `MonitorState.splitRatio` of the list-a
 reload's JSON), and three rows around the cursor while `splitFocus` is `preview`. A preview with more rows than its room
 (`splitScrolls`) is built again one cell narrower and paints its scrollbar in the freed last cell; a Home lane at work that
 the cursor is not on may add a cue (`laneCue`) to its row.
-The owner's micro-actions on a HUD job (`render/job-actions.ts`, spec §2.2) are pure input: `g` becomes
+A key has one meaning per page (`n` is only `try-flag`; `>` `<` move between Home's cards that need you; `i` and Delete
+add and remove a place, `+` `=` `-` are only `list-grow` / `list-shrink`; the decoder names each once and
+`tests/unit/panel-keys-rows.test.mjs` checks Help lists a key on one row). A footer's keys come from the selected row
+(`homeKeys` in `job-actions.ts`, the `hints` a split scene returns): per-hint words are in `split-i18n.ts`, and
+`hintText` translates a footer hint by hint, so a new hint is one entry, not one whole line per combination.
+Rows that have to fit 40 columns keep what identifies them: `cutWords` cuts at a word, `briefStack` gives a briefed
+row's sentence its own line when the id is long, and `placeRows` (`control-view.ts`) shows a place's model by short name
+on the row, or on a second line before it cuts the name.
+The owner's micro-actions on a HUD job (`render/job-actions.ts`, spec §2.2) are pure input: `g` (on a job's row) becomes
 `focus-job-tab`; `1`–`4` and `d` on an expanded question slab (or in the Inspector) pick an option or the worker's
 default and become `answer-job` (the digits switch no tab, so they mean nothing elsewhere: tabs are ←→, Tab and a click); `X` sets `confirmStop`, whose `y`/Enter becomes
 `stop-job`. Any other input cancels the stop prompt. `tree-page.ts` does the I/O: `focusJobTab` and `stopJob`

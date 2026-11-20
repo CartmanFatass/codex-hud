@@ -83,7 +83,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   assert.match(lines[at(/ flow /)], /^ {2}− flow +flow image not installed$/);
   assert.match(lines[at(/bad\.json/)], /^ {2}! bad\.json +unparseable JSON$/);
   assert.match(lines[at(/^▸ Healthy ─/)], / 5$/);
-  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp \[default\] reviewer \[custom\] sonic oracle \[fable\] general$/);
+  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp reviewer sonic oracle general$/);
   assert.ok(at(/^Needs attention ─/) < at(/^▸ Healthy ─/) && at(/^▸ Healthy ─/) < at(/^Harnesses ─/));
   assert.doesNotMatch(lines.join('\n'), /synthetic\/model|^Roles ─|^Browser tasks ─/m);
   assert.match(lines[at(/^Harnesses ─/) + 1], /pi ✓ +agy ✓ +claude ✓ +codex − +grok ✓ +jev-ask ✓ +jev-aistudio ✓ +jev-flow −/);
@@ -170,10 +170,10 @@ test('Control plane, opened: each role once with its place and fallbacks, browse
   assert.ok(at(/^Healthy ─/) < at(/^Roles ─/) && at(/^Roles ─/) < at(/ imp /) && at(/ oracle /) < at(/^Browser tasks ─/));
   assert.ok(at(/^Browser tasks ─/) < at(/ pro /) && at(/ pro /) < at(/^Harnesses ─/));
   // Wide rows say whose file is in force: the shipped one, or the owner's once a switch (or the reviewer's fallback) wrote it.
-  assert.match(lines[at(/ imp /)], /◉ imp \[default\] +pi +synthetic\/model +high +default$/);
-  assert.match(lines[at(/ reviewer /)], /◉ reviewer \[custom\] +pi +default +yours$/);
+  assert.match(lines[at(/ imp /)], /◉ imp +pi +synthetic\/model +high +default$/);
+  assert.match(lines[at(/ reviewer /)], /◉ reviewer +pi +default +yours$/);
   assert.match(lines[at(/ reviewer /) + 1], /○ ↳ +claude +opus +high/);
-  assert.match(lines[at(/ oracle /)], /◉ oracle \[fable\] +claude +fable +high +default$/);
+  assert.match(lines[at(/ oracle /)], /◉ oracle +claude +fable +high +default$/);
   assert.match(lines[at(/ oracle /) + 1], /○ ↳ +pi +default/);
   assert.match(lines[at(/ pro /)], /◉ pro +chatgpt +6 Pro/);
   assert.match(lines[at(/ pro /) + 1], /○ ↳ +gemini/);
@@ -186,14 +186,14 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   assert.equal(s.assignment('imp').runs_on.harness, 'pi');
   // Keep this place-edit exercise on one primary; presets themselves are exercised below.
   s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 1) };
-  await s.press('-');
+  await s.press('\x1b[3~');
   // p: the harness of the primary place. The shipped table gives the agent its model; a CLI place has no pi role.
   await s.press('p');
   assert.deepEqual(s.session.done, { ok: true, index: 0 });
   let imp = s.assignment('imp');
   assert.deepEqual([imp.harness, imp.agent, imp.model, imp.runs_on.agent, imp.available], ['cli', 'agy', 'gemini-4-argon-high', 'agy', true]);
   assert.equal(imp.source_file, join(s.hud, 'roles/imp.json'));
-  assert.match(s.text(), /◉ imp \[custom\] +agy +gemini-4-argon-high/);
+  assert.match(s.text(), /◉ imp +agy +gemini-4-argon-high/);
   const file = join(s.hud, 'roles/imp.json');
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   assert.deepEqual(fs.readdirSync(join(s.hud, 'roles')).filter((n) => n.endsWith('.tmp')), []);
@@ -223,7 +223,7 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   await s.press('P');
   assert.equal(s.assignment('imp').agent, 'agy');
   // +: a fallback after the last place, the cursor on it; K and J move it; - removes it.
-  await s.press('+');
+  await s.press('i');
   assert.deepEqual(s.session.done, { ok: true, index: 1 });
   assert.equal(s.session.state.projectCursor, placeItem('imp', 1));
   assert.equal(s.frame().state.projectCursor, placeItem('imp', 1), 'the cursor is on the new row in the very next frame');
@@ -238,22 +238,22 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   assert.deepEqual(s.session.done, { ok: true, index: 0 }, 'at the top K stays and writes nothing');
   await s.press('J');
   assert.equal(s.session.state.projectCursor, placeItem('imp', 1));
-  await s.press('-');
+  await s.press('\x1b[3~');
   assert.equal(stored(s, 'imp').run.length, 1);
-  await s.press('-');
+  await s.press('\x1b[3~');
   assert.equal(s.session.done.message, 'keep at least one place');
   assert.equal(stored(s, 'imp').run.length, 1);
   // x: an exhausted mark goes, and the place is in use again.
-  await s.press('+');
+  await s.press('i');
   const first = stored(s, 'imp').run[0];
   markExhausted(s.hud, placeKey({ harness: 'cli', agent: first.agent, model: first.model }), 'HTTP 429', NOW);
   s.session.snap = await s.collector.collect(true, s.board, NOW);
   assert.equal(s.assignment('imp').runs_on.harness, 'pi', 'the next place is in use while the first is exhausted');
-  assert.match(s.text(), /✗ imp \[custom\] +agy/);
+  assert.match(s.text(), /✗ imp +agy/);
   s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 0) };
   await s.press('x');
   assert.equal(s.assignment('imp').runs_on.agent, 'agy');
-  assert.match(s.text(), /◉ imp \[custom\] +agy/);
+  assert.match(s.text(), /◉ imp +agy/);
   await s.press('x');
   assert.equal(s.session.done.message, 'not marked exhausted');
   // The MCP reads the same files: hud_roster shows what the page shows.
@@ -281,7 +281,7 @@ test('c/C apply a whole role preset through the real key path; rows show default
   await s.press('c');
   assert.match(s.text(), /imp \[hydrogen\]/);
   await s.press('C');
-  assert.match(s.text(), /✗ imp \[grok\]/);
+  assert.match(s.text(), /✗ imp +pi/);
   assert.equal(s.assignment('imp').exhausted.length, 1);
   await s.press('C');
   await s.press('e');
@@ -409,14 +409,14 @@ test('the model picker: Tab shows every provider and model, `default` unsets, a 
   await s.keys('m', ENTER, UP, ENTER);
   assert.equal(stored(s, 'imp').run[0].model, undefined);
   assert.equal(s.assignment('imp').model, 'synthetic/model', 'the pi role\'s own model is what the next job gets');
-  assert.match(s.text(), /◉ imp \[default\] +pi +synthetic\/model +high +yours$/m, 'the row shows that model, and the owner\'s file is the one in force');
-  // While the picker is open every key is its own: q, p, e, + and x type or move, and nothing else happens.
+  assert.match(s.text(), /◉ imp +pi +synthetic\/model +high +yours$/m, 'the row shows that model, and the owner\'s file is the one in force');
+  // While the picker is open every key is its own: q, p, e, i and x type or move, and nothing else happens.
   await s.press('m');
-  for (const raw of ['q', 'p', 'e', '+', 'x', 'K', 'o', 'j']) {
+  for (const raw of ['q', 'p', 'e', 'i', 'x', 'K', 'o', 'j']) {
     const out = await s.press(raw);
     assert.deepEqual([out.action, out.close], [undefined, false], raw);
   }
-  assert.equal(s.session.state.projectInput.text, 'qpe+xKoj');
+  assert.equal(s.session.state.projectInput.text, 'qpeixKoj');
   assert.equal(stored(s, 'imp').run.length, 2);
   assert.equal(stored(s, 'imp').run[0].harness, 'pi');
   // A click leaves it (the page is the same one underneath).
@@ -512,10 +512,10 @@ test('a project role file in force is shown apart and never written past', async
   const lines = plain(s.frame(80));
   assert.ok(lines.findIndex((l) => /^Project roles ─+ 2$/.test(l)) > lines.findIndex((l) => / sonic /.test(l)));
   assert.match(s.text(), /◉ frontend +pi +project\/model/);
-  assert.match(s.text(), /◉ imp \[custom\] +pi +project\/imp/);
+  assert.match(s.text(), /◉ imp +pi +project\/imp/);
   const before = fs.readFileSync(join(s.cwd, '.hud/roles/imp.json'), 'utf8');
   s.session.state = { ...s.session.state, projectCursor: placeItem('imp', 0) };
-  for (const raw of ['p', 'm', 'e', '+', '-', 'K', 'c', 'C']) {
+  for (const raw of ['p', 'm', 'e', 'i', '\x1b[3~', 'K', 'c', 'C']) {
     await s.press(raw);
     assert.deepEqual(s.session.done, { ok: false, message: 'the project file is in force: o opens it' }, raw);
   }
@@ -561,14 +561,14 @@ test('Control plane keys: decoded names, only on a place row of the Control plan
   const s = await setup(t);
   const decoder = new WorkbenchInputDecoder('workboard');
   const names = (raw) => decoder.push(Buffer.from(raw)).map((i) => i.key);
-  assert.deepEqual([...'pPmMeE+-KJx'].map((c) => names(c)[0]), ['place-harness', 'place-harness-prev', 'place-model', 'place-model-prev',
-    'place-thinking', 'place-thinking-prev', 'place-add', 'place-remove', 'place-up', 'place-down', 'place-clear']);
+  assert.deepEqual([...'pPmMeEiKJx', '\x1b[3~'].map((c) => names(c)[0]), ['place-harness', 'place-harness-prev', 'place-model', 'place-model-prev',
+    'place-thinking', 'place-thinking-prev', 'place-add', 'place-up', 'place-down', 'place-clear', 'place-remove']);
   assert.deepEqual([...'srtjkq'].map((c) => names(c)[0]), ['settings-save', 'reset', 'settings-test', 'down', 'up', 'close']);
   // The panel's own keyboard also types: a printable key carries its character (named or not), and a control key has none.
   const decoded = (raw, profile = 'workboard') => new WorkbenchInputDecoder(profile).push(Buffer.from(raw));
   assert.deepEqual(decoded('m'), [{ type: 'key', key: 'place-model', text: 'm' }]);
   assert.deepEqual(decoded('Z'), [{ type: 'key', key: '', text: 'Z' }]);
-  assert.deepEqual(decoded('é-'), [{ type: 'key', key: '', text: 'é' }, { type: 'key', key: 'place-remove', text: '-' }]);
+  assert.deepEqual(decoded('é-'), [{ type: 'key', key: '', text: 'é' }, { type: 'key', key: 'list-shrink', text: '-' }]);
   assert.deepEqual(decoded('\x7f'), [{ type: 'key', key: 'backspace' }]);
   assert.deepEqual(decoded('\r'), [{ type: 'key', key: 'enter' }]);
   assert.deepEqual(decoded('\x1b[B'), [{ type: 'key', key: 'down' }]);
@@ -576,7 +576,7 @@ test('Control plane keys: decoded names, only on a place row of the Control plan
   // Elsewhere they do nothing: the hub, another page, a row of the Control plane that is not a place.
   for (const state of [onPage(), onPage('progress'), onPage('control', { projectCursor: 'project:fold:healthy' })]) {
     s.session.state = state;
-    for (const raw of ['p', 'm', 'x', '+']) assert.equal((await s.press(raw)).action, undefined);
+    for (const raw of ['p', 'm', 'x', 'i']) assert.equal((await s.press(raw)).action, undefined);
   }
   s.session.state = initialMonitorState();
   assert.equal((await s.press('p')).action, undefined);
@@ -588,7 +588,7 @@ test('the live panel applies a Control plane key to the role files, and says why
   const root = fs.realpathSync(s.cwd);
   s.put(join(s.hud, 'projects.json'), { version: 1, projects: [{ root, registered_at: '2026-11-13T00:00:00.000Z' }] });
   s.put(join(s.cwd, '.hud/roles/frontend.json'), { role: 'frontend', harness: 'pi', pi_role: 'implementer', split: false, can_continue: true, model: 'project/model' });
-  s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'reviewer', 'sonic'] });
+  s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'sonic'] });
   s.put(join(s.hud, 'hud-settings.json'), { modelEnabled: false, refreshMs: 100, language: 'en' });
   const place = JSON.stringify({ state: { ...initialMonitorState(), mainTab: 'project', projectPage: 'control', projectCursor: placeItem('imp', 0), projectFolded: new Set(['agents', 'files']) } },
     (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
@@ -613,9 +613,9 @@ test('the live panel applies a Control plane key to the role files, and says why
   await until(() => / model\b/.test(stripAnsi(out)) && /gpt-6\.1-sol/.test(stripAnsi(out)), 'the models of the provider');
   child.stdin.write('sol\r');
   await until(() => fs.existsSync(join(s.hud, 'roles/imp.json')) && stored(s, 'imp').run[0].model === 'openai/gpt-6.1-sol', 'the model written');
-  // Down to the project's own role: imp fallback, two reviewer places, sonic, then frontend.
+  // Down to the project's own role: imp fallback, sonic, then frontend (reviewer is hidden: the 30-cell page is short, and a notice scrolls away with the rows).
   const mark = out.length;
-  child.stdin.write('jjjjjp');
+  child.stdin.write('jjjp');
   // The panel here is 30 columns wide, so the notice is cut to what fits.
   await until(() => /the project file is in/.test(stripAnsi(out.slice(mark))), 'the notice');
   assert.equal(fs.existsSync(join(s.hud, 'roles/frontend.json')), false);

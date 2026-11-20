@@ -39,7 +39,7 @@
     "",
     "",
     "",
-    "✓ 3 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
+    "✓ 3 done today     ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all"
   ],
   "home-80-zh": [
     " 首页 ?1  项目                                                           模型 开",
@@ -81,7 +81,7 @@
     "",
     "",
     "",
-    "✓ 3 今日完成     ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  / 筛选"
+    "✓ 3 今日完成     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置"
   ],
   "older-80-en": [
     " Home ?1  Project                                                      models on",
@@ -123,7 +123,7 @@
     "",
     "",
     "",
-    "✓ 3 done today   ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help"
+    "✓ 3 done today     ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all"
   ],
   "older-80-zh": [
     " 首页 ?1  项目                                                           模型 开",
@@ -165,7 +165,7 @@
     "",
     "",
     "",
-    "✓ 3 今日完成     ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  / 筛选"
+    "✓ 3 今日完成     ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置"
   ],
   "job-80-en": [
     "‹ Home › R5-API · imp",
@@ -358,7 +358,7 @@
     "模型 ───────────────────────────────────────────────────────────────────────────",
     "  模型文字                                                                    开",
     "  模型                                                  deepseek-v4-1-flash-1017",
-    "  决策 API                                                     OpenAI （无 key）",
+    "  决策 API                                                       OpenAI (无 key)",
     "* 调用上限                                                             ‹ 120/h ›",
     "┃ 每小时 LLM 调用次数（句子、标题、简报）",
     "  本小时调用                                                    ██▍░░░░░░░ 14/60",
@@ -388,14 +388,16 @@
     "⏎       expand / collapse in place        ┃ body of a card",
     "o       open the file in $EDITOR          dim rows are older ones, shown with a",
     "[ ]     switch project (Project)          lavender words are marked by the model",
-    "Space   mark to try; y/n accept/flag",
+    "Space   mark a to-try row",
+    "y n     accept / flag the marked",
+    "        to-try rows",
     "c C     role: next / previous preset",
     "p e     place: harness, thinking",
     "        (capitals go back)",
     "m       place: pick a model (provider,",
     "        then model; type to filter)",
-    "+ - K J place: add, remove, move up,",
-    "        move down",
+    "i Del   place: add, remove",
+    "K J     place: move up, move down",
     "x       place: clear its exhausted",
     "        mark",
     "r       place: refresh model lists",
@@ -405,7 +407,8 @@
     "v       inspect: details and files",
     "a       show / hide older jobs and",
     "        decisions (Home)",
-    "n N     next / previous trouble (Home)",
+    "> <     next / previous card that",
+    "        needs you (Home)",
     "b       models on / off",
     "w       export a review board (HTML)",
     "        and open it",
@@ -414,8 +417,8 @@
     "Esc     back",
     "",
     "In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back",
-    "On the Control plane c/C applies the next/previous role preset; p m e + - K J x",
-    "change the place under the cursor (m picks a model, r refreshes model lists):",
+    "On the Control plane c/C applies the next/previous role preset; p m e i Del K J",
+    "x change the place under the cursor (m picks a model, r refreshes model lists):",
     "written to $HUD_HOME/roles, used by the next job; a project role file in force",
     "is only opened",
     "In the Inspector ⏎ opens the file",
@@ -508,7 +511,7 @@
     "",
     "",
     "",
-    "✓ 3 done today                         ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  / filter  ←→ tab"
+    "✓ 3 done today                         ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "home-120-zh": [
     " 首页 ?1  项目                                                                                                   模型 开",
@@ -550,7 +553,7 @@
     "",
     "",
     "",
-    "✓ 3 今日完成                                    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  / 筛选  ←→ 切页"
+    "✓ 3 今日完成                                    ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "older-120-en": [
     " Home ?1  Project                                                                                              models on",
@@ -592,7 +595,7 @@
     "",
     "",
     "",
-    "✓ 3 done today                         ↑↓ move  ⏎ expand  o open  v inspect  a all  , settings  ? help  / filter  ←→ tab"
+    "✓ 3 done today                         ⏎ expand  ? help  / filter  o open  v inspect  ↑↓ move  a all  , settings  ←→ tab"
   ],
   "older-120-zh": [
     " 首页 ?1  项目                                                                                                   模型 开",
@@ -634,7 +637,7 @@
     "",
     "",
     "",
-    "✓ 3 今日完成                                    ↑↓ 移动  ⏎ 展开  o 打开  v 详情  a 全部  , 设置  ? 帮助  / 筛选  ←→ 切页"
+    "✓ 3 今日完成                                    ⏎ 展开  ? 帮助  / 筛选  o 打开  v 详情  ↑↓ 移动  a 全部  , 设置  ←→ 切页"
   ],
   "job-120-en": [
     "‹ Home › R5-API · imp",
@@ -827,7 +830,7 @@
     "模型 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  模型文字                                                                                                            开",
     "  模型                                                                                          deepseek-v4-1-flash-1017",
-    "  决策 API                                                                                             OpenAI （无 key）",
+    "  决策 API                                                                                               OpenAI (无 key)",
     "* 调用上限                                                                                                     ‹ 120/h ›",
     "┃ 每小时 LLM 调用次数（句子、标题、简报）",
     "  本小时调用                                                                                            ██▍░░░░░░░ 14/60",
@@ -857,12 +860,14 @@
     "⏎       expand / collapse in place                            ┃ body of a card",
     "o       open the file in $EDITOR                              dim rows are older ones, shown with a",
     "[ ]     switch project (Project)                              lavender words are marked by the model",
-    "Space   mark to try; y/n accept/flag",
+    "Space   mark a to-try row",
+    "y n     accept / flag the marked to-try rows",
     "c C     role: next / previous preset",
     "p e     place: harness, thinking (capitals go back)",
     "m       place: pick a model (provider, then model; type to",
     "        filter)",
-    "+ - K J place: add, remove, move up, move down",
+    "i Del   place: add, remove",
+    "K J     place: move up, move down",
     "x       place: clear its exhausted mark",
     "r       place: refresh model lists",
     "g       job: go to its herdr tab",
@@ -870,7 +875,7 @@
     "X       job: stop it (y confirms)",
     "v       inspect: details and files",
     "a       show / hide older jobs and decisions (Home)",
-    "n N     next / previous trouble (Home)",
+    "> <     next / previous card that needs you (Home)",
     "b       models on / off",
     "w       export a review board (HTML) and open it",
     ",       Settings",
@@ -878,7 +883,7 @@
     "Esc     back",
     "",
     "In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back",
-    "On the Control plane c/C applies the next/previous role preset; p m e + - K J x change the place under the cursor (m",
+    "On the Control plane c/C applies the next/previous role preset; p m e i Del K J x change the place under the cursor (m",
     "picks a model, r refreshes model lists): written to $HUD_HOME/roles, used by the next job; a project role file in force",
     "is only opened",
     "In the Inspector ⏎ opens the file",
@@ -893,6 +898,7 @@
     "  hud-build                      Build a spec's tickets as a task graph, one imp per ready ticket",
     "  tdd                            Red-green-refactor at the seams the spec agreed",
     "  diagnosing-bugs                A feedback loop first, then reproduce, hypothesise and fix",
+    "  triage                         Sort issues others filed: reproduce, dedupe, turn into agent-ready briefs",
     "                                                                                                     ↑↓ scroll  esc back"
   ],
   "changes-120-en": [
@@ -1002,7 +1008,7 @@
     "模型 ───────────────────────────────────",
     "  模型文字                            开",
     "  模型          deepseek-v4-1-flash-1017",
-    "  决策 API             OpenAI （无 key）",
+    "  决策 API               OpenAI (无 key)",
     "* 调用上限                     ‹ 120/h ›",
     "┃ 每小时 LLM 调用次数（句子、标题、",
     "┃ 简报）",

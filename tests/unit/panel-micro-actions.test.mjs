@@ -59,7 +59,7 @@ function fixture(t) {
 }
 
 test('the decoder names the new keys; the digits are options, not tabs, and Changes has a letter', () => {
-  assert.deepEqual([key('g'), key('d'), key('X'), key('r')].map((k) => [k.key, k.text]), [['home', 'g'], ['answer-default', 'd'], ['stop-job', 'X'], ['reset', 'r']]);
+  assert.deepEqual([key('g'), key('d'), key('X'), key('r')].map((k) => [k.key, k.text]), [['', 'g'], ['answer-default', 'd'], ['stop-job', 'X'], ['reset', 'r']]);
   assert.deepEqual(['1', '2', '3', '4'].map((c) => [key(c).key, c]), ['1', '2', '3', '4'].map((c) => ['option', c]));
   assert.deepEqual(['1', '2', '3', '4'].map((c) => key(c).text), ['1', '2', '3', '4']);
   assert.equal(key('f').key, 'changes');
@@ -115,14 +115,14 @@ test('hud watch tells the main session what the owner answered from the panel', 
   assert.deepEqual(lines.filter((l) => l.includes('ANSWERED')), [`[imp@${ASKING}] ANSWERED q1 from panel: remove it now`]);
 });
 
-test('g on a HUD job card (Home and Inspector) focuses its tab; elsewhere it stays the top of the list, and the Home key always does', (t) => {
+test('g on a HUD job card (Home and Inspector) focuses its tab; elsewhere it means nothing (the Home key is the top)', (t) => {
   const f = fixture(t);
   for (const id of [ASKING, RUNNING, DONE]) assert.deepEqual(f.press(id, 'g').out.action, { type: 'focus-job-tab', dir: f.dir(id) }, id);
   const home = f.press(RUNNING, '\x1b[H');
   assert.equal(home.out.action, undefined, 'the Home key moves, it does not focus');
   const w = f.worker(RUNNING), target = { kind: 'worker', laneId: w.laneId, workerId: w.id };
   assert.deepEqual(f.press(RUNNING, 'g', { focus: 'details', boardInspect: target }).out.action, { type: 'focus-job-tab', dir: f.dir(RUNNING) });
-  // A lane header, the progress block and the Project tab have no job: `g` jumps to the top as before.
+  // A lane header, the progress block and the Project tab have no job: `g` does nothing.
   assert.equal(f.press(RUNNING, 'g', { mainTab: 'project' }).out.action, undefined);
   const header = f.render(), ctx = { tree: TREE, frame: header, nowMs: NOW };
   assert.equal(handleMonitorInput({ ...header.state, homeTarget: { kind: 'lane', laneId: w.laneId } }, key('g'), ctx).action, undefined);

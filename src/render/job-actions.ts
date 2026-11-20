@@ -39,6 +39,11 @@ export function answerKeys(worker: OwnerWorker): string[] {
   const a = answerable(worker);
   return !a ? [] : [a.options.length ? `${a.options.length === 1 ? '1' : `1-${a.options.length}`} ${t('answer')}` : '', a.suggested ? `d ${t('default')}` : ''].filter(Boolean);
 }
+/** Home's footer for the row under the cursor, most useful first (a narrow row drops the last): a card takes `o` and `v`, a HUD job also its tab and, while it runs, stop. */
+export function homeKeys(state: MonitorState, board: WorkboardSnapshot | undefined, enter: string): string {
+  const job = jobUnderCursor(state, board), card = state.focus === 'agents' && state.mainTab === 'home' && !state.boardAnchor && !!state.homeTarget;
+  return [`⏎ ${enter}`, ...(job ? ['g job tab', ...(job.worker.settledAt === null ? ['X stop'] : [])] : []), '? help', ...(card ? ['o open', 'v inspect'] : []), '↑↓ move', 'a all', ', settings', '←→ tab'].join('  ');
+}
 /** The one-row prompt above the page while a stop waits for its answer. */
 export function stopPromptRows(state: MonitorState, width: number): MonitorRow[] {
   const stop = state.confirmStop;
@@ -49,10 +54,10 @@ export function stopPromptRows(state: MonitorState, width: number): MonitorRow[]
 export function openJobAction(next: MonitorState, input: WorkbenchInput, key: string, board: WorkboardSnapshot | undefined, result: (action?: MonitorOutcome['action']) => MonitorOutcome): MonitorOutcome | undefined {
   if (input.type !== 'key') return undefined;
   const digit = /^[1-4]$/.exec(input.text ?? '')?.[0], answering = digit !== undefined || key === 'answer-default';
-  if (!answering && !(key === 'stop-job' || (key === 'home' && input.text === 'g'))) return undefined;
+  if (!answering && !(key === 'stop-job' || input.text === 'g')) return undefined;
   const job = jobUnderCursor(next, board);
   if (!job) return undefined;
-  if (key === 'home') return result({ type: 'focus-job-tab', dir: job.dir });
+  if (input.text === 'g') return result({ type: 'focus-job-tab', dir: job.dir });
   if (key === 'stop-job') {
     if (job.worker.settledAt !== null) return undefined;
     next.confirmStop = { jobId: job.jobId, role: job.worker.role ?? 'job', dir: job.dir };

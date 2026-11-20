@@ -432,7 +432,7 @@ what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`)
 page to what is still to try: the header `Only to try ── n` replaces everything below the crumb, then
 the ledger's slices in state `try` (never matched by their words, whatever the milestone) grouped by
 milestone, newest first: the newest is open (`◇ DATA-ONE  text  1d`), each older one
-a folded row (`▸ M3b  ◇ 1 to try  19d`) that Enter opens. With the model on and a brief stored, a slice is one row: its id and its brief's first sentence (cut with `…`). Without a brief (model off, pending or failed) it shows its whole ledger text, wrapped under its id (a break falls at a space or after a `/`, `-`, `_` or `.`, never inside a word); a panel
+a folded row (`▸ M3b  ◇ 1 to try  19d`) that Enter opens. With the model on and a brief stored, a slice is one row: its id and its brief's first sentence (cut with `…`). Without a brief (model off, pending or failed) it shows its whole ledger text, wrapped under its id (a break falls at a space or after a `/`, `-`, `_` or `.`, never inside a word); a briefed row whose id leaves little room for its sentence (a long id) puts the sentence on its own line under the id; a panel
 too short for all of them keeps two rows for those slices the cursor is not on. Enter on a slice shows its milestone, commit and
 day and, with a brief, the whole **brief** (what changed in plain words, at most two sentences) and numbered **acceptance steps**
 (how to try it, at most four); the original ledger text, written for agents, is folded under them (`▸ Ledger line`, Enter unfolds it). `t`, Enter or a click on the header, or Esc
@@ -474,7 +474,9 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
   whose file comes from the project's own `.hud/roles`, which wins) and **Browser tasks** (roles that
   run only on browser places: pro, flow). A role is one row per place on one
   line: the first is the primary, `↳` rows are its fallbacks in order. A row reads mark, role,
-  harness, model, thinking; marks are `◉` in use (where the next `hud_create` runs: the first place
+  harness, model, thinking (the model by its short name: no `vendor/` and no snapshot date; a row
+  that would cut the name keeps it whole on a second line first; the role's preset is not on its
+  rows, it is in the selected role's heading, `imp ── 3 places · preset: custom`); marks are `◉` in use (where the next `hud_create` runs: the first place
   that is installed and not exhausted), `○` standby, `✗` exhausted (rows of 56+ columns add the time
   left) and `−` harness not installed. Rows of 80+ columns end with whose file is in force:
   `default` (shipped), `yours` (`$HUD_HOME/roles/<role>.json`) or `project`. Enter and `o` open that
@@ -486,13 +488,13 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
 
 Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → project file in force; more specific wins, omission inherits. `hud_roster` returns `presets` and `preset` (matching name or null). Pass a name from `presets` to `hud_create` to use it for one job only.
 
-On a role's place row, `c`/`C` applies the next/previous preset in one step (from `custom`, first/last), writing its run to the owner's file and keeping other fields, including presets. The role row shows `[name]` or `[custom]` when presets exist; exhausted marks remain per place. Project-pinned roles refuse as for other edits; `o` opens the file. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
+On a role's place row, `c`/`C` applies the next/previous preset in one step (from `custom`, first/last), writing its run to the owner's file and keeping other fields, including presets. The preset's name is shown in the selected role's heading and its `role` line (`[name]` or `[custom]`), not on each row; exhausted marks remain per place. Project-pinned roles refuse as for other edits; `o` opens the file. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
 
 On a place row (Control plane only): `p`/`P` next/previous harness (`pi`, then each CLI agent for a
 role that has CLI instructions; a browser role walks chatgpt, gemini, aistudio) with that harness's
 default model from `harnesses.json`; `e`/`E` thinking (a Flow place: image/video with `m`). Each cycle
-passes through "unset" (the role's or harness's own default) before it wraps. `+` adds a fallback at
-the end (the first harness not yet listed, else another model of the same one); `-` removes the
+passes through "unset" (the role's or harness's own default) before it wraps. `i` adds a fallback at
+the end (the first harness not yet listed, else another model of the same one); `Del` removes the
 place (one always stays); `K`/`J` move it earlier/later; `x` clears its exhausted mark; `r` refreshes
 model lists from `pi`, `agy` and `grok`.
 
@@ -607,7 +609,15 @@ or leaving the view clears the Space marks.
 
 Home and Project are the only main tabs. Inspector, Changes, Settings and Help share
 one title band, exact-width rows and whole footer hints (rightmost hints drop when
-narrow). There is no Agents pane, stacked/compact layout, Timeline, activity hub,
+narrow). Home, the hub and the Control plane footers show the keys of the selected row: a HUD
+job's row adds `g job tab` and `X stop`, a to-try row `Space mark  y accept  n flag`, a role
+`c C preset`, a place `i add  Del remove  K J move`; a key the row does not take is not listed.
+One key means one thing on a page (`n` flags a to-try row and nothing else; `>` `<` move between
+Home's cards that need you; `i` `Del` change places; `+` `=` `-` size Split's list), and the Help
+page lists each key once. A row says its state once: a card's `[done]` mark is left out when its
+state word says the same, and a Home lane's state word is on its row once. The fixed words
+(`Usage`, `unparseable JSON`, `(no key)`) follow the panel language, and a quota figure says
+whether it is what is `used` or what is `left`. There is no Agents pane, stacked/compact layout, Timeline, activity hub,
 agent log, Summary or diagnostics page. Each page retains its scroll/selection.
 Icons are `unicode` or `text`; old nerd/emoji values load as unicode.
 
@@ -628,20 +638,20 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Tab/Shift-Tab, Left/Right, a click on the tab | Switch between Home and Project (the digits switch no tab: `1`–`4` answer an open question). The tab's count is `?` and a number (`Project ?4`: what waits for you) |
 | `f` | Changes summary (once `3`) |
 | `[`, `]` | Project: previous/next project (not on the Projects list) |
-| `p` `e` (capitals back), `+` `-` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
+| `p` `e` (capitals back), `i` `Del` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
 | `c` / `C` | Control plane: apply the next / previous role preset |
 | `m` (`M`) | Control plane: pick the model of the place under the cursor: provider, then model on `pi`; type to filter, ↑↓ pick, Enter sets (an open provider, or the model), Tab shows every model, ← back, Esc cancels |
-| Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`g`/`G`) | Move/page/first/last (`g` on a HUD job card is the next row) |
-| `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else `g` is Home (first row), and the Home key always is |
+| Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
+| `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else it does nothing: the first row is the Home key |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) once its slab is expanded (Enter; always in the Inspector), where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | On an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then `pi-role-reap <dir>` runs and the panel reads again); any other key cancels |
 | Enter | Expand/collapse card, question, decision or lane; in Project open a page, then fold, show a ticket or open a row's file |
 | `o` | Open question + answer, else report, else brief; native transcript; in Project the row's file |
 | `v` | Inspector |
 | `a` | Show/hide older jobs and decisions |
-| `n`/`N` | Next/previous trouble |
+| `>` / `<` | Home: next / previous card that needs you (asking, failed or stalled) |
 | Space | Toggle a mark on the to-try row under the cursor; on Home, open Inspector |
-| `y` / `n` | Accept / flag marked to-try rows, or the current row if none are marked |
+| `y` / `n` | Accept / flag marked to-try rows, or the current row if none are marked (`n` means nothing else on any page) |
 | `b` | Model text master on/off (also the top-row models word) |
 | `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
 | `/` | Filter rows live on Home (either layout), Project Progress and Project Tickets: a one-row bar `/ query▌  N matches` under the header. A case-insensitive substring over, on Home, a card's package, title, role, harness, model-sentence keywords and status word (`asking`, `failed`, `working`, `stalled`, `done`; a decision's package and title); on Progress a slice's id, milestone, text, role and state (`working`, `blocked`, `to try`, `accepted`, `todo`); on Tickets a ticket's feature, number, title, status and blocker. Only matching rows are drawn, so ↑↓, Enter and Split's preview move over them; a matching card older than Home's fold or hide time stays (shown as its one row, muted), and the waiting, progress and older-count blocks, STATE's Next and its summary are left out while it is on. While typing every printable key goes to the query (`g`, `X`, `w`, `r`, digits, `=`, `-`, `q` do nothing else; Left, Right and Tab wait); Backspace edits; Enter stops typing and keeps the filter; Esc stops typing, then clears it (Split's preview gives Esc back to the list first). Another tab, page, project, Help or the Inspector clears it. Kept across the panel's reload |
@@ -691,7 +701,7 @@ Home and Project become **a list above and a preview of the cursor row below**
 | Up/Down | Move in the list (or in the preview, once Enter has taken the keys there) |
 | PgUp/PgDn, wheel over the preview | Scroll the preview; the wheel over the list moves the cursor |
 | Enter | A row with something to act on in its preview (cards, waiting items, places) moves the keys there; there Enter does what it does in Classic. Elsewhere as in Classic |
-| `=` `+` / `-` | Grow the list / the preview by a row (the list's share stays between a fifth and four fifths of the rows and is kept when the panel reloads). `+` `-` stay the Control plane's place keys once Enter has taken the keys to a place |
+| `=` `+` / `-` | Grow the list / the preview by a row (the list's share stays between a fifth and four fifths of the rows and is kept when the panel reloads). The Control plane's place keys are `i` and `Del`, so these keys never mean two things there |
 | Esc | Back from the preview to the list, then as in Classic |
 | Click | Selects a row (or a preview row); a second click is Enter |
 

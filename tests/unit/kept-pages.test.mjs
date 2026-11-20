@@ -30,8 +30,8 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
       frames = pageFrames(f);
     for (const [key, text] of Object.entries(frames).filter(([key]) => key.startsWith(page + '-')))
       assert.deepEqual(text, expected[key], key);
-    // Help is a scrolling page: one more key row (w) moved the Backup skills header below the first 40 rows.
-    const frame = f.render(page, 80, 'en', page === 'help' ? 47 : 40),
+    // Help is a scrolling page: more key rows moved the Backup skills header below the first 47 rows.
+    const frame = f.render(page, 80, 'en', page === 'help' ? 50 : 40),
       text = plainFrame(frame).join('\n');
     if (page === 'older') {
       assert.match(text, /5 older shown · a hide/);
@@ -59,7 +59,10 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
     if (page === 'help') {
       assert.doesNotMatch(text, /Home · Project/);
       assert.match(text, /Backup skills ─+ 17/);
-      assert.match(text, /Space\s+mark to try; y\/n accept\/flag/);
+      assert.match(text, /Space\s+mark a to-try row/);
+      assert.match(text, /y n\s+accept \/ flag the marked/);
+      assert.match(text, /i Del\s+place: add, remove/);
+      assert.doesNotMatch(text, /\+ - K J|n N /);
       assert.match(text, /f\s+Changes/);
       assert.match(text, /← → Tab\s+switch tab \(a click too\)/);
       assert.match(text, /1-4 d\s+job: answer its open question/);

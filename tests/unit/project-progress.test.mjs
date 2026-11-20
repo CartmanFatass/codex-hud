@@ -170,7 +170,7 @@ test('a Progress page of jobs alone pages by keyboard: Down, PgDn and End move t
   assert.match(plain(frame).join('\n'), /Task 12/);
   // A job with neither report nor brief is still a stop, and Enter on it does nothing.
   assert.equal(send(frame, '\r').action, undefined);
-  frame = page(send(frame, 'g').state);
+  frame = page(send(frame, '\x1b[H').state);
   assert.equal(frame.state.projectCursor, `project:job:${active[0].jobId}`);
   assert.match(plain(frame).join('\n'), /Task 1\b/, 'the view came back to the first job');
   assert.deepEqual(send(frame, '\r').action, { type: 'open-files', files: [join(f.job, 'brief.md')] });

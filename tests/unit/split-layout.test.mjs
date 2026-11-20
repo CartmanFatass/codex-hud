@@ -54,8 +54,9 @@ test('Home: the list has a row per lane and block, a question and a failure keep
   const { busy, idle } = await fixtures(t);
   const d = driver(busy), lines = d.lines();
   // Needs first (asking, the failure), then what runs, then Waiting, Decided and Progress; the preview is the cursor lane's slab and cards.
-  assert.deepEqual(lines.slice(2, 12).map((l) => l.slice(0, 14)), ['? NATIVE-TREE ', '┃ Question: Wh', '✗ EXPORT-CSV  ', '┃ HTTP 429, no', '◉ M4-PROJECT  ', '◉ AUTH-REFRESH', '◉ this session', '? Waiting for ', '◇ Decided for ', '◐ Progress    ']);
-  assert.match(rule(d), /^NATIVE-TREE ─+ asking · 2 jobs$/);
+  // AUTH-REFRESH's phase does not fit its row beside the role and the age, so it takes a row of its own, not a cut.
+  assert.deepEqual(lines.slice(2, 13).map((l) => l.slice(0, 14)), ['? NATIVE-TREE ', '┃ Question: Wh', '✗ EXPORT-CSV  ', '┃ HTTP 429, no', '◉ M4-PROJECT  ', '◉ AUTH-REFRESH', '  reviewing · ', '◉ this session', '? Waiting for ', '◇ Decided for ', '◐ Progress    ']);
+  assert.match(rule(d), /^NATIVE-TREE ─+ imp · 2 jobs$/);
   assert.equal(d.state.splitCursor, d.frame.workboard.rows[0].item);
   // Idle: nothing runs, the first row that needs the owner is Waiting for you, whose preview lists the items and the latest slices.
   const calm = driver(idle), quiet = calm.lines();
@@ -172,7 +173,7 @@ test('Project hub: a list of Waiting and the pages with the cursor page previewe
   d.run('up');
   const out = d.run('try-accept');
   assert.deepEqual([out.action.type, out.action.action, out.action.target.slices[0].id], ['record-try', 'accept', 'DATA-ONE']);
-  assert.equal(d.run('next-trouble').action.action, 'flag');
+  assert.equal(d.run('try-flag').action.action, 'flag');
   d.run('enter');
   assert.equal(d.state.projectPage, 'progress');
   // A slice already marked leaves the queue: the next one is the one y acts on.
@@ -237,7 +238,7 @@ test('Split Progress lets the owner select an older to-try slice and read its br
 
 test('Split hub reveals an off-screen first pending slice before y/n can record it', async (t) => {
   const { busy } = await fixtures(t);
-  for (const [height, key, action] of [[24, 'try-accept', 'accept'], [12, 'next-trouble', 'flag']]) {
+  for (const [height, key, action] of [[24, 'try-accept', 'accept'], [12, 'try-flag', 'flag']]) {
     const d = driver(busy, { data: busy.control, height }).at(page(undefined));
     if (height === 24) d.run('page-down');
     assert.equal(d.state.projectCursor, 'project:page:progress');
@@ -362,7 +363,7 @@ const lastCells = (d) => { const p = d.pane('preview'); return d.lines().slice(p
 const keysOf = (text) => new WorkbenchInputDecoder('workboard').push(Buffer.from(text));
 
 test('Split V2 input: = + - are named by the decoder; a pointer motion with the left button held is no input (no drag of the rule)', () => {
-  assert.deepEqual(keysOf('=+-'), [{ type: 'key', key: 'list-grow', text: '=' }, { type: 'key', key: 'place-add', text: '+' }, { type: 'key', key: 'place-remove', text: '-' }]);
+  assert.deepEqual(keysOf('=+-'), [{ type: 'key', key: 'list-grow', text: '=' }, { type: 'key', key: 'list-grow', text: '+' }, { type: 'key', key: 'list-shrink', text: '-' }]);
   assert.deepEqual(keysOf('\x1b[<0;5;7M\x1b[<32;5;4M\x1b[<35;5;4M\x1b[<0;5;4m'), [{ type: 'mouse', button: 'left', x: 4, y: 6 }]);
 });
 
@@ -387,16 +388,16 @@ test('Split ratio: = and + grow the list, - grows the preview, a press on the ru
   const rows = () => [d.pane('agents').height, d.pane('preview').height];
   const [list, preview] = rows();
   assert.equal(d.state.splitRatio, undefined, 'unset, the list is as tall as it needs');
-  d.run('place-remove');
+  d.run('list-shrink');
   assert.deepEqual(rows(), [list - 1, preview + 1], '- grows the preview by a row');
-  d.run('place-remove');
+  d.run('list-shrink');
   assert.deepEqual(rows(), [list - 2, preview + 2]);
   d.run('list-grow');
   assert.deepEqual(rows(), [list - 1, preview + 1], '= grows the list');
-  d.run('place-add');
+  d.run('list-grow');
   assert.deepEqual(rows(), [list, preview], '+ does too');
   // The share is kept across the panel's reload, which hands its state over as JSON.
-  d.run('place-remove'); d.run('place-remove'); d.run('place-remove');
+  d.run('list-shrink'); d.run('list-shrink'); d.run('list-shrink');
   const saved = d.state.splitRatio, held = process.env.HUD_PANEL_RELOAD_PLACE;
   process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({ state: d.state, settings: null });
   const place = readPanelPlace();
@@ -414,28 +415,30 @@ test('Split ratio: = and + grow the list, - grows the preview, a press on the ru
   assert.equal(d.state.splitRatio, ratio);
   // Classic has no rule: the same inputs change nothing there.
   const classic = busy.render(40, 'en', 24, initialMonitorState());
-  for (const input of ['list-grow', 'place-remove']) {
+  for (const input of ['list-grow', 'list-shrink']) {
     const out = handleMonitorInput(classic.state, typeof input === 'string' ? { type: 'key', key: input } : input, { tree: TREE, frame: classic, nowMs: NOW, standalone: true });
     assert.equal(out.state.splitRatio, undefined);
   }
 });
 
-test('Split ratio keys leave the Control plane’s + and - to its places', async (t) => {
+test('One meaning per key on the Control plane: = + - size the Split, i and Delete add and remove a place, and the ratio never moves with them', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.control }).at(page('control'));
-  assert.equal(d.run('place-add').action, undefined, 'from the role list + is the ratio key: no place is under it');
+  assert.equal(d.run('place-add').action, undefined, 'from the role list no place is under i');
+  assert.equal(d.state.splitRatio, undefined, 'and i is not a ratio key');
+  d.run('list-grow');
   assert.ok(d.state.splitRatio);
   const before = d.state.splitRatio;
   d.run('enter');
-  assert.equal(d.run('place-add').action.op, 'add', 'on a place it adds one');
-  assert.equal(d.run('place-remove').action.op, 'remove');
+  assert.equal(d.run('place-add').action.op, 'add', 'on a place i adds one');
+  assert.equal(d.run('place-remove').action.op, 'remove', 'Delete removes it');
   assert.equal(d.state.splitRatio, before);
 });
 
 test('Preview focus compacts the list to three rows around the cursor, and Esc restores the chosen share', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy);
-  d.run('place-remove'); d.run('place-remove');
+  d.run('list-shrink'); d.run('list-shrink');
   const [list, preview] = [d.pane('agents').height, d.pane('preview').height];
   assert.ok(list > 3);
   for (let i = 0; i < 2; i++) d.run('down');
@@ -448,7 +451,7 @@ test('Preview focus compacts the list to three rows around the cursor, and Esc r
   assert.equal(d.state.splitCursor, cursor);
   // The ratio keys do nothing in the preview, so the share Esc restores is the chosen one.
   const ratio = d.state.splitRatio;
-  d.run('place-remove');
+  d.run('list-shrink');
   assert.equal(d.state.splitRatio, ratio);
   d.run('escape');
   assert.deepEqual([d.pane('agents').height, d.pane('preview').height], [list, preview]);

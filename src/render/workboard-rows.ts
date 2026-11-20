@@ -59,6 +59,8 @@ export const itemRow = (glyph: string, left: string, right: string, width: numbe
   boardRow(pair(`${glyph || ' '} ${left}`, theme.board.muted(right), width));
 export const subTopRow = (crumb: string, right: string, width: number): string =>
   theme.board.title(pair(`${mark('‹', '<')} ${crumb}`, right, width));
+/** A footer's hints in the panel language: the whole string when it has an entry, else each `key word` hint on its own, so a row's own set needs no whole-line entry. */
+export const hintText = (hints: string): string => { const whole = t(hints); return whole !== hints ? whole : hints.split('  ').map((h) => t(h)).join('  '); };
 export function footHints(hints: string, room: number): string {
   const parts = hints.split('  ');
   while (parts.length && visualLength(parts.join('  ')) > room) parts.pop();

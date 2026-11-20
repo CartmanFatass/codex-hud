@@ -110,7 +110,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
       assert.match(text(pages.progress), lang === 'en' ? /^Next ─+ 5$/m : /^下一步 ─+ 5$/m);
       if (width >= 80) {
         assert.match(text(pages.progress), /Which synthetic option\?/);
-        assert.match(text(pages.control), /unparseable JSON/);
+        assert.match(text(pages.control), lang === 'en' ? /unparseable JSON/ : /JSON 无法解析/);
         assert.match(text(pages.control), /bad\.json/);
       }
       if (lang === 'zh') {
@@ -187,7 +187,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   assert.match(text, /^ {2}− flow +flow image not installed$/m);
   assert.match(text, /^ {2}! bad\.json +unparseable JSON$/m);
   assert.match(text, /^▸ Healthy ─+ 6$/m);
-  assert.match(text, /^ {2}◉ imp \[custom\] reviewer \[default\] sonic oracle \[fable\] pro general$/m);
+  assert.match(text, /^ {2}◉ imp reviewer sonic oracle pro general$/m);
   assert.match(text, /^▸ Files ─+ 8$/m);
   assert.match(text, /^ {2}keys 3\/5 · browser ✓ · missing GEMINI OPENAI$/m);
   assert.doesNotMatch(text, /synthetic\/model|project-agent\.md|▸ agents/);

@@ -13,10 +13,9 @@ export type WorkbenchInput =
 const KEYS: Record<string, string> = {
   j: 'down',
   k: 'up',
+  G: 'end',
   h: 'left',
   l: 'right',
-  g: 'home',
-  G: 'end',
   '\t': 'tab',
   '\r': 'enter',
   '\n': 'enter',
@@ -32,9 +31,9 @@ const KEYS: Record<string, string> = {
   t: 'settings-test',
   ',': 'settings',
   o: 'open-session',
-  // Home's next and previous trouble cards.
-  n: 'next-trouble',
-  N: 'previous-trouble',
+  // Home's next and previous card that needs the owner. `n` flags a to-try row, `g` goes to a job's tab, `+ - =` size Split: one meaning per key.
+  '>': 'next-trouble',
+  '<': 'previous-trouble',
   '?': 'help',
   b: 'brief-toggle',
   '1': 'agents',
@@ -51,6 +50,7 @@ const ESCAPES: Record<string, string> = {
   '\x1bOC': 'right',
   '\x1bOD': 'left',
   '\x1b[Z': 'shift-tab',
+  '\x1b[3~': 'place-remove',
   '\x1b[5~': 'page-up',
   '\x1b[6~': 'page-down',
   '\x1b[H': 'home',
@@ -109,6 +109,7 @@ export class WorkbenchInputDecoder {
                   '[': 'project-prev',
                   ']': 'project-next',
                   y: 'try-accept',
+                  n: 'try-flag',
                   // Control plane: the place under the cursor (capitals go back).
                   c: 'role-preset',
                   C: 'role-preset-prev',
@@ -118,12 +119,13 @@ export class WorkbenchInputDecoder {
                   M: 'place-model-prev',
                   e: 'place-thinking',
                   E: 'place-thinking-prev',
-                  '+': 'place-add',
-                  '-': 'place-remove',
+                  i: 'place-add',
+                  '+': 'list-grow',
+                  '-': 'list-shrink',
                   K: 'place-up',
                   J: 'place-down',
                   x: 'place-clear',
-                  // A HUD job's micro-actions: `d` answers with the question's default once `r` opened the reply; `X` asks to stop it.
+                  // A HUD job's micro-actions: `d` answers with the question's default on an expanded slab; `X` asks to stop it.
                   d: 'answer-default',
                   X: 'stop-job',
                   '\x7f': 'backspace',
@@ -131,7 +133,6 @@ export class WorkbenchInputDecoder {
                   v: 'inspect',
                   ' ': 'inspect',
                   w: 'export-board',
-                  // Split: `=` grows the list like `+` (which is the Control plane's place-add there).
                   '=': 'list-grow',
                 } as Record<string, string>
               )[ch] ?? KEYS[ch])

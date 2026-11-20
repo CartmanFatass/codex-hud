@@ -201,6 +201,15 @@ export function squeeze(text: string, width: number): string {
   return `${head}…${tail}`;
 }
 
+/** `text` cut to `room` cells at the end of a word, with `…`; a word is never split (Chinese has no spaces: it is cut at a character). Empty when no whole word fits. Takes sanitized text with no escapes in it. */
+export function cutWords(text: string, room: number): string {
+  if (visualLength(text) <= room) return text;
+  const head = truncateAnsi(text, room).replace(/…$/, ''), wide = /[\u2e80-\u9fff\uff00-\uffef]/;
+  if (text[head.length] === ' ' || wide.test(text[head.length] ?? '') || wide.test(head.at(-1) ?? '')) return head.trimEnd() + '…';
+  const space = head.lastIndexOf(' ');
+  return space > 0 ? head.slice(0, space) + '…' : '';
+}
+
 /**
  * One line of a diff, or of a file's text, in rows `width` wide. Tabs are
  * spaces to the next fourth column past the marker. Each row after the

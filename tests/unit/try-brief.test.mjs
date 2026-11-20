@@ -72,35 +72,43 @@ const TWO_ZH = { brief: '会话文件回环时，任务行不再消失。其余�
 const briefed = (data, brief) => ({ ...data, ledger: data.ledger.map((r) => (r.id === 'DATA-ONE' ? { ...r, brief } : r)) });
 const FOLDED = ['agents', 'healthy', 'files'];
 
-test('a to-try row with a brief is one line: its id and the first sentence, cut to the room; the rest of the brief is for the preview', async (t) => {
+test('a to-try row with a brief: its id and age on one row, the first sentence beside them when it fits whole, else under them in full; the rest of the brief is for the preview', async (t) => {
   const { f, data } = await fixture(t), withBrief = briefed(data, TWO), zh = briefed(data, TWO_ZH);
-  const rowsOf = (frame, re) => plain(frame).filter((l) => re.test(l));
+  const SENTENCE = 'Job rows no longer vanish when a session file loops back.';
+  // The id row, then the rows under it up to the next row that starts at the margin (the next slice).
+  const under = (lines) => { const at = lines.findIndex((l) => /^\s*[◇✓] DATA-ONE/.test(l)); return { id: lines[at], text: lines.slice(at + 1).slice(0, 3).filter((l) => /^ {2,}[^\s◇◆◐○✓▸]/.test(l)).map((l) => l.trim()).join(' ') }; };
   for (const [view, state] of [['Classic to-try view', progress({ projectTry: { scroll: 0 } })], ['Classic history', progress()], ['Split Progress list', split({ ...progress(), projectCursor: 'project:slice:DATA-ONE' })]]) {
     const frame = f.render(40, 'en', 60, state, withBrief);
     fits(frame);
-    const own = rowsOf(frame, /DATA-ONE/).filter((l) => /^\s*[◇✓] DATA-ONE/.test(l));
-    assert.equal(own.length, 1, `${view}: the slice is one row`);
-    assert.match(own[0], /DATA-ONE +Job rows no/, `${view}: its first sentence beside the id`);
-    // (Split's preview, under the list, is where the whole brief is.)
-    const list = view.startsWith('Split') ? frame.panes.find((p) => p.id === 'agents').rows.map((r) => stripAnsi(r.text)).join(' ') : flat(frame);
-    assert.doesNotMatch(list, /Nothing else changes|ENDOFLEDGER/, `${view}: neither the second sentence nor the ledger text on a list row`);
+    const lines = view.startsWith('Split') ? frame.panes.find((p) => p.id === 'agents').rows.map((r) => stripAnsi(r.text).trimEnd()) : plain(frame);
+    assert.equal(lines.filter((l) => /^\s*[◇✓] DATA-ONE/.test(l)).length, 1, `${view}: the slice has one id row`);
+    const own = under(lines);
+    assert.doesNotMatch(own.id, /Job rows/, `${view}: the id row keeps its room`);
+    assert.equal(own.text, SENTENCE, `${view}: the whole first sentence under the id, nothing cut`);
+    assert.doesNotMatch(lines.join(' '), /Nothing else changes|ENDOFLEDGER/, `${view}: neither the second sentence nor the ledger text on a list row`);
   }
-  // Wide enough, the sentence is whole and still only the first.
+  // Wide enough, the sentence is whole beside the id, and still only the first.
   const wide = plain(f.render(100, 'en', 60, progress({ projectTry: { scroll: 0 } }), withBrief)).filter((l) => /DATA-ONE/.test(l));
   assert.match(wide[0], /DATA-ONE {2}Job rows no longer vanish when a session file loops back\.(?! Nothing)/);
-  // Chinese ends a sentence with 。 and wraps no word; the row still fits 40 columns.
+  // A long id does not take the sentence's room: it goes under the id, whole.
+  const long = { ...withBrief, ledger: withBrief.ledger.map((r) => (r.id === 'DATA-ONE' ? { ...r, id: 'SUPERVISOR-MCP-LONG-ID' } : r)) };
+  const longRows = plain(f.render(40, 'en', 60, progress({ projectTry: { scroll: 0 } }), long)), at = longRows.findIndex((l) => /SUPERVISOR-MCP-LONG-ID/.test(l));
+  assert.ok(at >= 0 && !/Job rows/.test(longRows[at]) && /^ {2,}Job rows no longer vanish/.test(longRows[at + 1]), 'the sentence is under the long id');
+  // Chinese ends a sentence with 。 and wraps no word; the rows still fit 40 columns.
   const frame = f.render(40, 'zh', 60, progress({ projectTry: { scroll: 0 } }), zh);
   fits(frame);
-  assert.match(plain(frame).find((l) => /DATA-ONE/.test(l)), /DATA-ONE {2}会话文件回环时/);
+  assert.ok(under(plain(frame)).text.startsWith('会话文件回环时，任务行不再消失。'), 'the sentence under the id');
   assert.doesNotMatch(flat(frame), /其余保持不变/);
-  // The hub's Latest and Split's To try say the same sentence.
+  // The hub's Latest is a one-row list: it says the id alone unless a useful part of the sentence fits. Split's To try gives the id a row.
   const hub = f.render(40, 'en', 60, { ...initialMonitorState(), mainTab: 'project', projectFolded: new Set(FOLDED) }, withBrief);
   assert.match(plain(hub).find((l) => /◇ DATA-ONE/.test(l)), /DATA-ONE {2}Job rows|DATA-ONE\s+to try/);
   const preview = f.render(40, 'en', 60, split({ mainTab: 'project' }), withBrief);
   fits(preview);
-  const row = plain(preview).filter((l) => /◇ DATA-ONE/.test(l));
-  assert.equal(row.length, 1, 'Split hub: one row, not the ledger text wrapped');
+  const rows = plain(preview), idRow = rows.findIndex((l) => /◇ DATA-ONE/.test(l));
+  assert.equal(rows.filter((l) => /◇ DATA-ONE/.test(l)).length, 1, 'Split hub: one id row');
+  assert.equal(under(rows).text, SENTENCE, 'and the sentence under it');
   assert.doesNotMatch(flat(preview), /ENDOFLEDGER/);
+  assert.ok(idRow > 0);
 });
 
 test('without a brief (model off, pending or failed) a to-try row keeps the whole original text, wrapped, none of it broken inside a word or a path', async (t) => {

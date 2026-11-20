@@ -160,7 +160,7 @@ export function pageFixture(home) {
     },
   };
   // Help lists three more keys (the job micro-actions) and still shows the skills catalog under them.
-  const render = (page, width, lang = 'en', height = page === 'help' ? 47 : 40) => {
+  const render = (page, width, lang = 'en', height = page === 'help' ? 50 : 40) => {
     const display = setDisplayConfig({ theme: 'none', icons: 'unicode' }),
       previous = setLanguage(lang);
     try {
