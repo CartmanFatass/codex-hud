@@ -437,14 +437,15 @@ what the earlier milestones accepted (`✓ 24 accepted in 5 earlier milestones`)
   guessed and sits under its milestone. The date is the ledger row's last hash (7-40 hex) read
   through the safe Git policy, in the one batched `git log` the collector already runs.
 
-**Acceptance.** Settings → Panel → **Acceptance** (`acceptance` in `hud-settings.json`) defaults to
-`task`. All pending `try` slices of a milestone share a row showing its name, slice count, and oldest
-known age. A `—` or empty milestone keeps each slice separate. The Waiting and Progress summaries count
-these tasks; the ledger progress bar and accepted totals still measure slices. Enter (or the Split preview)
-shows the member slices with their usual ledger text or stored briefs and steps. Space marks the whole
-row; `y` accepts and `n` flags it. A filter matching one member still acts on the complete task. The HTML
-board uses the same setting. Watch/MCP notices and brief generation are unchanged. Set `slice` for the
-previous per-slice display and controls described below.
+**Detail.** Settings → Panel → **Detail** (`acceptance` in `hud-settings.json`) defaults to `task`.
+Progress shows one row per milestone, with the worst state's mark first and a slice count per state.
+A `—` or empty milestone keeps each slice separate. Tickets shows one row per `.scratch` feature,
+with resolved/total (including dropped tickets as resolved) and the oldest open ticket's status.
+Enter in Classic or the Split preview shows the members with their usual details. Hub counts features
+and tasks; Waiting's to-try count is the number of tasks with pending slices. Space, `y` and `n` mark,
+accept and flag only a task's `try` slices. A filter matching one member still shows the whole task or feature.
+Home and the HTML board still use the setting for their to-try rows. Watch/MCP notices and brief generation
+are unchanged. Set `slice` for the previous per-slice and per-ticket views.
 
 **To try only (Classic).** Enter or a click on the to-try count (`2 to try`, a stop of its own), or `t`, filters the
 page to what is still to try: the header `Only to try ── n` replaces everything below the crumb, then
@@ -872,7 +873,7 @@ on save, not migrated; existing user caches/assets are not deleted.
 
 ## LLM
 
-One master controls job/native names and sentences, decision titles/details,
+One master controls job/native names and sentences, Inspector decision titles,
 Decision labels and Recommended Home ranking/brief. Nothing writes workflow facts
 or steers a worker. Off hides overlays and sends no requests; without a saved
 preference, a Mistral/OpenAI/Gemini key defaults it on. Text requires a matching

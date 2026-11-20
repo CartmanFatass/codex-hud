@@ -7,7 +7,7 @@
 import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { projectWorkCard } from '../collectors/work-card.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
-import { acceptanceTasks } from '../collectors/acceptance-tasks.js';
+import { ledgerTasks } from '../collectors/acceptance-tasks.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
@@ -44,22 +44,29 @@ export function homeMatcher(board: WorkboardSnapshot, needle: string, now: numbe
 }
 
 /** Progress: ledger slices by id, milestone, text and state, worktree slices and loose jobs by their label, role and state. Tickets: by feature, number, title, status and blocker. */
-export function filterProject(data: ProjectSnapshot, page: 'progress' | 'tickets', needle: string, acceptance?: MonitorState['acceptance']): { data: ProjectSnapshot; count: number } {
+export function filterProject(data: ProjectSnapshot, page: 'progress' | 'tickets', needle: string, acceptance?: MonitorState['acceptance'], onlyTry = false): { data: ProjectSnapshot; count: number } {
   if (page === 'tickets') {
-    const tickets = data.tickets.map((f) => ({ ...f, tickets: f.tickets.filter((r) => has(needle, f.slug, r.number, r.title, r.status, ...r.blockers)) })).filter((f) => f.tickets.length);
+    const match = (f: ProjectSnapshot['tickets'][number], r: ProjectSnapshot['tickets'][number]['tickets'][number]) => has(needle, f.slug, r.number, r.title, r.status, ...r.blockers);
+    if (acceptance !== 'slice') {
+      const tickets = data.tickets.filter((f) => f.tickets.some((r) => match(f, r)));
+      return { data: { ...data, tickets }, count: tickets.length };
+    }
+    const tickets = data.tickets.map((f) => ({ ...f, tickets: f.tickets.filter((r) => match(f, r)) })).filter((f) => f.tickets.length);
     return { data: { ...data, tickets }, count: tickets.reduce((n, f) => n + f.tickets.length, 0) };
   }
   // A worktree slice and its ledger row match together; jobs outside any slice are matched alone.
   const matchedLabels = new Set(data.slices.filter((s) => has(needle, s.label, s.value, s.role, s.ledgerState, s.drift, s.ledgerState && t(s.ledgerState))).map((s) => s.label));
   const matching = data.ledger.filter((r) => matchedLabels.has(r.id) || has(needle, r.id, r.milestone, r.text, r.state, t(r.state === 'try' ? 'to try' : r.state)));
   // A matching member reveals the task, never a partial acceptance target.
-  const matched = new Set(matching), tasks = acceptance === 'slice' ? undefined : acceptanceTasks(data.ledger).filter((task) => task.slices.some((r) => matched.has(r)));
+  const matched = new Set(matching), tasks = acceptance === 'slice' ? undefined : ledgerTasks(data.ledger).filter((task) =>
+    (!onlyTry || task.slices.some((r) => r.state === 'try')) && task.slices.some((r) => matched.has(r)));
   for (const task of tasks ?? []) for (const r of task.slices) matched.add(r);
   const ledger = tasks ? data.ledger.filter((r) => matched.has(r)) : matching;
   const ledgerIds = new Set(ledger.map((r) => r.id));
   const slices = data.slices.filter((s) => matchedLabels.has(s.label) || ledgerIds.has(s.label));
   const loose = data.active.filter((a) => !data.slices.some((s) => s.jobId === a.jobId) && has(needle, a.role, a.title, a.package, a.state));
-  return { data: { ...data, ledger, slices, active: loose, next: [], summary: '' }, count: (tasks ? matching.filter((r) => r.state !== 'try').length + tasks.length : ledger.length) + loose.length + slices.filter((s) => !ledgerIds.has(s.label)).length };
+  const count = tasks ? tasks.length + (onlyTry ? 0 : loose.length) : ledger.length + loose.length + slices.filter((s) => !ledgerIds.has(s.label)).length;
+  return { data: { ...data, ledger, slices, active: loose, next: [], summary: '' }, count };
 }
 
 /** The bar: `/ query▌` and how many rows match (not before something is typed). */

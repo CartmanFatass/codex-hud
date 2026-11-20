@@ -78,8 +78,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'projectLayout', group: 'Panel', label: 'Project layout', values: ['timeline', 'board', 'inbox'],
     help: 'Project tab: Timeline is the default; Board shows a milestone map and project table; Inbox puts what needs you first',
     format: (value) => t(({ timeline: 'Timeline', board: 'Board', inbox: 'Inbox' } as Record<string, string>)[String(value)] ?? String(value)) },
-  { key: 'acceptance', group: 'Panel', label: 'Acceptance', values: ['task', 'slice'],
-    help: 'Try a whole milestone or one slice at a time', format: (value) => t(String(value)) },
+  { key: 'acceptance', group: 'Panel', label: 'Detail', values: ['task', 'slice'],
+    help: 'Show milestones and features as tasks, or show individual slices and tickets', format: (value) => t(String(value)) },
   {
     key: 'treeWidth',
     group: 'Panel',

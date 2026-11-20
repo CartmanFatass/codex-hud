@@ -277,8 +277,8 @@ steps from the ledger line, its commits and tickets; stored per slice and langua
 ledger rows only while the ledger line is unchanged (`LedgerSlice.brief`), so an unchanged slice costs no call and a pending,
 failed or master-off state leaves the original text. The panel shows a briefed slice as its id and the brief's first sentence on one row, and
 in its preview (Split) or expanded row (Classic) the whole brief, the steps and the original ledger text folded below them
-(`project-view.ts` `tryDetailRows`, `landedInline`); one `tryCount` (the ledger's `try` slices) is the number the Waiting row, the Progress row
-and the Projects list all say. Keyword painting is shared by
+(`project-view.ts` `tryDetailRows`, `landedInline`); `tryCount` reports pending milestone tasks or individual `try` slices, according to Detail.
+Waiting, the Progress row and the Projects list use the same unit. Keyword painting is shared by
 cards, decisions and Inspector (`utils/keyword-marks.ts`), never lifecycle evidence.
 
 Decision labels and Home ranking use `selectDecisionProvider`, not the chat endpoint.

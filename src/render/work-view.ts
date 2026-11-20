@@ -180,7 +180,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   const filtering = !!filterScope(state) && (!!state.filterOpen || !!state.filterQuery), needle = filtering ? filterNeedle(state) : '';
   let matches: number | undefined;
   if (needle && input.project && (page === 'progress' || page === 'tickets')) {
-    const found = filterProject(input.project, page, needle, state.acceptance);
+    const found = filterProject(input.project, page, needle, state.acceptance, !!state.projectTry);
     input = { ...input, project: found.data };
     matches = found.count;
   }
@@ -206,7 +206,7 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
       : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}`;
   if (sub || page || list) {
     // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
-    const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
+    const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '', state.acceptance);
     frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
@@ -397,7 +397,9 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : page === 'progress' ? (state.projectTry ? [...TRY_ACTIONS, 't all', '⏎ open', 'Esc back']
             : onTry && (state.acceptance !== 'slice' || state.projectLayout === 'board' || state.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']
+            : state.acceptance !== 'slice' && state.projectCursor?.startsWith('project:fold:task:') ? ['⏎ details', 'Esc back', 'o file', 't to try']
             : ['t to try', '⏎ open', 'Esc back'])
+          : page === 'tickets' && state.acceptance !== 'slice' ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
           : onTry && (state.acceptance !== 'slice' || state.projectLayout === 'inbox') ? [...TRY_ACTIONS, '⏎ details', 'o file', ...projectSwitch]
           : ['⏎ open', ...projectSwitch])

@@ -123,9 +123,12 @@ function boardInFlightRows(data: ProjectSnapshot, width: number, now: number, bo
 
 function gaugeRow(page: ProjectPage, data: ProjectSnapshot, width: number, now: number, col: number, prefix = '', tryMarks?: ReadonlyMap<string, TryAction>, acceptance?: MonitorState['acceptance']): MonitorRow {
   const head = `${prefix}${theme.board.title(fit(t(PAGE_WORD[page]), col))}`, space = Math.max(1, width - visualLength(head)), item = `project:page:${page}`;
+  if ((page === 'progress' || page === 'tickets') && acceptance !== 'slice') {
+    const facts = pageSummary(page, data, now, false, acceptance);
+    while (facts.length > 1 && visualLength(facts.join(' · ')) > space) facts.pop();
+    return { item, text: fit(head + (facts.join(' · ') || muted(mark('–', '-'))), width) };
+  }
   if (page === 'progress') {
-    const pending = acceptance === 'slice' ? 0 : tryCount(data, acceptance);
-    if (pending) return { item, text: fit(head + t('{n} to try', { n: pending }), width) };
     const ms = boardMilestones(data)[0];
     if (!ms) return { item, text: fit(head + muted(data.statePath ? mark('–', '-') : t('no STATE.md')), width) };
     const frac = muted(`${ms.accepted}/${ms.total}`);
@@ -173,13 +176,16 @@ export function boardHubRows(
     return [...rows, boardRow('')];
   };
   const milestones = boardMilestones(data), cols = mapCols(milestones, now), latest = boardLatestRows(data, state, width, now, tryMarks), legend = milestones.length ? boardLegendRow(width) : undefined;
-  const progRight = [data.ladder.current && monitorText(data.ladder.current), tries && t('{n} to try', { n: tries })].filter(Boolean).join(' · ');
+  const progFacts = state.acceptance === 'slice' ? [data.ladder.current && monitorText(data.ladder.current), tries && t('{n} to try', { n: tries })].filter(Boolean)
+    : pageSummary('progress', data, now, false, state.acceptance);
+  while (state.acceptance !== 'slice' && progFacts.length > 1 && visualLength(progFacts.join(' · ')) > width - visualLength(t('Progress')) - 5) progFacts.pop();
+  const progRight = progFacts.join(' · ');
   const mapRows = milestones.length ? milestones.map((m) => milestoneMapRow(m, cols, width, now, tryMarks, { item: 'project:page:progress' }))
     : [{ text: fit('  ' + muted(data.statePath ? t('none') : t('no STATE.md')), width), item: 'project:page:progress' }];
   const live = boardInFlightRows(data, width, now, board);
   const gaugePages = PROJECT_PAGES.filter((p) => p !== 'progress' && (p !== 'tickets' || data.tickets?.length));
   const col = Math.max(...gaugePages.map((p) => visualLength(t(PAGE_WORD[p])))) + 1;
-  const pages = gaugePages.map((p) => gaugeRow(p, data, width, now, col, '', tryMarks));
+  const pages = gaugePages.map((p) => gaugeRow(p, data, width, now, col, '', tryMarks, state.acceptance));
   const build = (lat: boolean, leg: boolean, cap: number, gaps: boolean, wrap = 0, keep = false) => [
     ...top, ...waitingBlock(wrap, keep),
     { ...section(t('Progress'), width, progRight), item: 'project:page:progress' }, ...mapRows,

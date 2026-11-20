@@ -7,11 +7,10 @@ export interface AcceptanceTask {
   oldest?: number;
 }
 
-/** Ledger order is supplied by the caller; only pending slices belong to an acceptance task. */
-export function acceptanceTasks(ledger: readonly LedgerSlice[]): AcceptanceTask[] {
+/** Ledger order is supplied by the caller; a slice without a milestone is its own task. */
+export function ledgerTasks(ledger: readonly LedgerSlice[]): AcceptanceTask[] {
   const groups = new Map<string, AcceptanceTask>();
   for (const r of ledger) {
-    if (r.state !== 'try') continue;
     const key = !r.milestone || r.milestone === '—' ? `slice:${r.id}` : `milestone:${r.milestone}`;
     let task = groups.get(key);
     if (!task) groups.set(key, task = { key, milestone: r.milestone, slices: [] });
@@ -20,3 +19,6 @@ export function acceptanceTasks(ledger: readonly LedgerSlice[]): AcceptanceTask[
   }
   return [...groups.values()];
 }
+
+/** Only pending slices belong to an acceptance target. */
+export const acceptanceTasks = (ledger: readonly LedgerSlice[]) => ledgerTasks(ledger.filter((r) => r.state === 'try'));

@@ -217,9 +217,11 @@ for (const lang of ['en', 'zh']) for (const width of [80, 120]) test(`01–06: H
   const previous = setLanguage(lang); t.after(() => setLanguage(previous));
   const state = initialMonitorState(), w = board.workers[0];
   const project = { waiting: [], docs: [], control: [], agents: [], keys: [], editing: [], roleCount: 0,
-    ladder: { ids: [] }, ledger: [], active: [], counts: { working: 1, blocked: 0, try: 0, accepted: 0, todo: 0, dropped: 0 },
+    ladder: { ids: [] }, ledger: [{ id: 'SYNTHETIC', milestone: 'M1', state: 'working', text: 'synthetic slice' }],
+    active: [], counts: { working: 1, blocked: 0, try: 0, accepted: 0, todo: 0, dropped: 0 },
     slices: [{ label: 'SYNTHETIC', value: 'synthetic slice', jobId: id }], next: [], tickets: [] };
-  const inspector = workInspectorRows(w, state, width, f.now), progress = projectRows(project, { ...state, projectPage: 'progress' }, width, f.now, board, true);
+  const inspector = workInspectorRows(w, state, width, f.now), progress = projectRows(project,
+    { ...state, projectPage: 'progress', projectFolded: new Set(['task:milestone:M1']) }, width, f.now, board, true);
   const frame = renderMonitor({ tree: { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(f.now) }, workboard: board,
     modelEnabled: true, state, width, height: 80, nowMs: f.now });
   for (const rows of [inspector, progress]) for (const r of rows) assert.ok(visualLength(r.text) <= width, stripAnsi(r.text));
@@ -231,9 +233,9 @@ for (const lang of ['en', 'zh']) for (const width of [80, 120]) test(`01–06: H
   const projectText = progress.map((r) => stripAnsi(r.text)).join('\n');
   for (const label of ['partial', 'must fix']) assert.ok(projectText.includes(tr(label)), projectText);
   assert.doesNotMatch(projectText, /Model fit|模型适配/, 'Model fit was removed (owner, 2026-11-12)');
-  // Pending/decided category and looping marks use the same translated bounded rows.
+  // Pending category and looping marks use translated bounded rows.
   const running = { ...w, settledAt: null, homeNeedsHuman: true, labels: { ...w.labels, looping: 0.9, category: 'owner authorisation' } };
-  const d = { id: 'q1', laneId: w.laneId, title: 'Synthetic choice', option: 'Keep fixture', departure: false, category: 'owner authorisation', evidence: [], kind: 'answer', stale: false };
+  const d = { id: 'q1', laneId: w.laneId, title: 'Synthetic choice', option: 'Keep fixture', departure: false, evidence: [], kind: 'answer', stale: false };
   const live = { ...empty([running], [d]), lanes: [{ ...board.lanes[0], workers: [running], decisions: [d] }] };
   const rows = homeRows(live, state, width, f.now, { workboard: live });
   assert.ok(rows.map((r) => stripAnsi(r.text)).join('\n').includes(tr('owner authorisation')));

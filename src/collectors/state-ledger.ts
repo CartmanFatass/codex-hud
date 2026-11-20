@@ -11,7 +11,7 @@ export function stateBullets(state: string, heading: string): string[] {
 
 export function parseLedger(state: string) {
   return stateBullets(state, 'Slices').flatMap((row) => {
-    const [status, milestone, id, ...rest] = row.replace(/\s+/g, ' ').trim().split(/\s+·\s+/);
+    const [status, milestone, id, ...rest] = row.replace(/\s+/g, ' ').trim().split(/(?<= )·(?= )/).map((part) => part.trim());
     return rest.length ? [{ id, state: status, milestone, text: rest.join(' · ') }] : [];
   });
 }
