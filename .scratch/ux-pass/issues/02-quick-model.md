@@ -1,6 +1,6 @@
 # 02: change a model in 2 keys (M-S2 QUICK-MODEL)
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Blocked by:** none
 
 **What to build:** `docs/design/ux-pass/model-selection.md` §4 S2. `m` on a role row (and on places) opens the picker;

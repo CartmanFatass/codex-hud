@@ -1,6 +1,6 @@
 # 06: one footer rule everywhere (O-1 FOOTER)
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Blocked by:** none
 
 **What to build:** `docs/design/ux-pass/overall.md` §3 Slice 1. Row actions, then Enter with this row's verb, then Esc,

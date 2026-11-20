@@ -175,8 +175,11 @@ board counts these; update at every landing or decision. -->
 - accepted · — · REVIEW-FIX-CONTROL-EXP · review fixes: native bar seen per Codex profile (EXP switch = tracking), pi footer 5h + 7d (≈ for proxy, second window dropped only when narrow), ledger one line per event ID on disk, draft rows keep [model ▾], focused chain says provider unknown; superseded immediate-edit paths deleted (imp) (5d39de2c; 86+853)
 - try · — · NO-DEFAULT-LABELS · Control drops [default]/[Custom] tags; unset model/thinking show the effective value muted ([▾] / blank when unknown); picker's clear row says role's model (…) / clear; no-selector choice is "file chain" (imp) (aeb74f31; test fix)
 - try · — · UX-PASS-01 · pi footer quota in Claude's style: bar, % used, level colour, reset; ≈ estimate, ? stale, ↻ pending; API grant bar (imp sol) (4bdb9207)
-- working · — · UX-PASS-02 · m on the role row changes a model in 2 keys (imp sol j16a11d3766e2ef14, wt/ux-pass-02)
-- working · — · UX-PASS-06 · one footer rule everywhere (imp sol jda484729fb8d0ac1, wt/ux-pass-06)
+- try · — · UX-PASS-02 · m on a role row (or place) → pick → saved at once; multi-place edits stay a draft (imp sol) (40fc5585; merge test fix 6401c781)
+- try · — · UX-PASS-06 · one footer rule: row actions, Enter verb, Esc, page actions, ? help last; no movement keys; ? opens Help over Settings (imp sol) (4a0a4d2f)
+- working · — · UX-PASS-03 · picker opens in the panel's own pane, no zoom, one click sets (imp sol j02d733c52f761497, wt/ux-pass-03)
+- working · — · UX-PASS-07 · Project hub, Progress and question slabs say a fact once (imp sol j051c8aff31c0a600, wt/ux-pass-07)
+- working · — · UX-PASS-09 · EXP in the panel's form (imp sol j6572c996b8d699aa, wt/ux-pass-09)
 - done · — · UX-PASS-DESIGN · model selection + pi footer quota design: S1 FOOTER-QUOTA, S2 QUICK-MODEL, S3 PICKER-PANE, S4 PICKER-ORDER, S5 PICKER-FLAT (opt); 4 owner decisions · docs/design/ux-pass/model-selection.md
 - done · — · UX-PASS-OVERALL · overall design: 1 FOOTER, 2 SAY-ONCE, 3 HELP, 4 EXP-FORM, 5 HARNESS-ROWS, 6 TOP-ROW; 4 owner decisions · docs/design/ux-pass/overall.md
 
