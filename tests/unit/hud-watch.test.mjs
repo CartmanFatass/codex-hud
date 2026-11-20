@@ -128,7 +128,8 @@ test('dead supervisor watcher preserves a live worker; both gone fail or close b
   await until(() => status(failed).state === 'waiting_orchestrator');
   assert.equal(status(failed).reason, 'supervisor exited; worker still running');
   assert.equal(status(failed).error, null);
-  assert.equal(status(closed).state, 'waiting_orchestrator');
+  // The watcher updates the two jobs one after the other.
+  await until(() => status(closed).state === 'waiting_orchestrator');
   const stamp = fs.statSync(join(failed, 'STATUS.json')).mtimeMs;
   await wait(120);
   assert.equal(fs.statSync(join(failed, 'STATUS.json')).mtimeMs, stamp, 'unchanged observation does not rewrite STATUS');
