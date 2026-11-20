@@ -22,7 +22,7 @@ import { controlShown, expShown, mainTabs } from './main-tabs.js';
 import { controlNavigation, storeControlNavigation } from './control-navigation.js';
 import { controlHeader, controlHints, controlPickerScene, controlRows, controlScene, presetFooterControls, roleRows } from './control-page.js';
 import { presetSheet } from './preset-input.js';
-import { chainSheet } from './chain-input.js';
+import { chainSheet, inlineModelSheet } from './chain-input.js';
 import { pickerRows } from './control-view.js';
 import { MODEL_PICKER_WIDE, paintZoomedPicker } from './model-picker-view.js';
 import { harnessAddRows, harnessFooterControls, harnessHints, harnessRows, harnessScene } from './harness-page.js';
@@ -47,7 +47,7 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
       ['p', 'role: filter and choose a preset'],
       ['N I', 'role: start a copied or empty draft'],
       ['R D', 'role: rename or preview deletion'],
-      ['m', 'place: open the model field; type to filter'],
+      ['m', 'role or place: choose a model'],
       ['s', 'chain: save and select the draft'],
       ['i Del', 'add / remove place or switch'],
       ['K J', 'place: move up, move down'],
@@ -91,9 +91,10 @@ function helpRows(input: MonitorData, width: number): MonitorRow[] {
     'In Project ⏎ opens a page, then a row or fold; o opens its file; Esc goes back',
     ...(input.state.panelLayout === 'split' ? ['Split: ⏎ opens the row’s preview, Esc comes back; click selects, again opens'] : []),
     'In a Control chain, Enter edits a place. Choose Target, Model or Flow kind, Thinking where offered, then Done. Nothing changes on disk until Save.',
+    'With m, Enter saves the model at once, or fills the place if a draft is open.',
     'Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).',
     'In the Inspector ⏎ opens the file',
-    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls', 'Control: click the model field (▾) to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.'] : []),
+    ...(input.mouse !== false ? ['click selects · again expands · wheel scrolls', 'Control: click the model field (▾) to open. In the pi picker, click a model to select, again to set; click a provider to fold, wheel scrolls the list.'] : []),
     'Model picker: current and preset models are pinned until you type. Typing opens matching groups.',
     'In Harnesses, remove means off. Add back: type to filter, Enter restores, Esc cancels.',
   ];
@@ -142,9 +143,11 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
   }
   // The picker is for a place that can take a model: with it gone (another page, another project) it closes.
   if (state.projectInput) {
-    const pick = chain?.sheet ? pickOf(input.project, state.projectInput) : undefined;
-    if (!pick) state.projectInput = undefined;
-    else if (input.modelPickerZoomed && width >= MODEL_PICKER_WIDE && height >= 4)
+    const pick = control && !harnesses && (chain?.sheet || state.controlQuickModel) ? pickOf(input.project, state.projectInput) : undefined;
+    if (!pick) {
+      state.projectInput = undefined;
+      state.controlQuickModel = undefined;
+    } else if (input.modelPickerZoomed && width >= MODEL_PICKER_WIDE && height >= 4)
       return paintZoomedPicker(frame, input.project!, state.projectInput, pick, width, height, now);
   }
   const experiment = exp ? { ...state.expPage } : undefined;
@@ -272,10 +275,13 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
       return paintSplit(frame, scene, board, targets, state.homeTarget, width, height, notes);
     }
   }
-  const anchor = chain && !picking && roleRows(state.controlChain!.role, width, now);
+  const inline = control && !harnesses && state.controlQuickModel?.choice;
+  const anchorRole = !picking && (inline ? state.controlQuickModel!.role : state.controlChain?.role);
+  const anchor = control && !harnesses && anchorRole && roleRows(anchorRole, width, now);
   const sheetRoom = height - 3 - top - Number(!!input.publicationNotice) - (anchor ? anchor.length : 0);
-  const sheet = anchor && input.project ? chainSheet(state.controlChain!, input.project.models, width, sheetRoom, now)
-    : presetInput && presetSheet(presetInput, width, sheetRoom);
+  const sheet = inline && input.project ? inlineModelSheet(state, input.project.models, width, sheetRoom)
+    : chain && anchor && input.project ? chainSheet(state.controlChain!, input.project.models, width, sheetRoom, now)
+      : presetInput && presetSheet(presetInput, width, sheetRoom);
   const sheetRows = sheet ? [section(sheet.rule.label, width, sheet.rule.right), ...sheet.rows] : undefined;
   let chainTop = 0;
   if (anchor && sheetRows) {

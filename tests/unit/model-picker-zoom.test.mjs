@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { setImmediate as nextTurn, setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { modelPickerZoom } from '../../dist/cli/model-picker-zoom.js';
+import { markExhausted, placeKey } from '../../dist/roles/roster.js';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { build } from '../../docs/design/model-picker/gen/frames.mjs';
@@ -128,8 +129,9 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     assert.match(right(b), zh ? /2小时前发现/ : /discovered 2h ago/);
     assert.equal(click(b, 75, yOf(b, /openai\/gpt-6.1-sol/)).state.projectInput.pick, b.state.projectInput.pick, 'detail is not a second list');
     const picked = click(b, 5, yOf(b, /openai\/gpt-6.1-sol/));
-    assert.equal(picked.action, undefined);
-    assert.equal(picked.state.controlChain.sheet.place.raw.model, 'openai/gpt-6.1-sol');
+    assert.equal(picked.action.type, 'preset-edit');
+    assert.equal(picked.action.run[0].model, 'openai/gpt-6.1-sol');
+    assert.equal(picked.state.controlChain.sheet, undefined);
     const wheel = draw(click(b, 2, 4, 'wheel-down').state);
     assert.notDeepEqual(left(wheel), left(b));
     assert.equal(right(wheel), right(b));
@@ -146,8 +148,9 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
     assert.match(right(selected), /xai\/grok-4.7/);
     assert.match(right(selected), /imp \[lab\]/);
     const set = send(selected, 'enter');
-    assert.equal(set.action, undefined);
-    assert.equal(set.state.controlChain.sheet.place.raw.model, 'arena/grok-4.7');
+    assert.equal(set.action.type, 'preset-edit');
+    assert.equal(set.action.run[0].model, 'arena/grok-4.7');
+    assert.equal(set.state.controlChain.sheet, undefined);
     assert.equal(set.state.projectInput, undefined);
     assert.deepEqual(send(selected, 'model-refresh').action, { type: 'refresh-models' });
     const cleared = send(selected, 'escape');
@@ -181,10 +184,12 @@ test('120×36 zoom frames follow the sample in EN/ZH: open groups, columns, exac
 test('live panel wiring opens with herdr on PATH and restores its own pane on shutdown', { timeout: 10000 }, async (t) => {
   const f = await fixture(t), log = join(f.cwd, 'herdr-log');
   f.put(join(f.hud, 'hud-settings.json'), { language: 'en', modelEnabled: false, theme: 'none', panelLayout: 'classic' });
+  const exhausted = { harness: 'pi', pi_role: 'implementer', model: 'synthetic/exhausted' };
+  markExhausted(f.hud, placeKey(exhausted), 'quota exceeded', Date.now());
   f.put(join(f.hud, 'roles/imp.json'), { role: 'imp', can_continue: true, hidden_presets: ['default', 'grok', 'hydrogen'], run: [
-    { harness: 'pi', pi_role: 'implementer', model: 'synthetic/current' },
+    exhausted, { harness: 'pi', pi_role: 'implementer', model: 'synthetic/current' },
   ] });
-  f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: Date.now(), pi: ['synthetic/current'] });
+  f.put(join(f.hud, 'display/model-lists.json'), { version: 1, fetchedAt: Date.now(), pi: ['synthetic/current', 'synthetic/next'] });
   const herdr = join(f.env.PATH, 'herdr');
   f.put(herdr, `#!${process.execPath}\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\n` +
     `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');\nconsole.log(${JSON.stringify(reply(true).stdout)});\n`);
@@ -210,16 +215,19 @@ test('live panel wiring opens with herdr on PATH and restores its own pane on sh
     }
     assert.fail(`missing ${re}: ${stderr}\n${stripAnsi(output)}`);
   };
-  await waitFor(/imp → pi\/synthetic/);
-  child.stdin.write('\rm');
-  await waitFor(/1 model · list .* old · zoomed/);
-  output = '';
-  child.stdin.write('\r');
-  await waitFor(/Edit place/);
-  const role = JSON.parse(readFileSync(join(f.hud, 'roles/imp.json'), 'utf8'));
-  assert.equal(role.run[0].model, 'synthetic/current');
+  await waitFor(/imp → synthetic\/current/);
   child.stdin.write('m');
-  await waitFor(/1 model · list .* old · zoomed/);
+  await waitFor(/2 models · list .* old · zoomed/);
+  output = '';
+  child.stdin.write('next\r');
+  await waitFor(/✓ imp #2 → synthetic\/next/);
+  assert.doesNotMatch(stripAnsi(output), /Edit place|Not saved/);
+  const role = JSON.parse(readFileSync(join(f.hud, 'roles/imp.json'), 'utf8'));
+  assert.deepEqual(role.run[0], exhausted);
+  assert.equal(role.run[1].model, 'synthetic/next');
+  output = '';
+  child.stdin.write('m');
+  await waitFor(/2 models · list .* old · zoomed/);
   child.kill('SIGTERM');
   assert.deepEqual(await exited, { code: 0, signal: null }, stderr);
   assert.deepEqual(readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse).filter((args) => args[1] === 'zoom'), [on, off, on, off]);

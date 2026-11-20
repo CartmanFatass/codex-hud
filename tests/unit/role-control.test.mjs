@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { projectFixture, pickerFrames, MAVERICK, plain, onPage, onControl, NOW, TREE, MODEL_LISTS, PROJECTS } from '../fixtures/project-page.mjs';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
@@ -53,8 +54,10 @@ async function setup(t, { shippedImp = true, healthyOpen = true } = {}) {
     }
     if (out.action?.type === 'preset-edit') {
       session.done = editPreset(f.hud, f.cwd, f.env, out.action);
-      if (session.done.ok && session.state.controlChain) session.state = finishChain(session.state);
-      else if (!session.done.ok && session.state.controlChain) session.state.controlChain.error = session.done.message;
+      if (out.action.modelIndex === undefined && session.state.controlChain) {
+        if (session.done.ok) session.state = finishChain(session.state);
+        else session.state.controlChain.error = session.done.message;
+      }
       f.collector.refreshRoles(session.snap, NOW);
     }
     return out;
@@ -147,8 +150,9 @@ test('Control plane keeps the long model field usable when the role list scrolls
   assert.equal(field.y, chain + 1, 'the long model field has its own row');
   assert.match(lines[field.y], /\[very-long.*….*preview ▾\]/);
   const picked = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: field.x, y: field.y }, { tree: TREE, frame });
-  assert.equal(picked.state.controlChain.sheet.field, 'model');
-  assert.ok(picked.state.controlChain.sheet.choice, 'the CLI catalog opens inline');
+  assert.equal(picked.state.controlChain.sheet, undefined);
+  assert.equal(picked.state.controlQuickModel.index, 0);
+  assert.ok(picked.state.controlQuickModel.choice, 'the CLI catalog opens inline');
   frame = choose(frame, { type: 'key', key: 'down' });
   assert.equal(frame.state.controlChain.at, 1);
   const y = plain(frame).findIndex((line) => /3 ○ agy/.test(line));
@@ -167,7 +171,7 @@ test('Classic expands only the selected role’s numbered chain; o opens a role�
   await s.press(DOWN); // Healthy
   await s.press(ENTER);
   await s.press(DOWN); // imp
-  assert.match(s.text(), /imp → pi\/synthetic/);
+  assert.match(s.text(), /imp → synthetic\/model/);
   assert.doesNotMatch(s.text(), /^› 1 ◉/m);
   assert.deepEqual((await s.press('o')).action, { type: 'open-files', files: [resolve('packages/hud-mcp/roles/imp.json')] });
   await s.press(ENTER);
@@ -230,7 +234,7 @@ test('c/C select from the role row and keep its cursor when attention changes; m
   const s = await setup(t), item = 'project:role:imp';
   const raw = JSON.parse(fs.readFileSync(resolve('packages/hud-mcp/roles/imp.json'), 'utf8')).run;
   s.session.state = select(s.session.state, item);
-  assert.match(s.text(), /imp → pi\/synthetic/);
+  assert.match(s.text(), /imp → synthetic\/model/);
   assert.match(plain(s.frame(120)).at(-1), /c C preset/);
   await s.press('c');
   assert.deepEqual(s.session.done, { ok: true, index: 0, preset: 'grok' });
@@ -263,6 +267,18 @@ test('browser fields use the actual adapter: site/effort, AI Studio model/thinki
   assert.equal(s.assignment('pro').runs_on.provider, 'chatgpt');
   await s.keys(ESC, DOWN, 'Ks');
   assert.equal(s.assignment('pro').runs_on.provider, 'gemini');
+  focus(s, 'pro', 2);
+  await s.press('m');
+  assert.equal(s.session.state.controlChain.sheet, undefined);
+  assert.match(s.text(), /model +\/ ▌/);
+  await s.keys('clear', ENTER);
+  assert.equal(s.session.done.ok, true);
+  assert.equal(stored(s, 'pro').run[2].model, undefined);
+  assert.equal(s.session.state.controlChain.at, 2);
+  s.session.state = select(s.session.state, 'project:role:flow');
+  await s.press('m');
+  assert.equal(s.session.state.controlQuickModel, undefined);
+  assert.doesNotMatch(s.frame().lines.at(-1), /m model/);
   focus(s, 'flow');
   await s.press(ENTER);
   assert.match(s.text(), /Flow kind +image/);
@@ -323,9 +339,9 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   assert.match(page, /claude-opus-5-5-20261101/);
   assert.doesNotMatch(page, /openai/);
   await s.keys(ESC, 'XAI/GROK-4.7', ENTER);
-  assert.equal(s.session.state.controlChain.sheet.place.raw.model, 'xai/grok-4.7');
-  assert.ok(!fs.existsSync(join(s.hud, 'roles/imp.json')), 'filling a field writes nothing');
-  await s.keys(END, ENTER, 's');
+  assert.equal(s.session.state.controlChain.at, 0);
+  assert.equal(s.session.state.controlChain.sheet, undefined);
+  assert.equal(s.session.state.controlChain.draft, undefined);
   assert.equal(s.session.done.ok, true);
   assert.equal(stored(s, 'imp').run[0].model, 'xai/grok-4.7');
   assert.equal(s.assignment('imp').model, 'xai/grok-4.7');
@@ -356,12 +372,83 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   assert.deepEqual(fs.readFileSync(roleFile), before);
   assert.deepEqual(fs.readFileSync(cacheFile), cacheBefore);
 });
+test('quick model on a role saves only the model in the active preset and targets its next place', async (t) => {
+  const s = await setup(t), file = join(s.hud, 'roles/imp.json'), item = 'project:role:imp';
+  const pi = (model, extra = {}) => ({ harness: 'pi', model, ...extra });
+  const daily = [pi('xai/grok-4.7', { thinking: 'high', extra: { synthetic: true } }), pi('openai/gpt-6.1-sol', { split: true })];
+  const original = { role: 'imp', instructions: 'implementer', can_continue: true, active_preset: 'daily', custom: ['keep'],
+    run: [pi('xai/grok-4.7-mini')], presets: [{ name: 'daily', run: daily, note: 'keep' }, { name: 'other', run: [pi('openai/o1')] }] };
+  const check = (index, model, before) => {
+    const expected = structuredClone(before);
+    expected.presets[0].run[index].model = model;
+    assert.deepEqual(stored(s, 'imp'), expected);
+    assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+    assert.equal(s.session.state.controlNav.projectCursor, item);
+    assert.equal(s.session.state.controlChain, undefined);
+    assert.equal(s.session.state.controlQuickModel, undefined);
+  };
+  for (const [panelLayout, model] of [['split', 'xai/grok-4.7-fast'], ['classic', 'xai/grok-4.7-mini']]) {
+    s.put(file, original);
+    discover(s);
+    s.session.state = onControl({ projectCursor: item }, { panelLayout });
+    await s.keys('m', model);
+    assert.equal(s.session.state.projectInput.index, 0);
+    assert.deepEqual(stored(s, 'imp'), original);
+    const out = await s.press(ENTER);
+    assert.deepEqual([out.action.type, out.action.op, out.action.modelIndex], ['preset-edit', 'run', 0]);
+    check(0, model, original);
+    const after = fs.readFileSync(file);
+    await s.press(ESC);
+    assert.deepEqual(fs.readFileSync(file), after);
+  }
+  const beforeFallback = stored(s, 'imp');
+  markExhausted(s.hud, placeKey(beforeFallback.presets[0].run[0]), 'quota exceeded', NOW);
+  s.collector.refreshRoles(s.session.snap, NOW);
+  s.session.state = onControl({ projectCursor: item }, { panelLayout: 'split' });
+  assert.match(s.text(), /imp \[daily\] → openai\/gpt-6.1-sol/);
+  await s.keys('m', 'openai/gpt-6-astra');
+  assert.equal(s.session.state.projectInput.index, 1);
+  const fallback = await s.press(ENTER);
+  assert.equal(fallback.action.modelIndex, 1);
+  check(1, 'openai/gpt-6-astra', beforeFallback);
+  const roster = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
+    cwd: s.cwd, env: { ...s.env, HUD_MCP_SURFACE: 'roles' }, stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  const exited = once(roster, 'exit');
+  t.after(() => roster.kill());
+  const response = once(createInterface({ input: roster.stdout }), 'line');
+  roster.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'hud_roster', arguments: { detail: true } } }) + '\n');
+  const [line] = await response;
+  roster.stdin.end();
+  assert.deepEqual(await exited, [0, null]);
+  const imp = JSON.parse(JSON.parse(line).result.content[0].text).roles.find((r) => r.role === 'imp');
+  assert.equal(imp.preset, 'daily');
+  assert.equal(imp.run[1].model, 'openai/gpt-6-astra');
+
+  focus(s, 'imp', 1);
+  const beforeDraft = fs.readFileSync(file);
+  await s.keys('K', 'm', 'openai/o1', ENTER);
+  assert.deepEqual(fs.readFileSync(file), beforeDraft);
+  const draft = s.session.state.controlChain;
+  assert.equal(draft.at, 0);
+  assert.equal(draft.sheet, undefined);
+  assert.equal(draft.draft.run[0].raw.model, 'openai/o1');
+  await s.press('s');
+  assert.equal(stored(s, 'imp').presets[0].run[0].model, 'openai/o1');
+
+  for (const place of stored(s, 'imp').presets[0].run) markExhausted(s.hud, placeKey(place), 'quota exceeded', NOW);
+  s.collector.refreshRoles(s.session.snap, NOW);
+  assert.match(s.text(), /imp \[daily\] → none/);
+  await s.press('m');
+  assert.equal(s.session.state.projectInput.index, 0, 'place 1 is editable when none can run');
+});
+
 test('pi picker keeps no-match text, owns printable keys, and does not offer an off default', async (t) => {
   const s = await setup(t);
   const long = 'new-provider/' + 'a'.repeat(115);
   assert.equal(long.length, 128);
   discover(s, [...MODEL_LISTS.pi, long]);
-  await s.keys('m', 'new-provider/aaa', TAB, ENTER, END, ENTER, 's');
+  await s.keys('m', 'new-provider/aaa', TAB, ENTER);
   assert.equal(stored(s, 'imp').run[0].model, long, 'the full 128-character ID survives the edit');
   focus(s);
   await s.keys('m', 'custom/pi-next', ENTER);
@@ -377,15 +464,14 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   await s.press(ESC);
   assert.equal(s.session.state.projectInput, undefined);
   assert.equal(stored(s, 'imp').run[0].model, long);
-  await s.press(ESC); // Cancel the place form after leaving the picker.
   setHarnessDisabled(s.hud, 'pi:synthetic', true);
   s.collector.refreshRoles(s.session.snap, NOW);
   await s.keys('m', '\x1b[H');
   assert.doesNotMatch(lines40(s).join('\n'), /role's model|from pi role/);
-  await s.keys(ESC, ESC);
+  await s.press(ESC);
   setHarnessDisabled(s.hud, 'pi:synthetic', false);
   s.collector.refreshRoles(s.session.snap, NOW);
-  await s.keys('m', END, ENTER, END, ENTER, 's');
+  await s.keys('m', END, ENTER);
   assert.equal(stored(s, 'imp').run[0].model, undefined);
   assert.equal(s.assignment('imp').model, 'synthetic/model');
   focus(s);
@@ -413,8 +499,14 @@ test('CLI model and thinking fields list catalog entries inline and a miss leave
   await s.keys('next-one', ENTER);
   assert.match(lines40(s).join('\n'), /No matching choices/);
   assert.equal(stored(s, 'imp').run[0].model, 'gemini-4-argon-high');
-  await s.keys(ESC, ENTER, 'flash', ENTER, DOWN, ENTER, 'xhigh', ENTER, END, ENTER, 's');
+  await s.press(ESC);
+  s.session.state = select(s.session.state, 'project:role:imp');
+  await s.keys('m', 'flash', ENTER);
+  assert.equal(s.session.done.ok, true);
   assert.equal(stored(s, 'imp').run[0].model, 'gemini-3.8-flash-high');
+  assert.equal(s.session.state.controlChain, undefined);
+  focus(s);
+  await s.keys(ENTER, DOWN, DOWN, ENTER, 'xhigh', ENTER, END, ENTER, 's');
   assert.equal(stored(s, 'imp').run[0].thinking, 'xhigh');
   // Width and cursor invariants for both languages/layouts, with long Latin and wide queries.
   const inputs = ['', '探'.repeat(90), 'maverick', 'openai'];
@@ -452,7 +544,7 @@ test('CLI model and thinking fields list catalog entries inline and a miss leave
   const help = plain(s.frame(80, 'en', 52)).join('\n').replace(/\n {8}/g, ' ');
   assert.doesNotMatch(help, /^p P |^e E /m);
   assert.match(help, /^p +role: filter and choose a preset/m);
-  assert.match(help, /^m +place: open the model field/m);
+  assert.match(help, /^m +role or place: choose a model/m);
   assert.match(help, /^r \^R +refresh: Control \/ picker/m);
   assert.match(help, /^Esc +back; confirm discarding a draft/m);
 });
@@ -506,7 +598,7 @@ test('pi picker paints live quota, off and unknown facts without offering off or
   assert.match(lines40(s, 'en', 9).join('\n'), /✗ exhausted · resets in 42m/, 'a short pane gives the strip room before the list');
   const expired = plain(s.render(40, 'en', s.session.state, 20, s.session.snap, true, 'unicode', 'none', { nowMs: NOW + 42 * 60000 })).join('\n');
   assert.doesNotMatch(expired, /✗|resets in/);
-  await s.keys(ENTER, END, ENTER, 's');
+  await s.press(ENTER);
   assert.equal(stored(s, 'imp').run[0].model, exhausted, 'an exhausted target remains selectable');
   for (const [id, row, status] of [
     ['grok-4.7', /^› ◉ grok-4\.7 +\?$/m, /\n +\? unknown\n/],
@@ -593,10 +685,12 @@ test('a project role file in force is shown apart and never written past', async
   assert.match(s.text(), /◉ imp → pi\/project +project/);
   const before = fs.readFileSync(join(s.cwd, '.hud/roles/imp.json'), 'utf8');
   s.session.state = select(s.session.state, 'project:role:imp');
-  for (const raw of ['c', 'C', 'p', 'N', 'I', 'R', 'D']) {
+  for (const raw of ['c', 'C', 'p', 'N', 'I', 'R', 'D', 'm']) {
     assert.equal((await s.press(raw)).action, undefined, raw);
     assert.equal(s.session.state.controlPresetInput, undefined);
+    assert.equal(s.session.state.controlQuickModel, undefined);
   }
+  assert.doesNotMatch(s.frame().lines.at(-1), /m model/);
   await s.press(ENTER);
   assert.match(s.text(), /pinned +project file · read-only here/);
   for (const raw of [ENTER, 'm', 'i', DEL, 'K', 's']) {
@@ -646,7 +740,7 @@ test('first edit of an older single-place file preserves instructions and advanc
   }
 });
 
-test('Control plane keys: decoded names, only on a place row of the Control plane, Settings letters unchanged', async (t) => {
+test('Control plane keys: decoded names, scoped to Control, Settings letters unchanged', async (t) => {
   const s = await setup(t);
   const decoder = new WorkbenchInputDecoder('workboard');
   const names = (raw) => decoder.push(Buffer.from(raw)).map((i) => i.key);
@@ -742,10 +836,11 @@ test('the live panel applies explicit owner edits, including batched name input'
   s.put(join(s.cwd, '.hud/roles/frontend.json'), { role: 'frontend', harness: 'pi', pi_role: 'implementer', split: false, can_continue: true, model: 'project/model' });
   s.put(join(s.cwd, '.hud/project.json'), { version: 1, roles: ['imp', 'frontend', 'sonic'] });
   s.put(join(s.hud, 'hud-settings.json'), { modelEnabled: false, refreshMs: 100, language: 'en' });
+  s.put(join(s.hud, 'display/model-lists.json'), { version: 1, fetchedAt: Date.now(), pi: MODEL_LISTS.pi });
   const place = JSON.stringify({ state: { ...initialMonitorState(), mainTab: 'project', projectPage: 'control', projectCursor: 'project:role:imp', projectFolded: new Set(['agents', 'files']) } },
     (_k, v) => (v instanceof Set ? { panelSet: [...v] } : v));
   const runner = join(s.root, 'live.mjs');
-  fs.writeFileSync(runner, `import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};\nawait runLivePage();\nprocess.exit(0);\n`);
+  fs.writeFileSync(runner, `import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};\nprocess.stdout.columns = 80;\nawait runLivePage();\nprocess.exit(0);\n`);
   const child = spawn(process.execPath, [runner], { stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, ...s.env, CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_CWD: s.cwd, HUD_PANEL_RELOAD_PLACE: place } });
   let out = '', err = '';
@@ -763,13 +858,18 @@ test('the live panel applies explicit owner edits, including batched name input'
   await until(() => /Discard edits\?/.test(stripAnsi(out)), 'the discard prompt');
   child.stdin.write('\r');
   assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false);
-  child.stdin.write('\rm');
-  await until(() => /Model ─/.test(stripAnsi(out)), 'the grouped picker in the place sheet');
-  child.stdin.write('openai/gpt-6.1-sol\r\x1b[F\r');
-  await until(() => /s save +esc discard +i add/.test(stripAnsi(out)), 'the change is in the draft');
-  assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false);
-  child.stdin.write('s');
-  await until(() => fs.existsSync(join(s.hud, 'roles/imp.json')) && stored(s, 'imp').run[0].model === 'openai/gpt-6.1-sol', 'the whole edit saved');
+  child.stdin.write('mopenai/gpt-6.1-sol\r');
+  await until(() => /✓ imp #1 → openai\/gpt-6.1-sol/.test(stripAnsi(out)), 'one immediate save from the role row');
+  assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6.1-sol');
+  out = '';
+  child.stdin.write('m');
+  await until(() => /Model ─/.test(stripAnsi(out)), 'the quick picker reopened');
+  const file = join(s.hud, 'roles/imp.json');
+  s.put(file, { ...stored(s, 'imp'), ownerChange: true });
+  const changed = fs.readFileSync(file);
+  child.stdin.write('xai/grok-4.7\r');
+  await until(() => /Role changed on disk; reopen the action/.test(stripAnsi(out)), 'the stale quick write was refused');
+  assert.deepEqual(fs.readFileSync(file), changed);
   child.stdin.write('pgrok\r');
   await until(() => stored(s, 'imp').active_preset === 'grok', 'selected a preset');
   child.stdin.write('Nqjk7\rs');

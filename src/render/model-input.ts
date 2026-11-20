@@ -28,7 +28,7 @@ export interface PickEntry {
 }
 
 export function pickOf(data: ProjectSnapshot | undefined, input: ModelInput): ModelPick | undefined {
-  const role = data?.roles.find((r) => r.role === input.role), place = input.sheetPlace;
+  const role = data?.roles.find((r) => r.role === input.role), place = input.place;
   return data && role && place?.harness === 'pi' && role.source !== 'project' ? { place, lists: data.models, presets: role.presets, preset: role.preset } : undefined;
 }
 

@@ -12,7 +12,7 @@ import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ProjectPage } from './project-view.js';
 import type { ModelLists, PlaceEdit, PlaceFact, PresetEdit, RoleFact } from '../roles/role-control.js';
 import type { PresetInput } from './preset-input.js';
-import type { ChainInput } from './chain-input.js';
+import type { ChainInput, QuickModelInput } from './chain-input.js';
 import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
 import type { TryAction, TryTarget } from '../collectors/try-records.js';
@@ -61,7 +61,8 @@ export interface MonitorState {
   controlHarnessNotice?: { id: string; off: boolean };
   controlPresetInput?: PresetInput;
   controlChain?: ChainInput;
-  controlPresetNotice?: { role: string; name: string | null };
+  controlQuickModel?: QuickModelInput;
+  controlPresetNotice?: { role: string; name: string | null } | { role: string; index: number; model: string | null };
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
   /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
@@ -82,7 +83,7 @@ export interface MonitorState {
   projectSaved?: Partial<Record<ProjectPage, { cursor?: string; scroll: number }>>;
   projectFolded?: ReadonlySet<string>;
   /** Model picker on this place. Group overrides belong to the current query; the wheel moves the window, not the cursor. */
-  projectInput?: { role: string; index: number; text: string; pick?: string; groups?: Record<string, boolean>; scroll?: number; clicked?: string; sheetPlace?: PlaceFact };
+  projectInput?: { role: string; index: number; text: string; pick?: string; groups?: Record<string, boolean>; scroll?: number; clicked?: string; place?: PlaceFact };
   /** A HUD job the owner asked to stop (`X`): a one-row prompt waits for `y` or Enter, any other input cancels. */
   confirmStop?: { jobId: string; role: string; dir: string };
   homeTarget?: WorkTarget;
@@ -255,7 +256,7 @@ export interface MonitorOutcome {
     | { type: 'open-files'; files: string[] }
     /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
     | ({ type: 'role-edit' } & PlaceEdit)
-    | ({ type: 'preset-edit' } & PresetEdit)
+    | ({ type: 'preset-edit'; modelIndex?: number } & PresetEdit)
     | { type: 'model-picked'; value: string }
     | { type: 'harness-switch'; id: string; off: boolean }
     | { type: 'record-try'; action: TryAction; target: TryTarget }

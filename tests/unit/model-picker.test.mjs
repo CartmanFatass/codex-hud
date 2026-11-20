@@ -28,10 +28,16 @@ const rowY = (frame, re) => {
   assert.ok(y >= 0, `${re}:\n${plain(frame).join('\n')}`);
   return y;
 };
-function filled(out, value) {
-  assert.equal(out.action, undefined, 'the picker only fills the in-memory field');
-  assert.equal(out.state.projectInput, undefined);
-  assert.equal(out.state.controlChain.sheet.place.raw.model, value);
+function picked(out, value) {
+  const { action, state } = out;
+  assert.equal(action?.type, 'preset-edit');
+  assert.equal(action.op, 'run');
+  assert.equal(action.modelIndex, state.controlChain.at);
+  assert.equal(action.run[action.modelIndex].model, value);
+  assert.equal(state.projectInput, undefined);
+  assert.equal(state.controlQuickModel, undefined);
+  assert.equal(state.controlChain.sheet, undefined);
+  assert.equal(state.controlChain.draft, undefined);
 }
 
 test('40-column entry, pinned and typed frames follow the sample in EN/ZH and both layouts', async (t) => {
@@ -42,6 +48,13 @@ test('40-column entry, pinned and typed frames follow the sample in EN/ZH and bo
     const normalize = (line) => line.trim().replace(/ +/g, ' ');
     const compare = (actual, sampleId, re) => assert.deepEqual(plain(actual).filter((l) => re.test(l)).map(normalize),
       sample(sampleId).filter((l) => re.test(l)).map(normalize));
+    if (layout === 'split') {
+      const roleRow = draw(lang, { ...state(layout), controlChain: undefined });
+      const hit = field(roleRow);
+      const quick = click(roleRow, hit.x, hit.y);
+      assert.equal(quick.state.controlChain, undefined);
+      assert.deepEqual(quick.state.projectInput, send(roleRow, 'place-model').state.projectInput);
+    }
     const entry = draw(lang, state(layout), 22);
     compare(entry, '1a', /^\s*(?:› )?\s*[123] [◉○].*\[.* ▾\]/);
     assert.match(entry.lines.at(-1).trimStart(), en ? /^m model/ : /^m 模型/);
@@ -50,8 +63,9 @@ test('40-column entry, pinned and typed frames follow the sample in EN/ZH and bo
     assert.deepEqual(open.state.projectInput, send(entry, 'place-model').state.projectInput);
     const cli = click(entry, field(entry, 1).x, field(entry, 1).y).state;
     assert.equal(cli.projectInput, undefined);
-    assert.equal(cli.controlChain.sheet.index, 1);
-    assert.equal(cli.controlChain.sheet.field, 'model');
+    assert.equal(cli.controlChain.sheet, undefined);
+    assert.equal(cli.controlQuickModel.index, 1);
+    assert.ok(cli.controlQuickModel.choice);
     const pinned = draw(lang, open.state);
     compare(pinned, '2a', /^(?:\/|▸|⊘)/);
     assert.match(plain(pinned).join('\n'), en ? /› ◉ xai\/grok-4.7\n +openai\/gpt-6.1-sol +✗ 42m\n +grok-4.7 +\? unknown \[lab\]/
@@ -65,7 +79,7 @@ test('40-column entry, pinned and typed frames follow the sample in EN/ZH and bo
     assert.equal(selected.action, undefined);
     filtered = draw(lang, selected.state);
     compare(filtered, '2b', /^(?:\/|▾|[› ]{4}grok-)/);
-    filled(send(filtered, 'enter'), 'xai/grok-4.7-fast');
+    picked(send(filtered, 'enter'), 'xai/grok-4.7-fast');
     for (const frame of [entry, pinned, filtered]) assert.ok(frame.lines.every((line) => visualLength(line) === 40));
     if (layout === 'split') assert.ok(pinned.panes.some((p) => p.id === 'preview'));
     if (layout === 'split' && process.env.HUD_MODEL_PICKER_REPORT_FRAMES)
@@ -87,18 +101,16 @@ test('draft reorder keeps clickable pi and CLI model fields in the in-memory cha
     const cli = click(draft, cliField.x, cliField.y);
     assert.equal(cli.action, undefined);
     assert.equal(cli.state.projectInput, undefined);
-    assert.equal(cli.state.controlChain.sheet.place.raw.harness, 'cli');
-    assert.ok(cli.state.controlChain.sheet.choice, 'CLI uses the inline catalog');
+    assert.equal(cli.state.controlChain.sheet, undefined);
+    assert.equal(cli.state.controlQuickModel.index, 0);
+    assert.ok(cli.state.controlQuickModel.choice, 'CLI uses the inline catalog');
     const pi = click(draft, piField.x, piField.y);
     assert.equal(pi.action, undefined);
     assert.equal(pi.state.projectInput.index, 1);
     const filtered = render(type(render(pi.state), 'grok-4.7-fast').state);
-    const filledModel = send(filtered, 'enter');
-    filled(filledModel, 'xai/grok-4.7-fast');
-    assert.equal(filledModel.state.controlChain.draft.run[1].raw.model, 'xai/grok-4.7');
-    const done = render(send(render(filledModel.state), 'end').state);
-    const updated = send(done, 'enter');
-    assert.equal(updated.action, undefined, 'Done updates only the draft');
+    const updated = send(filtered, 'enter');
+    assert.equal(updated.action, undefined, 'Enter updates only the draft');
+    assert.equal(updated.state.controlChain.sheet, undefined);
     assert.equal(updated.state.controlChain.draft.run[1].raw.model, 'xai/grok-4.7-fast');
     if (process.env.CONTROL_REVIEW_FRAMES && layout === 'classic') t.diagnostic(`${lang} draft:\n${plain(draft).join('\n')}`);
   }
@@ -134,11 +146,11 @@ test('picker mouse folds off-cursor headers, scrolls only the list, and requires
     hit(/^▸ arena ─/);
     assert.match(plain(frame).join('\n'), /^▾ arena /m);
     frame = render(send(frame, 'home').state);
-    filled(send(frame, 'enter'), 'arena/grok-4.6'); // Headers are skipped by navigation.
+    picked(send(frame, 'enter'), 'arena/grok-4.6'); // Headers are skipped by navigation.
     const fast = /grok-4.7-fast$/;
     hit(fast);
     const out = click(frame, 3, rowY(frame, fast));
-    filled(out, 'xai/grok-4.7-fast');
+    picked(out, 'xai/grok-4.7-fast');
     const tab = frame.controls.find((c) => c.kind === 'board-project');
     const left = click(frame, tab.x, tab.y);
     assert.equal(left.state.mainTab, 'control');
@@ -163,7 +175,9 @@ test('the picker uses real collected preset chains, and locked and Flow places s
   const blank = field(opened, 1);
   assert.equal(blank.width, 3);
   assert.match(opened.lines[blank.y], /\[▾\]/);
-  assert.deepEqual(click(opened, blank.x + 1, blank.y).state.controlChain.sheet, send(opened, 'place-model').state.controlChain.sheet);
+  const openedInline = click(opened, blank.x + 1, blank.y);
+  assert.ok(openedInline.state.controlQuickModel.choice);
+  assert.deepEqual(openedInline.state.controlQuickModel, send(opened, 'place-model').state.controlQuickModel);
   const pick = f.render(40, 'en', click(opened, field(opened).x, field(opened).y).state, 32, data);
   assert.match(plain(pick).join('\n'), /Pinned ─+ 2\n› ◉ xai\/current\n +openai\/backup +\[backup\] \[shared\]/);
   assert.doesNotMatch(plain(pick).join('\n'), /xai\/other|\[other\]/);

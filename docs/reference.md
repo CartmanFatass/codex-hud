@@ -472,7 +472,7 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
 - **Healthy**: folded to role names. Enter shows one row per role with its next target and, on project-owned roles, a `project` tag. Only named presets other than `default` get a preset tag; a file chain without a selector has no tag either.
 - **Usage** and **Files**: both folded. Usage opens quota windows, pi spend and dispatch health. Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
 
-Split previews the selected role's next model, thinking, source and numbered chain; Enter focuses its places and Esc returns to the list. Classic expands the numbered chain and its source under the role with Enter. `o` on a role or place opens its source. Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed. `x` clears a real quota mark, even on a switched-off place; it does not turn that place on.
+The role row names the next model when it fits whole; otherwise it shows the harness (and provider for pi, when known). A known inherited model is muted. Split previews the selected role's numbered chain and source; Enter focuses its places and Esc returns to the list. Classic expands the numbered chain and its source under the role with Enter. `o` on a role or place opens its source. Chain marks: `◉` next, `○` standby, `⊘` switched off, `✗` exhausted and `−` not installed. `x` clears a real quota mark, even on a switched-off place; it does not turn that place on.
 
 **Harnesses** (`h`, or click the Roles / Harnesses headings) lists the pi runner, compiled CLI agents,
 browser tools and pi providers for **this machine, all projects**. Space or Enter toggles the selected
@@ -519,11 +519,15 @@ or the write fails, or if the role changed on disk, the draft stays open. To lea
 confirm **Discard edits?** with Enter or resume with Esc. Panel reload waits until the draft is closed.
 Outside a draft, `x` clears the selected place's quota mark and `o` opens the role file. `r` refreshes model lists.
 
-Click the model field (`[model ▾]`), or press `m` on a focused editable place, to open it. When unset,
-the field shows the effective model in muted text if known, or just `[▾]`. Unset thinking likewise
-shows the known value in muted text or stays blank. The pi Model field uses the picker below. Enter
-fills the field; choose Done to put the place in the draft and `s` in the chain to save it.
-Project-locked places show plain text.
+Press `m` on a role row to change the `◉` place (or place 1 if none can run). Press `m` on a place or
+click its model field (`[model ▾]`) to change that place directly: pi opens the picker below, and CLI
+and AI Studio open an inline list. Enter saves immediately to the active named preset or file chain
+and keeps the cursor where it was. If a draft is open, Enter changes only the draft; `s` still saves it.
+Flow has no model, and project-locked places show plain text and cannot be edited.
+
+When unset, the model field shows the effective model in muted text if known, or just `[▾]`.
+Unset thinking likewise shows the known value in muted text or stays blank. If you open Edit place
+with Enter, its Model field still fills the form: choose Done to put the place in the draft, then `s` to save.
 With an empty query, the picker pins the current model and compatible models from this role's named
 presets, tagged except for `default`. No recent history is kept. Pinned models also stay in their provider groups.
 Opening the picker asks herdr to zoom the panel's own pane. Closing restores the split only if this
@@ -703,7 +707,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `N`, `I`, `R`, `D` | Control role row: start a copied or empty draft, rename the selected preset, or preview and confirm deletion |
 | `h` | Control: switch Roles / Harnesses (or click the view heading) |
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
-| `m` | Control place: open the Model field (or click `[model ▾]`). In the pi picker, type to filter, ↑↓ or click to pick, Enter or click again to fill, Esc clears then closes, Ctrl+R refreshes the lists |
+| `m` | Control role or place: choose a model directly (or click `[model ▾]`). Type to filter, ↑↓ to pick, Enter to save (or fill an open draft). In the pi picker, a second click sets, Esc clears then closes, and Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
 | `g` | On a HUD job's card (Home, either layout, or its Inspector): focus that job's herdr tab, the `TAB` in its `SESSION.txt`; a tab already closed says `tab closed`. Everywhere else it does nothing: the first row is the Home key |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) once its slab is expanded (Enter; always in the Inspector), where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |

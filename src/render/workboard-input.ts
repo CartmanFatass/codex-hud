@@ -7,7 +7,7 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import { cardExpanded } from './work-card.js';
 import { projectFoldedSet, projectPageOf, projectListOpen, type ProjectPage } from './project-view.js';
 import type { RoleFact } from '../roles/role-control.js';
-import { chainInputKey } from './chain-input.js';
+import { openQuickModel, roleModelIndex } from './chain-input.js';
 import { splitHomeInput, splitProjectInput } from './split-input.js';
 import { join } from 'node:path';
 import { tryInput } from './try-input.js';
@@ -263,8 +263,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         const index = /:(\d+)$/.exec(place ?? '')?.[1];
         const role = rowFact(place ?? listItem);
         if (role && index !== undefined) {
-          const opened = openChain(role, Number(index));
-          return tab === 'control-model' ? chainInputKey(opened.state, { type: 'key', key: 'place-model' }, ctx, () => opened) : opened;
+          if (tab !== 'control-model') return openChain(role, Number(index));
+          next = openQuickModel(next, role, Number(index), ctx);
+          next.projectCursor = controlRoleItem(role.role);
+          return result();
         }
         if (!tab && role && listItem === next.projectCursor) return openChain(role);
       }
@@ -276,6 +278,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       const op = tab?.startsWith('preset-') ? tab : key;
       if (fact && (key === 'enter' || key === 'activate')) return openChain(fact);
       if (fact && fact.source !== 'project') {
+        if (key === 'place-model' || tab === 'control-model') {
+          next = openQuickModel(next, fact, roleModelIndex(fact), ctx);
+          return result();
+        }
         if (op === 'role-preset' || op === 'role-preset-prev' || op === 'preset-next' || op === 'preset-prev')
           return result({ type: 'role-edit', role: fact.role, index: 0, op: 'preset',
             step: op.endsWith('prev') ? -1 : 1, revision: fact.revision });

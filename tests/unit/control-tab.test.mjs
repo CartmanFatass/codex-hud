@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { projectFixture, onControl, onPage, plain, presetFrames, richControl, NOW, TREE, PROJECTS } from '../fixtures/project-page.mjs';
+import { projectFixture, onControl, onPage, plain, presetFrames, quickModelFrames, richControl, NOW, TREE, PROJECTS } from '../fixtures/project-page.mjs';
 import { build } from '../../docs/design/control-tab/gen/frames.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
@@ -178,12 +178,31 @@ test('40-column preset row, successful switch and chooser text match the sample 
     const list = (rows) => rows.filter((line) => line.startsWith('/ ') || listEntry.test(line));
     const wanted = list(sample('4c').map((row) => row.replace(/(?:Custom|自定义) +→ (\S+) +(?:file chain|文件链)$/, lang === 'en' ? 'file chain → $1' : '文件链    → $1')));
     for (const layout of ['classic', 'split']) {
-      assert.equal(rendered[`preset-row-40-${layout}-${lang}`].find((line) => role.test(line)), sample('4a').find((line) => role.test(line)));
+      assert.equal(rendered[`preset-row-40-${layout}-${lang}`].find((line) => role.test(line)), '  ◉ imp [daily] → xai/grok-4.7');
       assert.deepEqual(list(rendered[`preset-list-40-${layout}-${lang}`]), wanted);
     }
     const switched = rendered[`preset-switched-40-split-${lang}`];
-    assert.ok(switched.includes('  ◉ imp → pi/openai'));
+    assert.ok(switched.includes('  ◉ imp → openai/gpt-6.1-sol'));
     assert.ok(switched.includes(lang === 'en' ? '✓ imp · preset applied' : '✓ imp · 已应用预设'));
+  }
+});
+
+test('quick model role, picker and saved notice fit in both layouts and languages', async (t) => {
+  const f = await fixture(t), frames = quickModelFrames(f, richControl(f.data));
+  for (const width of [40, 120]) for (const layout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
+    const frame = (id) => frames[`quick-model-${id}-${width}-${layout}-${lang}`];
+    const zh = lang === 'zh';
+    for (const id of ['row', 'picker', 'saved']) assert.ok(frame(id).every((line) => visualLength(line) === width));
+    assert.match(frame('row').join('\n'), /^  ◉ imp \[daily\] → xai\/grok-4.7 *$/m);
+    assert.match(frame('row').join('\n'), /^  ◉ reviewer → mistral\/mistral-small-4 *$/m);
+    assert.match(frame('row').at(-1), zh ? /^ *m 模型/ : /^ *m model/);
+    assert.match(frame('picker').join('\n'), /^› ◉ xai\/grok-4.7 *$/m);
+    assert.match(frame('saved').join('\n'), zh ? /^✓ imp 第 1 位 → xai\/grok-4.7-fast *$/m : /^✓ imp #1 → xai\/grok-4.7-fast *$/m);
+    assert.match(frame('saved').join('\n'), /^  ◉ imp \[daily\] → xai\/grok-4.7-fast *$/m);
+    if (layout === 'split') {
+      assert.match(frame('row').join('\n'), /^(?:Chain|备选链) ─+ 3\n  1 ◉ pi\/xai/m);
+      assert.doesNotMatch(frame('row').join('\n'), /^(?:next job|下个任务|model +xai|模型 +xai|thinking +high|思考 +high)|click ▾ or press m|点 ▾ 或按 m/m);
+    }
   }
 });
 

@@ -395,7 +395,8 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   setLanguage('zh');
   const chinese = plainFrame(draw({ ...opened, focus: 'agents' })).join('\n');
   assert.doesNotMatch(chinese, /在 Codex 自带的面板中|press .*first/);
-  assert.match(chinese, /c C\s+角色：下一个／上一个预设[\s\S]*m\s+位置：打开模型字段/);
+  assert.match(chinese, /c C\s+角色：下一个／上一个预设[\s\S]*m\s+角色或位置：选择模型/);
+  assert.match(chinese, /按 m 选模型后，Enter 立即保存/);
   assert.match(chinese, /在控制的备选链中，按 Enter 编辑位置/);
   assert.doesNotMatch(chinese, /On Control|pick a model/);
 });

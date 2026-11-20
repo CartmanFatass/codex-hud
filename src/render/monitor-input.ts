@@ -3,7 +3,7 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorRow, MonitorState } from './monitor.js';
 import { harnessAddInput, workboardInput } from './workboard-input.js';
 import { presetInputKey } from './preset-input.js';
-import { chainInputKey } from './chain-input.js';
+import { chainInputKey, quickModelKey } from './chain-input.js';
 import { jobModalInput } from './job-actions.js';
 import { filterInput, filterScope } from './filter.js';
 import { expInput } from './exp-view.js';
@@ -28,6 +28,7 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
 function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   if (expShown(state) && state.expPage?.edit) return expInput(state, input, ctx)!;
   if (state.controlPresetInput) return presetInputKey(state, input, ctx);
+  if (state.controlQuickModel) return quickModelKey(state, input, ctx);
   if (state.controlChain) return chainInputKey(state, input, ctx, route);
   const add = harnessAddInput(state, input, ctx);
   if (add) return add;

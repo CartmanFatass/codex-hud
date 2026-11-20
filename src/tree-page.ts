@@ -14,6 +14,7 @@ import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collect
 import { projectList } from './roles/projects.js';
 import { editPlaces, editPreset } from './roles/role-control.js';
 import { finishChain } from './render/chain-input.js';
+import { effectiveModel } from './render/control-view.js';
 import { discoverModelLists, readModelListCache } from './roles/model-discovery.js';
 import { pathToFileURL } from 'node:url';
 import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
@@ -885,7 +886,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     }
     if (closed || collecting) return;
     const ready = await reload.poll(() => Boolean((settingsPage && settingsDirty(settingsPage)) || state.expPage?.edit ||
-      state.controlPresetInput || state.controlChain?.draft || state.controlChain?.sheet || state.projectInput || pickerZoom.restoring));
+      state.controlPresetInput || state.controlChain?.draft || state.controlChain?.sheet || state.controlQuickModel || state.projectInput || pickerZoom.restoring));
     if (closed) return;
     if (ready) {
       restarting = reload.restart({ state, openedAt, widthOverride: widthOverride ?? null,
@@ -1238,7 +1239,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (expSaving && expShown(state)) continue;
       if (input.type === 'mouse' && !settings.mouse) continue;
       // Editors own unnamed printable keys; nowhere else do they trigger an action.
-      if (input.type === 'key' && !input.key && !state.projectInput && !state.expPage?.edit && !state.controlPresetInput && !state.controlChain?.sheet && !state.controlHarnessAdd) continue;
+      if (input.type === 'key' && !input.key && !state.projectInput && !state.controlQuickModel && !state.expPage?.edit && !state.controlPresetInput && !state.controlChain?.sheet && !state.controlHarnessAdd) continue;
       syncPanelView();
       const fromSettings = Boolean(settingsPage);
       if (settingsLeave && confirmationFrame) {
@@ -1402,20 +1403,26 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         error = roleNotice || settingsError || null;
       }
       if (result.action?.type === 'preset-edit') {
-        const { type: _type, ...edit } = result.action;
+        const { type: _type, modelIndex, ...edit } = result.action;
         const done = editPreset(jobPipeline.home, shownRoot(), process.env, edit);
-        if (done.ok) {
+        if (modelIndex === undefined && done.ok) {
           if (state.controlChain) state = finishChain(state);
           state = { ...state, controlPresetInput: undefined,
             controlPresetNotice: done.preset === undefined ? undefined : { role: edit.role, name: done.preset },
             controlNav: { ...state.controlNav, projectCursor: controlRoleItem(edit.role), boardRevealed: undefined } };
-        } else if (state.controlChain) {
+        } else if (modelIndex === undefined && state.controlChain) {
           state = { ...state, controlChain: { ...state.controlChain, error: done.message ?? 'could not save the change' } };
         }
-        // Keep the draft or sheet (and its captured revision) on failure.
-        notice(done.ok || state.controlChain ? '' : t(done.message ?? 'could not save the change') + (done.reason ? `: ${done.reason}` : ''));
+        // Keep the draft (and its revision) on failure; a quick save uses the ordinary notice slot.
+        notice(done.ok || (modelIndex === undefined && state.controlChain) ? '' : t(done.message ?? 'could not save the change') + (done.reason ? `: ${done.reason}` : ''));
         const visit = visits.visit(shownRoot());
         if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
+        if (done.ok && modelIndex !== undefined && edit.op === 'run') {
+          const place = visit.control?.roles.find((r) => r.role === edit.role)?.places[modelIndex];
+          const model = place ? place.piModel?.current ?? effectiveModel(place) : edit.run[modelIndex]?.model ?? null;
+          state.controlPresetNotice = { role: edit.role, index: modelIndex, model };
+          state.controlNav = { ...state.controlNav, boardRevealed: undefined };
+        }
       }
       if (result.action?.type === 'brief-toggle') {
         try {
@@ -1445,7 +1452,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   };
   /** Pass unnamed text when an editor is open or could be opened in this batch. */
   const editorInput = (inputs: WorkbenchInput[]) => {
-    let picking = Boolean(state.projectInput || state.expPage?.edit || state.controlHarnessAdd || state.controlPresetInput || state.controlChain?.sheet);
+    let picking = Boolean(state.projectInput || state.controlQuickModel || state.expPage?.edit || state.controlHarnessAdd || state.controlPresetInput || state.controlChain?.sheet);
     return inputs.filter((i) => {
       if (i.type !== 'key') { picking ||= (!!state.experiments || controlShown(state)) && i.button === 'left'; return true; }
       if (i.key === 'place-model' || i.key === 'place-add' || (controlShown(state) && ['enter', 'preset-list', 'preset-copy', 'preset-empty', 'preset-rename'].includes(i.key)) ||

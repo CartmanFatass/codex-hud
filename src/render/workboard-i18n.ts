@@ -262,10 +262,9 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '⏎ set': '⏎ 设为',
   '^R refresh': '^R 刷新',
   'back; confirm discarding a draft; picker: clear then exit': '返回；放弃草稿需确认；选择器：先清空筛选，再关闭',
-  'place: open the model field; type to filter': '位置：打开模型字段；输入筛选',
-  'click ▾ or press m to choose a model': '点 ▾ 或按 m：选择模型',
-  'Control: click the model field (▾) to open. Click a model to select, again to set; click a provider to fold, wheel scrolls the list.':
-    '控制：点模型字段（▾）打开。单击模型选中，再点一次设定；点提供方标题折叠或展开，滚轮滚动列表。',
+  'role or place: choose a model': '角色或位置：选择模型',
+  'Control: click the model field (▾) to open. In the pi picker, click a model to select, again to set; click a provider to fold, wheel scrolls the list.':
+    '控制：点模型字段（▾）打开。pi 选择器中，单击模型选中，再点一次设定；点提供方标题折叠或展开，滚轮滚动列表。',
   'Model picker: current and preset models are pinned until you type. Typing opens matching groups.':
     '模型选择器：未输入时置顶当前模型和预设模型。输入筛选时展开匹配分组。',
   Pinned: '置顶',
@@ -373,6 +372,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Could not stop': '无法停止',
   'In a Control chain, Enter edits a place. Choose Target, Model or Flow kind, Thinking where offered, then Done. Nothing changes on disk until Save.':
     '在控制的备选链中，按 Enter 编辑位置。选择目标、模型或 Flow 类型、可用的思考档位，再选「完成」。保存之前不会改写文件。',
+  'With m, Enter saves the model at once, or fills the place if a draft is open.':
+    '按 m 选模型后，Enter 立即保存；已有草稿时只填入该位置。',
   'Edits in $HUD_HOME/roles take effect on the next job; project role files are read-only (o opens them).':
     '改动写入 $HUD_HOME/roles，下一个任务即用；项目角色文件只读（按 o 打开）。',
   'role not found': '没有这个角色',

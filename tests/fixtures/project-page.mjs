@@ -196,7 +196,7 @@ export function projectFrames(f) {
   }
   frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
-  Object.assign(frames, pickerFrames(f, control), presetFrames(f, control));
+  Object.assign(frames, pickerFrames(f, control), presetFrames(f, control), quickModelFrames(f, control));
   frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
   frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
   return frames;
@@ -223,6 +223,33 @@ export function presetFrames(f, control) {
   for (const lang of ['en', 'zh']) frames[`preset-switched-40-split-${lang}`] = plain(f.render(40, lang, onControl(nav, {
     panelLayout: 'split', experiments: true, controlPresetNotice: { role: 'imp', name: 'default' },
   }), 34, withImp({ ...imp, preset: 'default', places: fileChain }), true, 'unicode', 'none', { projectName: 'harbor-api' }));
+  return frames;
+}
+
+export function quickModelFrames(f, control) {
+  const imp = control.roles.find((r) => r.role === 'imp'), reviewer = control.roles.find((r) => r.role === 'reviewer');
+  const places = [{ ...imp.places[0], state: 'active', until: undefined, provider: 'xai', model: 'xai/grok-4.7' },
+    { ...imp.places[1], state: 'standby', thinking: null }, { ...imp.places[2], model: 'claude-opus-5-5' }];
+  const review = { ...reviewer, places: [{ ...reviewer.places[0], model: 'mistral/mistral-small-4' }] };
+  const data = (chain) => ({ ...control, control: [], roles: [
+    { ...imp, preset: 'daily', places: chain, editor: mockEditor(chain) }, review,
+    ...control.roles.filter((r) => ['sonic', 'oracle', 'frontend'].includes(r.role)),
+  ] });
+  const nav = { projectCursor: 'project:role:imp', projectFolded: new Set(['usage', 'files']) };
+  const frames = {};
+  for (const width of [40, 120]) for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
+    const draw = (state, snapshot = data(places)) => f.render(width, lang, state, state.projectInput ? 24 : 28, snapshot);
+    const send = (frame, key, text) => handleMonitorInput(frame.state, { type: 'key', key, text }, { frame, tree: TREE, nowMs: NOW });
+    const row = draw(onControl(nav, { panelLayout }));
+    const picker = draw(send(row, 'place-model').state);
+    const picked = send(draw(send(picker, '', 'grok-4.7-fast').state), 'enter');
+    const { modelIndex: index, run } = picked.action;
+    const model = run[index].model;
+    const saved = draw({ ...picked.state, controlPresetNotice: { role: 'imp', index, model } },
+      data(places.map((p, i) => i === index ? { ...p, model } : p)));
+    for (const [name, frame] of Object.entries({ row, picker, saved }))
+      frames[`quick-model-${name}-${width}-${panelLayout}-${lang}`] = frame.lines.map(stripAnsi);
+  }
   return frames;
 }
 

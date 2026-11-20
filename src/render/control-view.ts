@@ -32,6 +32,17 @@ export const presetTag = (name?: string | null) => {
 export const sourceLabel = (source: RoleFact['source']) => t(source === 'default' ? 'shipped' : source);
 export const effectiveModel = (p: PlaceFact) => p.model ?? (p.piModel?.isDefault ? p.piModel.defaultId : null);
 export const unsetModel = (p: PlaceFact) => p.piModel?.isDefault ?? !p.model;
+/** A role row adds a model only if the entire destination fits with its name and preset. */
+export function roleModelDestination(p: PlaceFact): string | undefined {
+  const model = monitorText(p.piModel?.current ?? effectiveModel(p) ?? '');
+  if (!model) return;
+  const value = mute(model, unsetModel(p));
+  if (p.harness === 'cli') return `${monitorText(p.label)} ${value}`;
+  if (p.harness === 'pi') {
+    if (model.includes('/')) return value;
+    if (p.provider) return mute(`${monitorText(p.provider)}/${model}`, unsetModel(p));
+  }
+}
 export const withDestination = (p: PlaceFact): PlaceFact => {
   const model = effectiveModel(p), prefix = `${p.provider}/`;
   return p.provider ? { ...p, label: placeDestination(p), model: model?.startsWith(prefix) ? model.slice(prefix.length) : model } : p;
