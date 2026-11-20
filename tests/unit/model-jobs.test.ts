@@ -52,7 +52,7 @@ test('Models exposes master, provider, separate budgets and summary interval; re
       renderSettingsPage(
         { draft, selected: SETTING_ROWS.findIndex((r) => r.group === 'Models'), offset: 0, message: '' },
         100,
-        30
+        40
       ).lines.join('\n')
     );
     assert.match(text, /Model text/);
