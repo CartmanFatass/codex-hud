@@ -64,24 +64,21 @@ const remaining = (balance: ExpBalance | undefined) =>
     : balance.remainingMicros === null
       ? t('uncalibrated')
       : expApproxUsd(Math.max(0, balance.remainingMicros));
-function accountReadings(detail: ExpAccount, balance: ExpBalance | undefined): [string, string][] {
-  const value = (reading: string) => (detail === 'openai-api' ? reading : offline());
+function accountReadings(balance: ExpBalance | undefined): [string, string][] {
   const unknown = t('unavailable');
   const calibration = balance?.lastCalibration;
   return [
-    ['Estimated remaining', value(remaining(balance))],
-    ['Current period', value(balance ? `${balance.startDate} → ${balance.endDate} · ${balance.timeZone}` : unknown)],
-    ['Billed this period', value(balance ? `$${expUsd(balance.billedMicros)}` : unknown)],
-    ['Unpriced requests', value(balance ? String(balance.unpriced) : unknown)],
+    ['Estimated remaining', remaining(balance)],
+    ['Current period', balance ? `${balance.startDate} → ${balance.endDate} · ${balance.timeZone}` : unknown],
+    ['Billed this period', balance ? `$${expUsd(balance.billedMicros)}` : unknown],
+    ['Unpriced requests', balance ? String(balance.unpriced) : unknown],
     [
       'Recent calibration',
-      value(
-        balance
-          ? calibration
-            ? `${calibration.at.slice(0, 16).replace('T', ' ')} UTC · $${expUsd(calibration.remainingMicros)}`
-            : t('none')
-          : unknown
-      ),
+      balance
+        ? calibration
+          ? `${calibration.at.slice(0, 16).replace('T', ' ')} UTC · $${expUsd(calibration.remainingMicros)}`
+          : t('none')
+        : unknown,
     ],
     ...(balance?.remainingMicros != null && balance.remainingMicros < 0
       ? [['Estimated overage', `$${expUsd(-balance.remainingMicros)}`] as [string, string]]
@@ -216,9 +213,12 @@ function groups(
             return value === undefined ? undefined : { field: 'calibration', account: detail, value };
           }),
         ],
-        readings: accountReadings(detail, detail === 'openai-api' ? data.openAiBalance : undefined),
-        notes:
-          detail === 'openai-api' ? ['Only oapi requests observed by the installed pi HUD are counted.'] : undefined,
+        readings: accountReadings(data.balances?.[detail]),
+        notes: [
+          detail === 'openai-api'
+            ? 'Only oapi requests observed by the installed pi HUD are counted.'
+            : 'Only direct Anthropic API-key requests observed by the installed pi HUD are counted.',
+        ],
       },
     ];
   }
@@ -293,7 +293,7 @@ function groups(
         link(
           account,
           account,
-          `${enabled(config.grants[account].enabled)} · ${account === 'openai-api' ? remaining(data.openAiBalance) : offline()}`
+          `${enabled(config.grants[account].enabled)} · ${remaining(data.balances?.[account])}`
         )
       ),
     },
@@ -318,7 +318,7 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number,
         boardRow(''),
         ...text(t('Old estimate → new base')),
         ...text(
-          `${edit.preview.account === 'openai-api' ? remaining(data.openAiBalance) : offline()} → $${expUsd(edit.preview.value)}`,
+          `${remaining(data.balances?.[edit.preview.account])} → $${expUsd(edit.preview.value)}`,
           theme.board.active
         ),
         ...text(t('This does not change the next grant.'), theme.board.muted),
@@ -333,15 +333,15 @@ export function expRows(page: ExpPage, data: ExpData | undefined, width: number,
         ...text(choices[edit.pick]?.label ?? '', theme.board.active),
       ];
     }
+    const account = page.detail === 'openai-api' || page.detail === 'anthropic-api' ? page.detail : undefined;
+    const grant = account && data.config.grants[account];
+    const endDate = account && data.balances?.[account]?.endDate;
     return [
       ...rows,
       boardRow(''),
       ...text(t(entry.edit.hint), theme.board.muted),
-      ...(page.detail === 'openai-api' &&
-      data.openAiBalance &&
-      (data.config.grants['openai-api'].schedule || data.config.grants['openai-api'].enabled) &&
-      ['grant', 'renewal', 'zone'].includes(entry.id)
-        ? text(t('Effective at next renewal: {date}', { date: data.openAiBalance.endDate }), theme.board.muted)
+      ...(endDate && grant && (grant.schedule || grant.enabled) && ['grant', 'renewal', 'zone'].includes(entry.id)
+        ? text(t('Effective at next renewal: {date}', { date: endDate }), theme.board.muted)
         : []),
       ...text(`> ${monitorText(edit.text)}${edit.text ? ' ' : ''}▌`, theme.board.active),
     ];

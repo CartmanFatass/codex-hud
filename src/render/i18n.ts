@@ -96,6 +96,8 @@ const ZH: Record<string, string> = {
   uncalibrated: '未校准',
   'Effective at next renewal: {date}': '下期续期时生效：{date}',
   'Only oapi requests observed by the installed pi HUD are counted.': '仅计入安装了 HUD 的 pi 所观察到的 oapi 请求。',
+  'Only direct Anthropic API-key requests observed by the installed pi HUD are counted.':
+    '仅计入安装了 HUD 的 pi 所观察到的、使用 API 密钥直连 Anthropic 的请求。',
   'not connected': '未接入',
   'Enter an alias; empty restores the directory name': '输入别名；留空恢复目录名',
   'Enter a number from 5 to 60': '输入 5 到 60 之间的分钟数',

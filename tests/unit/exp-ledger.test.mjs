@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { appendExpEvent, readExpBalance } from '../../dist/collectors/exp-ledger.js';
-import { readExpData, readOpenAiBalance, saveExpEdit } from '../../dist/collectors/exp-store.js';
+import { readExpData, readExpGrantBalance, saveExpEdit } from '../../dist/collectors/exp-store.js';
 import { expCycle } from '../../dist/exp-cycle.js';
 import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { setLanguage } from '../../dist/render/i18n.js';
@@ -14,7 +14,8 @@ import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 
 const account = 'openai-api';
 const now = '2026-11-20T10:30:00.000Z';
-function fixture(t) {
+const readOpenAiBalance = (home, at) => readExpGrantBalance(home, account, at);
+function fixture(t, account = 'openai-api') {
   const root = fs.mkdtempSync(join(tmpdir(), 'exp-ledger-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const home = join(root, 'home');
@@ -24,7 +25,7 @@ function fixture(t) {
   edit('grant', 20_000_000);
   edit('zone', 'UTC');
   edit('grant-enabled', true);
-  return { home, hud, exp, edit, path: join(exp, 'ledger-openai-api.jsonl') };
+  return { home, hud, exp, edit, path: join(exp, `ledger-${account}.jsonl`) };
 }
 const cost = (id, at, costMicros = 650_000) => ({
   type: 'cost',
@@ -108,20 +109,23 @@ test('29–31 renew at short month end in their own time zone, reset without car
     Date.parse('2009-11-01T02:30:00Z'),
     'rolling back to the previous date after midnight does not reopen the prior cycle'
   );
-  const f = fixture(t);
-  f.edit('calibration', 13_400_000);
-  f.edit('grant', 25_000_000);
-  f.edit('renewal', 31);
-  f.edit('zone', 'America/New_York');
-  appendExpEvent(f.hud, account, cost('pre-renewal', '2026-11-30T23:59:59.999Z'));
-  appendExpEvent(f.hud, account, cost('at-renewal', '2026-12-01T00:00:00.000Z'));
-  const balance = (iso) => readOpenAiBalance(f.hud, Date.parse(iso));
-  assert.equal(balance('2026-11-30T23:59:59.999Z').remainingMicros, 12_750_000);
-  assert.equal(balance('2026-11-30T23:59:59.999Z').timeZone, 'UTC');
-  assert.equal(balance('2026-12-01T00:00:00Z').remainingMicros, 24_350_000);
-  assert.equal(balance('2026-12-01T00:00:00Z').timeZone, 'America/New_York');
-  assert.equal(balance('2027-03-01T00:00:00Z').remainingMicros, 25_000_000);
-  assert.equal(balance('2027-03-01T00:00:00Z').lastCalibration.at, now);
+  for (const account of ['openai-api', 'anthropic-api']) {
+    const f = fixture(t, account);
+    const balance = (iso) => readExpGrantBalance(f.hud, account, Date.parse(iso));
+    assert.equal(balance(now).remainingMicros, null, 'first enable is uncalibrated');
+    f.edit('calibration', 13_400_000);
+    f.edit('grant', 25_000_000);
+    f.edit('renewal', 31);
+    f.edit('zone', 'America/New_York');
+    appendExpEvent(f.hud, account, cost('pre-renewal', '2026-11-30T23:59:59.999Z'));
+    appendExpEvent(f.hud, account, cost('at-renewal', '2026-12-01T00:00:00.000Z'));
+    assert.equal(balance('2026-11-30T23:59:59.999Z').remainingMicros, 12_750_000);
+    assert.equal(balance('2026-11-30T23:59:59.999Z').timeZone, 'UTC');
+    assert.equal(balance('2026-12-01T00:00:00Z').remainingMicros, 24_350_000);
+    assert.equal(balance('2026-12-01T00:00:00Z').timeZone, 'America/New_York');
+    assert.equal(balance('2027-03-01T00:00:00Z').remainingMicros, 25_000_000);
+    assert.equal(balance('2027-03-01T00:00:00Z').lastCalibration.at, now);
+  }
 });
 
 test('four concurrent JSONL writers keep intact lines and double-count no request', async (t) => {

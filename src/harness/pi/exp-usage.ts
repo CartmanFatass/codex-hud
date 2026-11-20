@@ -1,25 +1,27 @@
 import { createHash } from 'node:crypto';
 import { appendExpEvent, type ExpCost, type ExpTokens } from '../../collectors/exp-ledger.js';
 import { readExpConfig } from '../../collectors/exp-store.js';
-import { expMicros } from '../../exp-config.js';
+import { expMicros, type ExpAccount } from '../../exp-config.js';
 import { experimentsEnabled } from '../../settings.js';
 import type { PiPackageContext } from './package-context.js';
+import { piExpAccount } from './exp-route.js';
 
-const account = 'openai-api';
 const tokenFields = ['input', 'output', 'cacheRead', 'cacheWrite'] as const;
 type Rates = Partial<ExpTokens>;
 export type ExpModelCost = Rates & { tiers?: readonly (Rates & { inputTokensAbove: number })[] };
 interface RequestModel {
   id: string;
-  cost: ExpModelCost;
+  cost?: ExpModelCost;
 }
 interface PiUsage extends ExpTokens {
+  cacheWrite1h?: number;
   cost?: Rates & { total?: number; totalFromProvider?: boolean };
 }
 interface Reply {
   role?: string;
   stopReason?: string;
   provider?: string;
+  api?: string;
   model?: string;
   responseId?: string;
   usage?: PiUsage;
@@ -47,21 +49,24 @@ function estimate(usage: PiUsage, tokens: ExpTokens, requestRates?: ExpModelCost
       rates = tier;
     }
   }
+  const longWrite = usage.cacheWrite1h ?? 0;
+  if (!expMicros(longWrite) || longWrite > tokens.cacheWrite) return 0;
   let micros = 0;
   // Pi's normalized input already excludes cache reads and writes. Model rates are USD / million tokens.
+  // Like Pi, price Anthropic's one-hour writes at 2x input, not as ordinary cache writes.
+  const billable = { ...tokens, input: tokens.input + 2 * longWrite, cacheWrite: tokens.cacheWrite - longWrite };
   for (const field of tokenFields) {
-    if (!tokens[field]) continue;
+    const count = billable[field];
+    if (!count) continue;
     const rate = rates[field];
     if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0) return 0;
-    micros += tokens[field] * rate;
+    micros += count * rate;
   }
   return micros;
 }
 
 function completed(reply: Reply, model: RequestModel | undefined, now: number): Cost | undefined {
   if (
-    reply.role !== 'assistant' ||
-    reply.provider !== 'oapi' ||
     !['stop', 'length', 'toolUse'].includes(reply.stopReason ?? '') ||
     typeof reply.model !== 'string' ||
     !/^[a-z0-9][a-z0-9._:/-]{0,159}$/i.test(reply.model) ||
@@ -85,34 +90,40 @@ function completed(reply: Reply, model: RequestModel | undefined, now: number): 
 
 /** Delegate entry only: no dependency on TUI, footer, or persisted history scans. */
 export function piExpUsage(hudHome: string, env: NodeJS.ProcessEnv) {
-  const enabled = () => {
+  const activeGrants = () => {
     try {
-      return experimentsEnabled(env) && readExpConfig(hudHome).grants[account].enabled;
+      if (experimentsEnabled(env)) return readExpConfig(hudHome).grants;
     } catch {
-      return false;
+      // Unknown settings do not authorize collection.
     }
   };
-  const record = (cost: Cost, id: string) => {
+  const record = (account: ExpAccount, cost: Cost, id: string) => {
     try {
       appendExpEvent(hudHome, account, { ...cost, id });
     } catch {
       // Accounting is best-effort and must never interrupt Pi's request/session.
     }
   };
-  let request: { session: string; model?: RequestModel } | undefined;
-  let pending: { session: string; cost: Cost } | undefined;
+  let request:
+    { session: string; oapiEnabled: boolean; oapiModel?: RequestModel; anthropicModel?: RequestModel } | undefined;
+  let pending: { account: ExpAccount; session: string; cost: Cost } | undefined;
   return {
     requestStart(_event: unknown, ctx: PiPackageContext) {
       request = undefined;
       pending = undefined;
-      if (!enabled()) return;
-      const session = ctx.sessionManager.getSessionId();
+      const grants = activeGrants();
+      if (!grants) return;
+      const oapiEnabled = grants['openai-api'].enabled;
       const model = ctx.model;
+      const anthropic = grants['anthropic-api'].enabled && piExpAccount(ctx) === 'anthropic-api';
+      if (!oapiEnabled && !anthropic) return;
+      const capture = () => model && { id: model.id, cost: structuredClone(model.cost) };
       request = {
-        session,
-        ...(model?.provider === 'oapi' && model.cost
-          ? { model: { id: model.id, cost: structuredClone(model.cost) } }
-          : {}),
+        session: ctx.sessionManager.getSessionId(),
+        // A virtual selection can route to oapi; the completed reply proves that provider, not the selected model.
+        oapiEnabled,
+        oapiModel: model?.provider === 'oapi' ? capture() : undefined,
+        anthropicModel: anthropic ? capture() : undefined,
       };
     },
     messageEnd(event: unknown, ctx: PiPackageContext) {
@@ -120,12 +131,22 @@ export function piExpUsage(hudHome: string, env: NodeJS.ProcessEnv) {
       if (reply?.role !== 'assistant') return;
       const started = request;
       request = undefined;
-      if (!started || reply.provider !== 'oapi' || started.session !== ctx.sessionManager.getSessionId() || !enabled())
-        return;
-      const cost = completed(reply, started.model, Date.now());
+      if (!started || started.session !== ctx.sessionManager.getSessionId()) return;
+      const isOapi = reply.provider === 'oapi' && started.oapiEnabled;
+      const isAnthropic =
+        reply.provider === 'anthropic' &&
+        reply.api === 'anthropic-messages' &&
+        started.anthropicModel &&
+        started.anthropicModel.id === reply.model &&
+        ctx.model?.id === reply.model &&
+        piExpAccount(ctx) === 'anthropic-api';
+      if (!isOapi && !isAnthropic) return;
+      const account = isOapi ? 'openai-api' : 'anthropic-api';
+      if (!activeGrants()?.[account].enabled) return;
+      const cost = completed(reply, isOapi ? started.oapiModel : started.anthropicModel, Date.now());
       if (!cost) return;
-      if (validId(reply.responseId)) record(cost, stableId('response', reply.responseId));
-      else pending = { session: started.session, cost };
+      if (validId(reply.responseId)) record(account, cost, stableId('response', reply.responseId));
+      else pending = { account, session: started.session, cost };
     },
     turnEnd(event: unknown, ctx: PiPackageContext) {
       // Pi emits one turn_end for the request before the next context hook, with its persisted ID.
@@ -136,13 +157,15 @@ export function piExpUsage(hudHome: string, env: NodeJS.ProcessEnv) {
       if (
         entry &&
         message?.role === 'assistant' &&
-        message.provider === 'oapi' &&
+        (entry.account === 'openai-api'
+          ? message.provider === 'oapi'
+          : message.provider === 'anthropic' && message.api === 'anthropic-messages') &&
         message.model === entry.cost.model &&
         validId(messageEntryId) &&
         entry.session === ctx.sessionManager.getSessionId() &&
-        enabled()
+        activeGrants()?.[entry.account].enabled
       )
-        record(entry.cost, stableId('entry', entry.session, messageEntryId));
+        record(entry.account, entry.cost, stableId('entry', entry.session, messageEntryId));
     },
   };
 }

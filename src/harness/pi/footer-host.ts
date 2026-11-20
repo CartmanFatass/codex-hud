@@ -41,13 +41,18 @@ export interface FooterContext {
     id: string;
     name?: string;
     provider?: string;
+    api?: string;
     baseUrl?: string;
     cost?: ExpModelCost;
     reasoning?: boolean;
     contextWindow?: number;
   };
   /** pi exposes the selected credential kind without returning or refreshing the credential. */
-  modelRegistry?: { isUsingOAuth(model: NonNullable<FooterContext['model']>): boolean };
+  modelRegistry?: {
+    isUsingOAuth(model: NonNullable<FooterContext['model']>): boolean;
+    getProviderAuthStatus?(provider: string): { configured: boolean; source?: string; label?: string };
+    getRegisteredProviderIds?(): readonly string[];
+  };
   sessionManager: {
     getSessionId(): string;
     getLeafId(): string | null;

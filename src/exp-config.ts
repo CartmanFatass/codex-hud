@@ -35,7 +35,7 @@ export interface ExpData {
   config: ExpConfig;
   profiles: ExpProfile[];
   proxySnapshot?: ExpProxySnapshot;
-  openAiBalance?: ExpBalance;
+  balances?: Partial<Record<ExpAccount, ExpBalance>>;
   unreadable?: true;
 }
 

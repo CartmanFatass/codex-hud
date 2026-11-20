@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
 import { knownExpProfiles, readExpConfig, readExpData, saveExpEdit } from '../../dist/collectors/exp-store.js';
+import { appendExpEvent } from '../../dist/collectors/exp-ledger.js';
 import { handleMonitorInput, initialMonitorState, monitorSettings, renderMonitor } from '../../dist/render/monitor.js';
 import {
   handleSettingsInput,
@@ -202,12 +203,11 @@ test('EXP edits every group, Esc drops drafts, and another project sees the same
     bindingVersion: cfg.proxy.bindingVersion,
   });
   assert.match(cfg.proxy.bindingVersion, /^[a-f0-9-]{36}$/);
-  assert.deepEqual(cfg.grants['anthropic-api'], {
-    enabled: true,
-    grantMicros: 20_000_000,
-    renewalDay: 18,
-    timeZone: 'Asia/Shanghai',
-  });
+  assert.equal(cfg.grants['anthropic-api'].enabled, true);
+  assert.equal(cfg.grants['anthropic-api'].grantMicros, 20_000_000);
+  assert.equal(cfg.grants['anthropic-api'].renewalDay, 18);
+  assert.equal(cfg.grants['anthropic-api'].timeZone, 'Asia/Shanghai');
+  assert.ok(cfg.grants['anthropic-api'].schedule.startsAt > NOW);
   assert.equal(cfg.grants['openai-api'].grantMicros, 12_345_678);
   assert.equal(cfg.grants['openai-api'].enabled, false);
   const reloaded = panel(f, {
@@ -220,7 +220,7 @@ test('EXP edits every group, Esc drops drafts, and another project sees the same
   });
   assert.match(plain(reloaded.frame()), /Second profile \(\.codex-secondary\)/);
   assert.match(plain(reloaded.frame()), /60 min/);
-  assert.match(plain(reloaded.frame()), /anthropic-api\s+on · not connected/);
+  assert.match(plain(reloaded.frame()), /anthropic-api\s+on · uncalibrated/);
   reloaded.select('anthropic-api');
   reloaded.press('enter');
   assert.match(plain(reloaded.frame()), /Grant per period\s+\$20\.00/);
@@ -268,7 +268,7 @@ test('calibration previews before any write, cancels cleanly, then appends one p
   assert.equal(fs.statSync(f.dir).mode & 0o777, 0o700);
 });
 
-test('40 columns in EN and ZH: both layouts show whole labels, offline data, and the calibration preview', (t) => {
+test('40 columns in EN and ZH: both layouts show whole labels, both ledgers, and the calibration preview', (t) => {
   const f = fixture(t);
   const oldLanguage = setLanguage('en');
   const oldDisplay = setDisplayConfig({ theme: 'terminal', icons: 'unicode' });
@@ -282,6 +282,14 @@ test('40 columns in EN and ZH: both layouts show whole labels, offline data, and
     NOW,
     f.env
   );
+  for (const [account, value] of [['anthropic-api', 8_000_000], ['openai-api', 12_750_000]]) {
+    saveExpEdit(f.env.HUD_HOME, { field: 'grant-enabled', account, value: true }, NOW - 1000, f.env);
+    saveExpEdit(f.env.HUD_HOME, { field: 'calibration', account, value }, NOW - 1000, f.env);
+  }
+  appendExpEvent(f.env.HUD_HOME, 'anthropic-api', {
+    type: 'cost', id: 'synthetic-cost', at: new Date(NOW).toISOString(), model: 'synthetic-claude',
+    tokens: { input: 10, output: 3, cacheRead: 2, cacheWrite: 5 }, source: 'priced', costMicros: 350_000,
+  });
   for (const lang of ['en', 'zh'])
     for (const panelLayout of ['classic', 'split']) {
       setLanguage(lang);
@@ -296,15 +304,25 @@ test('40 columns in EN and ZH: both layouts show whole labels, offline data, and
       const overview = exact();
       assert.match(overview, lang === 'en' ? /Home\s+Project\s+EXP exp/ : /首页\s+项目\s+EXP 实验/);
       assert.match(overview, /Secondary work profile for\s+documentation\s+\(\.codex-secondary\)/);
-      assert.match(overview, /openai-api/);
+      assert.match(overview, /anthropic-api\s+(on|开) · ≈\$7\.65\s+openai-api\s+(on|开) · ≈\$12\.75/);
       p.select('proxy-status');
       p.press('enter');
       assert.match(exact(), lang === 'en' ? /Next attempt\s+—/ : /下次尝试\s+—/);
       p.press('escape');
-      p.select('openai-api');
-      p.press('enter');
-      assert.match(exact(), lang === 'en' ? /Unpriced requests\s+0/ : /未计价请求数\s+0/);
-      p.edit('calibration', '13.40');
-      assert.match(exact(), lang === 'en' ? /Old estimate → new base/ : /旧估算 → 新基准/);
+      for (const [account, remaining, billed] of [['anthropic-api', '7.65', '0.35'], ['openai-api', '12.75', '0.00']]) {
+        p.select(account);
+        p.press('enter');
+        const detail = exact();
+        assert.ok(detail.includes(`≈$${remaining}`));
+        assert.match(detail, lang === 'en' ? /Unpriced requests\s+0/ : /未计价请求数\s+0/);
+        const line = detail.split('\n').find((row) => row.startsWith(lang === 'en' ? 'Billed this period' : '本期已计费用'));
+        assert.ok(line?.endsWith(`$${billed}`), line);
+        p.edit('calibration', '13.40');
+        const preview = exact();
+        assert.match(preview, lang === 'en' ? /Old estimate → new base/ : /旧估算 → 新基准/);
+        assert.ok(preview.includes(`≈$${remaining} → $13.40`));
+        p.press('escape');
+        p.press('escape');
+      }
     }
 });

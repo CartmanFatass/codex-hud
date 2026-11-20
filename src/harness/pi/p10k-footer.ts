@@ -19,13 +19,14 @@ import { monitorText } from '../../render/monitor-text.js';
 import { formatTokenCount } from '../../render/lines/activity-line.js';
 import type { WorkSignals } from '../../render/work-summary.js';
 import { applyBarSettings } from '../../bar-settings.js';
-import { readOpenAiBalance } from '../../collectors/exp-store.js';
-import { expApproxUsd } from '../../exp-config.js';
+import { readExpGrantBalance } from '../../collectors/exp-store.js';
+import { expApproxUsd, type ExpAccount } from '../../exp-config.js';
 import { experimentsEnabled } from '../../settings.js';
 import { getHudHome } from '../../hud-home.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
 import { HUD_STATUS_KEY } from './segment.js';
 import type { FooterAPI, FooterContext, FooterHost } from './footer-host.js';
+import { piExpAccount } from './exp-route.js';
 import { createPiSubscription } from './subscription.js';
 import type { ProxyRefreshOptions } from '../../collectors/exp-proxy-refresh.js';
 export type { FooterHost } from './footer-host.js';
@@ -532,17 +533,20 @@ export function createP10kFooter(
   let view: FooterContext | null = null;
   let stats: Stats | undefined;
   let capturedViz: string | undefined;
-  let apiQuota: bar.BarFacts['quota'];
-  function readApiQuota(model: FooterContext['model']): bar.BarFacts['quota'] {
+  let apiQuota: { account: ExpAccount; quota: NonNullable<bar.BarFacts['quota']> } | undefined;
+  function readApiQuota(ctx: FooterContext | null): typeof apiQuota {
     try {
-      if (model?.provider !== 'oapi' || !experimentsEnabled(env)) return;
-      const balance = readOpenAiBalance(getHudHome(env), Date.now(), true);
-      return (
-        balance && {
-          label: 'API',
-          text: balance.remainingMicros === null ? 'uncalibrated' : expApproxUsd(Math.max(0, balance.remainingMicros)),
-        }
-      );
+      const account = piExpAccount(ctx);
+      if (!account || !experimentsEnabled(env)) return;
+      const balance = readExpGrantBalance(getHudHome(env), account, Date.now(), true);
+      if (balance)
+        return {
+          account,
+          quota: {
+            label: 'API',
+            text: balance.remainingMicros === null ? 'uncalibrated' : expApproxUsd(Math.max(0, balance.remainingMicros)),
+          },
+        };
     } catch {
       return;
     }
@@ -586,7 +590,7 @@ export function createP10kFooter(
     if (!stats || stats.sessionId !== sessionId || stats.leafId !== leafId) stats = computeStats(ctx);
     capturedViz = readVizMode(ctx);
     capturedLoaded = loadedCounts(pi);
-    apiQuota = readApiQuota(ctx.model);
+    apiQuota = readApiQuota(ctx);
     const cwd = ctx.sessionManager.getCwd(),
       name = ctx.sessionManager.getSessionName?.(),
       usage = ctx.getContextUsage();
@@ -605,14 +609,18 @@ export function createP10kFooter(
   function line(width: number, ctx: FooterContext): string {
     if (!view || !stats || !mounted || width <= 0) return '';
     const subscriptionQuota = subscription.draw(ctx);
-    // Only oapi uses the ledger; subscription.draw only returns a reading for openai + OAuth.
-    const quota = ctx.model?.provider === 'oapi' ? apiQuota : subscriptionQuota ? { text: subscriptionQuota } : undefined;
+    const quota =
+      apiQuota && apiQuota.account === piExpAccount(ctx)
+        ? apiQuota.quota
+        : subscriptionQuota
+          ? { text: subscriptionQuota }
+          : undefined;
     const facts = buildFacts(view, pi, quota);
     const now = Date.now();
     const style = noColor() ? 'line' : activeBarStyle();
     let { line: text, kept } = bar.renderBar(facts, width, now, style);
-    // In a narrow pi pane, prefer the subscription reading to the path and context.
-    if (subscriptionQuota && displayConfig().barFields.includes('quota') && !kept.includes('quota')) {
+    // In a narrow pi pane, prefer the current route's reading to the path and context.
+    if (quota && displayConfig().barFields.includes('quota') && !kept.includes('quota')) {
       for (const context of [facts.context, undefined]) {
         const fitted = bar.renderBar({ ...facts, project: undefined, context }, width, now, style);
         if (fitted.kept.includes('quota')) {
@@ -766,7 +774,7 @@ export function createP10kFooter(
     /** Work signals also refresh idle ledger balances (other workers or cycle rollover); no new timer. */
     setWork(signals: WorkSignals) {
       work = signals;
-      apiQuota = readApiQuota(current?.model);
+      apiQuota = readApiQuota(current);
       repaint?.();
     },
     working() {

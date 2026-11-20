@@ -9,9 +9,11 @@ import {
   expInteger,
   expMicros,
   expTimeZone,
+  type ExpAccount,
   type ExpConfig,
   type ExpData,
   type ExpEdit,
+  type ExpGrant,
   type ExpGrantTerms,
   type ExpProfile,
 } from '../exp-config.js';
@@ -150,11 +152,13 @@ export function parseProxySnapshot(raw: string, proxy: ExpConfig['proxy']): ExpP
   }
 }
 
-export function readOpenAiBalance(hudHome: string, now: number, enabledOnly = false) {
+const legacySavedAt = (grant: ExpGrant, savedAt?: number) => (grant.enabled && !grant.schedule ? savedAt : undefined);
+
+export function readExpGrantBalance(hudHome: string, account: ExpAccount, now: number, enabledOnly = false) {
   const { config, savedAt } = expConfigFile(hudHome);
-  const grant = config.grants['openai-api'];
+  const grant = config.grants[account];
   if (enabledOnly && !grant.enabled) return;
-  return readExpBalance(hudHome, 'openai-api', grant, now, grant.enabled && !grant.schedule ? savedAt : undefined);
+  return readExpBalance(hudHome, account, grant, now, legacySavedAt(grant, savedAt));
 }
 
 export function readExpData(hudHome: string, env = process.env, now = Date.now()): ExpData {
@@ -170,15 +174,12 @@ export function readExpData(hudHome: string, env = process.env, now = Date.now()
       }
     }
 
-    const grant = config.grants['openai-api'];
-    const openAiBalance = readExpBalance(
-      hudHome,
-      'openai-api',
-      grant,
-      now,
-      grant.enabled && !grant.schedule ? savedAt : undefined
-    );
-    return { config, profiles, proxySnapshot, openAiBalance };
+    const balances: NonNullable<ExpData['balances']> = {};
+    for (const account of EXP_ACCOUNTS) {
+      const grant = config.grants[account];
+      balances[account] = readExpBalance(hudHome, account, grant, now, legacySavedAt(grant, savedAt));
+    }
+    return { config, profiles, proxySnapshot, balances };
   } catch {
     return { config: defaultExpConfig(), profiles, unreadable: true };
   }
@@ -187,9 +188,11 @@ export function readExpData(hudHome: string, env = process.env, now = Date.now()
 /** Saves only the edited field against the latest config. A calibration never rewrites configuration. */
 export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env = process.env): void {
   const { config, savedAt } = expConfigFile(hudHome);
-  const openai = config.grants['openai-api'];
-  if (openai.enabled && !openai.schedule && savedAt !== undefined)
-    openai.schedule = { startsAt: expCycle(openai, savedAt).end };
+  for (const account of EXP_ACCOUNTS) {
+    const grant = config.grants[account];
+    const legacy = legacySavedAt(grant, savedAt);
+    if (legacy !== undefined) grant.schedule = { startsAt: expCycle(grant, legacy).end };
+  }
   const known = (home: string) => knownExpProfiles(env).some((p) => p.home === home);
   const invalid = () => {
     throw new Error('Invalid EXP setting');
@@ -220,7 +223,7 @@ export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env =
       if (!EXP_ACCOUNTS.includes(edit.account)) invalid();
       const grant = config.grants[edit.account];
       const changeTerms = (changed: boolean) => {
-        if (changed && edit.account === 'openai-api' && grant.schedule) {
+        if (changed && grant.schedule) {
           grant.schedule = {
             startsAt: grantCycle(grant, nowMs).end,
             previous: grantTerms(grant, nowMs, undefined),
@@ -229,8 +232,7 @@ export function saveExpEdit(hudHome: string, edit: ExpEdit, nowMs: number, env =
       };
       switch (edit.field) {
         case 'grant-enabled':
-          if (edit.value && edit.account === 'openai-api' && !grant.schedule)
-            grant.schedule = { startsAt: expCycle(grant, nowMs).end };
+          if (edit.value && !grant.schedule) grant.schedule = { startsAt: expCycle(grant, nowMs).end };
           grant.enabled = edit.value;
           break;
         case 'grant':

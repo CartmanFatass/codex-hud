@@ -6,12 +6,15 @@ import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createFooterHost } from '../fakes/pi.mjs';
-import { expProxyPath, readExpConfig, readOpenAiBalance, saveExpEdit } from '../../dist/collectors/exp-store.js';
+import { expProxyPath, readExpConfig, readExpGrantBalance, saveExpEdit } from '../../dist/collectors/exp-store.js';
 const root = process.env.R6A_PI_EMITTED_ROOT ?? path.resolve('dist');
 const { displayTarget } = await import(pathToFileURL(path.join(root, 'integrations/panel/receipt.js')));
 const { visualWidth, truncateAnsi, stripAnsi } = await import(pathToFileURL(path.join(root, 'render/colors.js')));
 const footerHost = createFooterHost({ visibleWidth: visualWidth, truncateToWidth: truncateAnsi });
 const node = fs.realpathSync(process.execPath);
+const readOpenAiBalance = (home, at) => readExpGrantBalance(home, 'openai-api', at);
+const anthropicModel = { provider: 'anthropic', api: 'anthropic-messages', baseUrl: 'https://api.anthropic.com' };
+const anthropicKeyStatus = { configured: true, source: 'environment', label: 'ANTHROPIC_API_KEY' };
 function setup(t) {
   const dir = fs.mkdtempSync(path.join(tmpdir(), 'hud-pi-package-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -439,7 +442,107 @@ test('delegation collects live oapi requests, using request-time prices and pers
   await h.emit('session_shutdown', c.ctx);
 });
 
-test('40-column pi footer switches between a live subscription proxy and oapi balance, and clears on master off', async (t) => {
+test('delegation isolates the Anthropic API-key ledger from OAuth, gateways, unknown routes, and oapi', async (t) => {
+  const f = setup(t), h = host(), c = context(f, h, 'synthetic-worker', 'rpc');
+  const home = f.binding.hudHome;
+  const now = Date.parse('2026-11-20T10:30:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now });
+  fs.writeFileSync(path.join(home, 'hud-settings.json'), JSON.stringify({ experiments: true }));
+  const edit = (account, field, value) => saveExpEdit(home, { account, field, value }, Date.now(), f.env);
+  const ledger = (account) => path.join(home, 'exp', `ledger-${account}.jsonl`);
+  const balance = (account) => readExpGrantBalance(home, account, Date.now());
+  const anthropic = 'anthropic-api', oapi = 'openai-api';
+  edit(oapi, 'grant-enabled', true);
+  let oauth = false, status = anthropicKeyStatus, registered = [];
+  const registry = {
+    isUsingOAuth: () => oauth,
+    getProviderAuthStatus: () => status,
+    getRegisteredProviderIds: () => registered,
+  };
+  const model = { ...anthropicModel, id: 'synthetic-claude', cost: { input: 10, output: 20, cacheRead: 1, cacheWrite: 12.5 } };
+  const reply = {
+    role: 'assistant', provider: model.provider, api: model.api, model: model.id, stopReason: 'stop', responseId: 'shared-id',
+    usage: { input: 10000, output: 5000, cacheRead: 25000, cacheWrite: 10000, cacheWrite1h: 2000, cost: { total: 0 } },
+  };
+  const start = (selected = model, auth = registry) => {
+    c.ctx.model = selected;
+    c.ctx.modelRegistry = auth;
+    return h.emit('context', c.ctx);
+  };
+  const finish = async (message = reply) => {
+    t.mock.timers.tick(1000);
+    await h.emit('message_end', c.ctx, { message });
+    await h.emit('turn_end', c.ctx, { message, messageEntryId: 'synthetic-entry' });
+  };
+  await load(f, h, { options: { env: f.env } });
+  await h.emit('session_start', c.ctx);
+  t.after(() => h.emit('session_shutdown', c.ctx));
+  await start();
+  edit(anthropic, 'grant-enabled', true);
+  await finish(); // Started before the account was enabled.
+  oauth = true;
+  await start();
+  oauth = false;
+  await finish(); // OAuth at request start, even if the registry later changes.
+  for (const label of ['ANTHROPIC_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'workload identity federation']) {
+    status = { ...anthropicKeyStatus, label };
+    await start();
+    await finish();
+  }
+  status = { configured: false };
+  await start();
+  await finish();
+  status = anthropicKeyStatus;
+  await start(model, null);
+  await finish();
+  registered = ['anthropic'];
+  await start();
+  await finish();
+  registered = [];
+  for (const selected of [
+    { ...model, provider: 'synthetic-gateway' },
+    { ...model, baseUrl: 'https://api.anthropic.com.synthetic.invalid' },
+    { ...model, baseUrl: undefined },
+    { ...model, api: 'openai-completions' },
+  ]) {
+    await start(selected);
+    await finish();
+  }
+  for (const fields of [{ provider: 'synthetic-gateway' }, { model: 'synthetic-other' }, { stopReason: 'error' }]) {
+    await start();
+    await finish({ ...reply, ...fields });
+  }
+  assert.equal(fs.existsSync(ledger(anthropic)), false, 'unattributable requests write nothing');
+  assert.equal(fs.existsSync(ledger(oapi)), false, 'neither does the other ledger');
+
+  edit(anthropic, 'calibration', 8_000_000);
+  edit(oapi, 'calibration', 15_000_000);
+  await start();
+  await finish(); // 100000 input + 100000 output + 25000 reads + 100000 short writes + 40000 long writes.
+  assert.equal(balance(anthropic).remainingMicros, 7_635_000);
+  assert.equal(balance(oapi).remainingMicros, 15_000_000);
+  await start({ provider: 'oapi', id: 'synthetic-oapi' });
+  const reported = (total) => ({ ...reply.usage, cost: { total, totalFromProvider: true } });
+  await finish({ ...reply, provider: 'oapi', model: 'synthetic-oapi', usage: reported(2) });
+  assert.equal(balance(oapi).remainingMicros, 13_000_000, 'same response ID in the other account is independent');
+  await start();
+  await finish(); // Duplicate response ID in the same account.
+  const noResponseId = { ...reply, responseId: undefined, usage: reported(0.5) };
+  for (let i = 0; i < 2; i++) {
+    await start();
+    await finish(noResponseId); // Duplicate persisted-entry ID in the same session.
+  }
+  assert.equal(balance(anthropic).remainingMicros, 7_135_000);
+  assert.equal(balance(anthropic).billedMicros, 865_000);
+  assert.equal(balance(oapi).remainingMicros, 13_000_000);
+  const lines = fs.readFileSync(ledger(anthropic), 'utf8').trimEnd().split('\n').map(JSON.parse);
+  assert.deepEqual(lines.slice(1).map(({ source, costMicros }) => [source, costMicros]), [
+    ['priced', 365_000], ['priced', 365_000], ['reported', 500_000], ['reported', 500_000],
+  ]);
+  assert.equal(h.calls.footer, 0);
+});
+
+test('40-column pi footer switches among subscription proxy, oapi, and Anthropic API grants, and clears on master off', async (t) => {
   const f = setup(t),
     h = host(),
     c = context(f, h),
@@ -453,7 +556,7 @@ test('40-column pi footer switches between a live subscription proxy and oapi ba
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-20T10:30:00Z') });
   c.ctx.model = { id: 'gpt-5.2', provider: 'oapi' };
   let oauth = true;
-  c.ctx.modelRegistry = { isUsingOAuth: () => oauth };
+  c.ctx.modelRegistry = { isUsingOAuth: () => oauth, getProviderAuthStatus: () => anthropicKeyStatus };
   const profile = path.join(fs.realpathSync(f.home), '.codex');
   fs.mkdirSync(profile);
   fs.writeFileSync(path.join(profile, 'config.toml'), '# synthetic profile\n');
@@ -463,6 +566,8 @@ test('40-column pi footer switches between a live subscription proxy and oapi ba
   change('calibration', 13_400_000);
   change('binding', profile);
   change('proxy-enabled', true);
+  saveExpEdit(home, { field: 'grant-enabled', account: 'anthropic-api', value: true }, Date.now(), f.env);
+  saveExpEdit(home, { field: 'calibration', account: 'anthropic-api', value: 8_000_000 }, Date.now(), f.env);
   fs.writeFileSync(
     expProxyPath(home),
     JSON.stringify({
@@ -486,8 +591,9 @@ test('40-column pi footer switches between a live subscription proxy and oapi ba
     await h.emit('message_end', c.ctx, {
       message: {
         role: 'assistant',
-        provider: 'oapi',
-        model: 'gpt-5.2',
+        provider: c.ctx.model.provider,
+        api: c.ctx.model.api,
+        model: c.ctx.model.id,
         responseId,
         stopReason: 'stop',
         usage: { input: 4, output: 1, cacheRead: 0, cacheWrite: 0, cost: { total, totalFromProvider: true } },
@@ -501,8 +607,10 @@ test('40-column pi footer switches between a live subscription proxy and oapi ba
     assert.ok(visualWidth(text) <= 40, text);
     return text;
   };
-  const select = async (provider) => {
-    c.ctx.model = { ...c.ctx.model, provider };
+  const select = async (provider, override = {}) => {
+    c.ctx.model = provider === 'anthropic'
+      ? { ...anthropicModel, id: 'claude-sonnet-4-6', ...override }
+      : { id: 'gpt-5.2', provider };
     await h.emit('model_select', c.ctx);
   };
   const api = /API ≈\$12\.75/;
@@ -516,6 +624,21 @@ test('40-column pi footer switches between a live subscription proxy and oapi ba
   const apiRow = row();
   assert.match(apiRow, api);
   assert.doesNotMatch(apiRow, /5h/, 'switching to oapi immediately drops the proxy');
+  oauth = false;
+  await select('anthropic');
+  assert.match(row(), /API ≈\$8\.00/);
+  await request('sample-anthropic-request', 0.35);
+  const anthropicRow = row();
+  assert.match(anthropicRow, /API ≈\$7\.65/);
+  assert.doesNotMatch(anthropicRow, /12\.75|5h/);
+  oauth = true;
+  assert.doesNotMatch(row(), /API|5h/, 'an auth change cannot display a cached Anthropic balance');
+  oauth = false;
+  await select('anthropic', { baseUrl: 'https://synthetic-gateway.invalid' });
+  assert.doesNotMatch(row(), /API|5h/);
+  await select('oapi');
+  assert.match(row(), api);
+  oauth = true;
   await select('openai');
   const switchedBack = row();
   assert.match(switchedBack, proxy);
@@ -526,6 +649,7 @@ test('40-column pi footer switches between a live subscription proxy and oapi ba
   if (process.env.EXP_EXAMPLES) {
     t.diagnostic(`openai OAuth: ${subscriptionRow}`);
     t.diagnostic(`oapi: ${apiRow}`);
+    t.diagnostic(`anthropic API: ${anthropicRow}`);
   }
   await select('oapi');
   await h.commands.get('hud').handler('footer off', c.ctx);
@@ -533,6 +657,8 @@ test('40-column pi footer switches between a live subscription proxy and oapi ba
   assert.equal(readOpenAiBalance(f.binding.hudHome, Date.now()).remainingMicros, -2_250_000);
   await h.commands.get('hud').handler('footer on', c.ctx);
   assert.match(row(), /API ≈\$0(?:\s|$)/);
+  await select('anthropic');
+  assert.match(row(), /API ≈\$7\.65/);
   settings(false);
   p.advance(5000); // The existing Work refresh clears an idle footer.
   assert.doesNotMatch(row(), /API/);

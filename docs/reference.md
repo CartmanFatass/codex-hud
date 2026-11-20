@@ -634,6 +634,12 @@ Other routes such as `oapi` do not show it. Old readings are marked stale, and a
 Open **Proxy readings** for both windows and their reset times, source, last success and error, and next eligible attempt.
 If the proxy pauses for sign-in, sign in to the bound profile and turn Auto-refresh off and back on. Experiments off stops refreshes.
 
+**API grants** shows the two ledgers together. The pi footer shows only the enabled ledger for the current API route
+(`API ≈$12.75`, for example), not subscription quota. `openai-api` counts `oapi` requests; `anthropic-api` counts only
+requests the installed pi HUD can identify as direct Anthropic API-key usage. Claude OAuth, third-party gateways,
+and unknown routes are not charged. The Claude Code status line is unchanged. Turning Experiments off preserves
+both ledgers and stops collection.
+
 Inspector, Changes, Settings and Help share
 one title band, exact-width rows and whole footer hints (rightmost hints drop when
 narrow). Home, the hub and the Control plane footers show the keys of the selected row: a HUD
