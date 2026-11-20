@@ -62,6 +62,7 @@ for (const page of ['home', 'older', 'job', 'asking', 'decision', 'settings', 'h
       assert.match(help, /Backup skills ─+ 17/);
       assert.match(help, /m\s+role\/place: picker in this\s+pane;/);
       assert.match(help, /one click or Enter sets/);
+      assert.match(help, /Esc\s+back; clear a filter first;\s+does nothing at a tab root/);
       assert.match(help, /Esc\s+picker: clear filter, then\s+close/);
       assert.match(help, /\^R\s+picker: refresh model lists/);
       assert.match(help, /Space\s+mark a to-try row/);
@@ -93,6 +94,14 @@ test('all kept frames stay cell-exact in EN/ZH at 32–120 columns', (t) => {
           assert.equal(visualLength(line), width, `${page} ${lang} ${width}: ${stripAnsi(line)}`);
       }
 });
+test('short Chinese minutes give the Home card title two more cells at 40 columns', (t) => {
+  const f = fixture(t);
+  const titleRow = (width) => plainFrame(f.render('home', width, 'zh', 40)).find((line) => line.includes('Dedupe'));
+  // At 38 columns the title has the same room it used to have with the two-cell-longer unit.
+  assert.match(titleRow(38), /Dedupe the sync qu…\s+提问中 4分$/);
+  assert.match(titleRow(40), /Dedupe the sync queue\s+提问中 4分$/);
+});
+
 test('the Inspector and expanded running cards show exactly one localized milestone in Classic and Split', (t) => {
   const f = fixture(t);
   const { id: workerId, laneId } = f.apiWorker;
@@ -134,7 +143,7 @@ test('Inspector shows elapsed run time for running and settled jobs, not for unk
   const settled = f.board.workers.find((w) => w.task === 'Add the retry helper');
   assert.match(draw(settled), /started\s+10:15[^\n]*\nended\s+11:23[^\n]*\nran\s+1h08m/);
   assert.match(draw(f.apiWorker), /started\s+11:48[^\n]*\nactivity[^\n]*\nran\s+1h05m/);
-  assert.match(plainFrame(f.render('job', 40, 'zh')).join('\n'), /^用时\s+47分钟$/m);
+  assert.match(plainFrame(f.render('job', 40, 'zh')).join('\n'), /^用时\s+47分$/m);
   assert.doesNotMatch(draw({ ...f.apiWorker, startedAt: null }), /^ran\s/m);
   assert.doesNotMatch(draw({ ...settled, settledAt: null }), /^ran\s/m);
 });

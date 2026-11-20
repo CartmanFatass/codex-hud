@@ -135,7 +135,7 @@ test('a job of another pane is titled from its brief on Progress, in EN and ZH, 
   for (const lang of ['en', 'zh']) for (const width of [40, 120]) {
     const frame = f.render(width, lang, 'progress', 56, data);
     for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
-    assert.match(text(frame), /◉ imp +Build the Project tab +20(m|分钟)$/m);
+    assert.match(text(frame), /◉ imp +Build the Project tab +20(m|分)$/m);
   }
   let frame = f.render(40, 'en', 'progress', 56, data);
   const rows = frame.workboard.rows.filter((r) => r.item === `project:job:${id}`);

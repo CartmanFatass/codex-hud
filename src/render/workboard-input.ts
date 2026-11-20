@@ -209,7 +209,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (main && mainTabOf(next) === 'exp') {
-    if (key === 'escape' && !next.expPage?.detail) { goTab(); return result(); }
     if (['help', 'settings', 'brief-toggle'].includes(key)) return null;
     if (tab === 'brief') return result({ type: 'brief-toggle' });
     return expInput(next, input, ctx) ?? result();
@@ -254,7 +253,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       return result();
     };
     if (control && !harnesses) {
-      next.controlPresetNotice = undefined;
+      if (key !== 'escape') next.controlPresetNotice = undefined;
       const rowFact = (item?: string) => rows.find((r) => r.item === controlRoleItem(controlRoleOf(item) ?? ''))?.roleFact;
       if (input.type === 'mouse' && input.button === 'left') {
         const pane = frame?.panes.find((p) => p.id === 'preview'), list = frame?.panes.find((p) => p.id === 'agents');
@@ -378,7 +377,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     if (control) {
       if (key === 'reset') return result({ type: 'refresh-models' });
-      if (key === 'escape') { goTab(); return result(); }
       return ['help', 'settings'].includes(key) ? null : result();
     }
     if (key === 'escape' && (projectPageOf(next) || listed || (next.projectBack && frame?.projects))) {

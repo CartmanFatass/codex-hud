@@ -56,7 +56,7 @@ test('Projects list: the panel project first, then waiting, running, then the mo
   assert.match(entry('bare-project')[1], /^  no STATE\.md · 1 open +2d$/);
   // The last-activity column goes through t(): minutes, hours and days in Chinese too.
   assert.match(text(l.list(40, 'zh')), /^  无 STATE\.md · 1 未完成 +2天$/m);
-  assert.match(text(l.list(40, 'zh')), /^  ◐ NATIVE-TREE, ORPHAN 工作中 +0分钟$/m);
+  assert.match(text(l.list(40, 'zh')), /^  ◐ NATIVE-TREE, ORPHAN 工作中 +0分$/m);
   assert.match(text(l.list(40, 'zh')), /^  ◇ B-TWO 待试用 +5小时$/m);
   // The overview carries it: the working slices, else the newest landed one (ledger order, no dates and no Git behind the list).
   const latest = (name) => l.projects.find((p) => p.name === name).overview.latest;
@@ -67,7 +67,7 @@ test('Projects list: the panel project first, then waiting, running, then the mo
   // A wide row keeps the bar before it.
   assert.match(text(l.list(80)), /^  [█▒░]{24}  ◐ NATIVE-TREE, ORPHAN working +0m$/m);
   const zh = text(l.list(40, 'zh'));
-  for (const age of ['0分钟', '5小时', '20分钟', '3天', '40天']) assert.match(zh, new RegExp(`${age}$`, 'm'));
+  for (const age of ['0分', '5小时', '20分', '3天', '40天']) assert.match(zh, new RegExp(`${age}$`, 'm'));
   assert.doesNotMatch(zh, /\b\d+[mhd]$/m, 'no English unit left in the Chinese list');
   assert.match(plain(l.list(40, 'zh'))[0], /^‹ 项目列表/);
   assert.match(plain(frame)[0], /^‹ Projects/);

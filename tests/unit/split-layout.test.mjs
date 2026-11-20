@@ -57,6 +57,8 @@ test('Home: the list has a row per lane and block, a question and a failure keep
   // Needs first (asking, the failure), then what runs, then Waiting, Decided and Progress; the preview is the cursor lane's slab and cards.
   // AUTH-REFRESH's phase does not fit its row beside the role and the age, so it takes a row of its own, not a cut.
   assert.deepEqual(lines.slice(2, 13).map((l) => l.slice(0, 14)), ['? NATIVE-TREE ', '┃ Question: Wh', '✗ EXPORT-CSV  ', '┃ HTTP 429, no', '◉ M4-PROJECT  ', '◉ AUTH-REFRESH', '  reviewing · ', '◉ this session', '? Waiting for ', '◇ Decided for ', '◐ Progress    ']);
+  assert.match(lines[9], /^◉ this session +subagents +1 running$/);
+  assert.match(plain(busy.render(40, 'zh')).join('\n'), /^◉ 本次会话 +子代理 +1 运行中$/m);
   assert.match(rule(d), /^NATIVE-TREE ─+ imp · 2 jobs$/);
   assert.equal(d.state.splitCursor, d.frame.workboard.rows[0].item);
   // Idle: nothing runs, the first row that needs the owner is Waiting for you, whose preview lists the items and the latest slices.

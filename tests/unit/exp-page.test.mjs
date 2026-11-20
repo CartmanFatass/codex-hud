@@ -126,7 +126,7 @@ test('Experiments is a saved Panel switch, and arrows, Tab and clicks reach EXP 
   assert.equal(go(key('left')), 'control');
   const { x, y } = frame.controls.find((c) => c.kind === 'board-exp');
   assert.equal(go({ type: 'mouse', button: 'left', x, y }), 'exp');
-  assert.equal(go(key('escape')), 'home');
+  assert.equal(go(key('escape')), 'exp');
   assert.equal(fs.existsSync(f.dir), false, 'showing EXP does not write');
   saveSettings({ experiments: false });
   frame = draw({ ...frame.state, ...monitorSettings(loadSettings()) }, expData);
@@ -297,6 +297,7 @@ test('40-column EXP form indents its rows and gives up blanks before sections in
       assert.match(lines[4], en ? /^  Track native status line +off$/ : /^  记录原生状态栏 +关$/);
       assert.match(lines[5], en ? /^  \.codex +bar not seen yet$/ : /^  \.codex +尚未见到原生栏$/);
       assert.match(lines[8], en ? /^pi subscription proxy ─+$/ : /^pi 订阅代理 ─+$/);
+      assert.match(lines[11], en ? /^  Interval +15 min$/ : /^  刷新间隔 +15 分$/);
       assert.match(lines[14], en ? /^API grants ─+$/ : /^API 赠额 ─+$/);
       assert.match(lines[16], en ? /^  openai-api +off · uncalibrated$/ : /^  openai-api +关 · 未校准$/);
       assert.match(lines.at(-1), en ? /⏎ edit  \? help$/ : /⏎ 编辑  \? 帮助$/);

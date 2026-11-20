@@ -115,7 +115,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   const narrow = plain(s.frame(40, 'zh', 64)).join('\n');
   assert.match(narrow, /^需要处理 ─+ 3$/m);
   assert.match(narrow, /^ {2}✗ pro → gemini$/m);
-  assert.match(narrow, /^ {6}chatgpt 已耗尽 60分钟$/m);
+  assert.match(narrow, /^ {6}chatgpt 已耗尽 60分$/m);
   assert.match(narrow, /^▸ 正常 ─+ 5$/m);
   s.session.state = select(s.session.state, 'project:fold:healthy');
   await s.press('\r');

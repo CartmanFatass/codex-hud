@@ -54,7 +54,7 @@ test('Activity row: an expanded running card and the Inspector show it under the
   const s = await scene(t, { activity: [0, 0, 1, 2, 4, 6, 8, 3, 1, 2] });
   const expanded = { ...initialMonitorState(), boardExpanded: new Set([s.key(s.main)]) };
   const inspector = { ...initialMonitorState(), focus: 'details', boardInspect: { kind: 'worker', laneId: s.lane.id, workerId: s.main.id } };
-  for (const width of [40, 80]) for (const [lang, word, span] of [['en', 'Activity', '10m'], ['zh', '活动', '10分钟']]) for (const state of [expanded, inspector]) {
+  for (const width of [40, 80]) for (const [lang, word, span] of [['en', 'Activity', '10m'], ['zh', '活动', '10分']]) for (const state of [expanded, inspector]) {
     const lines = s.render(width, lang, state), row = text(lines).filter((l) => l.includes('▁▂▄▆█▃▁▂'));
     assert.equal(row.length, 1, `${lang} ${width}\n${lines.join('\n')}`);
     assert.match(row[0], new RegExp(`^┃ ${word} +▁▂▄▆█▃▁▂ ${span}`));
@@ -70,8 +70,8 @@ test('Sonic children hang under their parent as one-line branches, in Classic an
   for (const width of [40, 80]) for (const lang of ['en', 'zh']) for (const [name, state] of [['classic', initialMonitorState()], ['split', split({ splitCursor: lane })]]) {
     const lines = s.render(width, lang, state), shown = text(lines), at = shown.findIndex((l) => l.includes('├─ ⚡ sonic · check retry fl'));
     assert.ok(at > 0, `${name} ${lang} ${width}\n${lines.join('\n')}`);
-    assert.match(shown[at], /^ {2}├─ ⚡ sonic · check retry fl\S* +3(m|分钟) ◉$/);
-    assert.match(shown[at + 1], /^ {2}└─ ⚡ sonic · list slow te\S* +\d+(m|分钟) ✓$/);
+    assert.match(shown[at], /^ {2}├─ ⚡ sonic · check retry fl\S* +3(m|分) ◉$/);
+    assert.match(shown[at + 1], /^ {2}└─ ⚡ sonic · list slow te\S* +\d+(m|分) ✓$/);
     assert.ok(!shown.some((l) => /^[◉✓] sonic/.test(l)), 'children are not cards');
     for (const line of lines) assert.equal(visualLength(line), width, `${name} ${lang} ${width}: ${line}`);
   }

@@ -91,7 +91,7 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
     if (width >= 56) assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +3\/14 done · 2 working · 2 blocked/ : /工单 +3\/14 完成 · 2 工作中 · 2 受阻/);
     if (width >= 80) {
       assert.match(text, lang === 'en' ? /2 features · 14 tickets/ : /2 个功能 · 14 个工单/);
-      assert.match(text, lang === 'en' ? /imp 12m/ : /imp 12分钟/);
+      assert.match(text, lang === 'en' ? /imp 12m/ : /imp 12分/);
       assert.match(text, /◆ nt 04 Settings cleanup +← 02, 03/);
       assert.match(text, /triaging/);
       assert.match(text, lang === 'en' ? /^▸ Done ─+ 4$/m : /^▸ 已完成 ─+ 4$/m);

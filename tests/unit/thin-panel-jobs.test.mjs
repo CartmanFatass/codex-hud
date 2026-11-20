@@ -157,7 +157,7 @@ test('Home: expanded Tier-1 text, exact EN/ZH cells, attention lanes, decision o
     assert.ok(!text.includes('WRONG-PANE'));
     for (const title of ['thin job cards', 'review card renderer', 'list the slowest', 'check the cut', 'width flag']) {
       const band = plain(frame).find((l) => l.includes(title));
-      assert.match(band, lang === 'en' ? /\d+m\s*$/ : /\d+分钟\s*$/);
+      assert.match(band, lang === 'en' ? /\d+m\s*$/ : /\d+分\s*$/);
     }
     if (process.env.PANEL_DUMPS)
       writeFileSync(join(process.env.PANEL_DUMPS, `home-${lang}.txt`), plain(f.render(board, 64)).join('\n') + '\n');
@@ -231,7 +231,7 @@ test('Home shows questions, lanes with cards, then decisions; Enter reveals the 
     const decided = home.findIndex((l) => l.startsWith('Decided for you'));
     assert.ok(at < lane && lane < decided);
     assert.match(home[lane + 1], /thin job cards/);
-    assert.match(home[0], /^ Home \?1\s+Project\s+Control\s+models on$/);
+    assert.match(home[0], /^ Home \?1\s+Project\s+Control\s*$/);
     assert.match(home[decided + 1], /^◆ PANEL-THIN · imp q2 .*…/);
     assert.match(home[decided + 1], /\d+m\s*$/);
     assert.equal(home[decided + 2].trim(), '');
@@ -389,22 +389,19 @@ test('model button uses the master preference; b matches it and S is inert', asy
   const f = fixture(t);
   await f.pipeline.refresh();
   const board = f.pipeline.workboard(f.tree);
-  let modelEnabled = true;
   const state = initialMonitorState();
-  for (const enabled of [true, false]) {
+  for (const modelEnabled of [true, false]) {
     const frame = renderMonitor({ tree: f.tree, workboard: board, state, modelEnabled, width: 56, height: 40 });
-    assert.equal(modelEnabled, enabled);
-    assert.match(stripAnsi(frame.lines[0]), enabled ? /models on/ : /models off/);
+    assert.equal(stripAnsi(frame.lines[0]).includes('models off'), !modelEnabled);
     const control = frame.controls.find((c) => c.kind === 'brief');
+    assert.equal(!!control, !modelEnabled);
     const ctx = { tree: f.tree, frame };
-    const clicked = handleMonitorInput(
-      frame.state,
-      { type: 'mouse', button: 'left', x: control.x + 1, y: control.y },
-      ctx
-    );
-    assert.equal(clicked.action.type, 'brief-toggle');
-    assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'brief-toggle' }, ctx).action, clicked.action);
-    modelEnabled = !modelEnabled;
+    const toggled = handleMonitorInput(frame.state, { type: 'key', key: 'brief-toggle' }, ctx);
+    assert.equal(toggled.action?.type, 'brief-toggle');
+    if (control) {
+      const clicked = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: control.x + 1, y: control.y }, ctx);
+      assert.deepEqual(clicked.action, toggled.action);
+    }
     const [input] = new WorkbenchInputDecoder('workboard').push(Buffer.from('S'));
     assert.deepEqual(handleMonitorInput(frame.state, input, ctx).state, frame.state);
   }

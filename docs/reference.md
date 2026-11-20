@@ -334,8 +334,8 @@ Only an explicit `One-way: true` pins a departure. Ordinary decisions hide after
 30 minutes, departures after two hours. A review verdict requires its recorded
 accept/changes-required line and settled output, not merely helper exit.
 
-**Native agents on Home.** Claude/Codex main sessions get their own lanes. Children
-indent once; deeper descendants say `↳ parent`. A hidden parent never hides a live
+**Native agents on Home.** Claude/Codex main sessions get their own lanes, labeled
+`subagents` in Split. Children indent once; deeper descendants say `↳ parent`. A hidden parent never hides a live
 child. pi helpers already appear as HUD jobs. Claude reads metadata and bounded
 forward transcript batches, retaining public Agent/Task nesting. Replay preserves
 known completion ages and blocks model requests until caught up. Growth after
@@ -585,15 +585,14 @@ since it was last touched (STATE.md or a ticket file, whichever is newer; a ledg
 would need Git). At 80+ columns the project's stacked bar leads the row. A project without
 STATE.md shows `no STATE.md` and its open tickets. Order:
 the panel's own project, then projects with waiting items, then with running jobs, then
-the rest, each group newest first. Enter or one click opens that project's hub (Esc or clicking the top crumb on
-that hub goes back to the list; on a hub not reached from the list Esc goes to
-the panel's main tab or exits the standalone panel). The cursor marks both rows of an
+the rest, each group newest first. Enter or one click opens that project's hub. From a hub opened this way, Esc
+returns to the list. On the Project tab's root hub, Esc does nothing. The cursor marks both rows of an
 entry. The list is read only while it is visible: for each listed project STATE and
 tickets as Home reads them (cached by file signature) and, in one pass over the newest
 64 job directories, the unsettled jobs per root, at most once every five seconds while
 the list stays open (opening it again reads at once). No Git, no roles, no full collection;
 the shown project's own full collection pauses while the list is open. The last-touched
-time reads `12m`, `3h`, `4d` (`12分钟`, `3小时`, `4天` in Chinese).
+time reads `12m`, `3h`, `4d` (`12分`, `3小时`, `4天` in Chinese).
 A project without STATE.md says `no STATE.md` on Progress; its other pages work.
 
 On a page Enter folds a header, shows a ticket's detail or opens a row's file, and `o`
@@ -723,11 +722,11 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `>` / `<` | Home: next / previous card that needs you (asking, failed or stalled) |
 | Space | Toggle a mark on the to-try row under the cursor; on Home, open Inspector |
 | `y` / `n` | Accept / flag marked to-try rows, or the current row if none are marked (`n` means nothing else on any page) |
-| `b` | Model text master on/off (also the top-row models word) |
+| `b` | Toggle model text (also in Settings → Models). The top row shows `models off` when model text is off and the label fits; click it to turn model text back on |
 | `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
 | `/` | Filter rows live on Home (either layout), Project Progress and Project Tickets: a one-row bar `/ query▌  N matches` under the header. A case-insensitive substring over, on Home, a card's package, title, role, harness, model-sentence keywords and status word (`asking`, `failed`, `working`, `stalled`, `done`; a decision's package and title); on Progress a slice's id, milestone, text, role and state (`working`, `blocked`, `to try`, `accepted`, `todo`); on Tickets a ticket's feature, number, title, status and blocker. Only matching rows are drawn, so ↑↓, Enter and Split's preview move over them; a matching card older than Home's fold or hide time stays (shown as its one row, muted), and the waiting, progress and older-count blocks, STATE's Next and its summary are left out while it is on. While typing every printable key goes to the query (`g`, `X`, `w`, `r`, digits, `=`, `-`, `q` do nothing else; Left, Right and Tab wait); Backspace edits; Enter stops typing and keeps the filter; Esc stops typing, then clears it (Split's preview gives Esc back to the list first). Another tab, page, project, Help or the Inspector clears it. Kept across the panel's reload |
 | `,`, `?` | Settings, Help. From Settings, Help returns to the same draft and selection |
-| Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue; standalone main-page Esc exits |
+| Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project, Control or EXP, Esc does nothing |
 | `q` | Close panel |
 
 Mouse clicks select a row/button, a second click on the selected item runs Enter's

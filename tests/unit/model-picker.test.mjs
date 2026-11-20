@@ -70,7 +70,7 @@ test('40-column entry, pinned and typed frames follow the sample in EN/ZH and bo
     const pinned = draw(lang, open.state);
     compare(pinned, '2a', /^(?:\/|▸|⊘)/);
     assert.match(plain(pinned).join('\n'), en ? /› ◉ xai\/grok-4.7\n +openai\/gpt-6.1-sol +✗ 42m\n +grok-4.7 +\? unknown \[lab\]/
-      : /› ◉ xai\/grok-4.7\n +openai\/gpt-6.1-sol +✗ 42分钟\n +grok-4.7 +\? 未知 \[lab\]/);
+      : /› ◉ xai\/grok-4.7\n +openai\/gpt-6.1-sol +✗ 42分\n +grok-4.7 +\? 未知 \[lab\]/);
     const backup = draw(lang, send(pinned, 'down').state);
     assert.doesNotMatch(plain(backup).join('\n'), /\[default\]/, 'the selected strip also omits the default preset tag');
     assert.doesNotMatch(plain(pinned).join('\n'), /Recent|最近|claude-opus|mistral-small/);

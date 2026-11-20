@@ -12,6 +12,7 @@ import { setLanguage } from '../../dist/render/i18n.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { skillsRows } from '../../dist/render/skills-view.js';
 import { defaultSettings } from '../../dist/settings.js';
+import { defaultExpConfig } from '../../dist/exp-config.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { visualLength, stripAnsi, truncateAnsi } from '../../dist/render/colors.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
@@ -133,6 +134,55 @@ test('Help opens at the source tab, scrolls back to Everywhere, and leaves the s
       }
     }
   } finally { setDisplayConfig(display); }
+});
+
+test('top row names each tab once and shows a model-text switch only when off and it fits', () => {
+  for (const [lang, tabs, off] of [['en', 'Home Project Control', 'models off'], ['zh', '首页 项目 控制', '模型 关']]) {
+    const previous = setLanguage(lang);
+    try {
+      for (const panelLayout of ['classic', 'split']) for (const experiments of [false, true]) for (const width of [40, 80, 120]) {
+        const state = { ...initialMonitorState(), panelLayout, experiments };
+        for (const modelEnabled of [true, false]) {
+          const frame = renderMonitor({ tree: TREE, state, modelEnabled, width, height: 16, nowMs: NOW });
+          assert.equal(visualLength(frame.lines[0]), width);
+          assert.equal(stripAnsi(frame.lines[0]).trim().replace(/ +/g, ' '),
+            tabs + (experiments ? ' EXP' : '') + (modelEnabled ? '' : ` ${off}`));
+          const ctx = { tree: TREE, frame, nowMs: NOW };
+          const press = (raw) => handleMonitorInput(frame.state, decode(raw)[0], ctx);
+          assert.equal(press('b').action?.type, 'brief-toggle');
+          assert.equal(press(',').action?.type, 'settings');
+          const hint = frame.controls.find((c) => c.kind === 'brief');
+          assert.equal(hint?.x, modelEnabled ? undefined : width - visualLength(off));
+          const click = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: width - 1, y: 0 }, ctx);
+          assert.equal(click.action?.type, modelEnabled ? undefined : 'brief-toggle');
+        }
+      }
+    } finally { setLanguage(previous); }
+  }
+  const narrow = renderMonitor({ tree: TREE, state: { ...initialMonitorState(), experiments: true },
+    modelEnabled: false, projectWaiting: 2, width: 40, height: 16, nowMs: NOW });
+  assert.equal(stripAnsi(narrow.lines[0]).trim(), 'Home  Project ?2  Control  EXP');
+  assert.equal(narrow.controls.some((c) => c.kind === 'brief'), false);
+});
+
+test('Esc at every tab root leaves the cursor and tab unchanged; q closes the panel', async (t) => {
+  const { busy } = await fixtures(t);
+  const expData = { config: defaultExpConfig(), profiles: [] };
+  for (const panelLayout of ['classic', 'split']) for (const mainTab of ['home', 'project', 'control', 'exp']) {
+    const render = (state) => busy.render(40, 'en', 40, state, busy.control, { expData });
+    const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW, standalone: true });
+    const root = render({ ...initialMonitorState(), panelLayout, mainTab, experiments: true });
+    const moved = render(press(root, '\x1b[B').state);
+    const cursor = ({ home: panelLayout === 'split' ? (s) => s.splitCursor : (s) => s.homeTarget,
+      project: (s) => s.projectCursor, control: (s) => s.controlNav.projectCursor, exp: (s) => s.expPage.cursor })[mainTab];
+    assert.ok(cursor(moved.state), `${panelLayout} ${mainTab} has a cursor`);
+    assert.notDeepEqual(cursor(moved.state), cursor(root.state), `${panelLayout} ${mainTab} moved off its first row`);
+    const escaped = press(moved, '\x1b');
+    assert.equal(escaped.close, false);
+    assert.equal(escaped.action, undefined);
+    assert.deepEqual(escaped.state, moved.state, `${panelLayout} ${mainTab} root is unchanged`);
+    assert.equal(press(moved, 'q').close, true);
+  }
 });
 
 test('n flags a to-try row and does nothing on Home; > and < are Home’s next and previous card that needs the owner', async (t) => {

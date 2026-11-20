@@ -40,7 +40,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['o', 'open the row’s file in $EDITOR'],
     ['/', 'filter rows live'],
     ['Backspace', 'edit filter text'],
-    ['Esc', 'back; clear a filter first'],
+    ['Esc', 'back; clear a filter first; does nothing at a tab root'],
     [',', 'Settings'],
     ['?', 'this page'],
     ['b', 'model text on / off'],
@@ -216,24 +216,18 @@ function renderFrame(input: MonitorData, state: MonitorState, source: WorkboardS
     const count = source.workers.filter((w) => w.homeNeedsHuman).length;
     // A count is a `?` and its number, the mark of what waits for the owner everywhere else: a bare number beside a tab reads as its key.
     const badge = (n: number) => (n ? ' ' + theme.board.attention(`?${n}`) : '');
-    const counts = { home: count, project: input.projectWaiting ?? input.project?.waiting.length ?? 0, control: 0 };
+    const counts = { home: count, project: input.projectWaiting ?? input.project?.waiting.length ?? 0, control: 0, exp: 0 };
     const tabs = mainTabs(state);
-    const labels = (badges: boolean, marker: boolean) => tabs.map((tab) =>
-      ` ${t(tab.label)}${'experimental' in tab ? marker ? ` ${theme.board.muted(t('exp'))}` : ''
-        : badges ? badge(counts[tab.id]) : ''} `);
-    let titles = labels(true, true);
-    let models = t(input.modelEnabled === false ? 'models off' : 'models on');
-    const fits = (words: string[], right: string) => visualLength(words.join('')) + (right ? visualLength(right) + 1 : 0) <= width;
-    if (!fits(titles, models)) {
-      // Keep whole tab labels and hit targets. At 40 columns the model hint is optional.
-      titles = labels(true, false);
-      if (!fits(titles, models)) models = '';
-      if (!fits(titles, models)) titles = labels(false, false);
-    }
+    const labels = (badges: boolean) => tabs.map((tab) => ` ${t(tab.label)}${badges ? badge(counts[tab.id]) : ''} `);
+    let titles = labels(true);
+    let models = input.modelEnabled === false ? t('models off') : '';
+    // Drop the model hint before tab badges; keep whole tab labels and hit targets.
+    if (visualLength(titles.join('')) + (models ? visualLength(models) + 1 : 0) > width) models = '';
+    if (visualLength(titles.join('')) > width) titles = labels(false);
     const modelsWidth = visualLength(models);
     const leftRoom = Math.max(0, width - (modelsWidth ? modelsWidth + 1 : 0));
     frame.lines[0] = pair(titles.map((label, i) => (state.mainTab === tabs[i].id ? theme.board.title : theme.board.muted)(label)).join(''),
-      (input.modelEnabled === false ? theme.board.attention : theme.board.muted)(models), width);
+      models && theme.board.attention(models), width);
     let x = 0;
     for (const [i, label] of titles.entries()) {
       const span = visualLength(label);

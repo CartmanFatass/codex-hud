@@ -249,7 +249,7 @@ test('Classic Home at 40 columns keeps the collapsed slab’s lane, question and
     const frame = f.render(initialMonitorState(), 40, lang), rows = plain(frame);
     const at = rows.findIndex((line) => line.startsWith('? imp · IMP'));
     assert.ok(at >= 0);
-    assert.match(rows[at], lang === 'en' ? /asking 4m$/ : /提问中 4分钟$/);
+    assert.match(rows[at], lang === 'en' ? /asking 4m$/ : /提问中 4分$/);
     assert.deepEqual(rows.slice(at + 1, at + 3), ['┃ Keep the v1 shim for one more', '┃ release?']);
     assert.match(rows[at + 3], lang === 'en' ? /^┃ 2 options · default:/ : /^┃ 2 个选项 · 默认:/);
     assert.equal(rows[at + 4], '');

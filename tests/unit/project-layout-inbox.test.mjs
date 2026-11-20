@@ -97,7 +97,7 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
       assert.match(text, /Inbox layout ranks what needs you\s+first\./);
       assert.match(text, lang === 'zh' ? /运行中/ : /Running/);
       assert.match(text, lang === 'zh' ? /✓ 最近验收 REVIEW-ONE 8天/ : /✓ last accepted REVIEW-ONE 8d/);
-      assert.match(text, lang === 'zh' ? /pi 已耗尽 42分钟/ : /pi out 42m/);
+      assert.match(text, lang === 'zh' ? /pi 已耗尽 42分/ : /pi out 42m/);
       if (lang === 'zh') assert.doesNotMatch(text, /\b(Needs you|Running|last accepted|to try|blocked|working|Control plane|Working tree|pi out)\b/);
     }
   }

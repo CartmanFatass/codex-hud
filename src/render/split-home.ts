@@ -69,7 +69,7 @@ export function homeScene(
     // The state word is said once, on the right. The middle says what else is known: a running lane's phase; for a lane that asks,
     // failed or finished, the role (a finished lane of several jobs, how many) and never the word again.
     const role = monitorText(card.role), jobs = t('{n} jobs', { n: lane.workers.length }), phaseText = workPhaseText(phase);
-    const mid = native ? t('native') : failed(card) || phase === 'done' ? (lane.workers.length > 1 && !failed(card) ? jobs : role) : word && phaseText.includes(word) ? role : phaseText;
+    const mid = native ? t('subagents') : failed(card) || phase === 'done' ? (lane.workers.length > 1 && !failed(card) ? jobs : role) : word && phaseText.includes(word) ? role : phaseText;
     const right = native ? theme.board.muted(t('{n} running', { n: running })) : word
       ? `${ink(word)} ${theme.board.muted(age)}` : `${roleInk(card.role)(role)} ${theme.board.muted(age)}`;
     // A middle that does not fit the row whole goes on a row of its own, not cut.

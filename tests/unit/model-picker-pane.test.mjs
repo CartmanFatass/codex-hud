@@ -66,7 +66,7 @@ test('wide picker frames in EN/ZH: open groups, columns, exact uses, long IDs, p
     assert.equal(normalized(left(a)[1]), normalized(modelHeader));
 
     const b = draw(send(a, 'down').state);
-    assert.match(right(b), zh ? /✗ 已耗尽 · 42分钟后恢复/ : /✗ exhausted · resets in 42m/);
+    assert.match(right(b), zh ? /✗ 已耗尽 · 42分后恢复/ : /✗ exhausted · resets in 42m/);
     for (const role of ['imp +(?:#1|第 1 位)', 'reviewer \\[pi\\]', 'oracle \\[fable\\][\\s\\S]*\\[architect\\]']) assert.match(right(b), new RegExp(role));
     assert.doesNotMatch(right(b), /\[default\]/);
     assert.match(right(b), zh ? /2小时前发现/ : /discovered 2h ago/);

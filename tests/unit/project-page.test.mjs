@@ -489,7 +489,7 @@ test('Hub timeline: Waiting for you, Now, Latest newest first with ages, then a 
     // Now: a slice with its text when it fits whole and the word for its state; a job no slice shows with its role and minutes.
     assert.match(text, new RegExp(`^ {2}◐ PAGE-ONE {10,}${word('working', '工作中')}$`, 'm'));
     assert.match(text, new RegExp(`^ {2}◆ PAGE-TWO {2}waits for page one +${word('blocked', '受阻')}$`, 'm'));
-    assert.match(text, new RegExp(`^ {2}◉ imp {2}Tidy the synthetic docs.* 5${word('m', '分钟')}$`, 'm'));
+    assert.match(text, new RegExp(`^ {2}◉ imp {2}Tidy the synthetic docs.* 5${word('m', '分')}$`, 'm'));
     // Latest: the three newest landed slices by commit date, each with its state and age.
     assert.deepEqual(text.match(/^ {2}[◇✓] [A-Z-]+/gm), ['  ◇ DATA-ONE', '  ◇ WATCH-LINK', '  ◇ SENTENCE-CUT']);
     assert.match(text, new RegExp(`^ {2}◇ DATA-ONE {10,}${word('to try 1d', '待试用 1天')}$`, 'm'));
