@@ -369,7 +369,7 @@ test('live panel: no discovery on Home or Project, Control reads only the displa
     for (const until = Date.now() + 10000; Date.now() < until && child.exitCode === null; await new Promise((r) => setTimeout(r, 20))) if (predicate()) return;
     assert.fail(`${what}: ${stderr}\n${stripAnsi(stdout).slice(-1500)}`);
   };
-  await wait(() => calls().some(([mode]) => mode === 'home'), 'Home collected');
+  await wait(() => calls().some(([mode]) => mode === 'home' || mode === 'home-tasks'), 'Home collected');
   child.stdin.write('r\t'); // Home r, then Project
   await wait(() => calls().some(([mode]) => mode === true), 'Project collected');
   child.stdin.write(']r'); // select the other project while on Project
@@ -405,7 +405,7 @@ test('live panel: no discovery on Home or Project, Control reads only the displa
   await wait(() => calls().filter(([mode]) => mode === 'control').at(-1)?.[1] === other, 'back on the other root');
   const n = calls().length;
   child.stdin.write('\t'); // wrap Control -> Home while Project still points to the other root
-  await wait(() => calls().slice(n).some(([mode, root]) => mode === 'home' && root === own), 'Home still collects its own project');
+  await wait(() => calls().slice(n).some(([mode, root]) => (mode === 'home' || mode === 'home-tasks') && root === own), 'Home still collects its own project');
   assert.equal(count(), 2);
   child.stdin.write('q');
   assert.deepEqual(await once(child, 'exit'), [0, null]);

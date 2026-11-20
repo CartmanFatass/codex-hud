@@ -124,7 +124,7 @@ test('bounded safe numstat for working tree and newest 12 tries, with native pat
 
   const r = project.ledger.at(-2), item = 'diff:' + file;
   r.brief = { brief: 'Synthetic brief', steps: ['Check the synthetic edit'] };
-  const render = (state) => renderMonitor({ tree: TREE, project, state, width: 40, height: 48, nowMs: NOW });
+  const render = (state) => renderMonitor({ tree: TREE, project, state: { acceptance: 'slice', ...state }, width: 40, height: 48, nowMs: NOW });
   for (const panelLayout of ['classic', 'split']) {
     for (const page of ['tree', 'progress']) {
       const state = onPage(page, {
