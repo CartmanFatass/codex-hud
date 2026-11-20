@@ -32,9 +32,9 @@ function driver(f, { width = 40, height = 40, data = f.data, state = split(), bo
 }
 
 test('a printable key is one decoder name, and the Help page lists no key twice', async (t) => {
-  // The decoder: n flags, > < move between cards, i and Delete place, + = - size the Split; no other name is on n, N, g, +, -.
+  // Lower case n flags, while the upper-case preset management keys act only on role rows.
   assert.deepEqual([...'n<>'].map((c) => decode(c)[0].key), ['try-flag', 'previous-trouble', 'next-trouble']);
-  assert.deepEqual(['N', 'g'].map((c) => decode(c)[0].key), ['', ''], 'N and g are no longer named: g is a job’s tab, the Home key is the top');
+  assert.deepEqual([...'NRDg'].map((c) => decode(c)[0].key), ['preset-copy', 'preset-rename', 'preset-delete', '']);
   assert.deepEqual(['i', '\x1b[3~', '+', '-', '='].map((c) => decode(c)[0].key), ['place-add', 'place-remove', 'list-grow', 'list-shrink', 'list-grow']);
   // `+` and `=` are one physical key and one meaning; no key besides them names the same action.
   const named = new Map();

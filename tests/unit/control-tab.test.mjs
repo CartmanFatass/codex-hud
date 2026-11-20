@@ -5,12 +5,14 @@ import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { projectFixture, onControl, onPage, plain, richControl, NOW, TREE, PROJECTS } from '../fixtures/project-page.mjs';
+import { projectFixture, onControl, onPage, plain, presetFrames, richControl, NOW, TREE, PROJECTS } from '../fixtures/project-page.mjs';
+import { build } from '../../docs/design/control-tab/gen/frames.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { readPanelPlace } from '../../dist/utils/panel-reload.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
+import { editPreset } from '../../dist/roles/role-control.js';
 
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'control-tab-'));
@@ -163,6 +165,116 @@ test('Harnesses keys, click targets and 40-cell rows in Classic and Split, in EN
     for (const input of decoder.push(Buffer.from('lost'))) frame = draw(send(frame, input).state);
     assert.match(caption(frame), zh ? /pi:lost +未见/ : /pi:lost +not seen/);
     assert.deepEqual(send(frame, 'enter').action, { type: 'harness-switch', id: 'pi:lost', off: false });
+  }
+});
+
+test('40-column preset row, successful switch and chooser text match the sample in both languages', async (t) => {
+  const f = await fixture(t), rendered = presetFrames(f, richControl(f.data));
+  for (const lang of ['en', 'zh']) {
+    const sample = (id) => build(lang).frames.find((frame) => frame.id === id).frame.rows.map((r) => r.segs.map((s) => s.t).join('').trimEnd());
+    const role = /^  ◉ imp \[/;
+    const listEntry = /^ *(?:◉ )?(?:default |grok |daily |Custom |自定义 )+.*→/;
+    const list = (rows) => rows.filter((line) => line.startsWith('/ ') || listEntry.test(line));
+    for (const layout of ['classic', 'split']) {
+      assert.equal(rendered[`preset-row-40-${layout}-${lang}`].find((line) => role.test(line)), sample('4a').find((line) => role.test(line)));
+      assert.deepEqual(list(rendered[`preset-list-40-${layout}-${lang}`]), list(sample('4c')));
+    }
+    const switched = rendered[`preset-switched-40-split-${lang}`];
+    for (const row of sample('4b').filter((line) => role.test(line) || line.startsWith('✓ imp'))) assert.ok(switched.includes(row), row);
+  }
+});
+
+test('project role at 40 columns shows source and lock, with open but no preset controls', async (t) => {
+  const f = await fixture(t), data = richControl(f.data);
+  for (const panelLayout of ['classic', 'split']) for (const lang of ['en', 'zh']) {
+    const state = onControl({ projectCursor: 'project:role:frontend', projectFolded: new Set(['role:frontend', 'usage', 'files']) }, { panelLayout });
+    const frame = f.render(40, lang, state, 34, data);
+    assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+    const content = plain(frame).join('\n');
+    assert.match(content, lang === 'en' ? /source +project/ : /来源 +项目/);
+    assert.match(content, lang === 'en' ? /pinned +project file · read-only here/ : /锁定 +项目文件 · 这里只读/);
+    assert.ok(!frame.controls.some((c) => c.kind.startsWith('preset-')));
+    const open = frame.controls.find((c) => c.kind === 'control-open-file');
+    assert.ok(open);
+    assert.deepEqual(send(frame, { type: 'mouse', button: 'left', x: open.x, y: open.y }).action,
+      { type: 'open-files', files: ['/synthetic/project/roles/frontend.json'] });
+  }
+});
+
+test('role preset sheets: filter, copy, rename and preview deletion in EN/ZH, Classic and Split', async (t) => {
+  const f = await fixture(t), file = join(f.hud, 'roles/imp.json'), cursor = 'project:role:imp';
+  const run = [{ harness: 'pi', model: 'openai/gpt-6.1-sol' }];
+  const chain = [{ harness: 'pi', model: 'xai/grok-4.7', thinking: 'high', pi_args: ['--verbose'] }];
+  const original = { role: 'imp', instructions: 'implementer', can_continue: true, run, active_preset: 'daily',
+    presets: [{ name: 'daily', run: chain }] };
+  f.put(join(f.hud, 'harnesses.json'), { disabled: ['pi:xai'] });
+  for (const layout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
+    f.put(file, original);
+    const snap = await f.collector.collect('control', f.board, NOW);
+    const before = fs.readFileSync(file, 'utf8'), zh = lang === 'zh';
+    const draw = (state) => {
+      const frame = f.render(40, lang, state, 30, snap, true, 'unicode', 'none', { projectName: 'harbor-api' });
+      assert.ok(frame.lines.every((line) => visualLength(line) === 40));
+      return frame;
+    };
+    const decoder = new WorkbenchInputDecoder('workboard');
+    let frame = draw(onControl({ projectCursor: cursor }, { panelLayout: layout }));
+    const text = () => plain(frame).join('\n');
+    const read = () => JSON.parse(fs.readFileSync(file, 'utf8'));
+    const apply = (out) => {
+      let state = out.state;
+      if (out.action?.type === 'preset-edit') {
+        const done = editPreset(f.hud, f.cwd, f.env, out.action);
+        assert.equal(done.ok, true, JSON.stringify(done));
+        f.collector.refreshRoles(snap, NOW);
+        state = { ...state, controlPresetInput: undefined };
+      } else assert.equal(out.action, undefined);
+      frame = draw(state);
+    };
+    const keys = (raw) => { for (const input of decoder.push(Buffer.from(raw))) apply(send(frame, input)); };
+    const click = (kind) => {
+      const c = frame.controls.find((control) => control.kind === kind);
+      assert.ok(c, kind);
+      apply(send(frame, { type: 'mouse', button: 'left', x: c.x, y: c.y }));
+    };
+    assert.match(text(), zh ? /imp \[daily\] → 无/ : /imp \[daily\] → none/);
+    click('preset-list');
+    assert.match(text(), zh ? /选择预设/ : /choose preset/);
+    assert.match(text(), zh ? /daily +→ 无/ : /daily +→ none/);
+    assert.match(text(), zh ? /自定义 +→ pi\/openai +文件链/ : /Custom +→ pi\/openai +file chain/);
+    keys('qjk7\r');
+    assert.match(text(), zh ? /没有匹配的预设/ : /No matching presets/);
+    assert.equal(frame.state.controlPresetInput.text, 'qjk7');
+    assert.equal(fs.readFileSync(file, 'utf8'), before);
+    keys('\x03');
+    assert.equal(frame.state.controlNav.projectCursor, cursor);
+    keys('pG\x1b[F\x7f\x1b[F\r'); // printable G is text; Home/End escapes are navigation.
+    assert.equal(read().active_preset, null);
+    keys('pgroK\r');
+    assert.equal(read().active_preset, 'grok', 'the all-off named chain can be chosen');
+    keys('NNO!\r');
+    assert.match(text(), zh ? /预设名无效/ : /bad preset name/);
+    keys('\x03');
+    keys('Ndaily\r');
+    assert.match(text(), zh ? /预设名称已存在/ : /preset name already exists/);
+    keys('\x03');
+    keys('Nqjk7\r');
+    assert.match(text(), zh ? /未保存/ : /Not saved/);
+    assert.equal(read().active_preset, 'grok');
+    keys('s');
+    assert.equal(read().active_preset, 'qjk7');
+    keys('Rnight\r');
+    assert.equal(read().active_preset, 'night');
+    keys('D');
+    assert.match(text(), zh ? /删除 night？[\s\S]*下次使用文件链/ : /Delete night\?[\s\S]*Use file chain next/);
+    assert.match(text(), /\[.*\] → pi\/openai/);
+    assert.equal(read().active_preset, 'night');
+    keys('\x03');
+    keys('D\r');
+    assert.equal(read().active_preset, null);
+    assert.deepEqual(read().run, run);
+    assert.deepEqual(read().presets, original.presets);
+    assert.equal(frame.state.controlNav.projectCursor, cursor);
   }
 });
 

@@ -1,11 +1,11 @@
 /**
  * The Control plane's two halves: what it shows of where each role runs (`controlFacts`, read-only, for the collector)
- * and what a key there does (`editPlaces`, the panel's one write: `$HUD_HOME/roles/<role>.json` through `writeRolePlaces`,
- * and `exhausted.json` through `clearExhausted`). The next `hud_create` reads the same files, so what the page shows is
+ * and what a key there does (`editPlaces` / `editPreset` write the owner role or clear a quota mark).
+ * The next `hud_create` reads the same files, so what the page shows is
  * what that call uses.
  */
 import * as fs from 'node:fs';
-import { isAbsolute, join, relative } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cliAgents } from './cli-kinds.js';
 import { isModelToken, MODEL_ID_MAX, modelSourceStatus } from './model-discovery.js';
@@ -13,13 +13,14 @@ import {
   attributePiModel,
   clearExhausted,
   currentPreset,
+  validPresetName,
   harnessDefaults,
   BRO_TOOLS,
   evaluatePlaces,
   qualifiedPiProvider,
   placeCatalog,
   roleRegistry,
-  writeRolePlaces,
+  type PresetChange,
   type HarnessDefault,
   type PlaceCatalog,
   type PlaceState,
@@ -55,15 +56,20 @@ export interface PlaceFact {
 }
 export interface RoleFact {
   role: string;
-  /** The role file in force: Enter and `o` open it. */
+  /** The role file in force; `o` opens it. */
   path: string;
   /** Whose file that is: the shipped `default`, `yours` under `$HUD_HOME/roles`, or the `project`'s. */
   source: 'default' | 'yours' | 'project';
   /** `project` roles come from the project's own `.hud/roles`, which wins and is never written here. */
   group: 'roles' | 'project' | 'browser';
   places: PlaceFact[];
-  /** Absent for roles without presets; null means a custom run. */
+  /** Null means the file chain; legacy equality can supply a displayed name. */
   preset?: string | null;
+  presets?: { name: string; next: string | null; offBy?: string }[];
+  fileChain?: PlaceFact[];
+  chainPath?: string;
+  missingPreset?: string;
+  revision?: string;
 }
 export interface HarnessFact {
   name: string;
@@ -110,7 +116,7 @@ export function placeDestination(place: Pick<PlaceFact, 'label' | 'harness' | 'p
 }
 const inside = (dir: string, path: string) => {
   const rel = relative(dir, path);
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
 };
 const projectPinned = (registry: Registry, role: Role) => {
   const info = registry.project();
@@ -134,7 +140,7 @@ export function controlFacts(
     p ? placeDestination({ ...p.place, label: placeLabel(p.place), provider: p.provider }) : null;
   for (const role of registry.roles().values()) {
     const assigned = registry.assignment(role, now, undefined, context);
-    const places = assigned.places.map((entry): PlaceFact => {
+    const toFact = (entry: (typeof assigned.places)[number]): PlaceFact => {
       const { place, model, thinking, provider, state, until, missing, off_by } = entry;
       if (entry.pi_role_file) piRoleFiles.add(entry.pi_role_file);
       if (provider) referenced.add(provider);
@@ -162,7 +168,8 @@ export function controlFacts(
         ...(off_by ? { offBy: off_by } : {}),
         ...(state === 'missing' ? { missing } : {}),
       };
-    });
+    };
+    const places = assigned.places.map(toFact);
     for (const { run } of role.presets ?? []) for (const place of run) {
       const provider = place.harness === 'pi' ? qualifiedPiProvider(place.model) : undefined;
       if (provider) referenced.add(provider);
@@ -184,7 +191,17 @@ export function controlFacts(
       source: pinned ? 'project' : inside(join(hudHome, 'roles'), role.source_file) ? 'yours' : 'default',
       group: pinned ? 'project' : role.run.every((p) => p.harness === 'bro') ? 'browser' : 'roles',
       places,
-      ...(role.presets?.length ? { preset: assigned.preset } : {}),
+      preset: assigned.preset,
+      missingPreset: assigned.preset_missing,
+      chainPath: assigned.chain_source_file,
+      revision: registry.revision(role),
+      presets: (role.presets ?? []).map(({ name, run }) => {
+        const reviewed = run === role.run ? assigned : registry.assignment(role, now, undefined, context, { preset: name });
+        return { name, next: destination(reviewed.places.find((p) => p.state === 'active')),
+          ...(reviewed.places.every((p) => p.state === 'off') ? { offBy: [...new Set(reviewed.places.map((p) => p.off_by))].join(' ') } : {}) };
+      }),
+      fileChain: role.presets?.some((p) => p.run === role.run)
+        ? registry.assignment(role, now, undefined, context, { preset: null }).places.map(toFact) : places,
     });
   }
   roles.sort((a, b) => rank(a.role) - rank(b.role) || a.role.localeCompare(b.role));
@@ -244,6 +261,7 @@ export interface PlaceEdit {
   op: PlaceOp;
   /** Which way `preset`, `harness`, `model` and `thinking` cycle; forward when absent. */
   step?: 1 | -1;
+  revision?: string;
   /** A model chosen in the Control plane's picker: `model` sets it (`''` unsets it, back to the role's default) instead of cycling. */
   value?: string;
 }
@@ -253,6 +271,26 @@ export interface EditOutcome {
   message?: string;
   reason?: string;
   index?: number;
+  preset?: string | null;
+}
+export type PresetEdit = { role: string; revision?: string } & Exclude<PresetChange, { op: 'run' }>;
+export function editPreset(hudHome: string, cwd: string, env: NodeJS.ProcessEnv, edit: PresetEdit, bundled = BUNDLED): EditOutcome {
+  try {
+    const registry = roleRegistry(hudHome, cwd, env, undefined, undefined, bundled);
+    const role = registry.roles().get(edit.role);
+    if (!role) return { ok: false, message: 'role not found' };
+    if (projectPinned(registry, role)) return { ok: false, message: 'the project file is in force: o opens it' };
+    if (edit.revision !== undefined && edit.revision !== registry.revision(role))
+      return { ok: false, message: 'Role changed on disk; reopen the action' };
+    if (edit.op !== 'select' && edit.op !== 'delete') {
+      if (!validPresetName(edit.name)) return { ok: false, message: 'bad preset name' };
+      if (role.presets?.some((p) => p.name === edit.name)) return { ok: false, message: 'preset name already exists' };
+    }
+    registry.savePreset(role, edit);
+    return { ok: true, preset: edit.op === 'delete' ? null : edit.name };
+  } catch (error) {
+    return { ok: false, message: 'could not save the change', reason: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 const kindKey = (p: RolePlace) =>
@@ -298,20 +336,6 @@ function cycle(values: string[], current: string | undefined, step: number): str
   const at = current === undefined ? values.length : values.indexOf(current);
   return slots[(((at < 0 ? values.length : at) + step) % slots.length + slots.length) % slots.length];
 }
-/** The places as the owner's own role file has them (unknown keys kept), else as loaded. */
-function workingRun(role: Role, hudHome: string): RolePlace[] {
-  try {
-    if (role.source_file === join(hudHome, 'roles', `${role.role}.json`)) {
-      const parsed = JSON.parse(fs.readFileSync(role.source_file, 'utf8')) as { run?: unknown };
-      if (Array.isArray(parsed.run) && parsed.run.length === role.run.length)
-        return parsed.run.map((p: RolePlace, i) => ({ ...p, harness: role.run[i]!.harness }));
-    }
-  } catch {
-    /* Fall back to the loaded places. */
-  }
-  return role.run.map((p) => ({ ...p }));
-}
-
 export function editPlaces(
   hudHome: string,
   cwd: string,
@@ -335,14 +359,16 @@ export function editPlaces(
     }
     if (projectPinned(registry, role)) return refuse('the project file is in force: o opens it');
     if (edit.op === 'preset') {
+      if (edit.revision !== undefined && edit.revision !== registry.revision(role)) return refuse('Role changed on disk; reopen the action');
       const presets = role.presets ?? [];
       if (!presets.length) return { ok: true, index: i };
       const at = presets.findIndex((p) => p.name === currentPreset(role));
       const next = presets[at < 0 ? (step > 0 ? 0 : presets.length - 1) : (at + step + presets.length) % presets.length]!;
-      writeRolePlaces(hudHome, role.role, next.run, bundled);
-      return { ok: true, index: 0 };
+      if (next.name === currentPreset(role)) return { ok: true, index: i };
+      registry.savePreset(role, { op: 'select', name: next.name });
+      return { ok: true, index: 0, preset: next.name };
     }
-    const run = workingRun(role, hudHome), here = run[i];
+    const run = registry.editableRun(role), here = run[i];
     if (!here) return refuse('role not found');
     const catalog = placeCatalog(hudHome, bundled, undefined, now);
     const table = harnessDefaults(hudHome, bundled);
@@ -397,7 +423,7 @@ export function editPlaces(
       [run[i], run[to]] = [run[to]!, run[i]!];
       index = to;
     }
-    writeRolePlaces(hudHome, role.role, run, bundled);
+    registry.savePreset(role, { op: 'run', run });
     return { ok: true, index };
   } catch (error) {
     return refuse('could not save the change', error instanceof Error ? error.message : String(error));

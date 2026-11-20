@@ -10,7 +10,8 @@ import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ProjectPage } from './project-view.js';
-import type { PlaceEdit } from '../roles/role-control.js';
+import type { PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
+import type { PresetInput } from './preset-input.js';
 import type { ModelPick } from './model-input.js';
 import type { BackupSkill } from '../collectors/backup-skills.js';
 import type { TryAction, TryTarget } from '../collectors/try-records.js';
@@ -57,6 +58,8 @@ export interface MonitorState {
   controlHarnessNav?: ControlNavigation;
   controlHarnessAdd?: { text: string; pick?: string };
   controlHarnessNotice?: { id: string; off: boolean };
+  controlPresetInput?: PresetInput;
+  controlPresetNotice?: { role: string; name: string | null };
   /** The Project page that is open; unset is the hub. Cursor and scroll below belong to it (or to the hub). */
   projectPage?: ProjectPage;
   /** The project the tab shows when it is not the panel's own; unset is the panel's own (Home always is). */
@@ -141,6 +144,7 @@ export interface MonitorRow {
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;
   harnessOff?: boolean;
+  roleFact?: RoleFact;
   tryTarget?: TryTarget;
 }
 export interface MonitorRect {
@@ -167,6 +171,7 @@ export interface MonitorControl {
     | 'board-inspect'
     | 'control-roles'
     | 'control-harnesses'
+    | 'control-open-file'
     | 'harness-add'
     | 'harness-toggle'
     | 'harness-remove'
@@ -174,6 +179,7 @@ export interface MonitorControl {
     | 'harness-restore'
     | 'harness-back'
     | 'harness-refresh'
+    | `preset-${'list' | 'copy' | 'rename' | 'delete' | 'next' | 'prev' | 'accept' | 'cancel'}`
     | 'settings'
     | 'help'
     | 'brief';
@@ -242,6 +248,7 @@ export interface MonitorOutcome {
     | { type: 'open-files'; files: string[] }
     /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
     | ({ type: 'role-edit' } & PlaceEdit)
+    | ({ type: 'preset-edit' } & PresetEdit)
     | { type: 'harness-switch'; id: string; off: boolean }
     | { type: 'record-try'; action: TryAction; target: TryTarget }
     | { type: 'refresh-models' }

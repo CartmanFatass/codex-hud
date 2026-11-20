@@ -113,6 +113,9 @@ export class WorkbenchInputDecoder {
                   // Control plane: the place under the cursor (capitals go back).
                   c: 'role-preset',
                   C: 'role-preset-prev',
+                  N: 'preset-copy',
+                  R: 'preset-rename',
+                  D: 'preset-delete',
                   p: 'place-harness',
                   P: 'place-harness-prev',
                   m: 'place-model',

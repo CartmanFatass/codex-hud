@@ -75,6 +75,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const main = next.focus === 'agents', classic = next.panelLayout !== 'split';
   const inspector = next.focus === 'details';
   const goTab = (tab: MainTab = 'home') => {
+    next.controlPresetNotice = undefined;
     const keepingProject = next.mainTab === 'control' || tab === 'control';
     next.mainTab = tab;
     if (tab === 'home') next.trySelection = undefined;
@@ -121,6 +122,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const useProject = (root?: string) => {
     if (root === next.projectRoot) return;
     next.projectRoot = root;
+    next.controlPresetNotice = undefined;
     next.controlNav = undefined;
     next.projectInput = undefined;
     next.trySelection = undefined;
@@ -254,6 +256,28 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (id && row?.harnessOff !== undefined && (!remove || !row.harnessOff))
         return { type: 'harness-switch', id, off: !row.harnessOff };
     };
+    if (control && !harnesses) {
+      next.controlPresetNotice = undefined;
+      if (tab === 'control-open-file' && rows[at]?.files) return result({ type: 'open-files', files: rows[at]!.files! });
+      const clickedRole = input.type === 'mouse' && input.button === 'left'
+        ? frame?.controls.find((c) => c.kind.startsWith('preset-') && c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.item
+        : undefined;
+      const fact = (clickedRole ? rows.find((r) => r.item === clickedRole) : rows[at])?.roleFact;
+      const op = tab?.startsWith('preset-') ? tab : key === 'place-harness' ? 'preset-list' : key;
+      if (fact && fact.source !== 'project') {
+        if (op === 'role-preset' || op === 'role-preset-prev' || op === 'preset-next' || op === 'preset-prev')
+          return result({ type: 'role-edit', role: fact.role, index: 0, op: 'preset',
+            step: op.endsWith('prev') ? -1 : 1, revision: fact.revision });
+        if (op === 'preset-list' || op === 'preset-copy' || ((op === 'preset-rename' || op === 'preset-delete') && fact.preset)) {
+          next.projectCursor = controlRoleItem(fact.role);
+          next.splitFocus = undefined;
+          next.controlPresetInput = op === 'preset-list' ? { mode: 'list', role: fact, text: '', at: 0 }
+            : op === 'preset-delete' ? { mode: 'delete', role: fact }
+              : { mode: op === 'preset-copy' ? 'copy' : 'rename', role: fact, text: '' };
+          return result();
+        }
+      }
+    }
     if (harnesses) {
       if (key === 'place-add' || tab === 'harness-add') {
         next.controlHarnessAdd = { text: '' };
@@ -341,14 +365,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (key === 'reset') return result({ type: 'refresh-models' });
       const place = PLACE_KEYS[key === 'backspace' ? 'place-remove' : key];
       const item = rows[at]?.item, role = controlRoleOf(item), index = /:(\d+)$/.exec(item ?? '')?.[1];
-      if (role && place && (index !== undefined || place.op === 'preset')) {
+      const pinned = role && rows.find((r) => r.item === controlRoleItem(role))?.roleFact?.source === 'project';
+      if (role && place && index !== undefined && place.op !== 'preset' && (!pinned || place.op === 'clear')) {
         // `m` uses the existing picker; Flow and pinned places retain the existing edit path.
         const pick = rows[at]?.modelPick;
         if (place.op === 'model' && index !== undefined && pick && pickable(pick)) {
           next.projectInput = { role, index: Number(index), text: '' };
           return result();
         }
-        return result({ type: 'role-edit', role, index: Number(index ?? 0), ...place });
+        return result({ type: 'role-edit', role, index: Number(index), ...place });
       }
       if (key === 'escape') {
         if (classic && role && (index !== undefined || folds().has(`role:${role}`))) {

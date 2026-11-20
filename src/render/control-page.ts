@@ -2,16 +2,18 @@
 import { basename } from 'node:path';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import { placeDestination, type PlaceFact, type RoleFact } from '../roles/role-control.js';
-import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
+import type { MonitorControl, MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { CONTROL_FOLDS, controlRoleItem, controlRoleOf } from './control-navigation.js';
 import { glyph, needsAttention, placeTarget, radarFacts, radarRows, radarSummary, roleName, roleToday } from './control-view.js';
 import { projectItem } from './project-view.js';
 import { projectSplitScene, type Shown } from './split-project.js';
-import { boardRow, kvRows, mark, pack, section } from './workboard-rows.js';
+import { boardRow, footHints, hintText, kvRows, mark, pack, section } from './workboard-rows.js';
 import { fit, flowLines, monitorText, pair, squeeze } from './monitor-text.js';
 import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { HARNESS_OFF, harnessErrorRow } from './harness-page.js';
+import { presetSheet } from './preset-input.js';
+import { splitPreviewRoom } from './split-frame.js';
 
 const muted = theme.board.muted;
 export const controlFolded = (state: MonitorState): ReadonlySet<string> => state.projectFolded ?? new Set(state.controlHarnesses ? [HARNESS_OFF] : CONTROL_FOLDS);
@@ -27,7 +29,7 @@ const reason = (place: PlaceFact, now: number) => place.state === 'off' ? `${t('
 export function controlHeader(input: MonitorData, state: MonitorState, width: number): MonitorRow[] {
   const projects = input.projects ?? [], at = Math.max(0, projects.findIndex((p) => p.root === state.projectRoot));
   const roles = ` ${t('Roles')} `, harnesses = ` ${t('Harnesses')} `, x = visualLength(roles);
-  const change = state.controlHarnessNotice;
+  const change = state.controlHarnessNotice, selected = state.controlPresetNotice;
   const scope = t('This machine · all projects');
   const caption = change ? pair(theme.board.success(`${mark('✓', '+')} ${t(change.off ? 'Switched off' : 'Restored')} ${monitorText(change.id)}`), muted(scope), width)
     : muted(scope);
@@ -36,7 +38,9 @@ export function controlHeader(input: MonitorData, state: MonitorState, width: nu
     text: (state.controlHarnesses ? muted : theme.board.title)(roles) + (state.controlHarnesses ? theme.board.title : muted)(harnesses),
     controls: [{ kind: 'control-roles', x: 0, width: Math.min(width, x) },
       ...(width > x ? [{ kind: 'control-harnesses' as const, x, width: Math.min(width - x, visualLength(harnesses)) }] : [])],
-  }, ...(state.controlHarnesses ? [boardRow(caption)] : [])];
+  }, ...(state.controlHarnesses ? [boardRow(caption)] : selected ? [boardRow(theme.board.success(`${mark('✓', '+')} ${t('{role} → preset {name}', {
+    role: monitorText(selected.role), name: selected.name === null ? t('Custom') : monitorText(selected.name),
+  })}`))] : [])];
 }
 
 export function controlHints(data: ProjectSnapshot | undefined, item?: string, inChain = false): string {
@@ -45,18 +49,25 @@ export function controlHints(data: ProjectSnapshot | undefined, item?: string, i
   if (role && index !== undefined) {
     const clear = role.places[Number(index)]?.until !== undefined ? '  x clear' : '';
     return role.source === 'project' ? `↑↓ place  o open file${clear}  esc back  ? help`
-      : `↑↓ place  p harness  m model  e thinking  i add  Del remove  K J move${clear}${role.preset !== undefined ? '  c C preset' : ''}  esc back  ? help`;
+      : `↑↓ place  p harness  m model  e thinking  i add  Del remove  K J move${clear}  esc back  ? help`;
   }
-  if (role) return `↑↓ move  ${inChain ? '⏎ places' : '⏎ open'}${role.source !== 'project' && role.preset !== undefined ? '  c C preset' : ''}  h harnesses  o open file  r refresh  ? help`;
+  if (role) {
+    const enter = inChain ? '⏎ chain' : '⏎ open';
+    if (role.source === 'project') return `↑↓ move  o open file  ${enter}  h harnesses  ? help`;
+    const names = role.presets?.length ? '  c C preset  p presets' : '';
+    const manage = role.preset ? '  R rename  D delete' : '';
+    return `↑↓ move  ${enter}${names}  N copy${manage}  h harnesses  o open file  r refresh  ? help`;
+  }
   const enter = item?.startsWith('project:file:') ? '  ⏎ open file' : item?.startsWith('project:fold:') ? '  ⏎ open' : '';
   return `↑↓ move${enter}  h harnesses  r refresh  ←→ tab  [ ] project  ? help`;
 }
 
 function roleRows(role: RoleFact, width: number, now: number): MonitorRow[] {
   const next = active(role), dead = role.places.find((p) => p.state === 'exhausted'), why = dead ?? (!next ? role.places[0] : undefined);
-  const extra = { item: controlRoleItem(role.role), files: [role.path] };
+  const extra = { item: controlRoleItem(role.role), files: [role.path], roleFact: role };
   const tag = role.source === 'project' ? muted(t('project')) : '';
-  const room = width - (tag ? visualLength(tag) + 1 : 0), lead = `  ${glyph(!next ? 'missing' : dead ? 'exhausted' : 'active')} `;
+  const room = width - (tag ? visualLength(tag) + 1 : 0);
+  const lead = `  ${role.missingPreset ? theme.board.attention('!') : glyph(!next ? 'missing' : dead ? 'exhausted' : 'active')} `;
   const arrow = ` ${mark('→', '>')} `, name = roleName(role), presetName = monitorText(preset(role));
   const to = squeeze(monitorText(next ? target(next) : t('none')), Math.max(4, room - visualLength(lead) - 10));
   const ids = room - visualLength(lead + arrow + to) - 3;
@@ -64,12 +75,22 @@ function roleRows(role: RoleFact, width: number, now: number): MonitorRow[] {
   const shownPreset = squeeze(presetName, Math.max(4, ids - visualLength(id)));
   const line = `${lead}${theme.board.title(id)} ${muted(`[${shownPreset}]${arrow}`)}${next ? to : theme.board.attention(to)}`;
   const note = why ? why.offBy ? `${why.offBy} ${t('Switched off')}` : `${target(why)} ${reason(why, now)}` : '';
-  return [{ ...extra, text: pair(line, tag, width) }, ...(note ? [{ ...extra, text: fit(`      ${theme.board.attention(monitorText(note))}`, width) }] : [])];
+  const missing = role.missingPreset ? t('Preset {name} missing; using file chain', { name: monitorText(role.missingPreset) }) : '';
+  return [{ ...extra, text: pair(line, tag, width) }, ...[note && monitorText(note), missing].filter(Boolean)
+    .flatMap((message) => flowLines(message, width - 6).map((part) => ({ ...extra, text: fit(`      ${theme.board.attention(part)}`, width) })))];
 }
 
 function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: number, classic = false): MonitorRow[] {
   const next = active(role), today = radarFacts(data.radar).roles.find(([name]) => name === role.role)?.[1];
-  const source = `${t(role.source)} · ${basename(role.path)}`;
+  const source = `${t(role.source)} · ${role.source === 'project' ? '.hud/roles/' : ''}${basename(role.path)}`;
+  const locked = t('project file · read-only here');
+  const available = role.presets?.map((p) => p.name).join('  ');
+  const metadata = [
+    ...kvRows('source', source, width),
+    ...(role.chainPath ? kvRows('chain source', role.chainPath, width) : []),
+    ...(role.source === 'project' ? [...kvRows('pinned', locked, width), ...(available ? kvRows('Presets', available, width) : [])] : []),
+  ];
+  const actions = role.source === 'project' ? [] : roleActions(role, width);
   const chain = role.places.flatMap((place, i) => {
     const prefix = `${classic ? '    ' : '  '}${i + 1} ${glyph(place.state)} `, indent = ' '.repeat(visualLength(prefix));
     const label = place.harness === 'pi' && !place.model?.includes('/') ? target(place) : place.label;
@@ -81,21 +102,24 @@ function roleDetail(data: ProjectSnapshot, role: RoleFact, width: number, now: n
       ...notes.filter(Boolean).flatMap((note) => flowLines(monitorText(note), Math.max(1, width - indent.length))
         .map((line) => ({ ...extra, text: fit(indent + muted(line), width) })))];
   });
-  if (classic) return [...chain, ...[`${t('source')} ${monitorText(source)}`, ...(today ? [`${t('today')} ${roleToday(today)}`] : [])]
-    .flatMap((line) => flowLines(line, Math.max(1, width - 4)).map((text) => boardRow('    ' + muted(text))))];
+  if (classic) return [...chain, ...[`${t('source')} ${monitorText(source)}`, ...(role.source === 'project' ? [`${t('pinned')} ${locked}`,
+    ...(available ? [`${t('Presets')} ${monitorText(available)}`] : [])] : []), ...(role.chainPath ? [`${t('chain source')} ${monitorText(role.chainPath)}`] : []),
+    ...(today ? [`${t('today')} ${roleToday(today)}`] : [])]
+    .flatMap((line) => flowLines(line, Math.max(1, width - 4)).map((text) => boardRow('    ' + muted(text)))), ...actions];
   return [
     ...kvRows('next job', next ? target(next) : t('none'), width),
     ...(next ? [...kvRows('model', next.model ?? next.kind ?? t('default'), width),
       ...kvRows('thinking', next.thinking ?? t(next.harness === 'bro' ? 'none' : 'default'), width)] : []),
-    ...kvRows('source', source, width),
+    ...metadata,
     ...(today ? kvRows('today', roleToday(today), width) : []),
-    boardRow(''), section(t('Chain'), width, String(role.places.length)), ...chain,
+    boardRow(''), section(t('Chain'), width, String(role.places.length)), ...chain, ...actions,
   ];
 }
 
 function controlList(data: ProjectSnapshot, state: MonitorState, width: number, now: number, classic: boolean): MonitorRow[] {
-  const attention = data.roles.filter(needsAttention).sort((a, b) => Number(!active(a)) - Number(!active(b)));
-  const healthy = (['roles', 'project', 'browser'] as const).flatMap((group) => data.roles.filter((r) => r.group === group && !needsAttention(r)));
+  const needs = (r: RoleFact) => !!r.missingPreset || needsAttention(r);
+  const attention = data.roles.filter(needs).sort((a, b) => Number(!active(a)) - Number(!active(b)));
+  const healthy = (['roles', 'project', 'browser'] as const).flatMap((group) => data.roles.filter((r) => r.group === group && !needs(r)));
   const invalid = data.control.filter((r) => r.label === 'invalid'), folded = new Set(controlFolded(state));
   // A quota or preset change can move the selected role into Healthy; don't lose the cursor.
   if (folded.has('healthy') && healthy.some((r) => r.role === controlRoleOf(state.projectCursor))) {
@@ -139,7 +163,7 @@ function controlList(data: ProjectSnapshot, state: MonitorState, width: number, 
 export const controlRows = (data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number) =>
   data ? controlList(data, state, width, now, true) : [boardRow(t('Loading…'))];
 
-export function controlScene(data: ProjectSnapshot, state: MonitorState, listWidth: number, now: number, previewWidth = listWidth) {
+export function controlScene(data: ProjectSnapshot, state: MonitorState, listWidth: number, now: number, previewWidth: number, height: number, notes: number) {
   const list = controlList(data, state, listWidth, now, false);
   const preview = (item?: string): Shown => {
     const role = data.roles.find((r) => controlRoleItem(r.role) === item);
@@ -148,7 +172,53 @@ export function controlScene(data: ProjectSnapshot, state: MonitorState, listWid
       : { label: '', rows: [], hints };
   };
   const hints = controlHints(data);
-  const scene = projectSplitScene(state, { list, preview, hints, start: list.find((r) => r.item)?.item }, `control|${state.projectRoot ?? ''}`);
+  const scene = projectSplitScene(state, { list, preview, hints, start: list.find((r) => r.item)?.item },
+    `control|${state.projectRoot ?? ''}|${state.controlPresetInput?.mode ?? ''}`);
   if (scene.sub) scene.hints = controlHints(data, scene.sub, true);
+  if (state.controlPresetInput) {
+    const room = splitPreviewRoom({ ...scene, compact: true }, state, height, notes);
+    const sheet = presetSheet(state.controlPresetInput, previewWidth, room);
+    return { ...scene, rule: sheet.rule, preview: sheet.rows, sub: sheet.cursor, hints: sheet.hints, compact: true };
+  }
   return scene;
+}
+
+function roleActions(role: RoleFact, width: number): MonitorRow[] {
+  const actions = [
+    ...(!role.presets?.length ? [] : [['preset-list', 'Presets'] as const]),
+    ['preset-copy', 'Copy preset'] as const,
+    ...(role.preset ? [['preset-rename', 'Rename'] as const, ['preset-delete', 'Delete'] as const] : []),
+  ];
+  const rows: MonitorRow[] = [];
+  let text = role.presets?.length ? '  ' : `  ${t('No presets')} · `;
+  let controls: NonNullable<MonitorRow['controls']> = [];
+  for (const [kind, label] of actions) {
+    const word = t(label), span = visualLength(word);
+    if (visualLength(text) + span > width) {
+      rows.push({ text: fit(text, width), controls });
+      text = '  ';
+      controls = [];
+    }
+    controls.push({ kind, item: controlRoleItem(role.role), x: visualLength(text), width: Math.min(span, width - visualLength(text)) });
+    text += `${theme.board.identifier(word)}  `;
+  }
+  return [...rows, { text: fit(text, width), controls }];
+}
+
+/** Match the footer's whole translated hints and their cells (same alignment as footRow). */
+export function presetFooterControls(frame: MonitorFrame, hints: string, width: number, y: number) {
+  const kinds: Record<string, MonitorControl['kind']> = {
+    'p presets': 'preset-list', 'N copy': 'preset-copy', 'R rename': 'preset-rename', 'D delete': 'preset-delete',
+    '⏎ apply': 'preset-accept', '⏎ delete': 'preset-accept', '⏎ rename': 'preset-accept', 's save': 'preset-accept',
+    '⏎ continue': 'preset-accept', 'esc cancel': 'preset-cancel', 'esc discard': 'preset-cancel', 'o open file': 'control-open-file',
+  };
+  const labels = hints.split('  '), shown = footHints(hintText(hints), width);
+  let x = width - visualLength(shown);
+  for (const [i, label] of shown.split('  ').entries()) {
+    const span = visualLength(label), kind = kinds[labels[i]!];
+    if (kind) frame.controls.push({ kind, x, width: span, y });
+    if (labels[i] === 'c C preset') frame.controls.push({ kind: 'preset-next', x, width: 1, y },
+      { kind: 'preset-prev', x: x + 2, width: 1, y }, { kind: 'preset-next', x: x + 4, width: Math.max(0, span - 4), y });
+    x += span + 2;
+  }
 }

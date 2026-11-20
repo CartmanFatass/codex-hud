@@ -189,20 +189,23 @@ test('machine switches: panel, roster and create use the same daily chain, witho
   const roleFile = join(home, 'roles', 'imp.json'), switches = join(home, 'harnesses.json'), jobs = join(home, 'jobs');
   const run = [{ harness: 'pi', model: 'xai/grok-4.7', lens: false, pi_args: ['--synthetic-flag'] },
     { harness: 'cli', agent: 'agy', model: 'gemini-4-hydrogen-high' }];
-  const roleBytes = JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true, run,
-    presets: [{ name: 'daily', run }] }, null, 2) + '\n';
+  const roleBytes = JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true,
+    run: [{ harness: 'pi', model: 'synthetic/file-chain' }], active_preset: 'daily', presets: [{ name: 'daily', run }] }, null, 2) + '\n';
   fs.mkdirSync(join(home, 'roles'));
   fs.writeFileSync(roleFile, roleBytes);
   const other = { grok: { state_trust: 'advisory' }, catalog: { pi: { include: {} } }, unknown: { keep: true } };
   fs.writeFileSync(switches, JSON.stringify(other), { mode: 0o644 });
-  const inode = fs.statSync(switches).ino;
   const roster = async (detail = true) => (await f.call('hud_roster', { detail })).roles.find((r) => r.role === 'imp');
   const create = (key, extras) => f.call('hud_create', { role: 'imp', request_key: key, task: 'Synthetic task.', ...extras });
   assert.equal((await roster()).places[0].state, 'active');
+  const inode = fs.statSync(switches).ino;
   setHarnessDisabled(home, 'cli:grok', true);
+  const firstWrite = fs.statSync(switches).ino;
+  assert.notEqual(firstWrite, inode);
   assert.equal((await roster()).places[0].state, 'active', 'CLI Grok is not the xai provider');
   setHarnessDisabled(home, 'pi:xai', true);
-  assert.notEqual(fs.statSync(switches).ino, inode);
+  // Compare adjacent replacements; after two renames the original inode can have been reused.
+  assert.notEqual(fs.statSync(switches).ino, firstWrite);
   assert.equal(fs.statSync(switches).mode & 0o777, 0o600);
   assert.deepEqual(JSON.parse(fs.readFileSync(switches, 'utf8')), { ...other, disabled: ['cli:grok', 'pi:xai'] });
   const assigned = await roster();
@@ -225,7 +228,7 @@ test('machine switches: panel, roster and create use the same daily chain, witho
     assert.ok(!fs.existsSync(jobs) || fs.readdirSync(jobs).length === 0, 'no job created for a refused override');
   }
   assert.deepEqual(f.commands(), [], 'roster and refusals run no commands or discovery');
-  const fallback = await create('daily', { preset: 'daily' });
+  const fallback = await create('daily');
   assert.equal(JSON.parse(fs.readFileSync(join(fallback.task_dir, 'job.json'), 'utf8')).place.agent, 'agy');
   const enabledOverride = await create('model-on', { model: 'other/new-model' });
   const job = JSON.parse(fs.readFileSync(join(enabledOverride.task_dir, 'job.json'), 'utf8'));

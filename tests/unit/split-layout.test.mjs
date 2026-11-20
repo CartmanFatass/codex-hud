@@ -294,7 +294,10 @@ test('Control plane: roles on top, the cursor role’s places below; Enter takes
   assert.match(rule(d), /^imp ─+ \[Custom\]$/);
   const preset = d.run('role-preset');
   assert.deepEqual([preset.action.type, preset.action.role, preset.action.op], ['role-edit', 'imp', 'preset']);
-  assert.equal(d.run('place-harness').action, undefined, 'a place key waits for a place');
+  const list = d.run('place-harness');
+  assert.equal(list.action, undefined, 'p on the role does not edit a place');
+  assert.equal(list.state.controlPresetInput.mode, 'list');
+  d.run('escape');
   d.run('enter');
   assert.equal(d.state.controlNav.splitFocus, 'preview');
   assert.equal(d.state.controlNav.projectCursor, 'project:role:imp:0');

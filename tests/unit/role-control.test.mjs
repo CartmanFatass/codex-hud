@@ -45,7 +45,7 @@ async function setup(t, { shippedImp = true, healthyOpen = true } = {}) {
     if (out.action?.type === 'role-edit') {
       const { type: _type, ...edit } = out.action;
       session.done = editPlaces(f.hud, f.cwd, f.env, edit, NOW);
-      if (session.done.ok) session.state = select(session.state, placeItem(edit.role, session.done.index));
+      if (session.done.ok && edit.op !== 'preset') session.state = select(session.state, placeItem(edit.role, session.done.index));
       // As the panel does: the roles are read again at once, the full collection follows the key.
       f.collector.refreshRoles(session.snap, NOW);
     }
@@ -252,14 +252,16 @@ test('a key on a place is written to the role file and is what the roster, hud_r
   assert.equal(roster.run.length, 2);
 });
 
-test('c/C apply a whole role preset through the real key path; rows show default, named and custom; marks stay per place', async (t) => {
-  const s = await setup(t);
+test('c/C select from the role row and keep its cursor when attention changes; marks stay per place', async (t) => {
+  const s = await setup(t), item = 'project:role:imp';
+  const raw = JSON.parse(fs.readFileSync(resolve('packages/hud-mcp/roles/imp.json'), 'utf8')).run;
+  s.session.state = select(s.session.state, item);
   assert.match(s.text(), /imp \[default\]/);
   assert.match(plain(s.frame(120)).at(-1), /c C preset/);
   await s.press('c');
-  assert.deepEqual(s.session.done, { ok: true, index: 0 });
+  assert.deepEqual(s.session.done, { ok: true, index: 0, preset: 'grok' });
   assert.equal(s.assignment('imp').preset, 'grok');
-  assert.deepEqual(stored(s, 'imp').run, s.assignment('imp').presets[1].run);
+  assert.deepEqual(stored(s, 'imp').run, raw);
   assert.match(s.text(), /imp \[grok\]/);
   markExhausted(s.hud, 'pi:xai/grok-4.7', 'quota exceeded', NOW);
   await s.press('c');
@@ -268,12 +270,10 @@ test('c/C apply a whole role preset through the real key path; rows show default
   assert.match(s.text(), /− imp \[grok\] → none/);
   assert.equal(s.assignment('imp').exhausted.length, 1);
   await s.press('C');
-  await s.press('e');
-  assert.match(s.text(), /imp \[Custom\]/);
-  await s.press('c');
-  assert.equal(s.assignment('imp').preset, 'default', 'custom starts at first');
+  assert.equal(s.frame().state.controlNav.projectCursor, item);
+  assert.equal(s.assignment('imp').preset, 'default');
   assert.match(s.text(), /sonic \[Custom\]/);
-  s.session.state = select(s.session.state, placeItem('sonic', 0));
+  s.session.state = select(s.session.state, 'project:role:sonic');
   await s.press('c');
   assert.equal(fs.existsSync(join(s.hud, 'roles/sonic.json')), false, 'no presets writes nothing');
 });
@@ -432,7 +432,8 @@ test('the model picker on a CLI place lists that harness\'s models at once, one 
   // Help says what m does now, and the key row for p e.
   s.session.state = { ...initialMonitorState(), help: true };
   const help = plain(s.frame(80, 'en', 40)).join('\n').replace(/\n {8}/g, ' ');
-  assert.match(help, /^p e +place: harness, thinking \(capitals go back\)/m);
+  assert.match(help, /^p P +role: preset list · place: harness/m);
+  assert.match(help, /^e E +place: thinking \(capital goes back\)/m);
   assert.match(help, /^m +pick model; pi groups; type to filter/m);
 });
 test('40-column picker sample: same grouped, filtered and long-ID frames in Classic and Split', async (t) => {
@@ -519,11 +520,12 @@ test('a project role file in force is shown apart and never written past', async
   assert.match(s.text(), /◉ frontend \[Custom\] → pi\/project +project/);
   assert.match(s.text(), /◉ imp \[[^\]]+\] → pi\/project +project/);
   const before = fs.readFileSync(join(s.cwd, '.hud/roles/imp.json'), 'utf8');
+  s.session.state = select(s.session.state, 'project:role:imp');
+  for (const raw of ['c', 'C', 'p', 'N', 'R', 'D']) assert.equal((await s.press(raw)).action, undefined, raw);
   s.session.state = select(s.session.state, placeItem('imp', 0));
-  for (const raw of ['p', 'm', 'e', 'i', '\x1b[3~', 'K', 'c', 'C']) {
-    await s.press(raw);
-    assert.deepEqual(s.session.done, { ok: false, message: 'the project file is in force: o opens it' }, raw);
-  }
+  assert.match(s.text(), /pinned project file · read-only here/);
+  for (const raw of ['p', 'm', 'e', 'i', '\x1b[3~', 'K', 'c', 'C'])
+    assert.equal((await s.press(raw)).action, undefined, raw);
   // A mark is not in a role file: clearing one works on a project role too.
   markExhausted(s.hud, placeKey({ harness: 'pi', model: 'project/model' }), 'HTTP 429', NOW);
   s.session.snap = await s.collector.collect(true, s.board, NOW + 1);
@@ -587,7 +589,7 @@ test('Control plane keys: decoded names, only on a place row of the Control plan
   assert.equal(s.session.state.mainTab, 'home');
 });
 
-test('the live panel applies a Control plane key to the role files, and says why one cannot', async (t) => {
+test('the live panel applies explicit owner edits, including batched preset input, and locks project roles', async (t) => {
   const s = await setup(t);
   const root = fs.realpathSync(s.cwd);
   s.put(join(s.hud, 'projects.json'), { version: 1, projects: [{ root, registered_at: '2026-11-13T00:00:00.000Z' }] });
@@ -615,11 +617,21 @@ test('the live panel applies a Control plane key to the role files, and says why
   assert.equal(fs.existsSync(join(s.hud, 'roles/imp.json')), false, 'opening it writes nothing');
   child.stdin.write('openai/gpt-6.1-sol\r');
   await until(() => fs.existsSync(join(s.hud, 'roles/imp.json')) && stored(s, 'imp').run[0].model === 'openai/gpt-6.1-sol', 'the model written');
-  // Down to the project's own role: imp's fallback, sonic, then frontend; open its chain and attempt an edit.
+  child.stdin.write('\x1b');
+  await until(() => /↑↓ move  ⏎ open/.test(stripAnsi(out).slice(-350)), 'back on the role row');
+  child.stdin.write('pgrok\r');
+  await until(() => stored(s, 'imp').active_preset === 'grok', 'selected a preset');
+  child.stdin.write('Nqjk7\rs');
+  await until(() => stored(s, 'imp').active_preset === 'qjk7', 'copied the selected chain');
+  child.stdin.write('D');
+  await until(() => /Use file chain next/.test(stripAnsi(out).slice(-1200)), 'preview before deletion');
+  assert.equal(stored(s, 'imp').active_preset, 'qjk7');
+  child.stdin.write('\r');
+  await until(() => stored(s, 'imp').active_preset === null, 'file chain selected after deletion');
+  assert.equal(stored(s, 'imp').run[0].model, 'openai/gpt-6.1-sol');
   const mark = out.length;
-  child.stdin.write('jjj\rjp');
-  // The panel here is 30 columns wide, so the notice is cut to what fits.
-  await until(() => /the project file is in/.test(stripAnsi(out.slice(mark))), 'the notice');
+  child.stdin.write('jj\rjp');
+  await until(() => /read-only here/.test(stripAnsi(out.slice(mark))), 'the lock row');
   assert.equal(fs.existsSync(join(s.hud, 'roles/frontend.json')), false);
   child.stdin.write('q');
   await once(child, 'exit');

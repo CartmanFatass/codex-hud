@@ -250,6 +250,7 @@
     "      exhausted 42m",
     "  2 ◉ agy gemini-4-hydrogen-high xhigh",
     "  3 ○ claude opus high",
+    "  Presets  Copy preset",
     "",
     "",
     "",
@@ -258,8 +259,7 @@
     "",
     "",
     "",
-    "",
-    "           ↑↓ move  ⏎ places  c C preset"
+    " ↑↓ move  ⏎ chain  c C preset  p presets"
   ],
   "control-unfolded-40-en": [
     " Home ?1  Project ?2  Control",
@@ -297,11 +297,11 @@
     "      xhigh",
     "  2 − codex gpt-6.1-sol high",
     "      not installed",
+    "  Presets  Copy preset  Rename  Delete",
     "",
     "",
     "",
-    "",
-    "           ↑↓ move  ⏎ places  c C preset"
+    " ↑↓ move  ⏎ chain  c C preset  p presets"
   ],
   "tickets-40-en": [
     "‹ Project › Tickets",
@@ -680,6 +680,7 @@
     "      已耗尽 42分钟",
     "  2 ◉ agy gemini-4-hydrogen-high xhigh",
     "  3 ○ claude opus high",
+    "  预设  复制预设",
     "",
     "",
     "",
@@ -688,8 +689,7 @@
     "",
     "",
     "",
-    "",
-    "       ↑↓ 移动  ⏎ 位置  c C 预设  h 宿主"
+    "   ↑↓ 移动  ⏎ 备选链  c C 预设  p 选预设"
   ],
   "control-unfolded-40-zh": [
     " 首页 ?1  项目 ?2  控制          模型 关",
@@ -727,11 +727,11 @@
     "      xhigh",
     "  2 − codex gpt-6.1-sol high",
     "      未安装",
+    "  预设  复制预设  重命名  删除",
     "",
     "",
     "",
-    "",
-    "       ↑↓ 移动  ⏎ 位置  c C 预设  h 宿主"
+    "   ↑↓ 移动  ⏎ 备选链  c C 预设  p 选预设"
   ],
   "tickets-40-zh": [
     "‹ 项目 › 工单       2 个功能 · 14 个工单",

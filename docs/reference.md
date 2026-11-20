@@ -468,7 +468,7 @@ Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last b
 
 **Control tab.** Control is a main tab after Project. It names and follows the project selected in Project; `[`/`]` change that same selection without changing Home's root. Control reads that root's role and file facts without collecting its Git status, worktrees or tickets. The Roles view starts with:
 
-- **Needs attention**: roles with exhausted places that are enabled, or with no available place, plus invalid role files. A role reads `imp [daily] → agy`; when a reason needs attention, it is explained underneath. An invalid file opens with Enter or `o`.
+- **Needs attention**: roles with exhausted places that are enabled, with no available place, or with a missing selected preset, plus invalid role files. A role reads `imp [daily] → agy`; when a reason needs attention, it is explained underneath. An invalid file opens with Enter or `o`.
 - **Healthy**: folded to role names. Enter shows one row per role, with its active preset or `Custom`, the next target, and a `project` tag on project-owned roles.
 - **Usage** and **Files**: both folded. Usage opens quota windows, pi spend and dispatch health. Files opens the convention, instructions, pi definitions, ignored configuration, native agents, and local presence checks for keys, browser and harnesses.
 
@@ -499,9 +499,11 @@ The same policy applies to a requested `preset` and to resolved `on` and `model`
 off target is refused, not silently rerouted. If no place can run, `hud_create` returns
 `no_available_place` before creating a job.
 
-Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → project file in force; more specific wins, omission inherits. `hud_roster` returns `presets` and `preset` (matching name or null). Pass a name from `presets` to `hud_create` to use it for one job only.
+Role files may carry `presets`: `[{ "name": "short-token", "run": [...] }]`, whole ordered place lists validated like `run`. Names are unique per file, 1–32 characters from `[A-Za-z0-9._-]`. Presets merge by name from shipped → owner → registered project. At each layer, `hidden_presets` removes inherited names, then local definitions replace or append names. The winning role file's `active_preset` selects a name; `null` selects **Custom** (the file's own `run`). Without this field, the file chain still runs and the first exact normalized match still supplies the displayed name. If an explicitly selected name is missing, the file chain runs and Control and the roster report the missing name. A detailed `hud_roster` returns the effective `run`, `preset` and merged `presets`. `hud_create(preset: …)` uses that named chain for one job without saving it.
 
-On a role or place row, `c`/`C` applies the next/previous preset in one step (from `Custom`, first/last), writing its run to the owner's file and keeping other fields, including presets. Exhausted marks remain per place. Project-pinned roles refuse as for other edits; `o` opens the file. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
+On a **role row**, `c`/`C` immediately selects the next/previous named preset, wrapping in displayed order (from Custom, first/last). `p` opens one list including Custom: type to filter, ↑↓ to choose, Enter to apply, Esc or Ctrl+C to cancel. The list shows where each chain runs next; an all-off preset remains selectable and shows **none**. `N` copies the current chain: name it, press Enter to preview the unsaved copy, then `s` to save and select it or Esc to discard. `R` renames the selected named preset on Enter. `D` previews deletion of the selected named preset and the file chain that will run next; Enter confirms, Esc cancels. Selection, copy, rename and deletion never launch a job or overwrite `run`. Quota marks stay with their places.
+
+Only explicit edits write the global owner role file (`$HUD_HOME/roles`, atomically, mode 0600), even when viewing a registered project. An inherited rename or deletion hides the old name in the owner layer instead of changing a shipped file. Project-pinned roles show the source and a lock; `o` opens the file but the panel offers no preset or place edits there. Shipped imp presets: `default`, `grok` (high), `hydrogen`; reviewer: `default`, `pi`; oracle: `fable`, `architect` (the former architect role's pi setup). No separate architect HUD role remains.
 
 On a place row (Control only): `p`/`P` next/previous harness (`pi`, then each CLI agent for a
 role that has CLI instructions; a browser role walks chatgpt, gemini, aistudio) with that harness's
@@ -645,7 +647,7 @@ Inspector, Changes, Settings and Help share
 one title band, exact-width rows and whole footer hints (rightmost hints drop when
 narrow). Home, the hub and the Control plane footers show the keys of the selected row: a HUD
 job's row adds `g job tab` and `X stop`, a to-try row `Space mark  y accept  n flag`, a role
-`c C preset`, a place `i add  Del remove  K J move`; a key the row does not take is not listed.
+`c C preset` and `p presets`, a place `i add  Del remove  K J move`; a key the row does not take is not listed.
 One key means one thing on a page (`n` flags a to-try row and nothing else; `>` `<` move between
 Home's cards that need you; `i` `Del` change places; `+` `=` `-` size Split's list), and the Help
 page lists each key once. A row says its state once: a card's `[done]` mark is left out when its
@@ -673,7 +675,8 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `f` | Changes summary (once `3`) |
 | `[`, `]` | Project or Control: previous/next project (not on the Projects list) |
 | `p` `e` (capitals back), `i` `Del` `K` `J`, `x`, `r` | Control plane: harness / thinking of the place under the cursor; add / remove / move up / move down a place; clear its exhausted mark; refresh harness model lists (`r`) |
-| `c` / `C` | Control plane: apply the next / previous role preset |
+| `c` / `C`, `p` | Control role row: next / previous named preset, or filter presets and choose a name or Custom |
+| `N`, `R`, `D` | Control role row: copy the current chain, rename the selected preset, or preview and confirm deletion |
 | `h` | Control: switch Roles / Harnesses (or click the view heading) |
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
 | `m` (`M`) | Control: pick the model for the selected place. Pi models are in one list grouped by provider; type to filter, ↑↓ pick, Enter sets, Esc cancels |
@@ -726,7 +729,7 @@ Home, Project and Control become **a list above and a preview of the cursor row 
   text and, for a slice to try with a brief, its brief and acceptance steps with the original ledger text folded below them (Enter on the slice takes the keys into the preview, Enter on the fold row unfolds it; `o` opens STATE.md). A to-try slice's list row is its id and the brief's first sentence. In the hub's
   Progress preview, Space starts on the highlighted to-try row and moves the keys into
   the preview. Without Space marks, `y` / `n` on the hub still act on the next slice to try.
-- **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the places: ↑↓ selects one, `p m e i Del K J x` act on it, Esc returns; `c` / `C` apply a preset to the role from the list. `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
+- **Control.** Roles on top (Needs attention first), with the selected role's detail and chain below. Enter focuses the places: ↑↓ selects one, `p m e i Del K J x` act on it, Esc returns; on a role row, `c` / `C` switch presets and `p` opens the preset list. `h` switches to Harnesses, with switch facts and next-job effects in the preview; `i` opens Add back in the preview.
 - **Tickets, Working tree, Docs.** A row each, the ticket's checklist and latest
   comment or the fact's whole text underneath; Enter opens the file.
 

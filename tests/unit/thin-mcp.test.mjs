@@ -3067,6 +3067,35 @@ test('hud_create uses a merged preset for one job and falls back within it witho
   assert.equal(fs.readFileSync(file, 'utf8'), original);
 });
 
+test('roster and default create route the active selector, while explicit preset is read-only and one-job', async (t) => {
+  const f = await fixture(t);
+  const roles = join(f.env.HUD_HOME, 'roles'), file = join(roles, 'imp.json');
+  const run = [{ harness: 'pi', model: 'synthetic/file' }];
+  fs.mkdirSync(roles);
+  fs.writeFileSync(file, JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true, run,
+    active_preset: 'same-b', hidden_presets: ['hydrogen'], presets: [
+      { name: 'same-a', run: [{ harness: 'pi', model: 'synthetic/named', thinking: 'high' }] },
+      { name: 'same-b', run: [{ harness: 'pi', model: 'synthetic/named', thinking: 'high' }] },
+      { name: 'file-copy', run },
+    ] }));
+  const start = fs.readFileSync(file, 'utf8');
+  const roster = async (detail) => (await f.call('hud_roster', { detail })).roles.find((r) => r.role === 'imp');
+  const selected = await roster(true);
+  assert.equal((await roster(false)).preset, 'same-b');
+  assert.equal(selected.preset, 'same-b');
+  assert.equal(selected.run[0].model, 'synthetic/named');
+  assert.equal(selected.runs_on.model, 'synthetic/named');
+  assert.equal(selected.presets.some((p) => p.name === 'hydrogen'), false);
+  const create = async (key, preset) => {
+    const job = await f.call('hud_create', { role: 'imp', request_key: key, preset, task: 'Synthetic task.' });
+    return JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  };
+  assert.equal((await create('selector')).model, 'synthetic/named');
+  assert.equal((await create('named-override', 'file-copy')).model, 'synthetic/file');
+  assert.deepEqual(await roster(true), selected);
+  assert.equal(fs.readFileSync(file, 'utf8'), start);
+});
+
 test('hud_create rejects unknown, conflicting and malformed preset arguments before dispatch', async (t) => {
   const f = await fixture(t);
   const args = { role: 'imp', request_key: 'invalid-preset', task: 'Synthetic task.' };

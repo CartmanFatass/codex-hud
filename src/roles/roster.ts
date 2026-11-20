@@ -1,5 +1,5 @@
-/** hud_roster's read-only registry, shared without starting the MCP. */
-import { randomUUID } from 'node:crypto';
+/** Shared role resolution and owner role-file writes, without starting the MCP. */
+import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -36,15 +36,20 @@ export interface RolePreset {
   run: RolePlace[];
 }
 /** Compare normalized places as data: object key order is irrelevant, place order is not. */
-export function currentPreset(role: Pick<Role, 'run' | 'presets'>): string | null {
+export function currentPreset(role: Pick<Role, 'run' | 'presets' | 'preset'>): string | null {
+  if (role.preset !== undefined) return role.preset;
   return role.presets?.find((p) => isDeepStrictEqual(p.run, role.run))?.name ?? null;
 }
+export const validPresetName = (value: unknown): value is string =>
+  typeof value === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(value);
 export interface Role {
   role: string;
   instructions?: string;
   harness: 'pi' | 'bro' | 'cli';
   run: RolePlace[];
   presets?: RolePreset[];
+  preset?: string | null;
+  preset_missing?: string;
   pi_role?: string;
   split?: boolean;
   can_continue?: boolean;
@@ -185,12 +190,17 @@ function roleReason(value: unknown): string | null {
   if (raw.idle_grace_s !== undefined && (!Number.isInteger(raw.idle_grace_s) || (raw.idle_grace_s as number) < 0))
     return 'bad cli fields';
   if (raw.can_continue !== undefined && typeof raw.can_continue !== 'boolean') return 'bad can_continue';
+  if (raw.active_preset !== undefined && raw.active_preset !== null && !validPresetName(raw.active_preset))
+    return 'bad active_preset';
+  const hidden = raw.hidden_presets;
+  if (hidden !== undefined && (!Array.isArray(hidden) || !hidden.every(validPresetName) || new Set(hidden).size !== hidden.length))
+    return 'bad hidden_presets';
   if (raw.presets !== undefined) {
     if (!Array.isArray(raw.presets)) return 'bad presets';
     const names = new Set<string>();
     for (const preset of raw.presets) {
       if (!preset || typeof preset !== 'object' || Array.isArray(preset) ||
-          typeof preset.name !== 'string' || !/^[A-Za-z0-9._-]{1,32}$/.test(preset.name)) return 'bad preset name';
+          !validPresetName(preset.name)) return 'bad preset name';
       if (names.has(preset.name)) return `duplicate preset ${preset.name}`;
       names.add(preset.name);
       const reason = runReason(preset.run, raw.instructions, raw.can_continue);
@@ -262,13 +272,19 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
   return {
     role: String(parsed.role),
     ...(instructions !== undefined ? { instructions } : {}),
-    harness: primary.harness,
+    ...primaryFields(primary),
     run,
     presets: ((parsed.presets ?? []) as RolePreset[]).map((p) => ({
       name: p.name, run: p.run.map((item) => normalizePlace(item, rawInstructions)),
     })),
     can_continue,
     ...(idle_grace_s !== undefined ? { idle_grace_s } : {}),
+    source_file: path,
+  };
+}
+function primaryFields(primary: RolePlace) {
+  return {
+    harness: primary.harness,
     ...(primary.pi_role !== undefined ? { pi_role: primary.pi_role } : {}),
     ...(primary.split !== undefined ? { split: primary.split } : {}),
     ...(primary.skills !== undefined ? { skills: primary.skills } : {}),
@@ -280,9 +296,29 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     ...(primary.kind !== undefined ? { kind: primary.kind } : {}),
     ...(primary.agent !== undefined ? { agent: primary.agent } : {}),
     ...(primary.args !== undefined ? { args: primary.args } : {}),
-    source_file: path,
   };
 }
+
+type RawPreset = RolePreset & Record<string, unknown>;
+type RoleLayer = {
+  file: Role;
+  raw: Record<string, unknown> & { active_preset?: string | null; hidden_presets?: string[]; presets?: RawPreset[] };
+};
+function mergePresets(layers: RoleLayer[]) {
+  const presets = new Map<string, { preset: RolePreset; path: string; raw: RawPreset }>();
+  for (const { file, raw } of layers) {
+    for (const name of raw.hidden_presets ?? []) presets.delete(name);
+    for (const [i, preset] of (file.presets ?? []).entries())
+      presets.set(preset.name, { preset, path: file.source_file, raw: raw.presets![i]! });
+  }
+  return presets;
+}
+type ChainChoice = { preset: string | null } | { run: RolePlace[] };
+export type PresetChange =
+  | { op: 'select'; name: string | null }
+  | { op: 'copy' | 'rename'; name: string }
+  | { op: 'delete' }
+  | { op: 'run'; run: RolePlace[] };
 function namedRole(value: unknown): string | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const role = (value as { role?: unknown }).role;
@@ -485,8 +521,9 @@ export function roleRegistry(
       return null;
     }
   }
+  const sources = new WeakMap<Role, { layers: RoleLayer[]; presets: ReturnType<typeof mergePresets> }>();
   function scan(): { roles: Map<string, Role>; invalid: (InvalidRole & { role?: string })[] } {
-    const roles = new Map<string, Role>();
+    const layers = new Map<string, RoleLayer[]>();
     const invalid: (InvalidRole & { role?: string })[] = [];
     const take = (root: string, projectFile: boolean) => {
       for (const file of list(root).filter((name) => name.endsWith('.json'))) {
@@ -505,11 +542,11 @@ export function roleRegistry(
           invalid.push(role ? { path, reason, role } : { path, reason });
           continue;
         }
-        const role = normalizeRole(parsed as Record<string, unknown>, path);
-        role.presets = [...new Map([
-          ...(roles.get(role.role)?.presets ?? []), ...(role.presets ?? []),
-        ].map((p) => [p.name, p])).values()];
-        roles.set(role.role, role);
+        const raw = parsed as RoleLayer['raw'];
+        const definition = normalizeRole(raw, path);
+        const stack = layers.get(definition.role) ?? [];
+        stack.push({ file: definition, raw });
+        layers.set(definition.role, stack);
       }
     };
     const info = project();
@@ -518,7 +555,26 @@ export function roleRegistry(
     if (info.registered) {
       take(join(info.root, '.hud', 'roles'), true);
       const names = allowed(join(info.root, '.hud', 'project.json'));
-      if (names) for (const name of [...roles.keys()]) if (!names.has(name)) roles.delete(name);
+      if (names) for (const name of layers.keys()) if (!names.has(name)) layers.delete(name);
+    }
+    const roles = new Map<string, Role>();
+    for (const [name, stack] of layers) {
+      const { file, raw } = stack.at(-1)!;
+      const merged = mergePresets(stack);
+      const presets = [...merged.values()].map(({ preset }) => preset);
+      const selected = raw.active_preset ? merged.get(raw.active_preset)?.preset : undefined;
+      let role = { ...file, presets };
+      if (selected) {
+        // Launch fields follow the effective chain; the winning file still owns the role metadata.
+        const { role: name, instructions, idle_grace_s, source_file } = file;
+        role = { role: name, instructions, idle_grace_s, source_file, presets, run: selected.run,
+          can_continue: selected.run.some((p) => p.harness !== 'bro') && Boolean(raw.can_continue),
+          ...primaryFields(selected.run[0]!) };
+      }
+      role.preset = raw.active_preset === undefined ? currentPreset(role) : selected?.name ?? null;
+      if (raw.active_preset && !selected) role.preset_missing = raw.active_preset;
+      sources.set(role, { layers: stack, presets: merged });
+      roles.set(name, role);
     }
     return { roles, invalid };
   }
@@ -533,11 +589,19 @@ export function roleRegistry(
     const item = scan().invalid.filter((item) => item.role === name).at(-1);
     if (item) return { path: item.path, reason: item.reason };
   }
-  function placeDetails(role: Role, place: RolePlace) {
+  function chainSource(role: Role) {
+    const stored = sources.get(role);
+    return role.preset && stored?.presets.get(role.preset)?.preset.run === role.run
+      ? stored.presets.get(role.preset)!.path : role.source_file;
+  }
+  function revision(role: Role) {
+    return createHash('sha256').update(JSON.stringify(sources.get(role)!.layers.map(({ file, raw }) => [file.source_file, raw]))).digest('hex');
+  }
+  function placeDetails(role: Role, place: RolePlace, source = chainSource(role)) {
     const piInfo =
       place.harness === 'pi' ? piRoleInfo(place.pi_role ?? role.instructions, env, read) : { pi_role_file: null, frontmatter: undefined };
     const effective = (key: 'model' | 'thinking') => {
-      if (place[key] !== undefined) return { value: place[key]!, source: role.source_file };
+      if (place[key] !== undefined) return { value: place[key]!, source };
       const value = frontmatterValue(piInfo.frontmatter, key);
       return { value, source: value ? piInfo.pi_role_file : null };
     };
@@ -550,11 +614,24 @@ export function roleRegistry(
     return { pi_role_file: piInfo.pi_role_file, model, thinking, state_trust };
   }
   const routing = (now = Date.now()) => routingContext(hudHome, env, now);
-  function assignment(role: Role, nowMs = Date.now(), overrideModel?: string, context = routing(nowMs)) {
-    const evaluated = evaluatePlaces(role.run.map((configured, index) => {
+  function assignment(role: Role, nowMs = Date.now(), overrideModel?: string, context = routing(nowMs), choice?: ChainChoice) {
+    const stored = sources.get(role);
+    const layer = stored?.layers.at(-1);
+    let run = role.run, preset = currentPreset(role), source = chainSource(role), canContinue = role.can_continue;
+    if (choice) {
+      const named = 'preset' in choice && choice.preset !== null ? stored?.presets.get(choice.preset) : undefined;
+      if ('preset' in choice && choice.preset !== null && !named) throw new Error(`unknown preset: ${choice.preset}`);
+      run = 'run' in choice ? choice.run : named?.preset.run ?? layer?.file.run ?? role.run;
+      preset = named?.preset.name ?? null;
+      if ('preset' in choice) {
+        source = named?.path ?? role.source_file;
+        canContinue = Boolean(layer?.raw.can_continue);
+      }
+    }
+    const evaluated = evaluatePlaces(run.map((configured, index) => {
       const overridden = overrideModel !== undefined && configured.harness !== 'bro';
       const place = overridden ? { ...configured, model: overrideModel } : configured;
-      const details = placeDetails(role, place);
+      const details = placeDetails(role, place, source);
       const pi = place.harness === 'pi' ? attributePiModel(details.model.value, context) : undefined;
       const provider = pi?.provider;
       const provider_source = !provider ? undefined : qualifiedPiProvider(details.model.value) ? (place.model === undefined ? 'pi_role' : 'model')
@@ -583,7 +660,7 @@ export function roleRegistry(
       effort: active.harness === 'bro' ? active.effort : undefined,
       kind: active.harness === 'bro' ? active.kind : undefined,
       args: active.harness === 'cli' ? active.args : undefined,
-      can_continue: active.harness === 'bro' ? false : role.can_continue,
+      can_continue: active.harness === 'bro' ? false : canContinue,
       model: model.value,
       thinking: thinking.value,
       model_source: model.source,
@@ -609,9 +686,11 @@ export function roleRegistry(
             ? `${quota_reason} (until ${until})` : state === 'missing' ? `missing ${missing} on PATH` : 'not used for the explicit model override'}`
         ).join('; '),
       }),
-      run: role.run,
+      run,
       presets: role.presets ?? [],
-      preset: currentPreset(role),
+      preset,
+      ...(choice ? { preset_missing: undefined } : {}),
+      ...(source !== role.source_file ? { chain_source_file: source } : {}),
       runs_on: chosen ? chosen.place : null,
       places: evaluated,
       exhausted: evaluated.flatMap(({ place, key, until, quota_reason }) =>
@@ -633,7 +712,79 @@ export function roleRegistry(
     }
     throw new Error('convention_not_found');
   }
-  return { roles, invalid, invalidRole, assignment, routing, placeDetails, convention, project, projectConfigIgnored };
+  /** Read raw places for the existing place keys: never round-trip normalized launch options. */
+  function editableRun(role: Role, named?: string): RolePlace[] {
+    const { layers, presets } = sources.get(role)!;
+    const layer = layers.at(-1)!;
+    const name = named ?? currentPreset(role);
+    const saved = name === null ? undefined : presets.get(name);
+    // Legacy equality labels the file chain, but doesn't make the normalized preset its source.
+    const selected = saved && (named !== undefined || saved.preset.run === role.run) ? saved : undefined;
+    const raw = selected?.raw.run ?? (Array.isArray(layer.raw.run) ? layer.raw.run as RolePlace[] : [
+      { harness: role.run[0]!.harness, ...Object.fromEntries(LEGACY_PLACE_KEYS.filter((key) => key in layer.raw).map((key) => [key, layer.raw[key]])) },
+    ]);
+    const instructions = typeof layer.raw.instructions === 'string' ? layer.raw.instructions.trim() : undefined;
+    return raw.map((p, i) => {
+      const configured = (selected?.preset.run ?? role.run)[i]!;
+      return { ...p, harness: configured.harness,
+        ...(configured.harness === 'pi' && p.pi_role === undefined && configured.pi_role !== instructions
+          ? { pi_role: configured.pi_role } : {}) };
+    });
+  }
+  function savePreset(role: Role, change: PresetChange) {
+    const { layers, presets } = sources.get(role)!;
+    const { file, raw } = layers.at(-1)!;
+    const roleName = role.role, rolesDir = join(hudHome, 'roles');
+    if (!VALID_ROLE.test(roleName)) throw new Error('invalid role name');
+    const owner = dirname(file.source_file) === rolesDir;
+    if (!owner && dirname(file.source_file) !== join(bundled, 'roles')) throw new Error('the project file is in force: o opens it');
+    const target = owner ? file.source_file : join(rolesDir, `${roleName}.json`);
+    lstatKind(rolesDir, true, rolesDir);
+    if (!owner && lstatKind(target, false, target)) throw new Error('owner role path is occupied');
+    if (!lstatKind(file.source_file, false, file.source_file) || !isDeepStrictEqual(json(file.source_file), raw))
+      throw new Error('role changed on disk; reopen the action');
+    const next = { ...raw };
+    if (!owner) { delete next.presets; delete next.hidden_presets; }
+    const active = currentPreset(role);
+    if (change.op === 'select') {
+      if (change.name !== null && !presets.has(change.name)) throw new Error('preset not found');
+      if (raw.active_preset === change.name) return;
+      next.active_preset = change.name;
+    } else if (change.op === 'run' && (!raw.active_preset || active === null)) {
+      if (raw.active_preset !== undefined) next.active_preset = null;
+      replaceFileRun(next, change.run, file.instructions);
+    } else {
+      const local = [...(next.presets ?? [])];
+      const saved = active === null ? undefined : presets.get(active);
+      if (change.op === 'rename' || change.op === 'delete') {
+        if (active === null) throw new Error('choose a named preset first');
+        const at = local.findIndex((p) => p.name === active);
+        if (at >= 0) local.splice(at, 1);
+        const inherited = mergePresets(owner ? layers.slice(0, -1) : layers).has(active);
+        if (inherited && !next.hidden_presets?.includes(active)) next.hidden_presets = [...(next.hidden_presets ?? []), active];
+      }
+      if (change.op === 'delete') {
+        next.active_preset = null;
+      } else {
+        const name = change.op === 'run' ? active! : change.name;
+        if (!validPresetName(name)) throw new Error('bad preset name');
+        if (change.op !== 'run' && presets.has(name)) throw new Error('preset name already exists');
+        // Rename the saved definition, not a legacy file chain which only compares equal to it.
+        const run = change.op === 'run' ? change.run : editableRun(role, change.op === 'rename' ? active! : undefined);
+        const updated = { ...(change.op === 'copy' ? undefined : saved?.raw), name, run };
+        const at = local.findIndex((p) => p.name === name);
+        if (at < 0) local.push(updated);
+        else local[at] = updated;
+        next.active_preset = name;
+      }
+      if (local.length || next.presets !== undefined) next.presets = local;
+    }
+    if (next.can_continue === undefined && next.presets?.some((p) => p.run.some((place) => place.harness !== 'bro')))
+      next.can_continue = false;
+    writeRoleRecord(rolesDir, target, roleName, next, owner ? raw : null);
+  }
+  return { roles, invalid, invalidRole, assignment, routing, placeDetails, convention, project, projectConfigIgnored,
+    revision, editableRun, savePreset };
 }
 
 export function recordFailureExhaustion(
@@ -851,29 +1002,34 @@ export function writeRolePlaces(
   const base = hasHome
     ? readRoleRecord(target, target)
     : readRoleRecord(join(bundled, 'roles', `${role}.json`), `shipped/${role}.json`);
-  const nextRun = run.map((place) => (place && typeof place === 'object' && !Array.isArray(place) ? { ...place } : place));
-  const next: Record<string, unknown> = { ...base, role, run: nextRun };
-  if (!Array.isArray(base.run) && base.harness !== undefined) {
-    // A single-place file becomes a run list: its instructions stay (the loader derived them from that place) and its
-    // place keys live in `run` now, not twice.
-    if (next.instructions === undefined && roleReason(base) === null) {
-      const derived = normalizeRole(base, target).instructions;
-      if (derived !== undefined) next.instructions = derived;
-    }
+  const next: Record<string, unknown> = { ...base, role };
+  const derived = !Array.isArray(base.run) && roleReason(base) === null ? normalizeRole(base, target).instructions : undefined;
+  replaceFileRun(next, run, derived);
+  return writeRoleRecord(rolesDir, target, role, next);
+}
+function replaceFileRun(next: Record<string, unknown>, run: readonly RolePlace[], instructions?: string) {
+  if (!Array.isArray(next.run) && next.harness !== undefined) {
+    // A single-place file becomes a run list; keep derived instructions and remove the old place keys.
+    if (next.instructions === undefined && instructions !== undefined) next.instructions = instructions;
     for (const key of LEGACY_PLACE_KEYS) delete next[key];
   }
-  if (next.can_continue === undefined && nextRun.some((p) => p && (p.harness === 'pi' || p.harness === 'cli'))) {
+  next.run = run;
+  if (next.can_continue === undefined && run.some((p) => p && (p.harness === 'pi' || p.harness === 'cli')))
     next.can_continue = false;
-  }
+}
+function writeRoleRecord(rolesDir: string, target: string, role: string, next: Record<string, unknown>, expected?: Record<string, unknown> | null): string {
   const err = roleReason(next);
   if (err) throw new Error(`invalid role places: ${err}`);
   fs.mkdirSync(rolesDir, { recursive: true, mode: 0o700 });
   const temp = join(rolesDir, `.${role}.${process.pid}.${randomUUID()}.tmp`);
   try {
     fs.writeFileSync(temp, JSON.stringify(next, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-    lstatKind(target, false, target);
+    fs.chmodSync(temp, 0o600);
+    lstatKind(rolesDir, true, rolesDir);
+    const exists = lstatKind(target, false, target);
+    if (expected !== undefined && (expected === null ? exists : !exists || !isDeepStrictEqual(json(target), expected)))
+      throw new Error('Role changed on disk; reopen the action');
     fs.renameSync(temp, target);
-    fs.chmodSync(target, 0o600);
   } finally {
     try {
       fs.unlinkSync(temp);

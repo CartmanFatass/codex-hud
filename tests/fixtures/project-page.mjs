@@ -125,7 +125,10 @@ export function richControl(data) {
   const place = (harness, label, model, thinking, state, extra = {}) => ({ harness, label, model, thinking, state,
     ...(harness === 'pi' ? { provider: model?.split('/')[0] ?? null } : {}), ...extra });
   const role = (name, group, source, places) => ({ role: name, group, source, path: `/synthetic/${source}/roles/${name}.json`, places,
-    ...(['imp', 'reviewer', 'oracle'].includes(name) ? { preset: name === 'imp' ? null : name === 'oracle' ? 'fable' : 'default' } : {}) });
+    ...(['imp', 'reviewer', 'oracle'].includes(name) ? { preset: name === 'imp' ? null : name === 'oracle' ? 'fable' : 'default' } : {}),
+    ...(name === 'imp' ? { presets: [{ name: 'default', next: 'pi/openai' }, { name: 'grok', next: 'pi/xai' }] }
+      : name === 'reviewer' ? { presets: [{ name: 'default', next: 'pi/mistral' }] }
+        : name === 'oracle' ? { presets: [{ name: 'fable', next: 'claude' }] } : {}) });
   const roles = [
     role('imp', 'roles', 'yours', [place('pi', 'pi', 'openai/gpt-6.1-sol', 'high', 'exhausted', { until: NOW + 42 * 60000 }),
       place('cli', 'agy', 'gemini-4-hydrogen-high', 'xhigh', 'active'), place('cli', 'claude', 'opus', 'high', 'standby')]),
@@ -188,9 +191,33 @@ export function projectFrames(f) {
   }
   frames['control-rich-open-120-en'] = plain(f.render(120, 'en', opened, 56, control));
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
-  Object.assign(frames, pickerFrames(f, control));
+  Object.assign(frames, pickerFrames(f, control), presetFrames(f, control));
   frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
   frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
+  return frames;
+}
+
+export function presetFrames(f, control) {
+  const base = control.roles.find((r) => r.role === 'imp');
+  const agy = { ...base.places[1], state: 'standby', thinking: null };
+  const fileChain = [{ harness: 'pi', label: 'pi', provider: 'openai', model: 'openai/gpt-6.1-sol', thinking: 'xhigh', state: 'active' }, agy];
+  const imp = { ...base, preset: 'daily', fileChain,
+    presets: [{ name: 'default', next: 'pi/openai' }, { name: 'grok', next: null, offBy: 'cli:grok' }, { name: 'daily', next: 'pi/xai' }],
+    places: [{ harness: 'pi', label: 'pi', provider: 'xai', model: 'xai/grok-4.7', thinking: 'high', state: 'active' },
+      agy, { ...base.places[2], model: 'claude-opus-5-5' }] };
+  const withImp = (role) => ({ ...control, roles: control.roles.map((r) => r === base ? role : r) });
+  const nav = { projectCursor: 'project:role:imp' };
+  const views = {
+    row: {}, list: { controlPresetInput: { mode: 'list', role: imp, text: '', at: 0 } },
+    delete: { controlPresetInput: { mode: 'delete', role: imp } },
+  };
+  const frames = {};
+  for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) for (const [name, extra] of Object.entries(views))
+    frames[`preset-${name}-40-${panelLayout}-${lang}`] = plain(f.render(40, lang, onControl(nav, { panelLayout, experiments: true, ...extra }),
+      name === 'row' ? 34 : 23, withImp(imp), true, 'unicode', 'none', { projectName: 'harbor-api' }));
+  for (const lang of ['en', 'zh']) frames[`preset-switched-40-split-${lang}`] = plain(f.render(40, lang, onControl(nav, {
+    panelLayout: 'split', experiments: true, controlPresetNotice: { role: 'imp', name: 'default' },
+  }), 34, withImp({ ...imp, preset: 'default', places: fileChain }), true, 'unicode', 'none', { projectName: 'harbor-api' }));
   return frames;
 }
 

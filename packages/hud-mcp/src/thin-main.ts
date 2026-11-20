@@ -1046,8 +1046,9 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     (target.harness !== 'bro' || (p.tool === target.tool && (!target.provider || p.provider === target.provider)));
   const modelOverride = args.model === undefined ? undefined : required(args, 'model');
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
-  const run = onEntry ? [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] : preset?.run ?? definition.run;
-  const effective = found.assignment({ ...definition, run }, now, modelOverride, routing);
+  const choice = onEntry ? { run: [{ ...definition.run.find((p) => matchPlace(p, onEntry)), ...onEntry }] }
+    : presetName !== undefined ? { preset: presetName } : undefined;
+  const effective = found.assignment(definition, now, modelOverride, routing, choice);
   const details = effective.places.find((p) => p.state === 'active');
   if (!details) {
     return { ok: false, code: 'no_available_place', reason: effective.reason, places: effective.places, exhausted: effective.exhausted };
@@ -1157,7 +1158,7 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
       ? {
           cli: {
             agent: place.agent as CliAgent,
-            can_continue: definition.can_continue === true,
+            can_continue: effective.can_continue === true,
             idle_grace_s: (args.idle_grace_s as number | undefined) ?? definition.idle_grace_s ?? 600,
             state_trust: details.state_trust ?? 'advisory',
           },
@@ -1204,7 +1205,8 @@ export async function dispatchJob(args: Args, pane: string | undefined, parentJo
     fs.writeFileSync(join(children, job.job), '', { mode: 0o600, flag: 'wx' });
   } else createdJobs.add(job.job);
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
-  const launchRole = preset ? { ...definition, skills: effective.skills } : definition;
+  const selected = definition.presets?.some((p) => p.run === definition.run);
+  const launchRole = preset || selected ? { ...definition, skills: effective.skills } : definition;
   return keyLock(`job:${job.job}`, () => launchJob(job, launchRole, place, dir, instructionsPath, task, worktree));
 }
 
@@ -1263,7 +1265,7 @@ function harnessSwitchFailure(error: HarnessSwitchError) {
 }
 
 function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['assignment']>) {
-  const { role, instructions, available, can_continue, runs_on, model, thinking, reason, places, preset } = assignment;
+  const { role, instructions, available, can_continue, runs_on, model, thinking, reason, places, preset, preset_missing } = assignment;
   const place = runs_on && {
     harness: runs_on.harness,
     pi_role: runs_on.pi_role,
@@ -1278,6 +1280,7 @@ function compactAssignment(assignment: ReturnType<ReturnType<typeof registry>['a
   return {
     role, available, can_continue, runs_on: place,
     ...(preset ? { preset } : {}),
+    ...(preset_missing ? { preset_missing } : {}),
     places: places.map(({ index, state, off_by, until, missing, provider, provider_source }) =>
       ({ index, state, off_by, until, missing, provider, provider_source })),
     ...(instructions && instructions !== role && instructions !== runs_on?.pi_role ? { instructions } : {}),

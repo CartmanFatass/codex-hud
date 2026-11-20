@@ -11,7 +11,7 @@ import { HARNESS_OFF, harnessItem } from './render/harness-page.js';
 import { HarnessSwitchError, setHarnessDisabled } from './roles/harness-switches.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from './collectors/project-visits.js';
 import { projectList } from './roles/projects.js';
-import { editPlaces, placeItem } from './roles/role-control.js';
+import { editPlaces, editPreset, placeItem } from './roles/role-control.js';
 import { discoverModelLists, readModelListCache } from './roles/model-discovery.js';
 import { pathToFileURL } from 'node:url';
 import { PanelReload, readPanelPlace } from './utils/panel-reload.js';
@@ -877,7 +877,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       collectionEpoch++;
     }
     if (closed || collecting) return;
-    const ready = await reload.poll(() => Boolean((settingsPage && settingsDirty(settingsPage)) || state.expPage?.edit));
+    const ready = await reload.poll(() => Boolean((settingsPage && settingsDirty(settingsPage)) || state.expPage?.edit || state.controlPresetInput));
     if (closed) return;
     if (ready) {
       restarting = reload.restart({ state, openedAt, widthOverride: widthOverride ?? null,
@@ -1227,7 +1227,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
       if (closed) break;
       if (input.type === 'mouse' && !settings.mouse) continue;
       // Editors own unnamed printable keys; nowhere else do they trigger an action.
-      if (input.type === 'key' && !input.key && !state.projectInput && !state.expPage?.edit) continue;
+      if (input.type === 'key' && !input.key && !state.projectInput && !state.expPage?.edit && !state.controlPresetInput) continue;
       syncPanelView();
       const fromSettings = Boolean(settingsPage);
       if (settingsLeave && confirmationFrame) {
@@ -1374,11 +1374,24 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
         const cursor = state.controlNav?.projectCursor;
         if (done.ok && done.index !== undefined && cursor !== controlRoleItem(edit.role))
           state.controlNav = { ...state.controlNav, projectCursor: placeItem(edit.role, done.index), boardRevealed: undefined };
+        if (done.ok && done.preset !== undefined) state.controlPresetNotice = { role: edit.role, name: done.preset };
         // Read the roles again now so a moved place or new assignment is reflected immediately.
         const visit = visits.visit(shownRoot());
         if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
         roleNotice = done.ok ? '' : t(done.message ?? 'could not save the change') + (done.reason ? `: ${done.reason}` : '');
         error = roleNotice || settingsError || null;
+      }
+      if (result.action?.type === 'preset-edit') {
+        const { type: _type, ...edit } = result.action;
+        const done = editPreset(jobPipeline.home, shownRoot(), process.env, edit);
+        if (done.ok) {
+          state = { ...state, controlPresetInput: undefined, controlPresetNotice: { role: edit.role, name: done.preset ?? null },
+            controlNav: { ...state.controlNav, projectCursor: controlRoleItem(edit.role), boardRevealed: undefined } };
+        }
+        // Keep the sheet (and its captured revision) on failure so it can be cancelled or corrected.
+        notice(done.ok ? '' : t(done.message ?? 'could not save the change') + (done.reason ? `: ${done.reason}` : ''));
+        const visit = visits.visit(shownRoot());
+        if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
       }
       if (result.action?.type === 'brief-toggle') {
         try {
@@ -1408,10 +1421,11 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
   };
   /** Pass unnamed text when an editor is open or could be opened in this batch. */
   const editorInput = (inputs: WorkbenchInput[]) => {
-    let picking = Boolean(state.projectInput || state.expPage?.edit || state.controlHarnessAdd);
+    let picking = Boolean(state.projectInput || state.expPage?.edit || state.controlHarnessAdd || state.controlPresetInput);
     return inputs.filter((i) => {
       if (i.type !== 'key') { picking ||= (!!state.experiments || controlShown(state)) && i.button === 'left'; return true; }
-      if (i.key.startsWith('place-model') || i.key === 'place-add' || (state.experiments && i.key === 'enter')) picking = true;
+      if (i.key.startsWith('place-model') || i.key === 'place-add' || (controlShown(state) && ['place-harness', 'preset-copy', 'preset-rename'].includes(i.key)) ||
+          (state.experiments && i.key === 'enter')) picking = true;
       return Boolean(i.key) || picking;
     });
   };

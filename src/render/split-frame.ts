@@ -62,8 +62,10 @@ function rooms(scene: SplitScene, state: MonitorState, body: number) {
   return { gaps, list, lead, compact, listRoom, previewRoom: Math.max(0, rest - listRoom) };
 }
 /** The preview has more rows than its room: it scrolls, and its last cell is the scrollbar, so the caller lays it out one cell narrower. */
+export const splitPreviewRoom = (scene: SplitScene, state: MonitorState, height: number, notes = 0) =>
+  rooms(scene, state, Math.max(0, height - 2 - notes)).previewRoom;
 export const splitScrolls = (scene: SplitScene, state: MonitorState, height: number, notes = 0): boolean =>
-  scene.preview.length > rooms(scene, state, Math.max(0, height - 2 - notes)).previewRoom;
+  scene.preview.length > splitPreviewRoom(scene, state, height, notes);
 
 export function paintSplit(
   frame: MonitorFrame, scene: SplitScene, board: WorkboardSnapshot,
@@ -92,6 +94,10 @@ export function paintSplit(
   const put = (y: number, row: MonitorRow, banded: boolean, edge = '') => {
     const raw = row.paint?.() ?? row.text, text = edge ? cells(raw, width - 1) + edge : fit(raw, width);
     frame.lines[y] = banded ? boardCursor(text) : text;
+    for (const control of row.controls ?? []) {
+      const span = Math.min(control.width, width - (edge ? 1 : 0) - control.x);
+      if (span > 0) frame.controls.push({ ...control, y, width: span });
+    }
   };
   const listTop = top + lead;
   for (let i = 0; i < listRoom; i++) {
