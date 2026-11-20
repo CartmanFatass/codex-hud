@@ -299,4 +299,12 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'waiting for you': '等你处理',
   'jobs running': '运行中任务',
   '{n} done': '{n} 已完成',
+  Running: '运行中',
+  Quiet: '安静',
+  'last accepted': '最近验收',
+  '{n} waiting': '{n} 待处理',
+  '{place} out': '{place} 已耗尽',
+  'needs-info': '待补充',
+  'needs-triage': '待分诊',
+  'ready-for-human': '待人工',
 };

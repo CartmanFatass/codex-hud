@@ -14,6 +14,7 @@ import { PROJECT_PAGES, PAGE_WORD, HOME_BLOCK, acceptedText, asksYou, barText, b
   type ProjectPage } from './project-view.js';
 import { glyph, needsAttention, placeRows, placeTarget, radarFacts, radarRows, radarSummary, roleName, roleToday } from './control-view.js';
 import { boardControlPart, boardHubPart, boardProgressPart } from './board-project.js';
+import { inboxHubPart, inboxProgressPart } from './inbox-project.js';
 import type { TryAction } from '../collectors/try-records.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { splitItems, splitScope, splitSubValid, type SplitScene } from './split-frame.js';
@@ -255,12 +256,12 @@ function factsPart(page: 'tree' | 'docs', data: ProjectSnapshot, width: number, 
 export function projectScene(input: MonitorData, state: MonitorState, board: WorkboardSnapshot, page: ProjectPage | undefined, width: number, now: number): SplitScene | undefined {
   const data = input.project;
   if (!data || page === 'waiting') return undefined;
-  const boardLayout = state.projectLayout === 'board';
-  const part = !page ? (boardLayout ? boardHubPart(input, data, state, board, width, now) : hubPart(input, data, state, board, width, now))
-    : page === 'progress' ? (boardLayout ? boardProgressPart(input, data, state, board, width, now) : progressPart(input, data, state, board, width, now))
-    : page === 'control' ? (boardLayout ? boardControlPart(data, width, now) : controlPart(data, width, now))
+  const layout = state.projectLayout;
+  const part = !page ? (layout === 'board' ? boardHubPart(input, data, state, board, width, now) : layout === 'inbox' ? inboxHubPart(input, data, state, board, width, now) : hubPart(input, data, state, board, width, now))
+    : page === 'progress' ? (layout === 'board' ? boardProgressPart(input, data, state, board, width, now) : layout === 'inbox' ? inboxProgressPart(input, data, state, board, width, now) : progressPart(input, data, state, board, width, now))
+    : page === 'control' ? (layout === 'board' ? boardControlPart(data, width, now) : controlPart(data, width, now))
     : page === 'tickets' ? ticketsPart(data, state, width, now) : factsPart(page, data, width, now);
-  const items = splitItems(part.list), wait = (at?: string) => (at?.startsWith('project:wait:') ? 'project:fold:waiting' : at);
+  const items = splitItems(part.list), wait = (at?: string) => (at?.startsWith('project:wait:') && items.includes('project:fold:waiting') ? 'project:fold:waiting' : at);
   let focus = state.splitFocus === 'preview', cursor = wait(focus ? state.splitList : state.projectCursor);
   cursor = cursor && items.includes(cursor) ? cursor : part.start;
   let shown = part.preview(cursor);

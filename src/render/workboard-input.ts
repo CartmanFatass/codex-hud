@@ -223,7 +223,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         tryOnly();
         return result();
       }
-      const tried = (next.projectTry || next.projectLayout === 'board') && tryInput(next, key, rows[at]);
+      const tried = (next.projectTry || next.projectLayout === 'board' || next.projectLayout === 'inbox') && tryInput(next, key, rows[at]);
+      if (tried) return tried;
+    }
+    if (classic && !projectPageOf(next) && !listed && next.projectLayout === 'inbox') {
+      const tried = tryInput(next, key, rows[at]);
       if (tried) return tried;
     }
     // Control plane: `r` refreshes model lists from the harnesses; place keys act on `project:role:<role>:<index>`.

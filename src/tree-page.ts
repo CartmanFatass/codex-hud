@@ -669,7 +669,7 @@ export async function runLivePage(options: { installCleanup?: (end: () => void) 
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
     const shown = state.mainTab === 'project' ? visits.shown(shownRoot()) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
     const page = projectPageOf(state);
-    const showTries = state.panelLayout === 'split' || state.projectLayout === 'board' ? !page || page === 'progress' : !!state.projectTry;
+    const showTries = state.panelLayout === 'split' || state.projectLayout === 'board' || state.projectLayout === 'inbox' ? !page || page === 'progress' : !!state.projectTry;
     const tryMarks = projectShown(state, !!settingsPage) && !listing(state) && showTries && shown.snapshot
       ? tries.marks(shown.root, shown.snapshot.ledger) : undefined;
     const output = time('render', () => {

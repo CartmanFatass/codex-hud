@@ -90,7 +90,7 @@ test('Settings → Panel → Project layout defaults to Timeline, cycles Timelin
   } finally { setLanguage(prev); }
 });
 
-test('Inbox currently renders as Timeline; Board leaves Home and Tickets unchanged', async (t) => {
+test('Board leaves Home and Tickets unchanged', async (t) => {
   const { busy } = await fixture(t);
   for (const panelLayout of ['classic', 'split']) {
     const base = (extra) => ({ ...initialMonitorState(), panelLayout, ...extra });
@@ -98,8 +98,6 @@ test('Inbox currently renders as Timeline; Board leaves Home and Tickets unchang
       plain(busy.render(40, 'en', 32, base({ mainTab: 'home', projectLayout: 'timeline' }))), `${panelLayout}: Home unchanged`);
     assert.deepEqual(plain(busy.render(40, 'en', 32, base({ mainTab: 'project', projectPage: 'tickets', projectLayout: 'board' }))),
       plain(busy.render(40, 'en', 32, base({ mainTab: 'project', projectPage: 'tickets', projectLayout: 'timeline' }))), `${panelLayout}: Tickets unchanged`);
-    assert.deepEqual(plain(busy.render(40, 'en', 32, base({ mainTab: 'project', projectLayout: 'inbox' }), busy.control)),
-      plain(busy.render(40, 'en', 32, base({ mainTab: 'project', projectLayout: 'timeline' }), busy.control)), `${panelLayout}: Inbox renders as Timeline`);
   }
 });
 

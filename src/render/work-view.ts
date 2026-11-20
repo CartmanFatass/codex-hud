@@ -240,9 +240,11 @@ export function renderWorkboardFrame(
     state.inspectCursor =
       files.find((r) => r.files?.[0].endsWith(worker?.work?.requestInfo?.evidence?.relativePath ?? '/report.md'))
         ?.item ?? files[0]?.item;
-  // A new hub or page starts on its first destination (a page row, not the Waiting fold).
+  // A new hub or page starts on its first destination (Inbox hub: first Needs-you row; else a page row, not the Waiting fold).
   if (project && (!state.projectCursor || !rows.some((r) => r.item === state.projectCursor)))
-    state.projectCursor = (rows.find((r) => r.item?.startsWith('project:page:')) || rows.find((r) => r.item))?.item;
+    state.projectCursor = (!page && !list && state.projectLayout === 'inbox'
+      ? rows.find((r) => r.item && r.item !== 'project:switch') || rows.find((r) => r.item)
+      : rows.find((r) => r.item?.startsWith('project:page:')) || rows.find((r) => r.item))?.item;
   // The model picker is the page while it is open: its picked entry is the cursor, and the page's own scroll and reveal wait.
   const picking = project && page === 'control' && !!state.projectInput;
   const key = picking ? 'project:pick' : project ? state.projectCursor : inspector ? state.inspectCursor : state.boardAnchor ?? (selected ? targetKey(selected) : '');
@@ -303,9 +305,12 @@ export function renderWorkboardFrame(
           : page === 'control' ? '↑↓ move  ⏎ open  esc back  ? help  r refresh'
           : page === 'waiting' ? '↑↓ scroll  o open  esc back  ? help'
           : page === 'progress' ? (state.projectTry ? 'Space mark  y accept  n flag  t all  ↑↓ move  esc back  ⏎ open  ? help'
-            : state.projectLayout === 'board' && rows.some((r) => r.item === state.projectCursor && r.tryTarget) ? 'Space mark  y accept  n flag  ⏎ details  o open file  t to try  esc back  ? help'
+            : (state.projectLayout === 'board' || state.projectLayout === 'inbox') && rows.some((r) => r.item === state.projectCursor && r.tryTarget) ? 'Space mark  y accept  n flag  ⏎ details  o open file  t to try  esc back  ? help'
             : '↑↓ move  ⏎ open  t to try  esc back  ? help')
-          : page || list ? '↑↓ move  ⏎ open  esc back  ? help' : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
+          : page || list ? '↑↓ move  ⏎ open  esc back  ? help'
+          : state.projectLayout === 'inbox' && rows.some((r) => r.item === state.projectCursor && r.tryTarget)
+            ? (frame.projects ? 'Space mark  y accept  n flag  ⏎ details  o open file  ←→ tab  [ ] project  ? help' : 'Space mark  y accept  n flag  ⏎ details  o open file  ←→ tab  ? help')
+          : frame.projects ? '↑↓ move  ⏎ open  ←→ tab  [ ] project  ? help' : '↑↓ move  ⏎ open  ←→ tab  ? help')
         : homeKeys(state, source, 'expand');
   if (height > 1)
     frame.lines[height - 1] = footRow(

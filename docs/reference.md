@@ -605,7 +605,12 @@ and `+N` when full), a `latest` line, a one-row legend, In flight and gauge page
 milestone into its slices in cell order on Progress (older milestones as map rows, jobs outside the ledger, Next); shows
 one fallback chain row per role on the Control plane with its places in the preview (Split) or expanded on Enter
 (Classic), where all place keys act; and draws the Projects list as a one-row-per-project table (`ms`, `ledger`, `?`,
-`◉`, `age`). **Inbox** currently renders as Timeline.
+`◉`, `age`). **Inbox** opens the hub with a ranked Needs you list (questions and STATE's waiting items, to-try slices
+newest first, tickets asking for an answer, blocked slices, roles at their limit, each with its reason word on the
+right and the same `N · M to try` header figures as Timeline), followed by Running, a `last accepted` line and the page
+rows; orders Progress as To try (every milestone, newest first), Blocked, Working, Next and Done folded to one row;
+groups the Projects list into Needs you, Running and Quiet (one row per quiet project); and keeps Timeline's Control
+plane and Tickets.
 
 In Classic's to-try view and on Split's to-try rows, Space toggles a mark (`▣`, or `*` with text icons).
 `y` accepts and `n` flags the marked rows, or the current row if nothing is marked. All affected slices go into

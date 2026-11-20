@@ -9,6 +9,7 @@ import { basename } from 'node:path';
 import { boardRow, itemRow, section, mark, minuteAge, kvRows, pack } from './workboard-rows.js';
 import { controlRows, pickerRows } from './control-view.js';
 import { boardControlRows, boardHubRows, boardListRows, boardProgressRows } from './board-project.js';
+import { inboxHubRows, inboxListRows, inboxProgressRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { pickOf } from './model-input.js';
 import { monitorText, fit, pair, flowLines, cutWords } from './monitor-text.js';
@@ -433,7 +434,7 @@ const ticketLane = (r: ProjectTicket) => r.state === 'done' || r.state === 'drop
 const ticketGlyph = (r: ProjectTicket) => r.state === 'done' ? theme.board.success(mark('✓', '+')) : r.state === 'dropped' ? theme.board.muted(mark('–', '-'))
   : r.state === 'blocked' ? theme.board.attention(mark('◆', '!')) : theme.board.active(ticketWorking(r) ? mark('◐', '@') : mark('●', '*'));
 /** Two to four letters naming a feature on its tickets' rows: its words' initials, else the first letters of its slug, never the same for two. */
-function featureCodes(features: TicketFeature[]): Map<string, string> {
+export function featureCodes(features: TicketFeature[]): Map<string, string> {
   const codes = new Map<string, string>(), used = new Set<string>();
   for (const { slug } of features) {
     const letters = slug.replace(/[^a-z0-9]/gi, ''), initials = slug.split(/[^a-z0-9]+/i).filter(Boolean).map((w) => w[0]).join('');
@@ -568,6 +569,8 @@ export function pageRows(
       return rows;
     } else if (state.projectLayout === 'board') {
       return boardProgressRows(data, state, width, now, board, modelEnabled, tryMarks);
+    } else if (state.projectLayout === 'inbox') {
+      return inboxProgressRows(data, state, width, now, board, modelEnabled, tryMarks);
     } else {
       if (data.summary) for (const line of clampLines(data.summary, width - 2, 2).lines) fileRow('  ' + line, 'summary');
       // The current milestone: its bar with accepted/total, its counts, and what the earlier ones accepted in all.
@@ -693,10 +696,11 @@ export function projectRows(
 ): MonitorRow[] {
   const page = projectPageOf(state);
   // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
-  if (projectListOpen(state, projects)) return state.projectLayout === 'board' ? boardListRows(projects, width, now) : listRows(projects, width, now);
+  if (projectListOpen(state, projects)) return state.projectLayout === 'board' ? boardListRows(projects, width, now) : state.projectLayout === 'inbox' ? inboxListRows(projects, width, now) : listRows(projects, width, now);
   if (!data) return [];
   // The model picker is the Control plane while it is open.
   if (page === 'control' && state.projectInput && pickOf(data, state.projectInput)) return pickerRows(data, state.projectInput, width, room ?? 24);
   if (!page && state.projectLayout === 'board') return boardHubRows(data, state, width, now, name, projects, board, room, tryMarks);
+  if (!page && state.projectLayout === 'inbox') return inboxHubRows(data, state, width, now, name, projects, board, room, tryMarks);
   return page ? pageRows(page, data, state, width, now, board, modelEnabled, tryMarks, room) : hubRows(data, state, width, now, name, projects, board, room);
 }
