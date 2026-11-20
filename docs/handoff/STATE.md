@@ -167,6 +167,7 @@ board counts these; update at every landing or decision. -->
 - try · — · CONTROL-TAB-04 · presets on the role row: c/C switch, p list, N copy / R rename / D delete with preview; active_preset + hidden_presets, project roles locked (imp) (41dd0030)
 - try · — · MODEL-PICKER-01 · picker model facts (ctx/out/think/img from the same pi --list-models call), strip, ✗/⊘/? row facts, off-provider line, ^R, Esc clears filter first (imp) (b1d81f98)
 - try · — · MODEL-PICKER-02 · clickable [model ▾] on editable pi/cli places (locked rows plain, Flow keeps m), pinned current + this role's preset models, folded groups open on typing, mouse select/set/wheel/header fold (imp) (094c514a)
+- working · — · MODEL-PICKER-03 · picker zooms the panel's herdr pane (restore only if it zoomed), 120×36 list + detail, narrow fallback (imp jeae4ff9e2faf2bdb, wt/model-picker-03)
 - try · — · PI-ASYNC-HUD · pi main session gets HUD notices natively: steer at the next model boundary, idle wake, draft untouched, session fence (pi imp) (86445c1f; merged f7fcd0fa; Fishpref worker async ask 5e4b6d8 on main 2026-11-20)
 - try · — · HUD-MCP-LEAN · lean roster (convention_version, detail), compact job read and peek, shared tool definitions; report notice never reads (pi imp) (32686bf1; test fix c748433f; merged f7fcd0fa)
 
