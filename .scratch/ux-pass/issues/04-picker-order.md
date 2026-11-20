@@ -1,6 +1,6 @@
 # 04: likely models first, ranked flat filter (M-S4 PICKER-ORDER)
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Blocked by:** 03
 
 **What to build:** `docs/design/ux-pass/model-selection.md` §4 S4. Browse view puts the current model, this role's
