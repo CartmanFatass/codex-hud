@@ -1,6 +1,6 @@
 # 05: one picker for CLI and AI Studio places (M-S5 PICKER-FLAT)
 
-**Status:** ready-for-agent
+**Status:** resolved
 **Blocked by:** 04
 
 **What to build:** `docs/design/ux-pass/model-selection.md` §4 S5. CLI and AI Studio places open the same picker as a
